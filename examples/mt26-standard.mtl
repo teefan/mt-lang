@@ -457,7 +457,7 @@ function heap_example() -> void:
 -- =============================================================================
 -- SECTION 13: OUTPUT PARAMETERS AND POINTER CASTS
 -- =============================================================================
--- (out variable) creates an output parameter - takes address of a variable.
+-- 'out variable' creates an output parameter - takes address of a variable.
 -- Combined with 'as' casts, this lets you pass data to C functions that
 -- expect output parameters.
 
@@ -465,8 +465,8 @@ function output_parameter_example() -> void:
     let value: int = 42
 
     unsafe:
-        -- (out value) passes pointer to value - for functions that "return" via parameter
-        let ptr: raw[void] = (out value) as raw[void]
+        -- 'out value' passes pointer to value - for functions that "return" via parameter
+        let ptr: raw[void] = (out value) as raw[void] -- parentheses to capture 'out value' before casting
 
         -- Read it back
         let read_back: ref[int] = ptr as ref[int]
