@@ -16,6 +16,19 @@ static char peek_char(Lexer* lexer)
     return lexer->source[lexer->current_offset];
 }
 
+// Nhìn xem thử ký tự tiếp theo là gì nhưng không ăn mất nó
+static peek_next_char(Lexer* lexer)
+{
+    // Nếu vị trí ký tự tiếp theo lớn hơn độ dài mã nguồn
+    if (lexer->current_offset + 1 >= lexer->source_length)
+    {
+        // Trả về ký tự kết báo hiệu kết thúc chuỗi
+        return '\0';
+    }
+
+    return lexer->source[lexer->current_offset + 1];
+}
+
 // Bước tới (ăn++) ký tự tiếp theo
 static char advance_char(Lexer* lexer)
 {
