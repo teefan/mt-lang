@@ -22,8 +22,9 @@ typedef struct Lexer
     // Hỗ trợ hệ thống định dạng canh lề
     uint8_t indent_stack[MAX_INDENT_LEVEL]; // Chồng hộp canh lề
     int indent_top;                         // Vị trí đỉnh chồng hộp
-
-    bool is_at_line_start; // Cờ xác định vị trí đang ở dòng mới
+    uint16_t current_indent;                // Số khoảng trắng canh lề hiện tại
+    uint16_t pending_dedents;               // Số lượng canh lề cần xả trước khi đọc ký hiệu mới
+    bool is_at_line_start;                  // Cờ xác định vị trí đang ở dòng mới
 } Lexer;
 
 // Khởi tạo bộ phân tích ký hiệu từ ngữ (lexer)
