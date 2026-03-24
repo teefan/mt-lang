@@ -1,4 +1,3 @@
-#include "tokens.h"
 #include "lexer.h"
 
 // --- Các hàm nội bộ ---
@@ -178,6 +177,256 @@ static void scan_trailing_trivia(Lexer *lexer)
             break;
         }
     }
+}
+
+// Xác định kiểu ký hiệu dựa trên của khoảng ký tự hiện tại của bộ phân tích từ ngữ
+// dựa trên thuật toán tìm kiếm bằng cây Trie
+static TokenType get_token_type(Lexer *lexer)
+{
+    // Lấy độ dài ký hiệu (từ vị trí bắt đầu ký hiệu -> đên vị trí hiện tại của bộ phân tích từ ngữ)
+    uint16_t token_length = (uint16_t)(lexer->current_offset - lexer->start_offset);
+
+    // Lấy ký tự đầu tiên
+    char first_char = lexer->source[lexer->start_offset];
+
+    // Truy xuất con trỏ tới đầu chữ hiện tại để dùng trong memcmp
+    const char *start = lexer->source + lexer->start_offset;
+
+    // Phân nhánh từ loại dựa trên ký tự đầu tiên, sau đó so sánh với khoảng ký tự hiện tại của bộ phân tích từ ngữ
+    switch (first_char)
+    {
+    case 'a':
+        if (token_length == 2 && memcmp(start, "as", 2) == 0)
+        {
+            return TOKEN_AS;
+        }
+
+        if (token_length == 5 && memcmp(start, "alias", 5) == 0)
+        {
+            return TOKEN_ALIAS;
+        }
+
+        break;
+    case 'b':
+        if (token_length == 5 && memcmp(start, "break", 5) == 0)
+        {
+            return TOKEN_BREAK;
+        }
+
+        break;
+    case 'c':
+        if (token_length == 4 && memcmp(start, "case", 4) == 0)
+        {
+            return TOKEN_CASE;
+        }
+
+        if (token_length == 5 && memcmp(start, "const", 5) == 0)
+        {
+            return TOKEN_CONST;
+        }
+
+        if (token_length == 8 && memcmp(start, "continue", 8) == 0)
+        {
+            return TOKEN_CONST;
+        }
+
+        break;
+    case 'd':
+        if (token_length == 7 && memcmp(start, "destroy", 7) == 0)
+        {
+            return TOKEN_CONST;
+        }
+
+        break;
+    case 'e':
+        if (token_length == 4)
+        {
+            if (memcmp(start, "else", 4) == 0)
+            {
+                return TOKEN_ELSE;
+            }
+
+            if (memcmp(start, "enum", 4) == 0)
+            {
+                return TOKEN_ENUM;
+            }
+        }
+
+        if (token_length == 6 && memcmp(start, "export", 6) == 0)
+        {
+            return TOKEN_EXPORT;
+        }
+
+        break;
+    case 'f':
+        if (token_length == 2 && memcmp(start, "fn", 2) == 0)
+        {
+            return TOKEN_FN;
+        }
+
+        if (token_length == 3 && memcmp(start, "for", 3) == 0)
+        {
+            return TOKEN_FOR;
+        }
+
+        if (token_length == 5)
+        {
+            if (memcmp(start, "fixed", 5) == 0)
+            {
+                return TOKEN_FIXED;
+            }
+
+            if (memcmp(start, "false", 5) == 0)
+            {
+                return TOKEN_FALSE;
+            }
+        }
+
+        if (token_length == 7 && memcmp(start, "foreign", 7) == 0)
+        {
+            return TOKEN_FOREIGN;
+        }
+
+        if (token_length == 8 && memcmp(start, "function", 8) == 0)
+        {
+            return TOKEN_FUNCTION;
+        }
+
+        break;
+    case 'i':
+        if (token_length == 2)
+        {
+            if (memcmp(start, "if", 2) == 0)
+            {
+                return TOKEN_IF;
+            }
+
+            if (memcmp(start, "in", 2) == 0)
+            {
+                return TOKEN_IN;
+            }
+        }
+
+        if (token_length == 6 && memcmp(start, "import", 6) == 0)
+        {
+            return TOKEN_IMPORT;
+        }
+
+        if (token_length == 7 && memcmp(start, "include", 7) == 0)
+        {
+            return TOKEN_INCLUDE;
+        }
+
+        break;
+    case 'l':
+        if (token_length == 3 && memcmp(start, "let", 3) == 0)
+        {
+            return TOKEN_LET;
+        }
+
+        if (token_length == 5 && memcmp(start, "local", 5) == 0)
+        {
+            return TOKEN_LOCAL;
+        }
+
+        break;
+    case 'm':
+        if (token_length == 4 && memcmp(start, "many", 4) == 0)
+        {
+            return TOKEN_MANY;
+        }
+
+        if (token_length == 9 && memcmp(start, "namespace", 9) == 0)
+        {
+            return TOKEN_NAMESPACE;
+        }
+
+        break;
+    case 'n':
+        if (token_length == 4 && memcmp(start, "null", 4) == 0)
+        {
+            return TOKEN_NULL;
+        }
+
+        break;
+    case 'o':
+        if (token_length == 3 && memcmp(start, "own", 3) == 0)
+        {
+            return TOKEN_OWN;
+        }
+
+        break;
+    case 'r':
+        if (token_length == 3)
+        {
+            if (memcmp(start, "raw", 3) == 0)
+            {
+                return TOKEN_RAW;
+            }
+
+            if (memcmp(start, "ref", 3) == 0)
+            {
+                return TOKEN_REF;
+            }
+        }
+
+        if (token_length == 6)
+        {
+            if (memcmp(start, "record", 6) == 0)
+            {
+                return TOKEN_RECORD;
+            }
+
+            if (memcmp(start, "return", 6) == 0)
+            {
+                return TOKEN_RETURN;
+            }
+        }
+
+        break;
+    case 's':
+        if (token_length == 5 && memcmp(start, "stack", 5) == 0)
+        {
+            return TOKEN_STACK;
+        }
+
+        if (token_length == 6 && memcmp(start, "switch", 6) == 0)
+        {
+            return TOKEN_SWITCH;
+        }
+
+        break;
+    case 't':
+        if (token_length == 4 && memcmp(start, "true", 4) == 0)
+        {
+            return TOKEN_TRUE;
+        }
+
+        break;
+    case 'u':
+        if (token_length == 6 && memcmp(start, "unsafe", 6) == 0)
+        {
+            return TOKEN_UNSAFE;
+        }
+
+        break;
+    case 'v':
+        if (token_length == 7 && memcmp(start, "variant", 7) == 0)
+        {
+            return TOKEN_VARIANT;
+        }
+
+        break;
+    case 'w':
+        if (token_length == 5 && memcmp(start, "while", 5) == 0)
+        {
+            return TOKEN_WHILE;
+        }
+
+        break;
+    }
+
+    return TOKEN_IDENTIFIER;
 }
 
 // Tạo một ký hiệu ngôn ngữ giữa hai vị trí: bắt đầu và hiện tại -của bộ phân tích từ ngữ

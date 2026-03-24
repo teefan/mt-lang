@@ -68,6 +68,7 @@ typedef enum TokenType
     TOKEN_ENUM,
     TOKEN_VARIANT,
     TOKEN_FUNCTION,
+    TOKEN_FN,
     TOKEN_LET,
     TOKEN_FIXED,
     TOKEN_CONST,
