@@ -73,7 +73,7 @@ static Token make_token(Lexer* lexer, TokenType type, uint16_t leading_length, u
     // Tính độ dài của ký hiệu bằng cách cắt mảnh vị trí hiện tại so với vị trí bắt đầu -của bộ phân tích từ ngữ
     token.length = (uint16_t)(lexer->current_offset - lexer->start_offset);
 
-    // Tạm thời chưa tính kích thước trivia (khoảng trắng và ghi chú)
+    // Gán kích thước trivia (khoảng trắng và ghi chú) trước và sau
     token.leading_trivia_length = leading_length;
     token.trailing_trivia_length = trailing_length;
 
