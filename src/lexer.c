@@ -139,7 +139,7 @@ static void scan_leading_trivia(Lexer *lexer)
     }
 }
 
-// Quét các vặt vãnh (ghi chú và khoảng trắng) đi sau ký hiệu
+// Quét đơn giản các vặt vãnh (ghi chú và khoảng trắng) đi sau ký hiệu, nhường phần lớn cho hàm quét trước
 static void scan_trailing_trivia(Lexer *lexer)
 {
     while (true)
@@ -179,20 +179,20 @@ static void scan_trailing_trivia(Lexer *lexer)
     }
 }
 
-// Xác định kiểu ký hiệu dựa trên của khoảng ký tự hiện tại của bộ phân tích từ ngữ
+// Xác định kiểu ký hiệu của khoảng ký tự hiện tại (đại diện ký hiệu) của bộ phân tích từ ngữ
 // dựa trên thuật toán tìm kiếm bằng cây Trie
 static TokenType get_token_type(Lexer *lexer)
 {
     // Lấy độ dài ký hiệu (từ vị trí bắt đầu ký hiệu -> đên vị trí hiện tại của bộ phân tích từ ngữ)
     uint16_t token_length = (uint16_t)(lexer->current_offset - lexer->start_offset);
 
-    // Lấy ký tự đầu tiên
+    // Lấy ký tự đầu tiên để phân nhánh từ loại
     char first_char = lexer->source[lexer->start_offset];
 
     // Truy xuất con trỏ tới đầu chữ hiện tại để dùng trong memcmp
     const char *start = lexer->source + lexer->start_offset;
 
-    // Phân nhánh từ loại dựa trên ký tự đầu tiên, sau đó so sánh với khoảng ký tự hiện tại của bộ phân tích từ ngữ
+    // Phân nhánh từ loại dựa trên ký tự đầu tiên, sau đó dùng memcmp để so sánh nhanh với khoảng ký tự hiện tại
     switch (first_char)
     {
     case 'a':
@@ -495,9 +495,9 @@ Token get_next_token(Lexer *lexer)
         lexer->is_at_line_start = false;
     }
 
-    // Sau khi quét xong các vặt vãnh đứng trước, ta quét các ký tự của ký hiệu
+    // Sau khi quét xong các vặt vãnh đứng trước, ta quét các ký tự để xác định ký hiệu đó
     char c = advance_char(lexer);
 
-    // Gán một một kiểu ký hiệu chưa biết
+    // Khởi tạo một kiểu ký hiệu chưa biết
     TokenType token = TOKEN_UNKNOWN;
 }
