@@ -59,6 +59,109 @@ static bool is_at_end(Lexer* lexer)
     return lexer->current_offset >= lexer->source_length;
 }
 
+// Quét các vặt vãnh (ghi chú và khoảng trắng) đi trước ký hiệu
+static void scan_leading_trivia(Lexer* lexer)
+{
+    while(true)
+    {
+        char c = peek_char(lexer);
+
+        // Ăn khoảng trắng, căn lề hay đầu dòng
+        if (c == ' ' || c == '\t' || c == '\r')
+        {
+            advance_char(lexer);
+        }
+        // Khi đang quét đằng trước ký hiệu, ăn xuống hàng và bật cờ báo hiệu hàng mới
+        else if (c == '\n')
+        {
+            lexer->is_at_line_start = true;
+            advance_char(lexer);
+        }
+        // Khi gặp '--', tức là báo hiệu ghi chú trong hàng
+        else if (c == '-' && peek_next_char(lexer) == '-')
+        {
+            // Ăn hai dấu --
+            advance_char(lexer); advance_char(lexer);
+
+            // Ăn ghi chú cho tới khi hết hàng và chưa tới cuối mã nguồn
+            while (peek_char(lexer) != '\n' && !is_at_end(lexer))
+            {
+                advance_char(lexer);
+            }
+        }
+        // Khi gặp '++' đầu tiên, tức là báo hiệu mở ra ghi chú nhiều hàng
+        else if (c == '+' && peek_next_char(lexer) == '+')
+        {
+            // Ăn hai dấu ++
+            advance_char(lexer); advance_char(lexer);
+
+            while (!is_at_end(lexer))
+            {
+                // Khi gặp '++' tiếp theo, tức là báo hiệu kết thúc ghi chú nhiều hàng
+                if (c == '+' && peek_next_char(lexer) == '+')
+                {
+                    // Ăn hai dấu ++
+                    advance_char(lexer); advance_char(lexer);
+                    break;
+                }
+
+                // Nếu gặp xuống hàng thì bật cờ báo hiệu hàng mới
+                if (peek_char(lexer) == '\n')
+                {
+                    lexer->is_at_line_start = true;
+                }
+
+                // Ăn hết bất kì ký tự nào vẫn thuộc ghi chú nhiều hàng
+                advance_char(lexer);
+            }
+        }
+        // Không thuộc bất kỳ vặt vãnh nào đang xem xét
+        else
+        {
+            // Gặp ký hiệu khác, ngừng, không ăn
+            break;
+        }
+    }
+}
+
+// Quét các vặt vãnh (ghi chú và khoảng trắng) đi sau ký hiệu
+static void scan_trailing_trivia(Lexer* lexer)
+{
+    while(true)
+    {
+        char c = peek_char(lexer);
+
+        // Ăn khoảng trắng, căn lề hay đầu dòng
+        if (c == ' ' || c == '\t' || c == '\r')
+        {
+            advance_char(lexer);
+        }
+        // Khi gặp '--', tức là báo hiệu ghi chú trong hàng
+        else if (c == '-' && peek_next_char(lexer) == '-')
+        {
+            // Ăn hai dấu --
+            advance_char(lexer); advance_char(lexer);
+
+            // Ăn ghi chú cho tới khi hết hàng và chưa tới cuối mã nguồn
+            while (peek_char(lexer) != '\n' && !is_at_end(lexer))
+            {
+                advance_char(lexer);
+            }
+
+            // Ghi chú một hàng luôn là thứ cuối cùng trên một hàng.
+            // Ăn xong thì dừng quét vặt vãnh theo sau.
+            break;
+        }
+        // Không thuộc bất kỳ vặt vãnh nào đang xem xét
+        else
+        {
+            // Nếu là xuống hàng \n, bắt đầu ghi chú nhiều dòng ++, hoặc ký hiệu khác thì dừng.
+            // Nhường \n và ++ cho các vặt vãnh đứng trước của ký hiệu tiếp theo.
+            break;
+        }
+    }
+}
+
 // Tạo một ký hiệu ngôn ngữ bằng cách "cắt" mảnh giữa hai vị trí: bắt đầu và hiện tại -của bộ phân tích từ ngữ
 static Token make_token(Lexer* lexer, TokenType type, uint16_t leading_length, uint16_t trailing_length)
 {
