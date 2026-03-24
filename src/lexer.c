@@ -17,7 +17,7 @@ static char peek_char(Lexer* lexer)
 }
 
 // Nhìn xem thử ký tự tiếp theo là gì nhưng không ăn mất nó
-static peek_next_char(Lexer* lexer)
+static char peek_next_char(Lexer* lexer)
 {
     // Nếu vị trí ký tự tiếp theo lớn hơn độ dài mã nguồn
     if (lexer->current_offset + 1 >= lexer->source_length)
