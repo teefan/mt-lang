@@ -7,6 +7,7 @@
 
 #define MAX_INDENT_LEVEL 64 // Cấp độ canh lề tối đa
 
+// Cấu trúc bộ phân tích từ ngữ
 typedef struct Lexer
 {
     // Thông tin mã nguồn để phân tích

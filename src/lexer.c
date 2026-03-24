@@ -64,6 +64,7 @@ static void scan_leading_trivia(Lexer *lexer)
 {
     while (true)
     {
+        // Lấy giá trị ký tự tiếp theo để kiểm tra
         char c = peek_char(lexer);
 
         // Ăn khoảng trắng, căn lề hay đầu dòng
@@ -132,6 +133,7 @@ static void scan_trailing_trivia(Lexer *lexer)
 {
     while (true)
     {
+        // Lấy giá trị ký tự tiếp theo để kiểm tra
         char c = peek_char(lexer);
 
         // Ăn khoảng trắng, căn lề hay đầu dòng
@@ -173,6 +175,7 @@ static Token make_token(
     // Khai báo một dữ liệu ký hiệu tại khung thực thi của hàm
     Token token;
 
+    // Gán kiểu ký hiệu
     token.type = type;
 
     // Gán vị trí khởi đầu của ký hiệu
@@ -220,11 +223,14 @@ Token get_next_token(Lexer *lexer)
     // Nếu vị trí này là kết thúc mã nguồn, chính là ký hiệu EOF
     if (is_at_end(lexer))
     {
+        // Tạo và trả về ký hiệu kết thúc EOF
         return make_token(lexer, TOKEN_EOF, 0, leading_length, 0);
     }
 
     // TODO: xây dựng ký hiệu canh lề
     if (lexer->is_at_line_start)
     {
+        // Tắt cờ để không kiểm tra ở ký hiệu sau
+        lexer->is_at_line_start = false;
     }
 }
