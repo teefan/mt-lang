@@ -23,21 +23,21 @@ import collections/array
 -- SHARED TEST TYPES
 -- ============================================================
 
--- Simple value struct, no destructor needed.
-struct Point:
+-- Simple value record, no destructor needed.
+record Point:
     x: int
     y: int
 
--- Struct with a destructor so own[Node] cleanup is exercised.
-struct Node:
+-- Record with a destructor so own[Node] cleanup is exercised.
+record Node:
     id:    int
     value: int
 
 destroy Node(n: ref[Node]) -> void:
     pass    -- silent; existence is what matters for coverage
 
--- Generic struct to exercise own[T] with a type parameter.
-struct Box[T]:
+-- Generic record to exercise own[T] with a type parameter.
+record Box[T]:
     data:  T
     valid: int    -- 1 = live, 0 = cleared (for move tracking)
 

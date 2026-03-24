@@ -27,59 +27,59 @@ import libc/stdio   -- I/O functions like print, print_format
 
 export namespace Types:
     -- Signed 8-bit integer: -128 to 127
-    struct Signed8:
+    record Signed8:
         b: byte
 
     -- Unsigned 8-bit integer: 0 to 255
-    struct Unsigned8:
+    record Unsigned8:
         ub: ubyte
 
     -- Character type (8-bit)
-    struct Character:
+    record Character:
         c: char
 
     -- Signed 16-bit integer: -32,768 to 32,767
-    struct Signed16:
+    record Signed16:
         s: short
 
     -- Unsigned 16-bit integer: 0 to 65,535
-    struct Unsigned16:
+    record Unsigned16:
         us: ushort
 
     -- Signed 32-bit integer: -2,147,483,648 to 2,147,483,647
-    struct Signed32:
+    record Signed32:
         i: int
 
     -- Unsigned 32-bit integer: 0 to 4,294,967,295
-    struct Unsigned32:
+    record Unsigned32:
         ui: uint
 
     -- Signed 64-bit integer
-    struct Signed64:
+    record Signed64:
         l: long
 
     -- Unsigned 64-bit integer
-    struct Unsigned64:
+    record Unsigned64:
         ul: ulong
 
     -- Pointer-sized signed integer
-    struct SignedPtr:
+    record SignedPtr:
         isz: isize
 
     -- Pointer-sized unsigned integer
-    struct UnsignedPtr:
+    record UnsignedPtr:
         usz: usize
 
     -- 32-bit floating point
-    struct Float32:
+    record Float32:
         f: float
 
     -- 64-bit floating point (double precision)
-    struct Float64:
+    record Float64:
         d: double
 
     -- Boolean type
-    struct Boolean:
+    record Boolean:
         b: bool
 
 -- Function to demonstrate all built-in types
@@ -184,39 +184,39 @@ export namespace Demo:
     -- =============================================================================
     -- GENERIC TYPES
     -- =============================================================================
-    -- Generic structs work like templates - they're parameterized by type variables.
+    -- Generic records work like templates - they're parameterized by type variables.
     -- The generic parameter (T, U) is specified after the name with square brackets.
     -- This creates a type-safe pair container that works with any types.
 
-    -- Generic struct with two type parameters - like std::pair in C++
-    struct Pair[T, U]:
+    -- Generic record with two type parameters - like std::pair in C++
+    record Pair[T, U]:
         first: T
         second: U
 
     -- =============================================================================
-    -- UNION TYPES
+    -- VARIANT TYPES
     -- =============================================================================
-    -- Union types are tagged unions - they can hold ONE of several different types.
+    -- Variant types are tagged unions - they can hold ONE of several different types.
     -- This is useful for representing values that could be one thing OR another.
     -- Each variant is accessed by name, and the type system tracks which is active.
 
     -- Example: A value that could be either a number or an error message
     -- The 'value' variant holds a number, the 'error' variant holds a string
-    union Result:
+    variant Result:
         value: int
         error: string
 
-    -- Another union example: Either success (with data) or failure (with message)
-    union OperationStatus:
+    -- Another variant example: Either success (with data) or failure (with message)
+    variant OperationStatus:
         success: bool
         failure: string
 
     -- =============================================================================
-    -- STRUCTS WITH DESTRUCTORS
+    -- RECORDS WITH DESTRUCTORS
     -- =============================================================================
 
-    -- A simple struct with a string field
-    struct Note:
+    -- A simple record with a string field
+    record Note:
         message: string
 
     -- Destructors are called automatically when owned values go out of scope
@@ -225,12 +225,12 @@ export namespace Demo:
         -- Print the message when the note is destroyed
         print(note.message)
 
-    -- A more complex struct representing a tea brewer
-    struct Brewer:
+    -- A more complex record representing a tea brewer
+    record Brewer:
         title: string
         stage: BrewStage
         total: Count
-        -- This struct demonstrates aggregate types with multiple fields
+        -- This record demonstrates aggregate types with multiple fields
 
     -- Destructor for Brewer - called when owned brewer is destroyed
     destroy Brewer(brewer: ref[Brewer]) -> void:
@@ -859,7 +859,7 @@ function main() -> int:
 -- END OF FILE
 -- =============================================================================
 -- This example demonstrates:
--- - Type system: aliases, enums, structs, generics, unions
+-- - Type system: aliases, enums, records, generics, variants
 -- - Fixed arrays: single-dimension and multidimensional (2D, 3D)
 -- - Memory: own (heap), arena (stack), raw (unsafe), references
 -- - Control flow: if, switch, while, do-while, for, break, continue

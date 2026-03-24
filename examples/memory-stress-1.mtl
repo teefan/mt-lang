@@ -2,10 +2,10 @@ import libc/stdio
 import collections/array
 
 -- ==================================================
--- 1. STRUCTS & DESTRUCTORS
+-- 1. RECORDS & DESTRUCTORS
 -- ==================================================
 
-struct Resident:
+record Resident:
     id: int
     active: bool
 
@@ -13,7 +13,7 @@ struct Resident:
 destroy Resident(r: ref[Resident]) -> void:
     print_format("  -> freeing resident %d", r.id)
 
-struct Apartment:
+record Apartment:
     unit: int
     -- Nested ownership: Apartment owns the Resident
     tenant: own[Resident]
