@@ -4,7 +4,7 @@
 // --- Các hàm nội bộ ---
 
 // Nhìn xem thử ký tự hiện tại là gì?
-static char peek_char(Lexer* lexer)
+static char peek_char(Lexer *lexer)
 {
     // Nếu vị trí hiện tại lớn hơn độ dài mã nguồn
     if (lexer->current_offset > lexer->source_length)
@@ -17,7 +17,7 @@ static char peek_char(Lexer* lexer)
 }
 
 // Nhìn xem thử ký tự tiếp theo là gì nhưng không ăn mất nó
-static char peek_next_char(Lexer* lexer)
+static char peek_next_char(Lexer *lexer)
 {
     // Nếu vị trí ký tự tiếp theo lớn hơn độ dài mã nguồn
     if (lexer->current_offset + 1 >= lexer->source_length)
@@ -30,7 +30,7 @@ static char peek_next_char(Lexer* lexer)
 }
 
 // Bước tới (ăn++) ký tự tiếp theo
-static char advance_char(Lexer* lexer)
+static char advance_char(Lexer *lexer)
 {
     return lexer->source[lexer->current_offset++];
 }
@@ -54,15 +54,15 @@ static bool is_alphanumeric(char c)
 }
 
 // Kiểm tra xem đã đến hoặc qua cuối mã nguồn chưa
-static bool is_at_end(Lexer* lexer)
+static bool is_at_end(Lexer *lexer)
 {
     return lexer->current_offset >= lexer->source_length;
 }
 
 // Quét các vặt vãnh (ghi chú và khoảng trắng) đi trước ký hiệu
-static void scan_leading_trivia(Lexer* lexer)
+static void scan_leading_trivia(Lexer *lexer)
 {
-    while(true)
+    while (true)
     {
         char c = peek_char(lexer);
 
@@ -81,7 +81,8 @@ static void scan_leading_trivia(Lexer* lexer)
         else if (c == '-' && peek_next_char(lexer) == '-')
         {
             // Ăn hai dấu --
-            advance_char(lexer); advance_char(lexer);
+            advance_char(lexer);
+            advance_char(lexer);
 
             // Ăn ghi chú cho tới khi hết hàng và chưa tới cuối mã nguồn
             while (peek_char(lexer) != '\n' && !is_at_end(lexer))
@@ -93,7 +94,8 @@ static void scan_leading_trivia(Lexer* lexer)
         else if (c == '+' && peek_next_char(lexer) == '+')
         {
             // Ăn hai dấu ++
-            advance_char(lexer); advance_char(lexer);
+            advance_char(lexer);
+            advance_char(lexer);
 
             while (!is_at_end(lexer))
             {
@@ -101,7 +103,8 @@ static void scan_leading_trivia(Lexer* lexer)
                 if (c == '+' && peek_next_char(lexer) == '+')
                 {
                     // Ăn hai dấu ++
-                    advance_char(lexer); advance_char(lexer);
+                    advance_char(lexer);
+                    advance_char(lexer);
                     break;
                 }
 
@@ -125,9 +128,9 @@ static void scan_leading_trivia(Lexer* lexer)
 }
 
 // Quét các vặt vãnh (ghi chú và khoảng trắng) đi sau ký hiệu
-static void scan_trailing_trivia(Lexer* lexer)
+static void scan_trailing_trivia(Lexer *lexer)
 {
-    while(true)
+    while (true)
     {
         char c = peek_char(lexer);
 
@@ -140,7 +143,8 @@ static void scan_trailing_trivia(Lexer* lexer)
         else if (c == '-' && peek_next_char(lexer) == '-')
         {
             // Ăn hai dấu --
-            advance_char(lexer); advance_char(lexer);
+            advance_char(lexer);
+            advance_char(lexer);
 
             // Ăn ghi chú cho tới khi hết hàng và chưa tới cuối mã nguồn
             while (peek_char(lexer) != '\n' && !is_at_end(lexer))
@@ -162,8 +166,9 @@ static void scan_trailing_trivia(Lexer* lexer)
     }
 }
 
-// Tạo một ký hiệu ngôn ngữ bằng cách "cắt" mảnh giữa hai vị trí: bắt đầu và hiện tại -của bộ phân tích từ ngữ
-static Token make_token(Lexer* lexer, TokenType type, uint16_t leading_length, uint16_t trailing_length)
+// Tạo một ký hiệu ngôn ngữ giữa hai vị trí: bắt đầu và hiện tại -của bộ phân tích từ ngữ
+static Token make_token(
+    Lexer *lexer, TokenType type, uint16_t length, uint16_t leading_length, uint16_t trailing_length)
 {
     // Khai báo một dữ liệu ký hiệu tại khung thực thi của hàm
     Token token;
@@ -173,10 +178,10 @@ static Token make_token(Lexer* lexer, TokenType type, uint16_t leading_length, u
     // Gán vị trí khởi đầu của ký hiệu
     token.start_offset = lexer->start_offset;
 
-    // Tính độ dài của ký hiệu bằng cách cắt mảnh vị trí hiện tại so với vị trí bắt đầu -của bộ phân tích từ ngữ
-    token.length = (uint16_t)(lexer->current_offset - lexer->start_offset);
+    // Gán độ dài của ký hiệu cắt mảnh đã được tính bởi bộ phân tích từ ngữ
+    token.length = length;
 
-    // Gán kích thước trivia (khoảng trắng và ghi chú) trước và sau
+    // Gán kích thước trivia (khoảng trắng và ghi chú) trước và sau, được tính bởi bộ phân tích từ ngữ
     token.leading_trivia_length = leading_length;
     token.trailing_trivia_length = trailing_length;
 
@@ -186,7 +191,7 @@ static Token make_token(Lexer* lexer, TokenType type, uint16_t leading_length, u
 
 // --- Giao diện công cộng ---
 
-void init_lexer(Lexer* lexer, const char* source, uint32_t source_length)
+void init_lexer(Lexer *lexer, const char *source, uint32_t source_length)
 {
     // Gán thông tin mã nguồn
     lexer->source = source;
@@ -202,6 +207,19 @@ void init_lexer(Lexer* lexer, const char* source, uint32_t source_length)
     lexer->indent_top = 0;
 }
 
-Token get_next_token(Lexer* lexer)
+Token get_next_token(Lexer *lexer)
 {
+    // Đo độ dài các vặt vãnh đứng trước ký hiệu
+    uint16_t leading_start = lexer->current_offset;
+    scan_leading_trivia(lexer);
+    uint16_t leading_length = (uint16_t)(lexer->current_offset - leading_start);
+
+    // Xác định vị trí ký hiệu hiện tại sau khi đã dọn dẹp vặt vãnh đứng trước
+    lexer->start_offset = lexer->current_offset;
+
+    // Nếu vị trí này là kết thúc mã nguồn
+    if (is_at_end(lexer))
+    {
+        return make_token(lexer, TOKEN_EOF, 0, leading_length, 0);
+    }
 }
