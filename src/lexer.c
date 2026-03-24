@@ -47,6 +47,18 @@ static bool is_digit(char c)
     return c >= '0' && c <= '9';
 }
 
+// Kiểm tra xem phải ký tự số thập lục phân hợp lệ 0-9, a-f, A-F
+static bool is_hex_digit(char c)
+{
+    return is_digit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+// Kiểm tra xem phải ký tự số nhị phân hợp lệ 0-1
+static bool is_binary_digit(char c)
+{
+    return c == '0' || c == '1';
+}
+
 // Kiểm tra xem phải là ký tự và số hợp lệ
 static bool is_alphanumeric(char c)
 {
