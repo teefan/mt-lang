@@ -32,6 +32,18 @@ static bool is_at_end(Lexer* lexer)
 
 void init_lexer(Lexer* lexer, const char* source, uint32_t source_length)
 {
+    // Gán thông tin mã nguồn
+    lexer->source = source;
+    lexer->source_length = source_length;
+
+    // Khởi động lại các biến theo dõi
+    lexer->start_offset = 0;
+    lexer->current_offset = 0;
+    lexer->is_at_line_start = true;
+
+    // Khởi động lại các biến theo dõi canh lề
+    lexer->indent_stack[0] = 0;
+    lexer->indent_top = 0;
 }
 
 Token get_next_token(Lexer* lexer)
