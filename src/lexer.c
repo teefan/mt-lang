@@ -60,12 +60,12 @@ static bool is_at_end(Lexer* lexer)
 }
 
 // Tạo một ký hiệu ngôn ngữ bằng cách "cắt" mảnh giữa hai vị trí: bắt đầu và hiện tại -của bộ phân tích từ ngữ
-static Token make_token(Lexer* lexer, TokenType token_type)
+static Token make_token(Lexer* lexer, TokenType type, uint16_t leading_length, uint16_t trailing_length)
 {
     // Khai báo một dữ liệu ký hiệu tại khung thực thi của hàm
     Token token;
 
-    token.type = token_type;
+    token.type = type;
 
     // Gán vị trí khởi đầu của ký hiệu
     token.start_offset = lexer->start_offset;
@@ -74,8 +74,8 @@ static Token make_token(Lexer* lexer, TokenType token_type)
     token.length = (uint16_t)(lexer->current_offset - lexer->start_offset);
 
     // Tạm thời chưa tính kích thước trivia (khoảng trắng và ghi chú)
-    token.leading_trivia_length = 0;
-    token.trailing_trivia_length = 0;
+    token.leading_trivia_length = leading_length;
+    token.trailing_trivia_length = trailing_length;
 
     // Hàm gọi tới sẽ sao chép ký hiệu này trước khi nó bị "dọn dẹp" trong khung thực thi hiện tại
     return token;
