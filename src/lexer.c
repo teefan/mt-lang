@@ -227,14 +227,14 @@ static TokenType get_token_type(Lexer *lexer)
 
         if (token_length == 8 && memcmp(start, "continue", 8) == 0)
         {
-            return TOKEN_CONST;
+            return TOKEN_CONTINUE;
         }
 
         break;
     case 'd':
         if (token_length == 7 && memcmp(start, "destroy", 7) == 0)
         {
-            return TOKEN_CONST;
+            return TOKEN_DESTROY;
         }
 
         break;
@@ -494,4 +494,10 @@ Token get_next_token(Lexer *lexer)
         // Tắt cờ để không kiểm tra ở ký hiệu sau
         lexer->is_at_line_start = false;
     }
+
+    // Sau khi quét xong các vặt vãnh đứng trước, ta quét các ký tự của ký hiệu
+    char c = advance_char(lexer);
+
+    // Gán một một kiểu ký hiệu chưa biết
+    TokenType token = TOKEN_UNKNOWN;
 }
