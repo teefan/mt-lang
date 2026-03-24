@@ -1,0 +1,104 @@
+-- GLFW Multi-Window Example
+-- Port of GLFW's windows.c example
+-- Creates 4 windows with different colors at calculated positions
+
+import graphics/glfw
+import graphics/opengl
+import libc/stdio
+import libc/stdlib
+
+function on_glfw_error(error_code: int, description: string) -> void:
+    if error_code == 0:
+        pass
+    print(description)
+
+function on_key(window: raw[GLFWwindow], key: int, scancode: int, action: int, mods: int) -> void:
+    if key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE:
+        glfw_set_window_should_close(window, 1 as int)
+
+function main() -> int:
+    fixed x11_display: string = get_env("DISPLAY")
+    fixed wayland_display: string = get_env("WAYLAND_DISPLAY")
+    if x11_display != "":
+        glfw_init_hint(GLFW_PLATFORM, GLFW_PLATFORM_X11)
+    else if wayland_display != "":
+        glfw_init_hint(GLFW_PLATFORM, GLFW_PLATFORM_WAYLAND)
+
+    glfw_set_error_callback(on_glfw_error)
+
+    if glfw_init() == 0:
+        print("glfw_init failed")
+        return 1
+
+    glfw_window_hint(GLFW_DECORATED, GLFW_FALSE)
+
+    let xpos: int = 0
+    let ypos: int = 0
+    let width: int = 0
+    let height: int = 0
+    glfw_get_monitor_workarea(glfw_get_primary_monitor(), out xpos, out ypos, out width, out height)
+
+    fixed windows: array[raw[GLFWwindow], 4] = [
+        null[GLFWwindow],
+        null[GLFWwindow],
+        null[GLFWwindow],
+        null[GLFWwindow]
+    ]
+    fixed colors: array[array[float, 3], 4] = [
+        [0.95, 0.32, 0.11],
+        [0.50, 0.80, 0.16],
+        [0.00, 0.68, 0.94],
+        [0.98, 0.74, 0.04]
+    ]
+
+    let i: int = 0
+    while i < 4:
+        let size: int = height / 5
+        let x_offset: int = size * (1 + (i & 1))
+        let y_offset: int = size * (1 + (i >> 1))
+
+        if i > 0:
+            glfw_window_hint(GLFW_FOCUS_ON_SHOW, GLFW_FALSE)
+
+        glfw_window_hint(GLFW_POSITION_X, xpos + x_offset)
+        glfw_window_hint(GLFW_POSITION_Y, ypos + y_offset)
+
+        fixed title: string = "Multi-Window Example"
+        windows[i] = glfw_create_window(size, size, title, null[GLFWmonitor], null[GLFWwindow])
+
+        if windows[i] == null[GLFWwindow]:
+            print("Error: Failed to create window")
+            glfw_terminate()
+            return 1
+
+        glfw_set_input_mode(windows[i], GLFW_STICKY_KEYS, GLFW_TRUE)
+        glfw_set_key_callback(windows[i], on_key)
+
+        i = i + 1
+
+    glfw_make_context_current(windows[0])
+    if load_gl_with_glfw() == 0:
+        print("load_gl_with_glfw failed")
+        i = 0
+        while i < 4:
+            if windows[i] != null[GLFWwindow]:
+                glfw_destroy_window(windows[i])
+            i = i + 1
+        glfw_terminate()
+        return 1
+
+    while true:
+        let j: int = 0
+        while j < 4:
+            glfw_make_context_current(windows[j])
+            gl_clear_color(colors[j][0], colors[j][1], colors[j][2], 1.0)
+            gl_clear(GL_COLOR_BUFFER_BIT)
+            glfw_swap_buffers(windows[j])
+
+            if glfw_window_should_close(windows[j]) != 0:
+                glfw_terminate()
+                return 0
+
+            j = j + 1
+
+        glfw_wait_events()

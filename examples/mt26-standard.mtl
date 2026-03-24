@@ -1,0 +1,875 @@
+-- Milk Tea Language - Comprehensive Standard Example
+-- ==================================================
+-- This file demonstrates all core features of the Milk Tea programming language.
+-- Milk Tea is designed for game development with explicit memory management and
+-- clear, readable syntax. There is no hidden magic - everything is explicit.
+
+-- =============================================================================
+-- SECTION 1: IMPORTS AND FOREIGN FUNCTION INTERFACE (FFI)
+-- =============================================================================
+-- Import standard library modules. libc/core bundles common C library functions.
+import libc/core
+
+-- You can also import specific modules directly:
+import libc/time    -- Time functions like get_time, clock_gettime
+import libc/stdio   -- I/O functions like print, print_format
+
+
+-- =============================================================================
+-- SECTION 2: BUILT-IN TYPES DEMONSTRATION
+-- =============================================================================
+-- Milk Tea provides these built-in types:
+--   Integer (signed):   byte (8-bit), short (16-bit), int (32-bit), long (64-bit), isize (pointer)
+--   Integer (unsigned): ubyte (8-bit), ushort (16-bit), uint (32-bit), ulong (64-bit), usize (pointer)
+--   Float:             float (32-bit), double (64-bit)
+--   Other:             bool, char, void, string
+--   Pointer types:     raw[T], ref[T], own[T], many[T]
+
+export namespace Types:
+    -- Signed 8-bit integer: -128 to 127
+    struct Signed8:
+        b: byte
+
+    -- Unsigned 8-bit integer: 0 to 255
+    struct Unsigned8:
+        ub: ubyte
+
+    -- Character type (8-bit)
+    struct Character:
+        c: char
+
+    -- Signed 16-bit integer: -32,768 to 32,767
+    struct Signed16:
+        s: short
+
+    -- Unsigned 16-bit integer: 0 to 65,535
+    struct Unsigned16:
+        us: ushort
+
+    -- Signed 32-bit integer: -2,147,483,648 to 2,147,483,647
+    struct Signed32:
+        i: int
+
+    -- Unsigned 32-bit integer: 0 to 4,294,967,295
+    struct Unsigned32:
+        ui: uint
+
+    -- Signed 64-bit integer
+    struct Signed64:
+        l: long
+
+    -- Unsigned 64-bit integer
+    struct Unsigned64:
+        ul: ulong
+
+    -- Pointer-sized signed integer
+    struct SignedPtr:
+        isz: isize
+
+    -- Pointer-sized unsigned integer
+    struct UnsignedPtr:
+        usz: usize
+
+    -- 32-bit floating point
+    struct Float32:
+        f: float
+
+    -- 64-bit floating point (double precision)
+    struct Float64:
+        d: double
+
+    -- Boolean type
+    struct Boolean:
+        b: bool
+
+-- Function to demonstrate all built-in types
+function demonstrate_types() -> void:
+    print("=== Built-in Types Demo ===")
+
+    -- 8-bit types
+    let b: byte = -128
+    let ub: ubyte = 255
+    print_format("byte (int8):  %d", b)
+    print_format("ubyte (uint8): %u", ub)
+
+    -- 16-bit types
+    let s: short = -32768
+    let us: ushort = 65535
+    print_format("short (int16):  %d", s)
+    print_format("ushort (uint16): %u", us)
+
+    -- 32-bit types
+    let i: int = -2147483648
+    let ui: uint = 4294967295
+    print_format("int (int32):  %d", i)
+    print_format("uint (uint32): %u", ui)
+
+    -- 64-bit types
+    let l: long = -9223372036854775807
+    let ul: ulong = 18446744073709551615
+    print_format("long (int64):  %ld", l)
+    print_format("ulong (uint64): %lu", ul)
+
+    -- Pointer-sized types
+    let isz: isize = -1
+    let usz: usize = 18446744073709551615
+    print_format("isize: %ld", isz)
+    print_format("usize: %lu", usz)
+
+    -- Floating point types
+    let f: float = 3.14159
+    let d: double = 3.141592653589793
+    print_format("float: %f", f)
+    print_format("double: %f", d)
+
+    -- Boolean type
+    let flag: bool = true
+    print_format("bool: %d", flag)
+
+    -- Character type
+    let ch: char = 'A'
+    print_format("char: %c", ch)
+
+    -- Cast between types
+    let cast_int: int = ub as int
+    print_format("cast ubyte->int: %d", cast_int)
+
+    print("")
+
+
+-- =============================================================================
+-- FOREIGN FUNCTION AND CONSTANT DECLARATIONS
+-- =============================================================================
+-- Foreign functions declare C library functions for use in Milk Tea.
+-- Syntax: foreign function name(params) -> return_type = c_function from library
+
+-- Example: Declare a C function from libc that takes a string parameter
+foreign function say_hello(text: string) -> void = puts from libc_stdio
+
+-- Foreign let declares C constants for use in Milk Tea.
+-- Syntax: foreign let name: type = c_constant from library
+foreign let stdin_flag: int = stdin_flag from libc_stdio
+
+-- Note: These are already defined in libc/stdio (SEEK_START, SEEK_END, etc.)
+-- We can reference them directly since we imported libc/stdio
+
+-- =============================================================================
+-- SECTION 2: TYPE DECLARATIONS
+-- =============================================================================
+
+-- Opaque types are incomplete types - useful for FFI when you don't need the
+-- internal structure visible to other modules. The actual definition is hidden.
+opaque NativeHandle
+
+-- Export makes this namespace visible to external modules that import this file.
+export namespace Demo:
+
+    -- Type aliases give semantic names to existing types.
+    -- This makes code more readable and allows easy type changes later.
+    alias Count = ulong         -- Unsigned 64-bit integer for counting
+    alias Index = usize       -- Unsigned size type for array indices
+
+    -- Enums define named constant values. They're useful for states, flags,
+    -- and any set of discrete options. Each member can have an explicit value.
+    enum BrewStage:
+        WARM_WATER = 0        -- First stage: heating water
+        STEEP_TEA = 1         -- Second stage: steeping tea leaves
+        POUR = 2              -- Third stage: pouring the finished drink
+
+    -- Function types define callable signatures. They're used for callbacks,
+    -- function pointers, and higher-order functions. The syntax is:
+    -- fn(parameter_name: parameter_type) -> return_type
+    alias StageVisitor = fn(stage: BrewStage, user_data: raw[void]) -> void
+
+    -- =============================================================================
+    -- GENERIC TYPES
+    -- =============================================================================
+    -- Generic structs work like templates - they're parameterized by type variables.
+    -- The generic parameter (T, U) is specified after the name with square brackets.
+    -- This creates a type-safe pair container that works with any types.
+
+    -- Generic struct with two type parameters - like std::pair in C++
+    struct Pair[T, U]:
+        first: T
+        second: U
+
+    -- =============================================================================
+    -- UNION TYPES
+    -- =============================================================================
+    -- Union types are tagged unions - they can hold ONE of several different types.
+    -- This is useful for representing values that could be one thing OR another.
+    -- Each variant is accessed by name, and the type system tracks which is active.
+
+    -- Example: A value that could be either a number or an error message
+    -- The 'value' variant holds a number, the 'error' variant holds a string
+    union Result:
+        value: int
+        error: string
+
+    -- Another union example: Either success (with data) or failure (with message)
+    union OperationStatus:
+        success: bool
+        failure: string
+
+    -- =============================================================================
+    -- STRUCTS WITH DESTRUCTORS
+    -- =============================================================================
+
+    -- A simple struct with a string field
+    struct Note:
+        message: string
+
+    -- Destructors are called automatically when owned values go out of scope
+    -- or when explicitly destroyed. Use them for cleanup, logging, or resource release.
+    destroy Note(note: ref[Note]) -> void:
+        -- Print the message when the note is destroyed
+        print(note.message)
+
+    -- A more complex struct representing a tea brewer
+    struct Brewer:
+        title: string
+        stage: BrewStage
+        total: Count
+        -- This struct demonstrates aggregate types with multiple fields
+
+    -- Destructor for Brewer - called when owned brewer is destroyed
+    destroy Brewer(brewer: ref[Brewer]) -> void:
+        print("destroy brewer")
+
+-- =============================================================================
+-- SECTION 3: GENERIC FUNCTIONS
+-- =============================================================================
+-- Generic functions work with any type. The type parameter [T] is specified
+-- after the function name. The compiler generates specialized code for each
+-- type used at call site. This is zero-cost abstraction - no runtime overhead.
+
+-- Identity function returns its argument unchanged. Works with ANY type.
+function identity[T](value: T) -> T:
+    return value
+
+-- Generic swap function demonstrates type parameters in action
+-- Note: Use unsafe pointer operations to swap values through references
+function swap_integers(a: ref[int], b: ref[int]) -> void:
+    unsafe:
+        let temp: int = a[0]
+        a[0] = b[0]
+        b[0] = temp
+
+-- =============================================================================
+-- SECTION 4: CONTROL FLOW - SWITCH STATEMENT
+-- =============================================================================
+-- Switch provides multi-way branching. It's cleaner than long if-else chains
+-- when comparing against multiple values. Each case is checked in order.
+-- The 'default' case handles any unmatched values.
+
+-- Convert BrewStage enum to human-readable string using switch
+function stage_name_switch(stage: Demo.BrewStage) -> string:
+    switch stage:
+        case WARM_WATER:
+            return "warm water"
+        case STEEP_TEA:
+            return "steep tea"
+        case POUR:
+            return "pour"
+        default:
+            return "unknown stage"
+
+-- =============================================================================
+-- SECTION 5: CONTROL FLOW - IF STATEMENTS
+-- =============================================================================
+-- If statements work as expected. Conditions must be boolean expressions.
+-- The else branch is optional. Chain with else-if for multiple conditions.
+
+-- Original if-chain version for comparison
+function stage_name(stage: Demo.BrewStage) -> string:
+    if stage == WARM_WATER:
+        return "warm water"
+
+    if stage == STEEP_TEA:
+        return "steep tea"
+
+    return "pour"
+
+-- =============================================================================
+-- SECTION 6: LOOPS - WHILE AND DO-WHILE
+-- =============================================================================
+-- While loops check condition before each iteration (pre-condition).
+-- Do-while checks after (post-condition), guaranteeing at least one execution.
+
+-- Count down from a value to zero using while
+function count_down(initial: int) -> int:
+    let counter: int = initial
+
+    -- While loop: runs WHILE condition is true
+    while counter > 0:
+        counter -= 1
+
+    return counter  -- Returns 0
+
+-- Demonstrate do-while: executes body at least once
+function count_at_least_once(initial: int) -> int:
+    let counter: int = initial
+
+    -- Do-while: runs body, THEN checks condition
+    do:
+        counter -= 1
+    while counter > 0
+
+    return counter
+
+-- =============================================================================
+-- SECTION 7: LOOPS - FOR AND BREAK/CONTINUE
+-- =============================================================================
+-- For loops come in two forms:
+--   1. C-style: for initializer; condition; increment
+--   2. Range-based: for variable in start..end (exclusive end)
+
+-- Range-based for: iterates from start to end-1
+function sum_range(start: int, end_exclusive: int) -> int:
+    let total: int = 0
+
+    for i: int in start..end_exclusive:
+        total += i
+
+    return total
+
+-- For with break (exit loop) and continue (skip to next iteration)
+function find_first_even(numbers: many[int]) -> int:
+    for i: int in 0..1000:
+        -- Continue skips to next iteration if condition is true
+        if numbers[i] % 2 != 0:
+            continue
+
+        -- Break exits the loop when we find an even number
+        return numbers[i]
+
+    return -1  -- No even number found
+
+-- =============================================================================
+-- SECTION 8: FUNCTION POINTERS AND CALLBACKS
+-- =============================================================================
+-- Function types can be passed as parameters, stored in variables,
+-- and called dynamically. They're the foundation for callbacks and visitors.
+
+-- Higher-order function that accepts a visitor callback
+function visit_stage(visitor: Demo.StageVisitor, stage: Demo.BrewStage, user_data: raw[void]) -> void:
+    visitor(stage, user_data)
+
+-- Example visitor that counts stage visits
+function count_stage(stage: Demo.BrewStage, user_data: raw[void]) -> void:
+    -- unsafe block is required for pointer operations
+    unsafe:
+        -- Cast raw void pointer to int pointer, then dereference
+        let visits: ref[int] = user_data as ref[int]
+        visits[0] += 1
+    -- Stage parameter is passed to callback but we don't use it here
+    -- In a real app, you might switch on stage to track different counts
+
+-- =============================================================================
+-- SECTION 9: CONST QUALIFICATION
+-- =============================================================================
+-- const marks values that should not be modified. It's a hint to the compiler
+-- and can enable optimizations. Note: const values can be shadowed in nested
+-- scopes but this is generally discouraged.
+
+function demonstrate_const() -> void:
+    const pi: double = 3.14159
+    const message: string = "This cannot be changed"
+
+    print_format("const pi = %f", pi)
+
+-- =============================================================================
+-- SECTION 10: MEMORY MANAGEMENT - OWN (HEAP)
+-- =============================================================================
+-- own[T] represents unique ownership. Values are allocated on the heap and
+-- must be explicitly destroyed or they leak memory. The owner is responsible
+-- for cleanup - when owner goes out of scope, destructor runs automatically.
+
+-- Memory allocation with own.alloc[T]() - allocates on heap, returns owned pointer
+function allocate_brewer(title: string) -> own[Demo.Brewer]:
+    -- own.alloc[T]() allocates T on the heap and returns own[T]
+    let brewer: own[Demo.Brewer] = own.alloc[Demo.Brewer]()
+    brewer.title = title
+    brewer.stage = STEEP_TEA
+    brewer.total = 0
+
+    -- When 'brewer' goes out of scope, destroy Demo.Brewer is called automatically
+    return brewer
+
+-- =============================================================================
+-- SECTION 11: MEMORY MANAGEMENT - ARENA (STACK-LIKE)
+-- =============================================================================
+-- stack scratch: N creates a fixed-size arena (stack-allocated buffer).
+-- Allocations from scratch are fast and automatically cleaned up when the
+-- containing function returns. Perfect for short-lived temporary data.
+
+-- Arena allocation with scratch.alloc[T](values)
+function arena_example() -> void:
+    -- Create 128-byte arena on the stack
+    stack scratch: 128
+
+    -- Allocate int array from arena with initial values
+    let scores: many[int] = scratch.alloc[int]([
+        2,
+        4,
+        6,
+    ])
+
+    -- scores is valid until 'scratch' goes out of scope
+    print_format("arena scores: %d, %d, %d", scores[0], scores[1], scores[2])
+
+    -- Arena automatically freed when function returns - no manual cleanup!
+
+-- =============================================================================
+-- SECTION 12: MEMORY MANAGEMENT - RAW (UNSAFE)
+-- =============================================================================
+-- raw[T] is an unsafe raw pointer. Use for FFI, manual memory management,
+-- and performance-critical code. All operations require 'unsafe' blocks.
+-- You're responsible for allocation, alignment, and deallocation.
+
+function heap_example() -> void:
+    unsafe:
+        -- null[T] is the null pointer constant
+        let handle: raw[NativeHandle] = null[NativeHandle]
+
+        -- null check works like C
+        if handle != null[NativeHandle]:
+            print("handle is not null")
+            return
+
+        -- heap.alloc[T](count) - raw malloc
+        let raw_scores: raw[int] = heap.alloc[int](3)
+
+        -- pointer_write - store value at pointer location
+        pointer_write(raw_scores, 100)
+
+        -- pointer_offset - pointer arithmetic
+        pointer_write(pointer_offset(raw_scores, 1), 200)
+        pointer_write(pointer_offset(raw_scores, 2), 300)
+
+        -- Cast raw to many for array-style access
+        let copied_scores: many[int] = raw_scores as many[int]
+        print_format("raw memory: %d, %d, %d", copied_scores[0], copied_scores[1], copied_scores[2])
+
+        -- Must manually free heap memory - no automatic cleanup!
+        heap.free(raw_scores)
+
+-- =============================================================================
+-- SECTION 13: OUTPUT PARAMETERS AND POINTER CASTS
+-- =============================================================================
+-- (out variable) creates an output parameter - takes address of a variable.
+-- Combined with 'as' casts, this lets you pass data to C functions that
+-- expect output parameters.
+
+function output_parameter_example() -> void:
+    let value: int = 42
+
+    unsafe:
+        -- (out value) passes pointer to value - for functions that "return" via parameter
+        let ptr: raw[void] = (out value) as raw[void]
+
+        -- Read it back
+        let read_back: ref[int] = ptr as ref[int]
+        print_format("output param value: %d", read_back[0])
+
+-- =============================================================================
+-- SECTION 14: TYPE CASTS
+-- =============================================================================
+-- Milk Tea uses explicit casts with 'as' keyword. Different view types
+-- reinterpret the same memory in different ways:
+--   - value as raw[T]   -> treat as raw pointer
+--   - value as ref[T]  -> treat as reference
+--   - value as many[T] -> treat as array/slice
+-- These are zero-cost views - no actual data copying.
+
+function cast_examples() -> void:
+    let value: int = 42
+
+    unsafe:
+        -- int to raw pointer view
+        let as_raw: raw[void] = value as raw[void]
+
+        -- raw pointer to reference view
+        let as_ref: ref[int] = as_raw as ref[int]
+
+        -- Reference to value
+        as_ref[0] = 100
+
+        print_format("value after cast modification: %d", value)
+
+-- =============================================================================
+-- SECTION 16: OPERATORS
+-- =============================================================================
+-- Milk Tea supports standard operators:
+--   Arithmetic: + - * / %
+--   Comparison: == != < > <= >=
+--   Logical: and or not (or && || !)
+--   Bitwise: & | ^ << >>
+--   Assignment: = += -= *= /= %= <<= >>= &= |= ^=
+--   Range: .. (exclusive), ... (ellipsis/inclusive)
+
+function operator_examples() -> int:
+    let a: int = 10
+    let b: int = 3
+
+    -- Arithmetic
+    let sum: int = a + b      -- 13
+    let diff: int = a - b     -- 7
+    let prod: int = a * b     -- 30
+    let quot: int = a / b     -- 3 (integer division)
+    let rem: int = a % b      -- 1
+
+    -- Comparison - returns bool
+    let eq: bool = a == b     -- false
+    let ne: bool = a != b     -- true
+    let lt: bool = a < b      -- false
+
+    -- Logical
+    let and_result: bool = a > 5 and b < 5   -- true
+    let or_result: bool = a > 100 or b > 1   -- true
+    let not_result: bool = not eq            -- true
+
+    -- Bitwise
+    let and_bit: int = a & b    -- 2 (1010 & 0011 = 0010)
+    let or_bit: int = a | b     -- 11 (1010 | 0011 = 1011)
+    let xor_bit: int = a ^ b    -- 9 (1010 ^ 0011 = 1001)
+    let lshift: int = a << 2    -- 40
+    let rshift: int = a >> 2    -- 2
+
+    -- Range operator - used in for loops
+    -- 0..5 produces 0, 1, 2, 3, 4
+    let range_sum: int = 0
+    for i: int in 0..5:
+        range_sum += i
+
+    print_format("operators: sum=%d diff=%d prod=%d quot=%d rem=%d", sum, diff, prod, quot, rem)
+    print_format("comparison: eq=%d ne=%d lt=%d", eq, ne, lt)
+    print_format("logical: and=%d or=%d not=%d", and_result, or_result, not_result)
+    print_format("bitwise: and=%d or=%d xor=%d lshift=%d rshift=%d", and_bit, or_bit, xor_bit, lshift, rshift)
+    print_format("range sum 0..5: %d", range_sum)
+
+    return 0
+
+-- =============================================================================
+-- SECTION 17: BUILT-IN FUNCTIONS
+-- =============================================================================
+-- Milk Tea provides several built-in functions in libc:
+--   print(text)           - print string to stdout
+--   print_format(format, ...) - printf-style formatted printing
+--   get_string_length(s) - strlen
+--   get_time(timer)      - get current time
+--   sleep(seconds)       - pause execution
+--   cosine(x), sine(x), tangent(x) - trig functions
+--   square_root(x), power(x, y) - math functions
+--   floor_float(x), ceil_float(x), round_float(x) - rounding
+
+function builtin_examples() -> void:
+    -- Print functions
+    print("Hello from Milk Tea!")
+
+    -- Formatted print (like printf)
+    print_format("Formatted: %d, %f, %s", 42, 3.14, "text")
+
+    -- String length
+    let text: string = "hello"
+    let len: usize = get_string_length(text)
+    print_format("string length: %zu", len)
+
+    -- Time function - get current timestamp
+    let stamp: UnixTime = get_time(0)
+    print_format("current time: %ld", stamp)
+
+    -- Math functions (from libc math)
+    let angle: double = 0.0
+    let cos_val: double = cosine(angle)
+    let sin_val: double = sine(angle)
+    let tan_val: double = tangent(angle)
+    print_format("trig: cos=%f sin=%f tan=%f", cos_val, sin_val, tan_val)
+
+    let sqrt_val: double = square_root(16.0)
+    let pow_val: double = power(2.0, 8.0)
+    let floor_val: double = floor_float(3.7)
+    let ceil_val: double = ceil_float(3.2)
+    print_format("math: sqrt=%f pow=%f floor=%f ceil=%f", sqrt_val, pow_val, floor_val, ceil_val)
+
+-- =============================================================================
+-- SECTION 18: ASSERTIONS
+-- =============================================================================
+-- assert(condition, "message") checks that a condition is true at runtime.
+-- If false, program terminates with the message. Useful for invariants,
+-- preconditions, and debugging.
+
+function assertion_example() -> void:
+    -- This assertion passes
+    assert(1 == 1, "Milk Tea assert works")
+
+    -- This would fail if uncommented:
+    -- assert(1 == 2, "This would crash!")
+
+    print("Assertions passed!")
+
+-- =============================================================================
+-- SECTION 19: FIXED STRINGS
+-- =============================================================================
+-- fixed declares a stack-allocated string (immutable). It's useful for
+-- string constants that won't change. Unlike 'let', the storage is in
+-- the function's stack frame and the string cannot be reassigned.
+
+function fixed_string_example() -> void:
+    -- Fixed string - immutable, stack-allocated
+    fixed title: string = "MT26 standard example"
+
+    -- Print the fixed string
+    print(title)
+
+    -- Fixed arrays - compile-time sized
+    fixed steps: array[string, 3] = [
+        "warm water",
+        "steep tea",
+        "pour",
+    ]
+
+    print(steps[0])
+    print(steps[1])
+    print(steps[2])
+
+-- =============================================================================
+-- SECTION 19B: MULTIDIMENSIONAL ARRAYS
+-- =============================================================================
+-- Fixed arrays can be nested for multidimensional arrays (2D, 3D, etc.)
+-- The syntax is array[array[T, N], M] for a 2D array with M rows and N columns.
+-- Multidimensional arrays compile directly to C arrays (e.g., int arr[3][3]).
+
+function demonstrate_multidimensional_arrays() -> void:
+    print("=== Multidimensional Arrays Demo ===")
+
+    -- 3x3 matrix of integers
+    fixed matrix: array[array[int, 3], 3] = [
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9]
+    ]
+
+    -- Access individual elements
+    print_format("matrix[0][0] = %d", matrix[0][0])
+    print_format("matrix[1][1] = %d", matrix[1][1])
+    print_format("matrix[2][2] = %d", matrix[2][2])
+
+    -- Sum all elements using nested loops
+    let sum: int = 0
+    let i: int = 0
+    while i < 3:
+        let j: int = 0
+        while j < 3:
+            sum = sum + matrix[i][j]
+            j = j + 1
+        i = i + 1
+    print_format("sum of all elements: %d", sum)
+
+    -- 3D array example - working with nested data
+    fixed cube: array[array[array[int, 2], 2], 2] = [
+        [[1, 2], [3, 4]],
+        [[5, 6], [7, 8]]
+    ]
+    print_format("cube[0][0][0] = %d", cube[0][0][0])
+    print_format("cube[1][1][1] = %d", cube[1][1][1])
+
+-- =============================================================================
+-- SECTION 20: ERRNO AND ERROR HANDLING
+-- =============================================================================
+-- errno and file operations removed: were using extended libc
+
+-- =============================================================================
+-- SECTION 21: MAIN FUNCTION AND PROGRAM ENTRY
+-- =============================================================================
+-- Every Milk Tea program needs a main function that returns int.
+-- Return 0 indicates success, non-zero indicates error.
+
+function main() -> int:
+    -- Start with assertion
+    assert(1 == 1, "Milk Tea assert works")
+
+    -- Built-in types demonstration
+    demonstrate_types()
+
+    -- Fixed strings and arrays ---
+    -- Prefer clear, sectioned code and word-based APIs.
+    fixed title: string = "MT26 standard example"
+    fixed steps: array[string, 3] = [
+        "warm water",
+        "steep tea",
+        "pour",
+    ]
+
+    -- Generic types keep their arguments explicit ---
+    -- Generic struct usage - type parameters are explicit
+    let header: Demo.Pair[string, usize]
+    header.first = title
+    header.second = 3
+    let label: string = header.first
+
+    -- Heap-backed ownership is explicit ---
+    -- own[T] allocates on heap, must be explicitly destroyed
+    let brewer: own[Demo.Brewer] = own.alloc[Demo.Brewer]()
+    brewer.title = label
+    brewer.stage = STEEP_TEA
+    brewer.total = 0
+
+    -- Another owned allocation
+    let note: own[Demo.Note] = own.alloc[Demo.Note]()
+    note.message = "destroy note"
+
+    -- Arena memory is good for short-lived borrowed data ---
+    -- Arena (stack-allocated buffer) for temporary data
+    stack scratch: 128
+    let scores: many[int] = scratch.alloc[int]([
+        2,
+        4,
+        6,
+    ])
+    brewer.total += scores[0] + scores[1] + scores[2]
+
+    -- Unsafe code is obvious at the use site ---
+    -- All pointer operations require unsafe block
+    let visit_count: int = 0
+    unsafe:
+        -- null pointer constant
+        let handle: raw[NativeHandle] = null[NativeHandle]
+
+        -- Output parameter - pass address of variable
+        let payload: raw[void] = (out visit_count) as raw[void]
+
+        -- Null check
+        if handle != null[NativeHandle]:
+            return 2
+
+        -- Call function with callback
+        visit_stage(count_stage, brewer.stage, payload)
+
+        -- Raw memory allocation
+        let raw_scores: raw[int] = heap.alloc[int](3)
+        pointer_write(raw_scores, scores[0])
+        pointer_write(pointer_offset(raw_scores, 1), scores[1])
+        pointer_write(pointer_offset(raw_scores, 2), scores[2])
+
+        -- Cast raw to many for array access
+        let copied_scores: many[int] = raw_scores as many[int]
+        brewer.total += copied_scores[0] + copied_scores[1] + copied_scores[2]
+
+        -- Must manually free heap memory
+        heap.free(raw_scores)
+
+    -- Structured control flow stays readable ---
+    -- Range-based for loop
+    for step: int in 0..3:
+        if step == 1:
+            -- continue skips to next iteration
+            continue
+
+        brewer.total += step
+
+    -- Demonstrate while loop ---
+    let countdown: int = 3
+    while countdown > 0:
+        countdown -= 1
+
+    -- Demonstrate do-while (runs at least once) ---
+    let at_least_once: int = 5
+    do:
+        at_least_once -= 1
+    while at_least_once > 0
+
+    -- Demonstrate switch statement ---
+    -- Using switch instead of if-else for enum values
+    let stage_desc: string = stage_name_switch(brewer.stage)
+    print("Stage from switch:")
+    print(stage_desc)
+
+    -- Built-in functions from libc ---
+    let text_length: usize = get_string_length(title)
+    let stamp: UnixTime = get_time(0)
+    let angle: double = cosine(0.0)
+
+    -- Sleep for a short time (uncomment to actually sleep)
+    -- sleep(1)
+
+    -- Print results ---
+    print(title)
+    print(steps[0])
+    print(steps[1])
+    print(steps[2])
+    print(stage_name(brewer.stage))
+    print_format("pair count: %zu", header.second)
+    print("")
+
+    print_format("visits: %d", visit_count)
+    print("")
+
+    -- Operator demonstration ---
+    print("--- Operators Demo ---")
+    operator_examples()
+
+    -- Built-in functions demo ---
+    print("--- Built-ins Demo ---")
+    builtin_examples()
+
+    -- Arena demo ---
+    print("--- Arena Demo ---")
+    arena_example()
+
+    -- Multidimensional arrays demo ---
+    print("--- Multidimensional Arrays Demo ---")
+    demonstrate_multidimensional_arrays()
+
+    -- Foreign function demo ---
+    print("--- Foreign Function Demo ---")
+    say_hello("Hello from foreign function!")
+    -- Use constants from libc/stdio (SEEK_START = 0, SEEK_END = 2)
+    print_format("SEEK_START = %d, SEEK_END = %d", SEEK_START, SEEK_TO_END)
+
+    -- Final assertion check ---
+    if text_length > 0 and stamp >= 0 and angle == 1.0:
+        print("")
+        print("=== All demos completed successfully! ===")
+        return 0
+
+    return 1
+
+-- =============================================================================
+-- SECTION 22: ASYNC/AWAIT - ASYNCHRONOUS PROGRAMMING
+-- =============================================================================
+-- =============================================================================
+-- SECTION 23: EXTERNAL NAMESPACE FILE - MULTI-FILE ORGANIZATION
+-- =============================================================================
+-- You can export namespaces to separate files for better organization.
+-- Other files can import and use them with the namespace prefix.
+
+-- Example: Create a file 'demo/math.mtl' with:
+--   export namespace Math:
+--       function add(a: int, b: int) -> int:
+--           return a + b
+--       function multiply(a: int, b: int) -> int:
+--           return a * b
+
+-- In another file, import and use:
+--   import demo/math
+--   let result: int = Math.add(2, 3)  -- returns 5
+
+-- =============================================================================
+-- END OF FILE
+-- =============================================================================
+-- This example demonstrates:
+-- - Type system: aliases, enums, structs, generics, unions
+-- - Fixed arrays: single-dimension and multidimensional (2D, 3D)
+-- - Memory: own (heap), arena (stack), raw (unsafe), references
+-- - Control flow: if, switch, while, do-while, for, break, continue
+-- - Functions: regular, generic, callbacks
+-- - FFI: foreign functions, opaque types
+-- - Standard library: print, math, time
+-- - Safety: assertions, unsafe blocks (explicit)
+--
+-- Milk Tea principles:
+-- 1. Explicit over implicit - no hidden memory management
+-- 2. Clear syntax - readable like plain English
+-- 3. Zero-cost abstractions - generics compile to efficient code
+-- 4. No magic - everything visible at use site

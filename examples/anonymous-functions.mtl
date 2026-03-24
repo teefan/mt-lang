@@ -1,0 +1,27 @@
+-- Anonymous Function Examples
+-- Demonstrates fn expressions (lambdas) in Milk Tea
+
+import libc/core
+
+function main() -> int:
+    -- Basic anonymous function assigned to a variable
+    let add: fn(a: int, b: int) -> int = fn(x: int, y: int) -> int => x + y
+    let result: int = add(3, 4)
+    print_format("add(3, 4) = %d", result)
+
+    -- Anonymous function with no parameters
+    let get_five: fn() -> int = fn() -> int => 5
+    let five: int = get_five()
+    print_format("get_five() = %d", five)
+
+    -- Anonymous function passed as argument
+    let doubler: fn(n: int) -> int = fn(n: int) -> int => n * 2
+    let x: int = apply(doubler, 7)
+    print_format("apply(doubler, 7) = %d", x)
+
+    print("All anonymous function tests passed!")
+    return 0
+
+-- Higher-order function that takes a function as argument
+function apply(f: fn(n: int) -> int, value: int) -> int:
+    return f(value)

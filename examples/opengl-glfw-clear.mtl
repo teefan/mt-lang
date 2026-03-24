@@ -1,0 +1,52 @@
+import graphics/glfw
+import graphics/opengl
+import libc/stdio
+import libc/stdlib
+
+function on_glfw_error(error_code: int, description: string) -> void:
+    if error_code == 0:
+        pass
+    print(description)
+
+function main() -> int:
+    glfw_set_error_callback(on_glfw_error)
+
+    fixed x11_display: string = get_env("DISPLAY")
+    fixed wayland_display: string = get_env("WAYLAND_DISPLAY")
+    if x11_display != "":
+        glfw_init_hint(GLFW_PLATFORM, GLFW_PLATFORM_X11)
+    else if wayland_display != "":
+        glfw_init_hint(GLFW_PLATFORM, GLFW_PLATFORM_WAYLAND)
+
+    if glfw_init() == 0:
+        print("glfw_init failed")
+        return 1
+
+    fixed window: raw[GLFWwindow] = glfw_create_window(
+        640,
+        480,
+        "Milk Tea OpenGL",
+        null[GLFWmonitor],
+        null[GLFWwindow]
+    )
+    if window == null[GLFWwindow]:
+        print("glfw_create_window failed")
+        glfw_terminate()
+        return 2
+
+    glfw_make_context_current(window)
+
+    if load_gl_with_glfw() == 0:
+        print("load_gl_with_glfw failed")
+        glfw_destroy_window(window)
+        glfw_terminate()
+        return 3
+
+    gl_clear_color(0.18, 0.24, 0.31, 1.0)
+    gl_clear(GL_COLOR_BUFFER_BIT)
+    glfw_swap_buffers(window)
+    glfw_poll_events()
+
+    glfw_destroy_window(window)
+    glfw_terminate()
+    return 0

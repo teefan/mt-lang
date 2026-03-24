@@ -1,0 +1,821 @@
+-- MT26 Memory Stress Test
+-- ========================
+-- Exercises every memory and pointer domain defined by the MT26 spec:
+--
+--   own[T]        heap allocation, move semantics, explicit + implicit destroy
+--   stack/arena  scoped arena, count alloc, literal alloc, nested scopes
+--   raw[T]        alloc, pointer_write, pointer_offset, resize, free
+--   many[T]       borrowed contiguous view, read, write, function passing
+--   ref[T]        borrowed single-element view, read, write
+--   out           address-taking, round-trip through raw[void]
+--   null[T]       null constant, null equality guard
+--   mixed         all domains active in the same scope
+--
+-- Each test function returns 0 on success.
+-- All expected values are verified with assert().
+-- main() accumulates failures and prints a summary.
+
+import libc/core
+import libc/stdio
+import collections/array
+
+-- ============================================================
+-- SHARED TEST TYPES
+-- ============================================================
+
+-- Simple value struct, no destructor needed.
+struct Point:
+    x: int
+    y: int
+
+-- Struct with a destructor so own[Node] cleanup is exercised.
+struct Node:
+    id:    int
+    value: int
+
+destroy Node(n: ref[Node]) -> void:
+    pass    -- silent; existence is what matters for coverage
+
+-- Generic struct to exercise own[T] with a type parameter.
+struct Box[T]:
+    data:  T
+    valid: int    -- 1 = live, 0 = cleared (for move tracking)
+
+-- ============================================================
+-- HELPERS: raw pointer read / write (encapsulate unsafe boilerplate)
+-- ============================================================
+
+-- Write an int at element offset inside a raw[int] buffer.
+function raw_write(ptr: raw[int], offset: int, value: int) -> void:
+    unsafe:
+        pointer_write(pointer_offset(ptr, offset), value)
+
+-- Read an int at element offset from a raw[int] buffer.
+function raw_read(ptr: raw[int], offset: int) -> int:
+    unsafe:
+        let view: many[int] = pointer_offset(ptr, offset) as many[int]
+        return view[0]
+
+-- Sum the first 'count' elements of a many[int] slice.
+function slice_sum(data: many[int], count: int) -> int:
+    let total: int = 0
+    for i: int in 0..count:
+        total += data[i]
+    return total
+
+-- ============================================================
+-- TEST 1: own[T] basic alloc, field access, implicit scope-exit destroy
+-- ============================================================
+function test_own_basic() -> int:
+    let p: own[Point] = own.alloc[Point]()
+    p.x = 10
+    p.y = 20
+
+    assert(p.x == 10, "t1: own field x")
+    assert(p.y == 20, "t1: own field y")
+
+    -- p destroyed automatically at scope exit; destructor coverage via
+    -- the Node tests that follow (Point has no destructor by design).
+    return 0
+
+-- ============================================================
+-- TEST 2: own[T] explicit early destroy
+-- ============================================================
+function test_own_explicit_destroy() -> int:
+    let n: own[Node] = own.alloc[Node]()
+    n.id    = 2
+    n.value = 99
+
+    assert(n.value == 99, "t2: value before destroy")
+    destroy n    -- explicit early cleanup; n is invalid after this
+    return 0
+
+-- ============================================================
+-- TEST 3: own[T] returned across a function boundary (move)
+-- ============================================================
+function make_node(id: int, value: int) -> own[Node]:
+    let n: own[Node] = own.alloc[Node]()
+    n.id    = id
+    n.value = value
+    return n    -- ownership transferred to caller
+
+function test_own_move_return() -> int:
+    let a: own[Node] = make_node(7, 42)
+    assert(a.id    == 7,  "t3: moved own id")
+    assert(a.value == 42, "t3: moved own value")
+
+    let b: own[Node] = make_node(8, 100)
+    assert(b.id    == 8,   "t3: second own id")
+    assert(b.value == 100, "t3: second own value")
+
+    -- a and b destroyed at scope exit
+    return 0
+
+-- ============================================================
+-- TEST 4: Multiple own[T] allocations, explicit ordered destroy
+-- ============================================================
+function test_own_multiple_sequential() -> int:
+    let n1: own[Node] = own.alloc[Node]()
+    let n2: own[Node] = own.alloc[Node]()
+    let n3: own[Node] = own.alloc[Node]()
+
+    n1.id = 1  n1.value = 10
+    n2.id = 2  n2.value = 20
+    n3.id = 3  n3.value = 30
+
+    assert(n1.value + n2.value + n3.value == 60, "t4: three own sum")
+
+    destroy n3
+    destroy n2
+    destroy n1
+    return 0
+
+-- ============================================================
+-- TEST 5: own[T] field mutation across multiple accesses
+-- ============================================================
+function test_own_field_mutation() -> int:
+    let n: own[Node] = own.alloc[Node]()
+    n.id    = 0
+    n.value = 0
+
+    -- Accumulate into the owned value's field
+    for i: int in 1..6:    -- 1..5 inclusive → sum = 15
+        n.value += i
+
+    assert(n.value == 15, "t5: accumulated field value")
+    return 0
+
+-- ============================================================
+-- TEST 6: generic own[Box[T]] alloc and field access
+-- ============================================================
+function test_own_generic() -> int:
+    let b: own[Box[int]] = own.alloc[Box[int]]()
+    b.data  = 12345
+    b.valid = 1
+
+    assert(b.data  == 12345, "t6: generic own field data")
+    assert(b.valid == 1,     "t6: generic own field valid")
+
+    destroy b
+    return 0
+
+-- ============================================================
+-- TEST 7: Arena – count-based allocation, read and write
+-- ============================================================
+function test_arena_count_alloc() -> int:
+    stack scratch: 256
+    let buf: many[int] = scratch.alloc[int](8)
+
+    for i: int in 0..8:
+        buf[i] = i * i    -- 0,1,4,9,16,25,36,49
+
+    assert(buf[0] == 0,  "t7: arena[0]")
+    assert(buf[1] == 1,  "t7: arena[1]")
+    assert(buf[4] == 16, "t7: arena[4]")
+    assert(buf[7] == 49, "t7: arena[7]")
+
+    return 0
+
+-- ============================================================
+-- TEST 8: Arena – literal-initialiser allocation
+-- ============================================================
+function test_arena_literal_alloc() -> int:
+    stack scratch: 128
+    let vals: many[int] = scratch.alloc[int]([
+        10,
+        20,
+        30,
+        40,
+    ])
+
+    assert(vals[0] == 10, "t8: literal[0]")
+    assert(vals[1] == 20, "t8: literal[1]")
+    assert(vals[2] == 30, "t8: literal[2]")
+    assert(vals[3] == 40, "t8: literal[3]")
+
+    return 0
+
+-- ============================================================
+-- TEST 9: Arena – multiple sequential allocs from one arena
+-- ============================================================
+function test_arena_multiple_allocs() -> int:
+    stack scratch: 512
+
+    let ints:    many[int]    = scratch.alloc[int](4)
+    let doubles: many[double] = scratch.alloc[double](4)
+
+    ints[0] = 1  ints[1] = 2  ints[2] = 3  ints[3] = 4
+    doubles[0] = 1.0  doubles[1] = 2.0  doubles[2] = 3.0  doubles[3] = 4.0
+
+    assert(ints[0] + ints[1] + ints[2] + ints[3] == 10, "t9: int slice sum")
+
+    -- Verify the int slice is not corrupted by the double alloc.
+    assert(ints[0] == 1, "t9: int[0] intact after double alloc")
+    assert(ints[3] == 4, "t9: int[3] intact after double alloc")
+
+    return 0
+
+-- ============================================================
+-- TEST 10: Arena – nested scopes, outer data survives inner alloc
+-- ============================================================
+function test_arena_nested_scopes() -> int:
+    stack outer: 512
+    let outer_data: many[int] = outer.alloc[int](4)
+    outer_data[0] = 100
+    outer_data[1] = 200
+    outer_data[2] = 300
+    outer_data[3] = 400
+
+    -- Inner arena is completely independent.
+    stack inner: 256
+    let inner_data: many[int] = inner.alloc[int](4)
+    inner_data[0] = outer_data[0] + 1
+    inner_data[1] = outer_data[1] + 1
+    inner_data[2] = outer_data[2] + 1
+    inner_data[3] = outer_data[3] + 1
+
+    assert(inner_data[0] == 101, "t10: inner[0]")
+    assert(inner_data[3] == 401, "t10: inner[3]")
+
+    -- outer_data must still be intact.
+    assert(outer_data[0] == 100, "t10: outer[0] after inner alloc")
+    assert(outer_data[3] == 400, "t10: outer[3] after inner alloc")
+
+    return 0
+
+-- ============================================================
+-- TEST 11: Arena – own[T] and arena active in the same scope
+-- ============================================================
+function test_arena_own_coexist() -> int:
+    let node: own[Node] = own.alloc[Node]()
+    node.id    = 11
+    node.value = 0
+
+    stack scratch: 256
+    let deltas: many[int] = scratch.alloc[int]([
+        10,
+        20,
+        30,
+    ])
+
+    for i: int in 0..3:
+        node.value += deltas[i]
+
+    assert(node.value == 60, "t11: own accumulated from arena slice")
+    return 0
+
+-- ============================================================
+-- TEST 12: raw[T] – alloc, pointer_write, many cast, free
+-- ============================================================
+function test_raw_alloc_write_read_free() -> int:
+    unsafe:
+        let ptr: raw[int] = heap.alloc[int](5)
+
+        pointer_write(ptr,                      10)
+        pointer_write(pointer_offset(ptr, 1),   20)
+        pointer_write(pointer_offset(ptr, 2),   30)
+        pointer_write(pointer_offset(ptr, 3),   40)
+        pointer_write(pointer_offset(ptr, 4),   50)
+
+        let view: many[int] = ptr as many[int]
+        assert(view[0] == 10, "t12: raw[0]")
+        assert(view[1] == 20, "t12: raw[1]")
+        assert(view[2] == 30, "t12: raw[2]")
+        assert(view[3] == 40, "t12: raw[3]")
+        assert(view[4] == 50, "t12: raw[4]")
+
+        heap.free(ptr)
+
+    return 0
+
+-- ============================================================
+-- TEST 13: raw[T] – null pointer constant and equality guard
+-- ============================================================
+function test_raw_null_guard() -> int:
+    let saw_null: int = 0
+
+    unsafe:
+        let ptr: raw[Node] = null[Node]
+
+        if ptr == null[Node]:
+            saw_null = 1
+
+    assert(saw_null == 1, "t13: null pointer confirmed")
+    return 0
+
+-- ============================================================
+-- TEST 14: raw[T] – resize (grow) and data preservation
+-- ============================================================
+function test_raw_resize_grow() -> int:
+    unsafe:
+        -- Initial allocation: 3 elements.
+        let ptr: raw[int] = heap.alloc[int](3)
+        pointer_write(ptr,                    1)
+        pointer_write(pointer_offset(ptr, 1), 2)
+        pointer_write(pointer_offset(ptr, 2), 3)
+
+        -- Grow to 6 elements; ptr is potentially invalid after this.
+        let ptr2: raw[int] = heap.resize[int](ptr, 6)
+        pointer_write(pointer_offset(ptr2, 3), 4)
+        pointer_write(pointer_offset(ptr2, 4), 5)
+        pointer_write(pointer_offset(ptr2, 5), 6)
+
+        let view: many[int] = ptr2 as many[int]
+
+        -- Original 3 elements must be preserved.
+        assert(view[0] == 1, "t14: resize preserve[0]")
+        assert(view[1] == 2, "t14: resize preserve[1]")
+        assert(view[2] == 3, "t14: resize preserve[2]")
+
+        -- Newly written elements.
+        assert(view[3] == 4, "t14: resize new[3]")
+        assert(view[4] == 5, "t14: resize new[4]")
+        assert(view[5] == 6, "t14: resize new[5]")
+
+        heap.free(ptr2)
+
+    return 0
+
+-- ============================================================
+-- TEST 15: raw[T] – resize (shrink) and data preservation
+-- ============================================================
+function test_raw_resize_shrink() -> int:
+    unsafe:
+        let ptr: raw[int] = heap.alloc[int](8)
+
+        for i: int in 0..8:
+            pointer_write(pointer_offset(ptr, i), i + 1)   -- 1..8
+
+        -- Shrink to 4 elements; first 4 values must survive.
+        let ptr2: raw[int] = heap.resize[int](ptr, 4)
+        let view: many[int] = ptr2 as many[int]
+
+        assert(view[0] == 1, "t15: shrink[0]")
+        assert(view[1] == 2, "t15: shrink[1]")
+        assert(view[2] == 3, "t15: shrink[2]")
+        assert(view[3] == 4, "t15: shrink[3]")
+
+        heap.free(ptr2)
+
+    return 0
+
+-- ============================================================
+-- TEST 16: raw[T] – pointer_offset arithmetic correctness
+-- ============================================================
+function test_pointer_arithmetic() -> int:
+    unsafe:
+        let buf: raw[int] = heap.alloc[int](8)
+
+        for i: int in 0..8:
+            pointer_write(pointer_offset(buf, i), i * 10)    -- 0,10,20,...,70
+
+        let view: many[int] = buf as many[int]
+        assert(view[0] == 0,  "t16: offset[0]")
+        assert(view[1] == 10, "t16: offset[1]")
+        assert(view[2] == 20, "t16: offset[2]")
+        assert(view[3] == 30, "t16: offset[3]")
+        assert(view[5] == 50, "t16: offset[5]")
+        assert(view[7] == 70, "t16: offset[7]")
+
+        heap.free(buf)
+
+    return 0
+
+-- ============================================================
+-- TEST 17: raw[T] – single-element alloc edge case
+-- ============================================================
+function test_raw_single_element() -> int:
+    unsafe:
+        let ptr: raw[int] = heap.alloc[int](1)
+        pointer_write(ptr, 42)
+
+        let r: ref[int] = ptr as ref[int]
+        assert(r[0] == 42, "t17: single raw write")
+
+        r[0] = 0
+        assert(r[0] == 0,  "t17: single raw overwrite")
+
+        heap.free(ptr)
+
+    return 0
+
+-- ============================================================
+-- TEST 18: raw[T] and own[T] in the same scope
+-- ============================================================
+function test_raw_own_coexist() -> int:
+    let node: own[Node] = own.alloc[Node]()
+    node.id    = 18
+    node.value = 0
+
+    unsafe:
+        let raw_buf: raw[int] = heap.alloc[int](3)
+        pointer_write(raw_buf,                    1)
+        pointer_write(pointer_offset(raw_buf, 1), 2)
+        pointer_write(pointer_offset(raw_buf, 2), 3)
+
+        let view: many[int] = raw_buf as many[int]
+        node.value = view[0] + view[1] + view[2]   -- 6
+
+        heap.free(raw_buf)
+
+    assert(node.value == 6, "t18: own accumulated from raw slice")
+    return 0
+
+-- ============================================================
+-- TEST 19: raw[T] → many[T] → ref[T] full cast chain
+-- ============================================================
+function test_pointer_cast_chain() -> int:
+    unsafe:
+        let raw_ptr: raw[int] = heap.alloc[int](1)
+        pointer_write(raw_ptr, 777)
+
+        -- raw → many view
+        let as_many: many[int] = raw_ptr as many[int]
+        assert(as_many[0] == 777, "t19: raw→many read")
+
+        -- raw → ref view
+        let as_ref: ref[int] = raw_ptr as ref[int]
+        assert(as_ref[0] == 777, "t19: raw→ref read")
+
+        -- Write through ref, confirm visible through many (same memory).
+        as_ref[0] = 888
+        assert(as_many[0] == 888, "t19: write-through-ref visible in many")
+
+        -- Write through many, confirm visible through ref.
+        as_many[0] = 999
+        assert(as_ref[0] == 999, "t19: write-through-many visible in ref")
+
+        heap.free(raw_ptr)
+
+    return 0
+
+-- ============================================================
+-- TEST 20: out – address-taking and raw[void] round-trip
+-- ============================================================
+function test_out_roundtrip() -> int:
+    let target: int = 55
+
+    unsafe:
+        -- Take address of a local, erase type to void, restore type.
+        let void_ptr: raw[void] = (out target) as raw[void]
+        let back: ref[int]      = void_ptr as ref[int]
+
+        assert(back[0] == 55, "t20: out round-trip read")
+
+        back[0] = 99
+
+    -- The write through the pointer must be visible in the original variable.
+    assert(target == 99, "t20: out write-back confirmed")
+    return 0
+
+-- ============================================================
+-- TEST 21: out – increment through ref[T] passed to helper
+-- ============================================================
+function add_via_ref(r: ref[int], amount: int) -> void:
+    unsafe:
+        r[0] += amount
+
+function test_out_via_function() -> int:
+    let counter: int = 0
+
+    unsafe:
+        let r: ref[int] = (out counter) as ref[int]
+        add_via_ref(r, 10)
+        add_via_ref(r, 5)
+
+    assert(counter == 15, "t21: counter after two increments via ref")
+    return 0
+
+-- ============================================================
+-- TEST 22: many[T] – sequential read/write and function passing
+-- ============================================================
+function test_many_sequential_rw() -> int:
+    stack scratch: 256
+    let data: many[int] = scratch.alloc[int](10)
+
+    for i: int in 0..10:
+        data[i] = i + 1    -- 1..10
+
+    let total: int = slice_sum(data, 10)
+    assert(total == 55, "t22: many sum 1..10 = 55")
+
+    -- Overwrite one element and re-sum.
+    data[4] = 100              -- replace 5 with 100: delta = +95
+    let total2: int = slice_sum(data, 10)
+    assert(total2 == 150, "t22: many after single overwrite")
+
+    return 0
+
+-- ============================================================
+-- TEST 23: many[T] – forward write then backward negate
+-- ============================================================
+function test_many_overwrite_pattern() -> int:
+    stack scratch: 512
+    let buf: many[int] = scratch.alloc[int](16)
+
+    -- Forward: fill 0..15
+    for i: int in 0..16:
+        buf[i] = i
+
+    -- Backward: negate each element
+    for i: int in 0..16:
+        buf[i] = buf[i] * -1
+
+    assert(buf[0]  == 0,   "t23: pattern[0]")
+    assert(buf[1]  == -1,  "t23: pattern[1]")
+    assert(buf[8]  == -8,  "t23: pattern[8]")
+    assert(buf[15] == -15, "t23: pattern[15]")
+
+    return 0
+
+-- ============================================================
+-- TEST 24: many[T] from a raw pointer cast, helper-based writes
+-- ============================================================
+function test_many_from_raw() -> int:
+    unsafe:
+        let raw_buf: raw[int] = heap.alloc[int](6)
+
+        raw_write(raw_buf, 0, 5)
+        raw_write(raw_buf, 1, 10)
+        raw_write(raw_buf, 2, 15)
+        raw_write(raw_buf, 3, 20)
+        raw_write(raw_buf, 4, 25)
+        raw_write(raw_buf, 5, 30)
+
+        let view: many[int] = raw_buf as many[int]
+        let s: int = view[0] + view[1] + view[2] + view[3] + view[4] + view[5]
+        assert(s == 105, "t24: raw helper→many sum")
+
+        heap.free(raw_buf)
+
+    return 0
+
+-- ============================================================
+-- TEST 25: own[Array[T]] dynamic container lifecycle
+-- ============================================================
+function test_own_array_container() -> int:
+    let arr: own[Array[int]] = array_make[int](4)
+
+    -- Push 0, 3, 6, ..., 27  (10 elements)
+    for i: int in 0..10:
+        array_push[int](arr, i * 3)
+
+    -- Spot-check: 0·3=0, 1·3=3, 9·3=27
+    assert(array_at[int](arr, 0)[0] == 0,  "t25: array[0]")
+    assert(array_at[int](arr, 1)[0] == 3,  "t25: array[1]")
+    assert(array_at[int](arr, 9)[0] == 27, "t25: array[9]")
+
+    -- Full sum: 0+3+6+...+27 = 135
+    let total: int = 0
+    for i: int in 0..10:
+        total += array_at[int](arr, i)[0]
+    assert(total == 135, "t25: array sum = 135")
+
+    destroy arr
+    return 0
+
+-- ============================================================
+-- TEST 26: own[Array[T]] – grow beyond initial capacity
+-- ============================================================
+function test_array_grow_capacity() -> int:
+    -- Start with capacity 2, push 20 elements to force realloc.
+    let arr: own[Array[int]] = array_make[int](2)
+
+    for i: int in 0..20:
+        array_push[int](arr, i)
+
+    -- Values must survive reallocation.
+    assert(array_at[int](arr, 0)[0]  == 0,  "t26: after grow[0]")
+    assert(array_at[int](arr, 10)[0] == 10, "t26: after grow[10]")
+    assert(array_at[int](arr, 19)[0] == 19, "t26: after grow[19]")
+
+    destroy arr
+    return 0
+
+-- ============================================================
+-- TEST 27: All three domains active simultaneously
+-- ============================================================
+function test_all_domains_together() -> int:
+    -- Heap domain
+    let node: own[Node] = own.alloc[Node]()
+    node.id    = 27
+    node.value = 0
+
+    -- Arena domain
+    stack scratch: 512
+    let arena_vals: many[int] = scratch.alloc[int]([
+        1,
+        2,
+        3,
+        4,
+        5,
+    ])
+    for i: int in 0..5:
+        node.value += arena_vals[i]    -- += 15
+
+    -- Raw domain (contributes the same 1..5 sum again)
+    unsafe:
+        let raw_buf: raw[int] = heap.alloc[int](5)
+        raw_write(raw_buf, 0, 1)
+        raw_write(raw_buf, 1, 2)
+        raw_write(raw_buf, 2, 3)
+        raw_write(raw_buf, 3, 4)
+        raw_write(raw_buf, 4, 5)
+
+        let raw_view: many[int] = raw_buf as many[int]
+        for i: int in 0..5:
+            node.value += raw_view[i]   -- += 15
+
+        heap.free(raw_buf)
+
+    -- 15 (arena) + 15 (raw) = 30
+    assert(node.value == 30, "t27: mixed domains total = 30")
+
+    destroy node
+    return 0
+
+-- ============================================================
+-- TEST 28: Stress – large raw buffer written/read via helpers
+-- ============================================================
+function test_raw_large_buffer() -> int:
+    unsafe:
+        let count: int = 64
+        let buf: raw[int] = heap.alloc[int](count)
+
+        -- Write i*7 into each slot.
+        for i: int in 0..count:
+            raw_write(buf, i, i * 7)
+
+        -- Verify every slot independently.
+        let ok: int = 1
+        for i: int in 0..count:
+            if raw_read(buf, i) != i * 7:
+                ok = 0
+
+        heap.free(buf)
+
+        assert(ok == 1, "t28: large buffer all slots correct")
+
+    return 0
+
+-- ============================================================
+-- TEST 29: Stress – arena at near-full capacity
+-- ============================================================
+function test_arena_near_full() -> int:
+    -- 4 ints = 16 bytes; arena is 32 bytes → tight fit.
+    stack scratch: 32
+    let a: many[int] = scratch.alloc[int](4)
+
+    a[0] = 10  a[1] = 20  a[2] = 30  a[3] = 40
+
+    assert(a[0] == 10, "t29: near-full arena[0]")
+    assert(a[3] == 40, "t29: near-full arena[3]")
+
+    return 0
+
+-- ============================================================
+-- TEST 30: Stress – alternating own alloc and raw alloc in a loop
+-- ============================================================
+function test_interleaved_allocs() -> int:
+    -- 5 rounds: allocate an owned node, accumulate from a raw buffer, destroy.
+    let total: int = 0
+
+    for round: int in 0..5:
+        let n: own[Node] = own.alloc[Node]()
+        n.id    = round
+        n.value = 0
+
+        unsafe:
+            let buf: raw[int] = heap.alloc[int](3)
+            raw_write(buf, 0, round + 1)
+            raw_write(buf, 1, round + 2)
+            raw_write(buf, 2, round + 3)
+
+            let view: many[int] = buf as many[int]
+            n.value = view[0] + view[1] + view[2]
+
+            heap.free(buf)
+
+        total += n.value
+        destroy n
+
+    -- Round 0: (1+2+3)=6  round 1: (2+3+4)=9  round 2: (3+4+5)=12
+    -- round 3: (4+5+6)=15  round 4: (5+6+7)=18  → total = 60
+    assert(total == 60, "t30: interleaved allocs total = 60")
+    return 0
+
+-- ============================================================
+-- MAIN
+-- ============================================================
+function main() -> int:
+    let failures: int = 0
+
+    print("=== MT26 Memory Stress Test ===")
+    print("")
+
+    -- own[T] tests ────────────────────────────────────────────
+    print("[1 ] own basic alloc / field access")
+    failures += test_own_basic()
+
+    print("[2 ] own explicit destroy")
+    failures += test_own_explicit_destroy()
+
+    print("[3 ] own move return across function boundary")
+    failures += test_own_move_return()
+
+    print("[4 ] own multiple sequential + ordered destroy")
+    failures += test_own_multiple_sequential()
+
+    print("[5 ] own field mutation in loop")
+    failures += test_own_field_mutation()
+
+    print("[6 ] own generic Box[T]")
+    failures += test_own_generic()
+
+    -- Arena tests ─────────────────────────────────────────────
+    print("[7 ] arena count-based alloc")
+    failures += test_arena_count_alloc()
+
+    print("[8 ] arena literal-initialiser alloc")
+    failures += test_arena_literal_alloc()
+
+    print("[9 ] arena multiple allocs from same arena")
+    failures += test_arena_multiple_allocs()
+
+    print("[10] arena nested scopes")
+    failures += test_arena_nested_scopes()
+
+    print("[11] arena + own coexist in same scope")
+    failures += test_arena_own_coexist()
+
+    -- raw[T] tests ────────────────────────────────────────────
+    print("[12] raw alloc / pointer_write / many cast / free")
+    failures += test_raw_alloc_write_read_free()
+
+    print("[13] raw null pointer constant and guard")
+    failures += test_raw_null_guard()
+
+    print("[14] raw resize (grow) with data preservation")
+    failures += test_raw_resize_grow()
+
+    print("[15] raw resize (shrink) with data preservation")
+    failures += test_raw_resize_shrink()
+
+    print("[16] raw pointer_offset arithmetic correctness")
+    failures += test_pointer_arithmetic()
+
+    print("[17] raw single-element edge case")
+    failures += test_raw_single_element()
+
+    print("[18] raw + own coexist in same scope")
+    failures += test_raw_own_coexist()
+
+    -- Cast chain tests ────────────────────────────────────────
+    print("[19] raw -> many -> ref full cast chain")
+    failures += test_pointer_cast_chain()
+
+    -- out / ref tests ─────────────────────────────────────────
+    print("[20] out round-trip through raw[void]")
+    failures += test_out_roundtrip()
+
+    print("[21] out increment via ref[T] function parameter")
+    failures += test_out_via_function()
+
+    -- many[T] tests ───────────────────────────────────────────
+    print("[22] many sequential read / write / function pass")
+    failures += test_many_sequential_rw()
+
+    print("[23] many forward-write then backward-negate")
+    failures += test_many_overwrite_pattern()
+
+    print("[24] many from raw cast with helper writes")
+    failures += test_many_from_raw()
+
+    -- Container tests ─────────────────────────────────────────
+    print("[25] own[Array[T]] push and sum")
+    failures += test_own_array_container()
+
+    print("[26] own[Array[T]] grow beyond initial capacity")
+    failures += test_array_grow_capacity()
+
+    -- Stress / mixed tests ────────────────────────────────────
+    print("[27] all three domains (own + arena + raw) simultaneously")
+    failures += test_all_domains_together()
+
+    print("[28] large raw buffer (64 elements) correctness")
+    failures += test_raw_large_buffer()
+
+    print("[29] arena at near-full capacity")
+    failures += test_arena_near_full()
+
+    print("[30] interleaved own + raw allocs across loop iterations")
+    failures += test_interleaved_allocs()
+
+    -- Summary ─────────────────────────────────────────────────
+    print("")
+    if failures == 0:
+        print("=== All 30 tests passed. ===")
+        return 0
+
+    print_format("=== FAILED: %d test(s) returned non-zero ===", failures)
+    return 1

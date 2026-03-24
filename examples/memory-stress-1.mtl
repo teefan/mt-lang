@@ -1,0 +1,125 @@
+import libc/stdio
+import collections/array
+
+-- ==================================================
+-- 1. STRUCTS & DESTRUCTORS
+-- ==================================================
+
+struct Resident:
+    id: int
+    active: bool
+
+-- Explicit destruction for tracking owned lifecycle
+destroy Resident(r: ref[Resident]) -> void:
+    print_format("  -> freeing resident %d", r.id)
+
+struct Apartment:
+    unit: int
+    -- Nested ownership: Apartment owns the Resident
+    tenant: own[Resident]
+    -- Raw memory to test manual free within a destructor
+    history_log: raw[int]
+
+destroy Apartment(apt: ref[Apartment]) -> void:
+    print_format("-> cleaning apartment %d", apt.unit)
+    unsafe:
+        -- Verify raw pointers are cleaned up before the struct dies
+        if apt.history_log != null[int]:
+            heap.free(apt.history_log)
+
+-- ==================================================
+-- 2. STRESS TEST FUNCTIONS
+-- ==================================================
+
+function test_nested_ownership_and_arrays() -> void:
+    print("--- Test 1: Nested Ownership & Array Cascades ---")
+
+    -- Array[T] supports cleanup-heavy element types, including Array[own[T]]
+    let grid: own[Array[own[Apartment]]] = array_make[own[Apartment]](2)
+
+    -- Allocate first entity
+    let apt1: own[Apartment] = own.alloc[Apartment]()
+    apt1.unit = 101
+    apt1.tenant = own.alloc[Resident]()
+    apt1.tenant.id = 1
+    unsafe:
+        apt1.history_log = heap.alloc[int](10)
+
+    -- Allocate second entity
+    let apt2: own[Apartment] = own.alloc[Apartment]()
+    apt2.unit = 102
+    apt2.tenant = own.alloc[Resident]()
+    apt2.tenant.id = 2
+    unsafe:
+        apt2.history_log = heap.alloc[int](50)
+
+    array_push[own[Apartment]](grid, apt1)
+    array_push[own[Apartment]](grid, apt2)
+
+    -- Explicitly destroy the array to test if it correctly cascades
+    -- the destruction to Apartment, and then to Resident.
+    destroy grid
+
+
+function test_arena_exhaustion() -> void:
+    print("--- Test 2: Arena/Scratch Boundaries ---")
+
+    -- Introduces a scoped arena value
+    stack scratch: 2048
+
+    let iterations: int = 5
+    for i: int in 0..iterations:
+        -- Allocates arena-backed contiguous storage
+        let temp_view: many[int] = scratch.alloc[int](100)
+
+        -- Write to ensure we are actually hitting the memory
+        temp_view[0] = i
+        temp_view[99] = i * 10
+
+        print_format("arena run %d: start=%d, end=%d", i, temp_view[0], temp_view[99])
+
+    -- If scratch memory does not reset or scope correctly,
+    -- looping this could blow past the 1024 capacity.
+
+
+function test_raw_reallocation() -> void:
+    print("--- Test 3: Raw Memory Realloc & Views ---")
+
+    unsafe:
+        -- Allocate unmanaged raw storage
+        let buffer: raw[int] = heap.alloc[int](5)
+        pointer_write(buffer, 111)
+
+        -- Resizes unmanaged raw storage
+        let resized: raw[int] = heap.resize[int](buffer, 100)
+
+        -- Test pointer arithmetic
+        let end_ptr: raw[int] = pointer_offset(resized, 99)
+        pointer_write(end_ptr, 999)
+
+        -- Pointer-view cast to treat address as start of contiguous T values
+        let view: many[int] = resized as many[int]
+
+        print_format("realloc verify: first=%d, last=%d", view[0], view[99])
+
+        -- Release unmanaged raw storage
+        heap.free(resized)
+
+
+-- ==================================================
+-- 3. MAIN ENTRY
+-- ==================================================
+
+function main() -> int:
+    print("Starting MT26 Memory Stress Test...")
+    print("====================================")
+
+    test_nested_ownership_and_arrays()
+    print("")
+    test_arena_exhaustion()
+    print("")
+    test_raw_reallocation()
+
+    print("====================================")
+    print("Tests completed. Run through Valgrind/ASAN to verify 0 leaks.")
+    return 0
