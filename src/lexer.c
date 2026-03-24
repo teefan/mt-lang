@@ -152,15 +152,15 @@ static void scan_trailing_trivia(Lexer *lexer)
                 advance_char(lexer);
             }
 
-            // Ghi chú một hàng luôn là thứ cuối cùng trên một hàng.
-            // Ăn xong thì dừng quét vặt vãnh theo sau.
+            // Ghi chú một hàng luôn là thứ cuối cùng trên một hàng
+            // Ăn xong thì dừng quét vặt vãnh theo sau
             break;
         }
         // Không thuộc bất kỳ vặt vãnh nào đang xem xét
         else
         {
-            // Nếu là xuống hàng \n, bắt đầu ghi chú nhiều dòng ++, hoặc ký hiệu khác thì dừng.
-            // Nhường \n và ++ cho các vặt vãnh đứng trước của ký hiệu tiếp theo.
+            // Nếu là xuống hàng \n, bắt đầu ghi chú nhiều dòng ++, hoặc ký hiệu khác thì dừng
+            // Nhường \n và ++ cho các vặt vãnh đứng trước của ký hiệu tiếp theo
             break;
         }
     }
@@ -217,9 +217,14 @@ Token get_next_token(Lexer *lexer)
     // Xác định vị trí ký hiệu hiện tại sau khi đã dọn dẹp vặt vãnh đứng trước
     lexer->start_offset = lexer->current_offset;
 
-    // Nếu vị trí này là kết thúc mã nguồn
+    // Nếu vị trí này là kết thúc mã nguồn, chính là ký hiệu EOF
     if (is_at_end(lexer))
     {
         return make_token(lexer, TOKEN_EOF, 0, leading_length, 0);
+    }
+
+    // TODO: xây dựng ký hiệu canh lề
+    if (lexer->is_at_line_start)
+    {
     }
 }
