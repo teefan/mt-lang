@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 // Ký hiệu của ngôn ngữ lập trình Milk Tea
 typedef enum TokenType
 {
