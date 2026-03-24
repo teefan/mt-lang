@@ -22,6 +22,12 @@ static char advance_char(Lexer* lexer)
     return lexer->source[lexer->current_offset++];
 }
 
+// Xác định đã đến hoặc qua cuối mã nguồn chưa
+static bool is_at_end(Lexer* lexer)
+{
+    return lexer->current_offset >= lexer->source_length;
+}
+
 // --- Giao diện công cộng ---
 
 void init_lexer(Lexer* lexer, const char* source, uint32_t source_length)
