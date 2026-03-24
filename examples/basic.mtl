@@ -1,0 +1,38 @@
+-- Milk Tea Lexer Test Source (test_lexer.mtl)
+-- This file tests Trivia, Indentation, and Modern Keywords
+
+import libc/stdio
+
+record Resident:
+    let id: int
+    let name: string
+
+-- A function using the 'ref[const T]' syntax we discussed
+function update_resident(r: ref[const Resident], new_id: int) -> void:
+    if new_id > 0:
+        print("Updating ID...")
+        -- Nested blocks to test INDENT/DEDENT
+        let status = true
+    else:
+        print("Invalid ID")
+
+variant Result[T]:
+    case Success(T)
+    case Failure(string)
+
+function main() -> int:
+    -- Testing let, const, and pointer domains
+    let x: int = 10
+    const y: int = 20
+
+    let pointer: ref[const int] = null[int]
+
+    -- Testing multi-char operators: ->, =>, ==, !=, <=, >=
+    let is_equal = (x == y)
+    let lambda = fn(a: int) -> int => a * a
+
+    if x < y:
+        let msg = "Lower"
+        return 0
+
+    return 1
