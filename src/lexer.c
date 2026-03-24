@@ -35,7 +35,25 @@ static char advance_char(Lexer* lexer)
     return lexer->source[lexer->current_offset++];
 }
 
-// Xác định đã đến hoặc qua cuối mã nguồn chưa
+// Kiểm tra xem phải ký tự hợp lệ a-z, A-Z và _
+static bool is_alpha(char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+// Kiểm tra xem phải ký tự số hợp lệ 0-9
+static bool is_digit(char c)
+{
+    return c >= '0' && c <= '9';
+}
+
+// Kiểm tra xem phải là ký tự và số hợp lệ
+static bool is_alphanumeric(char c)
+{
+    return is_alpha(c) && is_digit(c);
+}
+
+// Kiểm tra xem đã đến hoặc qua cuối mã nguồn chưa
 static bool is_at_end(Lexer* lexer)
 {
     return lexer->current_offset >= lexer->source_length;
