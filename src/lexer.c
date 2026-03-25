@@ -634,7 +634,7 @@ Token get_next_token(Lexer *lexer)
         uint16_t top_indent = lexer->indent_stack[lexer->indent_top]; // Số khoảng trắng canh lề đỉnh
 
         // Nếu số khoảng trắng canh lề hàng lớn hơn số khoảng trắng canh lề đỉnh: -> đi sâu vào lề (mở khối)
-        if (current_indent > top_indent)
+        if (current_indent > top_indent && lexer->indent_top + 1 < MAX_INDENT_LEVEL)
         {
             // Tăng độ sâu của lề (khối)
             lexer->indent_top++;
