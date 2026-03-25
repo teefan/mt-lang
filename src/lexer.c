@@ -508,8 +508,14 @@ Token get_next_token(Lexer *lexer)
     }
 
     // Đo độ dài các vặt vãnh đứng trước ký hiệu
+
+    // Vị trí ký tự bắt đầu quét
     uint16_t leading_start = lexer->current_offset;
+
+    // Quét các vặt vãnh đầu ký hiệu, khi quét sẽ tự động nhảy vị trí ký tự
     scan_leading_trivia(lexer);
+
+    // Đã quét xong, tính toán độ dài của vặt vãnh trước ký hiệu
     uint16_t leading_length = (uint16_t)(lexer->current_offset - leading_start);
 
     // Xác định vị trí ký hiệu hiện tại sau khi đã dọn dẹp vặt vãnh đứng trước
@@ -531,10 +537,10 @@ Token get_next_token(Lexer *lexer)
         uint16_t current_indent = lexer->current_indent;              // Số khoảng trắng canh lề hàng
         uint16_t top_indent = lexer->indent_stack[lexer->indent_top]; // Số khoảng trắng canh lề đỉnh
 
-        // Nếu số khoảng trắng canh lề hàng lớn hơn số khoảng trắng canh lề đỉnh
+        // Nếu số khoảng trắng canh lề hàng lớn hơn số khoảng trắng canh lề đỉnh: -> đi sâu vào lề (mở khối)
         if (current_indent > top_indent)
         {
-            // Gán số khoảng trắng vào độ sâu lề (khối) hiện tại
+            // Gán số khoảng trắng vào độ sâu lề hiện tại (khối đang mở)
             lexer->indent_stack[lexer->indent_top] = current_indent;
 
             // Tăng độ sâu của lề (khối)
@@ -543,9 +549,28 @@ Token get_next_token(Lexer *lexer)
             // Tạo và trả về ký hiệu tăng lề (mở khối)
             return make_token(lexer, TOKEN_INDENT, 0, leading_length, 0);
         }
-        // Nếu số khoảng trắng canh lề hàng nhỏ hơn số khoảng trắng canh lề đỉnh
+        // Nếu số khoảng trắng canh lề hàng nhỏ hơn số khoảng trắng canh lề đỉnh: <- lùi lề (đóng khối)
         else if (current_indent < top_indent)
         {
+            // Thụt lề (đóng khối) liên tục nếu số khoảng trắng hàng nhỏ hơn số khoảng trắng canh để đỉnh
+            while (lexer->indent_top > 0 && current_indent < lexer->indent_stack[lexer->indent_top])
+            {
+                // Giảm độ sâu lề (khối)
+                lexer->indent_top--;
+
+                // Lưu số kết thúc lề cần có (số lần phải đóng khối)
+                lexer->pending_dedents++;
+            }
+
+            // Xả lề (đóng khối) đầu tiên nếu có lề cần xả (khối cần đóng)
+            if (lexer->pending_dedents > 0)
+            {
+                // Xả lề (đóng khối)
+                lexer->pending_dedents--;
+
+                // Tạo và trả về ký hiệu lùi lề (đóng khối)
+                return make_token(lexer, TOKEN_DEDENT, 0, leading_length, 0);
+            }
         }
     }
 
