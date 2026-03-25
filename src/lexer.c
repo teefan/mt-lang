@@ -134,7 +134,7 @@ static void scan_leading_trivia(Lexer *lexer)
             while (!is_at_end(lexer))
             {
                 // Khi gặp '++' tiếp theo, tức là báo hiệu kết thúc ghi chú nhiều hàng
-                if (c == '+' && peek_next_char(lexer) == '+')
+                if (peek_char(lexer) == '+' && peek_next_char(lexer) == '+')
                 {
                     // Ăn hai dấu ++
                     advance_char(lexer);
