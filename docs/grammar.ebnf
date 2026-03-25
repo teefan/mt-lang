@@ -1,0 +1,77 @@
+# ==============================================================================
+# 1. CẤU TRÚC TOÀN CỤC (GLOBAL)
+# ==============================================================================
+
+program         = statement* ;
+block           = INDENT statement+ DEDENT ;
+
+statement       = declaration
+                | if_stmt
+                | while_stmt
+                | for_stmt
+                | return_stmt
+                | expr_stmt ;
+
+# ==============================================================================
+# 2. KHAI BÁO (DECLARATIONS)
+# ==============================================================================
+
+declaration     = var_decl | func_decl | const_decl ;
+
+var_decl        = "let" IDENTIFIER ( ":" type_annotation )? ( "=" expression )? ;
+const_decl      = "const" IDENTIFIER "=" expression ;
+
+# function name(params) -> type: block
+func_decl       = "function" IDENTIFIER "(" parameters? ")" ( "->" type_annotation )? ":" block ;
+
+parameters      = parameter ( "," parameter )* ;
+parameter       = IDENTIFIER ( ":" type_annotation )? ;
+
+type_annotation = ( "own" | "ref" | "many" | "raw" )? IDENTIFIER ;
+
+# ==============================================================================
+# 3. ĐIỀU KHIỂN LUỒNG (CONTROL FLOW)
+# ==============================================================================
+
+if_stmt         = "if" expression ":" block ( "else" ":" block )? ;
+while_stmt      = "while" expression ":" block ;
+for_stmt        = "for" IDENTIFIER "in" expression ":" block ;
+return_stmt     = "return" expression? ;
+expr_stmt       = expression ;
+
+# ==============================================================================
+# 4. BIỂU THỨC (EXPRESSIONS) - THỨ TỰ ƯU TIÊN TỪ THẤP ĐẾN CAO
+# ==============================================================================
+
+expression      = assignment ;
+
+# Cho phép: x = 10 hoặc player.x = 10
+assignment      = logic_or ( "=" assignment )? ;
+
+logic_or        = logic_and ( "or" logic_and )* ;
+logic_and       = equality ( "and" equality )* ;
+
+equality        = comparison ( ( "==" | "!=" ) comparison )* ;
+comparison      = range ( ( "<" | "<=" | ">" | ">=" ) range )* ;
+
+# Toán tử range: 1..10 (có trong tokens.h của bạn)
+range           = term ( ".." term )* ;
+
+term            = factor ( ( "+" | "-" ) factor )* ;
+factor          = unary ( ( "*" | "/" | "%" ) unary )* ;
+
+# Một ngôi: !x, -5, own x, ref x
+unary           = ( "!" | "-" | "own" | "ref" | "raw" ) unary
+                | call_member ;
+
+# Gọi hàm và Truy cập thành viên: foo().bar[0]
+call_member     = primary ( "(" arguments? ")" | "." IDENTIFIER | "[" expression "]" )* ;
+
+# Nguyên tử: Các giá trị cơ bản
+primary         = NUMBER
+                | STRING
+                | "true" | "false" | "null"
+                | IDENTIFIER
+                | "(" expression ")" ;
+
+arguments       = expression ( "," expression )* ;
