@@ -615,9 +615,19 @@ Token get_next_token(Lexer *lexer)
     // Xác định vị trí ký hiệu hiện tại sau khi đã dọn dẹp vặt vãnh đứng trước
     lexer->start_offset = lexer->current_offset;
 
-    // Nếu vị trí này là kết thúc mã nguồn, chính là ký hiệu EOF
+    // Nếu vị trí này là kết thúc mã nguồn
     if (is_at_end(lexer))
     {
+        // Nếu còn canh lể (khối mở) chưa được đóng hết
+        if (lexer->indent_top > 0)
+        {
+            // Thụt lề, giảm độ sâu
+            lexer->indent_top--;
+
+            // Tạo và trả về ký hiệu đóng DEDENT thay vì EOF
+            return make_token(lexer, TOKEN_DEDENT, 0, leading_length, 0);
+        }
+
         // Tạo và trả về ký hiệu kết thúc EOF
         return make_token(lexer, TOKEN_EOF, 0, leading_length, 0);
     }
