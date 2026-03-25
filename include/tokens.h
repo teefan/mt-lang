@@ -22,8 +22,8 @@ typedef enum TokenType
     TOKEN_EQUAL_EQUAL,   // ==
     TOKEN_BANG,          // !
     TOKEN_BANG_EQUAL,    // !=
-    TOKEN_LESS,          // <
-    TOKEN_LESS_EQUAL,    // <=
+    TOKEN_LESSER,        // <
+    TOKEN_LESSER_EQUAL,  // <=
     TOKEN_GREATER,       // >
     TOKEN_GREATER_EQUAL, // >=
     TOKEN_PLUS,          // +

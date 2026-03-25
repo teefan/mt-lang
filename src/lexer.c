@@ -2,6 +2,12 @@
 
 // --- Các hàm nội bộ ---
 
+// Kiểm tra xem đã đến hoặc qua cuối mã nguồn chưa
+static bool is_at_end(Lexer *lexer)
+{
+    return lexer->current_offset >= lexer->source_length;
+}
+
 // Nhìn xem thử ký tự hiện tại là gì?
 static char peek_char(Lexer *lexer)
 {
@@ -28,16 +34,32 @@ static char peek_next_char(Lexer *lexer)
     return lexer->source[lexer->current_offset + 1];
 }
 
-// Bước tới (ăn++) ký tự tiếp theo
+// Bước tới (ăn) ký tự tiếp theo
 static char advance_char(Lexer *lexer)
 {
     return lexer->source[lexer->current_offset++];
 }
 
-// Kiểm tra xem đã đến hoặc qua cuối mã nguồn chưa
-static bool is_at_end(Lexer *lexer)
+// Nếu ký tự đúng như mong đợi thì ăn
+static bool match_char(Lexer *lexer, char expected_char)
 {
-    return lexer->current_offset >= lexer->source_length;
+    // Không làm gì cả nếu đã đến kết thúc
+    if (is_at_end(lexer))
+    {
+        return false;
+    }
+
+    // Không làm gì cả nếu không phải ký tự mong muốn
+    if (lexer->source[lexer->current_offset] != expected_char)
+    {
+        return false;
+    }
+
+    // Ăn ký tự mong muốn
+    lexer->current_offset++;
+
+    // Xác nhận đã ăn
+    return true;
 }
 
 // Kiểm tra xem phải ký tự hợp lệ a-z, A-Z và _
@@ -579,9 +601,9 @@ Token get_next_token(Lexer *lexer)
         return make_token(lexer, TOKEN_DEDENT, 0, 0, 0);
     }
 
-    // Đo độ dài các vặt vãnh đứng trước ký hiệu
+    // --- Đo độ dài các vặt vãnh đứng trước ký hiệu ---
 
-    // Vị trí ký tự bắt đầu quét
+    // Vị trí ký tự bắt đầu quét vặt vãnh trước
     uint16_t leading_start = lexer->current_offset;
 
     // Quét các vặt vãnh đầu ký hiệu, khi quét sẽ tự động nhảy vị trí ký tự
@@ -600,7 +622,9 @@ Token get_next_token(Lexer *lexer)
         return make_token(lexer, TOKEN_EOF, 0, leading_length, 0);
     }
 
-    // Xây dựng ký hiệu canh lề (mở/đóng khối)
+    // --- Xây dựng ký hiệu canh lề (mở/đóng khối) ---
+
+    // Nếu cờ xuống hàng đang bật
     if (lexer->is_at_line_start)
     {
         // Tắt cờ xuống hàng để không kiểm tra ở ký hiệu sau
@@ -646,7 +670,7 @@ Token get_next_token(Lexer *lexer)
         }
     }
 
-    // Bắt đầu đi vào quét ký hiệu trung tâm
+    // --- Bắt đầu đi vào quét ký hiệu trung tâm ---
 
     // Sau khi quét xong các vặt vãnh đứng trước, ta tiếp tục quét các ký tự để xác định ký hiệu đó
     char c = advance_char(lexer);
@@ -655,6 +679,7 @@ Token get_next_token(Lexer *lexer)
     TokenType token_type = TOKEN_UNKNOWN;
 
     // Kiểm tra ký tự chữ trước vì đa số ký hiệu sẽ là từ khóa hoặc định danh
+
     // Nếu ký tự đang kiểm tra là ký tự chữ a-z, A-Z
     if (is_alpha(c))
     {
@@ -677,8 +702,102 @@ Token get_next_token(Lexer *lexer)
         // Phân tích ký hiệu số: số thập lục phân, nhị phân, số nguyên và số thực
         token_type = scan_number(lexer);
     }
-    // Quét toán tử và các dấu điều khiển
+    // Xác định toán tử và các dấu điều khiển
     else
     {
+        // Xác định kiểu các ký tự, toán tử, toán tử đặc biệt, v.v...
+        switch (c)
+        {
+        case '(':
+            token_type = TOKEN_LEFT_PAREN;
+            break;
+        case ')':
+            token_type = TOKEN_RIGHT_PAREN;
+            break;
+        case '[':
+            token_type = TOKEN_LEFT_BRACKET;
+            break;
+        case ']':
+            token_type = TOKEN_RIGHT_BRACKET;
+            break;
+        case '{':
+            token_type = TOKEN_LEFT_BRACE;
+            break;
+        case '}':
+            token_type = TOKEN_RIGHT_BRACE;
+            break;
+        case ':':
+            token_type = TOKEN_COLON;
+            break;
+        case ';':
+            token_type = TOKEN_SEMICOLON;
+            break;
+        case ',':
+            token_type = TOKEN_COMMA;
+            break;
+        case '.':
+            token_type = match_char(lexer, '.') ? TOKEN_DOT_DOT : TOKEN_DOT;
+            break;
+        case '+':
+            token_type = TOKEN_PLUS;
+            break;
+        case '-':
+            token_type = match_char(lexer, '>') ? TOKEN_ARROW : TOKEN_MINUS;
+            break;
+        case '*':
+            token_type = TOKEN_STAR;
+            break;
+        case '/':
+            token_type = TOKEN_SLASH;
+            break;
+        case '%':
+            token_type = TOKEN_PERCENT;
+            break;
+        case '!':
+            token_type = match_char(lexer, '=') ? TOKEN_BANG_EQUAL : TOKEN_BANG;
+            break;
+        case '=':
+            if (match_char(lexer, '='))
+            {
+                token_type = TOKEN_EQUAL_EQUAL;
+            }
+            else if (match_char(lexer, '>'))
+            {
+                token_type = TOKEN_FAT_ARROW;
+            }
+            else
+            {
+                token_type = TOKEN_EQUAL;
+            }
+
+            break;
+        case '>':
+            token_type = match_char(lexer, '=') ? TOKEN_GREATER_EQUAL : TOKEN_GREATER;
+            break;
+        case '<':
+            token_type = match_char(lexer, '=') ? TOKEN_LESSER_EQUAL : TOKEN_LESSER;
+            break;
+        // Trường hợp xác định được kiểu ký hiệu
+        default:
+            token_type = TOKEN_UNKNOWN;
+            break;
+        }
     }
+
+    // Tính độ dài ký hiệu đang tạo
+    uint16_t token_length = (uint16_t)(lexer->current_offset - lexer->start_offset);
+
+    // --- Đo độ dài các vặt vãnh đứng sau ký hiệu ---
+
+    // Vị trí ký tự bắt đầu quét vặt vãnh sau
+    uint16_t trailing_start = lexer->current_offset;
+
+    // Quét các vặt vãnh sau ký hiệu, khi quét sẽ tự động nhảy vị trí ký tự
+    scan_trailing_trivia(lexer);
+
+    // Đã quét xong, tính toán độ dài của vặt vãnh sau ký hiệu
+    uint16_t trailing_length = (uint16_t)(lexer->current_offset - trailing_start);
+
+    // Tạo và trả về tất cả thông tin của ký hiệu dò được
+    return make_token(lexer, token_type, token_length, leading_length, trailing_length);
 }
