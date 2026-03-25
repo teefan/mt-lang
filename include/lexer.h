@@ -20,10 +20,10 @@ typedef struct Lexer
     uint32_t current_offset; // Vị trí hiện tại đang dò
 
     // Hỗ trợ hệ thống định dạng canh lề
-    uint8_t indent_stack[MAX_INDENT_LEVEL]; // Chồng hộp canh lề (số khối)
-    int indent_top;                         // Vị trí đỉnh chồng hộp
+    uint8_t indent_stack[MAX_INDENT_LEVEL]; // Hộp canh lề (số khối)
+    int indent_top;                         // Vị trí (độ sâu) khối hiện tại
     uint16_t current_indent;                // Số khoảng trắng canh lề hiện tại
-    uint16_t pending_dedents;               // Số lượng canh lề cần xả trước khi đọc ký hiệu mới
+    uint16_t pending_dedents;               // Số lượng canh lề cần xả (khối mở) trước khi đọc ký hiệu mới
     bool is_at_line_start;                  // Cờ xác định vị trí đang ở dòng mới
 } Lexer;
 
