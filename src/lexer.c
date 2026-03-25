@@ -34,6 +34,12 @@ static char advance_char(Lexer *lexer)
     return lexer->source[lexer->current_offset++];
 }
 
+// Kiểm tra xem đã đến hoặc qua cuối mã nguồn chưa
+static bool is_at_end(Lexer *lexer)
+{
+    return lexer->current_offset >= lexer->source_length;
+}
+
 // Kiểm tra xem phải ký tự hợp lệ a-z, A-Z và _
 static bool is_alpha(char c)
 {
@@ -62,12 +68,6 @@ static bool is_binary_digit(char c)
 static bool is_alphanumeric(char c)
 {
     return is_alpha(c) && is_digit(c);
-}
-
-// Kiểm tra xem đã đến hoặc qua cuối mã nguồn chưa
-static bool is_at_end(Lexer *lexer)
-{
-    return lexer->current_offset >= lexer->source_length;
 }
 
 // Quét các vặt vãnh (ghi chú và khoảng trắng) đi trước ký hiệu
