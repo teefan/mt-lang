@@ -260,11 +260,11 @@ static TokenType scan_number(Lexer *lexer)
     // Xử lý phần thập phân, ví dụ .18 trong 0.18
     if (peek_char(lexer) == '.' && is_digit(peek_next_char(lexer)))
     {
-        // Xác nhận số thực, ăn '.'
+        // Xác nhận số thực, ăn ký tự '.'
         advance_char(lexer);
 
         // Quét và ăn các ký tự số sau dấu chấm
-        while(is_digit(peek_char(lexer)))
+        while (is_digit(peek_char(lexer)))
         {
             advance_char(lexer);
         }
@@ -654,6 +654,7 @@ Token get_next_token(Lexer *lexer)
     // Khởi tạo một ký hiệu, gán kiểu chưa biết
     TokenType token_type = TOKEN_UNKNOWN;
 
+    // Kiểm tra ký tự chữ trước vì đa số ký hiệu sẽ là từ khóa hoặc định danh
     // Nếu ký tự đang kiểm tra là ký tự chữ a-z, A-Z
     if (is_alpha(c))
     {
@@ -666,5 +667,18 @@ Token get_next_token(Lexer *lexer)
 
         // Kiểm tra kiểu ký hiệu (từ khóa hay định danh) của chuỗi ký tự đã ăn
         token_type = check_token_type(lexer);
+    }
+    // Còn nếu ký tự đang kiểm tra là ký tự số 0-9
+    else if (is_digit(c))
+    {
+        // Lùi vị trí bộ phân tích từ ngữ 1 bước để hàm scan_number duyệt xử lý toàn bộ số
+        lexer->current_offset--;
+
+        // Phân tích ký hiệu số: số thập lục phân, nhị phân, số nguyên và số thực
+        token_type = scan_number(lexer);
+    }
+    // Quét toán tử và các dấu điều khiển
+    else
+    {
     }
 }
