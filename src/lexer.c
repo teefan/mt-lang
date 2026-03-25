@@ -89,7 +89,7 @@ static bool is_binary_digit(char c)
 // Kiểm tra xem phải là ký tự và số hợp lệ
 static bool is_alphanumeric(char c)
 {
-    return is_alpha(c) && is_digit(c);
+    return is_alpha(c) || is_digit(c);
 }
 
 // Quét các vặt vãnh (ghi chú và khoảng trắng) đi trước ký hiệu
