@@ -1,77 +1,247 @@
 # ==============================================================================
-# 1. CẤU TRÚC TOÀN CỤC (GLOBAL)
+# GRAMMAR FOR MILK TEA PROGRAMMING LANGUAGE
+# ==============================================================================
+# Lexical tokens are defined in include/tokens.h
+# Lexer implementation is in src/lexer.c
 # ==============================================================================
 
-program         = statement* ;
-block           = INDENT statement+ DEDENT ;
-
-statement       = declaration
-                | if_stmt
-                | while_stmt
-                | for_stmt
-                | return_stmt
-                | expr_stmt ;
-
 # ==============================================================================
-# 2. KHAI BÁO (DECLARATIONS)
+# 1. CẤU TRÚC TOÀN CỤC (GLOBAL STRUCTURE)
 # ==============================================================================
 
-declaration     = var_decl | func_decl | const_decl ;
+program = import_stmt* ( top_level_declaration | namespace_decl )* ;
 
-var_decl        = "let" IDENTIFIER ( ":" type_annotation )? ( "=" expression )? ;
-const_decl      = "const" IDENTIFIER "=" expression ;
-
-# function name(params) -> type: block
-func_decl       = "function" IDENTIFIER "(" parameters? ")" ( "->" type_annotation )? ":" block ;
-
-parameters      = parameter ( "," parameter )* ;
-parameter       = IDENTIFIER ( ":" type_annotation )? ;
-
-type_annotation = ( "own" | "ref" | "many" | "raw" )? IDENTIFIER ;
-
-# ==============================================================================
-# 3. ĐIỀU KHIỂN LUỒNG (CONTROL FLOW)
-# ==============================================================================
-
-if_stmt         = "if" expression ":" block ( "else" ":" block )? ;
-while_stmt      = "while" expression ":" block ;
-for_stmt        = "for" IDENTIFIER "in" expression ":" block ;
-return_stmt     = "return" expression? ;
-expr_stmt       = expression ;
+top_level_declaration = record_decl
+                      | enum_decl
+                      | variant_decl
+                      | alias_decl
+                      | opaque_decl
+                      | func_decl
+                      | foreign_func_decl
+                      | foreign_var_decl
+                      | destroy_decl ;
 
 # ==============================================================================
-# 4. BIỂU THỨC (EXPRESSIONS) - THỨ TỰ ƯU TIÊN TỪ THẤP ĐẾN CAO
+# 2. MODULE SYSTEM (IMPORT/EXPORT/FOREIGN)
 # ==============================================================================
 
-expression      = assignment ;
+import_stmt = "import" module_path ;
 
-# Cho phép: x = 10 hoặc player.x = 10
-assignment      = logic_or ( "=" assignment )? ;
+export_stmt = "export" ( namespace_decl | top_level_declaration ) ;
 
-logic_or        = logic_and ( "or" logic_and )* ;
-logic_and       = equality ( "and" equality )* ;
+namespace_decl = "namespace" IDENTIFIER ":" NEWLINE block ;
 
-equality        = comparison ( ( "==" | "!=" ) comparison )* ;
-comparison      = range ( ( "<" | "<=" | ">" | ">=" ) range )* ;
+module_path = IDENTIFIER ( "/" IDENTIFIER )* ;
 
-# Toán tử range: 1..10 (có trong tokens.h của bạn)
-range           = term ( ".." term )* ;
+# foreign function say_hello(text: string) -> void = puts from libc_stdio
+foreign_func_decl = "foreign" "function" IDENTIFIER "(" parameters? ")" "->" type_annotation
+                    "=" IDENTIFIER "from" IDENTIFIER ;
 
-term            = factor ( ( "+" | "-" ) factor )* ;
-factor          = unary ( ( "*" | "/" | "%" ) unary )* ;
+# foreign let stdin_flag: int = stdin_flag from libc_stdio
+foreign_var_decl = "foreign" "let" IDENTIFIER ":" type_annotation "=" IDENTIFIER "from" IDENTIFIER ;
 
-# Một ngôi: !x, -5, own x, ref x
-unary           = ( "!" | "-" | "own" | "ref" | "raw" ) unary
-                | call_member ;
+# ==============================================================================
+# 3. KHAI BÁO KIỂU (TYPE DECLARATIONS)
+# ==============================================================================
 
-# Gọi hàm và Truy cập thành viên: foo().bar[0]
-call_member     = primary ( "(" arguments? ")" | "." IDENTIFIER | "[" expression "]" )* ;
+# record Pair[T, U]:
+#     first: T
+#     second: U
+record_decl = "record" IDENTIFIER ( "[" type_params "]" )? ":" NEWLINE block ;
 
-# Nguyên tử: Các giá trị cơ bản
-primary         = NUMBER
-                | STRING
-                | "true" | "false" | "null"
-                | IDENTIFIER
-                | "(" expression ")" ;
+# enum BrewStage:
+#     WARM_WATER = 0
+#     STEEP_TEA = 1
+enum_decl = "enum" IDENTIFIER ":" NEWLINE block ;
 
-arguments       = expression ( "," expression )* ;
+# variant Result[T]:
+#     case Success(T)
+#     case Failure(string)
+# OR:
+# variant OperationStatus:
+#     success: bool
+#     failure: string
+variant_decl = "variant" IDENTIFIER ( "[" type_params "]" )? ":" NEWLINE
+                ( ( "case" IDENTIFIER ( "(" type_annotation ")" )? NEWLINE )+
+                | ( var_decl NEWLINE )+ ) ;
+
+# Record/enum fields use var_decl syntax
+record_fields = ( var_decl NEWLINE )+ ;
+
+# alias Count = ulong
+alias_decl = "alias" IDENTIFIER "=" type_annotation ;
+
+# opaque NativeHandle
+opaque_decl = "opaque" IDENTIFIER ;
+
+type_params = IDENTIFIER ( "," IDENTIFIER )* ;
+
+# ==============================================================================
+# 4. KHAI BÁO BIẾN (VARIABLE DECLARATIONS)
+# ==============================================================================
+
+var_decl = "let" IDENTIFIER ( ":" type_annotation )? ( "=" expression )? ;
+
+const_decl = "const" IDENTIFIER ( ":" type_annotation )? "=" expression ;
+
+# fixed title: string = "MT26"
+fixed_decl = "fixed" IDENTIFIER ":" type_annotation "=" expression ;
+
+# fixed matrix: array[array[int, 3], 3] = [...]
+fixed_array_decl = "fixed" IDENTIFIER ":" "array" "[" type_annotation "," expression "]" "=" array_literal ;
+
+# ==============================================================================
+# 5. KHAI BÁO HÀM (FUNCTION DECLARATIONS)
+# ==============================================================================
+
+# function identity[T](value: T) -> T:
+func_decl = ( "function" | "fn" ) IDENTIFIER ( "[" type_params "]" )?
+            "(" parameters? ")" ( "->" type_annotation )? ":" block ;
+
+# Anonymous function: fn(a: int) -> int => a * a
+anonymous_fn = "fn" ( "(" parameters? ")" ( "->" type_annotation )? )? "=>" expression ;
+
+parameters = parameter ( "," parameter )* ;
+
+parameter = IDENTIFIER ":" type_annotation ;
+
+# ==============================================================================
+# 6. ANNOTATION KIỂU (TYPE ANNOTATIONS)
+# ==============================================================================
+
+type_annotation = ( "own" | "ref" | "many" | "raw" ) "[" type_annotation "]"
+                | ( "const" )? IDENTIFIER ( "[" type_annotation ( "," type_annotation )* "]" )? ;
+
+# ref[const Resident], own[Demo.Brewer], array[int, 3]
+generic_type = IDENTIFIER "[" type_annotation ( "," type_annotation )* "]" ;
+
+array_literal = "[" expression ( "," expression )* "]" ;
+
+# ==============================================================================
+# 7. ĐIỀU KHIỂN LUỒNG (CONTROL FLOW)
+# ==============================================================================
+
+statement = declaration
+          | if_stmt
+          | while_stmt
+          | do_while_stmt
+          | for_stmt
+          | switch_stmt
+          | return_stmt
+          | break_stmt
+          | continue_stmt
+          | expr_stmt ;
+
+if_stmt = "if" expression ":" block ( "else" ":" block )? ;
+
+while_stmt = "while" expression ":" block ;
+
+# do: ... while condition (note: no colon after while)
+do_while_stmt = "do" ":" block "while" expression ;
+
+# for i: int in 0..5:
+for_stmt = "for" IDENTIFIER ":" type_annotation "in" expression ":" block ;
+
+# switch stage:
+#     case WARM_WATER: ...
+#     case STEEP_TEA: ...
+#     default: ...
+switch_stmt = "switch" expression ":" NEWLINE
+              ( "case" IDENTIFIER ":" NEWLINE block )+
+              ( "default" ":" NEWLINE block )? ;
+
+return_stmt = "return" expression? ;
+
+break_stmt = "break" ;
+
+continue_stmt = "continue" ;
+
+expr_stmt = expression ;
+
+# ==============================================================================
+# 8. BLOCKS VÀ DECLARATIONS TRONG KHAI BÁO
+# ==============================================================================
+
+block = INDENT statement+ DEDENT ;
+
+declaration = var_decl | const_decl | fixed_decl | fixed_array_decl | func_decl ;
+
+# ==============================================================================
+# 9. BIỂU THỨC (EXPRESSIONS) - THỨ TỰ ƯU TIÊN TỪ THẤP ĐẾN CAO
+# ==============================================================================
+
+expression = assignment ;
+
+# x = 10, x += 1, player.x = 10
+assignment = qualified_name ( "=" ) assignment
+           | logic_or ;
+
+logic_or = logic_and ( "or" logic_and )* ;
+logic_and = bitwise_or ( "and" bitwise_or )* ;
+
+bitwise_or = bitwise_xor ( "|" bitwise_xor )* ;
+bitwise_xor = bitwise_and ( "^" bitwise_and )* ;
+bitwise_and = shift ( "&" shift )* ;
+
+shift = comparison ( ( "<<" | ">>" ) comparison )* ;
+
+comparison = range ( ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) range )* ;
+
+range = term ( ".." term )* ;
+
+term = factor ( ( "+" | "-" ) factor )* ;
+
+factor = unary ( ( "*" | "/" | "%" ) unary )* ;
+
+# Unary operators: !x, -5, own x, ref x, raw x (prefix)
+unary = ( "!" | "-" | "own" | "ref" | "raw" ) unary
+      | call_member ;
+
+# call_member: foo().bar[0], foo(x, y), arr[0], x as Type, x is Type
+call_member = primary ( "(" arguments? ")"
+            | "." IDENTIFIER
+            | "[" expression "]"
+            | "as" type_annotation
+            | "is" type_annotation )* ;
+
+# ==============================================================================
+# 10. NGUYÊN TỬ (PRIMARY - LITERALS AND VALUES)
+# ==============================================================================
+
+primary = NUMBER
+        | STRING
+        | STRING_BLOCK
+        | CHAR
+        | "true" | "false" | "null"
+        | qualified_name
+        | array_literal
+        | anonymous_fn
+        | "own" "." "alloc" "[" type_annotation "]" "(" ")"
+        | "heap" "." "alloc" "[" type_annotation "]" "(" expression ")"
+        | "heap" "." "free" "(" expression ")"
+        | "null" "[" type_annotation "]"
+        | "unsafe" ":" block
+        | "out" expression
+        | "pointer_write" "(" expression "," expression ")"
+        | "pointer_offset" "(" expression "," expression ")"
+        | "stack" IDENTIFIER ":" expression
+        | "(" expression ")" ;
+
+arguments = expression ( "," expression )* ;
+
+qualified_name = IDENTIFIER ( "." IDENTIFIER )* ;
+
+# ==============================================================================
+# 11. MEMORY MANAGEMENT SPECIALS
+# ==============================================================================
+
+# Destructor declaration: destroy Note(note: ref[Note]) -> void:
+destroy_decl = "destroy" IDENTIFIER "(" parameters ")" "->" type_annotation ":" block ;
+
+# ==============================================================================
+# NOTES:
+# ==============================================================================
+# - NEWLINE, INDENT, DEDENT are generated by the lexer (lexer.c)
+# - Comments: -- single line, ++ multi-line ++ are handled as trivia by lexer
+# - String block: """...""" is TOKEN_STRING_BLOCK
+# - CHAR literal: 'A' is TOKEN_CHAR
