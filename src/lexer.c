@@ -81,12 +81,24 @@ static void scan_leading_trivia(Lexer *lexer)
         // Ăn khoảng trắng, căn lề hay đầu dòng
         if (c == ' ' || c == '\t' || c == '\r')
         {
+            // Nếu là khoảng trắng và đang ở đầu dòng, nghĩa là đang bắt đầu đi vào canh lề (khối) mới
+            if (c == ' ' && lexer->is_at_line_start)
+            {
+                // Đếm lên số khoảng trắng lề (khối) của hàng hiện tại
+                lexer->current_indent++;
+            }
+
             advance_char(lexer);
         }
         // Khi đang quét đằng trước ký hiệu, ăn xuống hàng và bật cờ báo hiệu hàng mới
         else if (c == '\n')
         {
+            // Bật cờ báo hiệu hàng mới
             lexer->is_at_line_start = true;
+
+            // Đưa số khoảng trắng của hàng về 0
+            lexer->current_indent = 0;
+
             advance_char(lexer);
         }
         // Khi gặp '--', tức là báo hiệu ghi chú trong hàng
@@ -464,15 +476,27 @@ void init_lexer(Lexer *lexer, const char *source, uint32_t source_length)
     // Khởi động lại các biến theo dõi
     lexer->start_offset = 0;
     lexer->current_offset = 0;
-    lexer->is_at_line_start = true;
 
     // Khởi động lại các biến theo dõi canh lề
     lexer->indent_stack[0] = 0;
     lexer->indent_top = 0;
+    lexer->current_indent = 0;
+    lexer->pending_dedents = 0;
+    lexer->is_at_line_start = true;
 }
 
 Token get_next_token(Lexer *lexer)
 {
+    // Nếu có canh lề đang cần xả (đóng khối)
+    if (lexer->pending_dedents > 0)
+    {
+        // Xả canh lề
+        lexer->pending_dedents--;
+
+        // Tạo và trả về ký hiệu lùi lề (đóng khối)
+        return make_token(lexer, TOKEN_DEDENT, 0, 0, 0);
+    }
+
     // Đo độ dài các vặt vãnh đứng trước ký hiệu
     uint16_t leading_start = lexer->current_offset;
     scan_leading_trivia(lexer);
@@ -491,11 +515,13 @@ Token get_next_token(Lexer *lexer)
     // TODO: xây dựng ký hiệu canh lề
     if (lexer->is_at_line_start)
     {
-        // Tắt cờ để không kiểm tra ở ký hiệu sau
+        // Tắt cờ xuống hàng để không kiểm tra ở ký hiệu sau
         lexer->is_at_line_start = false;
     }
 
-    // Sau khi quét xong các vặt vãnh đứng trước, ta quét các ký tự để xác định ký hiệu đó
+    // Bắt đầu đi vào quét ký hiệu trung tâm
+
+    // Sau khi quét xong các vặt vãnh đứng trước, ta tiếp tục quét các ký tự để xác định ký hiệu đó
     char c = advance_char(lexer);
 
     // Khởi tạo một kiểu ký hiệu chưa biết

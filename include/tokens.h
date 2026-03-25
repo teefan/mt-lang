@@ -91,8 +91,8 @@ typedef enum TokenType
 
     // --- Kí hiệu đặc biệt để phân tích từ ngữ (kiểu thụt lề) ---
     TOKEN_NEWLINE,
-    TOKEN_INDENT,
-    TOKEN_DEDENT,
+    TOKEN_INDENT, // Canh lề tới (mở khối)
+    TOKEN_DEDENT, // Canh lề lùi (đóng khối)
 
     // --- Trạng thái hệ thống ---
     TOKEN_UNKNOWN,
