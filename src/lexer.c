@@ -636,11 +636,11 @@ Token get_next_token(Lexer *lexer)
         // Nếu số khoảng trắng canh lề hàng lớn hơn số khoảng trắng canh lề đỉnh: -> đi sâu vào lề (mở khối)
         if (current_indent > top_indent)
         {
-            // Gán số khoảng trắng vào độ sâu lề hiện tại (khối đang mở)
-            lexer->indent_stack[lexer->indent_top] = current_indent;
-
             // Tăng độ sâu của lề (khối)
             lexer->indent_top++;
+
+            // Gán số khoảng trắng vào độ sâu lề hiện tại (khối đang mở)
+            lexer->indent_stack[lexer->indent_top] = current_indent;
 
             // Tạo và trả về ký hiệu tăng lề (mở khối)
             return make_token(lexer, TOKEN_INDENT, 0, leading_length, 0);
