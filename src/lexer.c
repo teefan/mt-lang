@@ -201,9 +201,81 @@ static void scan_trailing_trivia(Lexer *lexer)
     }
 }
 
+// Quét xác định kiểu ký hiệu số
+static TokenType scan_number(Lexer *lexer)
+{
+    // Lấy ký tự đầu tiên của ký hiệu
+    char first_char = peek_char(lexer);
+
+    // Nếu bắt đầu bằng '0', xem xét phải số thập lục phân 0x hay nhị phân 0b
+    if (first_char == '0')
+    {
+        // Xem xét tiếp ký tự tiếp theo
+        char next_char = peek_next_char(lexer);
+
+        // Nếu là x, đây là số thập lục phân
+        if (next_char == 'x' || next_char == 'X')
+        {
+            // Ăn 0x
+            advance_char(lexer);
+            advance_char(lexer);
+
+            // Kiểm tra tiếp nội dung số thập lục phân
+            char c = peek_char(lexer);
+            while (is_hex_digit(c))
+            {
+                advance_char(lexer);
+            }
+
+            return TOKEN_NUMBER;
+        }
+
+        // Nếu là b, đây là số nhị phân
+        if (next_char == 'b' || next_char == 'B')
+        {
+            // Ăn 0b
+            advance_char(lexer);
+            advance_char(lexer);
+
+            // Kiểm tra tiếp nội dung số nhị phân
+            char c = peek_char(lexer);
+            while (is_binary_digit(c))
+            {
+                advance_char(lexer);
+            }
+
+            return TOKEN_NUMBER;
+        }
+    }
+
+    // Đã thử quét xong số thập lục phân và nhị phân, giờ quét số thực
+
+    // Quét và xử lý phần nguyên, ví dụ 0 trong 0.18
+    while (is_digit(peek_char(lexer)))
+    {
+        // Ăn hết phần nguyên
+        advance_char(lexer);
+    }
+
+    // Xử lý phần thập phân, ví dụ .18 trong 0.18
+    if (peek_char(lexer) == '.' && is_digit(peek_next_char(lexer)))
+    {
+        // Xác nhận số thực, ăn '.'
+        advance_char(lexer);
+
+        // Quét và ăn các ký tự số sau dấu chấm
+        while(is_digit(peek_char(lexer)))
+        {
+            advance_char(lexer);
+        }
+    }
+
+    return TOKEN_NUMBER;
+}
+
 // Xác định kiểu ký hiệu của khoảng ký tự hiện tại (đại diện ký hiệu) của bộ phân tích từ ngữ
 // dựa trên thuật toán tìm kiếm bằng cây Trie
-static TokenType get_token_type(Lexer *lexer)
+static TokenType check_token_type(Lexer *lexer)
 {
     // Lấy độ dài ký hiệu (từ vị trí bắt đầu ký hiệu -> đên vị trí hiện tại của bộ phân tích từ ngữ)
     uint16_t token_length = (uint16_t)(lexer->current_offset - lexer->start_offset);
@@ -580,5 +652,19 @@ Token get_next_token(Lexer *lexer)
     char c = advance_char(lexer);
 
     // Khởi tạo một ký hiệu, gán kiểu chưa biết
-    TokenType token = TOKEN_UNKNOWN;
+    TokenType token_type = TOKEN_UNKNOWN;
+
+    // Nếu ký tự đang kiểm tra là ký tự chữ a-z, A-Z
+    if (is_alpha(c))
+    {
+        // Và trong khi các ký tự chữ và số tiếp theo là a-z, A-Z, 0-9
+        while (is_alphanumeric(peek_char(lexer)))
+        {
+            // Ăn ký tự chữ số hợp lệ
+            advance_char(lexer);
+        }
+
+        // Kiểm tra kiểu ký hiệu (từ khóa hay định danh) của chuỗi ký tự đã ăn
+        token_type = check_token_type(lexer);
+    }
 }
