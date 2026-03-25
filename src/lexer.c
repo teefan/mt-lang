@@ -243,8 +243,7 @@ static TokenType scan_number(Lexer *lexer)
             advance_char(lexer);
 
             // Kiểm tra tiếp nội dung số thập lục phân
-            char c = peek_char(lexer);
-            while (is_hex_digit(c))
+            while (is_hex_digit(peek_char(lexer)))
             {
                 advance_char(lexer);
             }
@@ -260,8 +259,7 @@ static TokenType scan_number(Lexer *lexer)
             advance_char(lexer);
 
             // Kiểm tra tiếp nội dung số nhị phân
-            char c = peek_char(lexer);
-            while (is_binary_digit(c))
+            while (is_binary_digit(peek_char(lexer)))
             {
                 advance_char(lexer);
             }
