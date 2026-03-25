@@ -785,6 +785,31 @@ Token get_next_token(Lexer *lexer)
         case '<':
             token_type = match_char(lexer, '=') ? TOKEN_LESSER_EQUAL : TOKEN_LESSER;
             break;
+        // Quét chuỗi ký tự STRING ở giữa "...", bắt đầu với ký tự '"'
+        case '"':
+            // Ký tự tiếp theo không phải đóng chuỗi '"' và không phải kết thúc mã
+            while (peek_char(lexer) != '"' && !is_at_end(lexer))
+            {
+                // Nếu gặp xuống hàng thì bật cờ báo
+                if (peek_char(lexer) == '\n')
+                {
+                    lexer->is_at_line_start = true;
+                }
+
+                // Tiếp tục ăn từng ký tự của chuỗi
+                advance_char(lexer);
+            }
+
+            // Nếu không phải kết thúc mã và tất nhiên là gặp ký tự đóng chuỗi vì đã ăn hết ở trên
+            if (!is_at_end(lexer))
+            {
+                // Ăn ký tự đóng chuỗi '"'
+                advance_char(lexer);
+            }
+
+            token_type = TOKEN_STRING;
+
+            break;
         // Trường hợp xác định được kiểu ký hiệu
         default:
             token_type = TOKEN_UNKNOWN;
