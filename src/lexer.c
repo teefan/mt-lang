@@ -82,10 +82,20 @@ static void scan_leading_trivia(Lexer *lexer)
         if (c == ' ' || c == '\t' || c == '\r')
         {
             // Nếu là khoảng trắng và đang ở đầu dòng, nghĩa là đang bắt đầu đi vào canh lề (khối) mới
-            if (c == ' ' && lexer->is_at_line_start)
+            if (lexer->is_at_line_start)
             {
-                // Đếm lên số khoảng trắng lề (khối) của hàng hiện tại
-                lexer->current_indent++;
+                // Trường hợp khoảng trắng
+                if (c == ' ')
+                {
+                    // Đếm lên số khoảng trắng lề (khối) của hàng hiện tại
+                    lexer->current_indent++;
+                }
+                // Trường hợp kí tự căn lề
+                else if (c == '\t')
+                {
+                    // Tăng số khoảng trắng lề (khối) của hàng hiện tại lên 4 khoảng trắng
+                    lexer->current_indent += 4;
+                }
             }
 
             advance_char(lexer);
@@ -512,11 +522,31 @@ Token get_next_token(Lexer *lexer)
         return make_token(lexer, TOKEN_EOF, 0, leading_length, 0);
     }
 
-    // TODO: xây dựng ký hiệu canh lề
+    // Xây dựng ký hiệu canh lề (mở/đóng khối)
     if (lexer->is_at_line_start)
     {
         // Tắt cờ xuống hàng để không kiểm tra ở ký hiệu sau
         lexer->is_at_line_start = false;
+
+        uint16_t current_indent = lexer->current_indent;              // Số khoảng trắng canh lề hàng
+        uint16_t top_indent = lexer->indent_stack[lexer->indent_top]; // Số khoảng trắng canh lề đỉnh
+
+        // Nếu số khoảng trắng canh lề hàng lớn hơn số khoảng trắng canh lề đỉnh
+        if (current_indent > top_indent)
+        {
+            // Gán số khoảng trắng vào độ sâu lề (khối) hiện tại
+            lexer->indent_stack[lexer->indent_top] = current_indent;
+
+            // Tăng độ sâu của lề (khối)
+            lexer->indent_top++;
+
+            // Tạo và trả về ký hiệu tăng lề (mở khối)
+            return make_token(lexer, TOKEN_INDENT, 0, leading_length, 0);
+        }
+        // Nếu số khoảng trắng canh lề hàng nhỏ hơn số khoảng trắng canh lề đỉnh
+        else if (current_indent < top_indent)
+        {
+        }
     }
 
     // Bắt đầu đi vào quét ký hiệu trung tâm
@@ -524,6 +554,6 @@ Token get_next_token(Lexer *lexer)
     // Sau khi quét xong các vặt vãnh đứng trước, ta tiếp tục quét các ký tự để xác định ký hiệu đó
     char c = advance_char(lexer);
 
-    // Khởi tạo một kiểu ký hiệu chưa biết
+    // Khởi tạo một ký hiệu, gán kiểu chưa biết
     TokenType token = TOKEN_UNKNOWN;
 }
