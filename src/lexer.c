@@ -11,8 +11,8 @@ static bool is_at_end(Lexer *lexer)
 // Nhìn xem thử ký tự hiện tại là gì?
 static char peek_char(Lexer *lexer)
 {
-    // Nếu vị trí hiện tại lớn hơn độ dài mã nguồn
-    if (lexer->current_offset > lexer->source_length)
+    // Nếu vị trí hiện tại lớn hơn hoặc bằng độ dài mã nguồn
+    if (lexer->current_offset >= lexer->source_length)
     {
         // Trả về ký tự kết báo hiệu kết thúc chuỗi
         return '\0';
@@ -21,17 +21,23 @@ static char peek_char(Lexer *lexer)
     return lexer->source[lexer->current_offset];
 }
 
-// Nhìn xem thử ký tự tiếp theo là gì nhưng không ăn mất nó
-static char peek_next_char(Lexer *lexer)
+// Nhìn xem thử một số ký tự phía trước là gì nhưng không ăn mất nó
+static char peek_char_at(Lexer *lexer, uint32_t look_ahead)
 {
-    // Nếu vị trí ký tự tiếp theo lớn hơn độ dài mã nguồn
-    if (lexer->current_offset + 1 >= lexer->source_length)
+    uint32_t target_offset = lexer->current_offset + look_ahead;
+
+    if (target_offset >= lexer->source_length)
     {
-        // Trả về ký tự kết báo hiệu kết thúc chuỗi
         return '\0';
     }
 
-    return lexer->source[lexer->current_offset + 1];
+    return lexer->source[target_offset];
+}
+
+// Nhìn xem thử ký tự tiếp theo là gì nhưng không ăn mất nó
+static char peek_next_char(Lexer *lexer)
+{
+    return peek_char_at(lexer, 1);
 }
 
 // Bước tới (ăn) ký tự tiếp theo
@@ -315,6 +321,11 @@ static TokenType check_token_type(Lexer *lexer)
             return TOKEN_AS;
         }
 
+        if (token_length == 3 && memcmp(start, "and", 3) == 0)
+        {
+            return TOKEN_AND;
+        }
+
         if (token_length == 5 && memcmp(start, "alias", 5) == 0)
         {
             return TOKEN_ALIAS;
@@ -346,6 +357,16 @@ static TokenType check_token_type(Lexer *lexer)
 
         break;
     case 'd':
+        if (token_length == 2 && memcmp(start, "do", 2) == 0)
+        {
+            return TOKEN_DO;
+        }
+
+        if (token_length == 7 && memcmp(start, "default", 7) == 0)
+        {
+            return TOKEN_DEFAULT;
+        }
+
         if (token_length == 7 && memcmp(start, "destroy", 7) == 0)
         {
             return TOKEN_DESTROY;
@@ -383,6 +404,11 @@ static TokenType check_token_type(Lexer *lexer)
             return TOKEN_FOR;
         }
 
+        if (token_length == 4 && memcmp(start, "from", 4) == 0)
+        {
+            return TOKEN_FROM;
+        }
+
         if (token_length == 5)
         {
             if (memcmp(start, "fixed", 5) == 0)
@@ -407,6 +433,13 @@ static TokenType check_token_type(Lexer *lexer)
         }
 
         break;
+    case 'h':
+        if (token_length == 4 && memcmp(start, "heap", 4) == 0)
+        {
+            return TOKEN_HEAP;
+        }
+
+        break;
     case 'i':
         if (token_length == 2)
         {
@@ -418,6 +451,11 @@ static TokenType check_token_type(Lexer *lexer)
             if (memcmp(start, "in", 2) == 0)
             {
                 return TOKEN_IN;
+            }
+
+            if (memcmp(start, "is", 2) == 0)
+            {
+                return TOKEN_IS;
             }
         }
 
@@ -452,6 +490,11 @@ static TokenType check_token_type(Lexer *lexer)
 
         break;
     case 'n':
+        if (token_length == 3 && memcmp(start, "not", 3) == 0)
+        {
+            return TOKEN_NOT;
+        }
+
         if (token_length == 4 && memcmp(start, "null", 4) == 0)
         {
             return TOKEN_NULL;
@@ -464,9 +507,31 @@ static TokenType check_token_type(Lexer *lexer)
 
         break;
     case 'o':
+        if (token_length == 2 && memcmp(start, "or", 2) == 0)
+        {
+            return TOKEN_OR;
+        }
+
+        if (token_length == 3 && memcmp(start, "out", 3) == 0)
+        {
+            return TOKEN_OUT;
+        }
+
         if (token_length == 3 && memcmp(start, "own", 3) == 0)
         {
             return TOKEN_OWN;
+        }
+
+        if (token_length == 6 && memcmp(start, "opaque", 6) == 0)
+        {
+            return TOKEN_OPAQUE;
+        }
+
+        break;
+    case 'p':
+        if (token_length == 4 && memcmp(start, "pass", 4) == 0)
+        {
+            return TOKEN_PASS;
         }
 
         break;
@@ -747,19 +812,76 @@ Token get_next_token(Lexer *lexer)
             token_type = match_char(lexer, '.') ? TOKEN_DOT_DOT : TOKEN_DOT;
             break;
         case '+':
-            token_type = TOKEN_PLUS;
+            token_type = match_char(lexer, '=') ? TOKEN_PLUS_EQUAL : TOKEN_PLUS;
             break;
         case '-':
-            token_type = match_char(lexer, '>') ? TOKEN_ARROW : TOKEN_MINUS;
+            if (match_char(lexer, '>'))
+            {
+                token_type = TOKEN_ARROW;
+            }
+            else if (match_char(lexer, '='))
+            {
+                token_type = TOKEN_MINUS_EQUAL;
+            }
+            else
+            {
+                token_type = TOKEN_MINUS;
+            }
+
             break;
         case '*':
-            token_type = TOKEN_STAR;
+            token_type = match_char(lexer, '=') ? TOKEN_STAR_EQUAL : TOKEN_STAR;
             break;
         case '/':
-            token_type = TOKEN_SLASH;
+            if (match_char(lexer, '/'))
+            {
+                token_type = TOKEN_SLASH_SLASH;
+            }
+            else if (match_char(lexer, '='))
+            {
+                token_type = TOKEN_SLASH_EQUAL;
+            }
+            else
+            {
+                token_type = TOKEN_SLASH;
+            }
+
             break;
         case '%':
-            token_type = TOKEN_PERCENT;
+            token_type = match_char(lexer, '=') ? TOKEN_PERCENT_EQUAL : TOKEN_PERCENT;
+            break;
+        case '&':
+            if (match_char(lexer, '&'))
+            {
+                token_type = TOKEN_AND_AND;
+            }
+            else if (match_char(lexer, '='))
+            {
+                token_type = TOKEN_AMP_EQUAL;
+            }
+            else
+            {
+                token_type = TOKEN_AMP;
+            }
+
+            break;
+        case '|':
+            if (match_char(lexer, '|'))
+            {
+                token_type = TOKEN_OR_OR;
+            }
+            else if (match_char(lexer, '='))
+            {
+                token_type = TOKEN_PIPE_EQUAL;
+            }
+            else
+            {
+                token_type = TOKEN_PIPE;
+            }
+
+            break;
+        case '^':
+            token_type = match_char(lexer, '=') ? TOKEN_CARET_EQUAL : TOKEN_CARET;
             break;
         case '!':
             token_type = match_char(lexer, '=') ? TOKEN_BANG_EQUAL : TOKEN_BANG;
@@ -780,16 +902,90 @@ Token get_next_token(Lexer *lexer)
 
             break;
         case '>':
-            token_type = match_char(lexer, '=') ? TOKEN_GREATER_EQUAL : TOKEN_GREATER;
+            if (match_char(lexer, '>'))
+            {
+                token_type = match_char(lexer, '=') ? TOKEN_SHIFT_RIGHT_EQUAL : TOKEN_SHIFT_RIGHT;
+            }
+            else
+            {
+                token_type = match_char(lexer, '=') ? TOKEN_GREATER_EQUAL : TOKEN_GREATER;
+            }
+
             break;
         case '<':
-            token_type = match_char(lexer, '=') ? TOKEN_LESSER_EQUAL : TOKEN_LESSER;
-            break;
-        // Quét chuỗi ký tự STRING ở giữa "...", bắt đầu với ký tự '"'
-        case '"':
-            // Ký tự tiếp theo không phải đóng chuỗi '"' và không phải kết thúc mã
-            while (peek_char(lexer) != '"' && !is_at_end(lexer))
+            if (match_char(lexer, '<'))
             {
+                token_type = match_char(lexer, '=') ? TOKEN_SHIFT_LEFT_EQUAL : TOKEN_SHIFT_LEFT;
+            }
+            else
+            {
+                token_type = match_char(lexer, '=') ? TOKEN_LESSER_EQUAL : TOKEN_LESSER;
+            }
+
+            break;
+        // Quét chuỗi ký tự ở giữa " " và khối chuỗi ở giữa """ """, bắt đầu với ký tự '"'
+        case '"':
+        {
+            // Khối chuỗi """ """
+            if (peek_char(lexer) == '"' && peek_next_char(lexer) == '"')
+            {
+                // Cho rằng khối chuỗi đang mở
+                bool is_closed = false;
+
+                // Ăn thêm 2 dấu nháy để hoàn tất mở """
+                advance_char(lexer);
+                advance_char(lexer);
+
+                // Ký tự tiếp theo không phải kết thúc mã
+                while (!is_at_end(lexer))
+                {
+                    // Và không phải đóng khối chuỗi '"""'
+                    if (peek_char(lexer) == '"' && peek_next_char(lexer) == '"' && peek_char_at(lexer, 2) == '"')
+                    {
+                        // Ăn đóng """
+                        advance_char(lexer);
+                        advance_char(lexer);
+                        advance_char(lexer);
+
+                        // Báo hiệu khối chuỗi đã đóng
+                        is_closed = true;
+
+                        break;
+                    }
+
+                    if (peek_char(lexer) == '\n')
+                    {
+                        lexer->is_at_line_start = true;
+                    }
+
+                    advance_char(lexer);
+                }
+
+                token_type = is_closed ? TOKEN_STRING_BLOCK : TOKEN_ERROR;
+
+                break;
+            }
+
+            // Tiếp tục xử lý chuỗi, nếu vừa rồi không phải khối chuỗi
+
+            // Cho rằng chuỗi đang mở
+            bool is_closed = false;
+
+            // Ký tự tiếp theo không phải kết thúc mã
+            while (!is_at_end(lexer))
+            {
+                // Và không phải kết thúc mã
+                if (peek_char(lexer) == '"')
+                {
+                    // Ăn ký tự đóng chuỗi '"'
+                    advance_char(lexer);
+
+                    // Báo hiệu chuỗi đã đóng
+                    is_closed = true;
+
+                    break;
+                }
+
                 // Nếu gặp xuống hàng thì bật cờ báo
                 if (peek_char(lexer) == '\n')
                 {
@@ -800,19 +996,69 @@ Token get_next_token(Lexer *lexer)
                 advance_char(lexer);
             }
 
-            // Nếu không phải kết thúc mã và tất nhiên là gặp ký tự đóng chuỗi vì đã ăn hết ở trên
-            if (!is_at_end(lexer))
+            token_type = is_closed ? TOKEN_STRING : TOKEN_ERROR;
+
+            break;
+        }
+        // Quét ký tự văn bản bắt đầu bằng dấu nháy đơn: ' '
+        case '\'':
+        {
+            // Ký tự văn bản đã gặp dấu đóng hay chưa
+            bool is_closed = false;
+
+            // Quét tới khi gặp dấu đóng hoặc hết mã nguồn
+            while (!is_at_end(lexer))
             {
-                // Ăn ký tự đóng chuỗi '"'
+                if (peek_char(lexer) == '\'')
+                {
+                    // Ăn dấu nháy đơn đóng ký tự văn bản
+                    advance_char(lexer);
+
+                    // Báo hiệu ký tự văn bản đã đóng hợp lệ
+                    is_closed = true;
+
+                    break;
+                }
+
+                if (peek_char(lexer) == '\\')
+                {
+                    // Ăn ký tự escape '\\'
+                    advance_char(lexer);
+
+                    // Nếu hết mã nguồn ngay sau '\\' thì ký tự văn bản bị lỗi
+                    if (is_at_end(lexer))
+                    {
+                        break;
+                    }
+
+                    // Ăn ký tự theo sau "thoát" (chưa kiểm tra tính hợp lệ của chuỗi "thoát")
+                    if (peek_char(lexer) == '\n')
+                    {
+                        lexer->is_at_line_start = true;
+                    }
+
+                    advance_char(lexer);
+
+                    continue;
+                }
+
+                if (peek_char(lexer) == '\n')
+                {
+                    lexer->is_at_line_start = true;
+                }
+
                 advance_char(lexer);
             }
 
-            token_type = TOKEN_STRING;
+            // Có dấu đóng thì là TOKEN_CHAR, ngược lại là lỗi văn bản chưa đóng
+            token_type = is_closed ? TOKEN_CHAR : TOKEN_ERROR;
 
             break;
-        // Trường hợp xác định được kiểu ký hiệu
+        }
+        // Trường hợp không xác định được kiểu ký hiệu
         default:
             token_type = TOKEN_UNKNOWN;
+
             break;
         }
     }

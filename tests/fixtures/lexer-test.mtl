@@ -1,0 +1,51 @@
+-- Lexer coverage fixture: keywords
+as and alias break
+case const continue
+do default destroy
+else enum export
+fn for from fixed false foreign function
+heap
+if in is import include
+let local
+many
+not null namespace
+or out own opaque
+pass
+raw ref record return
+stack switch
+true
+unsafe
+variant
+while
+
+-- Identifier and numeric literals
+identifier_name
+123 0x1F 0b101 3.14
+
+-- String and char literals
+"hello"
+"""
+text
+"""
+'A'
+'\''
+
+-- Punctuation and operators
+( ) [ ] { } : ; , . ..
++ += - -= -> * *= / /= // % %=
+& &= && | |= || ^ ^= ! != = == =>
+< <= << <<= > >= >> >>=
+
+-- Trivia behavior: trailing and block comments should be skipped
+foo -- trailing comment
+++ block comment
+inside block comment ++
+bar
+
+-- Indent and dedent
+if true:
+    pass
+pass
+
+-- Unknown token case
+@
