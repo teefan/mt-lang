@@ -450,16 +450,16 @@ static TokenType check_token_type(Lexer *lexer)
             return TOKEN_MANY;
         }
 
-        if (token_length == 9 && memcmp(start, "namespace", 9) == 0)
-        {
-            return TOKEN_NAMESPACE;
-        }
-
         break;
     case 'n':
         if (token_length == 4 && memcmp(start, "null", 4) == 0)
         {
             return TOKEN_NULL;
+        }
+
+        if (token_length == 9 && memcmp(start, "namespace", 9) == 0)
+        {
+            return TOKEN_NAMESPACE;
         }
 
         break;
