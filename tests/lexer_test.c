@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Cấu trúc biểu diễn ký hiệu mong đợi theo thứ tự bộ phân tích từ ngữ phải trả về
 typedef struct ExpectedToken
@@ -193,10 +194,71 @@ static bool run_fixture_test(void)
     return true;
 }
 
+// Chạy kiểm tra riêng cho các trường hợp lỗi từ ngữ phải trả TOKEN_ERROR
+static bool run_error_token_test(void)
+{
+    typedef struct ErrorCase
+    {
+        const char *label;
+        const char *source;
+    } ErrorCase;
+
+    // Các lỗi đã định nghĩa ở lexer hiện tại: chuỗi thường, chuỗi khối và ký tự văn bản không đóng
+    static const ErrorCase cases[] = {
+        {"unterminated-string", "\"abc"},
+        {"unterminated-block-string", "\"\"\"abc"},
+        {"unterminated-char", "'A"},
+        {"dangling-char-escape", "'\\"},
+    };
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+    {
+        Lexer lexer;
+
+        init_lexer(&lexer, cases[i].source, (uint32_t)strlen(cases[i].source));
+
+        Token first = get_next_token(&lexer);
+
+        if (first.type != TOKEN_ERROR)
+        {
+            fprintf(
+                stderr,
+                "[%s] first token mismatch: expected=%s actual=%s\n",
+                cases[i].label,
+                token_name(TOKEN_ERROR),
+                token_name(first.type));
+
+            return false;
+        }
+
+        Token second = get_next_token(&lexer);
+
+        if (second.type != TOKEN_EOF)
+        {
+            fprintf(
+                stderr,
+                "[%s] second token mismatch: expected=%s actual=%s\n",
+                cases[i].label,
+                token_name(TOKEN_EOF),
+                token_name(second.type));
+
+            return false;
+        }
+    }
+
+    return true;
+}
+
 int main(void)
 {
     // Chạy một fixture tổng hợp để kiểm tra toàn bộ đường quét chính
     if (!run_fixture_test())
+    {
+        return 1;
+    }
+
+    // Chạy nhóm kiểm tra lỗi bảo đảm lexer trả TOKEN_ERROR như thiết kế
+    if (!run_error_token_test())
     {
         return 1;
     }
