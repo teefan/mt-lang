@@ -1,0 +1,808 @@
+# Milk Tea Language Design
+
+Milk Tea is a statically typed, indentation-based systems language for games.
+It borrows:
+
+- C's data layout, ABI honesty, and pointer model
+- C#'s type clarity, enums, flags, and explicit `unsafe` escape hatches
+- Ruby's readable naming and low-ceremony feel
+- Python's indentation, blocks, and approachable surface syntax
+
+The output target is beautiful C. The generated C should be readable enough that a human can debug it, diff it, and ship it without feeling trapped inside a compiler's private IR.
+
+## Primary goals
+
+1. Be obvious to read. The language should look like code, not punctuation.
+2. Stay statically typed. Public APIs must be explicit and unsurprising.
+3. Feel good for game programming. Tight loops, structs, arrays, arenas, handles, and FFI should be first-class.
+4. Interoperate with C as a native citizen. C libraries are not a side feature; they are part of the core story.
+5. Generate C that mirrors the source closely. No hidden runtime, hidden heap traffic, or hidden dispatch.
+
+## Non-goals
+
+- No exceptions
+- No inheritance
+- No hidden virtual dispatch
+- No operator overloading beyond the built-in operators
+- No trait system or typeclass machinery in v1
+- No macro system that rewrites arbitrary ASTs
+- No garbage collector
+- No implicit conversions between unrelated primitive types
+- No hidden allocation for strings, collections, closures, or method calls
+
+## Design rules
+
+### 1. What you see is what runs
+
+If code allocates, takes an address, dereferences a pointer, performs an FFI call, or enters unsafe territory, the source should say so directly.
+
+### 2. C is the ABI ground truth
+
+Milk Tea must represent C structs, unions, enums, flags, pointers, arrays, callbacks, and calling conventions without lossy translation.
+
+### 3. Safe by default, unsafe by choice
+
+The language should help with common mistakes, but it must not hide the machine model. Sharp operations are allowed, but only behind explicit syntax.
+
+### 4. Data-oriented design comes first
+
+Plain structs, arrays, spans, pools, and arenas matter more than elaborate object systems.
+
+### 5. The language surface stays small
+
+If a feature saves five lines but makes lowering, tooling, or debugging much harder, it does not belong in v1.
+
+## Overall shape
+
+- Indentation defines blocks.
+- A colon starts a block.
+- Newlines terminate statements.
+- Tabs are illegal in source files; indentation is 4 spaces.
+- Comments use `#`.
+- Names are `snake_case` for modules, variables, and functions.
+- Types use `PascalCase`.
+- Generated binding modules preserve C names exactly at the ABI layer.
+
+Example:
+
+```mt
+module game.main
+
+import std.math as math
+import std.c.raylib as rl
+
+const screen_width: i32 = 1280
+const screen_height: i32 = 720
+
+struct Player:
+	position: rl.Vector2
+	velocity: rl.Vector2
+	radius: f32
+
+impl Player:
+	def update(mut self, dt: f32):
+		self.position.x += self.velocity.x * dt
+		self.position.y += self.velocity.y * dt
+
+def main() -> i32:
+	rl.InitWindow(screen_width, screen_height, c"Milk Tea")
+	defer rl.CloseWindow()
+
+	var player = Player(
+		position = rl.Vector2(x = 400.0, y = 300.0),
+		velocity = rl.Vector2(x = 140.0, y = 100.0),
+		radius = 18.0,
+	)
+
+	while not rl.WindowShouldClose():
+		let dt = rl.GetFrameTime()
+		player.update(dt)
+
+		rl.BeginDrawing()
+		defer rl.EndDrawing()
+
+		rl.ClearBackground(rl.BLACK)
+		rl.DrawCircleV(player.position, player.radius, rl.GOLD)
+
+	return 0
+```
+
+## Syntax and readability rules
+
+Milk Tea should use a deliberately small punctuation set. The only everyday symbolic forms are:
+
+- `:` for blocks
+- `->` for function return types
+- `.` for field and module access
+- `[]` for indexing and generic arguments
+- `&` for address-of
+- `*` for dereference
+- `?` for nullable types
+
+Everything else should prefer words over symbols.
+
+### Declarations
+
+```mt
+module demo.physics
+
+import std.math
+
+const gravity: f32 = 9.81
+
+type EntityId = u32
+
+struct Body:
+	id: EntityId
+	mass: f32
+	velocity: f32
+
+enum BodyKind: u8
+	dynamic = 1
+	static = 2
+
+flags DrawFlags: u32
+	visible = 1 << 0
+	selected = 1 << 1
+```
+
+### Variables
+
+- `let` creates an immutable local binding.
+- `var` creates a mutable local binding.
+- `const` defines a compile-time constant.
+
+```mt
+let width: i32 = 1280
+var score: i32 = 0
+const max_players: i32 = 4
+```
+
+Local type inference is allowed when the initializer makes the type obvious:
+
+```mt
+let dt = rl.GetFrameTime()      # inferred as f32
+var player_count = 0            # inferred as i32
+```
+
+Public items should always spell their types out.
+
+### Functions
+
+```mt
+def clamp(value: f32, min_value: f32, max_value: f32) -> f32:
+	if value < min_value:
+		return min_value
+	elif value > max_value:
+		return max_value
+	else:
+		return value
+```
+
+There is no overloading. One function name maps to one callable symbol.
+
+### Methods
+
+Methods are syntax sugar over namespaced functions. They do not imply objects, inheritance, or dynamic dispatch.
+
+```mt
+struct Camera:
+	position: Vec2
+	zoom: f32
+
+impl Camera:
+	def move_by(mut self, delta: Vec2):
+		self.position.x += delta.x
+		self.position.y += delta.y
+
+	def world_scale(self) -> f32:
+		return self.zoom
+```
+
+Lowering rule:
+
+- `camera.move_by(delta)` lowers to `game_Camera_move_by(&camera, delta)`.
+- `camera.world_scale()` lowers to `game_Camera_world_scale(&camera)`.
+
+Receiver rule:
+
+- `mut self` methods require an addressable receiver.
+- `self` methods borrow the receiver read-only.
+- There is no hidden dynamic dispatch, vtable lookup, or heap allocation.
+
+The rule is fixed and inspectable. There is no method lookup at runtime.
+
+### Control flow
+
+```mt
+if ready:
+	start_game()
+elif wants_menu:
+	open_menu()
+else:
+	show_intro()
+
+while running:
+	tick()
+
+for i in range(0, count):
+	update_enemy(i)
+
+for body in bodies:
+	simulate(body)
+
+match event.kind:
+	EventKind.quit:
+		return 0
+	EventKind.resize:
+		resize(event.width, event.height)
+```
+
+Rules:
+
+- Conditions must be `bool`. Integers and pointers do not become truthy implicitly.
+- `match` must be exhaustive for enums.
+- `break` and `continue` work exactly as in C and Python.
+
+### Useful structured features
+
+Milk Tea should include a small number of control-flow features that materially improve systems code without hiding behavior.
+
+#### `defer`
+
+`defer` registers cleanup code at scope exit and lowers to obvious cleanup labels in C.
+
+```mt
+def load_texture(path: str, arena: ptr[Arena]) -> Result[Texture, LoadError]:
+	let temp = arena.mark()
+	defer arena.reset(temp)
+
+	let c_path = arena.to_cstr(path)
+	let texture = rl.LoadTexture(c_path)
+
+	if texture.id == 0:
+		return err(LoadError.file_not_found)
+
+	return texture
+```
+
+#### `unsafe`
+
+`unsafe` is required for:
+
+- raw pointer arithmetic
+- unchecked casts and bit reinterpretation
+- reading inactive union fields
+- unchecked indexing
+- direct ABI edge work that the compiler cannot validate
+
+```mt
+unsafe:
+	let p = pixels + offset
+	let value = *(cast[ptr[u32]](p))
+```
+
+The point is not to forbid sharp tools. The point is to mark them.
+
+## Type system
+
+The type system must stay simple, explicit, and close to C.
+
+### Primitive types
+
+- `bool`
+- `byte`
+- `char`
+- `i8`, `i16`, `i32`, `i64`
+- `u8`, `u16`, `u32`, `u64`
+- `isize`, `usize`
+- `f32`, `f64`
+- `void`
+- `str`
+- `cstr`
+
+Notes:
+
+- `str` is a UTF-8 string view, not a NUL-terminated C string.
+- `cstr` is a NUL-terminated C string reference for ABI calls.
+- String literals produce `str`.
+- `c"hello"` produces `cstr` with static storage.
+
+### Composite types
+
+```mt
+array[T, N]      # fixed-size array
+ptr[T]           # raw pointer
+span[T]          # pointer + length view
+fn(A, B) -> R    # function pointer type
+```
+
+Examples:
+
+```mt
+let pixels: span[u8]
+let texture_ptr: ptr[Texture]
+let normal_table: array[f32, 256]
+let callback: fn(ptr[void], i32) -> void
+```
+
+### Nullability
+
+Milk Tea keeps nullability explicit.
+
+```mt
+let window: ptr[Window]? = null
+let name: cstr? = null
+```
+
+Only nullable pointer-like types may hold `null`.
+
+### User-defined types
+
+#### Structs
+
+Structs are plain data. Field order is preserved.
+
+```mt
+struct Vec2:
+	x: f32
+	y: f32
+```
+
+#### Enums
+
+Enums always have an explicit backing type.
+
+```mt
+enum WeaponKind: u8
+	sword = 1
+	bow = 2
+	wand = 3
+```
+
+#### Flags
+
+Flags are named bitmasks with a fixed integer backing type.
+
+```mt
+flags WindowFlags: u32
+	fullscreen = 1 << 0
+	vsync = 1 << 1
+	borderless = 1 << 2
+```
+
+#### Unions
+
+Unions are allowed for FFI and low-level storage.
+
+```mt
+union Value:
+	i: i32
+	f: f32
+	raw: ptr[void]
+```
+
+Reading a union field other than the last written field requires `unsafe`.
+
+#### Opaque types
+
+Opaque types are essential for C handles.
+
+```mt
+opaque SDL_Window
+opaque ma_engine
+```
+
+#### Type aliases
+
+```mt
+type Seconds = f32
+type FileHandle = ptr[libc.FILE]
+```
+
+### Generics
+
+Generics are useful, but they must stay boring.
+
+Allowed in v1:
+
+- generic structs
+- generic functions
+- monomorphized code generation
+
+Not allowed in v1:
+
+- specialization
+- trait bounds
+- type-level computation
+- arbitrary compile-time execution
+
+Example:
+
+```mt
+struct Slice[T]:
+	data: ptr[T]
+	len: usize
+
+def first[T](items: Slice[T]) -> ptr[T]?:
+	if items.len == 0:
+		return null
+	return items.data
+```
+
+## Expressions and conversions
+
+### Operators
+
+Built-in operators should match familiar C behavior where possible:
+
+- arithmetic: `+ - * / %`
+- comparison: `== != < <= > >=`
+- boolean: `and or not`
+- bitwise: `& | ^ ~ << >>`
+
+No user-defined operator overloading.
+
+### Casts
+
+Conversions are explicit.
+
+```mt
+let count64 = cast[u64](count32)
+let value = cast[f32](raw)
+```
+
+For bit reinterpretation, use a separate form inside `unsafe`:
+
+```mt
+unsafe:
+	let bits = reinterpret[u32](value)
+```
+
+### Literals
+
+```mt
+42
+0xff
+0b1010
+3.14159
+'a'
+"hello"
+c"hello"
+```
+
+Integer literals are untyped until context resolves them, defaulting to `i32`.
+Float literals default to `f64`.
+
+### Composite literals
+
+There are no constructors with hidden logic in v1. Aggregate construction uses field and element literals directly.
+
+```mt
+let player = Player(
+	position = Vec2(x = 10.0, y = 20.0),
+	velocity = Vec2(x = 0.0, y = 0.0),
+)
+
+let palette = array[u32, 4](0xff0000ff, 0x00ff00ff, 0x0000ffff, 0xffffffff)
+```
+
+This keeps data construction obvious and maps cleanly to C initializers.
+
+## Memory model
+
+The memory model must feel like C with better defaults and cleaner surfaces.
+
+### Value semantics by default
+
+- Scalars copy by value.
+- Structs copy by value.
+- Fixed arrays copy by value.
+- Returning a struct is allowed and lowers to normal C return or out-parameter lowering as needed.
+
+There is no hidden reference counting and no hidden heap boxing.
+
+### Explicit allocation
+
+Heap allocation is always explicit and allocator-driven.
+
+```mt
+def spawn_enemy(arena: ptr[Arena], start: Vec2) -> ptr[Enemy]:
+	let enemy = arena.alloc[Enemy](1)
+	enemy.position = start
+	enemy.health = 100
+	return enemy
+```
+
+Recommended standard memory surfaces:
+
+- `std.mem.heap` for general allocation
+- `std.mem.arena` for frame, level, and scratch lifetimes
+- `std.mem.pool` for fixed-size object pools
+- `std.mem.stack` for explicit temporary allocators
+
+### Pointers
+
+Pointers are first-class because game code needs them.
+
+```mt
+let position_ptr = &player.position
+let x = (*position_ptr).x
+```
+
+Rules:
+
+- `&expr` takes an address.
+- `*ptr` dereferences a pointer.
+- Pointer arithmetic exists only inside `unsafe`.
+- Pointer comparison is explicit and never treated as boolean truthiness.
+
+### Spans
+
+Raw pointers are necessary. Spans are the readable everyday view.
+
+```mt
+span[T] is conceptually:
+	data: ptr[T]
+	len: usize
+```
+
+`span[T]` should be built into the language surface as a standard view type because it is the right default for arrays, buffers, decoded file content, vertex streams, and audio samples.
+
+### Lifetime story
+
+Milk Tea should not try to be Rust. It should instead make lifetime choices explicit at the API level.
+
+The model:
+
+- stack values for local temporaries
+- arenas for frame and level data
+- pools for stable object storage
+- explicit heap allocation when needed
+- `unsafe` for manual aliasing and lifetime tricks
+
+This is enough to write fast engine and game code without dragging the user through ownership proofs.
+
+## Error handling
+
+Exceptions do not belong here.
+
+Preferred strategy:
+
+- `Result[T, E]` for recoverable failures
+- `panic("message")` for programmer errors and impossible states
+- explicit status codes for thin FFI wrappers when that matches the C API better
+
+Example:
+
+```mt
+enum LoadError: u8
+	file_not_found = 1
+	invalid_format = 2
+
+def load_level(path: str, arena: ptr[Arena]) -> Result[Level, LoadError]:
+	let json = read_text_file(path, arena)
+	if json == null:
+		return err(LoadError.file_not_found)
+
+	return parse_level(json)
+```
+
+No implicit exception paths. Every failure path is visible in the type or the code.
+
+## Modules and packaging
+
+Source files should map directly to modules.
+
+```mt
+module game.rendering.sprite_batch
+
+import std.c.raylib as rl
+import game.assets
+```
+
+Rules:
+
+- one top-level module per file
+- explicit imports only
+- no wildcard imports in v1
+- no cyclic imports
+- package naming stays filesystem-friendly
+
+Recommended layout:
+
+- `std.*` for core library modules
+- `std.c.*` for raw bindgen-generated C modules
+- `std.wrap.*` for optional ergonomic wrappers over raw C modules
+- project modules under their own root namespace
+
+## FFI design
+
+FFI is a core feature, not a bolt-on.
+
+### Raw C bindings
+
+Milk Tea needs a dedicated `extern module` form for ABI-exact bindings.
+
+```mt
+extern module std.c.raylib:
+	link "raylib"
+	include "raylib.h"
+
+	struct Vector2:
+		x: f32
+		y: f32
+
+	struct Color:
+		r: u8
+		g: u8
+		b: u8
+		a: u8
+
+	extern def InitWindow(width: i32, height: i32, title: cstr) -> void
+	extern def WindowShouldClose() -> bool
+	extern def BeginDrawing() -> void
+	extern def EndDrawing() -> void
+	extern def DrawCircleV(center: Vector2, radius: f32, color: Color) -> void
+```
+
+Capabilities required by the FFI surface:
+
+- exact integer and float widths
+- exact struct field order
+- packed structs and explicit alignment
+- unions
+- opaque handles
+- function pointers and callbacks
+- `cdecl` and future calling convention markers
+- C varargs for APIs like `printf`
+- constant and macro import where clang can resolve the value
+
+### Bindgen
+
+Bindings for libc, raylib, SDL3, Box2D, stb, miniaudio, json-c, and similar libraries should be generated with clang.
+
+Bindgen output rules:
+
+1. Preserve ABI-visible names exactly in raw `std.c.*` modules.
+2. Emit the thinnest possible surface. No runtime marshaling.
+3. Emit opaque types instead of guessing private layouts.
+4. Emit comments or metadata that make the original C header traceable.
+5. Prefer enums, flags, structs, unions, constants, and function declarations over clever wrappers.
+
+The raw layer should be inspectable and boring. Higher-level wrapper modules may exist, but they must remain optional.
+
+### Strings and buffers at the FFI boundary
+
+String and buffer rules must stay explicit:
+
+- `str` does not silently become `cstr`
+- string literals can use `c"..."` when a static C string is required
+- converting `str` to `cstr` requires an allocator or temporary arena unless the source is already NUL-terminated
+- binary data crosses FFI as `ptr[T]`, `span[T]`, or fixed arrays
+
+### Callbacks
+
+Callbacks must map directly to C function pointers.
+
+```mt
+type LogCallback = fn(level: i32, message: cstr, user_data: ptr[void]) -> void
+```
+
+Capturing closures should not be lowered to hidden heap objects. If user state is needed, pass it explicitly as `user_data`.
+
+## Data layout and ABI controls
+
+The language must expose a small set of layout controls for interop and SIMD-friendly code.
+
+```mt
+packed struct FileHeader:
+	magic: array[u8, 4]
+	version: u16
+
+align(16) struct Mat4:
+	m: array[f32, 16]
+```
+
+Required controls:
+
+- `packed struct`
+- `align(n)`
+- `sizeof(T)`
+- `alignof(T)`
+- `offsetof(T, field)`
+- `static_assert(condition, message)`
+
+These are not niche. They are mandatory for FFI and engine code.
+
+## Generated C quality bar
+
+Milk Tea only succeeds if the generated C is respectable.
+
+### Generated C requirements
+
+1. Keep one obvious symbol mapping from source to C.
+2. Preserve source names as much as the C target allows.
+3. Emit straightforward local variables and control flow.
+4. Lower methods to plain functions.
+5. Lower `match` to `switch` where possible.
+6. Lower `defer` to readable cleanup labels or scoped cleanup blocks.
+7. Avoid a mandatory runtime beyond what is needed for startup, panic hooks, and core helper intrinsics.
+
+Example lowering:
+
+Milk Tea:
+
+```mt
+struct Player:
+	position: Vec2
+	velocity: Vec2
+
+impl Player:
+	def update(mut self, dt: f32):
+		self.position.x += self.velocity.x * dt
+		self.position.y += self.velocity.y * dt
+```
+
+Target C:
+
+```c
+typedef struct game_Vec2 {
+	float x;
+	float y;
+} game_Vec2;
+
+typedef struct game_Player {
+	game_Vec2 position;
+	game_Vec2 velocity;
+} game_Player;
+
+static void game_Player_update(game_Player* self, float dt) {
+	self->position.x += self->velocity.x * dt;
+	self->position.y += self->velocity.y * dt;
+}
+```
+
+This is the standard to protect. If the generated C becomes harder to read than hand-written C, the language has drifted.
+
+## Feature set recommendation for v1
+
+The full vision should be staged. A shippable v1 needs the smallest feature set that still proves the language works for real game code.
+
+### Ship in v1
+
+- indentation-based parser
+- modules and imports
+- `let`, `var`, `const`
+- functions and method sugar via `impl`
+- structs, enums, flags, unions, opaque types, type aliases
+- arrays, pointers, spans, function pointers
+- `if`, `while`, `for`, `match`, `defer`, `unsafe`
+- explicit casts
+- `extern module` declarations
+- clang-driven bindgen for `std.c.*`
+- readable C backend
+
+### Defer until later
+
+- trait bounds
+- interfaces
+- async
+- exceptions
+- metaprogramming
+- custom operators
+- package registry
+- hidden managed runtime features
+
+## Summary
+
+Milk Tea should be a language where:
+
+- the syntax is calm and readable
+- the type system is explicit but not academic
+- the memory model is fast and honest
+- pointers are available without shame
+- C libraries fit naturally
+- the generated C remains clean enough to trust
+
+That combination is the point. The language should feel like a better place to write the kind of code people currently force into C, C++, or Rust even when those languages are fighting the job.
