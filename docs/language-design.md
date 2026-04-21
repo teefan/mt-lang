@@ -57,7 +57,9 @@ If a feature saves five lines but makes lowering, tooling, or debugging much har
 - Indentation defines blocks.
 - A colon starts a block.
 - Newlines terminate statements.
+- Newlines inside `()` and `[]` do not terminate statements.
 - Tabs are illegal in source files; indentation is 4 spaces.
+- Trailing commas are allowed in multiline call arguments and aggregate literals.
 - Comments use `#`.
 - Names are `snake_case` for modules, variables, and functions.
 - Types use `PascalCase`.
@@ -477,6 +479,7 @@ Float literals default to `f64`.
 ### Composite literals
 
 There are no constructors with hidden logic in v1. Aggregate construction uses field and element literals directly.
+Multiline aggregate-style calls may use trailing commas so data-heavy code stays easy to diff.
 
 ```mt
 let player = Player(
