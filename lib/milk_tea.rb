@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "pathname"
+
 require_relative 'milk_tea/token'
 require_relative 'milk_tea/lexer'
 require_relative 'milk_tea/ast'
