@@ -10,27 +10,29 @@ module MilkTea
   class Build
     Result = Data.define(:output_path, :c_path, :compiler, :link_flags)
 
-    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil)
-      new(path, output_path:, cc:, keep_c_path:).build
+    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: RawBindings.default_registry(root: MilkTea.root))
+      new(path, output_path:, cc:, keep_c_path:, raw_bindings:).build
     end
 
-    def initialize(path, output_path:, cc:, keep_c_path:)
+    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:)
       @source_path = File.expand_path(path)
       @output_path = File.expand_path(output_path || default_output_path(@source_path))
       @cc = cc
       @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
+      @raw_bindings = raw_bindings
     end
 
     def build
       program = ModuleLoader.check_program(@source_path)
       generated_c = Codegen.generate_c(program)
+      compiler_flags = collect_compiler_flags(program)
       link_flags = collect_link_flags(program)
 
       FileUtils.mkdir_p(File.dirname(@output_path))
 
       if @keep_c_path
         write_c_file(@keep_c_path, generated_c)
-        compile(@keep_c_path, link_flags)
+        compile(@keep_c_path, compiler_flags, link_flags)
         return Result.new(output_path: @output_path, c_path: @keep_c_path, compiler: @cc, link_flags:)
       end
 
@@ -39,7 +41,7 @@ module MilkTea
         file.flush
         file.close
 
-        compile(file.path, link_flags)
+        compile(file.path, compiler_flags, link_flags)
       end
 
       Result.new(output_path: @output_path, c_path: nil, compiler: @cc, link_flags:)
@@ -68,8 +70,24 @@ module MilkTea
       end
     end
 
-    def compile(c_path, link_flags)
-      command = [@cc, "-std=c11", c_path, "-o", @output_path, *link_flags]
+    def collect_compiler_flags(program)
+      program.analyses_by_module_name.keys.sort.each_with_object([]) do |module_name, flags|
+        analysis = program.analyses_by_module_name.fetch(module_name)
+        next unless analysis.module_kind == :extern_module
+
+        binding = @raw_bindings.find_by_module_name(module_name)
+        next unless binding
+
+        binding.build_flags.each do |flag|
+          flags << flag unless flags.include?(flag)
+        end
+      end
+    rescue RawBindings::Error => e
+      raise BuildError, e.message
+    end
+
+    def compile(c_path, compiler_flags, link_flags)
+      command = [@cc, "-std=c11", *compiler_flags, c_path, "-o", @output_path, *link_flags]
       stdout, stderr, status = Open3.capture3(*command)
       return if status.success?
 

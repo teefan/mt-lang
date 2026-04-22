@@ -26,6 +26,51 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_executes_binary_from_source_directory_for_relative_assets
+    Dir.mktmpdir("milk-tea-run-cwd") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = File.join(dir, "fake-run-cwd-cc")
+      File.write(compiler_path, <<~SH)
+        #!/bin/sh
+        printf '%s\n' "$@" > #{compiler_log.inspect}
+        output=''
+        previous=''
+        for argument in "$@"; do
+          if [ "$previous" = '-o' ]; then
+            output="$argument"
+          fi
+          previous="$argument"
+        done
+        cat > "$output" <<'SCRIPT'
+        #!/bin/sh
+        pwd
+        SCRIPT
+        chmod +x "$output"
+      SH
+      File.chmod(0o755, compiler_path)
+
+      source_path = File.join(dir, "cwd.mt")
+      File.write(source_path, [
+        "module demo.cwd",
+        "",
+        "def main() -> i32:",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler_path)
+
+      assert_equal "#{dir}\n", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 0, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler_path, result.compiler
+      assert_equal [], result.link_flags
+      assert_includes File.read(compiler_log).lines(chomp: true), "-o"
+    end
+  end
+
   def test_run_with_host_compiler_executes_real_binary
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
@@ -70,6 +115,36 @@ class MilkTeaRunTest < Minitest::Test
         "    if clamped == 40:",
         "        return math.max(6, 7)",
         "    return 1",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 7, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_mixed_numeric_binary_operations
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-numeric") do |dir|
+      source_path = File.join(dir, "numeric.mt")
+
+      File.write(source_path, [
+        "module demo.numeric",
+        "",
+        "def main() -> i32:",
+        "    let sum = 1 + 2.5",
+        "    if 3 < 3.5 and sum > 3.0:",
+        "        return 7",
+        "    return 0",
         "",
       ].join("\n"))
 
@@ -583,15 +658,14 @@ class MilkTeaRunTest < Minitest::Test
         "def main() -> i32:",
         "    var palette = array[u32, 4](1, 2, 3, 4)",
         "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
-        "    unsafe:",
-        "        palette[1] = 9",
-        "        holder.colors[2] = 10",
-        "        if palette[0] != 1:",
-        "            return 1",
-        "        if palette[1] != 9:",
-        "            return 2",
-        "        if holder.colors[2] != 10:",
-        "            return 3",
+        "    palette[1] = 9",
+        "    holder.colors[2] = 10",
+        "    if palette[0] != 1:",
+        "        return 1",
+        "    if palette[1] != 9:",
+        "        return 2",
+        "    if holder.colors[2] != 10:",
+        "        return 3",
         "    return 0",
         "",
       ].join("\n"))
@@ -601,6 +675,33 @@ class MilkTeaRunTest < Minitest::Test
       assert_equal "", result.stdout
       assert_equal "", result.stderr
       assert_equal 0, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_traps_out_of_bounds_safe_array_indexing
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-array-bounds") do |dir|
+      source_path = File.join(dir, "array-bounds.mt")
+
+      File.write(source_path, [
+        "module demo.array_bounds",
+        "",
+        "def main() -> i32:",
+        "    let palette = array[i32, 4](1, 2, 3, 4)",
+        "    return palette[4]",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_includes result.stderr, "array index out of bounds"
+      assert_equal 134, result.exit_status
       assert_nil result.output_path
       assert_nil result.c_path
       assert_equal compiler, result.compiler

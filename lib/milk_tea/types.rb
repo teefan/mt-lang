@@ -35,6 +35,22 @@ module MilkTea
     class Primitive < Base
       INTEGER_NAMES = %w[i8 i16 i32 i64 u8 u16 u32 u64 isize usize].freeze
       FLOAT_NAMES = %w[f32 f64].freeze
+      FIXED_SIGNED_INTEGER_WIDTHS = {
+        "i8" => 8,
+        "i16" => 16,
+        "i32" => 32,
+        "i64" => 64,
+      }.freeze
+      FIXED_UNSIGNED_INTEGER_WIDTHS = {
+        "u8" => 8,
+        "u16" => 16,
+        "u32" => 32,
+        "u64" => 64,
+      }.freeze
+      FLOAT_WIDTHS = {
+        "f32" => 32,
+        "f64" => 64,
+      }.freeze
 
       attr_reader :name
 
@@ -67,6 +83,30 @@ module MilkTea
 
       def float?
         FLOAT_NAMES.include?(name)
+      end
+
+      def signed_integer?
+        FIXED_SIGNED_INTEGER_WIDTHS.key?(name) || name == "isize"
+      end
+
+      def unsigned_integer?
+        FIXED_UNSIGNED_INTEGER_WIDTHS.key?(name) || name == "usize"
+      end
+
+      def fixed_width_integer?
+        FIXED_SIGNED_INTEGER_WIDTHS.key?(name) || FIXED_UNSIGNED_INTEGER_WIDTHS.key?(name)
+      end
+
+      def pointer_sized_integer?
+        name == "isize" || name == "usize"
+      end
+
+      def integer_width
+        FIXED_SIGNED_INTEGER_WIDTHS[name] || FIXED_UNSIGNED_INTEGER_WIDTHS[name]
+      end
+
+      def float_width
+        FLOAT_WIDTHS[name]
       end
 
       def boolean?

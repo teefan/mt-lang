@@ -90,6 +90,8 @@ module MilkTea
         Tempfile.create(["milk-tea-bindgen", ".c"]) do |translation_unit|
           @translation_unit_path = translation_unit.path
           translation_unit.write(%(#include #{@header_path.dump}\n))
+          translation_unit.flush
+          @active_macro_names = preprocessed_macro_names(translation_unit.path)
           macro_probe_declarations.each do |declaration|
             translation_unit.write(declaration)
             translation_unit.write("\n")
@@ -215,6 +217,7 @@ module MilkTea
 
       def macro_constant_candidate?(name, body)
         return false unless name.match?(/\A[A-Z][A-Z0-9_]*\z/)
+        return false unless active_macro_name?(name)
 
         normalized = normalize_macro_body(body)
         return false if normalized.empty?
@@ -225,6 +228,33 @@ module MilkTea
         return false if first_token && NON_VALUE_MACRO_TOKENS.include?(first_token)
 
         normalized.match?(/\A[A-Za-z0-9_()+\-*\/%<>&|~^.,{}\[\]:?\s]+\z/)
+      end
+
+      def active_macro_name?(name)
+        @active_macro_names.include?(name)
+      end
+
+      def preprocessed_macro_names(translation_unit_path)
+        command = [
+          @clang,
+          "-x",
+          "c",
+          "-fno-builtin",
+          *@clang_args,
+          "-dM",
+          "-E",
+          translation_unit_path,
+        ]
+        stdout, stderr, status = Open3.capture3(*command)
+        unless status.success?
+          details = [stdout, stderr].reject(&:empty?).join
+          raise BindgenError, details.empty? ? "clang bindgen macro probe failed" : "clang bindgen macro probe failed:\n#{details}"
+        end
+
+        stdout.each_line.filter_map do |line|
+          match = line.match(/\A#define\s+([A-Za-z_][A-Za-z0-9_]*)\b/)
+          match[1] if match
+        end.to_set
       end
 
       def contains_disallowed_macro_call?(source)

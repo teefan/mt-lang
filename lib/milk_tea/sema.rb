@@ -714,6 +714,11 @@ module MilkTea
       def infer_index_access(expression, scopes:)
         receiver_type = infer_expression(expression.receiver, scopes:)
         index_type = infer_expression(expression.index, scopes:, expected_type: @types.fetch("usize"))
+
+        if array_type?(receiver_type) && !unsafe_context? && !addressable_storage_expression?(expression.receiver)
+          raise SemaError, "safe array indexing requires an addressable array value; bind it to a local first"
+        end
+
         infer_index_result_type(receiver_type, index_type)
       end
 
@@ -775,17 +780,19 @@ module MilkTea
           pointer_result = pointer_arithmetic_result(expression.operator, left_type, right_type)
           return pointer_result if pointer_result
 
-          unless left_type.numeric? && right_type.numeric? && left_type == right_type
-            raise SemaError, "operator #{expression.operator} requires matching numeric types, got #{left_type} and #{right_type}"
+          result_type = common_numeric_type(left_type, right_type)
+          unless result_type
+            raise SemaError, "operator #{expression.operator} requires compatible numeric types, got #{left_type} and #{right_type}"
           end
 
-          left_type
+          result_type
         when "%"
-          unless left_type.integer? && right_type.integer? && left_type == right_type
-            raise SemaError, "operator % requires matching integer types, got #{left_type} and #{right_type}"
+          result_type = common_integer_type(left_type, right_type)
+          unless result_type
+            raise SemaError, "operator % requires compatible integer types, got #{left_type} and #{right_type}"
           end
 
-          left_type
+          result_type
         when "<<", ">>"
           unless left_type.is_a?(Types::Primitive) && left_type.integer? && right_type.is_a?(Types::Primitive) && right_type.integer?
             raise SemaError, "operator #{expression.operator} requires integer operands, got #{left_type} and #{right_type}"
@@ -793,13 +800,13 @@ module MilkTea
 
           left_type
         when "<", "<=", ">", ">="
-          unless left_type.numeric? && right_type.numeric? && left_type == right_type
-            raise SemaError, "operator #{expression.operator} requires matching numeric types, got #{left_type} and #{right_type}"
+          unless common_numeric_type(left_type, right_type)
+            raise SemaError, "operator #{expression.operator} requires compatible numeric types, got #{left_type} and #{right_type}"
           end
 
           @types.fetch("bool")
         when "==", "!="
-          unless types_compatible?(left_type, right_type) || types_compatible?(right_type, left_type)
+          unless common_numeric_type(left_type, right_type) || types_compatible?(left_type, right_type) || types_compatible?(right_type, left_type)
             raise SemaError, "operator #{expression.operator} requires comparable types, got #{left_type} and #{right_type}"
           end
 
@@ -936,7 +943,8 @@ module MilkTea
 
         arguments.zip(expected_params).each do |argument, parameter|
           actual_type = infer_expression(argument.value, scopes:, expected_type: parameter.type)
-          ensure_assignable!(actual_type, parameter.type, "argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}")
+          ensure_argument_assignable!(actual_type, parameter.type, external: binding.external,
+                                      message: "argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}")
         end
       end
 
@@ -1014,11 +1022,21 @@ module MilkTea
           return target_type
         end
 
-        unless source_type.is_a?(Types::Primitive) && source_type.numeric? && target_type.is_a?(Types::Primitive) && target_type.numeric?
+        source_numeric_type = cast_numeric_type(source_type)
+        target_numeric_type = cast_numeric_type(target_type)
+
+        unless source_numeric_type && target_numeric_type
           raise SemaError, "cast currently only supports numeric primitive types, got #{source_type} -> #{target_type}"
         end
 
         target_type
+      end
+
+      def cast_numeric_type(type)
+        return type if type.is_a?(Types::Primitive) && type.numeric?
+        return type.backing_type if type.is_a?(Types::EnumBase) && type.backing_type.numeric?
+
+        nil
       end
 
       def check_reinterpret_call(target_type, arguments, scopes:)
@@ -1141,12 +1159,62 @@ module MilkTea
         raise SemaError, message unless types_compatible?(actual_type, expected_type)
       end
 
+      def ensure_argument_assignable!(actual_type, expected_type, external:, message:)
+        raise SemaError, message unless argument_types_compatible?(actual_type, expected_type, external:)
+      end
+
       def types_compatible?(actual_type, expected_type)
         return true if actual_type == expected_type
         return true if actual_type == @null_type && expected_type.is_a?(Types::Nullable)
         return true if expected_type.is_a?(Types::Nullable) && actual_type == expected_type.base
+        return true if actual_type.is_a?(Types::EnumBase) && actual_type.backing_type == expected_type
 
         false
+      end
+
+      def argument_types_compatible?(actual_type, expected_type, external:)
+        return true if types_compatible?(actual_type, expected_type)
+        return true if external && extern_enum_integer_argument_compatibility?(actual_type, expected_type)
+
+        false
+      end
+
+      def extern_enum_integer_argument_compatibility?(actual_type, expected_type)
+        return unless actual_type.is_a?(Types::EnumBase)
+        return unless expected_type.is_a?(Types::Primitive) && expected_type.integer? && expected_type.fixed_width_integer?
+
+        backing_type = actual_type.backing_type
+        return unless backing_type.is_a?(Types::Primitive) && backing_type.integer? && backing_type.fixed_width_integer?
+
+        backing_type.integer_width == expected_type.integer_width
+      end
+
+      def common_numeric_type(left_type, right_type)
+        return left_type if left_type == right_type
+        return unless left_type.is_a?(Types::Primitive) && right_type.is_a?(Types::Primitive)
+        return unless left_type.numeric? && right_type.numeric?
+
+        return common_integer_type(left_type, right_type) if left_type.integer? && right_type.integer?
+        return wider_float_type(left_type, right_type) if left_type.float? && right_type.float?
+
+        float_type, integer_type = left_type.float? ? [left_type, right_type] : [right_type, left_type]
+        return unless integer_type.integer? && integer_type.fixed_width_integer?
+
+        float_type
+      end
+
+      def common_integer_type(left_type, right_type)
+        return left_type if left_type == right_type
+        return unless left_type.is_a?(Types::Primitive) && right_type.is_a?(Types::Primitive)
+        return unless left_type.integer? && right_type.integer?
+        return unless left_type.fixed_width_integer? && right_type.fixed_width_integer?
+        return unless left_type.signed_integer? == right_type.signed_integer?
+
+        left_type.integer_width >= right_type.integer_width ? left_type : right_type
+      end
+
+      def wider_float_type(left_type, right_type)
+        left_type.float_width >= right_type.float_width ? left_type : right_type
       end
 
       def with_unsafe
@@ -1354,7 +1422,6 @@ module MilkTea
       end
 
       def infer_index_result_type(receiver_type, index_type)
-        raise SemaError, "indexing requires unsafe" unless unsafe_context?
         raise SemaError, "index must be an integer type, got #{index_type}" unless integer_type?(index_type)
 
         if array_type?(receiver_type)
@@ -1362,10 +1429,25 @@ module MilkTea
         end
 
         if pointer_type?(receiver_type)
+          raise SemaError, "pointer indexing requires unsafe" unless unsafe_context?
+
           return pointee_type(receiver_type)
         end
 
         raise SemaError, "cannot index #{receiver_type}"
+      end
+
+      def addressable_storage_expression?(expression)
+        case expression
+        when AST::Identifier
+          true
+        when AST::MemberAccess, AST::IndexAccess
+          addressable_storage_expression?(expression.receiver)
+        when AST::UnaryOp
+          expression.operator == "*"
+        else
+          false
+        end
       end
 
       def match_member_name(expression, enum_type)

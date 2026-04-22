@@ -155,6 +155,24 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/mt_span_i32 items = \(mt_span_i32\)\{ \.data = &value, \.len = 1 \};/, generated)
   end
 
+  def test_generate_c_for_mixed_numeric_binary_operations_inserts_explicit_casts
+    source = [
+      "module demo.numeric_codegen",
+      "",
+      "def main() -> i32:",
+      "    let sum = 1 + 2.5",
+      "    if 3 < 3.5 and sum > 3.0:",
+      "        return 1",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/double sum = \(\(\(double\) 1\)\) \+ 2\.5;/, generated)
+    assert_match(/if \(\(\(\(\(double\) 3\)\) < 3\.5\) && \(sum > 3\.0\)\)/, generated)
+  end
+
   def test_generate_c_for_generic_struct_instantiation_and_embedding
     source = [
       "module demo.generic_surface",
@@ -472,7 +490,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/\.colors = \{ 5, 6, 7, 8 \}/, generated)
   end
 
-  def test_generate_c_for_unsafe_array_indexing_and_assignment
+  def test_generate_c_for_safe_array_indexing_and_assignment
     source = [
       "module demo.array_index_surface",
       "",
@@ -482,23 +500,23 @@ class MilkTeaCodegenTest < Minitest::Test
       "def main() -> i32:",
       "    var palette = array[u32, 4](1, 2, 3, 4)",
       "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
-      "    unsafe:",
-      "        palette[1] = 9",
-      "        holder.colors[2] = 10",
-      "        if palette[0] != 1:",
-      "            return 1",
-      "        if holder.colors[2] != 10:",
-      "            return 2",
+      "    palette[1] = 9",
+      "    holder.colors[2] = 10",
+      "    if palette[0] != 1:",
+      "        return 1",
+      "    if holder.colors[2] != 10:",
+      "        return 2",
       "    return 0",
       "",
     ].join("\n")
 
     generated = generate_c_from_source(source)
 
-    assert_match(/palette\[1\] = 9;/, generated)
-    assert_match(/holder\.colors\[2\] = 10;/, generated)
-    assert_match(/if \(palette\[0\] != 1\)/, generated)
-    assert_match(/if \(holder\.colors\[2\] != 10\)/, generated)
+    assert_match(/static inline uint32_t \*mt_checked_index_array_u32_4\(uint32_t \(\*array\)\[4\], uintptr_t index\)/, generated)
+    assert_match(/if \(index >= 4\) mt_panic\("array index out of bounds"\);/, generated)
+    assert_match(/\(\*mt_checked_index_array_u32_4\(\&\(palette\), 1\)\) = 9;/, generated)
+    assert_match(/\(\*mt_checked_index_array_u32_4\(\&\(holder\.colors\), 2\)\) = 10;/, generated)
+    assert_match(/if \(\(\(\*mt_checked_index_array_u32_4\(\&\(palette\), 0\)\)\) != 1\)/, generated)
   end
 
   def test_generate_c_for_array_assignment_and_parameter_copy
@@ -525,9 +543,11 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_source(source)
 
     assert_match(/int32_t values_input\[4\]/, generated)
+    assert_match(/static inline int32_t \*mt_checked_index_array_i32_4\(int32_t \(\*array\)\[4\], uintptr_t index\)/, generated)
     assert_match(/int32_t values\[4\];\n  memcpy\(values, values_input, sizeof\(values\)\);/, generated)
     assert_match(/memcpy\(lhs, rhs, sizeof\(lhs\)\);/, generated)
-    assert_match(/return values\[1\];/, generated)
+    assert_match(/return \(\*mt_checked_index_array_i32_4\(\&\(values\), 1\)\);/, generated)
+    assert_match(/if \(\(\(\*mt_checked_index_array_i32_4\(\&\(lhs\), 1\)\)\) != 6\)/, generated)
   end
 
   def test_generate_c_for_local_array_returns

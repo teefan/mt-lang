@@ -30,6 +30,9 @@ class MilkTeaBindgenTest < Minitest::Test
         #define PIXEL_RATIO 2
         #define GREETING "Milk"
         #define DYNAMIC_SIZE runtime_size()
+        #if 0
+        #define INACTIVE_LIMIT missing_symbol
+        #endif
 
         typedef struct Material {
           float params[4];
@@ -106,6 +109,7 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_match(/const PIXEL_RATIO: i32 = 2/, generated)
       refute_match(/const GREETING:/, generated)
       refute_match(/const DYNAMIC_SIZE:/, generated)
+      refute_match(/const INACTIVE_LIMIT:/, generated)
       assert_match(/const MAGIC: i32 = 7/, generated)
       assert_match(/const SCALE: f32 = 2.5/, generated)
       assert_match(/const ORIGIN: Vec2 = Vec2\(x = 0.0, y = 0.0\)/, generated)

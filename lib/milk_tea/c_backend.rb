@@ -14,8 +14,13 @@ module MilkTea
 
     def emit
       lines = []
-      @program.includes.each do |include_node|
-        lines << "#include #{include_node.header}"
+      headers = @program.includes.map(&:header)
+      if uses_panic_helper?
+        headers << "<stdio.h>"
+        headers << "<stdlib.h>"
+      end
+      headers.uniq.each do |header|
+        lines << "#include #{header}"
       end
       lines << ""
 
@@ -74,6 +79,12 @@ module MilkTea
         lines << ""
       end
 
+      checked_array_index_types = collect_checked_array_index_types
+      checked_array_index_types.each do |type|
+        lines.concat(emit_checked_array_index_helper(type))
+        lines << ""
+      end
+
       @program.functions.each do |function|
         lines.concat(emit_function(function))
         lines << ""
@@ -85,7 +96,7 @@ module MilkTea
     private
 
     def uses_panic_helper?
-      @program.functions.any? { |function| function_uses_panic?(function) }
+      collect_checked_array_index_types.any? || @program.functions.any? { |function| function_uses_panic?(function) }
     end
 
     def function_uses_panic?(function)
@@ -123,7 +134,7 @@ module MilkTea
         expression.callee == "mt_panic" || expression.arguments.any? { |argument| expression_uses_panic?(argument) }
       when IR::Member
         expression_uses_panic?(expression.receiver)
-      when IR::Index
+      when IR::Index, IR::CheckedIndex
         expression_uses_panic?(expression.receiver) || expression_uses_panic?(expression.index)
       when IR::Unary
         expression_uses_panic?(expression.operand)
@@ -152,6 +163,16 @@ module MilkTea
         "#{INDENT}fputs(message, stderr);",
         "#{INDENT}fputc('\\n', stderr);",
         "#{INDENT}abort();",
+        "}",
+      ]
+    end
+
+    def emit_checked_array_index_helper(type)
+      helper_name = checked_array_index_helper_name(type)
+      [
+        "static inline #{c_declaration(pointer_to(array_element_type(type)), helper_name)}(#{c_declaration(type, '(*array)')}, #{c_declaration(Types::Primitive.new('usize'), 'index')}) {",
+        "#{INDENT}if (index >= #{array_length(type)}) mt_panic(\"array index out of bounds\");",
+        "#{INDENT}return &(*array)[index];",
         "}",
       ]
     end
@@ -336,6 +357,8 @@ module MilkTea
         "#{wrap_member_receiver(expression.receiver)}#{operator}#{expression.member}"
       when IR::Index
         "#{wrap_index_receiver(expression.receiver)}[#{emit_expression(expression.index)}]"
+      when IR::CheckedIndex
+        "(*#{checked_array_index_helper_name(expression.receiver_type)}(&(#{emit_expression(expression.receiver)}), #{emit_expression(expression.index)}))"
       when IR::Call
         call = emit_call_expression(expression)
         array_type?(expression.type) ? "#{call}.value" : call
@@ -496,7 +519,7 @@ module MilkTea
       case expression
       when IR::Member
         collect_reinterpret_helpers_from_expression(expression.receiver, helpers, seen)
-      when IR::Index
+      when IR::Index, IR::CheckedIndex
         collect_reinterpret_helpers_from_expression(expression.receiver, helpers, seen)
         collect_reinterpret_helpers_from_expression(expression.index, helpers, seen)
       when IR::Call
@@ -540,9 +563,13 @@ module MilkTea
       "mt_reinterpret_#{sanitize_identifier(target_type.to_s)}_from_#{sanitize_identifier(source_type.to_s)}"
     end
 
+    def checked_array_index_helper_name(type)
+      "mt_checked_index_#{sanitize_identifier(type.to_s)}"
+    end
+
     def wrap_member_receiver(expression)
       case expression
-      when IR::Name, IR::Member, IR::Index
+      when IR::Name, IR::Member, IR::Index, IR::CheckedIndex
         emit_expression(expression)
       else
         "(#{emit_expression(expression)})"
@@ -551,7 +578,7 @@ module MilkTea
 
     def wrap_index_receiver(expression)
       case expression
-      when IR::Name, IR::Member, IR::Index, IR::Call
+      when IR::Name, IR::Member, IR::Index, IR::CheckedIndex, IR::Call
         emit_expression(expression)
       else
         "(#{emit_expression(expression)})"
@@ -625,6 +652,75 @@ module MilkTea
 
     def collect_array_return_types
       @program.functions.map(&:return_type).select { |type| array_type?(type) }.uniq
+    end
+
+    def collect_checked_array_index_types
+      array_types = []
+      @program.functions.each do |function|
+        collect_checked_array_index_types_from_statements(function.body, array_types)
+      end
+      array_types.uniq
+    end
+
+    def collect_checked_array_index_types_from_statements(statements, array_types)
+      statements.each do |statement|
+        case statement
+        when IR::LocalDecl
+          collect_checked_array_index_types_from_expression(statement.value, array_types)
+        when IR::Assignment
+          collect_checked_array_index_types_from_expression(statement.target, array_types)
+          collect_checked_array_index_types_from_expression(statement.value, array_types)
+        when IR::BlockStmt, IR::WhileStmt
+          collect_checked_array_index_types_from_statements(statement.body, array_types)
+        when IR::IfStmt
+          collect_checked_array_index_types_from_expression(statement.condition, array_types)
+          collect_checked_array_index_types_from_statements(statement.then_body, array_types)
+          collect_checked_array_index_types_from_statements(statement.else_body, array_types) if statement.else_body
+        when IR::SwitchStmt
+          collect_checked_array_index_types_from_expression(statement.expression, array_types)
+          statement.cases.each do |switch_case|
+            collect_checked_array_index_types_from_statements(switch_case.body, array_types)
+          end
+        when IR::StaticAssert
+          collect_checked_array_index_types_from_expression(statement.condition, array_types)
+          collect_checked_array_index_types_from_expression(statement.message, array_types)
+        when IR::ReturnStmt
+          collect_checked_array_index_types_from_expression(statement.value, array_types) if statement.value
+        when IR::ExpressionStmt
+          collect_checked_array_index_types_from_expression(statement.expression, array_types)
+        end
+      end
+    end
+
+    def collect_checked_array_index_types_from_expression(expression, array_types)
+      case expression
+      when IR::Member
+        collect_checked_array_index_types_from_expression(expression.receiver, array_types)
+      when IR::Index
+        collect_checked_array_index_types_from_expression(expression.receiver, array_types)
+        collect_checked_array_index_types_from_expression(expression.index, array_types)
+      when IR::CheckedIndex
+        array_types << expression.receiver_type
+        collect_checked_array_index_types_from_expression(expression.receiver, array_types)
+        collect_checked_array_index_types_from_expression(expression.index, array_types)
+      when IR::Call
+        expression.arguments.each { |argument| collect_checked_array_index_types_from_expression(argument, array_types) }
+      when IR::Unary
+        collect_checked_array_index_types_from_expression(expression.operand, array_types)
+      when IR::Binary
+        collect_checked_array_index_types_from_expression(expression.left, array_types)
+        collect_checked_array_index_types_from_expression(expression.right, array_types)
+      when IR::ReinterpretExpr
+        collect_checked_array_index_types_from_expression(expression.expression, array_types)
+      when IR::AddressOf
+        collect_checked_array_index_types_from_expression(expression.expression, array_types)
+      when IR::Cast
+        collect_checked_array_index_types_from_expression(expression.expression, array_types)
+      when IR::AggregateLiteral
+        expression.fields.each { |field| collect_checked_array_index_types_from_expression(field.value, array_types) }
+      when IR::ArrayLiteral
+        expression.elements.each { |element| collect_checked_array_index_types_from_expression(element, array_types) }
+      end
     end
 
     def collect_span_types
@@ -750,7 +846,7 @@ module MilkTea
       case expression
       when IR::Member
         collect_result_types_from_expression(expression.receiver, result_types, visited)
-      when IR::Index
+      when IR::Index, IR::CheckedIndex
         collect_result_types_from_expression(expression.receiver, result_types, visited)
         collect_result_types_from_expression(expression.index, result_types, visited)
       when IR::Call
@@ -878,7 +974,7 @@ module MilkTea
       case expression
       when IR::Member
         collect_generic_struct_types_from_expression(expression.receiver, generic_struct_types, visited)
-      when IR::Index
+      when IR::Index, IR::CheckedIndex
         collect_generic_struct_types_from_expression(expression.receiver, generic_struct_types, visited)
         collect_generic_struct_types_from_expression(expression.index, generic_struct_types, visited)
       when IR::Call
@@ -1023,7 +1119,7 @@ module MilkTea
       case expression
       when IR::Member
         collect_span_types_from_expression(expression.receiver, span_types, visited)
-      when IR::Index
+      when IR::Index, IR::CheckedIndex
         collect_span_types_from_expression(expression.receiver, span_types, visited)
         collect_span_types_from_expression(expression.index, span_types, visited)
       when IR::Call
