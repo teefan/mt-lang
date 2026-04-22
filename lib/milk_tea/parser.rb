@@ -78,7 +78,9 @@ module MilkTea
     end
 
     def parse_declaration
-      if match(:const)
+      if check(:packed) || check(:align)
+        parse_struct_decl_with_layout
+      elsif match(:const)
         parse_const_decl
       elsif match(:type)
         parse_type_alias_decl
@@ -98,6 +100,8 @@ module MilkTea
         parse_function_def
       elsif match(:extern)
         parse_extern_decl
+      elsif match(:static_assert)
+        parse_static_assert
       else
         raise error(peek, "expected declaration")
       end
@@ -139,7 +143,9 @@ module MilkTea
     end
 
     def parse_extern_module_declaration
-      if match(:const)
+      if check(:packed) || check(:align)
+        parse_struct_decl_with_layout
+      elsif match(:const)
         parse_const_decl
       elsif match(:type)
         parse_type_alias_decl
@@ -178,7 +184,7 @@ module MilkTea
       AST::TypeAliasDecl.new(name:, target:)
     end
 
-    def parse_struct_decl
+    def parse_struct_decl(packed: false, alignment: nil)
       name = consume_name("expected struct name").lexeme
       type_params = parse_declaration_type_params
       fields = parse_named_block do
@@ -188,7 +194,31 @@ module MilkTea
         consume_end_of_statement
         AST::Field.new(name: field_name, type: field_type)
       end
-      AST::StructDecl.new(name:, type_params:, fields:)
+      AST::StructDecl.new(name:, type_params:, fields:, packed:, alignment:)
+    end
+
+    def parse_struct_decl_with_layout
+      packed = false
+      alignment = nil
+
+      loop do
+        if match(:packed)
+          raise error(previous, "duplicate packed modifier") if packed
+
+          packed = true
+        elsif match(:align)
+          raise error(previous, "duplicate align modifier") if alignment
+
+          consume(:lparen, "expected '(' after align")
+          alignment = consume(:integer, "expected integer alignment value").literal
+          consume(:rparen, "expected ')' after alignment value")
+        else
+          break
+        end
+      end
+
+      consume(:struct, "expected struct after layout modifiers")
+      parse_struct_decl(packed:, alignment:)
     end
 
     def parse_union_decl
@@ -406,8 +436,16 @@ module MilkTea
         parse_match_stmt
       elsif match(:unsafe)
         parse_unsafe_stmt
+      elsif match(:static_assert)
+        parse_static_assert
+      elsif match(:for)
+        parse_for_stmt
       elsif match(:while)
         parse_while_stmt
+      elsif match(:break)
+        parse_break_stmt
+      elsif match(:continue)
+        parse_continue_stmt
       elsif match(:return)
         parse_return_stmt
       elsif match(:defer)
@@ -452,10 +490,38 @@ module MilkTea
       AST::UnsafeStmt.new(body: parse_block)
     end
 
+    def parse_static_assert
+      consume(:lparen, "expected '(' after static_assert")
+      condition = parse_expression
+      consume(:comma, "expected ',' after static_assert condition")
+      message = parse_expression
+      consume(:rparen, "expected ')' after static_assert message")
+      consume_end_of_statement
+      AST::StaticAssert.new(condition:, message:)
+    end
+
+    def parse_for_stmt
+      name = consume_name("expected loop variable name").lexeme
+      consume(:in, "expected 'in' in for loop")
+      iterable = parse_expression
+      body = parse_block
+      AST::ForStmt.new(name:, iterable:, body:)
+    end
+
     def parse_while_stmt
       condition = parse_expression
       body = parse_block
       AST::WhileStmt.new(condition:, body:)
+    end
+
+    def parse_break_stmt
+      consume_end_of_statement
+      AST::BreakStmt.new
+    end
+
+    def parse_continue_stmt
+      consume_end_of_statement
+      AST::ContinueStmt.new
     end
 
     def parse_return_stmt
@@ -614,7 +680,13 @@ module MilkTea
     end
 
     def parse_primary
-      if match_name
+      if match(:sizeof)
+        parse_sizeof_expr
+      elsif match(:alignof)
+        parse_alignof_expr
+      elsif match(:offsetof)
+        parse_offsetof_expr
+      elsif match_name
         AST::Identifier.new(name: previous.lexeme)
       elsif match(:integer)
         AST::IntegerLiteral.new(lexeme: previous.lexeme, value: previous.literal)
@@ -637,6 +709,29 @@ module MilkTea
       else
         raise error(peek, "expected expression")
       end
+    end
+
+    def parse_sizeof_expr
+      consume(:lparen, "expected '(' after sizeof")
+      type = parse_type_ref
+      consume(:rparen, "expected ')' after sizeof type")
+      AST::SizeofExpr.new(type:)
+    end
+
+    def parse_alignof_expr
+      consume(:lparen, "expected '(' after alignof")
+      type = parse_type_ref
+      consume(:rparen, "expected ')' after alignof type")
+      AST::AlignofExpr.new(type:)
+    end
+
+    def parse_offsetof_expr
+      consume(:lparen, "expected '(' after offsetof")
+      type = parse_type_ref
+      consume(:comma, "expected ',' after offsetof type")
+      field = consume_name("expected field name in offsetof").lexeme
+      consume(:rparen, "expected ')' after offsetof field")
+      AST::OffsetofExpr.new(type:, field:)
     end
 
     def parse_qualified_name
@@ -718,7 +813,7 @@ module MilkTea
     end
 
     def builtin_specialization_target?(expression)
-      expression.is_a?(AST::Identifier) && %w[array cast span].include?(expression.name)
+      expression.is_a?(AST::Identifier) && %w[array cast reinterpret span].include?(expression.name)
     end
 
     def aggregate_specialization_target?(expression)

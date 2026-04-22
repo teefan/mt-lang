@@ -34,6 +34,7 @@ module MilkTea
         structs = []
         unions = []
         enums = []
+        static_asserts = []
         functions = []
 
         lowered_analyses.each do |analysis|
@@ -46,6 +47,7 @@ module MilkTea
           structs.concat(lower_structs)
           unions.concat(lower_unions)
           enums.concat(lower_enums)
+          static_asserts.concat(lower_static_asserts)
           functions.concat(lower_functions)
         end
 
@@ -56,6 +58,7 @@ module MilkTea
           structs:,
           unions:,
           enums:,
+          static_asserts:,
           functions:,
         )
       end
@@ -75,6 +78,7 @@ module MilkTea
 
       def collect_includes
         headers = ["<stdbool.h>", "<stdint.h>", "<string.h>"]
+        headers << "<stddef.h>" if program_uses_offsetof?
         if program_uses_panic?
           headers << "<stdio.h>"
           headers << "<stdlib.h>"
@@ -95,6 +99,10 @@ module MilkTea
         @program.analyses_by_path.values.any? { |analysis| analysis_uses_panic?(analysis) }
       end
 
+      def program_uses_offsetof?
+        @program.analyses_by_path.values.any? { |analysis| analysis_uses_offsetof?(analysis) }
+      end
+
       def analysis_uses_panic?(analysis)
         analysis.ast.declarations.any? do |decl|
           case decl
@@ -108,8 +116,29 @@ module MilkTea
         end
       end
 
+      def analysis_uses_offsetof?(analysis)
+        analysis.ast.declarations.any? do |decl|
+          case decl
+          when AST::ConstDecl
+            expression_uses_offsetof?(decl.value)
+          when AST::StaticAssert
+            expression_uses_offsetof?(decl.condition) || expression_uses_offsetof?(decl.message)
+          when AST::FunctionDef
+            block_uses_offsetof?(decl.body)
+          when AST::ImplBlock
+            decl.methods.any? { |method| block_uses_offsetof?(method.body) }
+          else
+            false
+          end
+        end
+      end
+
       def block_uses_panic?(statements)
         statements.any? { |statement| statement_uses_panic?(statement) }
+      end
+
+      def block_uses_offsetof?(statements)
+        statements.any? { |statement| statement_uses_offsetof?(statement) }
       end
 
       def statement_uses_panic?(statement)
@@ -123,6 +152,10 @@ module MilkTea
             (statement.else_body && block_uses_panic?(statement.else_body))
         when AST::MatchStmt
           expression_uses_panic?(statement.expression) || statement.arms.any? { |arm| expression_uses_panic?(arm.pattern) || block_uses_panic?(arm.body) }
+        when AST::StaticAssert
+          expression_uses_panic?(statement.condition) || expression_uses_panic?(statement.message)
+        when AST::ForStmt
+          expression_uses_panic?(statement.iterable) || block_uses_panic?(statement.body)
         when AST::UnsafeStmt, AST::WhileStmt
           expression = statement.is_a?(AST::WhileStmt) ? statement.condition : nil
           (expression && expression_uses_panic?(expression)) || block_uses_panic?(statement.body)
@@ -130,6 +163,33 @@ module MilkTea
           statement.value && expression_uses_panic?(statement.value)
         when AST::DeferStmt, AST::ExpressionStmt
           expression_uses_panic?(statement.expression)
+        else
+          false
+        end
+      end
+
+      def statement_uses_offsetof?(statement)
+        case statement
+        when AST::LocalDecl
+          expression_uses_offsetof?(statement.value)
+        when AST::Assignment
+          expression_uses_offsetof?(statement.target) || expression_uses_offsetof?(statement.value)
+        when AST::IfStmt
+          statement.branches.any? { |branch| expression_uses_offsetof?(branch.condition) || block_uses_offsetof?(branch.body) } ||
+            (statement.else_body && block_uses_offsetof?(statement.else_body))
+        when AST::MatchStmt
+          expression_uses_offsetof?(statement.expression) || statement.arms.any? { |arm| expression_uses_offsetof?(arm.pattern) || block_uses_offsetof?(arm.body) }
+        when AST::StaticAssert
+          expression_uses_offsetof?(statement.condition) || expression_uses_offsetof?(statement.message)
+        when AST::ForStmt
+          expression_uses_offsetof?(statement.iterable) || block_uses_offsetof?(statement.body)
+        when AST::UnsafeStmt, AST::WhileStmt
+          expression = statement.is_a?(AST::WhileStmt) ? statement.condition : nil
+          (expression && expression_uses_offsetof?(expression)) || block_uses_offsetof?(statement.body)
+        when AST::ReturnStmt
+          statement.value && expression_uses_offsetof?(statement.value)
+        when AST::DeferStmt, AST::ExpressionStmt
+          expression_uses_offsetof?(statement.expression)
         else
           false
         end
@@ -152,6 +212,27 @@ module MilkTea
           expression_uses_panic?(expression.receiver) || expression_uses_panic?(expression.index)
         when AST::Specialization
           expression_uses_panic?(expression.callee) || expression.arguments.any? { |argument| expression_uses_panic?(argument.value) }
+        else
+          false
+        end
+      end
+
+      def expression_uses_offsetof?(expression)
+        case expression
+        when AST::OffsetofExpr
+          true
+        when AST::Call
+          expression_uses_offsetof?(expression.callee) || expression.arguments.any? { |argument| expression_uses_offsetof?(argument.value) }
+        when AST::BinaryOp
+          expression_uses_offsetof?(expression.left) || expression_uses_offsetof?(expression.right)
+        when AST::UnaryOp
+          expression_uses_offsetof?(expression.operand)
+        when AST::MemberAccess
+          expression_uses_offsetof?(expression.receiver)
+        when AST::IndexAccess
+          expression_uses_offsetof?(expression.receiver) || expression_uses_offsetof?(expression.index)
+        when AST::Specialization
+          expression_uses_offsetof?(expression.callee) || expression.arguments.any? { |argument| expression_uses_offsetof?(argument.value) }
         else
           false
         end
@@ -192,6 +273,15 @@ module MilkTea
         end
       end
 
+      def lower_static_asserts
+        @analysis.ast.declarations.grep(AST::StaticAssert).map do |statement|
+          IR::StaticAssert.new(
+            condition: lower_expression(statement.condition, env: empty_env, expected_type: @types.fetch("bool")),
+            message: lower_expression(statement.message, env: empty_env, expected_type: @types.fetch("str")),
+          )
+        end
+      end
+
       def lower_structs
         @analysis.ast.declarations.grep(AST::StructDecl).filter_map do |decl|
           next unless decl.type_params.empty?
@@ -200,7 +290,7 @@ module MilkTea
           fields = decl.fields.map do |field|
             IR::Field.new(name: field.name, type: struct_type.field(field.name))
           end
-          IR::StructDecl.new(name: decl.name, c_name: c_type_name(struct_type), fields:)
+          IR::StructDecl.new(name: decl.name, c_name: c_type_name(struct_type), fields:, packed: decl.packed, alignment: decl.alignment)
         end
       end
 
@@ -290,7 +380,7 @@ module MilkTea
         end
 
         return_type = binding.type.return_type
-        body = lower_block(decl.body, env:, active_defers: [], return_type:)
+        body = lower_block(decl.body, env:, active_defers: [], return_type:, loop_flow: nil)
         body = parameter_setup + body
 
         IR::Function.new(
@@ -303,7 +393,7 @@ module MilkTea
         )
       end
 
-      def lower_block(statements, env:, active_defers:, return_type:)
+      def lower_block(statements, env:, active_defers:, return_type:, loop_flow:)
         local_env = duplicate_env(env)
         lowered = []
         local_defers = []
@@ -313,7 +403,13 @@ module MilkTea
           when AST::DeferStmt
             local_defers << lower_expression(statement.expression, env: local_env)
           when AST::UnsafeStmt
-            body = lower_block(statement.body, env: local_env, active_defers: active_defers + local_defers, return_type:)
+            body = lower_block(
+              statement.body,
+              env: local_env,
+              active_defers: active_defers + local_defers,
+              return_type:,
+              loop_flow: nested_loop_flow(loop_flow, local_defers),
+            )
             lowered << IR::BlockStmt.new(body:)
           when AST::LocalDecl
             type = statement.type ? resolve_type_ref(statement.type) : infer_expression_type(statement.value, env: local_env)
@@ -326,9 +422,23 @@ module MilkTea
             value = lower_expression(statement.value, env: local_env, expected_type: target.type)
             lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
           when AST::IfStmt
-            branches = statement.branches.reverse_each.reduce(statement.else_body ? lower_block(statement.else_body, env: local_env, active_defers: active_defers + local_defers, return_type:) : []) do |else_body, branch|
+            branches = statement.branches.reverse_each.reduce(
+              statement.else_body ? lower_block(
+                statement.else_body,
+                env: local_env,
+                active_defers: active_defers + local_defers,
+                return_type:,
+                loop_flow: nested_loop_flow(loop_flow, local_defers),
+              ) : []
+            ) do |else_body, branch|
               condition = lower_expression(branch.condition, env: local_env, expected_type: @types.fetch("bool"))
-              then_body = lower_block(branch.body, env: local_env, active_defers: active_defers + local_defers, return_type:)
+              then_body = lower_block(
+                branch.body,
+                env: local_env,
+                active_defers: active_defers + local_defers,
+                return_type:,
+                loop_flow: nested_loop_flow(loop_flow, local_defers),
+              )
               [IR::IfStmt.new(condition:, then_body:, else_body:)]
             end
             lowered.concat(branches)
@@ -337,16 +447,35 @@ module MilkTea
             expression = lower_expression(statement.expression, env: local_env, expected_type: scrutinee_type)
             cases = statement.arms.map do |arm|
               value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
-              body = lower_block(arm.body, env: local_env, active_defers: active_defers + local_defers, return_type:)
+              body = lower_block(
+                arm.body,
+                env: local_env,
+                active_defers: active_defers + local_defers,
+                return_type:,
+                loop_flow: nested_loop_flow(loop_flow, local_defers),
+              )
               IR::SwitchCase.new(value:, body:)
             end
             lowered << IR::SwitchStmt.new(expression:, cases:)
+          when AST::StaticAssert
+            lowered << IR::StaticAssert.new(
+              condition: lower_expression(statement.condition, env: local_env, expected_type: @types.fetch("bool")),
+              message: lower_expression(statement.message, env: local_env, expected_type: @types.fetch("str")),
+            )
+          when AST::ForStmt
+            lowered << lower_for_stmt(statement, env: local_env, active_defers: active_defers + local_defers, return_type:)
           when AST::WhileStmt
-            condition = lower_expression(statement.condition, env: local_env, expected_type: @types.fetch("bool"))
-            body = lower_block(statement.body, env: local_env, active_defers: active_defers + local_defers, return_type:)
-            lowered << IR::WhileStmt.new(condition:, body:)
+            lowered << lower_while_stmt(statement, env: local_env, active_defers: active_defers + local_defers, return_type:)
+          when AST::BreakStmt
+            raise LoweringError, "break must be inside a loop" unless loop_flow
+
+            lowered.concat(lower_loop_exit(loop_flow[:break_label], local_defers, loop_flow[:break_defers]))
+          when AST::ContinueStmt
+            raise LoweringError, "continue must be inside a loop" unless loop_flow
+
+            lowered.concat(lower_loop_exit(loop_flow[:continue_label], local_defers, loop_flow[:continue_defers]))
           when AST::ReturnStmt
-            cleanup = (local_defers + active_defers).reverse.map { |expression| IR::ExpressionStmt.new(expression:) }
+            cleanup = cleanup_statements(local_defers, active_defers)
             lowered.concat(cleanup)
             value = statement.value ? lower_expression(statement.value, env: local_env, expected_type: return_type) : nil
             lowered << IR::ReturnStmt.new(value:)
@@ -357,10 +486,140 @@ module MilkTea
           end
         end
 
-        unless lowered.last.is_a?(IR::ReturnStmt)
-          lowered.concat(local_defers.reverse.map { |expression| IR::ExpressionStmt.new(expression:) })
+        unless terminating_ir_statement?(lowered.last)
+          lowered.concat(cleanup_statements(local_defers, []))
         end
         lowered
+      end
+
+      def lower_for_stmt(statement, env:, active_defers:, return_type:)
+        return lower_range_for_stmt(statement, env:, active_defers:, return_type:) if range_call?(statement.iterable)
+
+        lower_collection_for_stmt(statement, env:, active_defers:, return_type:)
+      end
+
+      def lower_while_stmt(statement, env:, active_defers:, return_type:)
+        continue_label = fresh_c_temp_name(env, "loop_continue")
+        break_label = fresh_c_temp_name(env, "loop_break")
+
+        body = lower_block(
+          statement.body,
+          env: duplicate_env(env),
+          active_defers:,
+          return_type:,
+          loop_flow: loop_flow(break_label:, continue_label:),
+        )
+        body << IR::LabelStmt.new(name: continue_label)
+
+        IR::BlockStmt.new(body: [
+          IR::WhileStmt.new(
+            condition: lower_expression(statement.condition, env:, expected_type: @types.fetch("bool")),
+            body:,
+          ),
+          IR::LabelStmt.new(name: break_label),
+        ])
+      end
+
+      def lower_range_for_stmt(statement, env:, active_defers:, return_type:)
+        loop_type = infer_range_loop_type(statement.iterable, env:)
+        start_expr = statement.iterable.arguments[0].value
+        stop_expr = statement.iterable.arguments[1].value
+        index_c_name = fresh_c_temp_name(env, "for_index")
+        stop_c_name = fresh_c_temp_name(env, "for_stop")
+        continue_label = fresh_c_temp_name(env, "loop_continue")
+        break_label = fresh_c_temp_name(env, "loop_break")
+        index_ref = IR::Name.new(name: index_c_name, type: loop_type, pointer: false)
+        stop_ref = IR::Name.new(name: stop_c_name, type: loop_type, pointer: false)
+
+        while_env = duplicate_env(env)
+        while_env[:scopes].last[statement.name] = local_binding(type: loop_type, c_name: c_local_name(statement.name), mutable: false, pointer: false)
+
+        body = [
+          IR::LocalDecl.new(name: statement.name, c_name: c_local_name(statement.name), type: loop_type, value: index_ref),
+        ]
+        body.concat(
+          lower_block(
+            statement.body,
+            env: while_env,
+            active_defers:,
+            return_type:,
+            loop_flow: loop_flow(break_label:, continue_label:),
+          ),
+        )
+        body << IR::LabelStmt.new(name: continue_label)
+        body << IR::Assignment.new(
+          target: index_ref,
+          operator: "+=",
+          value: IR::IntegerLiteral.new(value: 1, type: loop_type),
+        )
+
+        IR::BlockStmt.new(body: [
+          IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: loop_type, value: lower_expression(start_expr, env:, expected_type: loop_type)),
+          IR::LocalDecl.new(name: stop_c_name, c_name: stop_c_name, type: loop_type, value: lower_expression(stop_expr, env:, expected_type: loop_type)),
+          IR::WhileStmt.new(
+            condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_ref, type: @types.fetch("bool")),
+            body:,
+          ),
+          IR::LabelStmt.new(name: break_label),
+        ])
+      end
+
+      def lower_collection_for_stmt(statement, env:, active_defers:, return_type:)
+        iterable_type = infer_expression_type(statement.iterable, env:)
+        element_type = collection_loop_type(iterable_type)
+        raise LoweringError, "for loop expects range(start, stop), array[T, N], or span[T], got #{iterable_type}" unless element_type
+
+        iterable_c_name = fresh_c_temp_name(env, "for_items")
+        index_c_name = fresh_c_temp_name(env, "for_index")
+        continue_label = fresh_c_temp_name(env, "loop_continue")
+        break_label = fresh_c_temp_name(env, "loop_break")
+        iterable_ref = IR::Name.new(name: iterable_c_name, type: iterable_type, pointer: false)
+        index_ref = IR::Name.new(name: index_c_name, type: @types.fetch("usize"), pointer: false)
+
+        item_value = if array_type?(iterable_type)
+                       IR::Index.new(receiver: iterable_ref, index: index_ref, type: element_type)
+                     else
+                       data_ref = IR::Member.new(receiver: iterable_ref, member: "data", type: pointer_to(element_type))
+                       IR::Index.new(receiver: data_ref, index: index_ref, type: element_type)
+                     end
+
+        stop_value = if array_type?(iterable_type)
+                       IR::IntegerLiteral.new(value: array_length(iterable_type), type: @types.fetch("usize"))
+                     else
+                       IR::Member.new(receiver: iterable_ref, member: "len", type: @types.fetch("usize"))
+                     end
+
+        while_env = duplicate_env(env)
+        while_env[:scopes].last[statement.name] = local_binding(type: element_type, c_name: c_local_name(statement.name), mutable: false, pointer: false)
+
+        body = [
+          IR::LocalDecl.new(name: statement.name, c_name: c_local_name(statement.name), type: element_type, value: item_value),
+        ]
+        body.concat(
+          lower_block(
+            statement.body,
+            env: while_env,
+            active_defers:,
+            return_type:,
+            loop_flow: loop_flow(break_label:, continue_label:),
+          ),
+        )
+        body << IR::LabelStmt.new(name: continue_label)
+        body << IR::Assignment.new(
+          target: index_ref,
+          operator: "+=",
+          value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("usize")),
+        )
+
+        IR::BlockStmt.new(body: [
+          IR::LocalDecl.new(name: iterable_c_name, c_name: iterable_c_name, type: iterable_type, value: lower_expression(statement.iterable, env:, expected_type: iterable_type)),
+          IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("usize"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize"))),
+          IR::WhileStmt.new(
+            condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
+            body:,
+          ),
+          IR::LabelStmt.new(name: break_label),
+        ])
       end
 
       def lower_assignment_target(expression, env:)
@@ -398,6 +657,12 @@ module MilkTea
           IR::IntegerLiteral.new(value: expression.value, type:)
         when AST::FloatLiteral
           IR::FloatLiteral.new(value: expression.value, type:)
+        when AST::SizeofExpr
+          IR::SizeofExpr.new(target_type: resolve_type_ref(expression.type), type:)
+        when AST::AlignofExpr
+          IR::AlignofExpr.new(target_type: resolve_type_ref(expression.type), type:)
+        when AST::OffsetofExpr
+          IR::OffsetofExpr.new(target_type: resolve_type_ref(expression.type), field: expression.field, type:)
         when AST::StringLiteral
           IR::StringLiteral.new(value: expression.value, type:, cstring: expression.cstring)
         when AST::BooleanLiteral
@@ -495,6 +760,15 @@ module MilkTea
           argument = expression.arguments.fetch(0)
           lowered_arg = lower_expression(argument.value, env:)
           IR::Cast.new(target_type: type, expression: lowered_arg, type:)
+        when :reinterpret
+          argument = expression.arguments.fetch(0)
+          source_type = infer_expression_type(argument.value, env:)
+          IR::ReinterpretExpr.new(
+            target_type: type,
+            source_type:,
+            expression: lower_expression(argument.value, env:, expected_type: source_type),
+            type:,
+          )
         when :result_ok
           argument = expression.arguments.fetch(0)
           fields = [
@@ -570,6 +844,11 @@ module MilkTea
             return [:cast, nil, nil, Types::Function.new("cast", params: [Types::Parameter.new("value", @types.fetch("i32"))], return_type: target_type)]
           end
 
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "reinterpret"
+            target_type = resolve_type_ref(callee.arguments.fetch(0).value)
+            return [:reinterpret, nil, nil, Types::Function.new("reinterpret", params: [Types::Parameter.new("value", target_type)], return_type: target_type)]
+          end
+
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "array"
             array_type = resolve_type_ref(AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["array"]), arguments: callee.arguments, nullable: false))
             return [:array, nil, nil, array_type]
@@ -605,6 +884,8 @@ module MilkTea
           else
             @types.fetch("f64")
           end
+        when AST::SizeofExpr, AST::AlignofExpr, AST::OffsetofExpr
+          @types.fetch("usize")
         when AST::StringLiteral
           @types.fetch(expression.cstring ? "cstr" : "str")
         when AST::BooleanLiteral
@@ -666,6 +947,9 @@ module MilkTea
             _, _, _, struct_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             struct_type
           when :cast
+            _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
+            function_type.return_type
+          when :reinterpret
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             function_type.return_type
           when :result_ok, :result_err
@@ -847,6 +1131,10 @@ module MilkTea
         type.is_a?(Types::GenericInstance) && type.name == "ptr" && type.arguments.length == 1
       end
 
+      def range_call?(expression)
+        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "range"
+      end
+
       def result_type?(type)
         type.is_a?(Types::Result)
       end
@@ -860,6 +1148,38 @@ module MilkTea
         return unless array_type?(type)
 
         type.arguments.first
+      end
+
+      def array_length(type)
+        return unless array_type?(type)
+
+        type.arguments[1].value
+      end
+
+      def collection_loop_type(type)
+        return array_element_type(type) if array_type?(type)
+        return type.element_type if type.is_a?(Types::Span)
+
+        nil
+      end
+
+      def infer_range_loop_type(expression, env:)
+        start_expr = expression.arguments[0].value
+        stop_expr = expression.arguments[1].value
+        start_type = infer_expression_type(start_expr, env:)
+        stop_type = infer_expression_type(stop_expr, env:)
+
+        if start_type != stop_type
+          if start_expr.is_a?(AST::IntegerLiteral)
+            start_type = infer_expression_type(start_expr, env:, expected_type: stop_type)
+          elsif stop_expr.is_a?(AST::IntegerLiteral)
+            stop_type = infer_expression_type(stop_expr, env:, expected_type: start_type)
+          end
+        end
+
+        raise LoweringError, "range bounds must use matching integer types, got #{start_type} and #{stop_type}" unless start_type == stop_type
+
+        start_type
       end
 
       def integer_type?(type)
@@ -994,6 +1314,40 @@ module MilkTea
         { type:, c_name:, mutable:, pointer: }
       end
 
+      def loop_flow(break_label:, continue_label:, break_defers: [], continue_defers: [])
+        {
+          break_label:,
+          continue_label:,
+          break_defers:,
+          continue_defers:,
+        }
+      end
+
+      def nested_loop_flow(current_loop_flow, local_defers)
+        return nil unless current_loop_flow
+
+        loop_flow(
+          break_label: current_loop_flow[:break_label],
+          continue_label: current_loop_flow[:continue_label],
+          break_defers: current_loop_flow[:break_defers] + local_defers,
+          continue_defers: current_loop_flow[:continue_defers] + local_defers,
+        )
+      end
+
+      def cleanup_statements(local_defers, outer_defers)
+        local_defers.reverse.concat(outer_defers.reverse).map do |expression|
+          IR::ExpressionStmt.new(expression:)
+        end
+      end
+
+      def lower_loop_exit(label, local_defers, outer_defers)
+        cleanup_statements(local_defers, outer_defers) + [IR::GotoStmt.new(label:)]
+      end
+
+      def terminating_ir_statement?(statement)
+        statement.is_a?(IR::ReturnStmt) || statement.is_a?(IR::GotoStmt)
+      end
+
       def empty_env
         { scopes: [{}], counter: 0 }
       end
@@ -1097,6 +1451,11 @@ module MilkTea
 
       def c_local_name(name)
         name
+      end
+
+      def fresh_c_temp_name(env, prefix)
+        env[:counter] += 1
+        "__mt_#{prefix}_#{env[:counter]}"
       end
 
       def sanitize_identifier(text)

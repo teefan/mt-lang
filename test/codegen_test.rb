@@ -307,6 +307,119 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return 1;/, generated)
   end
 
+  def test_generate_c_for_range_and_array_for_loops
+    source = [
+      "module demo.for_surface",
+      "",
+      "def sum(items: array[i32, 4]) -> i32:",
+      "    var total = 0",
+      "    for item in items:",
+      "        total += item",
+      "    for i in range(0, 4):",
+      "        total += i",
+      "    return total",
+      "",
+      "def main() -> i32:",
+      "    return sum(array[i32, 4](1, 2, 3, 4))",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/while \(__mt_for_index_\d+ < 4\)/, generated)
+    assert_match(/int32_t item = __mt_for_items_\d+\[__mt_for_index_\d+\];/, generated)
+    assert_match(/while \(__mt_for_index_\d+ < __mt_for_stop_\d+\)/, generated)
+    assert_match(/int32_t i = __mt_for_index_\d+;/, generated)
+  end
+
+  def test_generate_c_for_break_and_continue_inside_match_with_for_loop
+    source = [
+      "module demo.loop_control_surface",
+      "",
+      "enum Step: u8",
+      "    skip = 1",
+      "    keep = 2",
+      "    stop = 3",
+      "",
+      "def add(target: ptr[i32], amount: i32) -> void:",
+      "    unsafe:",
+      "        *target += amount",
+      "",
+      "def main() -> i32:",
+      "    var total = 0",
+      "    for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):",
+      "        defer add(&total, 1)",
+      "        match step:",
+      "            Step.skip:",
+      "                continue",
+      "            Step.keep:",
+      "                total += 10",
+      "            Step.stop:",
+      "                break",
+      "    return total",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/goto __mt_loop_continue_\d+;/, generated)
+    assert_match(/goto __mt_loop_break_\d+;/, generated)
+    assert_match(/__mt_loop_continue_\d+:;/, generated)
+    assert_match(/__mt_loop_break_\d+:;/, generated)
+    assert_match(/__mt_for_index_\d+ \+= 1;/, generated)
+  end
+
+  def test_generate_c_for_layout_queries_and_static_assert
+    source = [
+      "module demo.layout_surface",
+      "",
+      "struct Header:",
+      "    magic: array[u8, 4]",
+      "    version: u16",
+      "",
+      "static_assert(sizeof(Header) == 6, \"Header size should stay stable\")",
+      "",
+      "def main() -> usize:",
+      "    return offsetof(Header, version) + alignof(Header)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/#include <stddef\.h>/, generated)
+    assert_match(/_Static_assert\(sizeof\(demo_layout_surface_Header\) == 6, "Header size should stay stable"\);/, generated)
+    assert_match(/return offsetof\(demo_layout_surface_Header, version\) \+ _Alignof\(demo_layout_surface_Header\);/, generated)
+  end
+
+  def test_generate_c_for_packed_and_aligned_structs
+    source = [
+      "module demo.layout_modifiers_surface",
+      "",
+      "packed struct Header:",
+      "    tag: u8",
+      "    value: u32",
+      "",
+      "align(16) struct Mat4:",
+      "    data: array[f32, 16]",
+      "",
+      "static_assert(sizeof(Header) == 5, \"Header should stay packed\")",
+      "static_assert(alignof(Mat4) == 16, \"Mat4 alignment drifted\")",
+      "",
+      "def main() -> i32:",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/struct demo_layout_modifiers_surface_Header \{/, generated)
+    assert_match(/\} __attribute__\(\(packed\)\);/, generated)
+    assert_match(/struct demo_layout_modifiers_surface_Mat4 \{/, generated)
+    assert_match(/\} __attribute__\(\(aligned\(16\)\)\);/, generated)
+    assert_match(/_Static_assert\(sizeof\(demo_layout_modifiers_surface_Header\) == 5, "Header should stay packed"\);/, generated)
+    assert_match(/_Static_assert\(_Alignof\(demo_layout_modifiers_surface_Mat4\) == 16, "Mat4 alignment drifted"\);/, generated)
+  end
+
   def test_generate_c_for_address_of_and_dereference_assignment
     source = [
       "module demo.pointer_surface",
@@ -444,6 +557,26 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/mt_array_return_array_i32_4 __mt_return_value;/, generated)
     assert_match(/memcpy\(__mt_return_value\.value, values, sizeof\(__mt_return_value\.value\)\);/, generated)
     assert_match(/return demo_array_return_surface_read\(demo_array_return_surface_clone\(demo_array_return_surface_make\(\)\.value\)\.value\);/, generated)
+  end
+
+  def test_generate_c_for_unsafe_reinterpret_calls
+    source = [
+      "module demo.reinterpret_surface",
+      "",
+      "def main() -> u32:",
+      "    let value: f32 = 1.0",
+      "    unsafe:",
+      "        let bits = reinterpret[u32](value)",
+      "        return bits",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static inline uint32_t mt_reinterpret_u32_from_f32\(float value\)/, generated)
+    assert_match(/_Static_assert\(sizeof\(uint32_t\) == sizeof\(float\), "reinterpret requires equal sizes"\);/, generated)
+    assert_match(/memcpy\(&result, &value, sizeof\(result\)\);/, generated)
+    assert_match(/uint32_t bits = mt_reinterpret_u32_from_f32\(value\);/, generated)
   end
 
   private

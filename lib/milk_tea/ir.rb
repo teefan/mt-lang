@@ -2,10 +2,10 @@
 
 module MilkTea
   module IR
-    Program = Data.define(:module_name, :includes, :constants, :structs, :unions, :enums, :functions)
+    Program = Data.define(:module_name, :includes, :constants, :structs, :unions, :enums, :static_asserts, :functions)
     Include = Data.define(:header)
     Constant = Data.define(:name, :c_name, :type, :value)
-    StructDecl = Data.define(:name, :c_name, :fields)
+      StructDecl = Data.define(:name, :c_name, :fields, :packed, :alignment)
     UnionDecl = Data.define(:name, :c_name, :fields)
     EnumDecl = Data.define(:name, :c_name, :backing_type, :members, :flags)
     EnumMember = Data.define(:name, :c_name, :value)
@@ -20,6 +20,9 @@ module MilkTea
     SwitchCase = Data.define(:value, :body)
     SwitchStmt = Data.define(:expression, :cases)
     WhileStmt = Data.define(:condition, :body)
+    GotoStmt = Data.define(:label)
+    LabelStmt = Data.define(:name)
+    StaticAssert = Data.define(:condition, :message)
     ReturnStmt = Data.define(:value)
     ExpressionStmt = Data.define(:expression)
 
@@ -29,6 +32,10 @@ module MilkTea
     Call = Data.define(:callee, :arguments, :type)
     Unary = Data.define(:operator, :operand, :type)
     Binary = Data.define(:operator, :left, :right, :type)
+    ReinterpretExpr = Data.define(:target_type, :source_type, :expression, :type)
+    SizeofExpr = Data.define(:target_type, :type)
+    AlignofExpr = Data.define(:target_type, :type)
+    OffsetofExpr = Data.define(:target_type, :field, :type)
     IntegerLiteral = Data.define(:value, :type)
     FloatLiteral = Data.define(:value, :type)
     StringLiteral = Data.define(:value, :type, :cstring)
