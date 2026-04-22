@@ -30,6 +30,7 @@ module MilkTea
       "return" => :return,
       "struct" => :struct,
       "type" => :type,
+      "unsafe" => :unsafe,
       "true" => :true,
       "union" => :union,
       "var" => :var,

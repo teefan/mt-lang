@@ -141,6 +141,90 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("on_log")
   end
 
+  def test_type_checks_span_construction_and_field_access
+    source = <<~MT
+      module demo.spans
+
+      def read(items: span[i32]) -> i32:
+          if items.len == 0:
+              return 0
+          unsafe:
+              return *items.data
+
+      def main() -> i32:
+          var value = 7
+          let items = span[i32](data = &value, len = 1)
+          return read(items)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("read")
+    assert_equal true, result.functions.key?("main")
+    assert_equal "span[i32]", result.functions.fetch("read").type.params.first.type.to_s
+  end
+
+  def test_type_checks_generic_struct_instantiation_and_embedding
+    source = <<~MT
+      module demo.generics
+
+      struct Slice[T]:
+          data: ptr[T]
+          len: usize
+
+      struct Holder:
+          items: Slice[i32]
+
+      def read(items: Slice[i32]) -> i32:
+          if items.len == 0:
+              return 0
+          unsafe:
+              return *items.data
+
+      def main() -> i32:
+          var value = 7
+          let holder = Holder(items = Slice[i32](data = &value, len = 1))
+          return read(holder.items)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("Slice")
+    assert_equal true, result.types.key?("Holder")
+    assert_equal "demo.generics.Slice[i32]", result.functions.fetch("read").type.params.first.type.to_s
+  end
+
+  def test_type_checks_generic_functions_with_inferred_type_arguments
+    source = <<~MT
+      module demo.generic_functions
+
+      struct Slice[T]:
+          data: ptr[T]
+          len: usize
+
+      def head[T](items: Slice[T]) -> ptr[T]:
+          return items.data
+
+      def min[T](a: T, b: T) -> T:
+          if a < b:
+              return a
+          return b
+
+      def main() -> i32:
+          var value = 7
+          let items = Slice[i32](data = &value, len = 1)
+          let smallest = min(9, 4)
+          unsafe:
+              return *head(items) + smallest
+    MT
+
+    result = check_source(source)
+
+    assert_equal ["T"], result.functions.fetch("head").type_params
+    assert_equal ["T"], result.functions.fetch("min").type_params
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_rejects_mismatched_callback_arguments
     source = <<~MT
       module demo.callbacks
@@ -179,6 +263,233 @@ class MilkTeaSemaTest < Minitest::Test
 
     assert_equal true, result.types.key?("Event")
     assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_unsafe_pointer_cast_and_arithmetic
+    source = <<~MT
+      module demo.unsafe_surface
+
+      extern def allocate(size: usize) -> ptr[void]
+
+      def main() -> i32:
+          let memory = allocate(16)
+          unsafe:
+              let advanced = cast[ptr[byte]](memory) + 4
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_address_of_dereference_and_deref_assignment
+    source = <<~MT
+      module demo.pointer_surface
+
+      struct Counter:
+          value: i32
+
+      def main() -> i32:
+          var counter = Counter(value = 3)
+          let counter_ptr = &counter
+          (*counter_ptr).value = 7
+          return counter.value
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("Counter")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_array_construction_for_locals_consts_and_struct_fields
+    source = <<~MT
+      module demo.arrays
+
+      struct Palette:
+          colors: array[u32, 4]
+
+      const DEFAULT: array[u32, 4] = array[u32, 4](11, 22, 33, 44)
+
+      def main() -> i32:
+          let palette = array[u32, 4](1, 2, 3, 4)
+          let holder = Palette(colors = array[u32, 4](5, 6, 7, 8))
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("Palette")
+    assert_equal true, result.values.key?("DEFAULT")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_array_assignment_and_by_value_parameters
+    source = <<~MT
+      module demo.arrays
+
+      def mutate(mut values: array[i32, 4]) -> i32:
+          unsafe:
+              values[1] = 9
+              return values[1]
+
+      def main() -> i32:
+          var lhs = array[i32, 4](1, 2, 3, 4)
+          let rhs = array[i32, 4](5, 6, 7, 8)
+          lhs = rhs
+          return mutate(lhs)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("mutate")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_local_array_return_values
+    source = <<~MT
+      module demo.array_returns
+
+      def make() -> array[i32, 4]:
+          return array[i32, 4](1, 2, 3, 4)
+
+      def clone(values: array[i32, 4]) -> array[i32, 4]:
+          return values
+
+      def read(values: array[i32, 4]) -> i32:
+          unsafe:
+              return values[1]
+
+      def main() -> i32:
+          return read(clone(make()))
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("make")
+    assert_equal true, result.functions.key?("clone")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_extern_array_params_and_returns
+    param_source = <<~MT
+      module demo.bad_params
+
+      extern def take(values: array[i32, 4]) -> i32
+    MT
+
+    param_error = assert_raises(MilkTea::SemaError) do
+      check_source(param_source)
+    end
+
+    assert_match(/extern function take cannot take array parameters/, param_error.message)
+
+    return_source = <<~MT
+      module demo.bad_return
+
+      extern def make() -> array[i32, 4]
+    MT
+
+    return_error = assert_raises(MilkTea::SemaError) do
+      check_source(return_source)
+    end
+
+    assert_match(/extern function make cannot return arrays/, return_error.message)
+  end
+
+  def test_type_checks_unsafe_array_indexing_and_element_assignment
+    source = <<~MT
+      module demo.arrays
+
+      struct Palette:
+          colors: array[u32, 4]
+
+      def main() -> i32:
+          var palette = array[u32, 4](1, 2, 3, 4)
+          var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))
+          unsafe:
+              palette[1] = 9
+              holder.colors[2] = 10
+              let first = palette[0]
+              let third = holder.colors[2]
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_indexing_outside_unsafe
+    source = <<~MT
+      module demo.bad
+
+      def main() -> i32:
+          let palette = array[u32, 4](1, 2, 3, 4)
+          let value = palette[0]
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/indexing requires unsafe/, error.message)
+  end
+
+  def test_rejects_dereference_of_non_pointer
+    source = <<~MT
+      module demo.bad
+
+      def main() -> i32:
+          let value = *1
+          return value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/operator \* requires a pointer operand/, error.message)
+  end
+
+  def test_rejects_pointer_cast_outside_unsafe
+    source = <<~MT
+      module demo.bad
+
+      extern def allocate(size: usize) -> ptr[void]
+
+      def main() -> i32:
+          let memory = allocate(16)
+          let bytes = cast[ptr[byte]](memory)
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/pointer cast requires unsafe/, error.message)
+  end
+
+  def test_rejects_pointer_arithmetic_outside_unsafe
+    source = <<~MT
+      module demo.bad
+
+      extern def allocate(size: usize) -> ptr[void]
+
+      def main() -> i32:
+          let memory = allocate(16)
+          let advanced = cast[ptr[byte]](memory) + 4
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/pointer cast requires unsafe/, error.message)
   end
 
   def test_rejects_non_integer_flags_backing_types

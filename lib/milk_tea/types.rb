@@ -172,6 +172,138 @@ module MilkTea
       end
     end
 
+    class TypeVar < Base
+      attr_reader :name
+
+      def initialize(name)
+        @name = name
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(TypeVar) && other.name == name
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, name].hash
+      end
+
+      def to_s
+        name
+      end
+    end
+
+    class Span < Base
+      attr_reader :element_type
+
+      def initialize(element_type)
+        @element_type = element_type
+        @fields = {
+          "data" => GenericInstance.new("ptr", [element_type]),
+          "len" => Primitive.new("usize"),
+        }.freeze
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(Span) && other.element_type == element_type
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, element_type].hash
+      end
+
+      def name
+        to_s
+      end
+
+      def fields
+        @fields
+      end
+
+      def field(name)
+        @fields[name]
+      end
+
+      def to_s
+        "span[#{element_type}]"
+      end
+    end
+
+    class GenericStructDefinition < Base
+      attr_reader :name, :type_params, :module_name, :external
+
+      def initialize(name, type_params, module_name: nil, external: false)
+        @name = name
+        @type_params = type_params.freeze
+        @module_name = module_name
+        @external = external
+        @fields = {}
+        @instances = {}
+      end
+
+      def define_fields(fields)
+        @fields = fields.freeze
+        self
+      end
+
+      def fields
+        @fields
+      end
+
+      def field(name)
+        @fields[name]
+      end
+
+      def instantiate(arguments)
+        raise ArgumentError, "#{name} expects #{type_params.length} type arguments, got #{arguments.length}" unless arguments.length == type_params.length
+
+        key = arguments.dup.freeze
+        return @instances[key] if @instances.key?(key)
+
+        substitutions = type_params.zip(arguments).to_h
+        instance = StructInstance.new(self, arguments)
+        @instances[key] = instance
+        instance.define_fields(@fields.transform_values { |type| substitute_type(type, substitutions) })
+      end
+
+      def to_s
+        module_name ? "#{module_name}.#{name}" : name
+      end
+
+      private
+
+      def substitute_type(type, substitutions)
+        case type
+        when TypeVar
+          substitutions.fetch(type.name, type)
+        when Nullable
+          Nullable.new(substitute_type(type.base, substitutions))
+        when GenericInstance
+          GenericInstance.new(type.name, type.arguments.map { |argument| argument.is_a?(LiteralTypeArg) ? argument : substitute_type(argument, substitutions) })
+        when Span
+          Span.new(substitute_type(type.element_type, substitutions))
+        when Function
+          Function.new(
+            type.name,
+            params: type.params.map { |param| Parameter.new(param.name, substitute_type(param.type, substitutions), mutable: param.mutable) },
+            return_type: substitute_type(type.return_type, substitutions),
+            receiver_type: type.receiver_type ? substitute_type(type.receiver_type, substitutions) : nil,
+            receiver_mutable: type.receiver_mutable,
+            external: type.external,
+          )
+        when StructInstance
+          type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
+        else
+          type
+        end
+      end
+    end
+
     class Struct < Base
       attr_reader :name, :module_name, :external
 
@@ -197,6 +329,31 @@ module MilkTea
 
       def to_s
         module_name ? "#{module_name}.#{name}" : name
+      end
+    end
+
+    class StructInstance < Struct
+      attr_reader :definition, :arguments
+
+      def initialize(definition, arguments)
+        super(definition.name, module_name: definition.module_name, external: definition.external)
+        @definition = definition
+        @arguments = arguments.freeze
+      end
+
+      def eql?(other)
+        other.is_a?(StructInstance) && other.definition == definition && other.arguments == arguments
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, definition, arguments].hash
+      end
+
+      def to_s
+        base = module_name ? "#{module_name}.#{name}" : name
+        "#{base}[#{arguments.join(', ')}]"
       end
     end
 

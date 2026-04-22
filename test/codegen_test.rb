@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "fileutils"
 require "tempfile"
 require_relative "test_helper"
 
@@ -12,7 +13,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/#include <stdint\.h>/, generated)
     assert_match(/#include "raylib\.h"/, generated)
     assert_match(/typedef struct demo_bouncing_ball_Ball/, generated)
-    assert_match(/static void demo_bouncing_ball_Ball_update\(demo_bouncing_ball_Ball\* self, float dt\)/, generated)
+    assert_match(/static void demo_bouncing_ball_Ball_update\(demo_bouncing_ball_Ball \*self, float dt\)/, generated)
     assert_match(/demo_bouncing_ball_Ball_update\(&ball, dt\);/, generated)
     assert_match(/int32_t main\(void\)/, generated)
     assert_equal 1, generated.scan("CloseWindow();").length
@@ -64,6 +65,304 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/if \(current == demo_codegen_surface_State_running\)/, generated)
     assert_match(/return 1;/, generated)
     end
+
+  def test_generate_c_includes_imported_ordinary_module_definitions
+    Dir.mktmpdir("milk-tea-codegen-imports") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "std"))
+      FileUtils.mkdir_p(File.join(dir, "demo"))
+
+      File.write(File.join(dir, "std", "math.mt"), [
+        "module std.math",
+        "",
+        "const TEN: i32 = 10",
+        "",
+        "def clamp[T](value: T, min_value: T, max_value: T) -> T:",
+        "    if value < min_value:",
+        "        return min_value",
+        "    elif value > max_value:",
+        "        return max_value",
+        "    return value",
+        "",
+      ].join("\n"))
+
+      root_path = File.join(dir, "demo", "main.mt")
+      File.write(root_path, [
+        "module demo.main",
+        "",
+        "import std.math as math",
+        "",
+        "def main() -> i32:",
+        "    return math.clamp(42, 0, math.TEN)",
+        "",
+      ].join("\n"))
+
+      program = MilkTea::ModuleLoader.new(module_roots: [dir]).check_program(root_path)
+      generated = MilkTea::Codegen.generate_c(program)
+
+      assert_match(/static const int32_t std_math_TEN = 10;/, generated)
+      assert_match(/static int32_t std_math_clamp_i32\(int32_t value, int32_t min_value, int32_t max_value\)/, generated)
+      assert_match(/return std_math_clamp_i32\(42, 0, std_math_TEN\);/, generated)
+    end
+  end
+
+  def test_generate_c_for_unsafe_pointer_cast_and_arithmetic
+    source = [
+      "module demo.pointer_surface",
+      "",
+      "extern def allocate(size: usize) -> ptr[void]",
+      "extern def release(memory: ptr[void]) -> void",
+      "",
+      "def main() -> i32:",
+      "    let memory = allocate(16)",
+      "    unsafe:",
+      "        let advanced = cast[ptr[byte]](memory) + 4",
+      "    release(memory)",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/uint8_t \*advanced = \(\(\(uint8_t\*\) memory\)\) \+ 4;/, generated)
+    assert_match(/release\(memory\);/, generated)
+  end
+
+  def test_generate_c_for_span_construction_and_field_access
+    source = [
+      "module demo.span_surface",
+      "",
+      "def read(items: span[i32]) -> i32:",
+      "    if items.len == 0:",
+      "        return 0",
+      "    unsafe:",
+      "        return *items.data",
+      "",
+      "def main() -> i32:",
+      "    var value = 7",
+      "    let items = span[i32](data = &value, len = 1)",
+      "    return read(items)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/typedef struct mt_span_i32/, generated)
+    assert_match(/int32_t \*data;/, generated)
+    assert_match(/uintptr_t len;/, generated)
+    assert_match(/static int32_t demo_span_surface_read\(mt_span_i32 items\)/, generated)
+    assert_match(/if \(items\.len == 0\)/, generated)
+    assert_match(/return \*items\.data;/, generated)
+    assert_match(/mt_span_i32 items = \(mt_span_i32\)\{ \.data = &value, \.len = 1 \};/, generated)
+  end
+
+  def test_generate_c_for_generic_struct_instantiation_and_embedding
+    source = [
+      "module demo.generic_surface",
+      "",
+      "struct Slice[T]:",
+      "    data: ptr[T]",
+      "    len: usize",
+      "",
+      "struct Holder:",
+      "    items: Slice[i32]",
+      "",
+      "def read(items: Slice[i32]) -> i32:",
+      "    if items.len == 0:",
+      "        return 0",
+      "    unsafe:",
+      "        return *items.data",
+      "",
+      "def main() -> i32:",
+      "    var value = 7",
+      "    let holder = Holder(items = Slice[i32](data = &value, len = 1))",
+      "    return read(holder.items)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/typedef struct demo_generic_surface_Slice_i32 demo_generic_surface_Slice_i32;/, generated)
+    assert_match(/typedef struct demo_generic_surface_Holder demo_generic_surface_Holder;/, generated)
+    assert_match(/struct demo_generic_surface_Slice_i32 \{/, generated)
+    assert_match(/int32_t \*data;/, generated)
+    assert_match(/uintptr_t len;/, generated)
+    assert_match(/struct demo_generic_surface_Holder \{/, generated)
+    assert_match(/demo_generic_surface_Slice_i32 items;/, generated)
+    assert_match(/static int32_t demo_generic_surface_read\(demo_generic_surface_Slice_i32 items\)/, generated)
+    assert_match(/demo_generic_surface_Holder holder = \(demo_generic_surface_Holder\)\{ \.items = \(demo_generic_surface_Slice_i32\)\{ \.data = &value, \.len = 1 \} \};/, generated)
+  end
+
+  def test_generate_c_for_generic_functions_with_inferred_type_arguments
+    source = [
+      "module demo.generic_functions",
+      "",
+      "struct Slice[T]:",
+      "    data: ptr[T]",
+      "    len: usize",
+      "",
+      "def head[T](items: Slice[T]) -> ptr[T]:",
+      "    return items.data",
+      "",
+      "def min[T](a: T, b: T) -> T:",
+      "    if a < b:",
+      "        return a",
+      "    return b",
+      "",
+      "def main() -> i32:",
+      "    var value = 7",
+      "    let items = Slice[i32](data = &value, len = 1)",
+      "    let smallest = min(9, 4)",
+      "    unsafe:",
+      "        return *head(items) + smallest",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static int32_t\* demo_generic_functions_head_i32\(demo_generic_functions_Slice_i32 items\)/, generated)
+    assert_match(/static int32_t demo_generic_functions_min_i32\(int32_t a, int32_t b\)/, generated)
+    assert_match(/int32_t smallest = demo_generic_functions_min_i32\(9, 4\);/, generated)
+    assert_match(/return \(\*demo_generic_functions_head_i32\(items\)\) \+ smallest;/, generated)
+  end
+
+  def test_generate_c_for_address_of_and_dereference_assignment
+    source = [
+      "module demo.pointer_surface",
+      "",
+      "struct Counter:",
+      "    value: i32",
+      "",
+      "def main() -> i32:",
+      "    var counter = Counter(value = 3)",
+      "    let counter_ptr = &counter",
+      "    (*counter_ptr).value = 7",
+      "    return counter.value",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/demo_pointer_surface_Counter \*counter_ptr = &counter;/, generated)
+    assert_match(/\(\*counter_ptr\)\.value = 7;/, generated)
+    assert_match(/return counter\.value;/, generated)
+  end
+
+  def test_generate_c_for_fixed_array_construction_and_layout
+    source = [
+      "module demo.array_surface",
+      "",
+      "struct Palette:",
+      "    colors: array[u32, 4]",
+      "",
+      "const DEFAULT: array[u32, 4] = array[u32, 4](11, 22, 33, 44)",
+      "",
+      "def main() -> i32:",
+      "    var palette = array[u32, 4](1, 2, 3, 4)",
+      "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
+      "    unsafe:",
+      "        if *cast[ptr[u32]](&palette) != 1:",
+      "            return 1",
+      "        if *cast[ptr[u32]](&holder.colors) != 5:",
+      "            return 2",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/typedef struct demo_array_surface_Palette/, generated)
+    assert_match(/uint32_t colors\[4\];/, generated)
+    assert_match(/static const uint32_t demo_array_surface_DEFAULT\[4\] = \{ 11, 22, 33, 44 \};/, generated)
+    assert_match(/uint32_t palette\[4\] = \{ 1, 2, 3, 4 \};/, generated)
+    assert_match(/\.colors = \{ 5, 6, 7, 8 \}/, generated)
+  end
+
+  def test_generate_c_for_unsafe_array_indexing_and_assignment
+    source = [
+      "module demo.array_index_surface",
+      "",
+      "struct Palette:",
+      "    colors: array[u32, 4]",
+      "",
+      "def main() -> i32:",
+      "    var palette = array[u32, 4](1, 2, 3, 4)",
+      "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
+      "    unsafe:",
+      "        palette[1] = 9",
+      "        holder.colors[2] = 10",
+      "        if palette[0] != 1:",
+      "            return 1",
+      "        if holder.colors[2] != 10:",
+      "            return 2",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/palette\[1\] = 9;/, generated)
+    assert_match(/holder\.colors\[2\] = 10;/, generated)
+    assert_match(/if \(palette\[0\] != 1\)/, generated)
+    assert_match(/if \(holder\.colors\[2\] != 10\)/, generated)
+  end
+
+  def test_generate_c_for_array_assignment_and_parameter_copy
+    source = [
+      "module demo.array_copy_surface",
+      "",
+      "def mutate(mut values: array[i32, 4]) -> i32:",
+      "    unsafe:",
+      "        values[1] = 9",
+      "        return values[1]",
+      "",
+      "def main() -> i32:",
+      "    var lhs = array[i32, 4](1, 2, 3, 4)",
+      "    let rhs = array[i32, 4](5, 6, 7, 8)",
+      "    lhs = rhs",
+      "    let changed = mutate(lhs)",
+      "    unsafe:",
+      "        if lhs[1] != 6:",
+      "            return 1",
+      "    return changed",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/int32_t values_input\[4\]/, generated)
+    assert_match(/int32_t values\[4\];\n  memcpy\(values, values_input, sizeof\(values\)\);/, generated)
+    assert_match(/memcpy\(lhs, rhs, sizeof\(lhs\)\);/, generated)
+    assert_match(/return values\[1\];/, generated)
+  end
+
+  def test_generate_c_for_local_array_returns
+    source = [
+      "module demo.array_return_surface",
+      "",
+      "def make() -> array[i32, 4]:",
+      "    return array[i32, 4](1, 2, 3, 4)",
+      "",
+      "def clone(values: array[i32, 4]) -> array[i32, 4]:",
+      "    return values",
+      "",
+      "def read(values: array[i32, 4]) -> i32:",
+      "    unsafe:",
+      "        return values[1]",
+      "",
+      "def main() -> i32:",
+      "    return read(clone(make()))",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/typedef struct mt_array_return_array_i32_4/, generated)
+    assert_match(/static mt_array_return_array_i32_4 demo_array_return_surface_make\(void\)/, generated)
+    assert_match(/return \(mt_array_return_array_i32_4\)\{ \.value = \{ 1, 2, 3, 4 \} \};/, generated)
+    assert_match(/mt_array_return_array_i32_4 __mt_return_value;/, generated)
+    assert_match(/memcpy\(__mt_return_value\.value, values, sizeof\(__mt_return_value\.value\)\);/, generated)
+    assert_match(/return demo_array_return_surface_read\(demo_array_return_surface_clone\(demo_array_return_surface_make\(\)\.value\)\.value\);/, generated)
+  end
 
   private
 
