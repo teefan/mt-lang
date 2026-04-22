@@ -29,6 +29,7 @@ module MilkTea
         @imports = {}
         @methods = Hash.new { |hash, key| hash[key] = {} }
         @null_type = Types::Null.new
+        @loop_depth = 0
         @unsafe_depth = 0
         @checked_function_bindings = {}
         @checking_function_bindings = {}
@@ -44,6 +45,7 @@ module MilkTea
         declare_top_level_values
         declare_functions
         check_top_level_values
+        check_top_level_static_asserts
         check_functions
 
         Analysis.new(
@@ -83,11 +85,25 @@ module MilkTea
         @ast.declarations.each do |decl|
           case decl
           when AST::StructDecl
+            validate_struct_layout!(decl)
             ensure_available_type_name!(decl.name)
             @types[decl.name] = if decl.type_params.empty?
-                                  Types::Struct.new(decl.name, module_name: @module_name, external: external_module?)
+                                  Types::Struct.new(
+                                    decl.name,
+                                    module_name: @module_name,
+                                    external: external_module?,
+                                    packed: decl.packed,
+                                    alignment: decl.alignment,
+                                  )
                                 else
-                                  Types::GenericStructDefinition.new(decl.name, decl.type_params.map(&:name), module_name: @module_name, external: external_module?)
+                                  Types::GenericStructDefinition.new(
+                                    decl.name,
+                                    decl.type_params.map(&:name),
+                                    module_name: @module_name,
+                                    external: external_module?,
+                                    packed: decl.packed,
+                                    alignment: decl.alignment,
+                                  )
                                 end
           when AST::UnionDecl
             ensure_available_type_name!(decl.name)
@@ -110,6 +126,15 @@ module MilkTea
           ensure_available_type_name!(decl.name)
           @types[decl.name] = resolve_type_ref(decl.target)
         end
+      end
+
+      def validate_struct_layout!(decl)
+        return unless decl.alignment
+
+        raise SemaError, "align(...) requires a positive alignment" unless decl.alignment.positive?
+        return if power_of_two?(decl.alignment)
+
+        raise SemaError, "align(...) requires a power-of-two alignment, got #{decl.alignment}"
       end
 
       def resolve_aggregate_fields
@@ -284,6 +309,12 @@ module MilkTea
         end
       end
 
+      def check_top_level_static_asserts
+        @ast.declarations.grep(AST::StaticAssert).each do |statement|
+          check_static_assert(statement, scopes: [])
+        end
+      end
+
       def check_functions
         @top_level_functions.each_value do |binding|
           check_function(binding)
@@ -337,10 +368,20 @@ module MilkTea
           with_unsafe do
             check_block(statement.body, scopes:, return_type:)
           end
+        when AST::StaticAssert
+          check_static_assert(statement, scopes:)
+        when AST::ForStmt
+          check_for_stmt(statement, scopes:, return_type:)
         when AST::WhileStmt
           condition_type = infer_expression(statement.condition, scopes:)
           ensure_assignable!(condition_type, @types.fetch("bool"), "while condition must be bool, got #{condition_type}")
-          check_block(statement.body, scopes:, return_type:)
+          with_loop do
+            check_block(statement.body, scopes:, return_type:)
+          end
+        when AST::BreakStmt
+          raise SemaError, "break must be inside a loop" unless inside_loop?
+        when AST::ContinueStmt
+          raise SemaError, "continue must be inside a loop" unless inside_loop?
         when AST::ReturnStmt
           value_type = statement.value ? infer_expression(statement.value, scopes:, expected_type: return_type) : @types.fetch("void")
           ensure_assignable!(value_type, return_type, "return type mismatch: expected #{return_type}, got #{value_type}")
@@ -418,6 +459,67 @@ module MilkTea
         return if missing_members.empty?
 
         raise SemaError, "match on #{scrutinee_type} is missing cases: #{missing_members.join(', ')}"
+      end
+
+      def check_for_stmt(statement, scopes:, return_type:)
+        loop_type = if range_call?(statement.iterable)
+                      check_range_loop(statement.iterable, scopes:)
+                    else
+                      iterable_type = infer_expression(statement.iterable, scopes:)
+                      collection_loop_type(iterable_type)
+                    end
+
+        raise SemaError, "for loop expects range(start, stop), array[T, N], or span[T], got #{infer_expression(statement.iterable, scopes:)}" unless loop_type
+
+        with_nested_scope(scopes) do |loop_scopes|
+          loop_scopes.last[statement.name] = ValueBinding.new(
+            name: statement.name,
+            type: loop_type,
+            mutable: false,
+            kind: :let,
+          )
+          with_loop do
+            check_block(statement.body, scopes: loop_scopes, return_type:)
+          end
+        end
+      end
+
+      def check_static_assert(statement, scopes:)
+        condition_type = infer_expression(statement.condition, scopes:, expected_type: @types.fetch("bool"))
+        ensure_assignable!(condition_type, @types.fetch("bool"), "static_assert condition must be bool, got #{condition_type}")
+        raise SemaError, "static_assert message must be a string literal" unless statement.message.is_a?(AST::StringLiteral)
+
+        message_type = infer_expression(statement.message, scopes:, expected_type: @types.fetch("str"))
+        return if string_like_type?(message_type)
+
+        raise SemaError, "static_assert message must be str or cstr, got #{message_type}"
+      end
+
+      def check_range_loop(expression, scopes:)
+        raise SemaError, "range does not support named arguments" if expression.arguments.any?(&:name)
+        raise SemaError, "range expects 2 arguments, got #{expression.arguments.length}" unless expression.arguments.length == 2
+
+        start_expr = expression.arguments[0].value
+        stop_expr = expression.arguments[1].value
+
+        start_type = infer_expression(start_expr, scopes:)
+        stop_type = infer_expression(stop_expr, scopes:)
+
+        unless integer_type?(start_type) && integer_type?(stop_type)
+          raise SemaError, "range bounds must be integer types, got #{start_type} and #{stop_type}"
+        end
+
+        if start_type != stop_type
+          if start_expr.is_a?(AST::IntegerLiteral)
+            start_type = infer_expression(start_expr, scopes:, expected_type: stop_type)
+          elsif stop_expr.is_a?(AST::IntegerLiteral)
+            stop_type = infer_expression(stop_expr, scopes:, expected_type: start_type)
+          end
+        end
+
+        raise SemaError, "range bounds must use matching integer types, got #{start_type} and #{stop_type}" unless start_type == stop_type
+
+        start_type
       end
 
       def infer_lvalue(expression, scopes:)
@@ -500,6 +602,15 @@ module MilkTea
           infer_integer_literal(expected_type)
         when AST::FloatLiteral
           infer_float_literal(expected_type)
+        when AST::SizeofExpr
+          infer_layout_query_type(expression.type, context: "sizeof")
+          @types.fetch("usize")
+        when AST::AlignofExpr
+          infer_layout_query_type(expression.type, context: "alignof")
+          @types.fetch("usize")
+        when AST::OffsetofExpr
+          infer_offsetof_type(expression.type, expression.field)
+          @types.fetch("usize")
         when AST::StringLiteral
           @types.fetch(expression.cstring ? "cstr" : "str")
         when AST::BooleanLiteral
@@ -730,6 +841,8 @@ module MilkTea
           check_array_construction(callable, expression.arguments, scopes:)
         when :cast
           check_cast_call(callable, expression.arguments, scopes:)
+        when :reinterpret
+          check_reinterpret_call(callable, expression.arguments, scopes:)
         when :result_ok, :result_err
           check_result_construction(callable_kind, expression.arguments, scopes:, expected_type:)
         when :panic
@@ -773,6 +886,15 @@ module MilkTea
             raise SemaError, "cast type argument must be a type" unless type_arg.is_a?(AST::TypeRef)
 
             return [:cast, resolve_type_ref(type_arg), nil]
+          end
+
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "reinterpret"
+            raise SemaError, "reinterpret requires exactly one type argument" unless callee.arguments.length == 1
+
+            type_arg = callee.arguments.first.value
+            raise SemaError, "reinterpret type argument must be a type" unless type_arg.is_a?(AST::TypeRef)
+
+            return [:reinterpret, resolve_type_ref(type_arg), nil]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "array"
@@ -894,6 +1016,19 @@ module MilkTea
 
         unless source_type.is_a?(Types::Primitive) && source_type.numeric? && target_type.is_a?(Types::Primitive) && target_type.numeric?
           raise SemaError, "cast currently only supports numeric primitive types, got #{source_type} -> #{target_type}"
+        end
+
+        target_type
+      end
+
+      def check_reinterpret_call(target_type, arguments, scopes:)
+        raise SemaError, "reinterpret requires exactly one argument" unless arguments.length == 1
+        raise SemaError, "reinterpret does not support named arguments" if arguments.first.name
+        raise SemaError, "reinterpret requires unsafe" unless unsafe_context?
+
+        source_type = infer_expression(arguments.first.value, scopes:)
+        unless reinterpretable_type?(source_type) && reinterpretable_type?(target_type)
+          raise SemaError, "reinterpret requires non-array concrete sized types, got #{source_type} -> #{target_type}"
         end
 
         target_type
@@ -1021,8 +1156,19 @@ module MilkTea
         @unsafe_depth -= 1
       end
 
+      def with_loop
+        @loop_depth += 1
+        yield
+      ensure
+        @loop_depth -= 1
+      end
+
       def unsafe_context?
         @unsafe_depth.positive?
+      end
+
+      def inside_loop?
+        @loop_depth.positive?
       end
 
       def pointer_arithmetic_result(operator, left_type, right_type)
@@ -1055,6 +1201,53 @@ module MilkTea
 
       def result_type?(type)
         type.is_a?(Types::Result)
+      end
+
+      def infer_layout_query_type(type_ref, context:)
+        type = resolve_type_ref(type_ref)
+        return type if sized_layout_type?(type)
+
+        raise SemaError, "#{context} requires a concrete sized type, got #{type}"
+      end
+
+      def infer_offsetof_type(type_ref, field_name)
+        type = resolve_type_ref(type_ref)
+        unless layout_aggregate_type?(type)
+          raise SemaError, "offsetof requires a struct, union, span, or Result type, got #{type}"
+        end
+
+        field_type = type.field(field_name)
+        raise SemaError, "unknown field #{type}.#{field_name}" unless field_type
+
+        type
+      end
+
+      def sized_layout_type?(type)
+        case type
+        when Types::Primitive, Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Span, Types::Result
+          true
+        when Types::Nullable
+          true
+        when Types::GenericInstance
+          pointer_type?(type) || array_type?(type)
+        else
+          false
+        end
+      end
+
+      def reinterpretable_type?(type)
+        return false if array_type?(type)
+        return false if type.is_a?(Types::Primitive) && type.void?
+
+        sized_layout_type?(type)
+      end
+
+      def layout_aggregate_type?(type)
+        type.respond_to?(:field) && !type.is_a?(Types::Opaque) && !type.is_a?(Types::EnumBase)
+      end
+
+      def power_of_two?(value)
+        (value & (value - 1)).zero?
       end
 
       def aggregate_type?(type)
@@ -1143,6 +1336,17 @@ module MilkTea
 
       def integer_type?(type)
         type.is_a?(Types::Primitive) && type.integer?
+      end
+
+      def range_call?(expression)
+        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "range"
+      end
+
+      def collection_loop_type(type)
+        return array_element_type(type) if array_type?(type)
+        return type.element_type if span_type?(type)
+
+        nil
       end
 
       def string_like_type?(type)

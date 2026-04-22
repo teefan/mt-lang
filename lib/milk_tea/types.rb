@@ -276,13 +276,15 @@ module MilkTea
     end
 
     class GenericStructDefinition < Base
-      attr_reader :name, :type_params, :module_name, :external
+      attr_reader :name, :type_params, :module_name, :external, :packed, :alignment
 
-      def initialize(name, type_params, module_name: nil, external: false)
+      def initialize(name, type_params, module_name: nil, external: false, packed: false, alignment: nil)
         @name = name
         @type_params = type_params.freeze
         @module_name = module_name
         @external = external
+        @packed = packed
+        @alignment = alignment
         @fields = {}
         @instances = {}
       end
@@ -348,12 +350,14 @@ module MilkTea
     end
 
     class Struct < Base
-      attr_reader :name, :module_name, :external
+      attr_reader :name, :module_name, :external, :packed, :alignment
 
-      def initialize(name, module_name: nil, external: false)
+      def initialize(name, module_name: nil, external: false, packed: false, alignment: nil)
         @name = name
         @module_name = module_name
         @external = external
+        @packed = packed
+        @alignment = alignment
         @fields = {}
       end
 
@@ -379,7 +383,13 @@ module MilkTea
       attr_reader :definition, :arguments
 
       def initialize(definition, arguments)
-        super(definition.name, module_name: definition.module_name, external: definition.external)
+        super(
+          definition.name,
+          module_name: definition.module_name,
+          external: definition.external,
+          packed: definition.packed,
+          alignment: definition.alignment,
+        )
         @definition = definition
         @arguments = arguments.freeze
       end

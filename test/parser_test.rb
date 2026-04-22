@@ -70,6 +70,155 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal 1, if_stmt.else_body.length
   end
 
+  def test_parses_for_range_statement
+    source = <<~MT
+      module demo.flow
+
+      def main(count: i32) -> i32:
+          for i in range(0, count):
+              tick(i)
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    for_stmt = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::ForStmt, for_stmt
+    assert_equal "i", for_stmt.name
+    assert_instance_of MilkTea::AST::Call, for_stmt.iterable
+    assert_instance_of MilkTea::AST::Identifier, for_stmt.iterable.callee
+    assert_equal "range", for_stmt.iterable.callee.name
+    assert_equal 2, for_stmt.iterable.arguments.length
+    assert_instance_of MilkTea::AST::ExpressionStmt, for_stmt.body.first
+  end
+
+  def test_parses_for_collection_statement
+    source = <<~MT
+      module demo.flow
+
+      def main(items: span[i32]) -> i32:
+          for item in items:
+              tick(item)
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    for_stmt = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::ForStmt, for_stmt
+    assert_equal "item", for_stmt.name
+    assert_instance_of MilkTea::AST::Identifier, for_stmt.iterable
+    assert_equal "items", for_stmt.iterable.name
+    assert_instance_of MilkTea::AST::ExpressionStmt, for_stmt.body.first
+  end
+
+  def test_parses_break_and_continue_inside_match_arms
+    source = <<~MT
+      module demo.flow
+
+      enum Step: u8
+          skip = 1
+          keep = 2
+          stop = 3
+
+      def main(items: array[Step, 3]) -> i32:
+          for step in items:
+              match step:
+                  Step.skip:
+                      continue
+                  Step.keep:
+                      break
+                  Step.stop:
+                      return 0
+          return 1
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations[1]
+    for_stmt = main_fn.body.first
+    match_stmt = for_stmt.body.first
+
+    assert_instance_of MilkTea::AST::ForStmt, for_stmt
+    assert_instance_of MilkTea::AST::MatchStmt, match_stmt
+    assert_instance_of MilkTea::AST::ContinueStmt, match_stmt.arms[0].body.first
+    assert_instance_of MilkTea::AST::BreakStmt, match_stmt.arms[1].body.first
+  end
+
+  def test_parses_layout_queries_and_static_assert
+    source = <<~MT
+      module demo.layout
+
+      struct Header:
+          magic: array[u8, 4]
+          version: u16
+
+      static_assert(sizeof(Header) >= 6, "Header must include version")
+
+      def main() -> usize:
+          return offsetof(Header, version) + alignof(Header)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    static_assert = ast.declarations[1]
+    main_fn = ast.declarations[2]
+    return_stmt = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::StaticAssert, static_assert
+    assert_instance_of MilkTea::AST::BinaryOp, static_assert.condition
+    assert_instance_of MilkTea::AST::SizeofExpr, static_assert.condition.left
+    assert_instance_of MilkTea::AST::StringLiteral, static_assert.message
+    assert_instance_of MilkTea::AST::BinaryOp, return_stmt.value
+    assert_instance_of MilkTea::AST::OffsetofExpr, return_stmt.value.left
+    assert_instance_of MilkTea::AST::AlignofExpr, return_stmt.value.right
+  end
+
+  def test_parses_packed_and_aligned_struct_declarations
+    source = <<~MT
+      module demo.layout
+
+      packed struct Header:
+          tag: u8
+          value: u32
+
+      align(16) struct Mat4:
+          data: array[f32, 16]
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    header = ast.declarations[0]
+    mat4 = ast.declarations[1]
+
+    assert_equal true, header.packed
+    assert_nil header.alignment
+    assert_equal false, mat4.packed
+    assert_equal 16, mat4.alignment
+  end
+
+  def test_parses_unsafe_reinterpret_specialization_call
+    source = <<~MT
+      module demo.bits
+
+      def main() -> u32:
+          let value: f32 = 1.0
+          unsafe:
+              let bits = reinterpret[u32](value)
+              return bits
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations[0]
+    unsafe_stmt = main_fn.body[1]
+    bits_decl = unsafe_stmt.body[0]
+
+    assert_instance_of MilkTea::AST::UnsafeStmt, unsafe_stmt
+    assert_instance_of MilkTea::AST::Call, bits_decl.value
+    assert_instance_of MilkTea::AST::Specialization, bits_decl.value.callee
+    assert_equal "reinterpret", bits_decl.value.callee.callee.name
+    assert_equal "u32", bits_decl.value.callee.arguments.first.value.name.to_s
+  end
+
   def test_parses_match_statement_with_enum_member_arms
     source = <<~MT
       module demo.flow

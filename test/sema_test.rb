@@ -291,6 +291,244 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("dispatch")
   end
 
+  def test_type_checks_for_loops_over_range_and_span
+    source = <<~MT
+      module demo.for_loops
+
+      def scan(items: span[i32]) -> i32:
+          for i in range(0, items.len):
+              let index: usize = i
+
+          for item in items:
+              let value: i32 = item
+
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("scan")
+  end
+
+  def test_type_checks_break_and_continue_inside_loop_bodies
+    source = <<~MT
+      module demo.loop_control
+
+      enum Step: u8
+          skip = 1
+          keep = 2
+          stop = 3
+
+      def add(target: ptr[i32], amount: i32) -> void:
+          unsafe:
+              *target += amount
+
+      def main() -> i32:
+          var total = 0
+          for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):
+              defer add(&total, 1)
+              match step:
+                  Step.skip:
+                      continue
+                  Step.keep:
+                      total += 10
+                  Step.stop:
+                      break
+          return total
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_layout_queries_and_static_assert
+    source = <<~MT
+      module demo.layout
+
+      struct Header:
+          magic: array[u8, 4]
+          version: u16
+
+      static_assert(sizeof(Header) == 6, "Header size should stay stable")
+
+      def main() -> usize:
+          return offsetof(Header, version) + alignof(Header)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_offsetof_unknown_field
+    source = <<~MT
+      module demo.layout
+
+      struct Header:
+          version: u16
+
+      def main() -> usize:
+          return offsetof(Header, missing)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/unknown field demo\.layout\.Header\.missing/, error.message)
+  end
+
+  def test_rejects_static_assert_with_non_literal_message
+    source = <<~MT
+      module demo.layout
+
+      const MESSAGE: cstr = c"layout must hold"
+
+      def main() -> i32:
+          static_assert(true, MESSAGE)
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/static_assert message must be a string literal/, error.message)
+  end
+
+  def test_type_checks_packed_and_aligned_struct_layout
+    source = <<~MT
+      module demo.layout
+
+      packed struct Header:
+          tag: u8
+          value: u32
+
+      align(16) struct Mat4:
+          data: array[f32, 16]
+
+      static_assert(sizeof(Header) == 5, "Header should stay packed")
+      static_assert(offsetof(Header, value) == 1, "Header.value offset drifted")
+      static_assert(alignof(Mat4) == 16, "Mat4 alignment drifted")
+
+      def main() -> i32:
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_unsafe_reinterpret_calls
+    source = <<~MT
+      module demo.bits
+
+      def main() -> u32:
+          let value: f32 = 1.0
+          unsafe:
+              let bits = reinterpret[u32](value)
+              return bits
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_reinterpret_outside_unsafe
+    source = <<~MT
+      module demo.bits
+
+      def main() -> u32:
+          let value: f32 = 1.0
+          return reinterpret[u32](value)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/reinterpret requires unsafe/, error.message)
+  end
+
+  def test_rejects_reinterpret_of_array_types
+    source = <<~MT
+      module demo.bits
+
+      def main() -> i32:
+          let values = array[u8, 4](1, 2, 3, 4)
+          unsafe:
+              let bits = reinterpret[u32](values)
+              return cast[i32](bits)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/reinterpret requires non-array concrete sized types/, error.message)
+  end
+
+  def test_rejects_non_power_of_two_alignment
+    source = <<~MT
+      module demo.layout
+
+      align(3) struct Mat4:
+          data: array[f32, 16]
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/align\(\.\.\.\) requires a power-of-two alignment, got 3/, error.message)
+  end
+
+  def test_rejects_break_and_continue_outside_loops
+    break_source = <<~MT
+      module demo.bad
+
+      def main() -> i32:
+          break
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(break_source)
+    end
+    assert_match(/break must be inside a loop/, error.message)
+
+    continue_source = <<~MT
+      module demo.bad
+
+      def main() -> i32:
+          continue
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(continue_source)
+    end
+    assert_match(/continue must be inside a loop/, error.message)
+  end
+
+  def test_rejects_for_loop_over_non_iterable_value
+    source = <<~MT
+      module demo.for_loops
+
+      def main() -> i32:
+          for value in 3:
+              let copy = value
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/for loop expects range\(start, stop\), array\[T, N\], or span\[T\], got i32/, error.message)
+  end
+
   def test_rejects_non_exhaustive_match_statement_over_enum
     source = <<~MT
       module demo.match

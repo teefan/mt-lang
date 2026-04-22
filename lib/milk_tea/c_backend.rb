@@ -63,6 +63,17 @@ module MilkTea
       end
       lines << "" unless @program.constants.empty?
 
+      @program.static_asserts.each do |statement|
+        lines << emit_static_assert(statement)
+      end
+      lines << "" unless @program.static_asserts.empty?
+
+      reinterpret_helpers = collect_reinterpret_helpers
+      reinterpret_helpers.each do |helper|
+        lines.concat(emit_reinterpret_helper(helper))
+        lines << ""
+      end
+
       @program.functions.each do |function|
         lines.concat(emit_function(function))
         lines << ""
@@ -95,6 +106,8 @@ module MilkTea
           (statement.else_body && statement.else_body.any? { |inner| statement_uses_panic?(inner) })
       when IR::SwitchStmt
         expression_uses_panic?(statement.expression) || statement.cases.any? { |switch_case| switch_case.body.any? { |inner| statement_uses_panic?(inner) } }
+      when IR::StaticAssert
+        expression_uses_panic?(statement.condition) || expression_uses_panic?(statement.message)
       when IR::ReturnStmt
         statement.value && expression_uses_panic?(statement.value)
       when IR::ExpressionStmt
@@ -116,6 +129,10 @@ module MilkTea
         expression_uses_panic?(expression.operand)
       when IR::Binary
         expression_uses_panic?(expression.left) || expression_uses_panic?(expression.right)
+      when IR::ReinterpretExpr
+        expression_uses_panic?(expression.expression)
+      when IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
+        false
       when IR::AddressOf
         expression_uses_panic?(expression.expression)
       when IR::Cast
@@ -156,7 +173,7 @@ module MilkTea
       struct_decl.fields.each do |field|
         lines << "#{INDENT}#{c_declaration(field.type, field.name)};"
       end
-      lines << "};"
+      lines << "}#{struct_layout_attributes(struct_decl)};"
       lines
     end
 
@@ -247,6 +264,12 @@ module MilkTea
         end
         lines << "#{indent}}"
         lines
+      when IR::GotoStmt
+        ["#{indent}goto #{statement.label};"]
+      when IR::LabelStmt
+        ["#{indent}#{statement.name}:;"]
+      when IR::StaticAssert
+        ["#{indent}#{emit_static_assert(statement)}"]
       when IR::IfStmt
         lines = ["#{indent}if (#{emit_expression(statement.condition)}) {"]
         statement.then_body.each do |inner|
@@ -287,6 +310,8 @@ module MilkTea
       case statement
       when IR::ReturnStmt
         true
+      when IR::GotoStmt
+        true
       when IR::BlockStmt
         body_terminates?(statement.body)
       when IR::IfStmt
@@ -296,6 +321,10 @@ module MilkTea
       else
         false
       end
+    end
+
+    def emit_static_assert(statement)
+      "_Static_assert(#{emit_expression(statement.condition)}, #{emit_expression(statement.message)});"
     end
 
     def emit_expression(expression)
@@ -318,6 +347,14 @@ module MilkTea
         end
       when IR::Binary
         "#{wrap_expression(expression.left)} #{c_operator(expression.operator)} #{wrap_expression(expression.right)}"
+      when IR::ReinterpretExpr
+        "#{reinterpret_helper_name(expression.target_type, expression.source_type)}(#{emit_expression(expression.expression)})"
+      when IR::SizeofExpr
+        "sizeof(#{layout_type_expression(expression.target_type)})"
+      when IR::AlignofExpr
+        "_Alignof(#{layout_type_expression(expression.target_type)})"
+      when IR::OffsetofExpr
+        "offsetof(#{layout_type_expression(expression.target_type)}, #{expression.field})"
       when IR::IntegerLiteral
         expression.value.to_s
       when IR::FloatLiteral
@@ -400,11 +437,107 @@ module MilkTea
 
     def wrap_expression(expression)
       case expression
-      when IR::Name, IR::IntegerLiteral, IR::FloatLiteral, IR::StringLiteral, IR::BooleanLiteral, IR::NullLiteral, IR::Member, IR::Index, IR::Call, IR::AggregateLiteral, IR::ArrayLiteral
+      when IR::Name, IR::IntegerLiteral, IR::FloatLiteral, IR::StringLiteral, IR::BooleanLiteral, IR::NullLiteral, IR::Member, IR::Index, IR::Call, IR::AggregateLiteral, IR::ArrayLiteral, IR::ReinterpretExpr, IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
         emit_expression(expression)
       else
         "(#{emit_expression(expression)})"
       end
+    end
+
+    def layout_type_expression(type)
+      c_declaration(type, "")
+    end
+
+    def collect_reinterpret_helpers
+      helpers = []
+      seen = {}
+
+      @program.functions.each do |function|
+        collect_reinterpret_helpers_from_statements(function.body, helpers, seen)
+      end
+
+      helpers
+    end
+
+    def collect_reinterpret_helpers_from_statements(statements, helpers, seen)
+      statements.each do |statement|
+        case statement
+        when IR::LocalDecl
+          collect_reinterpret_helpers_from_expression(statement.value, helpers, seen)
+        when IR::Assignment
+          collect_reinterpret_helpers_from_expression(statement.target, helpers, seen)
+          collect_reinterpret_helpers_from_expression(statement.value, helpers, seen)
+        when IR::BlockStmt
+          collect_reinterpret_helpers_from_statements(statement.body, helpers, seen)
+        when IR::WhileStmt
+          collect_reinterpret_helpers_from_expression(statement.condition, helpers, seen)
+          collect_reinterpret_helpers_from_statements(statement.body, helpers, seen)
+        when IR::IfStmt
+          collect_reinterpret_helpers_from_expression(statement.condition, helpers, seen)
+          collect_reinterpret_helpers_from_statements(statement.then_body, helpers, seen)
+          collect_reinterpret_helpers_from_statements(statement.else_body, helpers, seen) if statement.else_body
+        when IR::SwitchStmt
+          collect_reinterpret_helpers_from_expression(statement.expression, helpers, seen)
+          statement.cases.each do |switch_case|
+            collect_reinterpret_helpers_from_statements(switch_case.body, helpers, seen)
+          end
+        when IR::StaticAssert
+          collect_reinterpret_helpers_from_expression(statement.condition, helpers, seen)
+          collect_reinterpret_helpers_from_expression(statement.message, helpers, seen)
+        when IR::ReturnStmt
+          collect_reinterpret_helpers_from_expression(statement.value, helpers, seen) if statement.value
+        when IR::ExpressionStmt
+          collect_reinterpret_helpers_from_expression(statement.expression, helpers, seen)
+        end
+      end
+    end
+
+    def collect_reinterpret_helpers_from_expression(expression, helpers, seen)
+      case expression
+      when IR::Member
+        collect_reinterpret_helpers_from_expression(expression.receiver, helpers, seen)
+      when IR::Index
+        collect_reinterpret_helpers_from_expression(expression.receiver, helpers, seen)
+        collect_reinterpret_helpers_from_expression(expression.index, helpers, seen)
+      when IR::Call
+        expression.arguments.each { |argument| collect_reinterpret_helpers_from_expression(argument, helpers, seen) }
+      when IR::Unary
+        collect_reinterpret_helpers_from_expression(expression.operand, helpers, seen)
+      when IR::Binary
+        collect_reinterpret_helpers_from_expression(expression.left, helpers, seen)
+        collect_reinterpret_helpers_from_expression(expression.right, helpers, seen)
+      when IR::ReinterpretExpr
+        key = [expression.target_type, expression.source_type]
+        unless seen[key]
+          helpers << expression
+          seen[key] = true
+        end
+        collect_reinterpret_helpers_from_expression(expression.expression, helpers, seen)
+      when IR::AddressOf
+        collect_reinterpret_helpers_from_expression(expression.expression, helpers, seen)
+      when IR::Cast
+        collect_reinterpret_helpers_from_expression(expression.expression, helpers, seen)
+      when IR::AggregateLiteral
+        expression.fields.each { |field| collect_reinterpret_helpers_from_expression(field.value, helpers, seen) }
+      when IR::ArrayLiteral
+        expression.elements.each { |element| collect_reinterpret_helpers_from_expression(element, helpers, seen) }
+      end
+    end
+
+    def emit_reinterpret_helper(expression)
+      helper_name = reinterpret_helper_name(expression.target_type, expression.source_type)
+      [
+        "static inline #{c_function_return_type(expression.target_type)} #{helper_name}(#{c_declaration(expression.source_type, 'value')}) {",
+        "#{INDENT}_Static_assert(sizeof(#{layout_type_expression(expression.target_type)}) == sizeof(#{layout_type_expression(expression.source_type)}), \"reinterpret requires equal sizes\");",
+        "#{INDENT}#{c_declaration(expression.target_type, 'result')};",
+        "#{INDENT}memcpy(&result, &value, sizeof(result));",
+        "#{INDENT}return result;",
+        "}",
+      ]
+    end
+
+    def reinterpret_helper_name(target_type, source_type)
+      "mt_reinterpret_#{sanitize_identifier(target_type.to_s)}_from_#{sanitize_identifier(source_type.to_s)}"
     end
 
     def wrap_member_receiver(expression)
@@ -522,6 +655,11 @@ module MilkTea
         collect_span_types_from_statements(function.body, span_types, visited)
       end
 
+      @program.static_asserts.each do |statement|
+        collect_span_types_from_expression(statement.condition, span_types, visited)
+        collect_span_types_from_expression(statement.message, span_types, visited)
+      end
+
       span_types.uniq
     end
 
@@ -531,6 +669,8 @@ module MilkTea
           name: type.to_s,
           c_name: named_type_c_name(type),
           fields: type.fields.map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) },
+          packed: type.packed,
+          alignment: type.alignment,
         )
       end
     end
@@ -541,6 +681,8 @@ module MilkTea
           name: type.to_s,
           c_name: result_type_name(type),
           fields: type.fields.map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) },
+          packed: false,
+          alignment: nil,
         )
       end
     end
@@ -573,6 +715,11 @@ module MilkTea
         collect_result_types_from_statements(function.body, result_types, visited)
       end
 
+      @program.static_asserts.each do |statement|
+        collect_result_types_from_expression(statement.condition, result_types, visited)
+        collect_result_types_from_expression(statement.message, result_types, visited)
+      end
+
       result_types
     end
 
@@ -592,7 +739,41 @@ module MilkTea
           statement.cases.each do |switch_case|
             collect_result_types_from_statements(switch_case.body, result_types, visited)
           end
+        when IR::StaticAssert
+          collect_result_types_from_expression(statement.condition, result_types, visited)
+          collect_result_types_from_expression(statement.message, result_types, visited)
         end
+      end
+    end
+
+    def collect_result_types_from_expression(expression, result_types, visited)
+      case expression
+      when IR::Member
+        collect_result_types_from_expression(expression.receiver, result_types, visited)
+      when IR::Index
+        collect_result_types_from_expression(expression.receiver, result_types, visited)
+        collect_result_types_from_expression(expression.index, result_types, visited)
+      when IR::Call
+        expression.arguments.each { |argument| collect_result_types_from_expression(argument, result_types, visited) }
+      when IR::Unary
+        collect_result_types_from_expression(expression.operand, result_types, visited)
+      when IR::Binary
+        collect_result_types_from_expression(expression.left, result_types, visited)
+        collect_result_types_from_expression(expression.right, result_types, visited)
+      when IR::ReinterpretExpr
+        collect_result_type(expression.target_type, result_types, visited)
+        collect_result_type(expression.source_type, result_types, visited)
+        collect_result_types_from_expression(expression.expression, result_types, visited)
+      when IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
+        collect_result_type(expression.target_type, result_types, visited)
+      when IR::AddressOf
+        collect_result_types_from_expression(expression.expression, result_types, visited)
+      when IR::Cast
+        collect_result_types_from_expression(expression.expression, result_types, visited)
+      when IR::AggregateLiteral
+        expression.fields.each { |field| collect_result_types_from_expression(field.value, result_types, visited) }
+      when IR::ArrayLiteral
+        expression.elements.each { |element| collect_result_types_from_expression(element, result_types, visited) }
       end
     end
 
@@ -662,6 +843,11 @@ module MilkTea
         collect_generic_struct_types_from_statements(function.body, generic_struct_types, visited)
       end
 
+      @program.static_asserts.each do |statement|
+        collect_generic_struct_types_from_expression(statement.condition, generic_struct_types, visited)
+        collect_generic_struct_types_from_expression(statement.message, generic_struct_types, visited)
+      end
+
       generic_struct_types
     end
 
@@ -681,7 +867,41 @@ module MilkTea
           statement.cases.each do |switch_case|
             collect_generic_struct_types_from_statements(switch_case.body, generic_struct_types, visited)
           end
+        when IR::StaticAssert
+          collect_generic_struct_types_from_expression(statement.condition, generic_struct_types, visited)
+          collect_generic_struct_types_from_expression(statement.message, generic_struct_types, visited)
         end
+      end
+    end
+
+    def collect_generic_struct_types_from_expression(expression, generic_struct_types, visited)
+      case expression
+      when IR::Member
+        collect_generic_struct_types_from_expression(expression.receiver, generic_struct_types, visited)
+      when IR::Index
+        collect_generic_struct_types_from_expression(expression.receiver, generic_struct_types, visited)
+        collect_generic_struct_types_from_expression(expression.index, generic_struct_types, visited)
+      when IR::Call
+        expression.arguments.each { |argument| collect_generic_struct_types_from_expression(argument, generic_struct_types, visited) }
+      when IR::Unary
+        collect_generic_struct_types_from_expression(expression.operand, generic_struct_types, visited)
+      when IR::Binary
+        collect_generic_struct_types_from_expression(expression.left, generic_struct_types, visited)
+        collect_generic_struct_types_from_expression(expression.right, generic_struct_types, visited)
+      when IR::ReinterpretExpr
+        collect_generic_struct_type(expression.target_type, generic_struct_types, visited)
+        collect_generic_struct_type(expression.source_type, generic_struct_types, visited)
+        collect_generic_struct_types_from_expression(expression.expression, generic_struct_types, visited)
+      when IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
+        collect_generic_struct_type(expression.target_type, generic_struct_types, visited)
+      when IR::AddressOf
+        collect_generic_struct_types_from_expression(expression.expression, generic_struct_types, visited)
+      when IR::Cast
+        collect_generic_struct_types_from_expression(expression.expression, generic_struct_types, visited)
+      when IR::AggregateLiteral
+        expression.fields.each { |field| collect_generic_struct_types_from_expression(field.value, generic_struct_types, visited) }
+      when IR::ArrayLiteral
+        expression.elements.each { |element| collect_generic_struct_types_from_expression(element, generic_struct_types, visited) }
       end
     end
 
@@ -792,7 +1012,41 @@ module MilkTea
           statement.cases.each do |switch_case|
             collect_span_types_from_statements(switch_case.body, span_types, visited)
           end
+        when IR::StaticAssert
+          collect_span_types_from_expression(statement.condition, span_types, visited)
+          collect_span_types_from_expression(statement.message, span_types, visited)
         end
+      end
+    end
+
+    def collect_span_types_from_expression(expression, span_types, visited)
+      case expression
+      when IR::Member
+        collect_span_types_from_expression(expression.receiver, span_types, visited)
+      when IR::Index
+        collect_span_types_from_expression(expression.receiver, span_types, visited)
+        collect_span_types_from_expression(expression.index, span_types, visited)
+      when IR::Call
+        expression.arguments.each { |argument| collect_span_types_from_expression(argument, span_types, visited) }
+      when IR::Unary
+        collect_span_types_from_expression(expression.operand, span_types, visited)
+      when IR::Binary
+        collect_span_types_from_expression(expression.left, span_types, visited)
+        collect_span_types_from_expression(expression.right, span_types, visited)
+      when IR::ReinterpretExpr
+        collect_span_type(expression.target_type, span_types, visited)
+        collect_span_type(expression.source_type, span_types, visited)
+        collect_span_types_from_expression(expression.expression, span_types, visited)
+      when IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
+        collect_span_type(expression.target_type, span_types, visited)
+      when IR::AddressOf
+        collect_span_types_from_expression(expression.expression, span_types, visited)
+      when IR::Cast
+        collect_span_types_from_expression(expression.expression, span_types, visited)
+      when IR::AggregateLiteral
+        expression.fields.each { |field| collect_span_types_from_expression(field.value, span_types, visited) }
+      when IR::ArrayLiteral
+        expression.elements.each { |element| collect_span_types_from_expression(element, span_types, visited) }
       end
     end
 
@@ -844,6 +1098,15 @@ module MilkTea
         "#{INDENT}#{c_declaration(Types::Primitive.new('usize'), 'len')};",
         "} #{span_type};",
       ]
+    end
+
+    def struct_layout_attributes(struct_decl)
+      attributes = []
+      attributes << "packed" if struct_decl.packed
+      attributes << "aligned(#{struct_decl.alignment})" if struct_decl.alignment
+      return "" if attributes.empty?
+
+      " __attribute__((#{attributes.join(', ')}))"
     end
 
     def array_return_wrapper_type_name(type)

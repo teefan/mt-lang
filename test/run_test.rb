@@ -344,6 +344,192 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_for_loops
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-for") do |dir|
+      source_path = File.join(dir, "for.mt")
+
+      File.write(source_path, [
+        "module demo.for_runtime",
+        "",
+        "def sum(items: array[i32, 4]) -> i32:",
+        "    var total = 0",
+        "    for item in items:",
+        "        total += item",
+        "    for i in range(0, 4):",
+        "        total += i",
+        "    return total",
+        "",
+        "def main() -> i32:",
+        "    return sum(array[i32, 4](1, 2, 3, 4))",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 16, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_loop_control_in_match
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-loop-control") do |dir|
+      source_path = File.join(dir, "loop_control.mt")
+
+      File.write(source_path, [
+        "module demo.loop_control_runtime",
+        "",
+        "enum Step: u8",
+        "    skip = 1",
+        "    keep = 2",
+        "    stop = 3",
+        "",
+        "def add(target: ptr[i32], amount: i32) -> void:",
+        "    unsafe:",
+        "        *target += amount",
+        "",
+        "def main() -> i32:",
+        "    var total = 0",
+        "    for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):",
+        "        defer add(&total, 1)",
+        "        match step:",
+        "            Step.skip:",
+        "                continue",
+        "            Step.keep:",
+        "                total += 10",
+        "            Step.stop:",
+        "                break",
+        "    return total",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 24, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_layout_queries_and_static_assert
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-layout") do |dir|
+      source_path = File.join(dir, "layout.mt")
+
+      File.write(source_path, [
+        "module demo.layout_runtime",
+        "",
+        "struct Header:",
+        "    magic: array[u8, 4]",
+        "    version: u16",
+        "",
+        "static_assert(sizeof(Header) == 6, \"Header size should stay stable\")",
+        "static_assert(offsetof(Header, version) == 4, \"Header.version offset drifted\")",
+        "",
+        "def main() -> i32:",
+        "    return cast[i32](sizeof(Header) + alignof(Header) + offsetof(Header, version))",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 12, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_packed_and_aligned_structs
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-layout-modifiers") do |dir|
+      source_path = File.join(dir, "layout_modifiers.mt")
+
+      File.write(source_path, [
+        "module demo.layout_modifiers_runtime",
+        "",
+        "packed struct Header:",
+        "    tag: u8",
+        "    value: u32",
+        "",
+        "align(16) struct Mat4:",
+        "    data: array[f32, 16]",
+        "",
+        "static_assert(sizeof(Header) == 5, \"Header should stay packed\")",
+        "static_assert(offsetof(Header, value) == 1, \"Header.value offset drifted\")",
+        "static_assert(alignof(Mat4) == 16, \"Mat4 alignment drifted\")",
+        "",
+        "def main() -> i32:",
+        "    return cast[i32](sizeof(Header) + offsetof(Header, value) + alignof(Mat4))",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 22, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_unsafe_reinterpret
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-reinterpret") do |dir|
+      source_path = File.join(dir, "reinterpret.mt")
+
+      File.write(source_path, [
+        "module demo.reinterpret_runtime",
+        "",
+        "def main() -> i32:",
+        "    let value: f32 = 1.0",
+        "    let expected: u32 = 1065353216",
+        "    unsafe:",
+        "        let bits = reinterpret[u32](value)",
+        "        if bits != expected:",
+        "            return 1",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 0, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_fixed_arrays
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
