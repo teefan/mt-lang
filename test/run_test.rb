@@ -26,6 +26,33 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_real_binary
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-real") do |dir|
+      source_path = File.join(dir, "smoke.mt")
+
+      File.write(source_path, [
+        "module demo.smoke",
+        "",
+        "def main() -> i32:",
+        "    return 42",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 42, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   private
 
   def demo_path
@@ -55,5 +82,14 @@ class MilkTeaRunTest < Minitest::Test
     SH
     File.chmod(0o755, path)
     path
+  end
+
+  def compiler_available?(compiler)
+    return File.executable?(compiler) if compiler.include?(File::SEPARATOR)
+
+    ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |entry|
+      candidate = File.join(entry, compiler)
+      File.file?(candidate) && File.executable?(candidate)
+    end
   end
 end
