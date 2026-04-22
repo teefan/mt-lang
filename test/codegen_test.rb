@@ -225,6 +225,39 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return \(\*demo_generic_functions_head_i32\(items\)\) \+ smallest;/, generated)
   end
 
+  def test_generate_c_for_result_construction_from_expected_context
+    source = [
+      "module demo.result_surface",
+      "",
+      "enum LoadError: u8",
+      "    invalid_format = 1",
+      "",
+      "def load(available: bool) -> Result[i32, LoadError]:",
+      "    if available:",
+      "        return ok(7)",
+      "    return err(LoadError.invalid_format)",
+      "",
+      "def main() -> i32:",
+      "    let loaded = load(false)",
+      "    if loaded.is_ok:",
+      "        return loaded.value",
+      "    if loaded.error == LoadError.invalid_format:",
+      "        return 1",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/typedef struct mt_result_i32_demo_result_surface_LoadError mt_result_i32_demo_result_surface_LoadError;/, generated)
+    assert_match(/struct mt_result_i32_demo_result_surface_LoadError \{/, generated)
+    assert_match(/bool is_ok;/, generated)
+    assert_match(/int32_t value;/, generated)
+    assert_match(/demo_result_surface_LoadError error;/, generated)
+    assert_match(/return \(mt_result_i32_demo_result_surface_LoadError\)\{ \.is_ok = true, \.value = 7 \};/, generated)
+    assert_match(/return \(mt_result_i32_demo_result_surface_LoadError\)\{ \.is_ok = false, \.error = demo_result_surface_LoadError_invalid_format \};/, generated)
+  end
+
   def test_generate_c_for_address_of_and_dereference_assignment
     source = [
       "module demo.pointer_surface",

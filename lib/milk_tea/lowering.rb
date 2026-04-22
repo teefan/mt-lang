@@ -416,6 +416,20 @@ module MilkTea
           argument = expression.arguments.fetch(0)
           lowered_arg = lower_expression(argument.value, env:)
           IR::Cast.new(target_type: type, expression: lowered_arg, type:)
+        when :result_ok
+          argument = expression.arguments.fetch(0)
+          fields = [
+            IR::AggregateField.new(name: "is_ok", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
+            IR::AggregateField.new(name: "value", value: lower_expression(argument.value, env:, expected_type: type.ok_type)),
+          ]
+          IR::AggregateLiteral.new(type:, fields:)
+        when :result_err
+          argument = expression.arguments.fetch(0)
+          fields = [
+            IR::AggregateField.new(name: "is_ok", value: IR::BooleanLiteral.new(value: false, type: @types.fetch("bool"))),
+            IR::AggregateField.new(name: "error", value: lower_expression(argument.value, env:, expected_type: type.error_type)),
+          ]
+          IR::AggregateLiteral.new(type:, fields:)
         else
           raise LoweringError, "unsupported call kind #{kind}"
         end
@@ -433,6 +447,10 @@ module MilkTea
           if @functions.key?(callee.name)
             binding = specialize_function_binding(@functions.fetch(callee.name), arguments, env)
             [ :function, function_binding_c_name(binding, module_name: @module_name), nil, binding.type ]
+          elsif callee.name == "ok"
+            [:result_ok, nil, nil, nil]
+          elsif callee.name == "err"
+            [:result_err, nil, nil, nil]
           elsif (type = @types[callee.name]).is_a?(Types::Struct)
             [ :struct_literal, nil, nil, type ]
           else
@@ -480,7 +498,7 @@ module MilkTea
 
           if (type_ref = type_ref_from_specialization(callee))
             specialized_type = resolve_type_ref(type_ref)
-            return [:struct_literal, nil, nil, specialized_type] if specialized_type.is_a?(Types::Struct)
+            return [:struct_literal, nil, nil, specialized_type] if specialized_type.is_a?(Types::Struct) || result_type?(specialized_type)
           end
 
           raise LoweringError, "unsupported specialization callee"
@@ -566,6 +584,10 @@ module MilkTea
           when :cast
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             function_type.return_type
+          when :result_ok, :result_err
+            raise LoweringError, "cannot infer result type for #{kind == :result_ok ? 'ok' : 'err'} without an expected Result[T, E]" unless result_type?(expected_type)
+
+            expected_type
           else
             raise LoweringError, "unsupported call kind #{kind}"
           end
@@ -672,6 +694,11 @@ module MilkTea
           return unless actual_type.is_a?(Types::Span)
 
           collect_type_substitutions(pattern_type.element_type, actual_type.element_type, substitutions, function_name)
+        when Types::Result
+          return unless actual_type.is_a?(Types::Result)
+
+          collect_type_substitutions(pattern_type.ok_type, actual_type.ok_type, substitutions, function_name)
+          collect_type_substitutions(pattern_type.error_type, actual_type.error_type, substitutions, function_name)
         when Types::StructInstance
           return unless actual_type.is_a?(Types::StructInstance)
           return unless actual_type.definition == pattern_type.definition && actual_type.arguments.length == pattern_type.arguments.length
@@ -712,6 +739,8 @@ module MilkTea
           )
         when Types::Span
           Types::Span.new(substitute_type(type.element_type, substitutions))
+        when Types::Result
+          Types::Result.new(substitute_type(type.ok_type, substitutions), substitute_type(type.error_type, substitutions))
         when Types::StructInstance
           type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
         when Types::Function
@@ -730,6 +759,10 @@ module MilkTea
 
       def pointer_type?(type)
         type.is_a?(Types::GenericInstance) && type.name == "ptr" && type.arguments.length == 1
+      end
+
+      def result_type?(type)
+        type.is_a?(Types::Result)
       end
 
       def array_type?(type)
@@ -833,7 +866,10 @@ module MilkTea
                      Types::LiteralTypeArg.new(argument.value.value)
                    end
                  end
-                 if (generic_type = resolve_named_generic_type(parts))
+                 if name == "Result"
+                   validate_generic_type!(name, args)
+                   Types::Result.new(args.fetch(0), args.fetch(1))
+                 elsif (generic_type = resolve_named_generic_type(parts))
                    generic_type.instantiate(args)
                  elsif name == "span"
                    Types::Span.new(args.fetch(0))
@@ -927,6 +963,10 @@ module MilkTea
           raise LoweringError, "array element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
           raise LoweringError, "array length must be an integer literal" unless arguments[1].is_a?(Types::LiteralTypeArg) && arguments[1].value.is_a?(Integer)
           raise LoweringError, "array length must be positive" unless arguments[1].value.positive?
+        when "Result"
+          raise LoweringError, "Result requires exactly two type arguments" unless arguments.length == 2
+          raise LoweringError, "Result ok type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
+          raise LoweringError, "Result error type must be a type" if arguments[1].is_a?(Types::LiteralTypeArg)
         else
           raise LoweringError, "unknown generic type #{name}"
         end

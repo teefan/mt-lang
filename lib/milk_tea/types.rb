@@ -234,6 +234,47 @@ module MilkTea
       end
     end
 
+    class Result < Base
+      attr_reader :ok_type, :error_type
+
+      def initialize(ok_type, error_type)
+        @ok_type = ok_type
+        @error_type = error_type
+        @fields = {
+          "is_ok" => Primitive.new("bool"),
+          "value" => ok_type,
+          "error" => error_type,
+        }.freeze
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(Result) && other.ok_type == ok_type && other.error_type == error_type
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, ok_type, error_type].hash
+      end
+
+      def name
+        to_s
+      end
+
+      def fields
+        @fields
+      end
+
+      def field(name)
+        @fields[name]
+      end
+
+      def to_s
+        "Result[#{ok_type}, #{error_type}]"
+      end
+    end
+
     class GenericStructDefinition < Base
       attr_reader :name, :type_params, :module_name, :external
 
@@ -287,6 +328,8 @@ module MilkTea
           GenericInstance.new(type.name, type.arguments.map { |argument| argument.is_a?(LiteralTypeArg) ? argument : substitute_type(argument, substitutions) })
         when Span
           Span.new(substitute_type(type.element_type, substitutions))
+        when Result
+          Result.new(substitute_type(type.ok_type, substitutions), substitute_type(type.error_type, substitutions))
         when Function
           Function.new(
             type.name,
