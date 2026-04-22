@@ -35,7 +35,7 @@ module MilkTea
 
     def run_binary(binary_path)
       build_result = Build.build(@source_path, output_path: binary_path, cc: @cc, keep_c_path: @keep_c_path)
-      stdout, stderr, status = Open3.capture3(build_result.output_path)
+      stdout, stderr, status = Open3.capture3(build_result.output_path, chdir: File.dirname(@source_path))
 
       Result.new(
         stdout:,

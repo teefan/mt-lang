@@ -63,3 +63,4 @@ build-iPhoneSimulator/
 .env
 .github/copilot-instructions.md
 AGENTS.md
+third_party/**/*

@@ -275,7 +275,7 @@ def load_texture(path: str, arena: ptr[Arena]) -> Result[Texture, LoadError]:
 - raw pointer arithmetic
 - unchecked casts and bit reinterpretation
 - reading inactive union fields
-- unchecked indexing
+- pointer indexing
 - direct ABI edge work that the compiler cannot validate
 
 ```mt
@@ -327,6 +327,12 @@ let texture_ptr: ptr[Texture]
 let normal_table: array[f32, 256]
 let callback: fn(ptr[void], i32) -> void
 ```
+
+Notes:
+
+- Fixed-array indexing is bounds-checked and safe by default.
+- Safe array indexing requires an addressable array value; bind temporaries before indexing them.
+- Pointer indexing follows the raw pointer model and requires `unsafe`.
 
 ### Nullability
 
@@ -460,6 +466,11 @@ For bit reinterpretation, use a separate form inside `unsafe`:
 unsafe:
 	let bits = reinterpret[u32](value)
 ```
+
+Binary arithmetic and numeric comparison operators may promote primitive operands to a common type locally.
+This is limited to `+ - * / % == != < <= > >=` and does not change assignment, return, or aggregate-field typing rules.
+Non-extern call boundaries remain strict, but extern calls may pass enum or flags values to same-width fixed-width integer parameters without an explicit cast for C ABI interop.
+Mixed signed and unsigned integers still require an explicit cast.
 
 ### Literals
 

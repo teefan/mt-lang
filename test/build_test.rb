@@ -72,6 +72,71 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
+  def test_build_includes_raw_binding_compiler_flags_for_imported_extern_modules
+    Dir.mktmpdir("milk-tea-build-raw-binding-flags") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      output_path = File.join(dir, "milk-tea-demo")
+      header_path = File.join(dir, "raylib.h")
+      File.write(header_path, "")
+
+      raw_bindings = MilkTea::RawBindings::Registry.new([
+        MilkTea::RawBindings::Binding.new(
+          name: "raylib",
+          module_name: "std.c.raylib",
+          binding_path: File.join(dir, "raylib.mt"),
+          header_candidates: [header_path],
+          include_directives: ["raylib.h"],
+          link_libraries: ["raylib"],
+          implementation_defines: ["MT_TEST_IMPLEMENTATION"],
+          compiler_flags: ["-DMT_TEST_TOOLING=1"],
+        ),
+      ])
+
+      MilkTea::Build.build(demo_path, output_path:, cc: compiler_path, raw_bindings:)
+
+      invocation = File.read(compiler_log).lines(chomp: true)
+      assert_includes invocation, "-I#{dir}"
+      assert_includes invocation, "-DMT_TEST_IMPLEMENTATION"
+      assert_includes invocation, "-DMT_TEST_TOOLING=1"
+      assert_includes invocation, "-lraylib"
+    end
+  end
+
+  def test_build_uses_default_raygui_binding_compiler_flags_when_imported
+    Dir.mktmpdir("milk-tea-build-raygui") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      source_path = File.join(dir, "raygui.mt")
+      output_path = File.join(dir, "raygui-demo")
+      c_path = File.join(dir, "raygui-demo.c")
+
+      File.write(source_path, [
+        "module demo.raygui_smoke",
+        "",
+        "import std.c.raygui as gui",
+        "",
+        "def main() -> i32:",
+        "    gui.GuiEnable()",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Build.build(source_path, output_path:, cc: compiler_path, keep_c_path: c_path)
+
+      assert_equal File.expand_path(output_path), result.output_path
+      assert_equal File.expand_path(c_path), result.c_path
+      assert_equal File.expand_path(compiler_path), result.compiler
+      assert_includes result.link_flags, "-lraylib"
+      assert_match(/#include "raygui\.h"/, File.read(c_path))
+
+      invocation = File.read(compiler_log).lines(chomp: true)
+      assert_includes invocation, "-lraylib"
+      assert_includes invocation, "-DRAYGUI_IMPLEMENTATION"
+      assert_includes invocation, "-I#{File.expand_path('../third_party/raylib-upstream/examples/shapes', __dir__)}"
+    end
+  end
+
   private
 
   def demo_path

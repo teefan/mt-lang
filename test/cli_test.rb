@@ -2,6 +2,7 @@
 
 require "stringio"
 require "tmpdir"
+require "json"
 require_relative "test_helper"
 
 class MilkTeaCliTest < Minitest::Test
@@ -129,6 +130,26 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
+  def test_raylib_manifest_command_writes_output_file
+    Dir.mktmpdir("milk-tea-cli-raylib-manifest") do |dir|
+      examples_root = write_raylib_examples_fixture(dir)
+      output_path = File.join(dir, "manifest.json")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["raylib-manifest", examples_root, "-o", output_path], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/generated .*examples -> .*manifest\.json/, out.string)
+
+      manifest = JSON.parse(File.read(output_path))
+      assert_equal 2, manifest.fetch("total_examples")
+      assert_equal 1, manifest.fetch("category_counts").fetch("core")
+      assert_equal 1, manifest.fetch("category_counts").fetch("shaders")
+    end
+  end
+
   def test_parse_command_requires_a_path
     out = StringIO.new
     err = StringIO.new
@@ -155,6 +176,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_match(/mtc build PATH/, err.string)
     assert_match(/mtc run PATH/, err.string)
     assert_match(/mtc bindgen MODULE HEADER/, err.string)
+    assert_match(/mtc raylib-manifest EXAMPLES_ROOT/, err.string)
   end
 
   def test_parse_command_reports_loader_errors
@@ -216,6 +238,43 @@ class MilkTeaCliTest < Minitest::Test
     SH
     File.chmod(0o755, path)
     path
+  end
+
+  def write_raylib_examples_fixture(dir)
+    examples_root = File.join(dir, "examples")
+    FileUtils.mkdir_p(File.join(examples_root, "core"))
+    FileUtils.mkdir_p(File.join(examples_root, "shaders"))
+
+    File.write(File.join(examples_root, "examples_list.txt"), <<~TXT)
+      core;core_basic_window;★☆☆☆;1.0;1.0;2013;2025;"Ramon Santamaria";@raysan5
+      shaders;shaders_texture_waves;★★☆☆;2.5;3.7;2019;2025;"Anata";@anatagawa
+    TXT
+
+    File.write(File.join(examples_root, "core", "core_basic_window.c"), <<~C)
+      #include "raylib.h"
+
+      int main(void)
+      {
+          InitWindow(800, 450, "raylib [core] example - basic window");
+          return 0;
+      }
+    C
+
+    File.write(File.join(examples_root, "shaders", "shaders_texture_waves.c"), <<~C)
+      #include "raylib.h"
+      #include "raymath.h"
+      #include "rlights.h"
+
+      int main(void)
+      {
+          Texture2D texture = LoadTexture("resources/space.png");
+          Shader shader = LoadShader(0, TextFormat("resources/shaders/glsl%i/wave.fs", GLSL_VERSION));
+          SetAudioStreamCallback(stream, callback);
+          return 0;
+      }
+    C
+
+    examples_root
   end
 
   def executable_available?(program)

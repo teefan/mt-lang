@@ -632,10 +632,15 @@ module MilkTea
           type = infer_expression_type(expression, env:)
           IR::Member.new(receiver:, member: expression.member, type:)
         when AST::IndexAccess
+          receiver_type = infer_expression_type(expression.receiver, env:)
           receiver = lower_expression(expression.receiver, env:)
           index = lower_expression(expression.index, env:, expected_type: @types.fetch("usize"))
           type = infer_expression_type(expression, env:)
-          IR::Index.new(receiver:, index:, type:)
+          if array_type?(receiver_type)
+            IR::CheckedIndex.new(receiver:, index:, receiver_type:, type:)
+          else
+            IR::Index.new(receiver:, index:, type:)
+          end
         when AST::UnaryOp
           if expression.operator == "*"
             type = infer_expression_type(expression, env:)
@@ -684,9 +689,14 @@ module MilkTea
         when AST::MemberAccess
           lower_member_access(expression, env:, type:)
         when AST::IndexAccess
+          receiver_type = infer_expression_type(expression.receiver, env:)
           receiver = lower_expression(expression.receiver, env:)
           index = lower_expression(expression.index, env:, expected_type: @types.fetch("usize"))
-          IR::Index.new(receiver:, index:, type:)
+          if array_type?(receiver_type) && addressable_storage_expression?(expression.receiver)
+            IR::CheckedIndex.new(receiver:, index:, receiver_type:, type:)
+          else
+            IR::Index.new(receiver:, index:, type:)
+          end
         when AST::UnaryOp
           if expression.operator == "&"
             IR::AddressOf.new(expression: lower_expression(expression.operand, env:), type:)
@@ -694,8 +704,13 @@ module MilkTea
             IR::Unary.new(operator: expression.operator, operand: lower_expression(expression.operand, env:), type:)
           end
         when AST::BinaryOp
-          left = lower_expression(expression.left, env:, expected_type: type)
-          right = lower_expression(expression.right, env:, expected_type: left.type)
+          left_type = infer_expression_type(expression.left, env:, expected_type: type)
+          right_type = infer_expression_type(expression.right, env:, expected_type: left_type)
+          operand_type = promoted_binary_operand_type(expression.operator, left_type, right_type)
+          left = lower_expression(expression.left, env:, expected_type: operand_type || type)
+          right = lower_expression(expression.right, env:, expected_type: operand_type || left.type)
+          left = cast_expression(left, operand_type) if operand_type
+          right = cast_expression(right, operand_type) if operand_type
           IR::Binary.new(operator: expression.operator, left:, right:, type:)
         when AST::Call
           lower_call(expression, env:, type:)
@@ -931,11 +946,18 @@ module MilkTea
             operand_type
           end
         when AST::BinaryOp
+          left_type = infer_expression_type(expression.left, env:, expected_type:)
+          right_type = infer_expression_type(expression.right, env:, expected_type: left_type)
+
           case expression.operator
           when "and", "or", "<", "<=", ">", ">=", "==", "!="
             @types.fetch("bool")
+          when "+", "-", "*", "/"
+            pointer_arithmetic_result_type(expression.operator, left_type, right_type) || common_numeric_type(left_type, right_type) || left_type
+          when "%"
+            common_integer_type(left_type, right_type) || left_type
           else
-            infer_expression_type(expression.left, env:, expected_type:)
+            left_type
           end
         when AST::Call
           kind, = resolve_callee(expression.callee, env, arguments: expression.arguments)
@@ -970,6 +992,56 @@ module MilkTea
         else
           raise LoweringError, "unsupported expression type #{expression.class.name}"
         end
+      end
+
+      def promoted_binary_operand_type(operator, left_type, right_type)
+        case operator
+        when "+", "-", "*", "/", "<", "<=", ">", ">=", "==", "!="
+          common_numeric_type(left_type, right_type)
+        when "%"
+          common_integer_type(left_type, right_type)
+        end
+      end
+
+      def cast_expression(expression, target_type)
+        return expression if expression.type == target_type
+
+        IR::Cast.new(target_type:, expression:, type: target_type)
+      end
+
+      def common_numeric_type(left_type, right_type)
+        return left_type if left_type == right_type
+        return unless left_type.is_a?(Types::Primitive) && right_type.is_a?(Types::Primitive)
+        return unless left_type.numeric? && right_type.numeric?
+
+        return common_integer_type(left_type, right_type) if left_type.integer? && right_type.integer?
+        return wider_float_type(left_type, right_type) if left_type.float? && right_type.float?
+
+        float_type, integer_type = left_type.float? ? [left_type, right_type] : [right_type, left_type]
+        return unless integer_type.integer? && integer_type.fixed_width_integer?
+
+        float_type
+      end
+
+      def common_integer_type(left_type, right_type)
+        return left_type if left_type == right_type
+        return unless left_type.is_a?(Types::Primitive) && right_type.is_a?(Types::Primitive)
+        return unless left_type.integer? && right_type.integer?
+        return unless left_type.fixed_width_integer? && right_type.fixed_width_integer?
+        return unless left_type.signed_integer? == right_type.signed_integer?
+
+        left_type.integer_width >= right_type.integer_width ? left_type : right_type
+      end
+
+      def wider_float_type(left_type, right_type)
+        left_type.float_width >= right_type.float_width ? left_type : right_type
+      end
+
+      def pointer_arithmetic_result_type(operator, left_type, right_type)
+        return left_type if pointer_type?(left_type) && integer_type?(right_type) && (operator == "+" || operator == "-")
+        return right_type if operator == "+" && integer_type?(left_type) && pointer_type?(right_type)
+
+        nil
       end
 
       def resolve_type_expression(expression)
@@ -1154,6 +1226,19 @@ module MilkTea
         return unless array_type?(type)
 
         type.arguments[1].value
+      end
+
+      def addressable_storage_expression?(expression)
+        case expression
+        when AST::Identifier
+          true
+        when AST::MemberAccess, AST::IndexAccess
+          addressable_storage_expression?(expression.receiver)
+        when AST::UnaryOp
+          expression.operator == "*"
+        else
+          false
+        end
       end
 
       def collection_loop_type(type)

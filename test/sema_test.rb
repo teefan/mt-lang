@@ -141,6 +141,47 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("on_log")
   end
 
+  def test_type_checks_mixed_numeric_binary_operators_with_arithmetic_conversion
+    source = <<~MT
+      module demo.numeric_conversions
+
+      def sum() -> f64:
+          return 1 + 2.5
+
+      def before_limit() -> bool:
+          return 3 < 3.5
+
+      def main() -> i32:
+          if before_limit():
+              return cast[i32](sum())
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal "f64", result.functions.fetch("sum").type.return_type.to_s
+    assert_equal "bool", result.functions.fetch("before_limit").type.return_type.to_s
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_mixed_signed_and_unsigned_integer_arithmetic_without_explicit_cast
+    source = <<~MT
+      module demo.bad
+
+      def main() -> i32:
+          let left: i32 = 1
+          let right: u32 = 2
+          let sum = left + right
+          return sum
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/operator \+ requires compatible numeric types/, error.message)
+  end
+
   def test_type_checks_span_construction_and_field_access
     source = <<~MT
       module demo.spans
@@ -471,6 +512,92 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/reinterpret requires non-array concrete sized types/, error.message)
   end
 
+  def test_type_checks_explicit_casts_from_enum_and_flags_backing_values
+    source = <<~MT
+      module demo.cast_values
+
+      enum State: u8
+          idle = 0
+
+      flags Gesture: i32
+          tap = 1
+
+      def main() -> i32:
+          let state = cast[i32](State.idle)
+          let gesture = cast[u32](Gesture.tap)
+          return state + cast[i32](gesture)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+    def test_type_checks_same_width_enum_and_flags_arguments_without_explicit_cast_for_extern_calls
+    source = <<~MT
+      module demo.call_values
+
+      enum State: i8
+          idle = 0
+
+      flags Gesture: i32
+          tap = 1
+
+      extern def takes_u32(value: u32) -> i32
+      extern def takes_u8(value: u8) -> i32
+
+      def main() -> i32:
+          takes_u32(Gesture.tap)
+          takes_u8(State.idle)
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_same_width_enum_and_flags_arguments_without_explicit_cast_for_non_extern_calls
+    source = <<~MT
+      module demo.call_values
+
+      flags Gesture: i32
+          tap = 1
+
+      def takes_u32(value: u32) -> i32:
+          return 0
+
+      def main() -> i32:
+          takes_u32(Gesture.tap)
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/argument value to takes_u32 expects u32, got .*Gesture/, error.message)
+  end
+
+  def test_rejects_same_width_enum_and_flags_assignment_without_explicit_cast
+    source = <<~MT
+      module demo.bad
+
+      flags Gesture: i32
+          tap = 1
+
+      def main() -> i32:
+          let gesture: u32 = Gesture.tap
+          return cast[i32](gesture)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/cannot assign .*Gesture to gesture: expected u32/, error.message)
+  end
+
   def test_rejects_non_power_of_two_alignment
     source = <<~MT
       module demo.layout
@@ -740,7 +867,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/extern function make cannot return arrays/, return_error.message)
   end
 
-  def test_type_checks_unsafe_array_indexing_and_element_assignment
+  def test_type_checks_safe_array_indexing_and_element_assignment
     source = <<~MT
       module demo.arrays
 
@@ -750,11 +877,10 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> i32:
           var palette = array[u32, 4](1, 2, 3, 4)
           var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))
-          unsafe:
-              palette[1] = 9
-              holder.colors[2] = 10
-              let first = palette[0]
-              let third = holder.colors[2]
+          palette[1] = 9
+          holder.colors[2] = 10
+          let first = palette[0]
+          let third = holder.colors[2]
           return 0
     MT
 
@@ -763,13 +889,14 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_rejects_indexing_outside_unsafe
+  def test_rejects_pointer_indexing_outside_unsafe
     source = <<~MT
       module demo.bad
 
+      def read(data: ptr[u32]) -> u32:
+          return data[0]
+
       def main() -> i32:
-          let palette = array[u32, 4](1, 2, 3, 4)
-          let value = palette[0]
           return 0
     MT
 
@@ -777,7 +904,23 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/indexing requires unsafe/, error.message)
+    assert_match(/pointer indexing requires unsafe/, error.message)
+  end
+
+  def test_rejects_safe_indexing_of_temporary_array_values
+    source = <<~MT
+      module demo.bad
+
+      def main() -> i32:
+          let value = array[i32, 4](1, 2, 3, 4)[0]
+          return value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/safe array indexing requires an addressable array value/, error.message)
   end
 
   def test_rejects_dereference_of_non_pointer
