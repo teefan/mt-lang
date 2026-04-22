@@ -28,22 +28,38 @@ module MilkTea
     def parse
       skip_newlines
 
-      module_name = match(:module) ? parse_module_name : nil
-
+      module_name = nil
+      module_kind = nil
       imports = []
-      skip_newlines
-      while match(:import)
-        imports << parse_import
+      directives = []
+      declarations = []
+
+      if match(:module)
+        module_kind = :module
+        module_name = parse_module_name
+
         skip_newlines
+        while match(:import)
+          imports << parse_import
+          skip_newlines
+        end
+      elsif match(:extern)
+        consume(:module, "expected module after extern")
+        module_kind = :extern_module
+        module_name = parse_qualified_name
+        directives, declarations = parse_extern_module_body
+        skip_newlines
+        raise error(peek, "expected end of file after extern module") unless eof?
+
+        return AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:)
       end
 
-      declarations = []
       until eof?
         declarations << parse_declaration
         skip_newlines
       end
 
-      AST::SourceFile.new(module_name:, imports:, declarations:)
+      AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:)
     end
 
     private
@@ -56,7 +72,7 @@ module MilkTea
 
     def parse_import
       path = parse_qualified_name
-      alias_name = match(:as) ? consume(:identifier, "expected import alias").lexeme : nil
+      alias_name = match(:as) ? consume_name("expected import alias").lexeme : nil
       consume_end_of_statement
       AST::Import.new(path:, alias_name:)
     end
@@ -64,19 +80,88 @@ module MilkTea
     def parse_declaration
       if match(:const)
         parse_const_decl
+      elsif match(:type)
+        parse_type_alias_decl
       elsif match(:struct)
         parse_struct_decl
+      elsif match(:union)
+        parse_union_decl
+      elsif match(:enum)
+        parse_enum_decl(AST::EnumDecl)
+      elsif match(:flags)
+        parse_enum_decl(AST::FlagsDecl)
+      elsif match(:opaque)
+        parse_opaque_decl
       elsif match(:impl)
         parse_impl_block
       elsif match(:def)
         parse_function_def
+      elsif match(:extern)
+        parse_extern_decl
       else
         raise error(peek, "expected declaration")
       end
     end
 
+    def parse_extern_module_body
+      consume(:colon, "expected ':' before extern module body")
+      consume(:newline, "expected newline before extern module body")
+      consume(:indent, "expected indented extern module body")
+
+      directives = []
+      declarations = []
+      skip_newlines
+      until check(:dedent) || eof?
+        if match(:link)
+          directives << parse_link_directive
+        elsif match(:include)
+          directives << parse_include_directive
+        else
+          declarations << parse_extern_module_declaration
+        end
+        skip_newlines
+      end
+
+      consume(:dedent, "expected end of extern module body")
+      [directives, declarations]
+    end
+
+    def parse_link_directive
+      value = consume(:string, "expected string literal after link").literal
+      consume_end_of_statement
+      AST::LinkDirective.new(value:)
+    end
+
+    def parse_include_directive
+      value = consume(:string, "expected string literal after include").literal
+      consume_end_of_statement
+      AST::IncludeDirective.new(value:)
+    end
+
+    def parse_extern_module_declaration
+      if match(:const)
+        parse_const_decl
+      elsif match(:type)
+        parse_type_alias_decl
+      elsif match(:struct)
+        parse_struct_decl
+      elsif match(:union)
+        parse_union_decl
+      elsif match(:enum)
+        parse_enum_decl(AST::EnumDecl)
+      elsif match(:flags)
+        parse_enum_decl(AST::FlagsDecl)
+      elsif match(:opaque)
+        parse_opaque_decl
+      elsif match(:extern)
+        parse_extern_decl
+      else
+        raise error(peek, "expected extern module declaration")
+      end
+    end
+
     def parse_const_decl
-      name = consume(:identifier, "expected constant name").lexeme
+      name = consume_name("expected constant name").lexeme
       consume(:colon, "expected ':' after constant name")
       type = parse_type_ref
       consume(:equal, "expected '=' after constant type")
@@ -85,16 +170,64 @@ module MilkTea
       AST::ConstDecl.new(name:, type:, value:)
     end
 
+    def parse_type_alias_decl
+      name = consume_name("expected type alias name").lexeme
+      consume(:equal, "expected '=' after type alias name")
+      target = parse_type_ref
+      consume_end_of_statement
+      AST::TypeAliasDecl.new(name:, target:)
+    end
+
     def parse_struct_decl
-      name = consume(:identifier, "expected struct name").lexeme
+      name = consume_name("expected struct name").lexeme
       fields = parse_named_block do
-        field_name = consume(:identifier, "expected field name").lexeme
+        field_name = consume_name("expected field name").lexeme
         consume(:colon, "expected ':' after field name")
         field_type = parse_type_ref
         consume_end_of_statement
         AST::Field.new(name: field_name, type: field_type)
       end
       AST::StructDecl.new(name:, fields:)
+    end
+
+    def parse_union_decl
+      name = consume_name("expected union name").lexeme
+      fields = parse_named_block do
+        field_name = consume_name("expected field name").lexeme
+        consume(:colon, "expected ':' after field name")
+        field_type = parse_type_ref
+        consume_end_of_statement
+        AST::Field.new(name: field_name, type: field_type)
+      end
+      AST::UnionDecl.new(name:, fields:)
+    end
+
+    def parse_enum_decl(node_class)
+      name = consume_name("expected declaration name").lexeme
+      consume(:colon, "expected ':' after declaration name")
+      backing_type = parse_type_ref
+      consume(:newline, "expected newline before declaration body")
+      consume(:indent, "expected indented declaration body")
+
+      members = []
+      skip_newlines
+      until check(:dedent) || eof?
+        member_name = consume_name("expected member name").lexeme
+        consume(:equal, "expected '=' after member name")
+        value = parse_expression
+        consume_end_of_statement
+        members << AST::EnumMember.new(name: member_name, value:)
+        skip_newlines
+      end
+
+      consume(:dedent, "expected end of declaration body")
+      node_class.new(name:, backing_type:, members:)
+    end
+
+    def parse_opaque_decl
+      name = consume_name("expected opaque type name").lexeme
+      consume_end_of_statement
+      AST::OpaqueDecl.new(name:)
     end
 
     def parse_impl_block
@@ -107,11 +240,25 @@ module MilkTea
     end
 
     def parse_function_def
-      name = consume(:identifier, "expected function name").lexeme
+      name = consume_name("expected function name").lexeme
       params = parse_params
       return_type = match(:arrow) ? parse_type_ref : nil
       body = parse_block
       AST::FunctionDef.new(name:, params:, return_type:, body:)
+    end
+
+    def parse_extern_decl
+      consume(:def, "expected def after extern")
+      parse_extern_function_decl
+    end
+
+    def parse_extern_function_decl
+      name = consume_name("expected function name").lexeme
+      params = parse_params
+      consume(:arrow, "expected '->' before extern function return type")
+      return_type = parse_type_ref
+      consume_end_of_statement
+      AST::ExternFunctionDecl.new(name:, params:, return_type:)
     end
 
     def parse_params
@@ -131,7 +278,7 @@ module MilkTea
 
     def parse_param
       mutable = match(:mut)
-      name_token = consume(:identifier, "expected parameter name")
+      name_token = consume_name("expected parameter name")
       param_type = nil
       if match(:colon)
         param_type = parse_type_ref
@@ -143,6 +290,8 @@ module MilkTea
     end
 
     def parse_type_ref
+      return parse_function_type_ref if match(:fn)
+
       name = parse_qualified_name
       arguments = []
       if match(:lbracket)
@@ -157,6 +306,31 @@ module MilkTea
 
       nullable = match(:question)
       AST::TypeRef.new(name:, arguments:, nullable:)
+    end
+
+    def parse_function_type_ref
+      consume(:lparen, "expected '(' after fn")
+      params = []
+
+      unless check(:rparen)
+        loop do
+          params << parse_function_type_param
+          break unless match(:comma)
+        end
+      end
+
+      consume(:rparen, "expected ')' after function type parameters")
+      consume(:arrow, "expected '->' after function type parameters")
+      return_type = parse_type_ref
+      AST::FunctionType.new(params:, return_type:)
+    end
+
+    def parse_function_type_param
+      mutable = match(:mut)
+      name = consume_name("expected function type parameter name").lexeme
+      consume(:colon, "expected ':' after function type parameter name")
+      type = parse_type_ref
+      AST::Param.new(name:, type:, mutable:)
     end
 
     def parse_type_argument
@@ -222,7 +396,7 @@ module MilkTea
     end
 
     def parse_local_decl(kind)
-      name = consume(:identifier, "expected local variable name").lexeme
+      name = consume_name("expected local variable name").lexeme
       var_type = match(:colon) ? parse_type_ref : nil
       consume(:equal, "expected '=' in local declaration")
       value = parse_expression
@@ -282,11 +456,31 @@ module MilkTea
     end
 
     def parse_and
-      parse_left_associative(:parse_comparison, :and)
+      parse_left_associative(:parse_bitwise_or, :and)
+    end
+
+    def parse_bitwise_or
+      parse_left_associative(:parse_bitwise_xor, :pipe)
+    end
+
+    def parse_bitwise_xor
+      parse_left_associative(:parse_bitwise_and, :caret)
+    end
+
+    def parse_bitwise_and
+      parse_left_associative(:parse_equality, :amp)
+    end
+
+    def parse_equality
+      parse_left_associative(:parse_comparison, :equal_equal, :bang_equal)
     end
 
     def parse_comparison
-      parse_left_associative(:parse_additive, :equal_equal, :bang_equal, :less, :less_equal, :greater, :greater_equal)
+      parse_left_associative(:parse_shift, :less, :less_equal, :greater, :greater_equal)
+    end
+
+    def parse_shift
+      parse_left_associative(:parse_additive, :shift_left, :shift_right)
     end
 
     def parse_additive
@@ -298,7 +492,7 @@ module MilkTea
     end
 
     def parse_unary
-      if match(:not, :minus, :plus)
+      if match(:not, :minus, :plus, :tilde)
         operator = previous.lexeme
         operand = parse_unary
         AST::UnaryOp.new(operator:, operand:)
@@ -312,7 +506,7 @@ module MilkTea
 
       loop do
         if match(:dot)
-          member = consume(:identifier, "expected member name after '.'").lexeme
+          member = consume_name("expected member name after '.'").lexeme
           expression = AST::MemberAccess.new(receiver: expression, member:)
         elsif match(:lbracket)
           arguments = []
@@ -348,7 +542,7 @@ module MilkTea
     end
 
     def parse_call_argument
-      if check(:identifier) && check_next(:equal)
+      if check_name && check_next(:equal)
         name = advance.lexeme
         consume(:equal, "expected '=' after named argument name")
         AST::Argument.new(name:, value: parse_expression)
@@ -358,7 +552,7 @@ module MilkTea
     end
 
     def parse_primary
-      if match(:identifier)
+      if match_name
         AST::Identifier.new(name: previous.lexeme)
       elsif match(:integer)
         AST::IntegerLiteral.new(lexeme: previous.lexeme, value: previous.literal)
@@ -384,9 +578,9 @@ module MilkTea
     end
 
     def parse_qualified_name
-      parts = [consume(:identifier, "expected identifier").lexeme]
+      parts = [consume_name("expected identifier").lexeme]
       while match(:dot)
-        parts << consume(:identifier, "expected identifier after '.'").lexeme
+        parts << consume_name("expected identifier after '.'").lexeme
       end
       AST::QualifiedName.new(parts:)
     end
@@ -422,16 +616,36 @@ module MilkTea
       raise error(peek, message)
     end
 
+    def consume_name(message)
+      return advance if check_name
+
+      raise error(peek, message)
+    end
+
     def check(type)
       return false if eof?
 
       peek.type == type
     end
 
+    def check_name
+      return false if eof?
+
+      type = peek.type
+      type == :identifier || (Token::KEYWORDS.value?(type) && !%i[true false null].include?(type))
+    end
+
     def check_next(type)
       return false if (@current + 1) >= @tokens.length
 
       @tokens[@current + 1].type == type
+    end
+
+    def match_name
+      return false unless check_name
+
+      advance
+      true
     end
 
     def advance

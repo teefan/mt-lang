@@ -14,6 +14,8 @@ require_relative 'milk_tea/ir'
 require_relative 'milk_tea/lowering'
 require_relative 'milk_tea/codegen'
 require_relative 'milk_tea/c_backend'
+require_relative 'milk_tea/build'
+require_relative 'milk_tea/run'
 require_relative 'milk_tea/cli'
 
 module MilkTea

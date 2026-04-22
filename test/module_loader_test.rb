@@ -18,6 +18,42 @@ class MilkTeaModuleLoaderTest < Minitest::Test
     assert_match(/source file not found/, error.message)
   end
 
+  def test_check_file_runs_semantic_analysis
+    result = MilkTea::ModuleLoader.check_file(demo_path)
+
+    assert_equal "demo.bouncing_ball", result.module_name
+    assert_equal %w[main], result.functions.keys.sort
+  end
+
+  def test_check_program_exposes_root_and_imported_modules
+    program = MilkTea::ModuleLoader.check_program(demo_path)
+
+    assert_equal demo_path, program.root_path
+    assert_equal "demo.bouncing_ball", program.root_analysis.module_name
+    assert_equal %w[demo.bouncing_ball std.c.raylib], program.analyses_by_module_name.keys.sort
+    assert_equal :extern_module, program.analyses_by_module_name.fetch("std.c.raylib").module_kind
+  end
+
+  def test_check_file_reports_missing_imported_modules
+    source_path = File.expand_path("missing-import.mt", __dir__)
+    File.write(source_path, <<~MT)
+      module demo.bad
+
+      import std.c.missing as missing
+
+      def main() -> i32:
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::ModuleLoadError) do
+      MilkTea::ModuleLoader.check_file(source_path)
+    end
+
+    assert_match(/module not found/, error.message)
+  ensure
+    File.delete(source_path) if source_path && File.exist?(source_path)
+  end
+
   private
 
   def demo_path

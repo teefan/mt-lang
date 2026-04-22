@@ -82,4 +82,21 @@ class MilkTeaLexerTest < Minitest::Test
     end
     assert_match(/unclosed grouping delimiter/, unclosed_grouping_error.message)
   end
+
+  def test_lexes_bitwise_tokens_and_normal_strings
+    source = <<~MT
+      const mask: u32 = ~0 | 1 & 2 ^ 4 << 1 >> 0
+      link "c"
+    MT
+
+    types = MilkTea::Lexer.lex(source).map(&:type)
+
+    assert_includes types, :tilde
+    assert_includes types, :pipe
+    assert_includes types, :amp
+    assert_includes types, :caret
+    assert_includes types, :shift_left
+    assert_includes types, :shift_right
+    assert_includes types, :string
+  end
 end

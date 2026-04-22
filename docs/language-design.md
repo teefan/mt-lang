@@ -474,7 +474,18 @@ c"hello"
 ```
 
 Integer literals are untyped until context resolves them, defaulting to `i32`.
-Float literals default to `f64`.
+Float literals default to `f64` when unconstrained.
+
+Typed contexts may adopt the expected numeric type for a literal directly. This is limited to literal typing, not general implicit conversion.
+
+Examples of typed contexts:
+
+- a declaration with an explicit type
+- a function argument with a known parameter type
+- a struct field initializer with a known field type
+- a return expression with a known return type
+
+This keeps `f32`-heavy game code readable while preserving the rule that ordinary expressions do not silently convert between numeric types.
 
 ### Composite literals
 
@@ -626,6 +637,8 @@ FFI is a core feature, not a bolt-on.
 ### Raw C bindings
 
 Milk Tea needs a dedicated `extern module` form for ABI-exact bindings.
+
+Direct `extern def` declarations are also allowed in ordinary modules for small manual ABI bridges, but generated and standard-library bindings should prefer full `extern module` files so the raw surface stays grouped, auditable, and easy to regenerate.
 
 ```mt
 extern module std.c.raylib:
