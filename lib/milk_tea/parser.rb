@@ -402,6 +402,8 @@ module MilkTea
         parse_local_decl(:var)
       elsif match(:if)
         parse_if_stmt
+      elsif match(:match)
+        parse_match_stmt
       elsif match(:unsafe)
         parse_unsafe_stmt
       elsif match(:while)
@@ -434,6 +436,16 @@ module MilkTea
 
       else_body = match(:else) ? parse_block : nil
       AST::IfStmt.new(branches:, else_body:)
+    end
+
+    def parse_match_stmt
+      expression = parse_expression
+      arms = parse_named_block do
+        pattern = parse_expression
+        body = parse_block
+        AST::MatchArm.new(pattern:, body:)
+      end
+      AST::MatchStmt.new(expression:, arms:)
     end
 
     def parse_unsafe_stmt

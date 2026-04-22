@@ -75,6 +75,10 @@ module MilkTea
 
       def collect_includes
         headers = ["<stdbool.h>", "<stdint.h>", "<string.h>"]
+        if program_uses_panic?
+          headers << "<stdio.h>"
+          headers << "<stdlib.h>"
+        end
 
         @program.analyses_by_module_name.each_value do |analysis|
           next unless analysis.module_kind == :extern_module
@@ -85,6 +89,72 @@ module MilkTea
         end
 
         headers.uniq.map { |header| IR::Include.new(header:) }
+      end
+
+      def program_uses_panic?
+        @program.analyses_by_path.values.any? { |analysis| analysis_uses_panic?(analysis) }
+      end
+
+      def analysis_uses_panic?(analysis)
+        analysis.ast.declarations.any? do |decl|
+          case decl
+          when AST::FunctionDef
+            block_uses_panic?(decl.body)
+          when AST::ImplBlock
+            decl.methods.any? { |method| block_uses_panic?(method.body) }
+          else
+            false
+          end
+        end
+      end
+
+      def block_uses_panic?(statements)
+        statements.any? { |statement| statement_uses_panic?(statement) }
+      end
+
+      def statement_uses_panic?(statement)
+        case statement
+        when AST::LocalDecl
+          expression_uses_panic?(statement.value)
+        when AST::Assignment
+          expression_uses_panic?(statement.target) || expression_uses_panic?(statement.value)
+        when AST::IfStmt
+          statement.branches.any? { |branch| expression_uses_panic?(branch.condition) || block_uses_panic?(branch.body) } ||
+            (statement.else_body && block_uses_panic?(statement.else_body))
+        when AST::MatchStmt
+          expression_uses_panic?(statement.expression) || statement.arms.any? { |arm| expression_uses_panic?(arm.pattern) || block_uses_panic?(arm.body) }
+        when AST::UnsafeStmt, AST::WhileStmt
+          expression = statement.is_a?(AST::WhileStmt) ? statement.condition : nil
+          (expression && expression_uses_panic?(expression)) || block_uses_panic?(statement.body)
+        when AST::ReturnStmt
+          statement.value && expression_uses_panic?(statement.value)
+        when AST::DeferStmt, AST::ExpressionStmt
+          expression_uses_panic?(statement.expression)
+        else
+          false
+        end
+      end
+
+      def expression_uses_panic?(expression)
+        case expression
+        when AST::Call
+          identifier = expression.callee
+          return true if identifier.is_a?(AST::Identifier) && identifier.name == "panic"
+
+          expression_uses_panic?(expression.callee) || expression.arguments.any? { |argument| expression_uses_panic?(argument.value) }
+        when AST::BinaryOp
+          expression_uses_panic?(expression.left) || expression_uses_panic?(expression.right)
+        when AST::UnaryOp
+          expression_uses_panic?(expression.operand)
+        when AST::MemberAccess
+          expression_uses_panic?(expression.receiver)
+        when AST::IndexAccess
+          expression_uses_panic?(expression.receiver) || expression_uses_panic?(expression.index)
+        when AST::Specialization
+          expression_uses_panic?(expression.callee) || expression.arguments.any? { |argument| expression_uses_panic?(argument.value) }
+        else
+          false
+        end
       end
 
       def lowered_analyses
@@ -262,6 +332,15 @@ module MilkTea
               [IR::IfStmt.new(condition:, then_body:, else_body:)]
             end
             lowered.concat(branches)
+          when AST::MatchStmt
+            scrutinee_type = infer_expression_type(statement.expression, env: local_env)
+            expression = lower_expression(statement.expression, env: local_env, expected_type: scrutinee_type)
+            cases = statement.arms.map do |arm|
+              value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
+              body = lower_block(arm.body, env: local_env, active_defers: active_defers + local_defers, return_type:)
+              IR::SwitchCase.new(value:, body:)
+            end
+            lowered << IR::SwitchStmt.new(expression:, cases:)
           when AST::WhileStmt
             condition = lower_expression(statement.condition, env: local_env, expected_type: @types.fetch("bool"))
             body = lower_block(statement.body, env: local_env, active_defers: active_defers + local_defers, return_type:)
@@ -430,6 +509,9 @@ module MilkTea
             IR::AggregateField.new(name: "error", value: lower_expression(argument.value, env:, expected_type: type.error_type)),
           ]
           IR::AggregateLiteral.new(type:, fields:)
+        when :panic
+          argument = expression.arguments.fetch(0)
+          IR::Call.new(callee: "mt_panic", arguments: [lower_expression(argument.value, env:, expected_type: @types.fetch("str"))], type:)
         else
           raise LoweringError, "unsupported call kind #{kind}"
         end
@@ -451,6 +533,8 @@ module MilkTea
             [:result_ok, nil, nil, nil]
           elsif callee.name == "err"
             [:result_err, nil, nil, nil]
+          elsif callee.name == "panic"
+            [:panic, nil, nil, nil]
           elsif (type = @types[callee.name]).is_a?(Types::Struct)
             [ :struct_literal, nil, nil, type ]
           else
@@ -588,6 +672,8 @@ module MilkTea
             raise LoweringError, "cannot infer result type for #{kind == :result_ok ? 'ok' : 'err'} without an expected Result[T, E]" unless result_type?(expected_type)
 
             expected_type
+          when :panic
+            @types.fetch("void")
           else
             raise LoweringError, "unsupported call kind #{kind}"
           end

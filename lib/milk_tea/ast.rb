@@ -33,6 +33,8 @@ module MilkTea
     Assignment = Data.define(:target, :operator, :value)
     IfBranch = Data.define(:condition, :body)
     IfStmt = Data.define(:branches, :else_body)
+    MatchArm = Data.define(:pattern, :body)
+    MatchStmt = Data.define(:expression, :arms)
     UnsafeStmt = Data.define(:body)
     WhileStmt = Data.define(:condition, :body)
     ReturnStmt = Data.define(:value)

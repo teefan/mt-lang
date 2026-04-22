@@ -331,6 +331,8 @@ module MilkTea
             check_block(branch.body, scopes:, return_type:)
           end
           check_block(statement.else_body, scopes:, return_type:) if statement.else_body
+        when AST::MatchStmt
+          check_match_stmt(statement, scopes:, return_type:)
         when AST::UnsafeStmt
           with_unsafe do
             check_block(statement.body, scopes:, return_type:)
@@ -391,6 +393,31 @@ module MilkTea
         else
           raise SemaError, "unsupported assignment operator #{statement.operator}"
         end
+      end
+
+      def check_match_stmt(statement, scopes:, return_type:)
+        scrutinee_type = infer_expression(statement.expression, scopes:)
+        unless scrutinee_type.is_a?(Types::Enum)
+          raise SemaError, "match requires an enum scrutinee, got #{scrutinee_type}"
+        end
+
+        covered_members = {}
+        statement.arms.each do |arm|
+          pattern_type = infer_expression(arm.pattern, scopes:, expected_type: scrutinee_type)
+          ensure_assignable!(pattern_type, scrutinee_type, "match arm expects #{scrutinee_type}, got #{pattern_type}")
+
+          member_name = match_member_name(arm.pattern, scrutinee_type)
+          raise SemaError, "match arm must be an enum member of #{scrutinee_type}" unless member_name
+          raise SemaError, "duplicate match arm #{scrutinee_type}.#{member_name}" if covered_members.key?(member_name)
+
+          covered_members[member_name] = true
+          check_block(arm.body, scopes:, return_type:)
+        end
+
+        missing_members = scrutinee_type.members - covered_members.keys
+        return if missing_members.empty?
+
+        raise SemaError, "match on #{scrutinee_type} is missing cases: #{missing_members.join(', ')}"
       end
 
       def infer_lvalue(expression, scopes:)
@@ -705,6 +732,8 @@ module MilkTea
           check_cast_call(callable, expression.arguments, scopes:)
         when :result_ok, :result_err
           check_result_construction(callable_kind, expression.arguments, scopes:, expected_type:)
+        when :panic
+          check_panic_call(expression.arguments, scopes:)
         else
           raise SemaError, "#{describe_expression(expression.callee)} is not callable"
         end
@@ -716,6 +745,7 @@ module MilkTea
           return [:function, @top_level_functions.fetch(callee.name), nil] if @top_level_functions.key?(callee.name)
           return [:result_ok, nil, nil] if callee.name == "ok"
           return [:result_err, nil, nil] if callee.name == "err"
+          return [:panic, nil, nil] if callee.name == "panic"
 
           type = @types[callee.name]
           return [:struct, type, nil] if type.is_a?(Types::Struct)
@@ -798,6 +828,16 @@ module MilkTea
         actual_type = infer_expression(arguments.first.value, scopes:, expected_type: field_type)
         ensure_assignable!(actual_type, field_type, "argument to #{name} expects #{field_type}, got #{actual_type}")
         expected_type
+      end
+
+      def check_panic_call(arguments, scopes:)
+        raise SemaError, "panic does not support named arguments" if arguments.any?(&:name)
+        raise SemaError, "panic expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+
+        message_type = infer_expression(arguments.first.value, scopes:, expected_type: @types.fetch("str"))
+        return @types.fetch("void") if string_like_type?(message_type)
+
+        raise SemaError, "panic expects str or cstr, got #{message_type}"
       end
 
       def check_aggregate_construction(struct_type, arguments, scopes:)
@@ -1105,6 +1145,10 @@ module MilkTea
         type.is_a?(Types::Primitive) && type.integer?
       end
 
+      def string_like_type?(type)
+        type == @types.fetch("str") || type == @types.fetch("cstr")
+      end
+
       def infer_index_result_type(receiver_type, index_type)
         raise SemaError, "indexing requires unsafe" unless unsafe_context?
         raise SemaError, "index must be an integer type, got #{index_type}" unless integer_type?(index_type)
@@ -1118,6 +1162,16 @@ module MilkTea
         end
 
         raise SemaError, "cannot index #{receiver_type}"
+      end
+
+      def match_member_name(expression, enum_type)
+        return unless expression.is_a?(AST::MemberAccess)
+
+        receiver_type = resolve_type_expression(expression.receiver)
+        return unless receiver_type == enum_type
+        return expression.member if enum_type.member(expression.member)
+
+        nil
       end
 
       def resolve_type_expression(expression)
