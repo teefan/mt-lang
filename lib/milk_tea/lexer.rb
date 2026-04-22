@@ -17,6 +17,8 @@ module MilkTea
   class Lexer
     TWO_CHAR_TOKENS = {
       "->" => :arrow,
+      "<<" => :shift_left,
+      ">>" => :shift_right,
       "+=" => :plus_equal,
       "-=" => :minus_equal,
       "*=" => :star_equal,
@@ -28,11 +30,14 @@ module MilkTea
     }.freeze
 
     ONE_CHAR_TOKENS = {
+      "&" => :amp,
       ":" => :colon,
       "," => :comma,
+      "^" => :caret,
       "." => :dot,
       "(" => :lparen,
       ")" => :rparen,
+      "|" => :pipe,
       "[" => :lbracket,
       "]" => :rbracket,
       "?" => :question,
@@ -44,6 +49,7 @@ module MilkTea
       "%" => :percent,
       "<" => :less,
       ">" => :greater,
+      "~" => :tilde,
     }.freeze
 
     def self.lex(source, path: nil)
@@ -102,6 +108,11 @@ module MilkTea
 
         if char == "c" && line[index + 1] == '"'
           index = lex_string(line, index, line_number, cstring: true)
+          next
+        end
+
+        if char == '"'
+          index = lex_string(line, index, line_number)
           next
         end
 

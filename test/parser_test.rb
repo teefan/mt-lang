@@ -7,6 +7,8 @@ class MilkTeaParserTest < Minitest::Test
     ast = MilkTea::Parser.parse(File.read(demo_path), path: demo_path)
 
     assert_equal "demo.bouncing_ball", ast.module_name.to_s
+    assert_equal :module, ast.module_kind
+    assert_equal [], ast.directives
     assert_equal 1, ast.imports.length
     assert_equal "std.c.raylib", ast.imports.first.path.to_s
     assert_equal "rl", ast.imports.first.alias_name
@@ -103,6 +105,47 @@ class MilkTeaParserTest < Minitest::Test
     assert_nil load.body.first.value
   end
 
+  def test_parses_function_type_aliases
+    source = <<~MT
+      module demo.callbacks
+
+      type LogCallback = fn(level: i32, message: cstr, user_data: ptr[void]) -> void
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    callback = ast.declarations.first
+
+    assert_equal "LogCallback", callback.name
+    assert_instance_of MilkTea::AST::FunctionType, callback.target
+    assert_equal %w[level message user_data], callback.target.params.map(&:name)
+    assert_equal "i32", callback.target.params[0].type.name.to_s
+    assert_equal "ptr", callback.target.params[2].type.name.to_s
+    assert_equal "void", callback.target.return_type.name.to_s
+  end
+
+  def test_parses_keyword_names_in_struct_fields_and_member_access
+    source = <<~MT
+      module demo.keywords
+
+      struct Event:
+          type: i32
+
+      def main(event: Event) -> i32:
+          let copy = Event(type = event.type)
+          return copy.type
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    event_decl = ast.declarations[0]
+    main_fn = ast.declarations[1]
+    local_decl = main_fn.body[0]
+
+    assert_equal "type", event_decl.fields.first.name
+    assert_equal "type", local_decl.value.arguments.first.name
+    assert_equal "type", local_decl.value.arguments.first.value.member
+    assert_equal "type", main_fn.body[1].value.member
+  end
+
   def test_rejects_untyped_non_self_parameters
     source = <<~MT
       module demo.bad
@@ -116,6 +159,61 @@ class MilkTeaParserTest < Minitest::Test
     end
 
     assert_match(/expected ':' and parameter type/, error.message)
+  end
+
+  def test_parses_extern_module_declarations
+    source = <<~MT
+      extern module std.c.raylib:
+          link "raylib"
+          include "raylib.h"
+
+          struct Color:
+              r: u8
+              g: u8
+              b: u8
+              a: u8
+
+          const BLACK: Color = Color(r = 0, g = 0, b = 0, a = 255)
+
+          enum LogLevel: i32
+              info = 1
+              warning = 2
+
+          flags WindowFlags: u32
+              visible = 1 << 0
+
+          union Number:
+              i: i32
+              f: f32
+
+          opaque SDL_Window
+          extern def InitWindow(width: i32, height: i32, title: cstr) -> void
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal :extern_module, ast.module_kind
+    assert_equal "std.c.raylib", ast.module_name.to_s
+    assert_equal %w[LinkDirective IncludeDirective], ast.directives.map { |node| node.class.name.split("::").last }
+    assert_equal(
+      %w[StructDecl ConstDecl EnumDecl FlagsDecl UnionDecl OpaqueDecl ExternFunctionDecl],
+      ast.declarations.map { |node| node.class.name.split("::").last },
+    )
+
+    const_decl = ast.declarations[1]
+    assert_equal "BLACK", const_decl.name
+    assert_equal "Color", const_decl.type.name.to_s
+    assert_instance_of MilkTea::AST::Call, const_decl.value
+
+    flags_decl = ast.declarations[3]
+    assert_equal "WindowFlags", flags_decl.name
+    assert_equal "u32", flags_decl.backing_type.name.to_s
+    assert_instance_of MilkTea::AST::BinaryOp, flags_decl.members.first.value
+    assert_equal "<<", flags_decl.members.first.value.operator
+
+    extern_def = ast.declarations.last
+    assert_equal "InitWindow", extern_def.name
+    assert_equal "void", extern_def.return_type.name.to_s
   end
 
   private
