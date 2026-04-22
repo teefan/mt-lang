@@ -490,7 +490,7 @@ module MilkTea
         when AST::BinaryOp
           infer_binary(expression, scopes:, expected_type:)
         when AST::Call
-          infer_call(expression, scopes:)
+          infer_call(expression, scopes:, expected_type:)
         when AST::Specialization
           raise SemaError, "specialized name #{describe_expression(expression)} must be called"
         else
@@ -683,7 +683,7 @@ module MilkTea
         nil
       end
 
-      def infer_call(expression, scopes:)
+      def infer_call(expression, scopes:, expected_type: nil)
         callable_kind, callable, receiver = resolve_callable(expression.callee, scopes:)
 
         case callable_kind
@@ -703,6 +703,8 @@ module MilkTea
           check_array_construction(callable, expression.arguments, scopes:)
         when :cast
           check_cast_call(callable, expression.arguments, scopes:)
+        when :result_ok, :result_err
+          check_result_construction(callable_kind, expression.arguments, scopes:, expected_type:)
         else
           raise SemaError, "#{describe_expression(expression.callee)} is not callable"
         end
@@ -712,6 +714,8 @@ module MilkTea
         case callee
         when AST::Identifier
           return [:function, @top_level_functions.fetch(callee.name), nil] if @top_level_functions.key?(callee.name)
+          return [:result_ok, nil, nil] if callee.name == "ok"
+          return [:result_err, nil, nil] if callee.name == "err"
 
           type = @types[callee.name]
           return [:struct, type, nil] if type.is_a?(Types::Struct)
@@ -782,6 +786,18 @@ module MilkTea
           actual_type = infer_expression(argument.value, scopes:, expected_type: parameter.type)
           ensure_assignable!(actual_type, parameter.type, "argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}")
         end
+      end
+
+      def check_result_construction(kind, arguments, scopes:, expected_type:)
+        name = kind == :result_ok ? "ok" : "err"
+        raise SemaError, "#{name} does not support named arguments" if arguments.any?(&:name)
+        raise SemaError, "#{name} expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+        raise SemaError, "cannot infer result type for #{name} without an expected Result[T, E]" unless result_type?(expected_type)
+
+        field_type = kind == :result_ok ? expected_type.ok_type : expected_type.error_type
+        actual_type = infer_expression(arguments.first.value, scopes:, expected_type: field_type)
+        ensure_assignable!(actual_type, field_type, "argument to #{name} expects #{field_type}, got #{actual_type}")
+        expected_type
       end
 
       def check_aggregate_construction(struct_type, arguments, scopes:)
@@ -905,6 +921,11 @@ module MilkTea
             end
           end
 
+          if name == "Result"
+            validate_generic_type!(name, arguments)
+            return Types::Result.new(arguments[0], arguments[1])
+          end
+
           if (generic_type = resolve_named_generic_type(parts))
             begin
               return generic_type.instantiate(arguments)
@@ -992,8 +1013,12 @@ module MilkTea
         type.is_a?(Types::Span)
       end
 
+      def result_type?(type)
+        type.is_a?(Types::Result)
+      end
+
       def aggregate_type?(type)
-        type.is_a?(Types::Struct) || span_type?(type)
+        type.is_a?(Types::Struct) || span_type?(type) || result_type?(type)
       end
 
       def array_type?(type)
@@ -1067,6 +1092,10 @@ module MilkTea
           raise SemaError, "array element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
           raise SemaError, "array length must be an integer literal" unless arguments[1].is_a?(Types::LiteralTypeArg) && arguments[1].value.is_a?(Integer)
           raise SemaError, "array length must be positive" unless arguments[1].value.positive?
+        when "Result"
+          raise SemaError, "Result requires exactly two type arguments" unless arguments.length == 2
+          raise SemaError, "Result ok type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
+          raise SemaError, "Result error type must be a type" if arguments[1].is_a?(Types::LiteralTypeArg)
         else
           raise SemaError, "unknown generic type #{name}"
         end
@@ -1180,6 +1209,11 @@ module MilkTea
           return unless actual_type.is_a?(Types::Span)
 
           collect_type_substitutions(pattern_type.element_type, actual_type.element_type, substitutions, function_name)
+        when Types::Result
+          return unless actual_type.is_a?(Types::Result)
+
+          collect_type_substitutions(pattern_type.ok_type, actual_type.ok_type, substitutions, function_name)
+          collect_type_substitutions(pattern_type.error_type, actual_type.error_type, substitutions, function_name)
         when Types::StructInstance
           return unless actual_type.is_a?(Types::StructInstance)
           return unless actual_type.definition == pattern_type.definition && actual_type.arguments.length == pattern_type.arguments.length
@@ -1220,6 +1254,8 @@ module MilkTea
           )
         when Types::Span
           Types::Span.new(substitute_type(type.element_type, substitutions))
+        when Types::Result
+          Types::Result.new(substitute_type(type.ok_type, substitutions), substitute_type(type.error_type, substitutions))
         when Types::StructInstance
           type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
         when Types::Function

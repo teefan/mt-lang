@@ -239,6 +239,45 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_result_construction
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-result") do |dir|
+      source_path = File.join(dir, "result.mt")
+
+      File.write(source_path, [
+        "module demo.result_runtime",
+        "",
+        "enum LoadError: u8",
+        "    invalid_format = 1",
+        "",
+        "def load(available: bool) -> Result[i32, LoadError]:",
+        "    if available:",
+        "        return ok(7)",
+        "    return err(LoadError.invalid_format)",
+        "",
+        "def main() -> i32:",
+        "    let success = load(true)",
+        "    let failure = load(false)",
+        "    if success.is_ok and failure.error == LoadError.invalid_format:",
+        "        return success.value + 1",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 8, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_fixed_arrays
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

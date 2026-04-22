@@ -225,6 +225,33 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_result_construction_from_expected_context
+    source = <<~MT
+      module demo.result
+
+      enum LoadError: u8
+          file_not_found = 1
+          invalid_format = 2
+
+      def load(available: bool) -> Result[i32, LoadError]:
+          if available:
+              return ok(7)
+          return err(LoadError.invalid_format)
+
+      def main() -> i32:
+          let cached: Result[i32, LoadError] = ok(5)
+          let missing = load(false)
+          if cached.is_ok and missing.error == LoadError.invalid_format:
+              return cached.value
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal "Result[i32, demo.result.LoadError]", result.functions.fetch("load").type.return_type.to_s
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_rejects_mismatched_callback_arguments
     source = <<~MT
       module demo.callbacks
