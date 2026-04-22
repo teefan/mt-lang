@@ -13,15 +13,23 @@ class MilkTeaBindgenTest < Minitest::Test
       output_path = File.join(dir, "sample.mt")
       File.write(header_path, <<~C)
         #include <stdarg.h>
+        #include <stddef.h>
+        #include <stdint.h>
 
         typedef struct Vec2 {
           float x;
           float y;
         } Vec2;
 
+        typedef struct Counters {
+          int32_t value;
+          size_t capacity;
+        } Counters;
+
         #define HOME ((Vec2){ 1.0f, 2.0f })
         #define PIXEL_RATIO 2
         #define GREETING "Milk"
+        #define DYNAMIC_SIZE runtime_size()
 
         typedef struct Material {
           float params[4];
@@ -30,6 +38,7 @@ class MilkTeaBindgenTest < Minitest::Test
 
         typedef void (*LogCallback)(int, const char *);
         typedef void (*TraceCallback)(int, va_list);
+        typedef _Complex double ComplexValue;
 
         static const int MAGIC = 7;
         static const float SCALE = 2.5f;
@@ -55,11 +64,20 @@ class MilkTeaBindgenTest < Minitest::Test
         struct Hidden;
 
         typedef unsigned int Flags;
+        typedef unsigned int HiddenU32;
+        typedef HiddenU32 PublicU32;
 
         int add(int a, int b);
+        int add(int a, int b);
+        size_t fill_buffer(uint32_t value, size_t count);
+        wchar_t widen(wchar_t value);
+        int runtime_size(void);
+        long double measure_long_double(void);
         const char *name_of(Mode mode);
         void set_callback(LogCallback callback);
         void take_hidden(struct Hidden *hidden);
+
+        int consume_strings(char **restrict values, char *const *restrict tokens);
       C
 
       generated = MilkTea::Bindgen.generate(
@@ -74,7 +92,10 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_match(/link "sample"/, generated)
       assert_match(/include "sample\.h"/, generated)
       assert_match(/struct Vec2:/, generated)
+      assert_match(/struct Counters:/, generated)
       assert_match(/struct Material:/, generated)
+      assert_match(/value: i32/, generated)
+      assert_match(/capacity: u64/, generated)
       assert_match(/params: array\[f32, 4\]/, generated)
       assert_match(/name: array\[char, 32\]/, generated)
       assert_match(/type LogCallback = fn\(arg0: i32, arg1: cstr\) -> void/, generated)
@@ -84,6 +105,7 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_match(/const HOME: Vec2 = Vec2\(x = 1.0, y = 2.0\)/, generated)
       assert_match(/const PIXEL_RATIO: i32 = 2/, generated)
       refute_match(/const GREETING:/, generated)
+      refute_match(/const DYNAMIC_SIZE:/, generated)
       assert_match(/const MAGIC: i32 = 7/, generated)
       assert_match(/const SCALE: f32 = 2.5/, generated)
       assert_match(/const ORIGIN: Vec2 = Vec2\(x = 0.0, y = 0.0\)/, generated)
@@ -96,10 +118,18 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_match(/TRACE_DEBUG = 2/, generated)
       assert_match(/opaque Hidden/, generated)
       assert_match(/type Flags = u32/, generated)
+      assert_match(/type HiddenU32 = u32/, generated)
+      assert_match(/type PublicU32 = u32/, generated)
+      refute_match(/type ComplexValue =/, generated)
+      refute_match(/extern def measure_long_double/, generated)
       assert_match(/extern def add\(a: i32, b: i32\) -> i32/, generated)
+      assert_equal 1, generated.scan("extern def add(a: i32, b: i32) -> i32").length
+      assert_match(/extern def fill_buffer\(value: u32, count: u64\) -> usize/, generated)
+      assert_match(/extern def widen\(value: i32\) -> i32/, generated)
       assert_match(/extern def name_of\(mode: Mode\) -> cstr/, generated)
-      assert_match(/extern def set_callback\(callback: LogCallback\) -> void/, generated)
+      assert_match(/extern def set_callback\(callback: fn\(arg0: i32, arg1: cstr\) -> void\) -> void/, generated)
       assert_match(/extern def take_hidden\(hidden: ptr\[Hidden\]\) -> void/, generated)
+      assert_match(/extern def consume_strings\(values: ptr\[ptr\[char\]\], tokens: ptr\[ptr\[char\]\]\) -> i32/, generated)
 
       File.write(output_path, generated)
       analysis = MilkTea::ModuleLoader.check_file(output_path)
@@ -113,7 +143,9 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_includes analysis.types.keys, "LogCallback"
       assert_includes analysis.functions.keys, "add"
       assert_includes analysis.functions.keys, "set_callback"
+      assert_includes analysis.functions.keys, "consume_strings"
       assert_includes analysis.types.keys, "Vec2"
+      assert_includes analysis.types.keys, "Counters"
       assert_includes analysis.types.keys, "Material"
       assert_includes analysis.types.keys, "Hidden"
     end

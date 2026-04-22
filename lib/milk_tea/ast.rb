@@ -8,6 +8,7 @@ module MilkTea
       end
     end
 
+    TypeParam = Data.define(:name)
     TypeArgument = Data.define(:value)
     TypeRef = Data.define(:name, :arguments, :nullable)
     FunctionType = Data.define(:params, :return_type)
@@ -17,7 +18,7 @@ module MilkTea
     IncludeDirective = Data.define(:value)
     ConstDecl = Data.define(:name, :type, :value)
     TypeAliasDecl = Data.define(:name, :target)
-    StructDecl = Data.define(:name, :fields)
+    StructDecl = Data.define(:name, :type_params, :fields)
     UnionDecl = Data.define(:name, :fields)
     Field = Data.define(:name, :type)
     EnumDecl = Data.define(:name, :backing_type, :members)
@@ -25,13 +26,14 @@ module MilkTea
     EnumMember = Data.define(:name, :value)
     OpaqueDecl = Data.define(:name)
     ImplBlock = Data.define(:type_name, :methods)
-    FunctionDef = Data.define(:name, :params, :return_type, :body)
-    ExternFunctionDecl = Data.define(:name, :params, :return_type)
+    FunctionDef = Data.define(:name, :type_params, :params, :return_type, :body)
+    ExternFunctionDecl = Data.define(:name, :type_params, :params, :return_type)
     Param = Data.define(:name, :type, :mutable)
     LocalDecl = Data.define(:kind, :name, :type, :value)
     Assignment = Data.define(:target, :operator, :value)
     IfBranch = Data.define(:condition, :body)
     IfStmt = Data.define(:branches, :else_body)
+    UnsafeStmt = Data.define(:body)
     WhileStmt = Data.define(:condition, :body)
     ReturnStmt = Data.define(:value)
     DeferStmt = Data.define(:expression)
@@ -39,6 +41,7 @@ module MilkTea
 
     Identifier = Data.define(:name)
     MemberAccess = Data.define(:receiver, :member)
+    IndexAccess = Data.define(:receiver, :index)
     Specialization = Data.define(:callee, :arguments)
     Call = Data.define(:callee, :arguments)
     Argument = Data.define(:name, :value)

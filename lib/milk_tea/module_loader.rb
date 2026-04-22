@@ -103,6 +103,7 @@ module MilkTea
       types = {}
       values = {}
       functions = {}
+      methods = analysis.methods.transform_values(&:dup)
 
       analysis.ast.declarations.each do |declaration|
         case declaration
@@ -115,7 +116,7 @@ module MilkTea
         end
       end
 
-      Sema::ModuleBinding.new(name: analysis.module_name, types:, values:, functions:)
+      Sema::ModuleBinding.new(name: analysis.module_name, types:, values:, functions:, methods:)
     end
   end
 end

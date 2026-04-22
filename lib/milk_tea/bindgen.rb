@@ -70,6 +70,7 @@ module MilkTea
       def generate
         ast = dump_ast
         top_level_nodes = extract_top_level_header_nodes(ast)
+        @visible_typedef_names = top_level_nodes.filter_map { |node| node["name"] if node["kind"] == "TypedefDecl" }
         build_alias_maps(top_level_nodes)
 
         declarations = []
@@ -218,11 +219,52 @@ module MilkTea
         normalized = normalize_macro_body(body)
         return false if normalized.empty?
         return false if normalized.include?('"') || normalized.include?("'")
+        return false if contains_disallowed_macro_call?(normalized)
 
         first_token = normalized[/\A[A-Za-z_][A-Za-z0-9_]*/]
         return false if first_token && NON_VALUE_MACRO_TOKENS.include?(first_token)
 
         normalized.match?(/\A[A-Za-z0-9_()+\-*\/%<>&|~^.,{}\[\]:?\s]+\z/)
+      end
+
+      def contains_disallowed_macro_call?(source)
+        index = 0
+
+        while index < source.length
+          match = source.match(/\b[A-Za-z_][A-Za-z0-9_]*\s*\(/, index)
+          return false unless match
+
+          open_index = match[0].rindex("(") + match.begin(0)
+          close_index = matching_paren_index(source, open_index)
+          return true unless close_index
+
+          next_index = close_index + 1
+          next_index += 1 while next_index < source.length && source[next_index].match?(/\s/)
+          return true unless next_index < source.length && source[next_index] == "{"
+
+          index = close_index + 1
+        end
+
+        false
+      end
+
+      def matching_paren_index(source, open_index)
+        depth = 0
+        index = open_index
+
+        while index < source.length
+          case source[index]
+          when "("
+            depth += 1
+          when ")"
+            depth -= 1
+            return index if depth.zero?
+          end
+
+          index += 1
+        end
+
+        nil
       end
 
       def normalize_macro_body(body)
@@ -305,22 +347,39 @@ module MilkTea
       end
 
       def select_type_alias_declarations(nodes)
+        alias_names = nodes.filter_map { |node| node["name"] if node["kind"] == "TypedefDecl" }
+
         nodes.each_with_index.filter_map do |node, index|
           next unless node["kind"] == "TypedefDecl"
           next if typedef_target(node)
 
-          mapped_type = function_pointer_type?(node.dig("type", "qualType")) ? map_function_pointer_typedef(node, context: node["name"]) : map_c_type(node.dig("type", "qualType"), context: node["name"])
+          qual_type = alias_qual_type(node)
+          mapped_type = if function_pointer_type?(qual_type)
+                          map_function_pointer_typedef(node, context: node["name"])
+                        else
+                          map_c_type(qual_type, context: node["name"])
+                        end
+          next if unresolved_alias_target?(mapped_type, alias_names)
+
           {
             index:,
             kind: "type_alias",
             name: node["name"],
             mapped_type:,
           }
+        rescue BindgenError
+          nil
         end
       end
 
+      def alias_qual_type(node)
+        type_qual_type(node)
+      end
+
       def select_function_declarations(nodes)
-        nodes.each_with_index.filter_map do |node, index|
+        selected = {}
+
+        nodes.each_with_index do |node, index|
           next unless node["kind"] == "FunctionDecl"
           next if node["storageClass"] == "static"
           next if Array(node["inner"]).any? { |child| child["kind"] == "CompoundStmt" }
@@ -329,19 +388,24 @@ module MilkTea
           params = Array(node["inner"]).select { |child| child["kind"] == "ParmVarDecl" }.each_with_index.map do |param, param_index|
             {
               name: param["name"] || "arg#{param_index}",
-              type: map_c_type(param.dig("type", "qualType"), context: "parameter #{param["name"] || param_index} of #{node["name"]}"),
+              type: map_type_node(param, context: "parameter #{param["name"] || param_index} of #{node["name"]}"),
             }
           end
 
           return_type = map_c_type(function_return_type(node), context: "return type of #{node["name"]}")
-          {
+          declaration = {
             index:,
             kind: "function",
             name: node["name"],
             params:,
             return_type:,
           }
+          selected[declaration[:name]] ||= declaration
+        rescue BindgenError
+          next
         end
+
+        selected.values
       end
 
       def select_constant_declarations(nodes)
@@ -370,7 +434,8 @@ module MilkTea
       end
 
       def constant_var_decl?(node)
-        node["init"] && strip_qualifiers(normalize_c_type(node.dig("type", "qualType"))) != normalize_c_type(node.dig("type", "qualType"))
+        qual_type = node.dig("type", "qualType")
+        node["init"] && strip_qualifiers(normalize_c_type(qual_type)) != normalize_c_type(qual_type)
       end
 
       def constant_qual_type(node)
@@ -383,11 +448,15 @@ module MilkTea
       end
 
       def function_return_type(node)
-        qual_type = node.dig("type", "qualType")
+        qual_type = type_qual_type(node)
         match = qual_type&.match(/\A(.+?)\s*\((?:.*)\)\z/)
         raise BindgenError, "unsupported function type for #{node["name"]}: #{qual_type.inspect}" unless match
 
         match[1]
+      end
+
+      def type_qual_type(node)
+        node.dig("type", "desugaredQualType") || node.dig("type", "qualType")
       end
 
       def enum_kind(node)
@@ -450,7 +519,7 @@ module MilkTea
         lines = ["    #{kind} #{name}:"]
         fields = Array(node["inner"]).select { |child| child["kind"] == "FieldDecl" }
         fields.each do |field|
-          field_type = map_c_type(field.dig("type", "qualType"), context: "field #{name}.#{field["name"]}")
+          field_type = map_type_node(field, context: "field #{name}.#{field["name"]}")
           lines << "        #{field["name"]}: #{field_type}"
         end
         lines
@@ -529,7 +598,7 @@ module MilkTea
         raise BindgenError, "initializer field count mismatch for #{context}" unless fields.length == values.length
 
         arguments = fields.zip(values).map do |field, value|
-          field_type = map_c_type(field.dig("type", "qualType"), context: "field #{expected_type}.#{field["name"]}")
+          field_type = map_type_node(field, context: "field #{expected_type}.#{field["name"]}")
           lowered = lower_constant_expression(value, expected_type: field_type, context: "field #{field["name"]} of #{context}")
           "#{field["name"]} = #{lowered}"
         end
@@ -547,14 +616,16 @@ module MilkTea
         return map_array_type(normalized, context:) if array_type?(normalized)
         return map_function_pointer_type(normalized, context:) if function_pointer_type?(normalized)
 
-        if pointer_type?(normalized)
-          return "cstr" if c_string_pointer?(normalized)
+        pointer_candidate = strip_pointer_suffix_qualifiers(normalized)
+        if pointer_type?(pointer_candidate)
+          return "cstr" if c_string_pointer?(pointer_candidate)
 
-          pointee = normalized.sub(/\s*\*\z/, "")
+          pointee = pointer_candidate.sub(/\s*\*\z/, "")
           return "ptr[#{map_c_type(pointee, context:)}]"
         end
 
         unqualified = strip_qualifiers(normalized)
+        return standard_typedef_primitive(unqualified) if standard_typedef_primitive(unqualified)
         return PRIMITIVE_TYPE_MAP.fetch(unqualified) if PRIMITIVE_TYPE_MAP.key?(unqualified)
         return map_long_type(unqualified, context:) if unqualified.start_with?("long") || unqualified.start_with?("unsigned long") || unqualified.start_with?("signed long")
         return record_name_for(unqualified) if unqualified.start_with?("struct ")
@@ -662,12 +733,36 @@ module MilkTea
 
       def map_type_node(node, context:)
         alias_name = typedef_name_from_type_node(node)
-        if alias_name
+        if alias_name && preserve_typedef_name?(alias_name)
           synthesize_typedef_dependency(alias_name)
           return alias_name
         end
 
-        map_c_type(node.dig("type", "qualType"), context:)
+        map_c_type(type_qual_type(node), context:)
+      end
+
+      def preserve_typedef_name?(name)
+        name == "va_list" || @visible_typedef_names.include?(name)
+      end
+
+      def unresolved_alias_target?(mapped_type, alias_names)
+        match = mapped_type.match(/\A([A-Za-z_][A-Za-z0-9_]*)\z/)
+        return false unless match
+
+        name = match[1]
+        return false unless name.start_with?("__")
+
+        !known_generated_type_name?(name, alias_names)
+      end
+
+      def known_generated_type_name?(name, alias_names)
+        return true if PRIMITIVE_TYPE_MAP.value?(name)
+        return true if alias_names.include?(name)
+        return true if @record_visible_names.value?(name)
+        return true if @enum_visible_names.value?(name)
+        return true if @synthetic_declarations.any? { |declaration| declaration[:name] == name }
+
+        false
       end
 
       def typedef_name_from_type_node(node)
@@ -705,6 +800,37 @@ module MilkTea
 
       def normalize_c_type(qual_type)
         qual_type.to_s.gsub(/\s+/, " ").strip
+      end
+
+      def strip_pointer_suffix_qualifiers(qual_type)
+        result = qual_type
+        qualifier_pattern = QUALIFIERS.join("|")
+
+        loop do
+          updated = result.sub(/\s*(?:#{qualifier_pattern})\z/, "")
+          break if updated == result
+
+          result = updated
+        end
+
+        result
+      end
+
+      def standard_typedef_primitive(unqualified)
+        return "usize" if unqualified == "size_t"
+        return "isize" if unqualified == "ssize_t" || unqualified == "ptrdiff_t"
+        return "i32" if unqualified == "wchar_t"
+
+        integer_typedef_primitive(unqualified)
+      end
+
+      def integer_typedef_primitive(unqualified)
+        match = unqualified.match(/\A(?:__)?(u_?)?int(8|16|32|64)_t\z/)
+        return unless match
+
+        signed_prefix = match[1]
+        width = match[2]
+        signed_prefix ? "u#{width}" : "i#{width}"
       end
 
       def pointer_type?(qual_type)

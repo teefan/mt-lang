@@ -105,6 +105,141 @@ class MilkTeaParserTest < Minitest::Test
     assert_nil load.body.first.value
   end
 
+  def test_parses_generic_struct_declaration_and_constructor_call
+    source = <<~MT
+      module demo.generics
+
+      struct Slice[T]:
+          data: ptr[T]
+          len: usize
+
+      def main() -> i32:
+          let value = 7
+          let items = Slice[i32](data = &value, len = 1)
+          return items.len
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    slice = ast.declarations.first
+
+    assert_equal "Slice", slice.name
+    assert_equal ["T"], slice.type_params.map(&:name)
+    assert_equal "ptr", slice.fields.first.type.name.to_s
+    assert_equal "T", slice.fields.first.type.arguments.first.value.name.to_s
+
+    main_fn = ast.declarations[1]
+    constructor = main_fn.body[1].value
+
+    assert_instance_of MilkTea::AST::Call, constructor
+    assert_instance_of MilkTea::AST::Specialization, constructor.callee
+    assert_equal "Slice", constructor.callee.callee.name
+    assert_equal "i32", constructor.callee.arguments.first.value.name.to_s
+    assert_equal %w[data len], constructor.arguments.map(&:name)
+  end
+
+  def test_parses_generic_function_definition
+    source = <<~MT
+      module demo.generic_functions
+
+      struct Slice[T]:
+          data: ptr[T]
+          len: usize
+
+      def first[T](items: Slice[T]) -> ptr[T]?:
+          return items.data
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    function = ast.declarations[1]
+
+    assert_equal "first", function.name
+    assert_equal ["T"], function.type_params.map(&:name)
+    assert_equal "Slice", function.params.first.type.name.to_s
+    assert_equal "T", function.params.first.type.arguments.first.value.name.to_s
+    assert_equal "ptr", function.return_type.name.to_s
+    assert_equal true, function.return_type.nullable
+  end
+
+  def test_parses_indexed_call_instead_of_generic_specialization
+    source = <<~MT
+      module demo.index_call
+
+      def main() -> i32:
+          return callbacks[0](1)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    call = ast.declarations.first.body.first.value
+
+    assert_instance_of MilkTea::AST::Call, call
+    assert_instance_of MilkTea::AST::IndexAccess, call.callee
+  end
+
+  def test_parses_span_constructor_calls
+    source = <<~MT
+      module demo.spans
+
+      def main() -> i32:
+          let view = span[i32](data = buffer, len = 3)
+          return view.len
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    local_decl = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::LocalDecl, local_decl
+    assert_instance_of MilkTea::AST::Call, local_decl.value
+    assert_instance_of MilkTea::AST::Specialization, local_decl.value.callee
+    assert_equal "span", local_decl.value.callee.callee.name
+    assert_equal "i32", local_decl.value.callee.arguments.first.value.name.to_s
+    assert_equal %w[data len], local_decl.value.arguments.map(&:name)
+  end
+
+  def test_parses_array_constructor_calls
+    source = <<~MT
+      module demo.arrays
+
+      def main() -> i32:
+          let palette = array[u32, 4](1, 2, 3, 4)
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    local_decl = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::Call, local_decl.value
+    assert_instance_of MilkTea::AST::Specialization, local_decl.value.callee
+    assert_equal "array", local_decl.value.callee.callee.name
+    assert_equal 2, local_decl.value.callee.arguments.length
+    assert_equal "u32", local_decl.value.callee.arguments.first.value.name.to_s
+    assert_equal 4, local_decl.value.callee.arguments[1].value.value
+    assert_equal 4, local_decl.value.arguments.length
+  end
+
+  def test_parses_index_access_instead_of_specialization
+    source = <<~MT
+      module demo.arrays
+
+      def main() -> i32:
+          unsafe:
+              let value = palette[1]
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    unsafe_stmt = main_fn.body.first
+    local_decl = unsafe_stmt.body.first
+
+    assert_instance_of MilkTea::AST::IndexAccess, local_decl.value
+    assert_instance_of MilkTea::AST::Identifier, local_decl.value.receiver
+    assert_instance_of MilkTea::AST::IntegerLiteral, local_decl.value.index
+    assert_equal "palette", local_decl.value.receiver.name
+    assert_equal 1, local_decl.value.index.value
+  end
+
   def test_parses_function_type_aliases
     source = <<~MT
       module demo.callbacks
@@ -121,6 +256,55 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "i32", callback.target.params[0].type.name.to_s
     assert_equal "ptr", callback.target.params[2].type.name.to_s
     assert_equal "void", callback.target.return_type.name.to_s
+  end
+
+  def test_parses_unsafe_blocks_with_pointer_cast_and_arithmetic
+    source = <<~MT
+      module demo.unsafe_surface
+
+      def main(memory: ptr[void]) -> i32:
+          unsafe:
+              let advanced = cast[ptr[byte]](memory) + 4
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    unsafe_stmt = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::UnsafeStmt, unsafe_stmt
+    local_decl = unsafe_stmt.body.first
+    assert_instance_of MilkTea::AST::LocalDecl, local_decl
+    assert_instance_of MilkTea::AST::BinaryOp, local_decl.value
+    assert_equal "+", local_decl.value.operator
+    assert_instance_of MilkTea::AST::Call, local_decl.value.left
+  end
+
+  def test_parses_address_of_and_dereference
+    source = <<~MT
+      module demo.pointers
+
+      struct Counter:
+          value: i32
+
+      def main() -> i32:
+          var counter = Counter(value = 3)
+          let counter_ptr = &counter
+          let value = (*counter_ptr).value
+          return value
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations[1]
+
+    pointer_decl = main_fn.body[1]
+    assert_instance_of MilkTea::AST::UnaryOp, pointer_decl.value
+    assert_equal "&", pointer_decl.value.operator
+
+    value_decl = main_fn.body[2]
+    assert_instance_of MilkTea::AST::MemberAccess, value_decl.value
+    assert_instance_of MilkTea::AST::UnaryOp, value_decl.value.receiver
+    assert_equal "*", value_decl.value.receiver.operator
   end
 
   def test_parses_keyword_names_in_struct_fields_and_member_access

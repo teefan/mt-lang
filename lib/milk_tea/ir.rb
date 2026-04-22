@@ -15,6 +15,7 @@ module MilkTea
 
     LocalDecl = Data.define(:name, :c_name, :type, :value)
     Assignment = Data.define(:target, :operator, :value)
+    BlockStmt = Data.define(:body)
     IfStmt = Data.define(:condition, :then_body, :else_body)
     WhileStmt = Data.define(:condition, :body)
     ReturnStmt = Data.define(:value)
@@ -22,6 +23,7 @@ module MilkTea
 
     Name = Data.define(:name, :type, :pointer)
     Member = Data.define(:receiver, :member, :type)
+    Index = Data.define(:receiver, :index, :type)
     Call = Data.define(:callee, :arguments, :type)
     Unary = Data.define(:operator, :operand, :type)
     Binary = Data.define(:operator, :left, :right, :type)
@@ -34,5 +36,6 @@ module MilkTea
     Cast = Data.define(:target_type, :expression, :type)
     AggregateLiteral = Data.define(:type, :fields)
     AggregateField = Data.define(:name, :value)
+    ArrayLiteral = Data.define(:type, :elements)
   end
 end

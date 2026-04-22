@@ -9,9 +9,16 @@ RAYLIB_HEADER_CANDIDATES = [
   '/usr/include/raylib.h',
   '/usr/local/include/raylib.h',
 ].freeze
+LIBC_MODULE_NAME = 'std.c.libc'
+LIBC_BINDING_PATH = File.expand_path('std/c/libc.mt', __dir__)
+LIBC_INCLUDE_DIRECTIVES = ['stdlib.h'].freeze
+LIBC_HEADER_CANDIDATES = [
+  '/usr/include/stdlib.h',
+  '/usr/local/include/stdlib.h',
+].freeze
 
 task default: :test
-task verify: [:test, 'bindgen:check_raylib']
+task verify: [:test, 'bindgen:check_raylib', 'bindgen:check_libc']
 
 Rake::TestTask.new do |t|
   t.libs << 'test'
@@ -41,7 +48,34 @@ namespace :bindgen do
       MESSAGE
     end
 
+    MilkTea::ModuleLoader.check_file(RAYLIB_BINDING_PATH)
     puts "verified #{RAYLIB_BINDING_PATH} matches bindgen output from #{header_path}"
+  end
+
+  desc 'Regenerate std/c/libc.mt from the installed stdlib.h header'
+  task :libc do
+    header_path = libc_header_path
+    generated = generate_libc_binding(header_path)
+
+    File.write(LIBC_BINDING_PATH, generated)
+    puts "generated #{header_path} -> #{LIBC_BINDING_PATH}"
+  end
+
+  desc 'Check that std/c/libc.mt matches current bindgen output'
+  task :check_libc do
+    header_path = libc_header_path
+    expected = normalized_bindgen_output(File.read(LIBC_BINDING_PATH))
+    actual = normalized_bindgen_output(generate_libc_binding(header_path))
+
+    if expected != actual
+      raise <<~MESSAGE
+        #{LIBC_BINDING_PATH} is out of date for #{header_path}
+        Run `rake bindgen:libc` to regenerate it.
+      MESSAGE
+    end
+
+    MilkTea::ModuleLoader.check_file(LIBC_BINDING_PATH)
+    puts "verified #{LIBC_BINDING_PATH} matches bindgen output from #{header_path}"
   end
 end
 
@@ -63,6 +97,26 @@ def generate_raylib_binding(header_path)
     header_path:,
     link_libraries: RAYLIB_LINK_LIBRARIES,
     include_directives: RAYLIB_INCLUDE_DIRECTIVES,
+  )
+end
+
+def libc_header_path
+  env_override = ENV['LIBC_HEADER']
+  candidates = []
+  candidates << env_override unless env_override.nil? || env_override.empty?
+  candidates.concat(LIBC_HEADER_CANDIDATES)
+
+  header_path = candidates.find { |path| File.file?(path) }
+  return header_path if header_path
+
+  raise "stdlib.h header not found; set LIBC_HEADER or install libc headers"
+end
+
+def generate_libc_binding(header_path)
+  MilkTea::Bindgen.generate(
+    module_name: LIBC_MODULE_NAME,
+    header_path:,
+    include_directives: LIBC_INCLUDE_DIRECTIVES,
   )
 end
 

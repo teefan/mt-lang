@@ -98,7 +98,7 @@ extern module std.c.raylib:
         baseSize: i32
         glyphCount: i32
         glyphPadding: i32
-        texture: Texture2D
+        texture: Texture
         recs: ptr[Rectangle]
         glyphs: ptr[GlyphInfo]
 
@@ -141,7 +141,7 @@ extern module std.c.raylib:
         locs: ptr[i32]
 
     struct MaterialMap:
-        texture: Texture2D
+        texture: Texture
         color: Color
         value: f32
 
@@ -152,7 +152,7 @@ extern module std.c.raylib:
 
     struct Transform:
         translation: Vector3
-        rotation: Quaternion
+        rotation: Vector4
         scale: Vector3
 
     struct BoneInfo:
@@ -732,7 +732,7 @@ extern module std.c.raylib:
 
     extern def EndMode3D() -> void
 
-    extern def BeginTextureMode(target: RenderTexture2D) -> void
+    extern def BeginTextureMode(target: RenderTexture) -> void
 
     extern def EndTextureMode() -> void
 
@@ -772,23 +772,23 @@ extern module std.c.raylib:
 
     extern def SetShaderValueMatrix(shader: Shader, locIndex: i32, mat: Matrix) -> void
 
-    extern def SetShaderValueTexture(shader: Shader, locIndex: i32, texture: Texture2D) -> void
+    extern def SetShaderValueTexture(shader: Shader, locIndex: i32, texture: Texture) -> void
 
     extern def UnloadShader(shader: Shader) -> void
 
-    extern def GetScreenToWorldRay(position: Vector2, camera: Camera) -> Ray
+    extern def GetScreenToWorldRay(position: Vector2, camera: Camera3D) -> Ray
 
-    extern def GetScreenToWorldRayEx(position: Vector2, camera: Camera, width: i32, height: i32) -> Ray
+    extern def GetScreenToWorldRayEx(position: Vector2, camera: Camera3D, width: i32, height: i32) -> Ray
 
-    extern def GetWorldToScreen(position: Vector3, camera: Camera) -> Vector2
+    extern def GetWorldToScreen(position: Vector3, camera: Camera3D) -> Vector2
 
-    extern def GetWorldToScreenEx(position: Vector3, camera: Camera, width: i32, height: i32) -> Vector2
+    extern def GetWorldToScreenEx(position: Vector3, camera: Camera3D, width: i32, height: i32) -> Vector2
 
     extern def GetWorldToScreen2D(position: Vector2, camera: Camera2D) -> Vector2
 
     extern def GetScreenToWorld2D(position: Vector2, camera: Camera2D) -> Vector2
 
-    extern def GetCameraMatrix(camera: Camera) -> Matrix
+    extern def GetCameraMatrix(camera: Camera3D) -> Matrix
 
     extern def GetCameraMatrix2D(camera: Camera2D) -> Matrix
 
@@ -828,15 +828,15 @@ extern module std.c.raylib:
 
     extern def MemFree(ptr: ptr[void]) -> void
 
-    extern def SetTraceLogCallback(callback: TraceLogCallback) -> void
+    extern def SetTraceLogCallback(callback: fn(arg0: i32, arg1: cstr, arg2: ptr[__va_list_tag]) -> void) -> void
 
-    extern def SetLoadFileDataCallback(callback: LoadFileDataCallback) -> void
+    extern def SetLoadFileDataCallback(callback: fn(arg0: cstr, arg1: ptr[i32]) -> ptr[u8]) -> void
 
-    extern def SetSaveFileDataCallback(callback: SaveFileDataCallback) -> void
+    extern def SetSaveFileDataCallback(callback: fn(arg0: cstr, arg1: ptr[void], arg2: i32) -> bool) -> void
 
-    extern def SetLoadFileTextCallback(callback: LoadFileTextCallback) -> void
+    extern def SetLoadFileTextCallback(callback: fn(arg0: cstr) -> ptr[char]) -> void
 
-    extern def SetSaveFileTextCallback(callback: SaveFileTextCallback) -> void
+    extern def SetSaveFileTextCallback(callback: fn(arg0: cstr, arg1: ptr[char]) -> bool) -> void
 
     extern def LoadFileData(fileName: cstr, dataSize: ptr[i32]) -> ptr[u8]
 
@@ -1022,7 +1022,7 @@ extern module std.c.raylib:
 
     extern def UpdateCameraPro(camera: ptr[Camera], movement: Vector3, rotation: Vector3, zoom: f32) -> void
 
-    extern def SetShapesTexture(texture: Texture2D, source: Rectangle) -> void
+    extern def SetShapesTexture(texture: Texture, source: Rectangle) -> void
 
     extern def GetShapesTexture() -> Texture2D
 
@@ -1164,7 +1164,7 @@ extern module std.c.raylib:
 
     extern def LoadImageFromMemory(fileType: cstr, fileData: ptr[u8], dataSize: i32) -> Image
 
-    extern def LoadImageFromTexture(texture: Texture2D) -> Image
+    extern def LoadImageFromTexture(texture: Texture) -> Image
 
     extern def LoadImageFromScreen() -> Image
 
@@ -1320,35 +1320,35 @@ extern module std.c.raylib:
 
     extern def LoadRenderTexture(width: i32, height: i32) -> RenderTexture2D
 
-    extern def IsTextureValid(texture: Texture2D) -> bool
+    extern def IsTextureValid(texture: Texture) -> bool
 
-    extern def UnloadTexture(texture: Texture2D) -> void
+    extern def UnloadTexture(texture: Texture) -> void
 
-    extern def IsRenderTextureValid(target: RenderTexture2D) -> bool
+    extern def IsRenderTextureValid(target: RenderTexture) -> bool
 
-    extern def UnloadRenderTexture(target: RenderTexture2D) -> void
+    extern def UnloadRenderTexture(target: RenderTexture) -> void
 
-    extern def UpdateTexture(texture: Texture2D, pixels: ptr[void]) -> void
+    extern def UpdateTexture(texture: Texture, pixels: ptr[void]) -> void
 
-    extern def UpdateTextureRec(texture: Texture2D, rec: Rectangle, pixels: ptr[void]) -> void
+    extern def UpdateTextureRec(texture: Texture, rec: Rectangle, pixels: ptr[void]) -> void
 
     extern def GenTextureMipmaps(texture: ptr[Texture2D]) -> void
 
-    extern def SetTextureFilter(texture: Texture2D, filter: i32) -> void
+    extern def SetTextureFilter(texture: Texture, filter: i32) -> void
 
-    extern def SetTextureWrap(texture: Texture2D, wrap: i32) -> void
+    extern def SetTextureWrap(texture: Texture, wrap: i32) -> void
 
-    extern def DrawTexture(texture: Texture2D, posX: i32, posY: i32, tint: Color) -> void
+    extern def DrawTexture(texture: Texture, posX: i32, posY: i32, tint: Color) -> void
 
-    extern def DrawTextureV(texture: Texture2D, position: Vector2, tint: Color) -> void
+    extern def DrawTextureV(texture: Texture, position: Vector2, tint: Color) -> void
 
-    extern def DrawTextureEx(texture: Texture2D, position: Vector2, rotation: f32, scale: f32, tint: Color) -> void
+    extern def DrawTextureEx(texture: Texture, position: Vector2, rotation: f32, scale: f32, tint: Color) -> void
 
-    extern def DrawTextureRec(texture: Texture2D, source: Rectangle, position: Vector2, tint: Color) -> void
+    extern def DrawTextureRec(texture: Texture, source: Rectangle, position: Vector2, tint: Color) -> void
 
-    extern def DrawTexturePro(texture: Texture2D, source: Rectangle, dest: Rectangle, origin: Vector2, rotation: f32, tint: Color) -> void
+    extern def DrawTexturePro(texture: Texture, source: Rectangle, dest: Rectangle, origin: Vector2, rotation: f32, tint: Color) -> void
 
-    extern def DrawTextureNPatch(texture: Texture2D, nPatchInfo: NPatchInfo, dest: Rectangle, origin: Vector2, rotation: f32, tint: Color) -> void
+    extern def DrawTextureNPatch(texture: Texture, nPatchInfo: NPatchInfo, dest: Rectangle, origin: Vector2, rotation: f32, tint: Color) -> void
 
     extern def ColorIsEqual(col1: Color, col2: Color) -> bool
 
@@ -1548,11 +1548,11 @@ extern module std.c.raylib:
 
     extern def DrawBoundingBox(box: BoundingBox, color: Color) -> void
 
-    extern def DrawBillboard(camera: Camera, texture: Texture2D, position: Vector3, scale: f32, tint: Color) -> void
+    extern def DrawBillboard(camera: Camera3D, texture: Texture, position: Vector3, scale: f32, tint: Color) -> void
 
-    extern def DrawBillboardRec(camera: Camera, texture: Texture2D, source: Rectangle, position: Vector3, size: Vector2, tint: Color) -> void
+    extern def DrawBillboardRec(camera: Camera3D, texture: Texture, source: Rectangle, position: Vector3, size: Vector2, tint: Color) -> void
 
-    extern def DrawBillboardPro(camera: Camera, texture: Texture2D, source: Rectangle, position: Vector3, up: Vector3, size: Vector2, origin: Vector2, rotation: f32, tint: Color) -> void
+    extern def DrawBillboardPro(camera: Camera3D, texture: Texture, source: Rectangle, position: Vector3, up: Vector3, size: Vector2, origin: Vector2, rotation: f32, tint: Color) -> void
 
     extern def UploadMesh(mesh: ptr[Mesh], dynamic: bool) -> void
 
@@ -1602,7 +1602,7 @@ extern module std.c.raylib:
 
     extern def UnloadMaterial(material: Material) -> void
 
-    extern def SetMaterialTexture(material: ptr[Material], mapType: i32, texture: Texture2D) -> void
+    extern def SetMaterialTexture(material: ptr[Material], mapType: i32, texture: Texture) -> void
 
     extern def SetModelMeshMaterial(model: ptr[Model], meshId: i32, materialId: i32) -> void
 
@@ -1758,15 +1758,15 @@ extern module std.c.raylib:
 
     extern def SetAudioStreamBufferSizeDefault(size: i32) -> void
 
-    extern def SetAudioStreamCallback(stream: AudioStream, callback: AudioCallback) -> void
+    extern def SetAudioStreamCallback(stream: AudioStream, callback: fn(arg0: ptr[void], arg1: u32) -> void) -> void
 
-    extern def AttachAudioStreamProcessor(stream: AudioStream, processor: AudioCallback) -> void
+    extern def AttachAudioStreamProcessor(stream: AudioStream, processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void
 
-    extern def DetachAudioStreamProcessor(stream: AudioStream, processor: AudioCallback) -> void
+    extern def DetachAudioStreamProcessor(stream: AudioStream, processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void
 
-    extern def AttachAudioMixedProcessor(processor: AudioCallback) -> void
+    extern def AttachAudioMixedProcessor(processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void
 
-    extern def DetachAudioMixedProcessor(processor: AudioCallback) -> void
+    extern def DetachAudioMixedProcessor(processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void
 
     const RAYLIB_VERSION_MAJOR: i32 = 5
 

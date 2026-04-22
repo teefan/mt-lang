@@ -180,6 +180,7 @@ module MilkTea
 
     def parse_struct_decl
       name = consume_name("expected struct name").lexeme
+      type_params = parse_declaration_type_params
       fields = parse_named_block do
         field_name = consume_name("expected field name").lexeme
         consume(:colon, "expected ':' after field name")
@@ -187,7 +188,7 @@ module MilkTea
         consume_end_of_statement
         AST::Field.new(name: field_name, type: field_type)
       end
-      AST::StructDecl.new(name:, fields:)
+      AST::StructDecl.new(name:, type_params:, fields:)
     end
 
     def parse_union_decl
@@ -241,10 +242,11 @@ module MilkTea
 
     def parse_function_def
       name = consume_name("expected function name").lexeme
+      type_params = parse_declaration_type_params
       params = parse_params
       return_type = match(:arrow) ? parse_type_ref : nil
       body = parse_block
-      AST::FunctionDef.new(name:, params:, return_type:, body:)
+      AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:)
     end
 
     def parse_extern_decl
@@ -254,11 +256,12 @@ module MilkTea
 
     def parse_extern_function_decl
       name = consume_name("expected function name").lexeme
+      type_params = parse_declaration_type_params
       params = parse_params
       consume(:arrow, "expected '->' before extern function return type")
       return_type = parse_type_ref
       consume_end_of_statement
-      AST::ExternFunctionDecl.new(name:, params:, return_type:)
+      AST::ExternFunctionDecl.new(name:, type_params:, params:, return_type:)
     end
 
     def parse_params
@@ -345,6 +348,21 @@ module MilkTea
       end
     end
 
+    def parse_declaration_type_params
+      return [] unless match(:lbracket)
+
+      params = []
+      unless check(:rbracket)
+        loop do
+          params << AST::TypeParam.new(name: consume_name("expected type parameter name").lexeme)
+          break unless match(:comma)
+        end
+      end
+
+      consume(:rbracket, "expected ']' after type parameters")
+      params
+    end
+
     def parse_block
       consume(:colon, "expected ':' before block")
       consume(:newline, "expected newline before block")
@@ -384,6 +402,8 @@ module MilkTea
         parse_local_decl(:var)
       elsif match(:if)
         parse_if_stmt
+      elsif match(:unsafe)
+        parse_unsafe_stmt
       elsif match(:while)
         parse_while_stmt
       elsif match(:return)
@@ -414,6 +434,10 @@ module MilkTea
 
       else_body = match(:else) ? parse_block : nil
       AST::IfStmt.new(branches:, else_body:)
+    end
+
+    def parse_unsafe_stmt
+      AST::UnsafeStmt.new(body: parse_block)
     end
 
     def parse_while_stmt
@@ -492,7 +516,7 @@ module MilkTea
     end
 
     def parse_unary
-      if match(:not, :minus, :plus, :tilde)
+      if match(:not, :minus, :plus, :tilde, :amp, :star)
         operator = previous.lexeme
         operand = parse_unary
         AST::UnaryOp.new(operator:, operand:)
@@ -508,16 +532,15 @@ module MilkTea
         if match(:dot)
           member = consume_name("expected member name after '.'").lexeme
           expression = AST::MemberAccess.new(receiver: expression, member:)
-        elsif match(:lbracket)
-          arguments = []
-          unless check(:rbracket)
-            loop do
-              arguments << AST::TypeArgument.new(value: parse_type_argument)
-              break unless match(:comma)
-            end
+        elsif check(:lbracket)
+          if (specialized_call = try_parse_specialization_call(expression))
+            expression = specialized_call
+          else
+            advance
+            index = parse_expression
+            consume(:rbracket, "expected ']' after index expression")
+            expression = AST::IndexAccess.new(receiver: expression, index:)
           end
-          consume(:rbracket, "expected ']' after specialization arguments")
-          expression = AST::Specialization.new(callee: expression, arguments:)
         elsif match(:lparen)
           expression = AST::Call.new(callee: expression, arguments: parse_call_arguments)
         else
@@ -526,6 +549,33 @@ module MilkTea
       end
 
       expression
+    end
+
+    def try_parse_specialization_call(expression)
+      return nil unless postfix_bracket_starts_specialization?(expression)
+
+      saved_current = @current
+      advance
+      arguments = []
+      unless check(:rbracket)
+        loop do
+          arguments << AST::TypeArgument.new(value: parse_type_argument)
+          break unless match(:comma)
+        end
+      end
+      consume(:rbracket, "expected ']' after specialization arguments")
+      consume(:lparen, "expected '(' after specialization arguments")
+      call_arguments = parse_call_arguments
+
+      unless builtin_specialization_target?(expression) || call_arguments.all?(&:name)
+        @current = saved_current
+        return nil
+      end
+
+      AST::Call.new(callee: AST::Specialization.new(callee: expression, arguments:), arguments: call_arguments)
+    rescue ParseError
+      @current = saved_current
+      nil
     end
 
     def parse_call_arguments
@@ -639,6 +689,53 @@ module MilkTea
       return false if (@current + 1) >= @tokens.length
 
       @tokens[@current + 1].type == type
+    end
+
+    def postfix_bracket_starts_specialization?(expression)
+      return false unless specialization_target?(expression)
+
+      closing_index = matching_rbracket_index(@current)
+      return false unless closing_index
+
+      closing_index += 1
+      closing_index < @tokens.length && @tokens[closing_index].type == :lparen
+    end
+
+    def specialization_target?(expression)
+      builtin_specialization_target?(expression) || aggregate_specialization_target?(expression)
+    end
+
+    def builtin_specialization_target?(expression)
+      expression.is_a?(AST::Identifier) && %w[array cast span].include?(expression.name)
+    end
+
+    def aggregate_specialization_target?(expression)
+      case expression
+      when AST::Identifier
+        true
+      when AST::MemberAccess
+        expression.receiver.is_a?(AST::Identifier)
+      else
+        false
+      end
+    end
+
+    def matching_rbracket_index(start_index)
+      depth = 0
+      index = start_index
+
+      while index < @tokens.length
+        case @tokens[index].type
+        when :lbracket
+          depth += 1
+        when :rbracket
+          depth -= 1
+          return index if depth.zero?
+        end
+        index += 1
+      end
+
+      nil
     end
 
     def match_name
