@@ -258,6 +258,55 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return \(mt_result_i32_demo_result_surface_LoadError\)\{ \.is_ok = false, \.error = demo_result_surface_LoadError_invalid_format \};/, generated)
   end
 
+  def test_generate_c_for_builtin_panic_helper
+    source = [
+      "module demo.panic_surface",
+      "",
+      "def main() -> i32:",
+      "    panic(\"bad state\")",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/#include <stdio\.h>/, generated)
+    assert_match(/#include <stdlib\.h>/, generated)
+    assert_match(/static void mt_panic\(const char\* message\)/, generated)
+    assert_match(/fputs\(message, stderr\);/, generated)
+    assert_match(/abort\(\);/, generated)
+    assert_match(/mt_panic\("bad state"\);/, generated)
+  end
+
+  def test_generate_c_for_enum_match_statement_as_switch
+    source = [
+      "module demo.match_surface",
+      "",
+      "enum EventKind: u8",
+      "    quit = 1",
+      "    resize = 2",
+      "",
+      "def dispatch(kind: EventKind) -> i32:",
+      "    match kind:",
+      "        EventKind.quit:",
+      "            return 0",
+      "        EventKind.resize:",
+      "            return 1",
+      "",
+      "def main() -> i32:",
+      "    return dispatch(EventKind.resize)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/switch \(kind\) \{/, generated)
+    assert_match(/case demo_match_surface_EventKind_quit: \{/, generated)
+    assert_match(/case demo_match_surface_EventKind_resize: \{/, generated)
+    assert_match(/return 0;/, generated)
+    assert_match(/return 1;/, generated)
+  end
+
   def test_generate_c_for_address_of_and_dereference_assignment
     source = [
       "module demo.pointer_surface",

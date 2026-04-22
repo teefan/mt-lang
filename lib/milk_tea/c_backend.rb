@@ -19,6 +19,11 @@ module MilkTea
       end
       lines << ""
 
+      if uses_panic_helper?
+        lines.concat(emit_panic_helper)
+        lines << ""
+      end
+
       struct_decls = sort_struct_decls(@program.structs + collect_generic_struct_decls + collect_result_decls)
 
       forward_declarations = emit_forward_declarations(struct_decls)
@@ -67,6 +72,72 @@ module MilkTea
     end
 
     private
+
+    def uses_panic_helper?
+      @program.functions.any? { |function| function_uses_panic?(function) }
+    end
+
+    def function_uses_panic?(function)
+      function.body.any? { |statement| statement_uses_panic?(statement) }
+    end
+
+    def statement_uses_panic?(statement)
+      case statement
+      when IR::LocalDecl
+        expression_uses_panic?(statement.value)
+      when IR::Assignment
+        expression_uses_panic?(statement.target) || expression_uses_panic?(statement.value)
+      when IR::BlockStmt, IR::WhileStmt
+        statement.body.any? { |inner| statement_uses_panic?(inner) }
+      when IR::IfStmt
+        expression_uses_panic?(statement.condition) ||
+          statement.then_body.any? { |inner| statement_uses_panic?(inner) } ||
+          (statement.else_body && statement.else_body.any? { |inner| statement_uses_panic?(inner) })
+      when IR::SwitchStmt
+        expression_uses_panic?(statement.expression) || statement.cases.any? { |switch_case| switch_case.body.any? { |inner| statement_uses_panic?(inner) } }
+      when IR::ReturnStmt
+        statement.value && expression_uses_panic?(statement.value)
+      when IR::ExpressionStmt
+        expression_uses_panic?(statement.expression)
+      else
+        false
+      end
+    end
+
+    def expression_uses_panic?(expression)
+      case expression
+      when IR::Call
+        expression.callee == "mt_panic" || expression.arguments.any? { |argument| expression_uses_panic?(argument) }
+      when IR::Member
+        expression_uses_panic?(expression.receiver)
+      when IR::Index
+        expression_uses_panic?(expression.receiver) || expression_uses_panic?(expression.index)
+      when IR::Unary
+        expression_uses_panic?(expression.operand)
+      when IR::Binary
+        expression_uses_panic?(expression.left) || expression_uses_panic?(expression.right)
+      when IR::AddressOf
+        expression_uses_panic?(expression.expression)
+      when IR::Cast
+        expression_uses_panic?(expression.expression)
+      when IR::AggregateLiteral
+        expression.fields.any? { |field| expression_uses_panic?(field.value) }
+      when IR::ArrayLiteral
+        expression.elements.any? { |element| expression_uses_panic?(element) }
+      else
+        false
+      end
+    end
+
+    def emit_panic_helper
+      [
+        "static void mt_panic(const char* message) {",
+        "#{INDENT}fputs(message, stderr);",
+        "#{INDENT}fputc('\\n', stderr);",
+        "#{INDENT}abort();",
+        "}",
+      ]
+    end
 
     def emit_forward_declarations(struct_decls)
       lines = []
@@ -189,8 +260,41 @@ module MilkTea
         end
         lines << "#{indent}}"
         lines
+      when IR::SwitchStmt
+        lines = ["#{indent}switch (#{emit_expression(statement.expression)}) {"]
+        statement.cases.each do |switch_case|
+          lines << "#{indent}#{INDENT}case #{emit_expression(switch_case.value)}: {"
+          switch_case.body.each do |inner|
+            lines.concat(emit_statement(inner, level + 2, function:))
+          end
+          lines << "#{indent}#{INDENT}#{INDENT}break;" unless body_terminates?(switch_case.body)
+          lines << "#{indent}#{INDENT}}"
+        end
+        lines << "#{indent}}"
+        lines
       else
         raise LoweringError, "unsupported IR statement #{statement.class.name}"
+      end
+    end
+
+    def body_terminates?(statements)
+      return false if statements.empty?
+
+      statement_terminates?(statements.last)
+    end
+
+    def statement_terminates?(statement)
+      case statement
+      when IR::ReturnStmt
+        true
+      when IR::BlockStmt
+        body_terminates?(statement.body)
+      when IR::IfStmt
+        statement.else_body && body_terminates?(statement.then_body) && body_terminates?(statement.else_body)
+      when IR::SwitchStmt
+        statement.cases.any? && statement.cases.all? { |switch_case| body_terminates?(switch_case.body) }
+      else
+        false
       end
     end
 
@@ -484,6 +588,10 @@ module MilkTea
         when IR::IfStmt
           collect_result_types_from_statements(statement.then_body, result_types, visited)
           collect_result_types_from_statements(statement.else_body, result_types, visited) if statement.else_body
+        when IR::SwitchStmt
+          statement.cases.each do |switch_case|
+            collect_result_types_from_statements(switch_case.body, result_types, visited)
+          end
         end
       end
     end
@@ -569,6 +677,10 @@ module MilkTea
         when IR::IfStmt
           collect_generic_struct_types_from_statements(statement.then_body, generic_struct_types, visited)
           collect_generic_struct_types_from_statements(statement.else_body, generic_struct_types, visited) if statement.else_body
+        when IR::SwitchStmt
+          statement.cases.each do |switch_case|
+            collect_generic_struct_types_from_statements(switch_case.body, generic_struct_types, visited)
+          end
         end
       end
     end
@@ -676,6 +788,10 @@ module MilkTea
         when IR::IfStmt
           collect_span_types_from_statements(statement.then_body, span_types, visited)
           collect_span_types_from_statements(statement.else_body, span_types, visited) if statement.else_body
+        when IR::SwitchStmt
+          statement.cases.each do |switch_case|
+            collect_span_types_from_statements(switch_case.body, span_types, visited)
+          end
         end
       end
     end

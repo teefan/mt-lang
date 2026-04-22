@@ -252,6 +252,83 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_panic_statement_with_string_message
+    source = <<~MT
+      module demo.panic
+
+      def main() -> i32:
+          panic("bad state")
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_exhaustive_match_statement_over_enum
+    source = <<~MT
+      module demo.match
+
+      enum EventKind: u8
+          quit = 1
+          resize = 2
+
+      def dispatch(kind: EventKind) -> i32:
+          match kind:
+              EventKind.quit:
+                  return 0
+              EventKind.resize:
+                  return 1
+
+      def main() -> i32:
+          return dispatch(EventKind.resize)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("EventKind")
+    assert_equal true, result.functions.key?("dispatch")
+  end
+
+  def test_rejects_non_exhaustive_match_statement_over_enum
+    source = <<~MT
+      module demo.match
+
+      enum EventKind: u8
+          quit = 1
+          resize = 2
+
+      def dispatch(kind: EventKind) -> i32:
+          match kind:
+              EventKind.quit:
+                  return 0
+          return 1
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/match on demo.match.EventKind is missing cases: resize/, error.message)
+  end
+
+  def test_rejects_panic_with_non_string_message
+    source = <<~MT
+      module demo.panic
+
+      def main() -> i32:
+          panic(123)
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/panic expects str or cstr, got i32/, error.message)
+  end
+
   def test_rejects_mismatched_callback_arguments
     source = <<~MT
       module demo.callbacks

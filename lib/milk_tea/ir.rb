@@ -17,6 +17,8 @@ module MilkTea
     Assignment = Data.define(:target, :operator, :value)
     BlockStmt = Data.define(:body)
     IfStmt = Data.define(:condition, :then_body, :else_body)
+    SwitchCase = Data.define(:value, :body)
+    SwitchStmt = Data.define(:expression, :cases)
     WhileStmt = Data.define(:condition, :body)
     ReturnStmt = Data.define(:value)
     ExpressionStmt = Data.define(:expression)

@@ -70,6 +70,35 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal 1, if_stmt.else_body.length
   end
 
+  def test_parses_match_statement_with_enum_member_arms
+    source = <<~MT
+      module demo.flow
+
+      enum EventKind: u8
+          quit = 1
+          resize = 2
+
+      def main(kind: EventKind) -> i32:
+          match kind:
+              EventKind.quit:
+                  return 0
+              EventKind.resize:
+                  return 1
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations[1]
+    match_stmt = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::MatchStmt, match_stmt
+    assert_instance_of MilkTea::AST::Identifier, match_stmt.expression
+    assert_equal "kind", match_stmt.expression.name
+    assert_equal 2, match_stmt.arms.length
+    assert_instance_of MilkTea::AST::MemberAccess, match_stmt.arms[0].pattern
+    assert_equal "quit", match_stmt.arms[0].pattern.member
+    assert_instance_of MilkTea::AST::ReturnStmt, match_stmt.arms[0].body.first
+  end
+
   def test_parses_generic_nullable_types_and_bare_returns
     source = <<~MT
       module demo.types

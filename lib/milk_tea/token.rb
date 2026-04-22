@@ -21,6 +21,7 @@ module MilkTea
       "import" => :import,
       "let" => :let,
       "link" => :link,
+      "match" => :match,
       "module" => :module,
       "mut" => :mut,
       "not" => :not,

@@ -278,6 +278,72 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_builtin_panic
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-panic") do |dir|
+      source_path = File.join(dir, "panic.mt")
+
+      File.write(source_path, [
+        "module demo.panic_runtime",
+        "",
+        "def main() -> i32:",
+        "    panic(\"bad state\")",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_includes result.stderr, "bad state"
+      assert_equal 134, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_enum_match
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-match") do |dir|
+      source_path = File.join(dir, "match.mt")
+
+      File.write(source_path, [
+        "module demo.match_runtime",
+        "",
+        "enum EventKind: u8",
+        "    quit = 1",
+        "    resize = 2",
+        "",
+        "def dispatch(kind: EventKind) -> i32:",
+        "    match kind:",
+        "        EventKind.quit:",
+        "            return 4",
+        "        EventKind.resize:",
+        "            return 7",
+        "",
+        "def main() -> i32:",
+        "    return dispatch(EventKind.resize)",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 7, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_fixed_arrays
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
