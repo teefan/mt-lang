@@ -14,6 +14,11 @@ module MilkTea
   end
 
   class Parser
+    BUILTIN_TYPE_NAMES = %w[
+      bool byte char i8 i16 i32 i64 u8 u16 u32 u64 isize usize f32 f64 void str cstr
+      ptr ref span array Result
+    ].freeze
+
     def self.parse(source = nil, path: nil, tokens: nil)
       token_stream = tokens || Lexer.lex(source, path: path)
       new(token_stream, path: path).parse
@@ -23,6 +28,9 @@ module MilkTea
       @tokens = tokens
       @path = path
       @current = 0
+      @known_type_names = {}
+      @known_import_aliases = {}
+      seed_known_names
     end
 
     def parse
@@ -674,7 +682,7 @@ module MilkTea
       consume(:lparen, "expected '(' after specialization arguments")
       call_arguments = parse_call_arguments
 
-      unless builtin_specialization_target?(expression) || call_arguments.all?(&:name)
+      unless specialization_call_target?(expression, arguments, call_arguments)
         @current = saved_current
         return nil
       end
@@ -854,6 +862,79 @@ module MilkTea
       else
         false
       end
+    end
+
+    def specialization_call_target?(expression, arguments, call_arguments)
+      return true if builtin_specialization_target?(expression)
+      return true if aggregate_specialization_target?(expression) && call_arguments.all?(&:name)
+
+      aggregate_specialization_target?(expression) && arguments.all? { |argument| definite_type_argument?(argument.value) }
+    end
+
+    def definite_type_argument?(value)
+      case value
+      when AST::FunctionType
+        true
+      when AST::TypeRef
+        known_type_like_name?(value.name.parts.first)
+      else
+        false
+      end
+    end
+
+    def known_type_like_name?(name)
+      @known_type_names.key?(name) || @known_import_aliases.key?(name)
+    end
+
+    def seed_known_names
+      BUILTIN_TYPE_NAMES.each { |name| @known_type_names[name] = true }
+
+      depth = 0
+      index = 0
+      while index < @tokens.length
+        token = @tokens[index]
+        case token.type
+        when :indent
+          depth += 1
+        when :dedent
+          depth -= 1 if depth.positive?
+        when :import
+          index = seed_import_alias(index + 1) if depth.zero?
+        when :struct, :union, :enum, :flags, :opaque, :type
+          if depth.zero?
+            name_token = @tokens[index + 1]
+            @known_type_names[name_token.lexeme] = true if type_name_token?(name_token)
+          end
+        end
+
+        index += 1
+      end
+    end
+
+    def seed_import_alias(start_index)
+      cursor = start_index
+      last_part = nil
+
+      while cursor < @tokens.length && @tokens[cursor].type != :newline
+        token = @tokens[cursor]
+        if token.type == :as
+          alias_token = @tokens[cursor + 1]
+          @known_import_aliases[alias_token.lexeme] = true if type_name_token?(alias_token)
+          return cursor
+        end
+
+        last_part = token.lexeme if type_name_token?(token)
+        cursor += 1
+      end
+
+      @known_import_aliases[last_part] = true if last_part
+      cursor
+    end
+
+    def type_name_token?(token)
+      return false unless token
+
+      token.type == :identifier || (Token::KEYWORDS.value?(token.type) && !%i[true false null].include?(token.type))
     end
 
     def pointer_dereference_expression?(expression)

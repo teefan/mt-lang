@@ -29,57 +29,54 @@ def generate_random_color() -> rl.Color:
     )
 
 def alloc_color_rects(rect_count: i32) -> ptr[ColorRect]:
-    unsafe:
-        return cast[ptr[ColorRect]](heap.alloc_zeroed(cast[usize](rect_count), cast[usize](sizeof(ColorRect))))
+    return heap.alloc_zeroed[ColorRect](cast[usize](rect_count))
 
 def release_color_rects(rectangles: ptr[ColorRect]) -> void:
-    unsafe:
-        heap.release(cast[ptr[void]](rectangles))
+    heap.release(rectangles)
     return
 
 def generate_random_color_rect_sequence(rect_count: i32, rect_width: f32, width: f32, height: f32) -> ptr[ColorRect]:
     let rectangles = alloc_color_rects(rect_count)
     let sequence = rl.LoadRandomSequence(rect_count, 0, rect_count - 1)
+    var rectangles_view = span[ColorRect](data = rectangles, len = cast[usize](rect_count))
+    let sequence_view = span[i32](data = sequence, len = cast[usize](rect_count))
     let rect_sequence_width = rect_count * rect_width
     let start_x = (width - rect_sequence_width) * 0.5
 
     var index = 0
     while index < rect_count:
-        unsafe:
-            let rect_height = cast[i32](remap(cast[f32](*(sequence + index)), 0.0, cast[f32](rect_count - 1), 0.0, height))
-            let rectangle = rectangles + index
-            rectangle->color = generate_random_color()
-            rectangle->rect = rl.Rectangle(
-                x = start_x + index * rect_width,
-                y = height - rect_height,
-                width = rect_width,
-                height = rect_height,
-            )
+        let rect_height = cast[i32](remap(cast[f32](sequence_view[index]), 0.0, cast[f32](rect_count - 1), 0.0, height))
+        rectangles_view[index].color = generate_random_color()
+        rectangles_view[index].rect = rl.Rectangle(
+            x = start_x + index * rect_width,
+            y = height - rect_height,
+            width = rect_width,
+            height = rect_height,
+        )
         index += 1
 
     rl.UnloadRandomSequence(sequence)
     return rectangles
 
-def swap_color_rect_values(left: ptr[ColorRect], right: ptr[ColorRect]) -> void:
-    unsafe:
-        let tmp = *left
-        left->color = right->color
-        left->rect.height = right->rect.height
-        left->rect.y = right->rect.y
-        right->color = tmp.color
-        right->rect.height = tmp.rect.height
-        right->rect.y = tmp.rect.y
+def swap_color_rect_values(left: ref[ColorRect], right: ref[ColorRect]) -> void:
+    let tmp = *left
+    left.color = right.color
+    left.rect.height = right.rect.height
+    left.rect.y = right.rect.y
+    right.color = tmp.color
+    right.rect.height = tmp.rect.height
+    right.rect.y = tmp.rect.y
     return
 
 def shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: i32) -> void:
     let sequence = rl.LoadRandomSequence(rect_count, 0, rect_count - 1)
+    var rectangles_view = span[ColorRect](data = rectangles, len = cast[usize](rect_count))
+    let sequence_view = span[i32](data = sequence, len = cast[usize](rect_count))
 
     var index = 0
     while index < rect_count:
-        unsafe:
-            let left = rectangles + index
-            let right = rectangles + *(sequence + index)
-            swap_color_rect_values(left, right)
+        let right_index = sequence_view[index]
+        swap_color_rect_values(ref(rectangles_view[index]), ref(rectangles_view[right_index]))
         index += 1
 
     rl.UnloadRandomSequence(sequence)
@@ -175,11 +172,11 @@ def main() -> i32:
         defer rl.EndDrawing()
 
         rl.ClearBackground(rl.RAYWHITE)
+        let rectangles_view = span[ColorRect](data = rectangles, len = cast[usize](rect_count))
 
         var index = 0
         while index < rect_count:
-            unsafe:
-                rl.DrawRectangleRec((rectangles + index)->rect, (rectangles + index)->color)
+            rl.DrawRectangleRec(rectangles_view[index].rect, rectangles_view[index].color)
             index += 1
 
         draw_help_text(screen_height)

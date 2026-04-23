@@ -357,6 +357,26 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::IndexAccess, call.callee
   end
 
+  def test_parses_explicit_generic_function_specialization_call
+    source = <<~MT
+      module demo.generic_call
+
+      def bytes_for[T](count: usize) -> usize:
+          return count
+
+      def main() -> i32:
+          return cast[i32](bytes_for[i32](4))
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    call = ast.declarations[1].body.first.value.arguments.first.value
+
+    assert_instance_of MilkTea::AST::Call, call
+    assert_instance_of MilkTea::AST::Specialization, call.callee
+    assert_equal "bytes_for", call.callee.callee.name
+    assert_equal "i32", call.callee.arguments.first.value.name.to_s
+  end
+
   def test_parses_span_constructor_calls
     source = <<~MT
       module demo.spans

@@ -370,6 +370,8 @@ module MilkTea
         params = []
         env = empty_env
         parameter_setup = []
+        previous_type_substitutions = @current_type_substitutions
+        @current_type_substitutions = binding.type_substitutions
 
         body_params = binding.body_params.dup
         if binding.type.receiver_type
@@ -422,6 +424,8 @@ module MilkTea
           body:,
           entry_point: receiver_type.nil? && decl.name == "main" && binding.type_arguments.empty?,
         )
+      ensure
+        @current_type_substitutions = previous_type_substitutions
       end
 
       def lower_block(statements, env:, active_defers:, return_type:, loop_flow:)
@@ -693,6 +697,8 @@ module MilkTea
           type = infer_expression_type(expression, env:)
           if array_type?(receiver_type)
             IR::CheckedIndex.new(receiver:, index:, receiver_type:, type:)
+          elsif receiver_type.is_a?(Types::Span)
+            IR::CheckedSpanIndex.new(receiver:, index:, receiver_type:, type:)
           else
             IR::Index.new(receiver:, index:, type:)
           end
@@ -751,6 +757,8 @@ module MilkTea
           index = lower_expression(expression.index, env:, expected_type: @types.fetch("usize"))
           if array_type?(receiver_type) && addressable_storage_expression?(expression.receiver)
             IR::CheckedIndex.new(receiver:, index:, receiver_type:, type:)
+          elsif receiver_type.is_a?(Types::Span)
+            IR::CheckedSpanIndex.new(receiver:, index:, receiver_type:, type:)
           else
             IR::Index.new(receiver:, index:, type:)
           end
@@ -811,8 +819,7 @@ module MilkTea
           arguments = lower_call_arguments(expression.arguments, callee_type, env:)
           IR::Call.new(callee: callee_name, arguments:, type:)
         when :method
-          receiver_arg = lower_expression(receiver, env:)
-          receiver_arg = IR::AddressOf.new(expression: receiver_arg, type: receiver_arg.type) if callee_type.receiver_mutable
+          receiver_arg = lower_method_receiver_argument(receiver, callee_type, env:)
           arguments = [receiver_arg, *lower_call_arguments(expression.arguments, callee_type, env:)]
           IR::Call.new(callee: callee_name, arguments:, type:)
         when :associated_method
@@ -870,9 +877,27 @@ module MilkTea
         when :panic
           argument = expression.arguments.fetch(0)
           IR::Call.new(callee: "mt_panic", arguments: [lower_expression(argument.value, env:, expected_type: @types.fetch("str"))], type:)
+        when :ref
+          argument = expression.arguments.fetch(0)
+          IR::AddressOf.new(expression: lower_expression(argument.value, env:), type:)
         else
           raise LoweringError, "unsupported call kind #{kind}"
         end
+      end
+
+      def lower_method_receiver_argument(receiver, callee_type, env:)
+        receiver_type = infer_expression_type(receiver, env:)
+        lowered_receiver = lower_expression(receiver, env:)
+
+        if callee_type.receiver_mutable
+          return lowered_receiver if ref_type?(receiver_type)
+
+          return IR::AddressOf.new(expression: lowered_receiver, type: lowered_receiver.type)
+        end
+
+        return IR::Unary.new(operator: "*", operand: lowered_receiver, type: referenced_type(receiver_type)) if ref_type?(receiver_type)
+
+        lowered_receiver
       end
 
       def lower_call_arguments(arguments, callee_type, env:)
@@ -953,6 +978,8 @@ module MilkTea
             [:result_err, nil, nil, nil]
           elsif callee.name == "panic"
             [:panic, nil, nil, nil]
+          elsif callee.name == "ref"
+            [:ref, nil, nil, nil]
           elsif (type = @types[callee.name]).is_a?(Types::Struct)
             [ :struct_literal, nil, nil, type ]
           else
@@ -986,11 +1013,12 @@ module MilkTea
           end
 
           receiver_type = infer_expression_type(callee.receiver, env:)
-          method_entry = @method_definitions[[receiver_type, callee.member]]
+          resolved_receiver_type = ref_type?(receiver_type) ? referenced_type(receiver_type) : receiver_type
+          method_entry = @method_definitions[[resolved_receiver_type, callee.member]]
           if method_entry
             method_analysis, method_ast = method_entry
-            method_binding = method_analysis.methods.fetch(receiver_type).fetch(method_ast.name)
-            return [:method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type:), callee.receiver, method_binding.type]
+            method_binding = method_analysis.methods.fetch(resolved_receiver_type).fetch(method_ast.name)
+            return [:method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: resolved_receiver_type), callee.receiver, method_binding.type]
           end
 
           raise LoweringError, "unknown callee #{callee.receiver}.#{callee.member}"
@@ -1031,6 +1059,14 @@ module MilkTea
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "zero"
             target_type = resolve_type_ref(callee.arguments.fetch(0).value)
             return [:zero, nil, nil, Types::Function.new("zero", params: [], return_type: target_type)]
+          end
+
+          if (function_binding = resolve_specialized_function_binding(callee))
+            if function_binding.external
+              return [:function, function_binding.name, nil, function_binding.type]
+            end
+
+            return [:function, function_binding_c_name(function_binding, module_name: function_binding.owner.module_name), nil, function_binding.type]
           end
 
           if (type_ref = type_ref_from_specialization(callee))
@@ -1088,6 +1124,7 @@ module MilkTea
             return imported_module.values.fetch(expression.member).type if imported_module.values.key?(expression.member)
           end
           receiver_type = infer_expression_type(expression.receiver, env:)
+          receiver_type = referenced_type(receiver_type) if ref_type?(receiver_type)
           return receiver_type.field(expression.member) if receiver_type.respond_to?(:field)
 
           raise LoweringError, "unknown member #{expression.member}"
@@ -1112,6 +1149,8 @@ module MilkTea
           when "&"
             pointer_to(operand_type)
           when "*"
+            return referenced_type(operand_type) if ref_type?(operand_type)
+
             pointee_type = pointee_type(operand_type)
             raise LoweringError, "operator * requires a pointer operand, got #{operand_type}" unless pointee_type
 
@@ -1141,6 +1180,9 @@ module MilkTea
           when :struct_literal, :array
             _, _, _, struct_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             struct_type
+          when :ref
+            argument_type = infer_expression_type(expression.arguments.fetch(0).value, env:)
+            Types::GenericInstance.new("ref", [argument_type])
           when :cast
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             function_type.return_type
@@ -1290,11 +1332,50 @@ module MilkTea
         binding.type
       end
 
+      def resolve_specialized_function_binding(expression)
+        binding = case expression.callee
+                  when AST::Identifier
+                    @functions[expression.callee.name]
+                  when AST::MemberAccess
+                    if expression.callee.receiver.is_a?(AST::Identifier) && @imports.key?(expression.callee.receiver.name)
+                      @imports.fetch(expression.callee.receiver.name).functions[expression.callee.member]
+                    end
+                  end
+        return nil unless binding
+
+        type_arguments = resolve_specialization_type_arguments(expression)
+        instantiate_function_binding(binding, type_arguments)
+      end
+
+      def resolve_specialization_type_arguments(expression)
+        expression.arguments.map do |argument|
+          raise LoweringError, "callable specialization arguments must be types" unless argument.value.is_a?(AST::TypeRef)
+
+          resolve_type_ref(argument.value)
+        end
+      end
+
       def specialize_function_binding(binding, arguments, env)
         return binding if binding.type_params.empty?
         raise LoweringError, "generic function #{binding.name} must be called" unless arguments
 
         type_arguments = infer_function_type_arguments(binding, arguments, env)
+        instantiate_function_binding(binding, type_arguments)
+      end
+
+      def instantiate_function_binding(binding, type_arguments)
+        if binding.type_params.empty?
+          raise LoweringError, "function #{binding.name} is not generic and cannot be specialized"
+        end
+
+        unless binding.type_params.length == type_arguments.length
+          raise LoweringError, "function #{binding.name} expects #{binding.type_params.length} type arguments, got #{type_arguments.length}"
+        end
+
+        if type_arguments.any? { |type_argument| contains_ref_type?(type_argument) }
+          raise LoweringError, "generic function #{binding.name} cannot be instantiated with ref types"
+        end
+
         key = type_arguments.freeze
         return binding.instances.fetch(key) if binding.instances.key?(key)
 
@@ -1309,6 +1390,7 @@ module MilkTea
           instances: {},
           type_arguments: key,
           owner: binding.owner,
+          type_substitutions: substitutions.freeze,
         )
         binding.instances[key] = instance
       end
@@ -1441,6 +1523,10 @@ module MilkTea
         type.is_a?(Types::GenericInstance) && type.name == "ptr" && type.arguments.length == 1
       end
 
+      def ref_type?(type)
+        type.is_a?(Types::GenericInstance) && type.name == "ref" && type.arguments.length == 1
+      end
+
       def range_call?(expression)
         expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "range"
       end
@@ -1512,8 +1598,14 @@ module MilkTea
       def infer_index_result_type(receiver_type, index_type)
         raise LoweringError, "index must be an integer type, got #{index_type}" unless integer_type?(index_type)
 
+        receiver_type = referenced_type(receiver_type) if ref_type?(receiver_type)
+
         if array_type?(receiver_type)
           return array_element_type(receiver_type)
+        end
+
+        if receiver_type.is_a?(Types::Span)
+          return receiver_type.element_type
         end
 
         if pointer_type?(receiver_type)
@@ -1527,6 +1619,35 @@ module MilkTea
         return unless pointer_type?(type)
 
         type.arguments.first
+      end
+
+      def referenced_type(type)
+        return unless ref_type?(type)
+
+        type.arguments.first
+      end
+
+      def contains_ref_type?(type)
+        case type
+        when Types::Nullable
+          contains_ref_type?(type.base)
+        when Types::GenericInstance
+          return true if ref_type?(type)
+
+          type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_ref_type?(argument) }
+        when Types::Span
+          contains_ref_type?(type.element_type)
+        when Types::Result
+          contains_ref_type?(type.ok_type) || contains_ref_type?(type.error_type)
+        when Types::StructInstance
+          type.arguments.any? { |argument| contains_ref_type?(argument) }
+        when Types::Function
+          type.params.any? { |param| contains_ref_type?(param.type) } ||
+            contains_ref_type?(type.return_type) ||
+            (type.receiver_type && contains_ref_type?(type.receiver_type))
+        else
+          false
+        end
       end
 
       def pointer_to(type)
@@ -1564,12 +1685,16 @@ module MilkTea
         @functions = saved_functions
       end
 
-      def resolve_type_ref(type_ref)
+      def current_type_params
+        @current_type_substitutions || {}
+      end
+
+      def resolve_type_ref(type_ref, type_params: current_type_params)
         if type_ref.is_a?(AST::FunctionType)
           params = type_ref.params.map do |param|
-            Types::Parameter.new(param.name, resolve_type_ref(param.type), mutable: param.mutable)
+            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:), mutable: param.mutable)
           end
-          return Types::Function.new(nil, params:, return_type: resolve_type_ref(type_ref.return_type))
+          return Types::Function.new(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
         end
 
         parts = type_ref.name.parts
@@ -1577,10 +1702,13 @@ module MilkTea
                  name = parts.join(".")
                  args = type_ref.arguments.map do |argument|
                    if argument.value.is_a?(AST::TypeRef)
-                     resolve_type_ref(argument.value)
+                     resolve_type_ref(argument.value, type_params:)
                    else
                      Types::LiteralTypeArg.new(argument.value.value)
                    end
+                 end
+                 if name != "ref" && args.any? { |argument| contains_ref_type?(argument) }
+                   raise LoweringError, "ref types cannot be nested inside #{name}"
                  end
                  if name == "Result"
                    validate_generic_type!(name, args)
@@ -1593,6 +1721,8 @@ module MilkTea
                    validate_generic_type!(name, args)
                    Types::GenericInstance.new(name, args)
                  end
+               elsif parts.length == 1 && type_params.key?(parts.first)
+                 type_params.fetch(parts.first)
                elsif parts.length == 1
                  type = @types.fetch(parts.first)
                  raise LoweringError, "generic type #{parts.first} requires type arguments" if type.is_a?(Types::GenericStructDefinition)
@@ -1606,6 +1736,8 @@ module MilkTea
                else
                  raise LoweringError, "unknown type #{type_ref.name}"
                end
+
+        raise LoweringError, "ref types are non-null and cannot be nullable" if type_ref.nullable && ref_type?(base)
 
         type_ref.nullable ? Types::Nullable.new(base) : base
       end
@@ -1705,6 +1837,11 @@ module MilkTea
         when "ptr"
           raise LoweringError, "ptr requires exactly one type argument" unless arguments.length == 1
           raise LoweringError, "ptr type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
+        when "ref"
+          raise LoweringError, "ref requires exactly one type argument" unless arguments.length == 1
+          raise LoweringError, "ref type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
+          raise LoweringError, "ref cannot target void" if arguments.first.is_a?(Types::Primitive) && arguments.first.void?
+          raise LoweringError, "ref cannot target another ref type" if contains_ref_type?(arguments.first)
         when "span"
           raise LoweringError, "span requires exactly one type argument" unless arguments.length == 1
           raise LoweringError, "span element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)

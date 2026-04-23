@@ -196,6 +196,49 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_safe_refs
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-refs") do |dir|
+      source_path = File.join(dir, "refs.mt")
+
+      File.write(source_path, [
+        "module demo.refs_runtime",
+        "",
+        "struct Counter:",
+        "    value: i32",
+        "",
+        "methods Counter:",
+        "    edit def add(delta: i32):",
+        "        this.value += delta",
+        "",
+        "def increment(counter: ref[Counter], amount: i32) -> void:",
+        "    counter.add(amount)",
+        "    counter.value += 1",
+        "",
+        "def main() -> i32:",
+        "    var counter = Counter(value = 3)",
+        "    let handle = ref(counter)",
+        "    increment(handle, 4)",
+        "    let value_ref = ref(counter.value)",
+        "    *value_ref += 2",
+        "    return counter.value",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 10, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_spans
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
@@ -224,6 +267,40 @@ class MilkTeaRunTest < Minitest::Test
       assert_equal "", result.stdout
       assert_equal "", result.stderr
       assert_equal 7, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_safe_span_indexing
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-span-index") do |dir|
+      source_path = File.join(dir, "span_index.mt")
+
+      File.write(source_path, [
+        "module demo.span_index_runtime",
+        "",
+        "def bump(mut items: span[i32]) -> i32:",
+        "    let first = items[0]",
+        "    items[0] = first + 2",
+        "    return items[0]",
+        "",
+        "def main() -> i32:",
+        "    var value = 7",
+        "    let items = span[i32](data = &value, len = 1)",
+        "    return bump(items)",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 9, result.exit_status
       assert_nil result.output_path
       assert_nil result.c_path
       assert_equal compiler, result.compiler

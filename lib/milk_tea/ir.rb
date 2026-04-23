@@ -30,6 +30,7 @@ module MilkTea
     Member = Data.define(:receiver, :member, :type)
     Index = Data.define(:receiver, :index, :type)
     CheckedIndex = Data.define(:receiver, :index, :receiver_type, :type)
+    CheckedSpanIndex = Data.define(:receiver, :index, :receiver_type, :type)
     Call = Data.define(:callee, :arguments, :type)
     Unary = Data.define(:operator, :operand, :type)
     Binary = Data.define(:operator, :left, :right, :type)
