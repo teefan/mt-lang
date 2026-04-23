@@ -1480,6 +1480,7 @@ module MilkTea
       end
 
       def pointer_cast_type?(type)
+        return true if type == @types.fetch("cstr")
         return pointer_type?(type.base) if type.is_a?(Types::Nullable)
 
         pointer_type?(type)

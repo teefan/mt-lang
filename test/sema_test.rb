@@ -1264,6 +1264,27 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/pointer cast requires unsafe/, error.message)
   end
 
+  def test_type_checks_unsafe_pointer_to_cstr_abi_casts
+    source = <<~MT
+      module demo.cstr_casts
+
+      extern def set_text(value: cstr) -> void
+      extern def get_text() -> cstr
+
+      def main() -> void:
+          var buffer = zero[array[char, 32]]()
+          unsafe:
+              let raw_buffer = raw(addr(buffer[0]))
+              set_text(cast[cstr](raw_buffer))
+              let clipboard = get_text()
+              let writable = cast[ptr[char]](clipboard)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_safe_ref_locals_params_and_methods
     source = <<~MT
       module demo.refs

@@ -820,6 +820,29 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/uint32_t bits = mt_reinterpret_u32_from_f32\(value\);/, generated)
   end
 
+  def test_generate_c_for_unsafe_pointer_to_cstr_abi_casts
+    source = [
+      "module demo.cstr_casts_surface",
+      "",
+      "extern def set_text(value: cstr) -> void",
+      "extern def get_text() -> cstr",
+      "",
+      "def main() -> void:",
+      "    var buffer = zero[array[char, 32]]()",
+      "    unsafe:",
+      "        let raw_buffer = raw(addr(buffer[0]))",
+      "        set_text(cast[cstr](raw_buffer))",
+      "        let clipboard = get_text()",
+      "        let writable = cast[ptr[char]](clipboard)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/set_text\(\(\(const char\*\) raw_buffer\)\);/, generated)
+    assert_match(/char \*writable = \(\(char\*\) clipboard\);/, generated)
+  end
+
   def test_generate_c_for_ref_arguments_passed_to_by_value_parameters
     source = [
       "module demo.ref_value_args",
