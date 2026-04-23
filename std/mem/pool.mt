@@ -30,48 +30,48 @@ def create(slot_size_bytes: usize, slot_count: usize) -> Pool:
             used_count = 0,
         )
 
-impl Pool:
-    def remaining_slots(self) -> usize:
-        return self.slot_count - self.used_count
+methods Pool:
+    def remaining_slots() -> usize:
+        return this.slot_count - this.used_count
 
-    def alloc_bytes(mut self) -> ptr[byte]?:
+    edit def alloc_bytes() -> ptr[byte]?:
         var index: usize = 0
-        while index < self.slot_count:
+        while index < this.slot_count:
             unsafe:
-                let state_ptr = self.occupancy + index
+                let state_ptr = this.occupancy + index
                 if *state_ptr == false:
                     *state_ptr = true
-                    self.used_count = self.used_count + 1
-                    return self.memory + (index * self.slot_size)
+                    this.used_count = this.used_count + 1
+                    return this.memory + (index * this.slot_size)
             index = index + 1
 
         return null
 
-    def release_bytes(mut self, slot: ptr[byte]?) -> bool:
+    edit def release_bytes(slot: ptr[byte]?) -> bool:
         if slot == null:
             return false
 
         var index: usize = 0
-        while index < self.slot_count:
+        while index < this.slot_count:
             unsafe:
-                let candidate = self.memory + (index * self.slot_size)
+                let candidate = this.memory + (index * this.slot_size)
                 if candidate == slot:
-                    let state_ptr = self.occupancy + index
+                    let state_ptr = this.occupancy + index
                     if *state_ptr == false:
                         return false
 
                     *state_ptr = false
-                    self.used_count = self.used_count - 1
+                    this.used_count = this.used_count - 1
                     return true
             index = index + 1
 
         return false
 
-    def release(mut self) -> void:
+    edit def release() -> void:
         unsafe:
-            heap.release(cast[ptr[void]](self.memory))
-            heap.release(cast[ptr[void]](self.occupancy))
-        self.slot_size = 0
-        self.slot_count = 0
-        self.used_count = 0
+            heap.release(cast[ptr[void]](this.memory))
+            heap.release(cast[ptr[void]](this.occupancy))
+        this.slot_size = 0
+        this.slot_count = 0
+        this.used_count = 0
         return

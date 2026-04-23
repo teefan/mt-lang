@@ -50,14 +50,14 @@ def main() -> i32:
     let touch_area = rl.Rectangle(
         x = 220.0,
         y = 10.0,
-        width = cast[f32](screen_width) - 230.0,
-        height = cast[f32](screen_height) - 20.0,
+        width = screen_width - 230.0,
+        height = screen_height - 20.0,
     )
     let test_area_fill = rl.Rectangle(
         x = 225.0,
         y = 15.0,
-        width = cast[f32](screen_width) - 240.0,
-        height = cast[f32](screen_height) - 30.0,
+        width = screen_width - 240.0,
+        height = screen_height - 30.0,
     )
     let gesture_circle_radius: f32 = 30.0
     let label_alpha: f32 = 0.5

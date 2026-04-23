@@ -263,7 +263,7 @@ def main() -> i32:
         var rec_offset_x = 0
         for index in range(0, 15):
             draw_keyboard_key(
-                rl.Rectangle(x = keyboard_offset.x + rec_offset_x, y = keyboard_offset.y, width = cast[f32](line01_widths[index]), height = 30.0),
+                rl.Rectangle(x = keyboard_offset.x + rec_offset_x, y = keyboard_offset.y, width = line01_widths[index], height = 30.0),
                 line01_keys[index],
             )
             rec_offset_x += line01_widths[index] + key_rec_spacing
@@ -274,7 +274,7 @@ def main() -> i32:
                 rl.Rectangle(
                     x = keyboard_offset.x + rec_offset_x,
                     y = keyboard_offset.y + 30.0 + key_rec_spacing,
-                    width = cast[f32](line02_widths[index]),
+                    width = line02_widths[index],
                     height = 38.0,
                 ),
                 line02_keys[index],
@@ -287,7 +287,7 @@ def main() -> i32:
                 rl.Rectangle(
                     x = keyboard_offset.x + rec_offset_x,
                     y = keyboard_offset.y + 68.0 + key_rec_spacing * 2,
-                    width = cast[f32](line03_widths[index]),
+                    width = line03_widths[index],
                     height = 38.0,
                 ),
                 line03_keys[index],
@@ -300,7 +300,7 @@ def main() -> i32:
                 rl.Rectangle(
                     x = keyboard_offset.x + rec_offset_x,
                     y = keyboard_offset.y + 106.0 + key_rec_spacing * 3,
-                    width = cast[f32](line04_widths[index]),
+                    width = line04_widths[index],
                     height = 38.0,
                 ),
                 line04_keys[index],
@@ -313,7 +313,7 @@ def main() -> i32:
                 rl.Rectangle(
                     x = keyboard_offset.x + rec_offset_x,
                     y = keyboard_offset.y + 144.0 + key_rec_spacing * 4,
-                    width = cast[f32](line05_widths[index]),
+                    width = line05_widths[index],
                     height = 38.0,
                 ),
                 line05_keys[index],
@@ -326,7 +326,7 @@ def main() -> i32:
                 rl.Rectangle(
                     x = keyboard_offset.x + rec_offset_x,
                     y = keyboard_offset.y + 182.0 + key_rec_spacing * 5,
-                    width = cast[f32](line06_widths[index]),
+                    width = line06_widths[index],
                     height = 38.0,
                 ),
                 line06_keys[index],

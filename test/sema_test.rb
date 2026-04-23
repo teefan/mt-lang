@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "fileutils"
+require "tmpdir"
 require_relative "test_helper"
 
 class MilkTeaSemaTest < Minitest::Test
@@ -583,6 +585,84 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_integer_literals_against_expected_float_boundaries
+    source = <<~MT
+      module demo.literal_float_context
+
+      struct Point:
+          x: f32
+          y: f32
+
+      def takes_f32(value: f32) -> void:
+          return
+
+      def main() -> i32:
+          let baseline: f32 = 0
+          let point = Point(x = 0, y = 1)
+          takes_f32(0)
+          return cast[i32](baseline + point.x)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_non_literal_numeric_coercion_for_non_external_boundaries
+    source = <<~MT
+      module demo.non_external_numeric_strict
+
+      struct Point:
+          x: f32
+
+      def takes_f32(value: f32) -> void:
+          return
+
+      def main() -> i32:
+          let value = 7
+          takes_f32(value)
+          let point = Point(x = value)
+          return cast[i32](point.x)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/argument value to takes_f32 expects f32, got i32/, error.message)
+  end
+
+  def test_type_checks_numeric_coercion_for_external_boundaries
+    program = check_program_source(
+      <<~MT,
+        module demo.external_numeric
+
+        import std.c.demo as demo
+
+        def main() -> i32:
+            let channel = 200
+            var color = demo.Color(r = channel, g = 0, b = 0, a = 255)
+            color.g = channel
+            demo.set_scale(channel)
+            return 0
+      MT
+      {
+        "std/c/demo.mt" => <<~MT,
+          extern module std.c.demo:
+              struct Color:
+                  r: u8
+                  g: u8
+                  b: u8
+                  a: u8
+
+              extern def set_scale(value: f32) -> void
+        MT
+      },
+    )
+
+    assert_equal true, program.analyses_by_module_name.key?("demo.external_numeric")
+  end
+
   def test_rejects_same_width_enum_and_flags_arguments_without_explicit_cast_for_non_extern_calls
     source = <<~MT
       module demo.call_values
@@ -603,6 +683,39 @@ class MilkTeaSemaTest < Minitest::Test
     end
 
     assert_match(/argument value to takes_u32 expects u32, got .*Gesture/, error.message)
+  end
+
+  def test_type_checks_variadic_extern_calls
+    source = <<~MT
+      module demo.printf
+
+      extern def printf(format: cstr, ...) -> i32
+
+      def main() -> i32:
+          let count = printf(c"value=%d ratio=%.1f\\n", 7, 2.5)
+          return count
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_variadic_extern_calls_missing_required_arguments
+    source = <<~MT
+      module demo.printf
+
+      extern def printf(format: cstr, ...) -> i32
+
+      def main() -> i32:
+          return printf()
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/function printf expects at least 1 arguments, got 0/, error.message)
   end
 
   def test_rejects_same_width_enum_and_flags_assignment_without_explicit_cast
@@ -789,7 +902,7 @@ class MilkTeaSemaTest < Minitest::Test
           var counter = Counter(value = 3)
           let counter_ptr = &counter
           unsafe:
-              (*counter_ptr).value = 7
+              counter_ptr->value = 7
           return counter.value
     MT
 
@@ -806,12 +919,12 @@ class MilkTeaSemaTest < Minitest::Test
       struct Vec:
           x: i32
 
-      impl Vec:
-          def zero() -> Vec:
+      methods Vec:
+          static def zero() -> Vec:
               return Vec(x = 0)
 
-          def add(self, other: Vec) -> Vec:
-              return Vec(x = self.x + other.x)
+          def add(other: Vec) -> Vec:
+              return Vec(x = this.x + other.x)
 
       def main() -> i32:
           let left = Vec.zero()
@@ -897,6 +1010,41 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_zero_initialization_for_arrays_and_structs
+    source = <<~MT
+      module demo.zero
+
+      struct Palette:
+          colors: array[u32, 4]
+
+      def main() -> i32:
+          let palette = zero[array[u32, 4]]()
+          let holder = zero[Palette]()
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("Palette")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_zero_for_void
+    source = <<~MT
+      module demo.zero_bad
+
+      def main() -> i32:
+          let value = zero[void]()
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/zero does not support type void/, error.message)
+  end
+
   def test_rejects_extern_array_params_and_returns
     param_source = <<~MT
       module demo.bad_params
@@ -973,7 +1121,7 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> i32:
           var counter = Counter(value = 3)
           let counter_ptr = &counter
-          return (*counter_ptr).value
+          return counter_ptr->value
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -1095,5 +1243,21 @@ class MilkTeaSemaTest < Minitest::Test
 
   def check_source(source)
     MilkTea::Sema.check(MilkTea::Parser.parse(source))
+  end
+
+  def check_program_source(source, imported_sources = {})
+    Dir.mktmpdir("milk-tea-sema") do |dir|
+      root_path = File.join(dir, "demo", "main.mt")
+      FileUtils.mkdir_p(File.dirname(root_path))
+      File.write(root_path, source)
+
+      imported_sources.each do |relative_path, imported_source|
+        path = File.join(dir, relative_path)
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, imported_source)
+      end
+
+      MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
+    end
   end
 end

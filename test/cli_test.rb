@@ -27,7 +27,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal 0, status
     assert_equal "", err.string
     assert_includes out.string, "module demo.bouncing_ball"
-    assert_includes out.string, "impl Ball:"
+    assert_includes out.string, "methods Ball:"
     assert_includes out.string, "def main() -> i32:"
   end
 

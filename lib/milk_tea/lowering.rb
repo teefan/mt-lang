@@ -108,7 +108,7 @@ module MilkTea
           case decl
           when AST::FunctionDef
             block_uses_panic?(decl.body)
-          when AST::ImplBlock
+          when AST::MethodsBlock
             decl.methods.any? { |method| block_uses_panic?(method.body) }
           else
             false
@@ -125,7 +125,7 @@ module MilkTea
             expression_uses_offsetof?(decl.condition) || expression_uses_offsetof?(decl.message)
           when AST::FunctionDef
             block_uses_offsetof?(decl.body)
-          when AST::ImplBlock
+          when AST::MethodsBlock
             decl.methods.any? { |method| block_uses_offsetof?(method.body) }
           else
             false
@@ -206,7 +206,7 @@ module MilkTea
           expression_uses_panic?(expression.left) || expression_uses_panic?(expression.right)
         when AST::UnaryOp
           expression_uses_panic?(expression.operand)
-        when AST::MemberAccess
+        when AST::MemberAccess, AST::PointerMemberAccess
           expression_uses_panic?(expression.receiver)
         when AST::IndexAccess
           expression_uses_panic?(expression.receiver) || expression_uses_panic?(expression.index)
@@ -227,7 +227,7 @@ module MilkTea
           expression_uses_offsetof?(expression.left) || expression_uses_offsetof?(expression.right)
         when AST::UnaryOp
           expression_uses_offsetof?(expression.operand)
-        when AST::MemberAccess
+        when AST::MemberAccess, AST::PointerMemberAccess
           expression_uses_offsetof?(expression.receiver)
         when AST::IndexAccess
           expression_uses_offsetof?(expression.receiver) || expression_uses_offsetof?(expression.index)
@@ -256,9 +256,9 @@ module MilkTea
 
       def build_method_definitions
         @program.analyses_by_path.values.each_with_object({}) do |analysis, definitions|
-          analysis.ast.declarations.grep(AST::ImplBlock).each do |impl|
-            receiver_type = resolve_impl_receiver_type(analysis, impl.type_name)
-            impl.methods.each do |method|
+          analysis.ast.declarations.grep(AST::MethodsBlock).each do |methods_block|
+            receiver_type = resolve_methods_receiver_type(analysis, methods_block.type_name)
+            methods_block.methods.each do |method|
               definitions[[receiver_type, method.name]] = [analysis, method]
             end
           end
@@ -340,8 +340,8 @@ module MilkTea
             else
               lowered << lower_function_decl(binding)
             end
-          when AST::ImplBlock
-            receiver_type = resolve_impl_receiver_type(@analysis, decl.type_name)
+          when AST::MethodsBlock
+            receiver_type = resolve_methods_receiver_type(@analysis, decl.type_name)
             decl.methods.each do |method|
               lowered << lower_function_decl(@analysis.methods.fetch(receiver_type).fetch(method.name), receiver_type:)
             end
@@ -351,7 +351,7 @@ module MilkTea
         lowered
       end
 
-      def resolve_impl_receiver_type(analysis, type_name)
+      def resolve_methods_receiver_type(analysis, type_name)
         parts = type_name.parts
         if parts.length == 1
           return analysis.types.fetch(parts.first)
@@ -362,7 +362,7 @@ module MilkTea
           return imported_module.types.fetch(parts.last)
         end
 
-        raise LoweringError, "unsupported impl target #{type_name}"
+        raise LoweringError, "unsupported methods target #{type_name}"
       end
 
       def lower_function_decl(binding, receiver_type: nil)
@@ -371,9 +371,26 @@ module MilkTea
         env = empty_env
         parameter_setup = []
 
-        binding.body_params.each_with_index do |param_binding, index|
+        body_params = binding.body_params.dup
+        if binding.type.receiver_type
+          receiver_binding = body_params.shift
+          c_name = c_local_name(receiver_binding.name)
+          env[:scopes].last[receiver_binding.name] = local_binding(
+            type: receiver_binding.type,
+            c_name:,
+            mutable: receiver_binding.mutable,
+            pointer: binding.type.receiver_mutable,
+          )
+          params << IR::Param.new(
+            name: receiver_binding.name,
+            c_name:,
+            type: receiver_binding.type,
+            pointer: binding.type.receiver_mutable,
+          )
+        end
+
+        body_params.each_with_index do |param_binding, index|
           param = decl.params[index]
-          pointer = receiver_type && index.zero? && param.name == "self" && param.mutable
           type = param_binding.type
 
           c_name = c_local_name(param_binding.name)
@@ -388,8 +405,8 @@ module MilkTea
               value: IR::Name.new(name: input_c_name, type:, pointer: false),
             )
           else
-            env[:scopes].last[param_binding.name] = local_binding(type:, c_name:, mutable: param.mutable, pointer:)
-            params << IR::Param.new(name: param_binding.name, c_name:, type:, pointer:)
+            env[:scopes].last[param_binding.name] = local_binding(type:, c_name:, mutable: param.mutable, pointer: false)
+            params << IR::Param.new(name: param_binding.name, c_name:, type:, pointer: false)
           end
         end
 
@@ -428,12 +445,21 @@ module MilkTea
           when AST::LocalDecl
             type = statement.type ? resolve_type_ref(statement.type) : infer_expression_type(statement.value, env: local_env)
             c_name = c_local_name(statement.name)
-            value = lower_expression(statement.value, env: local_env, expected_type: type)
+            value = lower_contextual_expression(statement.value, env: local_env, expected_type: type)
             local_env[:scopes].last[statement.name] = local_binding(type:, c_name:, mutable: statement.kind == :var, pointer: false)
             lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:)
           when AST::Assignment
             target = lower_assignment_target(statement.target, env: local_env)
-            value = lower_expression(statement.value, env: local_env, expected_type: target.type)
+            value = if statement.operator == "="
+                      lower_contextual_expression(
+                        statement.value,
+                        env: local_env,
+                        expected_type: target.type,
+                        external_numeric: external_numeric_assignment_target?(statement.target, env: local_env),
+                      )
+                    else
+                      lower_expression(statement.value, env: local_env, expected_type: target.type)
+                    end
             lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
           when AST::IfStmt
             branches = statement.branches.reverse_each.reduce(
@@ -491,7 +517,7 @@ module MilkTea
           when AST::ReturnStmt
             cleanup = cleanup_statements(local_defers, active_defers)
             lowered.concat(cleanup)
-            value = statement.value ? lower_expression(statement.value, env: local_env, expected_type: return_type) : nil
+            value = statement.value ? lower_contextual_expression(statement.value, env: local_env, expected_type: return_type) : nil
             lowered << IR::ReturnStmt.new(value:)
           when AST::ExpressionStmt
             lowered << IR::ExpressionStmt.new(expression: lower_expression(statement.expression, env: local_env))
@@ -645,6 +671,10 @@ module MilkTea
           receiver = lower_expression(expression.receiver, env:)
           type = infer_expression_type(expression, env:)
           IR::Member.new(receiver:, member: expression.member, type:)
+        when AST::PointerMemberAccess
+          receiver = lower_expression(expression.receiver, env:)
+          type = infer_expression_type(expression, env:)
+          IR::Member.new(receiver:, member: expression.member, type:)
         when AST::IndexAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
           receiver = lower_expression(expression.receiver, env:)
@@ -702,6 +732,8 @@ module MilkTea
           end
         when AST::MemberAccess
           lower_member_access(expression, env:, type:)
+        when AST::PointerMemberAccess
+          lower_pointer_member_access(expression, env:, type:)
         when AST::IndexAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
           receiver = lower_expression(expression.receiver, env:)
@@ -755,41 +787,44 @@ module MilkTea
         IR::Member.new(receiver:, member: expression.member, type:)
       end
 
+      def lower_pointer_member_access(expression, env:, type:)
+        receiver = lower_expression(expression.receiver, env:)
+        IR::Member.new(receiver:, member: expression.member, type:)
+      end
+
       def lower_call(expression, env:, type:)
         kind, callee_name, receiver, callee_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
 
         case kind
         when :function
-          arguments = expression.arguments.map.with_index do |argument, index|
-            expected_type = callee_type.params[index].type
-            lower_expression(argument.value, env:, expected_type: expected_type)
-          end
+          arguments = lower_call_arguments(expression.arguments, callee_type, env:)
           IR::Call.new(callee: callee_name, arguments:, type:)
         when :method
           receiver_arg = lower_expression(receiver, env:)
           receiver_arg = IR::AddressOf.new(expression: receiver_arg, type: receiver_arg.type) if callee_type.receiver_mutable
-          arguments = [receiver_arg]
-          expression.arguments.each_with_index do |argument, index|
-            expected_type = callee_type.params[index].type
-            arguments << lower_expression(argument.value, env:, expected_type: expected_type)
-          end
+          arguments = [receiver_arg, *lower_call_arguments(expression.arguments, callee_type, env:)]
           IR::Call.new(callee: callee_name, arguments:, type:)
         when :associated_method
-          arguments = expression.arguments.map.with_index do |argument, index|
-            expected_type = callee_type.params[index].type
-            lower_expression(argument.value, env:, expected_type: expected_type)
-          end
+          arguments = lower_call_arguments(expression.arguments, callee_type, env:)
           IR::Call.new(callee: callee_name, arguments:, type:)
         when :struct_literal
           fields = expression.arguments.map do |argument|
             field_type = type.field(argument.name)
-            IR::AggregateField.new(name: argument.name, value: lower_expression(argument.value, env:, expected_type: field_type))
+            IR::AggregateField.new(
+              name: argument.name,
+              value: lower_contextual_expression(
+                argument.value,
+                env:,
+                expected_type: field_type,
+                external_numeric: type.respond_to?(:external) && type.external,
+              ),
+            )
           end
           IR::AggregateLiteral.new(type:, fields:)
         when :array
           element_type = array_element_type(type)
           elements = expression.arguments.map do |argument|
-            lower_expression(argument.value, env:, expected_type: element_type)
+            lower_contextual_expression(argument.value, env:, expected_type: element_type)
           end
           IR::ArrayLiteral.new(type:, elements:)
         when :cast
@@ -805,18 +840,20 @@ module MilkTea
             expression: lower_expression(argument.value, env:, expected_type: source_type),
             type:,
           )
+        when :zero
+          IR::ZeroInit.new(type:)
         when :result_ok
           argument = expression.arguments.fetch(0)
           fields = [
             IR::AggregateField.new(name: "is_ok", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
-            IR::AggregateField.new(name: "value", value: lower_expression(argument.value, env:, expected_type: type.ok_type)),
+            IR::AggregateField.new(name: "value", value: lower_contextual_expression(argument.value, env:, expected_type: type.ok_type)),
           ]
           IR::AggregateLiteral.new(type:, fields:)
         when :result_err
           argument = expression.arguments.fetch(0)
           fields = [
             IR::AggregateField.new(name: "is_ok", value: IR::BooleanLiteral.new(value: false, type: @types.fetch("bool"))),
-            IR::AggregateField.new(name: "error", value: lower_expression(argument.value, env:, expected_type: type.error_type)),
+            IR::AggregateField.new(name: "error", value: lower_contextual_expression(argument.value, env:, expected_type: type.error_type)),
           ]
           IR::AggregateLiteral.new(type:, fields:)
         when :panic
@@ -824,6 +861,56 @@ module MilkTea
           IR::Call.new(callee: "mt_panic", arguments: [lower_expression(argument.value, env:, expected_type: @types.fetch("str"))], type:)
         else
           raise LoweringError, "unsupported call kind #{kind}"
+        end
+      end
+
+      def lower_call_arguments(arguments, callee_type, env:)
+        arguments.map.with_index do |argument, index|
+          expected_type = index < callee_type.params.length ? callee_type.params[index].type : nil
+          lower_contextual_expression(argument.value, env:, expected_type:, external_numeric: callee_type.external && !expected_type.nil?)
+        end
+      end
+
+      def lower_contextual_expression(expression, env:, expected_type:, external_numeric: false)
+        lowered = lower_expression(expression, env:, expected_type: expected_type)
+        return lowered unless expected_type
+        return lowered if lowered.type == expected_type
+        return cast_expression(lowered, expected_type) if contextual_numeric_compatibility?(expression, lowered.type, expected_type, external_numeric:)
+
+        lowered
+      end
+
+      def contextual_numeric_compatibility?(expression, actual_type, expected_type, external_numeric: false)
+        return true if integer_literal_numeric_compatibility?(expression, expected_type)
+        return true if external_numeric && external_numeric_compatibility?(actual_type, expected_type)
+
+        false
+      end
+
+      def integer_literal_numeric_compatibility?(expression, expected_type)
+        integer_literal_expression?(expression) && expected_type.is_a?(Types::Primitive) && expected_type.numeric?
+      end
+
+      def integer_literal_expression?(expression)
+        expression.is_a?(AST::IntegerLiteral) ||
+          (expression.is_a?(AST::UnaryOp) && ["+", "-"].include?(expression.operator) && integer_literal_expression?(expression.operand))
+      end
+
+      def external_numeric_compatibility?(actual_type, expected_type)
+        actual_type.is_a?(Types::Primitive) && actual_type.numeric? &&
+          expected_type.is_a?(Types::Primitive) && expected_type.numeric?
+      end
+
+      def external_numeric_assignment_target?(expression, env:)
+        case expression
+        when AST::MemberAccess
+          receiver_type = infer_expression_type(expression.receiver, env:)
+          receiver_type.respond_to?(:external) && receiver_type.external
+        when AST::PointerMemberAccess
+          receiver_type = pointee_type(infer_expression_type(expression.receiver, env:))
+          receiver_type && receiver_type.respond_to?(:external) && receiver_type.external
+        else
+          false
         end
       end
 
@@ -886,6 +973,19 @@ module MilkTea
           end
 
           raise LoweringError, "unknown callee #{callee.receiver}.#{callee.member}"
+        when AST::PointerMemberAccess
+          receiver_type = infer_expression_type(callee.receiver, env:)
+          pointee = pointee_type(receiver_type)
+          raise LoweringError, "operator -> requires a pointer operand, got #{receiver_type}" unless pointee
+
+          method_entry = @method_definitions[[pointee, callee.member]]
+          if method_entry
+            method_analysis, method_ast = method_entry
+            method_binding = method_analysis.methods.fetch(pointee).fetch(method_ast.name)
+            return [:method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: pointee), AST::UnaryOp.new(operator: "*", operand: callee.receiver), method_binding.type]
+          end
+
+          raise LoweringError, "unknown method #{pointee}.#{callee.member}"
         when AST::Specialization
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "cast"
             target_type = resolve_type_ref(callee.arguments.fetch(0).value)
@@ -905,6 +1005,11 @@ module MilkTea
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "span"
             span_type = resolve_type_ref(AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["span"]), arguments: callee.arguments, nullable: false))
             return [:struct_literal, nil, nil, span_type]
+          end
+
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "zero"
+            target_type = resolve_type_ref(callee.arguments.fetch(0).value)
+            return [:zero, nil, nil, Types::Function.new("zero", params: [], return_type: target_type)]
           end
 
           if (type_ref = type_ref_from_specialization(callee))
@@ -965,6 +1070,15 @@ module MilkTea
           return receiver_type.field(expression.member) if receiver_type.respond_to?(:field)
 
           raise LoweringError, "unknown member #{expression.member}"
+        when AST::PointerMemberAccess
+          receiver_type = infer_expression_type(expression.receiver, env:)
+          pointee = pointee_type(receiver_type)
+          raise LoweringError, "operator -> requires a pointer operand, got #{receiver_type}" unless pointee
+
+          field_type = pointee.field(expression.member) if pointee.respond_to?(:field)
+          return field_type if field_type
+
+          raise LoweringError, "unknown field #{pointee}.#{expression.member}"
         when AST::IndexAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
           index_type = infer_expression_type(expression.index, env:, expected_type: @types.fetch("usize"))
@@ -1010,6 +1124,9 @@ module MilkTea
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             function_type.return_type
           when :reinterpret
+            _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
+            function_type.return_type
+          when :zero
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             function_type.return_type
           when :result_ok, :result_err
@@ -1177,10 +1294,13 @@ module MilkTea
 
       def infer_function_type_arguments(binding, arguments, env)
         expected_params = binding.type.params
-        raise LoweringError, "function #{binding.name} expects #{expected_params.length} arguments, got #{arguments.length}" unless expected_params.length == arguments.length
+        unless call_arity_matches?(binding.type, arguments.length)
+          raise LoweringError, arity_error_message(binding.type, binding.name, arguments.length)
+        end
 
         substitutions = {}
-        arguments.zip(expected_params).each do |argument, parameter|
+        expected_params.each_with_index do |parameter, index|
+          argument = arguments.fetch(index)
           actual_type = infer_expression_type(argument.value, env:)
           collect_type_substitutions(parameter.type, actual_type, substitutions, binding.name)
         end
@@ -1190,6 +1310,20 @@ module MilkTea
           raise LoweringError, "cannot infer type argument #{name} for function #{binding.name}" unless inferred
 
           inferred
+        end
+      end
+
+      def call_arity_matches?(function_type, actual_count)
+        return actual_count >= function_type.params.length if function_type.variadic
+
+        actual_count == function_type.params.length
+      end
+
+      def arity_error_message(function_type, name, actual_count)
+        if function_type.variadic
+          "function #{name} expects at least #{function_type.params.length} arguments, got #{actual_count}"
+        else
+          "function #{name} expects #{function_type.params.length} arguments, got #{actual_count}"
         end
       end
 
@@ -1274,6 +1408,7 @@ module MilkTea
             return_type: substitute_type(type.return_type, substitutions),
             receiver_type: type.receiver_type ? substitute_type(type.receiver_type, substitutions) : nil,
             receiver_mutable: type.receiver_mutable,
+            variadic: type.variadic,
             external: type.external,
           )
         else
@@ -1314,7 +1449,7 @@ module MilkTea
         case expression
         when AST::Identifier
           true
-        when AST::MemberAccess, AST::IndexAccess
+        when AST::MemberAccess, AST::PointerMemberAccess, AST::IndexAccess
           addressable_storage_expression?(expression.receiver)
         when AST::UnaryOp
           expression.operator == "*"

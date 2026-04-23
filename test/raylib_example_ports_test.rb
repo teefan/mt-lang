@@ -43,6 +43,7 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
 
   def core_example_paths
     %w[
+      core_2d_camera
       core_2d_camera_platformer
       core_3d_camera_free
       core_3d_camera_first_person
@@ -55,6 +56,8 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
       core_2d_camera_split_screen
       core_delta_time
       core_highdpi_demo
+      core_highdpi_testbed
+      core_window_letterbox
       core_input_actions
       core_input_gestures
       core_input_keys
@@ -64,6 +67,7 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
       core_input_mouse_wheel
       core_input_virtual_controls
       core_monitor_detector
+      core_random_sequence
       core_random_values
       core_render_texture
       core_window_web

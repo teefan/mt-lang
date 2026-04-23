@@ -72,6 +72,53 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
+  def test_build_with_host_compiler_supports_variadic_extern_calls
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    unique_root = "mtvarargs#{Process.pid}#{rand(1_000_000)}"
+    workspace_dir = File.join(MilkTea.root, unique_root)
+
+    begin
+      FileUtils.mkdir_p(File.join(workspace_dir, "std", "c"))
+      FileUtils.mkdir_p(File.join(workspace_dir, "demo"))
+
+      File.write(File.join(workspace_dir, "std", "c", "stdio.mt"), [
+        "extern module #{unique_root}.std.c.stdio:",
+        "    include \"stdio.h\"",
+        "",
+        "    extern def printf(format: cstr, ...) -> i32",
+        "",
+      ].join("\n"))
+
+      source_path = File.join(workspace_dir, "demo", "main.mt")
+      output_path = File.join(workspace_dir, "demo", "main")
+
+      File.write(source_path, [
+        "module #{unique_root}.demo.main",
+        "",
+        "import #{unique_root}.std.c.stdio as c",
+        "",
+        "def main() -> i32:",
+        "    c.printf(c\"%d %s\\n\", 42, c\"ok\")",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Build.build(source_path, output_path:, cc: compiler)
+
+      assert_equal File.expand_path(output_path), result.output_path
+      assert File.exist?(output_path)
+
+      stdout, stderr, status = Open3.capture3(output_path)
+      assert_equal "42 ok\n", stdout
+      assert_equal "", stderr
+      assert_equal 0, status.exitstatus
+    ensure
+      FileUtils.remove_entry(workspace_dir) if File.exist?(workspace_dir)
+    end
+  end
+
   def test_build_includes_raw_binding_compiler_flags_for_imported_extern_modules
     Dir.mktmpdir("milk-tea-build-raw-binding-flags") do |dir|
       compiler_log = File.join(dir, "compiler.log")

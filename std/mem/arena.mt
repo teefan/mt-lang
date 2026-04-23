@@ -17,30 +17,30 @@ def create(capacity_bytes: usize) -> Arena:
             offset = 0,
         )
 
-impl Arena:
-    def mark(self) -> Mark:
-        return self.offset
+methods Arena:
+    def mark() -> Mark:
+        return this.offset
 
-    def reset(mut self, mark: Mark) -> void:
-        self.offset = mark
+    edit def reset(mark: Mark) -> void:
+        this.offset = mark
         return
 
-    def remaining_bytes(self) -> usize:
-        return self.capacity - self.offset
+    def remaining_bytes() -> usize:
+        return this.capacity - this.offset
 
-    def alloc_bytes(mut self, size_bytes: usize) -> ptr[byte]?:
-        let next_offset = self.offset + size_bytes
-        if next_offset > self.capacity:
+    edit def alloc_bytes(size_bytes: usize) -> ptr[byte]?:
+        let next_offset = this.offset + size_bytes
+        if next_offset > this.capacity:
             return null
 
         unsafe:
-            let result = self.memory + self.offset
-            self.offset = next_offset
+            let result = this.memory + this.offset
+            this.offset = next_offset
             return result
 
-    def release(mut self) -> void:
+    edit def release() -> void:
         unsafe:
-            heap.release(cast[ptr[void]](self.memory))
-        self.offset = 0
-        self.capacity = 0
+            heap.release(cast[ptr[void]](this.memory))
+        this.offset = 0
+        this.capacity = 0
         return

@@ -25,5 +25,6 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
         rl.DrawRectangle(screen_width / 2 - 40, box_position_y, 80, 80, rl.MAROON)
         rl.DrawText(help_text, 10, 10, 20, rl.GRAY)
+        rl.DrawText(rl.TextFormat(c"Box position Y: %03i", box_position_y), 10, 40, 20, rl.LIGHTGRAY)
 
     return 0

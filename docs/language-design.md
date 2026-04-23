@@ -1,7 +1,7 @@
 # Milk Tea Language Design
 
 Milk Tea is a statically typed, indentation-based systems language for games.
-It borrows:
+It draws from:
 
 - C's data layout, ABI honesty, and pointer model
 - C#'s type clarity, enums, flags, and explicit `unsafe` escape hatches
@@ -24,7 +24,7 @@ The output target is beautiful C. The generated C should be readable enough that
 - No inheritance
 - No hidden virtual dispatch
 - No operator overloading beyond the built-in operators
-- No trait system or typeclass machinery in v1
+- No trait system or typeclass machinery
 - No macro system that rewrites arbitrary ASTs
 - No garbage collector
 - No implicit conversions between unrelated primitive types
@@ -81,10 +81,10 @@ struct Player:
 	velocity: rl.Vector2
 	radius: f32
 
-impl Player:
-	def update(mut self, dt: f32):
-		self.position.x += self.velocity.x * dt
-		self.position.y += self.velocity.y * dt
+methods Player:
+	edit def update(dt: f32):
+		this.position.x += this.velocity.x * dt
+		this.position.y += this.velocity.y * dt
 
 def main() -> i32:
 	rl.InitWindow(screen_width, screen_height, c"Milk Tea")
@@ -192,30 +192,32 @@ struct Camera:
 	position: Vec2
 	zoom: f32
 
-impl Camera:
-	def move_by(mut self, delta: Vec2):
-		self.position.x += delta.x
-		self.position.y += delta.y
+methods Camera:
+	edit def move_by(delta: Vec2):
+		this.position.x += delta.x
+		this.position.y += delta.y
 
-	def world_scale(self) -> f32:
-		return self.zoom
+	def world_scale() -> f32:
+		return this.zoom
 
-	def origin() -> Camera:
+	static def origin() -> Camera:
 		return Camera(position = Vec2(x = 0.0, y = 0.0), zoom = 1.0)
 ```
 
 Lowering rule:
 
 - `camera.move_by(delta)` lowers to `game_Camera_move_by(&camera, delta)`.
-- `camera.world_scale()` lowers to `game_Camera_world_scale(&camera)`.
+- `camera.world_scale()` lowers to `game_Camera_world_scale(camera)`.
 - `Camera.origin()` lowers to `game_Camera_origin()`.
 
 Receiver rule:
 
-- `mut self` methods require an addressable receiver.
-- `self` methods borrow the receiver read-only.
-- Methods without `self` are associated functions on the type.
+- Plain `def` inside `methods T:` means an implicit `this: T` value receiver.
+- `edit def` inside `methods T:` means an implicit writable `this` receiver and requires an addressable receiver.
+- `static def` inside `methods T:` means there is no receiver.
 - There is no hidden dynamic dispatch, vtable lookup, or heap allocation.
+
+Value receivers are deliberate. They keep fluent calls on temporaries honest and let method calls lower directly to plain C value parameters. Writable methods are the only place where the compiler takes an address implicitly.
 
 The rule is fixed and inspectable. There is no method lookup at runtime.
 
@@ -427,7 +429,7 @@ Allowed in v1:
 Not allowed in v1:
 
 - specialization
-- trait bounds
+- generic constraints
 - type-level computation
 - arbitrary compile-time execution
 
@@ -558,15 +560,67 @@ Pointers are first-class because game code needs them.
 
 ```mt
 let position_ptr = &player.position
-let x = (*position_ptr).x
+let x = position_ptr->x
 ```
 
 Rules:
 
 - `&expr` takes an address.
 - `*ptr` dereferences a pointer.
+- `ptr->field` accesses a member through a raw pointer.
 - Pointer arithmetic exists only inside `unsafe`.
 - Pointer comparison is explicit and never treated as boolean truthiness.
+
+### References
+
+Raw pointers should not be the default way to alias one live object in ordinary Milk Tea code. They stay for FFI, nullable links, intrusive structures, allocator internals, and manual memory work. Everyday aliasing should use a separate reference surface.
+
+Proposed built-in types:
+
+```mt
+ref[T]            # writable safe reference
+ref[const T]      # read-only safe reference
+```
+
+Planned method syntax with future references:
+
+```mt
+methods Camera:
+	def world_scale() -> f32:
+		return this.zoom
+
+	edit def move_by(delta: Vec2):
+		this.position.x += delta.x
+		this.position.y += delta.y
+
+	static def origin() -> Camera:
+		return Camera(position = Vec2(x = 0.0, y = 0.0), zoom = 1.0)
+```
+
+Rules:
+
+- `ref[T]` and `ref[const T]` are non-null.
+- `.` works on references. `->` remains exclusive to `ptr[T]`.
+- `ref[const T]` allows reads only.
+- `ref[T]` allows writes and can flow to `ref[const T]`.
+- references do not support arithmetic, pointer indexing, or nullable semantics.
+- conversion from `ref[...]` to `ptr[...]` is explicit and `unsafe`.
+- the first implementation should keep writable references (`ref[T]`) non-escaping: pass them, use them locally, but do not store or return them until the escape model is nailed down.
+- reference construction syntax is intentionally undecided here; the language should avoid Rust-style reference vocabulary.
+
+References are separate from methods:
+
+- plain methods still receive values.
+- `edit def` methods use the writable implicit receiver and require an addressable call target.
+- `static def` methods receive nothing.
+- `ref[T]` and `ref[const T]` are for explicit aliasing in APIs, not hidden method receiver lowering.
+- raw pointer APIs stay spelled as `ptr[T]` and continue using `unsafe` plus `->`.
+
+This gives the language three clear aliasing tools instead of one overloaded one:
+
+- `ref[T]` for one writable safe object reference
+- `ref[const T]` for one read-only safe object reference
+- `ptr[T]` for raw memory and FFI
 
 ### Spans
 
@@ -579,6 +633,8 @@ span[T] is conceptually:
 ```
 
 `span[T]` should be built into the language surface as a standard view type because it is the right default for arrays, buffers, decoded file content, vertex streams, and audio samples.
+
+`span[T]` is the many-element view. `ref[T]` and `ref[const T]` are the single-object references.
 
 ### Lifetime story
 
@@ -771,10 +827,10 @@ struct Player:
 	position: Vec2
 	velocity: Vec2
 
-impl Player:
-	def update(mut self, dt: f32):
-		self.position.x += self.velocity.x * dt
-		self.position.y += self.velocity.y * dt
+methods Player:
+	edit def update(dt: f32):
+		this.position.x += this.velocity.x * dt
+		this.position.y += this.velocity.y * dt
 ```
 
 Target C:
@@ -790,9 +846,9 @@ typedef struct game_Player {
 	game_Vec2 velocity;
 } game_Player;
 
-static void game_Player_update(game_Player* self, float dt) {
-	self->position.x += self->velocity.x * dt;
-	self->position.y += self->velocity.y * dt;
+static void game_Player_update(game_Player* this, float dt) {
+	this->position.x += this->velocity.x * dt;
+	this->position.y += this->velocity.y * dt;
 }
 ```
 
@@ -807,7 +863,7 @@ The full vision should be staged. A shippable v1 needs the smallest feature set 
 - indentation-based parser
 - modules and imports
 - `let`, `var`, `const`
-- functions and method sugar via `impl`
+- functions and method sugar via `methods`
 - structs, enums, flags, unions, opaque types, type aliases
 - arrays, pointers, spans, function pointers
 - `if`, `while`, `for`, `match`, `defer`, `unsafe`
@@ -818,7 +874,7 @@ The full vision should be staged. A shippable v1 needs the smallest feature set 
 
 ### Defer until later
 
-- trait bounds
+- generic constraints
 - interfaces
 - async
 - exceptions

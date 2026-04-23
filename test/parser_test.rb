@@ -13,7 +13,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "std.c.raylib", ast.imports.first.path.to_s
     assert_equal "rl", ast.imports.first.alias_name
     assert_equal(
-      %w[ConstDecl ConstDecl ConstDecl StructDecl ImplBlock FunctionDef],
+      %w[ConstDecl ConstDecl ConstDecl StructDecl MethodsBlock FunctionDef],
       ast.declarations.map { |node| node.class.name.split("::").last },
     )
 
@@ -21,16 +21,20 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "Ball", struct_decl.name
     assert_equal %w[position velocity radius color], struct_decl.fields.map(&:name)
 
-    impl_block = ast.declarations[4]
-    assert_equal "Ball", impl_block.type_name.to_s
-    assert_equal %w[update draw], impl_block.methods.map(&:name)
+    methods_block = ast.declarations[4]
+    assert_equal "Ball", methods_block.type_name.to_s
+    assert_equal %w[update draw], methods_block.methods.map(&:name)
 
-    update_method = impl_block.methods.first
+    update_method = methods_block.methods.first
+    assert_equal :edit, update_method.kind
     assert_equal 4, update_method.body.length
     assert_instance_of MilkTea::AST::Assignment, update_method.body[0]
     assert_instance_of MilkTea::AST::Assignment, update_method.body[1]
     assert_instance_of MilkTea::AST::IfStmt, update_method.body[2]
     assert_instance_of MilkTea::AST::IfStmt, update_method.body[3]
+
+    draw_method = methods_block.methods[1]
+    assert_equal :plain, draw_method.kind
 
     main_fn = ast.declarations[5]
     assert_equal "main", main_fn.name
@@ -396,6 +400,32 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal 4, local_decl.value.arguments.length
   end
 
+  def test_parses_zero_constructor_calls
+    source = <<~MT
+      module demo.zero
+
+      def main() -> i32:
+          let palette = zero[array[u32, 4]]()
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    local_decl = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::Call, local_decl.value
+    assert_instance_of MilkTea::AST::Specialization, local_decl.value.callee
+    assert_equal "zero", local_decl.value.callee.callee.name
+    assert_equal 1, local_decl.value.callee.arguments.length
+    array_type = local_decl.value.callee.arguments.first.value
+    assert_instance_of MilkTea::AST::TypeRef, array_type
+    assert_equal "array", array_type.name.to_s
+    assert_equal 2, array_type.arguments.length
+    assert_equal "u32", array_type.arguments.first.value.name.to_s
+    assert_equal 4, array_type.arguments[1].value.value
+    assert_equal 0, local_decl.value.arguments.length
+  end
+
   def test_parses_index_access_instead_of_specialization
     source = <<~MT
       module demo.arrays
@@ -468,7 +498,7 @@ class MilkTeaParserTest < Minitest::Test
       def main() -> i32:
           var counter = Counter(value = 3)
           let counter_ptr = &counter
-          let value = (*counter_ptr).value
+          let value = counter_ptr->value
           return value
     MT
 
@@ -480,9 +510,9 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "&", pointer_decl.value.operator
 
     value_decl = main_fn.body[2]
-    assert_instance_of MilkTea::AST::MemberAccess, value_decl.value
-    assert_instance_of MilkTea::AST::UnaryOp, value_decl.value.receiver
-    assert_equal "*", value_decl.value.receiver.operator
+    assert_instance_of MilkTea::AST::PointerMemberAccess, value_decl.value
+    assert_instance_of MilkTea::AST::Identifier, value_decl.value.receiver
+    assert_equal "counter_ptr", value_decl.value.receiver.name
   end
 
   def test_parses_keyword_names_in_struct_fields_and_member_access
@@ -576,6 +606,23 @@ class MilkTeaParserTest < Minitest::Test
     extern_def = ast.declarations.last
     assert_equal "InitWindow", extern_def.name
     assert_equal "void", extern_def.return_type.name.to_s
+    assert_equal false, extern_def.variadic
+  end
+
+  def test_parses_variadic_extern_function_declarations
+    source = <<~MT
+      extern module std.c.stdio:
+          include "stdio.h"
+
+          extern def printf(format: cstr, ...) -> i32
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    extern_def = ast.declarations.last
+
+    assert_equal "printf", extern_def.name
+    assert_equal ["format"], extern_def.params.map(&:name)
+    assert_equal true, extern_def.variadic
   end
 
   private

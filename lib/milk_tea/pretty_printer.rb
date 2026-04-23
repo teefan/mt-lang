@@ -159,8 +159,8 @@ module MilkTea
           emit_enum_like("flags", declaration.name, declaration.backing_type, declaration.members)
         when AST::OpaqueDecl
           line("opaque #{declaration.name}")
-        when AST::ImplBlock
-          line("impl #{declaration.type_name}:" )
+        when AST::MethodsBlock
+          line("methods #{declaration.type_name}:")
           with_indent do
             declaration.methods.each_with_index do |method, index|
               emit_function(method)
@@ -199,9 +199,27 @@ module MilkTea
       end
 
       def render_function_signature(function, prefix: "")
-        text = +"#{prefix}def #{function.name}#{render_type_params(function.type_params)}(#{function.params.map { |param| render_param(param) }.join(', ')})"
+        signature_prefix = if function.is_a?(AST::MethodDef)
+                             case function.kind
+                             when :edit
+                               "edit def "
+                             when :static
+                               "static def "
+                             else
+                               "def "
+                             end
+                           else
+                             "def "
+                           end
+        text = +"#{prefix}#{signature_prefix}#{function.name}#{render_type_params(function.type_params)}(#{render_signature_params(function)})"
         text << " -> #{render_type(function.return_type)}" if function.return_type
         text
+      end
+
+      def render_signature_params(function)
+        params = function.params.map { |param| render_param(param) }
+        params << "..." if function.respond_to?(:variadic) && function.variadic
+        params.join(', ')
       end
 
       def render_type_params(type_params)
@@ -340,6 +358,8 @@ module MilkTea
           expression.name
         when AST::MemberAccess
           wrap("#{render_postfix(expression.receiver)}.#{expression.member}", parent_precedence, POSTFIX_PRECEDENCE)
+        when AST::PointerMemberAccess
+          wrap("#{render_postfix(expression.receiver)}->#{expression.member}", parent_precedence, POSTFIX_PRECEDENCE)
         when AST::IndexAccess
           wrap("#{render_postfix(expression.receiver)}[#{render_expression(expression.index)}]", parent_precedence, POSTFIX_PRECEDENCE)
         when AST::Specialization
@@ -385,7 +405,7 @@ module MilkTea
       end
 
       def postfix_expression?(expression)
-        expression.is_a?(AST::Identifier) || expression.is_a?(AST::MemberAccess) || expression.is_a?(AST::IndexAccess) ||
+        expression.is_a?(AST::Identifier) || expression.is_a?(AST::MemberAccess) || expression.is_a?(AST::PointerMemberAccess) || expression.is_a?(AST::IndexAccess) ||
           expression.is_a?(AST::Specialization) || expression.is_a?(AST::Call)
       end
     end
@@ -542,7 +562,7 @@ module MilkTea
         when IR::Name
           expression.name
         when IR::Member
-          operator = expression.receiver.is_a?(IR::Name) && expression.receiver.pointer ? "->" : "."
+          operator = pointer_receiver_expression?(expression.receiver) ? "->" : "."
           wrap("#{render_postfix(expression.receiver)}#{operator}#{expression.member}", parent_precedence, POSTFIX_PRECEDENCE)
         when IR::Index
           wrap("#{render_postfix(expression.receiver)}[#{render_expression(expression.index)}]", parent_precedence, POSTFIX_PRECEDENCE)
@@ -596,6 +616,14 @@ module MilkTea
 
       def postfix_expression?(expression)
         expression.is_a?(IR::Name) || expression.is_a?(IR::Member) || expression.is_a?(IR::Index) || expression.is_a?(IR::Call)
+      end
+
+      def pointer_receiver_expression?(expression)
+        (expression.is_a?(IR::Name) && expression.pointer) || (expression.respond_to?(:type) && pointer_type?(expression.type))
+      end
+
+      def pointer_type?(type)
+        type.is_a?(Types::GenericInstance) && type.name == "ptr" && type.arguments.length == 1
       end
     end
   end

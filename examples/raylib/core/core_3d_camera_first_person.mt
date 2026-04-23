@@ -68,13 +68,13 @@ def main() -> i32:
     for index in range(0, max_columns):
         heights[index] = cast[f32](rl.GetRandomValue(1, 12))
         positions[index] = rl.Vector3(
-            x = cast[f32](rl.GetRandomValue(-15, 15)),
+            x = rl.GetRandomValue(-15, 15),
             y = heights[index] / 2.0,
-            z = cast[f32](rl.GetRandomValue(-15, 15)),
+            z = rl.GetRandomValue(-15, 15),
         )
         colors[index] = rl.Color(
-            r = cast[u8](rl.GetRandomValue(20, 255)),
-            g = cast[u8](rl.GetRandomValue(10, 55)),
+            r = rl.GetRandomValue(20, 255),
+            g = rl.GetRandomValue(10, 55),
             b = 30,
             a = 255,
         )

@@ -246,7 +246,7 @@ module MilkTea
 
       case statement
       when IR::LocalDecl
-        if array_type?(statement.type) && !statement.value.is_a?(IR::ArrayLiteral)
+        if array_type?(statement.type) && !statement.value.is_a?(IR::ArrayLiteral) && !statement.value.is_a?(IR::ZeroInit)
           lines = ["#{indent}#{c_declaration(statement.type, statement.c_name)};"]
           lines << emit_array_copy_statement(statement.c_name, statement.value, indent)
           lines
@@ -353,7 +353,7 @@ module MilkTea
       when IR::Name
         expression.name
       when IR::Member
-        operator = expression.receiver.is_a?(IR::Name) && expression.receiver.pointer ? "->" : "."
+        operator = pointer_member_receiver?(expression.receiver) ? "->" : "."
         "#{wrap_member_receiver(expression.receiver)}#{operator}#{expression.member}"
       when IR::Index
         "#{wrap_index_receiver(expression.receiver)}[#{emit_expression(expression.index)}]"
@@ -388,6 +388,8 @@ module MilkTea
         expression.value ? "true" : "false"
       when IR::NullLiteral
         "NULL"
+      when IR::ZeroInit
+        emit_zero_expression(expression.type)
       when IR::AddressOf
         "&#{wrap_expression(expression.expression)}"
       when IR::Cast
@@ -402,7 +404,14 @@ module MilkTea
     end
 
     def emit_initializer(expression)
-      expression.is_a?(IR::ArrayLiteral) ? emit_array_initializer(expression) : emit_expression(expression)
+      case expression
+      when IR::ArrayLiteral
+        emit_array_initializer(expression)
+      when IR::ZeroInit
+        emit_zero_initializer(expression.type)
+      else
+        emit_expression(expression)
+      end
     end
 
     def emit_aggregate_literal(expression)
@@ -419,6 +428,24 @@ module MilkTea
 
     def emit_array_compound_literal(expression)
       "(#{c_declaration(expression.type, '')}) #{emit_array_initializer(expression)}"
+    end
+
+    def emit_zero_initializer(type)
+      return "{ 0 }" if array_type?(type)
+      return "NULL" if type.is_a?(Types::Nullable)
+      return "false" if type.is_a?(Types::Primitive) && type.boolean?
+      return "0.0" if type.is_a?(Types::Primitive) && type.float?
+      return "0" if type.is_a?(Types::Primitive) && !type.void?
+      return "(#{c_type(type)}) 0" if type.is_a?(Types::EnumBase)
+
+      "{ 0 }"
+    end
+
+    def emit_zero_expression(type)
+      return emit_zero_initializer(type) if type.is_a?(Types::Primitive) || type.is_a?(Types::Nullable)
+      return emit_zero_initializer(type) if type.is_a?(Types::EnumBase)
+
+      "(#{c_declaration(type, '')}) #{emit_zero_initializer(type)}"
     end
 
     def emit_call_expression(expression)
@@ -460,7 +487,7 @@ module MilkTea
 
     def wrap_expression(expression)
       case expression
-      when IR::Name, IR::IntegerLiteral, IR::FloatLiteral, IR::StringLiteral, IR::BooleanLiteral, IR::NullLiteral, IR::Member, IR::Index, IR::Call, IR::AggregateLiteral, IR::ArrayLiteral, IR::ReinterpretExpr, IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
+      when IR::Name, IR::IntegerLiteral, IR::FloatLiteral, IR::StringLiteral, IR::BooleanLiteral, IR::NullLiteral, IR::ZeroInit, IR::Member, IR::Index, IR::Call, IR::AggregateLiteral, IR::ArrayLiteral, IR::ReinterpretExpr, IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
         emit_expression(expression)
       else
         "(#{emit_expression(expression)})"
@@ -544,6 +571,8 @@ module MilkTea
         expression.fields.each { |field| collect_reinterpret_helpers_from_expression(field.value, helpers, seen) }
       when IR::ArrayLiteral
         expression.elements.each { |element| collect_reinterpret_helpers_from_expression(element, helpers, seen) }
+      when IR::ZeroInit, IR::IntegerLiteral, IR::FloatLiteral, IR::StringLiteral, IR::BooleanLiteral, IR::NullLiteral, IR::Name, IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
+        nil
       end
     end
 
@@ -574,6 +603,10 @@ module MilkTea
       else
         "(#{emit_expression(expression)})"
       end
+    end
+
+    def pointer_member_receiver?(expression)
+      (expression.is_a?(IR::Name) && expression.pointer) || (expression.respond_to?(:type) && pointer_type?(expression.type))
     end
 
     def wrap_index_receiver(expression)

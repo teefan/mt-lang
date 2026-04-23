@@ -820,6 +820,8 @@ extern module std.c.raygui:
 
     extern def OpenURL(url: cstr) -> void
 
+    extern def TraceLog(logLevel: i32, text: cstr, ...) -> void
+
     extern def SetTraceLogLevel(logLevel: i32) -> void
 
     extern def MemAlloc(size: u32) -> ptr[void]
@@ -1453,6 +1455,8 @@ extern module std.c.raygui:
     extern def TextIsEqual(text1: cstr, text2: cstr) -> bool
 
     extern def TextLength(text: cstr) -> u32
+
+    extern def TextFormat(text: cstr, ...) -> cstr
 
     extern def TextSubtext(text: cstr, position: i32, length: i32) -> cstr
 

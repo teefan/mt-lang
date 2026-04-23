@@ -48,6 +48,7 @@ def main() -> i32:
             20,
             rl.BLACK,
         )
+        rl.DrawText(rl.TextFormat(c"Cube position in screen space coordinates: [%i, %i]", cast[i32](cube_screen_position.x), cast[i32](cube_screen_position.y)), 10, 10, 20, rl.LIME)
         rl.DrawText(help_text, 10, 40, 20, rl.GRAY)
 
     return 0
