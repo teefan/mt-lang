@@ -53,6 +53,7 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
       core_basic_window
       core_basic_screen_manager
       core_3d_camera_mode
+      core_clipboard_text
       core_2d_camera_split_screen
       core_delta_time
       core_highdpi_demo
