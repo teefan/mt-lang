@@ -497,6 +497,10 @@ Float literals default to `f64` when unconstrained.
 
 Typed contexts may adopt the expected numeric type for a literal directly. This is limited to literal typing, not general implicit conversion.
 
+There is one additional narrow boundary rule for float-heavy code: a primitive integer expression may flow into an expected float type for an explicitly typed local declaration, an `=` assignment to a float-typed lvalue, or a return expression from a float-returning function.
+
+This is still a boundary cast, not a general usual-arithmetic-conversions model. It does not widen ordinary function arguments, aggregate field initializers, public constant initialization, or arbitrary expression typing. Integer arithmetic stays integer arithmetic until that final boundary cast, so `let ratio: f32 = hits / total` still performs integer division before the result is converted.
+
 Examples of typed contexts:
 
 - a declaration with an explicit type
@@ -575,6 +579,8 @@ Rules:
 
 Raw pointers should not be the default way to alias one live object in ordinary Milk Tea code. They stay for FFI, nullable links, intrusive structures, allocator internals, and manual memory work. Everyday aliasing should use a separate reference surface.
 
+Status today: this surface is still planned, not implemented. The current compiler supports raw `ptr[T]` with `&`, `*`, `->`, pointer casts, and pointer arithmetic, with dereference-like operations gated by `unsafe`.
+
 Proposed built-in types:
 
 ```mt
@@ -607,6 +613,14 @@ Rules:
 - conversion from `ref[...]` to `ptr[...]` is explicit and `unsafe`.
 - the first implementation should keep writable references (`ref[T]`) non-escaping: pass them, use them locally, but do not store or return them until the escape model is nailed down.
 - reference construction syntax is intentionally undecided here; the language should avoid Rust-style reference vocabulary.
+
+Before `ref[...]` can be safe and real, the compiler still needs:
+
+- first-class `ref[T]` and `ref[const T]` types in parser, sema, lowering, and codegen
+- construction and coercion rules from addressable lvalues into references
+- read-only versus writable access checks on member access, calls, and assignment targets
+- a non-escape rule for writable refs so returning or storing them cannot outlive the source object
+- explicit `unsafe` escape hatches from references back to raw pointers for FFI and manual memory code
 
 References are separate from methods:
 

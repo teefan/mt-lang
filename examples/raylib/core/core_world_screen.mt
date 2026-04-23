@@ -43,8 +43,8 @@ def main() -> i32:
         rl.EndMode3D()
         rl.DrawText(
             enemy_text,
-            cast[i32](cube_screen_position.x) - rl.MeasureText(enemy_text, 20) / 2,
-            cast[i32](cube_screen_position.y),
+            cube_screen_position.x - rl.MeasureText(enemy_text, 20) / 2,
+            cube_screen_position.y,
             20,
             rl.BLACK,
         )

@@ -10,15 +10,15 @@ const sample_text: cstr = c"Can you see this?"
 
 def draw_text_center(text: cstr, x: i32, y: i32, font_size: i32, color: rl.Color) -> void:
     let font = rl.GetFontDefault()
-    let size = rl.MeasureTextEx(font, text, cast[f32](font_size), 3.0)
+    let size = rl.MeasureTextEx(font, text, font_size, 3.0)
     rl.DrawTextEx(
         font,
         text,
         rl.Vector2(
-            x = cast[f32](x) - size.x / 2.0,
-            y = cast[f32](y) - size.y / 2.0,
+            x = x - size.x / 2.0,
+            y = y - size.y / 2.0,
         ),
-        cast[f32](font_size),
+        font_size,
         3.0,
         color,
     )
@@ -83,7 +83,7 @@ def main() -> i32:
                 rl.DrawRectangle(
                     x,
                     pixel_grid_top,
-                    cast[i32](cell_size_px),
+                    cell_size_px,
                     pixel_grid_bottom - pixel_grid_top,
                     rl.Color(r = 0, g = 121, b = 241, a = 100),
                 )
@@ -104,8 +104,8 @@ def main() -> i32:
             font,
             sample_text,
             rl.Vector2(
-                x = cast[f32](rl.GetScreenWidth()) - sample_size.x - 5.0,
-                y = cast[f32](rl.GetScreenHeight()) - sample_size.y - 5.0,
+                x = rl.GetScreenWidth() - sample_size.x - 5.0,
+                y = rl.GetScreenHeight() - sample_size.y - 5.0,
             ),
             20.0,
             3.0,
