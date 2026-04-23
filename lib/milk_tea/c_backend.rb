@@ -85,6 +85,12 @@ module MilkTea
         lines << ""
       end
 
+      checked_span_index_types = collect_checked_span_index_types
+      checked_span_index_types.each do |type|
+        lines.concat(emit_checked_span_index_helper(type))
+        lines << ""
+      end
+
       @program.functions.each do |function|
         lines.concat(emit_function(function))
         lines << ""
@@ -96,7 +102,7 @@ module MilkTea
     private
 
     def uses_panic_helper?
-      collect_checked_array_index_types.any? || @program.functions.any? { |function| function_uses_panic?(function) }
+      collect_checked_array_index_types.any? || collect_checked_span_index_types.any? || @program.functions.any? { |function| function_uses_panic?(function) }
     end
 
     def function_uses_panic?(function)
@@ -134,7 +140,7 @@ module MilkTea
         expression.callee == "mt_panic" || expression.arguments.any? { |argument| expression_uses_panic?(argument) }
       when IR::Member
         expression_uses_panic?(expression.receiver)
-      when IR::Index, IR::CheckedIndex
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
         expression_uses_panic?(expression.receiver) || expression_uses_panic?(expression.index)
       when IR::Unary
         expression_uses_panic?(expression.operand)
@@ -173,6 +179,16 @@ module MilkTea
         "static inline #{c_declaration(pointer_to(array_element_type(type)), helper_name)}(#{c_declaration(type, '(*array)')}, #{c_declaration(Types::Primitive.new('usize'), 'index')}) {",
         "#{INDENT}if (index >= #{array_length(type)}) mt_panic(\"array index out of bounds\");",
         "#{INDENT}return &(*array)[index];",
+        "}",
+      ]
+    end
+
+    def emit_checked_span_index_helper(type)
+      helper_name = checked_span_index_helper_name(type)
+      [
+        "static inline #{c_declaration(pointer_to(type.element_type), helper_name)}(#{c_declaration(type, 'span')}, #{c_declaration(Types::Primitive.new('usize'), 'index')}) {",
+        "#{INDENT}if (index >= span.len) mt_panic(\"span index out of bounds\");",
+        "#{INDENT}return &span.data[index];",
         "}",
       ]
     end
@@ -359,6 +375,8 @@ module MilkTea
         "#{wrap_index_receiver(expression.receiver)}[#{emit_expression(expression.index)}]"
       when IR::CheckedIndex
         "(*#{checked_array_index_helper_name(expression.receiver_type)}(&(#{emit_expression(expression.receiver)}), #{emit_expression(expression.index)}))"
+      when IR::CheckedSpanIndex
+        "(*#{checked_span_index_helper_name(expression.receiver_type)}(#{emit_expression(expression.receiver)}, #{emit_expression(expression.index)}))"
       when IR::Call
         call = emit_call_expression(expression)
         array_type?(expression.type) ? "#{call}.value" : call
@@ -546,7 +564,7 @@ module MilkTea
       case expression
       when IR::Member
         collect_reinterpret_helpers_from_expression(expression.receiver, helpers, seen)
-      when IR::Index, IR::CheckedIndex
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
         collect_reinterpret_helpers_from_expression(expression.receiver, helpers, seen)
         collect_reinterpret_helpers_from_expression(expression.index, helpers, seen)
       when IR::Call
@@ -596,9 +614,13 @@ module MilkTea
       "mt_checked_index_#{sanitize_identifier(type.to_s)}"
     end
 
+    def checked_span_index_helper_name(type)
+      "mt_checked_span_index_#{sanitize_identifier(type.to_s)}"
+    end
+
     def wrap_member_receiver(expression)
       case expression
-      when IR::Name, IR::Member, IR::Index, IR::CheckedIndex
+      when IR::Name, IR::Member, IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
         emit_expression(expression)
       else
         "(#{emit_expression(expression)})"
@@ -606,12 +628,13 @@ module MilkTea
     end
 
     def pointer_member_receiver?(expression)
-      (expression.is_a?(IR::Name) && expression.pointer) || (expression.respond_to?(:type) && pointer_type?(expression.type))
+      (expression.is_a?(IR::Name) && expression.pointer) ||
+        (expression.respond_to?(:type) && (pointer_type?(expression.type) || ref_type?(expression.type)))
     end
 
     def wrap_index_receiver(expression)
       case expression
-      when IR::Name, IR::Member, IR::Index, IR::CheckedIndex, IR::Call
+      when IR::Name, IR::Member, IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::Call
         emit_expression(expression)
       else
         "(#{emit_expression(expression)})"
@@ -640,6 +663,10 @@ module MilkTea
       end
 
       if pointer_type?(type)
+        return c_declaration_parts(type.arguments.first, "*#{name}")
+      end
+
+      if ref_type?(type)
         return c_declaration_parts(type.arguments.first, "*#{name}")
       end
 
@@ -693,6 +720,14 @@ module MilkTea
         collect_checked_array_index_types_from_statements(function.body, array_types)
       end
       array_types.uniq
+    end
+
+    def collect_checked_span_index_types
+      span_types = []
+      @program.functions.each do |function|
+        collect_checked_span_index_types_from_statements(function.body, span_types)
+      end
+      span_types.uniq
     end
 
     def collect_checked_array_index_types_from_statements(statements, array_types)
@@ -753,6 +788,67 @@ module MilkTea
         expression.fields.each { |field| collect_checked_array_index_types_from_expression(field.value, array_types) }
       when IR::ArrayLiteral
         expression.elements.each { |element| collect_checked_array_index_types_from_expression(element, array_types) }
+      end
+    end
+
+    def collect_checked_span_index_types_from_statements(statements, span_types)
+      statements.each do |statement|
+        case statement
+        when IR::LocalDecl
+          collect_checked_span_index_types_from_expression(statement.value, span_types)
+        when IR::Assignment
+          collect_checked_span_index_types_from_expression(statement.target, span_types)
+          collect_checked_span_index_types_from_expression(statement.value, span_types)
+        when IR::BlockStmt, IR::WhileStmt
+          collect_checked_span_index_types_from_statements(statement.body, span_types)
+        when IR::IfStmt
+          collect_checked_span_index_types_from_expression(statement.condition, span_types)
+          collect_checked_span_index_types_from_statements(statement.then_body, span_types)
+          collect_checked_span_index_types_from_statements(statement.else_body, span_types) if statement.else_body
+        when IR::SwitchStmt
+          collect_checked_span_index_types_from_expression(statement.expression, span_types)
+          statement.cases.each do |switch_case|
+            collect_checked_span_index_types_from_statements(switch_case.body, span_types)
+          end
+        when IR::StaticAssert
+          collect_checked_span_index_types_from_expression(statement.condition, span_types)
+          collect_checked_span_index_types_from_expression(statement.message, span_types)
+        when IR::ReturnStmt
+          collect_checked_span_index_types_from_expression(statement.value, span_types) if statement.value
+        when IR::ExpressionStmt
+          collect_checked_span_index_types_from_expression(statement.expression, span_types)
+        end
+      end
+    end
+
+    def collect_checked_span_index_types_from_expression(expression, span_types)
+      case expression
+      when IR::Member
+        collect_checked_span_index_types_from_expression(expression.receiver, span_types)
+      when IR::Index, IR::CheckedIndex
+        collect_checked_span_index_types_from_expression(expression.receiver, span_types)
+        collect_checked_span_index_types_from_expression(expression.index, span_types)
+      when IR::CheckedSpanIndex
+        span_types << expression.receiver_type
+        collect_checked_span_index_types_from_expression(expression.receiver, span_types)
+        collect_checked_span_index_types_from_expression(expression.index, span_types)
+      when IR::Call
+        expression.arguments.each { |argument| collect_checked_span_index_types_from_expression(argument, span_types) }
+      when IR::Unary
+        collect_checked_span_index_types_from_expression(expression.operand, span_types)
+      when IR::Binary
+        collect_checked_span_index_types_from_expression(expression.left, span_types)
+        collect_checked_span_index_types_from_expression(expression.right, span_types)
+      when IR::ReinterpretExpr
+        collect_checked_span_index_types_from_expression(expression.expression, span_types)
+      when IR::AddressOf
+        collect_checked_span_index_types_from_expression(expression.expression, span_types)
+      when IR::Cast
+        collect_checked_span_index_types_from_expression(expression.expression, span_types)
+      when IR::AggregateLiteral
+        expression.fields.each { |field| collect_checked_span_index_types_from_expression(field.value, span_types) }
+      when IR::ArrayLiteral
+        expression.elements.each { |element| collect_checked_span_index_types_from_expression(element, span_types) }
       end
     end
 
@@ -879,7 +975,7 @@ module MilkTea
       case expression
       when IR::Member
         collect_result_types_from_expression(expression.receiver, result_types, visited)
-      when IR::Index, IR::CheckedIndex
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
         collect_result_types_from_expression(expression.receiver, result_types, visited)
         collect_result_types_from_expression(expression.index, result_types, visited)
       when IR::Call
@@ -1007,7 +1103,7 @@ module MilkTea
       case expression
       when IR::Member
         collect_generic_struct_types_from_expression(expression.receiver, generic_struct_types, visited)
-      when IR::Index, IR::CheckedIndex
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
         collect_generic_struct_types_from_expression(expression.receiver, generic_struct_types, visited)
         collect_generic_struct_types_from_expression(expression.index, generic_struct_types, visited)
       when IR::Call
@@ -1152,7 +1248,7 @@ module MilkTea
       case expression
       when IR::Member
         collect_span_types_from_expression(expression.receiver, span_types, visited)
-      when IR::Index, IR::CheckedIndex
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
         collect_span_types_from_expression(expression.receiver, span_types, visited)
         collect_span_types_from_expression(expression.index, span_types, visited)
       when IR::Call
@@ -1293,6 +1389,10 @@ module MilkTea
         raise LoweringError, "ptr requires exactly one type argument" unless type.arguments.length == 1
 
         "#{c_type(type.arguments.first)}*"
+      when "ref"
+        raise LoweringError, "ref requires exactly one type argument" unless type.arguments.length == 1
+
+        "#{c_type(type.arguments.first)}*"
       else
         raise LoweringError, "unsupported generic C type #{type.name}"
       end
@@ -1300,6 +1400,10 @@ module MilkTea
 
     def pointer_type?(type)
       type.is_a?(Types::GenericInstance) && type.name == "ptr" && type.arguments.length == 1
+    end
+
+    def ref_type?(type)
+      type.is_a?(Types::GenericInstance) && type.name == "ref" && type.arguments.length == 1
     end
 
     def array_type?(type)

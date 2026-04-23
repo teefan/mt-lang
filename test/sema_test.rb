@@ -233,6 +233,27 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal "span[i32]", result.functions.fetch("read").type.params.first.type.to_s
   end
 
+  def test_type_checks_safe_span_indexing_and_element_assignment
+    source = <<~MT
+      module demo.spans
+
+      def bump(mut items: span[i32]) -> i32:
+          let first = items[0]
+          items[0] = first + 2
+          return items[0]
+
+      def main() -> i32:
+          var value = 7
+          let items = span[i32](data = &value, len = 1)
+          return bump(items)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("bump")
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_generic_struct_instantiation_and_embedding
     source = <<~MT
       module demo.generics
@@ -291,6 +312,23 @@ class MilkTeaSemaTest < Minitest::Test
 
     assert_equal ["T"], result.functions.fetch("head").type_params
     assert_equal ["T"], result.functions.fetch("min").type_params
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_generic_functions_with_explicit_type_arguments_and_layout_queries
+    source = <<~MT
+      module demo.generic_layout
+
+      def bytes_for[T](count: usize) -> usize:
+          return count * sizeof(T)
+
+      def main() -> i32:
+          return cast[i32](bytes_for[i32](4))
+    MT
+
+    result = check_source(source)
+
+    assert_equal ["T"], result.functions.fetch("bytes_for").type_params
     assert_equal true, result.functions.key?("main")
   end
 
@@ -1224,6 +1262,111 @@ class MilkTeaSemaTest < Minitest::Test
     end
 
     assert_match(/pointer cast requires unsafe/, error.message)
+  end
+
+  def test_type_checks_safe_ref_locals_params_and_methods
+    source = <<~MT
+      module demo.refs
+
+      struct Counter:
+          value: i32
+
+      methods Counter:
+          edit def add(delta: i32):
+              this.value += delta
+
+      def increment(counter: ref[Counter], amount: i32) -> void:
+          counter.add(amount)
+          counter.value += 1
+
+      def main() -> i32:
+          var counter = Counter(value = 3)
+          let handle = ref(counter)
+          increment(handle, 4)
+          let value_ref = ref(counter.value)
+          *value_ref += 2
+          return counter.value
+    MT
+
+    result = check_source(source)
+
+    assert_equal "ref[demo.refs.Counter]", result.functions.fetch("increment").type.params.first.type.to_s
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_ref_of_immutable_values
+    source = <<~MT
+      module demo.bad
+
+      def main() -> i32:
+          let value = 1
+          let handle = ref(value)
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/cannot assign to immutable value/, error.message)
+  end
+
+  def test_rejects_ref_storage_and_escape_types
+    field_source = <<~MT
+      module demo.bad_field
+
+      struct Holder:
+          value: ref[i32]
+    MT
+
+    field_error = assert_raises(MilkTea::SemaError) do
+      check_source(field_source)
+    end
+
+    assert_match(/field Holder\.value cannot store ref types/, field_error.message)
+
+    extern_source = <<~MT
+      module demo.bad_param
+
+      extern def take(value: ref[i32]) -> void
+    MT
+
+    extern_error = assert_raises(MilkTea::SemaError) do
+      check_source(extern_source)
+    end
+
+    assert_match(/extern function take cannot take ref parameters/, extern_error.message)
+
+    return_source = <<~MT
+      module demo.bad_return
+
+      def leak(value: ref[i32]) -> ref[i32]:
+          return value
+    MT
+
+    return_error = assert_raises(MilkTea::SemaError) do
+      check_source(return_source)
+    end
+
+    assert_match(/function leak cannot return ref types/, return_error.message)
+  end
+
+  def test_rejects_ref_to_pointer_cast_outside_unsafe
+    source = <<~MT
+      module demo.bad
+
+      def main() -> i32:
+          var value = 1
+          let handle = ref(value)
+          let raw = cast[ptr[i32]](handle)
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/ref to pointer cast requires unsafe/, error.message)
   end
 
   def test_rejects_non_integer_flags_backing_types

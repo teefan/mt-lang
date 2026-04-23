@@ -11,24 +11,22 @@ struct Pool:
 
 def create(slot_size_bytes: usize, slot_count: usize) -> Pool:
     if slot_size_bytes == 0 or slot_count == 0:
-        unsafe:
-            return Pool(
-                memory = cast[ptr[byte]](heap.alloc(0)),
-                occupancy = cast[ptr[bool]](heap.alloc(0)),
-                slot_size = slot_size_bytes,
-                slot_count = 0,
-                used_count = 0,
-            )
-
-    let total_size = slot_size_bytes * slot_count
-    unsafe:
         return Pool(
-            memory = cast[ptr[byte]](heap.alloc(total_size)),
-            occupancy = cast[ptr[bool]](heap.alloc_zeroed(slot_count, 1)),
+            memory = heap.alloc[byte](0),
+            occupancy = heap.alloc[bool](0),
             slot_size = slot_size_bytes,
-            slot_count = slot_count,
+            slot_count = 0,
             used_count = 0,
         )
+
+    let total_size = slot_size_bytes * slot_count
+    return Pool(
+        memory = heap.alloc[byte](total_size),
+        occupancy = heap.alloc_zeroed[bool](slot_count),
+        slot_size = slot_size_bytes,
+        slot_count = slot_count,
+        used_count = 0,
+    )
 
 methods Pool:
     def remaining_slots() -> usize:
@@ -68,9 +66,8 @@ methods Pool:
         return false
 
     edit def release() -> void:
-        unsafe:
-            heap.release(cast[ptr[void]](this.memory))
-            heap.release(cast[ptr[void]](this.occupancy))
+        heap.release(this.memory)
+        heap.release(this.occupancy)
         this.slot_size = 0
         this.slot_count = 0
         this.used_count = 0

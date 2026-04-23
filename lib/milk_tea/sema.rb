@@ -6,7 +6,7 @@ module MilkTea
   class Sema
     Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :values, :functions, :methods)
     ValueBinding = Data.define(:name, :type, :mutable, :kind)
-    FunctionBinding = Data.define(:name, :type, :body_params, :ast, :external, :type_params, :instances, :type_arguments, :owner)
+    FunctionBinding = Data.define(:name, :type, :body_params, :ast, :external, :type_params, :instances, :type_arguments, :owner, :type_substitutions)
     ModuleBinding = Data.define(:name, :types, :values, :functions, :methods)
 
     BUILTIN_TYPE_NAMES = %w[
@@ -18,6 +18,8 @@ module MilkTea
     end
 
     class Checker
+      attr_reader :module_name
+
       def initialize(ast, imported_modules: {})
         @ast = ast
         @imported_modules = imported_modules
@@ -158,7 +160,9 @@ module MilkTea
           decl.fields.each do |field|
             raise SemaError, "duplicate field #{decl.name}.#{field.name}" if fields.key?(field.name)
 
-            fields[field.name] = resolve_type_ref(field.type, type_params:)
+            field_type = resolve_type_ref(field.type, type_params:)
+            validate_stored_ref_type!(field_type, "field #{decl.name}.#{field.name}")
+            fields[field.name] = field_type
           end
 
           struct_type.define_fields(fields)
@@ -194,9 +198,11 @@ module MilkTea
       def declare_top_level_values
         @ast.declarations.grep(AST::ConstDecl).each do |decl|
           ensure_available_value_name!(decl.name)
+          type = resolve_type_ref(decl.type)
+          validate_stored_ref_type!(type, "constant #{decl.name}")
           @top_level_values[decl.name] = ValueBinding.new(
             name: decl.name,
-            type: resolve_type_ref(decl.type),
+            type: type,
             mutable: false,
             kind: :const,
           )
@@ -254,6 +260,7 @@ module MilkTea
 
         body_params.concat(decl.params.map do |param|
           type = resolve_type_ref(param.type, type_params:)
+          validate_parameter_ref_type!(type, function_name: decl.name, parameter_name: param.name, external:)
 
           if external && array_type?(type)
             raise SemaError, "extern function #{decl.name} cannot take array parameters"
@@ -279,6 +286,7 @@ module MilkTea
         end
 
         return_type = decl.return_type ? resolve_type_ref(decl.return_type, type_params:) : @types.fetch("void")
+        validate_return_ref_type!(return_type, function_name: decl.name)
         if external && array_type?(return_type)
           raise SemaError, "extern function #{decl.name} cannot return arrays"
         end
@@ -303,6 +311,7 @@ module MilkTea
           instances: {},
           type_arguments: [].freeze,
           owner: self,
+          type_substitutions: {}.freeze,
         )
       end
 
@@ -343,11 +352,14 @@ module MilkTea
         return if @checking_function_bindings[binding.object_id]
 
         @checking_function_bindings[binding.object_id] = true
+        previous_type_substitutions = @current_type_substitutions
+        @current_type_substitutions = binding.type_substitutions
         with_scope(binding.body_params) do |scopes|
           check_block(binding.ast.body, scopes:, return_type: binding.type.return_type)
         end
         @checked_function_bindings[binding.object_id] = true
       ensure
+        @current_type_substitutions = previous_type_substitutions
         @checking_function_bindings.delete(binding.object_id)
       end
 
@@ -418,6 +430,7 @@ module MilkTea
         inferred_type = infer_expression(statement.value, scopes:, expected_type: declared_type)
 
         if declared_type
+          validate_local_ref_type!(declared_type, statement.name)
           ensure_assignable!(
             inferred_type,
             declared_type,
@@ -432,6 +445,8 @@ module MilkTea
 
           final_type = inferred_type
         end
+
+        validate_local_ref_type!(final_type, statement.name)
 
         current_scope[statement.name] = ValueBinding.new(
           name: statement.name,
@@ -586,6 +601,8 @@ module MilkTea
         when AST::UnaryOp
           if expression.operator == "*"
             pointer_type = infer_expression(expression.operand, scopes:)
+            return referenced_type(pointer_type) if ref_type?(pointer_type)
+
             pointee_type = pointee_type(pointer_type)
             raise SemaError, "operator * requires a pointer operand, got #{pointer_type}" unless pointee_type
             raise SemaError, "pointer dereference requires unsafe" unless unsafe_context?
@@ -604,6 +621,8 @@ module MilkTea
         when AST::Identifier
           binding = lookup_value(expression.name, scopes)
           raise SemaError, "unknown name #{expression.name}" unless binding
+          return referenced_type(binding.type) if ref_type?(binding.type)
+
           raise SemaError, "cannot assign through immutable #{expression.name}" unless binding.mutable
 
           binding.type
@@ -634,6 +653,8 @@ module MilkTea
         when AST::UnaryOp
           if expression.operator == "*"
             pointer_type = infer_expression(expression.operand, scopes:)
+            return referenced_type(pointer_type) if ref_type?(pointer_type)
+
             pointee_type = pointee_type(pointer_type)
             raise SemaError, "operator * requires a pointer operand, got #{pointer_type}" unless pointee_type
             raise SemaError, "pointer dereference requires unsafe" unless unsafe_context?
@@ -768,6 +789,7 @@ module MilkTea
         end
 
         receiver_type = infer_expression(expression.receiver, scopes:)
+        receiver_type = referenced_type(receiver_type) if ref_type?(receiver_type)
         unless aggregate_type?(receiver_type)
           raise SemaError, "cannot access member #{expression.member} of #{receiver_type}"
         end
@@ -835,8 +857,11 @@ module MilkTea
           operand_type
         when "&"
           pointee_type = infer_lvalue(expression.operand, scopes:)
+          raise SemaError, "cannot take the address of a ref value" if ref_type?(pointee_type)
           pointer_to(pointee_type)
         when "*"
+          return referenced_type(operand_type) if ref_type?(operand_type)
+
           pointee_type = pointee_type(operand_type)
           raise SemaError, "operator * requires a pointer operand, got #{operand_type}" unless pointee_type
           raise SemaError, "pointer dereference requires unsafe" unless unsafe_context?
@@ -977,6 +1002,8 @@ module MilkTea
           check_result_construction(callable_kind, expression.arguments, scopes:, expected_type:)
         when :panic
           check_panic_call(expression.arguments, scopes:)
+        when :ref
+          check_ref_call(expression.arguments, scopes:)
         else
           raise SemaError, "#{describe_expression(expression.callee)} is not callable"
         end
@@ -989,6 +1016,7 @@ module MilkTea
           return [:result_ok, nil, nil] if callee.name == "ok"
           return [:result_err, nil, nil] if callee.name == "err"
           return [:panic, nil, nil] if callee.name == "panic"
+          return [:ref, nil, nil] if callee.name == "ref"
 
           type = @types[callee.name]
           return [:struct, type, nil] if type.is_a?(Types::Struct)
@@ -1011,7 +1039,7 @@ module MilkTea
           end
 
           receiver_type = infer_expression(callee.receiver, scopes:)
-          method = lookup_method(receiver_type, callee.member)
+          method = lookup_method(ref_type?(receiver_type) ? referenced_type(receiver_type) : receiver_type, callee.member)
           return [:method, method, callee.receiver] if method
 
           raise SemaError, "unknown method #{receiver_type}.#{callee.member}"
@@ -1065,6 +1093,10 @@ module MilkTea
             raise SemaError, "zero type argument must be a type" unless type_arg.is_a?(AST::TypeRef)
 
             return [:zero, resolve_type_ref(type_arg), nil]
+          end
+
+          if (function_binding = resolve_specialized_function_binding(callee))
+            return [:function, function_binding, nil]
           end
 
           if (type_ref = type_ref_from_specialization(callee))
@@ -1146,6 +1178,14 @@ module MilkTea
         raise SemaError, "panic expects str or cstr, got #{message_type}"
       end
 
+      def check_ref_call(arguments, scopes:)
+        raise SemaError, "ref does not support named arguments" if arguments.any?(&:name)
+        raise SemaError, "ref expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+
+        source_type = infer_ref_source_type(arguments.first.value, scopes:)
+        Types::GenericInstance.new("ref", [source_type])
+      end
+
       def check_aggregate_construction(struct_type, arguments, scopes:)
         display_name = aggregate_display_name(struct_type)
 
@@ -1205,6 +1245,12 @@ module MilkTea
 
         if pointer_cast?(source_type, target_type)
           raise SemaError, "pointer cast requires unsafe" unless unsafe_context?
+
+          return target_type
+        end
+
+        if ref_to_pointer_cast?(source_type, target_type)
+          raise SemaError, "ref to pointer cast requires unsafe" unless unsafe_context?
 
           return target_type
         end
@@ -1276,9 +1322,15 @@ module MilkTea
         raise SemaError, "duplicate value #{name}" if @top_level_values.key?(name) || @top_level_functions.key?(name)
       end
 
-      def resolve_type_ref(type_ref, type_params: {})
+      def current_type_params
+        @current_type_substitutions || {}
+      end
+
+      def resolve_type_ref(type_ref, type_params: current_type_params)
         base = resolve_non_nullable_type(type_ref, type_params:)
         return base if type_ref.is_a?(AST::FunctionType)
+
+        raise SemaError, "ref types are non-null and cannot be nullable" if type_ref.nullable && ref_type?(base)
 
         type_ref.nullable ? Types::Nullable.new(base) : base
       end
@@ -1306,6 +1358,10 @@ module MilkTea
             else
               raise SemaError, "unsupported type argument #{argument.value.class.name}"
             end
+          end
+
+          if name != "ref" && arguments.any? { |argument| contains_ref_type?(argument) }
+            raise SemaError, "ref types cannot be nested inside #{name}"
           end
 
           if name == "Result"
@@ -1479,8 +1535,16 @@ module MilkTea
         pointer_type?(source_type) && pointer_type?(target_type)
       end
 
+      def ref_to_pointer_cast?(source_type, target_type)
+        ref_type?(source_type) && pointer_type?(target_type)
+      end
+
       def pointer_type?(type)
         type.is_a?(Types::GenericInstance) && type.name == "ptr" && type.arguments.length == 1
+      end
+
+      def ref_type?(type)
+        type.is_a?(Types::GenericInstance) && type.name == "ref" && type.arguments.length == 1
       end
 
       def span_type?(type)
@@ -1578,8 +1642,37 @@ module MilkTea
         type.arguments.first
       end
 
+      def referenced_type(type)
+        return unless ref_type?(type)
+
+        type.arguments.first
+      end
+
       def pointer_to(type)
         Types::GenericInstance.new("ptr", [type])
+      end
+
+      def contains_ref_type?(type)
+        case type
+        when Types::Nullable
+          contains_ref_type?(type.base)
+        when Types::GenericInstance
+          return true if ref_type?(type)
+
+          type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_ref_type?(argument) }
+        when Types::Span
+          contains_ref_type?(type.element_type)
+        when Types::Result
+          contains_ref_type?(type.ok_type) || contains_ref_type?(type.error_type)
+        when Types::StructInstance
+          type.arguments.any? { |argument| contains_ref_type?(argument) }
+        when Types::Function
+          type.params.any? { |param| contains_ref_type?(param.type) } ||
+            contains_ref_type?(type.return_type) ||
+            (type.receiver_type && contains_ref_type?(type.receiver_type))
+        else
+          false
+        end
       end
 
       def resolve_named_generic_type(parts)
@@ -1618,6 +1711,11 @@ module MilkTea
         when "ptr"
           raise SemaError, "ptr requires exactly one type argument" unless arguments.length == 1
           raise SemaError, "ptr type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
+        when "ref"
+          raise SemaError, "ref requires exactly one type argument" unless arguments.length == 1
+          raise SemaError, "ref type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
+          raise SemaError, "ref cannot target void" if arguments.first.is_a?(Types::Primitive) && arguments.first.void?
+          raise SemaError, "ref cannot target another ref type" if contains_ref_type?(arguments.first)
         when "span"
           raise SemaError, "span requires exactly one type argument" unless arguments.length == 1
           raise SemaError, "span element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
@@ -1659,6 +1757,10 @@ module MilkTea
 
         if array_type?(receiver_type)
           return array_element_type(receiver_type)
+        end
+
+        if span_type?(receiver_type)
+          return receiver_type.element_type
         end
 
         if pointer_type?(receiver_type)
@@ -1717,10 +1819,49 @@ module MilkTea
         @top_level_functions.fetch(name).type
       end
 
+      def resolve_specialized_function_binding(expression)
+        binding = case expression.callee
+                  when AST::Identifier
+                    @top_level_functions[expression.callee.name]
+                  when AST::MemberAccess
+                    if expression.callee.receiver.is_a?(AST::Identifier) && @imports.key?(expression.callee.receiver.name)
+                      @imports.fetch(expression.callee.receiver.name).functions[expression.callee.member]
+                    end
+                  end
+        return nil unless binding
+
+        type_arguments = resolve_specialization_type_arguments(expression)
+        instantiate_function_binding(binding, type_arguments)
+      end
+
+      def resolve_specialization_type_arguments(expression)
+        expression.arguments.map do |argument|
+          raise SemaError, "callable specialization arguments must be types" unless argument.value.is_a?(AST::TypeRef)
+
+          resolve_type_ref(argument.value)
+        end
+      end
+
       def specialize_function_binding(binding, arguments, scopes:)
         return binding if binding.type_params.empty?
 
         type_arguments = infer_function_type_arguments(binding, arguments, scopes:)
+        instantiate_function_binding(binding, type_arguments)
+      end
+
+      def instantiate_function_binding(binding, type_arguments)
+        if binding.type_params.empty?
+          raise SemaError, "function #{binding.name} is not generic and cannot be specialized"
+        end
+
+        unless binding.type_params.length == type_arguments.length
+          raise SemaError, "function #{binding.name} expects #{binding.type_params.length} type arguments, got #{type_arguments.length}"
+        end
+
+        if type_arguments.any? { |type_argument| contains_ref_type?(type_argument) }
+          raise SemaError, "generic function #{binding.name} cannot be instantiated with ref types"
+        end
+
         key = type_arguments.freeze
         return binding.instances.fetch(key) if binding.instances.key?(key)
 
@@ -1735,6 +1876,7 @@ module MilkTea
           instances: {},
           type_arguments: key,
           owner: binding.owner,
+          type_substitutions: substitutions.freeze,
         )
         binding.instances[key] = instance
       end
@@ -1755,6 +1897,8 @@ module MilkTea
         binding.type_params.map do |name|
           inferred = substitutions[name]
           raise SemaError, "cannot infer type argument #{name} for function #{binding.name}" unless inferred
+
+          raise SemaError, "generic function #{binding.name} cannot be instantiated with ref types" if contains_ref_type?(inferred)
 
           inferred
         end
@@ -1853,11 +1997,58 @@ module MilkTea
         type.respond_to?(:bitwise?) && type.bitwise?
       end
 
+      def validate_stored_ref_type!(type, context)
+        raise SemaError, "#{context} cannot store ref types" if contains_ref_type?(type)
+      end
+
+      def validate_parameter_ref_type!(type, function_name:, parameter_name:, external:)
+        if ref_type?(type)
+          raise SemaError, "extern function #{function_name} cannot take ref parameters" if external
+
+          return
+        end
+
+        raise SemaError, "parameter #{parameter_name} of #{function_name} cannot nest ref types" if contains_ref_type?(type)
+      end
+
+      def validate_return_ref_type!(type, function_name:)
+        raise SemaError, "function #{function_name} cannot return ref types" if contains_ref_type?(type)
+      end
+
+      def validate_local_ref_type!(type, local_name)
+        return if ref_type?(type)
+
+        raise SemaError, "local #{local_name} cannot store nested ref types" if contains_ref_type?(type)
+      end
+
+      def safe_reference_source_expression?(expression)
+        case expression
+        when AST::Identifier
+          true
+        when AST::MemberAccess, AST::IndexAccess
+          safe_reference_source_expression?(expression.receiver)
+        else
+          false
+        end
+      end
+
+      def infer_ref_source_type(expression, scopes:)
+        raise SemaError, "ref requires a mutable safe lvalue source" unless safe_reference_source_expression?(expression)
+
+        source_type = infer_lvalue(expression, scopes:)
+        raise SemaError, "ref cannot target ref values" if contains_ref_type?(source_type)
+
+        source_type
+      end
+
       def external_module?
         @module_kind == :extern_module
       end
 
       def assignable_receiver?(receiver_expression, scopes)
+        receiver_type = infer_expression(receiver_expression, scopes:)
+        return true if ref_type?(receiver_type)
+
         infer_lvalue(receiver_expression, scopes:)
         true
       rescue SemaError

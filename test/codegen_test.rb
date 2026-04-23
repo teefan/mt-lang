@@ -155,6 +155,31 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/mt_span_i32 items = \(mt_span_i32\)\{ \.data = &value, \.len = 1 \};/, generated)
   end
 
+  def test_generate_c_for_safe_span_indexing_and_element_assignment
+    source = [
+      "module demo.span_index_surface",
+      "",
+      "def bump(mut items: span[i32]) -> i32:",
+      "    let first = items[0]",
+      "    items[0] = first + 2",
+      "    return items[0]",
+      "",
+      "def main() -> i32:",
+      "    var value = 7",
+      "    let items = span[i32](data = &value, len = 1)",
+      "    return bump(items)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static inline int32_t \*mt_checked_span_index_span_i32\(mt_span_i32 span, uintptr_t index\)/, generated)
+    assert_match(/if \(index >= span\.len\) mt_panic\("span index out of bounds"\);/, generated)
+    assert_match(/int32_t first = \(\*mt_checked_span_index_span_i32\(items, 0\)\);/, generated)
+    assert_match(/\(\*mt_checked_span_index_span_i32\(items, 0\)\) = first \+ 2;/, generated)
+    assert_match(/return \(\*mt_checked_span_index_span_i32\(items, 0\)\);/, generated)
+  end
+
   def test_generate_c_for_mixed_numeric_binary_operations_inserts_explicit_casts
     source = [
       "module demo.numeric_codegen",
@@ -314,6 +339,26 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/static int32_t demo_generic_functions_min_i32\(int32_t a, int32_t b\)/, generated)
     assert_match(/int32_t smallest = demo_generic_functions_min_i32\(9, 4\);/, generated)
     assert_match(/return \(\*demo_generic_functions_head_i32\(items\)\) \+ smallest;/, generated)
+  end
+
+  def test_generate_c_for_generic_functions_with_explicit_type_arguments_and_layout_queries
+    source = [
+      "module demo.generic_layout",
+      "",
+      "def bytes_for[T](count: usize) -> usize:",
+      "    return count * sizeof(T)",
+      "",
+      "def main() -> i32:",
+      "    let total = bytes_for[i32](4)",
+      "    return cast[i32](total)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static uintptr_t demo_generic_layout_bytes_for_i32\(uintptr_t count\)/, generated)
+    assert_match(/return count \* sizeof\(int32_t\);/, generated)
+    assert_match(/uintptr_t total = demo_generic_layout_bytes_for_i32\(4\);/, generated)
   end
 
   def test_generate_c_for_result_construction_from_expected_context
@@ -531,6 +576,44 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/demo_pointer_surface_Counter \*counter_ptr = &counter;/, generated)
     assert_match(/counter_ptr->value = 7;/, generated)
+    assert_match(/return counter\.value;/, generated)
+  end
+
+  def test_generate_c_for_safe_ref_locals_params_and_methods
+    source = [
+      "module demo.ref_surface",
+      "",
+      "struct Counter:",
+      "    value: i32",
+      "",
+      "methods Counter:",
+      "    edit def add(delta: i32):",
+      "        this.value += delta",
+      "",
+      "def increment(counter: ref[Counter], amount: i32) -> void:",
+      "    counter.add(amount)",
+      "    counter.value += 1",
+      "",
+      "def main() -> i32:",
+      "    var counter = Counter(value = 3)",
+      "    let handle = ref(counter)",
+      "    increment(handle, 4)",
+      "    let value_ref = ref(counter.value)",
+      "    *value_ref += 2",
+      "    return counter.value",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static void demo_ref_surface_Counter_add\(demo_ref_surface_Counter \*this, int32_t delta\)/, generated)
+    assert_match(/static void demo_ref_surface_increment\(demo_ref_surface_Counter \*counter, int32_t amount\)/, generated)
+    assert_match(/demo_ref_surface_Counter \*handle = &counter;/, generated)
+    assert_match(/demo_ref_surface_increment\(handle, 4\);/, generated)
+    assert_match(/demo_ref_surface_Counter_add\(counter, amount\);/, generated)
+    assert_match(/counter->value \+= 1;/, generated)
+    assert_match(/int32_t \*value_ref = &counter\.value;/, generated)
+    assert_match(/\*value_ref \+= 2;/, generated)
     assert_match(/return counter\.value;/, generated)
   end
 

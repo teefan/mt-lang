@@ -10,12 +10,11 @@ struct Arena:
     offset: usize
 
 def create(capacity_bytes: usize) -> Arena:
-    unsafe:
-        return Arena(
-            memory = cast[ptr[byte]](heap.alloc(capacity_bytes)),
-            capacity = capacity_bytes,
-            offset = 0,
-        )
+    return Arena(
+        memory = heap.alloc[byte](capacity_bytes),
+        capacity = capacity_bytes,
+        offset = 0,
+    )
 
 methods Arena:
     def mark() -> Mark:
@@ -39,8 +38,7 @@ methods Arena:
             return result
 
     edit def release() -> void:
-        unsafe:
-            heap.release(cast[ptr[void]](this.memory))
+        heap.release(this.memory)
         this.offset = 0
         this.capacity = 0
         return

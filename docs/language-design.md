@@ -544,8 +544,10 @@ There is no hidden reference counting and no hidden heap boxing.
 Heap allocation is always explicit and allocator-driven.
 
 ```mt
-def spawn_enemy(arena: ptr[Arena], start: Vec2) -> ptr[Enemy]:
-	let enemy = arena.alloc[Enemy](1)
+import std.mem.heap as heap
+
+def spawn_enemy(start: Vec2) -> ptr[Enemy]:
+	let enemy = heap.alloc[Enemy](1)
 	enemy.position = start
 	enemy.health = 100
 	return enemy
@@ -553,7 +555,7 @@ def spawn_enemy(arena: ptr[Arena], start: Vec2) -> ptr[Enemy]:
 
 Recommended standard memory surfaces:
 
-- `std.mem.heap` for general allocation
+- `std.mem.heap` for general allocation and the raw `*_bytes` boundary
 - `std.mem.arena` for frame, level, and scratch lifetimes
 - `std.mem.pool` for fixed-size object pools
 - `std.mem.stack` for explicit temporary allocators
@@ -579,48 +581,32 @@ Rules:
 
 Raw pointers should not be the default way to alias one live object in ordinary Milk Tea code. They stay for FFI, nullable links, intrusive structures, allocator internals, and manual memory work. Everyday aliasing should use a separate reference surface.
 
-Status today: this surface is still planned, not implemented. The current compiler supports raw `ptr[T]` with `&`, `*`, `->`, pointer casts, and pointer arithmetic, with dereference-like operations gated by `unsafe`.
+Status today: the first writable reference slice is implemented. The compiler supports explicit `ref(expr)` construction from mutable addressable lvalues, `ref[T]` locals and parameters, safe `*ref_value`, safe `ref_value.field`, safe `ref_value.edit_method(...)`, and explicit `unsafe` escape back to raw `ptr[T]` through `cast[...]`.
 
-Proposed built-in types:
-
-```mt
-ref[T]            # writable safe reference
-ref[const T]      # read-only safe reference
-```
-
-Planned method syntax with future references:
+Built-in reference types:
 
 ```mt
-methods Camera:
-	def world_scale() -> f32:
-		return this.zoom
-
-	edit def move_by(delta: Vec2):
-		this.position.x += delta.x
-		this.position.y += delta.y
-
-	static def origin() -> Camera:
-		return Camera(position = Vec2(x = 0.0, y = 0.0), zoom = 1.0)
+ref[T]            # writable safe reference, implemented
+ref[const T]      # read-only safe reference, planned
 ```
 
 Rules:
 
 - `ref[T]` and `ref[const T]` are non-null.
-- `.` works on references. `->` remains exclusive to `ptr[T]`.
-- `ref[const T]` allows reads only.
-- `ref[T]` allows writes and can flow to `ref[const T]`.
-- references do not support arithmetic, pointer indexing, or nullable semantics.
+- `ref(expr)` requires a mutable addressable lvalue source.
+- `.` works on references. `->` remains exclusive to raw `ptr[T]`.
+- `*ref_value` is safe and yields the referenced value.
+- `ref[T]` allows writes through `*ref_value`, member access, and `edit def` method calls.
+- `ref[const T]` is still planned; it is the only additional safe reference variant worth adding beyond `ref[T]`.
+- references do not support arithmetic, pointer indexing, address-of on reference values, or nullable semantics.
 - conversion from `ref[...]` to `ptr[...]` is explicit and `unsafe`.
-- the first implementation should keep writable references (`ref[T]`) non-escaping: pass them, use them locally, but do not store or return them until the escape model is nailed down.
-- reference construction syntax is intentionally undecided here; the language should avoid Rust-style reference vocabulary.
+- the first implementation keeps writable references non-escaping: they may be used in locals and non-extern function parameters, but they cannot be stored, nested inside other types, returned, or accepted by extern functions.
 
-Before `ref[...]` can be safe and real, the compiler still needs:
+Still pending before the reference surface is complete:
 
-- first-class `ref[T]` and `ref[const T]` types in parser, sema, lowering, and codegen
-- construction and coercion rules from addressable lvalues into references
-- read-only versus writable access checks on member access, calls, and assignment targets
-- a non-escape rule for writable refs so returning or storing them cannot outlive the source object
-- explicit `unsafe` escape hatches from references back to raw pointers for FFI and manual memory code
+- `ref[const T]` and const-aware coercions
+- a principled escape model if stored or returned references are ever allowed
+- broader borrowed-view ergonomics where `span[T]` and `ref[T]` need to interoperate more directly
 
 References are separate from methods:
 
