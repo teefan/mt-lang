@@ -880,6 +880,14 @@ module MilkTea
         lowered_receiver = lower_expression(receiver, env:)
 
         if callee_type.receiver_mutable
+          if lowered_receiver.is_a?(IR::Name) && lowered_receiver.pointer
+            return lowered_receiver
+          end
+
+          if lowered_receiver.is_a?(IR::Unary) && lowered_receiver.operator == "*"
+            return lowered_receiver.operand
+          end
+
           return IR::AddressOf.new(expression: lowered_receiver, type: lowered_receiver.type)
         end
 
@@ -967,7 +975,7 @@ module MilkTea
             [:value, nil, nil, nil]
           elsif callee.name == "raw"
             [:raw, nil, nil, nil]
-          elsif (type = @types[callee.name]).is_a?(Types::Struct)
+          elsif (type = @types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView)
             [ :struct_literal, nil, nil, type ]
           else
             raise LoweringError, "unknown callee #{callee.name}"
@@ -981,7 +989,8 @@ module MilkTea
 
               return [:function, binding.name, nil, binding.type]
             end
-            if imported_module.types[callee.member].is_a?(Types::Struct)
+            imported_type = imported_module.types[callee.member]
+            if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView)
               return [:struct_literal, nil, nil, imported_module.types.fetch(callee.member)]
             end
           end

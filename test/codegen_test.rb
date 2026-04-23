@@ -544,12 +544,44 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_source(source)
 
     assert_match(/typedef struct mt_str \{/, generated)
-    assert_match(/const char\* data;/, generated)
+    assert_match(/char\* data;/, generated)
     assert_match(/uintptr_t len;/, generated)
     assert_match(/static const mt_str demo_str_surface_greeting = \(mt_str\)\{ \.data = "hello", \.len = 5 \};/, generated)
     assert_match(/static void mt_panic_str\(mt_str message\) \{/, generated)
     assert_match(/fwrite\(message\.data, 1, message\.len, stderr\);/, generated)
     assert_match(/mt_panic_str\(demo_str_surface_greeting\);/, generated)
+  end
+
+  def test_generate_c_for_str_slice_and_arena_cstr_conversion
+    source = [
+      "module demo.str_methods_surface",
+      "",
+      "import std.str",
+      "import std.mem.arena as arena",
+      "",
+      "def main() -> i32:",
+      "    var scratch = arena.create(64)",
+      "    defer scratch.release()",
+      "    let text = \"hello world\"",
+      "    let part = text.slice(6, 5)",
+      "    let copied = part.to_cstr(addr(scratch))",
+      "    panic(copied)",
+      "    if part.len == cast[usize](5):",
+      "        return cast[i32](part.len)",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static mt_str str_slice\(mt_str this, uintptr_t start, uintptr_t len\)/, generated)
+    assert_match(/return \(mt_str\)\{ \.data = this\.data \+ start, \.len = len \};/, generated)
+    assert_match(/static const char\* std_mem_arena_Arena_to_cstr\(std_mem_arena_Arena \*this, mt_str text\)/, generated)
+    assert_match(/uint8_t\* memory = std_mem_arena_Arena_alloc_bytes\(this, text\.len \+ 1\);/, generated)
+    assert_match(/char \*buffer = \(\(char\*\) memory\);/, generated)
+    assert_match(/\*\(buffer \+ text\.len\) = 0;/, generated)
+    assert_match(/mt_str text = \(mt_str\)\{ \.data = "hello world", \.len = 11 \};/, generated)
+    assert_match(/const char\* copied = str_to_cstr\(part, &scratch\);/, generated)
   end
 
   def test_generate_c_for_packed_and_aligned_structs
@@ -638,7 +670,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/static void demo_ref_surface_increment\(demo_ref_surface_Counter \*counter, int32_t amount\)/, generated)
     assert_match(/demo_ref_surface_Counter \*handle = &counter;/, generated)
     assert_match(/demo_ref_surface_increment\(handle, 4\);/, generated)
-    assert_match(/demo_ref_surface_Counter_add\(\&\(\*counter\), amount\);/, generated)
+    assert_match(/demo_ref_surface_Counter_add\(counter, amount\);/, generated)
     assert_match(/\(\*counter\)\.value \+= 1;/, generated)
     assert_match(/int32_t \*value_ref = &\(\*handle\)\.value;/, generated)
     assert_match(/\*value_ref \+= 2;/, generated)

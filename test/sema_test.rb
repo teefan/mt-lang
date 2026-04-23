@@ -390,6 +390,32 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/argument value to set_text expects cstr, got str/, error.message)
   end
 
+  def test_type_checks_real_str_len_slice_and_cstr_conversion
+    source = <<~MT
+      module demo.str_methods
+
+      import std.str
+      import std.mem.arena as arena
+
+      def main() -> i32:
+          var scratch = arena.create(64)
+          defer scratch.release()
+
+          let text: str = "hello world"
+          let part = text.slice(6, 5)
+          let copied = part.to_cstr(addr(scratch))
+
+          if text.len == cast[usize](11) and part.len == cast[usize](5):
+              return cast[i32](part.len)
+          panic(copied)
+          return 0
+    MT
+
+            program = check_program_source(source)
+
+            assert_equal true, program.analyses_by_module_name.key?("demo.str_methods")
+  end
+
   def test_type_checks_exhaustive_match_statement_over_enum
     source = <<~MT
       module demo.match

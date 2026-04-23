@@ -67,7 +67,7 @@ module MilkTea
 
       def install_builtin_types
         BUILTIN_TYPE_NAMES.each do |name|
-          @types[name] = Types::Primitive.new(name)
+          @types[name] = name == "str" ? Types::StringView.new : Types::Primitive.new(name)
         end
       end
 
@@ -220,7 +220,9 @@ module MilkTea
             @top_level_functions[decl.name] = declare_function_binding(decl, external: true)
           when AST::MethodsBlock
             receiver_type = resolve_type_ref(AST::TypeRef.new(name: decl.type_name, arguments: [], nullable: false))
-            raise SemaError, "methods target #{decl.type_name} must be a struct" unless receiver_type.is_a?(Types::Struct)
+            unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StringView)
+              raise SemaError, "methods target #{decl.type_name} must be a struct or str"
+            end
 
             decl.methods.each do |method|
               binding = declare_function_binding(method, receiver_type:)
@@ -949,14 +951,17 @@ module MilkTea
           return [:raw, nil, nil] if callee.name == "raw"
 
           type = @types[callee.name]
-          return [:struct, type, nil] if type.is_a?(Types::Struct)
+          return [:struct, type, nil] if type.is_a?(Types::Struct) || type.is_a?(Types::StringView)
 
           raise SemaError, "unknown callable #{callee.name}"
         when AST::MemberAccess
           if callee.receiver.is_a?(AST::Identifier) && @imports.key?(callee.receiver.name)
             imported_module = @imports.fetch(callee.receiver.name)
             return [:function, imported_module.functions.fetch(callee.member), nil] if imported_module.functions.key?(callee.member)
-            return [:struct, imported_module.types.fetch(callee.member), nil] if imported_module.types[callee.member].is_a?(Types::Struct)
+            imported_type = imported_module.types[callee.member]
+            if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView)
+              return [:struct, imported_module.types.fetch(callee.member), nil]
+            end
 
             raise SemaError, "unknown callable #{callee.receiver.name}.#{callee.member}"
           end
@@ -1498,6 +1503,10 @@ module MilkTea
         type.is_a?(Types::Span)
       end
 
+      def string_view_type?(type)
+        type.is_a?(Types::StringView)
+      end
+
       def result_type?(type)
         type.is_a?(Types::Result)
       end
@@ -1512,7 +1521,7 @@ module MilkTea
       def infer_offsetof_type(type_ref, field_name)
         type = resolve_type_ref(type_ref)
         unless layout_aggregate_type?(type)
-          raise SemaError, "offsetof requires a struct, union, span, or Result type, got #{type}"
+          raise SemaError, "offsetof requires a struct, union, span, Result, or str type, got #{type}"
         end
 
         field_type = type.field(field_name)
@@ -1523,7 +1532,7 @@ module MilkTea
 
       def sized_layout_type?(type)
         case type
-        when Types::Primitive, Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Span, Types::Result
+        when Types::Primitive, Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Span, Types::StringView, Types::Result
           true
         when Types::Nullable
           true
@@ -1546,6 +1555,7 @@ module MilkTea
         return true if type.is_a?(Types::Nullable)
         return true if type.is_a?(Types::EnumBase)
         return true if span_type?(type)
+        return true if string_view_type?(type)
         return true if result_type?(type)
         return true if type.is_a?(Types::Struct)
         return true if pointer_type?(type)
@@ -1563,7 +1573,7 @@ module MilkTea
       end
 
       def aggregate_type?(type)
-        type.is_a?(Types::Struct) || span_type?(type) || result_type?(type)
+        type.is_a?(Types::Struct) || span_type?(type) || string_view_type?(type) || result_type?(type)
       end
 
       def array_type?(type)

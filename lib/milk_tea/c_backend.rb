@@ -190,7 +190,7 @@ module MilkTea
     def emit_string_type
       [
         "typedef struct mt_str {",
-        "#{INDENT}const char* data;",
+        "#{INDENT}char* data;",
         "#{INDENT}uintptr_t len;",
         "} mt_str;",
       ]
@@ -430,7 +430,7 @@ module MilkTea
       when IR::FloatLiteral
         emit_float_literal(expression)
       when IR::StringLiteral
-        expression.type == Types::Primitive.new("str") ? emit_str_literal(expression) : expression.value.inspect
+        expression.type.is_a?(Types::StringView) ? emit_str_literal(expression) : expression.value.inspect
       when IR::BooleanLiteral
         expression.value ? "true" : "false"
       when IR::NullLiteral
@@ -478,7 +478,7 @@ module MilkTea
     end
 
     def emit_zero_initializer(type)
-      return "{ 0 }" if type.is_a?(Types::Primitive) && type.name == "str"
+      return "{ 0 }" if type.is_a?(Types::StringView)
       return "{ 0 }" if array_type?(type)
       return "NULL" if type.is_a?(Types::Nullable)
       return "false" if type.is_a?(Types::Primitive) && type.boolean?
@@ -490,7 +490,7 @@ module MilkTea
     end
 
     def emit_zero_expression(type)
-      return "(#{c_type(type)}) #{emit_zero_initializer(type)}" if type.is_a?(Types::Primitive) && type.name == "str"
+      return "(#{c_type(type)}) #{emit_zero_initializer(type)}" if type.is_a?(Types::StringView)
       return emit_zero_initializer(type) if type.is_a?(Types::Primitive) || type.is_a?(Types::Nullable)
       return emit_zero_initializer(type) if type.is_a?(Types::EnumBase)
 
@@ -717,6 +717,9 @@ module MilkTea
       when Types::Nullable
         base = c_type(type.base)
         base.end_with?("*") ? base : "#{base}*"
+      when Types::StringView
+        base = "mt_str"
+        pointer ? "#{base}*" : base
       when Types::Primitive
         base = primitive_c_type(type.name)
         pointer ? "#{base}*" : base
@@ -1413,7 +1416,6 @@ module MilkTea
         "f32" => "float",
         "f64" => "double",
         "void" => "void",
-        "str" => "mt_str",
         "cstr" => "const char*",
       }.fetch(name)
     end
