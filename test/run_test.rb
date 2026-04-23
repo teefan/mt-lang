@@ -176,8 +176,10 @@ class MilkTeaRunTest < Minitest::Test
         "def main() -> i32:",
         "    var counter = Counter(value = 3)",
         "    let counter_ptr = &counter",
-        "    (*counter_ptr).value = 7",
-        "    let value = (*counter_ptr).value",
+        "    var value = 0",
+        "    unsafe:",
+        "        (*counter_ptr).value = 7",
+        "        value = (*counter_ptr).value",
         "    return value",
         "",
       ].join("\n"))

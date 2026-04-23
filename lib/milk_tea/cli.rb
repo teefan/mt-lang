@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "pp"
+
 module MilkTea
   class CLI
     def self.start(argv = ARGV, out: $stdout, err: $stderr)
@@ -16,10 +18,14 @@ module MilkTea
       command = @argv.shift
 
       case command
+      when "lex"
+        lex_command
       when "parse"
         parse_command
       when "check"
         check_command
+      when "lower"
+        lower_command
       when "emit-c"
         emit_c_command
       when "build"
@@ -41,6 +47,19 @@ module MilkTea
 
     private
 
+    def lex_command
+      path = @argv.shift
+      unless path
+        @err.puts("missing source file path")
+        print_usage(@err)
+        return 1
+      end
+
+      tokens = Lexer.lex(read_source_file(path), path: path)
+      @out.write(PP.pp(tokens, +""))
+      0
+    end
+
     def parse_command
       path = @argv.shift
       unless path
@@ -50,8 +69,7 @@ module MilkTea
       end
 
       ast = ModuleLoader.load_file(path)
-      module_name = ast.module_name ? ast.module_name.to_s : "(anonymous)"
-      @out.puts("parsed #{path} as #{module_name}")
+      @out.write(PrettyPrinter.format_ast(ast))
       0
     end
 
@@ -66,6 +84,19 @@ module MilkTea
       result = ModuleLoader.check_file(path)
       module_name = result.module_name || "(anonymous)"
       @out.puts("checked #{path} as #{module_name}")
+      0
+    end
+
+    def lower_command
+      path = @argv.shift
+      unless path
+        @err.puts("missing source file path")
+        print_usage(@err)
+        return 1
+      end
+
+      program = ModuleLoader.check_program(path)
+      @out.write(PrettyPrinter.format_ir(Lowering.lower(program)))
       0
     end
 
@@ -274,9 +305,19 @@ module MilkTea
       nil
     end
 
+    def read_source_file(path)
+      File.read(path)
+    rescue Errno::ENOENT
+      raise ModuleLoadError.new("source file not found", path: path)
+    rescue Errno::EISDIR
+      raise ModuleLoadError.new("expected a source file, got a directory", path: path)
+    end
+
     def print_usage(io)
-      io.puts("Usage: mtc parse PATH")
+      io.puts("Usage: mtc lex PATH")
+      io.puts("       mtc parse PATH")
       io.puts("       mtc check PATH")
+      io.puts("       mtc lower PATH")
       io.puts("       mtc emit-c PATH")
       io.puts("       mtc build PATH [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH]")
       io.puts("       mtc run PATH [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH]")

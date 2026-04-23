@@ -32,17 +32,20 @@ class MilkTeaStdRaylibMathTest < Minitest::Test
       assert_equal File.expand_path(c_path), result.c_path
       assert_equal File.expand_path(compiler_path), result.compiler
       assert_includes result.link_flags, "-lraylib"
+      assert_includes result.link_flags, "-lm"
       assert File.exist?(output_path)
       assert File.exist?(c_path)
       assert_match(/#include "raylib\.h"/, File.read(c_path))
+      assert_match(/#include "math\.h"/, File.read(c_path))
       assert_includes File.read(compiler_log).lines(chomp: true), "-lraylib"
+      assert_includes File.read(compiler_log).lines(chomp: true), "-lm"
     end
   end
 
   def test_host_runtime_executes_std_raylib_math_helpers
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
-    skip "raylib linker input not available for: #{compiler}" unless raylib_link_available?(compiler)
+    skip "raylib math linker input not available for: #{compiler}" unless raylib_math_link_available?(compiler)
 
     Dir.mktmpdir("milk-tea-std-raylib-math") do |dir|
       source_path = File.join(dir, "program.mt")
@@ -55,6 +58,7 @@ class MilkTeaStdRaylibMathTest < Minitest::Test
       assert_equal 0, result.exit_status
       assert_equal compiler, result.compiler
       assert_includes result.link_flags, "-lraylib"
+      assert_includes result.link_flags, "-lm"
     end
   end
 
@@ -69,29 +73,55 @@ class MilkTeaStdRaylibMathTest < Minitest::Test
       "import std.raylib.math as rm",
       "",
       "def approx_eq(a: f32, b: f32) -> bool:",
-      "    return math.abs(a - b) < 0.0001",
+      "    return math.abs(a - b) < 0.001",
       "",
       "def main() -> i32:",
       "    let scalar = rm.lerp(rm.clamp(1.5, 0.0, 1.0), 5.0, 0.25)",
-      "    let v2a = rm.vector2_add(rm.vector2_one(), rl.Vector2(x = 2.0, y = -1.0))",
-      "    let v2b = rm.vector2_subtract(v2a, rm.vector2_zero())",
-      "    let v2c = rm.vector2_scale(v2b, scalar)",
-      "    let v2d = rm.vector2_multiply(v2c, rl.Vector2(x = 0.5, y = 2.0))",
-      "    let v2e = rm.vector2_clamp(v2d, rl.Vector2(x = 0.0, y = -10.0), rl.Vector2(x = 10.0, y = 10.0))",
+      "    let v2a = rm.Vector2.one().add(rl.Vector2(x = 2.0, y = -1.0))",
+      "    let v2b = v2a.subtract(rm.Vector2.zero())",
+      "    let v2c = v2b.scale(scalar)",
+      "    let v2d = v2c.multiply(rl.Vector2(x = 0.5, y = 2.0))",
+      "    let v2e = v2d.clamp(rl.Vector2(x = 0.0, y = -10.0), rl.Vector2(x = 10.0, y = 10.0))",
+      "    let v2len = rl.Vector2(x = 3.0, y = 4.0).length()",
+      "    let v2dist = rm.Vector2.zero().distance(rl.Vector2(x = 6.0, y = 8.0))",
+      "    let v2norm = rl.Vector2(x = 3.0, y = 4.0).normalize()",
+      "    let v2angle = rl.Vector2(x = 1.0, y = 0.0).angle(rl.Vector2(x = 0.0, y = 1.0))",
+      "    let v2rot = rl.Vector2(x = 1.0, y = 0.0).rotate(90.0 * rm.deg2rad)",
       "",
-      "    let v3a = rm.vector3_add(rm.vector3_one(), rl.Vector3(x = 1.0, y = 2.0, z = 3.0))",
-      "    let v3b = rm.vector3_subtract(v3a, rl.Vector3(x = 1.0, y = 1.0, z = 1.0))",
-      "    let v3c = rm.vector3_scale(v3b, 2.0)",
-      "    let dot = rm.vector3_dot_product(v3c, rl.Vector3(x = 1.0, y = 0.0, z = 1.0))",
-      "    let cross = rm.vector3_cross_product(v3c, rl.Vector3(x = 0.0, y = 1.0, z = 0.0))",
-      "    let neg = rm.vector3_negate(cross)",
-      "    let mix = rm.vector3_lerp(v3c, neg, 0.25)",
+      "    let v3a = rm.Vector3.one().add(rl.Vector3(x = 1.0, y = 2.0, z = 3.0))",
+      "    let v3b = v3a.subtract(rl.Vector3(x = 1.0, y = 1.0, z = 1.0))",
+      "    let v3c = v3b.scale(2.0)",
+      "    let dot = v3c.dot(rl.Vector3(x = 1.0, y = 0.0, z = 1.0))",
+      "    let cross = v3c.cross(rl.Vector3(x = 0.0, y = 1.0, z = 0.0))",
+      "    let neg = cross.negate()",
+      "    let mix = v3c.lerp(neg, 0.25)",
+      "    let v3len = rl.Vector3(x = 2.0, y = 3.0, z = 6.0).length()",
+      "    let v3dist = rm.Vector3.zero().distance(rl.Vector3(x = 2.0, y = 3.0, z = 6.0))",
+      "    let v3norm = rl.Vector3(x = 0.0, y = 3.0, z = 4.0).normalize()",
+      "    let v3angle = rl.Vector3(x = 1.0, y = 0.0, z = 0.0).angle(rl.Vector3(x = 0.0, y = 1.0, z = 0.0))",
+      "    let v3rot = rl.Vector3(x = 1.0, y = 0.0, z = 0.0).rotate_by_axis_angle(rl.Vector3(x = 0.0, y = 0.0, z = 1.0), 90.0 * rm.deg2rad)",
       "",
-      "    let translate = rm.matrix_translate(v2e.x, v2e.y, dot)",
-      "    let identity = rm.matrix_identity()",
-      "    let scaled = rm.matrix_scale(1.0, 2.0, 3.0)",
-      "    let combined = rm.matrix_multiply(identity, translate)",
-      "    let transformed = rm.vector3_transform(mix, combined)",
+      "    let translate = rm.Matrix.translate(v2e.x, v2e.y, dot)",
+      "    let identity = rm.Matrix.identity()",
+      "    let scaled = rm.Matrix.scale(1.0, 2.0, 3.0)",
+      "    let combined = identity.multiply(translate)",
+      "    let transformed = mix.transform(combined)",
+      "    let look = rm.Matrix.look_at(rl.Vector3(x = 0.0, y = 0.0, z = 1.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector3(x = 0.0, y = 1.0, z = 0.0))",
+      "    let perspective = rm.Matrix.perspective(90.0 * rm.deg2rad, 1.0, 0.1, 100.0)",
+      "    let ortho = rm.Matrix.ortho(-1.0, 1.0, -1.0, 1.0, 0.1, 100.0)",
+      "",
+      "    let color = rm.Color.from_hsv(0.0, 1.0, 1.0)",
+      "",
+      "    let q_identity = rm.Quaternion.identity()",
+      "    let q_axis = rm.Quaternion.from_axis_angle(rl.Vector3(x = 0.0, y = 0.0, z = 1.0), 90.0 * rm.deg2rad)",
+      "    let q_norm = rl.Vector4(x = 0.0, y = 0.0, z = 2.0, w = 0.0).normalize()",
+      "    let q_inv = q_axis.invert()",
+      "    let q_back = q_axis.multiply(q_inv)",
+      "    let q_matrix = q_axis.to_matrix()",
+      "    let q_from_matrix = rm.Quaternion.from_matrix(q_matrix)",
+      "    let q_roundtrip = q_from_matrix.to_matrix()",
+      "    let q_slerp = q_identity.slerp(q_axis, 0.5)",
+      "    let q_slerp_matrix = q_slerp.to_matrix()",
       "",
       "    if not approx_eq(rm.rad2deg * rm.deg2rad, 1.0):",
       "        return 1",
@@ -105,6 +135,42 @@ class MilkTeaStdRaylibMathTest < Minitest::Test
       "        return 5",
       "    if not approx_eq(transformed.x, 6.0) or not approx_eq(transformed.y, 3.0) or not approx_eq(transformed.z, 12.0):",
       "        return 6",
+      "    if not approx_eq(v2len, 5.0) or not approx_eq(v2dist, 10.0):",
+      "        return 7",
+      "    if not approx_eq(v2norm.x, 0.6) or not approx_eq(v2norm.y, 0.8):",
+      "        return 8",
+      "    if not approx_eq(v2angle, 90.0 * rm.deg2rad):",
+      "        return 9",
+      "    if not approx_eq(v2rot.x, 0.0) or not approx_eq(v2rot.y, 1.0):",
+      "        return 10",
+      "    if not approx_eq(v3len, 7.0) or not approx_eq(v3dist, 7.0):",
+      "        return 11",
+      "    if not approx_eq(v3norm.x, 0.0) or not approx_eq(v3norm.y, 0.6) or not approx_eq(v3norm.z, 0.8):",
+      "        return 12",
+      "    if not approx_eq(v3angle, 90.0 * rm.deg2rad):",
+      "        return 13",
+      "    if not approx_eq(v3rot.x, 0.0) or not approx_eq(v3rot.y, 1.0) or not approx_eq(v3rot.z, 0.0):",
+      "        return 14",
+      "    if color.r != 255 or color.g != 0 or color.b != 0 or color.a != 255:",
+      "        return 15",
+      "    if not approx_eq(look.m0, 1.0) or not approx_eq(look.m5, 1.0) or not approx_eq(look.m10, 1.0) or not approx_eq(look.m14, -1.0):",
+      "        return 16",
+      "    if not approx_eq(perspective.m0, 1.0) or not approx_eq(perspective.m5, 1.0) or not approx_eq(perspective.m11, -1.0):",
+      "        return 17",
+      "    if not approx_eq(ortho.m0, 1.0) or not approx_eq(ortho.m5, 1.0) or not approx_eq(ortho.m15, 1.0):",
+      "        return 18",
+      "    if not approx_eq(q_identity.w, 1.0):",
+      "        return 19",
+      "    if not approx_eq(q_norm.z, 1.0) or not approx_eq(q_norm.w, 0.0):",
+      "        return 20",
+      "    if not approx_eq(q_back.x, 0.0) or not approx_eq(q_back.y, 0.0) or not approx_eq(q_back.z, 0.0) or not approx_eq(q_back.w, 1.0):",
+      "        return 21",
+      "    if not approx_eq(q_matrix.m0, 0.0) or not approx_eq(q_matrix.m1, 1.0) or not approx_eq(q_matrix.m4, -1.0) or not approx_eq(q_matrix.m5, 0.0):",
+      "        return 22",
+      "    if not approx_eq(q_roundtrip.m0, q_matrix.m0) or not approx_eq(q_roundtrip.m1, q_matrix.m1) or not approx_eq(q_roundtrip.m4, q_matrix.m4) or not approx_eq(q_roundtrip.m5, q_matrix.m5):",
+      "        return 23",
+      "    if not approx_eq(q_slerp_matrix.m0, 0.70710677) or not approx_eq(q_slerp_matrix.m1, 0.70710677) or not approx_eq(q_slerp_matrix.m4, -0.70710677) or not approx_eq(q_slerp_matrix.m5, 0.70710677):",
+      "        return 24",
       "    return 0",
       "",
     ].join("\n")
@@ -138,13 +204,13 @@ class MilkTeaStdRaylibMathTest < Minitest::Test
     end
   end
 
-  def raylib_link_available?(compiler)
+  def raylib_math_link_available?(compiler)
     Dir.mktmpdir("milk-tea-raylib-link") do |dir|
       source_path = File.join(dir, "probe.c")
       output_path = File.join(dir, "probe")
       File.write(source_path, "int main(void) { return 0; }\n")
 
-      return system(compiler, source_path, "-lraylib", "-o", output_path, out: File::NULL, err: File::NULL)
+      return system(compiler, source_path, "-lraylib", "-lm", "-o", output_path, out: File::NULL, err: File::NULL)
     end
   end
 end

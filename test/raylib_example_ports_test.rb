@@ -43,8 +43,10 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
 
   def core_example_paths
     %w[
+      core_2d_camera_platformer
       core_3d_camera_free
       core_3d_camera_first_person
+      core_3d_camera_fps
       core_3d_camera_split_screen
       core_3d_picking
       core_basic_window

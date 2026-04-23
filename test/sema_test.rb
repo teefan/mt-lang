@@ -164,6 +164,32 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_left_biased_float_literals_against_f32_operands
+    source = <<~MT
+      module demo.float_literal_alignment
+
+      struct Pair:
+          x: f32
+          y: f32
+
+      def inverse(value: f32) -> f32:
+          let scaled = 1.0 / value
+          return scaled
+
+      def main() -> i32:
+          let denom: f32 = 4.0
+          let pair = Pair(x = 1.0 / denom, y = -2.0 / denom)
+          if inverse(denom) < pair.x:
+              return 1
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal "f32", result.functions.fetch("inverse").type.return_type.to_s
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_rejects_mixed_signed_and_unsigned_integer_arithmetic_without_explicit_cast
     source = <<~MT
       module demo.bad
@@ -533,7 +559,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
-    def test_type_checks_same_width_enum_and_flags_arguments_without_explicit_cast_for_extern_calls
+  def test_type_checks_same_width_enum_and_flags_arguments_without_explicit_cast_for_extern_calls
     source = <<~MT
       module demo.call_values
 
@@ -752,7 +778,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_type_checks_address_of_dereference_and_deref_assignment
+  def test_type_checks_address_of_dereference_and_deref_assignment_in_unsafe
     source = <<~MT
       module demo.pointer_surface
 
@@ -762,13 +788,43 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> i32:
           var counter = Counter(value = 3)
           let counter_ptr = &counter
-          (*counter_ptr).value = 7
+          unsafe:
+              (*counter_ptr).value = 7
           return counter.value
     MT
 
     result = check_source(source)
 
     assert_equal true, result.types.key?("Counter")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_associated_functions_on_local_structs
+    source = <<~MT
+      module demo.associated
+
+      struct Vec:
+          x: i32
+
+      impl Vec:
+          def zero() -> Vec:
+              return Vec(x = 0)
+
+          def add(self, other: Vec) -> Vec:
+              return Vec(x = self.x + other.x)
+
+      def main() -> i32:
+          let left = Vec.zero()
+          let total = left.add(Vec.zero())
+          return total.x
+    MT
+
+    result = check_source(source)
+    vec_type = result.types.fetch("Vec")
+    methods = result.methods.fetch(vec_type)
+
+    assert_nil methods.fetch("zero").type.receiver_type
+    assert_equal vec_type, methods.fetch("add").type.receiver_type
     assert_equal true, result.functions.key?("main")
   end
 
@@ -905,6 +961,26 @@ class MilkTeaSemaTest < Minitest::Test
     end
 
     assert_match(/pointer indexing requires unsafe/, error.message)
+  end
+
+  def test_rejects_pointer_dereference_outside_unsafe
+    source = <<~MT
+      module demo.bad
+
+      struct Counter:
+          value: i32
+
+      def main() -> i32:
+          var counter = Counter(value = 3)
+          let counter_ptr = &counter
+          return (*counter_ptr).value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/pointer dereference requires unsafe/, error.message)
   end
 
   def test_rejects_safe_indexing_of_temporary_array_values

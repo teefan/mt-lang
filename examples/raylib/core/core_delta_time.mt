@@ -34,9 +34,9 @@ def main() -> i32:
         delta_circle.x += rl.GetFrameTime() * 6.0 * speed
         frame_circle.x += 0.1 * speed
 
-        if delta_circle.x > 1.0 * screen_width:
+        if delta_circle.x > cast[f32](screen_width):
             delta_circle.x = 0.0
-        if frame_circle.x > 1.0 * screen_width:
+        if frame_circle.x > cast[f32](screen_width):
             frame_circle.x = 0.0
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_R):

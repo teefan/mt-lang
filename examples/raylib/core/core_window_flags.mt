@@ -115,9 +115,9 @@ def main() -> i32:
         ball_position.x += ball_speed.x
         ball_position.y += ball_speed.y
 
-        if ball_position.x >= 1.0 * rl.GetScreenWidth() - ball_radius or ball_position.x <= ball_radius:
+        if ball_position.x >= cast[f32](rl.GetScreenWidth()) - ball_radius or ball_position.x <= ball_radius:
             ball_speed.x *= -1.0
-        if ball_position.y >= 1.0 * rl.GetScreenHeight() - ball_radius or ball_position.y <= ball_radius:
+        if ball_position.y >= cast[f32](rl.GetScreenHeight()) - ball_radius or ball_position.y <= ball_radius:
             ball_speed.y *= -1.0
 
         rl.BeginDrawing()
@@ -133,8 +133,8 @@ def main() -> i32:
             rl.Rectangle(
                 x = 0.0,
                 y = 0.0,
-                width = 1.0 * rl.GetScreenWidth(),
-                height = 1.0 * rl.GetScreenHeight(),
+                width = cast[f32](rl.GetScreenWidth()),
+                height = cast[f32](rl.GetScreenHeight()),
             ),
             outline_thickness,
             rl.RAYWHITE,

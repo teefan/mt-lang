@@ -232,6 +232,8 @@ module MilkTea
         raise SemaError, "generic methods are not supported yet in #{decl.name}" if receiver_type && type_param_names.any?
         raise SemaError, "main cannot be generic" if decl.name == "main" && type_param_names.any?
 
+        instance_method = receiver_type && decl.params.first&.name == "self"
+
         type_params = {}
         type_param_names.each do |name|
           raise SemaError, "duplicate type parameter #{decl.name}[#{name}]" if type_params.key?(name)
@@ -240,7 +242,7 @@ module MilkTea
         end
 
         body_params = decl.params.map.with_index do |param, index|
-          type = if receiver_type && index.zero? && param.name == "self"
+          type = if instance_method && index.zero? && param.name == "self"
                    receiver_type
                  else
                    raise SemaError, "parameter #{param.name} requires a type" unless param.type
@@ -257,14 +259,12 @@ module MilkTea
 
         receiver_mutable = false
         call_params = body_params
-        if receiver_type
+        function_receiver_type = nil
+        if instance_method
           self_param = decl.params.first
-          unless self_param && self_param.name == "self"
-            raise SemaError, "method #{decl.name} must declare self as the first parameter"
-          end
-
           receiver_mutable = self_param.mutable
           call_params = body_params.drop(1)
+          function_receiver_type = receiver_type
         end
 
         seen = {}
@@ -283,7 +283,7 @@ module MilkTea
           decl.name,
           params: call_params.map { |param| Types::Parameter.new(param.name, param.type, mutable: param.mutable) },
           return_type:,
-          receiver_type:,
+          receiver_type: function_receiver_type,
           receiver_mutable:,
           external:,
         )
@@ -549,6 +549,7 @@ module MilkTea
             pointer_type = infer_expression(expression.operand, scopes:)
             pointee_type = pointee_type(pointer_type)
             raise SemaError, "operator * requires a pointer operand, got #{pointer_type}" unless pointee_type
+            raise SemaError, "pointer dereference requires unsafe" unless unsafe_context?
 
             return pointee_type
           end
@@ -586,6 +587,7 @@ module MilkTea
             pointer_type = infer_expression(expression.operand, scopes:)
             pointee_type = pointee_type(pointer_type)
             raise SemaError, "operator * requires a pointer operand, got #{pointer_type}" unless pointee_type
+            raise SemaError, "pointer dereference requires unsafe" unless unsafe_context?
 
             return pointee_type
           end
@@ -677,6 +679,11 @@ module MilkTea
           member_type = resolve_type_member(type, expression.member)
           return member_type if member_type
 
+          if (method = lookup_method(type, expression.member))
+            raise SemaError, "associated function #{type}.#{expression.member} must be called" unless method.type.receiver_type.nil?
+            raise SemaError, "method #{type}.#{expression.member} must be called"
+          end
+
           raise SemaError, "unknown member #{type}.#{expression.member}"
         end
 
@@ -743,6 +750,7 @@ module MilkTea
         when "*"
           pointee_type = pointee_type(operand_type)
           raise SemaError, "operator * requires a pointer operand, got #{operand_type}" unless pointee_type
+          raise SemaError, "pointer dereference requires unsafe" unless unsafe_context?
 
           pointee_type
         else
@@ -764,6 +772,13 @@ module MilkTea
                               end
 
         right_type = infer_expression(expression.right, scopes:, expected_type: right_expected_type)
+        left_type, right_type = harmonize_binary_float_literal_types(
+          expression.left,
+          expression.right,
+          left_type,
+          right_type,
+          scopes:,
+        )
 
         case expression.operator
         when "and", "or"
@@ -814,6 +829,23 @@ module MilkTea
         else
           raise SemaError, "unsupported binary operator #{expression.operator}"
         end
+      end
+
+      def harmonize_binary_float_literal_types(left_expression, right_expression, left_type, right_type, scopes:)
+        if float_literal_expression?(left_expression) && right_type.is_a?(Types::Primitive) && right_type.float?
+          left_type = infer_expression(left_expression, scopes:, expected_type: right_type)
+        end
+
+        if float_literal_expression?(right_expression) && left_type.is_a?(Types::Primitive) && left_type.float?
+          right_type = infer_expression(right_expression, scopes:, expected_type: left_type)
+        end
+
+        [left_type, right_type]
+      end
+
+      def float_literal_expression?(expression)
+        expression.is_a?(AST::FloatLiteral) ||
+          (expression.is_a?(AST::UnaryOp) && ["+", "-"].include?(expression.operator) && float_literal_expression?(expression.operand))
       end
 
       def propagating_expected_type(operator, expected_type)
@@ -878,6 +910,13 @@ module MilkTea
             return [:struct, imported_module.types.fetch(callee.member), nil] if imported_module.types[callee.member].is_a?(Types::Struct)
 
             raise SemaError, "unknown callable #{callee.receiver.name}.#{callee.member}"
+          end
+
+          if (type_expr = resolve_type_expression(callee.receiver))
+            method = lookup_method(type_expr, callee.member)
+            return [:function, method, nil] if method && method.type.receiver_type.nil?
+
+            raise SemaError, "unknown associated function #{type_expr}.#{callee.member}"
           end
 
           receiver_type = infer_expression(callee.receiver, scopes:)

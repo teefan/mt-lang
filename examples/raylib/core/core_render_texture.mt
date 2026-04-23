@@ -30,9 +30,9 @@ def main() -> i32:
         ball_position.x += ball_speed.x
         ball_position.y += ball_speed.y
 
-        if ball_position.x >= 1.0 * render_texture_width - ball_radius_limit or ball_position.x <= ball_radius_limit:
+        if ball_position.x >= cast[f32](render_texture_width) - ball_radius_limit or ball_position.x <= ball_radius_limit:
             ball_speed.x *= -1.0
-        if ball_position.y >= 1.0 * render_texture_height - ball_radius_limit or ball_position.y <= ball_radius_limit:
+        if ball_position.y >= cast[f32](render_texture_height) - ball_radius_limit or ball_position.y <= ball_radius_limit:
             ball_speed.y *= -1.0
 
         rotation += 0.5
@@ -52,14 +52,14 @@ def main() -> i32:
             rl.Rectangle(
                 x = 0.0,
                 y = 0.0,
-                width = 1.0 * target.texture.width,
-                height = -1.0 * target.texture.height,
+                width = cast[f32](target.texture.width),
+                height = -cast[f32](target.texture.height),
             ),
             rl.Rectangle(
                 x = 0.5 * screen_width,
                 y = 0.5 * screen_height,
-                width = 1.0 * target.texture.width,
-                height = 1.0 * target.texture.height,
+                width = cast[f32](target.texture.width),
+                height = cast[f32](target.texture.height),
             ),
             rl.Vector2(
                 x = 0.5 * target.texture.width,

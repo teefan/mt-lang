@@ -448,7 +448,8 @@ class MilkTeaCodegenTest < Minitest::Test
       "def main() -> i32:",
       "    var counter = Counter(value = 3)",
       "    let counter_ptr = &counter",
-      "    (*counter_ptr).value = 7",
+      "    unsafe:",
+      "        (*counter_ptr).value = 7",
       "    return counter.value",
       "",
     ].join("\n")
@@ -458,6 +459,45 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/demo_pointer_surface_Counter \*counter_ptr = &counter;/, generated)
     assert_match(/\(\*counter_ptr\)\.value = 7;/, generated)
     assert_match(/return counter\.value;/, generated)
+  end
+
+  def test_generate_c_for_imported_associated_functions_on_type_aliases
+    Dir.mktmpdir("milk-tea-codegen-associated") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "demo"))
+
+      File.write(File.join(dir, "demo", "math.mt"), [
+        "module demo.math",
+        "",
+        "struct RawVec:",
+        "    x: i32",
+        "",
+        "type Vec = RawVec",
+        "",
+        "impl RawVec:",
+        "    def zero() -> Vec:",
+        "        return Vec(x = 0)",
+        "",
+      ].join("\n"))
+
+      source_path = File.join(dir, "main.mt")
+      File.write(source_path, [
+        "module demo.main",
+        "",
+        "import demo.math as math",
+        "",
+        "def main() -> i32:",
+        "    let value = math.Vec.zero()",
+        "    return value.x",
+        "",
+      ].join("\n"))
+
+      program = MilkTea::ModuleLoader.new(module_roots: [dir]).check_program(source_path)
+      generated = MilkTea::Codegen.generate_c(program)
+
+      assert_match(/static demo_math_RawVec demo_math_RawVec_zero\(void\)/, generated)
+      assert_match(/demo_math_RawVec value = demo_math_RawVec_zero\(\);/, generated)
+      assert_match(/return value\.x;/, generated)
+    end
   end
 
   def test_generate_c_for_fixed_array_construction_and_layout
@@ -597,6 +637,26 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/_Static_assert\(sizeof\(uint32_t\) == sizeof\(float\), "reinterpret requires equal sizes"\);/, generated)
     assert_match(/memcpy\(&result, &value, sizeof\(result\)\);/, generated)
     assert_match(/uint32_t bits = mt_reinterpret_u32_from_f32\(value\);/, generated)
+  end
+
+  def test_generate_c_for_left_biased_float_literal_inference
+    source = [
+      "module demo.float_literal_inference",
+      "",
+      "def main() -> i32:",
+      "    let value: f32 = 4.0",
+      "    let inverse = 1.0 / value",
+      "    let scaled = -2.0 / value",
+      "    if inverse > scaled:",
+      "        return 0",
+      "    return 1",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/float inverse = 1\.0f \/ value;/, generated)
+    assert_match(/float scaled = \(-2\.0f\) \/ value;/, generated)
   end
 
   private
