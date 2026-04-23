@@ -28,6 +28,7 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
         assert_equal File.expand_path(c_path), result.c_path
         assert_equal File.expand_path(compiler_path), result.compiler
         assert_includes result.link_flags, "-lraylib"
+        assert_includes result.link_flags, "-lm" if File.basename(path, ".mt") == "core_clipboard_text"
         assert File.exist?(output_path)
         assert File.exist?(c_path)
         assert_match(/#include "raylib\.h"/, File.read(c_path))

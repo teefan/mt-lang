@@ -173,7 +173,7 @@ module MilkTea
           module_name: "std.c.raygui",
           binding_path: root.join("std/c/raygui.mt"),
           include_directives: ["raygui.h"],
-          link_libraries: ["raylib"],
+          link_libraries: ["raylib", "m"],
           env_var: "RAYGUI_HEADER",
           implementation_defines: ["RAYGUI_IMPLEMENTATION"],
           header_candidates: [

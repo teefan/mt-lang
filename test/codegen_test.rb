@@ -409,9 +409,11 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/#include <stdio\.h>/, generated)
     assert_match(/#include <stdlib\.h>/, generated)
     assert_match(/static void mt_panic\(const char\* message\)/, generated)
+    assert_match(/static void mt_panic_str\(mt_str message\)/, generated)
     assert_match(/fputs\(message, stderr\);/, generated)
+    assert_match(/fwrite\(message\.data, 1, message\.len, stderr\);/, generated)
     assert_match(/abort\(\);/, generated)
-    assert_match(/mt_panic\("bad state"\);/, generated)
+    assert_match(/mt_panic_str\(\(mt_str\)\{ \.data = "bad state", \.len = 9 \}\);/, generated)
   end
 
   def test_generate_c_for_enum_match_statement_as_switch
@@ -525,6 +527,29 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/#include <stddef\.h>/, generated)
     assert_match(/_Static_assert\(sizeof\(demo_layout_surface_Header\) == 6, "Header size should stay stable"\);/, generated)
     assert_match(/return offsetof\(demo_layout_surface_Header, version\) \+ _Alignof\(demo_layout_surface_Header\);/, generated)
+  end
+
+  def test_generate_c_for_real_str_literals_and_panic
+    source = [
+      "module demo.str_surface",
+      "",
+      "const greeting: str = \"hello\"",
+      "",
+      "def main() -> i32:",
+      "    panic(greeting)",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/typedef struct mt_str \{/, generated)
+    assert_match(/const char\* data;/, generated)
+    assert_match(/uintptr_t len;/, generated)
+    assert_match(/static const mt_str demo_str_surface_greeting = \(mt_str\)\{ \.data = "hello", \.len = 5 \};/, generated)
+    assert_match(/static void mt_panic_str\(mt_str message\) \{/, generated)
+    assert_match(/fwrite\(message\.data, 1, message\.len, stderr\);/, generated)
+    assert_match(/mt_panic_str\(demo_str_surface_greeting\);/, generated)
   end
 
   def test_generate_c_for_packed_and_aligned_structs

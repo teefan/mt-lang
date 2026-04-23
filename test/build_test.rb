@@ -175,10 +175,12 @@ class MilkTeaBuildTest < Minitest::Test
       assert_equal File.expand_path(c_path), result.c_path
       assert_equal File.expand_path(compiler_path), result.compiler
       assert_includes result.link_flags, "-lraylib"
+      assert_includes result.link_flags, "-lm"
       assert_match(/#include "raygui\.h"/, File.read(c_path))
 
       invocation = File.read(compiler_log).lines(chomp: true)
       assert_includes invocation, "-lraylib"
+      assert_includes invocation, "-lm"
       assert_includes invocation, "-DRAYGUI_IMPLEMENTATION"
       assert_includes invocation, "-I#{File.expand_path('../third_party/raylib-upstream/examples/shapes', __dir__)}"
     end
