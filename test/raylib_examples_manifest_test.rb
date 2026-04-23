@@ -11,8 +11,14 @@ class MilkTeaRaylibExamplesManifestTest < Minitest::Test
       manifest = MilkTea::RaylibExamplesManifest.generate(examples_root)
 
       assert_equal File.join(examples_root, "examples_list.txt"), manifest.fetch("examples_list_path")
-      assert_equal 2, manifest.fetch("total_examples")
-      assert_equal({ "core" => 1, "shaders" => 1 }, manifest.fetch("category_counts"))
+      assert_equal 3, manifest.fetch("total_examples")
+      assert_equal({ "core" => 2, "shaders" => 1 }, manifest.fetch("category_counts"))
+
+      rlgl_example = manifest.fetch("examples").find { |example| example.fetch("example_id") == "core/core_2d_camera_mouse_zoom" }
+      refute_nil rlgl_example
+      assert_equal ["rlgl.h"], rlgl_example.fetch("helper_headers")
+      assert_equal true, rlgl_example.fetch("uses_rlgl")
+      refute_includes rlgl_example.fetch("known_blockers"), "rlgl_helper_header"
 
       shader_example = manifest.fetch("examples").find { |example| example.fetch("example_id") == "shaders/shaders_texture_waves" }
       refute_nil shader_example
@@ -62,6 +68,7 @@ class MilkTeaRaylibExamplesManifestTest < Minitest::Test
     File.write(File.join(examples_root, "examples_list.txt"), <<~TXT)
       # curated examples fixture
       core;core_basic_window;★☆☆☆;1.0;1.0;2013;2025;"Ramon Santamaria";@raysan5
+      core;core_2d_camera_mouse_zoom;★★☆☆;1.0;5.5;2016;2025;"Ramon Santamaria";@raysan5
       shaders;shaders_texture_waves;★★☆☆;2.5;3.7;2019;2025;"Anata";@anatagawa
     TXT
 
@@ -71,6 +78,18 @@ class MilkTeaRaylibExamplesManifestTest < Minitest::Test
       int main(void)
       {
           InitWindow(800, 450, "raylib [core] example - basic window");
+          return 0;
+      }
+    C
+
+    File.write(File.join(examples_root, "core", "core_2d_camera_mouse_zoom.c"), <<~C)
+      #include "raylib.h"
+      #include "rlgl.h"
+
+      int main(void)
+      {
+          rlPushMatrix();
+          rlPopMatrix();
           return 0;
       }
     C

@@ -12,6 +12,8 @@ extern module std.c.libm:
 
     extern def cosf(__x: f32) -> f32
 
+    extern def truncf(__x: f32) -> f32
+
     extern def tanf(__x: f32) -> f32
 
     extern def atan2f(__y: f32, __x: f32) -> f32

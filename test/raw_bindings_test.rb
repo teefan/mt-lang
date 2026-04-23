@@ -7,11 +7,14 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raygui libc], registry.map(&:name)
+    assert_equal %w[raylib raygui rlgl libc], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_equal ["RAYGUI_IMPLEMENTATION"], registry.fetch("raygui").implementation_defines
     assert_equal ["raylib", "m"], registry.fetch("raygui").link_libraries
     assert_includes registry.fetch("raygui").header_candidates.first, "third_party/raylib-upstream/examples/shapes/raygui.h"
+    assert_equal "std.c.rlgl", registry.fetch("rlgl").module_name
+    assert_equal ["raylib"], registry.fetch("rlgl").link_libraries
+    assert_includes registry.fetch("rlgl").header_candidates.last, "third_party/raylib-upstream/src/rlgl.h"
     assert_equal "bindgen:check:libc", registry.fetch("libc").check_task_name
     assert_equal "bindgen:check_raylib", registry.fetch("raylib").legacy_check_task_name
   end
