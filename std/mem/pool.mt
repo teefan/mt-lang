@@ -37,8 +37,8 @@ methods Pool:
         while index < this.slot_count:
             unsafe:
                 let state_ptr = this.occupancy + index
-                if *state_ptr == false:
-                    *state_ptr = true
+                if value(state_ptr) == false:
+                    value(state_ptr) = true
                     this.used_count = this.used_count + 1
                     return this.memory + (index * this.slot_size)
             index = index + 1
@@ -55,10 +55,10 @@ methods Pool:
                 let candidate = this.memory + (index * this.slot_size)
                 if candidate == slot:
                     let state_ptr = this.occupancy + index
-                    if *state_ptr == false:
+                    if value(state_ptr) == false:
                         return false
 
-                    *state_ptr = false
+                    value(state_ptr) = false
                     this.used_count = this.used_count - 1
                     return true
             index = index + 1

@@ -48,7 +48,6 @@ module MilkTea
 
     Identifier = Data.define(:name)
     MemberAccess = Data.define(:receiver, :member)
-    PointerMemberAccess = Data.define(:receiver, :member)
     IndexAccess = Data.define(:receiver, :index)
     Specialization = Data.define(:callee, :arguments)
     Call = Data.define(:callee, :arguments)

@@ -42,3 +42,11 @@ methods Arena:
         this.offset = 0
         this.capacity = 0
         return
+
+def alloc[T](space: ref[Arena], count: usize) -> ptr[T]?:
+    let memory = value(space).alloc_bytes(count * cast[usize](sizeof(T)))
+    if memory == null:
+        return null
+
+    unsafe:
+        return cast[ptr[T]](memory)

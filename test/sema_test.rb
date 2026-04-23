@@ -218,11 +218,11 @@ class MilkTeaSemaTest < Minitest::Test
           if items.len == 0:
               return 0
           unsafe:
-              return *items.data
+              return value(items.data)
 
       def main() -> i32:
           var value = 7
-          let items = span[i32](data = &value, len = 1)
+          let items = span[i32](data = raw(addr(value)), len = 1)
           return read(items)
     MT
 
@@ -244,7 +244,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var value = 7
-          let items = span[i32](data = &value, len = 1)
+          let items = span[i32](data = raw(addr(value)), len = 1)
           return bump(items)
     MT
 
@@ -269,11 +269,11 @@ class MilkTeaSemaTest < Minitest::Test
           if items.len == 0:
               return 0
           unsafe:
-              return *items.data
+              return value(items.data)
 
       def main() -> i32:
           var value = 7
-          let holder = Holder(items = Slice[i32](data = &value, len = 1))
+          let holder = Holder(items = Slice[i32](data = raw(addr(value)), len = 1))
           return read(holder.items)
     MT
 
@@ -302,10 +302,10 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var value = 7
-          let items = Slice[i32](data = &value, len = 1)
+          let items = Slice[i32](data = raw(addr(value)), len = 1)
           let smallest = min(9, 4)
           unsafe:
-              return *head(items) + smallest
+              return value(head(items)) + smallest
     MT
 
     result = check_source(source)
@@ -428,12 +428,12 @@ class MilkTeaSemaTest < Minitest::Test
 
       def add(target: ptr[i32], amount: i32) -> void:
           unsafe:
-              *target += amount
+              value(target) += amount
 
       def main() -> i32:
           var total = 0
           for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):
-              defer add(&total, 1)
+              defer add(raw(addr(total)), 1)
               match step:
                   Step.skip:
                       continue
@@ -963,9 +963,9 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let counter_ptr = &counter
+          let counter_ptr = raw(addr(counter))
           unsafe:
-              counter_ptr->value = 7
+              value(counter_ptr).value = 7
           return counter.value
     MT
 
@@ -1183,15 +1183,15 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let counter_ptr = &counter
-          return counter_ptr->value
+          let counter_ptr = raw(addr(counter))
+          return value(counter_ptr).value
     MT
 
     error = assert_raises(MilkTea::SemaError) do
       check_source(source)
     end
 
-    assert_match(/pointer dereference requires unsafe/, error.message)
+    assert_match(/raw pointer dereference requires unsafe/, error.message)
   end
 
   def test_rejects_safe_indexing_of_temporary_array_values
@@ -1215,7 +1215,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.bad
 
       def main() -> i32:
-          let value = *1
+          let value = value(1)
           return value
     MT
 
@@ -1223,7 +1223,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/operator \* requires a pointer operand/, error.message)
+    assert_match(/value expects ref\[\.\.\.\] or ptr\[\.\.\.\], got i32/, error.message)
   end
 
   def test_rejects_pointer_cast_outside_unsafe
@@ -1276,16 +1276,19 @@ class MilkTeaSemaTest < Minitest::Test
               this.value += delta
 
       def increment(counter: ref[Counter], amount: i32) -> void:
-          counter.add(amount)
-          counter.value += 1
+          value(counter).add(amount)
+          value(counter).value += 1
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let handle = ref(counter)
+          let handle = addr(counter)
           increment(handle, 4)
-          let value_ref = ref(counter.value)
-          *value_ref += 2
-          return counter.value
+          let value_ref = addr(value(handle).value)
+          value(value_ref) += 2
+          unsafe:
+              let raw_counter = raw(handle)
+              value(raw_counter).value += 1
+          return value(handle).value
     MT
 
     result = check_source(source)
@@ -1300,7 +1303,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           let value = 1
-          let handle = ref(value)
+          let handle = addr(value)
           return 0
     MT
 
@@ -1351,13 +1354,38 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/function leak cannot return ref types/, return_error.message)
   end
 
+  def test_type_checks_ref_arguments_for_by_value_parameters
+    source = <<~MT
+      module demo.ref_value_args
+
+      struct Counter:
+          value: i32
+
+      extern def consume(counter: Counter) -> void
+
+      def read(counter: Counter) -> i32:
+          return counter.value
+
+      def main() -> i32:
+          var counter = Counter(value = 7)
+          let handle = addr(counter)
+          consume(value(handle))
+          return read(value(handle))
+    MT
+
+    result = check_source(source)
+
+    assert_equal "demo.ref_value_args.Counter", result.functions.fetch("read").type.params.first.type.to_s
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_rejects_ref_to_pointer_cast_outside_unsafe
     source = <<~MT
       module demo.bad
 
       def main() -> i32:
           var value = 1
-          let handle = ref(value)
+          let handle = addr(value)
           let raw = cast[ptr[i32]](handle)
           return 0
     MT
@@ -1367,6 +1395,26 @@ class MilkTeaSemaTest < Minitest::Test
     end
 
     assert_match(/ref to pointer cast requires unsafe/, error.message)
+  end
+
+  def test_rejects_ref_projection_without_value
+    source = <<~MT
+      module demo.bad
+
+      struct Counter:
+          value: i32
+
+      def main() -> i32:
+          var counter = Counter(value = 3)
+          let handle = addr(counter)
+          return handle.value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/cannot access member value of ref\[demo.bad.Counter\]/, error.message)
   end
 
   def test_rejects_non_integer_flags_backing_types

@@ -114,7 +114,7 @@ def main() -> i32:
                 camera.projection = rl.CameraProjection.CAMERA_PERSPECTIVE
                 camera.fovy = 60.0
 
-        rl.UpdateCamera(&camera, camera_mode)
+        rl.UpdateCamera(raw(addr(camera)), camera_mode)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

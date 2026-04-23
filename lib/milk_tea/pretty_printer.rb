@@ -358,8 +358,6 @@ module MilkTea
           expression.name
         when AST::MemberAccess
           wrap("#{render_postfix(expression.receiver)}.#{expression.member}", parent_precedence, POSTFIX_PRECEDENCE)
-        when AST::PointerMemberAccess
-          wrap("#{render_postfix(expression.receiver)}->#{expression.member}", parent_precedence, POSTFIX_PRECEDENCE)
         when AST::IndexAccess
           wrap("#{render_postfix(expression.receiver)}[#{render_expression(expression.index)}]", parent_precedence, POSTFIX_PRECEDENCE)
         when AST::Specialization
@@ -405,7 +403,7 @@ module MilkTea
       end
 
       def postfix_expression?(expression)
-        expression.is_a?(AST::Identifier) || expression.is_a?(AST::MemberAccess) || expression.is_a?(AST::PointerMemberAccess) || expression.is_a?(AST::IndexAccess) ||
+        expression.is_a?(AST::Identifier) || expression.is_a?(AST::MemberAccess) || expression.is_a?(AST::IndexAccess) ||
           expression.is_a?(AST::Specialization) || expression.is_a?(AST::Call)
       end
     end

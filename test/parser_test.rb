@@ -297,7 +297,7 @@ class MilkTeaParserTest < Minitest::Test
 
       def main() -> i32:
           let value = 7
-          let items = Slice[i32](data = &value, len = 1)
+          let items = Slice[i32](data = raw(addr(value)), len = 1)
           return items.len
     MT
 
@@ -508,9 +508,45 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::Call, local_decl.value.left
   end
 
-  def test_parses_address_of_and_dereference
+  def test_parses_addr_value_and_raw_calls
     source = <<~MT
-      module demo.pointers
+      module demo.handles
+
+      struct Counter:
+          value: i32
+
+      def main() -> i32:
+          var counter = Counter(value = 3)
+          let handle = addr(counter)
+          unsafe:
+              let counter_ptr = raw(handle)
+              value(counter_ptr).value = 7
+          let value_ref = addr(value(handle).value)
+          value(value_ref) += 2
+          return value(handle).value
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations[1]
+
+    handle_decl = main_fn.body[1]
+    assert_instance_of MilkTea::AST::Call, handle_decl.value
+    assert_equal "addr", handle_decl.value.callee.name
+
+    unsafe_stmt = main_fn.body[2]
+    pointer_decl = unsafe_stmt.body[0]
+    assert_instance_of MilkTea::AST::Call, pointer_decl.value
+    assert_equal "raw", pointer_decl.value.callee.name
+
+    assignment = unsafe_stmt.body[1]
+    assert_instance_of MilkTea::AST::MemberAccess, assignment.target
+    assert_instance_of MilkTea::AST::Call, assignment.target.receiver
+    assert_equal "value", assignment.target.receiver.callee.name
+  end
+
+  def test_rejects_legacy_pointer_sigils
+    source = <<~MT
+      module demo.bad
 
       struct Counter:
           value: i32
@@ -518,21 +554,12 @@ class MilkTeaParserTest < Minitest::Test
       def main() -> i32:
           var counter = Counter(value = 3)
           let counter_ptr = &counter
-          let value = counter_ptr->value
-          return value
+          return counter_ptr->value
     MT
 
-    ast = MilkTea::Parser.parse(source)
-    main_fn = ast.declarations[1]
-
-    pointer_decl = main_fn.body[1]
-    assert_instance_of MilkTea::AST::UnaryOp, pointer_decl.value
-    assert_equal "&", pointer_decl.value.operator
-
-    value_decl = main_fn.body[2]
-    assert_instance_of MilkTea::AST::PointerMemberAccess, value_decl.value
-    assert_instance_of MilkTea::AST::Identifier, value_decl.value.receiver
-    assert_equal "counter_ptr", value_decl.value.receiver.name
+    assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(source)
+    end
   end
 
   def test_parses_keyword_names_in_struct_fields_and_member_access

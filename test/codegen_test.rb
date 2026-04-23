@@ -135,11 +135,11 @@ class MilkTeaCodegenTest < Minitest::Test
       "    if items.len == 0:",
       "        return 0",
       "    unsafe:",
-      "        return *items.data",
+      "        return value(items.data)",
       "",
       "def main() -> i32:",
       "    var value = 7",
-      "    let items = span[i32](data = &value, len = 1)",
+      "    let items = span[i32](data = raw(addr(value)), len = 1)",
       "    return read(items)",
       "",
     ].join("\n")
@@ -152,7 +152,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/static int32_t demo_span_surface_read\(mt_span_i32 items\)/, generated)
     assert_match(/if \(items\.len == 0\)/, generated)
     assert_match(/return \*items\.data;/, generated)
-    assert_match(/mt_span_i32 items = \(mt_span_i32\)\{ \.data = &value, \.len = 1 \};/, generated)
+    assert_match(/mt_span_i32 items = \(mt_span_i32\)\{ \.data = \(\(int32_t\*\) \(&value\)\), \.len = 1 \};/, generated)
   end
 
   def test_generate_c_for_safe_span_indexing_and_element_assignment
@@ -166,7 +166,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var value = 7",
-      "    let items = span[i32](data = &value, len = 1)",
+      "    let items = span[i32](data = raw(addr(value)), len = 1)",
       "    return bump(items)",
       "",
     ].join("\n")
@@ -286,11 +286,11 @@ class MilkTeaCodegenTest < Minitest::Test
       "    if items.len == 0:",
       "        return 0",
       "    unsafe:",
-      "        return *items.data",
+      "        return value(items.data)",
       "",
       "def main() -> i32:",
       "    var value = 7",
-      "    let holder = Holder(items = Slice[i32](data = &value, len = 1))",
+      "    let holder = Holder(items = Slice[i32](data = raw(addr(value)), len = 1))",
       "    return read(holder.items)",
       "",
     ].join("\n")
@@ -305,7 +305,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/struct demo_generic_surface_Holder \{/, generated)
     assert_match(/demo_generic_surface_Slice_i32 items;/, generated)
     assert_match(/static int32_t demo_generic_surface_read\(demo_generic_surface_Slice_i32 items\)/, generated)
-    assert_match(/demo_generic_surface_Holder holder = \(demo_generic_surface_Holder\)\{ \.items = \(demo_generic_surface_Slice_i32\)\{ \.data = &value, \.len = 1 \} \};/, generated)
+    assert_match(/demo_generic_surface_Holder holder = \(demo_generic_surface_Holder\)\{ \.items = \(demo_generic_surface_Slice_i32\)\{ \.data = \(\(int32_t\*\) \(&value\)\), \.len = 1 \} \};/, generated)
   end
 
   def test_generate_c_for_generic_functions_with_inferred_type_arguments
@@ -326,10 +326,10 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var value = 7",
-      "    let items = Slice[i32](data = &value, len = 1)",
+      "    let items = Slice[i32](data = raw(addr(value)), len = 1)",
       "    let smallest = min(9, 4)",
       "    unsafe:",
-      "        return *head(items) + smallest",
+      "        return value(head(items)) + smallest",
       "",
     ].join("\n")
 
@@ -479,12 +479,12 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def add(target: ptr[i32], amount: i32) -> void:",
       "    unsafe:",
-      "        *target += amount",
+      "        value(target) += amount",
       "",
       "def main() -> i32:",
       "    var total = 0",
       "    for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):",
-      "        defer add(&total, 1)",
+      "        defer add(raw(addr(total)), 1)",
       "        match step:",
       "            Step.skip:",
       "                continue",
@@ -565,17 +565,17 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var counter = Counter(value = 3)",
-      "    let counter_ptr = &counter",
+      "    let counter_ptr = raw(addr(counter))",
       "    unsafe:",
-      "        counter_ptr->value = 7",
+      "        value(counter_ptr).value = 7",
       "    return counter.value",
       "",
     ].join("\n")
 
     generated = generate_c_from_source(source)
 
-    assert_match(/demo_pointer_surface_Counter \*counter_ptr = &counter;/, generated)
-    assert_match(/counter_ptr->value = 7;/, generated)
+    assert_match(/demo_pointer_surface_Counter \*counter_ptr = \(\(demo_pointer_surface_Counter\*\) \(&counter\)\);/, generated)
+    assert_match(/\(\*counter_ptr\)\.value = 7;/, generated)
     assert_match(/return counter\.value;/, generated)
   end
 
@@ -591,16 +591,19 @@ class MilkTeaCodegenTest < Minitest::Test
       "        this.value += delta",
       "",
       "def increment(counter: ref[Counter], amount: i32) -> void:",
-      "    counter.add(amount)",
-      "    counter.value += 1",
+      "    value(counter).add(amount)",
+      "    value(counter).value += 1",
       "",
       "def main() -> i32:",
       "    var counter = Counter(value = 3)",
-      "    let handle = ref(counter)",
+      "    let handle = addr(counter)",
       "    increment(handle, 4)",
-      "    let value_ref = ref(counter.value)",
-      "    *value_ref += 2",
-      "    return counter.value",
+      "    let value_ref = addr(value(handle).value)",
+      "    value(value_ref) += 2",
+      "    unsafe:",
+      "        let raw_counter = raw(handle)",
+      "        value(raw_counter).value += 1",
+      "    return value(handle).value",
       "",
     ].join("\n")
 
@@ -610,11 +613,13 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/static void demo_ref_surface_increment\(demo_ref_surface_Counter \*counter, int32_t amount\)/, generated)
     assert_match(/demo_ref_surface_Counter \*handle = &counter;/, generated)
     assert_match(/demo_ref_surface_increment\(handle, 4\);/, generated)
-    assert_match(/demo_ref_surface_Counter_add\(counter, amount\);/, generated)
-    assert_match(/counter->value \+= 1;/, generated)
-    assert_match(/int32_t \*value_ref = &counter\.value;/, generated)
+    assert_match(/demo_ref_surface_Counter_add\(\&\(\*counter\), amount\);/, generated)
+    assert_match(/\(\*counter\)\.value \+= 1;/, generated)
+    assert_match(/int32_t \*value_ref = &\(\*handle\)\.value;/, generated)
     assert_match(/\*value_ref \+= 2;/, generated)
-    assert_match(/return counter\.value;/, generated)
+    assert_match(/demo_ref_surface_Counter \*raw_counter = \(\(demo_ref_surface_Counter\*\) handle\);/, generated)
+    assert_match(/\(\*raw_counter\)\.value \+= 1;/, generated)
+    assert_match(/return \(\*handle\)\.value;/, generated)
   end
 
   def test_generate_c_for_imported_associated_functions_on_type_aliases
@@ -669,9 +674,9 @@ class MilkTeaCodegenTest < Minitest::Test
       "    var palette = array[u32, 4](1, 2, 3, 4)",
       "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
       "    unsafe:",
-      "        if *cast[ptr[u32]](&palette) != 1:",
+      "        if value(raw(addr(palette[0]))) != 1:",
       "            return 1",
-      "        if *cast[ptr[u32]](&holder.colors) != 5:",
+      "        if value(raw(addr(holder.colors[0]))) != 5:",
       "            return 2",
       "    return 0",
       "",
@@ -813,6 +818,32 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/_Static_assert\(sizeof\(uint32_t\) == sizeof\(float\), "reinterpret requires equal sizes"\);/, generated)
     assert_match(/memcpy\(&result, &value, sizeof\(result\)\);/, generated)
     assert_match(/uint32_t bits = mt_reinterpret_u32_from_f32\(value\);/, generated)
+  end
+
+  def test_generate_c_for_ref_arguments_passed_to_by_value_parameters
+    source = [
+      "module demo.ref_value_args",
+      "",
+      "struct Counter:",
+      "    value: i32",
+      "",
+      "extern def consume(counter: Counter) -> void",
+      "",
+      "def read(counter: Counter) -> i32:",
+      "    return counter.value",
+      "",
+      "def main() -> i32:",
+      "    var counter = Counter(value = 7)",
+      "    let handle = addr(counter)",
+      "    consume(value(handle))",
+      "    return read(value(handle))",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/consume\(\*handle\);/, generated)
+    assert_match(/return demo_ref_value_args_read\(\*handle\);/, generated)
   end
 
   def test_generate_c_for_left_biased_float_literal_inference

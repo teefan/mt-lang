@@ -59,13 +59,13 @@ def generate_random_color_rect_sequence(rect_count: i32, rect_width: f32, width:
     return rectangles
 
 def swap_color_rect_values(left: ref[ColorRect], right: ref[ColorRect]) -> void:
-    let tmp = *left
-    left.color = right.color
-    left.rect.height = right.rect.height
-    left.rect.y = right.rect.y
-    right.color = tmp.color
-    right.rect.height = tmp.rect.height
-    right.rect.y = tmp.rect.y
+    let tmp = value(left)
+    value(left).color = value(right).color
+    value(left).rect.height = value(right).rect.height
+    value(left).rect.y = value(right).rect.y
+    value(right).color = tmp.color
+    value(right).rect.height = tmp.rect.height
+    value(right).rect.y = tmp.rect.y
     return
 
 def shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: i32) -> void:
@@ -76,7 +76,7 @@ def shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: i32) -> 
     var index = 0
     while index < rect_count:
         let right_index = sequence_view[index]
-        swap_color_rect_values(ref(rectangles_view[index]), ref(rectangles_view[right_index]))
+        swap_color_rect_values(addr(rectangles_view[index]), addr(rectangles_view[right_index]))
         index += 1
 
     rl.UnloadRandomSequence(sequence)

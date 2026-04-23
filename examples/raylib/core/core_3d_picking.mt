@@ -49,7 +49,7 @@ def main() -> i32:
 
     while not rl.WindowShouldClose():
         if rl.IsCursorHidden():
-            rl.UpdateCamera(&camera, rl.CameraMode.CAMERA_FIRST_PERSON)
+            rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_FIRST_PERSON)
 
         if rl.IsMouseButtonPressed(rl.MouseButton.MOUSE_BUTTON_RIGHT):
             if rl.IsCursorHidden():

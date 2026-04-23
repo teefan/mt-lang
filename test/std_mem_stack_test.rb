@@ -48,6 +48,50 @@ class MilkTeaStdMemStackTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_typed_stack_allocation_helper
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_mem_stack_typed",
+      "",
+      "import std.mem.stack as stack",
+      "",
+      "struct Pair:",
+      "    left: i32",
+      "    right: i32",
+      "",
+      "def main() -> i32:",
+      "    var temp = stack.create(cast[usize](sizeof(Pair)))",
+      "    defer temp.release()",
+      "",
+      "    let pair = stack.alloc[Pair](addr(temp), 1)",
+      "    if pair == null:",
+      "        return 1",
+      "",
+      "    unsafe:",
+      "        let base = cast[ptr[Pair]](pair)",
+      "        value(base).left = 2",
+      "        value(base).right = 4",
+      "        if value(base).left + value(base).right != 6:",
+      "            return 2",
+      "",
+      "    let exhausted = stack.alloc[Pair](addr(temp), 1)",
+      "    if exhausted != null:",
+      "        return 3",
+      "",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   private
 
   def run_program(source, compiler:)

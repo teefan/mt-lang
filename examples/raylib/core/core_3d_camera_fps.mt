@@ -114,13 +114,13 @@ methods FpsState:
 
         let head_sin = rm.sin(this.head_timer * math.pi)
         let head_cos = rm.cos(this.head_timer * math.pi)
-        camera.up = up.rotate_by_axis_angle(pitch, head_sin * step_rotation + this.lean.x)
+        value(camera).up = up.rotate_by_axis_angle(pitch, head_sin * step_rotation + this.lean.x)
 
         var bobbing = right.scale(head_sin * bob_side)
         bobbing.y = rm.abs(head_cos * bob_up)
 
-        camera.position = camera.position.add(bobbing.scale(this.walk_lerp))
-        camera.target = camera.position.add(pitch)
+        value(camera).position = value(camera).position.add(bobbing.scale(this.walk_lerp))
+        value(camera).target = value(camera).position.add(pitch)
 
 def draw_level() -> void:
     let floor_extent = 25
@@ -191,7 +191,7 @@ def main() -> i32:
         projection = rl.CameraProjection.CAMERA_PERSPECTIVE,
     )
 
-    state.update_camera(ref(camera), player)
+    state.update_camera(addr(camera), player)
     rl.DisableCursor()
     rl.SetTargetFPS(60)
 
@@ -237,7 +237,7 @@ def main() -> i32:
         state.lean.x = rm.lerp(state.lean.x, cast[f32](sideway) * 0.02, 10.0 * delta)
         state.lean.y = rm.lerp(state.lean.y, cast[f32](forward) * 0.015, 10.0 * delta)
 
-        state.update_camera(ref(camera), player)
+        state.update_camera(addr(camera), player)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
