@@ -584,30 +584,14 @@ module MilkTea
           raise SemaError, "unknown field #{receiver_type}.#{expression.member}" unless field_type
 
           field_type
-        when AST::PointerMemberAccess
-          receiver_type = infer_pointer_member_receiver_type(expression.receiver, scopes:)
-          unless aggregate_type?(receiver_type)
-            raise SemaError, "cannot assign to member #{expression.member} of #{receiver_type}"
-          end
-
-          field_type = receiver_type.field(expression.member)
-          raise SemaError, "unknown field #{receiver_type}.#{expression.member}" unless field_type
-
-          field_type
         when AST::IndexAccess
           receiver_type = infer_lvalue_receiver(expression.receiver, scopes:)
           index_type = infer_expression(expression.index, scopes:, expected_type: @types.fetch("usize"))
           infer_index_result_type(receiver_type, index_type)
-        when AST::UnaryOp
-          if expression.operator == "*"
-            pointer_type = infer_expression(expression.operand, scopes:)
-            return referenced_type(pointer_type) if ref_type?(pointer_type)
-
-            pointee_type = pointee_type(pointer_type)
-            raise SemaError, "operator * requires a pointer operand, got #{pointer_type}" unless pointee_type
-            raise SemaError, "pointer dereference requires unsafe" unless unsafe_context?
-
-            return pointee_type
+        when AST::Call
+          if value_call?(expression)
+            validate_value_call_arguments!(expression.arguments)
+            return infer_value_target_type(expression.arguments.first.value, scopes:)
           end
 
           raise SemaError, "invalid assignment target"
@@ -621,7 +605,6 @@ module MilkTea
         when AST::Identifier
           binding = lookup_value(expression.name, scopes)
           raise SemaError, "unknown name #{expression.name}" unless binding
-          return referenced_type(binding.type) if ref_type?(binding.type)
 
           raise SemaError, "cannot assign through immutable #{expression.name}" unless binding.mutable
 
@@ -636,30 +619,14 @@ module MilkTea
           raise SemaError, "unknown field #{receiver_type}.#{expression.member}" unless field_type
 
           field_type
-        when AST::PointerMemberAccess
-          receiver_type = infer_pointer_member_receiver_type(expression.receiver, scopes:)
-          unless aggregate_type?(receiver_type)
-            raise SemaError, "cannot access member #{expression.member} of #{receiver_type}"
-          end
-
-          field_type = receiver_type.field(expression.member)
-          raise SemaError, "unknown field #{receiver_type}.#{expression.member}" unless field_type
-
-          field_type
         when AST::IndexAccess
           receiver_type = infer_lvalue_receiver(expression.receiver, scopes:)
           index_type = infer_expression(expression.index, scopes:, expected_type: @types.fetch("usize"))
           infer_index_result_type(receiver_type, index_type)
-        when AST::UnaryOp
-          if expression.operator == "*"
-            pointer_type = infer_expression(expression.operand, scopes:)
-            return referenced_type(pointer_type) if ref_type?(pointer_type)
-
-            pointee_type = pointee_type(pointer_type)
-            raise SemaError, "operator * requires a pointer operand, got #{pointer_type}" unless pointee_type
-            raise SemaError, "pointer dereference requires unsafe" unless unsafe_context?
-
-            return pointee_type
+        when AST::Call
+          if value_call?(expression)
+            validate_value_call_arguments!(expression.arguments)
+            return infer_value_target_type(expression.arguments.first.value, scopes:)
           end
 
           raise SemaError, "invalid assignment target"
@@ -672,9 +639,6 @@ module MilkTea
         case expression
         when AST::MemberAccess
           receiver_type = infer_lvalue_receiver(expression.receiver, scopes:)
-          receiver_type.respond_to?(:external) && receiver_type.external
-        when AST::PointerMemberAccess
-          receiver_type = infer_pointer_member_receiver_type(expression.receiver, scopes:)
           receiver_type.respond_to?(:external) && receiver_type.external
         else
           false
@@ -706,8 +670,6 @@ module MilkTea
           infer_identifier(expression, scopes:, expected_type:)
         when AST::MemberAccess
           infer_member_access(expression, scopes:)
-        when AST::PointerMemberAccess
-          infer_pointer_member_access(expression, scopes:)
         when AST::IndexAccess
           infer_index_access(expression, scopes:)
         when AST::UnaryOp
@@ -789,7 +751,6 @@ module MilkTea
         end
 
         receiver_type = infer_expression(expression.receiver, scopes:)
-        receiver_type = referenced_type(receiver_type) if ref_type?(receiver_type)
         unless aggregate_type?(receiver_type)
           raise SemaError, "cannot access member #{expression.member} of #{receiver_type}"
         end
@@ -802,31 +763,6 @@ module MilkTea
         end
 
         raise SemaError, "unknown field #{receiver_type}.#{expression.member}"
-      end
-
-      def infer_pointer_member_access(expression, scopes:)
-        receiver_type = infer_pointer_member_receiver_type(expression.receiver, scopes:)
-        unless aggregate_type?(receiver_type)
-          raise SemaError, "cannot access member #{expression.member} of #{receiver_type}"
-        end
-
-        field_type = receiver_type.field(expression.member)
-        return field_type if field_type
-
-        if lookup_method(receiver_type, expression.member)
-          raise SemaError, "method #{receiver_type.name}.#{expression.member} must be called"
-        end
-
-        raise SemaError, "unknown field #{receiver_type}.#{expression.member}"
-      end
-
-      def infer_pointer_member_receiver_type(expression, scopes:)
-        receiver_type = infer_expression(expression, scopes:)
-        pointee = pointee_type(receiver_type)
-        raise SemaError, "operator -> requires a pointer operand, got #{receiver_type}" unless pointee
-        raise SemaError, "pointer dereference requires unsafe" unless unsafe_context?
-
-        pointee
       end
 
       def infer_index_access(expression, scopes:)
@@ -855,18 +791,6 @@ module MilkTea
           raise SemaError, "operator ~ requires an integer or flags operand, got #{operand_type}" unless bitwise_type?(operand_type)
 
           operand_type
-        when "&"
-          pointee_type = infer_lvalue(expression.operand, scopes:)
-          raise SemaError, "cannot take the address of a ref value" if ref_type?(pointee_type)
-          pointer_to(pointee_type)
-        when "*"
-          return referenced_type(operand_type) if ref_type?(operand_type)
-
-          pointee_type = pointee_type(operand_type)
-          raise SemaError, "operator * requires a pointer operand, got #{operand_type}" unless pointee_type
-          raise SemaError, "pointer dereference requires unsafe" unless unsafe_context?
-
-          pointee_type
         else
           raise SemaError, "unsupported unary operator #{expression.operator}"
         end
@@ -1002,8 +926,12 @@ module MilkTea
           check_result_construction(callable_kind, expression.arguments, scopes:, expected_type:)
         when :panic
           check_panic_call(expression.arguments, scopes:)
-        when :ref
-          check_ref_call(expression.arguments, scopes:)
+        when :addr
+          check_addr_call(expression.arguments, scopes:)
+        when :value
+          check_value_call(expression.arguments, scopes:)
+        when :raw
+          check_raw_call(expression.arguments, scopes:)
         else
           raise SemaError, "#{describe_expression(expression.callee)} is not callable"
         end
@@ -1016,7 +944,9 @@ module MilkTea
           return [:result_ok, nil, nil] if callee.name == "ok"
           return [:result_err, nil, nil] if callee.name == "err"
           return [:panic, nil, nil] if callee.name == "panic"
-          return [:ref, nil, nil] if callee.name == "ref"
+          return [:addr, nil, nil] if callee.name == "addr"
+          return [:value, nil, nil] if callee.name == "value"
+          return [:raw, nil, nil] if callee.name == "raw"
 
           type = @types[callee.name]
           return [:struct, type, nil] if type.is_a?(Types::Struct)
@@ -1039,14 +969,8 @@ module MilkTea
           end
 
           receiver_type = infer_expression(callee.receiver, scopes:)
-          method = lookup_method(ref_type?(receiver_type) ? referenced_type(receiver_type) : receiver_type, callee.member)
-          return [:method, method, callee.receiver] if method
-
-          raise SemaError, "unknown method #{receiver_type}.#{callee.member}"
-        when AST::PointerMemberAccess
-          receiver_type = infer_pointer_member_receiver_type(callee.receiver, scopes:)
           method = lookup_method(receiver_type, callee.member)
-          return [:method, method, AST::UnaryOp.new(operator: "*", operand: callee.receiver)] if method
+          return [:method, method, callee.receiver] if method
 
           raise SemaError, "unknown method #{receiver_type}.#{callee.member}"
         when AST::Specialization
@@ -1178,12 +1102,28 @@ module MilkTea
         raise SemaError, "panic expects str or cstr, got #{message_type}"
       end
 
-      def check_ref_call(arguments, scopes:)
-        raise SemaError, "ref does not support named arguments" if arguments.any?(&:name)
-        raise SemaError, "ref expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+      def check_addr_call(arguments, scopes:)
+        raise SemaError, "addr does not support named arguments" if arguments.any?(&:name)
+        raise SemaError, "addr expects 1 argument, got #{arguments.length}" unless arguments.length == 1
 
-        source_type = infer_ref_source_type(arguments.first.value, scopes:)
+        source_type = infer_addr_source_type(arguments.first.value, scopes:)
         Types::GenericInstance.new("ref", [source_type])
+      end
+
+      def check_value_call(arguments, scopes:)
+        validate_value_call_arguments!(arguments)
+
+        infer_value_target_type(arguments.first.value, scopes:)
+      end
+
+      def check_raw_call(arguments, scopes:)
+        raise SemaError, "raw does not support named arguments" if arguments.any?(&:name)
+        raise SemaError, "raw expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+
+        source_type = infer_expression(arguments.first.value, scopes:)
+        raise SemaError, "raw expects ref[...] argument, got #{source_type}" unless ref_type?(source_type)
+
+        pointer_to(referenced_type(source_type))
       end
 
       def check_aggregate_construction(struct_type, arguments, scopes:)
@@ -1532,11 +1472,17 @@ module MilkTea
       end
 
       def pointer_cast?(source_type, target_type)
-        pointer_type?(source_type) && pointer_type?(target_type)
+        pointer_cast_type?(source_type) && pointer_cast_type?(target_type)
       end
 
       def ref_to_pointer_cast?(source_type, target_type)
-        ref_type?(source_type) && pointer_type?(target_type)
+        ref_type?(source_type) && pointer_cast_type?(target_type)
+      end
+
+      def pointer_cast_type?(type)
+        return pointer_type?(type.base) if type.is_a?(Types::Nullable)
+
+        pointer_type?(type)
       end
 
       def pointer_type?(type)
@@ -1776,10 +1722,8 @@ module MilkTea
         case expression
         when AST::Identifier
           true
-        when AST::MemberAccess, AST::PointerMemberAccess, AST::IndexAccess
+        when AST::MemberAccess, AST::IndexAccess
           addressable_storage_expression?(expression.receiver)
-        when AST::UnaryOp
-          expression.operator == "*"
         else
           false
         end
@@ -2021,24 +1965,49 @@ module MilkTea
         raise SemaError, "local #{local_name} cannot store nested ref types" if contains_ref_type?(type)
       end
 
-      def safe_reference_source_expression?(expression)
+      def safe_reference_source_expression?(expression, scopes:)
         case expression
         when AST::Identifier
           true
         when AST::MemberAccess, AST::IndexAccess
-          safe_reference_source_expression?(expression.receiver)
+          safe_reference_source_expression?(expression.receiver, scopes:)
+        when AST::Call
+          return false unless value_call?(expression)
+          return false unless expression.arguments.length == 1 && expression.arguments.first.name.nil?
+
+          ref_type?(infer_expression(expression.arguments.first.value, scopes:))
         else
           false
         end
       end
 
-      def infer_ref_source_type(expression, scopes:)
-        raise SemaError, "ref requires a mutable safe lvalue source" unless safe_reference_source_expression?(expression)
+      def infer_addr_source_type(expression, scopes:)
+        raise SemaError, "addr requires a mutable safe lvalue source" unless safe_reference_source_expression?(expression, scopes:)
 
         source_type = infer_lvalue(expression, scopes:)
-        raise SemaError, "ref cannot target ref values" if contains_ref_type?(source_type)
+        raise SemaError, "addr cannot target ref values" if contains_ref_type?(source_type)
 
         source_type
+      end
+
+      def validate_value_call_arguments!(arguments)
+        raise SemaError, "value does not support named arguments" if arguments.any?(&:name)
+        raise SemaError, "value expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+      end
+
+      def infer_value_target_type(handle_expression, scopes:)
+        handle_type = infer_expression(handle_expression, scopes:)
+        return referenced_type(handle_type) if ref_type?(handle_type)
+
+        pointee = pointee_type(handle_type)
+        raise SemaError, "value expects ref[...] or ptr[...], got #{handle_type}" unless pointee
+        raise SemaError, "raw pointer dereference requires unsafe" unless unsafe_context?
+
+        pointee
+      end
+
+      def value_call?(expression)
+        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "value"
       end
 
       def external_module?
@@ -2046,9 +2015,6 @@ module MilkTea
       end
 
       def assignable_receiver?(receiver_expression, scopes)
-        receiver_type = infer_expression(receiver_expression, scopes:)
-        return true if ref_type?(receiver_type)
-
         infer_lvalue(receiver_expression, scopes:)
         true
       rescue SemaError
@@ -2077,8 +2043,6 @@ module MilkTea
           expression.name
         when AST::MemberAccess
           "#{describe_expression(expression.receiver)}.#{expression.member}"
-        when AST::PointerMemberAccess
-          "#{describe_expression(expression.receiver)}->#{expression.member}"
         when AST::IndexAccess
           "#{describe_expression(expression.receiver)}[...]"
         when AST::Specialization

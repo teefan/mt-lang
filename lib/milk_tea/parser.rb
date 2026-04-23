@@ -626,7 +626,7 @@ module MilkTea
     end
 
     def parse_unary
-      if match(:not, :minus, :plus, :tilde, :amp, :star)
+      if match(:not, :minus, :plus, :tilde)
         operator = previous.lexeme
         operand = parse_unary
         AST::UnaryOp.new(operator:, operand:)
@@ -640,13 +640,8 @@ module MilkTea
 
       loop do
         if match(:dot)
-          raise error(previous, "use '->' for raw pointer member access") if pointer_dereference_expression?(expression)
-
           member = consume_name("expected member name after '.'").lexeme
           expression = AST::MemberAccess.new(receiver: expression, member:)
-        elsif match(:arrow)
-          member = consume_name("expected member name after '->'").lexeme
-          expression = AST::PointerMemberAccess.new(receiver: expression, member:)
         elsif check(:lbracket)
           if (specialized_call = try_parse_specialization_call(expression))
             expression = specialized_call
@@ -935,10 +930,6 @@ module MilkTea
       return false unless token
 
       token.type == :identifier || (Token::KEYWORDS.value?(token.type) && !%i[true false null].include?(token.type))
-    end
-
-    def pointer_dereference_expression?(expression)
-      expression.is_a?(AST::UnaryOp) && expression.operator == "*"
     end
 
     def matching_rbracket_index(start_index)

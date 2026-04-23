@@ -204,11 +204,11 @@ methods Camera:
 		return Camera(position = Vec2(x = 0.0, y = 0.0), zoom = 1.0)
 ```
 
-Lowering rule:
+Lowering rule, in emitted C:
 
-- `camera.move_by(delta)` lowers to `game_Camera_move_by(&camera, delta)`.
-- `camera.world_scale()` lowers to `game_Camera_world_scale(camera)`.
-- `Camera.origin()` lowers to `game_Camera_origin()`.
+- `camera.move_by(delta)` emits `game_Camera_move_by(&camera, delta)`.
+- `camera.world_scale()` emits `game_Camera_world_scale(camera)`.
+- `Camera.origin()` emits `game_Camera_origin()`.
 
 Receiver rule:
 
@@ -289,7 +289,7 @@ def load_texture(path: str, arena: ptr[Arena]) -> Result[Texture, LoadError]:
 ```mt
 unsafe:
 	let p = pixels + offset
-	let value = *(cast[ptr[u32]](p))
+	let pixel = value(cast[ptr[u32]](p))
 ```
 
 The point is not to forbid sharp tools. The point is to mark them.
@@ -548,8 +548,9 @@ import std.mem.heap as heap
 
 def spawn_enemy(start: Vec2) -> ptr[Enemy]:
 	let enemy = heap.alloc[Enemy](1)
-	enemy.position = start
-	enemy.health = 100
+	unsafe:
+		value(enemy).position = start
+		value(enemy).health = 100
 	return enemy
 ```
 
@@ -560,67 +561,55 @@ Recommended standard memory surfaces:
 - `std.mem.pool` for fixed-size object pools
 - `std.mem.stack` for explicit temporary allocators
 
-### Pointers
+Typed allocation helpers live on the module surface where generic methods are not available yet. For example, `heap.alloc[Enemy](1)`, `arena.alloc[Enemy](addr(scratch), 4)`, and `stack.alloc[Enemy](addr(temp), 2)` all stay explicit about allocator choice, while raw byte APIs remain available for lower-level storage work.
 
-Pointers are first-class because game code needs them.
+### Pointers and references
 
-```mt
-let position_ptr = &player.position
-let x = position_ptr->x
-```
-
-Rules:
-
-- `&expr` takes an address.
-- `*ptr` dereferences a pointer.
-- `ptr->field` accesses a member through a raw pointer.
-- Pointer arithmetic exists only inside `unsafe`.
-- Pointer comparison is explicit and never treated as boolean truthiness.
-
-### References
-
-Raw pointers should not be the default way to alias one live object in ordinary Milk Tea code. They stay for FFI, nullable links, intrusive structures, allocator internals, and manual memory work. Everyday aliasing should use a separate reference surface.
-
-Status today: the first writable reference slice is implemented. The compiler supports explicit `ref(expr)` construction from mutable addressable lvalues, `ref[T]` locals and parameters, safe `*ref_value`, safe `ref_value.field`, safe `ref_value.edit_method(...)`, and explicit `unsafe` escape back to raw `ptr[T]` through `cast[...]`.
-
-Built-in reference types:
+Pointers are still first-class because game code needs raw memory and FFI. The source model is explicit and uniform.
 
 ```mt
-ref[T]            # writable safe reference, implemented
-ref[const T]      # read-only safe reference, planned
+let position_ref = addr(player.position)
+let position_ptr = raw(position_ref)
+
+value(position_ref).x += 1
+
+unsafe:
+	value(position_ptr).x += 1
 ```
 
-Rules:
+Rules for safe references:
 
-- `ref[T]` and `ref[const T]` are non-null.
-- `ref(expr)` requires a mutable addressable lvalue source.
-- `.` works on references. `->` remains exclusive to raw `ptr[T]`.
-- `*ref_value` is safe and yields the referenced value.
-- `ref[T]` allows writes through `*ref_value`, member access, and `edit def` method calls.
-- `ref[const T]` is still planned; it is the only additional safe reference variant worth adding beyond `ref[T]`.
-- references do not support arithmetic, pointer indexing, address-of on reference values, or nullable semantics.
-- conversion from `ref[...]` to `ptr[...]` is explicit and `unsafe`.
-- the first implementation keeps writable references non-escaping: they may be used in locals and non-extern function parameters, but they cannot be stored, nested inside other types, returned, or accepted by extern functions.
+- `ref[T]` is a non-null writable safe alias to one live object.
+- `addr(expr)` requires a mutable addressable lvalue source and produces `ref[T]`.
+- `value(ref_value)` is safe and yields the referenced lvalue/value.
+- `raw(ref_value)` converts a safe reference to `ptr[T]` explicitly.
+- there is no auto projection through refs: use `value(handle).field` and `value(handle).edit_method()`.
+- there is no implicit ref-to-value call conversion: if a function expects `T`, pass `value(handle)`.
+- references do not support arithmetic, pointer indexing, or nullable semantics.
+- writable references are non-escaping in the current implementation: they may be used in locals and non-extern function parameters, but they cannot be stored, nested inside other types, returned, or accepted by extern functions.
 
-Still pending before the reference surface is complete:
+Rules for raw pointers:
 
-- `ref[const T]` and const-aware coercions
-- a principled escape model if stored or returned references are ever allowed
-- broader borrowed-view ergonomics where `span[T]` and `ref[T]` need to interoperate more directly
+- `ptr[T]` and `ptr[T]?` are raw pointer values.
+- there is no source `&expr`, `*ptr`, or `ptr->field`.
+- spell address formation as `addr(expr)` and raw pointer formation as `raw(addr(expr))` when you truly need a raw pointer.
+- `value(ptr)` dereferences a raw pointer and requires `unsafe`.
+- `value(ptr).field` accesses a member through a raw pointer and requires `unsafe`.
+- pointer arithmetic and pointer indexing remain `unsafe`.
+- pointer comparison is explicit and never treated as boolean truthiness.
 
 References are separate from methods:
 
 - plain methods still receive values.
 - `edit def` methods use the writable implicit receiver and require an addressable call target.
 - `static def` methods receive nothing.
-- `ref[T]` and `ref[const T]` are for explicit aliasing in APIs, not hidden method receiver lowering.
-- raw pointer APIs stay spelled as `ptr[T]` and continue using `unsafe` plus `->`.
+- `ref[T]` is for explicit aliasing in APIs, not hidden receiver lowering.
 
-This gives the language three clear aliasing tools instead of one overloaded one:
+This gives the language clear aliasing tools instead of one overloaded surface:
 
-- `ref[T]` for one writable safe object reference
-- `ref[const T]` for one read-only safe object reference
-- `ptr[T]` for raw memory and FFI
+- `ref[T]` for safe aliasing of one mutable object
+- `ptr[T]` and `ptr[T]?` for raw memory and FFI
+- `span[T]` for sized borrowed views over raw pointer data
 
 ### Spans
 

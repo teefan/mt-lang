@@ -27,3 +27,11 @@ methods Stack:
     edit def release() -> void:
         this.arena.release()
         return
+
+def alloc[T](space: ref[Stack], count: usize) -> ptr[T]?:
+    let memory = value(space).alloc_bytes(count * cast[usize](sizeof(T)))
+    if memory == null:
+        return null
+
+    unsafe:
+        return cast[ptr[T]](memory)

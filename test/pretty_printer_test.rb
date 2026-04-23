@@ -13,9 +13,9 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let counter_ptr = &counter
+          let counter_ptr = raw(addr(counter))
           unsafe:
-              counter_ptr->value = 7
+              value(counter_ptr).value = 7
           return counter.value
     MT
 
@@ -60,9 +60,9 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let counter_ptr = &counter
+          let counter_ptr = raw(addr(counter))
           unsafe:
-              counter_ptr->value = 7
+              value(counter_ptr).value = 7
           return counter.value
     MT
 
@@ -73,8 +73,8 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_includes output, "program demo.pretty"
     assert_includes output, "struct Counter as demo_pretty_Counter:"
     assert_includes output, "fn main() -> i32 [entry]:"
-    assert_includes output, "let counter_ptr: ptr[demo.pretty.Counter] = &counter"
-    assert_includes output, "counter_ptr->value = 7"
+    assert_includes output, "let counter_ptr: ptr[demo.pretty.Counter] = cast[ptr[demo.pretty.Counter]](&counter)"
+    assert_includes output, "(*counter_ptr).value = 7"
     assert_includes output, "return counter.value"
   end
 

@@ -206,7 +206,7 @@ module MilkTea
           expression_uses_panic?(expression.left) || expression_uses_panic?(expression.right)
         when AST::UnaryOp
           expression_uses_panic?(expression.operand)
-        when AST::MemberAccess, AST::PointerMemberAccess
+        when AST::MemberAccess
           expression_uses_panic?(expression.receiver)
         when AST::IndexAccess
           expression_uses_panic?(expression.receiver) || expression_uses_panic?(expression.index)
@@ -227,7 +227,7 @@ module MilkTea
           expression_uses_offsetof?(expression.left) || expression_uses_offsetof?(expression.right)
         when AST::UnaryOp
           expression_uses_offsetof?(expression.operand)
-        when AST::MemberAccess, AST::PointerMemberAccess
+        when AST::MemberAccess
           expression_uses_offsetof?(expression.receiver)
         when AST::IndexAccess
           expression_uses_offsetof?(expression.receiver) || expression_uses_offsetof?(expression.index)
@@ -686,10 +686,6 @@ module MilkTea
           receiver = lower_expression(expression.receiver, env:)
           type = infer_expression_type(expression, env:)
           IR::Member.new(receiver:, member: expression.member, type:)
-        when AST::PointerMemberAccess
-          receiver = lower_expression(expression.receiver, env:)
-          type = infer_expression_type(expression, env:)
-          IR::Member.new(receiver:, member: expression.member, type:)
         when AST::IndexAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
           receiver = lower_expression(expression.receiver, env:)
@@ -702,10 +698,10 @@ module MilkTea
           else
             IR::Index.new(receiver:, index:, type:)
           end
-        when AST::UnaryOp
-          if expression.operator == "*"
+        when AST::Call
+          if value_call?(expression)
             type = infer_expression_type(expression, env:)
-            operand = lower_expression(expression.operand, env:)
+            operand = lower_expression(expression.arguments.first.value, env:)
             return IR::Unary.new(operator: "*", operand:, type:)
           end
 
@@ -749,8 +745,6 @@ module MilkTea
           end
         when AST::MemberAccess
           lower_member_access(expression, env:, type:)
-        when AST::PointerMemberAccess
-          lower_pointer_member_access(expression, env:, type:)
         when AST::IndexAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
           receiver = lower_expression(expression.receiver, env:)
@@ -763,13 +757,7 @@ module MilkTea
             IR::Index.new(receiver:, index:, type:)
           end
         when AST::UnaryOp
-          if expression.operator == "&"
-            IR::AddressOf.new(expression: lower_expression(expression.operand, env:), type:)
-          elsif ["+", "-", "not", "~"].include?(expression.operator)
-            IR::Unary.new(operator: expression.operator, operand: lower_expression(expression.operand, env:, expected_type: type), type:)
-          else
-            IR::Unary.new(operator: expression.operator, operand: lower_expression(expression.operand, env:), type:)
-          end
+          IR::Unary.new(operator: expression.operator, operand: lower_expression(expression.operand, env:, expected_type: type), type:)
         when AST::BinaryOp
           left_type, right_type = infer_binary_operand_types(expression, env:, expected_type: type)
           operand_type = promoted_binary_operand_type(expression.operator, left_type, right_type)
@@ -802,11 +790,6 @@ module MilkTea
           return IR::Name.new(name: imported_value_c_name(imported_module, expression.member), type:, pointer: false)
         end
 
-        receiver = lower_expression(expression.receiver, env:)
-        IR::Member.new(receiver:, member: expression.member, type:)
-      end
-
-      def lower_pointer_member_access(expression, env:, type:)
         receiver = lower_expression(expression.receiver, env:)
         IR::Member.new(receiver:, member: expression.member, type:)
       end
@@ -877,25 +860,26 @@ module MilkTea
         when :panic
           argument = expression.arguments.fetch(0)
           IR::Call.new(callee: "mt_panic", arguments: [lower_expression(argument.value, env:, expected_type: @types.fetch("str"))], type:)
-        when :ref
+        when :addr
           argument = expression.arguments.fetch(0)
           IR::AddressOf.new(expression: lower_expression(argument.value, env:), type:)
+        when :value
+          argument = expression.arguments.fetch(0)
+          IR::Unary.new(operator: "*", operand: lower_expression(argument.value, env:), type:)
+        when :raw
+          argument = expression.arguments.fetch(0)
+          IR::Cast.new(target_type: type, expression: lower_expression(argument.value, env:), type:)
         else
           raise LoweringError, "unsupported call kind #{kind}"
         end
       end
 
       def lower_method_receiver_argument(receiver, callee_type, env:)
-        receiver_type = infer_expression_type(receiver, env:)
         lowered_receiver = lower_expression(receiver, env:)
 
         if callee_type.receiver_mutable
-          return lowered_receiver if ref_type?(receiver_type)
-
           return IR::AddressOf.new(expression: lowered_receiver, type: lowered_receiver.type)
         end
-
-        return IR::Unary.new(operator: "*", operand: lowered_receiver, type: referenced_type(receiver_type)) if ref_type?(receiver_type)
 
         lowered_receiver
       end
@@ -952,9 +936,6 @@ module MilkTea
         when AST::MemberAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
           receiver_type.respond_to?(:external) && receiver_type.external
-        when AST::PointerMemberAccess
-          receiver_type = pointee_type(infer_expression_type(expression.receiver, env:))
-          receiver_type && receiver_type.respond_to?(:external) && receiver_type.external
         else
           false
         end
@@ -978,8 +959,12 @@ module MilkTea
             [:result_err, nil, nil, nil]
           elsif callee.name == "panic"
             [:panic, nil, nil, nil]
-          elsif callee.name == "ref"
-            [:ref, nil, nil, nil]
+          elsif callee.name == "addr"
+            [:addr, nil, nil, nil]
+          elsif callee.name == "value"
+            [:value, nil, nil, nil]
+          elsif callee.name == "raw"
+            [:raw, nil, nil, nil]
           elsif (type = @types[callee.name]).is_a?(Types::Struct)
             [ :struct_literal, nil, nil, type ]
           else
@@ -1013,7 +998,7 @@ module MilkTea
           end
 
           receiver_type = infer_expression_type(callee.receiver, env:)
-          resolved_receiver_type = ref_type?(receiver_type) ? referenced_type(receiver_type) : receiver_type
+          resolved_receiver_type = receiver_type
           method_entry = @method_definitions[[resolved_receiver_type, callee.member]]
           if method_entry
             method_analysis, method_ast = method_entry
@@ -1022,19 +1007,6 @@ module MilkTea
           end
 
           raise LoweringError, "unknown callee #{callee.receiver}.#{callee.member}"
-        when AST::PointerMemberAccess
-          receiver_type = infer_expression_type(callee.receiver, env:)
-          pointee = pointee_type(receiver_type)
-          raise LoweringError, "operator -> requires a pointer operand, got #{receiver_type}" unless pointee
-
-          method_entry = @method_definitions[[pointee, callee.member]]
-          if method_entry
-            method_analysis, method_ast = method_entry
-            method_binding = method_analysis.methods.fetch(pointee).fetch(method_ast.name)
-            return [:method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: pointee), AST::UnaryOp.new(operator: "*", operand: callee.receiver), method_binding.type]
-          end
-
-          raise LoweringError, "unknown method #{pointee}.#{callee.member}"
         when AST::Specialization
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "cast"
             target_type = resolve_type_ref(callee.arguments.fetch(0).value)
@@ -1124,19 +1096,9 @@ module MilkTea
             return imported_module.values.fetch(expression.member).type if imported_module.values.key?(expression.member)
           end
           receiver_type = infer_expression_type(expression.receiver, env:)
-          receiver_type = referenced_type(receiver_type) if ref_type?(receiver_type)
           return receiver_type.field(expression.member) if receiver_type.respond_to?(:field)
 
           raise LoweringError, "unknown member #{expression.member}"
-        when AST::PointerMemberAccess
-          receiver_type = infer_expression_type(expression.receiver, env:)
-          pointee = pointee_type(receiver_type)
-          raise LoweringError, "operator -> requires a pointer operand, got #{receiver_type}" unless pointee
-
-          field_type = pointee.field(expression.member) if pointee.respond_to?(:field)
-          return field_type if field_type
-
-          raise LoweringError, "unknown field #{pointee}.#{expression.member}"
         when AST::IndexAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
           index_type = infer_expression_type(expression.index, env:, expected_type: @types.fetch("usize"))
@@ -1146,15 +1108,6 @@ module MilkTea
           case expression.operator
           when "not"
             @types.fetch("bool")
-          when "&"
-            pointer_to(operand_type)
-          when "*"
-            return referenced_type(operand_type) if ref_type?(operand_type)
-
-            pointee_type = pointee_type(operand_type)
-            raise LoweringError, "operator * requires a pointer operand, got #{operand_type}" unless pointee_type
-
-            pointee_type
           else
             operand_type
           end
@@ -1180,9 +1133,13 @@ module MilkTea
           when :struct_literal, :array
             _, _, _, struct_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             struct_type
-          when :ref
+          when :addr
             argument_type = infer_expression_type(expression.arguments.fetch(0).value, env:)
             Types::GenericInstance.new("ref", [argument_type])
+          when :value
+            infer_value_type(expression.arguments.fetch(0).value, env:)
+          when :raw
+            Types::GenericInstance.new("ptr", [infer_ref_argument_type(expression.arguments.fetch(0).value, env:)])
           when :cast
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             function_type.return_type
@@ -1556,13 +1513,31 @@ module MilkTea
         case expression
         when AST::Identifier
           true
-        when AST::MemberAccess, AST::PointerMemberAccess, AST::IndexAccess
+        when AST::MemberAccess, AST::IndexAccess
           addressable_storage_expression?(expression.receiver)
-        when AST::UnaryOp
-          expression.operator == "*"
+        when AST::Call
+          value_call?(expression)
         else
           false
         end
+      end
+
+      def value_call?(expression)
+        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "value"
+      end
+
+      def infer_value_type(handle_expression, env:)
+        handle_type = infer_expression_type(handle_expression, env:)
+        return referenced_type(handle_type) if ref_type?(handle_type)
+
+        pointee_type(handle_type) || raise(LoweringError, "value expects ref[...] or ptr[...], got #{handle_type}")
+      end
+
+      def infer_ref_argument_type(handle_expression, env:)
+        handle_type = infer_expression_type(handle_expression, env:)
+        return referenced_type(handle_type) if ref_type?(handle_type)
+
+        raise LoweringError, "raw expects ref[...] argument, got #{handle_type}"
       end
 
       def collection_loop_type(type)

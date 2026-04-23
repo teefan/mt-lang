@@ -26,7 +26,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(&camera, rl.CameraMode.CAMERA_THIRD_PERSON)
+        rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_THIRD_PERSON)
         cube_screen_position = rl.GetWorldToScreen(
             rl.Vector3(x = cube_position.x, y = cube_position.y + 2.5, z = cube_position.z),
             camera,

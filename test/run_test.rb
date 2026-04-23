@@ -175,11 +175,11 @@ class MilkTeaRunTest < Minitest::Test
         "",
         "def main() -> i32:",
         "    var counter = Counter(value = 3)",
-        "    let counter_ptr = &counter",
+        "    let counter_ptr = raw(addr(counter))",
         "    var value = 0",
         "    unsafe:",
-        "        counter_ptr->value = 7",
-        "        value = counter_ptr->value",
+        "        value(counter_ptr).value = 7",
+        "        value = value(counter_ptr).value",
         "    return value",
         "",
       ].join("\n"))
@@ -214,16 +214,19 @@ class MilkTeaRunTest < Minitest::Test
         "        this.value += delta",
         "",
         "def increment(counter: ref[Counter], amount: i32) -> void:",
-        "    counter.add(amount)",
-        "    counter.value += 1",
+        "    value(counter).add(amount)",
+        "    value(counter).value += 1",
         "",
         "def main() -> i32:",
         "    var counter = Counter(value = 3)",
-        "    let handle = ref(counter)",
+        "    let handle = addr(counter)",
         "    increment(handle, 4)",
-        "    let value_ref = ref(counter.value)",
-        "    *value_ref += 2",
-        "    return counter.value",
+        "    let value_ref = addr(value(handle).value)",
+        "    value(value_ref) += 2",
+        "    unsafe:",
+        "        let raw_counter = raw(handle)",
+        "        value(raw_counter).value += 1",
+        "    return value(handle).value",
         "",
       ].join("\n"))
 
@@ -231,7 +234,43 @@ class MilkTeaRunTest < Minitest::Test
 
       assert_equal "", result.stdout
       assert_equal "", result.stderr
-      assert_equal 10, result.exit_status
+      assert_equal 11, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_explicit_value_for_by_value_parameters
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-explicit-value") do |dir|
+      source_path = File.join(dir, "explicit-value.mt")
+
+      File.write(source_path, [
+        "module demo.explicit_value_args",
+        "",
+        "struct Counter:",
+        "    value: i32",
+        "",
+        "def read(counter: Counter) -> i32:",
+        "    return counter.value",
+        "",
+        "def main() -> i32:",
+        "    var counter = Counter(value = 9)",
+        "    let handle = addr(counter)",
+        "    counter.value = 12",
+        "    return read(value(handle))",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 12, result.exit_status
       assert_nil result.output_path
       assert_nil result.c_path
       assert_equal compiler, result.compiler
@@ -253,11 +292,11 @@ class MilkTeaRunTest < Minitest::Test
         "    if items.len == 0:",
         "        return 0",
         "    unsafe:",
-        "        return *items.data",
+        "        return value(items.data)",
         "",
         "def main() -> i32:",
         "    var value = 7",
-        "    let items = span[i32](data = &value, len = 1)",
+        "    let items = span[i32](data = raw(addr(value)), len = 1)",
         "    return read(items)",
         "",
       ].join("\n"))
@@ -291,7 +330,7 @@ class MilkTeaRunTest < Minitest::Test
         "",
         "def main() -> i32:",
         "    var value = 7",
-        "    let items = span[i32](data = &value, len = 1)",
+        "    let items = span[i32](data = raw(addr(value)), len = 1)",
         "    return bump(items)",
         "",
       ].join("\n"))
@@ -329,11 +368,11 @@ class MilkTeaRunTest < Minitest::Test
         "    if items.len == 0:",
         "        return 0",
         "    unsafe:",
-        "        return *items.data",
+        "        return value(items.data)",
         "",
         "def main() -> i32:",
         "    var value = 7",
-        "    let holder = Holder(items = Slice[i32](data = &value, len = 1))",
+        "    let holder = Holder(items = Slice[i32](data = raw(addr(value)), len = 1))",
         "    return read(holder.items)",
         "",
       ].join("\n"))
@@ -374,10 +413,10 @@ class MilkTeaRunTest < Minitest::Test
         "",
         "def main() -> i32:",
         "    var value = 7",
-        "    let items = Slice[i32](data = &value, len = 1)",
+        "    let items = Slice[i32](data = raw(addr(value)), len = 1)",
         "    let smallest = min(9, 4)",
         "    unsafe:",
-        "        return *head(items) + smallest",
+        "        return value(head(items)) + smallest",
         "",
       ].join("\n"))
 
@@ -386,6 +425,42 @@ class MilkTeaRunTest < Minitest::Test
       assert_equal "", result.stdout
       assert_equal "", result.stderr
       assert_equal 11, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_ref_arguments_for_by_value_parameters
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-ref-value-args") do |dir|
+      source_path = File.join(dir, "ref-value-args.mt")
+
+      File.write(source_path, [
+        "module demo.ref_value_args",
+        "",
+        "struct Counter:",
+        "    value: i32",
+        "",
+        "def read(counter: Counter) -> i32:",
+        "    return counter.value",
+        "",
+        "def main() -> i32:",
+        "    var counter = Counter(value = 9)",
+        "    let handle = addr(counter)",
+        "    counter.value = 12",
+        "    return read(value(handle))",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 12, result.exit_status
       assert_nil result.output_path
       assert_nil result.c_path
       assert_equal compiler, result.compiler
@@ -550,12 +625,12 @@ class MilkTeaRunTest < Minitest::Test
         "",
         "def add(target: ptr[i32], amount: i32) -> void:",
         "    unsafe:",
-        "        *target += amount",
+        "        value(target) += amount",
         "",
         "def main() -> i32:",
         "    var total = 0",
         "    for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):",
-        "        defer add(&total, 1)",
+        "        defer add(raw(addr(total)), 1)",
         "        match step:",
         "            Step.skip:",
         "                continue",
@@ -701,9 +776,9 @@ class MilkTeaRunTest < Minitest::Test
         "    var palette = array[u32, 4](1, 2, 3, 4)",
         "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
         "    unsafe:",
-        "        if *cast[ptr[u32]](&palette) != 1:",
+        "        if value(raw(addr(palette[0]))) != 1:",
         "            return 1",
-        "        if *cast[ptr[u32]](&holder.colors) != 5:",
+        "        if value(raw(addr(holder.colors[0]))) != 5:",
         "            return 2",
         "    return 0",
         "",

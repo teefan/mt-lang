@@ -57,6 +57,50 @@ class MilkTeaStdMemArenaTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_typed_arena_allocation_helper
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_mem_arena_typed",
+      "",
+      "import std.mem.arena as arena",
+      "",
+      "struct Pair:",
+      "    left: i32",
+      "    right: i32",
+      "",
+      "def main() -> i32:",
+      "    var scratch = arena.create(cast[usize](sizeof(Pair)))",
+      "    defer scratch.release()",
+      "",
+      "    let pair = arena.alloc[Pair](addr(scratch), 1)",
+      "    if pair == null:",
+      "        return 1",
+      "",
+      "    unsafe:",
+      "        let base = cast[ptr[Pair]](pair)",
+      "        value(base).left = 7",
+      "        value(base).right = 3",
+      "        if value(base).left + value(base).right != 10:",
+      "            return 2",
+      "",
+      "    let exhausted = arena.alloc[Pair](addr(scratch), 1)",
+      "    if exhausted != null:",
+      "        return 3",
+      "",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   private
 
   def run_program(source, compiler:)
