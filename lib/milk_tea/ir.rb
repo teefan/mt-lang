@@ -42,6 +42,7 @@ module MilkTea
     StringLiteral = Data.define(:value, :type, :cstring)
     BooleanLiteral = Data.define(:value, :type)
     NullLiteral = Data.define(:type)
+    ZeroInit = Data.define(:type)
     AddressOf = Data.define(:expression, :type)
     Cast = Data.define(:target_type, :expression, :type)
     AggregateLiteral = Data.define(:type, :fields)

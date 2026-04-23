@@ -178,8 +178,8 @@ class MilkTeaRunTest < Minitest::Test
         "    let counter_ptr = &counter",
         "    var value = 0",
         "    unsafe:",
-        "        (*counter_ptr).value = 7",
-        "        value = (*counter_ptr).value",
+        "        counter_ptr->value = 7",
+        "        value = counter_ptr->value",
         "    return value",
         "",
       ].join("\n"))
@@ -736,6 +736,42 @@ class MilkTeaRunTest < Minitest::Test
         "    unsafe:",
         "        if lhs[1] != 6:",
         "            return 2",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 0, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_zero_initialization
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-zero") do |dir|
+      source_path = File.join(dir, "zero.mt")
+
+      File.write(source_path, [
+        "module demo.zero",
+        "",
+        "struct Palette:",
+        "    colors: array[u32, 4]",
+        "",
+        "def main() -> i32:",
+        "    let palette = zero[array[u32, 4]]()",
+        "    let holder = zero[Palette]()",
+        "    if palette[0] != 0:",
+        "        return 1",
+        "    if holder.colors[3] != 0:",
+        "        return 2",
         "    return 0",
         "",
       ].join("\n"))

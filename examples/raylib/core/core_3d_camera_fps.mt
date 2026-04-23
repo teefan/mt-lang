@@ -35,20 +35,20 @@ struct FpsState:
     head_lerp: f32
     lean: rl.Vector2
 
-impl Body:
-    def update(mut self, rot: f32, side: i32, forward: i32, jump_pressed: bool, crouch_hold: bool) -> void:
+methods Body:
+    edit def update(rot: f32, side: i32, forward: i32, jump_pressed: bool, crouch_hold: bool) -> void:
         var input = rl.Vector2(x = cast[f32](side), y = -cast[f32](forward))
         if side != 0 and forward != 0:
             input = input.normalize()
 
         let delta = rl.GetFrameTime()
 
-        if not self.is_grounded:
-            self.velocity.y -= gravity * delta
+        if not this.is_grounded:
+            this.velocity.y -= gravity * delta
 
-        if self.is_grounded and jump_pressed:
-            self.velocity.y = jump_force
-            self.is_grounded = false
+        if this.is_grounded and jump_pressed:
+            this.velocity.y = jump_force
+            this.is_grounded = false
 
         let up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
         let front = rl.Vector3(x = 0.0, y = 0.0, z = 1.0).rotate_by_axis_angle(up, rot)
@@ -58,71 +58,71 @@ impl Body:
             y = 0.0,
             z = input.x * right.z + input.y * front.z,
         )
-        self.dir = self.dir.lerp(desired_dir, control * delta)
+        this.dir = this.dir.lerp(desired_dir, control * delta)
 
         var decel = air_drag
-        if self.is_grounded:
+        if this.is_grounded:
             decel = friction
-        var hvel = rl.Vector3(x = self.velocity.x * decel, y = 0.0, z = self.velocity.z * decel)
+        var hvel = rl.Vector3(x = this.velocity.x * decel, y = 0.0, z = this.velocity.z * decel)
 
         let hvel_length = hvel.length()
         if hvel_length < max_speed * 0.01:
             hvel = rm.Vector3.zero()
 
-        let speed = hvel.dot(self.dir)
+        let speed = hvel.dot(this.dir)
         var active_max_speed = max_speed
         if crouch_hold:
             active_max_speed = crouch_speed
         let accel = rm.clamp(active_max_speed - speed, 0.0, max_accel * delta)
-        hvel.x += self.dir.x * accel
-        hvel.z += self.dir.z * accel
+        hvel.x += this.dir.x * accel
+        hvel.z += this.dir.z * accel
 
-        self.velocity.x = hvel.x
-        self.velocity.z = hvel.z
+        this.velocity.x = hvel.x
+        this.velocity.z = hvel.z
 
-        self.position.x += self.velocity.x * delta
-        self.position.y += self.velocity.y * delta
-        self.position.z += self.velocity.z * delta
+        this.position.x += this.velocity.x * delta
+        this.position.y += this.velocity.y * delta
+        this.position.z += this.velocity.z * delta
 
-        if self.position.y <= 0.0:
-            self.position.y = 0.0
-            self.velocity.y = 0.0
-            self.is_grounded = true
+        if this.position.y <= 0.0:
+            this.position.y = 0.0
+            this.velocity.y = 0.0
+            this.is_grounded = true
 
-impl FpsState:
-    def update_camera(mut self, camera: ptr[rl.Camera3D], body: Body) -> void:
+methods FpsState:
+    edit def update_camera(camera: ptr[rl.Camera3D], body: Body) -> void:
         let up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
         let target_offset = rl.Vector3(x = 0.0, y = 0.0, z = -1.0)
 
-        let yaw = target_offset.rotate_by_axis_angle(up, self.look_rotation.x)
+        let yaw = target_offset.rotate_by_axis_angle(up, this.look_rotation.x)
 
         var max_angle_up = up.angle(yaw)
         max_angle_up -= 0.001
-        if -self.look_rotation.y > max_angle_up:
-            self.look_rotation.y = -max_angle_up
+        if -this.look_rotation.y > max_angle_up:
+            this.look_rotation.y = -max_angle_up
 
         var max_angle_down = up.negate().angle(yaw)
         max_angle_down *= -1.0
         max_angle_down += 0.001
-        if -self.look_rotation.y < max_angle_down:
-            self.look_rotation.y = -max_angle_down
+        if -this.look_rotation.y < max_angle_down:
+            this.look_rotation.y = -max_angle_down
 
         let right = yaw.cross(up).normalize()
-        var pitch_angle = -self.look_rotation.y - self.lean.y
+        var pitch_angle = -this.look_rotation.y - this.lean.y
         pitch_angle = rm.clamp(pitch_angle, -math.pi / 2.0 + 0.0001, math.pi / 2.0 - 0.0001)
         let pitch = yaw.rotate_by_axis_angle(right, pitch_angle)
 
-        let head_sin = rm.sin(self.head_timer * math.pi)
-        let head_cos = rm.cos(self.head_timer * math.pi)
+        let head_sin = rm.sin(this.head_timer * math.pi)
+        let head_cos = rm.cos(this.head_timer * math.pi)
         unsafe:
-            (*camera).up = up.rotate_by_axis_angle(pitch, head_sin * step_rotation + self.lean.x)
+            camera->up = up.rotate_by_axis_angle(pitch, head_sin * step_rotation + this.lean.x)
 
         var bobbing = right.scale(head_sin * bob_side)
         bobbing.y = rm.abs(head_cos * bob_up)
 
         unsafe:
-            (*camera).position = (*camera).position.add(bobbing.scale(self.walk_lerp))
-            (*camera).target = (*camera).position.add(pitch)
+            camera->position = camera->position.add(bobbing.scale(this.walk_lerp))
+            camera->target = camera->position.add(pitch)
 
 def draw_level() -> void:
     let floor_extent = 25

@@ -15,6 +15,10 @@ module MilkTea
   end
 
   class Lexer
+    THREE_CHAR_TOKENS = {
+      "..." => :ellipsis,
+    }.freeze
+
     TWO_CHAR_TOKENS = {
       "->" => :arrow,
       "<<" => :shift_left,
@@ -244,6 +248,13 @@ module MilkTea
 
     def lex_symbol(line, index, line_number)
       start = index
+      lexeme = line[index, 3]
+      if lexeme && THREE_CHAR_TOKENS.key?(lexeme)
+        type = THREE_CHAR_TOKENS.fetch(lexeme)
+        @tokens << token(type, lexeme, nil, line_number, start + 1)
+        return index + 3
+      end
+
       lexeme = line[index, 2]
       if lexeme && TWO_CHAR_TOKENS.key?(lexeme)
         type = TWO_CHAR_TOKENS.fetch(lexeme)

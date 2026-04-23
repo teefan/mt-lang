@@ -99,4 +99,10 @@ class MilkTeaLexerTest < Minitest::Test
     assert_includes types, :shift_right
     assert_includes types, :string
   end
+
+  def test_lexes_ellipsis_token
+    types = MilkTea::Lexer.lex("extern def printf(format: cstr, ...) -> i32\n").map(&:type)
+
+    assert_includes types, :ellipsis
+  end
 end

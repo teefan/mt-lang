@@ -12,19 +12,19 @@ struct Ball:
     radius: f32
     color: rl.Color
 
-impl Ball:
-    def update(mut self, dt: f32):
-        self.position.x += self.velocity.x * dt
-        self.position.y += self.velocity.y * dt
+methods Ball:
+    edit def update(dt: f32):
+        this.position.x += this.velocity.x * dt
+        this.position.y += this.velocity.y * dt
 
-        if self.position.x < self.radius or self.position.x > cast[f32](screen_width) - self.radius:
-            self.velocity.x = -self.velocity.x
+        if this.position.x < this.radius or this.position.x > cast[f32](screen_width) - this.radius:
+            this.velocity.x = -this.velocity.x
 
-        if self.position.y < self.radius or self.position.y > cast[f32](screen_height) - self.radius:
-            self.velocity.y = -self.velocity.y
+        if this.position.y < this.radius or this.position.y > cast[f32](screen_height) - this.radius:
+            this.velocity.y = -this.velocity.y
 
-    def draw(self):
-        rl.DrawCircleV(self.position, self.radius, self.color)
+    def draw():
+        rl.DrawCircleV(this.position, this.radius, this.color)
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

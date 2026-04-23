@@ -15,7 +15,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
           var counter = Counter(value = 3)
           let counter_ptr = &counter
           unsafe:
-              (*counter_ptr).value = 7
+              counter_ptr->value = 7
           return counter.value
     MT
 
@@ -38,6 +38,19 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_variadic_extern_module_ast_like_source
+    source = <<~MT
+      extern module std.c.stdio:
+          include "stdio.h"
+
+          extern def printf(format: cstr, ...) -> i32
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_lowered_ir_as_structured_output
     source = <<~MT
       module demo.pretty
@@ -49,7 +62,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
           var counter = Counter(value = 3)
           let counter_ptr = &counter
           unsafe:
-              (*counter_ptr).value = 7
+              counter_ptr->value = 7
           return counter.value
     MT
 
@@ -61,7 +74,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_includes output, "struct Counter as demo_pretty_Counter:"
     assert_includes output, "fn main() -> i32 [entry]:"
     assert_includes output, "let counter_ptr: ptr[demo.pretty.Counter] = &counter"
-    assert_includes output, "(*counter_ptr).value = 7"
+    assert_includes output, "counter_ptr->value = 7"
     assert_includes output, "return counter.value"
   end
 

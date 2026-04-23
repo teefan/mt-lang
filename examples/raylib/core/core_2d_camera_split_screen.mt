@@ -12,14 +12,14 @@ const player_two_text: cstr = c"PLAYER2: UP/DOWN/LEFT/RIGHT to move"
 def draw_grid() -> void:
     var column = 0
     while column < screen_width / player_size + 1:
-        let x = cast[f32](player_size * column)
-        rl.DrawLineV(rl.Vector2(x = x, y = 0.0), rl.Vector2(x = x, y = cast[f32](screen_height)), rl.LIGHTGRAY)
+        let x = player_size * column
+        rl.DrawLineV(rl.Vector2(x = x, y = 0.0), rl.Vector2(x = x, y = screen_height), rl.LIGHTGRAY)
         column += 1
 
     var row = 0
     while row < screen_height / player_size + 1:
-        let y = cast[f32](player_size * row)
-        rl.DrawLineV(rl.Vector2(x = 0.0, y = y), rl.Vector2(x = cast[f32](screen_width), y = y), rl.LIGHTGRAY)
+        let y = player_size * row
+        rl.DrawLineV(rl.Vector2(x = 0.0, y = y), rl.Vector2(x = screen_width, y = y), rl.LIGHTGRAY)
         row += 1
 
 def draw_camera_scene(camera: rl.Camera2D, player1: rl.Rectangle, player2: rl.Rectangle) -> void:
@@ -33,8 +33,8 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var player1 = rl.Rectangle(x = 200.0, y = 200.0, width = cast[f32](player_size), height = cast[f32](player_size))
-    var player2 = rl.Rectangle(x = 250.0, y = 200.0, width = cast[f32](player_size), height = cast[f32](player_size))
+    var player1 = rl.Rectangle(x = 200.0, y = 200.0, width = player_size, height = player_size)
+    var player2 = rl.Rectangle(x = 250.0, y = 200.0, width = player_size, height = player_size)
 
     var camera1 = rl.Camera2D(
         target = rl.Vector2(x = player1.x, y = player1.y),
@@ -57,8 +57,8 @@ def main() -> i32:
     let split_screen_rect = rl.Rectangle(
         x = 0.0,
         y = 0.0,
-        width = cast[f32](screen_camera1.texture.width),
-        height = -cast[f32](screen_camera1.texture.height),
+        width = screen_camera1.texture.width,
+        height = -screen_camera1.texture.height,
     )
     let overlay_alpha: f32 = 0.6
 

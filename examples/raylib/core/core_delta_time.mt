@@ -8,8 +8,6 @@ const window_title: cstr = c"raylib [core] example - delta time"
 const help_text: cstr = c"Use the scroll wheel to change the fps limit, r to reset"
 const delta_text: cstr = c"FUNC: x += GetFrameTime()*speed"
 const frame_text: cstr = c"FUNC: x += speed"
-const fps_limited_text: cstr = c"FPS LIMIT ACTIVE"
-const fps_unlimited_text: cstr = c"FPS UNLIMITED"
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -34,9 +32,9 @@ def main() -> i32:
         delta_circle.x += rl.GetFrameTime() * 6.0 * speed
         frame_circle.x += 0.1 * speed
 
-        if delta_circle.x > cast[f32](screen_width):
+        if delta_circle.x > screen_width:
             delta_circle.x = 0.0
-        if frame_circle.x > cast[f32](screen_width):
+        if frame_circle.x > screen_width:
             frame_circle.x = 0.0
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_R):
@@ -50,9 +48,10 @@ def main() -> i32:
         rl.DrawCircleV(delta_circle, circle_radius, rl.RED)
         rl.DrawCircleV(frame_circle, circle_radius, rl.BLUE)
         if current_fps <= 0:
-            rl.DrawText(fps_unlimited_text, 10, 10, 20, rl.DARKGRAY)
+            rl.DrawText(rl.TextFormat(c"FPS: unlimited (%i)", rl.GetFPS()), 10, 10, 20, rl.DARKGRAY)
         else:
-            rl.DrawText(fps_limited_text, 10, 10, 20, rl.DARKGRAY)
+            rl.DrawText(rl.TextFormat(c"FPS: %i (target: %i)", rl.GetFPS(), current_fps), 10, 10, 20, rl.DARKGRAY)
+        rl.DrawText(rl.TextFormat(c"Frame time: %.2f ms", rl.GetFrameTime()), 10, 30, 20, rl.DARKGRAY)
         rl.DrawText(help_text, 10, 50, 20, rl.DARKGRAY)
         rl.DrawText(delta_text, 10, 90, 20, rl.RED)
         rl.DrawText(frame_text, 10, 240, 20, rl.BLUE)

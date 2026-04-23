@@ -534,14 +534,15 @@ module MilkTea
     end
 
     class Function < Base
-      attr_reader :name, :params, :return_type, :receiver_type, :receiver_mutable, :external
+      attr_reader :name, :params, :return_type, :receiver_type, :receiver_mutable, :variadic, :external
 
-      def initialize(name, params:, return_type:, receiver_type: nil, receiver_mutable: false, external: false)
+      def initialize(name, params:, return_type:, receiver_type: nil, receiver_mutable: false, variadic: false, external: false)
         @name = name
         @params = params.freeze
         @return_type = return_type
         @receiver_type = receiver_type
         @receiver_mutable = receiver_mutable
+        @variadic = variadic
         @external = external
         freeze
       end
@@ -551,13 +552,14 @@ module MilkTea
           other.params == params &&
           other.return_type == return_type &&
           other.receiver_type == receiver_type &&
-          other.receiver_mutable == receiver_mutable
+          other.receiver_mutable == receiver_mutable &&
+          other.variadic == variadic
       end
 
       alias == eql?
 
       def hash
-        [self.class, params, return_type, receiver_type, receiver_mutable].hash
+        [self.class, params, return_type, receiver_type, receiver_mutable, variadic].hash
       end
 
       def to_s

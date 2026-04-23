@@ -77,6 +77,7 @@ class MilkTeaBindgenTest < Minitest::Test
         int runtime_size(void);
         long double measure_long_double(void);
         const char *name_of(Mode mode);
+        int logf(const char *format, ...);
         void set_callback(LogCallback callback);
         void take_hidden(struct Hidden *hidden);
 
@@ -131,6 +132,7 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_match(/extern def fill_buffer\(value: u32, count: u64\) -> usize/, generated)
       assert_match(/extern def widen\(value: i32\) -> i32/, generated)
       assert_match(/extern def name_of\(mode: Mode\) -> cstr/, generated)
+      assert_match(/extern def logf\(format: cstr, \.\.\.\) -> i32/, generated)
       assert_match(/extern def set_callback\(callback: fn\(arg0: i32, arg1: cstr\) -> void\) -> void/, generated)
       assert_match(/extern def take_hidden\(hidden: ptr\[Hidden\]\) -> void/, generated)
       assert_match(/extern def consume_strings\(values: ptr\[ptr\[char\]\], tokens: ptr\[ptr\[char\]\]\) -> i32/, generated)

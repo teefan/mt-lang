@@ -94,8 +94,10 @@ module MilkTea
         parse_enum_decl(AST::FlagsDecl)
       elsif match(:opaque)
         parse_opaque_decl
-      elsif match(:impl)
-        parse_impl_block
+      elsif match(:methods)
+        parse_methods_block
+      elsif check(:edit) || check(:static)
+        raise error(peek, "#{peek.lexeme} def is only allowed inside methods blocks")
       elsif match(:def)
         parse_function_def
       elsif match(:extern)
@@ -261,13 +263,12 @@ module MilkTea
       AST::OpaqueDecl.new(name:)
     end
 
-    def parse_impl_block
+    def parse_methods_block
       type_name = parse_qualified_name
       methods = parse_named_block do
-        consume(:def, "expected method declaration")
-        parse_function_def
+        parse_method_def
       end
-      AST::ImplBlock.new(type_name:, methods:)
+      AST::MethodsBlock.new(type_name:, methods:)
     end
 
     def parse_function_def
@@ -279,6 +280,24 @@ module MilkTea
       AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:)
     end
 
+    def parse_method_def
+      kind = if match(:edit)
+               :edit
+             elsif match(:static)
+               :static
+             else
+               :plain
+             end
+      consume(:def, "expected method declaration")
+
+      name = consume_name("expected function name").lexeme
+      type_params = parse_declaration_type_params
+      params = parse_params
+      return_type = match(:arrow) ? parse_type_ref : nil
+      body = parse_block
+      AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:)
+    end
+
     def parse_extern_decl
       consume(:def, "expected def after extern")
       parse_extern_function_decl
@@ -287,37 +306,42 @@ module MilkTea
     def parse_extern_function_decl
       name = consume_name("expected function name").lexeme
       type_params = parse_declaration_type_params
-      params = parse_params
+      params, variadic = parse_params(allow_variadic: true)
       consume(:arrow, "expected '->' before extern function return type")
       return_type = parse_type_ref
       consume_end_of_statement
-      AST::ExternFunctionDecl.new(name:, type_params:, params:, return_type:)
+      AST::ExternFunctionDecl.new(name:, type_params:, params:, return_type:, variadic:)
     end
 
-    def parse_params
+    def parse_params(allow_variadic: false)
       consume(:lparen, "expected '('")
       params = []
+      variadic = false
 
       unless check(:rparen)
         loop do
+          if allow_variadic && match(:ellipsis)
+            variadic = true
+            break
+          end
+
           params << parse_param
           break unless match(:comma)
         end
       end
 
       consume(:rparen, "expected ')' after parameters")
+      return [params, variadic] if allow_variadic
+
       params
     end
 
     def parse_param
       mutable = match(:mut)
       name_token = consume_name("expected parameter name")
-      param_type = nil
-      if match(:colon)
-        param_type = parse_type_ref
-      elsif name_token.lexeme != "self"
-        raise error(name_token, "expected ':' and parameter type")
-      end
+      raise error(name_token, "expected ':' and parameter type") unless match(:colon)
+
+      param_type = parse_type_ref
 
       AST::Param.new(name: name_token.lexeme, type: param_type, mutable:)
     end
@@ -608,8 +632,13 @@ module MilkTea
 
       loop do
         if match(:dot)
+          raise error(previous, "use '->' for raw pointer member access") if pointer_dereference_expression?(expression)
+
           member = consume_name("expected member name after '.'").lexeme
           expression = AST::MemberAccess.new(receiver: expression, member:)
+        elsif match(:arrow)
+          member = consume_name("expected member name after '->'").lexeme
+          expression = AST::PointerMemberAccess.new(receiver: expression, member:)
         elsif check(:lbracket)
           if (specialized_call = try_parse_specialization_call(expression))
             expression = specialized_call
@@ -813,7 +842,7 @@ module MilkTea
     end
 
     def builtin_specialization_target?(expression)
-      expression.is_a?(AST::Identifier) && %w[array cast reinterpret span].include?(expression.name)
+      expression.is_a?(AST::Identifier) && %w[array cast reinterpret span zero].include?(expression.name)
     end
 
     def aggregate_specialization_target?(expression)
@@ -825,6 +854,10 @@ module MilkTea
       else
         false
       end
+    end
+
+    def pointer_dereference_expression?(expression)
+      expression.is_a?(AST::UnaryOp) && expression.operator == "*"
     end
 
     def matching_rbracket_index(start_index)

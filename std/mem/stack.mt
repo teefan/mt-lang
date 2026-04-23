@@ -10,20 +10,20 @@ struct Stack:
 def create(capacity_bytes: usize) -> Stack:
     return Stack(arena = arena.create(capacity_bytes))
 
-impl Stack:
-    def mark(self) -> Mark:
-        return self.arena.mark()
+methods Stack:
+    def mark() -> Mark:
+        return this.arena.mark()
 
-    def reset(mut self, mark: Mark) -> void:
-        self.arena.reset(mark)
+    edit def reset(mark: Mark) -> void:
+        this.arena.reset(mark)
         return
 
-    def remaining_bytes(self) -> usize:
-        return self.arena.remaining_bytes()
+    def remaining_bytes() -> usize:
+        return this.arena.remaining_bytes()
 
-    def alloc_bytes(mut self, size_bytes: usize) -> ptr[byte]?:
-        return self.arena.alloc_bytes(size_bytes)
+    edit def alloc_bytes(size_bytes: usize) -> ptr[byte]?:
+        return this.arena.alloc_bytes(size_bytes)
 
-    def release(mut self) -> void:
-        self.arena.release()
+    edit def release() -> void:
+        this.arena.release()
         return

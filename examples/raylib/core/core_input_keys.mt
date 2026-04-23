@@ -14,8 +14,8 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var ball_position = rl.Vector2(
-        x = 0.5 * screen_width,
-        y = 0.5 * screen_height,
+        x = screen_width / 2.0,
+        y = screen_height / 2.0,
     )
 
     rl.SetTargetFPS(60)

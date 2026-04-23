@@ -4,6 +4,10 @@ extern module std.c.libm:
 
     extern def sqrtf(__x: f32) -> f32
 
+    extern def expf(__x: f32) -> f32
+
+    extern def logf(__x: f32) -> f32
+
     extern def sinf(__x: f32) -> f32
 
     extern def cosf(__x: f32) -> f32

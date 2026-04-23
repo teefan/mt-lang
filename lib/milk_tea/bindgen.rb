@@ -413,7 +413,6 @@ module MilkTea
           next unless node["kind"] == "FunctionDecl"
           next if node["storageClass"] == "static"
           next if Array(node["inner"]).any? { |child| child["kind"] == "CompoundStmt" }
-          next if node["variadic"]
 
           params = Array(node["inner"]).select { |child| child["kind"] == "ParmVarDecl" }.each_with_index.map do |param, param_index|
             {
@@ -428,6 +427,7 @@ module MilkTea
             kind: "function",
             name: node["name"],
             params:,
+            variadic: node["variadic"],
             return_type:,
           }
           selected[declaration[:name]] ||= declaration
@@ -591,8 +591,9 @@ module MilkTea
       end
 
       def emit_function_declaration(declaration)
-        params = declaration[:params].map { |param| "#{param[:name]}: #{param[:type]}" }.join(", ")
-        ["    extern def #{declaration[:name]}(#{params}) -> #{declaration[:return_type]}"]
+        params = declaration[:params].map { |param| "#{param[:name]}: #{param[:type]}" }
+        params << "..." if declaration[:variadic]
+        ["    extern def #{declaration[:name]}(#{params.join(', ')}) -> #{declaration[:return_type]}"]
       end
 
       def lower_constant_expression(node, expected_type:, context:)

@@ -13,7 +13,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/#include <stdint\.h>/, generated)
     assert_match(/#include "raylib\.h"/, generated)
     assert_match(/typedef struct demo_bouncing_ball_Ball/, generated)
-    assert_match(/static void demo_bouncing_ball_Ball_update\(demo_bouncing_ball_Ball \*self, float dt\)/, generated)
+    assert_match(/static void demo_bouncing_ball_Ball_update\(demo_bouncing_ball_Ball \*this, float dt\)/, generated)
     assert_match(/demo_bouncing_ball_Ball_update\(&ball, dt\);/, generated)
     assert_match(/int32_t main\(void\)/, generated)
     assert_equal 1, generated.scan("CloseWindow();").length
@@ -171,6 +171,55 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/double sum = \(\(\(double\) 1\)\) \+ 2\.5;/, generated)
     assert_match(/if \(\(\(\(\(double\) 3\)\) < 3\.5\) && \(sum > 3\.0\)\)/, generated)
+  end
+
+  def test_generate_c_for_variadic_extern_calls
+    source = [
+      "module demo.variadic_codegen",
+      "",
+      "extern def printf(format: cstr, ...) -> i32",
+      "",
+      "def main() -> i32:",
+      "    return printf(c\"value=%d %s\\n\", 7, c\"ok\")",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/return demo_variadic_codegen_printf\("value=%d %s\\n", 7, "ok"\);/, generated)
+  end
+
+  def test_generate_c_for_contextual_numeric_coercion_at_external_boundaries
+    generated = generate_c_from_program_source(
+      <<~MT,
+        module demo.external_numeric_codegen
+
+        import std.c.demo as demo
+
+        def main() -> i32:
+            let channel = 200
+            var color = demo.Color(r = channel, g = 0, b = 0, a = 255)
+            color.g = channel
+            demo.set_scale(channel)
+            return 0
+      MT
+      {
+        "std/c/demo.mt" => <<~MT,
+          extern module std.c.demo:
+              struct Color:
+                  r: u8
+                  g: u8
+                  b: u8
+                  a: u8
+
+              extern def set_scale(value: f32) -> void
+        MT
+      },
+    )
+
+    assert_match(/\.r = \(\(uint8_t\) channel\)/, generated)
+    assert_match(/color\.g = \(\(uint8_t\) channel\);/, generated)
+    assert_match(/set_scale\(\(\(float\) channel\)\);/, generated)
   end
 
   def test_generate_c_for_generic_struct_instantiation_and_embedding
@@ -449,7 +498,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    var counter = Counter(value = 3)",
       "    let counter_ptr = &counter",
       "    unsafe:",
-      "        (*counter_ptr).value = 7",
+      "        counter_ptr->value = 7",
       "    return counter.value",
       "",
     ].join("\n")
@@ -457,7 +506,7 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_source(source)
 
     assert_match(/demo_pointer_surface_Counter \*counter_ptr = &counter;/, generated)
-    assert_match(/\(\*counter_ptr\)\.value = 7;/, generated)
+    assert_match(/counter_ptr->value = 7;/, generated)
     assert_match(/return counter\.value;/, generated)
   end
 
@@ -473,8 +522,8 @@ class MilkTeaCodegenTest < Minitest::Test
         "",
         "type Vec = RawVec",
         "",
-        "impl RawVec:",
-        "    def zero() -> Vec:",
+        "methods RawVec:",
+        "    static def zero() -> Vec:",
         "        return Vec(x = 0)",
         "",
       ].join("\n"))
@@ -557,6 +606,26 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/\(\*mt_checked_index_array_u32_4\(\&\(palette\), 1\)\) = 9;/, generated)
     assert_match(/\(\*mt_checked_index_array_u32_4\(\&\(holder\.colors\), 2\)\) = 10;/, generated)
     assert_match(/if \(\(\(\*mt_checked_index_array_u32_4\(\&\(palette\), 0\)\)\) != 1\)/, generated)
+  end
+
+  def test_generate_c_for_zero_initialization
+    source = [
+      "module demo.zero_surface",
+      "",
+      "struct Palette:",
+      "    colors: array[u32, 4]",
+      "",
+      "def main() -> i32:",
+      "    var palette = zero[array[u32, 4]]()",
+      "    var holder = zero[Palette]()",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/uint32_t palette\[4\] = \{ 0 \};/, generated)
+    assert_match(/demo_zero_surface_Palette holder = \{ 0 \};/, generated)
   end
 
   def test_generate_c_for_array_assignment_and_parameter_copy
@@ -671,6 +740,23 @@ class MilkTeaCodegenTest < Minitest::Test
       file.flush
 
       program = MilkTea::ModuleLoader.check_program(file.path)
+      MilkTea::Codegen.generate_c(program)
+    end
+  end
+
+  def generate_c_from_program_source(source, imported_sources = {})
+    Dir.mktmpdir("milk-tea-codegen") do |dir|
+      root_path = File.join(dir, "demo", "main.mt")
+      FileUtils.mkdir_p(File.dirname(root_path))
+      File.write(root_path, source)
+
+      imported_sources.each do |relative_path, imported_source|
+        path = File.join(dir, relative_path)
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, imported_source)
+      end
+
+      program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
       MilkTea::Codegen.generate_c(program)
     end
   end
