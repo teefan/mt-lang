@@ -17,10 +17,10 @@ methods Ball:
         this.position.x += this.velocity.x * dt
         this.position.y += this.velocity.y * dt
 
-        if this.position.x < this.radius or this.position.x > cast[f32](screen_width) - this.radius:
+        if this.position.x < this.radius or this.position.x > screen_width - this.radius:
             this.velocity.x = -this.velocity.x
 
-        if this.position.y < this.radius or this.position.y > cast[f32](screen_height) - this.radius:
+        if this.position.y < this.radius or this.position.y > screen_height - this.radius:
             this.velocity.y = -this.velocity.y
 
     def draw():
