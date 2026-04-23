@@ -54,8 +54,8 @@ def main() -> i32:
     let split_screen_rect = rl.Rectangle(
         x = 0.0,
         y = 0.0,
-        width = cast[f32](screen_player1.texture.width),
-        height = -cast[f32](screen_player1.texture.height),
+        width = screen_player1.texture.width,
+        height = -screen_player1.texture.height,
     )
     let count = 5
     let spacing: f32 = 4.0

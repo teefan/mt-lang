@@ -445,7 +445,12 @@ module MilkTea
           when AST::LocalDecl
             type = statement.type ? resolve_type_ref(statement.type) : infer_expression_type(statement.value, env: local_env)
             c_name = c_local_name(statement.name)
-            value = lower_contextual_expression(statement.value, env: local_env, expected_type: type)
+            value = lower_contextual_expression(
+              statement.value,
+              env: local_env,
+              expected_type: type,
+              contextual_int_to_float: statement.type && contextual_int_to_float_target?(type),
+            )
             local_env[:scopes].last[statement.name] = local_binding(type:, c_name:, mutable: statement.kind == :var, pointer: false)
             lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:)
           when AST::Assignment
@@ -456,6 +461,7 @@ module MilkTea
                         env: local_env,
                         expected_type: target.type,
                         external_numeric: external_numeric_assignment_target?(statement.target, env: local_env),
+                        contextual_int_to_float: contextual_int_to_float_target?(target.type),
                       )
                     else
                       lower_expression(statement.value, env: local_env, expected_type: target.type)
@@ -517,7 +523,12 @@ module MilkTea
           when AST::ReturnStmt
             cleanup = cleanup_statements(local_defers, active_defers)
             lowered.concat(cleanup)
-            value = statement.value ? lower_contextual_expression(statement.value, env: local_env, expected_type: return_type) : nil
+            value = statement.value ? lower_contextual_expression(
+              statement.value,
+              env: local_env,
+              expected_type: return_type,
+              contextual_int_to_float: contextual_int_to_float_target?(return_type),
+            ) : nil
             lowered << IR::ReturnStmt.new(value:)
           when AST::ExpressionStmt
             lowered << IR::ExpressionStmt.new(expression: lower_expression(statement.expression, env: local_env))
@@ -871,18 +882,19 @@ module MilkTea
         end
       end
 
-      def lower_contextual_expression(expression, env:, expected_type:, external_numeric: false)
+      def lower_contextual_expression(expression, env:, expected_type:, external_numeric: false, contextual_int_to_float: false)
         lowered = lower_expression(expression, env:, expected_type: expected_type)
         return lowered unless expected_type
         return lowered if lowered.type == expected_type
-        return cast_expression(lowered, expected_type) if contextual_numeric_compatibility?(expression, lowered.type, expected_type, external_numeric:)
+        return cast_expression(lowered, expected_type) if contextual_numeric_compatibility?(expression, lowered.type, expected_type, external_numeric:, contextual_int_to_float:)
 
         lowered
       end
 
-      def contextual_numeric_compatibility?(expression, actual_type, expected_type, external_numeric: false)
+      def contextual_numeric_compatibility?(expression, actual_type, expected_type, external_numeric: false, contextual_int_to_float: false)
         return true if integer_literal_numeric_compatibility?(expression, expected_type)
         return true if external_numeric && external_numeric_compatibility?(actual_type, expected_type)
+        return true if contextual_int_to_float && contextual_int_to_float_compatibility?(actual_type, expected_type)
 
         false
       end
@@ -899,6 +911,15 @@ module MilkTea
       def external_numeric_compatibility?(actual_type, expected_type)
         actual_type.is_a?(Types::Primitive) && actual_type.numeric? &&
           expected_type.is_a?(Types::Primitive) && expected_type.numeric?
+      end
+
+      def contextual_int_to_float_compatibility?(actual_type, expected_type)
+        actual_type.is_a?(Types::Primitive) && actual_type.integer? &&
+          expected_type.is_a?(Types::Primitive) && expected_type.float?
+      end
+
+      def contextual_int_to_float_target?(type)
+        type.is_a?(Types::Primitive) && type.float?
       end
 
       def external_numeric_assignment_target?(expression, env:)

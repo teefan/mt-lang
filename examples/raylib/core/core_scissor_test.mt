@@ -25,8 +25,8 @@ def main() -> i32:
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_S):
             scissor_mode = not scissor_mode
 
-        scissor_area.x = cast[f32](rl.GetMouseX()) - scissor_half_width
-        scissor_area.y = cast[f32](rl.GetMouseY()) - scissor_half_height
+        scissor_area.x = rl.GetMouseX() - scissor_half_width
+        scissor_area.y = rl.GetMouseY() - scissor_half_height
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
@@ -35,10 +35,10 @@ def main() -> i32:
 
         if scissor_mode:
             rl.BeginScissorMode(
-                cast[i32](scissor_area.x),
-                cast[i32](scissor_area.y),
-                cast[i32](scissor_area.width),
-                cast[i32](scissor_area.height),
+                scissor_area.x,
+                scissor_area.y,
+                scissor_area.width,
+                scissor_area.height,
             )
 
         rl.DrawRectangle(0, 0, rl.GetScreenWidth(), rl.GetScreenHeight(), rl.RED)

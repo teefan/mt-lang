@@ -76,6 +76,6 @@ def main() -> i32:
         if mouse_pos.y > rl.GetScreenHeight() - 60:
             mouse_text_y = cast[i32](mouse_pos.y) - 46
 
-        rl.DrawText(rl.TextFormat(c"[%i,%i]", rl.GetMouseX(), rl.GetMouseY()), cast[i32](mouse_pos.x) - 44, mouse_text_y, 20, rl.BLACK)
+        rl.DrawText(rl.TextFormat(c"[%i,%i]", rl.GetMouseX(), rl.GetMouseY()), mouse_pos.x - 44, mouse_text_y, 20, rl.BLACK)
 
     return 0

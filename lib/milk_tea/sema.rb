@@ -399,6 +399,7 @@ module MilkTea
             return_type,
             "return type mismatch: expected #{return_type}, got #{value_type}",
             expression: statement.value,
+            contextual_int_to_float: contextual_int_to_float_target?(return_type),
           )
         when AST::DeferStmt
           infer_expression(statement.expression, scopes:)
@@ -422,6 +423,7 @@ module MilkTea
             declared_type,
             "cannot assign #{inferred_type} to #{statement.name}: expected #{declared_type}",
             expression: statement.value,
+            contextual_int_to_float: contextual_int_to_float_target?(declared_type),
           )
           final_type = declared_type
         else
@@ -452,6 +454,7 @@ module MilkTea
             "cannot assign #{value_type} to #{target_type}",
             expression: statement.value,
             external_numeric: external_numeric_assignment_target?(statement.target, scopes:),
+            contextual_int_to_float: contextual_int_to_float_target?(target_type),
           )
         when "+=", "-=", "*=", "/="
           unless target_type.numeric? && value_type.numeric? && target_type == value_type
@@ -1346,21 +1349,22 @@ module MilkTea
         raise SemaError, "unknown type #{type_ref.name}"
       end
 
-      def ensure_assignable!(actual_type, expected_type, message, expression: nil, external_numeric: false)
-        raise SemaError, message unless types_compatible?(actual_type, expected_type, expression:, external_numeric:)
+      def ensure_assignable!(actual_type, expected_type, message, expression: nil, external_numeric: false, contextual_int_to_float: false)
+        raise SemaError, message unless types_compatible?(actual_type, expected_type, expression:, external_numeric:, contextual_int_to_float:)
       end
 
       def ensure_argument_assignable!(actual_type, expected_type, external:, message:, expression: nil)
         raise SemaError, message unless argument_types_compatible?(actual_type, expected_type, external:, expression:)
       end
 
-      def types_compatible?(actual_type, expected_type, expression: nil, external_numeric: false)
+      def types_compatible?(actual_type, expected_type, expression: nil, external_numeric: false, contextual_int_to_float: false)
         return true if actual_type == expected_type
         return true if actual_type == @null_type && expected_type.is_a?(Types::Nullable)
         return true if expected_type.is_a?(Types::Nullable) && actual_type == expected_type.base
         return true if actual_type.is_a?(Types::EnumBase) && actual_type.backing_type == expected_type
         return true if integer_literal_numeric_compatibility?(expression, expected_type)
         return true if external_numeric && external_numeric_compatibility?(actual_type, expected_type)
+        return true if contextual_int_to_float && contextual_int_to_float_compatibility?(actual_type, expected_type)
 
         false
       end
@@ -1384,6 +1388,15 @@ module MilkTea
       def external_numeric_compatibility?(actual_type, expected_type)
         actual_type.is_a?(Types::Primitive) && actual_type.numeric? &&
           expected_type.is_a?(Types::Primitive) && expected_type.numeric?
+      end
+
+      def contextual_int_to_float_compatibility?(actual_type, expected_type)
+        actual_type.is_a?(Types::Primitive) && actual_type.integer? &&
+          expected_type.is_a?(Types::Primitive) && expected_type.float?
+      end
+
+      def contextual_int_to_float_target?(type)
+        type.is_a?(Types::Primitive) && type.float?
       end
 
       def extern_enum_integer_argument_compatibility?(actual_type, expected_type)

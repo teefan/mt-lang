@@ -28,7 +28,7 @@ def main() -> i32:
             let width = rl.GetMonitorWidth(index)
             let height = rl.GetMonitorHeight(index)
 
-            if position.x < cast[f32](monitor_offset_x):
+            if position.x < monitor_offset_x:
                 monitor_offset_x = -cast[i32](position.x)
 
             let right_edge = cast[i32](position.x) + width
@@ -67,26 +67,26 @@ def main() -> i32:
             let width = rl.GetMonitorWidth(draw_index)
             let height = rl.GetMonitorHeight(draw_index)
             let rec = rl.Rectangle(
-                x = (position.x + cast[f32](monitor_offset_x)) * monitor_scale + 140.0,
+                x = (position.x + monitor_offset_x) * monitor_scale + 140.0,
                 y = position.y * monitor_scale + 80.0,
-                width = cast[f32](width) * monitor_scale,
-                height = cast[f32](height) * monitor_scale,
+                width = width * monitor_scale,
+                height = height * monitor_scale,
             )
 
-            rl.DrawText(rl.GetMonitorName(draw_index), cast[i32](rec.x) + 10, cast[i32](rec.y) + 10, 20, rl.BLUE)
+            rl.DrawText(rl.GetMonitorName(draw_index), rec.x + 10, rec.y + 10, 20, rl.BLUE)
 
             if draw_index == current_monitor_index:
                 rl.DrawRectangleLinesEx(rec, 5.0, rl.RED)
-                rl.DrawText(current_label, cast[i32](rec.x) + 10, cast[i32](rec.y) + 40, 20, rl.RED)
+                rl.DrawText(current_label, rec.x + 10, rec.y + 40, 20, rl.RED)
                 let window_position = rl.GetWindowPosition()
                 rl.DrawRectangleV(
                     rl.Vector2(
-                        x = (window_position.x + cast[f32](monitor_offset_x)) * monitor_scale + 140.0,
+                        x = (window_position.x + monitor_offset_x) * monitor_scale + 140.0,
                         y = window_position.y * monitor_scale + 80.0,
                     ),
                     rl.Vector2(
-                        x = cast[f32](screen_width) * monitor_scale,
-                        y = cast[f32](screen_height) * monitor_scale,
+                        x = screen_width * monitor_scale,
+                        y = screen_height * monitor_scale,
                     ),
                     rl.Fade(rl.GREEN, 0.5),
                 )

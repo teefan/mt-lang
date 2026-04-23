@@ -182,10 +182,10 @@ def draw_keyboard_key(bounds: rl.Rectangle, key: i32) -> void:
         let active = rl.IsKeyDown(key)
         if active:
             rl.DrawRectangleLinesEx(bounds, 2.0, rl.MAROON)
-            rl.DrawText(key_text(key), cast[i32](bounds.x) + 4, cast[i32](bounds.y) + 4, 10, rl.MAROON)
+            rl.DrawText(key_text(key), bounds.x + 4, bounds.y + 4, 10, rl.MAROON)
         else:
             rl.DrawRectangleLinesEx(bounds, 2.0, rl.DARKGRAY)
-            rl.DrawText(key_text(key), cast[i32](bounds.x) + 4, cast[i32](bounds.y) + 4, 10, rl.DARKGRAY)
+            rl.DrawText(key_text(key), bounds.x + 4, bounds.y + 4, 10, rl.DARKGRAY)
 
     if rl.CheckCollisionPointRec(rl.GetMousePosition(), bounds):
         rl.DrawRectangleRec(bounds, rl.Fade(rl.RED, 0.2))

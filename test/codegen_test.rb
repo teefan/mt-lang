@@ -222,6 +222,30 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/set_scale\(\(\(float\) channel\)\);/, generated)
   end
 
+  def test_generate_c_for_contextual_integer_to_float_at_local_assignment_and_return_boundaries
+    source = [
+      "module demo.contextual_int_to_float_codegen",
+      "",
+      "struct Point:",
+      "    x: f32",
+      "",
+      "def project(value: i32) -> f32:",
+      "    var total: f32 = value",
+      "    total = value + 1",
+      "    var point = Point(x = 0.0)",
+      "    point.x = value + 2",
+      "    return value + 3",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/float total = \(\(float\) value\);/, generated)
+    assert_match(/total = \(\(float\) \(value \+ 1\)\);/, generated)
+    assert_match(/point\.x = \(\(float\) \(value \+ 2\)\);/, generated)
+    assert_match(/return \(\(float\) \(value \+ 3\)\);/, generated)
+  end
+
   def test_generate_c_for_generic_struct_instantiation_and_embedding
     source = [
       "module demo.generic_surface",

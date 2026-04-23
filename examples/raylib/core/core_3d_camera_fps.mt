@@ -37,7 +37,7 @@ struct FpsState:
 
 methods Body:
     edit def update(rot: f32, side: i32, forward: i32, jump_pressed: bool, crouch_hold: bool) -> void:
-        var input = rl.Vector2(x = cast[f32](side), y = -cast[f32](forward))
+        var input = rl.Vector2(x = side, y = -forward)
         if side != 0 and forward != 0:
             input = input.normalize()
 

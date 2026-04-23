@@ -632,6 +632,31 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/argument value to takes_f32 expects f32, got i32/, error.message)
   end
 
+  def test_type_checks_contextual_integer_to_float_for_local_assignment_and_return
+    source = <<~MT
+      module demo.contextual_int_to_float
+
+      struct Point:
+          x: f32
+
+      def project(value: i32) -> f32:
+          var total: f32 = value
+          total = value + 1
+          var point = Point(x = 0.0)
+          point.x = value + 2
+          return value + 3
+
+      def main() -> i32:
+          let value = 4
+          let baseline: f32 = value
+          return cast[i32](project(value) + baseline)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("project")
+  end
+
   def test_type_checks_numeric_coercion_for_external_boundaries
     program = check_program_source(
       <<~MT,
