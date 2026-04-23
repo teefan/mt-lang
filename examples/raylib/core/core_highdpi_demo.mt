@@ -13,15 +13,15 @@ const sample_text: cstr = c"Can you see this?"
 
 def draw_text_center(text: cstr, x: i32, y: i32, font_size: i32, color: rl.Color) -> void:
     let font = rl.GetFontDefault()
-    let size = rl.MeasureTextEx(font, text, 1.0 * font_size, 3.0)
+    let size = rl.MeasureTextEx(font, text, cast[f32](font_size), 3.0)
     rl.DrawTextEx(
         font,
         text,
         rl.Vector2(
-            x = 1.0 * x - size.x / 2.0,
-            y = 1.0 * y - size.y / 2.0,
+            x = cast[f32](x) - size.x / 2.0,
+            y = cast[f32](y) - size.y / 2.0,
         ),
-        1.0 * font_size,
+        cast[f32](font_size),
         3.0,
         color,
     )
@@ -38,7 +38,7 @@ def main() -> i32:
     let pixel_grid_top = logical_grid_bottom - 20
     let pixel_grid_bottom = pixel_grid_top + 80
     let pixel_grid_desc_y = pixel_grid_bottom + 60
-    var cell_size_px: f32 = 1.0 * cell_size
+    var cell_size_px: f32 = cast[f32](cell_size)
 
     rl.SetTargetFPS(60)
 
@@ -48,7 +48,7 @@ def main() -> i32:
             rl.SetWindowMonitor((rl.GetCurrentMonitor() + 1) % monitor_count)
 
         let dpi_scale = rl.GetWindowScaleDPI()
-        cell_size_px = 1.0 * cell_size / dpi_scale.x
+        cell_size_px = cast[f32](cell_size) / dpi_scale.x
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
@@ -71,7 +71,7 @@ def main() -> i32:
         odd = true
         var pixel_x = cell_size
         while pixel_x < rl.GetRenderWidth():
-            let x = cast[i32](1.0 * pixel_x / dpi_scale.x)
+            let x = cast[i32](cast[f32](pixel_x) / dpi_scale.x)
             if odd:
                 rl.DrawRectangle(
                     x,
@@ -92,8 +92,8 @@ def main() -> i32:
             font,
             sample_text,
             rl.Vector2(
-                x = 1.0 * rl.GetScreenWidth() - sample_size.x - 5.0,
-                y = 1.0 * rl.GetScreenHeight() - sample_size.y - 5.0,
+                x = cast[f32](rl.GetScreenWidth()) - sample_size.x - 5.0,
+                y = cast[f32](rl.GetScreenHeight()) - sample_size.y - 5.0,
             ),
             20.0,
             3.0,

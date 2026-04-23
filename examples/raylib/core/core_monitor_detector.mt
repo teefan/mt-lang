@@ -28,7 +28,7 @@ def main() -> i32:
             let width = rl.GetMonitorWidth(index)
             let height = rl.GetMonitorHeight(index)
 
-            if position.x < 1.0 * monitor_offset_x:
+            if position.x < cast[f32](monitor_offset_x):
                 monitor_offset_x = -cast[i32](position.x)
 
             let right_edge = cast[i32](position.x) + width
@@ -50,9 +50,9 @@ def main() -> i32:
 
         var monitor_scale: f32 = 0.6
         if max_height > max_width + monitor_offset_x:
-            monitor_scale *= 1.0 * screen_height / max_height
+            monitor_scale *= cast[f32](screen_height) / max_height
         else:
-            monitor_scale *= 1.0 * screen_width / (max_width + monitor_offset_x)
+            monitor_scale *= cast[f32](screen_width) / (max_width + monitor_offset_x)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
@@ -67,10 +67,10 @@ def main() -> i32:
             let width = rl.GetMonitorWidth(draw_index)
             let height = rl.GetMonitorHeight(draw_index)
             let rec = rl.Rectangle(
-                x = (position.x + 1.0 * monitor_offset_x) * monitor_scale + 140.0,
+                x = (position.x + cast[f32](monitor_offset_x)) * monitor_scale + 140.0,
                 y = position.y * monitor_scale + 80.0,
-                width = 1.0 * width * monitor_scale,
-                height = 1.0 * height * monitor_scale,
+                width = cast[f32](width) * monitor_scale,
+                height = cast[f32](height) * monitor_scale,
             )
 
             rl.DrawText(rl.GetMonitorName(draw_index), cast[i32](rec.x) + 10, cast[i32](rec.y) + 10, 20, rl.BLUE)
@@ -81,12 +81,12 @@ def main() -> i32:
                 let window_position = rl.GetWindowPosition()
                 rl.DrawRectangleV(
                     rl.Vector2(
-                        x = (window_position.x + 1.0 * monitor_offset_x) * monitor_scale + 140.0,
+                        x = (window_position.x + cast[f32](monitor_offset_x)) * monitor_scale + 140.0,
                         y = window_position.y * monitor_scale + 80.0,
                     ),
                     rl.Vector2(
-                        x = 1.0 * screen_width * monitor_scale,
-                        y = 1.0 * screen_height * monitor_scale,
+                        x = cast[f32](screen_width) * monitor_scale,
+                        y = cast[f32](screen_height) * monitor_scale,
                     ),
                     rl.Fade(rl.GREEN, 0.5),
                 )

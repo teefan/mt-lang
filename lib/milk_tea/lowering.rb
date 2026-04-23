@@ -257,7 +257,7 @@ module MilkTea
       def build_method_definitions
         @program.analyses_by_path.values.each_with_object({}) do |analysis, definitions|
           analysis.ast.declarations.grep(AST::ImplBlock).each do |impl|
-            receiver_type = analysis.types.fetch(impl.type_name.to_s)
+            receiver_type = resolve_impl_receiver_type(analysis, impl.type_name)
             impl.methods.each do |method|
               definitions[[receiver_type, method.name]] = [analysis, method]
             end
@@ -341,7 +341,7 @@ module MilkTea
               lowered << lower_function_decl(binding)
             end
           when AST::ImplBlock
-            receiver_type = @types.fetch(decl.type_name.to_s)
+            receiver_type = resolve_impl_receiver_type(@analysis, decl.type_name)
             decl.methods.each do |method|
               lowered << lower_function_decl(@analysis.methods.fetch(receiver_type).fetch(method.name), receiver_type:)
             end
@@ -349,6 +349,20 @@ module MilkTea
         end
 
         lowered
+      end
+
+      def resolve_impl_receiver_type(analysis, type_name)
+        parts = type_name.parts
+        if parts.length == 1
+          return analysis.types.fetch(parts.first)
+        end
+
+        if parts.length == 2
+          imported_module = analysis.imports.fetch(parts.first)
+          return imported_module.types.fetch(parts.last)
+        end
+
+        raise LoweringError, "unsupported impl target #{type_name}"
       end
 
       def lower_function_decl(binding, receiver_type: nil)
@@ -700,12 +714,13 @@ module MilkTea
         when AST::UnaryOp
           if expression.operator == "&"
             IR::AddressOf.new(expression: lower_expression(expression.operand, env:), type:)
+          elsif ["+", "-", "not", "~"].include?(expression.operator)
+            IR::Unary.new(operator: expression.operator, operand: lower_expression(expression.operand, env:, expected_type: type), type:)
           else
             IR::Unary.new(operator: expression.operator, operand: lower_expression(expression.operand, env:), type:)
           end
         when AST::BinaryOp
-          left_type = infer_expression_type(expression.left, env:, expected_type: type)
-          right_type = infer_expression_type(expression.right, env:, expected_type: left_type)
+          left_type, right_type = infer_binary_operand_types(expression, env:, expected_type: type)
           operand_type = promoted_binary_operand_type(expression.operator, left_type, right_type)
           left = lower_expression(expression.left, env:, expected_type: operand_type || type)
           right = lower_expression(expression.right, env:, expected_type: operand_type || left.type)
@@ -757,6 +772,12 @@ module MilkTea
           expression.arguments.each_with_index do |argument, index|
             expected_type = callee_type.params[index].type
             arguments << lower_expression(argument.value, env:, expected_type: expected_type)
+          end
+          IR::Call.new(callee: callee_name, arguments:, type:)
+        when :associated_method
+          arguments = expression.arguments.map.with_index do |argument, index|
+            expected_type = callee_type.params[index].type
+            lower_expression(argument.value, env:, expected_type: expected_type)
           end
           IR::Call.new(callee: callee_name, arguments:, type:)
         when :struct_literal
@@ -843,13 +864,25 @@ module MilkTea
             end
           end
 
+          if (type_expr = resolve_type_expression(callee.receiver))
+            method_entry = @method_definitions[[type_expr, callee.member]]
+            if method_entry
+              method_analysis, method_ast = method_entry
+              method_binding = method_analysis.methods.fetch(type_expr).fetch(method_ast.name)
+              if method_binding.type.receiver_type.nil?
+                return [:associated_method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: type_expr), nil, method_binding.type]
+              end
+            end
+
+            raise LoweringError, "unknown associated function #{type_expr}.#{callee.member}"
+          end
+
           receiver_type = infer_expression_type(callee.receiver, env:)
           method_entry = @method_definitions[[receiver_type, callee.member]]
           if method_entry
             method_analysis, method_ast = method_entry
-            function_type = function_type_for_method(receiver_type, method_ast.name, analysis: method_analysis)
             method_binding = method_analysis.methods.fetch(receiver_type).fetch(method_ast.name)
-            return [:method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type:), callee.receiver, function_type]
+            return [:method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type:), callee.receiver, method_binding.type]
           end
 
           raise LoweringError, "unknown callee #{callee.receiver}.#{callee.member}"
@@ -917,6 +950,12 @@ module MilkTea
           if (type_expr = resolve_type_expression(expression.receiver))
             member_type = resolve_type_member(type_expr, expression.member)
             return member_type if member_type
+
+            if (method_entry = @method_definitions[[type_expr, expression.member]])
+              method_analysis, method_ast = method_entry
+              method_binding = method_analysis.methods.fetch(type_expr).fetch(method_ast.name)
+              return method_binding.type if method_binding.type.receiver_type.nil?
+            end
           end
           if expression.receiver.is_a?(AST::Identifier) && @imports.key?(expression.receiver.name)
             imported_module = @imports.fetch(expression.receiver.name)
@@ -946,8 +985,7 @@ module MilkTea
             operand_type
           end
         when AST::BinaryOp
-          left_type = infer_expression_type(expression.left, env:, expected_type:)
-          right_type = infer_expression_type(expression.right, env:, expected_type: left_type)
+          left_type, right_type = infer_binary_operand_types(expression, env:, expected_type: expected_type)
 
           case expression.operator
           when "and", "or", "<", "<=", ">", ">=", "==", "!="
@@ -962,7 +1000,7 @@ module MilkTea
         when AST::Call
           kind, = resolve_callee(expression.callee, env, arguments: expression.arguments)
           case kind
-          when :function, :method
+          when :function, :method, :associated_method
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             function_type.return_type
           when :struct_literal, :array
@@ -992,6 +1030,50 @@ module MilkTea
         else
           raise LoweringError, "unsupported expression type #{expression.class.name}"
         end
+      end
+
+      def infer_binary_operand_types(expression, env:, expected_type: nil)
+        propagated_type = propagating_expected_type(expression.operator, expected_type)
+        left_type = infer_expression_type(expression.left, env:, expected_type: propagated_type)
+        right_expected_type = case expression.operator
+                              when "<<", ">>"
+                                propagated_type || left_type
+                              when "+", "-", "*", "/", "%", "|", "&", "^"
+                                left_type
+                              else
+                                left_type
+                              end
+        right_type = infer_expression_type(expression.right, env:, expected_type: right_expected_type)
+        harmonize_binary_float_literal_types(expression.left, expression.right, left_type, right_type, env:)
+      end
+
+      def harmonize_binary_float_literal_types(left_expression, right_expression, left_type, right_type, env:)
+        if float_literal_expression?(left_expression) && right_type.is_a?(Types::Primitive) && right_type.float?
+          left_type = infer_expression_type(left_expression, env:, expected_type: right_type)
+        end
+
+        if float_literal_expression?(right_expression) && left_type.is_a?(Types::Primitive) && left_type.float?
+          right_type = infer_expression_type(right_expression, env:, expected_type: left_type)
+        end
+
+        [left_type, right_type]
+      end
+
+      def float_literal_expression?(expression)
+        expression.is_a?(AST::FloatLiteral) ||
+          (expression.is_a?(AST::UnaryOp) && ["+", "-"].include?(expression.operator) && float_literal_expression?(expression.operand))
+      end
+
+      def propagating_expected_type(operator, expected_type)
+        case operator
+        when "+", "-", "*", "/", "%", "<<", ">>"
+          return expected_type if expected_type.is_a?(Types::Primitive) && expected_type.numeric?
+        when "|", "&", "^"
+          return expected_type if expected_type.is_a?(Types::Primitive) && expected_type.integer?
+          return expected_type if expected_type.is_a?(Types::Flags)
+        end
+
+        nil
       end
 
       def promoted_binary_operand_type(operator, left_type, right_type)
@@ -1297,19 +1379,6 @@ module MilkTea
 
       def analysis_for_module(module_name)
         @program.analyses_by_module_name.fetch(module_name)
-      end
-
-      def function_type_for_method(receiver_type, name, analysis: @analysis)
-        _, method_ast = @method_definitions.fetch([receiver_type, name])
-        params = method_ast.params.drop(1).map do |param|
-          Types::Parameter.new(param.name, resolve_type_ref_for_analysis(param.type, analysis), mutable: param.mutable)
-        end
-        return_type = if method_ast.return_type
-                        resolve_type_ref_for_analysis(method_ast.return_type, analysis)
-                      else
-                        analysis.types.fetch("void")
-                      end
-        Types::Function.new(name, params:, return_type:, receiver_type:, receiver_mutable: method_ast.params.first.mutable)
       end
 
       def resolve_type_ref_for_analysis(type_ref, analysis)

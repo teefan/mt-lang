@@ -25,8 +25,8 @@ def main() -> i32:
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_S):
             scissor_mode = not scissor_mode
 
-        scissor_area.x = 1.0 * rl.GetMouseX() - scissor_half_width
-        scissor_area.y = 1.0 * rl.GetMouseY() - scissor_half_height
+        scissor_area.x = cast[f32](rl.GetMouseX()) - scissor_half_width
+        scissor_area.y = cast[f32](rl.GetMouseY()) - scissor_half_height
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

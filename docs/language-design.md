@@ -34,7 +34,7 @@ The output target is beautiful C. The generated C should be readable enough that
 
 ### 1. What you see is what runs
 
-If code allocates, takes an address, dereferences a pointer, performs an FFI call, or enters unsafe territory, the source should say so directly.
+If code allocates, takes an address, dereferences a raw pointer, performs an FFI call, or enters unsafe territory, the source should say so directly.
 
 ### 2. C is the ABI ground truth
 
@@ -199,17 +199,22 @@ impl Camera:
 
 	def world_scale(self) -> f32:
 		return self.zoom
+
+	def origin() -> Camera:
+		return Camera(position = Vec2(x = 0.0, y = 0.0), zoom = 1.0)
 ```
 
 Lowering rule:
 
 - `camera.move_by(delta)` lowers to `game_Camera_move_by(&camera, delta)`.
 - `camera.world_scale()` lowers to `game_Camera_world_scale(&camera)`.
+- `Camera.origin()` lowers to `game_Camera_origin()`.
 
 Receiver rule:
 
 - `mut self` methods require an addressable receiver.
 - `self` methods borrow the receiver read-only.
+- Methods without `self` are associated functions on the type.
 - There is no hidden dynamic dispatch, vtable lookup, or heap allocation.
 
 The rule is fixed and inspectable. There is no method lookup at runtime.
@@ -272,6 +277,7 @@ def load_texture(path: str, arena: ptr[Arena]) -> Result[Texture, LoadError]:
 
 `unsafe` is required for:
 
+- raw pointer dereference and field access through raw pointers
 - raw pointer arithmetic
 - unchecked casts and bit reinterpretation
 - reading inactive union fields
@@ -687,7 +693,7 @@ Capabilities required by the FFI surface:
 
 ### Bindgen
 
-Bindings for libc, raylib, SDL3, Box2D, stb, miniaudio, json-c, and similar libraries should be generated with clang.
+Bindings for libc, libm, raylib, SDL3, Box2D, stb, miniaudio, json-c, and similar libraries should be generated with clang.
 
 Bindgen output rules:
 

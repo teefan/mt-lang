@@ -6,15 +6,29 @@ require "json"
 require_relative "test_helper"
 
 class MilkTeaCliTest < Minitest::Test
-  def test_parse_command_reports_success
+  def test_lex_command_reports_tokens
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["lex", demo_path], out:, err:)
+
+    assert_equal 0, status
+    assert_equal "", err.string
+    assert_match(/MilkTea::Token/, out.string)
+    assert_match(/type=:module/, out.string)
+  end
+
+  def test_parse_command_reports_ast
     out = StringIO.new
     err = StringIO.new
 
     status = MilkTea::CLI.start(["parse", demo_path], out:, err:)
 
     assert_equal 0, status
-    assert_match(/parsed .*milk-tea-demo\.mt as demo\.bouncing_ball/, out.string)
     assert_equal "", err.string
+    assert_includes out.string, "module demo.bouncing_ball"
+    assert_includes out.string, "impl Ball:"
+    assert_includes out.string, "def main() -> i32:"
   end
 
   def test_check_command_reports_success
@@ -26,6 +40,19 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal 0, status
     assert_match(/checked .*milk-tea-demo\.mt as demo\.bouncing_ball/, out.string)
     assert_equal "", err.string
+  end
+
+  def test_lower_command_reports_ir
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["lower", demo_path], out:, err:)
+
+    assert_equal 0, status
+    assert_equal "", err.string
+    assert_includes out.string, "program demo.bouncing_ball"
+    assert_includes out.string, "include \"raylib.h\""
+    assert_includes out.string, "fn main() -> i32 [entry]:"
   end
 
   def test_emit_c_command_reports_generated_c
@@ -159,7 +186,8 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal 1, status
     assert_equal "", out.string
     assert_match(/missing source file path/, err.string)
-    assert_match(/Usage: mtc parse PATH/, err.string)
+    assert_match(/Usage: mtc lex PATH/, err.string)
+    assert_match(/mtc parse PATH/, err.string)
   end
 
   def test_invalid_commands_print_usage
@@ -170,8 +198,10 @@ class MilkTeaCliTest < Minitest::Test
 
     assert_equal 1, status
     assert_equal "", out.string
-    assert_match(/Usage: mtc parse PATH/, err.string)
+    assert_match(/Usage: mtc lex PATH/, err.string)
+    assert_match(/mtc parse PATH/, err.string)
     assert_match(/mtc check PATH/, err.string)
+    assert_match(/mtc lower PATH/, err.string)
     assert_match(/mtc emit-c PATH/, err.string)
     assert_match(/mtc build PATH/, err.string)
     assert_match(/mtc run PATH/, err.string)
