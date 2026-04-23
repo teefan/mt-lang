@@ -373,6 +373,23 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_rejects_passing_str_to_cstr_parameter_without_explicit_boundary
+    source = <<~MT
+      module demo.string_boundary
+
+      extern def set_text(value: cstr) -> void
+
+      def main() -> void:
+          set_text("hello")
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/argument value to set_text expects cstr, got str/, error.message)
+  end
+
   def test_type_checks_exhaustive_match_statement_over_enum
     source = <<~MT
       module demo.match

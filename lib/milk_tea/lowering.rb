@@ -859,7 +859,9 @@ module MilkTea
           IR::AggregateLiteral.new(type:, fields:)
         when :panic
           argument = expression.arguments.fetch(0)
-          IR::Call.new(callee: "mt_panic", arguments: [lower_expression(argument.value, env:, expected_type: @types.fetch("str"))], type:)
+          message_type = infer_expression_type(argument.value, env:)
+          callee = message_type == @types.fetch("cstr") ? "mt_panic" : "mt_panic_str"
+          IR::Call.new(callee:, arguments: [lower_expression(argument.value, env:, expected_type: message_type)], type:)
         when :addr
           argument = expression.arguments.fetch(0)
           IR::AddressOf.new(expression: lower_expression(argument.value, env:), type:)

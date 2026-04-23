@@ -24,6 +24,9 @@ module MilkTea
       end
       lines << ""
 
+      lines.concat(emit_string_type)
+      lines << ""
+
       if uses_panic_helper?
         lines.concat(emit_panic_helper)
         lines << ""
@@ -137,7 +140,7 @@ module MilkTea
     def expression_uses_panic?(expression)
       case expression
       when IR::Call
-        expression.callee == "mt_panic" || expression.arguments.any? { |argument| expression_uses_panic?(argument) }
+        %w[mt_panic mt_panic_str].include?(expression.callee) || expression.arguments.any? { |argument| expression_uses_panic?(argument) }
       when IR::Member
         expression_uses_panic?(expression.receiver)
       when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
@@ -164,12 +167,32 @@ module MilkTea
     end
 
     def emit_panic_helper
-      [
+      lines = [
         "static void mt_panic(const char* message) {",
         "#{INDENT}fputs(message, stderr);",
         "#{INDENT}fputc('\\n', stderr);",
         "#{INDENT}abort();",
         "}",
+      ]
+
+      lines.concat([
+        "",
+        "static void mt_panic_str(mt_str message) {",
+        "#{INDENT}fwrite(message.data, 1, message.len, stderr);",
+        "#{INDENT}fputc('\\n', stderr);",
+        "#{INDENT}abort();",
+        "}",
+      ])
+
+      lines
+    end
+
+    def emit_string_type
+      [
+        "typedef struct mt_str {",
+        "#{INDENT}const char* data;",
+        "#{INDENT}uintptr_t len;",
+        "} mt_str;",
       ]
     end
 
@@ -361,7 +384,13 @@ module MilkTea
     end
 
     def emit_static_assert(statement)
-      "_Static_assert(#{emit_expression(statement.condition)}, #{emit_expression(statement.message)});"
+      message = if statement.message.is_a?(IR::StringLiteral)
+                  statement.message.value.inspect
+                else
+                  emit_expression(statement.message)
+                end
+
+      "_Static_assert(#{emit_expression(statement.condition)}, #{message});"
     end
 
     def emit_expression(expression)
@@ -401,7 +430,7 @@ module MilkTea
       when IR::FloatLiteral
         emit_float_literal(expression)
       when IR::StringLiteral
-        expression.value.inspect
+        expression.type == Types::Primitive.new("str") ? emit_str_literal(expression) : expression.value.inspect
       when IR::BooleanLiteral
         expression.value ? "true" : "false"
       when IR::NullLiteral
@@ -449,6 +478,7 @@ module MilkTea
     end
 
     def emit_zero_initializer(type)
+      return "{ 0 }" if type.is_a?(Types::Primitive) && type.name == "str"
       return "{ 0 }" if array_type?(type)
       return "NULL" if type.is_a?(Types::Nullable)
       return "false" if type.is_a?(Types::Primitive) && type.boolean?
@@ -460,10 +490,15 @@ module MilkTea
     end
 
     def emit_zero_expression(type)
+      return "(#{c_type(type)}) #{emit_zero_initializer(type)}" if type.is_a?(Types::Primitive) && type.name == "str"
       return emit_zero_initializer(type) if type.is_a?(Types::Primitive) || type.is_a?(Types::Nullable)
       return emit_zero_initializer(type) if type.is_a?(Types::EnumBase)
 
       "(#{c_declaration(type, '')}) #{emit_zero_initializer(type)}"
+    end
+
+    def emit_str_literal(expression)
+      "(mt_str){ .data = #{expression.value.inspect}, .len = #{expression.value.bytesize} }"
     end
 
     def emit_call_expression(expression)
@@ -1378,7 +1413,7 @@ module MilkTea
         "f32" => "float",
         "f64" => "double",
         "void" => "void",
-        "str" => "const char*",
+        "str" => "mt_str",
         "cstr" => "const char*",
       }.fetch(name)
     end

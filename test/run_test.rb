@@ -726,6 +726,38 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_passing_real_str_values
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-str") do |dir|
+      source_path = File.join(dir, "str_value.mt")
+
+      File.write(source_path, [
+        "module demo.str_runtime",
+        "",
+        "const greeting: str = \"hello\"",
+        "",
+        "def score(message: str) -> i32:",
+        "    return 7",
+        "",
+        "def main() -> i32:",
+        "    return score(greeting)",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 7, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_unsafe_reinterpret
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

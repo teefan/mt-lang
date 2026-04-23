@@ -10,6 +10,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal %w[raylib raygui libc], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_equal ["RAYGUI_IMPLEMENTATION"], registry.fetch("raygui").implementation_defines
+    assert_equal ["raylib", "m"], registry.fetch("raygui").link_libraries
     assert_includes registry.fetch("raygui").header_candidates.first, "third_party/raylib-upstream/examples/shapes/raygui.h"
     assert_equal "bindgen:check:libc", registry.fetch("libc").check_task_name
     assert_equal "bindgen:check_raylib", registry.fetch("raylib").legacy_check_task_name
