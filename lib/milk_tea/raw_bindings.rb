@@ -183,6 +183,19 @@ module MilkTea
           ],
         ),
         Binding.new(
+          name: "rlgl",
+          module_name: "std.c.rlgl",
+          binding_path: root.join("std/c/rlgl.mt"),
+          include_directives: ["rlgl.h"],
+          link_libraries: ["raylib"],
+          env_var: "RLGL_HEADER",
+          header_candidates: [
+            "/usr/include/rlgl.h",
+            "/usr/local/include/rlgl.h",
+            root.join("third_party/raylib-upstream/src/rlgl.h").to_s,
+          ],
+        ),
+        Binding.new(
           name: "libc",
           module_name: "std.c.libc",
           binding_path: root.join("std/c/libc.mt"),

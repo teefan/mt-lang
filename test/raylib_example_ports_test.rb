@@ -28,7 +28,9 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
         assert_equal File.expand_path(c_path), result.c_path
         assert_equal File.expand_path(compiler_path), result.compiler
         assert_includes result.link_flags, "-lraylib"
-        assert_includes result.link_flags, "-lm" if File.basename(path, ".mt") == "core_clipboard_text"
+        if %w[core_clipboard_text core_smooth_pixelperfect].include?(File.basename(path, ".mt"))
+          assert_includes result.link_flags, "-lm"
+        end
         assert File.exist?(output_path)
         assert File.exist?(c_path)
         assert_match(/#include "raylib\.h"/, File.read(c_path))
@@ -61,6 +63,7 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
       core_highdpi_testbed
       core_window_letterbox
       core_input_actions
+      core_input_gamepad
       core_input_gestures
       core_input_keys
       core_keyboard_testbed
@@ -72,6 +75,9 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
       core_random_sequence
       core_random_values
       core_render_texture
+      core_smooth_pixelperfect
+      core_undo_redo
+      core_viewport_scaling
       core_window_web
       core_window_flags
       core_world_screen

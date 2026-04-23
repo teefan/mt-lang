@@ -329,8 +329,7 @@
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
       "known_blockers": [
-        "raymath_helper_header",
-        "rlgl_helper_header"
+        "raymath_helper_header"
       ]
     },
     {
@@ -901,9 +900,7 @@
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
-      "known_blockers": [
-        "rlgl_helper_header"
-      ]
+      "known_blockers": []
     },
     {
       "example_id": "core/core_smooth_pixelperfect",
@@ -1839,8 +1836,7 @@
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
       "known_blockers": [
-        "raymath_helper_header",
-        "rlgl_helper_header"
+        "raymath_helper_header"
       ]
     },
     {
@@ -1869,9 +1865,7 @@
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
-      "known_blockers": [
-        "rlgl_helper_header"
-      ]
+      "known_blockers": []
     },
     {
       "example_id": "shapes/shapes_splines_drawing",
@@ -2341,7 +2335,6 @@
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
-        "rlgl_helper_header",
         "raygui_helper_header"
       ]
     },
@@ -2371,9 +2364,7 @@
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
-      "known_blockers": [
-        "rlgl_helper_header"
-      ]
+      "known_blockers": []
     },
     {
       "example_id": "shapes/shapes_ball_physics",
@@ -2538,9 +2529,7 @@
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
-      "known_blockers": [
-        "rlgl_helper_header"
-      ]
+      "known_blockers": []
     },
     {
       "example_id": "textures/textures_logo_raylib",
@@ -3110,8 +3099,7 @@
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
       "known_blockers": [
-        "raymath_helper_header",
-        "rlgl_helper_header"
+        "raymath_helper_header"
       ]
     },
     {
@@ -3308,8 +3296,7 @@
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
       "known_blockers": [
-        "raymath_helper_header",
-        "rlgl_helper_header"
+        "raymath_helper_header"
       ]
     },
     {
@@ -3754,7 +3741,6 @@
       "uses_file_drop_or_directory_api": true,
       "port_status": "not_started",
       "known_blockers": [
-        "rlgl_helper_header",
         "shader_assets",
         "directory_or_drop_apis"
       ]
@@ -4283,9 +4269,7 @@
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
-      "known_blockers": [
-        "rlgl_helper_header"
-      ]
+      "known_blockers": []
     },
     {
       "example_id": "models/models_rlgl_solar_system",
@@ -4313,9 +4297,7 @@
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
-      "known_blockers": [
-        "rlgl_helper_header"
-      ]
+      "known_blockers": []
     },
     {
       "example_id": "models/models_yaw_pitch_roll",
@@ -4448,7 +4430,6 @@
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
-        "rlgl_helper_header",
         "shader_assets",
         "directory_or_drop_apis"
       ]
@@ -4481,9 +4462,7 @@
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
-      "known_blockers": [
-        "rlgl_helper_header"
-      ]
+      "known_blockers": []
     },
     {
       "example_id": "models/models_animation_gpu_skinning",
@@ -4750,7 +4729,6 @@
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
-        "rlgl_helper_header",
         "shader_assets"
       ]
     },
@@ -5473,7 +5451,6 @@
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
       "known_blockers": [
-        "rlgl_helper_header",
         "shader_assets"
       ]
     },
@@ -5669,7 +5646,6 @@
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
-        "rlgl_helper_header",
         "rlights_helper_header",
         "shader_assets"
       ]
@@ -5710,7 +5686,6 @@
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
-        "rlgl_helper_header",
         "shader_assets"
       ]
     },
@@ -5785,7 +5760,6 @@
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
-        "rlgl_helper_header",
         "shader_assets"
       ]
     },
@@ -5824,7 +5798,6 @@
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
       "known_blockers": [
-        "rlgl_helper_header",
         "rlights_helper_header",
         "shader_assets"
       ]
@@ -5860,7 +5833,6 @@
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
       "known_blockers": [
-        "rlgl_helper_header",
         "shader_assets"
       ]
     },
@@ -5949,7 +5921,6 @@
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
-        "rlgl_helper_header",
         "shader_assets"
       ]
     },
@@ -6019,7 +5990,6 @@
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
       "known_blockers": [
-        "rlgl_helper_header",
         "shader_assets"
       ]
     },
@@ -6097,9 +6067,7 @@
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
       "port_status": "not_started",
-      "known_blockers": [
-        "rlgl_helper_header"
-      ]
+      "known_blockers": []
     },
     {
       "example_id": "shaders/shaders_cel_shading",
@@ -6145,7 +6113,6 @@
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
-        "rlgl_helper_header",
         "rlights_helper_header",
         "shader_assets"
       ]

@@ -193,7 +193,6 @@ module MilkTea
     def known_blockers(uses_raymath:, uses_rlgl:, uses_raygui:, uses_rlights:, uses_shader_files:, uses_callbacks:, uses_file_drop_or_directory_api:)
       blockers = []
       blockers << "raymath_helper_header" if uses_raymath
-      blockers << "rlgl_helper_header" if uses_rlgl
       blockers << "raygui_helper_header" if uses_raygui
       blockers << "rlights_helper_header" if uses_rlights
       blockers << "shader_assets" if uses_shader_files
