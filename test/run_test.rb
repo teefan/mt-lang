@@ -758,6 +758,44 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_str_slice_and_cstr_conversion
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-str-ops") do |dir|
+      source_path = File.join(dir, "str_ops.mt")
+
+      File.write(source_path, [
+        "module demo.str_ops_runtime",
+        "",
+        "import std.str",
+        "import std.mem.arena as arena",
+        "import std.c.libc as libc",
+        "",
+        "def main() -> i32:",
+        "    var scratch = arena.create(64)",
+        "    defer scratch.release()",
+        "    let text = \"12345!\"",
+        "    let part = text.slice(0, 5)",
+        "    let copied = part.to_cstr(addr(scratch))",
+        "    if text.len == cast[usize](6) and libc.atoi(copied) == 12345:",
+        "        return cast[i32](part.len)",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 5, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_unsafe_reinterpret
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

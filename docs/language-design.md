@@ -262,11 +262,11 @@ Milk Tea should include a small number of control-flow features that materially 
 `defer` registers cleanup code at scope exit and lowers to obvious cleanup labels in C.
 
 ```mt
-def load_texture(path: str, arena: ptr[Arena]) -> Result[Texture, LoadError]:
-	let temp = arena.mark()
-	defer arena.reset(temp)
+def load_texture(path: str, space: ref[Arena]) -> Result[Texture, LoadError]:
+	let temp = value(space).mark()
+	defer value(space).reset(temp)
 
-	let c_path = arena.to_cstr(path)
+	let c_path = path.to_cstr(space)
 	let texture = rl.LoadTexture(c_path)
 
 	if texture.id == 0:
@@ -756,7 +756,7 @@ String and buffer rules must stay explicit:
 
 - `str` does not silently become `cstr`
 - string literals can use `c"..."` when a static C string is required
-- converting `str` to `cstr` requires an allocator or temporary arena unless the source is already NUL-terminated
+- converting `str` to `cstr` requires an explicit allocator or temporary arena copy
 - binary data crosses FFI as `ptr[T]`, `span[T]`, or fixed arrays
 
 ### Callbacks

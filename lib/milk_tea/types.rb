@@ -274,6 +274,42 @@ module MilkTea
       end
     end
 
+    class StringView < Base
+      attr_reader :name, :module_name
+
+      def initialize
+        @name = "str"
+        @module_name = nil
+        @fields = {
+          "data" => GenericInstance.new("ptr", [Primitive.new("char")]),
+          "len" => Primitive.new("usize"),
+        }.freeze
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(StringView)
+      end
+
+      alias == eql?
+
+      def hash
+        self.class.hash
+      end
+
+      def fields
+        @fields
+      end
+
+      def field(name)
+        @fields[name]
+      end
+
+      def to_s
+        "str"
+      end
+    end
+
     class Result < Base
       attr_reader :ok_type, :error_type
 

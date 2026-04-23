@@ -37,6 +37,20 @@ methods Arena:
             this.offset = next_offset
             return result
 
+    edit def to_cstr(text: str) -> cstr:
+        let memory = this.alloc_bytes(text.len + 1)
+        if memory == null:
+            panic(c"Arena.to_cstr out of memory")
+
+        unsafe:
+            let buffer = cast[ptr[char]](memory)
+            var index: usize = 0
+            while index < text.len:
+                value(buffer + index) = value(text.data + index)
+                index += 1
+            value(buffer + text.len) = zero[char]()
+            return cast[cstr](buffer)
+
     edit def release() -> void:
         heap.release(this.memory)
         this.offset = 0
