@@ -60,9 +60,7 @@ methods Body:
         )
         this.dir = this.dir.lerp(desired_dir, control * delta)
 
-        var decel = air_drag
-        if this.is_grounded:
-            decel = friction
+        let decel = if this.is_grounded then friction else air_drag
         var hvel = rl.Vector3(x = this.velocity.x * decel, y = 0.0, z = this.velocity.z * decel)
 
         let hvel_length = hvel.length()
@@ -70,9 +68,7 @@ methods Body:
             hvel = rm.Vector3.zero()
 
         let speed = hvel.dot(this.dir)
-        var active_max_speed = max_speed
-        if crouch_hold:
-            active_max_speed = crouch_speed
+        let active_max_speed = if crouch_hold then crouch_speed else max_speed
         let accel = rm.clamp(active_max_speed - speed, 0.0, max_accel * delta)
         hvel.x += this.dir.x * accel
         hvel.z += this.dir.z * accel
@@ -216,10 +212,7 @@ def main() -> i32:
         player.update(state.look_rotation.x, sideway, forward, rl.IsKeyPressed(rl.KeyboardKey.KEY_SPACE), crouching)
 
         let delta = rl.GetFrameTime()
-        var target_head_lerp = stand_height
-        if crouching:
-            target_head_lerp = crouch_height
-        state.head_lerp = rm.lerp(state.head_lerp, target_head_lerp, 20.0 * delta)
+        state.head_lerp = rm.lerp(state.head_lerp, if crouching then crouch_height else stand_height, 20.0 * delta)
         camera.position = rl.Vector3(
             x = player.position.x,
             y = player.position.y + (bottom_height + state.head_lerp),

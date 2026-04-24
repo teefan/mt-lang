@@ -30,6 +30,51 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/if condition must be bool/, error.message)
   end
 
+  def test_type_checks_nullable_pointer_guard_clause_flow_narrowing
+    source = <<~MT
+      module demo.null_flow
+
+      def read(handle: ptr[i32]?) -> i32:
+          if handle == null:
+              return 0
+          unsafe:
+              return value(handle)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("read")
+  end
+
+  def test_type_checks_short_circuit_nullable_flow_narrowing
+    source = <<~MT
+      module demo.null_flow
+
+      def read(handle: ptr[i32]?) -> i32:
+          unsafe:
+              if handle != null and value(handle) > 0:
+                  return value(handle)
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("read")
+  end
+
+  def test_type_checks_if_expression
+    source = <<~MT
+      module demo.if_expr
+
+      def main(ready: bool) -> i32:
+          return if ready then 1 else 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_rejects_wrong_return_type
     source = <<~MT
       module demo.bad

@@ -149,6 +149,8 @@ module MilkTea
         expression_uses_panic?(expression.operand)
       when IR::Binary
         expression_uses_panic?(expression.left) || expression_uses_panic?(expression.right)
+      when IR::Conditional
+        expression_uses_panic?(expression.condition) || expression_uses_panic?(expression.then_expression) || expression_uses_panic?(expression.else_expression)
       when IR::ReinterpretExpr
         expression_uses_panic?(expression.expression)
       when IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
@@ -417,6 +419,8 @@ module MilkTea
         end
       when IR::Binary
         "#{wrap_expression(expression.left)} #{c_operator(expression.operator)} #{wrap_expression(expression.right)}"
+      when IR::Conditional
+        "#{wrap_expression(expression.condition)} ? #{wrap_expression(expression.then_expression)} : #{wrap_expression(expression.else_expression)}"
       when IR::ReinterpretExpr
         "#{reinterpret_helper_name(expression.target_type, expression.source_type)}(#{emit_expression(expression.expression)})"
       when IR::SizeofExpr
@@ -609,6 +613,10 @@ module MilkTea
       when IR::Binary
         collect_reinterpret_helpers_from_expression(expression.left, helpers, seen)
         collect_reinterpret_helpers_from_expression(expression.right, helpers, seen)
+      when IR::Conditional
+        collect_reinterpret_helpers_from_expression(expression.condition, helpers, seen)
+        collect_reinterpret_helpers_from_expression(expression.then_expression, helpers, seen)
+        collect_reinterpret_helpers_from_expression(expression.else_expression, helpers, seen)
       when IR::ReinterpretExpr
         key = [expression.target_type, expression.source_type]
         unless seen[key]
@@ -816,6 +824,10 @@ module MilkTea
       when IR::Binary
         collect_checked_array_index_types_from_expression(expression.left, array_types)
         collect_checked_array_index_types_from_expression(expression.right, array_types)
+      when IR::Conditional
+        collect_checked_array_index_types_from_expression(expression.condition, array_types)
+        collect_checked_array_index_types_from_expression(expression.then_expression, array_types)
+        collect_checked_array_index_types_from_expression(expression.else_expression, array_types)
       when IR::ReinterpretExpr
         collect_checked_array_index_types_from_expression(expression.expression, array_types)
       when IR::AddressOf
@@ -877,6 +889,10 @@ module MilkTea
       when IR::Binary
         collect_checked_span_index_types_from_expression(expression.left, span_types)
         collect_checked_span_index_types_from_expression(expression.right, span_types)
+      when IR::Conditional
+        collect_checked_span_index_types_from_expression(expression.condition, span_types)
+        collect_checked_span_index_types_from_expression(expression.then_expression, span_types)
+        collect_checked_span_index_types_from_expression(expression.else_expression, span_types)
       when IR::ReinterpretExpr
         collect_checked_span_index_types_from_expression(expression.expression, span_types)
       when IR::AddressOf
@@ -1023,6 +1039,10 @@ module MilkTea
       when IR::Binary
         collect_result_types_from_expression(expression.left, result_types, visited)
         collect_result_types_from_expression(expression.right, result_types, visited)
+      when IR::Conditional
+        collect_result_types_from_expression(expression.condition, result_types, visited)
+        collect_result_types_from_expression(expression.then_expression, result_types, visited)
+        collect_result_types_from_expression(expression.else_expression, result_types, visited)
       when IR::ReinterpretExpr
         collect_result_type(expression.target_type, result_types, visited)
         collect_result_type(expression.source_type, result_types, visited)
@@ -1151,6 +1171,10 @@ module MilkTea
       when IR::Binary
         collect_generic_struct_types_from_expression(expression.left, generic_struct_types, visited)
         collect_generic_struct_types_from_expression(expression.right, generic_struct_types, visited)
+      when IR::Conditional
+        collect_generic_struct_types_from_expression(expression.condition, generic_struct_types, visited)
+        collect_generic_struct_types_from_expression(expression.then_expression, generic_struct_types, visited)
+        collect_generic_struct_types_from_expression(expression.else_expression, generic_struct_types, visited)
       when IR::ReinterpretExpr
         collect_generic_struct_type(expression.target_type, generic_struct_types, visited)
         collect_generic_struct_type(expression.source_type, generic_struct_types, visited)
@@ -1296,6 +1320,10 @@ module MilkTea
       when IR::Binary
         collect_span_types_from_expression(expression.left, span_types, visited)
         collect_span_types_from_expression(expression.right, span_types, visited)
+      when IR::Conditional
+        collect_span_types_from_expression(expression.condition, span_types, visited)
+        collect_span_types_from_expression(expression.then_expression, span_types, visited)
+        collect_span_types_from_expression(expression.else_expression, span_types, visited)
       when IR::ReinterpretExpr
         collect_span_type(expression.target_type, span_types, visited)
         collect_span_type(expression.source_type, span_types, visited)

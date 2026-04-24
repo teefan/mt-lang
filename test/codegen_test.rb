@@ -198,6 +198,22 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/if \(\(\(\(\(double\) 3\)\) < 3\.5\) && \(sum > 3\.0\)\)/, generated)
   end
 
+  def test_generate_c_for_if_expressions
+    source = [
+      "module demo.if_expr_codegen",
+      "",
+      "def main(ready: bool) -> i32:",
+      "    let score = if ready then 1 else 0",
+      "    return if ready then score else score + 1",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/int32_t score = ready \? 1 : 0;/, generated)
+    assert_match(/return ready \? score : \(score \+ 1\);/, generated)
+  end
+
   def test_generate_c_for_variadic_extern_calls
     source = [
       "module demo.variadic_codegen",

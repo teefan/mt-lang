@@ -582,7 +582,18 @@ module MilkTea
     end
 
     def parse_expression
+      return parse_if_expression if match(:if)
+
       parse_or
+    end
+
+    def parse_if_expression
+      condition = parse_or
+      consume(:then, "expected 'then' in if expression")
+      then_expression = parse_expression
+      consume(:else, "expected 'else' in if expression")
+      else_expression = parse_expression
+      AST::IfExpr.new(condition:, then_expression:, else_expression:)
     end
 
     def parse_or

@@ -212,19 +212,13 @@ def main() -> i32:
         rl.DrawTriangle(rl.Vector2(x = last_gesture_position.x + 144.0, y = last_gesture_position.y + 43.0), rl.Vector2(x = last_gesture_position.x + 159.0, y = last_gesture_position.y + 53.0), rl.Vector2(x = last_gesture_position.x + 159.0, y = last_gesture_position.y + 33.0), pinch_in_color)
 
         for touch_indicator in range(0, 4):
-            var indicator_color = rl.LIGHTGRAY
-            if touch_count > touch_indicator:
-                indicator_color = current_gesture_color
-            rl.DrawCircle(cast[i32](last_gesture_position.x) + 180, cast[i32](last_gesture_position.y) + 7 + touch_indicator * 15, 5.0, indicator_color)
+            rl.DrawCircle(cast[i32](last_gesture_position.x) + 180, cast[i32](last_gesture_position.y) + 7 + touch_indicator * 15, 5.0, if touch_count <= touch_indicator then rl.LIGHTGRAY else current_gesture_color)
 
         rl.DrawText(c"Log", cast[i32](gesture_log_position.x), cast[i32](gesture_log_position.y), 20, rl.BLACK)
         var log_row = 0
         var log_index = gesture_log_index % gesture_log_size
         while log_row < gesture_log_size:
-            var line_color = rl.LIGHTGRAY
-            if log_row == 0:
-                line_color = current_gesture_color
-            rl.DrawText(gesture_log[log_index], cast[i32](gesture_log_position.x), cast[i32](gesture_log_position.y) + 410 - log_row * 20, 20, line_color)
+            rl.DrawText(gesture_log[log_index], cast[i32](gesture_log_position.x), cast[i32](gesture_log_position.y) + 410 - log_row * 20, 20, if log_row == 0 then current_gesture_color else rl.LIGHTGRAY)
             log_row += 1
             log_index = (log_index + 1) % gesture_log_size
 
@@ -275,10 +269,7 @@ def main() -> i32:
                     touch_index += 1
 
                 if touch_count == 2:
-                    var line_thickness: f32 = 12.0
-                    if current_gesture == rl.Gesture.GESTURE_PINCH_OUT:
-                        line_thickness = 8.0
-                    rl.DrawLineEx(touch_positions[0], touch_positions[1], line_thickness, current_gesture_color)
+                    rl.DrawLineEx(touch_positions[0], touch_positions[1], if current_gesture == rl.Gesture.GESTURE_PINCH_OUT then 8.0 else 12.0, current_gesture_color)
             else:
                 rl.DrawCircleV(mouse_position, 35.0, rl.Fade(current_gesture_color, 0.5))
                 rl.DrawCircleV(mouse_position, 5.0, current_gesture_color)

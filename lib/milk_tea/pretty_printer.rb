@@ -79,6 +79,7 @@ module MilkTea
     end
 
     class ASTFormatter < BaseFormatter
+      IF_EXPRESSION_PRECEDENCE = 5
       POSTFIX_PRECEDENCE = 90
       UNARY_PRECEDENCE = 80
 
@@ -373,6 +374,11 @@ module MilkTea
           left = render_expression(expression.left, current_precedence)
           right = render_expression(expression.right, current_precedence + 1)
           wrap("#{left} #{expression.operator} #{right}", parent_precedence, current_precedence)
+        when AST::IfExpr
+          condition = render_expression(expression.condition, IF_EXPRESSION_PRECEDENCE)
+          then_expression = render_expression(expression.then_expression, IF_EXPRESSION_PRECEDENCE)
+          else_expression = render_expression(expression.else_expression, IF_EXPRESSION_PRECEDENCE)
+          wrap("if #{condition} then #{then_expression} else #{else_expression}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
         when AST::SizeofExpr
           "sizeof(#{render_type(expression.type)})"
         when AST::AlignofExpr
@@ -409,6 +415,7 @@ module MilkTea
     end
 
     class IRFormatter < BaseFormatter
+      IF_EXPRESSION_PRECEDENCE = 5
       POSTFIX_PRECEDENCE = 90
       UNARY_PRECEDENCE = 80
 
@@ -577,6 +584,11 @@ module MilkTea
           left = render_expression(expression.left, current_precedence)
           right = render_expression(expression.right, current_precedence + 1)
           wrap("#{left} #{expression.operator} #{right}", parent_precedence, current_precedence)
+        when IR::Conditional
+          condition = render_expression(expression.condition, IF_EXPRESSION_PRECEDENCE)
+          then_expression = render_expression(expression.then_expression, IF_EXPRESSION_PRECEDENCE)
+          else_expression = render_expression(expression.else_expression, IF_EXPRESSION_PRECEDENCE)
+          wrap("if #{condition} then #{then_expression} else #{else_expression}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
         when IR::ReinterpretExpr
           "reinterpret[#{expression.target_type} <- #{expression.source_type}](#{render_expression(expression.expression)})"
         when IR::SizeofExpr

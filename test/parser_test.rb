@@ -74,6 +74,42 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal 1, if_stmt.else_body.length
   end
 
+  def test_parses_if_expression
+    source = <<~MT
+      module demo.expr
+
+      def main(ready: bool) -> i32:
+          return if ready then 1 else 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    return_stmt = ast.declarations.first.body.first
+
+    assert_instance_of MilkTea::AST::ReturnStmt, return_stmt
+    assert_instance_of MilkTea::AST::IfExpr, return_stmt.value
+    assert_instance_of MilkTea::AST::Identifier, return_stmt.value.condition
+    assert_instance_of MilkTea::AST::IntegerLiteral, return_stmt.value.then_expression
+    assert_instance_of MilkTea::AST::IntegerLiteral, return_stmt.value.else_expression
+  end
+
+  def test_parses_return_boolean_chain_without_forced_parentheses
+    source = <<~MT
+      module demo.expr
+
+      def main(a: bool, b: bool, c: bool) -> bool:
+          return a and b or c
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    return_stmt = ast.declarations.first.body.first
+
+    assert_instance_of MilkTea::AST::ReturnStmt, return_stmt
+    assert_instance_of MilkTea::AST::BinaryOp, return_stmt.value
+    assert_equal "or", return_stmt.value.operator
+    assert_instance_of MilkTea::AST::BinaryOp, return_stmt.value.left
+    assert_equal "and", return_stmt.value.left.operator
+  end
+
   def test_parses_for_range_statement
     source = <<~MT
       module demo.flow
