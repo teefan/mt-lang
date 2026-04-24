@@ -1985,7 +1985,7 @@ module MilkTea
       end
 
       def empty_env
-        { scopes: [{}], counter: 0 }
+        { scopes: [{}], counter: { value: 0 } }
       end
 
       def duplicate_env(env)
@@ -2095,8 +2095,8 @@ module MilkTea
       end
 
       def fresh_c_temp_name(env, prefix)
-        env[:counter] += 1
-        "__mt_#{prefix}_#{env[:counter]}"
+        env[:counter][:value] += 1
+        "__mt_#{prefix}_#{env[:counter][:value]}"
       end
 
       def sanitize_identifier(text)
