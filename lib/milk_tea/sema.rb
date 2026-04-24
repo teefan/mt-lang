@@ -22,7 +22,23 @@ module MilkTea
       end
     end
     FunctionBinding = Data.define(:name, :type, :body_params, :ast, :external, :type_params, :instances, :type_arguments, :owner, :type_substitutions)
-    ModuleBinding = Data.define(:name, :types, :values, :functions, :methods)
+    ModuleBinding = Data.define(:name, :types, :values, :functions, :methods, :private_types, :private_values, :private_functions, :private_methods) do
+      def private_type?(name)
+        private_types.key?(name)
+      end
+
+      def private_value?(name)
+        private_values.key?(name)
+      end
+
+      def private_function?(name)
+        private_functions.key?(name)
+      end
+
+      def private_method?(receiver_type, name)
+        private_methods.fetch(receiver_type, {}).key?(name)
+      end
+    end
 
     BUILTIN_TYPE_NAMES = %w[
       bool byte char i8 i16 i32 i64 u8 u16 u32 u64 isize usize f32 f64 void str cstr
@@ -74,7 +90,7 @@ module MilkTea
           types: @types,
           values: @top_level_values,
           functions: @top_level_functions,
-          methods: @methods,
+          methods: snapshot_methods,
         )
       end
 
@@ -84,6 +100,12 @@ module MilkTea
         BUILTIN_TYPE_NAMES.each do |name|
           @types[name] = name == "str" ? Types::StringView.new : Types::Primitive.new(name)
         end
+      end
+
+      def snapshot_methods
+        @methods.each_with_object({}) do |(receiver_type, bindings), methods|
+          methods[receiver_type] = bindings.dup.freeze
+        end.freeze
       end
 
       def install_imports
@@ -777,6 +799,10 @@ module MilkTea
             raise SemaError, "type #{expression.receiver.name}.#{expression.member} cannot be used as a value"
           end
 
+          if imported_module.private_value?(expression.member) || imported_module.private_function?(expression.member) || imported_module.private_type?(expression.member)
+            raise SemaError, "#{expression.receiver.name}.#{expression.member} is private to module #{imported_module.name}"
+          end
+
           raise SemaError, "unknown member #{expression.receiver.name}.#{expression.member}"
         end
 
@@ -790,6 +816,10 @@ module MilkTea
 
         if lookup_method(receiver_type, expression.member)
           raise SemaError, "method #{receiver_type.name}.#{expression.member} must be called"
+        end
+
+        if (imported_module = imported_module_with_private_method(receiver_type, expression.member))
+          raise SemaError, "#{receiver_type}.#{expression.member} is private to module #{imported_module.name}"
         end
 
         raise SemaError, "unknown field #{receiver_type}.#{expression.member}"
@@ -1024,6 +1054,10 @@ module MilkTea
               return [:struct, imported_module.types.fetch(callee.member), nil]
             end
 
+            if imported_module.private_function?(callee.member) || imported_module.private_type?(callee.member) || imported_module.private_value?(callee.member)
+              raise SemaError, "#{callee.receiver.name}.#{callee.member} is private to module #{imported_module.name}"
+            end
+
             raise SemaError, "unknown callable #{callee.receiver.name}.#{callee.member}"
           end
 
@@ -1037,6 +1071,10 @@ module MilkTea
           receiver_type = infer_expression(callee.receiver, scopes:)
           method = lookup_method(receiver_type, callee.member)
           return [:method, method, callee.receiver] if method
+
+          if (imported_module = imported_module_with_private_method(receiver_type, callee.member))
+            raise SemaError, "#{receiver_type}.#{callee.member} is private to module #{imported_module.name}"
+          end
 
           raise SemaError, "unknown method #{receiver_type}.#{callee.member}"
         when AST::Specialization
@@ -1412,6 +1450,9 @@ module MilkTea
         if parts.length == 2 && @imports.key?(parts.first)
           imported_module = @imports.fetch(parts.first)
           type = imported_module.types[parts.last]
+          if imported_module.private_type?(parts.last)
+            raise SemaError, "#{parts.first}.#{parts.last} is private to module #{imported_module.name}"
+          end
           raise SemaError, "unknown type #{type_ref.name}" unless type
           raise SemaError, "generic type #{type_ref.name} requires type arguments" if type.is_a?(Types::GenericStructDefinition)
 
@@ -1859,8 +1900,20 @@ module MilkTea
           return nil unless @imports.key?(expression.receiver.name)
 
           imported_module = @imports.fetch(expression.receiver.name)
+          if imported_module.private_type?(expression.member)
+            raise SemaError, "#{expression.receiver.name}.#{expression.member} is private to module #{imported_module.name}"
+          end
+
           imported_module.types[expression.member]
         end
+      end
+
+      def imported_module_with_private_method(receiver_type, method_name)
+        @imports.each_value do |module_binding|
+          return module_binding if module_binding.private_method?(receiver_type, method_name)
+        end
+
+        nil
       end
 
       def resolve_type_member(type, name)

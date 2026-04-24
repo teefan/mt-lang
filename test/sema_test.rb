@@ -814,6 +814,124 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, program.analyses_by_module_name.key?("demo.external_numeric")
   end
 
+  def test_type_checks_import_of_public_declarations_and_methods
+    source = <<~MT
+      module demo.main
+
+      import demo.lib as lib
+
+      def main() -> i32:
+          let counter = lib.Counter(value = lib.answer)
+          return counter.read()
+    MT
+
+    imported = {
+      "demo/lib.mt" => <<~MT,
+        module demo.lib
+
+        pub const answer: i32 = 7
+
+        pub struct Counter:
+            value: i32
+
+        methods Counter:
+            pub def read() -> i32:
+                return this.value
+
+            def double() -> i32:
+                return this.value * 2
+      MT
+    }
+
+    result = check_program_source(source, imported).root_analysis
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_import_of_private_module_member
+    source = <<~MT
+      module demo.main
+
+      import demo.lib as lib
+
+      def main() -> i32:
+          return lib.hidden
+    MT
+
+    imported = {
+      "demo/lib.mt" => <<~MT,
+        module demo.lib
+
+        const hidden: i32 = 7
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source, imported)
+    end
+
+    assert_match(/lib\.hidden is private to module demo\.lib/, error.message)
+  end
+
+  def test_rejects_import_of_private_method
+    source = <<~MT
+      module demo.main
+
+      import demo.lib as lib
+
+      def main() -> i32:
+          let counter = lib.Counter(value = 1)
+          counter.double()
+          return 0
+    MT
+
+    imported = {
+      "demo/lib.mt" => <<~MT,
+        module demo.lib
+
+        pub struct Counter:
+            value: i32
+
+        methods Counter:
+            def double() -> i32:
+                return this.value * 2
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source, imported)
+    end
+
+    assert_match(/demo\.lib\.Counter\.double is private to module demo\.lib/, error.message)
+  end
+
+  def test_rejects_import_of_private_type_constructor
+    source = <<~MT
+      module demo.main
+
+      import demo.lib as lib
+
+      def main() -> i32:
+          let hidden = lib.Hidden(value = 7)
+          return hidden.value
+    MT
+
+    imported = {
+      "demo/lib.mt" => <<~MT,
+        module demo.lib
+
+        struct Hidden:
+            value: i32
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source, imported)
+    end
+
+    assert_match(/lib\.Hidden is private to module demo\.lib/, error.message)
+  end
+
   def test_rejects_same_width_enum_and_flags_arguments_without_explicit_cast_for_non_extern_calls
     source = <<~MT
       module demo.call_values

@@ -101,22 +101,79 @@ module MilkTea
 
     def module_binding(analysis)
       types = {}
+      private_types = {}
       values = {}
+      private_values = {}
       functions = {}
-      methods = analysis.methods.transform_values(&:dup)
+      private_functions = {}
 
       analysis.ast.declarations.each do |declaration|
         case declaration
         when AST::StructDecl, AST::UnionDecl, AST::EnumDecl, AST::FlagsDecl, AST::OpaqueDecl, AST::TypeAliasDecl
-          types[declaration.name] = analysis.types.fetch(declaration.name)
+          target = exported_declaration?(analysis, declaration) ? types : private_types
+          target[declaration.name] = analysis.types.fetch(declaration.name)
         when AST::ConstDecl
-          values[declaration.name] = analysis.values.fetch(declaration.name)
+          target = exported_declaration?(analysis, declaration) ? values : private_values
+          target[declaration.name] = analysis.values.fetch(declaration.name)
         when AST::FunctionDef, AST::ExternFunctionDecl
-          functions[declaration.name] = analysis.functions.fetch(declaration.name)
+          target = exported_declaration?(analysis, declaration) ? functions : private_functions
+          target[declaration.name] = analysis.functions.fetch(declaration.name)
         end
       end
 
-      Sema::ModuleBinding.new(name: analysis.module_name, types:, values:, functions:, methods:)
+      methods, private_methods = exported_methods(analysis, types)
+
+      Sema::ModuleBinding.new(
+        name: analysis.module_name,
+        types:,
+        values:,
+        functions:,
+        methods:,
+        private_types:,
+        private_values:,
+        private_functions:,
+        private_methods:,
+      )
+    end
+
+    def exported_declaration?(analysis, declaration)
+      return true if analysis.module_kind == :extern_module
+      return false unless declaration.respond_to?(:visibility)
+
+      declaration.visibility == :public
+    end
+
+    def exported_methods(analysis, exported_types)
+      if analysis.module_kind == :extern_module
+        return [analysis.methods.transform_values(&:dup), {}]
+      end
+
+      methods = {}
+      private_methods = {}
+
+      analysis.methods.each do |receiver_type, bindings|
+        public_bindings = {}
+        hidden_bindings = {}
+
+        bindings.each do |name, binding|
+          visible = binding.ast.respond_to?(:visibility) && binding.ast.visibility == :public && exported_method_receiver?(receiver_type, exported_types)
+
+          if visible
+            public_bindings[name] = binding
+          else
+            hidden_bindings[name] = binding
+          end
+        end
+
+        methods[receiver_type] = public_bindings unless public_bindings.empty?
+        private_methods[receiver_type] = hidden_bindings unless hidden_bindings.empty?
+      end
+
+      [methods, private_methods]
+    end
+
+    def exported_method_receiver?(receiver_type, exported_types)
+      receiver_type.is_a?(Types::StringView) || exported_types.value?(receiver_type)
     end
   end
 end

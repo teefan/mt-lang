@@ -37,6 +37,7 @@ module MilkTea
       "opaque" => :opaque,
       "or" => :or,
       "packed" => :packed,
+      "pub" => :pub,
       "return" => :return,
       "sizeof" => :sizeof,
       "static" => :static,
