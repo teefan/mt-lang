@@ -10,7 +10,7 @@ def env_flag(name: cstr) -> bool:
     let value: ptr[char]? = libc.getenv(name)
     return value != null
 
-def env_i32(name: cstr, default_value: i32) -> i32:
+def env(name: cstr, default_value: i32) -> i32:
     let value: ptr[char]? = libc.getenv(name)
     if value == null:
         return default_value
@@ -26,7 +26,7 @@ def smoke_capture(frame_count: i32, default_frames: i32) -> bool:
     let screenshot_path: ptr[char]? = libc.getenv(smoke_screenshot_env)
     if screenshot_path == null:
         return false
-    if frame_count < env_i32(smoke_frames_env, default_frames):
+    if frame_count < env(smoke_frames_env, default_frames):
         return false
 
     unsafe:

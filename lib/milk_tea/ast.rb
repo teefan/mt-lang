@@ -54,6 +54,7 @@ module MilkTea
     Argument = Data.define(:name, :value)
     UnaryOp = Data.define(:operator, :operand)
     BinaryOp = Data.define(:operator, :left, :right)
+    IfExpr = Data.define(:condition, :then_expression, :else_expression)
     SizeofExpr = Data.define(:type)
     AlignofExpr = Data.define(:type)
     OffsetofExpr = Data.define(:type, :field)

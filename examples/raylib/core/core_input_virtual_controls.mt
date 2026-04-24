@@ -72,10 +72,7 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
         rl.DrawCircleV(player_position, 50.0, rl.MAROON)
 
-        var up_color = rl.BLACK
-        if pressed_button == PadButton.BUTTON_UP:
-            up_color = rl.DARKGRAY
-        rl.DrawCircleV(button_up, button_radius, up_color)
+        rl.DrawCircleV(button_up, button_radius, if pressed_button == PadButton.BUTTON_UP then rl.DARKGRAY else rl.BLACK)
         rl.DrawTriangle(
             rl.Vector2(x = button_up.x, y = button_up.y - 12.0),
             rl.Vector2(x = button_up.x - 9.0, y = button_up.y + 9.0),
@@ -83,10 +80,7 @@ def main() -> i32:
             rl.YELLOW,
         )
 
-        var left_color = rl.BLACK
-        if pressed_button == PadButton.BUTTON_LEFT:
-            left_color = rl.DARKGRAY
-        rl.DrawCircleV(button_left, button_radius, left_color)
+        rl.DrawCircleV(button_left, button_radius, if pressed_button == PadButton.BUTTON_LEFT then rl.DARKGRAY else rl.BLACK)
         rl.DrawTriangle(
             rl.Vector2(x = button_left.x + 9.0, y = button_left.y - 9.0),
             rl.Vector2(x = button_left.x - 12.0, y = button_left.y),
@@ -94,10 +88,7 @@ def main() -> i32:
             rl.BLUE,
         )
 
-        var right_color = rl.BLACK
-        if pressed_button == PadButton.BUTTON_RIGHT:
-            right_color = rl.DARKGRAY
-        rl.DrawCircleV(button_right, button_radius, right_color)
+        rl.DrawCircleV(button_right, button_radius, if pressed_button == PadButton.BUTTON_RIGHT then rl.DARKGRAY else rl.BLACK)
         rl.DrawTriangle(
             rl.Vector2(x = button_right.x + 12.0, y = button_right.y),
             rl.Vector2(x = button_right.x - 9.0, y = button_right.y - 9.0),
@@ -105,10 +96,7 @@ def main() -> i32:
             rl.RED,
         )
 
-        var down_color = rl.BLACK
-        if pressed_button == PadButton.BUTTON_DOWN:
-            down_color = rl.DARKGRAY
-        rl.DrawCircleV(button_down, button_radius, down_color)
+        rl.DrawCircleV(button_down, button_radius, if pressed_button == PadButton.BUTTON_DOWN then rl.DARKGRAY else rl.BLACK)
         rl.DrawTriangle(
             rl.Vector2(x = button_down.x - 9.0, y = button_down.y - 9.0),
             rl.Vector2(x = button_down.x, y = button_down.y + 12.0),

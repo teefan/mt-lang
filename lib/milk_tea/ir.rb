@@ -34,6 +34,7 @@ module MilkTea
     Call = Data.define(:callee, :arguments, :type)
     Unary = Data.define(:operator, :operand, :type)
     Binary = Data.define(:operator, :left, :right, :type)
+    Conditional = Data.define(:condition, :then_expression, :else_expression, :type)
     ReinterpretExpr = Data.define(:target_type, :source_type, :expression, :type)
     SizeofExpr = Data.define(:target_type, :type)
     AlignofExpr = Data.define(:target_type, :type)

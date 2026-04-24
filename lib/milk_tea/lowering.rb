@@ -204,6 +204,8 @@ module MilkTea
           expression_uses_panic?(expression.callee) || expression.arguments.any? { |argument| expression_uses_panic?(argument.value) }
         when AST::BinaryOp
           expression_uses_panic?(expression.left) || expression_uses_panic?(expression.right)
+        when AST::IfExpr
+          expression_uses_panic?(expression.condition) || expression_uses_panic?(expression.then_expression) || expression_uses_panic?(expression.else_expression)
         when AST::UnaryOp
           expression_uses_panic?(expression.operand)
         when AST::MemberAccess
@@ -225,6 +227,8 @@ module MilkTea
           expression_uses_offsetof?(expression.callee) || expression.arguments.any? { |argument| expression_uses_offsetof?(argument.value) }
         when AST::BinaryOp
           expression_uses_offsetof?(expression.left) || expression_uses_offsetof?(expression.right)
+        when AST::IfExpr
+          expression_uses_offsetof?(expression.condition) || expression_uses_offsetof?(expression.then_expression) || expression_uses_offsetof?(expression.else_expression)
         when AST::UnaryOp
           expression_uses_offsetof?(expression.operand)
         when AST::MemberAccess
@@ -455,7 +459,7 @@ module MilkTea
               expected_type: type,
               contextual_int_to_float: statement.type && contextual_int_to_float_target?(type),
             )
-            local_env[:scopes].last[statement.name] = local_binding(type:, c_name:, mutable: statement.kind == :var, pointer: false)
+            current_actual_scope(local_env[:scopes])[statement.name] = local_binding(type:, c_name:, mutable: statement.kind == :var, pointer: false)
             lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:)
           when AST::Assignment
             target = lower_assignment_target(statement.target, env: local_env)
@@ -472,26 +476,44 @@ module MilkTea
                     end
             lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
           when AST::IfStmt
-            branches = statement.branches.reverse_each.reduce(
-              statement.else_body ? lower_block(
-                statement.else_body,
-                env: local_env,
-                active_defers: active_defers + local_defers,
-                return_type:,
-                loop_flow: nested_loop_flow(loop_flow, local_defers),
-              ) : []
-            ) do |else_body, branch|
-              condition = lower_expression(branch.condition, env: local_env, expected_type: @types.fetch("bool"))
-              then_body = lower_block(
-                branch.body,
-                env: local_env,
-                active_defers: active_defers + local_defers,
-                return_type:,
-                loop_flow: nested_loop_flow(loop_flow, local_defers),
-              )
-              [IR::IfStmt.new(condition:, then_body:, else_body:)]
+            false_refinements = {}
+            branch_entries = []
+
+            statement.branches.each do |branch|
+              branch_env = env_with_refinements(local_env, false_refinements)
+              true_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: true, env: branch_env))
+
+              branch_entries << [
+                lower_expression(branch.condition, env: branch_env, expected_type: @types.fetch("bool")),
+                lower_block(
+                  branch.body,
+                  env: env_with_refinements(local_env, true_refinements),
+                  active_defers: active_defers + local_defers,
+                  return_type:,
+                  loop_flow: nested_loop_flow(loop_flow, local_defers),
+                ),
+              ]
+
+              false_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: false, env: branch_env))
             end
-            lowered.concat(branches)
+
+            nested_else_body = statement.else_body ? lower_block(
+              statement.else_body,
+              env: env_with_refinements(local_env, false_refinements),
+              active_defers: active_defers + local_defers,
+              return_type:,
+              loop_flow: nested_loop_flow(loop_flow, local_defers),
+            ) : []
+
+            nested_if = nested_else_body
+            branch_entries.reverse_each do |condition, then_body|
+              nested_if = [IR::IfStmt.new(condition:, then_body:, else_body: nested_if)]
+            end
+            lowered.concat(nested_if)
+
+            if statement.else_body.nil? && statement.branches.all? { |branch| block_always_terminates?(branch.body) }
+              local_env[:scopes] = scopes_with_refinements(local_env[:scopes], false_refinements)
+            end
           when AST::MatchStmt
             scrutinee_type = infer_expression_type(statement.expression, env: local_env)
             expression = lower_expression(statement.expression, env: local_env, expected_type: scrutinee_type)
@@ -559,7 +581,7 @@ module MilkTea
 
         body = lower_block(
           statement.body,
-          env: duplicate_env(env),
+          env: env_with_refinements(duplicate_env(env), flow_refinements(statement.condition, truthy: true, env: env)),
           active_defers:,
           return_type:,
           loop_flow: loop_flow(break_label:, continue_label:),
@@ -587,7 +609,7 @@ module MilkTea
         stop_ref = IR::Name.new(name: stop_c_name, type: loop_type, pointer: false)
 
         while_env = duplicate_env(env)
-        while_env[:scopes].last[statement.name] = local_binding(type: loop_type, c_name: c_local_name(statement.name), mutable: false, pointer: false)
+        current_actual_scope(while_env[:scopes])[statement.name] = local_binding(type: loop_type, c_name: c_local_name(statement.name), mutable: false, pointer: false)
 
         body = [
           IR::LocalDecl.new(name: statement.name, c_name: c_local_name(statement.name), type: loop_type, value: index_ref),
@@ -645,7 +667,7 @@ module MilkTea
                      end
 
         while_env = duplicate_env(env)
-        while_env[:scopes].last[statement.name] = local_binding(type: element_type, c_name: c_local_name(statement.name), mutable: false, pointer: false)
+        current_actual_scope(while_env[:scopes])[statement.name] = local_binding(type: element_type, c_name: c_local_name(statement.name), mutable: false, pointer: false)
 
         body = [
           IR::LocalDecl.new(name: statement.name, c_name: c_local_name(statement.name), type: element_type, value: item_value),
@@ -681,7 +703,7 @@ module MilkTea
         case expression
         when AST::Identifier
           binding = lookup_value(expression.name, env)
-          IR::Name.new(name: binding[:c_name], type: binding[:type], pointer: binding[:pointer])
+          IR::Name.new(name: binding[:c_name], type: binding[:storage_type], pointer: binding[:pointer])
         when AST::MemberAccess
           receiver = lower_expression(expression.receiver, env:)
           type = infer_expression_type(expression, env:)
@@ -759,13 +781,23 @@ module MilkTea
         when AST::UnaryOp
           IR::Unary.new(operator: expression.operator, operand: lower_expression(expression.operand, env:, expected_type: type), type:)
         when AST::BinaryOp
+          right_env = binary_right_env(expression, env)
           left_type, right_type = infer_binary_operand_types(expression, env:, expected_type: type)
           operand_type = promoted_binary_operand_type(expression.operator, left_type, right_type)
           left = lower_expression(expression.left, env:, expected_type: operand_type || type)
-          right = lower_expression(expression.right, env:, expected_type: operand_type || left.type)
+          right = lower_expression(expression.right, env: right_env, expected_type: operand_type || left.type)
           left = cast_expression(left, operand_type) if operand_type
           right = cast_expression(right, operand_type) if operand_type
           IR::Binary.new(operator: expression.operator, left:, right:, type:)
+        when AST::IfExpr
+          then_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: true, env:))
+          else_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: false, env:))
+          IR::Conditional.new(
+            condition: lower_expression(expression.condition, env:, expected_type: @types.fetch("bool")),
+            then_expression: lower_contextual_expression(expression.then_expression, env: then_env, expected_type: type),
+            else_expression: lower_contextual_expression(expression.else_expression, env: else_env, expected_type: type),
+            type:,
+          )
         when AST::Call
           lower_call(expression, env:, type:)
         when AST::Specialization
@@ -1135,6 +1167,19 @@ module MilkTea
           else
             left_type
           end
+        when AST::IfExpr
+          then_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: true, env:))
+          else_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: false, env:))
+          then_type = infer_expression_type(expression.then_expression, env: then_env, expected_type: expected_type)
+          else_type = infer_expression_type(expression.else_expression, env: else_env, expected_type: expected_type)
+
+          if expected_type &&
+             if_expression_branch_compatible?(then_type, expected_type) &&
+             if_expression_branch_compatible?(else_type, expected_type)
+            return expected_type
+          end
+
+          conditional_common_type(then_type, else_type) || raise(LoweringError, "if expression branches require compatible types, got #{then_type} and #{else_type}")
         when AST::Call
           kind, = resolve_callee(expression.callee, env, arguments: expression.arguments)
           case kind
@@ -1183,6 +1228,7 @@ module MilkTea
       def infer_binary_operand_types(expression, env:, expected_type: nil)
         propagated_type = propagating_expected_type(expression.operator, expected_type)
         left_type = infer_expression_type(expression.left, env:, expected_type: propagated_type)
+        right_env = binary_right_env(expression, env)
         right_expected_type = case expression.operator
                               when "<<", ">>"
                                 propagated_type || left_type
@@ -1191,8 +1237,19 @@ module MilkTea
                               else
                                 left_type
                               end
-        right_type = infer_expression_type(expression.right, env:, expected_type: right_expected_type)
-        harmonize_binary_float_literal_types(expression.left, expression.right, left_type, right_type, env:)
+        right_type = infer_expression_type(expression.right, env: right_env, expected_type: right_expected_type)
+        harmonize_binary_float_literal_types(expression.left, expression.right, left_type, right_type, env: right_env)
+      end
+
+      def binary_right_env(expression, env)
+        case expression.operator
+        when "and"
+          env_with_refinements(env, flow_refinements(expression.left, truthy: true, env:))
+        when "or"
+          env_with_refinements(env, flow_refinements(expression.left, truthy: false, env:))
+        else
+          env
+        end
       end
 
       def harmonize_binary_float_literal_types(left_expression, right_expression, left_type, right_type, env:)
@@ -1449,7 +1506,8 @@ module MilkTea
       def substitute_value_binding(binding, substitutions)
         Sema::ValueBinding.new(
           name: binding.name,
-          type: substitute_type(binding.type, substitutions),
+          storage_type: substitute_type(binding.storage_type, substitutions),
+          flow_type: binding.flow_type ? substitute_type(binding.flow_type, substitutions) : nil,
           mutable: binding.mutable,
           kind: binding.kind,
         )
@@ -1734,12 +1792,162 @@ module MilkTea
         end
 
         if @values.key?(name)
-          { type: @values.fetch(name).type, c_name: constant_c_name(name), mutable: false, pointer: false }
+          binding = @values.fetch(name)
+          { type: binding.type, storage_type: binding.storage_type, c_name: constant_c_name(name), mutable: false, pointer: false }
         end
       end
 
-      def local_binding(type:, c_name:, mutable:, pointer:)
-        { type:, c_name:, mutable:, pointer: }
+      def local_binding(type:, c_name:, mutable:, pointer:, storage_type: nil)
+        { type:, storage_type: storage_type || type, c_name:, mutable:, pointer: }
+      end
+
+      def current_actual_scope(scopes)
+        scopes.reverse_each do |scope|
+          return scope unless scope.is_a?(Sema::FlowScope)
+        end
+
+        raise LoweringError, "missing lexical scope"
+      end
+
+      def env_with_refinements(env, refinements)
+        updated = env.dup
+        updated[:scopes] = scopes_with_refinements(env[:scopes], refinements)
+        updated
+      end
+
+      def scopes_with_refinements(scopes, refinements)
+        return scopes if refinements.nil? || refinements.empty?
+
+        base_scopes = scopes.last.is_a?(Sema::FlowScope) ? scopes[0...-1] : scopes
+        merged_refinements = scopes.last.is_a?(Sema::FlowScope) ? scopes.last.each_with_object({}) { |(name, binding), result| result[name] = binding[:type] } : {}
+        merged_refinements = merge_refinements(merged_refinements, refinements)
+        flow_scope = Sema::FlowScope.new
+
+        merged_refinements.each do |name, refined_type|
+          binding = lookup_value(name, { scopes: base_scopes })
+          next unless binding
+
+          flow_scope[name] = binding.merge(type: refined_type)
+        end
+
+        return base_scopes if flow_scope.empty?
+
+        base_scopes + [flow_scope]
+      end
+
+      def merge_refinements(existing, incoming)
+        merged = existing.dup
+        incoming.each do |name, refined_type|
+          if merged.key?(name) && merged[name] != refined_type
+            merged.delete(name)
+          else
+            merged[name] = refined_type
+          end
+        end
+
+        merged
+      end
+
+      def flow_refinements(expression, truthy:, env:)
+        case expression
+        when AST::UnaryOp
+          return flow_refinements(expression.operand, truthy: !truthy, env:) if expression.operator == "not"
+        when AST::BinaryOp
+          case expression.operator
+          when "and"
+            if truthy
+              left_truthy = flow_refinements(expression.left, truthy: true, env:)
+              right_env = env_with_refinements(env, left_truthy)
+              right_truthy = flow_refinements(expression.right, truthy: true, env: right_env)
+              return merge_refinements(left_truthy, right_truthy)
+            end
+          when "or"
+            unless truthy
+              left_falsy = flow_refinements(expression.left, truthy: false, env:)
+              right_env = env_with_refinements(env, left_falsy)
+              right_falsy = flow_refinements(expression.right, truthy: false, env: right_env)
+              return merge_refinements(left_falsy, right_falsy)
+            end
+          when "==", "!="
+            return null_test_refinements(expression, truthy:, env:)
+          end
+        end
+
+        {}
+      end
+
+      def null_test_refinements(expression, truthy:, env:)
+        identifier_expression = nil
+        if expression.left.is_a?(AST::Identifier) && expression.right.is_a?(AST::NullLiteral)
+          identifier_expression = expression.left
+        elsif expression.left.is_a?(AST::NullLiteral) && expression.right.is_a?(AST::Identifier)
+          identifier_expression = expression.right
+        else
+          return {}
+        end
+
+        binding = lookup_value(identifier_expression.name, env)
+        return {} unless binding && binding[:storage_type].is_a?(Types::Nullable)
+
+        null_result = expression.operator == "==" ? truthy : !truthy
+        refined_type = null_result ? null_type : binding[:storage_type].base
+        { identifier_expression.name => refined_type }
+      end
+
+      def block_always_terminates?(statements)
+        statements.any? { |statement| statement_always_terminates?(statement) }
+      end
+
+      def statement_always_terminates?(statement)
+        case statement
+        when AST::ReturnStmt, AST::BreakStmt, AST::ContinueStmt
+          true
+        when AST::IfStmt
+          statement.else_body && statement.branches.all? { |branch| block_always_terminates?(branch.body) } && block_always_terminates?(statement.else_body)
+        when AST::MatchStmt
+          statement.arms.all? { |arm| block_always_terminates?(arm.body) }
+        when AST::UnsafeStmt
+          block_always_terminates?(statement.body)
+        else
+          false
+        end
+      end
+
+      def conditional_common_type(then_type, else_type)
+        return then_type if then_type == else_type
+
+        numeric_type = common_numeric_type(then_type, else_type)
+        return numeric_type if numeric_type
+
+        if then_type == null_type && nullable_candidate?(else_type)
+          return Types::Nullable.new(else_type)
+        end
+
+        if else_type == null_type && nullable_candidate?(then_type)
+          return Types::Nullable.new(then_type)
+        end
+
+        return then_type if then_type.is_a?(Types::Nullable) && else_type == then_type.base
+        return else_type if else_type.is_a?(Types::Nullable) && then_type == else_type.base
+
+        nil
+      end
+
+      def if_expression_branch_compatible?(actual_type, expected_type)
+        return true if actual_type == expected_type
+        return true if actual_type == null_type && expected_type.is_a?(Types::Nullable)
+        return true if expected_type.is_a?(Types::Nullable) && actual_type == expected_type.base
+        return true if common_numeric_type(actual_type, expected_type) == expected_type
+
+        false
+      end
+
+      def nullable_candidate?(type)
+        !ref_type?(type) && type != @types.fetch("void")
+      end
+
+      def null_type
+        @null_type ||= Types::Nullable.new(@types.fetch("void"))
       end
 
       def loop_flow(break_label:, continue_label:, break_defers: [], continue_defers: [])

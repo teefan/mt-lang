@@ -5,7 +5,22 @@ module MilkTea
 
   class Sema
     Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :values, :functions, :methods)
-    ValueBinding = Data.define(:name, :type, :mutable, :kind)
+    FlowScope = Class.new(Hash)
+    ValueBinding = Data.define(:name, :storage_type, :flow_type, :mutable, :kind) do
+      def type
+        flow_type || storage_type
+      end
+
+      def with_flow_type(refined_type)
+        ValueBinding.new(
+          name:,
+          storage_type:,
+          flow_type: refined_type == storage_type ? nil : refined_type,
+          mutable:,
+          kind:,
+        )
+      end
+    end
     FunctionBinding = Data.define(:name, :type, :body_params, :ast, :external, :type_params, :instances, :type_arguments, :owner, :type_substitutions)
     ModuleBinding = Data.define(:name, :types, :values, :functions, :methods)
 
@@ -200,7 +215,7 @@ module MilkTea
           ensure_available_value_name!(decl.name)
           type = resolve_type_ref(decl.type)
           validate_stored_ref_type!(type, "constant #{decl.name}")
-          @top_level_values[decl.name] = ValueBinding.new(
+          @top_level_values[decl.name] = value_binding(
             name: decl.name,
             type: type,
             mutable: false,
@@ -252,7 +267,7 @@ module MilkTea
 
         body_params = []
         if instance_method
-          body_params << ValueBinding.new(
+          body_params << value_binding(
             name: "this",
             type: receiver_type,
             mutable: method_kind == :edit,
@@ -268,7 +283,7 @@ module MilkTea
             raise SemaError, "extern function #{decl.name} cannot take array parameters"
           end
 
-          ValueBinding.new(name: param.name, type:, mutable: param.mutable, kind: :param)
+          value_binding(name: param.name, type:, mutable: param.mutable, kind: :param)
         end)
 
         receiver_mutable = false
@@ -368,7 +383,8 @@ module MilkTea
       def check_block(statements, scopes:, return_type:)
         with_nested_scope(scopes) do |nested_scopes|
           statements.each do |statement|
-            check_statement(statement, scopes: nested_scopes, return_type:)
+            refinements = check_statement(statement, scopes: nested_scopes, return_type:)
+            apply_continuation_refinements!(nested_scopes, refinements)
           end
         end
       end
@@ -380,12 +396,19 @@ module MilkTea
         when AST::Assignment
           check_assignment(statement, scopes:)
         when AST::IfStmt
+          false_refinements = {}
+          branch_bodies_terminate = []
           statement.branches.each do |branch|
-            condition_type = infer_expression(branch.condition, scopes:)
+            branch_scopes = scopes_with_refinements(scopes, false_refinements)
+            condition_type = infer_expression(branch.condition, scopes: branch_scopes, expected_type: @types.fetch("bool"))
             ensure_assignable!(condition_type, @types.fetch("bool"), "if condition must be bool, got #{condition_type}")
-            check_block(branch.body, scopes:, return_type:)
+            true_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: true, scopes: branch_scopes))
+            check_block(branch.body, scopes: scopes_with_refinements(scopes, true_refinements), return_type:)
+            branch_bodies_terminate << block_always_terminates?(branch.body)
+            false_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: false, scopes: branch_scopes))
           end
-          check_block(statement.else_body, scopes:, return_type:) if statement.else_body
+          check_block(statement.else_body, scopes: scopes_with_refinements(scopes, false_refinements), return_type:) if statement.else_body
+          return false_refinements if statement.else_body.nil? && branch_bodies_terminate.all?
         when AST::MatchStmt
           check_match_stmt(statement, scopes:, return_type:)
         when AST::UnsafeStmt
@@ -397,10 +420,11 @@ module MilkTea
         when AST::ForStmt
           check_for_stmt(statement, scopes:, return_type:)
         when AST::WhileStmt
-          condition_type = infer_expression(statement.condition, scopes:)
+          condition_type = infer_expression(statement.condition, scopes:, expected_type: @types.fetch("bool"))
           ensure_assignable!(condition_type, @types.fetch("bool"), "while condition must be bool, got #{condition_type}")
           with_loop do
-            check_block(statement.body, scopes:, return_type:)
+            body_scopes = scopes_with_refinements(scopes, flow_refinements(statement.condition, truthy: true, scopes:))
+            check_block(statement.body, scopes: body_scopes, return_type:)
           end
         when AST::BreakStmt
           raise SemaError, "break must be inside a loop" unless inside_loop?
@@ -422,10 +446,12 @@ module MilkTea
         else
           raise SemaError, "unsupported statement #{statement.class.name}"
         end
+
+        nil
       end
 
       def check_local_decl(statement, scopes:)
-        current_scope = scopes.last
+        current_scope = current_actual_scope(scopes)
         raise SemaError, "duplicate local #{statement.name}" if current_scope.key?(statement.name)
 
         declared_type = statement.type ? resolve_type_ref(statement.type) : nil
@@ -450,7 +476,7 @@ module MilkTea
 
         validate_local_ref_type!(final_type, statement.name)
 
-        current_scope[statement.name] = ValueBinding.new(
+        current_scope[statement.name] = value_binding(
           name: statement.name,
           type: final_type,
           mutable: statement.kind == :var,
@@ -518,7 +544,7 @@ module MilkTea
         raise SemaError, "for loop expects range(start, stop), array[T, N], or span[T], got #{infer_expression(statement.iterable, scopes:)}" unless loop_type
 
         with_nested_scope(scopes) do |loop_scopes|
-          loop_scopes.last[statement.name] = ValueBinding.new(
+          current_actual_scope(loop_scopes)[statement.name] = value_binding(
             name: statement.name,
             type: loop_type,
             mutable: false,
@@ -678,6 +704,8 @@ module MilkTea
           infer_unary(expression, scopes:, expected_type:)
         when AST::BinaryOp
           infer_binary(expression, scopes:, expected_type:)
+        when AST::IfExpr
+          infer_if_expression(expression, scopes:, expected_type:)
         when AST::Call
           infer_call(expression, scopes:, expected_type:)
         when AST::Specialization
@@ -802,6 +830,15 @@ module MilkTea
         propagated_type = propagating_expected_type(expression.operator, expected_type)
         left_type = infer_expression(expression.left, scopes:, expected_type: propagated_type)
 
+        right_scopes = case expression.operator
+                       when "and"
+                         scopes_with_refinements(scopes, flow_refinements(expression.left, truthy: true, scopes:))
+                       when "or"
+                         scopes_with_refinements(scopes, flow_refinements(expression.left, truthy: false, scopes:))
+                       else
+                         scopes
+                       end
+
         right_expected_type = case expression.operator
                               when "<<", ">>"
                                 propagated_type || left_type
@@ -811,13 +848,13 @@ module MilkTea
                                 left_type
                               end
 
-        right_type = infer_expression(expression.right, scopes:, expected_type: right_expected_type)
+        right_type = infer_expression(expression.right, scopes: right_scopes, expected_type: right_expected_type)
         left_type, right_type = harmonize_binary_float_literal_types(
           expression.left,
           expression.right,
           left_type,
           right_type,
-          scopes:,
+          scopes: right_scopes,
         )
 
         case expression.operator
@@ -869,6 +906,30 @@ module MilkTea
         else
           raise SemaError, "unsupported binary operator #{expression.operator}"
         end
+      end
+
+      def infer_if_expression(expression, scopes:, expected_type: nil)
+        condition_type = infer_expression(expression.condition, scopes:, expected_type: @types.fetch("bool"))
+        ensure_assignable!(condition_type, @types.fetch("bool"), "if expression condition must be bool, got #{condition_type}")
+
+        then_scopes = scopes_with_refinements(scopes, flow_refinements(expression.condition, truthy: true, scopes:))
+        else_scopes = scopes_with_refinements(scopes, flow_refinements(expression.condition, truthy: false, scopes:))
+        then_type = infer_expression(expression.then_expression, scopes: then_scopes, expected_type:)
+        else_type = infer_expression(expression.else_expression, scopes: else_scopes, expected_type:)
+
+        return expected_type if expected_type &&
+          types_compatible?(then_type, expected_type, expression: expression.then_expression) &&
+          types_compatible?(else_type, expected_type, expression: expression.else_expression)
+
+        common_type = conditional_common_type(
+          then_type,
+          else_type,
+          then_expression: expression.then_expression,
+          else_expression: expression.else_expression,
+        )
+        return common_type if common_type
+
+        raise SemaError, "if expression branches require compatible types, got #{then_type} and #{else_type}"
       end
 
       def harmonize_binary_float_literal_types(left_expression, right_expression, left_type, right_type, scopes:)
@@ -1910,7 +1971,8 @@ module MilkTea
       def substitute_value_binding(binding, substitutions)
         ValueBinding.new(
           name: binding.name,
-          type: substitute_type(binding.type, substitutions),
+          storage_type: substitute_type(binding.storage_type, substitutions),
+          flow_type: binding.flow_type ? substitute_type(binding.flow_type, substitutions) : nil,
           mutable: binding.mutable,
           kind: binding.kind,
         )
@@ -2046,6 +2108,148 @@ module MilkTea
       def with_nested_scope(scopes)
         nested_scopes = scopes + [{}]
         yield(nested_scopes)
+      end
+
+      def value_binding(name:, type:, mutable:, kind:, flow_type: nil)
+        ValueBinding.new(name:, storage_type: type, flow_type: flow_type == type ? nil : flow_type, mutable:, kind:)
+      end
+
+      def current_actual_scope(scopes)
+        scopes.reverse_each do |scope|
+          return scope unless scope.is_a?(FlowScope)
+        end
+
+        raise SemaError, "missing lexical scope"
+      end
+
+      def apply_continuation_refinements!(scopes, refinements)
+        return if refinements.nil? || refinements.empty?
+
+        scopes.replace(scopes_with_refinements(scopes, refinements))
+      end
+
+      def scopes_with_refinements(scopes, refinements)
+        return scopes if refinements.nil? || refinements.empty?
+
+        base_scopes = scopes.last.is_a?(FlowScope) ? scopes[0...-1] : scopes
+        merged_refinements = scopes.last.is_a?(FlowScope) ? scopes.last.each_with_object({}) { |(name, binding), result| result[name] = binding.type } : {}
+        merged_refinements = merge_refinements(merged_refinements, refinements)
+        flow_scope = FlowScope.new
+
+        merged_refinements.each do |name, refined_type|
+          binding = lookup_value(name, base_scopes)
+          next unless binding
+
+          flow_scope[name] = binding.with_flow_type(refined_type)
+        end
+
+        return base_scopes if flow_scope.empty?
+
+        base_scopes + [flow_scope]
+      end
+
+      def merge_refinements(existing, incoming)
+        merged = existing.dup
+        incoming.each do |name, refined_type|
+          if merged.key?(name) && merged[name] != refined_type
+            merged.delete(name)
+          else
+            merged[name] = refined_type
+          end
+        end
+
+        merged
+      end
+
+      def flow_refinements(expression, truthy:, scopes:)
+        case expression
+        when AST::UnaryOp
+          return flow_refinements(expression.operand, truthy: !truthy, scopes:) if expression.operator == "not"
+        when AST::BinaryOp
+          case expression.operator
+          when "and"
+            if truthy
+              left_truthy = flow_refinements(expression.left, truthy: true, scopes:)
+              right_scopes = scopes_with_refinements(scopes, left_truthy)
+              right_truthy = flow_refinements(expression.right, truthy: true, scopes: right_scopes)
+              return merge_refinements(left_truthy, right_truthy)
+            end
+          when "or"
+            unless truthy
+              left_falsy = flow_refinements(expression.left, truthy: false, scopes:)
+              right_scopes = scopes_with_refinements(scopes, left_falsy)
+              right_falsy = flow_refinements(expression.right, truthy: false, scopes: right_scopes)
+              return merge_refinements(left_falsy, right_falsy)
+            end
+          when "==", "!="
+            return null_test_refinements(expression, truthy:, scopes:)
+          end
+        end
+
+        {}
+      end
+
+      def null_test_refinements(expression, truthy:, scopes:)
+        identifier_expression = nil
+        if expression.left.is_a?(AST::Identifier) && expression.right.is_a?(AST::NullLiteral)
+          identifier_expression = expression.left
+        elsif expression.left.is_a?(AST::NullLiteral) && expression.right.is_a?(AST::Identifier)
+          identifier_expression = expression.right
+        else
+          return {}
+        end
+
+        binding = lookup_value(identifier_expression.name, scopes)
+        return {} unless binding&.storage_type.is_a?(Types::Nullable)
+
+        null_result = expression.operator == "==" ? truthy : !truthy
+        refined_type = null_result ? @null_type : binding.storage_type.base
+        { identifier_expression.name => refined_type }
+      end
+
+      def block_always_terminates?(statements)
+        statements.any? { |statement| statement_always_terminates?(statement) }
+      end
+
+      def statement_always_terminates?(statement)
+        case statement
+        when AST::ReturnStmt, AST::BreakStmt, AST::ContinueStmt
+          true
+        when AST::IfStmt
+          statement.else_body && statement.branches.all? { |branch| block_always_terminates?(branch.body) } && block_always_terminates?(statement.else_body)
+        when AST::MatchStmt
+          statement.arms.all? { |arm| block_always_terminates?(arm.body) }
+        when AST::UnsafeStmt
+          block_always_terminates?(statement.body)
+        else
+          false
+        end
+      end
+
+      def conditional_common_type(then_type, else_type, then_expression:, else_expression:)
+        return then_type if then_type == else_type
+
+        numeric_type = common_numeric_type(then_type, else_type)
+        return numeric_type if numeric_type
+
+        if then_type == @null_type && nullable_candidate?(else_type)
+          return Types::Nullable.new(else_type)
+        end
+
+        if else_type == @null_type && nullable_candidate?(then_type)
+          return Types::Nullable.new(then_type)
+        end
+
+        return then_type if types_compatible?(else_type, then_type, expression: else_expression)
+        return else_type if types_compatible?(then_type, else_type, expression: then_expression)
+
+        nil
+      end
+
+      def nullable_candidate?(type)
+        return false if ref_type?(type)
+
+        sized_layout_type?(type) || pointer_type?(type) || type.is_a?(Types::Nullable)
       end
 
       def describe_expression(expression)

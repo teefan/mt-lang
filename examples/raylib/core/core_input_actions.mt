@@ -114,15 +114,9 @@ def main() -> i32:
 
         rl.ClearBackground(rl.GRAY)
 
-        var player_color = rl.RED
-        if release_action:
-            player_color = rl.BLUE
-        rl.DrawRectangleV(position, size, player_color)
+        rl.DrawRectangleV(position, size, if release_action then rl.BLUE else rl.RED)
 
-        if action_set:
-            rl.DrawText(cursor_set_text, 10, 10, 20, rl.WHITE)
-        else:
-            rl.DrawText(default_set_text, 10, 10, 20, rl.WHITE)
+        rl.DrawText(if action_set then cursor_set_text else default_set_text, 10, 10, 20, rl.WHITE)
         rl.DrawText(help_text, 10, 50, 20, rl.GREEN)
 
     return 0
