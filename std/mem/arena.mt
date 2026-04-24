@@ -2,14 +2,14 @@ module std.mem.arena
 
 import std.mem.heap as heap
 
-type Mark = usize
+pub type Mark = usize
 
-struct Arena:
+pub struct Arena:
     memory: ptr[byte]
     capacity: usize
     offset: usize
 
-def create(capacity_bytes: usize) -> Arena:
+pub def create(capacity_bytes: usize) -> Arena:
     return Arena(
         memory = heap.alloc[byte](capacity_bytes),
         capacity = capacity_bytes,
@@ -17,17 +17,17 @@ def create(capacity_bytes: usize) -> Arena:
     )
 
 methods Arena:
-    def mark() -> Mark:
+    pub def mark() -> Mark:
         return this.offset
 
-    edit def reset(mark: Mark) -> void:
+    pub edit def reset(mark: Mark) -> void:
         this.offset = mark
         return
 
-    def remaining_bytes() -> usize:
+    pub def remaining_bytes() -> usize:
         return this.capacity - this.offset
 
-    edit def alloc_bytes(size_bytes: usize) -> ptr[byte]?:
+    pub edit def alloc_bytes(size_bytes: usize) -> ptr[byte]?:
         let next_offset = this.offset + size_bytes
         if next_offset > this.capacity:
             return null
@@ -37,7 +37,7 @@ methods Arena:
             this.offset = next_offset
             return result
 
-    edit def to_cstr(text: str) -> cstr:
+    pub edit def to_cstr(text: str) -> cstr:
         let memory = this.alloc_bytes(text.len + 1)
         if memory == null:
             panic(c"Arena.to_cstr out of memory")
@@ -51,13 +51,13 @@ methods Arena:
             value(buffer + text.len) = zero[char]()
             return cast[cstr](buffer)
 
-    edit def release() -> void:
+    pub edit def release() -> void:
         heap.release(this.memory)
         this.offset = 0
         this.capacity = 0
         return
 
-def alloc[T](space: ref[Arena], count: usize) -> ptr[T]?:
+pub def alloc[T](space: ref[Arena], count: usize) -> ptr[T]?:
     let memory = value(space).alloc_bytes(count * cast[usize](sizeof(T)))
     if memory == null:
         return null

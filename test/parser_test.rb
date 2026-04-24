@@ -74,6 +74,53 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal 1, if_stmt.else_body.length
   end
 
+  def test_parses_public_declarations_and_methods
+    source = <<~MT
+      module demo.visibility
+
+      pub const answer: i32 = 42
+      pub type Score = i32
+
+      pub struct Counter:
+          value: i32
+
+      methods Counter:
+          pub def read() -> i32:
+              return this.value
+
+          def bump() -> void:
+              this.value += 1
+
+      pub def make_counter() -> Counter:
+          return Counter(value = 0)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal :public, ast.declarations[0].visibility
+    assert_equal :public, ast.declarations[1].visibility
+    assert_equal :public, ast.declarations[2].visibility
+    assert_equal :public, ast.declarations[4].visibility
+
+    methods_block = ast.declarations[3]
+    assert_equal :public, methods_block.methods[0].visibility
+    assert_equal :private, methods_block.methods[1].visibility
+  end
+
+  def test_rejects_pub_on_methods_block
+    source = <<~MT
+      module demo.visibility
+
+      pub methods Counter:
+          def read() -> i32:
+              return 0
+    MT
+
+    error = assert_raises(MilkTea::ParseError) { MilkTea::Parser.parse(source) }
+
+    assert_match(/pub is not allowed on methods blocks/, error.message)
+  end
+
   def test_parses_if_expression
     source = <<~MT
       module demo.expr

@@ -86,34 +86,43 @@ module MilkTea
     end
 
     def parse_declaration
+      visibility, visibility_token = parse_visibility
+
       if check(:packed) || check(:align)
-        parse_struct_decl_with_layout
+        parse_struct_decl_with_layout(visibility:)
       elsif match(:const)
-        parse_const_decl
+        parse_const_decl(visibility:)
       elsif match(:type)
-        parse_type_alias_decl
+        parse_type_alias_decl(visibility:)
       elsif match(:struct)
-        parse_struct_decl
+        parse_struct_decl(visibility:)
       elsif match(:union)
-        parse_union_decl
+        parse_union_decl(visibility:)
       elsif match(:enum)
-        parse_enum_decl(AST::EnumDecl)
+        parse_enum_decl(AST::EnumDecl, visibility:)
       elsif match(:flags)
-        parse_enum_decl(AST::FlagsDecl)
+        parse_enum_decl(AST::FlagsDecl, visibility:)
       elsif match(:opaque)
-        parse_opaque_decl
+        parse_opaque_decl(visibility:)
       elsif match(:methods)
+        raise error(visibility_token, "pub is not allowed on methods blocks") if visibility == :public
+
         parse_methods_block
       elsif check(:edit) || check(:static)
         raise error(peek, "#{peek.lexeme} def is only allowed inside methods blocks")
       elsif match(:def)
-        parse_function_def
+        parse_function_def(visibility:)
       elsif match(:extern)
+        raise error(visibility_token, "pub is not allowed on extern declarations yet") if visibility == :public
+
         parse_extern_decl
       elsif match(:static_assert)
+        raise error(visibility_token, "pub is not allowed on static_assert") if visibility == :public
+
         parse_static_assert
       else
-        raise error(peek, "expected declaration")
+        message = visibility == :public ? "expected exportable declaration after pub" : "expected declaration"
+        raise error(peek, message)
       end
     end
 
@@ -153,22 +162,24 @@ module MilkTea
     end
 
     def parse_extern_module_declaration
-      if check(:packed) || check(:align)
-        parse_struct_decl_with_layout
+      if match(:pub)
+        raise error(previous, "pub is not allowed inside extern modules")
+      elsif check(:packed) || check(:align)
+        parse_struct_decl_with_layout(visibility: :public)
       elsif match(:const)
-        parse_const_decl
+        parse_const_decl(visibility: :public)
       elsif match(:type)
-        parse_type_alias_decl
+        parse_type_alias_decl(visibility: :public)
       elsif match(:struct)
-        parse_struct_decl
+        parse_struct_decl(visibility: :public)
       elsif match(:union)
-        parse_union_decl
+        parse_union_decl(visibility: :public)
       elsif match(:enum)
-        parse_enum_decl(AST::EnumDecl)
+        parse_enum_decl(AST::EnumDecl, visibility: :public)
       elsif match(:flags)
-        parse_enum_decl(AST::FlagsDecl)
+        parse_enum_decl(AST::FlagsDecl, visibility: :public)
       elsif match(:opaque)
-        parse_opaque_decl
+        parse_opaque_decl(visibility: :public)
       elsif match(:extern)
         parse_extern_decl
       else
@@ -176,25 +187,25 @@ module MilkTea
       end
     end
 
-    def parse_const_decl
+    def parse_const_decl(visibility: :private)
       name = consume_name("expected constant name").lexeme
       consume(:colon, "expected ':' after constant name")
       type = parse_type_ref
       consume(:equal, "expected '=' after constant type")
       value = parse_expression
       consume_end_of_statement
-      AST::ConstDecl.new(name:, type:, value:)
+      AST::ConstDecl.new(name:, type:, value:, visibility:)
     end
 
-    def parse_type_alias_decl
+    def parse_type_alias_decl(visibility: :private)
       name = consume_name("expected type alias name").lexeme
       consume(:equal, "expected '=' after type alias name")
       target = parse_type_ref
       consume_end_of_statement
-      AST::TypeAliasDecl.new(name:, target:)
+      AST::TypeAliasDecl.new(name:, target:, visibility:)
     end
 
-    def parse_struct_decl(packed: false, alignment: nil)
+    def parse_struct_decl(packed: false, alignment: nil, visibility: :private)
       name = consume_name("expected struct name").lexeme
       type_params = parse_declaration_type_params
       fields = parse_named_block do
@@ -204,10 +215,10 @@ module MilkTea
         consume_end_of_statement
         AST::Field.new(name: field_name, type: field_type)
       end
-      AST::StructDecl.new(name:, type_params:, fields:, packed:, alignment:)
+      AST::StructDecl.new(name:, type_params:, fields:, packed:, alignment:, visibility:)
     end
 
-    def parse_struct_decl_with_layout
+    def parse_struct_decl_with_layout(visibility: :private)
       packed = false
       alignment = nil
 
@@ -228,10 +239,10 @@ module MilkTea
       end
 
       consume(:struct, "expected struct after layout modifiers")
-      parse_struct_decl(packed:, alignment:)
+      parse_struct_decl(packed:, alignment:, visibility:)
     end
 
-    def parse_union_decl
+    def parse_union_decl(visibility: :private)
       name = consume_name("expected union name").lexeme
       fields = parse_named_block do
         field_name = consume_name("expected field name").lexeme
@@ -240,10 +251,10 @@ module MilkTea
         consume_end_of_statement
         AST::Field.new(name: field_name, type: field_type)
       end
-      AST::UnionDecl.new(name:, fields:)
+      AST::UnionDecl.new(name:, fields:, visibility:)
     end
 
-    def parse_enum_decl(node_class)
+    def parse_enum_decl(node_class, visibility: :private)
       name = consume_name("expected declaration name").lexeme
       consume(:colon, "expected ':' after declaration name")
       backing_type = parse_type_ref
@@ -262,13 +273,13 @@ module MilkTea
       end
 
       consume(:dedent, "expected end of declaration body")
-      node_class.new(name:, backing_type:, members:)
+      node_class.new(name:, backing_type:, members:, visibility:)
     end
 
-    def parse_opaque_decl
+    def parse_opaque_decl(visibility: :private)
       name = consume_name("expected opaque type name").lexeme
       consume_end_of_statement
-      AST::OpaqueDecl.new(name:)
+      AST::OpaqueDecl.new(name:, visibility:)
     end
 
     def parse_methods_block
@@ -279,16 +290,17 @@ module MilkTea
       AST::MethodsBlock.new(type_name:, methods:)
     end
 
-    def parse_function_def
+    def parse_function_def(visibility: :private)
       name = consume_name("expected function name").lexeme
       type_params = parse_declaration_type_params
       params = parse_params
       return_type = match(:arrow) ? parse_type_ref : nil
       body = parse_block
-      AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:)
+      AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:, visibility:)
     end
 
     def parse_method_def
+      visibility, _visibility_token = parse_visibility
       kind = if match(:edit)
                :edit
              elsif match(:static)
@@ -303,7 +315,13 @@ module MilkTea
       params = parse_params
       return_type = match(:arrow) ? parse_type_ref : nil
       body = parse_block
-      AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:)
+      AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:)
+    end
+
+    def parse_visibility
+      return [:public, previous] if match(:pub)
+
+      [:private, nil]
     end
 
     def parse_extern_decl

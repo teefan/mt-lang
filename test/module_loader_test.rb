@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "fileutils"
+require "tmpdir"
 require_relative "test_helper"
 
 class MilkTeaModuleLoaderTest < Minitest::Test
@@ -52,6 +54,59 @@ class MilkTeaModuleLoaderTest < Minitest::Test
     assert_match(/module not found/, error.message)
   ensure
     File.delete(source_path) if source_path && File.exist?(source_path)
+  end
+
+  def test_check_program_exports_only_public_declarations_from_imports
+    Dir.mktmpdir("milk-tea-module-loader-visibility") do |dir|
+      root_path = File.join(dir, "demo", "main.mt")
+      lib_path = File.join(dir, "demo", "lib.mt")
+
+      FileUtils.mkdir_p(File.dirname(root_path))
+      File.write(root_path, <<~MT)
+        module demo.main
+
+        import demo.lib as lib
+
+        def main() -> i32:
+            let counter = lib.Counter(value = lib.answer)
+            return counter.read()
+      MT
+
+      File.write(lib_path, <<~MT)
+        module demo.lib
+
+        pub const answer: i32 = 7
+        const hidden: i32 = 9
+
+        pub struct Counter:
+            value: i32
+
+        struct Hidden:
+            value: i32
+
+        methods Counter:
+            pub def read() -> i32:
+                return this.value
+
+            def bump() -> i32:
+                return this.value + 1
+
+        pub def make_counter() -> Counter:
+            return Counter(value = answer)
+
+        def hidden_fn() -> i32:
+            return hidden
+      MT
+
+      program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
+      imported = program.root_analysis.imports.fetch("lib")
+      counter_type = imported.types.fetch("Counter")
+
+      assert_equal %w[Counter], imported.types.keys.sort
+      assert_equal %w[answer], imported.values.keys.sort
+      assert_equal %w[make_counter], imported.functions.keys.sort
+      assert_equal %w[read], imported.methods.fetch(counter_type).keys.sort
+    end
   end
 
   private

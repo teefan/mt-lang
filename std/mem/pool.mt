@@ -2,14 +2,14 @@ module std.mem.pool
 
 import std.mem.heap as heap
 
-struct Pool:
+pub struct Pool:
     memory: ptr[byte]
     occupancy: ptr[bool]
     slot_size: usize
     slot_count: usize
     used_count: usize
 
-def create(slot_size_bytes: usize, slot_count: usize) -> Pool:
+pub def create(slot_size_bytes: usize, slot_count: usize) -> Pool:
     if slot_size_bytes == 0 or slot_count == 0:
         return Pool(
             memory = heap.alloc[byte](0),
@@ -29,10 +29,10 @@ def create(slot_size_bytes: usize, slot_count: usize) -> Pool:
     )
 
 methods Pool:
-    def remaining_slots() -> usize:
+    pub def remaining_slots() -> usize:
         return this.slot_count - this.used_count
 
-    edit def alloc_bytes() -> ptr[byte]?:
+    pub edit def alloc_bytes() -> ptr[byte]?:
         var index: usize = 0
         while index < this.slot_count:
             unsafe:
@@ -45,7 +45,7 @@ methods Pool:
 
         return null
 
-    edit def release_bytes(slot: ptr[byte]?) -> bool:
+    pub edit def release_bytes(slot: ptr[byte]?) -> bool:
         if slot == null:
             return false
 
@@ -65,7 +65,7 @@ methods Pool:
 
         return false
 
-    edit def release() -> void:
+    pub edit def release() -> void:
         heap.release(this.memory)
         heap.release(this.occupancy)
         this.slot_size = 0

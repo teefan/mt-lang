@@ -129,16 +129,17 @@ module MilkTea
       def emit_declaration(declaration)
         case declaration
         when AST::ConstDecl
-          header = "const #{declaration.name}"
+          header = "#{visibility_prefix(declaration)}const #{declaration.name}"
           header += ": #{render_type(declaration.type)}" if declaration.type
           line("#{header} = #{render_expression(declaration.value)}")
         when AST::TypeAliasDecl
-          line("type #{declaration.name} = #{render_type(declaration.target)}")
+          line("#{visibility_prefix(declaration)}type #{declaration.name} = #{render_type(declaration.target)}")
         when AST::StructDecl
           prefixes = []
           prefixes << "packed" if declaration.packed
           prefixes << "align(#{declaration.alignment})" if declaration.alignment
           header = +""
+          header << visibility_prefix(declaration)
           header << "#{prefixes.join(' ')} " unless prefixes.empty?
           header << "struct #{declaration.name}#{render_type_params(declaration.type_params)}:"
           line(header)
@@ -148,18 +149,18 @@ module MilkTea
             end
           end
         when AST::UnionDecl
-          line("union #{declaration.name}:")
+          line("#{visibility_prefix(declaration)}union #{declaration.name}:")
           with_indent do
             declaration.fields.each do |field|
               line("#{field.name}: #{render_type(field.type)}")
             end
           end
         when AST::EnumDecl
-          emit_enum_like("enum", declaration.name, declaration.backing_type, declaration.members)
+          emit_enum_like("enum", declaration.name, declaration.backing_type, declaration.members, declaration.visibility)
         when AST::FlagsDecl
-          emit_enum_like("flags", declaration.name, declaration.backing_type, declaration.members)
+          emit_enum_like("flags", declaration.name, declaration.backing_type, declaration.members, declaration.visibility)
         when AST::OpaqueDecl
-          line("opaque #{declaration.name}")
+          line("#{visibility_prefix(declaration)}opaque #{declaration.name}")
         when AST::MethodsBlock
           line("methods #{declaration.type_name}:")
           with_indent do
@@ -177,8 +178,8 @@ module MilkTea
         end
       end
 
-      def emit_enum_like(kind, name, backing_type, members)
-        header = "#{kind} #{name}"
+      def emit_enum_like(kind, name, backing_type, members, visibility)
+        header = "#{visibility_prefix(visibility)}#{kind} #{name}"
         header += ": #{render_type(backing_type)}" if backing_type
         line(header)
         with_indent do
@@ -212,9 +213,19 @@ module MilkTea
                            else
                              "def "
                            end
-        text = +"#{prefix}#{signature_prefix}#{function.name}#{render_type_params(function.type_params)}(#{render_signature_params(function)})"
+        text = +"#{prefix}#{visibility_prefix(function)}#{signature_prefix}#{function.name}#{render_type_params(function.type_params)}(#{render_signature_params(function)})"
         text << " -> #{render_type(function.return_type)}" if function.return_type
         text
+      end
+
+      def visibility_prefix(declaration_or_visibility)
+        visibility = if declaration_or_visibility.is_a?(Symbol)
+                       declaration_or_visibility
+                     elsif declaration_or_visibility.respond_to?(:visibility)
+                       declaration_or_visibility.visibility
+                     end
+
+        visibility == :public ? "pub " : ""
       end
 
       def render_signature_params(function)

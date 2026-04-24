@@ -6,11 +6,11 @@ import std.c.raylib as rl
 const smoke_frames_env: cstr = c"MILK_TEA_RAYLIB_SMOKE_FRAMES"
 const smoke_screenshot_env: cstr = c"MILK_TEA_RAYLIB_SMOKE_SCREENSHOT"
 
-def env_flag(name: cstr) -> bool:
+pub def env_flag(name: cstr) -> bool:
     let value: ptr[char]? = libc.getenv(name)
     return value != null
 
-def env(name: cstr, default_value: i32) -> i32:
+pub def env(name: cstr, default_value: i32) -> i32:
     let value: ptr[char]? = libc.getenv(name)
     if value == null:
         return default_value
@@ -22,7 +22,7 @@ def env(name: cstr, default_value: i32) -> i32:
 
     return default_value
 
-def smoke_capture(frame_count: i32, default_frames: i32) -> bool:
+pub def smoke_capture(frame_count: i32, default_frames: i32) -> bool:
     let screenshot_path: ptr[char]? = libc.getenv(smoke_screenshot_env)
     if screenshot_path == null:
         return false

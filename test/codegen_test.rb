@@ -74,9 +74,9 @@ class MilkTeaCodegenTest < Minitest::Test
       File.write(File.join(dir, "std", "math.mt"), [
         "module std.math",
         "",
-        "const TEN: i32 = 10",
+        "pub const TEN: i32 = 10",
         "",
-        "def clamp[T](value: T, min_value: T, max_value: T) -> T:",
+        "pub def clamp[T](value: T, min_value: T, max_value: T) -> T:",
         "    if value < min_value:",
         "        return min_value",
         "    elif value > max_value:",
@@ -702,13 +702,13 @@ class MilkTeaCodegenTest < Minitest::Test
       File.write(File.join(dir, "demo", "math.mt"), [
         "module demo.math",
         "",
-        "struct RawVec:",
+        "pub struct RawVec:",
         "    x: i32",
         "",
-        "type Vec = RawVec",
+        "pub type Vec = RawVec",
         "",
         "methods RawVec:",
-        "    static def zero() -> Vec:",
+        "    pub static def zero() -> Vec:",
         "        return Vec(x = 0)",
         "",
       ].join("\n"))

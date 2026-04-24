@@ -4,92 +4,92 @@ import std.c.libm as libm
 import std.c.raylib as rl
 import std.math as math
 
-type Vector2 = rl.Vector2
-type Vector3 = rl.Vector3
-type Matrix = rl.Matrix
-type Quaternion = rl.Quaternion
-type Color = rl.Color
+pub type Vector2 = rl.Vector2
+pub type Vector3 = rl.Vector3
+pub type Matrix = rl.Matrix
+pub type Quaternion = rl.Quaternion
+pub type Color = rl.Color
 
-const deg2rad: f32 = math.deg2rad
-const rad2deg: f32 = math.rad2deg
+pub const deg2rad: f32 = math.deg2rad
+pub const rad2deg: f32 = math.rad2deg
 const quaternion_slerp_epsilon: f32 = 0.000001
 const quaternion_slerp_linear_threshold: f32 = 0.95
 
-def clamp(value: f32, min_value: f32, max_value: f32) -> f32:
+pub def clamp(value: f32, min_value: f32, max_value: f32) -> f32:
     if value < min_value:
         return min_value
     if value > max_value:
         return max_value
     return value
 
-def lerp(start: f32, finish: f32, amount: f32) -> f32:
+pub def lerp(start: f32, finish: f32, amount: f32) -> f32:
     return start + (finish - start) * amount
 
-def abs(value: f32) -> f32:
+pub def abs(value: f32) -> f32:
     return libm.fabsf(value)
 
-def sqrt(value: f32) -> f32:
+pub def sqrt(value: f32) -> f32:
     return libm.sqrtf(value)
 
-def sin(value: f32) -> f32:
+pub def sin(value: f32) -> f32:
     return libm.sinf(value)
 
-def cos(value: f32) -> f32:
+pub def cos(value: f32) -> f32:
     return libm.cosf(value)
 
-def tan(value: f32) -> f32:
+pub def tan(value: f32) -> f32:
     return libm.tanf(value)
 
-def atan2(y: f32, x: f32) -> f32:
+pub def atan2(y: f32, x: f32) -> f32:
     return libm.atan2f(y, x)
 
-def acos(value: f32) -> f32:
+pub def acos(value: f32) -> f32:
     return libm.acosf(value)
 
 methods rl.Color:
-    static def from_hsv(hue: f32, saturation: f32, value: f32) -> Color:
+    pub static def from_hsv(hue: f32, saturation: f32, value: f32) -> Color:
         return rl.ColorFromHSV(hue, saturation, value)
 
 methods rl.Vector2:
-    static def zero() -> Vector2:
+    pub static def zero() -> Vector2:
         return rl.Vector2(x = 0.0, y = 0.0)
 
-    static def one() -> Vector2:
+    pub static def one() -> Vector2:
         return rl.Vector2(x = 1.0, y = 1.0)
 
-    def add(other: Vector2) -> Vector2:
+    pub def add(other: Vector2) -> Vector2:
         return rl.Vector2(x = this.x + other.x, y = this.y + other.y)
 
-    def subtract(other: Vector2) -> Vector2:
+    pub def subtract(other: Vector2) -> Vector2:
         return rl.Vector2(x = this.x - other.x, y = this.y - other.y)
 
-    def scale(factor: f32) -> Vector2:
+    pub def scale(factor: f32) -> Vector2:
         return rl.Vector2(x = this.x * factor, y = this.y * factor)
 
-    def multiply(other: Vector2) -> Vector2:
+    pub def multiply(other: Vector2) -> Vector2:
         return rl.Vector2(x = this.x * other.x, y = this.y * other.y)
 
-    def length() -> f32:
+    pub def length() -> f32:
         return libm.sqrtf(this.x * this.x + this.y * this.y)
 
-    def distance(other: Vector2) -> f32:
+    pub def distance(other: Vector2) -> f32:
         let dx = this.x - other.x
         let dy = this.y - other.y
         return libm.sqrtf(dx * dx + dy * dy)
 
-    def angle(other: Vector2) -> f32:
+    pub def angle(other: Vector2) -> f32:
         let dot = this.x * other.x + this.y * other.y
         let det = this.x * other.y - this.y * other.x
         return libm.atan2f(det, dot)
 
-    def normalize() -> Vector2:
+    pub def normalize() -> Vector2:
         let length = this.length()
         if length > 0.0:
             let inv_length = 1.0 / length
             return rl.Vector2(x = this.x * inv_length, y = this.y * inv_length)
         return Vector2.zero()
 
-    def rotate(angle: f32) -> Vector2:
+    pub def rotate(angle: f32) -> Vector2:
         let cos_angle = libm.cosf(angle)
         let sin_angle = libm.sinf(angle)
         return rl.Vector2(
@@ -97,71 +97,71 @@ methods rl.Vector2:
             y = this.x * sin_angle + this.y * cos_angle,
         )
 
-    def clamp(min_value: Vector2, max_value: Vector2) -> Vector2:
+    pub def clamp(min_value: Vector2, max_value: Vector2) -> Vector2:
         return rl.Vector2(
             x = clamp(this.x, min_value.x, max_value.x),
             y = clamp(this.y, min_value.y, max_value.y),
         )
 
 methods rl.Vector3:
-    static def zero() -> Vector3:
+    pub static def zero() -> Vector3:
         return rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 
-    static def one() -> Vector3:
+    pub static def one() -> Vector3:
         return rl.Vector3(x = 1.0, y = 1.0, z = 1.0)
 
-    def add(other: Vector3) -> Vector3:
+    pub def add(other: Vector3) -> Vector3:
         return rl.Vector3(x = this.x + other.x, y = this.y + other.y, z = this.z + other.z)
 
-    def subtract(other: Vector3) -> Vector3:
+    pub def subtract(other: Vector3) -> Vector3:
         return rl.Vector3(x = this.x - other.x, y = this.y - other.y, z = this.z - other.z)
 
-    def scale(factor: f32) -> Vector3:
+    pub def scale(factor: f32) -> Vector3:
         return rl.Vector3(x = this.x * factor, y = this.y * factor, z = this.z * factor)
 
-    def dot(other: Vector3) -> f32:
+    pub def dot(other: Vector3) -> f32:
         return this.x * other.x + this.y * other.y + this.z * other.z
 
-    def length() -> f32:
+    pub def length() -> f32:
         return libm.sqrtf(this.x * this.x + this.y * this.y + this.z * this.z)
 
-    def distance(other: Vector3) -> f32:
+    pub def distance(other: Vector3) -> f32:
         let dx = other.x - this.x
         let dy = other.y - this.y
         let dz = other.z - this.z
         return libm.sqrtf(dx * dx + dy * dy + dz * dz)
 
-    def cross(other: Vector3) -> Vector3:
+    pub def cross(other: Vector3) -> Vector3:
         return rl.Vector3(
             x = this.y * other.z - this.z * other.y,
             y = this.z * other.x - this.x * other.z,
             z = this.x * other.y - this.y * other.x,
         )
 
-    def angle(other: Vector3) -> f32:
+    pub def angle(other: Vector3) -> f32:
         let cross = this.cross(other)
         let length = cross.length()
         let dot = this.dot(other)
         return libm.atan2f(length, dot)
 
-    def negate() -> Vector3:
+    pub def negate() -> Vector3:
         return rl.Vector3(x = -this.x, y = -this.y, z = -this.z)
 
-    def normalize() -> Vector3:
+    pub def normalize() -> Vector3:
         let length = this.length()
         if length != 0.0:
             let inv_length = 1.0 / length
             return rl.Vector3(x = this.x * inv_length, y = this.y * inv_length, z = this.z * inv_length)
         return this
 
-    def lerp(other: Vector3, amount: f32) -> Vector3:
+    pub def lerp(other: Vector3, amount: f32) -> Vector3:
         return rl.Vector3(
             x = lerp(this.x, other.x, amount),
             y = lerp(this.y, other.y, amount),
             z = lerp(this.z, other.z, amount),
         )
 
-    def rotate_by_axis_angle(axis: Vector3, angle: f32) -> Vector3:
+    pub def rotate_by_axis_angle(axis: Vector3, angle: f32) -> Vector3:
         let normalized_axis = axis.normalize()
         let half_angle = angle / 2.0
         let sin_half_angle = libm.sinf(half_angle)
@@ -177,7 +177,7 @@ methods rl.Vector3:
         let scaled_wwv = wwv.scale(2.0)
         return this.add(scaled_wv).add(scaled_wwv)
 
-    def transform(mat: Matrix) -> Vector3:
+    pub def transform(mat: Matrix) -> Vector3:
         let x = this.x
         let y = this.y
         let z = this.z
@@ -188,7 +188,7 @@ methods rl.Vector3:
         )
 
 methods rl.Matrix:
-    static def identity() -> Matrix:
+    pub static def identity() -> Matrix:
         return rl.Matrix(
             m0 = 1.0,
             m4 = 0.0,
@@ -208,7 +208,7 @@ methods rl.Matrix:
             m15 = 1.0,
         )
 
-    def multiply(other: Matrix) -> Matrix:
+    pub def multiply(other: Matrix) -> Matrix:
         return rl.Matrix(
             m0 = this.m0 * other.m0 + this.m1 * other.m4 + this.m2 * other.m8 + this.m3 * other.m12,
             m4 = this.m4 * other.m0 + this.m5 * other.m4 + this.m6 * other.m8 + this.m7 * other.m12,
@@ -228,7 +228,7 @@ methods rl.Matrix:
             m15 = this.m12 * other.m3 + this.m13 * other.m7 + this.m14 * other.m11 + this.m15 * other.m15,
         )
 
-    static def translate(x: f32, y: f32, z: f32) -> Matrix:
+    pub static def translate(x: f32, y: f32, z: f32) -> Matrix:
         return rl.Matrix(
             m0 = 1.0,
             m4 = 0.0,
@@ -248,7 +248,7 @@ methods rl.Matrix:
             m15 = 1.0,
         )
 
-    static def scale(x: f32, y: f32, z: f32) -> Matrix:
+    pub static def scale(x: f32, y: f32, z: f32) -> Matrix:
         return rl.Matrix(
             m0 = x,
             m4 = 0.0,
@@ -268,7 +268,7 @@ methods rl.Matrix:
             m15 = 1.0,
         )
 
-    static def perspective(fov_y: f32, aspect: f32, near_plane: f32, far_plane: f32) -> Matrix:
+    pub static def perspective(fov_y: f32, aspect: f32, near_plane: f32, far_plane: f32) -> Matrix:
         let top = near_plane * libm.tanf(fov_y * 0.5)
         let bottom = -top
         let right = top * aspect
@@ -295,7 +295,7 @@ methods rl.Matrix:
             m15 = 0.0,
         )
 
-    static def ortho(left: f32, right: f32, bottom: f32, top: f32, near_plane: f32, far_plane: f32) -> Matrix:
+    pub static def ortho(left: f32, right: f32, bottom: f32, top: f32, near_plane: f32, far_plane: f32) -> Matrix:
         let rl_width = right - left
         let tb = top - bottom
         let fn = far_plane - near_plane
@@ -318,7 +318,7 @@ methods rl.Matrix:
             m15 = 1.0,
         )
 
-    static def look_at(eye: Vector3, target: Vector3, up: Vector3) -> Matrix:
+    pub static def look_at(eye: Vector3, target: Vector3, up: Vector3) -> Matrix:
         let vz = eye.subtract(target).normalize()
         let vx = up.cross(vz).normalize()
         let vy = vz.cross(vx)
@@ -342,13 +342,13 @@ methods rl.Matrix:
         )
 
 methods rl.Quaternion:
-    static def identity() -> Quaternion:
+    pub static def identity() -> Quaternion:
         return rl.Vector4(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
 
-    def length() -> f32:
+    pub def length() -> f32:
         return libm.sqrtf(this.x * this.x + this.y * this.y + this.z * this.z + this.w * this.w)
 
-    def normalize() -> Quaternion:
+    pub def normalize() -> Quaternion:
         let length = this.length()
         if length == 0.0:
             return this
@@ -360,7 +360,7 @@ methods rl.Quaternion:
             w = this.w * inv_length,
         )
 
-    def invert() -> Quaternion:
+    pub def invert() -> Quaternion:
         let length_sq = this.x * this.x + this.y * this.y + this.z * this.z + this.w * this.w
         if length_sq == 0.0:
             return this
@@ -372,7 +372,7 @@ methods rl.Quaternion:
             w = this.w * inv_length,
         )
 
-    def multiply(other: Quaternion) -> Quaternion:
+    pub def multiply(other: Quaternion) -> Quaternion:
         return rl.Vector4(
             x = this.x * other.w + this.w * other.x + this.y * other.z - this.z * other.y,
             y = this.y * other.w + this.w * other.y + this.z * other.x - this.x * other.z,
@@ -380,7 +380,7 @@ methods rl.Quaternion:
             w = this.w * other.w - this.x * other.x - this.y * other.y - this.z * other.z,
         )
 
-    def to_matrix() -> Matrix:
+    pub def to_matrix() -> Matrix:
         let a2 = this.x * this.x
         let b2 = this.y * this.y
         let c2 = this.z * this.z
@@ -409,7 +409,7 @@ methods rl.Quaternion:
             m15 = 1.0,
         )
 
-    static def from_axis_angle(axis: Vector3, angle: f32) -> Quaternion:
+    pub static def from_axis_angle(axis: Vector3, angle: f32) -> Quaternion:
         let axis_length = axis.length()
         if axis_length == 0.0:
             return Quaternion.identity()
@@ -424,7 +424,7 @@ methods rl.Quaternion:
             w = cos_half_angle,
         ).normalize()
 
-    static def from_matrix(mat: Matrix) -> Quaternion:
+    pub static def from_matrix(mat: Matrix) -> Quaternion:
         let four_w_squared_minus_one = mat.m0 + mat.m5 + mat.m10
         let four_x_squared_minus_one = mat.m0 - mat.m5 - mat.m10
         let four_y_squared_minus_one = mat.m5 - mat.m0 - mat.m10
@@ -473,7 +473,7 @@ methods rl.Quaternion:
             w = (mat.m1 - mat.m4) * mult,
         )
 
-    def nlerp(other: Quaternion, amount: f32) -> Quaternion:
+    pub def nlerp(other: Quaternion, amount: f32) -> Quaternion:
         return rl.Vector4(
             x = this.x + amount * (other.x - this.x),
             y = this.y + amount * (other.y - this.y),
@@ -481,7 +481,7 @@ methods rl.Quaternion:
             w = this.w + amount * (other.w - this.w),
         ).normalize()
 
-    def slerp(other: Quaternion, amount: f32) -> Quaternion:
+    pub def slerp(other: Quaternion, amount: f32) -> Quaternion:
         var target = other
         var cos_half_theta = this.x * other.x + this.y * other.y + this.z * other.z + this.w * other.w
 

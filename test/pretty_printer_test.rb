@@ -38,6 +38,30 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_public_declarations_and_methods_like_source
+    source = <<~MT
+      module demo.pretty
+
+      pub struct Counter:
+          value: i32
+
+      methods Counter:
+          pub def read() -> i32:
+              return this.value
+
+          def bump() -> void:
+              this.value += 1
+
+      pub def main() -> i32:
+          let counter = Counter(value = 3)
+          return counter.read()
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_variadic_extern_module_ast_like_source
     source = <<~MT
       extern module std.c.stdio:
