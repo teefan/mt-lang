@@ -28,7 +28,7 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
         assert_equal File.expand_path(c_path), result.c_path
         assert_equal File.expand_path(compiler_path), result.compiler
         assert_includes result.link_flags, "-lraylib"
-        if %w[core_clipboard_text core_smooth_pixelperfect].include?(File.basename(path, ".mt"))
+        if %w[core_clipboard_text core_smooth_pixelperfect core_input_gestures_testbed].include?(File.basename(path, ".mt"))
           assert_includes result.link_flags, "-lm"
         end
         assert File.exist?(output_path)
@@ -53,6 +53,7 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
       core_3d_camera_fps
       core_3d_camera_split_screen
       core_3d_picking
+      core_custom_frame_control
       core_basic_window
       core_basic_screen_manager
       core_3d_camera_mode
@@ -65,6 +66,7 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
       core_input_actions
       core_input_gamepad
       core_input_gestures
+      core_input_gestures_testbed
       core_input_keys
       core_keyboard_testbed
       core_input_mouse
@@ -76,6 +78,7 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
       core_random_values
       core_render_texture
       core_smooth_pixelperfect
+      core_storage_values
       core_undo_redo
       core_viewport_scaling
       core_window_web
