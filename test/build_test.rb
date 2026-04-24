@@ -119,6 +119,45 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
+  def test_build_with_host_compiler_uses_distinct_loop_labels_across_sibling_nested_blocks
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-build-loop-labels") do |dir|
+      source_path = File.join(dir, "loop-labels.mt")
+      output_path = File.join(dir, "loop-labels")
+
+      File.write(source_path, [
+        "module demo.loop_labels",
+        "",
+        "def main() -> i32:",
+        "    var outer = 0",
+        "    while outer < 2:",
+        "        if outer == 0:",
+        "            var left = 0",
+        "            while left < 1:",
+        "                left += 1",
+        "        else:",
+        "            var right = 0",
+        "            while right < 1:",
+        "                right += 1",
+        "        outer += 1",
+        "    return outer",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Build.build(source_path, output_path:, cc: compiler)
+
+      assert_equal File.expand_path(output_path), result.output_path
+      assert File.exist?(output_path)
+
+      stdout, stderr, status = Open3.capture3(output_path)
+      assert_equal "", stdout
+      assert_equal "", stderr
+      assert_equal 2, status.exitstatus
+    end
+  end
+
   def test_build_includes_raw_binding_compiler_flags_for_imported_extern_modules
     Dir.mktmpdir("milk-tea-build-raw-binding-flags") do |dir|
       compiler_log = File.join(dir, "compiler.log")

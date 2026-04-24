@@ -15,19 +15,23 @@ class MilkTeaRaylibExampleRuntimeTest < Minitest::Test
     smoke_examples.each do |name|
       Dir.mktmpdir("milk-tea-raylib-runtime") do |dir|
         source_path = File.expand_path("../examples/raylib/core/#{name}.mt", __dir__)
+        source_dir = File.dirname(source_path)
         binary_path = File.join(dir, name)
-        screenshot_path = File.join(dir, "#{name}.bmp")
+        screenshot_name = "#{name}.bmp"
+        screenshot_path = File.join(source_dir, screenshot_name)
 
         MilkTea::Build.build(source_path, output_path: binary_path, cc: compiler)
+
+        File.delete(screenshot_path) if File.exist?(screenshot_path)
 
         stdout, stderr, status = Open3.capture3(
           {
             "MILK_TEA_RAYLIB_SMOKE_FRAMES" => "3",
-            "MILK_TEA_RAYLIB_SMOKE_SCREENSHOT" => screenshot_path,
+            "MILK_TEA_RAYLIB_SMOKE_SCREENSHOT" => screenshot_name,
           },
           *headless_runner,
           binary_path,
-          chdir: File.dirname(source_path),
+          chdir: source_dir,
         )
 
         assert_equal 0, status.exitstatus, "#{name} exited with #{status.exitstatus}: #{stderr}\n#{stdout}"
@@ -37,6 +41,8 @@ class MilkTeaRaylibExampleRuntimeTest < Minitest::Test
         assert_operator stats[:white_ratio], :<, 0.99, "#{name} screenshot is effectively all white"
         assert_operator stats[:black_ratio], :<, 0.99, "#{name} screenshot is effectively all black"
         assert_operator stats[:unique_colors], :>, 4, "#{name} screenshot did not render enough visible variation"
+
+        File.delete(screenshot_path)
       end
     end
   end
@@ -71,8 +77,8 @@ class MilkTeaRaylibExampleRuntimeTest < Minitest::Test
     bits_per_pixel = data.byteslice(28, 2).unpack1("v")
     compression = data.byteslice(30, 4).unpack1("V")
 
-    raise "compressed BMP not supported: #{path}" unless compression == 0
     raise "unsupported BMP depth #{bits_per_pixel}: #{path}" unless [24, 32].include?(bits_per_pixel)
+    raise "compressed BMP not supported: #{path}" unless compression == 0 || (compression == 3 && bits_per_pixel == 32)
 
     bytes_per_pixel = bits_per_pixel / 8
     row_size = ((bits_per_pixel * width + 31) / 32) * 4
