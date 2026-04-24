@@ -466,6 +466,8 @@ module MilkTea
     end
 
     def emit_aggregate_literal(expression)
+      return emit_zero_expression(expression.type) if expression.fields.empty?
+
       fields = expression.fields.map do |field|
         ".#{field.name} = #{emit_initializer(field.value)}"
       end.join(", ")
@@ -473,6 +475,8 @@ module MilkTea
     end
 
     def emit_array_initializer(expression)
+      return "{ 0 }" if expression.elements.empty?
+
       elements = expression.elements.map { |element| emit_initializer(element) }.join(", ")
       "{ #{elements} }"
     end

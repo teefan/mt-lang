@@ -196,6 +196,39 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_integer_to_char_buffer_writes
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-char-buffer") do |dir|
+      source_path = File.join(dir, "char-buffer.mt")
+
+      File.write(source_path, [
+        "module demo.char_buffer_runtime",
+        "",
+        "def main() -> i32:",
+        "    let first = 65",
+        "    var buffer = zero[array[char, 4]]()",
+        "    unsafe:",
+        "        var raw_buffer = raw(addr(buffer[0]))",
+        "        raw_buffer[0] = first",
+        "        raw_buffer[1] = cast[char](66)",
+        "    return cast[i32](buffer[0]) + cast[i32](buffer[1]) - 131",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 0, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_safe_refs
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
@@ -994,6 +1027,55 @@ class MilkTeaRunTest < Minitest::Test
         "        return 1",
         "    if holder.colors[3] != 0:",
         "        return 2",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 0, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_partial_aggregate_and_array_initialization
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-partial-init") do |dir|
+      source_path = File.join(dir, "partial-init.mt")
+
+      File.write(source_path, [
+        "module demo.partial_init",
+        "",
+        "struct Point:",
+        "    x: i32",
+        "    y: i32",
+        "",
+        "struct Holder:",
+        "    point: Point",
+        "    colors: array[u32, 4]",
+        "",
+        "def main() -> i32:",
+        "    let origin = Point()",
+        "    let point = Point(x = 5)",
+        "    let colors = array[u32, 4](1, 2)",
+        "    let holder = Holder(point = point)",
+        "    if origin.x != 0 or origin.y != 0:",
+        "        return 1",
+        "    if point.x != 5 or point.y != 0:",
+        "        return 2",
+        "    if colors[0] != 1 or colors[1] != 2 or colors[2] != 0 or colors[3] != 0:",
+        "        return 3",
+        "    if holder.point.x != 5 or holder.point.y != 0:",
+        "        return 4",
+        "    if holder.colors[0] != 0 or holder.colors[3] != 0:",
+        "        return 5",
         "    return 0",
         "",
       ].join("\n"))

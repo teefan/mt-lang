@@ -42,6 +42,41 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
     end
   end
 
+  def test_shapes_example_ports_check_and_lower
+    shapes_example_paths.each do |path|
+      program = MilkTea::ModuleLoader.check_program(path)
+
+      assert_equal true, program.analyses_by_module_name.key?(module_name_for(path))
+    end
+  end
+
+  def test_shapes_example_ports_build_with_fake_compiler
+    Dir.mktmpdir("milk-tea-raylib-shapes-example-ports") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+
+      shapes_example_paths.each do |path|
+        output_basename = File.basename(path, ".mt")
+        output_path = File.join(dir, output_basename)
+        c_path = File.join(dir, "#{output_basename}.c")
+
+        result = MilkTea::Build.build(path, output_path:, cc: compiler_path, keep_c_path: c_path)
+
+        assert_equal File.expand_path(output_path), result.output_path
+        assert_equal File.expand_path(c_path), result.c_path
+        assert_equal File.expand_path(compiler_path), result.compiler
+        assert_includes result.link_flags, "-lraylib"
+        assert File.exist?(output_path)
+        assert File.exist?(c_path)
+        assert_match(/#include "raylib\.h"/, File.read(c_path))
+      end
+
+      invocation = File.read(compiler_log).lines(chomp: true)
+      assert_includes invocation, "-std=c11"
+      assert_includes invocation, "-lraylib"
+    end
+  end
+
   private
 
   def core_example_paths
@@ -49,11 +84,14 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
       core_2d_camera
       core_2d_camera_mouse_zoom
       core_2d_camera_platformer
+      core_automation_events
       core_3d_camera_free
       core_3d_camera_first_person
       core_3d_camera_fps
       core_3d_camera_split_screen
       core_3d_picking
+      core_compute_hash
+      core_custom_logging
       core_custom_frame_control
       core_directory_files
       core_basic_window
@@ -80,10 +118,13 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
       core_random_sequence
       core_random_values
       core_render_texture
+      core_screen_recording
       core_smooth_pixelperfect
       core_storage_values
+      core_text_file_loading
       core_undo_redo
       core_viewport_scaling
+      core_vr_simulator
       core_window_web
       core_window_flags
       core_world_screen
@@ -94,8 +135,18 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
     end
   end
 
+  def shapes_example_paths
+    %w[
+      shapes_basic_shapes
+      shapes_bouncing_ball
+    ].map do |name|
+      File.expand_path("../examples/raylib/shapes/#{name}.mt", __dir__)
+    end
+  end
+
   def module_name_for(path)
-    "examples.raylib.core.#{File.basename(path, ".mt")}"
+    relative_path = path.delete_prefix(File.expand_path("../examples/", __dir__) + "/")
+    "examples.#{relative_path.delete_suffix(".mt").tr("/", ".")}"
   end
 
   def write_fake_compiler(dir, log_path)

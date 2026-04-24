@@ -744,7 +744,12 @@ module MilkTea
       elsif match(:false)
         AST::BooleanLiteral.new(value: false)
       elsif match(:null)
-        AST::NullLiteral.new
+        type = nil
+        if match(:lbracket)
+          type = parse_type_ref
+          consume(:rbracket, "expected ']' after typed null literal")
+        end
+        AST::NullLiteral.new(type:)
       elsif match(:lparen)
         expression = parse_expression
         consume(:rparen, "expected ')' after expression")

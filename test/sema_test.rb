@@ -1042,6 +1042,28 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_unsafe_pointer_indexing_with_integer_offsets
+    source = <<~MT
+      module demo.pointer_offsets
+
+      extern def allocate(size: usize) -> ptr[void]
+
+      def main() -> i32:
+          let memory = allocate(16)
+          unsafe:
+              let bytes = cast[ptr[byte]](memory)
+              let offset = 4
+              let advanced = bytes + offset
+              let first = advanced[offset - 4]
+              let same = first
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_address_of_dereference_and_deref_assignment_in_unsafe
     source = <<~MT
       module demo.pointer_surface
@@ -1178,6 +1200,49 @@ class MilkTeaSemaTest < Minitest::Test
 
     assert_equal true, result.types.key?("Palette")
     assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_partial_aggregate_and_array_construction
+    source = <<~MT
+      module demo.partial_init
+
+      struct Point:
+          x: i32
+          y: i32
+
+      struct Holder:
+          point: Point
+          colors: array[u32, 4]
+
+      def main() -> i32:
+          let origin = Point()
+          let point = Point(x = 5)
+          let colors = array[u32, 4](1, 2)
+          let holder = Holder(point = point)
+          return origin.x + point.x + cast[i32](colors[1]) + holder.point.x
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("Point")
+    assert_equal true, result.types.key?("Holder")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_partial_array_construction_with_too_many_elements
+    source = <<~MT
+      module demo.too_many_array_elements
+
+      def main() -> i32:
+          let values = array[i32, 2](1, 2, 3)
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/array expects at most 2 elements, got 3/, error.message)
   end
 
   def test_rejects_zero_for_void
@@ -1371,6 +1436,87 @@ class MilkTeaSemaTest < Minitest::Test
     result = check_source(source)
 
     assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_unsafe_integer_to_char_buffer_writes
+    source = <<~MT
+      module demo.char_buffer_writes
+
+      def main() -> i32:
+          let first = 65
+          var ptr: ptr[char] = zero[ptr[char]]()
+          unsafe:
+              ptr[0] = first
+              ptr[1] = cast[char](66)
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_char_as_general_numeric_type
+    source = <<~MT
+      module demo.bad_char_numeric
+
+      def main() -> i32:
+          let value = cast[char](65)
+          return value + 1
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/operator \+ requires compatible numeric types, got char and i32/, error.message)
+  end
+
+  def test_type_checks_typed_null_pointer_literals_and_unsafe_cstr_casts
+    source = <<~MT
+      module demo.typed_null_cstr
+
+      extern def set_text(value: cstr) -> void
+
+      def main() -> void:
+          let maybe_buffer: ptr[char]? = null[ptr[char]]
+          unsafe:
+              set_text(cast[cstr](null[ptr[char]]))
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_non_pointer_typed_null_literals
+    source = <<~MT
+      module demo.bad_typed_null
+
+      def main() -> void:
+          let maybe_buffer: ptr[char]? = null[i32]
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/typed null requires pointer-like type, got i32/, error.message)
+  end
+
+  def test_rejects_inference_from_typed_null_literals
+    source = <<~MT
+      module demo.bad_typed_null_inference
+
+      def main() -> void:
+          let maybe_buffer = null[ptr[char]]
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/cannot infer type for maybe_buffer from null/, error.message)
   end
 
   def test_type_checks_safe_ref_locals_params_and_methods
