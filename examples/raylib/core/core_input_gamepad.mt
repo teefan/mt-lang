@@ -20,7 +20,9 @@ const right_trigger_deadzone: f32 = -0.9
 
 def gamepad_name_matches(gamepad_name: cstr, alias_one: cstr, alias_two: cstr) -> bool:
     let lower_gamepad_name = rl.TextToLower(gamepad_name)
-    return rl.TextFindIndex(lower_gamepad_name, alias_one) > -1 or rl.TextFindIndex(lower_gamepad_name, alias_two) > -1
+    unsafe:
+        let lower_gamepad_name_cstr = cast[cstr](lower_gamepad_name)
+        return rl.TextFindIndex(lower_gamepad_name_cstr, alias_one) > -1 or rl.TextFindIndex(lower_gamepad_name_cstr, alias_two) > -1
 
 def draw_stick(center_x: i32, center_y: i32, outer_radius: f32, inner_radius: f32, stick_x: f32, stick_y: f32, pressed: bool) -> void:
     var stick_color = rl.BLACK

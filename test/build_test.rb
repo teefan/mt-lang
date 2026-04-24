@@ -174,6 +174,7 @@ class MilkTeaBuildTest < Minitest::Test
           header_candidates: [header_path],
           include_directives: ["raylib.h"],
           link_libraries: ["raylib"],
+          link_flags: ["-L#{dir}", "-lglfw"],
           implementation_defines: ["MT_TEST_IMPLEMENTATION"],
           compiler_flags: ["-DMT_TEST_TOOLING=1"],
         ),
@@ -185,7 +186,38 @@ class MilkTeaBuildTest < Minitest::Test
       assert_includes invocation, "-I#{dir}"
       assert_includes invocation, "-DMT_TEST_IMPLEMENTATION"
       assert_includes invocation, "-DMT_TEST_TOOLING=1"
+      assert_includes invocation, "-L#{dir}"
+      assert_includes invocation, "-lglfw"
       assert_includes invocation, "-lraylib"
+      assert_operator invocation.index("-L#{dir}"), :<, invocation.index("-lraylib")
+      assert_operator invocation.index("-lraylib"), :<, invocation.index("-lglfw")
+    end
+  end
+
+  def test_build_runs_raw_binding_prepare_hook_for_imported_extern_modules
+    Dir.mktmpdir("milk-tea-build-raw-binding-prepare") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      output_path = File.join(dir, "milk-tea-demo")
+      header_path = File.join(dir, "raylib.h")
+      File.write(header_path, "")
+
+      prepared = []
+      raw_bindings = MilkTea::RawBindings::Registry.new([
+        MilkTea::RawBindings::Binding.new(
+          name: "raylib",
+          module_name: "std.c.raylib",
+          binding_path: File.join(dir, "raylib.mt"),
+          header_candidates: [header_path],
+          include_directives: ["raylib.h"],
+          link_libraries: ["raylib"],
+          prepare: ->(_binding, env:, cc:) { prepared << cc },
+        ),
+      ])
+
+      MilkTea::Build.build(demo_path, output_path:, cc: compiler_path, raw_bindings:)
+
+      assert_equal [File.expand_path(compiler_path)], prepared
     end
   end
 

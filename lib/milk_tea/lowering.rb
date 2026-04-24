@@ -711,7 +711,7 @@ module MilkTea
         when AST::IndexAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
           receiver = lower_expression(expression.receiver, env:)
-          index = lower_expression(expression.index, env:, expected_type: @types.fetch("usize"))
+          index = lower_expression(expression.index, env:)
           type = infer_expression_type(expression, env:)
           if array_type?(receiver_type)
             IR::CheckedIndex.new(receiver:, index:, receiver_type:, type:)
@@ -770,7 +770,7 @@ module MilkTea
         when AST::IndexAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
           receiver = lower_expression(expression.receiver, env:)
-          index = lower_expression(expression.index, env:, expected_type: @types.fetch("usize"))
+          index = lower_expression(expression.index, env:)
           if array_type?(receiver_type) && addressable_storage_expression?(expression.receiver)
             IR::CheckedIndex.new(receiver:, index:, receiver_type:, type:)
           elsif receiver_type.is_a?(Types::Span)
@@ -944,6 +944,7 @@ module MilkTea
 
       def contextual_numeric_compatibility?(expression, actual_type, expected_type, external_numeric: false, contextual_int_to_float: false)
         return true if integer_literal_numeric_compatibility?(expression, expected_type)
+        return true if integer_to_char_compatibility?(actual_type, expected_type)
         return true if external_numeric && external_numeric_compatibility?(actual_type, expected_type)
         return true if contextual_int_to_float && contextual_int_to_float_compatibility?(actual_type, expected_type)
 
@@ -952,6 +953,21 @@ module MilkTea
 
       def integer_literal_numeric_compatibility?(expression, expected_type)
         integer_literal_expression?(expression) && expected_type.is_a?(Types::Primitive) && expected_type.numeric?
+      end
+
+      def integer_to_char_compatibility?(actual_type, expected_type)
+        char_type?(expected_type) && integer_like_char_source_type?(actual_type)
+      end
+
+      def integer_like_char_source_type?(type)
+        return true if type.is_a?(Types::Primitive) && type.integer?
+        return true if type.is_a?(Types::EnumBase) && type.backing_type.is_a?(Types::Primitive) && type.backing_type.integer?
+
+        false
+      end
+
+      def char_type?(type)
+        type.is_a?(Types::Primitive) && type.name == "char"
       end
 
       def integer_literal_expression?(expression)
@@ -1116,7 +1132,7 @@ module MilkTea
         when AST::BooleanLiteral
           @types.fetch("bool")
         when AST::NullLiteral
-          expected_type || Types::Nullable.new(@types.fetch("void"))
+          infer_null_literal_type(expression, expected_type)
         when AST::Identifier
           binding = lookup_value(expression.name, env)
           return binding[:type] if binding
@@ -1144,7 +1160,7 @@ module MilkTea
           raise LoweringError, "unknown member #{expression.member}"
         when AST::IndexAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
-          index_type = infer_expression_type(expression.index, env:, expected_type: @types.fetch("usize"))
+          index_type = infer_expression_type(expression.index, env:)
           infer_index_result_type(receiver_type, index_type)
         when AST::UnaryOp
           operand_type = infer_expression_type(expression.operand, env:, expected_type:)
@@ -1294,6 +1310,12 @@ module MilkTea
         return expression if expression.type == target_type
 
         IR::Cast.new(target_type:, expression:, type: target_type)
+      end
+
+      def infer_null_literal_type(expression, expected_type)
+        return Types::Null.new(resolve_type_ref(expression.type)) if expression.type
+
+        expected_type || null_type
       end
 
       def common_numeric_type(left_type, right_type)
@@ -1919,12 +1941,12 @@ module MilkTea
         numeric_type = common_numeric_type(then_type, else_type)
         return numeric_type if numeric_type
 
-        if then_type == null_type && nullable_candidate?(else_type)
-          return Types::Nullable.new(else_type)
+        if (nullable_type = conditional_null_common_type(then_type, else_type))
+          return nullable_type
         end
 
-        if else_type == null_type && nullable_candidate?(then_type)
-          return Types::Nullable.new(then_type)
+        if (nullable_type = conditional_null_common_type(else_type, then_type))
+          return nullable_type
         end
 
         return then_type if then_type.is_a?(Types::Nullable) && else_type == then_type.base
@@ -1935,7 +1957,7 @@ module MilkTea
 
       def if_expression_branch_compatible?(actual_type, expected_type)
         return true if actual_type == expected_type
-        return true if actual_type == null_type && expected_type.is_a?(Types::Nullable)
+        return true if null_assignable_to?(actual_type, expected_type)
         return true if expected_type.is_a?(Types::Nullable) && actual_type == expected_type.base
         return true if common_numeric_type(actual_type, expected_type) == expected_type
 
@@ -1946,8 +1968,31 @@ module MilkTea
         !ref_type?(type) && type != @types.fetch("void")
       end
 
+      def null_assignable_to?(actual_type, expected_type)
+        return false unless actual_type.is_a?(Types::Null)
+        return false unless expected_type.is_a?(Types::Nullable)
+        return true unless actual_type.target_type
+
+        actual_type.target_type == expected_type.base
+      end
+
+      def conditional_null_common_type(null_type, other_type)
+        return unless null_type.is_a?(Types::Null)
+
+        if other_type.is_a?(Types::Nullable)
+          return other_type if null_type.target_type.nil? || null_type.target_type == other_type.base
+
+          return nil
+        end
+
+        return unless nullable_candidate?(other_type)
+        return if null_type.target_type && null_type.target_type != other_type
+
+        Types::Nullable.new(other_type)
+      end
+
       def null_type
-        @null_type ||= Types::Nullable.new(@types.fetch("void"))
+        @null_type ||= Types::Null.new
       end
 
       def loop_flow(break_label:, continue_label:, break_defers: [], continue_defers: [])

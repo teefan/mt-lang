@@ -26,3 +26,5 @@ module MilkTea
     @root ||= Pathname.new(File.expand_path('..', __dir__))
   end
 end
+
+require_relative 'milk_tea/vendored_raylib'

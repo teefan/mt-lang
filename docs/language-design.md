@@ -315,6 +315,7 @@ Notes:
 
 - `str` is a UTF-8 string view, not a NUL-terminated C string.
 - `cstr` is a NUL-terminated C string reference for ABI calls.
+- `char` is the ABI-facing single-byte character type for C text and raw buffers. It is not a general arithmetic integer type.
 - String literals produce `str`.
 - `c"hello"` produces `cstr` with static storage.
 
@@ -466,6 +467,7 @@ Conversions are explicit.
 ```mt
 let count64 = cast[u64](count32)
 let value = cast[f32](raw)
+let newline = cast[char](10)
 ```
 
 For bit reinterpretation, use a separate form inside `unsafe`:
@@ -479,6 +481,19 @@ Binary arithmetic and numeric comparison operators may promote primitive operand
 This is limited to `+ - * / % == != < <= > >=` and does not change assignment, return, or aggregate-field typing rules.
 Non-extern call boundaries remain strict, but extern calls may pass enum or flags values to same-width fixed-width integer parameters without an explicit cast for C ABI interop.
 Mixed signed and unsigned integers still require an explicit cast.
+
+`char` stays outside the general numeric-promotion rules. If code wants arithmetic on a character value, cast it to an integer type first. If code wants to write bytes back into a `char` buffer, either use an explicit `cast[char](...)` or rely on the expected `char` boundary where a known `char` target is being initialized or assigned.
+
+Example:
+
+```mt
+let newline = cast[char](10)
+
+unsafe:
+	buffer[0] = 65
+	buffer[1] = newline
+	let code = cast[i32](buffer[0])
+```
 
 ### Literals
 
@@ -514,6 +529,9 @@ This keeps `f32`-heavy game code readable while preserving the rule that ordinar
 
 There are no constructors with hidden logic in v1. Aggregate construction uses field and element literals directly.
 Multiline aggregate-style calls may use trailing commas so data-heavy code stays easy to diff.
+Omitted fields in plain aggregate literals and omitted tail elements in fixed-array literals default to zero.
+That means `Type()`, `Type(field = value)`, `array[T, N]()`, and `array[T, N](a, b)` are all just zero-default data literals, not constructor calls.
+There are still no default field expressions, hidden initializer functions, or other non-local effects during construction.
 
 ```mt
 let player = Player(
@@ -521,7 +539,10 @@ let player = Player(
 	velocity = Vec2(x = 0.0, y = 0.0),
 )
 
+let origin = Player()
+
 let palette = array[u32, 4](0xff0000ff, 0x00ff00ff, 0x0000ffff, 0xffffffff)
+let grayscale = array[u32, 4](0x111111ff, 0x555555ff)
 ```
 
 This keeps data construction obvious and maps cleanly to C initializers.
@@ -596,7 +617,9 @@ Rules for raw pointers:
 - `value(ptr)` dereferences a raw pointer and requires `unsafe`.
 - `value(ptr).field` accesses a member through a raw pointer and requires `unsafe`.
 - pointer arithmetic and pointer indexing remain `unsafe`.
+- raw pointer offsets and indices may use ordinary integer expressions directly; code does not need a pre-emptive cast to `usize` just to write `ptr[i]` or `ptr + offset`.
 - pointer comparison is explicit and never treated as boolean truthiness.
+- `ptr[char]` is the ordinary representation for mutable C text and byte-oriented FFI buffers; writing control bytes such as NUL or newline uses `char` values, typically spelled with `cast[char](0)` and `cast[char](10)`.
 
 References are separate from methods:
 

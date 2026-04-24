@@ -323,6 +323,21 @@ class MilkTeaParserTest < Minitest::Test
     assert_nil load.body.first.value
   end
 
+  def test_parses_typed_null_pointer_literals
+    source = <<~MT
+      module demo.typed_null
+
+      const missing: ptr[char]? = null[ptr[char]]
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    missing = ast.declarations[0]
+    assert_instance_of MilkTea::AST::NullLiteral, missing.value
+    assert_equal "ptr", missing.value.type.name.to_s
+    assert_equal "char", missing.value.type.arguments.first.value.name.to_s
+  end
+
   def test_parses_generic_struct_declaration_and_constructor_call
     source = <<~MT
       module demo.generics
@@ -480,6 +495,42 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "u32", array_type.arguments.first.value.name.to_s
     assert_equal 4, array_type.arguments[1].value.value
     assert_equal 0, local_decl.value.arguments.length
+  end
+
+  def test_parses_partial_aggregate_and_array_constructor_calls
+    source = <<~MT
+      module demo.partial_literals
+
+      struct Point:
+          x: i32
+          y: i32
+
+      def main() -> i32:
+          let origin = Point()
+          let point = Point(x = 1)
+          let palette = array[u32, 4](1, 2)
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations[1]
+    origin_decl = main_fn.body[0]
+    point_decl = main_fn.body[1]
+    palette_decl = main_fn.body[2]
+
+    assert_instance_of MilkTea::AST::Call, origin_decl.value
+    assert_equal "Point", origin_decl.value.callee.name
+    assert_equal 0, origin_decl.value.arguments.length
+
+    assert_instance_of MilkTea::AST::Call, point_decl.value
+    assert_equal "Point", point_decl.value.callee.name
+    assert_equal 1, point_decl.value.arguments.length
+    assert_equal "x", point_decl.value.arguments.first.name
+
+    assert_instance_of MilkTea::AST::Call, palette_decl.value
+    assert_instance_of MilkTea::AST::Specialization, palette_decl.value.callee
+    assert_equal "array", palette_decl.value.callee.callee.name
+    assert_equal 2, palette_decl.value.arguments.length
   end
 
   def test_parses_index_access_instead_of_specialization

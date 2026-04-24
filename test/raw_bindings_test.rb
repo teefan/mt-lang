@@ -7,14 +7,19 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raygui rlgl libc], registry.map(&:name)
+    assert_equal %w[raylib raygui rlgl msf_gif libc], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
+    assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
+    assert_includes registry.fetch("raylib").link_flags, "-lglfw"
     assert_equal ["RAYGUI_IMPLEMENTATION"], registry.fetch("raygui").implementation_defines
     assert_equal ["raylib", "m"], registry.fetch("raygui").link_libraries
     assert_includes registry.fetch("raygui").header_candidates.first, "third_party/raylib-upstream/examples/shapes/raygui.h"
     assert_equal "std.c.rlgl", registry.fetch("rlgl").module_name
     assert_equal ["raylib"], registry.fetch("rlgl").link_libraries
     assert_includes registry.fetch("rlgl").header_candidates.last, "third_party/raylib-upstream/src/rlgl.h"
+    assert_equal "std.c.msf_gif", registry.fetch("msf_gif").module_name
+    assert_equal ["MSF_GIF_IMPL"], registry.fetch("msf_gif").implementation_defines
+    assert_includes registry.fetch("msf_gif").header_candidates.first, "third_party/raylib-upstream/examples/core/msf_gif.h"
     assert_equal "bindgen:check:libc", registry.fetch("libc").check_task_name
     assert_equal "bindgen:check_raylib", registry.fetch("raylib").legacy_check_task_name
   end
@@ -95,6 +100,33 @@ class MilkTeaRawBindingsTest < Minitest::Test
 
       assert_equal ["-I#{dir}", "-DSAMPLE_IMPLEMENTATION", "-DSAMPLE_TOOLING=1"], binding.build_flags
     end
+  end
+
+  def test_binding_exposes_extra_link_flags
+    binding = MilkTea::RawBindings::Binding.new(
+      name: "sample",
+      module_name: "std.c.sample",
+      binding_path: "/tmp/sample.mt",
+      header_candidates: ["/tmp/sample.h"],
+      link_flags: ["-L/tmp/sample", "-lsample_helper"],
+    )
+
+    assert_equal ["-L/tmp/sample", "-lsample_helper"], binding.link_flags
+  end
+
+  def test_prepare_hook_can_be_invoked
+    invoked = []
+    binding = MilkTea::RawBindings::Binding.new(
+      name: "sample",
+      module_name: "std.c.sample",
+      binding_path: "/tmp/sample.mt",
+      header_candidates: ["/tmp/sample.h"],
+      prepare: ->(_binding, env:, cc:) { invoked << [env.fetch("MARKER"), cc] },
+    )
+
+    binding.prepare!(env: { "MARKER" => "ok", "CC" => "cc" }, cc: "clang")
+
+    assert_equal [["ok", "clang"]], invoked
   end
 
   def test_registry_can_find_bindings_by_module_name

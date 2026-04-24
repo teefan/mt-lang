@@ -390,7 +390,7 @@ module MilkTea
         when AST::BooleanLiteral
           expression.value ? "true" : "false"
         when AST::NullLiteral
-          "null"
+          expression.type ? "null[#{render_type(expression.type)}]" : "null"
         else
           raise ArgumentError, "unsupported AST expression #{expression.class.name}"
         end

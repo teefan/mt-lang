@@ -5,20 +5,22 @@ module MilkTea
     class Error < StandardError; end
 
     class Binding
-      attr_reader :name, :module_name, :binding_path, :include_directives, :link_libraries, :header_candidates, :env_var, :clang_args, :compiler_flags, :implementation_defines
+      attr_reader :name, :module_name, :binding_path, :include_directives, :link_libraries, :link_flags, :header_candidates, :env_var, :clang_args, :compiler_flags, :implementation_defines
 
-      def initialize(name:, module_name:, binding_path:, header_candidates:, include_directives: nil, link_libraries: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [])
+      def initialize(name:, module_name:, binding_path:, header_candidates:, include_directives: nil, link_libraries: [], link_flags: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [], prepare: nil)
         @name = name.to_s
         @module_name = module_name
         @binding_path = File.expand_path(binding_path.to_s)
         @header_candidates = header_candidates.map { |path| File.expand_path(path) }.freeze
         @include_directives = include_directives&.dup&.freeze
         @link_libraries = link_libraries.dup.freeze
+        @link_flags = link_flags.dup.freeze
         @env_var = env_var
         @clang = clang
         @clang_args = clang_args.dup.freeze
         @compiler_flags = compiler_flags.dup.freeze
         @implementation_defines = implementation_defines.dup.freeze
+        @prepare = prepare
       end
 
       def task_name
@@ -103,6 +105,10 @@ module MilkTea
         resolved_header_path
       end
 
+      def prepare!(env: ENV, cc: ENV.fetch("CC", "cc"))
+        @prepare&.call(self, env:, cc:)
+      end
+
       private
 
       def resolved_clang(env)
@@ -162,11 +168,16 @@ module MilkTea
           binding_path: root.join("std/c/raylib.mt"),
           include_directives: ["raylib.h"],
           link_libraries: ["raylib"],
+          link_flags: MilkTea::VendoredRaylib.link_flags,
           env_var: "RAYLIB_HEADER",
           header_candidates: [
+            root.join("third_party/raylib-upstream/src/raylib.h").to_s,
             "/usr/include/raylib.h",
             "/usr/local/include/raylib.h",
           ],
+          prepare: ->(_binding, env:, cc:) do
+            MilkTea::VendoredRaylib.prepare!(cc: env.fetch("RAYLIB_CC", ENV.fetch("CC", "cc")))
+          end,
         ),
         Binding.new(
           name: "raygui",
@@ -193,6 +204,16 @@ module MilkTea
             "/usr/include/rlgl.h",
             "/usr/local/include/rlgl.h",
             root.join("third_party/raylib-upstream/src/rlgl.h").to_s,
+          ],
+        ),
+        Binding.new(
+          name: "msf_gif",
+          module_name: "std.c.msf_gif",
+          binding_path: root.join("std/c/msf_gif.mt"),
+          include_directives: ["msf_gif.h"],
+          implementation_defines: ["MSF_GIF_IMPL"],
+          header_candidates: [
+            root.join("third_party/raylib-upstream/examples/core/msf_gif.h").to_s,
           ],
         ),
         Binding.new(

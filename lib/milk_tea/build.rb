@@ -24,6 +24,7 @@ module MilkTea
 
     def build
       program = ModuleLoader.check_program(@source_path)
+      prepare_bindings(program)
       generated_c = Codegen.generate_c(program)
       compiler_flags = collect_compiler_flags(program)
       link_flags = collect_link_flags(program)
@@ -53,6 +54,20 @@ module MilkTea
       source_path.sub(/\.mt\z/, "")
     end
 
+    def prepare_bindings(program)
+      program.analyses_by_module_name.keys.sort.each do |module_name|
+        analysis = program.analyses_by_module_name.fetch(module_name)
+        next unless analysis.module_kind == :extern_module
+
+        binding = @raw_bindings.find_by_module_name(module_name)
+        next unless binding
+
+        binding.prepare!(cc: @cc)
+      end
+    rescue RawBindings::Error => e
+      raise BuildError, e.message
+    end
+
     def write_c_file(path, source)
       FileUtils.mkdir_p(File.dirname(path))
       File.write(path, source)
@@ -63,9 +78,22 @@ module MilkTea
         analysis = program.analyses_by_module_name.fetch(module_name)
         next unless analysis.module_kind == :extern_module
 
+        binding = @raw_bindings.find_by_module_name(module_name)
+        if binding
+          binding.link_flags.grep(/\A-L/).each do |flag|
+            flags << flag unless flags.include?(flag)
+          end
+        end
+
         analysis.directives.grep(AST::LinkDirective).each do |directive|
           flag = "-l#{directive.value}"
           flags << flag unless flags.include?(flag)
+        end
+
+        if binding
+          binding.link_flags.reject { |flag| flag.start_with?("-L") }.each do |flag|
+            flags << flag unless flags.include?(flag)
+          end
         end
       end
     end

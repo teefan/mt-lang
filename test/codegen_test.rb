@@ -813,6 +813,29 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/demo_zero_surface_Palette holder = \{ 0 \};/, generated)
   end
 
+  def test_generate_c_for_partial_aggregate_and_array_initialization
+    source = [
+      "module demo.partial_surface",
+      "",
+      "struct Point:",
+      "    x: i32",
+      "    y: i32",
+      "",
+      "def main() -> i32:",
+      "    var origin = Point()",
+      "    var point = Point(x = 5)",
+      "    var palette = array[u32, 4](1, 2)",
+      "    return origin.x + point.x + cast[i32](palette[1])",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/demo_partial_surface_Point origin = \(demo_partial_surface_Point\) \{ 0 \};/, generated)
+    assert_match(/demo_partial_surface_Point point = \(demo_partial_surface_Point\)\{ \.x = 5 \};/, generated)
+    assert_match(/uint32_t palette\[4\] = \{ 1, 2 \};/, generated)
+  end
+
   def test_generate_c_for_array_assignment_and_parameter_copy
     source = [
       "module demo.array_copy_surface",
@@ -914,6 +937,62 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/set_text\(\(\(const char\*\) raw_buffer\)\);/, generated)
     assert_match(/char \*writable = \(\(char\*\) clipboard\);/, generated)
+  end
+
+  def test_generate_c_for_unsafe_typed_null_pointer_to_cstr_casts
+    source = [
+      "module demo.typed_null_cstr_surface",
+      "",
+      "extern def set_text(value: cstr) -> void",
+      "",
+      "def main() -> void:",
+      "    unsafe:",
+      "        set_text(cast[cstr](null[ptr[char]]))",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/set_text\(\(\(const char\*\) NULL\)\);/, generated)
+  end
+
+  def test_generate_c_for_unsafe_integer_to_char_buffer_writes
+    source = [
+      "module demo.char_buffer_surface",
+      "",
+      "def main() -> i32:",
+      "    var ptr: ptr[char] = zero[ptr[char]]()",
+      "    unsafe:",
+      "        ptr[0] = 65",
+      "        ptr[1] = cast[char](66)",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/ptr\[0\] = \(\(char\) 65\);/, generated)
+    assert_match(/ptr\[1\] = \(\(char\) 66\);/, generated)
+  end
+
+  def test_generate_c_for_unsafe_pointer_offsets_without_usize_casts
+    source = [
+      "module demo.pointer_offset_surface",
+      "",
+      "def main() -> i32:",
+      "    var ptr: ptr[char] = zero[ptr[char]]()",
+      "    let offset = 1",
+      "    unsafe:",
+      "        var next = ptr + offset",
+      "        next[offset - 1] = 65",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/char \*next = ptr \+ offset;/, generated)
+    assert_match(/next\[offset - 1\] = \(\(char\) 65\);/, generated)
   end
 
   def test_generate_c_for_ref_arguments_passed_to_by_value_parameters

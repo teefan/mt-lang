@@ -123,18 +123,25 @@ module MilkTea
     end
 
     class Null < Base
+      attr_reader :target_type
+
+      def initialize(target_type = nil)
+        @target_type = target_type
+        freeze
+      end
+
       def eql?(other)
-        other.is_a?(Null)
+        other.is_a?(Null) && other.target_type == target_type
       end
 
       alias == eql?
 
       def hash
-        self.class.hash
+        [self.class, target_type].hash
       end
 
       def to_s
-        "null"
+        target_type ? "null[#{target_type}]" : "null"
       end
     end
 

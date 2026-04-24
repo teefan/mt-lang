@@ -468,7 +468,7 @@ module MilkTea
           )
           final_type = declared_type
         else
-          raise SemaError, "cannot infer type for #{statement.name} from null" if inferred_type == @null_type
+          raise SemaError, "cannot infer type for #{statement.name} from null" if inferred_type.is_a?(Types::Null)
           raise SemaError, "cannot bind void result to #{statement.name}" if inferred_type.void?
 
           final_type = inferred_type
@@ -614,7 +614,7 @@ module MilkTea
           field_type
         when AST::IndexAccess
           receiver_type = infer_lvalue_receiver(expression.receiver, scopes:)
-          index_type = infer_expression(expression.index, scopes:, expected_type: @types.fetch("usize"))
+          index_type = infer_expression(expression.index, scopes:)
           infer_index_result_type(receiver_type, index_type)
         when AST::Call
           if value_call?(expression)
@@ -649,7 +649,7 @@ module MilkTea
           field_type
         when AST::IndexAccess
           receiver_type = infer_lvalue_receiver(expression.receiver, scopes:)
-          index_type = infer_expression(expression.index, scopes:, expected_type: @types.fetch("usize"))
+          index_type = infer_expression(expression.index, scopes:)
           infer_index_result_type(receiver_type, index_type)
         when AST::Call
           if value_call?(expression)
@@ -693,7 +693,7 @@ module MilkTea
         when AST::BooleanLiteral
           @types.fetch("bool")
         when AST::NullLiteral
-          @null_type
+          infer_null_literal(expression)
         when AST::Identifier
           infer_identifier(expression, scopes:, expected_type:)
         when AST::MemberAccess
@@ -797,7 +797,7 @@ module MilkTea
 
       def infer_index_access(expression, scopes:)
         receiver_type = infer_expression(expression.receiver, scopes:)
-        index_type = infer_expression(expression.index, scopes:, expected_type: @types.fetch("usize"))
+        index_type = infer_expression(expression.index, scopes:)
 
         if array_type?(receiver_type) && !unsafe_context? && !addressable_storage_expression?(expression.receiver)
           raise SemaError, "safe array indexing requires an addressable array value; bind it to a local first"
@@ -1214,9 +1214,6 @@ module MilkTea
           provided[argument.name] = true
         end
 
-        missing_fields = struct_type.fields.keys - provided.keys
-        raise SemaError, "missing fields for #{display_name}: #{missing_fields.join(', ')}" unless missing_fields.empty?
-
         struct_type
       end
 
@@ -1225,7 +1222,7 @@ module MilkTea
 
         element_type = array_element_type(array_type)
         length = array_length(array_type)
-        raise SemaError, "array expects #{length} elements, got #{arguments.length}" unless arguments.length == length
+        raise SemaError, "array expects at most #{length} elements, got #{arguments.length}" if arguments.length > length
 
         arguments.each do |argument|
           actual_type = infer_expression(argument.value, scopes:, expected_type: element_type)
@@ -1274,8 +1271,21 @@ module MilkTea
       def cast_numeric_type(type)
         return type if type.is_a?(Types::Primitive) && type.numeric?
         return type.backing_type if type.is_a?(Types::EnumBase) && type.backing_type.numeric?
+        return type if char_type?(type)
+        return type.backing_type if type.is_a?(Types::EnumBase) && char_type?(type.backing_type)
 
         nil
+      end
+
+      def infer_null_literal(expression)
+        return @null_type unless expression.type
+
+        target_type = resolve_type_ref(expression.type)
+        unless typed_null_target_type?(target_type)
+          raise SemaError, "typed null requires pointer-like type, got #{target_type}"
+        end
+
+        Types::Null.new(target_type)
       end
 
       def check_reinterpret_call(target_type, arguments, scopes:)
@@ -1421,10 +1431,11 @@ module MilkTea
 
       def types_compatible?(actual_type, expected_type, expression: nil, external_numeric: false, contextual_int_to_float: false)
         return true if actual_type == expected_type
-        return true if actual_type == @null_type && expected_type.is_a?(Types::Nullable)
+        return true if null_assignable_to?(actual_type, expected_type)
         return true if expected_type.is_a?(Types::Nullable) && actual_type == expected_type.base
         return true if actual_type.is_a?(Types::EnumBase) && actual_type.backing_type == expected_type
         return true if integer_literal_numeric_compatibility?(expression, expected_type)
+        return true if integer_to_char_compatibility?(actual_type, expected_type)
         return true if external_numeric && external_numeric_compatibility?(actual_type, expected_type)
         return true if contextual_int_to_float && contextual_int_to_float_compatibility?(actual_type, expected_type)
 
@@ -1440,6 +1451,29 @@ module MilkTea
 
       def integer_literal_numeric_compatibility?(expression, expected_type)
         integer_literal_expression?(expression) && expected_type.is_a?(Types::Primitive) && expected_type.numeric?
+      end
+
+      def integer_to_char_compatibility?(actual_type, expected_type)
+        char_type?(expected_type) && integer_like_char_source_type?(actual_type)
+      end
+
+      def integer_like_char_source_type?(type)
+        return true if type.is_a?(Types::Primitive) && type.integer?
+        return true if type.is_a?(Types::EnumBase) && type.backing_type.is_a?(Types::Primitive) && type.backing_type.integer?
+
+        false
+      end
+
+      def char_type?(type)
+        type.is_a?(Types::Primitive) && type.name == "char"
+      end
+
+      def null_assignable_to?(actual_type, expected_type)
+        return false unless actual_type.is_a?(Types::Null)
+        return false unless expected_type.is_a?(Types::Nullable)
+        return true unless actual_type.target_type
+
+        actual_type.target_type == expected_type.base
       end
 
       def integer_literal_expression?(expression)
@@ -1546,10 +1580,15 @@ module MilkTea
       end
 
       def pointer_cast_type?(type)
+        return typed_null_target_type?(type.target_type) if type.is_a?(Types::Null)
         return true if type == @types.fetch("cstr")
         return pointer_type?(type.base) if type.is_a?(Types::Nullable)
 
         pointer_type?(type)
+      end
+
+      def typed_null_target_type?(type)
+        type == @types.fetch("cstr") || pointer_type?(type)
       end
 
       def pointer_type?(type)
@@ -2232,12 +2271,12 @@ module MilkTea
         numeric_type = common_numeric_type(then_type, else_type)
         return numeric_type if numeric_type
 
-        if then_type == @null_type && nullable_candidate?(else_type)
-          return Types::Nullable.new(else_type)
+        if (nullable_type = conditional_null_common_type(then_type, else_type))
+          return nullable_type
         end
 
-        if else_type == @null_type && nullable_candidate?(then_type)
-          return Types::Nullable.new(then_type)
+        if (nullable_type = conditional_null_common_type(else_type, then_type))
+          return nullable_type
         end
 
         return then_type if types_compatible?(else_type, then_type, expression: else_expression)
@@ -2250,6 +2289,21 @@ module MilkTea
         return false if ref_type?(type)
 
         sized_layout_type?(type) || pointer_type?(type) || type.is_a?(Types::Nullable)
+      end
+
+      def conditional_null_common_type(null_type, other_type)
+        return unless null_type.is_a?(Types::Null)
+
+        if other_type.is_a?(Types::Nullable)
+          return other_type if null_type.target_type.nil? || null_type.target_type == other_type.base
+
+          return nil
+        end
+
+        return unless nullable_candidate?(other_type)
+        return if null_type.target_type && null_type.target_type != other_type
+
+        Types::Nullable.new(other_type)
       end
 
       def describe_expression(expression)
