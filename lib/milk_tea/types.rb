@@ -418,7 +418,15 @@ module MilkTea
         when Function
           Function.new(
             type.name,
-            params: type.params.map { |param| Parameter.new(param.name, substitute_type(param.type, substitutions), mutable: param.mutable) },
+            params: type.params.map do |param|
+              Parameter.new(
+                param.name,
+                substitute_type(param.type, substitutions),
+                mutable: param.mutable,
+                passing_mode: param.passing_mode,
+                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
+              )
+            end,
             return_type: substitute_type(type.return_type, substitutions),
             receiver_type: type.receiver_type ? substitute_type(type.receiver_type, substitutions) : nil,
             receiver_mutable: type.receiver_mutable,
@@ -552,12 +560,14 @@ module MilkTea
     end
 
     class Parameter
-      attr_reader :name, :type, :mutable
+      attr_reader :name, :type, :mutable, :passing_mode, :boundary_type
 
-      def initialize(name, type, mutable: false)
+      def initialize(name, type, mutable: false, passing_mode: :plain, boundary_type: nil)
         @name = name
         @type = type
         @mutable = mutable
+        @passing_mode = passing_mode
+        @boundary_type = boundary_type
         freeze
       end
 
@@ -566,13 +576,17 @@ module MilkTea
       end
 
       def eql?(other)
-        other.is_a?(Parameter) && other.type == type && other.mutable == mutable
+        other.is_a?(Parameter) &&
+          other.type == type &&
+          other.mutable == mutable &&
+          other.passing_mode == passing_mode &&
+          other.boundary_type == boundary_type
       end
 
       alias == eql?
 
       def hash
-        [self.class, type, mutable].hash
+        [self.class, type, mutable, passing_mode, boundary_type].hash
       end
     end
 

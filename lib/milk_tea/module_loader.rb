@@ -115,7 +115,7 @@ module MilkTea
         when AST::ConstDecl
           target = exported_declaration?(analysis, declaration) ? values : private_values
           target[declaration.name] = analysis.values.fetch(declaration.name)
-        when AST::FunctionDef, AST::ExternFunctionDecl
+        when AST::FunctionDef, AST::ExternFunctionDecl, AST::ForeignFunctionDecl
           target = exported_declaration?(analysis, declaration) ? functions : private_functions
           target[declaration.name] = analysis.functions.fetch(declaration.name)
         end

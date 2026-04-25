@@ -1,0 +1,12 @@
+{
+  "module_name": "std.rlgl",
+  "raw_module_name": "std.c.rlgl",
+  "raw_import_alias": "c",
+  "types": {
+    "strip_prefix": "rl"
+  },
+  "constants": {},
+  "functions": {
+    "strip_prefix": "rl"
+  }
+}

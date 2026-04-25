@@ -75,6 +75,28 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_foreign_declarations_and_using_scratch_calls_like_source
+    source = <<~MT
+      module std.raylib
+
+      import std.c.raylib as c
+
+      pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
+
+      pub foreign def close_window(owned window: Window) -> void = c.CloseWindow
+
+      pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
+
+      def main(path: str, scratch: ref[Arena]) -> ptr[u8]?:
+          var data_size = 0
+          return load_file_data(path, out data_size) using scratch
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_lowered_ir_as_structured_output
     source = <<~MT
       module demo.pretty

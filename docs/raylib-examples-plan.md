@@ -34,6 +34,10 @@ There is also an `others/` directory in the upstream repo. It is not part of the
 ## Current Repo Facts
 
 - The repo already has a usable `std.c.raylib` raw binding and a working build/run pipeline.
+- The repo now also has a generated `std.raylib` ordinary module for a first curated API slice, driven by a checked-in policy over `std.c.raylib`.
+- The generated ordinary module now explicitly excludes raw-only callback and varargs support declarations that should stay on the raw side until the language can model them honestly.
+- `examples/raylib/` is now the raw/conformance corpus. It intentionally stays close to the upstream ports and continues to import `std.c.raylib` where needed.
+- `examples/idiomatic/raylib/` is the curated showcase track. Files in that tree must import `std.raylib`, prefer `str`, and avoid `unsafe`, `c"..."`, and raw pointer syntax.
 - The repo does not currently ship raw extern modules for `raymath.h`, `rlgl.h`, `raygui.h`, or `rlights.h`.
 - Upstream examples assume `resources/...` paths are resolved relative to the example source directory.
 - `MilkTea::Run.run` now executes the built binary with `chdir: File.dirname(source_path)`, which is required for example-relative asset loading.
@@ -44,6 +48,8 @@ There is also an `others/` directory in the upstream repo. It is not part of the
 2. Do not hand-copy assets ad hoc. Asset sync must be reproducible and pinned to an upstream commit.
 3. Do not try to port all 212 examples as a flat batch. Port by dependency tier.
 4. Do not let `others/` or `raygui.h` block the curated 212-example milestone.
+5. Do not rewrite `examples/raylib/` in place to make it idiomatic. That tree is the raw regression corpus.
+6. Curated examples must not depend on `unsafe`, `std.c.raylib`, `c"..."`, or raw pointer syntax unless demonstrating a deliberate low-level seam.
 
 ## Repository Layout
 
@@ -53,8 +59,12 @@ Use three distinct areas:
   - pinned upstream checkout or vendored snapshot
   - source of truth for example C code, resources, screenshots, helper headers
 - `examples/raylib/`
-  - Milk Tea ports only
+  - upstream-shaped Milk Tea ports
+  - raw/conformance fixtures and regression coverage
   - mirror upstream category structure
+- `examples/idiomatic/raylib/`
+  - curated user-facing examples written from scratch
+  - ordinary Milk Tea surface only (`std.raylib`)
 - `docs/raylib-examples-plan.md`
   - this execution plan and milestone rules
 
@@ -65,9 +75,30 @@ examples/raylib/core/core_basic_window.mt
 examples/raylib/core/resources/...
 examples/raylib/textures/textures_logo_raylib.mt
 examples/raylib/textures/resources/...
+examples/idiomatic/raylib/basic_window.mt
+examples/idiomatic/raylib/bouncing_ball.mt
 ```
 
 This preserves the upstream relative asset convention exactly. With the current `Run.run` cwd fix, `resources/...` paths stay valid without adding special runtime path logic.
+
+## Example Tracks
+
+### Raw Fixture Track
+
+- Lives under `examples/raylib/`.
+- Mirrors upstream categories and file names.
+- May continue to use `std.c.raylib`, `cstr`, raw ABI calls, and awkward seams when that is what the upstream port currently exercises.
+- Exists for compiler regression coverage, build coverage, and conformance against the upstream examples corpus.
+
+### Idiomatic Showcase Track
+
+- Lives under `examples/idiomatic/raylib/`.
+- Is written from scratch against `std.raylib`.
+- Uses the upstream raylib C example as the behavioral reference, not as a transliteration template.
+- Should preserve the original example's teaching goal, controls, and visible behavior while discarding C-shaped implementation details that do not belong in ordinary Milk Tea.
+- Must prefer `str` and ordinary Milk Tea values.
+- Must avoid `unsafe`, `raw(addr(...))`, `std.c.raylib`, and `c"..."` unless the example is explicitly about a low-level seam.
+- If a user-facing example needs those low-level forms, treat that as evidence that the ordinary library surface is still missing an abstraction.
 
 ## Asset Download Strategy
 

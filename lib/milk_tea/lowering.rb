@@ -31,6 +31,7 @@ module MilkTea
         includes = collect_includes
 
         constants = []
+        opaques = []
         structs = []
         unions = []
         enums = []
@@ -44,6 +45,7 @@ module MilkTea
           collect_structs
 
           constants.concat(lower_constants)
+          opaques.concat(lower_opaques)
           structs.concat(lower_structs)
           unions.concat(lower_unions)
           enums.concat(lower_enums)
@@ -55,6 +57,7 @@ module MilkTea
           module_name: @program.root_analysis.module_name,
           includes:,
           constants:,
+          opaques:,
           structs:,
           unions:,
           enums:,
@@ -68,6 +71,8 @@ module MilkTea
       def collect_structs
         @analysis.ast.declarations.each do |decl|
           case decl
+          when AST::OpaqueDecl
+            @opaque_types[decl.name] = @types.fetch(decl.name)
           when AST::StructDecl
             @struct_types[decl.name] = @types.fetch(decl.name)
           when AST::UnionDecl
@@ -197,6 +202,8 @@ module MilkTea
 
       def expression_uses_panic?(expression)
         case expression
+        when AST::UsingCall
+          expression_uses_panic?(expression.call) || expression_uses_panic?(expression.scratch)
         when AST::Call
           identifier = expression.callee
           return true if identifier.is_a?(AST::Identifier) && identifier.name == "panic"
@@ -223,6 +230,8 @@ module MilkTea
         case expression
         when AST::OffsetofExpr
           true
+        when AST::UsingCall
+          expression_uses_offsetof?(expression.call) || expression_uses_offsetof?(expression.scratch)
         when AST::Call
           expression_uses_offsetof?(expression.callee) || expression.arguments.any? { |argument| expression_uses_offsetof?(argument.value) }
         when AST::BinaryOp
@@ -254,6 +263,7 @@ module MilkTea
         @types = analysis.types
         @values = analysis.values
         @functions = analysis.functions
+        @opaque_types = {}
         @struct_types = {}
         @union_types = {}
       end
@@ -274,6 +284,13 @@ module MilkTea
           type = @values.fetch(decl.name).type
           value = lower_expression(decl.value, env: empty_env, expected_type: type)
           IR::Constant.new(name: decl.name, c_name: constant_c_name(decl.name), type:, value:)
+        end
+      end
+
+      def lower_opaques
+        @analysis.ast.declarations.grep(AST::OpaqueDecl).map do |decl|
+          opaque_type = @opaque_types.fetch(decl.name)
+          IR::OpaqueDecl.new(name: decl.name, c_name: c_type_name(opaque_type))
         end
       end
 
@@ -453,27 +470,37 @@ module MilkTea
           when AST::LocalDecl
             type = statement.type ? resolve_type_ref(statement.type) : infer_expression_type(statement.value, env: local_env)
             c_name = c_local_name(statement.name)
-            value = lower_contextual_expression(
-              statement.value,
-              env: local_env,
-              expected_type: type,
-              contextual_int_to_float: statement.type && contextual_int_to_float_target?(type),
-            )
+            if (foreign_call = foreign_call_info(statement.value, local_env))
+              setup, value = lower_foreign_call_statement(foreign_call, env: local_env, expected_type: type, statement_position: false)
+              lowered.concat(setup)
+            else
+              value = lower_contextual_expression(
+                statement.value,
+                env: local_env,
+                expected_type: type,
+                contextual_int_to_float: statement.type && contextual_int_to_float_target?(type),
+              )
+            end
             current_actual_scope(local_env[:scopes])[statement.name] = local_binding(type:, c_name:, mutable: statement.kind == :var, pointer: false)
             lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:)
           when AST::Assignment
             target = lower_assignment_target(statement.target, env: local_env)
-            value = if statement.operator == "="
-                      lower_contextual_expression(
-                        statement.value,
-                        env: local_env,
-                        expected_type: target.type,
-                        external_numeric: external_numeric_assignment_target?(statement.target, env: local_env),
-                        contextual_int_to_float: contextual_int_to_float_target?(target.type),
-                      )
-                    else
-                      lower_expression(statement.value, env: local_env, expected_type: target.type)
-                    end
+            if (foreign_call = foreign_call_info(statement.value, local_env))
+              setup, value = lower_foreign_call_statement(foreign_call, env: local_env, expected_type: target.type, statement_position: false)
+              lowered.concat(setup)
+            else
+              value = if statement.operator == "="
+                        lower_contextual_expression(
+                          statement.value,
+                          env: local_env,
+                          expected_type: target.type,
+                          external_numeric: external_numeric_assignment_target?(statement.target, env: local_env),
+                          contextual_int_to_float: contextual_int_to_float_target?(target.type),
+                        )
+                      else
+                        lower_expression(statement.value, env: local_env, expected_type: target.type)
+                      end
+            end
             lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
           when AST::IfStmt
             false_refinements = {}
@@ -547,9 +574,14 @@ module MilkTea
 
             lowered.concat(lower_loop_exit(loop_flow[:continue_label], local_defers, loop_flow[:continue_defers]))
           when AST::ReturnStmt
+            value = nil
+            if statement.value && (foreign_call = foreign_call_info(statement.value, local_env))
+              setup, value = lower_foreign_call_statement(foreign_call, env: local_env, expected_type: return_type, statement_position: false)
+              lowered.concat(setup)
+            end
             cleanup = cleanup_statements(local_defers, active_defers)
             lowered.concat(cleanup)
-            value = statement.value ? lower_contextual_expression(
+            value ||= statement.value ? lower_contextual_expression(
               statement.value,
               env: local_env,
               expected_type: return_type,
@@ -557,7 +589,19 @@ module MilkTea
             ) : nil
             lowered << IR::ReturnStmt.new(value:)
           when AST::ExpressionStmt
-            lowered << IR::ExpressionStmt.new(expression: lower_expression(statement.expression, env: local_env))
+            if (foreign_call = foreign_call_info(statement.expression, local_env))
+              setup, value = lower_foreign_call_statement(
+                foreign_call,
+                env: local_env,
+                expected_type: foreign_call[:binding].type.return_type,
+                statement_position: true,
+              )
+              lowered.concat(setup)
+              lowered << IR::ExpressionStmt.new(expression: value) if value
+              local_env[:scopes] = scopes_with_refinements(local_env[:scopes], owned_foreign_call_refinements(foreign_call, local_env))
+            else
+              lowered << IR::ExpressionStmt.new(expression: lower_expression(statement.expression, env: local_env))
+            end
           else
             raise LoweringError, "unsupported statement #{statement.class.name}"
           end
@@ -760,6 +804,7 @@ module MilkTea
           elsif @functions.key?(expression.name)
             function_binding = @functions.fetch(expression.name)
             raise LoweringError, "generic function #{expression.name} cannot be used as a value" if function_binding.type_params.any?
+            raise LoweringError, "foreign function #{expression.name} cannot be used as a value" if foreign_function_binding?(function_binding)
 
             IR::Name.new(name: function_binding_c_name(function_binding, module_name: @module_name), type: type, pointer: false)
           else
@@ -800,6 +845,8 @@ module MilkTea
           )
         when AST::Call
           lower_call(expression, env:, type:)
+        when AST::UsingCall
+          raise LoweringError, "using scratch must appear in statement position"
         when AST::Specialization
           lower_specialization(expression, env:, type:)
         else
@@ -827,10 +874,16 @@ module MilkTea
       end
 
       def lower_call(expression, env:, type:)
-        kind, callee_name, receiver, callee_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
+        kind, callee_name, receiver, callee_type, callee_binding = resolve_callee(expression.callee, env, arguments: expression.arguments)
 
         case kind
         when :function
+          if callee_binding && foreign_function_binding?(callee_binding)
+            raise LoweringError, "owned foreign calls must be top-level expression statements" if foreign_call_owns_binding?(callee_binding)
+
+            return lower_foreign_call_inline(expression, callee_binding, env:, type:)
+          end
+
           arguments = lower_call_arguments(expression.arguments, callee_type, env:)
           IR::Call.new(callee: callee_name, arguments:, type:)
         when :method
@@ -933,6 +986,605 @@ module MilkTea
         end
       end
 
+      def foreign_call_info(expression, env)
+        call = case expression
+               when AST::UsingCall
+                 expression.call
+               when AST::Call
+                 expression
+               end
+        return unless call
+
+        kind, _, _, _, binding = resolve_callee(call.callee, env, arguments: call.arguments)
+        return unless kind == :function && binding && foreign_function_binding?(binding)
+
+        {
+          call:,
+          scratch: expression.is_a?(AST::UsingCall) ? expression.scratch : nil,
+          binding:,
+        }
+      end
+
+      def foreign_call_owns_binding?(binding)
+        binding.type.params.any? { |parameter| parameter.passing_mode == :owned }
+      end
+
+      def lower_foreign_call_statement(foreign_call, env:, expected_type:, statement_position:)
+        call = foreign_call.fetch(:call)
+        scratch = foreign_call[:scratch]
+        binding = foreign_call.fetch(:binding)
+        raise LoweringError, "owned foreign calls must be top-level expression statements" if foreign_call_owns_binding?(binding) && !statement_position
+
+        owner_analysis = analysis_for_module(binding.owner.module_name)
+        mapping_expression = foreign_mapping_expression(binding.ast)
+        reference_counts = foreign_mapping_reference_counts(mapping_expression)
+        mapping_env = duplicate_env(env)
+        lowered = []
+        mark_name = nil
+        release_assignments = owned_foreign_release_assignments(foreign_call, env:)
+
+        if scratch
+          mark_call = foreign_scratch_method_call(scratch, "mark", [])
+          mark_type = infer_expression_type(mark_call, env: mapping_env)
+          mark_name = fresh_c_temp_name(env, "scratch_mark")
+          current_actual_scope(mapping_env[:scopes])[mark_name] = local_binding(type: mark_type, c_name: mark_name, mutable: false, pointer: false)
+          lowered << IR::LocalDecl.new(
+            name: mark_name,
+            c_name: mark_name,
+            type: mark_type,
+            value: lower_expression(mark_call, env: mapping_env, expected_type: mark_type),
+          )
+        end
+
+        replacements = bind_foreign_mapping_arguments(binding, call.arguments, mapping_env, lowered, env:, scratch:, reference_counts:)
+
+        call_type = binding.type.return_type
+        lowered_call = lower_inline_foreign_mapping_expression(
+          mapping_expression,
+          mapping_env:,
+          replacements:,
+          owner_analysis:,
+          expected_type: expected_type || call_type,
+        )
+
+        if scratch
+          reset_call = foreign_scratch_method_call(scratch, "reset", [AST::Identifier.new(name: mark_name)])
+          reset_expression = lower_expression(reset_call, env: mapping_env, expected_type: @types.fetch("void"))
+
+          if call_type == @types.fetch("void")
+            lowered << IR::ExpressionStmt.new(expression: lowered_call)
+            lowered.concat(release_assignments)
+            lowered << IR::ExpressionStmt.new(expression: reset_expression)
+            return [lowered, nil]
+          end
+
+          raise LoweringError, "owned foreign calls must return void" unless release_assignments.empty?
+
+          result_name = fresh_c_temp_name(env, "foreign_result")
+          lowered << IR::LocalDecl.new(name: result_name, c_name: result_name, type: call_type, value: lowered_call)
+          lowered << IR::ExpressionStmt.new(expression: reset_expression)
+          return [lowered, IR::Name.new(name: result_name, type: call_type, pointer: false)]
+        end
+
+        if call_type == @types.fetch("void")
+          lowered << IR::ExpressionStmt.new(expression: lowered_call)
+          lowered.concat(release_assignments)
+          return [lowered, nil]
+        end
+
+        raise LoweringError, "owned foreign calls must return void" unless release_assignments.empty?
+
+        [lowered, lowered_call]
+      end
+
+      def owned_foreign_release_assignments(foreign_call, env:)
+        owned_foreign_release_bindings(foreign_call, env:).map do |binding|
+          IR::Assignment.new(
+            target: IR::Name.new(name: binding[:c_name], type: binding[:storage_type], pointer: binding[:pointer]),
+            operator: "=",
+            value: IR::NullLiteral.new(type: binding[:storage_type]),
+          )
+        end
+      end
+
+      def owned_foreign_call_refinements(foreign_call, env)
+        owned_foreign_release_bindings(foreign_call, env:).each_with_object({}) do |binding, refinements|
+          refinements[binding[:name]] = null_type
+        end
+      end
+
+      def owned_foreign_release_bindings(foreign_call, env:)
+        binding = foreign_call.fetch(:binding)
+        call = foreign_call.fetch(:call)
+
+        binding.type.params.each_with_index.filter_map do |parameter, index|
+          next unless parameter.passing_mode == :owned
+
+          argument = call.arguments.fetch(index)
+          unless argument.value.is_a?(AST::Identifier)
+            raise LoweringError, "owned foreign calls require bare nullable local or parameter bindings"
+          end
+
+          lowered_binding = lookup_value(argument.value.name, env)
+          unless lowered_binding && lowered_binding[:storage_type].is_a?(Types::Nullable) && lowered_binding[:storage_type].base == parameter.type
+            raise LoweringError, "owned foreign calls require bare nullable local or parameter bindings"
+          end
+
+          lowered_binding.merge(name: argument.value.name)
+        end
+      end
+
+      def bind_foreign_mapping_arguments(binding, arguments, mapping_env, lowered, env:, scratch:, reference_counts:)
+        replacements = {}
+
+        binding.ast.params.each_with_index do |param_ast, index|
+          parameter = binding.type.params.fetch(index)
+          temp_type = parameter.boundary_type || parameter.type
+          lowered_value = lower_foreign_argument_value(parameter, arguments.fetch(index), env:, scratch:)
+
+          if foreign_argument_needs_temporary_binding?(lowered_value, reference_count: reference_counts.fetch(param_ast.name, 0))
+            temp_name = fresh_c_temp_name(env, "foreign_arg")
+            lowered << IR::LocalDecl.new(
+              name: temp_name,
+              c_name: temp_name,
+              type: temp_type,
+              value: lowered_value,
+            )
+            current_actual_scope(mapping_env[:scopes])[param_ast.name] = local_binding(type: temp_type, c_name: temp_name, mutable: false, pointer: false)
+            replacements[param_ast.name] = IR::Name.new(name: temp_name, type: temp_type, pointer: false)
+          else
+            current_actual_scope(mapping_env[:scopes])[param_ast.name] = local_binding(type: temp_type, c_name: param_ast.name, mutable: false, pointer: false)
+            replacements[param_ast.name] = lowered_value
+          end
+        end
+
+        replacements
+      end
+
+      def lower_foreign_argument_value(parameter, argument, env:, scratch:)
+        case parameter.passing_mode
+        when :plain, :owned
+          if parameter.boundary_type.nil? || parameter.boundary_type == parameter.type
+            lower_contextual_expression(argument.value, env:, expected_type: parameter.type)
+          elsif parameter.boundary_type == @types.fetch("cstr") && parameter.type == @types.fetch("str")
+            if argument.value.is_a?(AST::StringLiteral) && !argument.value.cstring
+              return IR::StringLiteral.new(value: argument.value.value, type: parameter.boundary_type, cstring: true)
+            end
+
+            actual_type = infer_expression_type(argument.value, env:)
+            if actual_type == @types.fetch("cstr")
+              return lower_expression(argument.value, env:, expected_type: parameter.boundary_type)
+            end
+
+            raise LoweringError, "foreign call requires using scratch" unless scratch
+
+            lower_expression(foreign_scratch_method_call(scratch, "to_cstr", [argument.value]), env:, expected_type: parameter.boundary_type)
+          else
+            raise LoweringError, "unsupported foreign boundary mapping #{parameter.type} as #{parameter.boundary_type}"
+          end
+        when :out, :inout
+          operand = argument.value.operand
+          lower_expression(raw_pointer_argument_expression(operand), env:, expected_type: parameter.boundary_type)
+        else
+          raise LoweringError, "unsupported foreign passing mode #{parameter.passing_mode}"
+        end
+      end
+
+      def lower_foreign_call_inline(expression, binding, env:, type:)
+        owner_analysis = analysis_for_module(binding.owner.module_name)
+        mapping_expression = foreign_mapping_expression(binding.ast)
+        reference_counts = foreign_mapping_reference_counts(mapping_expression)
+        mapping_env = duplicate_env(env)
+
+        binding.ast.params.each_with_index do |param_ast, index|
+          next unless reference_counts.fetch(param_ast.name, 0) > 1
+          next if simple_foreign_argument_expression?(expression.arguments.fetch(index).value)
+
+          raise LoweringError, "foreign call #{binding.name} requires statement-position lowering because #{param_ast.name} is used multiple times"
+        end
+
+        replacements = binding.ast.params.each_with_index.to_h do |param_ast, index|
+          parameter = binding.type.params.fetch(index)
+          temp_type = parameter.boundary_type || parameter.type
+          current_actual_scope(mapping_env[:scopes])[param_ast.name] = local_binding(type: temp_type, c_name: param_ast.name, mutable: false, pointer: false)
+          [param_ast.name, lower_foreign_argument_value(parameter, expression.arguments.fetch(index), env:, scratch: nil)]
+        end
+
+        lowered_expression = lower_inline_foreign_mapping_expression(
+          mapping_expression,
+          mapping_env:,
+          replacements:,
+          owner_analysis:,
+          expected_type: type,
+        )
+
+        return cast_expression(lowered_expression, type) if foreign_identity_projection_compatible?(lowered_expression.type, type)
+
+        lowered_expression
+      end
+
+      def lower_inline_foreign_mapping_expression(expression, mapping_env:, replacements:, owner_analysis:, expected_type: nil)
+        unless foreign_mapping_uses_inline_replacement?(expression, replacements)
+          return with_analysis_context(owner_analysis) do
+            lower_expression(expression, env: mapping_env, expected_type:)
+          end
+        end
+
+        type = with_analysis_context(owner_analysis) do
+          infer_expression_type(expression, env: mapping_env, expected_type:)
+        end
+
+        case expression
+        when AST::Identifier
+          replacements.fetch(expression.name)
+        when AST::MemberAccess
+          receiver = lower_inline_foreign_mapping_expression(
+            expression.receiver,
+            mapping_env:,
+            replacements:,
+            owner_analysis:,
+          )
+          IR::Member.new(receiver:, member: expression.member, type:)
+        when AST::IndexAccess
+          receiver_type = with_analysis_context(owner_analysis) do
+            infer_expression_type(expression.receiver, env: mapping_env)
+          end
+          receiver = lower_inline_foreign_mapping_expression(
+            expression.receiver,
+            mapping_env:,
+            replacements:,
+            owner_analysis:,
+          )
+          index = lower_inline_foreign_mapping_expression(
+            expression.index,
+            mapping_env:,
+            replacements:,
+            owner_analysis:,
+          )
+          if array_type?(receiver_type) && addressable_storage_expression?(expression.receiver)
+            IR::CheckedIndex.new(receiver:, index:, receiver_type:, type:)
+          elsif receiver_type.is_a?(Types::Span)
+            IR::CheckedSpanIndex.new(receiver:, index:, receiver_type:, type:)
+          else
+            IR::Index.new(receiver:, index:, type:)
+          end
+        when AST::Call
+          lower_inline_foreign_mapping_call(expression, mapping_env:, replacements:, owner_analysis:, type:)
+        when AST::UnaryOp
+          IR::Unary.new(
+            operator: expression.operator,
+            operand: lower_inline_foreign_mapping_expression(
+              expression.operand,
+              mapping_env:,
+              replacements:,
+              owner_analysis:,
+              expected_type: type,
+            ),
+            type:,
+          )
+        when AST::BinaryOp
+          left_type, right_type = with_analysis_context(owner_analysis) do
+            infer_binary_operand_types(expression, env: mapping_env, expected_type: type)
+          end
+          operand_type = promoted_binary_operand_type(expression.operator, left_type, right_type)
+          left = lower_inline_foreign_mapping_expression(
+            expression.left,
+            mapping_env:,
+            replacements:,
+            owner_analysis:,
+            expected_type: operand_type || type,
+          )
+          right = lower_inline_foreign_mapping_expression(
+            expression.right,
+            mapping_env:,
+            replacements:,
+            owner_analysis:,
+            expected_type: operand_type || left.type,
+          )
+          left = cast_expression(left, operand_type) if operand_type
+          right = cast_expression(right, operand_type) if operand_type
+          IR::Binary.new(operator: expression.operator, left:, right:, type:)
+        when AST::IfExpr
+          IR::Conditional.new(
+            condition: lower_inline_foreign_mapping_expression(
+              expression.condition,
+              mapping_env:,
+              replacements:,
+              owner_analysis:,
+              expected_type: @types.fetch("bool"),
+            ),
+            then_expression: lower_inline_foreign_mapping_expression(
+              expression.then_expression,
+              mapping_env:,
+              replacements:,
+              owner_analysis:,
+              expected_type: type,
+            ),
+            else_expression: lower_inline_foreign_mapping_expression(
+              expression.else_expression,
+              mapping_env:,
+              replacements:,
+              owner_analysis:,
+              expected_type: type,
+            ),
+            type:,
+          )
+        else
+          with_analysis_context(owner_analysis) do
+            lower_expression(expression, env: mapping_env, expected_type:)
+          end
+        end
+      end
+
+      def lower_inline_foreign_mapping_call(expression, mapping_env:, replacements:, owner_analysis:, type:)
+        kind, callee_name, receiver, callee_type, callee_binding = with_analysis_context(owner_analysis) do
+          resolve_callee(expression.callee, mapping_env, arguments: expression.arguments)
+        end
+
+        case kind
+        when :function
+          raise LoweringError, "owned foreign calls must be top-level expression statements" if callee_binding && foreign_function_binding?(callee_binding) && foreign_call_owns_binding?(callee_binding)
+
+          arguments = expression.arguments.map.with_index do |argument, index|
+            expected_arg_type = index < callee_type.params.length ? callee_type.params[index].type : nil
+            lower_inline_foreign_mapping_expression(
+              argument.value,
+              mapping_env:,
+              replacements:,
+              owner_analysis:,
+              expected_type: expected_arg_type,
+            )
+          end
+          IR::Call.new(callee: callee_name, arguments:, type:)
+        when :cast
+          argument = expression.arguments.fetch(0)
+          lowered_arg = lower_inline_foreign_mapping_expression(
+            argument.value,
+            mapping_env:,
+            replacements:,
+            owner_analysis:,
+          )
+          IR::Cast.new(target_type: type, expression: lowered_arg, type:)
+        when :reinterpret
+          argument = expression.arguments.fetch(0)
+          source_type = with_analysis_context(owner_analysis) do
+            infer_expression_type(argument.value, env: mapping_env)
+          end
+          IR::ReinterpretExpr.new(
+            target_type: type,
+            source_type:,
+            expression: lower_inline_foreign_mapping_expression(
+              argument.value,
+              mapping_env:,
+              replacements:,
+              owner_analysis:,
+              expected_type: source_type,
+            ),
+            type:,
+          )
+        when :zero
+          IR::ZeroInit.new(type:)
+        when :addr
+          argument = expression.arguments.fetch(0)
+          IR::AddressOf.new(
+            expression: lower_inline_foreign_mapping_expression(
+              argument.value,
+              mapping_env:,
+              replacements:,
+              owner_analysis:,
+            ),
+            type:,
+          )
+        when :value
+          argument = expression.arguments.fetch(0)
+          IR::Unary.new(
+            operator: "*",
+            operand: lower_inline_foreign_mapping_expression(
+              argument.value,
+              mapping_env:,
+              replacements:,
+              owner_analysis:,
+            ),
+            type:,
+          )
+        when :raw
+          argument = expression.arguments.fetch(0)
+          IR::Cast.new(
+            target_type: type,
+            expression: lower_inline_foreign_mapping_expression(
+              argument.value,
+              mapping_env:,
+              replacements:,
+              owner_analysis:,
+            ),
+            type:,
+          )
+        else
+          raise LoweringError, "unsupported inline foreign mapping call kind #{kind}"
+        end
+      end
+
+      def foreign_mapping_uses_inline_replacement?(expression, replacements)
+        case expression
+        when AST::Identifier
+          replacements.key?(expression.name)
+        when AST::MemberAccess
+          foreign_mapping_uses_inline_replacement?(expression.receiver, replacements)
+        when AST::IndexAccess
+          foreign_mapping_uses_inline_replacement?(expression.receiver, replacements) ||
+            foreign_mapping_uses_inline_replacement?(expression.index, replacements)
+        when AST::Specialization, AST::Call
+          foreign_mapping_uses_inline_replacement?(expression.callee, replacements) ||
+            expression.arguments.any? { |argument| foreign_mapping_uses_inline_replacement?(argument.value, replacements) }
+        when AST::UnaryOp
+          foreign_mapping_uses_inline_replacement?(expression.operand, replacements)
+        when AST::BinaryOp
+          foreign_mapping_uses_inline_replacement?(expression.left, replacements) ||
+            foreign_mapping_uses_inline_replacement?(expression.right, replacements)
+        when AST::IfExpr
+          foreign_mapping_uses_inline_replacement?(expression.condition, replacements) ||
+            foreign_mapping_uses_inline_replacement?(expression.then_expression, replacements) ||
+            foreign_mapping_uses_inline_replacement?(expression.else_expression, replacements)
+        else
+          false
+        end
+      end
+
+      def raw_pointer_argument_expression(operand)
+        AST::Call.new(
+          callee: AST::Identifier.new(name: "raw"),
+          arguments: [
+            AST::Argument.new(
+              name: nil,
+              value: AST::Call.new(
+                callee: AST::Identifier.new(name: "addr"),
+                arguments: [AST::Argument.new(name: nil, value: operand)],
+              ),
+            ),
+          ],
+        )
+      end
+
+      def foreign_scratch_method_call(scratch, method_name, arguments)
+        AST::Call.new(
+          callee: AST::MemberAccess.new(
+            receiver: AST::Call.new(
+              callee: AST::Identifier.new(name: "value"),
+              arguments: [AST::Argument.new(name: nil, value: scratch)],
+            ),
+            member: method_name,
+          ),
+          arguments: arguments.map { |argument| AST::Argument.new(name: nil, value: argument) },
+        )
+      end
+
+      def foreign_function_binding?(binding)
+        binding.ast.is_a?(AST::ForeignFunctionDecl)
+      end
+
+      def foreign_mapping_expression(decl)
+        return decl.mapping if decl.mapping.is_a?(AST::Call)
+
+        AST::Call.new(
+          callee: decl.mapping,
+          arguments: decl.params.map { |param| AST::Argument.new(name: nil, value: AST::Identifier.new(name: param.name)) },
+        )
+      end
+
+      def substitute_foreign_mapping_expression(expression, replacements)
+        case expression
+        when AST::Identifier
+          replacements.fetch(expression.name, expression)
+        when AST::MemberAccess
+          AST::MemberAccess.new(receiver: substitute_foreign_mapping_expression(expression.receiver, replacements), member: expression.member)
+        when AST::IndexAccess
+          AST::IndexAccess.new(
+            receiver: substitute_foreign_mapping_expression(expression.receiver, replacements),
+            index: substitute_foreign_mapping_expression(expression.index, replacements),
+          )
+        when AST::Specialization
+          AST::Specialization.new(
+            callee: substitute_foreign_mapping_expression(expression.callee, replacements),
+            arguments: expression.arguments.map do |argument|
+              AST::Argument.new(name: argument.name, value: substitute_foreign_mapping_expression(argument.value, replacements))
+            end,
+          )
+        when AST::Call
+          AST::Call.new(
+            callee: substitute_foreign_mapping_expression(expression.callee, replacements),
+            arguments: expression.arguments.map do |argument|
+              AST::Argument.new(name: argument.name, value: substitute_foreign_mapping_expression(argument.value, replacements))
+            end,
+          )
+        when AST::UnaryOp
+          AST::UnaryOp.new(operator: expression.operator, operand: substitute_foreign_mapping_expression(expression.operand, replacements))
+        when AST::BinaryOp
+          AST::BinaryOp.new(
+            operator: expression.operator,
+            left: substitute_foreign_mapping_expression(expression.left, replacements),
+            right: substitute_foreign_mapping_expression(expression.right, replacements),
+          )
+        when AST::IfExpr
+          AST::IfExpr.new(
+            condition: substitute_foreign_mapping_expression(expression.condition, replacements),
+            then_expression: substitute_foreign_mapping_expression(expression.then_expression, replacements),
+            else_expression: substitute_foreign_mapping_expression(expression.else_expression, replacements),
+          )
+        else
+          expression
+        end
+      end
+
+      def foreign_mapping_reference_counts(expression, counts = Hash.new(0))
+        case expression
+        when AST::Identifier
+          counts[expression.name] += 1
+        when AST::MemberAccess
+          foreign_mapping_reference_counts(expression.receiver, counts)
+        when AST::IndexAccess
+          foreign_mapping_reference_counts(expression.receiver, counts)
+          foreign_mapping_reference_counts(expression.index, counts)
+        when AST::Specialization, AST::Call
+          foreign_mapping_reference_counts(expression.callee, counts)
+          expression.arguments.each { |argument| foreign_mapping_reference_counts(argument.value, counts) }
+        when AST::UnaryOp
+          foreign_mapping_reference_counts(expression.operand, counts)
+        when AST::BinaryOp
+          foreign_mapping_reference_counts(expression.left, counts)
+          foreign_mapping_reference_counts(expression.right, counts)
+        when AST::IfExpr
+          foreign_mapping_reference_counts(expression.condition, counts)
+          foreign_mapping_reference_counts(expression.then_expression, counts)
+          foreign_mapping_reference_counts(expression.else_expression, counts)
+        end
+
+        counts
+      end
+
+      def simple_foreign_argument_expression?(expression)
+        case expression
+        when AST::Identifier, AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral, AST::BooleanLiteral, AST::NullLiteral
+          true
+        when AST::MemberAccess
+          simple_foreign_argument_expression?(expression.receiver)
+        else
+          false
+        end
+      end
+
+      def foreign_argument_needs_temporary_binding?(expression, reference_count:)
+        return true if reference_count > 1
+
+        !inlineable_foreign_argument_expression?(expression)
+      end
+
+      def inlineable_foreign_argument_expression?(expression)
+        case expression
+        when IR::Name, IR::IntegerLiteral, IR::FloatLiteral, IR::StringLiteral, IR::BooleanLiteral, IR::NullLiteral, IR::ZeroInit, IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
+          true
+        when IR::Member
+          inlineable_foreign_argument_expression?(expression.receiver)
+        when IR::Index
+          inlineable_foreign_argument_expression?(expression.receiver) && inlineable_foreign_argument_expression?(expression.index)
+        when IR::Unary
+          inlineable_foreign_argument_expression?(expression.operand)
+        when IR::Binary
+          inlineable_foreign_argument_expression?(expression.left) && inlineable_foreign_argument_expression?(expression.right)
+        when IR::Conditional
+          inlineable_foreign_argument_expression?(expression.condition) &&
+            inlineable_foreign_argument_expression?(expression.then_expression) &&
+            inlineable_foreign_argument_expression?(expression.else_expression)
+        when IR::ReinterpretExpr, IR::Cast
+          inlineable_foreign_argument_expression?(expression.expression)
+        when IR::AddressOf
+          inlineable_foreign_argument_expression?(expression.expression)
+        when IR::AggregateLiteral
+          expression.fields.all? { |field| inlineable_foreign_argument_expression?(field.value) }
+        else
+          false
+        end
+      end
+
       def lower_contextual_expression(expression, env:, expected_type:, external_numeric: false, contextual_int_to_float: false)
         lowered = lower_expression(expression, env:, expected_type: expected_type)
         return lowered unless expected_type
@@ -1010,7 +1662,7 @@ module MilkTea
         when AST::Identifier
           if @functions.key?(callee.name)
             binding = specialize_function_binding(@functions.fetch(callee.name), arguments, env)
-            [ :function, function_binding_c_name(binding, module_name: @module_name), nil, binding.type ]
+            [ :function, function_binding_c_name(binding, module_name: @module_name), nil, binding.type, binding ]
           elsif callee.name == "ok"
             [:result_ok, nil, nil, nil]
           elsif callee.name == "err"
@@ -1033,9 +1685,9 @@ module MilkTea
             imported_module = @imports.fetch(callee.receiver.name)
             if imported_module.functions.key?(callee.member)
               binding = specialize_function_binding(imported_module.functions.fetch(callee.member), arguments, env)
-              return [:function, function_binding_c_name(binding, module_name: imported_module.name), nil, binding.type] unless binding.external
+              return [:function, function_binding_c_name(binding, module_name: imported_module.name), nil, binding.type, binding] unless binding.external
 
-              return [:function, binding.name, nil, binding.type]
+              return [:function, binding.name, nil, binding.type, binding]
             end
             imported_type = imported_module.types[callee.member]
             if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView)
@@ -1094,10 +1746,10 @@ module MilkTea
 
           if (function_binding = resolve_specialized_function_binding(callee))
             if function_binding.external
-              return [:function, function_binding.name, nil, function_binding.type]
+              return [:function, function_binding.name, nil, function_binding.type, function_binding]
             end
 
-            return [:function, function_binding_c_name(function_binding, module_name: function_binding.owner.module_name), nil, function_binding.type]
+            return [:function, function_binding_c_name(function_binding, module_name: function_binding.owner.module_name), nil, function_binding.type, function_binding]
           end
 
           if (type_ref = type_ref_from_specialization(callee))
@@ -1230,6 +1882,8 @@ module MilkTea
           else
             raise LoweringError, "unsupported call kind #{kind}"
           end
+        when AST::UsingCall
+          infer_expression_type(expression.call, env:, expected_type:)
         when AST::Specialization
           if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "cast"
             resolve_type_ref(expression.arguments.fetch(0).value)
@@ -1312,6 +1966,34 @@ module MilkTea
         IR::Cast.new(target_type:, expression:, type: target_type)
       end
 
+      def foreign_identity_projection_compatible?(actual_type, expected_type)
+        if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
+          return foreign_identity_projection_compatible?(actual_type.base, expected_type.base)
+        end
+
+        return foreign_identity_projection_compatible?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
+        return false if actual_type.is_a?(Types::Nullable)
+
+        return true if pointer_type?(actual_type) && pointer_type?(expected_type) && (void_pointer_type?(actual_type) || void_pointer_type?(expected_type))
+        return true if void_pointer_type?(actual_type) && opaque_type?(expected_type)
+        return true if opaque_type?(actual_type) && void_pointer_type?(expected_type)
+        return true if char_pointer_type?(actual_type) && expected_type == @types.fetch("cstr")
+
+        false
+      end
+
+      def void_pointer_type?(type)
+        pointer_type?(type) && type.arguments.first == @types.fetch("void")
+      end
+
+      def char_pointer_type?(type)
+        pointer_type?(type) && type.arguments.first == @types.fetch("char")
+      end
+
+      def opaque_type?(type)
+        type.is_a?(Types::Opaque)
+      end
+
       def infer_null_literal_type(expression, expected_type)
         return Types::Null.new(resolve_type_ref(expression.type)) if expression.type
 
@@ -1375,6 +2057,7 @@ module MilkTea
       def function_type_for_name(name)
         binding = @functions.fetch(name)
         raise LoweringError, "generic function #{name} cannot be used as a value" if binding.type_params.any?
+        raise LoweringError, "foreign function #{name} cannot be used as a value" if foreign_function_binding?(binding)
 
         binding.type
       end
@@ -1555,7 +2238,15 @@ module MilkTea
         when Types::Function
           Types::Function.new(
             type.name,
-            params: type.params.map { |param| Types::Parameter.new(param.name, substitute_type(param.type, substitutions), mutable: param.mutable) },
+            params: type.params.map do |param|
+              Types::Parameter.new(
+                param.name,
+                substitute_type(param.type, substitutions),
+                mutable: param.mutable,
+                passing_mode: param.passing_mode,
+                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
+              )
+            end,
             return_type: substitute_type(type.return_type, substitutions),
             receiver_type: type.receiver_type ? substitute_type(type.receiver_type, substitutions) : nil,
             receiver_mutable: type.receiver_mutable,
@@ -1722,6 +2413,33 @@ module MilkTea
 
       def analysis_for_module(module_name)
         @program.analyses_by_module_name.fetch(module_name)
+      end
+
+      def with_analysis_context(analysis)
+        saved_analysis = @analysis
+        saved_module_name = @module_name
+        saved_module_prefix = @module_prefix
+        saved_imports = @imports
+        saved_types = @types
+        saved_values = @values
+        saved_functions = @functions
+
+        @analysis = analysis
+        @module_name = analysis.module_name
+        @module_prefix = @module_name.tr(".", "_")
+        @imports = analysis.imports
+        @types = analysis.types
+        @values = analysis.values
+        @functions = analysis.functions
+        yield
+      ensure
+        @analysis = saved_analysis
+        @module_name = saved_module_name
+        @module_prefix = saved_module_prefix
+        @imports = saved_imports
+        @types = saved_types
+        @values = saved_values
+        @functions = saved_functions
       end
 
       def resolve_type_ref_for_analysis(type_ref, analysis)

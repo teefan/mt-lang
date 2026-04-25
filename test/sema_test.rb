@@ -188,6 +188,443 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("on_log")
   end
 
+  def test_type_checks_foreign_defs_with_boundary_mappings
+    root_source = <<~MT
+      module demo.main
+
+      import std.mem.arena as arena
+      import std.raylib as rl
+
+      def main(path: str, scratch: ref[arena.Arena], data: span[u8]) -> i32:
+          var data_size = 0
+          rl.init_window(800, 450, "Demo")
+          let loaded = rl.load_file_data(path, out data_size) using scratch
+          let saved = rl.save_file_data(path, data) using scratch
+          if loaded != null and saved:
+              return data_size
+          return 0
+    MT
+
+    imported_sources = {
+      "std/c/raylib.mt" => <<~MT,
+        extern module std.c.raylib:
+            include "raylib.h"
+
+            extern def InitWindow(width: i32, height: i32, title: cstr) -> void
+            extern def LoadFileData(file_name: cstr, data_size: ptr[i32]) -> ptr[u8]?
+            extern def SaveFileData(file_name: cstr, data: ptr[u8], bytes: i32) -> bool
+      MT
+      "std/raylib.mt" => <<~MT,
+        module std.raylib
+
+        import std.c.raylib as c
+
+        pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
+        pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
+        pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.imports.key?("rl")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_foreign_defs_with_string_literal_without_using_scratch
+    root_source = <<~MT
+      module demo.main
+
+      import std.raylib as rl
+
+      def main() -> void:
+          rl.init_window(800, 450, "Demo")
+    MT
+
+    imported_sources = {
+      "std/c/raylib.mt" => <<~MT,
+        extern module std.c.raylib:
+            include "raylib.h"
+
+            extern def InitWindow(width: i32, height: i32, title: cstr) -> void
+      MT
+      "std/raylib.mt" => <<~MT,
+        module std.raylib
+
+        import std.c.raylib as c
+
+        pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.imports.key?("rl")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_foreign_defs_with_existing_cstr_without_using_scratch
+    root_source = <<~MT
+      module demo.main
+
+      import std.raylib as rl
+
+      def main() -> void:
+          let title = c"Demo"
+          rl.init_window(800, 450, title)
+    MT
+
+    imported_sources = {
+      "std/c/raylib.mt" => <<~MT,
+        extern module std.c.raylib:
+            include "raylib.h"
+
+            extern def InitWindow(width: i32, height: i32, title: cstr) -> void
+      MT
+      "std/raylib.mt" => <<~MT,
+        module std.raylib
+
+        import std.c.raylib as c
+
+        pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.imports.key?("rl")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_foreign_defs_with_identity_pointer_projections
+    root_source = <<~MT
+      module demo.main
+
+      import std.mem as mem
+
+      def main(buffer: ptr[char]) -> cstr:
+          let bytes = mem.allocate_bytes(16)
+          mem.release_bytes(bytes)
+          mem.set_label(buffer)
+          return mem.get_label()
+    MT
+
+    imported_sources = {
+      "std/c/mem.mt" => <<~MT,
+        extern module std.c.mem:
+            include "mem.h"
+
+            extern def AllocateBytes(size: usize) -> ptr[void]
+            extern def ReleaseBytes(memory: ptr[void]) -> void
+            extern def SetLabel(label: cstr) -> void
+            extern def GetLabel() -> ptr[char]
+      MT
+      "std/mem.mt" => <<~MT,
+        module std.mem
+
+        import std.c.mem as c
+
+        pub foreign def allocate_bytes(size: usize) -> ptr[byte] = c.AllocateBytes
+        pub foreign def release_bytes(memory: ptr[byte]) -> void = c.ReleaseBytes
+        pub foreign def set_label(label: ptr[char]) -> void = c.SetLabel
+        pub foreign def get_label() -> cstr = c.GetLabel
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.imports.key?("mem")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_foreign_defs_with_opaque_handle_projections
+    root_source = <<~MT
+      module demo.main
+
+      import std.window as win
+
+      def main() -> i32:
+          let window = win.create()
+          if window != null:
+              win.destroy(window)
+              return 1
+          return 0
+    MT
+
+    imported_sources = {
+      "std/c/window.mt" => <<~MT,
+        extern module std.c.window:
+            include "window.h"
+
+            extern def CreateWindow() -> ptr[void]?
+            extern def DestroyWindow(window: ptr[void]?) -> void
+      MT
+      "std/window.mt" => <<~MT,
+        module std.window
+
+        import std.c.window as c
+
+        pub opaque Window
+
+        pub foreign def create() -> Window? = c.CreateWindow
+        pub foreign def destroy(window: Window?) -> void = c.DestroyWindow
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.imports.key?("win")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_owned_foreign_release_calls_and_refines_binding_to_null
+    root_source = <<~MT
+      module demo.main
+
+      import std.window as win
+
+      def main() -> i32:
+          let window = win.create()
+          if window != null:
+              win.destroy(window)
+              if window == null:
+                  return 1
+          return 0
+    MT
+
+    imported_sources = {
+      "std/c/window.mt" => <<~MT,
+        extern module std.c.window:
+            include "window.h"
+
+            extern def CreateWindow() -> ptr[void]?
+            extern def DestroyWindow(window: ptr[void]?) -> void
+      MT
+      "std/window.mt" => <<~MT,
+        module std.window
+
+        import std.c.window as c
+
+        pub opaque Window
+
+        pub foreign def create() -> Window? = c.CreateWindow
+        pub foreign def destroy(owned window: Window) -> void = c.DestroyWindow
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.imports.key?("win")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_owned_foreign_release_on_non_nullable_binding
+    root_source = <<~MT
+      module demo.main
+
+      import std.window as win
+
+      def main() -> void:
+          let window = win.require()
+          win.destroy(window)
+    MT
+
+    imported_sources = {
+      "std/c/window.mt" => <<~MT,
+        extern module std.c.window:
+            include "window.h"
+
+            extern def RequireWindow() -> ptr[void]
+            extern def DestroyWindow(window: ptr[void]?) -> void
+      MT
+      "std/window.mt" => <<~MT,
+        module std.window
+
+        import std.c.window as c
+
+        pub opaque Window
+
+        pub foreign def require() -> Window = c.RequireWindow
+        pub foreign def destroy(owned window: Window) -> void = c.DestroyWindow
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(root_source, imported_sources)
+    end
+
+    assert_match(/owned argument window to destroy must be a bare nullable local or parameter binding/, error.message)
+  end
+
+  def test_rejects_owned_foreign_release_outside_expression_statement
+    root_source = <<~MT
+      module demo.main
+
+      import std.window as win
+
+      def main() -> void:
+          let window = win.create()
+          if window != null:
+              defer win.destroy(window)
+    MT
+
+    imported_sources = {
+      "std/c/window.mt" => <<~MT,
+        extern module std.c.window:
+            include "window.h"
+
+            extern def CreateWindow() -> ptr[void]?
+            extern def DestroyWindow(window: ptr[void]?) -> void
+      MT
+      "std/window.mt" => <<~MT,
+        module std.window
+
+        import std.c.window as c
+
+        pub opaque Window
+
+        pub foreign def create() -> Window? = c.CreateWindow
+        pub foreign def destroy(owned window: Window) -> void = c.DestroyWindow
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(root_source, imported_sources)
+    end
+
+    assert_match(/owned foreign calls must be top-level expression statements/, error.message)
+  end
+
+  def test_rejects_foreign_defs_that_drop_cstr_mutability
+    root_source = <<~MT
+      module demo.main
+
+      import std.mem as mem
+
+      def main(label: cstr) -> void:
+          mem.write_label(label)
+    MT
+
+    imported_sources = {
+      "std/c/mem.mt" => <<~MT,
+        extern module std.c.mem:
+            include "mem.h"
+
+            extern def WriteLabel(label: ptr[char]) -> void
+      MT
+      "std/mem.mt" => <<~MT,
+        module std.mem
+
+        import std.c.mem as c
+
+        pub foreign def write_label(label: cstr) -> void = c.WriteLabel
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(root_source, imported_sources)
+    end
+
+    assert_match(/argument label to WriteLabel expects ptr\[char\], got cstr/, error.message)
+  end
+
+  def test_rejects_out_argument_outside_foreign_call
+    source = <<~MT
+      module demo.bad
+
+      def write(value: i32) -> i32:
+          return value
+
+      def main() -> i32:
+          var number = 1
+          return write(out number)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/out is only allowed for foreign call arguments/, error.message)
+  end
+
+  def test_rejects_redundant_using_scratch_on_foreign_call
+    root_source = <<~MT
+      module demo.main
+
+      import std.mem.arena as arena
+      import std.raylib as rl
+
+      def main(data: span[u8], scratch: ref[arena.Arena]) -> bool:
+          return rl.window_should_close() using scratch
+    MT
+
+    imported_sources = {
+      "std/c/raylib.mt" => <<~MT,
+        extern module std.c.raylib:
+            include "raylib.h"
+
+            extern def WindowShouldClose() -> bool
+      MT
+      "std/raylib.mt" => <<~MT,
+        module std.raylib
+
+        import std.c.raylib as c
+
+        pub foreign def window_should_close() -> bool = c.WindowShouldClose
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(root_source, imported_sources)
+    end
+
+    assert_match(/using scratch is not needed/, error.message)
+  end
+
+  def test_rejects_nested_using_scratch_inside_larger_expression
+    root_source = <<~MT
+      module demo.main
+
+      import std.mem.arena as arena
+      import std.raylib as rl
+
+      def consume(data: ptr[u8]?) -> ptr[u8]?:
+          return data
+
+      def main(path: str, scratch: ref[arena.Arena]) -> ptr[u8]?:
+          var data_size = 0
+          return consume(rl.load_file_data(path, out data_size) using scratch)
+    MT
+
+    imported_sources = {
+      "std/c/raylib.mt" => <<~MT,
+        extern module std.c.raylib:
+            include "raylib.h"
+
+            extern def LoadFileData(file_name: cstr, data_size: ptr[i32]) -> ptr[u8]?
+      MT
+      "std/raylib.mt" => <<~MT,
+        module std.raylib
+
+        import std.c.raylib as c
+
+        pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(root_source, imported_sources)
+    end
+
+    assert_match(/using scratch must be the top-level expression/, error.message)
+  end
+
   def test_type_checks_mixed_numeric_binary_operators_with_arithmetic_conversion
     source = <<~MT
       module demo.numeric_conversions

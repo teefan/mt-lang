@@ -36,6 +36,8 @@ The output target is beautiful C. The generated C should be readable enough that
 
 If code allocates, takes an address, dereferences a raw pointer, performs an FFI call, or enters unsafe territory, the source should say so directly.
 
+FFI visibility belongs at the declaration site. Raw `extern module` declarations expose exact ABI types. Imported foreign declarations may project those raw types into ordinary Milk Tea types, but the projection rule, temporary-storage rule, and ownership rule must be declared there instead of repeated at every call site.
+
 ### 2. C is the ABI ground truth
 
 Milk Tea must represent C structs, unions, enums, flags, pointers, arrays, callbacks, and calling conventions without lossy translation.
@@ -64,6 +66,7 @@ If a feature saves five lines but makes lowering, tooling, or debugging much har
 - Names are `snake_case` for modules, variables, and functions.
 - Types use `PascalCase`.
 - Generated binding modules preserve C names exactly at the ABI layer.
+- Imported foreign modules use normal Milk Tea naming.
 
 Example:
 
@@ -71,7 +74,7 @@ Example:
 module game.main
 
 import std.math as math
-import std.c.raylib as rl
+import std.raylib as rl
 
 const screen_width: i32 = 1280
 const screen_height: i32 = 720
@@ -87,8 +90,8 @@ methods Player:
 		this.position.y += this.velocity.y * dt
 
 def main() -> i32:
-	rl.InitWindow(screen_width, screen_height, c"Milk Tea")
-	defer rl.CloseWindow()
+	rl.init_window(screen_width, screen_height, "Milk Tea")
+	defer rl.close_window()
 
 	var player = Player(
 		position = rl.Vector2(x = 400.0, y = 300.0),
@@ -96,15 +99,15 @@ def main() -> i32:
 		radius = 18.0,
 	)
 
-	while not rl.WindowShouldClose():
-		let dt = rl.GetFrameTime()
+	while not rl.window_should_close():
+		let dt = rl.get_frame_time()
 		player.update(dt)
 
-		rl.BeginDrawing()
-		defer rl.EndDrawing()
+		rl.begin_drawing()
+		defer rl.end_drawing()
 
-		rl.ClearBackground(rl.BLACK)
-		rl.DrawCircleV(player.position, player.radius, rl.GOLD)
+		rl.clear_background(rl.BLACK)
+		rl.draw_circle_v(player.position, player.radius, rl.GOLD)
 
 	return 0
 ```
@@ -262,12 +265,11 @@ Milk Tea should include a small number of control-flow features that materially 
 `defer` registers cleanup code at scope exit and lowers to obvious cleanup labels in C.
 
 ```mt
-def load_texture(path: str, space: ref[Arena]) -> Result[Texture, LoadError]:
-	let temp = value(space).mark()
-	defer value(space).reset(temp)
+def load_texture(path: str, scratch: ref[Arena]) -> Result[Texture, LoadError]:
+	let mark = value(scratch).mark()
+	defer value(scratch).reset(mark)
 
-	let c_path = path.to_cstr(space)
-	let texture = rl.LoadTexture(c_path)
+	let texture = rl.load_texture(path) using scratch
 
 	if texture.id == 0:
 		return err(LoadError.file_not_found)
@@ -284,7 +286,7 @@ def load_texture(path: str, space: ref[Arena]) -> Result[Texture, LoadError]:
 - unchecked casts and bit reinterpretation
 - reading inactive union fields
 - pointer indexing
-- direct ABI edge work that the compiler cannot validate
+- raw ABI work that is not covered by a declared foreign import contract
 
 ```mt
 unsafe:
@@ -293,6 +295,7 @@ unsafe:
 ```
 
 The point is not to forbid sharp tools. The point is to mark them.
+Calling a foreign import that already declares borrowed strings, transient scratch-backed strings, `out` parameters, or typed pointer projections is ordinary code. Crossing into raw `std.c.*` bindings, doing pointer reinterpretation, or manually walking foreign memory remains explicit low-level work.
 
 ## Type system
 
@@ -314,10 +317,11 @@ The type system must stay simple, explicit, and close to C.
 Notes:
 
 - `str` is a UTF-8 string view, not a NUL-terminated C string.
-- `cstr` is a NUL-terminated C string reference for ABI calls.
+- `cstr` is the raw ABI-facing NUL-terminated C string type. It belongs primarily in raw `extern module` declarations and low-level interop code.
 - `char` is the ABI-facing single-byte character type for C text and raw buffers. It is not a general arithmetic integer type.
 - String literals produce `str`.
-- `c"hello"` produces `cstr` with static storage.
+- A string literal may satisfy an imported borrowed C string parameter directly because static storage is known.
+- `c"hello"` produces `cstr` with static storage for raw ABI work and low-level interop.
 
 ### Composite types
 
@@ -607,7 +611,7 @@ Rules for safe references:
 - there is no auto projection through refs: use `value(handle).field` and `value(handle).edit_method()`.
 - there is no implicit ref-to-value call conversion: if a function expects `T`, pass `value(handle)`.
 - references do not support arithmetic, pointer indexing, or nullable semantics.
-- writable references are non-escaping in the current implementation: they may be used in locals and non-extern function parameters, but they cannot be stored, nested inside other types, returned, or accepted by extern functions.
+- writable references are non-escaping in the current implementation: they may be used in locals and non-extern function parameters, and imported foreign parameters may expose `out` or `inout` boundary forms that lower to raw pointers, but refs themselves still cannot be stored, nested inside other types, returned, or used directly in raw `extern module` declarations.
 
 Rules for raw pointers:
 
@@ -620,6 +624,7 @@ Rules for raw pointers:
 - raw pointer offsets and indices may use ordinary integer expressions directly; code does not need a pre-emptive cast to `usize` just to write `ptr[i]` or `ptr + offset`.
 - pointer comparison is explicit and never treated as boolean truthiness.
 - `ptr[char]` is the ordinary representation for mutable C text and byte-oriented FFI buffers; writing control bytes such as NUL or newline uses `char` values, typically spelled with `cast[char](0)` and `cast[char](10)`.
+- imported foreign declarations may project ABI-identical pointer forms at the boundary. A raw `ptr[void]` parameter may surface as `ptr[T]?` or an opaque handle type when the imported declaration says so. Reinterpretation inside user code still requires explicit `cast` and, when dereferenced, `unsafe`.
 
 References are separate from methods:
 
@@ -670,7 +675,7 @@ Preferred strategy:
 
 - `Result[T, E]` for recoverable failures
 - `panic("message")` for programmer errors and impossible states
-- explicit status codes for thin FFI wrappers when that matches the C API better
+- explicit status codes for imported foreign APIs when that matches the C API better
 
 Example:
 
@@ -696,7 +701,7 @@ Source files should map directly to modules.
 ```mt
 module game.rendering.sprite_batch
 
-import std.c.raylib as rl
+import std.raylib as rl
 import game.assets
 ```
 
@@ -710,14 +715,22 @@ Rules:
 
 Recommended layout:
 
-- `std.*` for core library modules
+- `std.*` for core library modules and imported foreign modules
 - `std.c.*` for raw bindgen-generated C modules
-- `std.wrap.*` for optional ergonomic wrappers over raw C modules
 - project modules under their own root namespace
+
+Handwritten wrappers may still exist for real policy or domain logic, but they are not the primary answer to FFI noise. The primary interop story should be raw `std.c.*` modules plus compiler-recognized imported foreign declarations.
 
 ## FFI design
 
 FFI is a core feature, not a bolt-on.
+
+Milk Tea needs two interop surfaces, not one:
+
+1. a raw ABI surface for exact bindings
+2. an imported foreign surface for ordinary Milk Tea code
+
+This is the same split C# gets right with P/Invoke versus `unsafe` pointer code. The declaration site carries the boundary contract. Raw pointers, reinterpretation, and manual memory walking remain explicit.
 
 ### Raw C bindings
 
@@ -770,17 +783,242 @@ Bindgen output rules:
 3. Emit opaque types instead of guessing private layouts.
 4. Emit comments or metadata that make the original C header traceable.
 5. Prefer enums, flags, structs, unions, constants, and function declarations over clever wrappers.
+6. When headers are clear enough, emit metadata that can drive generated imported foreign declarations for borrowed strings, transient strings, out parameters, spans, opaque handles, and release functions. If the header is not clear enough, stay raw instead of guessing.
 
-The raw layer should be inspectable and boring. Higher-level wrapper modules may exist, but they must remain optional.
+The imported layer may also be generated, but only from an explicit checked-in policy file. clang bindgen is responsible for ABI facts; the policy file is responsible for semantic facts the header does not encode, such as `str as cstr`, `out`, `inout`, `owned`, span fan-out, selected renames, and which raw declarations should remain exposed only through `std.c.*`.
+
+The raw layer should be inspectable and boring. Handwritten wrappers are optional, but they are not the language's primary ergonomics mechanism.
+
+### Imported foreign declarations
+
+Most application code should call imported foreign declarations, not raw `std.c.*` bindings.
+
+Imported foreign modules are ordinary `module` files. They import a raw `std.c.*` module and re-export compiler-recognized `foreign def` declarations.
+
+```mt
+module std.raylib
+
+import std.c.raylib as c
+
+pub type Vector2 = c.Vector2
+pub type Texture = c.Texture
+pub type Color = c.Color
+
+pub const BLACK: Color = c.BLACK
+pub const GOLD: Color = c.GOLD
+
+pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
+pub foreign def close_window() -> void = c.CloseWindow
+pub foreign def window_should_close() -> bool = c.WindowShouldClose
+pub foreign def get_frame_time() -> f32 = c.GetFrameTime
+
+pub foreign def load_texture(path: str as cstr) -> Texture = c.LoadTexture
+pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
+pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
+
+pub foreign def mem_alloc[T](count: usize) -> ptr[T]? = c.MemAlloc(count * cast[u32](sizeof(T)))
+pub foreign def mem_realloc[T](memory: ptr[T]?, count: usize) -> ptr[T]? = c.MemRealloc(memory, count * cast[u32](sizeof(T)))
+pub foreign def mem_free[T](memory: ptr[T]?) -> void = c.MemFree(memory)
+```
+
+Types, enums, flags, and constants that need no boundary conversion should usually be re-exported with ordinary `pub type`, `pub const`, `enum`, or `flags` declarations. `foreign def` is for call boundaries, not for everything else in the module.
+
+These declarations are not handwritten wrappers:
+
+- one imported declaration maps directly to one foreign symbol
+- there is no extra function body, hidden dispatch, or policy object
+- lowering stays inspectable in generated C
+- boundary conversions are declared once on the import instead of repeated at every call site
+
+Chosen v1 form:
+
+- `foreign def` is a new declaration kind allowed in ordinary modules
+- the left side is the public Milk Tea signature
+- the right side is either a raw symbol name or a declarative raw call expression
+- `= c.Symbol` is shorthand for positional lowering when surface parameters map directly to the raw ABI after boundary conversion
+- `= c.Symbol(...)` is required when one surface parameter fans out into multiple raw arguments, when argument order changes, or when the raw API needs size arithmetic such as `count * sizeof(T)`
+
+The right side is deliberately not a normal function body. It is a restricted lowering clause. It may use:
+
+- the referenced raw foreign symbol
+- imported parameters
+- field access such as `data.data` and `data.len`
+- `cast`, `sizeof`, `alignof`, literals, `null`, and simple arithmetic
+
+It may not use:
+
+- control flow
+- local declarations
+- arbitrary function calls
+- heap allocation
+- `unsafe` blocks
+
+An imported foreign declaration must be able to express at least:
+
+- a `str` parameter that lowers to `cstr` at the foreign boundary
+- a transient `str` to `cstr` materialization that requires explicit scratch storage at the call site
+- `out` and `inout` parameters that lower to raw pointers
+- release-style functions that consume an owned handle and null the caller binding afterward
+- pointer-plus-length views that lower from `span[T]`
+- identity ABI projections such as `ptr[T]?` to `ptr[void]` or `cstr?` to `ptr[char]?`
+
+Parameter and boundary rules:
+
+- `name: str as cstr` means the public Milk Tea type is `str`, while the raw foreign target expects `cstr` or `ptr[char]`
+- a string literal or existing `cstr` value may satisfy `str as cstr` without temporary storage
+- a dynamic `str` argument for `str as cstr` requires an explicit call-site `using scratch` clause
+- `out name: T` means the raw foreign target takes a writable pointer and the call site must pass `out lvalue`
+- `inout name: T` means the raw foreign target reads and writes through a pointer and the call site must pass `inout lvalue`
+- `owned name: Handle` means the public Milk Tea parameter is a non-null opaque handle or `ptr[T]`, and v1 uses it only for release-style foreign calls that consume an existing nullable binding
+- plain parameters and return values require exact compatibility or an explicitly permitted identity ABI projection
+
+#### Sema rules for foreign defs
+
+The checker should treat `foreign def` as its own declaration kind with dedicated rules.
+
+Declaration rules:
+
+- `foreign def` is allowed only in ordinary modules, not inside `extern module`, `methods`, or function bodies
+- the right-hand side must resolve to an imported raw extern symbol from a `std.c.*` module
+- `= c.Symbol` is shorthand symbol mapping; `c.Symbol` must resolve to an imported `extern def`
+- `= c.Symbol(...)` is declarative RHS mapping; the callee must resolve to an imported `extern def`
+- the right-hand side may reference only declaration parameters and imported raw symbols from the module scope
+- an `owned` parameter may not use `as`, must have a non-null `opaque Handle` or `ptr[T]` type, and any `foreign def` that has an `owned` parameter must return `void`
+
+Shorthand symbol mapping rules:
+
+- the public parameter count must match the raw parameter count, excluding raw varargs
+- parameters map positionally in source order
+- each mapped pair must satisfy one of: exact type match, declared boundary mapping such as `str as cstr`, directional pointer mapping through `out` or `inout`, or an allowed identity ABI projection
+- aliasing a public imported-binding type to a different raw module type does not create a new identity ABI projection. Two raw structs from different `std.c.*` modules remain distinct unless the language grows an explicit foreign type-projection rule for that pair.
+- the public return type must either exactly match the raw return type or be reachable through an allowed identity ABI projection
+- shorthand mapping is rejected if any surface parameter must fan out into multiple raw arguments, if any raw argument needs arithmetic over more than one parameter, or if raw argument order differs from public argument order
+
+Declarative RHS mapping rules:
+
+- the RHS must be a raw call expression whose callee is an imported raw extern function
+- raw call arity must match the raw target signature, respecting raw varargs rules
+- the checker analyzes each raw argument expression in an environment containing the public parameters
+- allowed RHS expression forms are: parameter identifiers, member access, index access, literals, `null`, `sizeof`, `alignof`, `offsetof`, `cast[...]`, and simple arithmetic or comparisons built from those forms
+- disallowed RHS forms are: control flow, local declarations, assignment, `unsafe`, `defer`, heap allocation, and arbitrary non-builtin function calls
+- every public parameter must be consumed by the RHS according to its mode
+
+Parameter consumption rules:
+
+- a plain parameter may be referenced one or more times in the RHS
+- a `span[T]` parameter may be split into `.data` and `.len`
+- an `out` parameter must appear exactly once as a bare parameter reference in the raw argument position that receives the writable pointer
+- an `inout` parameter must appear exactly once as a bare parameter reference in the raw argument position that receives the mutable pointer
+- an `owned` parameter lowers through the same identity value as a plain handle parameter; v1 ownership affects call-site validation and post-call flow, not the RHS mapping expression shape
+- a `str as cstr` parameter may appear only in raw argument positions whose target type is `cstr` or `ptr[char]`
+
+Call-site checking rules:
+
+- a call to a `foreign def` with `out` parameters requires `out lvalue` at the corresponding argument position
+- a call to a `foreign def` with `inout` parameters requires `inout lvalue` at the corresponding argument position
+- a call to a `foreign def` with `owned` parameters requires a bare identifier naming a nullable local or parameter binding
+- the current flow type of that binding must already be the non-null handle type required by the `owned` parameter
+- in v1, a foreign call with any `owned` parameter must be a top-level expression statement; `defer`, local initializers, assignments, returns, and larger expressions are rejected
+- after an `owned` foreign call, continuation flow refines each consumed binding to `null`
+- `out` and `inout` are rejected outside calls to `foreign def`
+- `out` requires a mutable addressable lvalue and does not read the old value before the call
+- `inout` requires a mutable addressable lvalue and exposes both the old and new value to the callee
+- `using scratch` is allowed only on calls to `foreign def`
+- `using scratch` is required if and only if at least one `str as cstr` argument needs temporary NUL-terminated materialization
+- a string literal and an existing `cstr` do not require `using scratch`
+- a redundant `using scratch` clause is an error in v1 because the source should not claim temporary storage that the call does not use
+- in v1, `using scratch` must be the top-level expression of a local initializer, assignment right-hand side, return expression, or expression statement; if a larger expression needs the result, bind it to a local first
+
+Allowed identity ABI projections in v1 are deliberately narrow:
+
+- `ptr[T]` or `ptr[T]?` to `ptr[void]` or `ptr[void]?`
+- `ptr[void]` or `ptr[void]?` to `opaque Handle` or `opaque Handle?` when the imported declaration chooses that handle surface
+- `ptr[char]` or `ptr[char]?` to `cstr` or `ptr[char]?` when mutability rules permit the raw direction
+- raw opaque pointer returns to typed pointer-like public returns when the representation is unchanged
+
+Anything outside those cases requires the raw layer or an explicit later language feature. `foreign def` is not a general coercion system.
+
+#### Lowering rules for foreign calls
+
+`foreign def` lowers directly to the referenced raw call boundary. It does not lower as a normal Milk Tea function body.
+
+Shorthand symbol mapping lowering:
+
+- the call target is the referenced raw symbol
+- arguments are lowered left-to-right in public parameter order
+- each public argument lowers through its declared boundary rule and then into the matching raw parameter slot
+- if the return type needs an allowed identity ABI projection, the backend emits the minimal explicit C cast required by the target types
+
+Declarative RHS mapping lowering:
+
+- the lowering clause is expanded by substituting lowered public arguments into the restricted RHS expression tree
+- the expanded raw call becomes the emitted call target and raw argument list
+- field access such as `data.data` and `data.len` lowers exactly as the corresponding member access on the public argument value
+- builtin forms such as `cast`, `sizeof`, `alignof`, and `offsetof` lower exactly as they do elsewhere in the language
+
+Scratch materialization lowering:
+
+- the postfix `using scratch_expr` is evaluated once
+- the scratch expression must produce the arena handle declared by the future sema rule for scratch storage
+- the compiler captures a mark from the arena before materializing any temporary C strings
+- each dynamic `str as cstr` argument is materialized into that arena in left-to-right argument order
+- the raw call is emitted using those temporary C-string pointers
+- the arena is reset back to the captured mark immediately after the raw call completes
+- in v1, this lowering form is available only when `using scratch` is the top-level expression of a local initializer, assignment right-hand side, return expression, or expression statement
+- if a larger expression needs the result, source must bind the foreign call to a local first and then use that local
+
+Directional pointer lowering:
+
+- `out x` lowers to address-taking of `x` at the raw call boundary without exposing `raw(addr(x))` in user source
+- `inout x` lowers to the same address-taking form, but sema preserves the read-write contract instead of pure output
+- if the raw target expects `ptr[void]` or another identity-projection pointer type, lowering inserts only the minimal cast required by the raw C signature
+
+Release-function ownership lowering:
+
+- an `owned` argument lowers through the same raw boundary value as the corresponding plain handle argument
+- immediately after the raw foreign call completes, lowering emits `binding = null` for each consumed binding
+- the same statement updates continuation flow so later code sees that binding as `null`
+- v1 does not add a general move checker; this null-after-call rule is limited to bare nullable local or parameter bindings in top-level expression statements
+
+Generated C quality rule:
+
+- lowering may introduce short-lived temporaries for scratch-backed strings, result spilling, or identity casts
+- lowering should not emit an extra helper function for each `foreign def` in the ordinary case
+- the preferred output is one visible raw call site whose surrounding temporaries make the boundary work obvious in C
+
+Call sites should read like this:
+
+```mt
+rl.init_window(screen_width, screen_height, "Milk Tea")
+let texture = rl.load_texture(path) using scratch
+let file_data = rl.load_file_data("storage.data", out data_size)
+let success = rl.save_file_data("storage.data", bytes)
+let ints = rl.mem_alloc[i32](16)
+```
+
+`using scratch` is a postfix call clause, not a normal argument. In v1 it is specifically the explicit permission to materialize temporary `str as cstr` storage in a scratch arena for the duration of the call. No `using` clause means no hidden temporary storage. If code wants to use that result inside a larger expression, it must first bind the call result to a local.
+
+`out name` and `inout name` are foreign-boundary forms, not raw pointer expressions. They lower to address-taking at the imported call site without exposing `raw(addr(...))` in ordinary code.
+
+This is the C# part worth copying: declarations say how the boundary works, while raw pointer code remains explicitly low-level.
 
 ### Strings and buffers at the FFI boundary
 
-String and buffer rules must stay explicit:
+String and buffer rules must stay explicit, but the explicitness belongs in imported declarations and any required `using` clause, not in every call site:
 
-- `str` does not silently become `cstr`
-- string literals can use `c"..."` when a static C string is required
-- converting `str` to `cstr` requires an explicit allocator or temporary arena copy
-- binary data crosses FFI as `ptr[T]`, `span[T]`, or fixed arrays
+- raw `extern module` declarations stay exact and continue to use `cstr`, `ptr[T]`, and `ptr[void]`
+- a string literal may satisfy an imported borrowed C string parameter directly; ordinary UI and logging code should not need `c"..."`
+- converting a dynamic `str` to a foreign C string still requires explicit storage in source, spelled with a call-site `using scratch` clause or an equivalent explicit storage form
+- `cstr` remains available for raw ABI work, returned native strings, and low-level code
+- pointer-plus-length APIs should import as `span[T]` when the native contract is a view rather than untyped memory
+- single-object output parameters should import as `out T` or `inout T` instead of naked pointer syntax
+- `ptr[void]` should stay in the raw layer, but imported declarations may project it to typed pointers or opaque handles when the ABI conversion is identity-only
+
+This keeps the important distinction intact:
+
+- source still makes temporary storage explicit
+- raw memory work still requires raw syntax
+- call sites stop spelling C representation details that the import declaration already knows
 
 ### Callbacks
 
