@@ -234,6 +234,46 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/InitWindow\(800, 450, "Demo"\);/, generated)
   end
 
+  def test_generate_c_for_foreign_defs_with_inout_uses_minimal_address_of
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main() -> void:
+          var camera = sample.Camera(id = 1)
+          sample.update_camera(inout camera, sample.CameraMode.CAMERA_FREE)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            struct Camera:
+                id: i32
+
+            enum CameraMode: i32
+                CAMERA_FREE = 1
+
+            extern def UpdateCamera(camera: ptr[Camera], mode: CameraMode) -> void
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub type Camera = c.Camera
+        pub type CameraMode = c.CameraMode
+
+        pub foreign def update_camera(inout camera: Camera, mode: CameraMode) -> void = c.UpdateCamera
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/UpdateCamera\(&camera, CAMERA_FREE\);/, generated)
+    refute_match(/UpdateCamera\(\(\([A-Za-z_][A-Za-z0-9_]*\*\) \(&camera\)\), CAMERA_FREE\);/, generated)
+  end
+
   def test_generate_c_for_foreign_defs_without_temps_for_simple_statement_arguments
     source = <<~MT
       module demo.main
@@ -324,8 +364,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(source, imported_sources)
 
-    assert_match(/Color __mt_foreign_arg_\d+ = Fade\(std_sample_RED, 0\.5f\);/, generated)
-    assert_match(/UseColor\(__mt_foreign_arg_\d+\);/, generated)
+    refute_match(/__mt_foreign_arg_\d+/, generated)
+    assert_match(/UseColor\(Fade\(std_sample_RED, 0\.5f\)\);/, generated)
   end
 
   def test_generate_c_for_foreign_defs_with_identity_pointer_projections
