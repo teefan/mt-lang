@@ -1116,13 +1116,25 @@ module MilkTea
 
       def bind_foreign_mapping_arguments(binding, arguments, mapping_env, lowered, env:, scratch:, reference_counts:)
         replacements = {}
-
-        binding.ast.params.each_with_index do |param_ast, index|
+        entries = binding.ast.params.each_with_index.map do |param_ast, index|
           parameter = binding.type.params.fetch(index)
-          temp_type = parameter.boundary_type || parameter.type
-          lowered_value = lower_foreign_argument_value(parameter, arguments.fetch(index), env:, scratch:)
+          {
+            param_ast:,
+            parameter:,
+            temp_type: parameter.boundary_type || parameter.type,
+            lowered_value: lower_foreign_argument_value(parameter, arguments.fetch(index), env:, scratch:),
+            reference_count: reference_counts.fetch(param_ast.name, 0),
+          }
+        end
 
-          if foreign_argument_needs_temporary_binding?(lowered_value, reference_count: reference_counts.fetch(param_ast.name, 0))
+        inline_direct_call_names = inlineable_single_direct_call_names(entries, scratch:)
+
+        entries.each do |entry|
+          param_ast = entry[:param_ast]
+          temp_type = entry[:temp_type]
+          lowered_value = entry[:lowered_value]
+
+          if !inline_direct_call_names.include?(param_ast.name) && foreign_argument_needs_temporary_binding?(lowered_value, reference_count: entry[:reference_count])
             temp_name = fresh_c_temp_name(env, "foreign_arg")
             lowered << IR::LocalDecl.new(
               name: temp_name,
@@ -1139,6 +1151,20 @@ module MilkTea
         end
 
         replacements
+      end
+
+      def inlineable_single_direct_call_names(entries, scratch:)
+        return [] if scratch
+
+        blocked_entries = entries.select do |entry|
+          entry[:reference_count] > 1 || !inlineable_foreign_argument_expression?(entry[:lowered_value])
+        end
+        return [] unless blocked_entries.length == 1
+
+        blocked_entry = blocked_entries.first
+        return [] unless blocked_entry[:reference_count] == 1 && blocked_entry[:lowered_value].is_a?(IR::Call)
+
+        [blocked_entry[:param_ast].name]
       end
 
       def lower_foreign_argument_value(parameter, argument, env:, scratch:)
@@ -1163,11 +1189,23 @@ module MilkTea
             raise LoweringError, "unsupported foreign boundary mapping #{parameter.type} as #{parameter.boundary_type}"
           end
         when :out, :inout
-          operand = argument.value.operand
-          lower_expression(raw_pointer_argument_expression(operand), env:, expected_type: parameter.boundary_type)
+          lower_foreign_pointer_argument_value(parameter, argument, env:)
         else
           raise LoweringError, "unsupported foreign passing mode #{parameter.passing_mode}"
         end
+      end
+
+      def lower_foreign_pointer_argument_value(parameter, argument, env:)
+        operand = argument.value.operand
+        address = IR::AddressOf.new(
+          expression: lower_expression(operand, env:),
+          type: pointer_to(parameter.type),
+        )
+
+        return address if parameter.boundary_type == address.type
+        return cast_expression(address, parameter.boundary_type) if foreign_identity_projection_compatible?(address.type, parameter.boundary_type)
+
+        raise LoweringError, "unsupported foreign pointer boundary mapping #{parameter.type} as #{parameter.boundary_type}"
       end
 
       def lower_foreign_call_inline(expression, binding, env:, type:)
