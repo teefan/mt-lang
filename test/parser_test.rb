@@ -806,6 +806,58 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal true, extern_def.variadic
   end
 
+  def test_parses_foreign_function_declarations_and_using_scratch_calls
+    source = <<~MT
+      module std.raylib
+
+      import std.c.raylib as c
+
+      pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
+      pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
+      pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
+      pub foreign def close_window(owned window: Window) -> void = c.CloseWindow
+
+      def main(path: str, scratch: ref[Arena]) -> ptr[u8]?:
+          var data_size = 0
+          return load_file_data(path, out data_size) using scratch
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal(
+      %w[ForeignFunctionDecl ForeignFunctionDecl ForeignFunctionDecl ForeignFunctionDecl FunctionDef],
+      ast.declarations.map { |node| node.class.name.split("::").last },
+    )
+
+    init_window = ast.declarations[0]
+    assert_equal :public, init_window.visibility
+    assert_equal "init_window", init_window.name
+    assert_instance_of MilkTea::AST::MemberAccess, init_window.mapping
+    assert_equal :plain, init_window.params[2].mode
+    assert_equal "str", init_window.params[2].type.name.to_s
+    assert_equal "cstr", init_window.params[2].boundary_type.name.to_s
+
+    load_file_data = ast.declarations[1]
+    assert_equal :out, load_file_data.params[1].mode
+    assert_instance_of MilkTea::AST::MemberAccess, load_file_data.mapping
+
+    save_file_data = ast.declarations[2]
+    assert_instance_of MilkTea::AST::Call, save_file_data.mapping
+    assert_equal "SaveFileData", save_file_data.mapping.callee.member
+
+    close_window = ast.declarations[3]
+    assert_equal :owned, close_window.params[0].mode
+    assert_instance_of MilkTea::AST::MemberAccess, close_window.mapping
+
+    main_fn = ast.declarations[4]
+    return_stmt = main_fn.body[1]
+    assert_instance_of MilkTea::AST::UsingCall, return_stmt.value
+    assert_instance_of MilkTea::AST::Call, return_stmt.value.call
+    assert_equal "scratch", return_stmt.value.scratch.name
+    assert_instance_of MilkTea::AST::UnaryOp, return_stmt.value.call.arguments[1].value
+    assert_equal "out", return_stmt.value.call.arguments[1].value.operator
+  end
+
   private
 
   def demo_path

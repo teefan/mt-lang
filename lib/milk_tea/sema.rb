@@ -64,6 +64,7 @@ module MilkTea
         @null_type = Types::Null.new
         @loop_depth = 0
         @unsafe_depth = 0
+        @foreign_mapping_depth = 0
         @checked_function_bindings = {}
         @checking_function_bindings = {}
       end
@@ -255,6 +256,9 @@ module MilkTea
           when AST::ExternFunctionDecl
             ensure_available_value_name!(decl.name)
             @top_level_functions[decl.name] = declare_function_binding(decl, external: true)
+          when AST::ForeignFunctionDecl
+            ensure_available_value_name!(decl.name)
+            @top_level_functions[decl.name] = declare_function_binding(decl)
           when AST::MethodsBlock
             receiver_type = resolve_type_ref(AST::TypeRef.new(name: decl.type_name, arguments: [], nullable: false))
             unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StringView)
@@ -272,6 +276,7 @@ module MilkTea
       end
 
       def declare_function_binding(decl, receiver_type: nil, external: false)
+        foreign = decl.is_a?(AST::ForeignFunctionDecl)
         type_param_names = decl.type_params.map(&:name)
         raise SemaError, "extern function #{decl.name} cannot be generic" if external && type_param_names.any?
         raise SemaError, "generic methods are not supported yet in #{decl.name}" if receiver_type && type_param_names.any?
@@ -297,7 +302,8 @@ module MilkTea
           )
         end
 
-        body_params.concat(decl.params.map do |param|
+        public_params = []
+        decl.params.each do |param|
           type = resolve_type_ref(param.type, type_params:)
           validate_parameter_ref_type!(type, function_name: decl.name, parameter_name: param.name, external:)
 
@@ -305,8 +311,17 @@ module MilkTea
             raise SemaError, "extern function #{decl.name} cannot take array parameters"
           end
 
-          value_binding(name: param.name, type:, mutable: param.mutable, kind: :param)
-        end)
+          if foreign
+            raise SemaError, "foreign parameter #{param.name} cannot use `as` with #{param.mode}" if param.mode != :plain && param.boundary_type
+            validate_owned_foreign_parameter!(type, function_name: decl.name, parameter_name: param.name) if param.mode == :owned
+
+            boundary_type = foreign_parameter_boundary_type(param, type, type_params:)
+            body_params << value_binding(name: param.name, type: boundary_type || type, mutable: false, kind: :param)
+            public_params << Types::Parameter.new(param.name, type, passing_mode: param.mode, boundary_type: boundary_type)
+          else
+            body_params << value_binding(name: param.name, type:, mutable: param.mutable, kind: :param)
+          end
+        end
 
         receiver_mutable = false
         call_params = body_params
@@ -317,6 +332,8 @@ module MilkTea
           function_receiver_type = receiver_type
         end
 
+        call_params = public_params if foreign
+
         seen = {}
         body_params.each do |param|
           raise SemaError, "duplicate parameter #{param.name} in #{decl.name}" if seen.key?(param.name)
@@ -326,13 +343,16 @@ module MilkTea
 
         return_type = decl.return_type ? resolve_type_ref(decl.return_type, type_params:) : @types.fetch("void")
         validate_return_ref_type!(return_type, function_name: decl.name)
+        if foreign && public_params.any? { |param| param.passing_mode == :owned } && return_type != @types.fetch("void")
+          raise SemaError, "foreign function #{decl.name} with owned parameters must return void"
+        end
         if external && array_type?(return_type)
           raise SemaError, "extern function #{decl.name} cannot return arrays"
         end
 
         function_type = Types::Function.new(
           decl.name,
-          params: call_params.map { |param| Types::Parameter.new(param.name, param.type, mutable: param.mutable) },
+          params: foreign ? call_params : call_params.map { |param| Types::Parameter.new(param.name, param.type, mutable: param.mutable) },
           return_type:,
           receiver_type: function_receiver_type,
           receiver_mutable:,
@@ -357,6 +377,8 @@ module MilkTea
       def check_top_level_values
         @ast.declarations.grep(AST::ConstDecl).each do |decl|
           binding = @top_level_values.fetch(decl.name)
+          validate_using_scratch_expression!(decl.value, root_allowed: false)
+          validate_owned_foreign_expression!(decl.value, scopes: [], root_allowed: false)
           actual_type = infer_expression(decl.value, scopes: [], expected_type: binding.type)
           ensure_assignable!(
             actual_type,
@@ -394,7 +416,17 @@ module MilkTea
         previous_type_substitutions = @current_type_substitutions
         @current_type_substitutions = binding.type_substitutions
         with_scope(binding.body_params) do |scopes|
-          check_block(binding.ast.body, scopes:, return_type: binding.type.return_type)
+          if binding.ast.is_a?(AST::ForeignFunctionDecl)
+            expression = foreign_mapping_expression(binding.ast)
+            actual_type = with_foreign_mapping_context do
+              infer_expression(expression, scopes:, expected_type: binding.type.return_type)
+            end
+            unless types_compatible?(actual_type, binding.type.return_type, expression:) || foreign_identity_projection_compatible?(actual_type, binding.type.return_type)
+              raise SemaError, "foreign mapping #{binding.name} expects #{binding.type.return_type}, got #{actual_type}"
+            end
+          else
+            check_block(binding.ast.body, scopes:, return_type: binding.type.return_type)
+          end
         end
         @checked_function_bindings[binding.object_id] = true
       ensure
@@ -422,6 +454,8 @@ module MilkTea
           branch_bodies_terminate = []
           statement.branches.each do |branch|
             branch_scopes = scopes_with_refinements(scopes, false_refinements)
+            validate_using_scratch_expression!(branch.condition, root_allowed: false)
+            validate_owned_foreign_expression!(branch.condition, scopes: branch_scopes, root_allowed: false)
             condition_type = infer_expression(branch.condition, scopes: branch_scopes, expected_type: @types.fetch("bool"))
             ensure_assignable!(condition_type, @types.fetch("bool"), "if condition must be bool, got #{condition_type}")
             true_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: true, scopes: branch_scopes))
@@ -442,6 +476,8 @@ module MilkTea
         when AST::ForStmt
           check_for_stmt(statement, scopes:, return_type:)
         when AST::WhileStmt
+          validate_using_scratch_expression!(statement.condition, root_allowed: false)
+          validate_owned_foreign_expression!(statement.condition, scopes:, root_allowed: false)
           condition_type = infer_expression(statement.condition, scopes:, expected_type: @types.fetch("bool"))
           ensure_assignable!(condition_type, @types.fetch("bool"), "while condition must be bool, got #{condition_type}")
           with_loop do
@@ -453,6 +489,8 @@ module MilkTea
         when AST::ContinueStmt
           raise SemaError, "continue must be inside a loop" unless inside_loop?
         when AST::ReturnStmt
+          validate_using_scratch_expression!(statement.value, root_allowed: true) if statement.value
+          validate_owned_foreign_expression!(statement.value, scopes:, root_allowed: false) if statement.value
           value_type = statement.value ? infer_expression(statement.value, scopes:, expected_type: return_type) : @types.fetch("void")
           ensure_assignable!(
             value_type,
@@ -462,9 +500,14 @@ module MilkTea
             contextual_int_to_float: contextual_int_to_float_target?(return_type),
           )
         when AST::DeferStmt
+          validate_using_scratch_expression!(statement.expression, root_allowed: false)
+          validate_owned_foreign_expression!(statement.expression, scopes:, root_allowed: false)
           infer_expression(statement.expression, scopes:)
         when AST::ExpressionStmt
+          validate_using_scratch_expression!(statement.expression, root_allowed: true)
+          validate_owned_foreign_expression!(statement.expression, scopes:, root_allowed: true)
           infer_expression(statement.expression, scopes:)
+          return owned_foreign_call_refinements(statement.expression, scopes:)
         else
           raise SemaError, "unsupported statement #{statement.class.name}"
         end
@@ -477,6 +520,8 @@ module MilkTea
         raise SemaError, "duplicate local #{statement.name}" if current_scope.key?(statement.name)
 
         declared_type = statement.type ? resolve_type_ref(statement.type) : nil
+        validate_using_scratch_expression!(statement.value, root_allowed: true)
+        validate_owned_foreign_expression!(statement.value, scopes:, root_allowed: false)
         inferred_type = infer_expression(statement.value, scopes:, expected_type: declared_type)
 
         if declared_type
@@ -509,6 +554,8 @@ module MilkTea
       def check_assignment(statement, scopes:)
         target_type = infer_lvalue(statement.target, scopes:)
 
+        validate_using_scratch_expression!(statement.value, root_allowed: true)
+        validate_owned_foreign_expression!(statement.value, scopes:, root_allowed: false)
         value_type = infer_expression(statement.value, scopes:, expected_type: target_type)
 
         case statement.operator
@@ -531,6 +578,8 @@ module MilkTea
       end
 
       def check_match_stmt(statement, scopes:, return_type:)
+        validate_using_scratch_expression!(statement.expression, root_allowed: false)
+        validate_owned_foreign_expression!(statement.expression, scopes:, root_allowed: false)
         scrutinee_type = infer_expression(statement.expression, scopes:)
         unless scrutinee_type.is_a?(Types::Enum)
           raise SemaError, "match requires an enum scrutinee, got #{scrutinee_type}"
@@ -538,6 +587,8 @@ module MilkTea
 
         covered_members = {}
         statement.arms.each do |arm|
+          validate_using_scratch_expression!(arm.pattern, root_allowed: false)
+          validate_owned_foreign_expression!(arm.pattern, scopes:, root_allowed: false)
           pattern_type = infer_expression(arm.pattern, scopes:, expected_type: scrutinee_type)
           ensure_assignable!(pattern_type, scrutinee_type, "match arm expects #{scrutinee_type}, got #{pattern_type}")
 
@@ -556,6 +607,8 @@ module MilkTea
       end
 
       def check_for_stmt(statement, scopes:, return_type:)
+        validate_using_scratch_expression!(statement.iterable, root_allowed: false)
+        validate_owned_foreign_expression!(statement.iterable, scopes:, root_allowed: false)
         loop_type = if range_call?(statement.iterable)
                       check_range_loop(statement.iterable, scopes:)
                     else
@@ -579,6 +632,10 @@ module MilkTea
       end
 
       def check_static_assert(statement, scopes:)
+        validate_using_scratch_expression!(statement.condition, root_allowed: false)
+        validate_using_scratch_expression!(statement.message, root_allowed: false)
+        validate_owned_foreign_expression!(statement.condition, scopes:, root_allowed: false)
+        validate_owned_foreign_expression!(statement.message, scopes:, root_allowed: false)
         condition_type = infer_expression(statement.condition, scopes:, expected_type: @types.fetch("bool"))
         ensure_assignable!(condition_type, @types.fetch("bool"), "static_assert condition must be bool, got #{condition_type}")
         raise SemaError, "static_assert message must be a string literal" unless statement.message.is_a?(AST::StringLiteral)
@@ -730,6 +787,8 @@ module MilkTea
           infer_if_expression(expression, scopes:, expected_type:)
         when AST::Call
           infer_call(expression, scopes:, expected_type:)
+        when AST::UsingCall
+          infer_using_call(expression, scopes:, expected_type:)
         when AST::Specialization
           raise SemaError, "specialized name #{describe_expression(expression)} must be called"
         else
@@ -851,6 +910,8 @@ module MilkTea
           raise SemaError, "operator ~ requires an integer or flags operand, got #{operand_type}" unless bitwise_type?(operand_type)
 
           operand_type
+        when "out", "inout"
+          raise SemaError, "#{expression.operator} is only allowed for foreign call arguments"
         else
           raise SemaError, "unsupported unary operator #{expression.operator}"
         end
@@ -991,42 +1052,160 @@ module MilkTea
         nil
       end
 
-      def infer_call(expression, scopes:, expected_type: nil)
+      def infer_call(expression, scopes:, expected_type: nil, scratch: nil)
         callable_kind, callable, receiver = resolve_callable(expression.callee, scopes:)
 
         case callable_kind
         when :function
           callable = specialize_function_binding(callable, expression.arguments, scopes:)
-          check_function_call(callable, expression.arguments, scopes:)
+          raise SemaError, "using scratch is only allowed for foreign calls" if scratch && !foreign_function_binding?(callable)
+
+          check_function_call(callable, expression.arguments, scopes:, scratch:)
           callable.owner.send(:check_function, callable) unless callable.type_arguments.empty?
           callable.type.return_type
         when :method
+          raise SemaError, "using scratch is only allowed for foreign calls" if scratch
           raise SemaError, "cannot call mut method #{callable.name} on an immutable receiver" if callable.type.receiver_mutable && !assignable_receiver?(receiver, scopes)
 
-          check_function_call(callable, expression.arguments, scopes:)
+          check_function_call(callable, expression.arguments, scopes:, scratch:)
           callable.type.return_type
         when :struct
+          raise SemaError, "using scratch is only allowed for foreign calls" if scratch
           check_aggregate_construction(callable, expression.arguments, scopes:)
         when :array
+          raise SemaError, "using scratch is only allowed for foreign calls" if scratch
           check_array_construction(callable, expression.arguments, scopes:)
         when :cast
+          raise SemaError, "using scratch is only allowed for foreign calls" if scratch
           check_cast_call(callable, expression.arguments, scopes:)
         when :reinterpret
+          raise SemaError, "using scratch is only allowed for foreign calls" if scratch
           check_reinterpret_call(callable, expression.arguments, scopes:)
         when :zero
+          raise SemaError, "using scratch is only allowed for foreign calls" if scratch
           check_zero_call(callable, expression.arguments)
         when :result_ok, :result_err
+          raise SemaError, "using scratch is only allowed for foreign calls" if scratch
           check_result_construction(callable_kind, expression.arguments, scopes:, expected_type:)
         when :panic
+          raise SemaError, "using scratch is only allowed for foreign calls" if scratch
           check_panic_call(expression.arguments, scopes:)
         when :addr
+          raise SemaError, "using scratch is only allowed for foreign calls" if scratch
           check_addr_call(expression.arguments, scopes:)
         when :value
+          raise SemaError, "using scratch is only allowed for foreign calls" if scratch
           check_value_call(expression.arguments, scopes:)
         when :raw
+          raise SemaError, "using scratch is only allowed for foreign calls" if scratch
           check_raw_call(expression.arguments, scopes:)
         else
           raise SemaError, "#{describe_expression(expression.callee)} is not callable"
+        end
+      end
+
+      def infer_using_call(expression, scopes:, expected_type: nil)
+        infer_call(expression.call, scopes:, expected_type:, scratch: expression.scratch)
+      end
+
+      def validate_using_scratch_expression!(expression, root_allowed: false)
+        return unless expression
+
+        case expression
+        when AST::UsingCall
+          unless root_allowed
+            raise SemaError, "using scratch must be the top-level expression of a local initializer, assignment, return, or expression statement"
+          end
+
+          validate_using_scratch_expression!(expression.call, root_allowed: false)
+          validate_using_scratch_expression!(expression.scratch, root_allowed: false)
+        when AST::Call, AST::Specialization
+          validate_using_scratch_expression!(expression.callee, root_allowed: false)
+          expression.arguments.each do |argument|
+            validate_using_scratch_expression!(argument.value, root_allowed: false)
+          end
+        when AST::UnaryOp
+          validate_using_scratch_expression!(expression.operand, root_allowed: false)
+        when AST::BinaryOp
+          validate_using_scratch_expression!(expression.left, root_allowed: false)
+          validate_using_scratch_expression!(expression.right, root_allowed: false)
+        when AST::IfExpr
+          validate_using_scratch_expression!(expression.condition, root_allowed: false)
+          validate_using_scratch_expression!(expression.then_expression, root_allowed: false)
+          validate_using_scratch_expression!(expression.else_expression, root_allowed: false)
+        when AST::MemberAccess
+          validate_using_scratch_expression!(expression.receiver, root_allowed: false)
+        when AST::IndexAccess
+          validate_using_scratch_expression!(expression.receiver, root_allowed: false)
+          validate_using_scratch_expression!(expression.index, root_allowed: false)
+        end
+      end
+
+      def validate_owned_foreign_expression!(expression, scopes:, root_allowed: false)
+        return unless expression
+
+        if (foreign_call = resolve_foreign_call_expression(expression, scopes:)) && foreign_call_owns_binding?(foreign_call[:binding])
+          raise SemaError, "owned foreign calls must be top-level expression statements" unless root_allowed
+        end
+
+        case expression
+        when AST::UsingCall
+          validate_owned_foreign_expression!(expression.call, scopes:, root_allowed: false)
+          validate_owned_foreign_expression!(expression.scratch, scopes:, root_allowed: false)
+        when AST::Call, AST::Specialization
+          validate_owned_foreign_expression!(expression.callee, scopes:, root_allowed: false)
+          expression.arguments.each do |argument|
+            validate_owned_foreign_expression!(argument.value, scopes:, root_allowed: false)
+          end
+        when AST::UnaryOp
+          validate_owned_foreign_expression!(expression.operand, scopes:, root_allowed: false)
+        when AST::BinaryOp
+          validate_owned_foreign_expression!(expression.left, scopes:, root_allowed: false)
+          validate_owned_foreign_expression!(expression.right, scopes:, root_allowed: false)
+        when AST::IfExpr
+          validate_owned_foreign_expression!(expression.condition, scopes:, root_allowed: false)
+          validate_owned_foreign_expression!(expression.then_expression, scopes:, root_allowed: false)
+          validate_owned_foreign_expression!(expression.else_expression, scopes:, root_allowed: false)
+        when AST::MemberAccess
+          validate_owned_foreign_expression!(expression.receiver, scopes:, root_allowed: false)
+        when AST::IndexAccess
+          validate_owned_foreign_expression!(expression.receiver, scopes:, root_allowed: false)
+          validate_owned_foreign_expression!(expression.index, scopes:, root_allowed: false)
+        end
+      end
+
+      def resolve_foreign_call_expression(expression, scopes:)
+        call = expression.is_a?(AST::UsingCall) ? expression.call : expression
+        return unless call.is_a?(AST::Call)
+
+        callable_kind, callable, _receiver = resolve_callable(call.callee, scopes:)
+        return unless callable_kind == :function
+
+        callable = specialize_function_binding(callable, call.arguments, scopes:) if callable.type_params.any?
+        return unless foreign_function_binding?(callable)
+
+        { call:, binding: callable }
+      rescue SemaError
+        nil
+      end
+
+      def foreign_call_owns_binding?(binding)
+        binding.type.params.any? { |parameter| parameter.passing_mode == :owned }
+      end
+
+      def owned_foreign_call_refinements(expression, scopes:)
+        foreign_call = resolve_foreign_call_expression(expression, scopes:)
+        return {} unless foreign_call
+
+        binding = foreign_call[:binding]
+        return {} unless foreign_call_owns_binding?(binding)
+
+        binding.type.params.each_with_index.each_with_object({}) do |(parameter, index), refinements|
+          next unless parameter.passing_mode == :owned
+
+          argument = foreign_call[:call].arguments.fetch(index)
+          argument_binding = foreign_owned_argument_binding(parameter, argument, scopes:, function_name: binding.name)
+          refinements[argument.value.name] = @null_type if argument_binding.storage_type.is_a?(Types::Nullable)
         end
       end
 
@@ -1138,26 +1317,45 @@ module MilkTea
         end
       end
 
-      def check_function_call(binding, arguments, scopes:)
+      def check_function_call(binding, arguments, scopes:, scratch: nil)
         if arguments.any?(&:name)
           raise SemaError, "function #{binding.name} does not support named arguments"
         end
 
         expected_params = binding.type.params
+        requires_scratch = false
         unless call_arity_matches?(binding.type, arguments.length)
           raise SemaError, arity_error_message(binding.type, binding.name, arguments.length)
         end
 
         expected_params.each_with_index do |parameter, index|
           argument = arguments.fetch(index)
-          actual_type = infer_expression(argument.value, scopes:, expected_type: parameter.type)
-          ensure_argument_assignable!(
-            actual_type,
-            parameter.type,
-            external: binding.external,
-            message: "argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}",
-            expression: argument.value,
-          )
+          actual_type = foreign_argument_actual_type(parameter, argument, scopes:, function_name: binding.name)
+          if foreign_cstr_boundary_parameter?(parameter)
+            unless foreign_cstr_argument_compatible?(actual_type, parameter, expression: foreign_argument_expression(argument))
+              raise SemaError, "argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}"
+            end
+
+            requires_scratch ||= foreign_argument_requires_scratch?(parameter, argument, actual_type)
+          else
+            ensure_argument_assignable!(
+              actual_type,
+              parameter.type,
+              external: binding.external,
+              message: "argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}",
+              expression: foreign_argument_expression(argument),
+            )
+          end
+        end
+
+        if foreign_function_binding?(binding)
+          if scratch
+            raise SemaError, "using scratch is not needed for foreign call #{binding.name}" unless requires_scratch
+
+            validate_foreign_scratch!(binding, scratch, scopes:, requires_scratch:)
+          elsif requires_scratch
+            raise SemaError, "foreign call #{binding.name} requires using scratch"
+          end
         end
 
         arguments.drop(expected_params.length).each do |argument|
@@ -1486,6 +1684,7 @@ module MilkTea
       def argument_types_compatible?(actual_type, expected_type, external:, expression: nil)
         return true if types_compatible?(actual_type, expected_type, expression:, external_numeric: external)
         return true if external && extern_enum_integer_argument_compatibility?(actual_type, expected_type)
+        return true if external && foreign_mapping_context? && foreign_identity_projection_compatible?(actual_type, expected_type)
 
         false
       end
@@ -1536,6 +1735,34 @@ module MilkTea
         type.is_a?(Types::Primitive) && type.float?
       end
 
+      def foreign_identity_projection_compatible?(actual_type, expected_type)
+        if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
+          return foreign_identity_projection_compatible?(actual_type.base, expected_type.base)
+        end
+
+        return foreign_identity_projection_compatible?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
+        return false if actual_type.is_a?(Types::Nullable)
+
+        return true if pointer_type?(actual_type) && pointer_type?(expected_type) && (void_pointer_type?(actual_type) || void_pointer_type?(expected_type))
+        return true if void_pointer_type?(actual_type) && opaque_type?(expected_type)
+        return true if opaque_type?(actual_type) && void_pointer_type?(expected_type)
+        return true if char_pointer_type?(actual_type) && expected_type == @types.fetch("cstr")
+
+        false
+      end
+
+      def void_pointer_type?(type)
+        pointer_type?(type) && type.arguments.first == @types.fetch("void")
+      end
+
+      def char_pointer_type?(type)
+        pointer_type?(type) && type.arguments.first == @types.fetch("char")
+      end
+
+      def opaque_type?(type)
+        type.is_a?(Types::Opaque)
+      end
+
       def extern_enum_integer_argument_compatibility?(actual_type, expected_type)
         return unless actual_type.is_a?(Types::EnumBase)
         return unless expected_type.is_a?(Types::Primitive) && expected_type.integer? && expected_type.fixed_width_integer?
@@ -1581,6 +1808,13 @@ module MilkTea
         @unsafe_depth -= 1
       end
 
+      def with_foreign_mapping_context
+        @foreign_mapping_depth += 1
+        yield
+      ensure
+        @foreign_mapping_depth -= 1
+      end
+
       def with_loop
         @loop_depth += 1
         yield
@@ -1594,6 +1828,10 @@ module MilkTea
 
       def inside_loop?
         @loop_depth.positive?
+      end
+
+      def foreign_mapping_context?
+        @foreign_mapping_depth.positive?
       end
 
       def pointer_arithmetic_result(operator, left_type, right_type)
@@ -1634,6 +1872,10 @@ module MilkTea
 
       def pointer_type?(type)
         type.is_a?(Types::GenericInstance) && type.name == "ptr" && type.arguments.length == 1
+      end
+
+      def opaque_type?(type)
+        type.is_a?(Types::Opaque)
       end
 
       def ref_type?(type)
@@ -1998,7 +2240,7 @@ module MilkTea
         substitutions = {}
         expected_params.each_with_index do |parameter, index|
           argument = arguments.fetch(index)
-          actual_type = infer_expression(argument.value, scopes:)
+          actual_type = foreign_argument_actual_type(parameter, argument, scopes:, function_name: binding.name, expected_type: nil)
           collect_type_substitutions(parameter.type, actual_type, substitutions, binding.name)
         end
 
@@ -2090,7 +2332,15 @@ module MilkTea
         when Types::Function
           Types::Function.new(
             type.name,
-            params: type.params.map { |param| Types::Parameter.new(param.name, substitute_type(param.type, substitutions), mutable: param.mutable) },
+            params: type.params.map do |param|
+              Types::Parameter.new(
+                param.name,
+                substitute_type(param.type, substitutions),
+                mutable: param.mutable,
+                passing_mode: param.passing_mode,
+                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
+              )
+            end,
             return_type: substitute_type(type.return_type, substitutions),
             receiver_type: type.receiver_type ? substitute_type(type.receiver_type, substitutions) : nil,
             receiver_mutable: type.receiver_mutable,
@@ -2128,6 +2378,101 @@ module MilkTea
         return if ref_type?(type)
 
         raise SemaError, "local #{local_name} cannot store nested ref types" if contains_ref_type?(type)
+      end
+
+      def validate_owned_foreign_parameter!(type, function_name:, parameter_name:)
+        if type.is_a?(Types::Nullable) || !(opaque_type?(type) || pointer_type?(type))
+          raise SemaError, "owned parameter #{parameter_name} of #{function_name} must use a non-null opaque or ptr[...] type"
+        end
+      end
+
+      def foreign_cstr_boundary_parameter?(parameter)
+        parameter.boundary_type == @types.fetch("cstr") && parameter.type == @types.fetch("str")
+      end
+
+      def foreign_cstr_argument_compatible?(actual_type, parameter, expression:)
+        types_compatible?(actual_type, parameter.type, expression:) || actual_type == @types.fetch("cstr")
+      end
+
+      def foreign_argument_requires_scratch?(parameter, argument, actual_type)
+        return false unless foreign_cstr_boundary_parameter?(parameter)
+        return false if actual_type == @types.fetch("cstr")
+        return false if argument.value.is_a?(AST::StringLiteral) && !argument.value.cstring
+
+        true
+      end
+
+      def foreign_parameter_boundary_type(param, public_type, type_params:)
+        return resolve_type_ref(param.boundary_type, type_params:) if param.boundary_type
+        return pointer_to(public_type) if [:out, :inout].include?(param.mode)
+
+        nil
+      end
+
+      def foreign_function_binding?(binding)
+        binding.ast.is_a?(AST::ForeignFunctionDecl)
+      end
+
+      def foreign_mapping_expression(decl)
+        return decl.mapping if decl.mapping.is_a?(AST::Call)
+
+        AST::Call.new(
+          callee: decl.mapping,
+          arguments: decl.params.map { |param| AST::Argument.new(name: nil, value: AST::Identifier.new(name: param.name)) },
+        )
+      end
+
+      def foreign_argument_expression(argument)
+        if argument.value.is_a?(AST::UnaryOp) && ["out", "inout"].include?(argument.value.operator)
+          argument.value.operand
+        else
+          argument.value
+        end
+      end
+
+      def foreign_argument_actual_type(parameter, argument, scopes:, function_name:, expected_type: parameter.type)
+        case parameter.passing_mode
+        when :plain
+          infer_expression(argument.value, scopes:, expected_type:)
+        when :owned
+          foreign_owned_argument_binding(parameter, argument, scopes:, function_name:).type
+        when :out, :inout
+          unless argument.value.is_a?(AST::UnaryOp) && argument.value.operator == parameter.passing_mode.to_s
+            raise SemaError, "argument #{parameter.name} to #{function_name} must use #{parameter.passing_mode}"
+          end
+
+          infer_lvalue(argument.value.operand, scopes:)
+        else
+          raise SemaError, "unsupported foreign passing mode #{parameter.passing_mode}"
+        end
+      end
+
+      def foreign_owned_argument_binding(parameter, argument, scopes:, function_name:)
+        unless argument.value.is_a?(AST::Identifier)
+          raise SemaError, "owned argument #{parameter.name} to #{function_name} must be a bare nullable local or parameter binding"
+        end
+
+        binding = lookup_value(argument.value.name, scopes)
+        unless binding && %i[let var param].include?(binding.kind) && binding.storage_type.is_a?(Types::Nullable) && binding.storage_type.base == parameter.type
+          raise SemaError, "owned argument #{parameter.name} to #{function_name} must be a bare nullable local or parameter binding"
+        end
+
+        binding
+      end
+
+      def validate_foreign_scratch!(binding, scratch, scopes:, requires_scratch:)
+        raise SemaError, "using scratch is only allowed for foreign calls" unless foreign_function_binding?(binding)
+
+        scratch_type = infer_expression(scratch, scopes:)
+        raise SemaError, "using scratch expects ref[...] arena storage" unless ref_type?(scratch_type)
+
+        receiver_type = referenced_type(scratch_type)
+        mark_method = lookup_method(receiver_type, "mark")
+        reset_method = lookup_method(receiver_type, "reset")
+        to_cstr_method = lookup_method(receiver_type, "to_cstr")
+        unless mark_method && reset_method && (!requires_scratch || to_cstr_method)
+          raise SemaError, "using scratch expects ref[...] arena storage"
+        end
       end
 
       def safe_reference_source_expression?(expression, scopes:)

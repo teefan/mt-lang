@@ -1,0 +1,339 @@
+{
+  "module_name": "std.raylib",
+  "raw_module_name": "std.c.raylib",
+  "raw_import_alias": "c",
+  "types": {
+    "exclude": [
+      "__va_list_tag",
+      "va_list",
+      "rAudioBuffer",
+      "rAudioProcessor",
+      "TraceLogCallback",
+      "LoadFileDataCallback",
+      "SaveFileDataCallback",
+      "LoadFileTextCallback",
+      "SaveFileTextCallback",
+      "AudioCallback"
+    ]
+  },
+  "constants": {},
+  "functions": {
+    "exclude": [
+      "SetTraceLogCallback",
+      "SetLoadFileDataCallback",
+      "SetSaveFileDataCallback",
+      "SetLoadFileTextCallback",
+      "SetSaveFileTextCallback"
+    ],
+    "overrides": [
+      {
+        "raw": "InitWindow",
+        "params": [
+          { "name": "width", "type": "i32" },
+          { "name": "height", "type": "i32" },
+          { "name": "title", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "SetWindowState",
+        "params": [
+          { "name": "flags", "type": "ConfigFlags" }
+        ]
+      },
+      {
+        "raw": "ClearWindowState",
+        "params": [
+          { "name": "flags", "type": "ConfigFlags" }
+        ]
+      },
+      {
+        "raw": "BeginTextureMode",
+        "params": [
+          { "name": "target", "type": "RenderTexture2D" }
+        ]
+      },
+      {
+        "raw": "TakeScreenshot",
+        "params": [
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "SetConfigFlags",
+        "params": [
+          { "name": "flags", "type": "ConfigFlags" }
+        ]
+      },
+      {
+        "raw": "OpenURL",
+        "params": [
+          { "name": "url", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "MemAlloc",
+        "type_params": ["T"],
+        "params": [
+          { "name": "count", "type": "usize" }
+        ],
+        "return_type": "ptr[T]?",
+        "mapping": "c.MemAlloc(count * cast[u32](sizeof(T)))"
+      },
+      {
+        "raw": "MemRealloc",
+        "type_params": ["T"],
+        "params": [
+          { "name": "memory", "type": "ptr[T]" },
+          { "name": "count", "type": "usize" }
+        ],
+        "return_type": "ptr[T]?",
+        "mapping": "c.MemRealloc(memory, count * cast[u32](sizeof(T)))"
+      },
+      {
+        "raw": "MemFree",
+        "type_params": ["T"],
+        "params": [
+          { "name": "memory", "type": "ptr[T]" }
+        ]
+      },
+      {
+        "raw": "LoadFileData",
+        "params": [
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" },
+          { "name": "data_size", "type": "i32", "mode": "out" }
+        ],
+        "return_type": "ptr[u8]?"
+      },
+      {
+        "raw": "UnloadFileData",
+        "params": [
+          { "name": "data", "type": "ptr[u8]", "mode": "owned" }
+        ]
+      },
+      {
+        "raw": "SaveFileData",
+        "params": [
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" },
+          { "name": "data", "type": "span[u8]" }
+        ],
+        "mapping": "c.SaveFileData(file_name, data.data, cast[i32](data.len))"
+      },
+      {
+        "raw": "FileExists",
+        "params": [
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "DirectoryExists",
+        "params": [
+          { "name": "dir_path", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "IsKeyPressed",
+        "params": [
+          { "name": "key", "type": "KeyboardKey" }
+        ]
+      },
+      {
+        "raw": "IsKeyPressedRepeat",
+        "params": [
+          { "name": "key", "type": "KeyboardKey" }
+        ]
+      },
+      {
+        "raw": "IsKeyDown",
+        "params": [
+          { "name": "key", "type": "KeyboardKey" }
+        ]
+      },
+      {
+        "raw": "IsKeyReleased",
+        "params": [
+          { "name": "key", "type": "KeyboardKey" }
+        ]
+      },
+      {
+        "raw": "IsKeyUp",
+        "params": [
+          { "name": "key", "type": "KeyboardKey" }
+        ]
+      },
+      {
+        "raw": "SetExitKey",
+        "params": [
+          { "name": "key", "type": "KeyboardKey" }
+        ]
+      },
+      {
+        "raw": "IsGamepadButtonPressed",
+        "params": [
+          { "name": "gamepad", "type": "i32" },
+          { "name": "button", "type": "GamepadButton" }
+        ]
+      },
+      {
+        "raw": "IsGamepadButtonDown",
+        "params": [
+          { "name": "gamepad", "type": "i32" },
+          { "name": "button", "type": "GamepadButton" }
+        ]
+      },
+      {
+        "raw": "IsGamepadButtonReleased",
+        "params": [
+          { "name": "gamepad", "type": "i32" },
+          { "name": "button", "type": "GamepadButton" }
+        ]
+      },
+      {
+        "raw": "IsMouseButtonPressed",
+        "params": [
+          { "name": "button", "type": "MouseButton" }
+        ]
+      },
+      {
+        "raw": "IsMouseButtonDown",
+        "params": [
+          { "name": "button", "type": "MouseButton" }
+        ]
+      },
+      {
+        "raw": "IsMouseButtonReleased",
+        "params": [
+          { "name": "button", "type": "MouseButton" }
+        ]
+      },
+      {
+        "raw": "IsMouseButtonUp",
+        "params": [
+          { "name": "button", "type": "MouseButton" }
+        ]
+      },
+      {
+        "raw": "SetMouseCursor",
+        "params": [
+          { "name": "cursor", "type": "MouseCursor" }
+        ]
+      },
+      {
+        "raw": "SetGesturesEnabled",
+        "params": [
+          { "name": "flags", "type": "Gesture" }
+        ]
+      },
+      {
+        "raw": "IsGestureDetected",
+        "params": [
+          { "name": "gesture", "type": "Gesture" }
+        ]
+      },
+      {
+        "raw": "UpdateCamera",
+        "params": [
+          { "name": "camera", "type": "Camera", "mode": "inout" },
+          { "name": "mode", "type": "CameraMode" }
+        ]
+      },
+      {
+        "raw": "DrawText",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "pos_x", "type": "i32" },
+          { "name": "pos_y", "type": "i32" },
+          { "name": "font_size", "type": "i32" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "TextFormat",
+        "name": "text_format_i32",
+        "params": [
+          { "name": "format", "type": "str", "boundary_type": "cstr" },
+          { "name": "value", "type": "i32" }
+        ],
+        "return_type": "cstr",
+        "mapping": "c.TextFormat(format, value)"
+      },
+      {
+        "raw": "TextFormat",
+        "name": "text_format_i32_i32",
+        "params": [
+          { "name": "format", "type": "str", "boundary_type": "cstr" },
+          { "name": "first", "type": "i32" },
+          { "name": "second", "type": "i32" }
+        ],
+        "return_type": "cstr",
+        "mapping": "c.TextFormat(format, first, second)"
+      },
+      {
+        "raw": "TextFormat",
+        "name": "text_format_i32_i32_i32_i32",
+        "params": [
+          { "name": "format", "type": "str", "boundary_type": "cstr" },
+          { "name": "first", "type": "i32" },
+          { "name": "second", "type": "i32" },
+          { "name": "third", "type": "i32" },
+          { "name": "fourth", "type": "i32" }
+        ],
+        "return_type": "cstr",
+        "mapping": "c.TextFormat(format, first, second, third, fourth)"
+      },
+      {
+        "raw": "TextFormat",
+        "name": "text_format_i32_cstr",
+        "params": [
+          { "name": "format", "type": "str", "boundary_type": "cstr" },
+          { "name": "value", "type": "i32" },
+          { "name": "label", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "cstr",
+        "mapping": "c.TextFormat(format, value, label)"
+      },
+      {
+        "raw": "TextFormat",
+        "name": "text_format_cstr",
+        "params": [
+          { "name": "format", "type": "str", "boundary_type": "cstr" },
+          { "name": "value", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "cstr",
+        "mapping": "c.TextFormat(format, value)"
+      },
+      {
+        "raw": "TextFormat",
+        "name": "text_format_f32",
+        "params": [
+          { "name": "format", "type": "str", "boundary_type": "cstr" },
+          { "name": "value", "type": "f32" }
+        ],
+        "return_type": "cstr",
+        "mapping": "c.TextFormat(format, value)"
+      },
+      {
+        "raw": "TextFormat",
+        "name": "text_format_f32_f32",
+        "params": [
+          { "name": "format", "type": "str", "boundary_type": "cstr" },
+          { "name": "first", "type": "f32" },
+          { "name": "second", "type": "f32" }
+        ],
+        "return_type": "cstr",
+        "mapping": "c.TextFormat(format, first, second)"
+      },
+      {
+        "raw": "LoadTexture",
+        "params": [
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "UnloadRenderTexture",
+        "params": [
+          { "name": "target", "type": "RenderTexture2D" }
+        ]
+      }
+    ]
+  }
+}

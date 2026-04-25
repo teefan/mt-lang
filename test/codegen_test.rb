@@ -155,6 +155,307 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/mt_span_i32 items = \(mt_span_i32\)\{ \.data = \(\(int32_t\*\) \(&value\)\), \.len = 1 \};/, generated)
   end
 
+  def test_generate_c_for_foreign_defs_with_out_and_using_scratch
+    source = <<~MT
+      module demo.main
+
+      import std.mem.arena as arena
+      import std.raylib as rl
+
+      def main(path: str, scratch: ref[arena.Arena], data: span[u8]) -> i32:
+          var data_size = 0
+          let loaded = rl.load_file_data(path, out data_size) using scratch
+          let saved = rl.save_file_data(path, data) using scratch
+          if loaded != null and saved:
+              return data_size
+          return 0
+    MT
+
+    imported_sources = {
+      "std/c/raylib.mt" => <<~MT,
+        extern module std.c.raylib:
+            include "raylib.h"
+
+            extern def LoadFileData(file_name: cstr, data_size: ptr[i32]) -> ptr[u8]?
+            extern def SaveFileData(file_name: cstr, data: ptr[u8], bytes: i32) -> bool
+      MT
+      "std/raylib.mt" => <<~MT,
+        module std.raylib
+
+        import std.c.raylib as c
+
+        pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
+        pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/std_mem_arena_Arena_mark\(/, generated)
+    assert_match(/std_mem_arena_Arena_reset\(/, generated)
+    assert_match(/LoadFileData\(/, generated)
+    assert_match(/&data_size/, generated)
+    assert_match(/SaveFileData\(/, generated)
+    assert_match(/__mt_foreign_arg_\d+\.data/, generated)
+    assert_match(/\(\(int32_t\) __mt_foreign_arg_\d+\.len\)|\(int32_t\) __mt_foreign_arg_\d+\.len/, generated)
+  end
+
+  def test_generate_c_for_foreign_defs_with_string_literal_without_using_scratch
+    source = <<~MT
+      module demo.main
+
+      import std.raylib as rl
+
+      def main() -> void:
+          rl.init_window(800, 450, "Demo")
+    MT
+
+    imported_sources = {
+      "std/c/raylib.mt" => <<~MT,
+        extern module std.c.raylib:
+            include "raylib.h"
+
+            extern def InitWindow(width: i32, height: i32, title: cstr) -> void
+      MT
+      "std/raylib.mt" => <<~MT,
+        module std.raylib
+
+        import std.c.raylib as c
+
+        pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    refute_match(/Arena_mark\(/, generated)
+    refute_match(/Arena_reset\(/, generated)
+    refute_match(/__mt_foreign_arg_\d+/, generated)
+    assert_match(/InitWindow\(800, 450, "Demo"\);/, generated)
+  end
+
+  def test_generate_c_for_foreign_defs_without_temps_for_simple_statement_arguments
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main(center: f32) -> void:
+          sample.draw_triangle(
+              sample.Vector2(x = center, y = 80.0),
+              sample.Vector2(x = center - 60.0, y = 150.0),
+              sample.Vector2(x = center + 60.0, y = 150.0),
+              sample.VIOLET,
+          )
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            struct Vector2:
+                x: f32
+                y: f32
+
+            struct Color:
+                r: u8
+                g: u8
+                b: u8
+                a: u8
+
+            const VIOLET: Color = Color(r = 200, g = 122, b = 255, a = 255)
+
+            extern def DrawTriangle(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub type Vector2 = c.Vector2
+        pub type Color = c.Color
+        pub const VIOLET: Color = c.VIOLET
+
+        pub foreign def draw_triangle(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void = c.DrawTriangle
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    refute_match(/__mt_foreign_arg_\d+/, generated)
+    assert_match(/DrawTriangle\(\(Vector2\)\{ \.x = center, \.y = 80\.0f \}, \(Vector2\)\{ \.x = center - 60\.0f, \.y = 150\.0f \}, \(Vector2\)\{ \.x = center \+ 60\.0f, \.y = 150\.0f \}, std_sample_VIOLET\);/, generated)
+  end
+
+  def test_generate_c_for_nested_foreign_calls_with_imported_arguments
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main() -> void:
+          sample.use_color(sample.fade(sample.RED, 0.5))
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            struct Color:
+                r: u8
+                g: u8
+                b: u8
+                a: u8
+
+            const RED: Color = Color(r = 255, g = 0, b = 0, a = 255)
+
+            extern def Fade(color: Color, alpha: f32) -> Color
+            extern def UseColor(color: Color) -> void
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub type Color = c.Color
+        pub const RED: Color = c.RED
+
+        pub foreign def fade(color: Color, alpha: f32) -> Color = c.Fade
+        pub foreign def use_color(color: Color) -> void = c.UseColor
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/Color __mt_foreign_arg_\d+ = Fade\(std_sample_RED, 0\.5f\);/, generated)
+    assert_match(/UseColor\(__mt_foreign_arg_\d+\);/, generated)
+  end
+
+  def test_generate_c_for_foreign_defs_with_identity_pointer_projections
+    source = <<~MT
+      module demo.main
+
+      import std.mem as mem
+
+      def first_byte() -> byte:
+          unsafe:
+              return mem.allocate_bytes(16)[0]
+
+      def main(buffer: ptr[char]) -> byte:
+          mem.release_bytes(mem.allocate_bytes(8))
+          mem.set_label(buffer)
+          return first_byte()
+    MT
+
+    imported_sources = {
+      "std/c/mem.mt" => <<~MT,
+        extern module std.c.mem:
+            include "mem.h"
+
+            extern def AllocateBytes(size: usize) -> ptr[void]
+            extern def ReleaseBytes(memory: ptr[void]) -> void
+            extern def SetLabel(label: cstr) -> void
+      MT
+      "std/mem.mt" => <<~MT,
+        module std.mem
+
+        import std.c.mem as c
+
+        pub foreign def allocate_bytes(size: usize) -> ptr[byte] = c.AllocateBytes
+        pub foreign def release_bytes(memory: ptr[byte]) -> void = c.ReleaseBytes
+        pub foreign def set_label(label: ptr[char]) -> void = c.SetLabel
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/return \(\(\(uint8_t\*\) AllocateBytes\(16\)\)\)\[0\];/, generated)
+    assert_match(/uint8_t \*__mt_foreign_arg_\d+ = \(\(uint8_t\*\) AllocateBytes\(8\)\);/, generated)
+    assert_match(/ReleaseBytes\(__mt_foreign_arg_\d+\);/, generated)
+    assert_match(/SetLabel\(buffer\);/, generated)
+  end
+
+  def test_generate_c_for_foreign_defs_with_opaque_handle_projections
+    source = <<~MT
+      module demo.main
+
+      import std.window as win
+
+      def main() -> i32:
+          let window = win.create()
+          if window != null:
+              win.destroy(window)
+              return 1
+          return 0
+    MT
+
+    imported_sources = {
+      "std/c/window.mt" => <<~MT,
+        extern module std.c.window:
+            include "window.h"
+
+            extern def CreateWindow() -> ptr[void]?
+            extern def DestroyWindow(window: ptr[void]?) -> void
+      MT
+      "std/window.mt" => <<~MT,
+        module std.window
+
+        import std.c.window as c
+
+        pub opaque Window
+
+        pub foreign def create() -> Window? = c.CreateWindow
+        pub foreign def destroy(window: Window?) -> void = c.DestroyWindow
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/typedef struct std_window_Window std_window_Window;/, generated)
+    assert_match(/std_window_Window\* window = CreateWindow\(\);/, generated)
+    assert_match(/DestroyWindow\(window\);/, generated)
+  end
+
+  def test_generate_c_for_owned_foreign_release_calls
+    source = <<~MT
+      module demo.main
+
+      import std.window as win
+
+      def main() -> i32:
+          let window = win.create()
+          if window != null:
+              win.destroy(window)
+              if window == null:
+                  return 1
+          return 0
+    MT
+
+    imported_sources = {
+      "std/c/window.mt" => <<~MT,
+        extern module std.c.window:
+            include "window.h"
+
+            extern def CreateWindow() -> ptr[void]?
+            extern def DestroyWindow(window: ptr[void]?) -> void
+      MT
+      "std/window.mt" => <<~MT,
+        module std.window
+
+        import std.c.window as c
+
+        pub opaque Window
+
+        pub foreign def create() -> Window? = c.CreateWindow
+        pub foreign def destroy(owned window: Window) -> void = c.DestroyWindow
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/std_window_Window\* window = CreateWindow\(\);/, generated)
+    assert_match(/DestroyWindow\(window\);/, generated)
+    assert_match(/window = NULL;/, generated)
+    assert_match(/if \(window == NULL\)/, generated)
+  end
+
   def test_generate_c_for_safe_span_indexing_and_element_assignment
     source = [
       "module demo.span_index_surface",
@@ -521,6 +822,28 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/__mt_loop_continue_\d+:;/, generated)
     assert_match(/__mt_loop_break_\d+:;/, generated)
     assert_match(/__mt_for_index_\d+ \+= 1;/, generated)
+  end
+
+  def test_generate_c_omits_unused_loop_labels
+    source = [
+      "module demo.simple_loop_surface",
+      "",
+      "def main() -> i32:",
+      "    var i = 0",
+      "    while i < 3:",
+      "        i += 1",
+      "    return i",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/int32_t main\(void\) \{\n  int32_t i = 0;\n  while \(i < 3\) \{/, generated)
+    assert_match(/while \(i < 3\) \{/, generated)
+    refute_match(/\n  \{\n    while \(i < 3\) \{/, generated)
+    refute_match(/__mt_loop_continue_\d+:;/, generated)
+    refute_match(/__mt_loop_break_\d+:;/, generated)
+    refute_match(/goto __mt_loop_(continue|break)_\d+;/, generated)
   end
 
   def test_generate_c_for_layout_queries_and_static_assert

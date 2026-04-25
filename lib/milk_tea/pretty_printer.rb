@@ -173,6 +173,8 @@ module MilkTea
           emit_function(declaration)
         when AST::ExternFunctionDecl
           line("#{render_function_signature(declaration, prefix: 'extern ')}")
+        when AST::ForeignFunctionDecl
+          line("#{render_function_signature(declaration)} = #{render_expression(declaration.mapping)}")
         else
           raise ArgumentError, "unsupported AST declaration #{declaration.class.name}"
         end
@@ -210,6 +212,8 @@ module MilkTea
                              else
                                "def "
                              end
+                           elsif function.is_a?(AST::ForeignFunctionDecl)
+                             "foreign def "
                            else
                              "def "
                            end
@@ -334,6 +338,14 @@ module MilkTea
       end
 
       def render_param(param)
+        if param.is_a?(AST::ForeignParam)
+          text = +""
+          text << "#{param.mode} " unless param.mode == :plain
+          text << "#{param.name}: #{render_type(param.type)}"
+          text << " as #{render_type(param.boundary_type)}" if param.boundary_type
+          return text
+        end
+
         prefix = param.mutable ? "mut " : ""
         return "#{prefix}#{param.name}" unless param.type
 
@@ -376,9 +388,11 @@ module MilkTea
           wrap("#{render_postfix(expression.callee)}[#{expression.arguments.map { |argument| render_type_argument(argument.value) }.join(', ')}]", parent_precedence, POSTFIX_PRECEDENCE)
         when AST::Call
           wrap("#{render_postfix(expression.callee)}(#{expression.arguments.map { |argument| render_argument(argument) }.join(', ')})", parent_precedence, POSTFIX_PRECEDENCE)
+        when AST::UsingCall
+          wrap("#{render_expression(expression.call, POSTFIX_PRECEDENCE)} using #{render_expression(expression.scratch, POSTFIX_PRECEDENCE)}", parent_precedence, POSTFIX_PRECEDENCE)
         when AST::UnaryOp
           operand = render_expression(expression.operand, UNARY_PRECEDENCE)
-          text = expression.operator == "not" ? "not #{operand}" : "#{expression.operator}#{operand}"
+          text = %w[not out inout].include?(expression.operator) ? "#{expression.operator} #{operand}" : "#{expression.operator}#{operand}"
           wrap(text, parent_precedence, UNARY_PRECEDENCE)
         when AST::BinaryOp
           current_precedence = precedence(expression.operator)
@@ -421,7 +435,7 @@ module MilkTea
 
       def postfix_expression?(expression)
         expression.is_a?(AST::Identifier) || expression.is_a?(AST::MemberAccess) || expression.is_a?(AST::IndexAccess) ||
-          expression.is_a?(AST::Specialization) || expression.is_a?(AST::Call)
+          expression.is_a?(AST::Specialization) || expression.is_a?(AST::Call) || expression.is_a?(AST::UsingCall)
       end
     end
 

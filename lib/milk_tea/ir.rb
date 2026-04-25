@@ -2,9 +2,10 @@
 
 module MilkTea
   module IR
-    Program = Data.define(:module_name, :includes, :constants, :structs, :unions, :enums, :static_asserts, :functions)
+    Program = Data.define(:module_name, :includes, :constants, :opaques, :structs, :unions, :enums, :static_asserts, :functions)
     Include = Data.define(:header)
     Constant = Data.define(:name, :c_name, :type, :value)
+    OpaqueDecl = Data.define(:name, :c_name)
       StructDecl = Data.define(:name, :c_name, :fields, :packed, :alignment)
     UnionDecl = Data.define(:name, :c_name, :fields)
     EnumDecl = Data.define(:name, :c_name, :backing_type, :members, :flags)

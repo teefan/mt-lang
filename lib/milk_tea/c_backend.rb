@@ -32,9 +32,10 @@ module MilkTea
         lines << ""
       end
 
+      opaque_decls = @program.opaques
       struct_decls = sort_struct_decls(@program.structs + collect_generic_struct_decls + collect_result_decls)
 
-      forward_declarations = emit_forward_declarations(struct_decls)
+      forward_declarations = emit_forward_declarations(opaque_decls, struct_decls)
       unless forward_declarations.empty?
         lines.concat(forward_declarations)
         lines << ""
@@ -218,8 +219,11 @@ module MilkTea
       ]
     end
 
-    def emit_forward_declarations(struct_decls)
+    def emit_forward_declarations(opaque_decls, struct_decls)
       lines = []
+      opaque_decls.each do |opaque_decl|
+        lines << "typedef struct #{opaque_decl.c_name} #{opaque_decl.c_name};"
+      end
       struct_decls.each do |struct_decl|
         lines << "typedef struct #{struct_decl.c_name} #{struct_decl.c_name};"
       end
@@ -271,18 +275,19 @@ module MilkTea
 
       prefix = function.entry_point ? "" : "static "
       lines = ["#{prefix}#{c_function_return_type(function.return_type)} #{function.c_name}(#{params}) {"]
+      used_labels = collect_used_labels(function.body)
       if function.body.empty?
         lines << "#{INDENT}(void)0;"
       else
         function.body.each do |statement|
-          lines.concat(emit_statement(statement, 1, function:))
+          lines.concat(emit_statement(statement, 1, function:, used_labels:))
         end
       end
       lines << "}"
       lines
     end
 
-    def emit_statement(statement, level, function:)
+    def emit_statement(statement, level, function:, used_labels:)
       indent = INDENT * level
 
       case statement
@@ -301,12 +306,16 @@ module MilkTea
           ["#{indent}#{emit_expression(statement.target)} #{statement.operator} #{emit_expression(statement.value)};"]
         end
       when IR::BlockStmt
-        lines = ["#{indent}{"]
-        statement.body.each do |inner|
-          lines.concat(emit_statement(inner, level + 1, function:))
+        if block_requires_scope?(statement.body)
+          lines = ["#{indent}{"]
+          statement.body.each do |inner|
+            lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
+          end
+          lines << "#{indent}}"
+          lines
+        else
+          statement.body.flat_map { |inner| emit_statement(inner, level, function:, used_labels:) }
         end
-        lines << "#{indent}}"
-        lines
       when IR::ExpressionStmt
         ["#{indent}#{emit_expression(statement.expression)};"]
       when IR::ReturnStmt
@@ -322,25 +331,27 @@ module MilkTea
       when IR::WhileStmt
         lines = ["#{indent}while (#{emit_expression(statement.condition)}) {"]
         statement.body.each do |inner|
-          lines.concat(emit_statement(inner, level + 1, function:))
+          lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
         end
         lines << "#{indent}}"
         lines
       when IR::GotoStmt
         ["#{indent}goto #{statement.label};"]
       when IR::LabelStmt
+        return [] unless used_labels.include?(statement.name)
+
         ["#{indent}#{statement.name}:;"]
       when IR::StaticAssert
         ["#{indent}#{emit_static_assert(statement)}"]
       when IR::IfStmt
         lines = ["#{indent}if (#{emit_expression(statement.condition)}) {"]
         statement.then_body.each do |inner|
-          lines.concat(emit_statement(inner, level + 1, function:))
+          lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
         end
         if statement.else_body && !statement.else_body.empty?
           lines << "#{indent}} else {"
           statement.else_body.each do |inner|
-            lines.concat(emit_statement(inner, level + 1, function:))
+            lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
           end
         end
         lines << "#{indent}}"
@@ -350,7 +361,7 @@ module MilkTea
         statement.cases.each do |switch_case|
           lines << "#{indent}#{INDENT}case #{emit_expression(switch_case.value)}: {"
           switch_case.body.each do |inner|
-            lines.concat(emit_statement(inner, level + 2, function:))
+            lines.concat(emit_statement(inner, level + 2, function:, used_labels:))
           end
           lines << "#{indent}#{INDENT}#{INDENT}break;" unless body_terminates?(switch_case.body)
           lines << "#{indent}#{INDENT}}"
@@ -383,6 +394,34 @@ module MilkTea
       else
         false
       end
+    end
+
+    def collect_used_labels(statements)
+      labels = []
+      collect_used_labels_from_statements(statements, labels)
+      labels.uniq
+    end
+
+    def collect_used_labels_from_statements(statements, labels)
+      statements.each do |statement|
+        case statement
+        when IR::BlockStmt, IR::WhileStmt
+          collect_used_labels_from_statements(statement.body, labels)
+        when IR::IfStmt
+          collect_used_labels_from_statements(statement.then_body, labels)
+          collect_used_labels_from_statements(statement.else_body, labels) if statement.else_body
+        when IR::SwitchStmt
+          statement.cases.each do |switch_case|
+            collect_used_labels_from_statements(switch_case.body, labels)
+          end
+        when IR::GotoStmt
+          labels << statement.label
+        end
+      end
+    end
+
+    def block_requires_scope?(statements)
+      statements.any? { |statement| statement.is_a?(IR::LocalDecl) }
     end
 
     def emit_static_assert(statement)
@@ -748,7 +787,8 @@ module MilkTea
         base = named_type_c_name(type)
         pointer ? "#{base}*" : base
       when Types::Opaque
-        "#{type.name}*"
+        base = named_type_c_name(type)
+        pointer ? "#{base}**" : "#{base}*"
       else
         raise LoweringError, "unsupported C type #{type.class.name}"
       end

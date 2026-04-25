@@ -110,6 +110,8 @@ module MilkTea
         parse_methods_block
       elsif check(:edit) || check(:static)
         raise error(peek, "#{peek.lexeme} def is only allowed inside methods blocks")
+      elsif match(:foreign)
+        parse_foreign_decl(visibility:)
       elsif match(:def)
         parse_function_def(visibility:)
       elsif match(:extern)
@@ -329,6 +331,11 @@ module MilkTea
       parse_extern_function_decl
     end
 
+    def parse_foreign_decl(visibility: :private)
+      consume(:def, "expected def after foreign")
+      parse_foreign_function_decl(visibility:)
+    end
+
     def parse_extern_function_decl
       name = consume_name("expected function name").lexeme
       type_params = parse_declaration_type_params
@@ -337,6 +344,18 @@ module MilkTea
       return_type = parse_type_ref
       consume_end_of_statement
       AST::ExternFunctionDecl.new(name:, type_params:, params:, return_type:, variadic:)
+    end
+
+    def parse_foreign_function_decl(visibility: :private)
+      name = consume_name("expected function name").lexeme
+      type_params = parse_declaration_type_params
+      params = parse_foreign_params
+      consume(:arrow, "expected '->' before foreign function return type")
+      return_type = parse_type_ref
+      consume(:equal, "expected '=' before foreign function mapping")
+      mapping = parse_expression
+      consume_end_of_statement
+      AST::ForeignFunctionDecl.new(name:, type_params:, params:, return_type:, mapping:, visibility:)
     end
 
     def parse_params(allow_variadic: false)
@@ -362,6 +381,21 @@ module MilkTea
       params
     end
 
+    def parse_foreign_params
+      consume(:lparen, "expected '('")
+      params = []
+
+      unless check(:rparen)
+        loop do
+          params << parse_foreign_param
+          break unless match(:comma)
+        end
+      end
+
+      consume(:rparen, "expected ')' after parameters")
+      params
+    end
+
     def parse_param
       mutable = match(:mut)
       name_token = consume_name("expected parameter name")
@@ -370,6 +404,25 @@ module MilkTea
       param_type = parse_type_ref
 
       AST::Param.new(name: name_token.lexeme, type: param_type, mutable:)
+    end
+
+    def parse_foreign_param
+      mode = if match(:out)
+               :out
+             elsif match(:owned)
+               :owned
+             elsif match(:inout)
+               :inout
+             else
+               :plain
+             end
+      name_token = consume_name("expected parameter name")
+      raise error(name_token, "expected ':' and parameter type") unless match(:colon)
+
+      param_type = parse_type_ref
+      boundary_type = match(:as) ? parse_type_ref : nil
+
+      AST::ForeignParam.new(name: name_token.lexeme, type: param_type, mode:, boundary_type:)
     end
 
     def parse_type_ref
@@ -655,7 +708,7 @@ module MilkTea
     end
 
     def parse_unary
-      if match(:not, :minus, :plus, :tilde)
+      if match(:not, :minus, :plus, :tilde, :out, :inout)
         operator = previous.lexeme
         operand = parse_unary
         AST::UnaryOp.new(operator:, operand:)
@@ -682,6 +735,12 @@ module MilkTea
           end
         elsif match(:lparen)
           expression = AST::Call.new(callee: expression, arguments: parse_call_arguments)
+        elsif match(:using)
+          raise error(previous, "using is only allowed after a call expression") unless expression.is_a?(AST::Call)
+
+          scratch = parse_expression
+          expression = AST::UsingCall.new(call: expression, scratch:)
+          break
         else
           break
         end
