@@ -46,9 +46,9 @@ methods Arena:
             let buffer = cast[ptr[char]](memory)
             var index: usize = 0
             while index < text.len:
-                value(buffer + index) = value(text.data + index)
+                deref(buffer + index) = deref(text.data + index)
                 index += 1
-            value(buffer + text.len) = zero[char]()
+            deref(buffer + text.len) = zero[char]()
             return cast[cstr](buffer)
 
     pub edit def release() -> void:

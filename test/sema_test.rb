@@ -38,7 +38,7 @@ class MilkTeaSemaTest < Minitest::Test
           if handle == null:
               return 0
           unsafe:
-              return value(handle)
+              return deref(handle)
     MT
 
     result = check_source(source)
@@ -52,8 +52,8 @@ class MilkTeaSemaTest < Minitest::Test
 
       def read(handle: ptr[i32]?) -> i32:
           unsafe:
-              if handle != null and value(handle) > 0:
-                  return value(handle)
+              if handle != null and deref(handle) > 0:
+                  return deref(handle)
           return 0
     MT
 
@@ -757,7 +757,7 @@ class MilkTeaSemaTest < Minitest::Test
           if items.len == 0:
               return 0
           unsafe:
-              return value(items.data)
+              return deref(items.data)
 
       def main() -> i32:
           var value = 7
@@ -794,27 +794,28 @@ class MilkTeaSemaTest < Minitest::Test
   end
 
   def test_type_checks_generic_struct_instantiation_and_embedding
-    source = <<~MT
-      module demo.generics
-
-      struct Slice[T]:
-          data: ptr[T]
-          len: usize
-
-      struct Holder:
-          items: Slice[i32]
-
-      def read(items: Slice[i32]) -> i32:
-          if items.len == 0:
-              return 0
-          unsafe:
-              return value(items.data)
-
-      def main() -> i32:
-          var value = 7
-          let holder = Holder(items = Slice[i32](data = raw(addr(value)), len = 1))
-          return read(holder.items)
-    MT
+    source = [
+      "module demo.generics",
+      "",
+      "struct Slice[T]:",
+      "    data: ptr[T]",
+      "    len: usize",
+      "",
+      "struct Holder:",
+      "    items: Slice[i32]",
+      "",
+      "def read(items: Slice[i32]) -> i32:",
+      "    if items.len == 0:",
+      "        return 0",
+      "    unsafe:",
+      "        return deref(items.data)",
+      "",
+      "def main() -> i32:",
+      "    var value = 7",
+      "    let holder = Holder(items = Slice[i32](data = raw(addr(value)), len = 1))",
+      "    return read(holder.items)",
+      "",
+    ].join("\n")
 
     result = check_source(source)
 
@@ -844,7 +845,7 @@ class MilkTeaSemaTest < Minitest::Test
           let items = Slice[i32](data = raw(addr(value)), len = 1)
           let smallest = min(9, 4)
           unsafe:
-              return value(head(items)) + smallest
+              return deref(head(items)) + smallest
     MT
 
     result = check_source(source)
@@ -1081,7 +1082,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def add(target: ptr[i32], amount: i32) -> void:
           unsafe:
-              value(target) += amount
+              deref(target) += amount
 
       def main() -> i32:
           var total = 0
@@ -1758,7 +1759,7 @@ class MilkTeaSemaTest < Minitest::Test
           var counter = Counter(value = 3)
           let counter_ptr = raw(addr(counter))
           unsafe:
-              value(counter_ptr).value = 7
+              deref(counter_ptr).value = 7
           return counter.value
     MT
 
@@ -2020,7 +2021,7 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> i32:
           var counter = Counter(value = 3)
           let counter_ptr = raw(addr(counter))
-          return value(counter_ptr).value
+          return deref(counter_ptr).value
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -2051,7 +2052,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.bad
 
       def main() -> i32:
-          let value = value(1)
+          let value = deref(1)
           return value
     MT
 
@@ -2059,7 +2060,28 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/value expects ref\[\.\.\.\] or ptr\[\.\.\.\], got i32/, error.message)
+    assert_match(/deref expects ptr\[\.\.\.\], got i32/, error.message)
+  end
+
+  def test_rejects_value_on_raw_pointer
+    source = <<~MT
+      module demo.bad
+
+      struct Counter:
+          value: i32
+
+      def main() -> i32:
+          var counter = Counter(value = 3)
+          let counter_ptr = raw(addr(counter))
+          unsafe:
+              return value(counter_ptr).value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/value expects ref\[\.\.\.\], got ptr\[demo\.bad\.Counter\]/, error.message)
   end
 
   def test_rejects_pointer_cast_outside_unsafe
@@ -2583,7 +2605,7 @@ class MilkTeaSemaTest < Minitest::Test
           value(value_ref) += 2
           unsafe:
               let raw_counter = raw(handle)
-              value(raw_counter).value += 1
+              deref(raw_counter).value += 1
           return value(handle).value
     MT
 

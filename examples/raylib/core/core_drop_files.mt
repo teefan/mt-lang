@@ -34,7 +34,7 @@ def main() -> i32:
             while dropped_index < dropped_count:
                 if file_path_counter < max_filepaths_recorded - 1:
                     unsafe:
-                        let dropped_path = value(dropped_files.paths + cast[usize](dropped_index))
+                        let dropped_path = deref(dropped_files.paths + cast[usize](dropped_index))
                         rl.TextCopy(file_paths[offset + dropped_index], cast[cstr](dropped_path))
                     file_path_counter += 1
                 dropped_index += 1

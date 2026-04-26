@@ -10,7 +10,7 @@ def utf8_boundary(text: str, index: usize) -> bool:
         return true
 
     unsafe:
-        let byte = cast[u8](value(text.data + index))
+        let byte = cast[u8](deref(text.data + index))
         return not utf8_continuation_byte(byte)
 
 methods str:

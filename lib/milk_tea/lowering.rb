@@ -593,9 +593,9 @@ module MilkTea
                 env: local_env,
                 expected_type: foreign_call[:binding].type.return_type,
                 statement_position: true,
+                discard_result: true,
               )
               lowered.concat(setup)
-              lowered << IR::ExpressionStmt.new(expression: value) if value
               local_env[:scopes] = scopes_with_refinements(local_env[:scopes], consuming_foreign_call_refinements(foreign_call, local_env))
             else
               lowered << IR::ExpressionStmt.new(expression: lower_expression(statement.expression, env: local_env))
@@ -763,7 +763,7 @@ module MilkTea
             IR::Index.new(receiver:, index:, type:)
           end
         when AST::Call
-          if value_call?(expression)
+          if value_call?(expression) || deref_call?(expression)
             type = infer_expression_type(expression, env:)
             operand = lower_expression(expression.arguments.first.value, env:)
             return IR::Unary.new(operator: "*", operand:, type:)
@@ -1079,6 +1079,9 @@ module MilkTea
         when :value
           argument = expression.arguments.fetch(0)
           IR::Unary.new(operator: "*", operand: lower_expression(argument.value, env:), type:)
+        when :deref
+          argument = expression.arguments.fetch(0)
+          IR::Unary.new(operator: "*", operand: lower_expression(argument.value, env:), type:)
         when :raw
           argument = expression.arguments.fetch(0)
           IR::Cast.new(target_type: type, expression: lower_expression(argument.value, env:), type:)
@@ -1140,7 +1143,7 @@ module MilkTea
         binding.type.params.any? { |parameter| parameter.passing_mode == :consuming }
       end
 
-      def lower_foreign_call_statement(foreign_call, env:, expected_type:, statement_position:)
+      def lower_foreign_call_statement(foreign_call, env:, expected_type:, statement_position:, discard_result: false)
         call = foreign_call.fetch(:call)
         binding = foreign_call.fetch(:binding)
         raise LoweringError, "consuming foreign calls must be top-level expression statements" if foreign_call_consumes_binding?(binding) && !statement_position
@@ -1172,6 +1175,12 @@ module MilkTea
         end
 
         raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
+
+        if discard_result
+          lowered << IR::ExpressionStmt.new(expression: lowered_call)
+          lowered.concat(cleanup_statements)
+          return [lowered, nil]
+        end
 
         unless cleanup_statements.empty?
           result_name = fresh_c_temp_name(env, "foreign_result")
@@ -1681,6 +1690,18 @@ module MilkTea
             ),
             type:,
           )
+        when :deref
+          argument = expression.arguments.fetch(0)
+          IR::Unary.new(
+            operator: "*",
+            operand: lower_inline_foreign_mapping_expression(
+              argument.value,
+              mapping_env:,
+              replacements:,
+              owner_analysis:,
+            ),
+            type:,
+          )
         when :str_buffer_capacity
           receiver_type = with_analysis_context(owner_analysis) do
             infer_expression_type(receiver, env: mapping_env)
@@ -2111,6 +2132,8 @@ module MilkTea
             [:addr, nil, nil, nil]
           elsif callee.name == "value"
             [:value, nil, nil, nil]
+          elsif callee.name == "deref"
+            [:deref, nil, nil, nil]
           elsif callee.name == "raw"
             [:raw, nil, nil, nil]
           elsif (type = @types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView)
@@ -2314,6 +2337,8 @@ module MilkTea
             Types::GenericInstance.new("ref", [argument_type])
           when :value
             infer_value_type(expression.arguments.fetch(0).value, env:)
+          when :deref
+            infer_deref_type(expression.arguments.fetch(0).value, env:)
           when :raw
             Types::GenericInstance.new("ptr", [infer_ref_argument_type(expression.arguments.fetch(0).value, env:)])
           when :cast
@@ -3034,7 +3059,7 @@ module MilkTea
         when AST::MemberAccess, AST::IndexAccess
           addressable_storage_expression?(expression.receiver)
         when AST::Call
-          value_call?(expression)
+          value_call?(expression) || deref_call?(expression)
         else
           false
         end
@@ -3044,11 +3069,21 @@ module MilkTea
         expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "value"
       end
 
+      def deref_call?(expression)
+        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "deref"
+      end
+
       def infer_value_type(handle_expression, env:)
         handle_type = infer_expression_type(handle_expression, env:)
         return referenced_type(handle_type) if ref_type?(handle_type)
 
-        pointee_type(handle_type) || raise(LoweringError, "value expects ref[...] or ptr[...], got #{handle_type}")
+        raise LoweringError, "value expects ref[...], got #{handle_type}"
+      end
+
+      def infer_deref_type(handle_expression, env:)
+        handle_type = infer_expression_type(handle_expression, env:)
+
+        pointee_type(handle_type) || raise(LoweringError, "deref expects ptr[...], got #{handle_type}")
       end
 
       def infer_ref_argument_type(handle_expression, env:)

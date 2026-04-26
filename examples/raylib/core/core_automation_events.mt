@@ -139,7 +139,7 @@ def main() -> i32:
             let dropped_files = rl.LoadDroppedFiles()
 
             unsafe:
-                let dropped_path = value(dropped_files.paths)
+                let dropped_path = deref(dropped_files.paths)
                 if rl.IsFileExtension(cast[cstr](dropped_path), automation_extensions):
                     rl.UnloadAutomationEventList(aelist)
                     aelist = rl.LoadAutomationEventList(cast[cstr](dropped_path))
@@ -164,7 +164,7 @@ def main() -> i32:
             else:
                 unsafe:
                     while current_play_frame < aelist.count:
-                        let event = value(aelist.events + cast[usize](current_play_frame))
+                        let event = deref(aelist.events + cast[usize](current_play_frame))
                         if play_frame_counter != event.frame:
                             break
 

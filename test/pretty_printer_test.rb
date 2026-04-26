@@ -5,19 +5,20 @@ require_relative "test_helper"
 
 class MilkTeaPrettyPrinterTest < Minitest::Test
   def test_formats_ast_like_source
-    source = <<~MT
-      module demo.pretty
-
-      struct Counter:
-          value: i32
-
-      def main() -> i32:
-          var counter = Counter(value = 3)
-          let counter_ptr = raw(addr(counter))
-          unsafe:
-              value(counter_ptr).value = 7
-          return counter.value
-    MT
+    source = [
+      "module demo.pretty",
+      "",
+      "struct Counter:",
+      "    value: i32",
+      "",
+      "def main() -> i32:",
+      "    var counter = Counter(value = 3)",
+      "    let counter_ptr = raw(addr(counter))",
+      "    unsafe:",
+      "        deref(counter_ptr).value = 7",
+      "    return counter.value",
+      "",
+    ].join("\n")
 
     ast = MilkTea::Parser.parse(source)
 
@@ -126,19 +127,20 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
   end
 
   def test_formats_lowered_ir_as_structured_output
-    source = <<~MT
-      module demo.pretty
-
-      struct Counter:
-          value: i32
-
-      def main() -> i32:
-          var counter = Counter(value = 3)
-          let counter_ptr = raw(addr(counter))
-          unsafe:
-              value(counter_ptr).value = 7
-          return counter.value
-    MT
+    source = [
+      "module demo.pretty",
+      "",
+      "struct Counter:",
+      "    value: i32",
+      "",
+      "def main() -> i32:",
+      "    var counter = Counter(value = 3)",
+      "    let counter_ptr = raw(addr(counter))",
+      "    unsafe:",
+      "        deref(counter_ptr).value = 7",
+      "    return counter.value",
+      "",
+    ].join("\n")
 
     output = with_program(source) do |program|
       MilkTea::PrettyPrinter.format_ir(MilkTea::Lowering.lower(program))

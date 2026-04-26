@@ -120,11 +120,11 @@ Milk Tea should use a deliberately small punctuation set. The only everyday symb
 - `->` for function return types
 - `.` for field and module access
 - `[]` for indexing and generic arguments
-- `&` for address-of
-- `*` for dereference
 - `?` for nullable types
 
 Everything else should prefer words over symbols.
+
+Address formation and dereference stay as word forms: `addr(expr)`, `raw(ref_value)`, `value(ref_value)`, and `deref(ptr_value)`.
 
 ### Declarations
 
@@ -156,7 +156,7 @@ flags DrawFlags: u32
 - `let` creates an immutable local binding.
 - `var` creates a mutable local binding.
 - `const` defines a compile-time constant.
-- A typed local declaration without `= ...` zero-initializes that local. This is only valid for types that `zero[T]()` already supports.
+- A typed local declaration without `= ...` zero-initializes that local. This is the normal local-storage form and is only valid for types that `zero[T]()` already supports. Use `zero[T]()` or `Type()` only when you need a value expression.
 
 ```mt
 let width: i32 = 1280
@@ -290,7 +290,7 @@ def load_texture(path: str) -> Result[Texture, LoadError]:
 ```mt
 unsafe:
 	let p = pixels + offset
-	let pixel = value(cast[ptr[u32]](p))
+	let pixel = deref(cast[ptr[u32]](p))
 ```
 
 The point is not to forbid sharp tools. The point is to mark them.
@@ -565,6 +565,7 @@ Multiline aggregate-style calls may use trailing commas so data-heavy code stays
 Omitted fields in plain aggregate literals and omitted tail elements in fixed-array literals default to zero.
 That means `Type()`, `Type(field = value)`, `array[T, N]()`, and `array[T, N](a, b)` are all just zero-default data literals, not constructor calls.
 There are still no default field expressions, hidden initializer functions, or other non-local effects during construction.
+Typed locals without `= ...` remain the declaration form for zero-initialized storage; these aggregate literals are the expression forms when code needs a value.
 
 ```mt
 let player = Player(
@@ -628,7 +629,7 @@ let position_ptr = raw(position_ref)
 value(position_ref).x += 1
 
 unsafe:
-	value(position_ptr).x += 1
+	deref(position_ptr).x += 1
 ```
 
 Rules for safe references:
@@ -647,8 +648,8 @@ Rules for raw pointers:
 - `ptr[T]` and `ptr[T]?` are raw pointer values.
 - there is no source `&expr`, `*ptr`, or `ptr->field`.
 - spell address formation as `addr(expr)` and raw pointer formation as `raw(addr(expr))` when you truly need a raw pointer.
-- `value(ptr)` dereferences a raw pointer and requires `unsafe`.
-- `value(ptr).field` accesses a member through a raw pointer and requires `unsafe`.
+- `deref(ptr)` dereferences a raw pointer and requires `unsafe`.
+- `deref(ptr).field` accesses a member through a raw pointer and requires `unsafe`.
 - pointer arithmetic and pointer indexing remain `unsafe`.
 - raw pointer offsets and indices may use ordinary integer expressions directly; code does not need a pre-emptive cast to `usize` just to write `ptr[i]` or `ptr + offset`.
 - pointer comparison is explicit and never treated as boolean truthiness.
@@ -1024,7 +1025,7 @@ let success = rl.save_file_data("storage.data", bytes)
 let ints = rl.mem_alloc[i32](16)
 ```
 
-`str as cstr` and `span[str]` foreign boundaries are ordinary call sites. If an imported declaration chooses those public surfaces, the compiler materializes temporary C-compatible storage only when the actual argument needs it and discards that storage immediately after the call. If code wants exact storage control, it can still use `cstr`, `span[char]`, or the raw `std.c.*` layer.
+`str as cstr` and `span[str]` foreign boundaries use ordinary imported-call syntax. When the actual argument is already ABI-compatible, they work anywhere an ordinary expression works. When the boundary needs synthesized temporary C-compatible storage or other statement-shaped setup, v1 lowering currently materializes that setup only in contexts where it can hoist the work visibly: expression statements, local initializers, assignments, and returns. If code wants exact storage control or a more deeply nested temp-backed call today, it can still use `cstr`, `span[char]`, or the raw `std.c.*` layer.
 
 `out name` and `inout name` are foreign-boundary forms, not raw pointer expressions. They lower to address-taking at the imported call site without exposing `raw(addr(...))` in ordinary code.
 

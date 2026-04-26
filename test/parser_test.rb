@@ -763,7 +763,7 @@ class MilkTeaParserTest < Minitest::Test
           let handle = addr(counter)
           unsafe:
               let counter_ptr = raw(handle)
-              value(counter_ptr).value = 7
+              deref(counter_ptr).value = 7
           let value_ref = addr(value(handle).value)
           value(value_ref) += 2
           return value(handle).value
@@ -784,7 +784,7 @@ class MilkTeaParserTest < Minitest::Test
     assignment = unsafe_stmt.body[1]
     assert_instance_of MilkTea::AST::MemberAccess, assignment.target
     assert_instance_of MilkTea::AST::Call, assignment.target.receiver
-    assert_equal "value", assignment.target.receiver.callee.name
+    assert_equal "deref", assignment.target.receiver.callee.name
   end
 
   def test_rejects_legacy_pointer_sigils

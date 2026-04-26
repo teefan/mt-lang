@@ -24,10 +24,10 @@ def hash_md5_text(hash_md5: ptr[u32]?) -> cstr:
     unsafe:
         return rl.TextFormat(
             c"%08X%08X%08X%08X",
-            value(hash_md5),
-            value(hash_md5 + 1),
-            value(hash_md5 + 2),
-            value(hash_md5 + 3),
+            deref(hash_md5),
+            deref(hash_md5 + 1),
+            deref(hash_md5 + 2),
+            deref(hash_md5 + 3),
         )
 
 def hash_sha1_text(hash_sha1: ptr[u32]?) -> cstr:
@@ -37,11 +37,11 @@ def hash_sha1_text(hash_sha1: ptr[u32]?) -> cstr:
     unsafe:
         return rl.TextFormat(
             c"%08X%08X%08X%08X%08X",
-            value(hash_sha1),
-            value(hash_sha1 + 1),
-            value(hash_sha1 + 2),
-            value(hash_sha1 + 3),
-            value(hash_sha1 + 4),
+            deref(hash_sha1),
+            deref(hash_sha1 + 1),
+            deref(hash_sha1 + 2),
+            deref(hash_sha1 + 3),
+            deref(hash_sha1 + 4),
         )
 
 def hash_sha256_text(hash_sha256: ptr[u32]?) -> cstr:
@@ -51,14 +51,14 @@ def hash_sha256_text(hash_sha256: ptr[u32]?) -> cstr:
     unsafe:
         return rl.TextFormat(
             c"%08X%08X%08X%08X%08X%08X%08X%08X",
-            value(hash_sha256),
-            value(hash_sha256 + 1),
-            value(hash_sha256 + 2),
-            value(hash_sha256 + 3),
-            value(hash_sha256 + 4),
-            value(hash_sha256 + 5),
-            value(hash_sha256 + 6),
-            value(hash_sha256 + 7),
+            deref(hash_sha256),
+            deref(hash_sha256 + 1),
+            deref(hash_sha256 + 2),
+            deref(hash_sha256 + 3),
+            deref(hash_sha256 + 4),
+            deref(hash_sha256 + 5),
+            deref(hash_sha256 + 6),
+            deref(hash_sha256 + 7),
         )
 
 def base64_display_text(base64_text: ptr[char]?) -> cstr:

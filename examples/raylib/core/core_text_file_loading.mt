@@ -37,7 +37,7 @@ def main() -> i32:
     var wrap_index = 0
     while wrap_index < line_count:
         unsafe:
-            var line = value(lines + wrap_index)
+            var line = deref(lines + wrap_index)
             let line_length = cast[i32](rl.TextLength(cast[cstr](line)))
             var j = 0
             var last_space = 0
@@ -66,7 +66,7 @@ def main() -> i32:
     var line_index = 0
     while line_index < line_count:
         unsafe:
-            let line = cast[cstr](value(lines + line_index))
+            let line = cast[cstr](deref(lines + line_index))
             let measured_text = if rl.TextIsEqual(line, c"") then c" " else line
             let size = rl.MeasureTextEx(default_font, measured_text, cast[f32](font_size), 2.0)
             text_height += cast[i32](size.y) + line_gap
@@ -106,7 +106,7 @@ def main() -> i32:
         var draw_y = text_top
         while draw_index < line_count:
             unsafe:
-                let line = cast[cstr](value(lines + draw_index))
+                let line = cast[cstr](deref(lines + draw_index))
                 let measured_text = if rl.TextIsEqual(line, c"") then c" " else line
                 let size = rl.MeasureTextEx(default_font, measured_text, cast[f32](font_size), 2.0)
                 rl.DrawText(line, 10, draw_y, font_size, rl.RED)
