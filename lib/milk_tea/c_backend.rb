@@ -221,7 +221,16 @@ module MilkTea
     end
 
     def uses_panic_helper?
-      collect_checked_array_index_types.any? || collect_checked_span_index_types.any? || @program.functions.any? { |function| function_uses_panic?(function) || function_uses_named_call?(function, %w[mt_str_buffer_len mt_str_buffer_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_assign mt_str_builder_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp]) }
+      uses_mt_panic_helper? || uses_mt_panic_str_helper?
+    end
+
+    def uses_mt_panic_helper?
+      collect_checked_array_index_types.any? || collect_checked_span_index_types.any? ||
+        @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_panic mt_str_buffer_len mt_str_buffer_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_assign mt_str_builder_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp]) }
+    end
+
+    def uses_mt_panic_str_helper?
+      @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_panic_str]) }
     end
 
     def uses_foreign_temp_cstr_helpers?
@@ -234,66 +243,6 @@ module MilkTea
 
     def uses_str_builder_helpers?
       @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_clear mt_str_builder_assign mt_str_builder_append mt_str_builder_prepare_write]) }
-    end
-
-    def function_uses_panic?(function)
-      function.body.any? { |statement| statement_uses_panic?(statement) }
-    end
-
-    def statement_uses_panic?(statement)
-      case statement
-      when IR::LocalDecl
-        expression_uses_panic?(statement.value)
-      when IR::Assignment
-        expression_uses_panic?(statement.target) || expression_uses_panic?(statement.value)
-      when IR::BlockStmt, IR::WhileStmt
-        statement.body.any? { |inner| statement_uses_panic?(inner) }
-      when IR::IfStmt
-        expression_uses_panic?(statement.condition) ||
-          statement.then_body.any? { |inner| statement_uses_panic?(inner) } ||
-          (statement.else_body && statement.else_body.any? { |inner| statement_uses_panic?(inner) })
-      when IR::SwitchStmt
-        expression_uses_panic?(statement.expression) || statement.cases.any? { |switch_case| switch_case.body.any? { |inner| statement_uses_panic?(inner) } }
-      when IR::StaticAssert
-        expression_uses_panic?(statement.condition) || expression_uses_panic?(statement.message)
-      when IR::ReturnStmt
-        statement.value && expression_uses_panic?(statement.value)
-      when IR::ExpressionStmt
-        expression_uses_panic?(statement.expression)
-      else
-        false
-      end
-    end
-
-    def expression_uses_panic?(expression)
-      case expression
-      when IR::Call
-        %w[mt_panic mt_panic_str].include?(expression.callee) || expression.arguments.any? { |argument| expression_uses_panic?(argument) }
-      when IR::Member
-        expression_uses_panic?(expression.receiver)
-      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
-        expression_uses_panic?(expression.receiver) || expression_uses_panic?(expression.index)
-      when IR::Unary
-        expression_uses_panic?(expression.operand)
-      when IR::Binary
-        expression_uses_panic?(expression.left) || expression_uses_panic?(expression.right)
-      when IR::Conditional
-        expression_uses_panic?(expression.condition) || expression_uses_panic?(expression.then_expression) || expression_uses_panic?(expression.else_expression)
-      when IR::ReinterpretExpr
-        expression_uses_panic?(expression.expression)
-      when IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
-        false
-      when IR::AddressOf
-        expression_uses_panic?(expression.expression)
-      when IR::Cast
-        expression_uses_panic?(expression.expression)
-      when IR::AggregateLiteral
-        expression.fields.any? { |field| expression_uses_panic?(field.value) }
-      when IR::ArrayLiteral
-        expression.elements.any? { |element| expression_uses_panic?(element) }
-      else
-        false
-      end
     end
 
     def function_uses_named_call?(function, callees)
@@ -351,22 +300,28 @@ module MilkTea
     end
 
     def emit_panic_helper
-      lines = [
-        "static void mt_panic(const char* message) {",
-        "#{INDENT}fputs(message, stderr);",
-        "#{INDENT}fputc('\\n', stderr);",
-        "#{INDENT}abort();",
-        "}",
-      ]
+      lines = []
 
-      lines.concat([
-        "",
-        "static void mt_panic_str(mt_str message) {",
-        "#{INDENT}fwrite(message.data, 1, message.len, stderr);",
-        "#{INDENT}fputc('\\n', stderr);",
-        "#{INDENT}abort();",
-        "}",
-      ])
+      if uses_mt_panic_helper?
+        lines.concat([
+          "static void mt_panic(const char* message) {",
+          "#{INDENT}fputs(message, stderr);",
+          "#{INDENT}fputc('\\n', stderr);",
+          "#{INDENT}abort();",
+          "}",
+        ])
+      end
+
+      if uses_mt_panic_str_helper?
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static void mt_panic_str(mt_str message) {",
+          "#{INDENT}fwrite(message.data, 1, message.len, stderr);",
+          "#{INDENT}fputc('\\n', stderr);",
+          "#{INDENT}abort();",
+          "}",
+        ])
+      end
 
       lines
     end
@@ -783,6 +738,15 @@ module MilkTea
       when IR::StaticAssert
         ["#{indent}#{emit_static_assert(statement)}"]
       when IR::IfStmt
+        case constant_boolean_value(statement.condition)
+        when true
+          return emit_statement(IR::BlockStmt.new(body: statement.then_body), level, function:, used_labels:)
+        when false
+          return [] unless statement.else_body && !statement.else_body.empty?
+
+          return emit_statement(IR::BlockStmt.new(body: statement.else_body), level, function:, used_labels:)
+        end
+
         lines = ["#{indent}if (#{emit_expression(statement.condition)}) {"]
         statement.then_body.each do |inner|
           lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
@@ -816,6 +780,59 @@ module MilkTea
       return false if statements.empty?
 
       statement_terminates?(statements.last)
+    end
+
+    def constant_boolean_value(expression)
+      case expression
+      when IR::BooleanLiteral
+        expression.value
+      when IR::Unary
+        operand = constant_boolean_value(expression.operand)
+        return nil if operand.nil? || expression.operator != "not"
+
+        !operand
+      when IR::Binary
+        left_int = constant_integer_value(expression.left)
+        right_int = constant_integer_value(expression.right)
+        if !left_int.nil? && !right_int.nil?
+          return left_int == right_int if expression.operator == "=="
+          return left_int != right_int if expression.operator == "!="
+          return left_int < right_int if expression.operator == "<"
+          return left_int <= right_int if expression.operator == "<="
+          return left_int > right_int if expression.operator == ">"
+          return left_int >= right_int if expression.operator == ">="
+        end
+
+        left_bool = constant_boolean_value(expression.left)
+        right_bool = constant_boolean_value(expression.right)
+        if !left_bool.nil? && !right_bool.nil?
+          return left_bool == right_bool if expression.operator == "=="
+          return left_bool != right_bool if expression.operator == "!="
+          return left_bool && right_bool if expression.operator == "and"
+          return left_bool || right_bool if expression.operator == "or"
+        end
+
+        nil
+      else
+        nil
+      end
+    end
+
+    def constant_integer_value(expression)
+      case expression
+      when IR::IntegerLiteral
+        expression.value
+      when IR::Unary
+        operand = constant_integer_value(expression.operand)
+        return nil if operand.nil?
+
+        return operand if expression.operator == "+"
+        return -operand if expression.operator == "-"
+
+        nil
+      else
+        nil
+      end
     end
 
     def statement_terminates?(statement)

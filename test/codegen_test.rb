@@ -265,12 +265,12 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(source, imported_sources)
 
-    assert_match(/mt_foreign_strs_to_cstrs_temp/, generated)
-    assert_match(/mt_free_foreign_cstrs_temp/, generated)
+    refute_match(/mt_foreign_strs_to_cstrs_temp/, generated)
+    refute_match(/mt_free_foreign_cstrs_temp/, generated)
     assert_match(/UseNames\(/, generated)
+    assert_match(/const char\* __mt_foreign_cstr_items_\d+\[3\] = \{ \(\(const char\*\) labels\[0\]\.data\), \(\(const char\*\) labels\[1\]\.data\), \(\(const char\*\) labels\[2\]\.data\) \};/, generated)
     assert_match(/__mt_foreign_arg_\d+\.data/, generated)
     assert_match(/\(\(int32_t\) __mt_foreign_arg_\d+\.len\)|\(int32_t\) __mt_foreign_arg_\d+\.len/, generated)
-    assert_operator generated.index("typedef struct mt_span_str"), :<, generated.index("static void mt_foreign_strs_to_cstrs_temp")
   end
 
   def test_generate_c_for_foreign_defs_with_span_str_to_span_ptr_char_boundary
@@ -279,8 +279,11 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.sample as sample
 
+      def middle() -> str:
+          return "Options"
+
       def main() -> i32:
-          var labels = array[str, 3]("Play", "Options", "Quit")
+          var labels = array[str, 3]("Play", middle(), "Quit")
           var active = 1
           return sample.use_names(labels, inout active)
     MT
@@ -314,8 +317,11 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.sample as sample
 
+      def middle() -> str:
+          return "Options"
+
       def main() -> i32:
-          var labels = array[str, 3]("Play", "Options", "Quit")
+          var labels = array[str, 3]("Play", middle(), "Quit")
           var active = 1
           sample.use_names(labels, inout active)
           return active
@@ -349,11 +355,14 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.sample as sample
 
+      def middle() -> str:
+          return "34"
+
       def keep(value: i32) -> i32:
           return value
 
       def main() -> i32:
-          var labels = array[str, 3]("12", "34", "56")
+          var labels = array[str, 3]("12", middle(), "56")
           let counted = keep(sample.count_names(labels))
           let doubled = keep(sample.pair_sum(1 + 2))
           return counted + doubled
@@ -379,7 +388,6 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/mt_foreign_strs_to_cstrs_temp/, generated)
     assert_match(/mt_free_foreign_cstrs_temp/, generated)
-    assert_match(/demo_main_keep\(__mt_foreign_result_\d+\)/, generated)
     assert_match(/demo_main_keep\(__mt_foreign_expr_\d+\)/, generated)
     assert_match(/CountNames\(/, generated)
     assert_match(/PairSum\(/, generated)
@@ -1102,9 +1110,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/#include <stdio\.h>/, generated)
     assert_match(/#include <stdlib\.h>/, generated)
-    assert_match(/static void mt_panic\(const char\* message\)/, generated)
+    refute_match(/static void mt_panic\(const char\* message\)/, generated)
     assert_match(/static void mt_panic_str\(mt_str message\)/, generated)
-    assert_match(/fputs\(message, stderr\);/, generated)
     assert_match(/fwrite\(message\.data, 1, message\.len, stderr\);/, generated)
     assert_match(/abort\(\);/, generated)
     assert_match(/mt_panic_str\(\(mt_str\)\{ \.data = "bad state", \.len = 9 \}\);/, generated)

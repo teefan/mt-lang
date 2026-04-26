@@ -59,6 +59,27 @@ class MilkTeaRayguiIdiomaticExamplesTest < Minitest::Test
     end
   end
 
+  def test_idiomatic_examples_codegen_avoids_reviewed_noise
+    generated = idiomatic_example_paths.to_h do |path|
+      program = MilkTea::ModuleLoader.check_program(path)
+      [File.basename(path), MilkTea::Codegen.generate_c(program)]
+    end
+
+    controls = generated.fetch("controls_showcase.mt")
+    dynamic = generated.fetch("dynamic_string_lists_showcase.mt")
+    text_builders = generated.fetch("text_builders_showcase.mt")
+
+    refute_match(/mt_foreign_strs_to_cstrs_temp/, controls)
+    refute_match(/mt_free_foreign_cstrs_temp/, controls)
+    refute_match(/mt_foreign_strs_to_cstrs_temp/, dynamic)
+    refute_match(/mt_free_foreign_cstrs_temp/, dynamic)
+
+    refute_match(/static void mt_panic_str\(/, controls)
+    refute_match(/static void mt_panic_str\(/, dynamic)
+    refute_match(/static void mt_panic_str\(/, text_builders)
+    refute_match(/if \(64 == 64\)/, text_builders)
+  end
+
   private
 
   def idiomatic_example_paths
