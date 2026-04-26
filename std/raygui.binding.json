@@ -230,7 +230,7 @@
           },
           {
             "name": "text",
-            "type": "span[cstr]",
+            "type": "span[str]",
             "boundary_type": "span[ptr[char]]"
           },
           {
@@ -767,7 +767,7 @@
           },
           {
             "name": "text",
-            "type": "span[cstr]",
+            "type": "span[str]",
             "boundary_type": "span[ptr[char]]"
           },
           {

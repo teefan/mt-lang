@@ -14,6 +14,6 @@ That means the remaining gap is not raw pointer syntax. It is ownership expressi
 The current language/runtime can already model the borrowed `GuiGetIcons()` buffer, but `GuiLoadIcons()` still needs one of these deeper features before it can move onto the honest curated surface:
 
 1. A way for `foreign def` mappings to discard a raw return value while still exposing a public `void` or side-effect-only API.
-2. A declarative owned foreign collection model that can describe deep release of both the outer `char **` container and each inner `char *` name.
+2. A declarative consuming foreign collection model that can describe deep release of both the outer `char **` container and each inner `char *` name.
 
 Until one of those exists, `GuiLoadIcons()` should remain excluded from `std.raygui`.

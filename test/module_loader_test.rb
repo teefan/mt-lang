@@ -32,7 +32,8 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
     assert_equal demo_path, program.root_path
     assert_equal "demo.bouncing_ball", program.root_analysis.module_name
-    assert_equal %w[demo.bouncing_ball std.c.raylib], program.analyses_by_module_name.keys.sort
+    assert_equal %w[demo.bouncing_ball std.c.raylib std.raylib], program.analyses_by_module_name.keys.sort
+    assert_equal :module, program.analyses_by_module_name.fetch("std.raylib").module_kind
     assert_equal :extern_module, program.analyses_by_module_name.fetch("std.c.raylib").module_kind
   end
 

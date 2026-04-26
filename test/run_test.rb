@@ -1070,36 +1070,43 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
-  def test_run_with_host_compiler_executes_program_using_cstr_list_buffer
+  def test_run_with_host_compiler_executes_program_using_span_str_foreign_list_marshalling
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    Dir.mktmpdir("milk-tea-run-cstr-list-buffer") do |dir|
-      source_path = File.join(dir, "cstr_list_buffer.mt")
+    dir_name = "run_span_str_#{Process.pid}_#{Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond)}"
+    dir = File.join(MilkTea.root, "tmp", dir_name)
+    source_path = File.join(dir, "main.mt")
+    sample_path = File.join(dir, "sample.mt")
 
-      File.write(source_path, [
-        "module demo.cstr_list_buffer_runtime",
+    Dir.mkdir(dir)
+
+    begin
+      module_prefix = "tmp.#{dir_name}"
+
+      File.write(sample_path, [
+        "module #{module_prefix}.sample",
         "",
         "import std.c.libc as libc",
         "",
+        "pub foreign def first(labels: span[str] as span[ptr[char]]) -> i32 = libc.atoi(labels[0])",
+        "pub foreign def second(labels: span[str] as span[ptr[char]]) -> i32 = libc.atoi(labels[1])",
+        "",
+      ].join("\n"))
+
+      File.write(source_path, [
+        "module #{module_prefix}.main",
+        "",
+        "import #{module_prefix}.sample as sample",
+        "",
         "def main() -> i32:",
-        "    var labels: cstr_list_buffer[2, 16]",
-        "    var items = array[str, 2](\"12\", \"34\")",
-        "    if labels.capacity() != cast[usize](2):",
+        "    var labels = array[str, 2](\"12\", \"34\")",
+        "    let first = sample.first(labels)",
+        "    let second = sample.second(labels)",
+        "    if first != 12:",
         "        return 1",
-        "    if labels.byte_capacity() != cast[usize](16):",
+        "    if second != 34:",
         "        return 2",
-        "    labels.assign(items)",
-        "    let values = labels.as_cstrs()",
-        "    if values.len != cast[usize](2):",
-        "        return 3",
-        "    if libc.atoi(values[0]) != 12:",
-        "        return 4",
-        "    if libc.atoi(values[1]) != 34:",
-        "        return 5",
-        "    labels.clear()",
-        "    if labels.as_cstrs().len != cast[usize](0):",
-        "        return 6",
         "    return 0",
         "",
       ].join("\n"))
@@ -1113,6 +1120,10 @@ class MilkTeaRunTest < Minitest::Test
       assert_nil result.c_path
       assert_equal compiler, result.compiler
       assert_equal [], result.link_flags
+    ensure
+      File.delete(sample_path) if File.exist?(sample_path)
+      File.delete(source_path) if File.exist?(source_path)
+      Dir.rmdir(dir) if Dir.exist?(dir)
     end
   end
 

@@ -267,11 +267,8 @@ Milk Tea should include a small number of control-flow features that materially 
 `defer` registers cleanup code at scope exit and lowers to obvious cleanup labels in C.
 
 ```mt
-def load_texture(path: str, scratch: ref[Arena]) -> Result[Texture, LoadError]:
-	let mark = value(scratch).mark()
-	defer value(scratch).reset(mark)
-
-	let texture = rl.load_texture(path) using scratch
+def load_texture(path: str) -> Result[Texture, LoadError]:
+	let texture = rl.load_texture(path)
 
 	if texture.id == 0:
 		return err(LoadError.file_not_found)
@@ -297,7 +294,7 @@ unsafe:
 ```
 
 The point is not to forbid sharp tools. The point is to mark them.
-Calling a foreign import that already declares borrowed strings, transient scratch-backed strings, `out` parameters, or typed pointer projections is ordinary code. Crossing into raw `std.c.*` bindings, doing pointer reinterpretation, or manually walking foreign memory remains explicit low-level work.
+Calling a foreign import that already declares borrowed strings, ordinary `str` parameters, string lists, `out` parameters, or typed pointer projections is ordinary code. Crossing into raw `std.c.*` bindings, doing pointer reinterpretation, or manually walking foreign memory remains explicit low-level work.
 
 ## Type system
 
@@ -323,7 +320,7 @@ Notes:
 - `cstr` is the raw ABI-facing NUL-terminated C string type. It belongs primarily in raw `extern module` declarations and low-level interop code.
 - `char` is the ABI-facing single-byte character type for C text and raw buffers. It is not a general arithmetic integer type.
 - String literals produce `str`.
-- Safe code does not fabricate `str` values from raw parts. Source code ordinarily obtains `str` values from literals, validated borrowed views such as `str_builder.as_str()` or `str_buffer.as_str()`, slicing an existing `str`, or other compiler/runtime surfaces that preserve the UTF-8 invariant.
+- Safe code does not fabricate `str` values from raw parts. Source code ordinarily obtains `str` values from literals, validated borrowed views such as `str_builder.as_str()`, slicing an existing `str`, or other compiler/runtime surfaces that preserve the UTF-8 invariant.
 - Low-level code may construct `str(data = ..., len = ...)` only inside `unsafe`, and the caller is then responsible for pointer validity, lifetime, and the UTF-8 invariant.
 - A string literal may satisfy an expected `cstr` directly when the compiler has contextual type information, such as a typed local, an `array[cstr, N]` element, or a borrowed C-string argument position, because static storage is known.
 - `c"hello"` produces `cstr` with static storage for raw ABI work and low-level interop.
@@ -332,9 +329,7 @@ Notes:
 
 ```mt
 array[T, N]      # fixed-size array
-str_buffer[N]    # fixed-capacity raw writable char storage
-str_builder[N]   # fixed-capacity mutable UTF-8 text builder
-cstr_list_buffer[count, bytes]  # fixed-capacity caller-owned cstr list storage
+str_builder[N]   # fixed-capacity mutable UTF-8 text buffer
 ptr[T]           # raw pointer
 span[T]          # pointer + length view
 fn(A, B) -> R    # function pointer type
@@ -345,7 +340,7 @@ Examples:
 ```mt
 let pixels: span[u8]
 let name_input: str_builder[64]
-let labels: cstr_list_buffer[8, 256]
+let labels: array[str, 8]
 let texture_ptr: ptr[Texture]
 let normal_table: array[f32, 256]
 let callback: fn(ptr[void], i32) -> void
@@ -355,16 +350,10 @@ Notes:
 
 - Fixed-array indexing is bounds-checked and safe by default.
 - Safe array indexing requires an addressable array value; bind temporaries before indexing them.
-- `str_buffer[N]` is a source-level fixed-capacity raw writable `char` buffer. It is zero-initializable, stores exactly `N` writable byte slots, and remains useful when the language needs caller-owned mutable C storage without tracked text semantics.
-- Addressable `str_buffer[N]` values coerce to `span[char]` for ordinary APIs and imported foreign declarations that consume writable character buffers.
-- `str_buffer[N]` is not an ABI type. Raw C bindings should still spell writable character parameters as `ptr[char]` or `span[char]`; `str_buffer[N]` is only the caller-side storage type.
-- `str_buffer[N]` has a small borrowed surface: `.clear()`, `.capacity()`, `.as_str()`, and `.as_cstr()`.
-- `.capacity()` reports the full writable slot count. If the buffer is also used as a C string, one slot may need to remain available for a trailing NUL terminator.
-- `.as_str()` returns a borrowed `str` view over the buffer contents up to the first NUL byte or the fixed capacity, and it traps at runtime if those bytes are not valid UTF-8.
-- `.as_cstr()` returns a borrowed `cstr` pointer to the same storage, but it traps at runtime if the buffer does not contain a trailing NUL within capacity or if the text prefix before that NUL is not valid UTF-8.
-- `str_builder[N]` is the source-level mutable UTF-8 text type. It owns `N` editable text bytes plus an implementation-managed trailing NUL slot, tracks current text length, and refreshes that length when a writable buffer alias mutates the underlying storage.
-- Addressable `str_builder[N]` values also coerce to `span[char]`, so ordinary writable-buffer APIs can still accept builders directly when they do not want a capacity-polymorphic text signature.
-- `str_builder[N]` is not an ABI type either. Raw bindings still spell writable text as `ptr[char]` or `span[char]`; `str_builder[N]` is the caller-side text object.
+- `array[char, N]` and `span[char]` are the ordinary source-level forms for raw writable character storage and byte-oriented foreign buffers. There is no separate source-level raw text-buffer type.
+- `str_builder[N]` is the one source-level mutable UTF-8 text type. It owns `N` editable text bytes plus an implementation-managed trailing NUL slot, tracks current text length, and refreshes that length when a writable buffer alias mutates the underlying storage.
+- Addressable `str_builder[N]` values also coerce to `span[char]`, so writable foreign text APIs can still accept builders directly when they do not want a second application-facing text abstraction.
+- `str_builder[N]` is not an ABI type. Raw bindings still spell writable text as `ptr[char]` or `span[char]`; `str_builder[N]` is the caller-side text object.
 - `str_builder[N]` has a built-in text surface: `.clear()`, `.assign(str)`, `.append(str)`, `.len()`, `.capacity()`, `.as_str()`, and `.as_cstr()`.
 - `.assign(...)` replaces the current contents and traps at runtime if the new text exceeds capacity.
 - `.append(...)` extends the current contents and traps at runtime if the appended text would exceed capacity.
@@ -372,15 +361,8 @@ Notes:
 - `.capacity()` reports the maximum editable text bytes, not counting the reserved trailing NUL slot.
 - `.as_str()` and `.as_cstr()` borrow from the same builder storage and revalidate through that same dirty-refresh path before returning.
 - `str.slice(start, len)` uses byte offsets and byte lengths, but both the start and end position must be UTF-8 code-unit boundaries or the slice traps at runtime.
-- `cstr_list_buffer[count, bytes]` is a caller-owned transient storage type for dynamic string lists that must cross a foreign boundary as `span[cstr]` or `span[ptr[char]]` without hidden allocation.
-- `cstr_list_buffer[count, bytes]` is zero-initializable and stores two capacities explicitly: the maximum item count and the total backing-byte budget for copied NUL-terminated strings.
-- `cstr_list_buffer[count, bytes]` has a small built-in surface: `.clear()`, `.assign(span[str])`, `.as_cstrs()`, `.capacity()`, and `.byte_capacity()`.
-- `.assign(...)` copies the provided `str` elements into the buffer's own byte storage, writes trailing NUL terminators, and traps at runtime if either capacity is exceeded.
-- `.as_cstrs()` returns a borrowed `span[cstr]` view over the stored entries and requires a safe stored receiver.
-- `cstr_list_buffer[count, bytes]` is not an ABI type. Raw C bindings still spell their boundary as `span[cstr]`, `span[ptr[char]]`, or raw pointer-plus-length pairs; `cstr_list_buffer` is the caller-side staging storage.
-- Imported foreign declarations may map `str_buffer[N] as ptr[char]` when the raw API wants a writable character pointer, and may map `span[char] as ptr[char]` when the public surface needs variable caller capacity.
+- Ordinary string lists stay `array[str, N]` or `span[str]` in source. If an imported foreign declaration chooses that public surface for a raw `char **`, `span[cstr]`, or pointer-plus-length text-list API, the boundary owns the temporary marshalling.
 - Imported foreign declarations may map `str_builder[N] as ptr[char]` directly when the public surface wants editable UTF-8 text with fixed caller capacity.
-- Imported foreign declarations may accept `span[cstr] as span[ptr[char]]`, and callers that need dynamic list materialization should use `cstr_list_buffer` explicitly instead of relying on hidden list coercions.
 - If the raw call also needs the caller buffer size, a `str_builder[N]` public signature should pass `text_public.capacity() + 1` in the foreign mapping so the raw side sees the full writable byte count including the trailing NUL slot.
 - `span[char] as ptr[char]` remains the right public surface when the writable storage is not semantically UTF-8 text or when the caller capacity is intentionally runtime-sized instead of part of the type.
 - In an explicit foreign mapping, a parameter declared with `as` keeps the boundary value under its original name and exposes the public value as `<name>_public`.
@@ -832,7 +814,7 @@ Bindgen output rules:
 5. Prefer enums, flags, structs, unions, constants, and function declarations over clever wrappers.
 6. When headers are clear enough, emit metadata that can drive generated imported foreign declarations for borrowed strings, transient strings, out parameters, spans, opaque handles, and release functions. If the header is not clear enough, stay raw instead of guessing.
 
-The imported layer may also be generated, but only from an explicit checked-in policy file. clang bindgen is responsible for ABI facts; the policy file is responsible for semantic facts the header does not encode, such as `str as cstr`, `out`, `inout`, `owned`, span fan-out, selected renames, and which raw declarations should remain exposed only through `std.c.*`.
+The imported layer may also be generated, but only from an explicit checked-in policy file. clang bindgen is responsible for ABI facts; the policy file is responsible for semantic facts the header does not encode, such as `str as cstr`, `out`, `inout`, `consuming`, span fan-out, selected renames, and which raw declarations should remain exposed only through `std.c.*`.
 
 The raw layer should be inspectable and boring. Handwritten wrappers are optional, but they are not the language's primary ergonomics mechanism.
 
@@ -903,9 +885,10 @@ It may not use:
 An imported foreign declaration must be able to express at least:
 
 - a `str` parameter that lowers to `cstr` at the foreign boundary
-- a transient `str` to `cstr` materialization that requires explicit scratch storage at the call site
+- ordinary `span[str]` or `array[str, N]` inputs for foreign string-list APIs
+- automatic transient boundary marshalling for dynamic text when the imported declaration chooses that public surface
 - `out` and `inout` parameters that lower to raw pointers
-- release-style functions that consume an owned handle and null the caller binding afterward
+- release-style functions that consume a handle and null the caller binding afterward
 - pointer-plus-length views that lower from `span[T]`
 - identity ABI projections such as `ptr[T]?` to `ptr[void]` or `cstr?` to `ptr[char]?`
 
@@ -914,12 +897,11 @@ Parameter and boundary rules:
 - `name: str as cstr` means the public Milk Tea type is `str`, while the raw foreign target expects `cstr` or `ptr[char]`
 - imported foreign declarations do not spell this surface as `str as ptr[char]`; the public text boundary stays `str as cstr` even when the raw callee argument type is `ptr[char]`
 - a string literal or existing `cstr` value may satisfy `str as cstr` without temporary storage
-- a dynamic `str` argument for `str as cstr` requires an explicit call-site `using scratch` clause
-- dynamic string-list marshalling is not implicit in v1. If a foreign surface wants `span[cstr]` or `span[ptr[char]]`, caller-owned transient storage should be spelled explicitly with `cstr_list_buffer[count, bytes]` and passed as `.as_cstrs()`.
-- imported foreign declarations do not accept `span[str] as span[cstr]` or `span[str] as span[ptr[char]]`; that hidden list materialization path is intentionally rejected.
+- a dynamic `str` argument for `str as cstr` is materialized automatically at the foreign boundary for the duration of the call
+- imported foreign declarations may accept `span[str]` or `array[str, N]` for string-list APIs even when the raw callee wants `span[cstr]`, `span[ptr[char]]`, or pointer-plus-length forms; that marshalling belongs to the declaration, not to the call site
 - `out name: T` means the raw foreign target takes a writable pointer and the call site must pass `out lvalue`
 - `inout name: T` means the raw foreign target reads and writes through a pointer and the call site must pass `inout lvalue`
-- `owned name: Handle` means the public Milk Tea parameter is a non-null opaque handle or `ptr[T]`, and v1 uses it only for release-style foreign calls that consume an existing nullable binding
+- `consuming name: Handle` means the public Milk Tea parameter is a non-null opaque handle or `ptr[T]`, and v1 uses it only for release-style foreign calls that consume an existing nullable binding
 - plain parameters and return values require exact compatibility or an explicitly permitted identity ABI projection
 
 #### Sema rules for foreign defs
@@ -933,7 +915,7 @@ Declaration rules:
 - `= c.Symbol` is shorthand symbol mapping; `c.Symbol` must resolve to an imported `extern def`
 - `= c.Symbol(...)` is declarative RHS mapping; the callee must resolve to an imported `extern def`
 - the right-hand side may reference only declaration parameters and imported raw symbols from the module scope
-- an `owned` parameter may not use `as`, must have a non-null `opaque Handle` or `ptr[T]` type, and any `foreign def` that has an `owned` parameter must return `void`
+- a `consuming` parameter may not use `as`, must have a non-null `opaque Handle` or `ptr[T]` type, and any `foreign def` that has a `consuming` parameter must return `void`
 
 Shorthand symbol mapping rules:
 
@@ -959,25 +941,22 @@ Parameter consumption rules:
 - a `span[T]` parameter may be split into `.data` and `.len`
 - an `out` parameter must appear exactly once as a bare parameter reference in the raw argument position that receives the writable pointer
 - an `inout` parameter must appear exactly once as a bare parameter reference in the raw argument position that receives the mutable pointer
-- an `owned` parameter lowers through the same identity value as a plain handle parameter; v1 ownership affects call-site validation and post-call flow, not the RHS mapping expression shape
+- a `consuming` parameter lowers through the same identity value as a plain handle parameter; v1 ownership affects call-site validation and post-call flow, not the RHS mapping expression shape
 - a `str as cstr` parameter may appear only in raw argument positions whose target type is `cstr` or `ptr[char]`
 
 Call-site checking rules:
 
 - a call to a `foreign def` with `out` parameters requires `out lvalue` at the corresponding argument position
 - a call to a `foreign def` with `inout` parameters requires `inout lvalue` at the corresponding argument position
-- a call to a `foreign def` with `owned` parameters requires a bare identifier naming a nullable local or parameter binding
-- the current flow type of that binding must already be the non-null handle type required by the `owned` parameter
-- in v1, a foreign call with any `owned` parameter must be a top-level expression statement; `defer`, local initializers, assignments, returns, and larger expressions are rejected
-- after an `owned` foreign call, continuation flow refines each consumed binding to `null`
+- a call to a `foreign def` with `consuming` parameters requires a bare identifier naming a nullable local or parameter binding
+- the current flow type of that binding must already be the non-null handle type required by the `consuming` parameter
+- in v1, a foreign call with any `consuming` parameter must be a top-level expression statement; `defer`, local initializers, assignments, returns, and larger expressions are rejected
+- after a `consuming` foreign call, continuation flow refines each consumed binding to `null`
 - `out` and `inout` are rejected outside calls to `foreign def`
 - `out` requires a mutable addressable lvalue and does not read the old value before the call
 - `inout` requires a mutable addressable lvalue and exposes both the old and new value to the callee
-- `using scratch` is allowed only on calls to `foreign def`
-- `using scratch` is required if and only if at least one `str as cstr` argument needs temporary NUL-terminated materialization
-- a string literal and an existing `cstr` do not require `using scratch`
-- a redundant `using scratch` clause is an error in v1 because the source should not claim temporary storage that the call does not use
-- in v1, `using scratch` must be the top-level expression of a local initializer, assignment right-hand side, return expression, or expression statement; if a larger expression needs the result, bind it to a local first
+- automatic foreign text marshalling is part of imported-boundary checking, not an extra source clause
+- string literals and existing `cstr` values lower directly where possible, so the compiler only materializes temporary storage when the public argument actually needs it
 
 Allowed identity ABI projections in v1 are deliberately narrow:
 
@@ -1006,16 +985,15 @@ Declarative RHS mapping lowering:
 - field access such as `data.data` and `data.len` lowers exactly as the corresponding member access on the public argument value
 - builtin forms such as `cast`, `sizeof`, `alignof`, and `offsetof` lower exactly as they do elsewhere in the language
 
-Scratch materialization lowering:
+Automatic text marshalling lowering:
 
-- the postfix `using scratch_expr` is evaluated once
-- the scratch expression must produce the arena handle declared by the future sema rule for scratch storage
-- the compiler captures a mark from the arena before materializing any temporary C strings
-- each dynamic `str as cstr` argument is materialized into that arena in left-to-right argument order
-- the raw call is emitted using those temporary C-string pointers
-- the arena is reset back to the captured mark immediately after the raw call completes
-- in v1, this lowering form is available only when `using scratch` is the top-level expression of a local initializer, assignment right-hand side, return expression, or expression statement
-- if a larger expression needs the result, source must bind the foreign call to a local first and then use that local
+- if a public foreign boundary uses `str`, `span[str]`, or `array[str, N]` and the raw callee needs C-compatible text storage, the compiler materializes that storage automatically for the duration of the call
+- materialization happens in left-to-right argument order so evaluation stays inspectable
+- literal-backed and already-compatible arguments lower directly with no temporary storage
+- dynamic `str` values lower to temporary NUL-terminated C strings when needed
+- string lists lower to temporary C-string arrays or pointer-plus-length views when needed
+- the temporary storage is released immediately after the raw call completes
+- if code needs exact storage control or wants to avoid boundary marshalling entirely, it may call the raw `std.c.*` layer or pass already-compatible `cstr` / `span[char]` values directly
 
 Directional pointer lowering:
 
@@ -1025,14 +1003,14 @@ Directional pointer lowering:
 
 Release-function ownership lowering:
 
-- an `owned` argument lowers through the same raw boundary value as the corresponding plain handle argument
+- a `consuming` argument lowers through the same raw boundary value as the corresponding plain handle argument
 - immediately after the raw foreign call completes, lowering emits `binding = null` for each consumed binding
 - the same statement updates continuation flow so later code sees that binding as `null`
 - v1 does not add a general move checker; this null-after-call rule is limited to bare nullable local or parameter bindings in top-level expression statements
 
 Generated C quality rule:
 
-- lowering may introduce short-lived temporaries for scratch-backed strings, result spilling, or identity casts
+- lowering may introduce short-lived temporaries for foreign text marshalling, result spilling, or identity casts
 - lowering should not emit an extra helper function for each `foreign def` in the ordinary case
 - the preferred output is one visible raw call site whose surrounding temporaries make the boundary work obvious in C
 
@@ -1040,13 +1018,13 @@ Call sites should read like this:
 
 ```mt
 rl.init_window(screen_width, screen_height, "Milk Tea")
-let texture = rl.load_texture(path) using scratch
+let texture = rl.load_texture(path)
 let file_data = rl.load_file_data("storage.data", out data_size)
 let success = rl.save_file_data("storage.data", bytes)
 let ints = rl.mem_alloc[i32](16)
 ```
 
-`using scratch` is a postfix call clause, not a normal argument. In v1 it is specifically the explicit permission to materialize temporary `str as cstr` storage in a scratch arena for the duration of the call. No `using` clause means no hidden temporary storage. If code wants to use that result inside a larger expression, it must first bind the call result to a local.
+`str as cstr` and `span[str]` foreign boundaries are ordinary call sites. If an imported declaration chooses those public surfaces, the compiler materializes temporary C-compatible storage only when the actual argument needs it and discards that storage immediately after the call. If code wants exact storage control, it can still use `cstr`, `span[char]`, or the raw `std.c.*` layer.
 
 `out name` and `inout name` are foreign-boundary forms, not raw pointer expressions. They lower to address-taking at the imported call site without exposing `raw(addr(...))` in ordinary code.
 
@@ -1054,11 +1032,11 @@ This is the C# part worth copying: declarations say how the boundary works, whil
 
 ### Strings and buffers at the FFI boundary
 
-String and buffer rules must stay explicit, but the explicitness belongs in imported declarations and any required `using` clause, not in every call site:
+String and buffer rules must stay explicit, but the explicitness belongs in imported declarations, not in every call site:
 
 - raw `extern module` declarations stay exact and continue to use `cstr`, `ptr[T]`, and `ptr[void]`
 - a string literal may satisfy a contextual `cstr` position directly; ordinary UI code should not need `c"..."` just to populate `cstr` locals, `array[cstr, N]`, or borrowed C-string arguments
-- converting a dynamic `str` to a foreign C string still requires explicit storage in source, spelled with a call-site `using scratch` clause or an equivalent explicit storage form
+- converting a dynamic `str` or `span[str]` to foreign C-compatible text is automatic when an imported declaration chooses that public surface
 - `cstr` remains available for raw ABI work, returned native strings, and low-level code
 - pointer-plus-length APIs should import as `span[T]` when the native contract is a view rather than untyped memory
 - single-object output parameters should import as `out T` or `inout T` instead of naked pointer syntax
@@ -1066,7 +1044,7 @@ String and buffer rules must stay explicit, but the explicitness belongs in impo
 
 This keeps the important distinction intact:
 
-- source still makes temporary storage explicit
+- source code thinks in `str`, `array[str, N]`, `span[str]`, and one mutable text buffer type
 - raw memory work still requires raw syntax
 - call sites stop spelling C representation details that the import declaration already knows
 

@@ -16,7 +16,7 @@ module MilkTea
   class Parser
     BUILTIN_TYPE_NAMES = %w[
       bool byte char i8 i16 i32 i64 u8 u16 u32 u64 isize usize f32 f64 void str cstr
-      ptr ref span array str_buffer str_builder cstr_list_buffer Result
+      ptr ref span array str_buffer str_builder Result
     ].freeze
 
     def self.parse(source = nil, path: nil, tokens: nil)
@@ -410,8 +410,8 @@ module MilkTea
     def parse_foreign_param
       mode = if match(:out)
                :out
-             elsif match(:owned)
-               :owned
+             elsif match(:consuming)
+               :consuming
              elsif match(:inout)
                :inout
              else
@@ -741,12 +741,6 @@ module MilkTea
           end
         elsif match(:lparen)
           expression = AST::Call.new(callee: expression, arguments: parse_call_arguments)
-        elsif match(:using)
-          raise error(previous, "using is only allowed after a call expression") unless expression.is_a?(AST::Call)
-
-          scratch = parse_expression
-          expression = AST::UsingCall.new(call: expression, scratch:)
-          break
         else
           break
         end

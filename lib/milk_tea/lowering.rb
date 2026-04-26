@@ -202,8 +202,6 @@ module MilkTea
 
       def expression_uses_panic?(expression)
         case expression
-        when AST::UsingCall
-          expression_uses_panic?(expression.call) || expression_uses_panic?(expression.scratch)
         when AST::Call
           identifier = expression.callee
           return true if identifier.is_a?(AST::Identifier) && identifier.name == "panic"
@@ -230,8 +228,6 @@ module MilkTea
         case expression
         when AST::OffsetofExpr
           true
-        when AST::UsingCall
-          expression_uses_offsetof?(expression.call) || expression_uses_offsetof?(expression.scratch)
         when AST::Call
           expression_uses_offsetof?(expression.callee) || expression.arguments.any? { |argument| expression_uses_offsetof?(argument.value) }
         when AST::BinaryOp
@@ -600,7 +596,7 @@ module MilkTea
               )
               lowered.concat(setup)
               lowered << IR::ExpressionStmt.new(expression: value) if value
-              local_env[:scopes] = scopes_with_refinements(local_env[:scopes], owned_foreign_call_refinements(foreign_call, local_env))
+              local_env[:scopes] = scopes_with_refinements(local_env[:scopes], consuming_foreign_call_refinements(foreign_call, local_env))
             else
               lowered << IR::ExpressionStmt.new(expression: lower_expression(statement.expression, env: local_env))
             end
@@ -847,8 +843,6 @@ module MilkTea
           )
         when AST::Call
           lower_call(expression, env:, type:)
-        when AST::UsingCall
-          raise LoweringError, "using scratch must appear in statement position"
         when AST::Specialization
           lower_specialization(expression, env:, type:)
         else
@@ -881,7 +875,7 @@ module MilkTea
         case kind
         when :function
           if callee_binding && foreign_function_binding?(callee_binding)
-            raise LoweringError, "owned foreign calls must be top-level expression statements" if foreign_call_owns_binding?(callee_binding)
+            raise LoweringError, "consuming foreign calls must be top-level expression statements" if foreign_call_consumes_binding?(callee_binding)
 
             return lower_foreign_call_inline(expression, callee_binding, env:, type:)
           end
@@ -1022,50 +1016,6 @@ module MilkTea
             ],
             type:,
           )
-        when :cstr_list_buffer_clear
-          receiver_type = infer_expression_type(receiver, env:)
-          IR::Call.new(
-            callee: "mt_cstr_list_buffer_clear",
-            arguments: [
-              lower_cstr_list_buffer_items_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: cstr_list_buffer_item_capacity(receiver_type), type: @types.fetch("usize")),
-              lower_cstr_list_buffer_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: cstr_list_buffer_byte_capacity(receiver_type), type: @types.fetch("usize")),
-              lower_cstr_list_buffer_len_pointer(receiver, env:),
-              lower_cstr_list_buffer_used_pointer(receiver, env:),
-            ],
-            type:,
-          )
-        when :cstr_list_buffer_assign
-          receiver_type = infer_expression_type(receiver, env:)
-          items_type = Types::Span.new(@types.fetch("str"))
-          IR::Call.new(
-            callee: "mt_cstr_list_buffer_assign",
-            arguments: [
-              lower_contextual_expression(expression.arguments.first.value, env:, expected_type: items_type),
-              lower_cstr_list_buffer_items_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: cstr_list_buffer_item_capacity(receiver_type), type: @types.fetch("usize")),
-              lower_cstr_list_buffer_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: cstr_list_buffer_byte_capacity(receiver_type), type: @types.fetch("usize")),
-              lower_cstr_list_buffer_len_pointer(receiver, env:),
-              lower_cstr_list_buffer_used_pointer(receiver, env:),
-            ],
-            type:,
-          )
-        when :cstr_list_buffer_as_cstrs
-          IR::AggregateLiteral.new(
-            type:,
-            fields: [
-              IR::AggregateField.new(name: "data", value: lower_cstr_list_buffer_items_pointer(receiver, env:)),
-              IR::AggregateField.new(name: "len", value: lower_cstr_list_buffer_len(receiver, env:)),
-            ],
-          )
-        when :cstr_list_buffer_capacity
-          receiver_type = infer_expression_type(receiver, env:)
-          IR::IntegerLiteral.new(value: cstr_list_buffer_item_capacity(receiver_type), type: type)
-        when :cstr_list_buffer_byte_capacity
-          receiver_type = infer_expression_type(receiver, env:)
-          IR::IntegerLiteral.new(value: cstr_list_buffer_byte_capacity(receiver_type), type: type)
         when :associated_method
           arguments = lower_call_arguments(expression.arguments, callee_type, env:)
           IR::Call.new(callee: callee_name, arguments:, type:)
@@ -1174,12 +1124,7 @@ module MilkTea
       end
 
       def foreign_call_info(expression, env)
-        call = case expression
-               when AST::UsingCall
-                 expression.call
-               when AST::Call
-                 expression
-               end
+        call = expression if expression.is_a?(AST::Call)
         return unless call
 
         kind, _, _, _, binding = resolve_callee(call.callee, env, arguments: call.arguments)
@@ -1187,43 +1132,28 @@ module MilkTea
 
         {
           call:,
-          scratch: expression.is_a?(AST::UsingCall) ? expression.scratch : nil,
           binding:,
         }
       end
 
-      def foreign_call_owns_binding?(binding)
-        binding.type.params.any? { |parameter| parameter.passing_mode == :owned }
+      def foreign_call_consumes_binding?(binding)
+        binding.type.params.any? { |parameter| parameter.passing_mode == :consuming }
       end
 
       def lower_foreign_call_statement(foreign_call, env:, expected_type:, statement_position:)
         call = foreign_call.fetch(:call)
-        scratch = foreign_call[:scratch]
         binding = foreign_call.fetch(:binding)
-        raise LoweringError, "owned foreign calls must be top-level expression statements" if foreign_call_owns_binding?(binding) && !statement_position
+        raise LoweringError, "consuming foreign calls must be top-level expression statements" if foreign_call_consumes_binding?(binding) && !statement_position
 
         owner_analysis = analysis_for_module(binding.owner.module_name)
         mapping_expression = foreign_mapping_expression(binding.ast)
         reference_counts = foreign_mapping_reference_counts(mapping_expression)
         mapping_env = duplicate_env(env)
         lowered = []
-        mark_name = nil
-        release_assignments = owned_foreign_release_assignments(foreign_call, env:)
+        release_assignments = consuming_foreign_release_assignments(foreign_call, env:)
+        cleanup_statements = []
 
-        if scratch
-          mark_call = foreign_scratch_method_call(scratch, "mark", [])
-          mark_type = infer_expression_type(mark_call, env: mapping_env)
-          mark_name = fresh_c_temp_name(env, "scratch_mark")
-          current_actual_scope(mapping_env[:scopes])[mark_name] = local_binding(type: mark_type, c_name: mark_name, mutable: false, pointer: false)
-          lowered << IR::LocalDecl.new(
-            name: mark_name,
-            c_name: mark_name,
-            type: mark_type,
-            value: lower_expression(mark_call, env: mapping_env, expected_type: mark_type),
-          )
-        end
-
-        replacements = bind_foreign_mapping_arguments(binding, call.arguments, mapping_env, lowered, env:, scratch:, reference_counts:)
+        replacements = bind_foreign_mapping_arguments(binding, call.arguments, mapping_env, lowered, env:, reference_counts:, cleanup: cleanup_statements)
 
         call_type = binding.type.return_type
         lowered_call = lower_inline_foreign_mapping_expression(
@@ -1234,38 +1164,27 @@ module MilkTea
           expected_type: expected_type || call_type,
         )
 
-        if scratch
-          reset_call = foreign_scratch_method_call(scratch, "reset", [AST::Identifier.new(name: mark_name)])
-          reset_expression = lower_expression(reset_call, env: mapping_env, expected_type: @types.fetch("void"))
-
-          if call_type == @types.fetch("void")
-            lowered << IR::ExpressionStmt.new(expression: lowered_call)
-            lowered.concat(release_assignments)
-            lowered << IR::ExpressionStmt.new(expression: reset_expression)
-            return [lowered, nil]
-          end
-
-          raise LoweringError, "owned foreign calls must return void" unless release_assignments.empty?
-
-          result_name = fresh_c_temp_name(env, "foreign_result")
-          lowered << IR::LocalDecl.new(name: result_name, c_name: result_name, type: call_type, value: lowered_call)
-          lowered << IR::ExpressionStmt.new(expression: reset_expression)
-          return [lowered, IR::Name.new(name: result_name, type: call_type, pointer: false)]
-        end
-
         if call_type == @types.fetch("void")
           lowered << IR::ExpressionStmt.new(expression: lowered_call)
           lowered.concat(release_assignments)
+          lowered.concat(cleanup_statements)
           return [lowered, nil]
         end
 
-        raise LoweringError, "owned foreign calls must return void" unless release_assignments.empty?
+        raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
+
+        unless cleanup_statements.empty?
+          result_name = fresh_c_temp_name(env, "foreign_result")
+          lowered << IR::LocalDecl.new(name: result_name, c_name: result_name, type: call_type, value: lowered_call)
+          lowered.concat(cleanup_statements)
+          return [lowered, IR::Name.new(name: result_name, type: call_type, pointer: false)]
+        end
 
         [lowered, lowered_call]
       end
 
-      def owned_foreign_release_assignments(foreign_call, env:)
-        owned_foreign_release_bindings(foreign_call, env:).map do |binding|
+      def consuming_foreign_release_assignments(foreign_call, env:)
+        consuming_foreign_release_bindings(foreign_call, env:).map do |binding|
           IR::Assignment.new(
             target: IR::Name.new(name: binding[:c_name], type: binding[:storage_type], pointer: binding[:pointer]),
             operator: "=",
@@ -1274,34 +1193,34 @@ module MilkTea
         end
       end
 
-      def owned_foreign_call_refinements(foreign_call, env)
-        owned_foreign_release_bindings(foreign_call, env:).each_with_object({}) do |binding, refinements|
+      def consuming_foreign_call_refinements(foreign_call, env)
+        consuming_foreign_release_bindings(foreign_call, env:).each_with_object({}) do |binding, refinements|
           refinements[binding[:name]] = null_type
         end
       end
 
-      def owned_foreign_release_bindings(foreign_call, env:)
+      def consuming_foreign_release_bindings(foreign_call, env:)
         binding = foreign_call.fetch(:binding)
         call = foreign_call.fetch(:call)
 
         binding.type.params.each_with_index.filter_map do |parameter, index|
-          next unless parameter.passing_mode == :owned
+          next unless parameter.passing_mode == :consuming
 
           argument = call.arguments.fetch(index)
           unless argument.value.is_a?(AST::Identifier)
-            raise LoweringError, "owned foreign calls require bare nullable local or parameter bindings"
+            raise LoweringError, "consuming foreign calls require bare nullable local or parameter bindings"
           end
 
           lowered_binding = lookup_value(argument.value.name, env)
           unless lowered_binding && lowered_binding[:storage_type].is_a?(Types::Nullable) && lowered_binding[:storage_type].base == parameter.type
-            raise LoweringError, "owned foreign calls require bare nullable local or parameter bindings"
+            raise LoweringError, "consuming foreign calls require bare nullable local or parameter bindings"
           end
 
           lowered_binding.merge(name: argument.value.name)
         end
       end
 
-      def bind_foreign_mapping_arguments(binding, arguments, mapping_env, lowered, env:, scratch:, reference_counts:)
+      def bind_foreign_mapping_arguments(binding, arguments, mapping_env, lowered, env:, reference_counts:, cleanup:)
         replacements = {}
         entries = binding.ast.params.each_with_index.map do |param_ast, index|
           parameter = binding.type.params.fetch(index)
@@ -1358,10 +1277,14 @@ module MilkTea
                               entry[:argument]
                             end
           source_env = entry[:public_reference_count].positive? ? mapping_env : env
-          entry[:lowered_value] = lower_foreign_argument_value(entry[:parameter], source_argument, env: source_env, scratch:)
+          entry[:lowered_value] = if automatic_foreign_cstr_list_temp_needed?(entry[:parameter], source_argument.value, env: source_env)
+                                    lower_foreign_cstr_list_argument_value(entry[:parameter], source_argument.value, env: source_env, lowered:, cleanup:)
+                                  else
+                                    lower_foreign_argument_value(entry[:parameter], source_argument, env: source_env)
+                                  end
         end
 
-        inline_direct_call_names = inlineable_single_direct_call_names(entries, scratch:)
+        inline_direct_call_names = inlineable_single_direct_call_names(entries)
 
         entries.each do |entry|
           next unless entry[:reference_count].positive?
@@ -1380,6 +1303,15 @@ module MilkTea
             )
             current_actual_scope(mapping_env[:scopes])[param_ast.name] = local_binding(type: temp_type, c_name: temp_name, mutable: false, pointer: false)
             replacements[param_ast.name] = IR::Name.new(name: temp_name, type: temp_type, pointer: false)
+            if temporary_foreign_cstr_expression?(lowered_value)
+              cleanup << IR::ExpressionStmt.new(
+                expression: IR::Call.new(
+                  callee: "mt_free_foreign_cstr_temp",
+                  arguments: [IR::Name.new(name: temp_name, type: temp_type, pointer: false)],
+                  type: @types.fetch("void"),
+                ),
+              )
+            end
           else
             current_actual_scope(mapping_env[:scopes])[param_ast.name] = local_binding(type: temp_type, c_name: param_ast.name, mutable: false, pointer: false)
             replacements[param_ast.name] = lowered_value
@@ -1389,9 +1321,7 @@ module MilkTea
         replacements
       end
 
-      def inlineable_single_direct_call_names(entries, scratch:)
-        return [] if scratch
-
+      def inlineable_single_direct_call_names(entries)
         blocked_entries = entries.select do |entry|
           next false unless entry[:reference_count].positive?
 
@@ -1401,13 +1331,14 @@ module MilkTea
 
         blocked_entry = blocked_entries.first
         return [] unless blocked_entry[:reference_count] == 1 && blocked_entry[:lowered_value].is_a?(IR::Call)
+        return [] if temporary_foreign_cstr_expression?(blocked_entry[:lowered_value])
 
         [blocked_entry[:param_ast].name]
       end
 
-      def lower_foreign_argument_value(parameter, argument, env:, scratch:)
+      def lower_foreign_argument_value(parameter, argument, env:)
         case parameter.passing_mode
-        when :plain, :owned
+        when :plain, :consuming
           if parameter.boundary_type.nil? || parameter.boundary_type == parameter.type
             lower_contextual_expression(argument.value, env:, expected_type: parameter.type)
           elsif parameter.boundary_type == @types.fetch("cstr") && parameter.type == @types.fetch("str")
@@ -1420,11 +1351,13 @@ module MilkTea
               return lower_expression(argument.value, env:, expected_type: parameter.boundary_type)
             end
 
-            raise LoweringError, "foreign call requires using scratch" unless scratch
-
-            lower_expression(foreign_scratch_method_call(scratch, "to_cstr", [argument.value]), env:, expected_type: parameter.boundary_type)
+            IR::Call.new(
+              callee: "mt_foreign_str_to_cstr_temp",
+              arguments: [lower_contextual_expression(argument.value, env:, expected_type: parameter.type)],
+              type: parameter.boundary_type,
+            )
           elsif foreign_span_boundary_compatible?(parameter.type, parameter.boundary_type)
-            lower_foreign_span_argument_value(parameter, argument, env:, scratch:)
+            lower_foreign_span_argument_value(parameter, argument, env:)
           elsif foreign_char_pointer_buffer_boundary_compatible?(parameter.type, parameter.boundary_type)
             lower_foreign_char_pointer_buffer_argument_value(parameter, argument, env:)
           else
@@ -1441,7 +1374,7 @@ module MilkTea
         end
       end
 
-      def lower_foreign_span_argument_value(parameter, argument, env:, scratch:)
+      def lower_foreign_span_argument_value(parameter, argument, env:)
         public_type = parameter.type
         boundary_type = parameter.boundary_type
         lowered_value = lower_contextual_expression(argument.value, env:, expected_type: public_type)
@@ -1521,6 +1454,14 @@ module MilkTea
           raise LoweringError, "foreign call #{binding.name} requires statement-position lowering because #{param_ast.name} is used multiple times"
         end
 
+        binding.ast.params.each_with_index do |param_ast, index|
+          parameter = binding.type.params.fetch(index)
+          next unless automatic_foreign_cstr_temp_needed?(parameter, expression.arguments.fetch(index).value, env:) ||
+                      automatic_foreign_cstr_list_temp_needed?(parameter, expression.arguments.fetch(index).value, env:)
+
+          raise LoweringError, "foreign call #{binding.name} requires statement-position lowering because #{param_ast.name} needs temporary cstr storage"
+        end
+
         replacements = {}
         binding.ast.params.each_with_index do |param_ast, index|
           parameter = binding.type.params.fetch(index)
@@ -1529,7 +1470,7 @@ module MilkTea
 
           if reference_counts.fetch(param_ast.name, 0).positive?
             current_actual_scope(mapping_env[:scopes])[param_ast.name] = local_binding(type: temp_type, c_name: param_ast.name, mutable: false, pointer: false)
-            replacements[param_ast.name] = lower_foreign_argument_value(parameter, expression.arguments.fetch(index), env:, scratch: nil)
+            replacements[param_ast.name] = lower_foreign_argument_value(parameter, expression.arguments.fetch(index), env:)
           end
 
           next unless public_alias && reference_counts.fetch(public_alias, 0).positive?
@@ -1672,7 +1613,7 @@ module MilkTea
 
         case kind
         when :function
-          raise LoweringError, "owned foreign calls must be top-level expression statements" if callee_binding && foreign_function_binding?(callee_binding) && foreign_call_owns_binding?(callee_binding)
+          raise LoweringError, "consuming foreign calls must be top-level expression statements" if callee_binding && foreign_function_binding?(callee_binding) && foreign_call_consumes_binding?(callee_binding)
 
           arguments = expression.arguments.map.with_index do |argument, index|
             expected_arg_type = index < callee_type.params.length ? callee_type.params[index].type : nil
@@ -1750,16 +1691,6 @@ module MilkTea
             infer_expression_type(receiver, env: mapping_env)
           end
           IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type:)
-        when :cstr_list_buffer_capacity
-          receiver_type = with_analysis_context(owner_analysis) do
-            infer_expression_type(receiver, env: mapping_env)
-          end
-          IR::IntegerLiteral.new(value: cstr_list_buffer_item_capacity(receiver_type), type:)
-        when :cstr_list_buffer_byte_capacity
-          receiver_type = with_analysis_context(owner_analysis) do
-            infer_expression_type(receiver, env: mapping_env)
-          end
-          IR::IntegerLiteral.new(value: cstr_list_buffer_byte_capacity(receiver_type), type:)
         when :raw
           argument = expression.arguments.fetch(0)
           IR::Cast.new(
@@ -1815,19 +1746,6 @@ module MilkTea
               ),
             ),
           ],
-        )
-      end
-
-      def foreign_scratch_method_call(scratch, method_name, arguments)
-        AST::Call.new(
-          callee: AST::MemberAccess.new(
-            receiver: AST::Call.new(
-              callee: AST::Identifier.new(name: "value"),
-              arguments: [AST::Argument.new(name: nil, value: scratch)],
-            ),
-            member: method_name,
-          ),
-          arguments: arguments.map { |argument| AST::Argument.new(name: nil, value: argument) },
         )
       end
 
@@ -1933,6 +1851,92 @@ module MilkTea
         return true if reference_count > 1
 
         !inlineable_foreign_argument_expression?(expression)
+      end
+
+      def automatic_foreign_cstr_list_temp_needed?(parameter, _expression, env: nil)
+        return false unless parameter.type.is_a?(Types::Span) && parameter.type.element_type == @types.fetch("str")
+        return false unless parameter.boundary_type.is_a?(Types::Span)
+
+        boundary_element_type = parameter.boundary_type.element_type
+        boundary_element_type == @types.fetch("cstr") || char_pointer_type?(boundary_element_type)
+      end
+
+      def automatic_foreign_cstr_temp_needed?(parameter, expression, env:)
+        return false unless parameter.boundary_type == @types.fetch("cstr") && parameter.type == @types.fetch("str")
+        return false if expression.is_a?(AST::StringLiteral) && !expression.cstring
+
+        infer_expression_type(expression, env:) != @types.fetch("cstr")
+      end
+
+      def temporary_foreign_cstr_expression?(expression)
+        expression.is_a?(IR::Call) && expression.callee == "mt_foreign_str_to_cstr_temp"
+      end
+
+      def lower_foreign_cstr_list_argument_value(parameter, argument_value, env:, lowered:, cleanup:)
+        public_type = parameter.type
+        boundary_type = parameter.boundary_type
+        items_type = pointer_to(pointer_to(@types.fetch("char")))
+        data_type = pointer_to(@types.fetch("char"))
+        len_type = @types.fetch("usize")
+        lowered_value = lower_contextual_expression(argument_value, env:, expected_type: public_type)
+        items_name = fresh_c_temp_name(env, "foreign_cstr_items")
+        data_name = fresh_c_temp_name(env, "foreign_cstr_data")
+        len_name = fresh_c_temp_name(env, "foreign_cstr_len")
+
+        lowered << IR::LocalDecl.new(
+          name: items_name,
+          c_name: items_name,
+          type: items_type,
+          value: IR::NullLiteral.new(type: items_type),
+        )
+        lowered << IR::LocalDecl.new(
+          name: data_name,
+          c_name: data_name,
+          type: data_type,
+          value: IR::NullLiteral.new(type: data_type),
+        )
+        lowered << IR::LocalDecl.new(
+          name: len_name,
+          c_name: len_name,
+          type: len_type,
+          value: IR::IntegerLiteral.new(value: 0, type: len_type),
+        )
+        lowered << IR::ExpressionStmt.new(
+          expression: IR::Call.new(
+            callee: "mt_foreign_strs_to_cstrs_temp",
+            arguments: [
+              lowered_value,
+              IR::AddressOf.new(expression: IR::Name.new(name: items_name, type: items_type, pointer: false), type: pointer_to(items_type)),
+              IR::AddressOf.new(expression: IR::Name.new(name: data_name, type: data_type, pointer: false), type: pointer_to(data_type)),
+              IR::AddressOf.new(expression: IR::Name.new(name: len_name, type: len_type, pointer: false), type: pointer_to(len_type)),
+            ],
+            type: @types.fetch("void"),
+          ),
+        )
+        cleanup << IR::ExpressionStmt.new(
+          expression: IR::Call.new(
+            callee: "mt_free_foreign_cstrs_temp",
+            arguments: [
+              IR::Name.new(name: items_name, type: items_type, pointer: false),
+              IR::Name.new(name: data_name, type: data_type, pointer: false),
+            ],
+            type: @types.fetch("void"),
+          ),
+        )
+
+        converted_data = foreign_identity_projection_expression(
+          IR::Name.new(name: items_name, type: items_type, pointer: false),
+          pointer_to(boundary_type.element_type),
+        )
+        raise LoweringError, "unsupported foreign boundary mapping #{public_type} as #{boundary_type}" unless converted_data
+
+        IR::AggregateLiteral.new(
+          type: boundary_type,
+          fields: [
+            IR::AggregateField.new(name: "data", value: converted_data),
+            IR::AggregateField.new(name: "len", value: IR::Name.new(name: len_name, type: len_type, pointer: false)),
+          ],
+        )
       end
 
       def inlineable_foreign_argument_expression?(expression)
@@ -2159,10 +2163,6 @@ module MilkTea
             return [str_builder_method, nil, callee.receiver, str_builder_method_type(str_builder_method, resolved_receiver_type)]
           end
 
-          if (cstr_list_buffer_method = cstr_list_buffer_method_kind(resolved_receiver_type, callee.member))
-            return [cstr_list_buffer_method, nil, callee.receiver, cstr_list_buffer_method_type(cstr_list_buffer_method, resolved_receiver_type)]
-          end
-
           raise LoweringError, "unknown callee #{callee.receiver}.#{callee.member}"
         when AST::Specialization
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "cast"
@@ -2303,8 +2303,7 @@ module MilkTea
           kind, = resolve_callee(expression.callee, env, arguments: expression.arguments)
           case kind
           when :function, :method, :associated_method, :str_buffer_clear, :str_buffer_as_str, :str_buffer_as_cstr, :str_buffer_capacity,
-            :str_builder_clear, :str_builder_assign, :str_builder_append, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr,
-            :cstr_list_buffer_clear, :cstr_list_buffer_assign, :cstr_list_buffer_as_cstrs, :cstr_list_buffer_capacity, :cstr_list_buffer_byte_capacity
+            :str_builder_clear, :str_builder_assign, :str_builder_append, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             function_type.return_type
           when :struct_literal, :array
@@ -2335,8 +2334,6 @@ module MilkTea
           else
             raise LoweringError, "unsupported call kind #{kind}"
           end
-        when AST::UsingCall
-          infer_expression_type(expression.call, env:, expected_type:)
         when AST::Specialization
           if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "cast"
             resolve_type_ref(expression.arguments.fetch(0).value)
@@ -2456,6 +2453,7 @@ module MilkTea
       def foreign_boundary_element_compatible?(public_type, boundary_type)
         return true if public_type == boundary_type
         return true if public_type == @types.fetch("str") && boundary_type == @types.fetch("cstr")
+        return true if public_type == @types.fetch("str") && char_pointer_type?(boundary_type)
 
         foreign_identity_projection_compatible?(public_type, boundary_type)
       end
@@ -2882,14 +2880,6 @@ module MilkTea
         str_builder_capacity(type) + 1
       end
 
-      def cstr_list_buffer_item_capacity(type)
-        type.arguments[0].value
-      end
-
-      def cstr_list_buffer_byte_capacity(type)
-        type.arguments[1].value
-      end
-
       def text_buffer_method_kind(receiver_type, name)
         return unless text_buffer_type?(receiver_type)
 
@@ -2923,23 +2913,6 @@ module MilkTea
           :str_builder_as_str
         when "as_cstr"
           :str_builder_as_cstr
-        end
-      end
-
-      def cstr_list_buffer_method_kind(receiver_type, name)
-        return unless cstr_list_buffer_type?(receiver_type)
-
-        case name
-        when "clear"
-          :cstr_list_buffer_clear
-        when "assign"
-          :cstr_list_buffer_assign
-        when "as_cstrs"
-          :cstr_list_buffer_as_cstrs
-        when "capacity"
-          :cstr_list_buffer_capacity
-        when "byte_capacity"
-          :cstr_list_buffer_byte_capacity
         end
       end
 
@@ -2989,30 +2962,6 @@ module MilkTea
           return_type:,
           receiver_type:,
           receiver_mutable: %i[str_builder_clear str_builder_assign str_builder_append].include?(kind),
-          external: false,
-        )
-      end
-
-      def cstr_list_buffer_method_type(kind, receiver_type)
-        return_type, params = case kind
-                              when :cstr_list_buffer_clear
-                                [@types.fetch("void"), []]
-                              when :cstr_list_buffer_assign
-                                [@types.fetch("void"), [Types::Parameter.new("items", Types::Span.new(@types.fetch("str")))]]
-                              when :cstr_list_buffer_as_cstrs
-                                [Types::Span.new(@types.fetch("cstr")), []]
-                              when :cstr_list_buffer_capacity, :cstr_list_buffer_byte_capacity
-                                [@types.fetch("usize"), []]
-                              else
-                                raise LoweringError, "unsupported cstr_list_buffer method #{kind}"
-                              end
-
-        Types::Function.new(
-          kind.to_s,
-          params:,
-          return_type:,
-          receiver_type:,
-          receiver_mutable: %i[cstr_list_buffer_clear cstr_list_buffer_assign].include?(kind),
           external: false,
         )
       end
@@ -3073,77 +3022,9 @@ module MilkTea
         )
       end
 
-      def lower_cstr_list_buffer_items_pointer(expression, env:)
-        receiver_type = infer_expression_type(expression, env:)
-        lowered_receiver = lower_expression(expression, env:)
-        IR::AddressOf.new(
-          expression: IR::Index.new(
-            receiver: IR::Member.new(
-              receiver: lowered_receiver,
-              member: "items",
-              type: Types::GenericInstance.new(
-                "array",
-                [@types.fetch("cstr"), Types::LiteralTypeArg.new(cstr_list_buffer_item_capacity(receiver_type))],
-              ),
-            ),
-            index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize")),
-            type: @types.fetch("cstr"),
-          ),
-          type: pointer_to(@types.fetch("cstr")),
-        )
-      end
-
-      def lower_cstr_list_buffer_data_pointer(expression, env:)
-        receiver_type = infer_expression_type(expression, env:)
-        lowered_receiver = lower_expression(expression, env:)
-        IR::AddressOf.new(
-          expression: IR::Index.new(
-            receiver: IR::Member.new(
-              receiver: lowered_receiver,
-              member: "data",
-              type: Types::GenericInstance.new(
-                "array",
-                [@types.fetch("char"), Types::LiteralTypeArg.new(cstr_list_buffer_byte_capacity(receiver_type))],
-              ),
-            ),
-            index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize")),
-            type: @types.fetch("char"),
-          ),
-          type: pointer_to(@types.fetch("char")),
-        )
-      end
-
-      def lower_cstr_list_buffer_len(expression, env:)
-        IR::Member.new(
-          receiver: lower_expression(expression, env:),
-          member: "len",
-          type: @types.fetch("usize"),
-        )
-      end
-
-      def lower_cstr_list_buffer_len_pointer(expression, env:)
-        IR::AddressOf.new(expression: lower_cstr_list_buffer_len(expression, env:), type: pointer_to(@types.fetch("usize")))
-      end
-
-      def lower_cstr_list_buffer_used_pointer(expression, env:)
-        IR::AddressOf.new(
-          expression: IR::Member.new(
-            receiver: lower_expression(expression, env:),
-            member: "used",
-            type: @types.fetch("usize"),
-          ),
-          type: pointer_to(@types.fetch("usize")),
-        )
-      end
-
       def text_buffer_type?(type)
         type.is_a?(Types::GenericInstance) && type.name == "str_buffer" && type.arguments.length == 1 &&
           type.arguments.first.is_a?(Types::LiteralTypeArg) && type.arguments.first.value.is_a?(Integer)
-      end
-
-      def cstr_list_buffer_type?(type)
-        type.is_a?(Types::GenericInstance) && type.name == "cstr_list_buffer" && type.arguments.length == 2 &&
-          type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) && argument.value.is_a?(Integer) }
       end
 
       def addressable_storage_expression?(expression)
@@ -3670,12 +3551,6 @@ module MilkTea
           raise LoweringError, "str_builder requires exactly one type argument" unless arguments.length == 1
           raise LoweringError, "str_builder capacity must be an integer literal" unless generic_integer_type_argument?(arguments.first)
           raise LoweringError, "str_builder capacity must be positive" if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
-        when "cstr_list_buffer"
-          raise LoweringError, "cstr_list_buffer requires exactly two type arguments" unless arguments.length == 2
-          raise LoweringError, "cstr_list_buffer item capacity must be an integer literal" unless generic_integer_type_argument?(arguments[0])
-          raise LoweringError, "cstr_list_buffer byte capacity must be an integer literal" unless generic_integer_type_argument?(arguments[1])
-          raise LoweringError, "cstr_list_buffer item capacity must be positive" if integer_type_argument?(arguments[0]) && !arguments[0].value.positive?
-          raise LoweringError, "cstr_list_buffer byte capacity must be positive" if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
         when "Result"
           raise LoweringError, "Result requires exactly two type arguments" unless arguments.length == 2
           raise LoweringError, "Result ok type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)

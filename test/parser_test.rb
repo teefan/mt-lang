@@ -10,7 +10,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal :module, ast.module_kind
     assert_equal [], ast.directives
     assert_equal 1, ast.imports.length
-    assert_equal "std.c.raylib", ast.imports.first.path.to_s
+    assert_equal "std.raylib", ast.imports.first.path.to_s
     assert_equal "rl", ast.imports.first.alias_name
     assert_equal(
       %w[ConstDecl ConstDecl ConstDecl StructDecl MethodsBlock FunctionDef],
@@ -653,54 +653,6 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal 0, local_decl.value.arguments.length
   end
 
-  def test_parses_cstr_list_buffer_typed_local_without_initializer
-    source = <<~MT
-      module demo.cstr_list_buffer
-
-      def main() -> void:
-          var labels: cstr_list_buffer[8, 256]
-    MT
-
-    ast = MilkTea::Parser.parse(source)
-    main_fn = ast.declarations.first
-    local_decl = main_fn.body.first
-
-    assert_instance_of MilkTea::AST::LocalDecl, local_decl
-    assert_equal :var, local_decl.kind
-    assert_equal "labels", local_decl.name
-    assert_equal "cstr_list_buffer", local_decl.type.name.to_s
-    assert_equal 2, local_decl.type.arguments.length
-    assert_equal 8, local_decl.type.arguments.first.value.value
-    assert_equal 256, local_decl.type.arguments[1].value.value
-    assert_nil local_decl.value
-  end
-
-  def test_parses_cstr_list_buffer_constructor_calls
-    source = <<~MT
-      module demo.cstr_list_buffer
-
-      def main() -> i32:
-          let labels = zero[cstr_list_buffer[8, 256]]()
-          return 0
-    MT
-
-    ast = MilkTea::Parser.parse(source)
-    main_fn = ast.declarations.first
-    local_decl = main_fn.body.first
-
-    assert_instance_of MilkTea::AST::Call, local_decl.value
-    assert_instance_of MilkTea::AST::Specialization, local_decl.value.callee
-    assert_equal "zero", local_decl.value.callee.callee.name
-    assert_equal 1, local_decl.value.callee.arguments.length
-    list_buffer_type = local_decl.value.callee.arguments.first.value
-    assert_instance_of MilkTea::AST::TypeRef, list_buffer_type
-    assert_equal "cstr_list_buffer", list_buffer_type.name.to_s
-    assert_equal 2, list_buffer_type.arguments.length
-    assert_equal 8, list_buffer_type.arguments.first.value.value
-    assert_equal 256, list_buffer_type.arguments[1].value.value
-    assert_equal 0, local_decl.value.arguments.length
-  end
-
   def test_parses_partial_aggregate_and_array_constructor_calls
     source = <<~MT
       module demo.partial_literals
@@ -963,7 +915,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal true, extern_def.variadic
   end
 
-  def test_parses_foreign_function_declarations_and_using_scratch_calls
+  def test_parses_foreign_function_declarations_and_calls
     source = <<~MT
       module std.raylib
 
@@ -972,11 +924,11 @@ class MilkTeaParserTest < Minitest::Test
       pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
       pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
       pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
-      pub foreign def close_window(owned window: Window) -> void = c.CloseWindow
+      pub foreign def close_window(consuming window: Window) -> void = c.CloseWindow
 
-      def main(path: str, scratch: ref[Arena]) -> ptr[u8]?:
+      def main(path: str) -> ptr[u8]?:
           var data_size = 0
-          return load_file_data(path, out data_size) using scratch
+          return load_file_data(path, out data_size)
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -1003,16 +955,14 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "SaveFileData", save_file_data.mapping.callee.member
 
     close_window = ast.declarations[3]
-    assert_equal :owned, close_window.params[0].mode
+    assert_equal :consuming, close_window.params[0].mode
     assert_instance_of MilkTea::AST::MemberAccess, close_window.mapping
 
     main_fn = ast.declarations[4]
     return_stmt = main_fn.body[1]
-    assert_instance_of MilkTea::AST::UsingCall, return_stmt.value
-    assert_instance_of MilkTea::AST::Call, return_stmt.value.call
-    assert_equal "scratch", return_stmt.value.scratch.name
-    assert_instance_of MilkTea::AST::UnaryOp, return_stmt.value.call.arguments[1].value
-    assert_equal "out", return_stmt.value.call.arguments[1].value.operator
+    assert_instance_of MilkTea::AST::Call, return_stmt.value
+    assert_instance_of MilkTea::AST::UnaryOp, return_stmt.value.arguments[1].value
+    assert_equal "out", return_stmt.value.arguments[1].value.operator
   end
 
   private

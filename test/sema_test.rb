@@ -192,14 +192,13 @@ class MilkTeaSemaTest < Minitest::Test
     root_source = <<~MT
       module demo.main
 
-      import std.mem.arena as arena
       import std.raylib as rl
 
-      def main(path: str, scratch: ref[arena.Arena], data: span[u8]) -> i32:
+      def main(path: str, data: span[u8]) -> i32:
           var data_size = 0
           rl.init_window(800, 450, "Demo")
-          let loaded = rl.load_file_data(path, out data_size) using scratch
-          let saved = rl.save_file_data(path, data) using scratch
+          let loaded = rl.load_file_data(path, out data_size)
+          let saved = rl.save_file_data(path, data)
           if loaded != null and saved:
               return data_size
           return 0
@@ -232,17 +231,16 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_rejects_foreign_defs_with_span_str_to_span_cstr_boundary
+  def test_type_checks_foreign_defs_with_span_str_to_span_cstr_boundary
     root_source = <<~MT
       module demo.main
 
-      import std.mem.arena as arena
       import std.sample as sample
 
-      def main(scratch: ref[arena.Arena]) -> void:
+      def main() -> void:
           var labels = array[str, 3]("Play", "Options", "Quit")
           var active = 0
-          sample.use_names(labels, inout active) using scratch
+          sample.use_names(labels, inout active)
     MT
 
     imported_sources = {
@@ -259,24 +257,23 @@ class MilkTeaSemaTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_program_source(root_source, imported_sources)
-    end
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
 
-    assert_match(/cannot map span\[str\] as span\[cstr\]/, error.message)
+    assert_equal true, result.imports.key?("sample")
+    assert_equal true, result.functions.key?("main")
   end
 
-  def test_rejects_foreign_defs_with_span_str_to_span_ptr_char_boundary
+  def test_type_checks_foreign_defs_with_span_str_to_span_ptr_char_boundary
     root_source = <<~MT
       module demo.main
 
-      import std.mem.arena as arena
       import std.sample as sample
 
-      def main(scratch: ref[arena.Arena]) -> void:
+      def main() -> void:
           var labels = array[str, 3]("Play", "Options", "Quit")
           var active = 0
-          sample.use_names(labels, inout active) using scratch
+          sample.use_names(labels, inout active)
     MT
 
     imported_sources = {
@@ -293,11 +290,11 @@ class MilkTeaSemaTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_program_source(root_source, imported_sources)
-    end
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
 
-    assert_match(/cannot map span\[str\] as span\[ptr\[char\]\]/, error.message)
+    assert_equal true, result.imports.key?("sample")
+    assert_equal true, result.functions.key?("main")
   end
 
   def test_rejects_foreign_defs_with_str_to_ptr_char_boundary
@@ -545,7 +542,7 @@ class MilkTeaSemaTest < Minitest::Test
         pub opaque Window
 
         pub foreign def create() -> Window? = c.CreateWindow
-        pub foreign def destroy(owned window: Window) -> void = c.DestroyWindow
+        pub foreign def destroy(consuming window: Window) -> void = c.DestroyWindow
       MT
     }
 
@@ -583,7 +580,7 @@ class MilkTeaSemaTest < Minitest::Test
         pub opaque Window
 
         pub foreign def require() -> Window = c.RequireWindow
-        pub foreign def destroy(owned window: Window) -> void = c.DestroyWindow
+        pub foreign def destroy(consuming window: Window) -> void = c.DestroyWindow
       MT
     }
 
@@ -591,7 +588,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_program_source(root_source, imported_sources)
     end
 
-    assert_match(/owned argument window to destroy must be a bare nullable local or parameter binding/, error.message)
+    assert_match(/consuming argument window to destroy must be a bare nullable local or parameter binding/, error.message)
   end
 
   def test_rejects_owned_foreign_release_outside_expression_statement
@@ -622,7 +619,7 @@ class MilkTeaSemaTest < Minitest::Test
         pub opaque Window
 
         pub foreign def create() -> Window? = c.CreateWindow
-        pub foreign def destroy(owned window: Window) -> void = c.DestroyWindow
+        pub foreign def destroy(consuming window: Window) -> void = c.DestroyWindow
       MT
     }
 
@@ -630,7 +627,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_program_source(root_source, imported_sources)
     end
 
-    assert_match(/owned foreign calls must be top-level expression statements/, error.message)
+    assert_match(/consuming foreign calls must be top-level expression statements/, error.message)
   end
 
   def test_rejects_foreign_defs_that_drop_cstr_mutability
@@ -683,78 +680,6 @@ class MilkTeaSemaTest < Minitest::Test
     end
 
     assert_match(/out is only allowed for foreign call arguments/, error.message)
-  end
-
-  def test_rejects_redundant_using_scratch_on_foreign_call
-    root_source = <<~MT
-      module demo.main
-
-      import std.mem.arena as arena
-      import std.raylib as rl
-
-      def main(data: span[u8], scratch: ref[arena.Arena]) -> bool:
-          return rl.window_should_close() using scratch
-    MT
-
-    imported_sources = {
-      "std/c/raylib.mt" => <<~MT,
-        extern module std.c.raylib:
-            include "raylib.h"
-
-            extern def WindowShouldClose() -> bool
-      MT
-      "std/raylib.mt" => <<~MT,
-        module std.raylib
-
-        import std.c.raylib as c
-
-        pub foreign def window_should_close() -> bool = c.WindowShouldClose
-      MT
-    }
-
-    error = assert_raises(MilkTea::SemaError) do
-      check_program_source(root_source, imported_sources)
-    end
-
-    assert_match(/using scratch is not needed/, error.message)
-  end
-
-  def test_rejects_nested_using_scratch_inside_larger_expression
-    root_source = <<~MT
-      module demo.main
-
-      import std.mem.arena as arena
-      import std.raylib as rl
-
-      def consume(data: ptr[u8]?) -> ptr[u8]?:
-          return data
-
-      def main(path: str, scratch: ref[arena.Arena]) -> ptr[u8]?:
-          var data_size = 0
-          return consume(rl.load_file_data(path, out data_size) using scratch)
-    MT
-
-    imported_sources = {
-      "std/c/raylib.mt" => <<~MT,
-        extern module std.c.raylib:
-            include "raylib.h"
-
-            extern def LoadFileData(file_name: cstr, data_size: ptr[i32]) -> ptr[u8]?
-      MT
-      "std/raylib.mt" => <<~MT,
-        module std.raylib
-
-        import std.c.raylib as c
-
-        pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
-      MT
-    }
-
-    error = assert_raises(MilkTea::SemaError) do
-      check_program_source(root_source, imported_sources)
-    end
-
-    assert_match(/using scratch must be the top-level expression/, error.message)
   end
 
   def test_type_checks_mixed_numeric_binary_operators_with_arithmetic_conversion
@@ -2262,40 +2187,19 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_type_checks_cstr_list_buffer_methods_and_foreign_span_cstr_boundary_without_scratch
-    root_source = <<~MT
+  def test_rejects_removed_cstr_list_buffer_type
+    source = <<~MT
       module demo.main
 
-      import std.ui as ui
-
-      def main() -> i32:
+      def main() -> void:
           var labels: cstr_list_buffer[3, 64]
-          var items = array[str, 3]("Primary", "Secondary", "About")
-          labels.assign(items)
-          ui.use_names(labels.as_cstrs())
-          labels.clear()
-          return cast[i32](labels.capacity() + labels.byte_capacity())
     MT
 
-    imported_sources = {
-      "std/c/ui.mt" => <<~MT,
-        extern module std.c.ui:
-            include "ui.h"
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
 
-            extern def UseNames(names: ptr[ptr[char]], count: i32) -> void
-      MT
-      "std/ui.mt" => <<~MT,
-        module std.ui
-
-        import std.c.ui as c
-
-        pub foreign def use_names(names: span[cstr] as span[ptr[char]]) -> void = c.UseNames(names.data, cast[i32](names.len))
-      MT
-    }
-
-    result = check_program_source(root_source, imported_sources)
-
-    assert_equal true, result.root_analysis.functions.key?("main")
+    assert_match(/unknown generic type cstr_list_buffer/, error.message)
   end
 
   def test_rejects_str_buffer_as_str_on_temporary_receiver
@@ -2328,21 +2232,6 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/as_cstr requires a safe stored receiver/, error.message)
   end
 
-  def test_rejects_cstr_list_buffer_as_cstrs_on_temporary_receiver
-    source = <<~MT
-      module demo.cstr_list_buffer_bad_view
-
-      def main() -> span[cstr]:
-          return zero[cstr_list_buffer[2, 32]]().as_cstrs()
-    MT
-
-    error = assert_raises(MilkTea::SemaError) do
-      check_source(source)
-    end
-
-    assert_match(/as_cstrs requires a safe stored receiver/, error.message)
-  end
-
   def test_type_checks_foreign_str_as_cstr_calls_with_str_buffer_as_cstr_without_scratch
     root_source = <<~MT
       module demo.main
@@ -2357,7 +2246,6 @@ class MilkTeaSemaTest < Minitest::Test
     imported_sources = {
       "std/c/ui.mt" => <<~MT,
         extern module std.c.ui:
-            include "ui.h"
 
             extern def Label(text: cstr) -> void
       MT

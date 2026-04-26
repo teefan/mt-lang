@@ -53,7 +53,6 @@ module MilkTea
     IndexAccess = Data.define(:receiver, :index)
     Specialization = Data.define(:callee, :arguments)
     Call = Data.define(:callee, :arguments)
-    UsingCall = Data.define(:call, :scratch)
     Argument = Data.define(:name, :value)
     UnaryOp = Data.define(:operator, :operand)
     BinaryOp = Data.define(:operator, :left, :right)

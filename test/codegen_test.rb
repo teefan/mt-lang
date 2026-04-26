@@ -155,17 +155,16 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/mt_span_i32 items = \(mt_span_i32\)\{ \.data = &value, \.len = 1 \};/, generated)
   end
 
-  def test_generate_c_for_foreign_defs_with_out_and_using_scratch
+  def test_generate_c_for_foreign_defs_with_out_and_automatic_cstr_temps
     source = <<~MT
       module demo.main
 
-      import std.mem.arena as arena
       import std.raylib as rl
 
-      def main(path: str, scratch: ref[arena.Arena], data: span[u8]) -> i32:
+      def main(path: str, data: span[u8]) -> i32:
           var data_size = 0
-          let loaded = rl.load_file_data(path, out data_size) using scratch
-          let saved = rl.save_file_data(path, data) using scratch
+          let loaded = rl.load_file_data(path, out data_size)
+          let saved = rl.save_file_data(path, data)
           if loaded != null and saved:
               return data_size
           return 0
@@ -191,8 +190,10 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(source, imported_sources)
 
-    assert_match(/std_mem_arena_Arena_mark\(/, generated)
-    assert_match(/std_mem_arena_Arena_reset\(/, generated)
+    refute_match(/std_mem_arena_Arena_mark\(/, generated)
+    refute_match(/std_mem_arena_Arena_reset\(/, generated)
+    assert_match(/mt_foreign_str_to_cstr_temp/, generated)
+    assert_match(/mt_free_foreign_cstr_temp/, generated)
     assert_match(/LoadFileData\(/, generated)
     assert_match(/&data_size/, generated)
     assert_match(/SaveFileData\(/, generated)
@@ -234,17 +235,16 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/InitWindow\(800, 450, "Demo"\);/, generated)
   end
 
-  def test_rejects_codegen_for_foreign_defs_with_span_str_to_span_cstr_boundary
+  def test_generate_c_for_foreign_defs_with_span_str_to_span_cstr_boundary
     source = <<~MT
       module demo.main
 
-      import std.mem.arena as arena
       import std.sample as sample
 
-      def main(scratch: ref[arena.Arena]) -> i32:
+      def main() -> i32:
           var labels = array[str, 3]("Play", "Options", "Quit")
           var active = 1
-          return sample.use_names(labels, inout active) using scratch
+          return sample.use_names(labels, inout active)
     MT
 
     imported_sources = {
@@ -261,24 +261,26 @@ class MilkTeaCodegenTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
-      generate_c_from_program_source(source, imported_sources)
-    end
+    generated = generate_c_from_program_source(source, imported_sources)
 
-    assert_match(/cannot map span\[str\] as span\[cstr\]/, error.message)
+    assert_match(/mt_foreign_strs_to_cstrs_temp/, generated)
+    assert_match(/mt_free_foreign_cstrs_temp/, generated)
+    assert_match(/UseNames\(/, generated)
+    assert_match(/__mt_foreign_arg_\d+\.data/, generated)
+    assert_match(/\(\(int32_t\) __mt_foreign_arg_\d+\.len\)|\(int32_t\) __mt_foreign_arg_\d+\.len/, generated)
+    assert_operator generated.index("typedef struct mt_span_str"), :<, generated.index("static void mt_foreign_strs_to_cstrs_temp")
   end
 
-  def test_rejects_codegen_for_foreign_defs_with_span_str_to_span_ptr_char_boundary
+  def test_generate_c_for_foreign_defs_with_span_str_to_span_ptr_char_boundary
     source = <<~MT
       module demo.main
 
-      import std.mem.arena as arena
       import std.sample as sample
 
-      def main(scratch: ref[arena.Arena]) -> i32:
+      def main() -> i32:
           var labels = array[str, 3]("Play", "Options", "Quit")
           var active = 1
-          return sample.use_names(labels, inout active) using scratch
+          return sample.use_names(labels, inout active)
     MT
 
     imported_sources = {
@@ -295,11 +297,13 @@ class MilkTeaCodegenTest < Minitest::Test
       MT
     }
 
-    error = assert_raises(MilkTea::SemaError) do
-      generate_c_from_program_source(source, imported_sources)
-    end
+    generated = generate_c_from_program_source(source, imported_sources)
 
-    assert_match(/cannot map span\[str\] as span\[ptr\[char\]\]/, error.message)
+    assert_match(/mt_foreign_strs_to_cstrs_temp/, generated)
+    assert_match(/mt_free_foreign_cstrs_temp/, generated)
+    assert_match(/UseNames\(/, generated)
+    assert_match(/__mt_foreign_arg_\d+\.data/, generated)
+    assert_match(/\(\(int32_t\) __mt_foreign_arg_\d+\.len\)|\(int32_t\) __mt_foreign_arg_\d+\.len/, generated)
   end
 
   def test_rejects_codegen_for_foreign_defs_with_str_to_ptr_char_boundary
@@ -698,7 +702,7 @@ class MilkTeaCodegenTest < Minitest::Test
         pub opaque Window
 
         pub foreign def create() -> Window? = c.CreateWindow
-        pub foreign def destroy(owned window: Window) -> void = c.DestroyWindow
+        pub foreign def destroy(consuming window: Window) -> void = c.DestroyWindow
       MT
     }
 
@@ -1801,52 +1805,19 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/TextBox\(mt_str_builder_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(\(int32_t\) (?:33|\(32 \+ 1\))\)\);/, generated)
   end
 
-  def test_generate_c_for_cstr_list_buffer_methods_and_foreign_span_cstr_boundary
+  def test_rejects_codegen_for_removed_cstr_list_buffer_type
     source = <<~MT
       module demo.main
 
-      import std.ui as ui
-
-      def main() -> i32:
+      def main() -> void:
           var labels: cstr_list_buffer[3, 64]
-          var items = array[str, 3]("Primary", "Secondary", "About")
-          labels.assign(items)
-          ui.use_names(labels.as_cstrs())
-          labels.clear()
-          return cast[i32](labels.capacity() + labels.byte_capacity())
     MT
 
-    imported_sources = {
-      "std/c/ui.mt" => <<~MT,
-        extern module std.c.ui:
-            include "ui.h"
+    error = assert_raises(MilkTea::SemaError) do
+      generate_c_from_program_source(source)
+    end
 
-            extern def UseNames(names: ptr[ptr[char]], count: i32) -> void
-      MT
-      "std/ui.mt" => <<~MT,
-        module std.ui
-
-        import std.c.ui as c
-
-        pub foreign def use_names(names: span[cstr] as span[ptr[char]]) -> void = c.UseNames(names.data, cast[i32](names.len))
-      MT
-    }
-
-    generated = generate_c_from_program_source(source, imported_sources)
-
-    assert_match(/typedef struct mt_cstr_list_buffer_3_64 mt_cstr_list_buffer_3_64;/, generated)
-    assert_match(/struct mt_cstr_list_buffer_3_64 \{/, generated)
-    assert_match(/const char\* items\[3\];/, generated)
-    assert_match(/char data\[64\];/, generated)
-    assert_match(/uintptr_t len;/, generated)
-    assert_match(/uintptr_t used;/, generated)
-    assert_match(/static void mt_cstr_list_buffer_assign\(mt_span_str values, const char\*\* items, uintptr_t item_cap, char\* data, uintptr_t data_cap, uintptr_t\* len, uintptr_t\* used\)/, generated)
-    assert_match(/static void mt_cstr_list_buffer_clear\(const char\*\* items, uintptr_t item_cap, char\* data, uintptr_t data_cap, uintptr_t\* len, uintptr_t\* used\)/, generated)
-    assert_match(/mt_cstr_list_buffer_3_64 labels = \{ 0 \};/, generated)
-    assert_match(/mt_cstr_list_buffer_assign\(\(mt_span_str\)\{ \.data = &items\[0\], \.len = 3 \}, &labels\.items\[0\], 3, &labels\.data\[0\], 64, &labels\.len, &labels\.used\);/, generated)
-    assert_match(/\(mt_span_cstr\)\{ \.data = &labels\.items\[0\], \.len = labels\.len \}/, generated)
-    assert_match(/mt_cstr_list_buffer_clear\(&labels\.items\[0\], 3, &labels\.data\[0\], 64, &labels\.len, &labels\.used\);/, generated)
-    refute_match(/to_cstrs\(/, generated)
+    assert_match(/unknown generic type cstr_list_buffer/, error.message)
   end
 
   def test_generate_c_for_foreign_str_as_cstr_call_with_str_buffer_as_cstr_without_scratch
