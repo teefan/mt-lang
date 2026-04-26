@@ -16,14 +16,13 @@ def main() -> i32:
     var toggle_enabled = true
     var checked = false
     var tab_active: i32 = 0
-    var tab_labels = array[cstr, 3]("Layout", "Palette", "About")
+    var tab_labels = array[str, 3]("Layout", "Palette", "About")
     var combo_active: i32 = 1
     var slider_value: f32 = 42.0
     var progress_value: f32 = 42.0
     var list_scroll: i32 = 0
     var list_active: i32 = 2
     var list_focus: i32 = -1
-    var list_items: cstr_list_buffer[5, 160]
     var accent = rl.Color(r = 110, g = 170, b = 255, a = 255)
     var mouse_cell = rl.Vector2(x = -1.0, y = -1.0)
 
@@ -35,7 +34,7 @@ def main() -> i32:
 
         rl.clear_background(rl.RAYWHITE)
         rl.draw_text("raygui imported surface pressure test", 24, 18, 20, rl.DARKGRAY)
-        rl.draw_text("shared structs and dynamic string lists stay on the curated surface", 24, 44, 18, rl.GRAY)
+        rl.draw_text("shared structs and dynamic string lists stay on the curated span[str] surface", 24, 44, 18, rl.GRAY)
 
         let left_panel = rl.Rectangle(x = 20.0, y = 84.0, width = 300.0, height = 440.0)
         let right_panel = rl.Rectangle(x = 340.0, y = 84.0, width = 600.0, height = 440.0)
@@ -73,10 +72,9 @@ def main() -> i32:
             if tab_active == 0 then "Tab: layout" else "Tab: focus",
             if list_focus >= 0 then "Focus: active" else "Focus: none",
         )
-        list_items.assign(list_entries)
         gui.list_view_ex(
             rl.Rectangle(x = 40.0, y = 424.0, width = 240.0, height = 84.0),
-            list_items.as_cstrs(),
+            list_entries,
             inout list_scroll,
             inout list_active,
             inout list_focus,
@@ -91,7 +89,7 @@ def main() -> i32:
         if tab_active == 0:
             gui.label(tab_caption_bounds, "Compact second-pass raygui surface")
         elif tab_active == 1:
-            gui.label(tab_caption_bounds, "Literal cstr arrays lower directly through the curated surface")
+            gui.label(tab_caption_bounds, "Literal string arrays lower directly through the curated surface")
         else:
             gui.label(tab_caption_bounds, "No raw pointers or unsafe blocks in this example")
         gui.color_picker(

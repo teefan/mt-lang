@@ -1,10 +1,10 @@
 module demo.bouncing_ball
 
-import std.c.raylib as rl
+import std.raylib as rl
 
 const screen_width: i32 = 1280
 const screen_height: i32 = 720
-const window_title: cstr = c"Milk Tea Demo"
+const window_title: str = "Milk Tea Demo"
 
 struct Ball:
     position: rl.Vector2
@@ -24,13 +24,13 @@ methods Ball:
             this.velocity.y = -this.velocity.y
 
     def draw():
-        rl.DrawCircleV(this.position, this.radius, this.color)
+        rl.draw_circle_v(this.position, this.radius, this.color)
 
 def main() -> i32:
-    rl.InitWindow(screen_width, screen_height, window_title)
-    defer rl.CloseWindow()
+    rl.init_window(screen_width, screen_height, window_title)
+    defer rl.close_window()
 
-    rl.SetTargetFPS(60)
+    rl.set_target_fps(60)
 
     var ball = Ball(
         position = rl.Vector2(x = 300.0, y = 240.0),
@@ -39,14 +39,14 @@ def main() -> i32:
         color = rl.GOLD,
     )
 
-    while not rl.WindowShouldClose():
-        let dt = rl.GetFrameTime()
+    while not rl.window_should_close():
+        let dt = rl.get_frame_time()
         ball.update(dt)
 
-        rl.BeginDrawing()
-        defer rl.EndDrawing()
+        rl.begin_drawing()
+        defer rl.end_drawing()
 
-        rl.ClearBackground(rl.BLACK)
+        rl.clear_background(rl.BLACK)
         ball.draw()
 
     return 0

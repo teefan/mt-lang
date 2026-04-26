@@ -35,6 +35,12 @@
         ]
       },
       {
+        "raw": "IsWindowState",
+        "params": [
+          { "name": "flag", "type": "ConfigFlags" }
+        ]
+      },
+      {
         "raw": "SetWindowState",
         "params": [
           { "name": "flags", "type": "ConfigFlags" }
@@ -107,7 +113,7 @@
       {
         "raw": "UnloadFileData",
         "params": [
-          { "name": "data", "type": "ptr[u8]", "mode": "owned" }
+          { "name": "data", "type": "ptr[u8]", "mode": "consuming" }
         ]
       },
       {

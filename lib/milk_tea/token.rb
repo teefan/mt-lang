@@ -37,7 +37,7 @@ module MilkTea
       "null" => :null,
       "offsetof" => :offsetof,
       "opaque" => :opaque,
-      "owned" => :owned,
+      "consuming" => :consuming,
       "or" => :or,
       "out" => :out,
       "packed" => :packed,
@@ -52,7 +52,6 @@ module MilkTea
       "true" => :true,
       "then" => :then,
       "union" => :union,
-      "using" => :using,
       "var" => :var,
       "while" => :while,
     }.freeze

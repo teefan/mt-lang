@@ -38,7 +38,7 @@ module MilkTea
       end
 
       opaque_decls = @program.opaques
-      struct_decls = sort_struct_decls(@program.structs + collect_generic_struct_decls + collect_result_decls + collect_str_builder_decls + collect_cstr_list_buffer_decls)
+      struct_decls = sort_struct_decls(@program.structs + collect_generic_struct_decls + collect_result_decls + collect_str_builder_decls)
 
       forward_declarations = emit_forward_declarations(opaque_decls, struct_decls)
       unless forward_declarations.empty?
@@ -56,8 +56,8 @@ module MilkTea
         lines << ""
       end
 
-      if uses_cstr_list_buffer_helpers?
-        lines.concat(emit_cstr_list_buffer_helpers)
+      if uses_foreign_temp_cstr_helpers?
+        lines.concat(emit_foreign_temp_cstr_helpers)
         lines << ""
       end
 
@@ -127,7 +127,11 @@ module MilkTea
     private
 
     def uses_panic_helper?
-      collect_checked_array_index_types.any? || collect_checked_span_index_types.any? || @program.functions.any? { |function| function_uses_panic?(function) || function_uses_named_call?(function, %w[mt_str_buffer_len mt_str_buffer_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_assign mt_str_builder_append mt_cstr_list_buffer_assign]) }
+      collect_checked_array_index_types.any? || collect_checked_span_index_types.any? || @program.functions.any? { |function| function_uses_panic?(function) || function_uses_named_call?(function, %w[mt_str_buffer_len mt_str_buffer_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_assign mt_str_builder_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp]) }
+    end
+
+    def uses_foreign_temp_cstr_helpers?
+      @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_foreign_str_to_cstr_temp mt_free_foreign_cstr_temp mt_foreign_strs_to_cstrs_temp mt_free_foreign_cstrs_temp]) }
     end
 
     def uses_text_buffer_helpers?
@@ -136,10 +140,6 @@ module MilkTea
 
     def uses_str_builder_helpers?
       @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_clear mt_str_builder_assign mt_str_builder_append mt_str_builder_prepare_write]) }
-    end
-
-    def uses_cstr_list_buffer_helpers?
-      @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_cstr_list_buffer_clear mt_cstr_list_buffer_assign]) }
     end
 
     def function_uses_panic?(function)
@@ -277,6 +277,91 @@ module MilkTea
       lines
     end
 
+    def emit_foreign_temp_cstr_helpers
+      lines = []
+
+      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_foreign_str_to_cstr_temp]) }
+        lines.concat([
+          "static const char* mt_foreign_str_to_cstr_temp(mt_str value) {",
+          "#{INDENT}char* data = (char*)malloc(value.len + 1);",
+          "#{INDENT}uintptr_t index = 0;",
+          "#{INDENT}if (data == NULL) mt_panic(\"foreign str temporary allocation failed\");",
+          "#{INDENT}while (index < value.len) {",
+          "#{INDENT * 2}data[index] = value.data[index];",
+          "#{INDENT * 2}index++;",
+          "#{INDENT}}",
+          "#{INDENT}data[value.len] = '\\0';",
+          "#{INDENT}return data;",
+          "}",
+        ])
+      end
+
+      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_free_foreign_cstr_temp]) }
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static void mt_free_foreign_cstr_temp(const char* value) {",
+          "#{INDENT}free((void*)value);",
+          "}",
+        ])
+      end
+
+      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_foreign_strs_to_cstrs_temp]) }
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static void mt_foreign_strs_to_cstrs_temp(mt_span_str values, char*** items_out, char** data_out, uintptr_t* len_out) {",
+          "#{INDENT}uintptr_t total_bytes = 0;",
+          "#{INDENT}uintptr_t index = 0;",
+          "#{INDENT}uintptr_t offset = 0;",
+          "#{INDENT}char** items = NULL;",
+          "#{INDENT}char* data = NULL;",
+          "#{INDENT}while (index < values.len) {",
+          "#{INDENT * 2}total_bytes += values.data[index].len + 1;",
+          "#{INDENT * 2}index++;",
+          "#{INDENT}}",
+          "#{INDENT}if (values.len > 0) {",
+          "#{INDENT * 2}items = (char**)malloc(values.len * sizeof(char*));",
+          "#{INDENT * 2}if (items == NULL) mt_panic(\"foreign string-list temporary allocation failed\");",
+          "#{INDENT}}",
+          "#{INDENT}if (total_bytes > 0) {",
+          "#{INDENT * 2}data = (char*)malloc(total_bytes);",
+          "#{INDENT * 2}if (data == NULL) {",
+          "#{INDENT * 3}free(items);",
+          "#{INDENT * 3}mt_panic(\"foreign string-list temporary allocation failed\");",
+          "#{INDENT * 2}}",
+          "#{INDENT}}",
+          "#{INDENT}index = 0;",
+          "#{INDENT}while (index < values.len) {",
+          "#{INDENT * 2}mt_str value = values.data[index];",
+          "#{INDENT * 2}uintptr_t byte_index = 0;",
+          "#{INDENT * 2}items[index] = data + offset;",
+          "#{INDENT * 2}while (byte_index < value.len) {",
+          "#{INDENT * 3}data[offset + byte_index] = value.data[byte_index];",
+          "#{INDENT * 3}byte_index++;",
+          "#{INDENT * 2}}",
+          "#{INDENT * 2}data[offset + value.len] = '\\0';",
+          "#{INDENT * 2}offset += value.len + 1;",
+          "#{INDENT * 2}index++;",
+          "#{INDENT}}",
+          "#{INDENT}*items_out = items;",
+          "#{INDENT}*data_out = data;",
+          "#{INDENT}*len_out = values.len;",
+          "}",
+        ])
+      end
+
+      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_free_foreign_cstrs_temp]) }
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static void mt_free_foreign_cstrs_temp(char** items, char* data) {",
+          "#{INDENT}free(items);",
+          "#{INDENT}free(data);",
+          "}",
+        ])
+      end
+
+      lines
+    end
+
     def emit_text_buffer_helpers
       [
         "static bool mt_is_utf8_continuation_byte(unsigned char byte) {",
@@ -353,47 +438,6 @@ module MilkTea
         "#{INDENT}memset(data, 0, cap);",
         "}",
       ]
-    end
-
-    def emit_cstr_list_buffer_helpers
-      lines = []
-
-      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_cstr_list_buffer_clear]) }
-        lines.concat([
-          "static void mt_cstr_list_buffer_clear(const char** items, uintptr_t item_cap, char* data, uintptr_t data_cap, uintptr_t* len, uintptr_t* used) {",
-          "#{INDENT}memset(items, 0, item_cap * sizeof(const char*));",
-          "#{INDENT}memset(data, 0, data_cap);",
-          "#{INDENT}*len = 0;",
-          "#{INDENT}*used = 0;",
-          "}",
-        ])
-      end
-
-      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_cstr_list_buffer_assign]) }
-        lines << "" unless lines.empty?
-        lines.concat([
-          "static void mt_cstr_list_buffer_assign(mt_span_str values, const char** items, uintptr_t item_cap, char* data, uintptr_t data_cap, uintptr_t* len, uintptr_t* used) {",
-          "#{INDENT}uintptr_t offset = 0;",
-          "#{INDENT}uintptr_t index = 0;",
-          "#{INDENT}if (values.len > item_cap) mt_panic(\"cstr_list_buffer.assign exceeds item capacity\");",
-          "#{INDENT}memset(items, 0, item_cap * sizeof(const char*));",
-          "#{INDENT}memset(data, 0, data_cap);",
-          "#{INDENT}while (index < values.len) {",
-          "#{INDENT * 2}mt_str value = values.data[index];",
-          "#{INDENT * 2}if (value.len + 1 > data_cap - offset) mt_panic(\"cstr_list_buffer.assign exceeds byte capacity\");",
-          "#{INDENT * 2}memcpy(data + offset, value.data, value.len);",
-          "#{INDENT * 2}data[offset + value.len] = '\\0';",
-          "#{INDENT * 2}items[index] = data + offset;",
-          "#{INDENT * 2}offset += value.len + 1;",
-          "#{INDENT * 2}index++;",
-          "#{INDENT}}",
-          "#{INDENT}*len = values.len;",
-          "#{INDENT}*used = offset;",
-          "}",
-        ])
-      end
-
-      lines
     end
 
     def emit_str_builder_helpers
@@ -1333,23 +1377,6 @@ module MilkTea
       end
     end
 
-    def collect_cstr_list_buffer_decls
-      collect_cstr_list_buffer_types.map do |type|
-        IR::StructDecl.new(
-          name: type.to_s,
-          c_name: cstr_list_buffer_type_name(type),
-          fields: [
-            IR::Field.new(name: "items", type: Types::GenericInstance.new("array", [Types::Primitive.new("cstr"), Types::LiteralTypeArg.new(cstr_list_buffer_item_capacity(type))])),
-            IR::Field.new(name: "data", type: Types::GenericInstance.new("array", [Types::Primitive.new("char"), Types::LiteralTypeArg.new(cstr_list_buffer_byte_capacity(type))])),
-            IR::Field.new(name: "len", type: Types::Primitive.new("usize")),
-            IR::Field.new(name: "used", type: Types::Primitive.new("usize")),
-          ],
-          packed: false,
-          alignment: nil,
-        )
-      end
-    end
-
     def collect_str_builder_decls
       collect_str_builder_types.map do |type|
         IR::StructDecl.new(
@@ -1534,42 +1561,6 @@ module MilkTea
       generic_struct_types
     end
 
-    def collect_cstr_list_buffer_types
-      cstr_list_buffer_types = []
-      visited = {}
-
-      @program.constants.each do |constant|
-        collect_cstr_list_buffer_type(constant.type, cstr_list_buffer_types, visited)
-      end
-
-      @program.structs.each do |struct_decl|
-        struct_decl.fields.each do |field|
-          collect_cstr_list_buffer_type(field.type, cstr_list_buffer_types, visited)
-        end
-      end
-
-      @program.unions.each do |union_decl|
-        union_decl.fields.each do |field|
-          collect_cstr_list_buffer_type(field.type, cstr_list_buffer_types, visited)
-        end
-      end
-
-      @program.functions.each do |function|
-        collect_cstr_list_buffer_type(function.return_type, cstr_list_buffer_types, visited)
-        function.params.each do |param|
-          collect_cstr_list_buffer_type(param.type, cstr_list_buffer_types, visited)
-        end
-        collect_cstr_list_buffer_types_from_statements(function.body, cstr_list_buffer_types, visited)
-      end
-
-      @program.static_asserts.each do |statement|
-        collect_cstr_list_buffer_types_from_expression(statement.condition, cstr_list_buffer_types, visited)
-        collect_cstr_list_buffer_types_from_expression(statement.message, cstr_list_buffer_types, visited)
-      end
-
-      cstr_list_buffer_types
-    end
-
     def collect_str_builder_types
       str_builder_types = []
       visited = {}
@@ -1703,107 +1694,6 @@ module MilkTea
       when Types::Struct, Types::Union
         type.fields.each_value do |field_type|
           collect_str_builder_type(field_type, str_builder_types, visited)
-        end
-      end
-    end
-
-    def collect_cstr_list_buffer_types_from_statements(statements, cstr_list_buffer_types, visited)
-      statements.each do |statement|
-        case statement
-        when IR::LocalDecl
-          collect_cstr_list_buffer_type(statement.type, cstr_list_buffer_types, visited)
-          collect_cstr_list_buffer_types_from_expression(statement.value, cstr_list_buffer_types, visited)
-        when IR::Assignment
-          collect_cstr_list_buffer_types_from_expression(statement.target, cstr_list_buffer_types, visited)
-          collect_cstr_list_buffer_types_from_expression(statement.value, cstr_list_buffer_types, visited)
-        when IR::BlockStmt, IR::WhileStmt
-          collect_cstr_list_buffer_types_from_statements(statement.body, cstr_list_buffer_types, visited)
-        when IR::IfStmt
-          collect_cstr_list_buffer_types_from_expression(statement.condition, cstr_list_buffer_types, visited)
-          collect_cstr_list_buffer_types_from_statements(statement.then_body, cstr_list_buffer_types, visited)
-          collect_cstr_list_buffer_types_from_statements(statement.else_body, cstr_list_buffer_types, visited) if statement.else_body
-        when IR::SwitchStmt
-          collect_cstr_list_buffer_types_from_expression(statement.expression, cstr_list_buffer_types, visited)
-          statement.cases.each do |switch_case|
-            collect_cstr_list_buffer_types_from_statements(switch_case.body, cstr_list_buffer_types, visited)
-          end
-        when IR::StaticAssert
-          collect_cstr_list_buffer_types_from_expression(statement.condition, cstr_list_buffer_types, visited)
-          collect_cstr_list_buffer_types_from_expression(statement.message, cstr_list_buffer_types, visited)
-        when IR::ReturnStmt
-          collect_cstr_list_buffer_types_from_expression(statement.value, cstr_list_buffer_types, visited) if statement.value
-        when IR::ExpressionStmt
-          collect_cstr_list_buffer_types_from_expression(statement.expression, cstr_list_buffer_types, visited)
-        end
-      end
-    end
-
-    def collect_cstr_list_buffer_types_from_expression(expression, cstr_list_buffer_types, visited)
-      case expression
-      when IR::Member
-        collect_cstr_list_buffer_types_from_expression(expression.receiver, cstr_list_buffer_types, visited)
-      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
-        collect_cstr_list_buffer_types_from_expression(expression.receiver, cstr_list_buffer_types, visited)
-        collect_cstr_list_buffer_types_from_expression(expression.index, cstr_list_buffer_types, visited)
-      when IR::Call
-        collect_cstr_list_buffer_type(expression.type, cstr_list_buffer_types, visited)
-        expression.arguments.each { |argument| collect_cstr_list_buffer_types_from_expression(argument, cstr_list_buffer_types, visited) }
-      when IR::Unary
-        collect_cstr_list_buffer_types_from_expression(expression.operand, cstr_list_buffer_types, visited)
-      when IR::Binary
-        collect_cstr_list_buffer_types_from_expression(expression.left, cstr_list_buffer_types, visited)
-        collect_cstr_list_buffer_types_from_expression(expression.right, cstr_list_buffer_types, visited)
-      when IR::Conditional
-        collect_cstr_list_buffer_types_from_expression(expression.condition, cstr_list_buffer_types, visited)
-        collect_cstr_list_buffer_types_from_expression(expression.then_expression, cstr_list_buffer_types, visited)
-        collect_cstr_list_buffer_types_from_expression(expression.else_expression, cstr_list_buffer_types, visited)
-      when IR::ReinterpretExpr
-        collect_cstr_list_buffer_type(expression.target_type, cstr_list_buffer_types, visited)
-        collect_cstr_list_buffer_type(expression.source_type, cstr_list_buffer_types, visited)
-        collect_cstr_list_buffer_types_from_expression(expression.expression, cstr_list_buffer_types, visited)
-      when IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
-        collect_cstr_list_buffer_type(expression.target_type, cstr_list_buffer_types, visited)
-      when IR::AddressOf, IR::Cast
-        collect_cstr_list_buffer_types_from_expression(expression.expression, cstr_list_buffer_types, visited)
-      when IR::AggregateLiteral
-        collect_cstr_list_buffer_type(expression.type, cstr_list_buffer_types, visited)
-        expression.fields.each { |field| collect_cstr_list_buffer_types_from_expression(field.value, cstr_list_buffer_types, visited) }
-      when IR::ArrayLiteral
-        expression.elements.each { |element| collect_cstr_list_buffer_types_from_expression(element, cstr_list_buffer_types, visited) }
-      end
-    end
-
-    def collect_cstr_list_buffer_type(type, cstr_list_buffer_types, visited)
-      return unless type
-      return if visited[type]
-
-      visited[type] = true
-
-      case type
-      when Types::Nullable
-        collect_cstr_list_buffer_type(type.base, cstr_list_buffer_types, visited)
-      when Types::Span
-        collect_cstr_list_buffer_type(type.element_type, cstr_list_buffer_types, visited)
-      when Types::StructInstance
-        type.arguments.each do |argument|
-          collect_cstr_list_buffer_type(argument, cstr_list_buffer_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
-        end
-        type.fields.each_value do |field_type|
-          collect_cstr_list_buffer_type(field_type, cstr_list_buffer_types, visited)
-        end
-      when Types::GenericInstance
-        cstr_list_buffer_types << type if cstr_list_buffer_type?(type)
-        type.arguments.each do |argument|
-          collect_cstr_list_buffer_type(argument, cstr_list_buffer_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
-        end
-      when Types::Function
-        type.params.each do |param|
-          collect_cstr_list_buffer_type(param.type, cstr_list_buffer_types, visited)
-        end
-        collect_cstr_list_buffer_type(type.return_type, cstr_list_buffer_types, visited)
-      when Types::Struct, Types::Union
-        type.fields.each_value do |field_type|
-          collect_cstr_list_buffer_type(field_type, cstr_list_buffer_types, visited)
         end
       end
     end
@@ -2149,10 +2039,6 @@ module MilkTea
         raise LoweringError, "str_builder requires exactly one type argument" unless str_builder_type?(type)
 
         str_builder_type_name(type)
-      when "cstr_list_buffer"
-        raise LoweringError, "cstr_list_buffer requires exactly two type arguments" unless cstr_list_buffer_type?(type)
-
-        cstr_list_buffer_type_name(type)
       else
         raise LoweringError, "unsupported generic C type #{type.name}"
       end
@@ -2204,23 +2090,6 @@ module MilkTea
     def text_buffer_type?(type)
       type.is_a?(Types::GenericInstance) && type.name == "str_buffer" && type.arguments.length == 1 &&
         type.arguments.first.is_a?(Types::LiteralTypeArg) && type.arguments.first.value.is_a?(Integer)
-    end
-
-    def cstr_list_buffer_type?(type)
-      type.is_a?(Types::GenericInstance) && type.name == "cstr_list_buffer" && type.arguments.length == 2 &&
-        type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) && argument.value.is_a?(Integer) }
-    end
-
-    def cstr_list_buffer_item_capacity(type)
-      type.arguments[0].value
-    end
-
-    def cstr_list_buffer_byte_capacity(type)
-      type.arguments[1].value
-    end
-
-    def cstr_list_buffer_type_name(type)
-      "mt_cstr_list_buffer_#{cstr_list_buffer_item_capacity(type)}_#{cstr_list_buffer_byte_capacity(type)}"
     end
 
     def pointer_to(type)

@@ -75,7 +75,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
-  def test_formats_foreign_declarations_and_using_scratch_calls_like_source
+  def test_formats_foreign_declarations_and_calls_like_source
     source = <<~MT
       module std.raylib
 
@@ -83,13 +83,13 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
       pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
 
-      pub foreign def close_window(owned window: Window) -> void = c.CloseWindow
+      pub foreign def close_window(consuming window: Window) -> void = c.CloseWindow
 
       pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
 
-      def main(path: str, scratch: ref[Arena]) -> ptr[u8]?:
+      def main(path: str) -> ptr[u8]?:
           var data_size = 0
-          return load_file_data(path, out data_size) using scratch
+          return load_file_data(path, out data_size)
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -118,33 +118,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
       def main() -> void:
           var buffer: str_buffer[64]
-    MT
-
-    ast = MilkTea::Parser.parse(source)
-
-    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
-  end
-
-  def test_formats_cstr_list_buffer_zero_construction_like_source
-    source = <<~MT
-      module demo.cstr_list_buffer
-
-      def main() -> i32:
-          var labels = zero[cstr_list_buffer[8, 256]]()
-          return cast[i32](labels.capacity())
-    MT
-
-    ast = MilkTea::Parser.parse(source)
-
-    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
-  end
-
-  def test_formats_cstr_list_buffer_typed_local_without_initializer_like_source
-    source = <<~MT
-      module demo.cstr_list_buffer
-
-      def main() -> void:
-          var labels: cstr_list_buffer[8, 256]
     MT
 
     ast = MilkTea::Parser.parse(source)
