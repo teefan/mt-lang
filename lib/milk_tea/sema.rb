@@ -387,6 +387,7 @@ module MilkTea
         @ast.declarations.grep(AST::ConstDecl).each do |decl|
           binding = @top_level_values.fetch(decl.name)
           validate_consuming_foreign_expression!(decl.value, scopes: [], root_allowed: false)
+          validate_hoistable_foreign_expression!(decl.value, scopes: [], root_hoistable: false)
           actual_type = infer_expression(decl.value, scopes: [], expected_type: binding.type)
           ensure_assignable!(
             actual_type,
@@ -506,6 +507,7 @@ module MilkTea
           )
         when AST::DeferStmt
           validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: false)
+          validate_hoistable_foreign_expression!(statement.expression, scopes:, root_hoistable: false)
           infer_expression(statement.expression, scopes:)
         when AST::ExpressionStmt
           validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: true)
@@ -600,6 +602,7 @@ module MilkTea
         covered_members = {}
         statement.arms.each do |arm|
           validate_consuming_foreign_expression!(arm.pattern, scopes:, root_allowed: false)
+          validate_hoistable_foreign_expression!(arm.pattern, scopes:, root_hoistable: false)
           pattern_type = infer_expression(arm.pattern, scopes:, expected_type: scrutinee_type)
           ensure_assignable!(pattern_type, scrutinee_type, "match arm expects #{scrutinee_type}, got #{pattern_type}")
 
@@ -644,6 +647,8 @@ module MilkTea
       def check_static_assert(statement, scopes:)
         validate_consuming_foreign_expression!(statement.condition, scopes:, root_allowed: false)
         validate_consuming_foreign_expression!(statement.message, scopes:, root_allowed: false)
+        validate_hoistable_foreign_expression!(statement.condition, scopes:, root_hoistable: false)
+        validate_hoistable_foreign_expression!(statement.message, scopes:, root_hoistable: false)
         condition_type = infer_expression(statement.condition, scopes:, expected_type: @types.fetch("bool"))
         ensure_assignable!(condition_type, @types.fetch("bool"), "static_assert condition must be bool, got #{condition_type}")
         raise SemaError, "static_assert message must be a string literal" unless statement.message.is_a?(AST::StringLiteral)
@@ -1150,6 +1155,65 @@ module MilkTea
         end
       end
 
+      def validate_hoistable_foreign_expression!(expression, scopes:, root_hoistable: false)
+        return unless expression
+
+        if (foreign_call = resolve_foreign_call_expression(expression, scopes:)) && (message = inline_foreign_call_requires_hoisting_message(foreign_call, scopes:))
+          raise SemaError, message unless root_hoistable
+        end
+
+        case expression
+        when AST::Call, AST::Specialization
+          validate_hoistable_foreign_expression!(expression.callee, scopes:, root_hoistable: false)
+          expression.arguments.each do |argument|
+            validate_hoistable_foreign_expression!(argument.value, scopes:, root_hoistable: false)
+          end
+        when AST::UnaryOp
+          validate_hoistable_foreign_expression!(expression.operand, scopes:, root_hoistable: false)
+        when AST::BinaryOp
+          validate_hoistable_foreign_expression!(expression.left, scopes:, root_hoistable: false)
+          validate_hoistable_foreign_expression!(expression.right, scopes:, root_hoistable: false)
+        when AST::IfExpr
+          validate_hoistable_foreign_expression!(expression.condition, scopes:, root_hoistable: false)
+          validate_hoistable_foreign_expression!(expression.then_expression, scopes:, root_hoistable: false)
+          validate_hoistable_foreign_expression!(expression.else_expression, scopes:, root_hoistable: false)
+        when AST::MemberAccess
+          validate_hoistable_foreign_expression!(expression.receiver, scopes:, root_hoistable: false)
+        when AST::IndexAccess
+          validate_hoistable_foreign_expression!(expression.receiver, scopes:, root_hoistable: false)
+          validate_hoistable_foreign_expression!(expression.index, scopes:, root_hoistable: false)
+        end
+      end
+
+      def inline_foreign_call_requires_hoisting_message(foreign_call, scopes:)
+        binding = foreign_call[:binding]
+        call = foreign_call[:call]
+        reference_counts = foreign_mapping_reference_counts(foreign_mapping_expression(binding.ast))
+
+        binding.ast.params.each_with_index do |param_ast, index|
+          public_alias = param_ast.boundary_type ? foreign_mapping_public_alias_name(param_ast.name) : nil
+          total_references = reference_counts.fetch(param_ast.name, 0)
+          total_references += reference_counts.fetch(public_alias, 0) if public_alias
+          next if total_references <= 1 || simple_foreign_argument_expression?(call.arguments.fetch(index).value)
+
+          return inline_foreign_hoisting_message(binding.name, param_ast.name, reason: "is referenced multiple times in its mapping")
+        end
+
+        binding.ast.params.each_with_index do |param_ast, index|
+          parameter = binding.type.params.fetch(index)
+          argument_expression = call.arguments.fetch(index).value
+          next unless automatic_foreign_cstr_temp_needed?(parameter, argument_expression, scopes:) || automatic_foreign_cstr_list_temp_needed?(parameter)
+
+          return inline_foreign_hoisting_message(binding.name, param_ast.name, reason: "needs temporary foreign text storage")
+        end
+
+        nil
+      end
+
+      def inline_foreign_hoisting_message(binding_name, parameter_name, reason:)
+        "foreign call #{binding_name} cannot be used inline because #{parameter_name} #{reason}; use it as a statement, local initializer, assignment, or return expression"
+      end
+
       def resolve_foreign_call_expression(expression, scopes:)
         call = expression
         return unless call.is_a?(AST::Call)
@@ -1167,6 +1231,58 @@ module MilkTea
 
       def foreign_call_consumes_binding?(binding)
         binding.type.params.any? { |parameter| parameter.passing_mode == :consuming }
+      end
+
+      def foreign_mapping_reference_counts(expression, counts = Hash.new(0))
+        case expression
+        when AST::Identifier
+          counts[expression.name] += 1
+        when AST::MemberAccess
+          foreign_mapping_reference_counts(expression.receiver, counts)
+        when AST::IndexAccess
+          foreign_mapping_reference_counts(expression.receiver, counts)
+          foreign_mapping_reference_counts(expression.index, counts)
+        when AST::Specialization, AST::Call
+          foreign_mapping_reference_counts(expression.callee, counts)
+          expression.arguments.each { |argument| foreign_mapping_reference_counts(argument.value, counts) }
+        when AST::UnaryOp
+          foreign_mapping_reference_counts(expression.operand, counts)
+        when AST::BinaryOp
+          foreign_mapping_reference_counts(expression.left, counts)
+          foreign_mapping_reference_counts(expression.right, counts)
+        when AST::IfExpr
+          foreign_mapping_reference_counts(expression.condition, counts)
+          foreign_mapping_reference_counts(expression.then_expression, counts)
+          foreign_mapping_reference_counts(expression.else_expression, counts)
+        end
+
+        counts
+      end
+
+      def simple_foreign_argument_expression?(expression)
+        case expression
+        when AST::Identifier, AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral, AST::BooleanLiteral, AST::NullLiteral
+          true
+        when AST::MemberAccess
+          simple_foreign_argument_expression?(expression.receiver)
+        else
+          false
+        end
+      end
+
+      def automatic_foreign_cstr_list_temp_needed?(parameter)
+        return false unless parameter.type.is_a?(Types::Span) && parameter.type.element_type == @types.fetch("str")
+        return false unless parameter.boundary_type.is_a?(Types::Span)
+
+        boundary_element_type = parameter.boundary_type.element_type
+        boundary_element_type == @types.fetch("cstr") || char_pointer_type?(boundary_element_type)
+      end
+
+      def automatic_foreign_cstr_temp_needed?(parameter, expression, scopes:)
+        return false unless parameter.boundary_type == @types.fetch("cstr") && parameter.type == @types.fetch("str")
+        return false if expression.is_a?(AST::StringLiteral) && !expression.cstring
+
+        infer_expression(expression, scopes:) != @types.fetch("cstr")
       end
 
       def consuming_foreign_call_refinements(expression, scopes:)

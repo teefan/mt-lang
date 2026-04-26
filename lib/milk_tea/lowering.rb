@@ -466,12 +466,23 @@ module MilkTea
           when AST::LocalDecl
             type = statement.type ? resolve_type_ref(statement.type) : infer_expression_type(statement.value, env: local_env)
             c_name = c_local_name(statement.name)
-            if statement.value && (foreign_call = foreign_call_info(statement.value, local_env))
+            prepared_setup = []
+            prepared_value = statement.value
+            if statement.value
+              prepared_setup, prepared_value = prepare_expression_for_inline_lowering(
+                statement.value,
+                env: local_env,
+                expected_type: type,
+                allow_root_statement_foreign: true,
+              )
+              lowered.concat(prepared_setup)
+            end
+            if prepared_value && (foreign_call = foreign_call_info(prepared_value, local_env))
               setup, value = lower_foreign_call_statement(foreign_call, env: local_env, expected_type: type, statement_position: false)
               lowered.concat(setup)
-            elsif statement.value
+            elsif prepared_value
               value = lower_contextual_expression(
-                statement.value,
+                prepared_value,
                 env: local_env,
                 expected_type: type,
                 contextual_int_to_float: statement.type && contextual_int_to_float_target?(type),
@@ -483,13 +494,20 @@ module MilkTea
             lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:)
           when AST::Assignment
             target = lower_assignment_target(statement.target, env: local_env)
-            if (foreign_call = foreign_call_info(statement.value, local_env))
+            prepared_setup, prepared_value = prepare_expression_for_inline_lowering(
+              statement.value,
+              env: local_env,
+              expected_type: target.type,
+              allow_root_statement_foreign: true,
+            )
+            lowered.concat(prepared_setup)
+            if (foreign_call = foreign_call_info(prepared_value, local_env))
               setup, value = lower_foreign_call_statement(foreign_call, env: local_env, expected_type: target.type, statement_position: false)
               lowered.concat(setup)
             else
               value = if statement.operator == "="
                         lower_contextual_expression(
-                          statement.value,
+                          prepared_value,
                           env: local_env,
                           expected_type: target.type,
                           external_numeric: external_numeric_assignment_target?(statement.target, env: local_env),
@@ -506,10 +524,16 @@ module MilkTea
 
             statement.branches.each do |branch|
               branch_env = env_with_refinements(local_env, false_refinements)
+              condition_setup, prepared_condition = prepare_expression_for_inline_lowering(
+                branch.condition,
+                env: branch_env,
+                expected_type: @types.fetch("bool"),
+              )
               true_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: true, env: branch_env))
 
               branch_entries << [
-                lower_expression(branch.condition, env: branch_env, expected_type: @types.fetch("bool")),
+                condition_setup,
+                lower_expression(prepared_condition, env: branch_env, expected_type: @types.fetch("bool")),
                 lower_block(
                   branch.body,
                   env: env_with_refinements(local_env, true_refinements),
@@ -531,8 +555,8 @@ module MilkTea
             ) : []
 
             nested_if = nested_else_body
-            branch_entries.reverse_each do |condition, then_body|
-              nested_if = [IR::IfStmt.new(condition:, then_body:, else_body: nested_if)]
+            branch_entries.reverse_each do |condition_setup, condition, then_body|
+              nested_if = [*condition_setup, IR::IfStmt.new(condition:, then_body:, else_body: nested_if)]
             end
             lowered.concat(nested_if)
 
@@ -541,7 +565,13 @@ module MilkTea
             end
           when AST::MatchStmt
             scrutinee_type = infer_expression_type(statement.expression, env: local_env)
-            expression = lower_expression(statement.expression, env: local_env, expected_type: scrutinee_type)
+            expression_setup, prepared_expression = prepare_expression_for_inline_lowering(
+              statement.expression,
+              env: local_env,
+              expected_type: scrutinee_type,
+            )
+            lowered.concat(expression_setup)
+            expression = lower_expression(prepared_expression, env: local_env, expected_type: scrutinee_type)
             cases = statement.arms.map do |arm|
               value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
               body = lower_block(
@@ -573,21 +603,39 @@ module MilkTea
             lowered.concat(lower_loop_exit(loop_flow[:continue_label], local_defers, loop_flow[:continue_defers]))
           when AST::ReturnStmt
             value = nil
-            if statement.value && (foreign_call = foreign_call_info(statement.value, local_env))
+            prepared_setup = []
+            prepared_value = statement.value
+            if statement.value
+              prepared_setup, prepared_value = prepare_expression_for_inline_lowering(
+                statement.value,
+                env: local_env,
+                expected_type: return_type,
+                allow_root_statement_foreign: true,
+              )
+              lowered.concat(prepared_setup)
+            end
+            if prepared_value && (foreign_call = foreign_call_info(prepared_value, local_env))
               setup, value = lower_foreign_call_statement(foreign_call, env: local_env, expected_type: return_type, statement_position: false)
               lowered.concat(setup)
             end
             cleanup = cleanup_statements(local_defers, active_defers)
             lowered.concat(cleanup)
-            value ||= statement.value ? lower_contextual_expression(
-              statement.value,
+            value ||= prepared_value ? lower_contextual_expression(
+              prepared_value,
               env: local_env,
               expected_type: return_type,
               contextual_int_to_float: contextual_int_to_float_target?(return_type),
             ) : nil
             lowered << IR::ReturnStmt.new(value:)
           when AST::ExpressionStmt
-            if (foreign_call = foreign_call_info(statement.expression, local_env))
+            prepared_setup, prepared_expression = prepare_expression_for_inline_lowering(
+              statement.expression,
+              env: local_env,
+              expected_type: infer_expression_type(statement.expression, env: local_env),
+              allow_root_statement_foreign: true,
+            )
+            lowered.concat(prepared_setup)
+            if (foreign_call = foreign_call_info(prepared_expression, local_env))
               setup, value = lower_foreign_call_statement(
                 foreign_call,
                 env: local_env,
@@ -598,7 +646,7 @@ module MilkTea
               lowered.concat(setup)
               local_env[:scopes] = scopes_with_refinements(local_env[:scopes], consuming_foreign_call_refinements(foreign_call, local_env))
             else
-              lowered << IR::ExpressionStmt.new(expression: lower_expression(statement.expression, env: local_env))
+              lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env: local_env))
             end
           else
             raise LoweringError, "unsupported statement #{statement.class.name}"
@@ -620,6 +668,11 @@ module MilkTea
       def lower_while_stmt(statement, env:, active_defers:, return_type:)
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
+        condition_setup, prepared_condition = prepare_expression_for_inline_lowering(
+          statement.condition,
+          env:,
+          expected_type: @types.fetch("bool"),
+        )
 
         body = lower_block(
           statement.body,
@@ -630,10 +683,30 @@ module MilkTea
         )
         body << IR::LabelStmt.new(name: continue_label)
 
+        condition = lower_expression(prepared_condition, env:, expected_type: @types.fetch("bool"))
+
+        if condition_setup.empty?
+          return IR::BlockStmt.new(body: [
+            IR::WhileStmt.new(
+              condition:,
+              body:,
+            ),
+            IR::LabelStmt.new(name: break_label),
+          ])
+        end
+
         IR::BlockStmt.new(body: [
           IR::WhileStmt.new(
-            condition: lower_expression(statement.condition, env:, expected_type: @types.fetch("bool")),
-            body:,
+            condition: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")),
+            body: [
+              *condition_setup,
+              IR::IfStmt.new(
+                condition: IR::Unary.new(operator: "not", operand: condition, type: @types.fetch("bool")),
+                then_body: [IR::GotoStmt.new(label: break_label)],
+                else_body: nil,
+              ),
+              *body,
+            ],
           ),
           IR::LabelStmt.new(name: break_label),
         ])
@@ -643,6 +716,8 @@ module MilkTea
         loop_type = infer_range_loop_type(statement.iterable, env:)
         start_expr = statement.iterable.arguments[0].value
         stop_expr = statement.iterable.arguments[1].value
+        start_setup, prepared_start = prepare_expression_for_inline_lowering(start_expr, env:, expected_type: loop_type)
+        stop_setup, prepared_stop = prepare_expression_for_inline_lowering(stop_expr, env:, expected_type: loop_type)
         index_c_name = fresh_c_temp_name(env, "for_index")
         stop_c_name = fresh_c_temp_name(env, "for_stop")
         continue_label = fresh_c_temp_name(env, "loop_continue")
@@ -673,8 +748,10 @@ module MilkTea
         )
 
         IR::BlockStmt.new(body: [
-          IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: loop_type, value: lower_expression(start_expr, env:, expected_type: loop_type)),
-          IR::LocalDecl.new(name: stop_c_name, c_name: stop_c_name, type: loop_type, value: lower_expression(stop_expr, env:, expected_type: loop_type)),
+          *start_setup,
+          IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: loop_type, value: lower_expression(prepared_start, env:, expected_type: loop_type)),
+          *stop_setup,
+          IR::LocalDecl.new(name: stop_c_name, c_name: stop_c_name, type: loop_type, value: lower_expression(prepared_stop, env:, expected_type: loop_type)),
           IR::WhileStmt.new(
             condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_ref, type: @types.fetch("bool")),
             body:,
@@ -687,6 +764,7 @@ module MilkTea
         iterable_type = infer_expression_type(statement.iterable, env:)
         element_type = collection_loop_type(iterable_type)
         raise LoweringError, "for loop expects range(start, stop), array[T, N], or span[T], got #{iterable_type}" unless element_type
+        iterable_setup, prepared_iterable = prepare_expression_for_inline_lowering(statement.iterable, env:, expected_type: iterable_type)
 
         iterable_c_name = fresh_c_temp_name(env, "for_items")
         index_c_name = fresh_c_temp_name(env, "for_index")
@@ -731,7 +809,8 @@ module MilkTea
         )
 
         IR::BlockStmt.new(body: [
-          IR::LocalDecl.new(name: iterable_c_name, c_name: iterable_c_name, type: iterable_type, value: lower_expression(statement.iterable, env:, expected_type: iterable_type)),
+          *iterable_setup,
+          IR::LocalDecl.new(name: iterable_c_name, c_name: iterable_c_name, type: iterable_type, value: lower_expression(prepared_iterable, env:, expected_type: iterable_type)),
           IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("usize"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize"))),
           IR::WhileStmt.new(
             condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
@@ -773,6 +852,184 @@ module MilkTea
         else
           raise LoweringError, "unsupported assignment target #{expression.class.name}"
         end
+      end
+
+      def prepare_expression_for_inline_lowering(expression, env:, expected_type: nil, allow_root_statement_foreign: false)
+        return [[], expression] unless expression
+
+        if expression.is_a?(AST::Call) && (foreign_call = foreign_call_info(expression, env)) && !allow_root_statement_foreign &&
+            foreign_call_requires_statement_lowering?(expression, foreign_call[:binding], env:)
+          type = infer_expression_type(expression, env:, expected_type:)
+          setup, value = lower_foreign_call_statement(foreign_call, env:, expected_type: type, statement_position: false)
+          return materialize_prepared_expression(setup, value, env:, type:, prefix: "foreign_expr")
+        end
+
+        case expression
+        when AST::MemberAccess
+          receiver_setup, receiver = prepare_expression_for_inline_lowering(expression.receiver, env:)
+          [receiver_setup, AST::MemberAccess.new(receiver:, member: expression.member)]
+        when AST::IndexAccess
+          receiver_setup, receiver = prepare_expression_for_inline_lowering(expression.receiver, env:)
+          index_setup, index = prepare_expression_for_inline_lowering(expression.index, env:)
+          [receiver_setup + index_setup, AST::IndexAccess.new(receiver:, index:)]
+        when AST::UnaryOp
+          operand_setup, operand = prepare_expression_for_inline_lowering(expression.operand, env:, expected_type:)
+          [operand_setup, AST::UnaryOp.new(operator: expression.operator, operand:)]
+        when AST::BinaryOp
+          prepare_binary_expression_for_inline_lowering(expression, env:, expected_type:)
+        when AST::IfExpr
+          prepare_if_expression_for_inline_lowering(expression, env:, expected_type:)
+        when AST::Call
+          prepare_call_expression_for_inline_lowering(expression, env:, expected_type:, allow_root_statement_foreign:)
+        else
+          [[], expression]
+        end
+      end
+
+      def prepare_call_expression_for_inline_lowering(expression, env:, expected_type: nil, allow_root_statement_foreign: false)
+        kind, _callee_name, _receiver, callee_type, binding = resolve_callee(expression.callee, env, arguments: expression.arguments)
+
+        if binding && foreign_function_binding?(binding) && !allow_root_statement_foreign && foreign_call_requires_statement_lowering?(expression, binding, env:)
+          type = infer_expression_type(expression, env:, expected_type:)
+          setup, value = lower_foreign_call_statement({ call: expression, binding: binding }, env:, expected_type: type, statement_position: false)
+          return materialize_prepared_expression(setup, value, env:, type:, prefix: "foreign_expr")
+        end
+
+        callee_setup, callee = prepare_expression_for_inline_lowering(expression.callee, env:)
+        argument_setup = []
+        arguments = expression.arguments.map.with_index do |argument, index|
+          expected_arg_type = kind == :function || kind == :method || kind == :associated_method ?
+            (index < callee_type.params.length ? callee_type.params[index].type : nil) : nil
+          setup, prepared_value = prepare_expression_for_inline_lowering(argument.value, env:, expected_type: expected_arg_type)
+          argument_setup.concat(setup)
+          AST::Argument.new(name: argument.name, value: prepared_value)
+        end
+
+        [callee_setup + argument_setup, AST::Call.new(callee:, arguments:)]
+      end
+
+      def prepare_binary_expression_for_inline_lowering(expression, env:, expected_type: nil)
+        propagated_type = propagating_expected_type(expression.operator, expected_type)
+        left_type, right_type = infer_binary_operand_types(expression, env:, expected_type:)
+        operand_type = promoted_binary_operand_type(expression.operator, left_type, right_type)
+        left_setup, left = prepare_expression_for_inline_lowering(expression.left, env:, expected_type: operand_type || propagated_type || left_type)
+        right_env = binary_right_env(expression, env)
+        right_setup, right = prepare_expression_for_inline_lowering(expression.right, env: right_env, expected_type: operand_type || left_type)
+
+        unless %w[and or].include?(expression.operator)
+          return [
+            left_setup + right_setup,
+            AST::BinaryOp.new(operator: expression.operator, left:, right:),
+          ]
+        end
+
+        return [[], expression] if left_setup.empty? && right_setup.empty?
+
+        result_type = infer_expression_type(expression, env:, expected_type:)
+        result_name = fresh_c_temp_name(env, expression.operator)
+        register_prepared_temp!(env, result_name, result_type)
+        result_ref = IR::Name.new(name: result_name, type: result_type, pointer: false)
+        left_value = lower_contextual_expression(left, env:, expected_type: result_type)
+        right_value = lower_contextual_expression(right, env: right_env, expected_type: result_type)
+        branch_condition = expression.operator == "and" ? result_ref : IR::Unary.new(operator: "not", operand: result_ref, type: @types.fetch("bool"))
+
+        [
+          left_setup + [
+            IR::LocalDecl.new(name: result_name, c_name: result_name, type: result_type, value: left_value),
+            IR::IfStmt.new(
+              condition: branch_condition,
+              then_body: right_setup + [IR::Assignment.new(target: result_ref, operator: "=", value: right_value)],
+              else_body: nil,
+            ),
+          ],
+          AST::Identifier.new(name: result_name),
+        ]
+      end
+
+      def prepare_if_expression_for_inline_lowering(expression, env:, expected_type: nil)
+        condition_setup, condition = prepare_expression_for_inline_lowering(expression.condition, env:, expected_type: @types.fetch("bool"))
+        then_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: true, env:))
+        else_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: false, env:))
+        result_type = infer_expression_type(expression, env:, expected_type:)
+        then_setup, then_expression = prepare_expression_for_inline_lowering(expression.then_expression, env: then_env, expected_type: result_type)
+        else_setup, else_expression = prepare_expression_for_inline_lowering(expression.else_expression, env: else_env, expected_type: result_type)
+
+        return [[], expression] if condition_setup.empty? && then_setup.empty? && else_setup.empty?
+
+        result_name = fresh_c_temp_name(env, "if_expr")
+        register_prepared_temp!(env, result_name, result_type)
+        result_ref = IR::Name.new(name: result_name, type: result_type, pointer: false)
+
+        [
+          condition_setup + [
+            IR::LocalDecl.new(name: result_name, c_name: result_name, type: result_type, value: IR::ZeroInit.new(type: result_type)),
+            IR::IfStmt.new(
+              condition: lower_expression(condition, env:, expected_type: @types.fetch("bool")),
+              then_body: then_setup + [
+                IR::Assignment.new(
+                  target: result_ref,
+                  operator: "=",
+                  value: lower_contextual_expression(then_expression, env: then_env, expected_type: result_type),
+                ),
+              ],
+              else_body: else_setup + [
+                IR::Assignment.new(
+                  target: result_ref,
+                  operator: "=",
+                  value: lower_contextual_expression(else_expression, env: else_env, expected_type: result_type),
+                ),
+              ],
+            ),
+          ],
+          AST::Identifier.new(name: result_name),
+        ]
+      end
+
+      def materialize_prepared_expression(setup, value, env:, type:, prefix:)
+        raise LoweringError, "cannot use void expression inline" unless value
+
+        if value.is_a?(IR::Name)
+          register_prepared_temp!(env, value.name, value.type, pointer: value.pointer)
+          return [setup, AST::Identifier.new(name: value.name)]
+        end
+
+        temp_name = fresh_c_temp_name(env, prefix)
+        register_prepared_temp!(env, temp_name, type)
+        [
+          setup + [IR::LocalDecl.new(name: temp_name, c_name: temp_name, type:, value:)],
+          AST::Identifier.new(name: temp_name),
+        ]
+      end
+
+      def register_prepared_temp!(env, name, type, pointer: false, storage_type: nil)
+        current_actual_scope(env[:scopes])[name] = local_binding(type:, storage_type:, c_name: name, mutable: false, pointer:)
+      end
+
+      def foreign_call_requires_statement_lowering?(expression, binding, env:)
+        return true if foreign_call_consumes_binding?(binding)
+
+        mapping_expression = foreign_mapping_expression(binding.ast)
+        reference_counts = foreign_mapping_reference_counts(mapping_expression)
+
+        binding.ast.params.each_with_index do |param_ast, index|
+          public_alias = param_ast.boundary_type ? foreign_mapping_public_alias_name(param_ast.name) : nil
+          total_references = reference_counts.fetch(param_ast.name, 0)
+          total_references += reference_counts.fetch(public_alias, 0) if public_alias
+          next unless total_references > 1
+          next if simple_foreign_argument_expression?(expression.arguments.fetch(index).value)
+
+          return true
+        end
+
+        binding.ast.params.each_with_index do |param_ast, index|
+          parameter = binding.type.params.fetch(index)
+          next unless automatic_foreign_cstr_temp_needed?(parameter, expression.arguments.fetch(index).value, env:) ||
+                      automatic_foreign_cstr_list_temp_needed?(parameter, expression.arguments.fetch(index).value, env:)
+
+          return true
+        end
+
+        false
       end
 
       def lower_expression(expression, env:, expected_type: nil)
@@ -1460,7 +1717,7 @@ module MilkTea
           next unless total_references > 1
           next if simple_foreign_argument_expression?(expression.arguments.fetch(index).value)
 
-          raise LoweringError, "foreign call #{binding.name} requires statement-position lowering because #{param_ast.name} is used multiple times"
+          raise LoweringError, "foreign call #{binding.name} cannot be used inline because #{param_ast.name} is referenced multiple times in its mapping; use it as a statement, local initializer, assignment, or return expression"
         end
 
         binding.ast.params.each_with_index do |param_ast, index|
@@ -1468,7 +1725,7 @@ module MilkTea
           next unless automatic_foreign_cstr_temp_needed?(parameter, expression.arguments.fetch(index).value, env:) ||
                       automatic_foreign_cstr_list_temp_needed?(parameter, expression.arguments.fetch(index).value, env:)
 
-          raise LoweringError, "foreign call #{binding.name} requires statement-position lowering because #{param_ast.name} needs temporary cstr storage"
+          raise LoweringError, "foreign call #{binding.name} cannot be used inline because #{param_ast.name} needs temporary foreign text storage; use it as a statement, local initializer, assignment, or return expression"
         end
 
         replacements = {}

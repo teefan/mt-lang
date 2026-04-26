@@ -1127,6 +1127,76 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_nested_imported_foreign_calls
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    dir_name = "run_nested_foreign_#{Process.pid}_#{Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond)}"
+    dir = File.join(MilkTea.root, "tmp", dir_name)
+    source_path = File.join(dir, "main.mt")
+    sample_path = File.join(dir, "sample.mt")
+
+    Dir.mkdir(dir)
+
+    begin
+      module_prefix = "tmp.#{dir_name}"
+
+      File.write(sample_path, [
+        "module #{module_prefix}.sample",
+        "",
+        "import std.c.libc as libc",
+        "",
+        "pub foreign def first(labels: span[str] as span[ptr[char]]) -> i32 = libc.atoi(labels[0])",
+        "pub foreign def second(labels: span[str] as span[ptr[char]]) -> i32 = libc.atoi(labels[1])",
+        "pub foreign def same_div(value: i32) -> libc.div_t = libc.div(value, value)",
+        "",
+      ].join("\n"))
+
+      File.write(source_path, [
+        "module #{module_prefix}.main",
+        "",
+        "import #{module_prefix}.sample as sample",
+        "",
+        "def keep(value: i32) -> i32:",
+        "    return value",
+        "",
+        "def main() -> i32:",
+        "    var labels = array[str, 2](\"12\", \"34\")",
+        "    var short_labels = array[str, 1](\"12\")",
+        "    let nested_sum = keep(sample.first(labels) + sample.second(labels))",
+        "    if nested_sum != 46:",
+        "        return 1",
+        "    let duplicated = sample.same_div(1 + 2).quot",
+        "    if duplicated != 1:",
+        "        return 2",
+        "    let chosen = if true then keep(sample.first(labels)) else keep(sample.second(short_labels))",
+        "    if chosen != 12:",
+        "        return 3",
+        "    if false and sample.second(short_labels) != 0:",
+        "        return 4",
+        "    let always_true = if true or sample.second(short_labels) != 0 then 1 else 0",
+        "    if always_true != 1:",
+        "        return 5",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 0, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    ensure
+      File.delete(sample_path) if File.exist?(sample_path)
+      File.delete(source_path) if File.exist?(source_path)
+      Dir.rmdir(dir) if Dir.exist?(dir)
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_unsafe_reinterpret
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

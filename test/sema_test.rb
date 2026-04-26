@@ -297,6 +297,144 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_foreign_defs_with_span_str_temp_marshalling_in_return_expression
+    root_source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main() -> i32:
+          var labels = array[str, 3]("12", "34", "56")
+          return sample.count_names(labels)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def CountNames(names: ptr[ptr[char]], count: i32) -> i32
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, cast[i32](names.len))
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.imports.key?("sample")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_nested_foreign_defs_with_span_str_temp_marshalling_in_inline_context
+    root_source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def keep(value: i32) -> i32:
+          return value
+
+      def main() -> i32:
+          var labels = array[str, 3]("12", "34", "56")
+          return keep(sample.count_names(labels))
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def CountNames(names: ptr[ptr[char]], count: i32) -> i32
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, cast[i32](names.len))
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.imports.key?("sample")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_nested_foreign_defs_with_multi_use_mapping_in_inline_context
+    root_source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def keep(value: i32) -> i32:
+          return value
+
+      def main() -> i32:
+          return keep(sample.pair_sum(1 + 2))
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def PairSum(left: i32, right: i32) -> i32
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def pair_sum(value: i32) -> i32 = c.PairSum(value, value)
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.imports.key?("sample")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_nested_foreign_defs_in_if_expression_and_short_circuit_contexts
+    root_source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main() -> i32:
+          var labels = array[str, 3]("12", "34", "56")
+          let total = if true then sample.count_names(labels) else 0
+          if false and sample.pair_sum(1 + 2) > 0:
+              return 1
+          return total
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def CountNames(names: ptr[ptr[char]], count: i32) -> i32
+            extern def PairSum(left: i32, right: i32) -> i32
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, cast[i32](names.len))
+        pub foreign def pair_sum(value: i32) -> i32 = c.PairSum(value, value)
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.imports.key?("sample")
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_rejects_foreign_defs_with_str_to_ptr_char_boundary
     root_source = <<~MT
       module demo.main
