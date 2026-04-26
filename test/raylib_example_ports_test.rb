@@ -136,12 +136,7 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
   end
 
   def shapes_example_paths
-    %w[
-      shapes_basic_shapes
-      shapes_bouncing_ball
-    ].map do |name|
-      File.expand_path("../examples/raylib/shapes/#{name}.mt", __dir__)
-    end
+    Dir[File.expand_path("../examples/raylib/shapes/*.mt", __dir__)].sort
   end
 
   def module_name_for(path)

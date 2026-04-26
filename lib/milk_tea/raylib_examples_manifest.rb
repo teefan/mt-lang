@@ -35,6 +35,9 @@ module MilkTea
     def initialize(examples_root)
       @examples_root = File.expand_path(examples_root)
       @examples_list_path = File.join(@examples_root, "examples_list.txt")
+      @repo_root = detect_repo_root
+      @raw_examples_root = @repo_root && File.join(@repo_root, "examples", "raylib")
+      @idiomatic_examples_root = @repo_root && File.join(@repo_root, "examples", "idiomatic", "raylib")
     end
 
     def generate
@@ -45,8 +48,10 @@ module MilkTea
       {
         "examples_root" => @examples_root,
         "examples_list_path" => @examples_list_path,
+        "repo_root" => @repo_root,
         "total_examples" => examples.length,
         "category_counts" => category_counts(examples),
+        "progress" => progress_summary(examples),
         "examples" => examples,
       }
     end
@@ -110,6 +115,8 @@ module MilkTea
       uses_audio_files = resource_paths.any? { |path| AUDIO_EXTENSIONS.include?(File.extname(path).downcase) }
       uses_callbacks = source.match?(CALLBACK_PATTERN)
       uses_file_drop_or_directory_api = source.match?(FILE_DROP_OR_DIRECTORY_PATTERN)
+      raw_port_path = find_raw_port_path(entry)
+      idiomatic_port_path = find_idiomatic_port_path(entry)
 
       {
         "example_id" => File.join(entry[:category], entry[:name]),
@@ -134,7 +141,11 @@ module MilkTea
         "uses_audio_files" => uses_audio_files,
         "uses_callbacks" => uses_callbacks,
         "uses_file_drop_or_directory_api" => uses_file_drop_or_directory_api,
-        "port_status" => "not_started",
+        "raw_port_present" => !raw_port_path.nil?,
+        "raw_port_path" => raw_port_path,
+        "idiomatic_port_present" => !idiomatic_port_path.nil?,
+        "idiomatic_port_path" => idiomatic_port_path,
+        "port_status" => port_status(raw_port_path:, idiomatic_port_path:),
         "known_blockers" => known_blockers(
           uses_raymath:,
           uses_rlgl:,
@@ -151,6 +162,55 @@ module MilkTea
       examples.each_with_object({}) do |example, counts|
         counts[example.fetch("category")] = counts.fetch(example.fetch("category"), 0) + 1
       end
+    end
+
+    def progress_summary(examples)
+      total_examples = examples.length
+      raw_ported_examples = examples.count { |example| example.fetch("raw_port_present") }
+      idiomatic_ported_examples = examples.count { |example| example.fetch("idiomatic_port_present") }
+
+      {
+        "raw_ported_examples" => raw_ported_examples,
+        "idiomatic_ported_examples" => idiomatic_ported_examples,
+        "raw_completion_percent" => completion_percent(raw_ported_examples, total_examples),
+        "idiomatic_completion_percent" => completion_percent(idiomatic_ported_examples, total_examples),
+        "by_category" => progress_by_category(examples),
+        "gates" => {
+          "wave1_raw_core_complete" => category_complete?(examples, "core", "raw_port_present"),
+          "wave1_raw_shapes_complete" => category_complete?(examples, "shapes", "raw_port_present"),
+          "wave1_ready_for_textures" => category_complete?(examples, "core", "raw_port_present") && category_complete?(examples, "shapes", "raw_port_present"),
+          "raw_corpus_complete" => total_examples.positive? && raw_ported_examples == total_examples,
+        },
+      }
+    end
+
+    def progress_by_category(examples)
+      examples.group_by { |example| example.fetch("category") }.transform_values do |category_examples|
+        total_examples = category_examples.length
+        raw_ported_examples = category_examples.count { |example| example.fetch("raw_port_present") }
+        idiomatic_ported_examples = category_examples.count { |example| example.fetch("idiomatic_port_present") }
+
+        {
+          "total_examples" => total_examples,
+          "raw_ported_examples" => raw_ported_examples,
+          "idiomatic_ported_examples" => idiomatic_ported_examples,
+          "raw_completion_percent" => completion_percent(raw_ported_examples, total_examples),
+          "idiomatic_completion_percent" => completion_percent(idiomatic_ported_examples, total_examples),
+        }
+      end
+    end
+
+    def completion_percent(completed, total)
+      return 0.0 if total.zero?
+
+      ((completed.to_f / total) * 100).round(1)
+    end
+
+    def category_complete?(examples, category, field)
+      category_examples = examples.select { |example| example.fetch("category") == category }
+      return false if category_examples.empty?
+
+      category_examples.all? { |example| example.fetch(field) }
     end
 
     def detect_helper_headers(source)
@@ -199,6 +259,64 @@ module MilkTea
       blockers << "callback_ffi" if uses_callbacks
       blockers << "directory_or_drop_apis" if uses_file_drop_or_directory_api
       blockers
+    end
+
+    def detect_repo_root
+      current = @examples_root
+
+      loop do
+        return current if repo_root?(current)
+
+        parent = File.dirname(current)
+        return nil if parent == current
+
+        current = parent
+      end
+    end
+
+    def repo_root?(path)
+      Dir.exist?(File.join(path, "examples", "raylib")) && Dir.exist?(File.join(path, "examples", "idiomatic", "raylib"))
+    end
+
+    def find_raw_port_path(entry)
+      return unless @raw_examples_root
+
+      path = File.join(@raw_examples_root, entry[:category], "#{entry[:name]}.mt")
+      repo_relative_path(path) if File.file?(path)
+    end
+
+    def find_idiomatic_port_path(entry)
+      return unless @idiomatic_examples_root && Dir.exist?(@idiomatic_examples_root)
+
+      idiomatic_path = idiomatic_candidate_paths(entry).find { |path| File.file?(path) }
+      repo_relative_path(idiomatic_path) if idiomatic_path
+    end
+
+    def idiomatic_candidate_paths(entry)
+      stripped_name = entry[:name].delete_prefix("#{entry[:category]}_")
+      idiomatic_paths = Dir[File.join(@idiomatic_examples_root, "*.mt")].sort
+
+      exact_names = [entry[:name], stripped_name].uniq
+      exact_paths = exact_names.map { |name| File.join(@idiomatic_examples_root, "#{name}.mt") }
+
+      suffix_paths = idiomatic_paths.select do |path|
+        idiomatic_name = File.basename(path, ".mt")
+        stripped_name.end_with?("_#{idiomatic_name}")
+      end
+
+      (exact_paths + suffix_paths).uniq
+    end
+
+    def port_status(raw_port_path:, idiomatic_port_path:)
+      return "raw_and_idiomatic" if raw_port_path && idiomatic_port_path
+      return "idiomatic_only" if idiomatic_port_path
+      return "raw_port" if raw_port_path
+
+      "not_started"
+    end
+
+    def repo_relative_path(path)
+      path.delete_prefix(@repo_root + "/")
     end
   end
 end

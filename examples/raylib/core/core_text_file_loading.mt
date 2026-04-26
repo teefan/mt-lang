@@ -2,6 +2,7 @@ module examples.raylib.core.core_text_file_loading
 
 import std.c.raylib as rl
 import std.raylib.math as rm
+import std.raylib.runtime as runtime
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
@@ -81,6 +82,7 @@ def main() -> i32:
     )
 
     rl.SetTargetFPS(60)
+    var smoke_frame_count = 0
 
     while not rl.WindowShouldClose():
         let scroll = rl.GetMouseWheelMove()
@@ -97,7 +99,6 @@ def main() -> i32:
         scroll_bar.y = rm.lerp(cast[f32](text_top), cast[f32](screen_height) - scroll_bar.height, scroll_ratio)
 
         rl.BeginDrawing()
-        defer rl.EndDrawing()
 
         rl.ClearBackground(rl.RAYWHITE)
 
@@ -117,6 +118,12 @@ def main() -> i32:
         rl.DrawRectangle(0, 0, screen_width, text_top - 10, rl.BEIGE)
         rl.DrawText(rl.TextFormat(c"File: %s", file_name), 10, 10, font_size, rl.MAROON)
         rl.DrawRectangleRec(scroll_bar, rl.MAROON)
+
+        rl.EndDrawing()
+
+        smoke_frame_count += 1
+        if runtime.smoke_capture(smoke_frame_count, 3):
+            break
 
     rl.UnloadTextLines(lines, line_count)
     rl.UnloadFileText(text)

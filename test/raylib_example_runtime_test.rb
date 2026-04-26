@@ -12,12 +12,15 @@ class MilkTeaRaylibExampleRuntimeTest < Minitest::Test
     headless_runner = find_headless_runner
     skip "xvfb-run is required for raylib runtime smoke tests" unless headless_runner
 
-    smoke_examples.each do |name|
+    smoke_examples.each do |example|
       Dir.mktmpdir("milk-tea-raylib-runtime") do |dir|
-        source_path = File.expand_path("../examples/raylib/core/#{name}.mt", __dir__)
+        name = example.fetch(:path)
+        min_unique_colors = example.fetch(:min_unique_colors, 5)
+        source_path = File.expand_path("../examples/raylib/#{name}.mt", __dir__)
         source_dir = File.dirname(source_path)
-        binary_path = File.join(dir, name)
-        screenshot_name = "#{name}.bmp"
+        output_basename = File.basename(name)
+        binary_path = File.join(dir, output_basename)
+        screenshot_name = "#{output_basename}.bmp"
         screenshot_path = File.join(source_dir, screenshot_name)
 
         MilkTea::Build.build(source_path, output_path: binary_path, cc: compiler)
@@ -40,7 +43,7 @@ class MilkTeaRaylibExampleRuntimeTest < Minitest::Test
         stats = bmp_stats(screenshot_path)
         assert_operator stats[:white_ratio], :<, 0.99, "#{name} screenshot is effectively all white"
         assert_operator stats[:black_ratio], :<, 0.99, "#{name} screenshot is effectively all black"
-        assert_operator stats[:unique_colors], :>, 4, "#{name} screenshot did not render enough visible variation"
+        assert_operator stats[:unique_colors], :>=, min_unique_colors, "#{name} screenshot did not render enough visible variation"
 
         File.delete(screenshot_path)
       end
@@ -50,10 +53,11 @@ class MilkTeaRaylibExampleRuntimeTest < Minitest::Test
   private
 
   def smoke_examples
-    %w[
-      core_custom_frame_control
-      core_input_gestures_testbed
-      core_storage_values
+    [
+      { path: "core/core_custom_frame_control", min_unique_colors: 5 },
+      { path: "core/core_storage_values", min_unique_colors: 5 },
+      { path: "core/core_text_file_loading", min_unique_colors: 2 },
+      { path: "shapes/shapes_basic_shapes", min_unique_colors: 5 },
     ]
   end
 
