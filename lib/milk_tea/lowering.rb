@@ -490,7 +490,14 @@ module MilkTea
             else
               value = IR::ZeroInit.new(type:)
             end
-            current_actual_scope(local_env[:scopes])[statement.name] = local_binding(type:, c_name:, mutable: statement.kind == :var, pointer: false)
+            current_actual_scope(local_env[:scopes])[statement.name] = local_binding(
+              type:,
+              c_name:,
+              mutable: statement.kind == :var,
+              pointer: false,
+              cstr_backed: cstr_backed_storage_value?(type, prepared_value, local_env),
+              cstr_list_backed: cstr_list_backed_storage_value?(type, prepared_value, local_env),
+            )
             lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:)
           when AST::Assignment
             target = lower_assignment_target(statement.target, env: local_env)
@@ -517,6 +524,7 @@ module MilkTea
                         lower_expression(statement.value, env: local_env, expected_type: target.type)
                       end
             end
+            update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
             lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
           when AST::IfStmt
             false_refinements = {}
@@ -559,6 +567,8 @@ module MilkTea
               nested_if = [*condition_setup, IR::IfStmt.new(condition:, then_body:, else_body: nested_if)]
             end
             lowered.concat(nested_if)
+
+            merge_cstr_metadata_after_if_statement!(statement, local_env)
 
             if statement.else_body.nil? && statement.branches.all? { |branch| block_always_terminates?(branch.body) }
               local_env[:scopes] = scopes_with_refinements(local_env[:scopes], false_refinements)
@@ -2151,6 +2161,10 @@ module MilkTea
       end
 
       def lower_foreign_cstr_list_argument_value(parameter, argument_value, env:, lowered:, cleanup:)
+        if (direct_value = lower_direct_foreign_cstr_list_argument_value(parameter, argument_value, env:, lowered:))
+          return direct_value
+        end
+
         public_type = parameter.type
         boundary_type = parameter.boundary_type
         items_type = pointer_to(pointer_to(@types.fetch("char")))
@@ -2213,6 +2227,71 @@ module MilkTea
           fields: [
             IR::AggregateField.new(name: "data", value: converted_data),
             IR::AggregateField.new(name: "len", value: IR::Name.new(name: len_name, type: len_type, pointer: false)),
+          ],
+        )
+      end
+
+      def lower_direct_foreign_cstr_list_argument_value(parameter, argument_value, env:, lowered:)
+        actual_type = infer_expression_type(argument_value, env:)
+        return unless array_type?(actual_type)
+        return unless cstr_list_backed_expression?(argument_value, env)
+
+        boundary_type = parameter.boundary_type
+        boundary_element_type = boundary_type.element_type
+        len = array_length(actual_type)
+        len_type = @types.fetch("usize")
+
+        if len.zero?
+          return IR::AggregateLiteral.new(
+            type: boundary_type,
+            fields: [
+              IR::AggregateField.new(name: "data", value: IR::NullLiteral.new(type: pointer_to(boundary_element_type))),
+              IR::AggregateField.new(name: "len", value: IR::IntegerLiteral.new(value: 0, type: len_type)),
+            ],
+          )
+        end
+
+        source = lower_expression(argument_value, env:, expected_type: actual_type)
+        item_type = array_element_type(actual_type)
+        items_array_type = Types::GenericInstance.new("array", [boundary_element_type, Types::LiteralTypeArg.new(len)])
+        items_name = fresh_c_temp_name(env, "foreign_cstr_items")
+        items = (0...len).map do |index|
+          item = IR::Index.new(
+            receiver: source,
+            index: IR::IntegerLiteral.new(value: index, type: len_type),
+            type: item_type,
+          )
+          item = IR::Member.new(receiver: item, member: "data", type: pointer_to(@types.fetch("char"))) if item_type == @types.fetch("str")
+
+          converted = foreign_identity_projection_expression(item, boundary_element_type)
+          raise LoweringError, "unsupported foreign boundary mapping #{parameter.type} as #{boundary_type}" unless converted
+
+          converted
+        end
+
+        lowered << IR::LocalDecl.new(
+          name: items_name,
+          c_name: items_name,
+          type: items_array_type,
+          value: IR::ArrayLiteral.new(type: items_array_type, elements: items),
+        )
+
+        items_ref = IR::Name.new(name: items_name, type: items_array_type, pointer: false)
+        IR::AggregateLiteral.new(
+          type: boundary_type,
+          fields: [
+            IR::AggregateField.new(
+              name: "data",
+              value: IR::AddressOf.new(
+                expression: IR::Index.new(
+                  receiver: items_ref,
+                  index: IR::IntegerLiteral.new(value: 0, type: len_type),
+                  type: boundary_element_type,
+                ),
+                type: pointer_to(boundary_element_type),
+              ),
+            ),
+            IR::AggregateField.new(name: "len", value: IR::IntegerLiteral.new(value: len, type: len_type)),
           ],
         )
       end
@@ -2317,6 +2396,203 @@ module MilkTea
 
       def string_literal_cstr_compatibility?(expression, expected_type)
         expression.is_a?(AST::StringLiteral) && !expression.cstring && expected_type == @types.fetch("cstr")
+      end
+
+      def cstr_backed_expression?(expression, env)
+        return true if infer_expression_type(expression, env:) == @types.fetch("cstr")
+
+        case expression
+        when AST::StringLiteral
+          true
+        when AST::Identifier
+          binding_cstr_backed?(lookup_value(expression.name, env))
+        when AST::IfExpr
+          then_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: true, env:))
+          else_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: false, env:))
+          cstr_backed_expression?(expression.then_expression, then_env) &&
+            cstr_backed_expression?(expression.else_expression, else_env)
+        else
+          false
+        end
+      rescue LoweringError
+        false
+      end
+
+      def cstr_list_backed_expression?(expression, env)
+        actual_type = infer_expression_type(expression, env:)
+        return false unless array_type?(actual_type)
+
+        element_type = array_element_type(actual_type)
+        return false unless element_type == @types.fetch("str") || element_type == @types.fetch("cstr")
+
+        case expression
+        when AST::Identifier
+          binding_cstr_list_backed?(lookup_value(expression.name, env))
+        when AST::Call
+          expression.arguments.all? { |argument| cstr_backed_expression?(argument.value, env) }
+        when AST::IfExpr
+          then_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: true, env:))
+          else_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: false, env:))
+          cstr_list_backed_expression?(expression.then_expression, then_env) &&
+            cstr_list_backed_expression?(expression.else_expression, else_env)
+        else
+          false
+        end
+      rescue LoweringError
+        false
+      end
+
+      def cstr_backed_storage_value?(type, expression, env)
+        return false unless expression
+        return true if type == @types.fetch("cstr")
+        return false unless type == @types.fetch("str")
+
+        cstr_backed_expression?(expression, env)
+      end
+
+      def cstr_list_backed_storage_value?(type, expression, env)
+        return false unless expression
+        return false unless cstr_list_trackable_type?(type)
+
+        cstr_list_backed_expression?(expression, env)
+      end
+
+      def update_cstr_metadata_for_assignment!(statement, prepared_value, env)
+        if statement.target.is_a?(AST::Identifier)
+          binding = lookup_value(statement.target.name, env)
+          return unless binding
+
+          replace_binding_cstr_metadata!(
+            statement.target.name,
+            env,
+            cstr_backed: statement.operator == "=" ? cstr_backed_storage_value?(binding[:type], prepared_value, env) : false,
+            cstr_list_backed: statement.operator == "=" ? cstr_list_backed_storage_value?(binding[:type], prepared_value, env) : false,
+          )
+          return
+        end
+
+        return unless statement.target.is_a?(AST::IndexAccess) && statement.target.receiver.is_a?(AST::Identifier)
+
+        binding = lookup_value(statement.target.receiver.name, env)
+        return unless binding && cstr_list_trackable_type?(binding[:type])
+
+        replace_binding_cstr_metadata!(statement.target.receiver.name, env, cstr_backed: binding_cstr_backed?(binding), cstr_list_backed: false)
+      end
+
+      def merge_cstr_metadata_after_if_statement!(statement, env)
+        exit_envs = cstr_metadata_exit_envs_for_if_statement(statement, env)
+        return if exit_envs.empty?
+
+        trackable_binding_names(env).each do |name|
+          binding = lookup_value(name, env)
+          next unless binding
+
+          replace_binding_cstr_metadata!(
+            name,
+            env,
+            cstr_backed: cstr_trackable_type?(binding[:type]) && exit_envs.all? { |exit_env| binding_cstr_backed?(lookup_value(name, exit_env)) },
+            cstr_list_backed: cstr_list_trackable_type?(binding[:type]) && exit_envs.all? { |exit_env| binding_cstr_list_backed?(lookup_value(name, exit_env)) },
+          )
+        end
+      end
+
+      def cstr_metadata_exit_envs_for_if_statement(statement, env)
+        false_refinements = {}
+        exit_envs = []
+
+        statement.branches.each do |branch|
+          branch_env = env_with_refinements(env, false_refinements)
+          true_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: true, env: branch_env))
+          simulated = simulate_cstr_metadata_block(branch.body, env: env_with_refinements(env, true_refinements))
+          exit_envs << simulated if simulated
+          false_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: false, env: branch_env))
+        end
+
+        if statement.else_body
+          simulated = simulate_cstr_metadata_block(statement.else_body, env: env_with_refinements(env, false_refinements))
+          exit_envs << simulated if simulated
+        else
+          exit_envs << env
+        end
+
+        exit_envs
+      end
+
+      def simulate_cstr_metadata_block(statements, env:)
+        simulated_env = duplicate_env(env)
+
+        statements.each do |statement|
+          case statement
+          when AST::LocalDecl
+            type = statement.type ? resolve_type_ref(statement.type) : infer_expression_type(statement.value, env: simulated_env)
+            current_actual_scope(simulated_env[:scopes])[statement.name] = local_binding(
+              type:,
+              c_name: c_local_name(statement.name),
+              mutable: statement.kind == :var,
+              pointer: false,
+              cstr_backed: cstr_backed_storage_value?(type, statement.value, simulated_env),
+              cstr_list_backed: cstr_list_backed_storage_value?(type, statement.value, simulated_env),
+            )
+          when AST::Assignment
+            update_cstr_metadata_for_assignment!(statement, statement.value, simulated_env)
+          when AST::IfStmt
+            merge_cstr_metadata_after_if_statement!(statement, simulated_env)
+          when AST::UnsafeStmt
+            nested_env = simulate_cstr_metadata_block(statement.body, env: simulated_env)
+            return nil unless nested_env
+
+            copy_cstr_metadata!(simulated_env, nested_env)
+          when AST::ReturnStmt, AST::BreakStmt, AST::ContinueStmt
+            return nil
+          end
+        end
+
+        simulated_env
+      end
+
+      def copy_cstr_metadata!(target_env, source_env)
+        trackable_binding_names(target_env).each do |name|
+          binding = lookup_value(name, target_env)
+          source_binding = lookup_value(name, source_env)
+          next unless binding && source_binding
+
+          replace_binding_cstr_metadata!(
+            name,
+            target_env,
+            cstr_backed: binding_cstr_backed?(source_binding),
+            cstr_list_backed: binding_cstr_list_backed?(source_binding),
+          )
+        end
+      end
+
+      def replace_binding_cstr_metadata!(name, env, cstr_backed:, cstr_list_backed:)
+        env[:scopes].reverse_each do |scope|
+          next if scope.is_a?(Sema::FlowScope)
+          next unless scope.key?(name)
+
+          scope[name] = scope.fetch(name).merge(cstr_backed:, cstr_list_backed:)
+          return
+        end
+      end
+
+      def trackable_binding_names(env)
+        env[:scopes].each_with_object([]) do |scope, names|
+          next if scope.is_a?(Sema::FlowScope)
+
+          scope.each do |name, binding|
+            next unless cstr_trackable_type?(binding[:type]) || cstr_list_trackable_type?(binding[:type])
+
+            names << name unless names.include?(name)
+          end
+        end
+      end
+
+      def binding_cstr_backed?(binding)
+        binding && binding[:cstr_backed]
+      end
+
+      def binding_cstr_list_backed?(binding)
+        binding && binding[:cstr_list_backed]
       end
 
       def integer_literal_numeric_compatibility?(expression, expected_type)
@@ -3133,6 +3409,17 @@ module MilkTea
         array_type?(actual_type) && expected_type.is_a?(Types::Span) && array_element_type(actual_type) == expected_type.element_type
       end
 
+      def cstr_trackable_type?(type)
+        type == @types.fetch("str") || type == @types.fetch("cstr")
+      end
+
+      def cstr_list_trackable_type?(type)
+        return false unless array_type?(type)
+
+        element_type = array_element_type(type)
+        element_type == @types.fetch("str") || element_type == @types.fetch("cstr")
+      end
+
       def str_builder_to_span_compatible?(actual_type, expected_type)
         str_builder_type?(actual_type) && expected_type.is_a?(Types::Span) && expected_type.element_type == @types.fetch("char")
       end
@@ -3565,8 +3852,8 @@ module MilkTea
         end
       end
 
-      def local_binding(type:, c_name:, mutable:, pointer:, storage_type: nil)
-        { type:, storage_type: storage_type || type, c_name:, mutable:, pointer: }
+      def local_binding(type:, c_name:, mutable:, pointer:, storage_type: nil, cstr_backed: false, cstr_list_backed: false)
+        { type:, storage_type: storage_type || type, c_name:, mutable:, pointer:, cstr_backed:, cstr_list_backed: }
       end
 
       def current_actual_scope(scopes)
