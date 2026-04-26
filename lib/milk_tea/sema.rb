@@ -6,7 +6,7 @@ module MilkTea
   class Sema
     Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :values, :functions, :methods)
     FlowScope = Class.new(Hash)
-    ValueBinding = Data.define(:name, :storage_type, :flow_type, :mutable, :kind) do
+    ValueBinding = Data.define(:name, :storage_type, :flow_type, :mutable, :kind, :const_value) do
       def type
         flow_type || storage_type
       end
@@ -18,6 +18,7 @@ module MilkTea
           flow_type: refined_type == storage_type ? nil : refined_type,
           mutable:,
           kind:,
+          const_value:,
         )
       end
     end
@@ -56,6 +57,7 @@ module MilkTea
         @imported_modules = imported_modules
         @module_name = ast.module_name&.to_s
         @module_kind = ast.module_kind
+        @const_declarations = ast.declarations.grep(AST::ConstDecl).each_with_object({}) { |decl, result| result[decl.name] = decl }
         @types = {}
         @top_level_values = {}
         @top_level_functions = {}
@@ -67,6 +69,8 @@ module MilkTea
         @foreign_mapping_depth = 0
         @checked_function_bindings = {}
         @checking_function_bindings = {}
+        @evaluating_const_values = []
+        @evaluated_const_values = {}
       end
 
       def check
@@ -79,6 +83,7 @@ module MilkTea
         declare_top_level_values
         declare_functions
         check_top_level_values
+        finalize_top_level_const_values
         check_top_level_static_asserts
         check_functions
 
@@ -404,6 +409,101 @@ module MilkTea
             "cannot assign #{actual_type} to constant #{decl.name}: expected #{binding.type}",
             expression: decl.value,
           )
+        end
+      end
+
+      def finalize_top_level_const_values
+        @const_declarations.each_key { |name| evaluate_top_level_const_value(name) }
+      end
+
+      def evaluate_top_level_const_value(name)
+        return @top_level_values.fetch(name).const_value if @evaluated_const_values.key?(name)
+
+        raise SemaError, "cyclic constant value dependency involving #{name}" if @evaluating_const_values.include?(name)
+
+        decl = @const_declarations.fetch(name)
+        @evaluating_const_values << name
+        value = evaluate_compile_time_const_value(decl.value)
+        @evaluating_const_values.pop
+
+        binding = @top_level_values.fetch(name)
+        @top_level_values[name] = ValueBinding.new(
+          name: binding.name,
+          storage_type: binding.storage_type,
+          flow_type: binding.flow_type,
+          mutable: binding.mutable,
+          kind: binding.kind,
+          const_value: value,
+        )
+        @evaluated_const_values[name] = true
+        value
+      end
+
+      def evaluate_compile_time_const_value(expression)
+        case expression
+        when AST::IntegerLiteral, AST::FloatLiteral
+          expression.value
+        when AST::Identifier
+          resolve_current_module_const_value(expression.name)
+        when AST::MemberAccess
+          if expression.receiver.is_a?(AST::Identifier)
+            resolve_imported_module_const_value(expression.receiver.name, expression.member)
+          end
+        when AST::UnaryOp
+          operand = evaluate_compile_time_const_value(expression.operand)
+          return unless operand.is_a?(Numeric)
+
+          case expression.operator
+          when "+"
+            operand
+          when "-"
+            -operand
+          when "~"
+            operand.is_a?(Integer) ? ~operand : nil
+          end
+        when AST::BinaryOp
+          left = evaluate_compile_time_const_value(expression.left)
+          right = evaluate_compile_time_const_value(expression.right)
+          evaluate_compile_time_const_binary(expression.operator, left, right)
+        end
+      end
+
+      def evaluate_compile_time_const_binary(operator, left, right)
+        return unless left.is_a?(Numeric) && right.is_a?(Numeric)
+
+        case operator
+        when "+"
+          left + right
+        when "-"
+          left - right
+        when "*"
+          left * right
+        when "/"
+          left / right
+        when "%"
+          return unless left.is_a?(Integer) && right.is_a?(Integer)
+
+          left % right
+        when "<<"
+          return unless left.is_a?(Integer) && right.is_a?(Integer)
+
+          left << right
+        when ">>"
+          return unless left.is_a?(Integer) && right.is_a?(Integer)
+
+          left >> right
+        when "|"
+          return unless left.is_a?(Integer) && right.is_a?(Integer)
+
+          left | right
+        when "&"
+          return unless left.is_a?(Integer) && right.is_a?(Integer)
+
+          left & right
+        when "^"
+          return unless left.is_a?(Integer) && right.is_a?(Integer)
+
+          left ^ right
         end
       end
 
@@ -1919,20 +2019,7 @@ module MilkTea
 
         if type_ref.arguments.any?
           name = parts.join(".")
-          arguments = type_ref.arguments.map do |argument|
-            case argument.value
-            when AST::TypeRef
-              resolve_type_ref(argument.value, type_params:)
-            when AST::FunctionType
-              resolve_type_ref(argument.value, type_params:)
-            when AST::IntegerLiteral
-              Types::LiteralTypeArg.new(argument.value.value)
-            when AST::FloatLiteral
-              Types::LiteralTypeArg.new(argument.value.value)
-            else
-              raise SemaError, "unsupported type argument #{argument.value.class.name}"
-            end
-          end
+          arguments = type_ref.arguments.map { |argument| resolve_type_argument(argument.value, type_params:) }
 
           if name != "ref" && arguments.any? { |argument| contains_ref_type?(argument) }
             raise SemaError, "ref types cannot be nested inside #{name}"
@@ -1980,6 +2067,67 @@ module MilkTea
         end
 
         raise SemaError, "unknown type #{type_ref.name}"
+      end
+
+      def resolve_type_argument(argument, type_params: current_type_params)
+        case argument
+        when AST::TypeRef
+          resolve_type_argument_ref(argument, type_params:)
+        when AST::FunctionType
+          resolve_type_ref(argument, type_params:)
+        when AST::IntegerLiteral, AST::FloatLiteral
+          Types::LiteralTypeArg.new(argument.value)
+        else
+          raise SemaError, "unsupported type argument #{argument.class.name}"
+        end
+      end
+
+      def resolve_type_argument_ref(type_ref, type_params:)
+        return resolve_type_ref(type_ref, type_params:) unless literal_type_argument_name_candidate?(type_ref)
+
+        resolve_type_ref(type_ref, type_params:)
+      rescue SemaError => error
+        literal_type_argument = resolve_named_literal_type_argument(type_ref)
+        return literal_type_argument if literal_type_argument
+
+        raise error
+      end
+
+      def literal_type_argument_name_candidate?(type_ref)
+        type_ref.arguments.empty? && !type_ref.nullable
+      end
+
+      def resolve_named_literal_type_argument(type_ref)
+        value = case type_ref.name.parts.length
+                when 1
+                  resolve_current_module_const_value(type_ref.name.parts.first)
+                when 2
+                  resolve_imported_module_const_value(type_ref.name.parts.first, type_ref.name.parts.last)
+                end
+
+        return unless value.is_a?(Integer) || value.is_a?(Float)
+
+        Types::LiteralTypeArg.new(value)
+      end
+
+      def resolve_current_module_const_value(name)
+        binding = @top_level_values[name]
+        return unless binding&.kind == :const
+
+        evaluate_top_level_const_value(name)
+      end
+
+      def resolve_imported_module_const_value(import_name, value_name)
+        imported_module = @imports[import_name]
+        return unless imported_module
+        if imported_module.private_value?(value_name)
+          raise SemaError, "#{import_name}.#{value_name} is private to module #{imported_module.name}"
+        end
+
+        binding = imported_module.values[value_name]
+        return unless binding&.kind == :const
+
+        binding.const_value
       end
 
       def ensure_assignable!(actual_type, expected_type, message, expression: nil, external_numeric: false, contextual_int_to_float: false)
@@ -2524,15 +2672,15 @@ module MilkTea
         when "array"
           raise SemaError, "array requires exactly two type arguments" unless arguments.length == 2
           raise SemaError, "array element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise SemaError, "array length must be an integer literal" unless generic_integer_type_argument?(arguments[1])
+          raise SemaError, "array length must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments[1])
           raise SemaError, "array length must be positive" if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
         when "str_buffer"
           raise SemaError, "str_buffer requires exactly one type argument" unless arguments.length == 1
-          raise SemaError, "str_buffer capacity must be an integer literal" unless generic_integer_type_argument?(arguments.first)
+          raise SemaError, "str_buffer capacity must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments.first)
           raise SemaError, "str_buffer capacity must be positive" if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
         when "str_builder"
           raise SemaError, "str_builder requires exactly one type argument" unless arguments.length == 1
-          raise SemaError, "str_builder capacity must be an integer literal" unless generic_integer_type_argument?(arguments.first)
+          raise SemaError, "str_builder capacity must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments.first)
           raise SemaError, "str_builder capacity must be positive" if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
         when "Result"
           raise SemaError, "Result requires exactly two type arguments" unless arguments.length == 2
@@ -2656,14 +2804,7 @@ module MilkTea
 
       def resolve_specialization_type_arguments(expression)
         expression.arguments.map do |argument|
-          case argument.value
-          when AST::TypeRef
-            resolve_type_ref(argument.value)
-          when AST::IntegerLiteral, AST::FloatLiteral
-            Types::LiteralTypeArg.new(argument.value.value)
-          else
-            raise SemaError, "callable specialization arguments must be types or literal type arguments"
-          end
+          resolve_type_argument(argument.value)
         end
       end
 
@@ -2788,6 +2929,7 @@ module MilkTea
           flow_type: binding.flow_type ? substitute_type(binding.flow_type, substitutions) : nil,
           mutable: binding.mutable,
           kind: binding.kind,
+          const_value: binding.const_value,
         )
       end
 
@@ -3146,7 +3288,7 @@ module MilkTea
       end
 
       def value_binding(name:, type:, mutable:, kind:, flow_type: nil)
-        ValueBinding.new(name:, storage_type: type, flow_type: flow_type == type ? nil : flow_type, mutable:, kind:)
+        ValueBinding.new(name:, storage_type: type, flow_type: flow_type == type ? nil : flow_type, mutable:, kind:, const_value: nil)
       end
 
       def current_actual_scope(scopes)

@@ -91,6 +91,7 @@ module MilkTea
       private
 
       def emit_source_file(source_file)
+        @current_module_kind = source_file.module_kind
         module_name = source_file.module_name ? source_file.module_name.to_s : "(anonymous)"
         header = source_file.module_kind == :extern_module ? "extern module #{module_name}:" : "module #{module_name}"
         line(header)
@@ -225,6 +226,8 @@ module MilkTea
       end
 
       def visibility_prefix(declaration_or_visibility)
+        return "" if @current_module_kind == :extern_module
+
         visibility = if declaration_or_visibility.is_a?(Symbol)
                        declaration_or_visibility
                      elsif declaration_or_visibility.respond_to?(:visibility)

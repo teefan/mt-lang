@@ -3274,15 +3274,69 @@ module MilkTea
 
       def resolve_specialization_type_arguments(expression)
         expression.arguments.map do |argument|
-          case argument.value
-          when AST::TypeRef
-            resolve_type_ref(argument.value)
-          when AST::IntegerLiteral, AST::FloatLiteral
-            Types::LiteralTypeArg.new(argument.value.value)
-          else
-            raise LoweringError, "callable specialization arguments must be types or literal type arguments"
-          end
+          resolve_type_argument(argument.value)
         end
+      end
+
+      def resolve_type_argument(argument, type_params: current_type_params)
+        case argument
+        when AST::TypeRef
+          resolve_type_argument_ref(argument, type_params:)
+        when AST::FunctionType
+          resolve_type_ref(argument, type_params:)
+        when AST::IntegerLiteral, AST::FloatLiteral
+          Types::LiteralTypeArg.new(argument.value)
+        else
+          raise LoweringError, "unsupported type argument #{argument.class.name}"
+        end
+      end
+
+      def resolve_type_argument_ref(type_ref, type_params:)
+        return resolve_type_ref(type_ref, type_params:) unless literal_type_argument_name_candidate?(type_ref)
+
+        resolve_type_ref(type_ref, type_params:)
+      rescue LoweringError => error
+        literal_type_argument = resolve_named_literal_type_argument(type_ref)
+        return literal_type_argument if literal_type_argument
+
+        raise error
+      end
+
+      def literal_type_argument_name_candidate?(type_ref)
+        type_ref.arguments.empty? && !type_ref.nullable
+      end
+
+      def resolve_named_literal_type_argument(type_ref)
+        value = case type_ref.name.parts.length
+                when 1
+                  resolve_current_module_const_value(type_ref.name.parts.first)
+                when 2
+                  resolve_imported_module_const_value(type_ref.name.parts.first, type_ref.name.parts.last)
+                end
+
+        return unless value.is_a?(Integer) || value.is_a?(Float)
+
+        Types::LiteralTypeArg.new(value)
+      end
+
+      def resolve_current_module_const_value(name)
+        binding = @values[name]
+        return unless binding&.kind == :const
+
+        binding.const_value
+      end
+
+      def resolve_imported_module_const_value(import_name, value_name)
+        imported_module = @imports[import_name]
+        return unless imported_module
+        if imported_module.private_value?(value_name)
+          raise LoweringError, "#{import_name}.#{value_name} is private to module #{imported_module.name}"
+        end
+
+        binding = imported_module.values[value_name]
+        return unless binding&.kind == :const
+
+        binding.const_value
       end
 
       def specialize_function_binding(binding, arguments, env)
@@ -3415,6 +3469,7 @@ module MilkTea
           flow_type: binding.flow_type ? substitute_type(binding.flow_type, substitutions) : nil,
           mutable: binding.mutable,
           kind: binding.kind,
+          const_value: binding.const_value,
         )
       end
 
@@ -3882,13 +3937,7 @@ module MilkTea
         parts = type_ref.name.parts
         base = if type_ref.arguments.any?
                  name = parts.join(".")
-                 args = type_ref.arguments.map do |argument|
-                   if argument.value.is_a?(AST::TypeRef) || argument.value.is_a?(AST::FunctionType)
-                     resolve_type_ref(argument.value, type_params:)
-                   else
-                     Types::LiteralTypeArg.new(argument.value.value)
-                   end
-                 end
+                 args = type_ref.arguments.map { |argument| resolve_type_argument(argument.value, type_params:) }
                  if name != "ref" && args.any? { |argument| contains_ref_type?(argument) }
                    raise LoweringError, "ref types cannot be nested inside #{name}"
                  end
@@ -3906,12 +3955,19 @@ module MilkTea
                elsif parts.length == 1 && type_params.key?(parts.first)
                  type_params.fetch(parts.first)
                elsif parts.length == 1
-                 type = @types.fetch(parts.first)
+                 type = @types[parts.first]
+                 raise LoweringError, "unknown type #{parts.first}" unless type
                  raise LoweringError, "generic type #{parts.first} requires type arguments" if type.is_a?(Types::GenericStructDefinition)
 
                  type
                elsif parts.length == 2 && @imports.key?(parts.first)
-                 type = @imports.fetch(parts.first).types.fetch(parts.last)
+                 imported_module = @imports.fetch(parts.first)
+                 if imported_module.private_type?(parts.last)
+                   raise LoweringError, "#{parts.first}.#{parts.last} is private to module #{imported_module.name}"
+                 end
+
+                 type = imported_module.types[parts.last]
+                 raise LoweringError, "unknown type #{type_ref.name}" unless type
                  raise LoweringError, "generic type #{type_ref.name} requires type arguments" if type.is_a?(Types::GenericStructDefinition)
 
                  type
@@ -4223,15 +4279,15 @@ module MilkTea
         when "array"
           raise LoweringError, "array requires exactly two type arguments" unless arguments.length == 2
           raise LoweringError, "array element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise LoweringError, "array length must be an integer literal" unless generic_integer_type_argument?(arguments[1])
+          raise LoweringError, "array length must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments[1])
           raise LoweringError, "array length must be positive" if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
         when "str_buffer"
           raise LoweringError, "str_buffer requires exactly one type argument" unless arguments.length == 1
-          raise LoweringError, "str_buffer capacity must be an integer literal" unless generic_integer_type_argument?(arguments.first)
+          raise LoweringError, "str_buffer capacity must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments.first)
           raise LoweringError, "str_buffer capacity must be positive" if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
         when "str_builder"
           raise LoweringError, "str_builder requires exactly one type argument" unless arguments.length == 1
-          raise LoweringError, "str_builder capacity must be an integer literal" unless generic_integer_type_argument?(arguments.first)
+          raise LoweringError, "str_builder capacity must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments.first)
           raise LoweringError, "str_builder capacity must be positive" if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
         when "Result"
           raise LoweringError, "Result requires exactly two type arguments" unless arguments.length == 2

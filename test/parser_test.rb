@@ -601,6 +601,29 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal 32, call.callee.arguments.first.value.value
   end
 
+  def test_parses_explicit_generic_function_named_const_specialization_call
+    source = <<~MT
+      module demo.generic_named_const_call
+
+      const CAPACITY: i32 = 32
+
+      def capacity_of[N](buffer: str_builder[N]) -> usize:
+          return buffer.capacity()
+
+      def main() -> i32:
+          var buffer: str_builder[CAPACITY]
+          return cast[i32](capacity_of[CAPACITY](buffer))
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    call = ast.declarations[2].body[1].value.arguments.first.value
+
+    assert_instance_of MilkTea::AST::Call, call
+    assert_instance_of MilkTea::AST::Specialization, call.callee
+    assert_equal "capacity_of", call.callee.callee.name
+    assert_equal "CAPACITY", call.callee.arguments.first.value.name.to_s
+  end
+
   def test_parses_explicit_imported_member_literal_specialization_call
     source = <<~MT
       module demo.imported_generic_literal_call
