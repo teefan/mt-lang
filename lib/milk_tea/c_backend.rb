@@ -227,7 +227,7 @@ module MilkTea
 
     def uses_mt_panic_helper?
       collect_checked_array_index_types.any? || collect_checked_span_index_types.any? ||
-        @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_panic mt_str_buffer_len mt_str_buffer_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_assign mt_str_builder_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp]) }
+        @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_panic mt_char_array_len mt_char_array_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_assign mt_str_builder_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp]) }
     end
 
     def uses_mt_panic_str_helper?
@@ -239,7 +239,7 @@ module MilkTea
     end
 
     def uses_text_buffer_helpers?
-      @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_buffer_len mt_str_buffer_clear mt_str_buffer_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_clear mt_str_builder_assign mt_str_builder_append mt_str_builder_prepare_write]) }
+      @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_char_array_len mt_char_array_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_clear mt_str_builder_assign mt_str_builder_append mt_str_builder_prepare_write]) }
     end
 
     def uses_str_builder_helpers?
@@ -472,22 +472,18 @@ module MilkTea
         "#{INDENT}return true;",
         "}",
         "",
-        "static uintptr_t mt_str_buffer_len(const char* data, uintptr_t cap) {",
+        "static uintptr_t mt_char_array_len(const char* data, uintptr_t cap) {",
         "#{INDENT}uintptr_t len = 0;",
         "#{INDENT}while (len < cap && data[len] != '\\0') {",
         "#{INDENT * 2}len++;",
         "#{INDENT}}",
-        "#{INDENT}if (!mt_is_valid_utf8(data, len)) mt_panic(\"str_buffer text must be valid UTF-8\");",
+        "#{INDENT}if (!mt_is_valid_utf8(data, len)) mt_panic(\"array[char] text must be valid UTF-8\");",
         "#{INDENT}return len;",
         "}",
         "",
-        "static const char* mt_str_buffer_as_cstr(const char* data, uintptr_t cap) {",
-        "#{INDENT}if (mt_str_buffer_len(data, cap) == cap) mt_panic(\"str_buffer.as_cstr requires a trailing NUL within capacity\");",
+        "static const char* mt_char_array_as_cstr(const char* data, uintptr_t cap) {",
+        "#{INDENT}if (mt_char_array_len(data, cap) == cap) mt_panic(\"array[char].as_cstr requires a trailing NUL within capacity\");",
         "#{INDENT}return data;",
-        "}",
-        "",
-        "static void mt_str_buffer_clear(char* data, uintptr_t cap) {",
-        "#{INDENT}memset(data, 0, cap);",
         "}",
       ]
     end
@@ -2225,20 +2221,15 @@ module MilkTea
     end
 
     def array_type?(type)
-      text_buffer_type?(type) ||
-        (type.is_a?(Types::GenericInstance) && type.name == "array" && type.arguments.length == 2 &&
-        type.arguments[1].is_a?(Types::LiteralTypeArg))
+      type.is_a?(Types::GenericInstance) && type.name == "array" && type.arguments.length == 2 &&
+        type.arguments[1].is_a?(Types::LiteralTypeArg)
     end
 
     def array_element_type(type)
-      return Types::Primitive.new("char") if text_buffer_type?(type)
-
       type.arguments.first
     end
 
     def array_length(type)
-      return type.arguments.first.value if text_buffer_type?(type)
-
       type.arguments[1].value
     end
 
@@ -2257,11 +2248,6 @@ module MilkTea
 
     def str_builder_type_name(type)
       "mt_str_builder_#{str_builder_capacity(type)}"
-    end
-
-    def text_buffer_type?(type)
-      type.is_a?(Types::GenericInstance) && type.name == "str_buffer" && type.arguments.length == 1 &&
-        type.arguments.first.is_a?(Types::LiteralTypeArg) && type.arguments.first.value.is_a?(Integer)
     end
 
     def pointer_to(type)

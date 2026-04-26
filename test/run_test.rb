@@ -960,18 +960,18 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
-  def test_run_with_host_compiler_rejects_str_buffer_as_str_with_invalid_utf_8
+  def test_run_with_host_compiler_rejects_array_char_as_str_with_invalid_utf_8
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    Dir.mktmpdir("milk-tea-run-str-buffer-bad-str") do |dir|
-      source_path = File.join(dir, "str_buffer_bad_str.mt")
+    Dir.mktmpdir("milk-tea-run-array-char-bad-str") do |dir|
+      source_path = File.join(dir, "array_char_bad_str.mt")
 
       File.write(source_path, [
-        "module demo.str_buffer_bad_str_runtime",
+        "module demo.array_char_bad_str_runtime",
         "",
         "def main() -> i32:",
-        "    var buffer: str_buffer[2]",
+        "    var buffer: array[char, 2]",
         "    buffer[0] = cast[char](0xC3)",
         "    let view = buffer.as_str()",
         "    return cast[i32](view.len)",
@@ -981,7 +981,7 @@ class MilkTeaRunTest < Minitest::Test
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
-      assert_includes result.stderr, "str_buffer text must be valid UTF-8"
+      assert_includes result.stderr, "array[char] text must be valid UTF-8"
       assert_equal 134, result.exit_status
       assert_nil result.output_path
       assert_nil result.c_path
@@ -990,18 +990,18 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
-  def test_run_with_host_compiler_rejects_str_buffer_as_cstr_with_invalid_utf_8
+  def test_run_with_host_compiler_rejects_array_char_as_cstr_with_invalid_utf_8
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    Dir.mktmpdir("milk-tea-run-str-buffer-bad-cstr") do |dir|
-      source_path = File.join(dir, "str_buffer_bad_cstr.mt")
+    Dir.mktmpdir("milk-tea-run-array-char-bad-cstr") do |dir|
+      source_path = File.join(dir, "array_char_bad_cstr.mt")
 
       File.write(source_path, [
-        "module demo.str_buffer_bad_cstr_runtime",
+        "module demo.array_char_bad_cstr_runtime",
         "",
         "def main() -> i32:",
-        "    var buffer: str_buffer[2]",
+        "    var buffer: array[char, 2]",
         "    buffer[0] = cast[char](0xC3)",
         "    let label = buffer.as_cstr()",
         "    return 0",
@@ -1011,7 +1011,7 @@ class MilkTeaRunTest < Minitest::Test
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
-      assert_includes result.stderr, "str_buffer text must be valid UTF-8"
+      assert_includes result.stderr, "array[char] text must be valid UTF-8"
       assert_equal 134, result.exit_status
       assert_nil result.output_path
       assert_nil result.c_path

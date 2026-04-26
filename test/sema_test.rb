@@ -2515,15 +2515,15 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/expects ptr\[i32\], got const_ptr\[i32\]/, error.message)
   end
 
-  def test_type_checks_str_buffer_as_span_char_and_safe_index_source
+  def test_type_checks_array_char_as_span_char_and_safe_index_source
     source = <<~MT
-      module demo.str_buffer_surface
+      module demo.char_array_surface
 
       def view(items: span[char]) -> usize:
           return items.len
 
       def main() -> i32:
-          var buffer = zero[str_buffer[32]]()
+          var buffer = zero[array[char, 32]]()
           buffer[0] = 65
           let used = view(buffer)
           return cast[i32](used)
@@ -2534,14 +2534,14 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_type_checks_zero_initialized_typed_str_buffer_locals
+  def test_type_checks_zero_initialized_typed_array_char_locals
     source = <<~MT
-      module demo.str_buffer_zero_locals
+      module demo.char_array_zero_locals
 
       def main() -> i32:
-          var buffer: str_buffer[32]
+          var buffer: array[char, 32]
           buffer[0] = 65
-          return cast[i32](buffer.capacity())
+          return 0
     MT
 
     result = check_source(source)
@@ -2564,21 +2564,35 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/without initializer requires a zero-initializable type/, error.message)
   end
 
-  def test_type_checks_str_buffer_methods
+  def test_type_checks_array_char_text_borrows
     source = <<~MT
-      module demo.str_buffer_methods
+      module demo.char_array_methods
 
       def main() -> i32:
-          var buffer = zero[str_buffer[16]]()
-          buffer.clear()
+          var buffer = zero[array[char, 16]]()
           let view = buffer.as_str()
           let label = buffer.as_cstr()
-          return cast[i32](buffer.capacity() + view.len)
+          return cast[i32](view.len)
     MT
 
     result = check_source(source)
 
     assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_removed_str_buffer_type
+    source = <<~MT
+      module demo.main
+
+      def main() -> void:
+          var buffer: str_buffer[8]
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/unknown generic type str_buffer/, error.message)
   end
 
   def test_rejects_removed_cstr_list_buffer_type
@@ -2596,12 +2610,12 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/unknown generic type cstr_list_buffer/, error.message)
   end
 
-  def test_rejects_str_buffer_as_str_on_temporary_receiver
+  def test_rejects_array_char_as_str_on_temporary_receiver
     source = <<~MT
-      module demo.str_buffer_bad_view
+      module demo.char_array_bad_view
 
       def main() -> str:
-          return zero[str_buffer[8]]().as_str()
+          return zero[array[char, 8]]().as_str()
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -2611,12 +2625,12 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/as_str requires a safe stored receiver/, error.message)
   end
 
-  def test_rejects_str_buffer_as_cstr_on_temporary_receiver
+  def test_rejects_array_char_as_cstr_on_temporary_receiver
     source = <<~MT
-      module demo.str_buffer_bad_cstr
+      module demo.char_array_bad_cstr
 
       def main() -> cstr:
-          return zero[str_buffer[8]]().as_cstr()
+          return zero[array[char, 8]]().as_cstr()
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -2626,14 +2640,14 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/as_cstr requires a safe stored receiver/, error.message)
   end
 
-  def test_type_checks_foreign_str_as_cstr_calls_with_str_buffer_as_cstr_without_scratch
+  def test_type_checks_foreign_str_as_cstr_calls_with_array_char_as_cstr_without_scratch
     root_source = <<~MT
       module demo.main
 
       import std.ui as ui
 
       def main() -> void:
-          var buffer: str_buffer[32]
+          var buffer: array[char, 32]
           ui.label(buffer.as_cstr())
     MT
 
@@ -2657,15 +2671,15 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("main")
   end
 
-  def test_type_checks_foreign_defs_with_str_buffer_and_span_char_ptr_char_boundary
+  def test_type_checks_foreign_defs_with_array_char_and_span_char_ptr_char_boundary
     root_source = <<~MT
       module demo.main
 
       import std.mem as mem
 
       def main() -> void:
-          var fixed = zero[str_buffer[32]]()
-          var dynamic = zero[str_buffer[64]]()
+          var fixed = zero[array[char, 32]]()
+          var dynamic = zero[array[char, 64]]()
           mem.write_fixed(fixed)
           mem.write_dynamic(dynamic)
     MT
@@ -2683,7 +2697,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import std.c.mem as c
 
-        pub foreign def write_fixed(label: str_buffer[32] as ptr[char]) -> void = c.WriteFixed(label)
+        pub foreign def write_fixed(label: array[char, 32] as ptr[char]) -> void = c.WriteFixed(label)
         pub foreign def write_dynamic(label: span[char] as ptr[char]) -> void = c.WriteDynamic(label)
       MT
     }
@@ -2723,7 +2737,7 @@ class MilkTeaSemaTest < Minitest::Test
       import std.ui as ui
 
       def main() -> void:
-          var buffer = zero[str_buffer[32]]()
+          var buffer = zero[array[char, 32]]()
           ui.text_box(buffer)
     MT
 

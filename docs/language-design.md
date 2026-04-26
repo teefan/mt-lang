@@ -320,7 +320,7 @@ Notes:
 - `cstr` is the raw ABI-facing NUL-terminated C string type. It belongs primarily in raw `extern module` declarations and low-level interop code.
 - `char` is the ABI-facing single-byte character type for C text and raw buffers. It is not a general arithmetic integer type.
 - String literals produce `str`.
-- Safe code does not fabricate `str` values from raw parts. Source code ordinarily obtains `str` values from literals, validated borrowed views such as `str_builder.as_str()`, slicing an existing `str`, or other compiler/runtime surfaces that preserve the UTF-8 invariant.
+- Safe code does not fabricate `str` values from raw parts. Source code ordinarily obtains `str` values from literals, validated borrowed views such as `array[char, N].as_str()`, `str_builder.as_str()`, slicing an existing `str`, or other compiler/runtime surfaces that preserve the UTF-8 invariant.
 - Low-level code may construct `str(data = ..., len = ...)` only inside `unsafe`, and the caller is then responsible for pointer validity, lifetime, and the UTF-8 invariant.
 - A string literal may satisfy an expected `cstr` directly when the compiler has contextual type information, such as a typed local, an `array[cstr, N]` element, or a borrowed C-string argument position, because static storage is known.
 - `c"hello"` produces `cstr` with static storage for raw ABI work and low-level interop.
@@ -351,7 +351,9 @@ Notes:
 - Fixed-array indexing is bounds-checked and safe by default.
 - Safe array indexing requires an addressable array value; bind temporaries before indexing them.
 - `array[char, N]` and `span[char]` are the ordinary source-level forms for raw writable character storage and byte-oriented foreign buffers. There is no separate source-level raw text-buffer type.
+- Addressable `array[char, N]` values also expose borrowed text views with `.as_str()` and `.as_cstr()`. Both scan for the first trailing NUL within the stored capacity, validate the borrowed bytes as UTF-8, and require a safe stored receiver so the returned view cannot outlive the backing array.
 - `str_builder[N]` is the one source-level mutable UTF-8 text type. It owns `N` editable text bytes plus an implementation-managed trailing NUL slot, tracks current text length, and refreshes that length when a writable buffer alias mutates the underlying storage.
+- The naming here is deliberate: `str`, `cstr`, and `str_builder` stay one vocabulary family, and both `str_builder[N]` and `array[char, N]` use the same borrowed-view projection names `.as_str()` and `.as_cstr()`.
 - Addressable `str_builder[N]` values also coerce to `span[char]`, so writable foreign text APIs can still accept builders directly when they do not want a second application-facing text abstraction.
 - `str_builder[N]` is not an ABI type. Raw bindings still spell writable text as `ptr[char]` or `span[char]`; `str_builder[N]` is the caller-side text object.
 - `str_builder[N]` has a built-in text surface: `.clear()`, `.assign(str)`, `.append(str)`, `.len()`, `.capacity()`, `.as_str()`, and `.as_cstr()`.
