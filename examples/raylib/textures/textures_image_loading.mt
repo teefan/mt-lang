@@ -1,7 +1,6 @@
 module examples.raylib.textures.textures_image_loading
 
 import std.c.raylib as rl
-import std.raylib.runtime as runtime
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
@@ -19,7 +18,6 @@ def main() -> i32:
     defer rl.UnloadTexture(texture)
 
     rl.SetTargetFPS(60)
-    var smoke_frame_count = 0
 
     while not rl.WindowShouldClose():
         rl.BeginDrawing()
@@ -29,9 +27,5 @@ def main() -> i32:
         rl.DrawText(message_text, 300, 370, 10, rl.GRAY)
 
         rl.EndDrawing()
-
-        smoke_frame_count += 1
-        if runtime.smoke_capture(smoke_frame_count, 3):
-            break
 
     return 0

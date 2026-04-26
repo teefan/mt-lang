@@ -26,7 +26,6 @@ def main() -> i32:
     var position: f32 = 0.0
     var pause = false
     var target_fps = 60
-    var smoke_frame_count = 0
 
     if not use_custom_frame_control:
         rl.SetTargetFPS(target_fps)
@@ -78,10 +77,6 @@ def main() -> i32:
 
         if use_custom_frame_control:
             rl.SwapScreenBuffer()
-
-        smoke_frame_count += 1
-        if runtime.smoke_capture(smoke_frame_count, 3):
-            break
 
         if use_custom_frame_control:
             current_time = rl.GetTime()

@@ -1,7 +1,6 @@
 module examples.raylib.core.core_storage_values
 
 import std.c.raylib as rl
-import std.raylib.runtime as runtime
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
@@ -72,7 +71,6 @@ def main() -> i32:
     var score = 0
     var hiscore = 0
     var frames_counter = 0
-    var smoke_frame_count = 0
 
     rl.SetTargetFPS(60)
 
@@ -101,9 +99,5 @@ def main() -> i32:
         rl.DrawText(c"Press SPACE to LOAD values", 252, 350, 20, rl.LIGHTGRAY)
 
         rl.EndDrawing()
-
-        smoke_frame_count += 1
-        if runtime.smoke_capture(smoke_frame_count, 3):
-            break
 
     return 0

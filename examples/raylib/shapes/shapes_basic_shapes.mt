@@ -1,7 +1,6 @@
 module examples.raylib.shapes.shapes_basic_shapes
 
 import std.c.raylib as rl
-import std.raylib.runtime as runtime
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
@@ -13,7 +12,6 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var rotation: f32 = 0.0
-    var smoke_frame_count = 0
     let circle_x = screen_width / 5
     let circle_center_x: f32 = circle_x
     let rect_center_x = screen_width / 4 * 2
@@ -61,9 +59,5 @@ def main() -> i32:
         rl.DrawLine(18, 42, screen_width - 18, 42, rl.BLACK)
 
         rl.EndDrawing()
-
-        smoke_frame_count += 1
-        if runtime.smoke_capture(smoke_frame_count, 3):
-            break
 
     return 0

@@ -1,7 +1,6 @@
 module examples.raylib.textures.textures_background_scrolling
 
 import std.c.raylib as rl
-import std.raylib.runtime as runtime
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
@@ -31,7 +30,6 @@ def main() -> i32:
     var scrolling_back: f32 = 0.0
     var scrolling_mid: f32 = 0.0
     var scrolling_fore: f32 = 0.0
-    var smoke_frame_count = 0
 
     rl.SetTargetFPS(60)
 
@@ -57,9 +55,5 @@ def main() -> i32:
         rl.DrawText(c"(c) Cyberpunk Street Environment by Luis Zuno (@ansimuz)", screen_width - 330, screen_height - 20, 10, rl.RAYWHITE)
 
         rl.EndDrawing()
-
-        smoke_frame_count += 1
-        if runtime.smoke_capture(smoke_frame_count, 3):
-            break
 
     return 0

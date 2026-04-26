@@ -1,7 +1,6 @@
 module examples.raylib.textures.textures_image_generation
 
 import std.c.raylib as rl
-import std.raylib.runtime as runtime
 
 const num_textures: i32 = 9
 const screen_width: i32 = 800
@@ -79,7 +78,6 @@ def main() -> i32:
     rl.UnloadImage(cellular)
 
     var current_texture = 0
-    var smoke_frame_count = 0
 
     rl.SetTargetFPS(60)
 
@@ -98,9 +96,5 @@ def main() -> i32:
         rl.DrawText(texture_label(current_texture), 540, 10, 20, texture_label_color(current_texture))
 
         rl.EndDrawing()
-
-        smoke_frame_count += 1
-        if runtime.smoke_capture(smoke_frame_count, 3):
-            break
 
     return 0

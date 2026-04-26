@@ -1,7 +1,6 @@
 module examples.raylib.core.core_input_gamepad
 
 import std.c.raylib as rl
-import std.raylib.runtime as runtime
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
@@ -193,7 +192,6 @@ def main() -> i32:
 
     var vibrate_button = zero[rl.Rectangle]()
     var gamepad = 0
-    var smoke_frame_count = 0
 
     rl.SetTargetFPS(60)
 
@@ -266,9 +264,5 @@ def main() -> i32:
             rl.DrawTexture(tex_xbox_pad, 0, 0, rl.LIGHTGRAY)
 
         rl.EndDrawing()
-
-        smoke_frame_count += 1
-        if runtime.smoke_capture(smoke_frame_count, 3):
-            break
 
     return 0
