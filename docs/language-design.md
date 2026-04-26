@@ -156,10 +156,12 @@ flags DrawFlags: u32
 - `let` creates an immutable local binding.
 - `var` creates a mutable local binding.
 - `const` defines a compile-time constant.
+- A typed local declaration without `= ...` zero-initializes that local. This is only valid for types that `zero[T]()` already supports.
 
 ```mt
 let width: i32 = 1280
 var score: i32 = 0
+var name_input: str_builder[64]
 const max_players: i32 = 4
 ```
 
@@ -317,16 +319,22 @@ The type system must stay simple, explicit, and close to C.
 Notes:
 
 - `str` is a UTF-8 string view, not a NUL-terminated C string.
+- Every `str` value must contain valid UTF-8 bytes for its full length.
 - `cstr` is the raw ABI-facing NUL-terminated C string type. It belongs primarily in raw `extern module` declarations and low-level interop code.
 - `char` is the ABI-facing single-byte character type for C text and raw buffers. It is not a general arithmetic integer type.
 - String literals produce `str`.
-- A string literal may satisfy an imported borrowed C string parameter directly because static storage is known.
+- Safe code does not fabricate `str` values from raw parts. Source code ordinarily obtains `str` values from literals, validated borrowed views such as `str_builder.as_str()` or `str_buffer.as_str()`, slicing an existing `str`, or other compiler/runtime surfaces that preserve the UTF-8 invariant.
+- Low-level code may construct `str(data = ..., len = ...)` only inside `unsafe`, and the caller is then responsible for pointer validity, lifetime, and the UTF-8 invariant.
+- A string literal may satisfy an expected `cstr` directly when the compiler has contextual type information, such as a typed local, an `array[cstr, N]` element, or a borrowed C-string argument position, because static storage is known.
 - `c"hello"` produces `cstr` with static storage for raw ABI work and low-level interop.
 
 ### Composite types
 
 ```mt
 array[T, N]      # fixed-size array
+str_buffer[N]    # fixed-capacity raw writable char storage
+str_builder[N]   # fixed-capacity mutable UTF-8 text builder
+cstr_list_buffer[count, bytes]  # fixed-capacity caller-owned cstr list storage
 ptr[T]           # raw pointer
 span[T]          # pointer + length view
 fn(A, B) -> R    # function pointer type
@@ -336,6 +344,8 @@ Examples:
 
 ```mt
 let pixels: span[u8]
+let name_input: str_builder[64]
+let labels: cstr_list_buffer[8, 256]
 let texture_ptr: ptr[Texture]
 let normal_table: array[f32, 256]
 let callback: fn(ptr[void], i32) -> void
@@ -345,6 +355,35 @@ Notes:
 
 - Fixed-array indexing is bounds-checked and safe by default.
 - Safe array indexing requires an addressable array value; bind temporaries before indexing them.
+- `str_buffer[N]` is a source-level fixed-capacity raw writable `char` buffer. It is zero-initializable, stores exactly `N` writable byte slots, and remains useful when the language needs caller-owned mutable C storage without tracked text semantics.
+- Addressable `str_buffer[N]` values coerce to `span[char]` for ordinary APIs and imported foreign declarations that consume writable character buffers.
+- `str_buffer[N]` is not an ABI type. Raw C bindings should still spell writable character parameters as `ptr[char]` or `span[char]`; `str_buffer[N]` is only the caller-side storage type.
+- `str_buffer[N]` has a small borrowed surface: `.clear()`, `.capacity()`, `.as_str()`, and `.as_cstr()`.
+- `.capacity()` reports the full writable slot count. If the buffer is also used as a C string, one slot may need to remain available for a trailing NUL terminator.
+- `.as_str()` returns a borrowed `str` view over the buffer contents up to the first NUL byte or the fixed capacity, and it traps at runtime if those bytes are not valid UTF-8.
+- `.as_cstr()` returns a borrowed `cstr` pointer to the same storage, but it traps at runtime if the buffer does not contain a trailing NUL within capacity or if the text prefix before that NUL is not valid UTF-8.
+- `str_builder[N]` is the source-level mutable UTF-8 text type. It owns `N` editable text bytes plus an implementation-managed trailing NUL slot, tracks current text length, and refreshes that length when a writable buffer alias mutates the underlying storage.
+- Addressable `str_builder[N]` values also coerce to `span[char]`, so ordinary writable-buffer APIs can still accept builders directly when they do not want a capacity-polymorphic text signature.
+- `str_builder[N]` is not an ABI type either. Raw bindings still spell writable text as `ptr[char]` or `span[char]`; `str_builder[N]` is the caller-side text object.
+- `str_builder[N]` has a built-in text surface: `.clear()`, `.assign(str)`, `.append(str)`, `.len()`, `.capacity()`, `.as_str()`, and `.as_cstr()`.
+- `.assign(...)` replaces the current contents and traps at runtime if the new text exceeds capacity.
+- `.append(...)` extends the current contents and traps at runtime if the appended text would exceed capacity.
+- `.len()` returns the tracked text length, revalidating UTF-8 and rescanning for the trailing NUL if the builder was passed through a writable `span[char]` or `ptr[char]` alias.
+- `.capacity()` reports the maximum editable text bytes, not counting the reserved trailing NUL slot.
+- `.as_str()` and `.as_cstr()` borrow from the same builder storage and revalidate through that same dirty-refresh path before returning.
+- `str.slice(start, len)` uses byte offsets and byte lengths, but both the start and end position must be UTF-8 code-unit boundaries or the slice traps at runtime.
+- `cstr_list_buffer[count, bytes]` is a caller-owned transient storage type for dynamic string lists that must cross a foreign boundary as `span[cstr]` or `span[ptr[char]]` without hidden allocation.
+- `cstr_list_buffer[count, bytes]` is zero-initializable and stores two capacities explicitly: the maximum item count and the total backing-byte budget for copied NUL-terminated strings.
+- `cstr_list_buffer[count, bytes]` has a small built-in surface: `.clear()`, `.assign(span[str])`, `.as_cstrs()`, `.capacity()`, and `.byte_capacity()`.
+- `.assign(...)` copies the provided `str` elements into the buffer's own byte storage, writes trailing NUL terminators, and traps at runtime if either capacity is exceeded.
+- `.as_cstrs()` returns a borrowed `span[cstr]` view over the stored entries and requires a safe stored receiver.
+- `cstr_list_buffer[count, bytes]` is not an ABI type. Raw C bindings still spell their boundary as `span[cstr]`, `span[ptr[char]]`, or raw pointer-plus-length pairs; `cstr_list_buffer` is the caller-side staging storage.
+- Imported foreign declarations may map `str_buffer[N] as ptr[char]` when the raw API wants a writable character pointer, and may map `span[char] as ptr[char]` when the public surface needs variable caller capacity.
+- Imported foreign declarations may map `str_builder[N] as ptr[char]` directly when the public surface wants editable UTF-8 text with fixed caller capacity.
+- Imported foreign declarations may accept `span[cstr] as span[ptr[char]]`, and callers that need dynamic list materialization should use `cstr_list_buffer` explicitly instead of relying on hidden list coercions.
+- If the raw call also needs the caller buffer size, a `str_builder[N]` public signature should pass `text_public.capacity() + 1` in the foreign mapping so the raw side sees the full writable byte count including the trailing NUL slot.
+- `span[char] as ptr[char]` remains the right public surface when the writable storage is not semantically UTF-8 text or when the caller capacity is intentionally runtime-sized instead of part of the type.
+- In an explicit foreign mapping, a parameter declared with `as` keeps the boundary value under its original name and exposes the public value as `<name>_public`.
 - Pointer indexing follows the raw pointer model and requires `unsafe`.
 
 ### Nullability
@@ -429,11 +468,11 @@ Allowed in v1:
 
 - generic structs
 - generic functions
+- explicit specialization calls
 - monomorphized code generation
 
 Not allowed in v1:
 
-- specialization
 - generic constraints
 - type-level computation
 - arbitrary compile-time execution
@@ -449,7 +488,15 @@ def first[T](items: Slice[T]) -> ptr[T]?:
 	if items.len == 0:
 		return null
 	return items.data
+
+def capacity_of[N](buffer: str_builder[N]) -> usize:
+	return buffer.capacity()
+
+def explicit_capacity(buffer: str_builder[32]) -> usize:
+	return capacity_of[32](buffer)
 ```
+
+Explicit specialization arguments may be type references like `bytes_for[i32](4)` or numeric literals like `capacity_of[32](buffer)` when the generic parameter is used in a literal slot such as `str_builder[N]` or `array[T, N]`.
 
 ## Expressions and conversions
 
@@ -865,8 +912,11 @@ An imported foreign declaration must be able to express at least:
 Parameter and boundary rules:
 
 - `name: str as cstr` means the public Milk Tea type is `str`, while the raw foreign target expects `cstr` or `ptr[char]`
+- imported foreign declarations do not spell this surface as `str as ptr[char]`; the public text boundary stays `str as cstr` even when the raw callee argument type is `ptr[char]`
 - a string literal or existing `cstr` value may satisfy `str as cstr` without temporary storage
 - a dynamic `str` argument for `str as cstr` requires an explicit call-site `using scratch` clause
+- dynamic string-list marshalling is not implicit in v1. If a foreign surface wants `span[cstr]` or `span[ptr[char]]`, caller-owned transient storage should be spelled explicitly with `cstr_list_buffer[count, bytes]` and passed as `.as_cstrs()`.
+- imported foreign declarations do not accept `span[str] as span[cstr]` or `span[str] as span[ptr[char]]`; that hidden list materialization path is intentionally rejected.
 - `out name: T` means the raw foreign target takes a writable pointer and the call site must pass `out lvalue`
 - `inout name: T` means the raw foreign target reads and writes through a pointer and the call site must pass `inout lvalue`
 - `owned name: Handle` means the public Milk Tea parameter is a non-null opaque handle or `ptr[T]`, and v1 uses it only for release-style foreign calls that consume an existing nullable binding
@@ -1007,7 +1057,7 @@ This is the C# part worth copying: declarations say how the boundary works, whil
 String and buffer rules must stay explicit, but the explicitness belongs in imported declarations and any required `using` clause, not in every call site:
 
 - raw `extern module` declarations stay exact and continue to use `cstr`, `ptr[T]`, and `ptr[void]`
-- a string literal may satisfy an imported borrowed C string parameter directly; ordinary UI and logging code should not need `c"..."`
+- a string literal may satisfy a contextual `cstr` position directly; ordinary UI code should not need `c"..."` just to populate `cstr` locals, `array[cstr, N]`, or borrowed C-string arguments
 - converting a dynamic `str` to a foreign C string still requires explicit storage in source, spelled with a call-site `using scratch` clause or an equivalent explicit storage form
 - `cstr` remains available for raw ABI work, returned native strings, and low-level code
 - pointer-plus-length APIs should import as `span[T]` when the native contract is a view rather than untyped memory

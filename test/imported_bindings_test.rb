@@ -8,7 +8,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raylib", "rlgl"], registry.map(&:name)
+    assert_equal ["raylib", "rlgl", "raygui"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -18,6 +18,11 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_equal "std.c.rlgl", registry.fetch("rlgl").raw_module_name
     assert_includes registry.fetch("rlgl").binding_path, "/std/rlgl.mt"
     assert_includes registry.fetch("rlgl").policy_path, "/std/rlgl.binding.json"
+
+    assert_equal "std.raygui", registry.fetch("raygui").module_name
+    assert_equal "std.c.raygui", registry.fetch("raygui").raw_module_name
+    assert_includes registry.fetch("raygui").binding_path, "/std/raygui.mt"
+    assert_includes registry.fetch("raygui").policy_path, "/std/raygui.binding.json"
   end
 
   def test_checked_in_raylib_binding_matches_policy_and_loads
@@ -38,8 +43,30 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_includes binding.check!, "/std/c/rlgl.mt"
 
     source = File.read(binding.binding_path)
-    assert_match(/^pub type Matrix = c\.Matrix$/, source)
+    assert_match(/^import std\.raylib as raylib$/, source)
+    assert_match(/^pub type Matrix = raylib\.Matrix$/, source)
     assert_match(/^pub foreign def matrix_mode\(mode: i32\) -> void = c\.rlMatrixMode$/, source)
+  end
+
+  def test_checked_in_raygui_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("raygui")
+
+    assert_includes binding.check!, "/std/c/raygui.mt"
+
+    source = File.read(binding.binding_path)
+    assert_match(/^import std\.raylib as raylib$/, source)
+    assert_match(/^pub type Rectangle = raylib\.Rectangle$/, source)
+    assert_match(/^pub type State = c\.GuiState$/, source)
+    assert_match(/^pub foreign def set_state\(state: State\) -> void = c\.GuiSetState\(cast\[i32\]\(state\)\)$/, source)
+    assert_match(/^pub foreign def get_state\(\) -> State = cast\[State\]\(c\.GuiGetState\(\)\)$/, source)
+    assert_match(/^pub foreign def get_icons\(\) -> span\[u32\] = span\[u32\]\(data = c\.GuiGetIcons\(\), len = 2048\)$/, source)
+    assert_match(/^pub foreign def tab_bar\(bounds: Rectangle, text: span\[cstr\] as span\[ptr\[char\]\], inout active: i32\) -> i32 = c\.GuiTabBar\(bounds, text\.data, cast\[i32\]\(text\.len\), active\)$/, source)
+    assert_match(/^pub foreign def scroll_panel\(bounds: Rectangle, text: str as cstr, content: Rectangle, inout scroll: Vector2, out view: Rectangle\) -> i32 = c\.GuiScrollPanel$/, source)
+    assert_match(/^pub foreign def toggle\(bounds: Rectangle, text: str as cstr, inout active: bool\) -> i32 = c\.GuiToggle$/, source)
+    assert_match(/^pub foreign def list_view_ex\(bounds: Rectangle, text: span\[cstr\] as span\[ptr\[char\]\], inout scroll_index: i32, inout active: i32, inout focus: i32\) -> i32 = c\.GuiListViewEx\(bounds, text\.data, cast\[i32\]\(text\.len\), scroll_index, active, focus\)$/, source)
+    assert_match(/^pub foreign def value_box_float\[N\]\(bounds: Rectangle, text: str as cstr, text_value: str_builder\[N\] as ptr\[char\], inout value: f32, edit_mode: bool\) -> i32 = c\.GuiValueBoxFloat\(bounds, text, text_value, value, edit_mode\)$/, source)
+    assert_match(/^pub foreign def text_box\[N\]\(bounds: Rectangle, text: str_builder\[N\] as ptr\[char\], edit_mode: bool\) -> i32 = c\.GuiTextBox\(bounds, text, cast\[i32\]\(text_public\.capacity\(\) \+ 1\), edit_mode\)$/, source)
+    assert_match(/^pub foreign def text_input_box\[N\]\(bounds: Rectangle, title: str as cstr, message: str as cstr, buttons: str as cstr, text: str_builder\[N\] as ptr\[char\], inout secret_view_active: bool\) -> i32 = c\.GuiTextInputBox\(bounds, title, message, buttons, text, cast\[i32\]\(text_public\.capacity\(\) \+ 1\), secret_view_active\)$/, source)
   end
 
   def test_generate_supports_imports_type_alias_overrides_and_prefix_stripping
@@ -126,6 +153,206 @@ class MilkTeaImportedBindingsTest < Minitest::Test
 
       File.write(binding_path, generated)
       assert_equal File.expand_path(raw_path), binding.check!(module_roots: [dir])
+    end
+  end
+
+  def test_generate_supports_shared_from_same_name_type_defaults
+    Dir.mktmpdir("milk-tea-imported-binding-shared-types") do |dir|
+      raw_path = File.join(dir, "std", "c", "sample.mt")
+      shared_path = File.join(dir, "std", "shared.mt")
+      binding_path = File.join(dir, "std", "sample.mt")
+      policy_path = File.join(dir, "std", "sample.binding.json")
+      FileUtils.mkdir_p(File.dirname(raw_path))
+
+      File.write(raw_path, <<~MT)
+        extern module std.c.sample:
+            struct Matrix:
+                m0: f32
+
+            enum rlMode: i32
+                RL_MODE_DEFAULT = 1
+
+            const IDENTITY: Matrix = Matrix(m0 = 1.0)
+
+            extern def rlSetMatrix(matrix: Matrix) -> void
+            extern def rlGetMatrix() -> Matrix
+            extern def rlGetMode() -> rlMode
+      MT
+
+      File.write(shared_path, <<~MT)
+        module std.shared
+
+        import std.c.sample as c
+
+        pub type Matrix = c.Matrix
+      MT
+
+      File.write(policy_path, JSON.pretty_generate({
+        module_name: "std.sample",
+        raw_module_name: "std.c.sample",
+        raw_import_alias: "c",
+        imports: [
+          {
+            module_name: "std.shared",
+            alias: "shared",
+          },
+        ],
+        types: {
+          strip_prefix: "rl",
+          shared_from: ["shared"],
+        },
+        constants: {},
+        functions: {
+          strip_prefix: "rl",
+        },
+      }))
+
+      binding = MilkTea::ImportedBindings::Binding.new(
+        name: "sample",
+        module_name: "std.sample",
+        binding_path:,
+        raw_module_name: "std.c.sample",
+        policy_path:,
+      )
+
+      expected = <<~MT
+        # generated by mtc imported-bindings from std.c.sample using sample.binding.json
+        module std.sample
+
+        import std.c.sample as c
+        import std.shared as shared
+
+        pub type Matrix = shared.Matrix
+        pub type Mode = c.rlMode
+
+        pub const IDENTITY: Matrix = c.IDENTITY
+
+        pub foreign def set_matrix(matrix: Matrix) -> void = c.rlSetMatrix
+        pub foreign def get_matrix() -> Matrix = c.rlGetMatrix
+        pub foreign def get_mode() -> Mode = c.rlGetMode
+      MT
+
+      generated = binding.generate(module_roots: [dir])
+      assert_equal expected, generated
+
+      File.write(binding_path, generated)
+      assert_equal File.expand_path(raw_path), binding.check!(module_roots: [dir])
+    end
+  end
+
+  def test_generate_supports_include_prefixes_for_filtered_mixed_raw_modules
+    Dir.mktmpdir("milk-tea-imported-binding-prefixes") do |dir|
+      raw_path = File.join(dir, "std", "c", "sample.mt")
+      shared_path = File.join(dir, "std", "shared.mt")
+      binding_path = File.join(dir, "std", "sample.mt")
+      policy_path = File.join(dir, "std", "sample.binding.json")
+      FileUtils.mkdir_p(File.dirname(raw_path))
+
+      File.write(raw_path, <<~MT)
+        extern module std.c.sample:
+            struct Color:
+                r: u8
+
+            enum GuiState: i32
+                STATE_NORMAL = 0
+
+            enum GuiIconName: i32
+                ICON_NONE = 0
+
+            const RAYGUI_VERSION_MAJOR: i32 = 4
+            const SCROLLBAR_LEFT_SIDE: i32 = 0
+
+            extern def InitWindow() -> void
+            extern def GuiSetState(state: i32) -> void
+            extern def GuiDrawIcon(iconId: i32, color: Color) -> void
+            extern def GuiLabel(text: cstr) -> i32
+      MT
+
+      File.write(shared_path, <<~MT)
+        module std.shared
+
+        import std.c.sample as c
+
+        pub type Color = c.Color
+      MT
+
+      File.write(policy_path, JSON.pretty_generate({
+        module_name: "std.sample",
+        raw_module_name: "std.c.sample",
+        raw_import_alias: "c",
+        imports: [
+          {
+            module_name: "std.shared",
+            alias: "shared",
+          },
+        ],
+        types: {
+          include: ["Color"],
+          include_prefixes: ["Gui"],
+          shared_from: ["shared"],
+          strip_prefix: "Gui",
+        },
+        constants: {
+          include: ["SCROLLBAR_LEFT_SIDE"],
+          include_prefixes: ["RAYGUI_VERSION_"],
+        },
+        functions: {
+          include_prefixes: ["Gui"],
+          strip_prefix: "Gui",
+          overrides: [
+            {
+              raw: "GuiSetState",
+              params: [
+                { "name": "state", "type": "State" },
+              ],
+            },
+            {
+              raw: "GuiDrawIcon",
+              params: [
+                { "name": "icon_id", "type": "IconName" },
+                { "name": "color", "type": "Color" },
+              ],
+            },
+            {
+              raw: "GuiLabel",
+              params: [
+                { "name": "text", "type": "str", "boundary_type": "cstr" },
+              ],
+            },
+          ],
+        },
+      }))
+
+      binding = MilkTea::ImportedBindings::Binding.new(
+        name: "sample",
+        module_name: "std.sample",
+        binding_path:,
+        raw_module_name: "std.c.sample",
+        policy_path:,
+      )
+
+      expected = <<~MT
+        # generated by mtc imported-bindings from std.c.sample using sample.binding.json
+        module std.sample
+
+        import std.c.sample as c
+        import std.shared as shared
+
+        pub type Color = shared.Color
+        pub type State = c.GuiState
+        pub type IconName = c.GuiIconName
+
+        pub const RAYGUI_VERSION_MAJOR: i32 = c.RAYGUI_VERSION_MAJOR
+        pub const SCROLLBAR_LEFT_SIDE: i32 = c.SCROLLBAR_LEFT_SIDE
+
+        pub foreign def set_state(state: State) -> void = c.GuiSetState
+        pub foreign def draw_icon(icon_id: IconName, color: Color) -> void = c.GuiDrawIcon
+        pub foreign def label(text: str as cstr) -> i32 = c.GuiLabel
+      MT
+
+      generated = binding.generate(module_roots: [dir])
+      assert_equal expected, generated
+      refute_match(/^pub foreign def init_window\(/, generated)
     end
   end
 

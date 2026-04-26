@@ -470,16 +470,18 @@ module MilkTea
           when AST::LocalDecl
             type = statement.type ? resolve_type_ref(statement.type) : infer_expression_type(statement.value, env: local_env)
             c_name = c_local_name(statement.name)
-            if (foreign_call = foreign_call_info(statement.value, local_env))
+            if statement.value && (foreign_call = foreign_call_info(statement.value, local_env))
               setup, value = lower_foreign_call_statement(foreign_call, env: local_env, expected_type: type, statement_position: false)
               lowered.concat(setup)
-            else
+            elsif statement.value
               value = lower_contextual_expression(
                 statement.value,
                 env: local_env,
                 expected_type: type,
                 contextual_int_to_float: statement.type && contextual_int_to_float_target?(type),
               )
+            else
+              value = IR::ZeroInit.new(type:)
             end
             current_actual_scope(local_env[:scopes])[statement.name] = local_binding(type:, c_name:, mutable: statement.kind == :var, pointer: false)
             lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:)
@@ -890,6 +892,180 @@ module MilkTea
           receiver_arg = lower_method_receiver_argument(receiver, callee_type, env:)
           arguments = [receiver_arg, *lower_call_arguments(expression.arguments, callee_type, env:)]
           IR::Call.new(callee: callee_name, arguments:, type:)
+        when :str_buffer_clear
+          receiver_type = infer_expression_type(receiver, env:)
+          IR::Call.new(
+            callee: "mt_str_buffer_clear",
+            arguments: [
+              lower_text_buffer_data_pointer(receiver, env:),
+              IR::IntegerLiteral.new(value: text_buffer_capacity(receiver_type), type: @types.fetch("usize")),
+            ],
+            type:,
+          )
+        when :str_buffer_as_str
+          receiver_type = infer_expression_type(receiver, env:)
+          data_pointer = lower_text_buffer_data_pointer(receiver, env:)
+          IR::AggregateLiteral.new(
+            type:,
+            fields: [
+              IR::AggregateField.new(name: "data", value: data_pointer),
+              IR::AggregateField.new(
+                name: "len",
+                value: IR::Call.new(
+                  callee: "mt_str_buffer_len",
+                  arguments: [
+                    data_pointer,
+                    IR::IntegerLiteral.new(value: text_buffer_capacity(receiver_type), type: @types.fetch("usize")),
+                  ],
+                  type: @types.fetch("usize"),
+                ),
+              ),
+            ],
+          )
+        when :str_buffer_as_cstr
+          receiver_type = infer_expression_type(receiver, env:)
+          IR::Call.new(
+            callee: "mt_str_buffer_as_cstr",
+            arguments: [
+              lower_text_buffer_data_pointer(receiver, env:),
+              IR::IntegerLiteral.new(value: text_buffer_capacity(receiver_type), type: @types.fetch("usize")),
+            ],
+            type:,
+          )
+        when :str_buffer_capacity
+          receiver_type = infer_expression_type(receiver, env:)
+          IR::IntegerLiteral.new(value: text_buffer_capacity(receiver_type), type: type)
+        when :str_builder_clear
+          receiver_type = infer_expression_type(receiver, env:)
+          IR::Call.new(
+            callee: "mt_str_builder_clear",
+            arguments: [
+              lower_str_builder_data_pointer(receiver, env:),
+              IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("usize")),
+              lower_str_builder_len_pointer(receiver, env:),
+              lower_str_builder_dirty_pointer(receiver, env:),
+            ],
+            type:,
+          )
+        when :str_builder_assign
+          receiver_type = infer_expression_type(receiver, env:)
+          IR::Call.new(
+            callee: "mt_str_builder_assign",
+            arguments: [
+              lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: @types.fetch("str")),
+              lower_str_builder_data_pointer(receiver, env:),
+              IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("usize")),
+              lower_str_builder_len_pointer(receiver, env:),
+              lower_str_builder_dirty_pointer(receiver, env:),
+            ],
+            type:,
+          )
+        when :str_builder_append
+          receiver_type = infer_expression_type(receiver, env:)
+          IR::Call.new(
+            callee: "mt_str_builder_append",
+            arguments: [
+              lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: @types.fetch("str")),
+              lower_str_builder_data_pointer(receiver, env:),
+              IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("usize")),
+              lower_str_builder_len_pointer(receiver, env:),
+              lower_str_builder_dirty_pointer(receiver, env:),
+            ],
+            type:,
+          )
+        when :str_builder_len
+          receiver_type = infer_expression_type(receiver, env:)
+          IR::Call.new(
+            callee: "mt_str_builder_len",
+            arguments: [
+              lower_str_builder_data_pointer(receiver, env:),
+              IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("usize")),
+              lower_str_builder_len_pointer(receiver, env:),
+              lower_str_builder_dirty_pointer(receiver, env:),
+            ],
+            type:,
+          )
+        when :str_builder_capacity
+          receiver_type = infer_expression_type(receiver, env:)
+          IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: type)
+        when :str_builder_as_str
+          receiver_type = infer_expression_type(receiver, env:)
+          data_pointer = lower_str_builder_data_pointer(receiver, env:)
+          IR::AggregateLiteral.new(
+            type:,
+            fields: [
+              IR::AggregateField.new(name: "data", value: data_pointer),
+              IR::AggregateField.new(
+                name: "len",
+                value: IR::Call.new(
+                  callee: "mt_str_builder_len",
+                  arguments: [
+                    data_pointer,
+                    IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("usize")),
+                    lower_str_builder_len_pointer(receiver, env:),
+                    lower_str_builder_dirty_pointer(receiver, env:),
+                  ],
+                  type: @types.fetch("usize"),
+                ),
+              ),
+            ],
+          )
+        when :str_builder_as_cstr
+          receiver_type = infer_expression_type(receiver, env:)
+          IR::Call.new(
+            callee: "mt_str_builder_as_cstr",
+            arguments: [
+              lower_str_builder_data_pointer(receiver, env:),
+              IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("usize")),
+              lower_str_builder_len_pointer(receiver, env:),
+              lower_str_builder_dirty_pointer(receiver, env:),
+            ],
+            type:,
+          )
+        when :cstr_list_buffer_clear
+          receiver_type = infer_expression_type(receiver, env:)
+          IR::Call.new(
+            callee: "mt_cstr_list_buffer_clear",
+            arguments: [
+              lower_cstr_list_buffer_items_pointer(receiver, env:),
+              IR::IntegerLiteral.new(value: cstr_list_buffer_item_capacity(receiver_type), type: @types.fetch("usize")),
+              lower_cstr_list_buffer_data_pointer(receiver, env:),
+              IR::IntegerLiteral.new(value: cstr_list_buffer_byte_capacity(receiver_type), type: @types.fetch("usize")),
+              lower_cstr_list_buffer_len_pointer(receiver, env:),
+              lower_cstr_list_buffer_used_pointer(receiver, env:),
+            ],
+            type:,
+          )
+        when :cstr_list_buffer_assign
+          receiver_type = infer_expression_type(receiver, env:)
+          items_type = Types::Span.new(@types.fetch("str"))
+          IR::Call.new(
+            callee: "mt_cstr_list_buffer_assign",
+            arguments: [
+              lower_contextual_expression(expression.arguments.first.value, env:, expected_type: items_type),
+              lower_cstr_list_buffer_items_pointer(receiver, env:),
+              IR::IntegerLiteral.new(value: cstr_list_buffer_item_capacity(receiver_type), type: @types.fetch("usize")),
+              lower_cstr_list_buffer_data_pointer(receiver, env:),
+              IR::IntegerLiteral.new(value: cstr_list_buffer_byte_capacity(receiver_type), type: @types.fetch("usize")),
+              lower_cstr_list_buffer_len_pointer(receiver, env:),
+              lower_cstr_list_buffer_used_pointer(receiver, env:),
+            ],
+            type:,
+          )
+        when :cstr_list_buffer_as_cstrs
+          IR::AggregateLiteral.new(
+            type:,
+            fields: [
+              IR::AggregateField.new(name: "data", value: lower_cstr_list_buffer_items_pointer(receiver, env:)),
+              IR::AggregateField.new(name: "len", value: lower_cstr_list_buffer_len(receiver, env:)),
+            ],
+          )
+        when :cstr_list_buffer_capacity
+          receiver_type = infer_expression_type(receiver, env:)
+          IR::IntegerLiteral.new(value: cstr_list_buffer_item_capacity(receiver_type), type: type)
+        when :cstr_list_buffer_byte_capacity
+          receiver_type = infer_expression_type(receiver, env:)
+          IR::IntegerLiteral.new(value: cstr_list_buffer_byte_capacity(receiver_type), type: type)
         when :associated_method
           arguments = lower_call_arguments(expression.arguments, callee_type, env:)
           IR::Call.new(callee: callee_name, arguments:, type:)
@@ -949,7 +1125,7 @@ module MilkTea
           IR::Call.new(callee:, arguments: [lower_expression(argument.value, env:, expected_type: message_type)], type:)
         when :addr
           argument = expression.arguments.fetch(0)
-          IR::AddressOf.new(expression: lower_expression(argument.value, env:), type:)
+          lower_addr_expression(argument.value, env:, target_type: type)
         when :value
           argument = expression.arguments.fetch(0)
           IR::Unary.new(operator: "*", operand: lower_expression(argument.value, env:), type:)
@@ -977,6 +1153,17 @@ module MilkTea
         end
 
         lowered_receiver
+      end
+
+      def lower_addr_expression(expression, env:, target_type:)
+        lowered_expression = lower_expression(expression, env:)
+        return cast_expression(lowered_expression, target_type) if lowered_expression.is_a?(IR::Name) && lowered_expression.pointer
+
+        if lowered_expression.is_a?(IR::Unary) && lowered_expression.operator == "*"
+          return cast_expression(lowered_expression.operand, target_type)
+        end
+
+        IR::AddressOf.new(expression: lowered_expression, type: target_type)
       end
 
       def lower_call_arguments(arguments, callee_type, env:)
@@ -1118,18 +1305,67 @@ module MilkTea
         replacements = {}
         entries = binding.ast.params.each_with_index.map do |param_ast, index|
           parameter = binding.type.params.fetch(index)
+          public_alias = param_ast.boundary_type ? foreign_mapping_public_alias_name(param_ast.name) : nil
           {
+            argument: arguments.fetch(index),
             param_ast:,
             parameter:,
             temp_type: parameter.boundary_type || parameter.type,
-            lowered_value: lower_foreign_argument_value(parameter, arguments.fetch(index), env:, scratch:),
+            public_alias:,
+            public_reference_count: public_alias ? reference_counts.fetch(public_alias, 0) : 0,
             reference_count: reference_counts.fetch(param_ast.name, 0),
+            lowered_value: nil,
           }
+        end
+
+        entries.each do |entry|
+          next unless entry[:public_reference_count].positive?
+
+          public_value = lower_contextual_expression(entry[:argument].value, env:, expected_type: entry[:parameter].type)
+          if public_value.is_a?(IR::Name)
+            current_actual_scope(mapping_env[:scopes])[entry[:public_alias]] = local_binding(
+              type: entry[:parameter].type,
+              c_name: public_value.name,
+              mutable: false,
+              pointer: public_value.pointer,
+            )
+            replacements[entry[:public_alias]] = public_value
+            next
+          end
+
+          public_temp_name = fresh_c_temp_name(env, "foreign_arg_public")
+          lowered << IR::LocalDecl.new(
+            name: public_temp_name,
+            c_name: public_temp_name,
+            type: entry[:parameter].type,
+            value: public_value,
+          )
+          current_actual_scope(mapping_env[:scopes])[entry[:public_alias]] = local_binding(
+            type: entry[:parameter].type,
+            c_name: public_temp_name,
+            mutable: false,
+            pointer: false,
+          )
+          replacements[entry[:public_alias]] = IR::Name.new(name: public_temp_name, type: entry[:parameter].type, pointer: false)
+        end
+
+        entries.each do |entry|
+          next unless entry[:reference_count].positive?
+
+          source_argument = if entry[:public_reference_count].positive?
+                              AST::Argument.new(name: nil, value: AST::Identifier.new(name: entry[:public_alias]))
+                            else
+                              entry[:argument]
+                            end
+          source_env = entry[:public_reference_count].positive? ? mapping_env : env
+          entry[:lowered_value] = lower_foreign_argument_value(entry[:parameter], source_argument, env: source_env, scratch:)
         end
 
         inline_direct_call_names = inlineable_single_direct_call_names(entries, scratch:)
 
         entries.each do |entry|
+          next unless entry[:reference_count].positive?
+
           param_ast = entry[:param_ast]
           temp_type = entry[:temp_type]
           lowered_value = entry[:lowered_value]
@@ -1157,6 +1393,8 @@ module MilkTea
         return [] if scratch
 
         blocked_entries = entries.select do |entry|
+          next false unless entry[:reference_count].positive?
+
           entry[:reference_count] > 1 || !inlineable_foreign_argument_expression?(entry[:lowered_value])
         end
         return [] unless blocked_entries.length == 1
@@ -1185,7 +1423,15 @@ module MilkTea
             raise LoweringError, "foreign call requires using scratch" unless scratch
 
             lower_expression(foreign_scratch_method_call(scratch, "to_cstr", [argument.value]), env:, expected_type: parameter.boundary_type)
+          elsif foreign_span_boundary_compatible?(parameter.type, parameter.boundary_type)
+            lower_foreign_span_argument_value(parameter, argument, env:, scratch:)
+          elsif foreign_char_pointer_buffer_boundary_compatible?(parameter.type, parameter.boundary_type)
+            lower_foreign_char_pointer_buffer_argument_value(parameter, argument, env:)
           else
+            lowered_value = lower_contextual_expression(argument.value, env:, expected_type: parameter.type)
+            converted = foreign_identity_projection_expression(lowered_value, parameter.boundary_type)
+            return converted if converted
+
             raise LoweringError, "unsupported foreign boundary mapping #{parameter.type} as #{parameter.boundary_type}"
           end
         when :out, :inout
@@ -1195,6 +1441,29 @@ module MilkTea
         end
       end
 
+      def lower_foreign_span_argument_value(parameter, argument, env:, scratch:)
+        public_type = parameter.type
+        boundary_type = parameter.boundary_type
+        lowered_value = lower_contextual_expression(argument.value, env:, expected_type: public_type)
+        return lowered_value if public_type == boundary_type
+
+        public_element_type = public_type.element_type
+        boundary_element_type = boundary_type.element_type
+
+        data_expression = IR::Member.new(receiver: lowered_value, member: "data", type: pointer_to(public_element_type))
+        converted_data = foreign_identity_projection_expression(data_expression, pointer_to(boundary_element_type))
+        raise LoweringError, "unsupported foreign boundary mapping #{public_type} as #{boundary_type}" unless converted_data
+
+        len_expression = IR::Member.new(receiver: lowered_value, member: "len", type: @types.fetch("usize"))
+        IR::AggregateLiteral.new(
+          type: boundary_type,
+          fields: [
+            IR::AggregateField.new(name: "data", value: converted_data),
+            IR::AggregateField.new(name: "len", value: len_expression),
+          ],
+        )
+      end
+
       def lower_foreign_pointer_argument_value(parameter, argument, env:)
         operand = argument.value.operand
         address = IR::AddressOf.new(
@@ -1202,10 +1471,38 @@ module MilkTea
           type: pointer_to(parameter.type),
         )
 
-        return address if parameter.boundary_type == address.type
-        return cast_expression(address, parameter.boundary_type) if foreign_identity_projection_compatible?(address.type, parameter.boundary_type)
+        converted = foreign_identity_projection_expression(address, parameter.boundary_type)
+        return converted if converted
 
         raise LoweringError, "unsupported foreign pointer boundary mapping #{parameter.type} as #{parameter.boundary_type}"
+      end
+
+      def lower_foreign_char_pointer_buffer_argument_value(parameter, argument, env:)
+        public_type = parameter.type
+
+        if text_buffer_type?(public_type)
+          return lower_text_buffer_data_pointer(argument.value, env:)
+        end
+
+        if str_builder_type?(public_type)
+          return IR::Call.new(
+            callee: "mt_str_builder_prepare_write",
+            arguments: [
+              lower_str_builder_data_pointer(argument.value, env:),
+              IR::IntegerLiteral.new(value: str_builder_capacity(public_type), type: @types.fetch("usize")),
+              lower_str_builder_dirty_pointer(argument.value, env:),
+            ],
+            type: parameter.boundary_type,
+          )
+        end
+
+        lowered_value = lower_contextual_expression(argument.value, env:, expected_type: public_type)
+        return IR::Member.new(receiver: lowered_value, member: "data", type: parameter.boundary_type) if public_type.is_a?(Types::Span) && public_type.element_type == @types.fetch("char")
+
+        converted = foreign_identity_projection_expression(lowered_value, parameter.boundary_type)
+        return converted if converted
+
+        raise LoweringError, "unsupported foreign boundary mapping #{public_type} as #{parameter.boundary_type}"
       end
 
       def lower_foreign_call_inline(expression, binding, env:, type:)
@@ -1215,17 +1512,30 @@ module MilkTea
         mapping_env = duplicate_env(env)
 
         binding.ast.params.each_with_index do |param_ast, index|
-          next unless reference_counts.fetch(param_ast.name, 0) > 1
+          public_alias = param_ast.boundary_type ? foreign_mapping_public_alias_name(param_ast.name) : nil
+          total_references = reference_counts.fetch(param_ast.name, 0)
+          total_references += reference_counts.fetch(public_alias, 0) if public_alias
+          next unless total_references > 1
           next if simple_foreign_argument_expression?(expression.arguments.fetch(index).value)
 
           raise LoweringError, "foreign call #{binding.name} requires statement-position lowering because #{param_ast.name} is used multiple times"
         end
 
-        replacements = binding.ast.params.each_with_index.to_h do |param_ast, index|
+        replacements = {}
+        binding.ast.params.each_with_index do |param_ast, index|
           parameter = binding.type.params.fetch(index)
           temp_type = parameter.boundary_type || parameter.type
-          current_actual_scope(mapping_env[:scopes])[param_ast.name] = local_binding(type: temp_type, c_name: param_ast.name, mutable: false, pointer: false)
-          [param_ast.name, lower_foreign_argument_value(parameter, expression.arguments.fetch(index), env:, scratch: nil)]
+          public_alias = param_ast.boundary_type ? foreign_mapping_public_alias_name(param_ast.name) : nil
+
+          if reference_counts.fetch(param_ast.name, 0).positive?
+            current_actual_scope(mapping_env[:scopes])[param_ast.name] = local_binding(type: temp_type, c_name: param_ast.name, mutable: false, pointer: false)
+            replacements[param_ast.name] = lower_foreign_argument_value(parameter, expression.arguments.fetch(index), env:, scratch: nil)
+          end
+
+          next unless public_alias && reference_counts.fetch(public_alias, 0).positive?
+
+          current_actual_scope(mapping_env[:scopes])[public_alias] = local_binding(type: parameter.type, c_name: public_alias, mutable: false, pointer: false)
+          replacements[public_alias] = lower_contextual_expression(expression.arguments.fetch(index).value, env:, expected_type: parameter.type)
         end
 
         lowered_expression = lower_inline_foreign_mapping_expression(
@@ -1236,7 +1546,8 @@ module MilkTea
           expected_type: type,
         )
 
-        return cast_expression(lowered_expression, type) if foreign_identity_projection_compatible?(lowered_expression.type, type)
+        converted = foreign_identity_projection_expression(lowered_expression, type)
+        return converted if converted
 
         lowered_expression
       end
@@ -1404,15 +1715,19 @@ module MilkTea
           IR::ZeroInit.new(type:)
         when :addr
           argument = expression.arguments.fetch(0)
-          IR::AddressOf.new(
-            expression: lower_inline_foreign_mapping_expression(
-              argument.value,
-              mapping_env:,
-              replacements:,
-              owner_analysis:,
-            ),
-            type:,
+          lowered_argument = lower_inline_foreign_mapping_expression(
+            argument.value,
+            mapping_env:,
+            replacements:,
+            owner_analysis:,
           )
+          if lowered_argument.is_a?(IR::Name) && lowered_argument.pointer
+            cast_expression(lowered_argument, type)
+          elsif lowered_argument.is_a?(IR::Unary) && lowered_argument.operator == "*"
+            cast_expression(lowered_argument.operand, type)
+          else
+            IR::AddressOf.new(expression: lowered_argument, type:)
+          end
         when :value
           argument = expression.arguments.fetch(0)
           IR::Unary.new(
@@ -1425,6 +1740,26 @@ module MilkTea
             ),
             type:,
           )
+        when :str_buffer_capacity
+          receiver_type = with_analysis_context(owner_analysis) do
+            infer_expression_type(receiver, env: mapping_env)
+          end
+          IR::IntegerLiteral.new(value: text_buffer_capacity(receiver_type), type:)
+        when :str_builder_capacity
+          receiver_type = with_analysis_context(owner_analysis) do
+            infer_expression_type(receiver, env: mapping_env)
+          end
+          IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type:)
+        when :cstr_list_buffer_capacity
+          receiver_type = with_analysis_context(owner_analysis) do
+            infer_expression_type(receiver, env: mapping_env)
+          end
+          IR::IntegerLiteral.new(value: cstr_list_buffer_item_capacity(receiver_type), type:)
+        when :cstr_list_buffer_byte_capacity
+          receiver_type = with_analysis_context(owner_analysis) do
+            infer_expression_type(receiver, env: mapping_env)
+          end
+          IR::IntegerLiteral.new(value: cstr_list_buffer_byte_capacity(receiver_type), type:)
         when :raw
           argument = expression.arguments.fetch(0)
           IR::Cast.new(
@@ -1507,6 +1842,10 @@ module MilkTea
           callee: decl.mapping,
           arguments: decl.params.map { |param| AST::Argument.new(name: nil, value: AST::Identifier.new(name: param.name)) },
         )
+      end
+
+      def foreign_mapping_public_alias_name(name)
+        "#{name}_public"
       end
 
       def substitute_foreign_mapping_expression(expression, replacements)
@@ -1624,12 +1963,65 @@ module MilkTea
       end
 
       def lower_contextual_expression(expression, env:, expected_type:, external_numeric: false, contextual_int_to_float: false)
+        if string_literal_cstr_compatibility?(expression, expected_type)
+          return IR::StringLiteral.new(value: expression.value, type: expected_type, cstring: true)
+        end
+
         lowered = lower_expression(expression, env:, expected_type: expected_type)
         return lowered unless expected_type
         return lowered if lowered.type == expected_type
+        return lower_str_builder_to_span_expression(lowered, expected_type) if str_builder_to_span_compatible?(lowered.type, expected_type)
+        return lower_array_to_span_expression(lowered, expected_type) if array_to_span_compatible?(lowered.type, expected_type)
         return cast_expression(lowered, expected_type) if contextual_numeric_compatibility?(expression, lowered.type, expected_type, external_numeric:, contextual_int_to_float:)
 
         lowered
+      end
+
+      def lower_array_to_span_expression(expression, target_type)
+        IR::AggregateLiteral.new(
+          type: target_type,
+          fields: [
+            IR::AggregateField.new(
+              name: "data",
+              value: IR::AddressOf.new(
+                expression: IR::Index.new(
+                  receiver: expression,
+                  index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize")),
+                  type: target_type.element_type,
+                ),
+                type: pointer_to(target_type.element_type),
+              ),
+            ),
+            IR::AggregateField.new(
+              name: "len",
+              value: IR::IntegerLiteral.new(value: array_length(expression.type), type: @types.fetch("usize")),
+            ),
+          ],
+        )
+      end
+
+      def lower_str_builder_to_span_expression(expression, target_type)
+        IR::AggregateLiteral.new(
+          type: target_type,
+          fields: [
+            IR::AggregateField.new(
+              name: "data",
+              value: IR::Call.new(
+                callee: "mt_str_builder_prepare_write",
+                arguments: [
+                  lower_str_builder_data_pointer_from_lowered(expression),
+                  IR::IntegerLiteral.new(value: str_builder_capacity(expression.type), type: @types.fetch("usize")),
+                  lower_str_builder_dirty_pointer_from_lowered(expression),
+                ],
+                type: pointer_to(target_type.element_type),
+              ),
+            ),
+            IR::AggregateField.new(
+              name: "len",
+              value: IR::IntegerLiteral.new(value: str_builder_storage_capacity(expression.type), type: @types.fetch("usize")),
+            ),
+          ],
+        )
       end
 
       def contextual_numeric_compatibility?(expression, actual_type, expected_type, external_numeric: false, contextual_int_to_float: false)
@@ -1639,6 +2031,10 @@ module MilkTea
         return true if contextual_int_to_float && contextual_int_to_float_compatibility?(actual_type, expected_type)
 
         false
+      end
+
+      def string_literal_cstr_compatibility?(expression, expected_type)
+        expression.is_a?(AST::StringLiteral) && !expression.cstring && expected_type == @types.fetch("cstr")
       end
 
       def integer_literal_numeric_compatibility?(expression, expected_type)
@@ -1755,6 +2151,18 @@ module MilkTea
             return [:method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: resolved_receiver_type), callee.receiver, method_binding.type]
           end
 
+          if (text_buffer_method = text_buffer_method_kind(resolved_receiver_type, callee.member))
+            return [text_buffer_method, nil, callee.receiver, text_buffer_method_type(text_buffer_method, resolved_receiver_type)]
+          end
+
+          if (str_builder_method = str_builder_method_kind(resolved_receiver_type, callee.member))
+            return [str_builder_method, nil, callee.receiver, str_builder_method_type(str_builder_method, resolved_receiver_type)]
+          end
+
+          if (cstr_list_buffer_method = cstr_list_buffer_method_kind(resolved_receiver_type, callee.member))
+            return [cstr_list_buffer_method, nil, callee.receiver, cstr_list_buffer_method_type(cstr_list_buffer_method, resolved_receiver_type)]
+          end
+
           raise LoweringError, "unknown callee #{callee.receiver}.#{callee.member}"
         when AST::Specialization
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "cast"
@@ -1770,6 +2178,11 @@ module MilkTea
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "array"
             array_type = resolve_type_ref(AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["array"]), arguments: callee.arguments, nullable: false))
             return [:array, nil, nil, array_type]
+          end
+
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "str_buffer"
+            text_buffer_type = resolve_type_ref(AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["str_buffer"]), arguments: callee.arguments, nullable: false))
+            return [:array, nil, nil, text_buffer_type]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "span"
@@ -1889,7 +2302,9 @@ module MilkTea
         when AST::Call
           kind, = resolve_callee(expression.callee, env, arguments: expression.arguments)
           case kind
-          when :function, :method, :associated_method
+          when :function, :method, :associated_method, :str_buffer_clear, :str_buffer_as_str, :str_buffer_as_cstr, :str_buffer_capacity,
+            :str_builder_clear, :str_builder_assign, :str_builder_append, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr,
+            :cstr_list_buffer_clear, :cstr_list_buffer_assign, :cstr_list_buffer_as_cstrs, :cstr_list_buffer_capacity, :cstr_list_buffer_byte_capacity
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             function_type.return_type
           when :struct_literal, :array
@@ -2004,20 +2419,123 @@ module MilkTea
         IR::Cast.new(target_type:, expression:, type: target_type)
       end
 
+      def reinterpret_expression(expression, target_type)
+        return expression if expression.type == target_type
+
+        IR::ReinterpretExpr.new(target_type:, source_type: expression.type, expression:, type: target_type)
+      end
+
+      def foreign_identity_projection_expression(expression, target_type)
+        return expression if expression.type == target_type
+        return cast_expression(expression, target_type) if foreign_identity_projection_cast_compatible?(expression.type, target_type)
+        return reinterpret_expression(expression, target_type) if foreign_identity_projection_reinterpret_compatible?(expression.type, target_type)
+
+        nil
+      end
+
       def foreign_identity_projection_compatible?(actual_type, expected_type)
+        foreign_identity_projection_cast_compatible?(actual_type, expected_type) ||
+          foreign_identity_projection_reinterpret_compatible?(actual_type, expected_type)
+      end
+
+      def foreign_span_boundary_compatible?(public_type, boundary_type)
+        return false unless public_type.is_a?(Types::Span) && boundary_type.is_a?(Types::Span)
+
+        foreign_boundary_element_compatible?(public_type.element_type, boundary_type.element_type)
+      end
+
+      def foreign_char_pointer_buffer_boundary_compatible?(public_type, boundary_type)
+        return false unless char_pointer_type?(boundary_type)
+
+        return true if public_type.is_a?(Types::Span) && public_type.element_type == @types.fetch("char")
+        return true if str_builder_type?(public_type)
+
+        text_buffer_type?(public_type)
+      end
+
+      def foreign_boundary_element_compatible?(public_type, boundary_type)
+        return true if public_type == boundary_type
+        return true if public_type == @types.fetch("str") && boundary_type == @types.fetch("cstr")
+
+        foreign_identity_projection_compatible?(public_type, boundary_type)
+      end
+
+      def foreign_identity_projection_cast_compatible?(actual_type, expected_type)
+        return true if actual_type == expected_type
+
         if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
-          return foreign_identity_projection_compatible?(actual_type.base, expected_type.base)
+          return foreign_identity_projection_cast_compatible?(actual_type.base, expected_type.base)
         end
 
-        return foreign_identity_projection_compatible?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
+        return foreign_identity_projection_cast_compatible?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
         return false if actual_type.is_a?(Types::Nullable)
 
-        return true if pointer_type?(actual_type) && pointer_type?(expected_type) && (void_pointer_type?(actual_type) || void_pointer_type?(expected_type))
+        if pointer_type?(actual_type) && pointer_type?(expected_type)
+          return true if void_pointer_type?(actual_type) || void_pointer_type?(expected_type)
+
+          return true if foreign_identity_projection_cast_compatible?(actual_type.arguments.first, expected_type.arguments.first)
+
+          return foreign_external_layout_compatible?(actual_type.arguments.first, expected_type.arguments.first)
+        end
+
         return true if void_pointer_type?(actual_type) && opaque_type?(expected_type)
         return true if opaque_type?(actual_type) && void_pointer_type?(expected_type)
         return true if char_pointer_type?(actual_type) && expected_type == @types.fetch("cstr")
+        return true if actual_type == @types.fetch("cstr") && char_pointer_type?(expected_type)
 
         false
+      end
+
+      def foreign_identity_projection_reinterpret_compatible?(actual_type, expected_type)
+        if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
+          return foreign_identity_projection_reinterpret_compatible?(actual_type.base, expected_type.base)
+        end
+
+        return foreign_identity_projection_reinterpret_compatible?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
+        return false if actual_type.is_a?(Types::Nullable)
+
+        foreign_external_layout_compatible?(actual_type, expected_type)
+      end
+
+      def foreign_external_layout_compatible?(actual_type, expected_type, seen = {})
+        return false unless actual_type.is_a?(Types::Struct) && expected_type.is_a?(Types::Struct)
+        return false if actual_type.is_a?(Types::Union) != expected_type.is_a?(Types::Union)
+        return false unless actual_type.external && expected_type.external
+        return false unless actual_type.name == expected_type.name
+        return false unless actual_type.packed == expected_type.packed
+        return false unless actual_type.alignment == expected_type.alignment
+
+        key = [actual_type.object_id, expected_type.object_id]
+        return true if seen[key]
+
+        seen[key] = true
+        actual_fields = actual_type.fields
+        expected_fields = expected_type.fields
+        return false unless actual_fields.keys == expected_fields.keys
+
+        actual_fields.all? do |field_name, field_type|
+          foreign_external_layout_field_compatible?(field_type, expected_fields.fetch(field_name), seen)
+        end
+      end
+
+      def foreign_external_layout_field_compatible?(actual_type, expected_type, seen)
+        return true if actual_type == expected_type
+
+        if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
+          return foreign_external_layout_field_compatible?(actual_type.base, expected_type.base, seen)
+        end
+
+        if pointer_type?(actual_type) && pointer_type?(expected_type)
+          return foreign_external_layout_field_compatible?(actual_type.arguments.first, expected_type.arguments.first, seen)
+        end
+
+        if array_type?(actual_type) && array_type?(expected_type)
+          return false unless array_length(actual_type) == array_length(expected_type)
+
+          return foreign_external_layout_field_compatible?(array_element_type(actual_type), array_element_type(expected_type), seen)
+        end
+
+        foreign_external_layout_compatible?(actual_type, expected_type, seen)
       end
 
       def void_pointer_type?(type)
@@ -2117,9 +2635,14 @@ module MilkTea
 
       def resolve_specialization_type_arguments(expression)
         expression.arguments.map do |argument|
-          raise LoweringError, "callable specialization arguments must be types" unless argument.value.is_a?(AST::TypeRef)
-
-          resolve_type_ref(argument.value)
+          case argument.value
+          when AST::TypeRef
+            resolve_type_ref(argument.value)
+          when AST::IntegerLiteral, AST::FloatLiteral
+            Types::LiteralTypeArg.new(argument.value.value)
+          else
+            raise LoweringError, "callable specialization arguments must be types or literal type arguments"
+          end
         end
       end
 
@@ -2313,20 +2836,314 @@ module MilkTea
       end
 
       def array_type?(type)
-        type.is_a?(Types::GenericInstance) && type.name == "array" && type.arguments.length == 2 &&
-          type.arguments[1].is_a?(Types::LiteralTypeArg)
+        text_buffer_type?(type) ||
+          (type.is_a?(Types::GenericInstance) && type.name == "array" && type.arguments.length == 2 &&
+          type.arguments[1].is_a?(Types::LiteralTypeArg))
       end
 
       def array_element_type(type)
         return unless array_type?(type)
 
+        return @types.fetch("char") if text_buffer_type?(type)
+
         type.arguments.first
+      end
+
+      def array_to_span_compatible?(actual_type, expected_type)
+        array_type?(actual_type) && expected_type.is_a?(Types::Span) && array_element_type(actual_type) == expected_type.element_type
+      end
+
+      def str_builder_to_span_compatible?(actual_type, expected_type)
+        str_builder_type?(actual_type) && expected_type.is_a?(Types::Span) && expected_type.element_type == @types.fetch("char")
       end
 
       def array_length(type)
         return unless array_type?(type)
 
+        return type.arguments.first.value if text_buffer_type?(type)
+
         type.arguments[1].value
+      end
+
+      def text_buffer_capacity(type)
+        array_length(type)
+      end
+
+      def str_builder_type?(type)
+        type.is_a?(Types::GenericInstance) && type.name == "str_builder" && type.arguments.length == 1 &&
+          type.arguments.first.is_a?(Types::LiteralTypeArg) && type.arguments.first.value.is_a?(Integer)
+      end
+
+      def str_builder_capacity(type)
+        type.arguments.first.value
+      end
+
+      def str_builder_storage_capacity(type)
+        str_builder_capacity(type) + 1
+      end
+
+      def cstr_list_buffer_item_capacity(type)
+        type.arguments[0].value
+      end
+
+      def cstr_list_buffer_byte_capacity(type)
+        type.arguments[1].value
+      end
+
+      def text_buffer_method_kind(receiver_type, name)
+        return unless text_buffer_type?(receiver_type)
+
+        case name
+        when "clear"
+          :str_buffer_clear
+        when "as_str"
+          :str_buffer_as_str
+        when "as_cstr"
+          :str_buffer_as_cstr
+        when "capacity"
+          :str_buffer_capacity
+        end
+      end
+
+      def str_builder_method_kind(receiver_type, name)
+        return unless str_builder_type?(receiver_type)
+
+        case name
+        when "clear"
+          :str_builder_clear
+        when "assign"
+          :str_builder_assign
+        when "append"
+          :str_builder_append
+        when "len"
+          :str_builder_len
+        when "capacity"
+          :str_builder_capacity
+        when "as_str"
+          :str_builder_as_str
+        when "as_cstr"
+          :str_builder_as_cstr
+        end
+      end
+
+      def cstr_list_buffer_method_kind(receiver_type, name)
+        return unless cstr_list_buffer_type?(receiver_type)
+
+        case name
+        when "clear"
+          :cstr_list_buffer_clear
+        when "assign"
+          :cstr_list_buffer_assign
+        when "as_cstrs"
+          :cstr_list_buffer_as_cstrs
+        when "capacity"
+          :cstr_list_buffer_capacity
+        when "byte_capacity"
+          :cstr_list_buffer_byte_capacity
+        end
+      end
+
+      def text_buffer_method_type(kind, receiver_type)
+        return_type = case kind
+                      when :str_buffer_clear
+                        @types.fetch("void")
+                      when :str_buffer_as_str
+                        @types.fetch("str")
+                      when :str_buffer_as_cstr
+                        @types.fetch("cstr")
+                      when :str_buffer_capacity
+                        @types.fetch("usize")
+                      else
+                        raise LoweringError, "unsupported str_buffer method #{kind}"
+                      end
+
+        Types::Function.new(
+          kind.to_s,
+          params: [],
+          return_type:,
+          receiver_type:,
+          receiver_mutable: kind == :str_buffer_clear,
+          external: false,
+        )
+      end
+
+      def str_builder_method_type(kind, receiver_type)
+        return_type, params = case kind
+                              when :str_builder_clear
+                                [@types.fetch("void"), []]
+                              when :str_builder_assign, :str_builder_append
+                                [@types.fetch("void"), [Types::Parameter.new("value", @types.fetch("str"))]]
+                              when :str_builder_len, :str_builder_capacity
+                                [@types.fetch("usize"), []]
+                              when :str_builder_as_str
+                                [@types.fetch("str"), []]
+                              when :str_builder_as_cstr
+                                [@types.fetch("cstr"), []]
+                              else
+                                raise LoweringError, "unsupported str_builder method #{kind}"
+                              end
+
+        Types::Function.new(
+          kind.to_s,
+          params:,
+          return_type:,
+          receiver_type:,
+          receiver_mutable: %i[str_builder_clear str_builder_assign str_builder_append].include?(kind),
+          external: false,
+        )
+      end
+
+      def cstr_list_buffer_method_type(kind, receiver_type)
+        return_type, params = case kind
+                              when :cstr_list_buffer_clear
+                                [@types.fetch("void"), []]
+                              when :cstr_list_buffer_assign
+                                [@types.fetch("void"), [Types::Parameter.new("items", Types::Span.new(@types.fetch("str")))]]
+                              when :cstr_list_buffer_as_cstrs
+                                [Types::Span.new(@types.fetch("cstr")), []]
+                              when :cstr_list_buffer_capacity, :cstr_list_buffer_byte_capacity
+                                [@types.fetch("usize"), []]
+                              else
+                                raise LoweringError, "unsupported cstr_list_buffer method #{kind}"
+                              end
+
+        Types::Function.new(
+          kind.to_s,
+          params:,
+          return_type:,
+          receiver_type:,
+          receiver_mutable: %i[cstr_list_buffer_clear cstr_list_buffer_assign].include?(kind),
+          external: false,
+        )
+      end
+
+      def lower_text_buffer_data_pointer(expression, env:)
+        lowered_receiver = lower_expression(expression, env:)
+        IR::AddressOf.new(
+          expression: IR::Index.new(
+            receiver: lowered_receiver,
+            index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize")),
+            type: @types.fetch("char"),
+          ),
+          type: pointer_to(@types.fetch("char")),
+        )
+      end
+
+      def lower_str_builder_data_pointer(expression, env:)
+        lower_str_builder_data_pointer_from_lowered(lower_expression(expression, env:))
+      end
+
+      def lower_str_builder_data_pointer_from_lowered(lowered_receiver)
+        IR::AddressOf.new(
+          expression: IR::Index.new(
+            receiver: IR::Member.new(
+              receiver: lowered_receiver,
+              member: "data",
+              type: Types::GenericInstance.new(
+                "array",
+                [@types.fetch("char"), Types::LiteralTypeArg.new(str_builder_storage_capacity(lowered_receiver.type))],
+              ),
+            ),
+            index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize")),
+            type: @types.fetch("char"),
+          ),
+          type: pointer_to(@types.fetch("char")),
+        )
+      end
+
+      def lower_str_builder_len_pointer(expression, env:)
+        lower_str_builder_len_pointer_from_lowered(lower_expression(expression, env:))
+      end
+
+      def lower_str_builder_len_pointer_from_lowered(lowered_receiver)
+        IR::AddressOf.new(
+          expression: IR::Member.new(receiver: lowered_receiver, member: "len", type: @types.fetch("usize")),
+          type: pointer_to(@types.fetch("usize")),
+        )
+      end
+
+      def lower_str_builder_dirty_pointer(expression, env:)
+        lower_str_builder_dirty_pointer_from_lowered(lower_expression(expression, env:))
+      end
+
+      def lower_str_builder_dirty_pointer_from_lowered(lowered_receiver)
+        IR::AddressOf.new(
+          expression: IR::Member.new(receiver: lowered_receiver, member: "dirty", type: @types.fetch("bool")),
+          type: pointer_to(@types.fetch("bool")),
+        )
+      end
+
+      def lower_cstr_list_buffer_items_pointer(expression, env:)
+        receiver_type = infer_expression_type(expression, env:)
+        lowered_receiver = lower_expression(expression, env:)
+        IR::AddressOf.new(
+          expression: IR::Index.new(
+            receiver: IR::Member.new(
+              receiver: lowered_receiver,
+              member: "items",
+              type: Types::GenericInstance.new(
+                "array",
+                [@types.fetch("cstr"), Types::LiteralTypeArg.new(cstr_list_buffer_item_capacity(receiver_type))],
+              ),
+            ),
+            index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize")),
+            type: @types.fetch("cstr"),
+          ),
+          type: pointer_to(@types.fetch("cstr")),
+        )
+      end
+
+      def lower_cstr_list_buffer_data_pointer(expression, env:)
+        receiver_type = infer_expression_type(expression, env:)
+        lowered_receiver = lower_expression(expression, env:)
+        IR::AddressOf.new(
+          expression: IR::Index.new(
+            receiver: IR::Member.new(
+              receiver: lowered_receiver,
+              member: "data",
+              type: Types::GenericInstance.new(
+                "array",
+                [@types.fetch("char"), Types::LiteralTypeArg.new(cstr_list_buffer_byte_capacity(receiver_type))],
+              ),
+            ),
+            index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize")),
+            type: @types.fetch("char"),
+          ),
+          type: pointer_to(@types.fetch("char")),
+        )
+      end
+
+      def lower_cstr_list_buffer_len(expression, env:)
+        IR::Member.new(
+          receiver: lower_expression(expression, env:),
+          member: "len",
+          type: @types.fetch("usize"),
+        )
+      end
+
+      def lower_cstr_list_buffer_len_pointer(expression, env:)
+        IR::AddressOf.new(expression: lower_cstr_list_buffer_len(expression, env:), type: pointer_to(@types.fetch("usize")))
+      end
+
+      def lower_cstr_list_buffer_used_pointer(expression, env:)
+        IR::AddressOf.new(
+          expression: IR::Member.new(
+            receiver: lower_expression(expression, env:),
+            member: "used",
+            type: @types.fetch("usize"),
+          ),
+          type: pointer_to(@types.fetch("usize")),
+        )
+      end
+
+      def text_buffer_type?(type)
+        type.is_a?(Types::GenericInstance) && type.name == "str_buffer" && type.arguments.length == 1 &&
+          type.arguments.first.is_a?(Types::LiteralTypeArg) && type.arguments.first.value.is_a?(Integer)
+      end
+
+      def cstr_list_buffer_type?(type)
+        type.is_a?(Types::GenericInstance) && type.name == "cstr_list_buffer" && type.arguments.length == 2 &&
+          type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) && argument.value.is_a?(Integer) }
       end
 
       def addressable_storage_expression?(expression)
@@ -2843,8 +3660,22 @@ module MilkTea
         when "array"
           raise LoweringError, "array requires exactly two type arguments" unless arguments.length == 2
           raise LoweringError, "array element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise LoweringError, "array length must be an integer literal" unless arguments[1].is_a?(Types::LiteralTypeArg) && arguments[1].value.is_a?(Integer)
-          raise LoweringError, "array length must be positive" unless arguments[1].value.positive?
+          raise LoweringError, "array length must be an integer literal" unless generic_integer_type_argument?(arguments[1])
+          raise LoweringError, "array length must be positive" if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
+        when "str_buffer"
+          raise LoweringError, "str_buffer requires exactly one type argument" unless arguments.length == 1
+          raise LoweringError, "str_buffer capacity must be an integer literal" unless generic_integer_type_argument?(arguments.first)
+          raise LoweringError, "str_buffer capacity must be positive" if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
+        when "str_builder"
+          raise LoweringError, "str_builder requires exactly one type argument" unless arguments.length == 1
+          raise LoweringError, "str_builder capacity must be an integer literal" unless generic_integer_type_argument?(arguments.first)
+          raise LoweringError, "str_builder capacity must be positive" if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
+        when "cstr_list_buffer"
+          raise LoweringError, "cstr_list_buffer requires exactly two type arguments" unless arguments.length == 2
+          raise LoweringError, "cstr_list_buffer item capacity must be an integer literal" unless generic_integer_type_argument?(arguments[0])
+          raise LoweringError, "cstr_list_buffer byte capacity must be an integer literal" unless generic_integer_type_argument?(arguments[1])
+          raise LoweringError, "cstr_list_buffer item capacity must be positive" if integer_type_argument?(arguments[0]) && !arguments[0].value.positive?
+          raise LoweringError, "cstr_list_buffer byte capacity must be positive" if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
         when "Result"
           raise LoweringError, "Result requires exactly two type arguments" unless arguments.length == 2
           raise LoweringError, "Result ok type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
@@ -2852,6 +3683,14 @@ module MilkTea
         else
           raise LoweringError, "unknown generic type #{name}"
         end
+      end
+
+      def integer_type_argument?(argument)
+        argument.is_a?(Types::LiteralTypeArg) && argument.value.is_a?(Integer)
+      end
+
+      def generic_integer_type_argument?(argument)
+        integer_type_argument?(argument) || argument.is_a?(Types::TypeVar)
       end
 
       def enum_member_c_name(type, member_name)

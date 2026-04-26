@@ -829,6 +829,293 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_utf_8_str_slice_on_codepoint_boundary
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-str-utf8-slice") do |dir|
+      source_path = File.join(dir, "str_utf8_slice.mt")
+
+      File.write(source_path, [
+        "module demo.str_utf8_slice_runtime",
+        "",
+        "import std.str",
+        "",
+        "def main() -> i32:",
+        "    let text = \"éx\"",
+        "    let part = text.slice(0, 2)",
+        "    if text.len == cast[usize](3) and part.len == cast[usize](2):",
+        "        return cast[i32](part.len)",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 2, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_rejects_str_slice_with_non_utf_8_start_boundary
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-str-bad-start-boundary") do |dir|
+      source_path = File.join(dir, "str_bad_start_boundary.mt")
+
+      File.write(source_path, [
+        "module demo.str_bad_start_boundary_runtime",
+        "",
+        "import std.str",
+        "",
+        "def main() -> i32:",
+        "    let text = \"éx\"",
+        "    let part = text.slice(1, 2)",
+        "    return cast[i32](part.len)",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_includes result.stderr, "str slice start must be a UTF-8 boundary"
+      assert_equal 134, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_rejects_str_slice_with_non_utf_8_end_boundary
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-str-bad-end-boundary") do |dir|
+      source_path = File.join(dir, "str_bad_end_boundary.mt")
+
+      File.write(source_path, [
+        "module demo.str_bad_end_boundary_runtime",
+        "",
+        "import std.str",
+        "",
+        "def main() -> i32:",
+        "    let text = \"éx\"",
+        "    let part = text.slice(0, 1)",
+        "    return cast[i32](part.len)",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_includes result.stderr, "str slice end must be a UTF-8 boundary"
+      assert_equal 134, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_rejects_str_buffer_as_str_with_invalid_utf_8
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-str-buffer-bad-str") do |dir|
+      source_path = File.join(dir, "str_buffer_bad_str.mt")
+
+      File.write(source_path, [
+        "module demo.str_buffer_bad_str_runtime",
+        "",
+        "def main() -> i32:",
+        "    var buffer: str_buffer[2]",
+        "    buffer[0] = cast[char](0xC3)",
+        "    let view = buffer.as_str()",
+        "    return cast[i32](view.len)",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_includes result.stderr, "str_buffer text must be valid UTF-8"
+      assert_equal 134, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_rejects_str_buffer_as_cstr_with_invalid_utf_8
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-str-buffer-bad-cstr") do |dir|
+      source_path = File.join(dir, "str_buffer_bad_cstr.mt")
+
+      File.write(source_path, [
+        "module demo.str_buffer_bad_cstr_runtime",
+        "",
+        "def main() -> i32:",
+        "    var buffer: str_buffer[2]",
+        "    buffer[0] = cast[char](0xC3)",
+        "    let label = buffer.as_cstr()",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_includes result.stderr, "str_buffer text must be valid UTF-8"
+      assert_equal 134, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_str_builder_methods
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-str-builder") do |dir|
+      source_path = File.join(dir, "str_builder.mt")
+
+      File.write(source_path, [
+        "module demo.str_builder_runtime",
+        "",
+        "def write_raw(mut items: span[char]) -> void:",
+        "    unsafe:",
+        "        items.data[0] = cast[char](65)",
+        "        items.data[1] = 0",
+        "",
+        "def view(items: span[char]) -> usize:",
+        "    return items.len",
+        "",
+        "def main() -> i32:",
+        "    var buffer: str_builder[8]",
+        "    buffer.assign(\"ab\")",
+        "    buffer.append(\"cd\")",
+        "    if view(buffer) != cast[usize](9):",
+        "        return 1",
+        "    if buffer.len() != cast[usize](4):",
+        "        return 2",
+        "    write_raw(buffer)",
+        "    let text = buffer.as_str()",
+        "    if text.len != cast[usize](1):",
+        "        return 3",
+        "    if buffer.len() != cast[usize](1):",
+        "        return 4",
+        "    buffer.clear()",
+        "    if buffer.len() != cast[usize](0):",
+        "        return 5",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 0, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_rejects_str_builder_as_str_after_invalid_raw_write
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-str-builder-bad-str") do |dir|
+      source_path = File.join(dir, "str_builder_bad_str.mt")
+
+      File.write(source_path, [
+        "module demo.str_builder_bad_str_runtime",
+        "",
+        "def corrupt(mut items: span[char]) -> void:",
+        "    unsafe:",
+        "        items.data[0] = cast[char](0x80)",
+        "        items.data[1] = 0",
+        "",
+        "def main() -> i32:",
+        "    var buffer: str_builder[4]",
+        "    corrupt(buffer)",
+        "    let text = buffer.as_str()",
+        "    return cast[i32](text.len)",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_includes result.stderr, "str_builder text must be valid UTF-8"
+      assert_equal 134, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_cstr_list_buffer
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-cstr-list-buffer") do |dir|
+      source_path = File.join(dir, "cstr_list_buffer.mt")
+
+      File.write(source_path, [
+        "module demo.cstr_list_buffer_runtime",
+        "",
+        "import std.c.libc as libc",
+        "",
+        "def main() -> i32:",
+        "    var labels: cstr_list_buffer[2, 16]",
+        "    var items = array[str, 2](\"12\", \"34\")",
+        "    if labels.capacity() != cast[usize](2):",
+        "        return 1",
+        "    if labels.byte_capacity() != cast[usize](16):",
+        "        return 2",
+        "    labels.assign(items)",
+        "    let values = labels.as_cstrs()",
+        "    if values.len != cast[usize](2):",
+        "        return 3",
+        "    if libc.atoi(values[0]) != 12:",
+        "        return 4",
+        "    if libc.atoi(values[1]) != 34:",
+        "        return 5",
+        "    labels.clear()",
+        "    if labels.as_cstrs().len != cast[usize](0):",
+        "        return 6",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 0, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_unsafe_reinterpret
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

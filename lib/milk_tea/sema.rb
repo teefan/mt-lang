@@ -316,7 +316,16 @@ module MilkTea
             validate_owned_foreign_parameter!(type, function_name: decl.name, parameter_name: param.name) if param.mode == :owned
 
             boundary_type = foreign_parameter_boundary_type(param, type, type_params:)
+            validate_foreign_boundary_type!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if param.boundary_type
             body_params << value_binding(name: param.name, type: boundary_type || type, mutable: false, kind: :param)
+            if param.boundary_type
+              body_params << value_binding(
+                name: foreign_mapping_public_alias_name(param.name),
+                type:,
+                mutable: false,
+                kind: :param,
+              )
+            end
             public_params << Types::Parameter.new(param.name, type, passing_mode: param.mode, boundary_type: boundary_type)
           else
             body_params << value_binding(name: param.name, type:, mutable: param.mutable, kind: :param)
@@ -520,9 +529,21 @@ module MilkTea
         raise SemaError, "duplicate local #{statement.name}" if current_scope.key?(statement.name)
 
         declared_type = statement.type ? resolve_type_ref(statement.type) : nil
-        validate_using_scratch_expression!(statement.value, root_allowed: true)
-        validate_owned_foreign_expression!(statement.value, scopes:, root_allowed: false)
-        inferred_type = infer_expression(statement.value, scopes:, expected_type: declared_type)
+        if statement.value
+          validate_using_scratch_expression!(statement.value, root_allowed: true)
+          validate_owned_foreign_expression!(statement.value, scopes:, root_allowed: false)
+          inferred_type = infer_expression(statement.value, scopes:, expected_type: declared_type)
+        else
+          raise SemaError, "local #{statement.name} without initializer requires an explicit type" unless declared_type
+
+          begin
+            zero_initializable_type?(declared_type)
+          rescue SemaError
+            raise SemaError, "local #{statement.name} without initializer requires a zero-initializable type, got #{declared_type}"
+          end
+
+          inferred_type = declared_type
+        end
 
         if declared_type
           validate_local_ref_type!(declared_type, statement.name)
@@ -866,6 +887,16 @@ module MilkTea
         end
 
         receiver_type = infer_expression(expression.receiver, scopes:)
+        if text_buffer_type?(receiver_type) && text_buffer_method_kind(receiver_type, expression.member)
+          raise SemaError, "method #{receiver_type}.#{expression.member} must be called"
+        end
+        if str_builder_type?(receiver_type) && str_builder_method_kind(receiver_type, expression.member)
+          raise SemaError, "method #{receiver_type}.#{expression.member} must be called"
+        end
+        if cstr_list_buffer_type?(receiver_type) && cstr_list_buffer_method_kind(receiver_type, expression.member)
+          raise SemaError, "method #{receiver_type}.#{expression.member} must be called"
+        end
+
         unless aggregate_type?(receiver_type)
           raise SemaError, "cannot access member #{expression.member} of #{receiver_type}"
         end
@@ -1069,6 +1100,18 @@ module MilkTea
 
           check_function_call(callable, expression.arguments, scopes:, scratch:)
           callable.type.return_type
+        when :str_buffer_clear, :str_buffer_as_str, :str_buffer_as_cstr, :str_buffer_capacity
+          raise SemaError, "using scratch is only allowed for foreign calls" if scratch
+
+          check_text_buffer_method_call(callable_kind, receiver, expression.arguments, scopes:)
+        when :str_builder_clear, :str_builder_assign, :str_builder_append, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr
+          raise SemaError, "using scratch is only allowed for foreign calls" if scratch
+
+          check_str_builder_method_call(callable_kind, receiver, expression.arguments, scopes:)
+        when :cstr_list_buffer_clear, :cstr_list_buffer_assign, :cstr_list_buffer_as_cstrs, :cstr_list_buffer_capacity, :cstr_list_buffer_byte_capacity
+          raise SemaError, "using scratch is only allowed for foreign calls" if scratch
+
+          check_cstr_list_buffer_method_call(callable_kind, receiver, expression.arguments, scopes:)
         when :struct
           raise SemaError, "using scratch is only allowed for foreign calls" if scratch
           check_aggregate_construction(callable, expression.arguments, scopes:)
@@ -1251,6 +1294,18 @@ module MilkTea
           method = lookup_method(receiver_type, callee.member)
           return [:method, method, callee.receiver] if method
 
+          if (text_buffer_method = text_buffer_method_kind(receiver_type, callee.member))
+            return [text_buffer_method, receiver_type, callee.receiver]
+          end
+
+          if (str_builder_method = str_builder_method_kind(receiver_type, callee.member))
+            return [str_builder_method, receiver_type, callee.receiver]
+          end
+
+          if (cstr_list_buffer_method = cstr_list_buffer_method_kind(receiver_type, callee.member))
+            return [cstr_list_buffer_method, receiver_type, callee.receiver]
+          end
+
           if (imported_module = imported_module_with_private_method(receiver_type, callee.member))
             raise SemaError, "#{receiver_type}.#{callee.member} is private to module #{imported_module.name}"
           end
@@ -1282,6 +1337,15 @@ module MilkTea
             raise SemaError, "array specialization must be array[T, N]" unless array_type?(array_type)
 
             return [:array, array_type, nil]
+          end
+
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "str_buffer"
+            raise SemaError, "str_buffer requires exactly one type argument" unless callee.arguments.length == 1
+
+            text_buffer_type = resolve_type_ref(AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["str_buffer"]), arguments: callee.arguments, nullable: false))
+            raise SemaError, "str_buffer specialization must be str_buffer[N]" unless text_buffer_type?(text_buffer_type)
+
+            return [:array, text_buffer_type, nil]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "span"
@@ -1344,7 +1408,9 @@ module MilkTea
               external: binding.external,
               message: "argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}",
               expression: foreign_argument_expression(argument),
-            )
+            ) unless array_to_span_call_argument_compatible?(actual_type, parameter.type, expression: foreign_argument_expression(argument), scopes:)
+
+            requires_scratch ||= foreign_argument_requires_scratch?(parameter, argument, actual_type)
           end
         end
 
@@ -1430,6 +1496,10 @@ module MilkTea
 
       def check_aggregate_construction(struct_type, arguments, scopes:)
         display_name = aggregate_display_name(struct_type)
+
+        if struct_type.is_a?(Types::StringView)
+          raise SemaError, "str construction requires unsafe" unless unsafe_context?
+        end
 
         raise SemaError, "aggregate construction for #{display_name} requires named arguments" unless arguments.all?(&:name)
 
@@ -1544,6 +1614,128 @@ module MilkTea
         target_type
       end
 
+      def check_text_buffer_method_call(kind, receiver, arguments, scopes:)
+        method_name = text_buffer_method_name(kind)
+        raise SemaError, "#{method_name} does not support named arguments" if arguments.any?(&:name)
+        raise SemaError, "#{method_name} expects 0 arguments, got #{arguments.length}" unless arguments.empty?
+
+        receiver_type = infer_expression(receiver, scopes:)
+        raise SemaError, "unknown method #{receiver_type}.#{method_name}" unless text_buffer_type?(receiver_type)
+
+        case kind
+        when :str_buffer_clear
+          raise SemaError, "cannot call mut method #{receiver_type}.clear on an immutable receiver" unless assignable_receiver?(receiver, scopes)
+
+          @types.fetch("void")
+        when :str_buffer_as_str
+          raise SemaError, "#{receiver_type}.as_str requires a safe stored receiver" unless safe_reference_source_expression?(receiver, scopes:)
+
+          @types.fetch("str")
+        when :str_buffer_as_cstr
+          raise SemaError, "#{receiver_type}.as_cstr requires a safe stored receiver" unless safe_reference_source_expression?(receiver, scopes:)
+
+          @types.fetch("cstr")
+        when :str_buffer_capacity
+          @types.fetch("usize")
+        else
+          raise SemaError, "unsupported str_buffer method #{kind}"
+        end
+      end
+
+      def check_str_builder_method_call(kind, receiver, arguments, scopes:)
+        method_name = str_builder_method_name(kind)
+        receiver_type = infer_expression(receiver, scopes:)
+        raise SemaError, "unknown method #{receiver_type}.#{method_name}" unless str_builder_type?(receiver_type)
+
+        case kind
+        when :str_builder_clear, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr
+          raise SemaError, "#{method_name} does not support named arguments" if arguments.any?(&:name)
+          raise SemaError, "#{method_name} expects 0 arguments, got #{arguments.length}" unless arguments.empty?
+        when :str_builder_assign, :str_builder_append
+          raise SemaError, "#{method_name} does not support named arguments" if arguments.any?(&:name)
+          raise SemaError, "#{method_name} expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+        else
+          raise SemaError, "unsupported str_builder method #{kind}"
+        end
+
+        case kind
+        when :str_builder_clear
+          raise SemaError, "cannot call mut method #{receiver_type}.clear on an immutable receiver" unless assignable_receiver?(receiver, scopes)
+
+          @types.fetch("void")
+        when :str_builder_assign, :str_builder_append
+          raise SemaError, "cannot call mut method #{receiver_type}.#{method_name} on an immutable receiver" unless assignable_receiver?(receiver, scopes)
+
+          actual_type = infer_expression(arguments.first.value, scopes:, expected_type: @types.fetch("str"))
+          ensure_argument_assignable!(
+            actual_type,
+            @types.fetch("str"),
+            external: false,
+            message: "argument value to #{receiver_type}.#{method_name} expects str, got #{actual_type}",
+            expression: arguments.first.value,
+          )
+
+          @types.fetch("void")
+        when :str_builder_len, :str_builder_capacity
+          @types.fetch("usize")
+        when :str_builder_as_str
+          raise SemaError, "#{receiver_type}.as_str requires a safe stored receiver" unless safe_reference_source_expression?(receiver, scopes:)
+
+          @types.fetch("str")
+        when :str_builder_as_cstr
+          raise SemaError, "#{receiver_type}.as_cstr requires a safe stored receiver" unless safe_reference_source_expression?(receiver, scopes:)
+
+          @types.fetch("cstr")
+        else
+          raise SemaError, "unsupported str_builder method #{kind}"
+        end
+      end
+
+      def check_cstr_list_buffer_method_call(kind, receiver, arguments, scopes:)
+        method_name = cstr_list_buffer_method_name(kind)
+        receiver_type = infer_expression(receiver, scopes:)
+        raise SemaError, "unknown method #{receiver_type}.#{method_name}" unless cstr_list_buffer_type?(receiver_type)
+
+        case kind
+        when :cstr_list_buffer_clear
+          raise SemaError, "#{method_name} does not support named arguments" if arguments.any?(&:name)
+          raise SemaError, "#{method_name} expects 0 arguments, got #{arguments.length}" unless arguments.empty?
+          raise SemaError, "cannot call mut method #{receiver_type}.clear on an immutable receiver" unless assignable_receiver?(receiver, scopes)
+
+          @types.fetch("void")
+        when :cstr_list_buffer_assign
+          raise SemaError, "#{method_name} does not support named arguments" if arguments.any?(&:name)
+          raise SemaError, "#{method_name} expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+          raise SemaError, "cannot call mut method #{receiver_type}.assign on an immutable receiver" unless assignable_receiver?(receiver, scopes)
+
+          expected_type = Types::Span.new(@types.fetch("str"))
+          argument = arguments.first
+          actual_type = infer_expression(argument.value, scopes:, expected_type: expected_type)
+          ensure_argument_assignable!(
+            actual_type,
+            expected_type,
+            external: false,
+            message: "argument items to #{receiver_type}.assign expects #{expected_type}, got #{actual_type}",
+            expression: argument.value,
+          ) unless array_to_span_call_argument_compatible?(actual_type, expected_type, expression: argument.value, scopes:)
+
+          @types.fetch("void")
+        when :cstr_list_buffer_as_cstrs
+          raise SemaError, "#{method_name} does not support named arguments" if arguments.any?(&:name)
+          raise SemaError, "#{method_name} expects 0 arguments, got #{arguments.length}" unless arguments.empty?
+          raise SemaError, "#{receiver_type}.as_cstrs requires a safe stored receiver" unless safe_reference_source_expression?(receiver, scopes:)
+
+          Types::Span.new(@types.fetch("cstr"))
+        when :cstr_list_buffer_capacity, :cstr_list_buffer_byte_capacity
+          raise SemaError, "#{method_name} does not support named arguments" if arguments.any?(&:name)
+          raise SemaError, "#{method_name} expects 0 arguments, got #{arguments.length}" unless arguments.empty?
+
+          @types.fetch("usize")
+        else
+          raise SemaError, "unsupported cstr_list_buffer method #{kind}"
+        end
+      end
+
       def lookup_value(name, scopes)
         scopes.reverse_each do |scope|
           return scope[name] if scope.key?(name)
@@ -1564,6 +1756,90 @@ module MilkTea
         end
 
         nil
+      end
+
+      def text_buffer_method_kind(receiver_type, name)
+        return unless text_buffer_type?(receiver_type)
+
+        case name
+        when "clear"
+          :str_buffer_clear
+        when "as_str"
+          :str_buffer_as_str
+        when "as_cstr"
+          :str_buffer_as_cstr
+        when "capacity"
+          :str_buffer_capacity
+        end
+      end
+
+      def str_builder_method_kind(receiver_type, name)
+        return unless str_builder_type?(receiver_type)
+
+        case name
+        when "clear"
+          :str_builder_clear
+        when "assign"
+          :str_builder_assign
+        when "append"
+          :str_builder_append
+        when "len"
+          :str_builder_len
+        when "capacity"
+          :str_builder_capacity
+        when "as_str"
+          :str_builder_as_str
+        when "as_cstr"
+          :str_builder_as_cstr
+        end
+      end
+
+      def cstr_list_buffer_method_kind(receiver_type, name)
+        return unless cstr_list_buffer_type?(receiver_type)
+
+        case name
+        when "clear"
+          :cstr_list_buffer_clear
+        when "assign"
+          :cstr_list_buffer_assign
+        when "as_cstrs"
+          :cstr_list_buffer_as_cstrs
+        when "capacity"
+          :cstr_list_buffer_capacity
+        when "byte_capacity"
+          :cstr_list_buffer_byte_capacity
+        end
+      end
+
+      def text_buffer_method_name(kind)
+        {
+          str_buffer_clear: "clear",
+          str_buffer_as_str: "as_str",
+          str_buffer_as_cstr: "as_cstr",
+          str_buffer_capacity: "capacity",
+        }.fetch(kind)
+      end
+
+      def str_builder_method_name(kind)
+        {
+          str_builder_clear: "clear",
+          str_builder_assign: "assign",
+          str_builder_append: "append",
+          str_builder_len: "len",
+          str_builder_capacity: "capacity",
+          str_builder_as_str: "as_str",
+          str_builder_as_cstr: "as_cstr",
+        }.fetch(kind)
+      end
+
+      def cstr_list_buffer_method_name(kind)
+        {
+          cstr_list_buffer_clear: "clear",
+          cstr_list_buffer_assign: "assign",
+          cstr_list_buffer_as_cstrs: "as_cstrs",
+          cstr_list_buffer_capacity: "capacity",
+          cstr_list_buffer_byte_capacity: "byte_capacity",
+        }.fetch(kind)
       end
 
       def ensure_available_type_name!(name)
@@ -1673,6 +1949,7 @@ module MilkTea
         return true if null_assignable_to?(actual_type, expected_type)
         return true if expected_type.is_a?(Types::Nullable) && actual_type == expected_type.base
         return true if actual_type.is_a?(Types::EnumBase) && actual_type.backing_type == expected_type
+        return true if string_literal_cstr_compatibility?(expression, expected_type)
         return true if integer_literal_numeric_compatibility?(expression, expected_type)
         return true if integer_to_char_compatibility?(actual_type, expected_type)
         return true if external_numeric && external_numeric_compatibility?(actual_type, expected_type)
@@ -1681,10 +1958,18 @@ module MilkTea
         false
       end
 
+      def string_literal_cstr_compatibility?(expression, expected_type)
+        expression.is_a?(AST::StringLiteral) && !expression.cstring && expected_type == @types.fetch("cstr")
+      end
+
       def argument_types_compatible?(actual_type, expected_type, external:, expression: nil)
         return true if types_compatible?(actual_type, expected_type, expression:, external_numeric: external)
         return true if external && extern_enum_integer_argument_compatibility?(actual_type, expected_type)
-        return true if external && foreign_mapping_context? && foreign_identity_projection_compatible?(actual_type, expected_type)
+        if external && foreign_mapping_context? && foreign_identity_projection_compatible?(actual_type, expected_type)
+          return false if actual_type == @types.fetch("cstr") && char_pointer_type?(expected_type)
+
+          return true
+        end
 
         false
       end
@@ -1736,19 +2021,86 @@ module MilkTea
       end
 
       def foreign_identity_projection_compatible?(actual_type, expected_type)
+        foreign_identity_projection_cast_compatible?(actual_type, expected_type) ||
+          foreign_identity_projection_reinterpret_compatible?(actual_type, expected_type)
+      end
+
+      def foreign_identity_projection_cast_compatible?(actual_type, expected_type)
+        return true if actual_type == expected_type
+
         if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
-          return foreign_identity_projection_compatible?(actual_type.base, expected_type.base)
+          return foreign_identity_projection_cast_compatible?(actual_type.base, expected_type.base)
         end
 
-        return foreign_identity_projection_compatible?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
+        return foreign_identity_projection_cast_compatible?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
         return false if actual_type.is_a?(Types::Nullable)
 
-        return true if pointer_type?(actual_type) && pointer_type?(expected_type) && (void_pointer_type?(actual_type) || void_pointer_type?(expected_type))
+        if pointer_type?(actual_type) && pointer_type?(expected_type)
+          return true if void_pointer_type?(actual_type) || void_pointer_type?(expected_type)
+
+          return true if foreign_identity_projection_cast_compatible?(actual_type.arguments.first, expected_type.arguments.first)
+
+          return foreign_external_layout_compatible?(actual_type.arguments.first, expected_type.arguments.first)
+        end
+
         return true if void_pointer_type?(actual_type) && opaque_type?(expected_type)
         return true if opaque_type?(actual_type) && void_pointer_type?(expected_type)
         return true if char_pointer_type?(actual_type) && expected_type == @types.fetch("cstr")
+        return true if actual_type == @types.fetch("cstr") && char_pointer_type?(expected_type)
 
         false
+      end
+
+      def foreign_identity_projection_reinterpret_compatible?(actual_type, expected_type)
+        if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
+          return foreign_identity_projection_reinterpret_compatible?(actual_type.base, expected_type.base)
+        end
+
+        return foreign_identity_projection_reinterpret_compatible?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
+        return false if actual_type.is_a?(Types::Nullable)
+
+        foreign_external_layout_compatible?(actual_type, expected_type)
+      end
+
+      def foreign_external_layout_compatible?(actual_type, expected_type, seen = {})
+        return false unless actual_type.is_a?(Types::Struct) && expected_type.is_a?(Types::Struct)
+        return false if actual_type.is_a?(Types::Union) != expected_type.is_a?(Types::Union)
+        return false unless actual_type.external && expected_type.external
+        return false unless actual_type.name == expected_type.name
+        return false unless actual_type.packed == expected_type.packed
+        return false unless actual_type.alignment == expected_type.alignment
+
+        key = [actual_type.object_id, expected_type.object_id]
+        return true if seen[key]
+
+        seen[key] = true
+        actual_fields = actual_type.fields
+        expected_fields = expected_type.fields
+        return false unless actual_fields.keys == expected_fields.keys
+
+        actual_fields.all? do |field_name, field_type|
+          foreign_external_layout_field_compatible?(field_type, expected_fields.fetch(field_name), seen)
+        end
+      end
+
+      def foreign_external_layout_field_compatible?(actual_type, expected_type, seen)
+        return true if actual_type == expected_type
+
+        if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
+          return foreign_external_layout_field_compatible?(actual_type.base, expected_type.base, seen)
+        end
+
+        if pointer_type?(actual_type) && pointer_type?(expected_type)
+          return foreign_external_layout_field_compatible?(actual_type.arguments.first, expected_type.arguments.first, seen)
+        end
+
+        if array_type?(actual_type) && array_type?(expected_type)
+          return false unless array_length(actual_type) == array_length(expected_type)
+
+          return foreign_external_layout_field_compatible?(array_element_type(actual_type), array_element_type(expected_type), seen)
+        end
+
+        foreign_external_layout_compatible?(actual_type, expected_type, seen)
       end
 
       def void_pointer_type?(type)
@@ -1920,7 +2272,7 @@ module MilkTea
         when Types::Nullable
           true
         when Types::GenericInstance
-          pointer_type?(type) || array_type?(type)
+          pointer_type?(type) || array_type?(type) || str_builder_type?(type) || cstr_list_buffer_type?(type)
         else
           false
         end
@@ -1943,6 +2295,8 @@ module MilkTea
         return true if type.is_a?(Types::Struct)
         return true if pointer_type?(type)
         return true if array_type?(type)
+        return true if str_builder_type?(type)
+        return true if cstr_list_buffer_type?(type)
 
         raise SemaError, "zero does not support type #{type}"
       end
@@ -1960,12 +2314,15 @@ module MilkTea
       end
 
       def array_type?(type)
-        type.is_a?(Types::GenericInstance) && type.name == "array" && type.arguments.length == 2 &&
-          !type.arguments.first.is_a?(Types::LiteralTypeArg) && type.arguments[1].is_a?(Types::LiteralTypeArg)
+        text_buffer_type?(type) ||
+          (type.is_a?(Types::GenericInstance) && type.name == "array" && type.arguments.length == 2 &&
+          !type.arguments.first.is_a?(Types::LiteralTypeArg) && type.arguments[1].is_a?(Types::LiteralTypeArg))
       end
 
       def array_element_type(type)
         return unless array_type?(type)
+
+        return @types.fetch("char") if text_buffer_type?(type)
 
         type.arguments.first
       end
@@ -1973,7 +2330,36 @@ module MilkTea
       def array_length(type)
         return unless array_type?(type)
 
+        return type.arguments.first.value if text_buffer_type?(type)
+
         type.arguments[1].value
+      end
+
+      def str_builder_type?(type)
+        type.is_a?(Types::GenericInstance) && type.name == "str_builder" && type.arguments.length == 1 &&
+          generic_integer_type_argument?(type.arguments.first)
+      end
+
+      def str_builder_capacity(type)
+        type.arguments.first.value
+      end
+
+      def text_buffer_type?(type)
+        type.is_a?(Types::GenericInstance) && type.name == "str_buffer" && type.arguments.length == 1 &&
+          generic_integer_type_argument?(type.arguments.first)
+      end
+
+      def cstr_list_buffer_type?(type)
+        type.is_a?(Types::GenericInstance) && type.name == "cstr_list_buffer" && type.arguments.length == 2 &&
+          type.arguments.all? { |argument| generic_integer_type_argument?(argument) }
+      end
+
+      def integer_type_argument?(argument)
+        argument.is_a?(Types::LiteralTypeArg) && argument.value.is_a?(Integer)
+      end
+
+      def generic_integer_type_argument?(argument)
+        integer_type_argument?(argument) || argument.is_a?(Types::TypeVar)
       end
 
       def pointee_type(type)
@@ -2062,8 +2448,22 @@ module MilkTea
         when "array"
           raise SemaError, "array requires exactly two type arguments" unless arguments.length == 2
           raise SemaError, "array element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise SemaError, "array length must be an integer literal" unless arguments[1].is_a?(Types::LiteralTypeArg) && arguments[1].value.is_a?(Integer)
-          raise SemaError, "array length must be positive" unless arguments[1].value.positive?
+          raise SemaError, "array length must be an integer literal" unless generic_integer_type_argument?(arguments[1])
+          raise SemaError, "array length must be positive" if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
+        when "str_buffer"
+          raise SemaError, "str_buffer requires exactly one type argument" unless arguments.length == 1
+          raise SemaError, "str_buffer capacity must be an integer literal" unless generic_integer_type_argument?(arguments.first)
+          raise SemaError, "str_buffer capacity must be positive" if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
+        when "str_builder"
+          raise SemaError, "str_builder requires exactly one type argument" unless arguments.length == 1
+          raise SemaError, "str_builder capacity must be an integer literal" unless generic_integer_type_argument?(arguments.first)
+          raise SemaError, "str_builder capacity must be positive" if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
+        when "cstr_list_buffer"
+          raise SemaError, "cstr_list_buffer requires exactly two type arguments" unless arguments.length == 2
+          raise SemaError, "cstr_list_buffer item capacity must be an integer literal" unless generic_integer_type_argument?(arguments[0])
+          raise SemaError, "cstr_list_buffer byte capacity must be an integer literal" unless generic_integer_type_argument?(arguments[1])
+          raise SemaError, "cstr_list_buffer item capacity must be positive" if integer_type_argument?(arguments[0]) && !arguments[0].value.positive?
+          raise SemaError, "cstr_list_buffer byte capacity must be positive" if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
         when "Result"
           raise SemaError, "Result requires exactly two type arguments" unless arguments.length == 2
           raise SemaError, "Result ok type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
@@ -2186,9 +2586,14 @@ module MilkTea
 
       def resolve_specialization_type_arguments(expression)
         expression.arguments.map do |argument|
-          raise SemaError, "callable specialization arguments must be types" unless argument.value.is_a?(AST::TypeRef)
-
-          resolve_type_ref(argument.value)
+          case argument.value
+          when AST::TypeRef
+            resolve_type_ref(argument.value)
+          when AST::IntegerLiteral, AST::FloatLiteral
+            Types::LiteralTypeArg.new(argument.value.value)
+          else
+            raise SemaError, "callable specialization arguments must be types or literal type arguments"
+          end
         end
       end
 
@@ -2216,10 +2621,14 @@ module MilkTea
         return binding.instances.fetch(key) if binding.instances.key?(key)
 
         substitutions = binding.type_params.zip(type_arguments).to_h
+        type = substitute_type(binding.type, substitutions)
+        body_params = binding.body_params.map { |param| substitute_value_binding(param, substitutions) }
+        validate_specialized_function_binding!(binding.name, type, body_params)
+
         instance = FunctionBinding.new(
           name: binding.name,
-          type: substitute_type(binding.type, substitutions),
-          body_params: binding.body_params.map { |param| substitute_value_binding(param, substitutions) },
+          type:,
+          body_params:,
           ast: binding.ast,
           external: binding.external,
           type_params: [].freeze,
@@ -2312,6 +2721,57 @@ module MilkTea
         )
       end
 
+      def validate_specialized_function_binding!(function_name, function_type, body_params)
+        function_type.params.each do |param|
+          validate_specialized_function_type!(param.type, function_name:, context: "parameter #{param.name}")
+          validate_specialized_function_type!(param.boundary_type, function_name:, context: "boundary parameter #{param.name}") if param.boundary_type
+        end
+        validate_specialized_function_type!(function_type.return_type, function_name:, context: "return type")
+        validate_specialized_function_type!(function_type.receiver_type, function_name:, context: "receiver type") if function_type.receiver_type
+
+        body_params.each do |param|
+          validate_specialized_function_type!(param.type, function_name:, context: "body parameter #{param.name}")
+        end
+      end
+
+      def validate_specialized_function_type!(type, function_name:, context:)
+        case type
+        when nil, Types::Primitive, Types::Enum, Types::Flags, Types::Opaque, Types::Struct
+          nil
+        when Types::LiteralTypeArg
+          raise SemaError, "#{context} of function #{function_name} must be a type, got #{type}"
+        when Types::TypeVar
+          raise SemaError, "cannot infer type argument #{type.name} for function #{function_name}"
+        when Types::Nullable
+          validate_specialized_function_type!(type.base, function_name:, context:)
+        when Types::GenericInstance
+          validate_generic_type!(type.name, type.arguments)
+          type.arguments.each do |argument|
+            next if argument.is_a?(Types::LiteralTypeArg)
+
+            validate_specialized_function_type!(argument, function_name:, context:)
+          end
+        when Types::Span
+          validate_specialized_function_type!(type.element_type, function_name:, context:)
+        when Types::Result
+          validate_specialized_function_type!(type.ok_type, function_name:, context:)
+          validate_specialized_function_type!(type.error_type, function_name:, context:)
+        when Types::StructInstance
+          type.arguments.each do |argument|
+            next if argument.is_a?(Types::LiteralTypeArg)
+
+            validate_specialized_function_type!(argument, function_name:, context:)
+          end
+        when Types::Function
+          type.params.each do |param|
+            validate_specialized_function_type!(param.type, function_name:, context: "#{context} parameter #{param.name}")
+            validate_specialized_function_type!(param.boundary_type, function_name:, context: "#{context} boundary parameter #{param.name}") if param.boundary_type
+          end
+          validate_specialized_function_type!(type.return_type, function_name:, context: "#{context} return type")
+          validate_specialized_function_type!(type.receiver_type, function_name:, context: "#{context} receiver type") if type.receiver_type
+        end
+      end
+
       def substitute_type(type, substitutions)
         case type
         when Types::TypeVar
@@ -2390,16 +2850,50 @@ module MilkTea
         parameter.boundary_type == @types.fetch("cstr") && parameter.type == @types.fetch("str")
       end
 
+      def foreign_char_pointer_buffer_boundary_compatible?(public_type, boundary_type)
+        return false unless char_pointer_type?(boundary_type)
+
+        return true if public_type.is_a?(Types::Span) && public_type.element_type == @types.fetch("char")
+        return true if str_builder_type?(public_type)
+
+        text_buffer_type?(public_type)
+      end
+
       def foreign_cstr_argument_compatible?(actual_type, parameter, expression:)
         types_compatible?(actual_type, parameter.type, expression:) || actual_type == @types.fetch("cstr")
       end
 
       def foreign_argument_requires_scratch?(parameter, argument, actual_type)
-        return false unless foreign_cstr_boundary_parameter?(parameter)
-        return false if actual_type == @types.fetch("cstr")
-        return false if argument.value.is_a?(AST::StringLiteral) && !argument.value.cstring
+        if foreign_cstr_boundary_parameter?(parameter)
+          return false if actual_type == @types.fetch("cstr")
+          return false if argument.value.is_a?(AST::StringLiteral) && !argument.value.cstring
 
-        true
+          return true
+        end
+
+        false
+      end
+
+      def array_to_span_call_argument_compatible?(actual_type, expected_type, expression:, scopes:)
+        return false unless expected_type.is_a?(Types::Span)
+
+        if array_type?(actual_type)
+          return false unless array_element_type(actual_type) == expected_type.element_type
+
+          infer_addr_source_type(expression, scopes:)
+          return true
+        end
+
+        if str_builder_type?(actual_type)
+          return false unless expected_type.element_type == @types.fetch("char")
+
+          infer_addr_source_type(expression, scopes:)
+          return true
+        end
+
+        false
+      rescue SemaError
+        false
       end
 
       def foreign_parameter_boundary_type(param, public_type, type_params:)
@@ -2407,6 +2901,32 @@ module MilkTea
         return pointer_to(public_type) if [:out, :inout].include?(param.mode)
 
         nil
+      end
+
+      def foreign_mapping_public_alias_name(name)
+        "#{name}_public"
+      end
+
+      def validate_foreign_boundary_type!(public_type, boundary_type, function_name:, parameter_name:)
+        return if boundary_type == public_type
+        return if boundary_type == @types.fetch("cstr") && public_type == @types.fetch("str")
+        return if foreign_span_boundary_compatible?(public_type, boundary_type)
+        return if foreign_char_pointer_buffer_boundary_compatible?(public_type, boundary_type)
+        return if foreign_identity_projection_compatible?(public_type, boundary_type)
+
+        raise SemaError, "foreign parameter #{parameter_name} of #{function_name} cannot map #{public_type} as #{boundary_type}"
+      end
+
+      def foreign_span_boundary_compatible?(public_type, boundary_type)
+        return false unless public_type.is_a?(Types::Span) && boundary_type.is_a?(Types::Span)
+
+        foreign_boundary_element_compatible?(public_type.element_type, boundary_type.element_type)
+      end
+
+      def foreign_boundary_element_compatible?(public_type, boundary_type)
+        return true if public_type == boundary_type
+
+        foreign_identity_projection_compatible?(public_type, boundary_type)
       end
 
       def foreign_function_binding?(binding)
@@ -2470,7 +2990,8 @@ module MilkTea
         mark_method = lookup_method(receiver_type, "mark")
         reset_method = lookup_method(receiver_type, "reset")
         to_cstr_method = lookup_method(receiver_type, "to_cstr")
-        unless mark_method && reset_method && (!requires_scratch || to_cstr_method)
+        needs_to_cstr = binding.type.params.any? { |parameter| foreign_cstr_boundary_parameter?(parameter) }
+        unless mark_method && reset_method && (!needs_to_cstr || to_cstr_method)
           raise SemaError, "using scratch expects ref[...] arena storage"
         end
       end

@@ -1,0 +1,931 @@
+{
+  "module_name": "std.raygui",
+  "raw_module_name": "std.c.raygui",
+  "raw_import_alias": "c",
+  "imports": [
+    {
+      "module_name": "std.raylib",
+      "alias": "raylib"
+    }
+  ],
+  "types": {
+    "include": [
+      "Color",
+      "Font",
+      "Rectangle",
+      "Vector2",
+      "Vector3"
+    ],
+    "include_prefixes": [
+      "Gui"
+    ],
+    "shared_from": [
+      "raylib"
+    ],
+    "strip_prefix": "Gui"
+  },
+  "constants": {
+    "include": [
+      "SCROLLBAR_LEFT_SIDE",
+      "SCROLLBAR_RIGHT_SIDE"
+    ],
+    "include_prefixes": [
+      "RAYGUI_VERSION_"
+    ]
+  },
+  "functions": {
+    "include_prefixes": [
+      "Gui"
+    ],
+    "exclude": [
+      "GuiLoadIcons"
+    ],
+    "strip_prefix": "Gui",
+    "overrides": [
+      {
+        "raw": "GuiSetState",
+        "mapping": "c.GuiSetState(cast[i32](state))",
+        "params": [
+          {
+            "name": "state",
+            "type": "State"
+          }
+        ]
+      },
+      {
+        "raw": "GuiGetState",
+        "mapping": "cast[State](c.GuiGetState())",
+        "return_type": "State"
+      },
+      {
+        "raw": "GuiSetStyle",
+        "mapping": "c.GuiSetStyle(cast[i32](control), property, value)",
+        "params": [
+          {
+            "name": "control",
+            "type": "Control"
+          },
+          {
+            "name": "property",
+            "type": "i32"
+          },
+          {
+            "name": "value",
+            "type": "i32"
+          }
+        ]
+      },
+      {
+        "raw": "GuiGetStyle",
+        "mapping": "c.GuiGetStyle(cast[i32](control), property)",
+        "params": [
+          {
+            "name": "control",
+            "type": "Control"
+          },
+          {
+            "name": "property",
+            "type": "i32"
+          }
+        ]
+      },
+      {
+        "raw": "GuiLoadStyle",
+        "params": [
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GuiSetTooltip",
+        "params": [
+          {
+            "name": "tooltip",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GuiIconText",
+        "mapping": "c.GuiIconText(cast[i32](icon_id), text)",
+        "params": [
+          {
+            "name": "icon_id",
+            "type": "IconName"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GuiDrawIcon",
+        "mapping": "c.GuiDrawIcon(cast[i32](icon_id), pos_x, pos_y, pixel_size, color)",
+        "params": [
+          {
+            "name": "icon_id",
+            "type": "IconName"
+          },
+          {
+            "name": "pos_x",
+            "type": "i32"
+          },
+          {
+            "name": "pos_y",
+            "type": "i32"
+          },
+          {
+            "name": "pixel_size",
+            "type": "i32"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
+        ]
+      },
+      {
+        "raw": "GuiGetIcons",
+        "mapping": "span[u32](data = c.GuiGetIcons(), len = 2048)",
+        "return_type": "span[u32]"
+      },
+      {
+        "raw": "GuiGetTextWidth",
+        "params": [
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GuiWindowBox",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "title",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GuiGroupBox",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GuiLine",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GuiPanel",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GuiTabBar",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "span[cstr]",
+            "boundary_type": "span[ptr[char]]"
+          },
+          {
+            "name": "active",
+            "type": "i32",
+            "mode": "inout"
+          }
+        ],
+        "mapping": "c.GuiTabBar(bounds, text.data, cast[i32](text.len), active)"
+      },
+      {
+        "raw": "GuiScrollPanel",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "content",
+            "type": "Rectangle"
+          },
+          {
+            "name": "scroll",
+            "type": "Vector2",
+            "mode": "inout"
+          },
+          {
+            "name": "view",
+            "type": "Rectangle",
+            "mode": "out"
+          }
+        ]
+      },
+      {
+        "raw": "GuiLabel",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GuiButton",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GuiLabelButton",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GuiToggle",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "active",
+            "type": "bool",
+            "mode": "inout"
+          }
+        ]
+      },
+      {
+        "raw": "GuiToggleGroup",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "active",
+            "type": "i32",
+            "mode": "inout"
+          }
+        ]
+      },
+      {
+        "raw": "GuiToggleSlider",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "active",
+            "type": "i32",
+            "mode": "inout"
+          }
+        ]
+      },
+      {
+        "raw": "GuiCheckBox",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "checked",
+            "type": "bool",
+            "mode": "inout"
+          }
+        ]
+      },
+      {
+        "raw": "GuiComboBox",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "active",
+            "type": "i32",
+            "mode": "inout"
+          }
+        ]
+      },
+      {
+        "raw": "GuiDropdownBox",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "active",
+            "type": "i32",
+            "mode": "inout"
+          },
+          {
+            "name": "edit_mode",
+            "type": "bool"
+          }
+        ]
+      },
+      {
+        "raw": "GuiSpinner",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "value",
+            "type": "i32",
+            "mode": "inout"
+          },
+          {
+            "name": "min_value",
+            "type": "i32"
+          },
+          {
+            "name": "max_value",
+            "type": "i32"
+          },
+          {
+            "name": "edit_mode",
+            "type": "bool"
+          }
+        ]
+      },
+      {
+        "raw": "GuiValueBox",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "value",
+            "type": "i32",
+            "mode": "inout"
+          },
+          {
+            "name": "min_value",
+            "type": "i32"
+          },
+          {
+            "name": "max_value",
+            "type": "i32"
+          },
+          {
+            "name": "edit_mode",
+            "type": "bool"
+          }
+        ]
+      },
+      {
+        "raw": "GuiValueBoxFloat",
+        "type_params": [
+          "N"
+        ],
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "text_value",
+            "type": "str_builder[N]",
+            "boundary_type": "ptr[char]"
+          },
+          {
+            "name": "value",
+            "type": "f32",
+            "mode": "inout"
+          },
+          {
+            "name": "edit_mode",
+            "type": "bool"
+          }
+        ],
+        "mapping": "c.GuiValueBoxFloat(bounds, text, text_value, value, edit_mode)"
+      },
+      {
+        "raw": "GuiTextBox",
+        "type_params": [
+          "N"
+        ],
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str_builder[N]",
+            "boundary_type": "ptr[char]"
+          },
+          {
+            "name": "edit_mode",
+            "type": "bool"
+          }
+        ],
+        "mapping": "c.GuiTextBox(bounds, text, cast[i32](text_public.capacity() + 1), edit_mode)"
+      },
+      {
+        "raw": "GuiTextInputBox",
+        "type_params": [
+          "N"
+        ],
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "title",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "message",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "buttons",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "text",
+            "type": "str_builder[N]",
+            "boundary_type": "ptr[char]"
+          },
+          {
+            "name": "secret_view_active",
+            "type": "bool",
+            "mode": "inout"
+          }
+        ],
+        "mapping": "c.GuiTextInputBox(bounds, title, message, buttons, text, cast[i32](text_public.capacity() + 1), secret_view_active)"
+      },
+      {
+        "raw": "GuiSlider",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text_left",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "text_right",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "value",
+            "type": "f32",
+            "mode": "inout"
+          },
+          {
+            "name": "min_value",
+            "type": "f32"
+          },
+          {
+            "name": "max_value",
+            "type": "f32"
+          }
+        ]
+      },
+      {
+        "raw": "GuiSliderBar",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text_left",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "text_right",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "value",
+            "type": "f32",
+            "mode": "inout"
+          },
+          {
+            "name": "min_value",
+            "type": "f32"
+          },
+          {
+            "name": "max_value",
+            "type": "f32"
+          }
+        ]
+      },
+      {
+        "raw": "GuiProgressBar",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text_left",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "text_right",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "value",
+            "type": "f32",
+            "mode": "inout"
+          },
+          {
+            "name": "min_value",
+            "type": "f32"
+          },
+          {
+            "name": "max_value",
+            "type": "f32"
+          }
+        ]
+      },
+      {
+        "raw": "GuiStatusBar",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GuiDummyRec",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GuiGrid",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "spacing",
+            "type": "f32"
+          },
+          {
+            "name": "subdivs",
+            "type": "i32"
+          },
+          {
+            "name": "mouse_cell",
+            "type": "Vector2",
+            "mode": "out"
+          }
+        ]
+      },
+      {
+        "raw": "GuiListView",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "scroll_index",
+            "type": "i32",
+            "mode": "inout"
+          },
+          {
+            "name": "active",
+            "type": "i32",
+            "mode": "inout"
+          }
+        ]
+      },
+      {
+        "raw": "GuiListViewEx",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "span[cstr]",
+            "boundary_type": "span[ptr[char]]"
+          },
+          {
+            "name": "scroll_index",
+            "type": "i32",
+            "mode": "inout"
+          },
+          {
+            "name": "active",
+            "type": "i32",
+            "mode": "inout"
+          },
+          {
+            "name": "focus",
+            "type": "i32",
+            "mode": "inout"
+          }
+        ],
+        "mapping": "c.GuiListViewEx(bounds, text.data, cast[i32](text.len), scroll_index, active, focus)"
+      },
+      {
+        "raw": "GuiMessageBox",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "title",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "message",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "buttons",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GuiColorPicker",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "color",
+            "type": "Color",
+            "mode": "inout"
+          }
+        ]
+      },
+      {
+        "raw": "GuiColorPanel",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "color",
+            "type": "Color",
+            "mode": "inout"
+          }
+        ]
+      },
+      {
+        "raw": "GuiColorBarAlpha",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "alpha",
+            "type": "f32",
+            "mode": "inout"
+          }
+        ]
+      },
+      {
+        "raw": "GuiColorBarHue",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "value",
+            "type": "f32",
+            "mode": "inout"
+          }
+        ]
+      },
+      {
+        "raw": "GuiColorPickerHSV",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "color_hsv",
+            "type": "Vector3",
+            "mode": "inout"
+          }
+        ]
+      },
+      {
+        "raw": "GuiColorPanelHSV",
+        "params": [
+          {
+            "name": "bounds",
+            "type": "Rectangle"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "color_hsv",
+            "type": "Vector3",
+            "mode": "inout"
+          }
+        ]
+      }
+    ]
+  }
+}

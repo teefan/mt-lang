@@ -152,7 +152,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/static int32_t demo_span_surface_read\(mt_span_i32 items\)/, generated)
     assert_match(/if \(items\.len == 0\)/, generated)
     assert_match(/return \*items\.data;/, generated)
-    assert_match(/mt_span_i32 items = \(mt_span_i32\)\{ \.data = \(\(int32_t\*\) \(&value\)\), \.len = 1 \};/, generated)
+    assert_match(/mt_span_i32 items = \(mt_span_i32\)\{ \.data = &value, \.len = 1 \};/, generated)
   end
 
   def test_generate_c_for_foreign_defs_with_out_and_using_scratch
@@ -232,6 +232,161 @@ class MilkTeaCodegenTest < Minitest::Test
     refute_match(/Arena_reset\(/, generated)
     refute_match(/__mt_foreign_arg_\d+/, generated)
     assert_match(/InitWindow\(800, 450, "Demo"\);/, generated)
+  end
+
+  def test_rejects_codegen_for_foreign_defs_with_span_str_to_span_cstr_boundary
+    source = <<~MT
+      module demo.main
+
+      import std.mem.arena as arena
+      import std.sample as sample
+
+      def main(scratch: ref[arena.Arena]) -> i32:
+          var labels = array[str, 3]("Play", "Options", "Quit")
+          var active = 1
+          return sample.use_names(labels, inout active) using scratch
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def UseNames(names: ptr[cstr], count: i32, active: ptr[i32]) -> i32
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def use_names(names: span[str] as span[cstr], inout active: i32) -> i32 = c.UseNames(names.data, cast[i32](names.len), active)
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      generate_c_from_program_source(source, imported_sources)
+    end
+
+    assert_match(/cannot map span\[str\] as span\[cstr\]/, error.message)
+  end
+
+  def test_rejects_codegen_for_foreign_defs_with_span_str_to_span_ptr_char_boundary
+    source = <<~MT
+      module demo.main
+
+      import std.mem.arena as arena
+      import std.sample as sample
+
+      def main(scratch: ref[arena.Arena]) -> i32:
+          var labels = array[str, 3]("Play", "Options", "Quit")
+          var active = 1
+          return sample.use_names(labels, inout active) using scratch
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def UseNames(names: ptr[ptr[char]], count: i32, active: ptr[i32]) -> i32
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def use_names(names: span[str] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, cast[i32](names.len), active)
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      generate_c_from_program_source(source, imported_sources)
+    end
+
+    assert_match(/cannot map span\[str\] as span\[ptr\[char\]\]/, error.message)
+  end
+
+  def test_rejects_codegen_for_foreign_defs_with_str_to_ptr_char_boundary
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main() -> void:
+          sample.show("demo")
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def Show(text: ptr[char]) -> void
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def show(text: str as ptr[char]) -> void = c.Show
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      generate_c_from_program_source(source, imported_sources)
+    end
+
+    assert_match(/cannot map str as ptr\[char\]/, error.message)
+  end
+
+  def test_generate_c_for_foreign_defs_with_span_cstr_to_span_ptr_char_without_scratch
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main() -> i32:
+          var labels = array[cstr, 3]("Play", "Options", "Quit")
+          var active = 1
+          return sample.use_names(labels, inout active)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def UseNames(names: ptr[ptr[char]], count: i32, active: ptr[i32]) -> i32
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def use_names(names: span[cstr] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, cast[i32](names.len), active)
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/typedef struct mt_span_cstr \{/, generated)
+    assert_match(/const char\* labels\[3\] = \{ "Play", "Options", "Quit" \};/, generated)
+    refute_match(/std_mem_arena_Arena_to_char_ptrs\(/, generated)
+    refute_match(/std_mem_arena_Arena_to_cstrs\(/, generated)
+    assert_match(/UseNames\(/, generated)
+    assert_match(/&labels\[0\]/, generated)
+    assert_match(/&active/, generated)
+  end
+
+  def test_generate_c_for_contextual_string_literals_as_cstr
+    source = <<~MT
+      module demo.literal_cstr
+
+      extern def set_text(value: cstr) -> void
+
+      def main() -> cstr:
+          let title: cstr = "hello"
+          set_text("world")
+          return title
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/const char\* title = "hello";/, generated)
+    assert_match(/set_text\("world"\);/, generated)
+    assert_match(/return title;/, generated)
   end
 
   def test_generate_c_for_foreign_defs_with_inout_uses_minimal_address_of
@@ -410,6 +565,65 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/uint8_t \*__mt_foreign_arg_\d+ = \(\(uint8_t\*\) AllocateBytes\(8\)\);/, generated)
     assert_match(/ReleaseBytes\(__mt_foreign_arg_\d+\);/, generated)
     assert_match(/SetLabel\(buffer\);/, generated)
+  end
+
+  def test_generate_c_for_foreign_defs_with_external_struct_boundary_reinterpret
+    source = <<~MT
+      module demo.main
+
+      import std.shared as shared
+      import std.sample as sample
+
+      def main() -> shared.Matrix:
+          var matrix = sample.get_matrix()
+          sample.set_matrix(shared.IDENTITY)
+          sample.set_matrix_ptr(raw(addr(matrix)))
+          return matrix
+    MT
+
+    imported_sources = {
+      "std/c/shared.mt" => <<~MT,
+        extern module std.c.shared:
+            struct Matrix:
+                m0: f32
+      MT
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            struct Matrix:
+                m0: f32
+
+            extern def SetMatrix(matrix: Matrix) -> void
+            extern def SetMatrixPtr(matrix: ptr[Matrix]) -> void
+            extern def GetMatrix() -> Matrix
+      MT
+      "std/shared.mt" => <<~MT,
+        module std.shared
+
+        import std.c.shared as c
+
+        pub type Matrix = c.Matrix
+        pub const IDENTITY: Matrix = Matrix(m0 = 1.0)
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+        import std.shared as shared
+
+        pub foreign def set_matrix(matrix: shared.Matrix as c.Matrix) -> void = c.SetMatrix
+        pub foreign def set_matrix_ptr(matrix: ptr[shared.Matrix] as ptr[c.Matrix]) -> void = c.SetMatrixPtr
+        pub foreign def get_matrix() -> shared.Matrix = c.GetMatrix
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    refute_match(/mt_reinterpret_std_c_shared_Matrix_from_std_c_sample_Matrix/, generated)
+    refute_match(/mt_reinterpret_std_c_sample_Matrix_from_std_c_shared_Matrix/, generated)
+    assert_match(/SetMatrix\(std_shared_IDENTITY\);/, generated)
+    assert_match(/SetMatrixPtr\(&matrix\);/, generated)
+    assert_match(/Matrix matrix = GetMatrix\(\);/, generated)
+    assert_match(/return matrix;/, generated)
   end
 
   def test_generate_c_for_foreign_defs_with_opaque_handle_projections
@@ -662,7 +876,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/struct demo_generic_surface_Holder \{/, generated)
     assert_match(/demo_generic_surface_Slice_i32 items;/, generated)
     assert_match(/static int32_t demo_generic_surface_read\(demo_generic_surface_Slice_i32 items\)/, generated)
-    assert_match(/demo_generic_surface_Holder holder = \(demo_generic_surface_Holder\)\{ \.items = \(demo_generic_surface_Slice_i32\)\{ \.data = \(\(int32_t\*\) \(&value\)\), \.len = 1 \} \};/, generated)
+    assert_match(/demo_generic_surface_Holder holder = \(demo_generic_surface_Holder\)\{ \.items = \(demo_generic_surface_Slice_i32\)\{ \.data = &value, \.len = 1 \} \};/, generated)
   end
 
   def test_generate_c_for_generic_functions_with_inferred_type_arguments
@@ -716,6 +930,46 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/static uintptr_t demo_generic_layout_bytes_for_i32\(uintptr_t count\)/, generated)
     assert_match(/return count \* sizeof\(int32_t\);/, generated)
     assert_match(/uintptr_t total = demo_generic_layout_bytes_for_i32\(4\);/, generated)
+  end
+
+  def test_generate_c_for_generic_functions_with_literal_type_arguments
+    source = [
+      "module demo.generic_builder",
+      "",
+      "def capacity_of[N](buffer: str_builder[N]) -> usize:",
+      "    return buffer.capacity()",
+      "",
+      "def main() -> i32:",
+      "    var buffer: str_builder[32]",
+      "    return cast[i32](capacity_of(buffer) + capacity_of(buffer))",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static uintptr_t demo_generic_builder_capacity_of_32\(mt_str_builder_32 buffer\)/, generated)
+    assert_match(/return 32;/, generated)
+    assert_match(/return \(\(int32_t\) \(demo_generic_builder_capacity_of_32\(buffer\) \+ demo_generic_builder_capacity_of_32\(buffer\)\)\);/, generated)
+  end
+
+  def test_generate_c_for_generic_functions_with_explicit_literal_type_arguments
+    source = [
+      "module demo.generic_builder_explicit",
+      "",
+      "def capacity_of[N](buffer: str_builder[N]) -> usize:",
+      "    return buffer.capacity()",
+      "",
+      "def main() -> i32:",
+      "    var buffer: str_builder[32]",
+      "    return cast[i32](capacity_of[32](buffer))",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static uintptr_t demo_generic_builder_explicit_capacity_of_32\(mt_str_builder_32 buffer\)/, generated)
+    assert_match(/return 32;/, generated)
+    assert_match(/return \(\(int32_t\) demo_generic_builder_explicit_capacity_of_32\(buffer\)\);/, generated)
   end
 
   def test_generate_c_for_result_construction_from_expected_context
@@ -954,6 +1208,8 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_source(source)
 
     assert_match(/static mt_str str_slice\(mt_str this, uintptr_t start, uintptr_t len\)/, generated)
+    assert_match(/str slice start must be a UTF-8 boundary/, generated)
+    assert_match(/str slice end must be a UTF-8 boundary/, generated)
     assert_match(/return \(mt_str\)\{ \.data = this\.data \+ start, \.len = len \};/, generated)
     assert_match(/static const char\* std_mem_arena_Arena_to_cstr\(std_mem_arena_Arena \*this, mt_str text\)/, generated)
     assert_match(/uint8_t\* memory = std_mem_arena_Arena_alloc_bytes\(this, text\.len \+ 1\);/, generated)
@@ -961,6 +1217,21 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/\*\(buffer \+ text\.len\) = 0;/, generated)
     assert_match(/mt_str text = \(mt_str\)\{ \.data = "hello world", \.len = 11 \};/, generated)
     assert_match(/const char\* copied = str_to_cstr\(part, &scratch\);/, generated)
+  end
+
+  def test_rejects_codegen_for_direct_str_construction_outside_unsafe
+    source = <<~MT
+      module demo.bad_str_constructor
+
+      def main(data: ptr[char], len: usize) -> str:
+          return str(data = data, len = len)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      generate_c_from_source(source)
+    end
+
+    assert_match(/str construction requires unsafe/, error.message)
   end
 
   def test_generate_c_for_packed_and_aligned_structs
@@ -1010,7 +1281,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/demo_pointer_surface_Counter \*counter_ptr = \(\(demo_pointer_surface_Counter\*\) \(&counter\)\);/, generated)
+    assert_match(/demo_pointer_surface_Counter \*counter_ptr = &counter;/, generated)
     assert_match(/\(\*counter_ptr\)\.value = 7;/, generated)
     assert_match(/return counter\.value;/, generated)
   end
@@ -1053,7 +1324,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/\(\*counter\)\.value \+= 1;/, generated)
     assert_match(/int32_t \*value_ref = &\(\*handle\)\.value;/, generated)
     assert_match(/\*value_ref \+= 2;/, generated)
-    assert_match(/demo_ref_surface_Counter \*raw_counter = \(\(demo_ref_surface_Counter\*\) handle\);/, generated)
+    assert_match(/demo_ref_surface_Counter \*raw_counter = handle;/, generated)
     assert_match(/\(\*raw_counter\)\.value \+= 1;/, generated)
     assert_match(/return \(\*handle\)\.value;/, generated)
   end
@@ -1300,6 +1571,385 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/set_text\(\(\(const char\*\) raw_buffer\)\);/, generated)
     assert_match(/char \*writable = \(\(char\*\) clipboard\);/, generated)
+  end
+
+  def test_generate_c_for_str_buffer_values_and_span_char_calls
+    source = [
+      "module demo.str_buffer_surface",
+      "",
+      "def view(items: span[char]) -> usize:",
+      "    return items.len",
+      "",
+      "def main() -> i32:",
+      "    var buffer = zero[str_buffer[32]]()",
+      "    buffer[0] = 65",
+      "    return cast[i32](view(buffer))",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/char buffer\[32\] = \{ 0 \};/, generated)
+    assert_match(/\(\*mt_checked_index_str_buffer_32\(&\(buffer\), 0\)\) = \(\(char\) 65\);/, generated)
+    assert_match(/\(mt_span_char\)\{ \.data = &buffer\[0\], \.len = 32 \}/, generated)
+  end
+
+  def test_generate_c_for_typed_str_buffer_local_without_initializer
+    source = [
+      "module demo.str_buffer_zero_local",
+      "",
+      "def main() -> i32:",
+      "    var buffer: str_buffer[16]",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/char buffer\[16\] = \{ 0 \};/, generated)
+  end
+
+  def test_generate_c_for_str_buffer_methods
+    source = [
+      "module demo.str_buffer_methods",
+      "",
+      "def main() -> i32:",
+      "    var buffer = zero[str_buffer[16]]()",
+      "    buffer.clear()",
+      "    let view = buffer.as_str()",
+      "    let label = buffer.as_cstr()",
+      "    return cast[i32](buffer.capacity() + view.len)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static bool mt_is_valid_utf8\(const char\* data, uintptr_t len\)/, generated)
+    assert_match(/static const char\* mt_str_buffer_as_cstr\(const char\* data, uintptr_t cap\)/, generated)
+    assert_match(/static uintptr_t mt_str_buffer_len\(const char\* data, uintptr_t cap\)/, generated)
+    assert_match(/static void mt_str_buffer_clear\(char\* data, uintptr_t cap\)/, generated)
+    assert_match(/if \(!mt_is_valid_utf8\(data, len\)\) mt_panic\("str_buffer text must be valid UTF-8"\);/, generated)
+    assert_match(/if \(mt_str_buffer_len\(data, cap\) == cap\) mt_panic\("str_buffer\.as_cstr requires a trailing NUL within capacity"\);/, generated)
+    assert_match(/mt_str_buffer_clear\(&buffer\[0\], 16\);/, generated)
+    assert_match(/mt_str view = \(mt_str\)\{ \.data = &buffer\[0\], \.len = mt_str_buffer_len\(&buffer\[0\], 16\) \};/, generated)
+    assert_match(/const char\* label = mt_str_buffer_as_cstr\(&buffer\[0\], 16\);/, generated)
+    assert_match(/return \(\(int32_t\) \(16 \+ view.len\)\);/, generated)
+  end
+
+  def test_generate_c_for_str_builder_methods_and_span_char_calls
+    source = [
+      "module demo.str_builder_surface",
+      "",
+      "def view(items: span[char]) -> usize:",
+      "    return items.len",
+      "",
+      "def main() -> i32:",
+      "    var buffer: str_builder[32]",
+      "    buffer.assign(\"hi\")",
+      "    buffer.append(\"!\")",
+      "    let text = buffer.as_str()",
+      "    let label = buffer.as_cstr()",
+      "    let raw = view(buffer)",
+      "    buffer.clear()",
+      "    return cast[i32](buffer.capacity() + text.len + raw)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/typedef struct mt_str_builder_32 mt_str_builder_32;/, generated)
+    assert_match(/struct mt_str_builder_32 \{/, generated)
+    assert_match(/char data\[33\];/, generated)
+    assert_match(/uintptr_t len;/, generated)
+    assert_match(/bool dirty;/, generated)
+    assert_match(/static char\* mt_str_builder_prepare_write\(char\* data, uintptr_t cap, bool\* dirty\)/, generated)
+    assert_match(/static uintptr_t mt_str_builder_len\(char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
+    assert_match(/static const char\* mt_str_builder_as_cstr\(char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
+    assert_match(/static void mt_str_builder_assign\(mt_str value, char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
+    assert_match(/static void mt_str_builder_append\(mt_str value, char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
+    assert_match(/static void mt_str_builder_clear\(char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
+    assert_match(/mt_str_builder_32 buffer = \{ 0 \};/, generated)
+    assert_match(/mt_str_builder_assign\(\(mt_str\)\{ \.data = "hi", \.len = 2 \}, &buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
+    assert_match(/mt_str_builder_append\(\(mt_str\)\{ \.data = "!", \.len = 1 \}, &buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
+    assert_match(/mt_str text = \(mt_str\)\{ \.data = &buffer\.data\[0\], \.len = mt_str_builder_len\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\) \};/, generated)
+    assert_match(/const char\* label = mt_str_builder_as_cstr\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
+    assert_match(/\(mt_span_char\)\{ \.data = mt_str_builder_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \.len = 33 \}/, generated)
+    assert_match(/mt_str_builder_clear\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
+  end
+
+  def test_generate_c_for_foreign_defs_with_str_builder_and_span_char_ptr_char_boundary
+    root_source = <<~MT
+      module demo.main
+
+      import std.ui as ui
+
+      def main() -> void:
+          var buffer: str_builder[32]
+          ui.text_box(buffer)
+    MT
+
+    imported_sources = {
+      "std/c/ui.mt" => <<~MT,
+        extern module std.c.ui:
+            include "ui.h"
+
+            extern def TextBox(text: ptr[char], text_size: i32) -> void
+      MT
+      "std/ui.mt" => <<~MT,
+        module std.ui
+
+        import std.c.ui as c
+
+        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.len))
+      MT
+    }
+
+    generated = generate_c_from_program_source(root_source, imported_sources)
+
+    assert_match(/mt_span_char __mt_foreign_arg_public_1 = \(mt_span_char\)\{ \.data = mt_str_builder_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \.len = 33 \};/, generated)
+    assert_match(/TextBox\(__mt_foreign_arg_public_1\.data, \(\(int32_t\) __mt_foreign_arg_public_1\.len\)\);/, generated)
+  end
+
+  def test_generate_c_for_generic_foreign_defs_with_str_builder_public_capacity_mapping
+    root_source = <<~MT
+      module demo.main
+
+      import std.ui as ui
+
+      def main() -> void:
+          var buffer: str_builder[32]
+          ui.text_box(buffer)
+    MT
+
+    imported_sources = {
+      "std/c/ui.mt" => <<~MT,
+        extern module std.c.ui:
+            include "ui.h"
+
+            extern def TextBox(text: ptr[char], text_size: i32) -> void
+      MT
+      "std/ui.mt" => <<~MT,
+        module std.ui
+
+        import std.c.ui as c
+
+        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.capacity() + 1))
+      MT
+    }
+
+    generated = generate_c_from_program_source(root_source, imported_sources)
+
+    assert_match(/TextBox\(mt_str_builder_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(\(int32_t\) (?:33|\(32 \+ 1\))\)\);/, generated)
+  end
+
+  def test_generate_c_for_explicit_literal_specialization_on_imported_generic_foreign_defs
+    root_source = <<~MT
+      module demo.main
+
+      import std.ui as ui
+
+      def main() -> void:
+          var buffer: str_builder[32]
+          ui.text_box[32](buffer)
+    MT
+
+    imported_sources = {
+      "std/c/ui.mt" => <<~MT,
+        extern module std.c.ui:
+            include "ui.h"
+
+            extern def TextBox(text: ptr[char], text_size: i32) -> void
+      MT
+      "std/ui.mt" => <<~MT,
+        module std.ui
+
+        import std.c.ui as c
+
+        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.capacity() + 1))
+      MT
+    }
+
+    generated = generate_c_from_program_source(root_source, imported_sources)
+
+    assert_match(/TextBox\(mt_str_builder_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(\(int32_t\) (?:33|\(32 \+ 1\))\)\);/, generated)
+  end
+
+  def test_generate_c_for_explicit_literal_specialization_on_local_generic_foreign_defs
+    root_source = <<~MT
+      module demo.main
+
+      import std.c.ui as c
+
+      pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.capacity() + 1))
+
+      def main() -> void:
+          var buffer: str_builder[32]
+          text_box[32](buffer)
+    MT
+
+    imported_sources = {
+      "std/c/ui.mt" => <<~MT,
+        extern module std.c.ui:
+            include "ui.h"
+
+            extern def TextBox(text: ptr[char], text_size: i32) -> void
+      MT
+    }
+
+    generated = generate_c_from_program_source(root_source, imported_sources)
+
+    assert_match(/TextBox\(mt_str_builder_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(\(int32_t\) (?:33|\(32 \+ 1\))\)\);/, generated)
+  end
+
+  def test_generate_c_for_cstr_list_buffer_methods_and_foreign_span_cstr_boundary
+    source = <<~MT
+      module demo.main
+
+      import std.ui as ui
+
+      def main() -> i32:
+          var labels: cstr_list_buffer[3, 64]
+          var items = array[str, 3]("Primary", "Secondary", "About")
+          labels.assign(items)
+          ui.use_names(labels.as_cstrs())
+          labels.clear()
+          return cast[i32](labels.capacity() + labels.byte_capacity())
+    MT
+
+    imported_sources = {
+      "std/c/ui.mt" => <<~MT,
+        extern module std.c.ui:
+            include "ui.h"
+
+            extern def UseNames(names: ptr[ptr[char]], count: i32) -> void
+      MT
+      "std/ui.mt" => <<~MT,
+        module std.ui
+
+        import std.c.ui as c
+
+        pub foreign def use_names(names: span[cstr] as span[ptr[char]]) -> void = c.UseNames(names.data, cast[i32](names.len))
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/typedef struct mt_cstr_list_buffer_3_64 mt_cstr_list_buffer_3_64;/, generated)
+    assert_match(/struct mt_cstr_list_buffer_3_64 \{/, generated)
+    assert_match(/const char\* items\[3\];/, generated)
+    assert_match(/char data\[64\];/, generated)
+    assert_match(/uintptr_t len;/, generated)
+    assert_match(/uintptr_t used;/, generated)
+    assert_match(/static void mt_cstr_list_buffer_assign\(mt_span_str values, const char\*\* items, uintptr_t item_cap, char\* data, uintptr_t data_cap, uintptr_t\* len, uintptr_t\* used\)/, generated)
+    assert_match(/static void mt_cstr_list_buffer_clear\(const char\*\* items, uintptr_t item_cap, char\* data, uintptr_t data_cap, uintptr_t\* len, uintptr_t\* used\)/, generated)
+    assert_match(/mt_cstr_list_buffer_3_64 labels = \{ 0 \};/, generated)
+    assert_match(/mt_cstr_list_buffer_assign\(\(mt_span_str\)\{ \.data = &items\[0\], \.len = 3 \}, &labels\.items\[0\], 3, &labels\.data\[0\], 64, &labels\.len, &labels\.used\);/, generated)
+    assert_match(/\(mt_span_cstr\)\{ \.data = &labels\.items\[0\], \.len = labels\.len \}/, generated)
+    assert_match(/mt_cstr_list_buffer_clear\(&labels\.items\[0\], 3, &labels\.data\[0\], 64, &labels\.len, &labels\.used\);/, generated)
+    refute_match(/to_cstrs\(/, generated)
+  end
+
+  def test_generate_c_for_foreign_str_as_cstr_call_with_str_buffer_as_cstr_without_scratch
+    source = <<~MT
+      module demo.main
+
+      import std.ui as ui
+
+      def main() -> void:
+          var buffer: str_buffer[32]
+          ui.label(buffer.as_cstr())
+    MT
+
+    imported_sources = {
+      "std/c/ui.mt" => <<~MT,
+        extern module std.c.ui:
+            include "ui.h"
+
+            extern def Label(text: cstr) -> void
+      MT
+      "std/ui.mt" => <<~MT,
+        module std.ui
+
+        import std.c.ui as c
+
+        pub foreign def label(text: str as cstr) -> void = c.Label
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/Label\(mt_str_buffer_as_cstr\(&buffer\[0\], 32\)\);/, generated)
+    refute_match(/to_cstr/, generated)
+  end
+
+  def test_generate_c_for_foreign_defs_with_str_buffer_and_span_char_ptr_char_boundary
+    source = <<~MT
+      module demo.main
+
+      import std.mem as mem
+
+      def main() -> void:
+          var fixed = zero[str_buffer[32]]()
+          var dynamic = zero[str_buffer[64]]()
+          mem.write_fixed(fixed)
+          mem.write_dynamic(dynamic)
+    MT
+
+    imported_sources = {
+      "std/c/mem.mt" => <<~MT,
+        extern module std.c.mem:
+            include "mem.h"
+
+            extern def WriteFixed(label: ptr[char]) -> void
+            extern def WriteDynamic(label: ptr[char]) -> void
+      MT
+      "std/mem.mt" => <<~MT,
+        module std.mem
+
+        import std.c.mem as c
+
+        pub foreign def write_fixed(label: str_buffer[32] as ptr[char]) -> void = c.WriteFixed(label)
+        pub foreign def write_dynamic(label: span[char] as ptr[char]) -> void = c.WriteDynamic(label)
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/WriteFixed\(&fixed\[0\]\);/, generated)
+    assert_match(/WriteDynamic\(\(\(mt_span_char\)\{ \.data = &dynamic\[0\], \.len = 64 \}\)\.data\);/, generated)
+  end
+
+  def test_generate_c_for_foreign_mapping_public_alias_boundary_and_length
+    source = <<~MT
+      module demo.main
+
+      import std.ui as ui
+
+      def main() -> void:
+          var buffer = zero[str_buffer[32]]()
+          ui.text_box(buffer)
+    MT
+
+    imported_sources = {
+      "std/c/ui.mt" => <<~MT,
+        extern module std.c.ui:
+            include "ui.h"
+
+            extern def TextBox(text: ptr[char], text_size: i32) -> void
+      MT
+      "std/ui.mt" => <<~MT,
+        module std.ui
+
+        import std.c.ui as c
+
+        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.len))
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/mt_span_char __mt_foreign_arg_public_\d+ = \(mt_span_char\)\{ \.data = &buffer\[0\], \.len = 32 \};/, generated)
+    assert_match(/TextBox\(__mt_foreign_arg_public_\d+\.data, \(\(int32_t\) __mt_foreign_arg_public_\d+\.len\)\);/, generated)
   end
 
   def test_generate_c_for_unsafe_typed_null_pointer_to_cstr_casts
