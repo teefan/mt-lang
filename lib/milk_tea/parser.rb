@@ -979,7 +979,14 @@ module MilkTea
     end
 
     def explicit_specialization_argument?(value)
-      definite_type_argument?(value) || value.is_a?(AST::IntegerLiteral) || value.is_a?(AST::FloatLiteral)
+      definite_type_argument?(value) ||
+        potential_named_literal_type_argument?(value) ||
+        value.is_a?(AST::IntegerLiteral) ||
+        value.is_a?(AST::FloatLiteral)
+    end
+
+    def potential_named_literal_type_argument?(value)
+      value.is_a?(AST::TypeRef) && value.arguments.empty? && !value.nullable
     end
 
     def definite_type_argument?(value)

@@ -1063,6 +1063,29 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return \(\(int32_t\) demo_generic_builder_explicit_capacity_of_32\(buffer\)\);/, generated)
   end
 
+  def test_generate_c_for_generic_functions_with_explicit_named_const_type_arguments
+    source = [
+      "module demo.generic_builder_named_const",
+      "",
+      "const BASE: i32 = 28",
+      "const CAPACITY: i32 = BASE + 4",
+      "",
+      "def capacity_of[N](buffer: str_builder[N]) -> usize:",
+      "    return buffer.capacity()",
+      "",
+      "def main() -> i32:",
+      "    var buffer: str_builder[CAPACITY]",
+      "    return cast[i32](capacity_of[CAPACITY](buffer))",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static uintptr_t demo_generic_builder_named_const_capacity_of_32\(mt_str_builder_32 buffer\)/, generated)
+    assert_match(/return 32;/, generated)
+    assert_match(/return \(\(int32_t\) demo_generic_builder_named_const_capacity_of_32\(buffer\)\);/, generated)
+  end
+
   def test_generate_c_for_result_construction_from_expected_context
     source = [
       "module demo.result_surface",

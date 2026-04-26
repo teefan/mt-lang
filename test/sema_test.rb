@@ -1113,6 +1113,30 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_named_constants_in_integer_type_argument_slots
+    source = <<~MT
+      module demo.named_const_type_args
+
+      const BASE: i32 = 28
+      const CAPACITY: i32 = BASE + 4
+
+      def capacity_of[N](buffer: str_builder[N]) -> usize:
+          return buffer.capacity()
+
+      def main() -> i32:
+          var buffer: str_builder[CAPACITY]
+          var values = zero[array[i32, CAPACITY]]()
+          values[0] = cast[i32](capacity_of[CAPACITY](buffer))
+          return values[0]
+    MT
+
+    result = check_source(source)
+
+    assert_equal 32, result.values.fetch("CAPACITY").const_value
+    assert_equal ["N"], result.functions.fetch("capacity_of").type_params
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_result_construction_from_expected_context
     source = <<~MT
       module demo.result
