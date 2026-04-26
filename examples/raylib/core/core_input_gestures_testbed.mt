@@ -2,7 +2,6 @@ module examples.raylib.core.core_input_gestures_testbed
 
 import std.c.libm as math
 import std.c.raylib as rl
-import std.raylib.runtime as runtime
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
@@ -80,7 +79,6 @@ def main() -> i32:
     var current_angle_degrees: f32 = 0.0
     var final_vector = rl.Vector2(x = 0.0, y = 0.0)
     let protractor_position = rl.Vector2(x = 266.0, y = 315.0)
-    var smoke_frame_count = 0
 
     rl.SetTargetFPS(60)
 
@@ -275,9 +273,5 @@ def main() -> i32:
                 rl.DrawCircleV(mouse_position, 5.0, current_gesture_color)
 
         rl.EndDrawing()
-
-        smoke_frame_count += 1
-        if runtime.smoke_capture(smoke_frame_count, 3):
-            break
 
     return 0

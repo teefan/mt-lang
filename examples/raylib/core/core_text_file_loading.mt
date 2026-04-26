@@ -2,7 +2,6 @@ module examples.raylib.core.core_text_file_loading
 
 import std.c.raylib as rl
 import std.raylib.math as rm
-import std.raylib.runtime as runtime
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
@@ -82,7 +81,6 @@ def main() -> i32:
     )
 
     rl.SetTargetFPS(60)
-    var smoke_frame_count = 0
 
     while not rl.WindowShouldClose():
         let scroll = rl.GetMouseWheelMove()
@@ -120,10 +118,6 @@ def main() -> i32:
         rl.DrawRectangleRec(scroll_bar, rl.MAROON)
 
         rl.EndDrawing()
-
-        smoke_frame_count += 1
-        if runtime.smoke_capture(smoke_frame_count, 3):
-            break
 
     rl.UnloadTextLines(lines, line_count)
     rl.UnloadFileText(text)

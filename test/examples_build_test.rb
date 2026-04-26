@@ -8,14 +8,17 @@ class MilkTeaExamplesBuildTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
+    manifest = example_manifest
+
     Dir.mktmpdir("milk-tea-examples-build") do |dir|
-      example_manifest.each do |entry|
+      manifest.each_with_index do |entry, index|
         path = entry.fetch(:path)
         relative_path = entry.fetch(:relative_path)
         output_basename = relative_path.delete_suffix(".mt").tr("/", "__")
         output_path = File.join(dir, output_basename)
         c_path = File.join(dir, "#{output_basename}.c")
 
+        announce_build_progress(index + 1, manifest.length, relative_path)
         result = MilkTea::Build.build(path, output_path:, cc: compiler, keep_c_path: c_path)
 
         assert_equal File.expand_path(output_path), result.output_path, relative_path
@@ -37,6 +40,11 @@ class MilkTeaExamplesBuildTest < Minitest::Test
   end
 
   private
+
+  def announce_build_progress(current, total, relative_path)
+    $stdout.puts("[examples_build_test #{current}/#{total}] #{relative_path}")
+    $stdout.flush
+  end
 
   def example_manifest
     examples_root = File.expand_path("../examples", __dir__)

@@ -1,7 +1,6 @@
 module examples.raylib.textures.textures_srcrec_dstrec
 
 import std.c.raylib as rl
-import std.raylib.runtime as runtime
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
@@ -34,7 +33,6 @@ def main() -> i32:
     let origin = rl.Vector2(x = cast[f32](frame_width), y = cast[f32](frame_height))
 
     var rotation: f32 = 0.0
-    var smoke_frame_count = 0
 
     rl.SetTargetFPS(60)
 
@@ -51,9 +49,5 @@ def main() -> i32:
         rl.DrawText(credit_text, screen_width - 200, screen_height - 20, 10, rl.GRAY)
 
         rl.EndDrawing()
-
-        smoke_frame_count += 1
-        if runtime.smoke_capture(smoke_frame_count, 3):
-            break
 
     return 0
