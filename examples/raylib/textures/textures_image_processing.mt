@@ -98,8 +98,7 @@ def main() -> i32:
                 rl.ImageFlipHorizontal(raw(addr(image_copy)))
 
             let pixels = rl.LoadImageColors(image_copy)
-            unsafe:
-                rl.UpdateTexture(texture, cast[ptr[void]](pixels))
+            rl.UpdateTexture(texture, pixels)
             rl.UnloadImageColors(pixels)
 
             texture_reload = false

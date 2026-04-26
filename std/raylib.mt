@@ -495,11 +495,11 @@ pub foreign def set_pixel_color(dst_ptr: ptr[void], color: Color, format: i32) -
 pub foreign def get_pixel_data_size(width: i32, height: i32, format: i32) -> i32 = c.GetPixelDataSize
 pub foreign def get_font_default() -> Font = c.GetFontDefault
 pub foreign def load_font(file_name: cstr) -> Font = c.LoadFont
-pub foreign def load_font_ex(file_name: cstr, font_size: i32, codepoints: ptr[i32], codepoint_count: i32) -> Font = c.LoadFontEx
+pub foreign def load_font_ex(file_name: cstr, font_size: i32, codepoints: ptr[i32]?, codepoint_count: i32) -> Font = c.LoadFontEx
 pub foreign def load_font_from_image(image: Image, key: Color, first_char: i32) -> Font = c.LoadFontFromImage
-pub foreign def load_font_from_memory(file_type: cstr, file_data: ptr[u8], data_size: i32, font_size: i32, codepoints: ptr[i32], codepoint_count: i32) -> Font = c.LoadFontFromMemory
+pub foreign def load_font_from_memory(file_type: cstr, file_data: ptr[u8], data_size: i32, font_size: i32, codepoints: ptr[i32]?, codepoint_count: i32) -> Font = c.LoadFontFromMemory
 pub foreign def is_font_valid(font: Font) -> bool = c.IsFontValid
-pub foreign def load_font_data(file_data: ptr[u8], data_size: i32, font_size: i32, codepoints: ptr[i32], codepoint_count: i32, type: i32, glyph_count: ptr[i32]) -> ptr[GlyphInfo] = c.LoadFontData
+pub foreign def load_font_data(file_data: ptr[u8], data_size: i32, font_size: i32, codepoints: ptr[i32]?, codepoint_count: i32, type: i32, glyph_count: ptr[i32]) -> ptr[GlyphInfo] = c.LoadFontData
 pub foreign def gen_image_font_atlas(glyphs: ptr[GlyphInfo], glyph_recs: ptr[ptr[Rectangle]], glyph_count: i32, font_size: i32, padding: i32, pack_method: i32) -> Image = c.GenImageFontAtlas
 pub foreign def unload_font_data(glyphs: ptr[GlyphInfo], glyph_count: i32) -> void = c.UnloadFontData
 pub foreign def unload_font(font: Font) -> void = c.UnloadFont

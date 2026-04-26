@@ -719,6 +719,38 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_plain_null_for_nullable_external_pointer_argument
+    source = <<~MT
+      module demo.ok
+
+      extern def load_font_ex(codepoints: ptr[i32]?) -> void
+
+      def main() -> void:
+          load_font_ex(null)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_external_ptr_to_void_argument_without_unsafe_cast
+    source = <<~MT
+      module demo.ok
+
+      extern def update_texture(pixels: ptr[void]) -> void
+
+      def main() -> void:
+          var pixels = zero[array[i32, 4]]()
+          let data = raw(addr(pixels[0]))
+          update_texture(data)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_rejects_owned_foreign_release_on_non_nullable_binding
     root_source = <<~MT
       module demo.main

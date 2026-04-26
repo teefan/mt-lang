@@ -11,9 +11,11 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
+    assert_equal({ "codepoints" => "ptr[i32]?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadFontEx"))
     assert_equal ["RAYGUI_IMPLEMENTATION"], registry.fetch("raygui").implementation_defines
     assert_equal ["raylib", "m"], registry.fetch("raygui").link_libraries
     assert_includes registry.fetch("raygui").header_candidates.first, "third_party/raylib-upstream/examples/shapes/raygui.h"
+    assert_equal({ "codepoints" => "ptr[i32]?" }, registry.fetch("raygui").function_param_type_overrides.fetch("LoadFontData"))
     assert_equal "std.c.rlgl", registry.fetch("rlgl").module_name
     assert_equal ["raylib"], registry.fetch("rlgl").link_libraries
     assert_includes registry.fetch("rlgl").header_candidates.last, "third_party/raylib-upstream/src/rlgl.h"
@@ -59,6 +61,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
         link_libraries: ["sample"],
         env_var: "SAMPLE_HEADER",
         clang_args: ["-I#{dir}"],
+        function_param_type_overrides: { "sample_function" => { "data" => "ptr[u8]?" } },
       )
 
       observed = nil
@@ -77,6 +80,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
           include_directives: ["sample.h"],
           clang: "clang-custom",
           clang_args: ["-I#{dir}"],
+          function_param_type_overrides: { "sample_function" => { "data" => "ptr[u8]?" } },
         },
         observed,
       )

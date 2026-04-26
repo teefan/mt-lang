@@ -16,7 +16,7 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var parrots = rl.LoadImage(parrots_path)
-    let font = rl.LoadFontEx(font_path, font_size, zero[ptr[i32]](), 0)
+    let font = rl.LoadFontEx(font_path, font_size, null, 0)
     defer rl.UnloadFont(font)
 
     rl.ImageDrawTextEx(raw(addr(parrots)), font, title_text, rl.Vector2(x = 20.0, y = 20.0), cast[f32](font.baseSize), 0.0, rl.RED)

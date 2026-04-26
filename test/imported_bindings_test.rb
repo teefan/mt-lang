@@ -35,6 +35,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     refute_match(/^pub type va_list = /, source)
     refute_match(/^pub type TraceLogCallback = /, source)
     refute_match(/^pub foreign def set_trace_log_callback\(/, source)
+    assert_match(/^pub foreign def load_font_ex\(file_name: cstr, font_size: i32, codepoints: ptr\[i32\]\?, codepoint_count: i32\) -> Font = c\.LoadFontEx$/, source)
+    assert_match(/^pub foreign def load_font_from_memory\(file_type: cstr, file_data: ptr\[u8\], data_size: i32, font_size: i32, codepoints: ptr\[i32\]\?, codepoint_count: i32\) -> Font = c\.LoadFontFromMemory$/, source)
+    assert_match(/^pub foreign def load_font_data\(file_data: ptr\[u8\], data_size: i32, font_size: i32, codepoints: ptr\[i32\]\?, codepoint_count: i32, type: i32, glyph_count: ptr\[i32\]\) -> ptr\[GlyphInfo\] = c\.LoadFontData$/, source)
   end
 
   def test_checked_in_rlgl_binding_matches_policy_and_loads

@@ -158,6 +158,30 @@ class MilkTeaBindgenTest < Minitest::Test
     end
   end
 
+  def test_generate_applies_function_param_type_overrides
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-overrides") do |dir|
+      header_path = File.join(dir, "sample.h")
+      File.write(header_path, <<~C)
+        int load_font_ex(int *codepoints, int codepointCount);
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+        function_param_type_overrides: {
+          "load_font_ex" => { "codepoints" => "ptr[i32]?" },
+        },
+      )
+
+      assert_match(/extern def load_font_ex\(codepoints: ptr\[i32\]\?, codepointCount: i32\) -> i32/, generated)
+    end
+  end
+
   private
 
   def executable_available?(program)
