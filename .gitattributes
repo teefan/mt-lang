@@ -1,0 +1,91 @@
+# Auto detect
+##   Handle line endings automatically for files detected as
+##   text and leave all files detected as binary untouched.
+##   This will handle all files NOT defined below.
+*                 text=auto
+
+# Source code
+*.bat             text eol=crlf
+*.css             text diff=css
+*.html            text diff=html
+*.ini             text
+*.json            text
+*.sh              text eol=lf
+*.xml             text
+
+# Documentation
+*.markdown        text diff=markdown
+*.md              text diff=markdown
+*.txt             text
+
+# Configs
+*.conf            text
+*.config          text
+.editorconfig     text
+*.env             text
+*.gdformatrc      text
+*.gdlintrc        text
+.gitattributes    text
+.gitconfig        text
+*.toml            text
+*.yaml            text
+*.yml             text
+
+# Graphics
+*.ai              binary
+*.aseprite        binary
+*.gif             binary
+*.ico             binary
+*.jpg             binary
+*.jpeg            binary
+*.pdf             binary
+*.png             binary
+*.psd             binary
+*.svg             text
+*.tif             binary
+*.tiff            binary
+*.wbmp            binary
+*.webp            binary
+
+# Audio
+*.kar             binary
+*.m4a             binary
+*.mid             binary
+*.midi            binary
+*.mp3             binary
+*.ogg             binary
+*.wave            binary
+
+# Video
+*.avi             binary
+*.m4v             binary
+*.mov             binary
+*.mp4             binary
+*.mpeg            binary
+*.mpg             binary
+*.ogv             binary
+*.webm            binary
+
+# Archives
+*.7z              binary
+*.gz              binary
+*.jar             binary
+*.rar             binary
+*.tar             binary
+*.zip             binary
+
+# Fonts
+*.ttf             binary
+*.eot             binary
+*.otf             binary
+*.woff            binary
+*.woff2           binary
+
+# Executables
+*.exe             binary
+
+# RC files
+*.*rc             text
+
+# Ignore files
+*.*ignore         text
