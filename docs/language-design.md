@@ -124,7 +124,7 @@ Milk Tea should use a deliberately small punctuation set. The only everyday symb
 
 Everything else should prefer words over symbols.
 
-Address formation and dereference stay as word forms: `addr(expr)`, `raw(ref_value)`, `value(ref_value)`, and `deref(ptr_value)`.
+Address formation and dereference stay as word forms: `addr(expr)`, `ro_addr(expr)`, `raw(ref_value)`, `value(ref_value)`, and `deref(ptr_value)`.
 
 ### Declarations
 
@@ -636,6 +636,7 @@ Rules for safe references:
 
 - `ref[T]` is a non-null writable safe alias to one live object.
 - `addr(expr)` requires a mutable addressable lvalue source and produces `ref[T]`.
+- `ro_addr(expr)` requires an addressable lvalue source and produces `const_ptr[T]` for read-only raw interop.
 - `value(ref_value)` is safe and yields the referenced lvalue/value.
 - `raw(ref_value)` converts a safe reference to `ptr[T]` explicitly.
 - there is no auto projection through refs: use `value(handle).field` and `value(handle).edit_method()`.
@@ -645,10 +646,11 @@ Rules for safe references:
 
 Rules for raw pointers:
 
-- `ptr[T]` and `ptr[T]?` are raw pointer values.
+- `ptr[T]`, `ptr[T]?`, `const_ptr[T]`, and `const_ptr[T]?` are raw pointer values.
 - there is no source `&expr`, `*ptr`, or `ptr->field`.
-- spell address formation as `addr(expr)` and raw pointer formation as `raw(addr(expr))` when you truly need a raw pointer.
+- spell writable address formation as `addr(expr)`, read-only raw address formation as `ro_addr(expr)`, and writable raw pointer formation as `raw(addr(expr))` when you truly need a raw pointer.
 - `deref(ptr)` dereferences a raw pointer and requires `unsafe`.
+- `const_ptr[T]` is the read-only raw-pointer surface and lowers to C `const T*`.
 - `deref(ptr).field` accesses a member through a raw pointer and requires `unsafe`.
 - pointer arithmetic and pointer indexing remain `unsafe`.
 - raw pointer offsets and indices may use ordinary integer expressions directly; code does not need a pre-emptive cast to `usize` just to write `ptr[i]` or `ptr + offset`.
@@ -666,7 +668,8 @@ References are separate from methods:
 This gives the language clear aliasing tools instead of one overloaded surface:
 
 - `ref[T]` for safe aliasing of one mutable object
-- `ptr[T]` and `ptr[T]?` for raw memory and FFI
+- `ptr[T]` / `ptr[T]?` for writable raw memory and FFI
+- `const_ptr[T]` / `const_ptr[T]?` for read-only raw memory and FFI
 - `span[T]` for sized borrowed views over raw pointer data
 
 ### Spans
@@ -681,7 +684,7 @@ span[T] is conceptually:
 
 `span[T]` should be built into the language surface as a standard view type because it is the right default for arrays, buffers, decoded file content, vertex streams, and audio samples.
 
-`span[T]` is the many-element view. `ref[T]` and `ref[const T]` are the single-object references.
+`span[T]` is the many-element view. `ref[T]` is the safe writable single-object alias, while `const_ptr[T]` is the raw read-only single-object pointer form.
 
 ### Lifetime story
 

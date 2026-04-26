@@ -56,7 +56,10 @@ module MilkTea
       "while" => :while,
     }.freeze
 
-    ASSIGNMENT_TYPES = %i[equal plus_equal minus_equal star_equal slash_equal].freeze
+    ASSIGNMENT_TYPES = %i[
+      equal plus_equal minus_equal star_equal slash_equal percent_equal
+      amp_equal pipe_equal caret_equal shift_left_equal shift_right_equal
+    ].freeze
 
     def assignment?
       ASSIGNMENT_TYPES.include?(type)

@@ -1343,6 +1343,9 @@ module MilkTea
         when :addr
           argument = expression.arguments.fetch(0)
           lower_addr_expression(argument.value, env:, target_type: type)
+        when :ro_addr
+          argument = expression.arguments.fetch(0)
+          lower_addr_expression(argument.value, env:, target_type: type)
         when :value
           argument = expression.arguments.fetch(0)
           IR::Unary.new(operator: "*", operand: lower_expression(argument.value, env:), type:)
@@ -1931,6 +1934,21 @@ module MilkTea
         when :zero
           IR::ZeroInit.new(type:)
         when :addr
+          argument = expression.arguments.fetch(0)
+          lowered_argument = lower_inline_foreign_mapping_expression(
+            argument.value,
+            mapping_env:,
+            replacements:,
+            owner_analysis:,
+          )
+          if lowered_argument.is_a?(IR::Name) && lowered_argument.pointer
+            cast_expression(lowered_argument, type)
+          elsif lowered_argument.is_a?(IR::Unary) && lowered_argument.operator == "*"
+            cast_expression(lowered_argument.operand, type)
+          else
+            IR::AddressOf.new(expression: lowered_argument, type:)
+          end
+        when :ro_addr
           argument = expression.arguments.fetch(0)
           lowered_argument = lower_inline_foreign_mapping_expression(
             argument.value,
@@ -2663,6 +2681,8 @@ module MilkTea
             [:panic, nil, nil, nil]
           elsif callee.name == "addr"
             [:addr, nil, nil, nil]
+          elsif callee.name == "ro_addr"
+            [:ro_addr, nil, nil, nil]
           elsif callee.name == "value"
             [:value, nil, nil, nil]
           elsif callee.name == "deref"
@@ -2868,6 +2888,9 @@ module MilkTea
           when :addr
             argument_type = infer_expression_type(expression.arguments.fetch(0).value, env:)
             Types::GenericInstance.new("ref", [argument_type])
+          when :ro_addr
+            argument_type = infer_expression_type(expression.arguments.fetch(0).value, env:)
+            Types::GenericInstance.new("const_ptr", [argument_type])
           when :value
             infer_value_type(expression.arguments.fetch(0).value, env:)
           when :deref
@@ -3376,7 +3399,7 @@ module MilkTea
       end
 
       def pointer_type?(type)
-        type.is_a?(Types::GenericInstance) && type.name == "ptr" && type.arguments.length == 1
+        type.is_a?(Types::GenericInstance) && ["ptr", "const_ptr"].include?(type.name) && type.arguments.length == 1
       end
 
       def ref_type?(type)

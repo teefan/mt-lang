@@ -17,6 +17,8 @@ module MilkTea
   class Lexer
     THREE_CHAR_TOKENS = {
       "..." => :ellipsis,
+      "<<=" => :shift_left_equal,
+      ">>=" => :shift_right_equal,
     }.freeze
 
     TWO_CHAR_TOKENS = {
@@ -27,6 +29,10 @@ module MilkTea
       "-=" => :minus_equal,
       "*=" => :star_equal,
       "/=" => :slash_equal,
+      "%=" => :percent_equal,
+      "&=" => :amp_equal,
+      "|=" => :pipe_equal,
+      "^=" => :caret_equal,
       "==" => :equal_equal,
       "!=" => :bang_equal,
       "<=" => :less_equal,

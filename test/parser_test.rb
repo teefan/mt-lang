@@ -385,6 +385,33 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "char", missing.value.type.arguments.first.value.name.to_s
   end
 
+  def test_parses_const_pointer_types_and_ro_addr_calls
+    source = <<~MT
+      module demo.const_pointers
+
+      extern def inspect(values: const_ptr[i32]) -> void
+
+      def main() -> void:
+          let value = 7
+          inspect(ro_addr(value))
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    inspect_fn = ast.declarations[0]
+    assert_equal "const_ptr", inspect_fn.params.first.type.name.to_s
+    assert_equal "i32", inspect_fn.params.first.type.arguments.first.value.name.to_s
+
+    main_fn = ast.declarations[1]
+    inspect_call = main_fn.body[1].expression
+    assert_instance_of MilkTea::AST::Call, inspect_call
+    assert_equal "inspect", inspect_call.callee.name
+
+    ro_addr_call = inspect_call.arguments.first.value
+    assert_instance_of MilkTea::AST::Call, ro_addr_call
+    assert_equal "ro_addr", ro_addr_call.callee.name
+  end
+
   def test_parses_generic_struct_declaration_and_constructor_call
     source = <<~MT
       module demo.generics
@@ -785,6 +812,32 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::MemberAccess, assignment.target
     assert_instance_of MilkTea::AST::Call, assignment.target.receiver
     assert_equal "deref", assignment.target.receiver.callee.name
+  end
+
+  def test_parses_extended_compound_assignment_operators
+    source = <<~MT
+      module demo.compound_assignments
+
+      flags Bits: u32
+          a = 1 << 0
+          b = 1 << 1
+
+      def main() -> void:
+          var value = 12
+          value %= 5
+          value <<= 1
+          value >>= 1
+          var bits = Bits.a
+          bits |= Bits.b
+          bits &= Bits.b
+          bits ^= Bits.a
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations[1]
+
+    assignments = main_fn.body.select { |statement| statement.is_a?(MilkTea::AST::Assignment) }
+    assert_equal ["%=", "<<=", ">>=", "|=", "&=", "^="], assignments.map(&:operator)
   end
 
   def test_rejects_legacy_pointer_sigils

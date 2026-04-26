@@ -587,6 +587,18 @@ module MilkTea
           unless target_type.numeric? && value_type.numeric? && target_type == value_type
             raise SemaError, "operator #{statement.operator} requires matching numeric types, got #{target_type} and #{value_type}"
           end
+        when "%="
+          unless common_integer_type(target_type, value_type) == target_type
+            raise SemaError, "operator #{statement.operator} requires compatible integer types, got #{target_type} and #{value_type}"
+          end
+        when "&=", "|=", "^="
+          unless target_type == value_type && bitwise_type?(target_type)
+            raise SemaError, "operator #{statement.operator} requires matching integer or flags types, got #{target_type} and #{value_type}"
+          end
+        when "<<=", ">>="
+          unless target_type.is_a?(Types::Primitive) && target_type.integer? && value_type.is_a?(Types::Primitive) && value_type.integer?
+            raise SemaError, "operator #{statement.operator} requires integer operands, got #{target_type} and #{value_type}"
+          end
         else
           raise SemaError, "unsupported assignment operator #{statement.operator}"
         end
@@ -1114,6 +1126,8 @@ module MilkTea
           check_panic_call(expression.arguments, scopes:)
         when :addr
           check_addr_call(expression.arguments, scopes:)
+        when :ro_addr
+          check_ro_addr_call(expression.arguments, scopes:)
         when :value
           check_value_call(expression.arguments, scopes:)
         when :deref
@@ -1309,6 +1323,7 @@ module MilkTea
           return [:result_err, nil, nil] if callee.name == "err"
           return [:panic, nil, nil] if callee.name == "panic"
           return [:addr, nil, nil] if callee.name == "addr"
+          return [:ro_addr, nil, nil] if callee.name == "ro_addr"
           return [:value, nil, nil] if callee.name == "value"
           return [:deref, nil, nil] if callee.name == "deref"
           return [:raw, nil, nil] if callee.name == "raw"
@@ -1507,6 +1522,14 @@ module MilkTea
 
         source_type = infer_addr_source_type(arguments.first.value, scopes:)
         Types::GenericInstance.new("ref", [source_type])
+      end
+
+      def check_ro_addr_call(arguments, scopes:)
+        raise SemaError, "ro_addr does not support named arguments" if arguments.any?(&:name)
+        raise SemaError, "ro_addr expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+
+        source_type = infer_ro_addr_source_type(arguments.first.value, scopes:)
+        const_pointer_to(source_type)
       end
 
       def check_value_call(arguments, scopes:)
@@ -1913,6 +1936,7 @@ module MilkTea
         return true if actual_type == expected_type
         return true if null_assignable_to?(actual_type, expected_type)
         return true if expected_type.is_a?(Types::Nullable) && actual_type == expected_type.base
+        return true if mutable_to_const_pointer_compatibility?(actual_type, expected_type)
         return true if actual_type.is_a?(Types::EnumBase) && actual_type.backing_type == expected_type
         return true if string_literal_cstr_compatibility?(expression, expected_type)
         return true if integer_literal_numeric_compatibility?(expression, expected_type)
@@ -1992,6 +2016,7 @@ module MilkTea
 
       def foreign_identity_projection_cast_compatible?(actual_type, expected_type)
         return true if actual_type == expected_type
+        return true if mutable_to_const_pointer_compatibility?(actual_type, expected_type)
 
         if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
           return foreign_identity_projection_cast_compatible?(actual_type.base, expected_type.base)
@@ -2001,6 +2026,7 @@ module MilkTea
         return false if actual_type.is_a?(Types::Nullable)
 
         if pointer_type?(actual_type) && pointer_type?(expected_type)
+          return false if const_pointer_type?(actual_type) && mutable_pointer_type?(expected_type)
           return true if void_pointer_type?(actual_type) || void_pointer_type?(expected_type)
 
           return true if foreign_identity_projection_cast_compatible?(actual_type.arguments.first, expected_type.arguments.first)
@@ -2188,7 +2214,15 @@ module MilkTea
       end
 
       def pointer_type?(type)
+        mutable_pointer_type?(type) || const_pointer_type?(type)
+      end
+
+      def mutable_pointer_type?(type)
         type.is_a?(Types::GenericInstance) && type.name == "ptr" && type.arguments.length == 1
+      end
+
+      def const_pointer_type?(type)
+        type.is_a?(Types::GenericInstance) && type.name == "const_ptr" && type.arguments.length == 1
       end
 
       def ref_type?(type)
@@ -2333,6 +2367,10 @@ module MilkTea
         Types::GenericInstance.new("ptr", [type])
       end
 
+      def const_pointer_to(type)
+        Types::GenericInstance.new("const_ptr", [type])
+      end
+
       def contains_ref_type?(type)
         case type
         when Types::Nullable
@@ -2392,6 +2430,11 @@ module MilkTea
         when "ptr"
           raise SemaError, "ptr requires exactly one type argument" unless arguments.length == 1
           raise SemaError, "ptr type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
+        when "const_ptr"
+          raise SemaError, "const_ptr requires exactly one type argument" unless arguments.length == 1
+          raise SemaError, "const_ptr type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
+          raise SemaError, "const_ptr cannot target void" if arguments.first.is_a?(Types::Primitive) && arguments.first.void?
+          raise SemaError, "const_ptr cannot target ref types" if contains_ref_type?(arguments.first)
         when "ref"
           raise SemaError, "ref requires exactly one type argument" unless arguments.length == 1
           raise SemaError, "ref type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
@@ -2936,6 +2979,15 @@ module MilkTea
         end
       end
 
+      def infer_ro_addr_source_type(expression, scopes:)
+        raise SemaError, "ro_addr requires a safe lvalue source" unless safe_reference_source_expression?(expression, scopes:)
+
+        source_type = infer_expression(expression, scopes:)
+        raise SemaError, "ro_addr cannot target ref values" if contains_ref_type?(source_type)
+
+        source_type
+      end
+
       def infer_addr_source_type(expression, scopes:)
         raise SemaError, "addr requires a mutable safe lvalue source" unless safe_reference_source_expression?(expression, scopes:)
 
@@ -2970,6 +3022,14 @@ module MilkTea
         raise SemaError, "raw pointer dereference requires unsafe" unless unsafe_context?
 
         pointee
+      end
+
+      def mutable_to_const_pointer_compatibility?(actual_type, expected_type)
+        return mutable_to_const_pointer_compatibility?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
+        return false if actual_type.is_a?(Types::Nullable)
+        return false unless mutable_pointer_type?(actual_type) && const_pointer_type?(expected_type)
+
+        pointee_type(actual_type) == pointee_type(expected_type)
       end
 
       def value_call?(expression)

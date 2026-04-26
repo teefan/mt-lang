@@ -1193,7 +1193,7 @@ module MilkTea
 
     def pointer_member_receiver?(expression)
       (expression.is_a?(IR::Name) && expression.pointer) ||
-        (expression.respond_to?(:type) && (pointer_type?(expression.type) || ref_type?(expression.type)))
+        (expression.respond_to?(:type) && (raw_pointer_type?(expression.type) || ref_type?(expression.type)))
     end
 
     def wrap_index_receiver(expression)
@@ -1226,8 +1226,12 @@ module MilkTea
         return c_declaration_parts(array_element_type(type), "#{declarator}[#{array_length(type)}]")
       end
 
-      if pointer_type?(type)
+      if mutable_pointer_type?(type)
         return c_declaration_parts(type.arguments.first, "*#{name}")
+      end
+
+      if const_pointer_type?(type)
+        return [generic_c_type(type), name]
       end
 
       if ref_type?(type)
@@ -2142,6 +2146,10 @@ module MilkTea
         raise LoweringError, "ptr requires exactly one type argument" unless type.arguments.length == 1
 
         "#{c_type(type.arguments.first)}*"
+      when "const_ptr"
+        raise LoweringError, "const_ptr requires exactly one type argument" unless type.arguments.length == 1
+
+        "const #{c_type(type.arguments.first)}*"
       when "ref"
         raise LoweringError, "ref requires exactly one type argument" unless type.arguments.length == 1
 
@@ -2155,8 +2163,20 @@ module MilkTea
       end
     end
 
-    def pointer_type?(type)
+    def mutable_pointer_type?(type)
       type.is_a?(Types::GenericInstance) && type.name == "ptr" && type.arguments.length == 1
+    end
+
+    def const_pointer_type?(type)
+      type.is_a?(Types::GenericInstance) && type.name == "const_ptr" && type.arguments.length == 1
+    end
+
+    def pointer_type?(type)
+      mutable_pointer_type?(type)
+    end
+
+    def raw_pointer_type?(type)
+      mutable_pointer_type?(type) || const_pointer_type?(type)
     end
 
     def ref_type?(type)
