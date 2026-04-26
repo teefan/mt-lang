@@ -14,6 +14,7 @@ module MilkTea
 
     def emit
       lines = []
+      constants = emitted_constants
       headers = @program.includes.map(&:header)
       if uses_panic_helper?
         headers << "<stdio.h>"
@@ -88,10 +89,10 @@ module MilkTea
         lines << ""
       end
 
-      @program.constants.each do |constant|
+      constants.each do |constant|
         lines << "#{constant_storage(constant.type)} #{c_declaration(constant.type, constant.c_name)} = #{emit_initializer(constant.value)};"
       end
-      lines << "" unless @program.constants.empty?
+      lines << "" unless constants.empty?
 
       @program.static_asserts.each do |statement|
         lines << emit_static_assert(statement)
@@ -125,6 +126,99 @@ module MilkTea
     end
 
     private
+
+    def emitted_constants
+      @emitted_constants ||= begin
+        constants_by_name = @program.constants.each_with_object({}) do |constant, result|
+          result[constant.c_name] = constant
+        end
+        referenced_names = {}
+        root_module_prefix = "#{@program.module_name.tr('.', '_')}_"
+
+        @program.constants.each do |constant|
+          next unless constant.c_name.start_with?(root_module_prefix)
+
+          referenced_names[constant.c_name] = true
+          collect_referenced_constant_names_from_expression(constant.value, constants_by_name, referenced_names)
+        end
+
+        @program.static_asserts.each do |statement|
+          collect_referenced_constant_names_from_expression(statement.condition, constants_by_name, referenced_names)
+          collect_referenced_constant_names_from_expression(statement.message, constants_by_name, referenced_names)
+        end
+
+        @program.functions.each do |function|
+          collect_referenced_constant_names_from_statements(function.body, constants_by_name, referenced_names)
+        end
+
+        @program.constants.select { |constant| referenced_names[constant.c_name] }
+      end
+    end
+
+    def collect_referenced_constant_names_from_statements(statements, constants_by_name, referenced_names)
+      statements.each do |statement|
+        case statement
+        when IR::LocalDecl
+          collect_referenced_constant_names_from_expression(statement.value, constants_by_name, referenced_names)
+        when IR::Assignment
+          collect_referenced_constant_names_from_expression(statement.target, constants_by_name, referenced_names)
+          collect_referenced_constant_names_from_expression(statement.value, constants_by_name, referenced_names)
+        when IR::BlockStmt, IR::WhileStmt
+          collect_referenced_constant_names_from_statements(statement.body, constants_by_name, referenced_names)
+        when IR::IfStmt
+          collect_referenced_constant_names_from_expression(statement.condition, constants_by_name, referenced_names)
+          collect_referenced_constant_names_from_statements(statement.then_body, constants_by_name, referenced_names)
+          collect_referenced_constant_names_from_statements(statement.else_body, constants_by_name, referenced_names) if statement.else_body
+        when IR::SwitchStmt
+          collect_referenced_constant_names_from_expression(statement.expression, constants_by_name, referenced_names)
+          statement.cases.each do |switch_case|
+            collect_referenced_constant_names_from_expression(switch_case.value, constants_by_name, referenced_names)
+            collect_referenced_constant_names_from_statements(switch_case.body, constants_by_name, referenced_names)
+          end
+        when IR::StaticAssert
+          collect_referenced_constant_names_from_expression(statement.condition, constants_by_name, referenced_names)
+          collect_referenced_constant_names_from_expression(statement.message, constants_by_name, referenced_names)
+        when IR::ReturnStmt
+          collect_referenced_constant_names_from_expression(statement.value, constants_by_name, referenced_names) if statement.value
+        when IR::ExpressionStmt
+          collect_referenced_constant_names_from_expression(statement.expression, constants_by_name, referenced_names)
+        end
+      end
+    end
+
+    def collect_referenced_constant_names_from_expression(expression, constants_by_name, referenced_names)
+      case expression
+      when IR::Name
+        constant = constants_by_name[expression.name]
+        return unless constant
+        return if referenced_names[constant.c_name]
+
+        referenced_names[constant.c_name] = true
+        collect_referenced_constant_names_from_expression(constant.value, constants_by_name, referenced_names)
+      when IR::Member
+        collect_referenced_constant_names_from_expression(expression.receiver, constants_by_name, referenced_names)
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+        collect_referenced_constant_names_from_expression(expression.receiver, constants_by_name, referenced_names)
+        collect_referenced_constant_names_from_expression(expression.index, constants_by_name, referenced_names)
+      when IR::Call
+        expression.arguments.each { |argument| collect_referenced_constant_names_from_expression(argument, constants_by_name, referenced_names) }
+      when IR::Unary
+        collect_referenced_constant_names_from_expression(expression.operand, constants_by_name, referenced_names)
+      when IR::Binary
+        collect_referenced_constant_names_from_expression(expression.left, constants_by_name, referenced_names)
+        collect_referenced_constant_names_from_expression(expression.right, constants_by_name, referenced_names)
+      when IR::Conditional
+        collect_referenced_constant_names_from_expression(expression.condition, constants_by_name, referenced_names)
+        collect_referenced_constant_names_from_expression(expression.then_expression, constants_by_name, referenced_names)
+        collect_referenced_constant_names_from_expression(expression.else_expression, constants_by_name, referenced_names)
+      when IR::ReinterpretExpr, IR::AddressOf, IR::Cast
+        collect_referenced_constant_names_from_expression(expression.expression, constants_by_name, referenced_names)
+      when IR::AggregateLiteral
+        expression.fields.each { |field| collect_referenced_constant_names_from_expression(field.value, constants_by_name, referenced_names) }
+      when IR::ArrayLiteral
+        expression.elements.each { |element| collect_referenced_constant_names_from_expression(element, constants_by_name, referenced_names) }
+      end
+    end
 
     def uses_panic_helper?
       collect_checked_array_index_types.any? || collect_checked_span_index_types.any? || @program.functions.any? { |function| function_uses_panic?(function) || function_uses_named_call?(function, %w[mt_str_buffer_len mt_str_buffer_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_assign mt_str_builder_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp]) }
@@ -1321,7 +1415,7 @@ module MilkTea
       span_types = []
       visited = {}
 
-      @program.constants.each do |constant|
+      emitted_constants.each do |constant|
         collect_span_type(constant.type, span_types, visited)
       end
 
@@ -1397,7 +1491,7 @@ module MilkTea
       result_types = []
       visited = {}
 
-      @program.constants.each do |constant|
+      emitted_constants.each do |constant|
         collect_result_type(constant.type, result_types, visited)
       end
 
@@ -1529,7 +1623,7 @@ module MilkTea
       generic_struct_types = []
       visited = {}
 
-      @program.constants.each do |constant|
+      emitted_constants.each do |constant|
         collect_generic_struct_type(constant.type, generic_struct_types, visited)
       end
 
@@ -1565,7 +1659,7 @@ module MilkTea
       str_builder_types = []
       visited = {}
 
-      @program.constants.each do |constant|
+      emitted_constants.each do |constant|
         collect_str_builder_type(constant.type, str_builder_types, visited)
       end
 

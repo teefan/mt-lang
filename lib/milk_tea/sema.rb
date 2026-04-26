@@ -706,7 +706,12 @@ module MilkTea
         when AST::Call
           if value_call?(expression)
             validate_value_call_arguments!(expression.arguments)
-            return infer_value_target_type(expression.arguments.first.value, scopes:)
+            return infer_reference_value_type(expression.arguments.first.value, scopes:)
+          end
+
+          if deref_call?(expression)
+            validate_deref_call_arguments!(expression.arguments)
+            return infer_deref_target_type(expression.arguments.first.value, scopes:)
           end
 
           raise SemaError, "invalid assignment target"
@@ -741,7 +746,12 @@ module MilkTea
         when AST::Call
           if value_call?(expression)
             validate_value_call_arguments!(expression.arguments)
-            return infer_value_target_type(expression.arguments.first.value, scopes:)
+            return infer_reference_value_type(expression.arguments.first.value, scopes:)
+          end
+
+          if deref_call?(expression)
+            validate_deref_call_arguments!(expression.arguments)
+            return infer_deref_target_type(expression.arguments.first.value, scopes:)
           end
 
           raise SemaError, "invalid assignment target"
@@ -1101,6 +1111,8 @@ module MilkTea
           check_addr_call(expression.arguments, scopes:)
         when :value
           check_value_call(expression.arguments, scopes:)
+        when :deref
+          check_deref_call(expression.arguments, scopes:)
         when :raw
           check_raw_call(expression.arguments, scopes:)
         else
@@ -1182,6 +1194,7 @@ module MilkTea
           return [:panic, nil, nil] if callee.name == "panic"
           return [:addr, nil, nil] if callee.name == "addr"
           return [:value, nil, nil] if callee.name == "value"
+          return [:deref, nil, nil] if callee.name == "deref"
           return [:raw, nil, nil] if callee.name == "raw"
 
           type = @types[callee.name]
@@ -1383,7 +1396,13 @@ module MilkTea
       def check_value_call(arguments, scopes:)
         validate_value_call_arguments!(arguments)
 
-        infer_value_target_type(arguments.first.value, scopes:)
+        infer_reference_value_type(arguments.first.value, scopes:)
+      end
+
+      def check_deref_call(arguments, scopes:)
+        validate_deref_call_arguments!(arguments)
+
+        infer_deref_target_type(arguments.first.value, scopes:)
       end
 
       def check_raw_call(arguments, scopes:)
@@ -2815,12 +2834,23 @@ module MilkTea
         raise SemaError, "value expects 1 argument, got #{arguments.length}" unless arguments.length == 1
       end
 
-      def infer_value_target_type(handle_expression, scopes:)
+      def validate_deref_call_arguments!(arguments)
+        raise SemaError, "deref does not support named arguments" if arguments.any?(&:name)
+        raise SemaError, "deref expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+      end
+
+      def infer_reference_value_type(handle_expression, scopes:)
         handle_type = infer_expression(handle_expression, scopes:)
         return referenced_type(handle_type) if ref_type?(handle_type)
 
+        raise SemaError, "value expects ref[...], got #{handle_type}"
+      end
+
+      def infer_deref_target_type(handle_expression, scopes:)
+        handle_type = infer_expression(handle_expression, scopes:)
+
         pointee = pointee_type(handle_type)
-        raise SemaError, "value expects ref[...] or ptr[...], got #{handle_type}" unless pointee
+        raise SemaError, "deref expects ptr[...], got #{handle_type}" unless pointee
         raise SemaError, "raw pointer dereference requires unsafe" unless unsafe_context?
 
         pointee
@@ -2828,6 +2858,10 @@ module MilkTea
 
       def value_call?(expression)
         expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "value"
+      end
+
+      def deref_call?(expression)
+        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "deref"
       end
 
       def external_module?

@@ -75,6 +75,7 @@ class MilkTeaCodegenTest < Minitest::Test
         "module std.math",
         "",
         "pub const TEN: i32 = 10",
+        "pub const UNUSED: i32 = 99",
         "",
         "pub def clamp[T](value: T, min_value: T, max_value: T) -> T:",
         "    if value < min_value:",
@@ -100,6 +101,7 @@ class MilkTeaCodegenTest < Minitest::Test
       generated = MilkTea::Codegen.generate_c(program)
 
       assert_match(/static const int32_t std_math_TEN = 10;/, generated)
+      refute_match(/static const int32_t std_math_UNUSED = 99;/, generated)
       assert_match(/static int32_t std_math_clamp_i32\(int32_t value, int32_t min_value, int32_t max_value\)/, generated)
       assert_match(/return std_math_clamp_i32\(42, 0, std_math_TEN\);/, generated)
     end
@@ -135,7 +137,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    if items.len == 0:",
       "        return 0",
       "    unsafe:",
-      "        return value(items.data)",
+      "        return deref(items.data)",
       "",
       "def main() -> i32:",
       "    var value = 7",
@@ -304,6 +306,41 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/UseNames\(/, generated)
     assert_match(/__mt_foreign_arg_\d+\.data/, generated)
     assert_match(/\(\(int32_t\) __mt_foreign_arg_\d+\.len\)|\(int32_t\) __mt_foreign_arg_\d+\.len/, generated)
+  end
+
+  def test_generate_c_for_ignored_foreign_result_with_span_str_temp_marshalling
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main() -> i32:
+          var labels = array[str, 3]("Play", "Options", "Quit")
+          var active = 1
+          sample.use_names(labels, inout active)
+          return active
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def UseNames(names: ptr[ptr[char]], count: i32, active: ptr[i32]) -> i32
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def use_names(names: span[str] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, cast[i32](names.len), active)
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/mt_foreign_strs_to_cstrs_temp/, generated)
+    assert_match(/mt_free_foreign_cstrs_temp/, generated)
+    assert_match(/UseNames\(/, generated)
+    refute_match(/__mt_foreign_result_\d+/, generated)
   end
 
   def test_rejects_codegen_for_foreign_defs_with_str_to_ptr_char_boundary
@@ -861,7 +898,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    if items.len == 0:",
       "        return 0",
       "    unsafe:",
-      "        return value(items.data)",
+      "        return deref(items.data)",
       "",
       "def main() -> i32:",
       "    var value = 7",
@@ -904,7 +941,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    let items = Slice[i32](data = raw(addr(value)), len = 1)",
       "    let smallest = min(9, 4)",
       "    unsafe:",
-      "        return value(head(items)) + smallest",
+      "        return deref(head(items)) + smallest",
       "",
     ].join("\n")
 
@@ -1096,7 +1133,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def add(target: ptr[i32], amount: i32) -> void:",
       "    unsafe:",
-      "        value(target) += amount",
+      "        deref(target) += amount",
       "",
       "def main() -> i32:",
       "    var total = 0",
@@ -1278,7 +1315,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    var counter = Counter(value = 3)",
       "    let counter_ptr = raw(addr(counter))",
       "    unsafe:",
-      "        value(counter_ptr).value = 7",
+      "        deref(counter_ptr).value = 7",
       "    return counter.value",
       "",
     ].join("\n")
@@ -1313,7 +1350,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    value(value_ref) += 2",
       "    unsafe:",
       "        let raw_counter = raw(handle)",
-      "        value(raw_counter).value += 1",
+      "        deref(raw_counter).value += 1",
       "    return value(handle).value",
       "",
     ].join("\n")
@@ -1385,9 +1422,9 @@ class MilkTeaCodegenTest < Minitest::Test
       "    var palette = array[u32, 4](1, 2, 3, 4)",
       "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
       "    unsafe:",
-      "        if value(raw(addr(palette[0]))) != 1:",
+      "        if deref(raw(addr(palette[0]))) != 1:",
       "            return 1",
-      "        if value(raw(addr(holder.colors[0]))) != 5:",
+      "        if deref(raw(addr(holder.colors[0]))) != 5:",
       "            return 2",
       "    return 0",
       "",
