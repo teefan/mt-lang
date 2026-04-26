@@ -1025,7 +1025,7 @@ let success = rl.save_file_data("storage.data", bytes)
 let ints = rl.mem_alloc[i32](16)
 ```
 
-`str as cstr` and `span[str]` foreign boundaries use ordinary imported-call syntax. When the actual argument is already ABI-compatible, they work anywhere an ordinary expression works. When the boundary needs synthesized temporary C-compatible storage or other statement-shaped setup, v1 lowering currently materializes that setup only in contexts where it can hoist the work visibly: expression statements, local initializers, assignments, and returns. If code wants exact storage control or a more deeply nested temp-backed call today, it can still use `cstr`, `span[char]`, or the raw `std.c.*` layer.
+`str as cstr` and `span[str]` foreign boundaries use ordinary imported-call syntax. When the boundary needs synthesized temporary C-compatible storage or other statement-shaped setup, lowering hoists that work into visible temporary locals and branch-local control flow as needed, so nested call arguments, arithmetic, `if ... then ... else ...` expressions, and short-circuit boolean expressions still read like ordinary Milk Tea while generated C stays explicit about the temporary storage.
 
 `out name` and `inout name` are foreign-boundary forms, not raw pointer expressions. They lower to address-taking at the imported call site without exposing `raw(addr(...))` in ordinary code.
 

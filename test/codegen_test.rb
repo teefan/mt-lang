@@ -343,6 +343,48 @@ class MilkTeaCodegenTest < Minitest::Test
     refute_match(/__mt_foreign_result_\d+/, generated)
   end
 
+  def test_generate_c_for_nested_foreign_defs_in_inline_contexts
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def keep(value: i32) -> i32:
+          return value
+
+      def main() -> i32:
+          var labels = array[str, 3]("12", "34", "56")
+          let counted = keep(sample.count_names(labels))
+          let doubled = keep(sample.pair_sum(1 + 2))
+          return counted + doubled
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def CountNames(names: ptr[ptr[char]], count: i32) -> i32
+            extern def PairSum(left: i32, right: i32) -> i32
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, cast[i32](names.len))
+        pub foreign def pair_sum(value: i32) -> i32 = c.PairSum(value, value)
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/mt_foreign_strs_to_cstrs_temp/, generated)
+    assert_match(/mt_free_foreign_cstrs_temp/, generated)
+    assert_match(/demo_main_keep\(__mt_foreign_result_\d+\)/, generated)
+    assert_match(/demo_main_keep\(__mt_foreign_expr_\d+\)/, generated)
+    assert_match(/CountNames\(/, generated)
+    assert_match(/PairSum\(/, generated)
+  end
+
   def test_rejects_codegen_for_foreign_defs_with_str_to_ptr_char_boundary
     source = <<~MT
       module demo.main
