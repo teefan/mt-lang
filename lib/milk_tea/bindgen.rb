@@ -40,7 +40,7 @@ module MilkTea
       "double" => "f64",
     }.freeze
 
-    def self.generate(module_name:, header_path:, link_libraries: [], include_directives: nil, clang: ENV.fetch("CLANG", "clang"), clang_args: [])
+    def self.generate(module_name:, header_path:, link_libraries: [], include_directives: nil, clang: ENV.fetch("CLANG", "clang"), clang_args: [], function_param_type_overrides: {})
       Generator.new(
         module_name:,
         header_path:,
@@ -48,17 +48,19 @@ module MilkTea
         include_directives:,
         clang:,
         clang_args:,
+        function_param_type_overrides:,
       ).generate
     end
 
     class Generator
-      def initialize(module_name:, header_path:, link_libraries:, include_directives:, clang:, clang_args:)
+      def initialize(module_name:, header_path:, link_libraries:, include_directives:, clang:, clang_args:, function_param_type_overrides:)
         @module_name = module_name
         @header_path = File.expand_path(header_path)
         @link_libraries = link_libraries.dup
         @include_directives = include_directives&.dup
         @clang = clang
         @clang_args = clang_args.dup
+        @function_param_type_overrides = normalize_function_param_type_overrides(function_param_type_overrides)
         @record_aliases = {}
         @enum_aliases = {}
         @record_visible_names = {}
@@ -78,7 +80,9 @@ module MilkTea
         declarations.concat(select_enum_declarations(top_level_nodes))
         declarations.concat(select_type_alias_declarations(top_level_nodes))
         declarations.concat(select_constant_declarations(top_level_nodes))
-        declarations.concat(select_function_declarations(top_level_nodes))
+        function_declarations = select_function_declarations(top_level_nodes)
+        validate_function_param_type_overrides!(function_declarations)
+        declarations.concat(function_declarations)
         declarations.sort_by! { |declaration| declaration[:index] }
 
         emit_module(declarations)
@@ -416,9 +420,10 @@ module MilkTea
           next if Array(node["inner"]).any? { |child| child["kind"] == "CompoundStmt" }
 
           params = Array(node["inner"]).select { |child| child["kind"] == "ParmVarDecl" }.each_with_index.map do |param, param_index|
+            param_name = param["name"] || "arg#{param_index}"
             {
-              name: param["name"] || "arg#{param_index}",
-              type: map_type_node(param, context: "parameter #{param["name"] || param_index} of #{node["name"]}"),
+              name: param_name,
+              type: function_param_type_override(node["name"], param_name) || map_type_node(param, context: "parameter #{param_name} of #{node["name"]}"),
             }
           end
 
@@ -437,6 +442,24 @@ module MilkTea
         end
 
         selected.values
+      end
+
+      def validate_function_param_type_overrides!(function_declarations)
+        return if @function_param_type_overrides.empty?
+
+        declarations_by_name = function_declarations.to_h { |declaration| [declaration[:name], declaration] }
+
+        @function_param_type_overrides.each do |function_name, param_overrides|
+          declaration = declarations_by_name[function_name]
+          raise BindgenError, "function_param_type_overrides references unknown function #{function_name} for #{@header_path}" unless declaration
+
+          param_names = declaration[:params].map { |param| param[:name] }
+          param_overrides.each_key do |param_name|
+            next if param_names.include?(param_name)
+
+            raise BindgenError, "function_param_type_overrides references unknown parameter #{function_name}.#{param_name} for #{@header_path}"
+          end
+        end
       end
 
       def select_constant_declarations(nodes)
@@ -642,6 +665,34 @@ module MilkTea
       def emit_float_value(value, expected_type)
         literal = value.include?(".") ? value : "#{value}.0"
         expected_type == "f32" ? "#{literal}" : literal
+      end
+
+      def function_param_type_override(function_name, param_name)
+        @function_param_type_overrides.dig(function_name, param_name)
+      end
+
+      def normalize_function_param_type_overrides(overrides)
+        return {} if overrides.nil?
+
+        raise BindgenError, "function_param_type_overrides must be a hash" unless overrides.is_a?(Hash)
+
+        overrides.each_with_object({}) do |(function_name, param_overrides), normalized|
+          unless function_name.is_a?(String) || function_name.is_a?(Symbol)
+            raise BindgenError, "function_param_type_overrides function names must be strings or symbols"
+          end
+
+          raise BindgenError, "function_param_type_overrides for #{function_name} must be a hash" unless param_overrides.is_a?(Hash)
+
+          normalized[function_name.to_s] = param_overrides.each_with_object({}) do |(param_name, type), params|
+            unless param_name.is_a?(String) || param_name.is_a?(Symbol)
+              raise BindgenError, "function_param_type_overrides parameter names must be strings or symbols"
+            end
+
+            raise BindgenError, "function_param_type_overrides for #{function_name}.#{param_name} must be a non-empty string" unless type.is_a?(String) && !type.empty?
+
+            params[param_name.to_s] = type
+          end.freeze
+        end.freeze
       end
 
       def map_c_type(qual_type, context:)

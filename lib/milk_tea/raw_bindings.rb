@@ -5,9 +5,9 @@ module MilkTea
     class Error < StandardError; end
 
     class Binding
-      attr_reader :name, :module_name, :binding_path, :include_directives, :link_libraries, :link_flags, :header_candidates, :env_var, :clang_args, :compiler_flags, :implementation_defines
+      attr_reader :name, :module_name, :binding_path, :include_directives, :link_libraries, :link_flags, :header_candidates, :env_var, :clang_args, :compiler_flags, :implementation_defines, :function_param_type_overrides
 
-      def initialize(name:, module_name:, binding_path:, header_candidates:, include_directives: nil, link_libraries: [], link_flags: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [], prepare: nil)
+      def initialize(name:, module_name:, binding_path:, header_candidates:, include_directives: nil, link_libraries: [], link_flags: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [], function_param_type_overrides: {}, prepare: nil)
         @name = name.to_s
         @module_name = module_name
         @binding_path = File.expand_path(binding_path.to_s)
@@ -20,6 +20,7 @@ module MilkTea
         @clang_args = clang_args.dup.freeze
         @compiler_flags = compiler_flags.dup.freeze
         @implementation_defines = implementation_defines.dup.freeze
+        @function_param_type_overrides = normalize_function_param_type_overrides(function_param_type_overrides)
         @prepare = prepare
       end
 
@@ -68,6 +69,7 @@ module MilkTea
           include_directives:,
           clang: resolved_clang(env),
           clang_args:,
+          function_param_type_overrides:,
         )
       end
 
@@ -110,6 +112,14 @@ module MilkTea
       end
 
       private
+
+      def normalize_function_param_type_overrides(overrides)
+        overrides.each_with_object({}) do |(function_name, param_overrides), normalized|
+          normalized[function_name.to_s] = param_overrides.each_with_object({}) do |(param_name, type), params|
+            params[param_name.to_s] = type.to_s
+          end.freeze
+        end.freeze
+      end
 
       def resolved_clang(env)
         @clang || env.fetch("CLANG", "clang")
@@ -161,6 +171,12 @@ module MilkTea
     end
 
     def self.default_bindings(root: MilkTea.root)
+      font_codepoint_param_overrides = {
+        "LoadFontEx" => { "codepoints" => "ptr[i32]?" },
+        "LoadFontFromMemory" => { "codepoints" => "ptr[i32]?" },
+        "LoadFontData" => { "codepoints" => "ptr[i32]?" },
+      }.freeze
+
       [
         Binding.new(
           name: "raylib",
@@ -175,6 +191,7 @@ module MilkTea
             "/usr/include/raylib.h",
             "/usr/local/include/raylib.h",
           ],
+          function_param_type_overrides: font_codepoint_param_overrides,
           prepare: ->(_binding, env:, cc:) do
             MilkTea::VendoredRaylib.prepare!(cc: env.fetch("RAYLIB_CC", ENV.fetch("CC", "cc")))
           end,
@@ -192,6 +209,7 @@ module MilkTea
             "/usr/include/raygui.h",
             "/usr/local/include/raygui.h",
           ],
+          function_param_type_overrides: font_codepoint_param_overrides,
         ),
         Binding.new(
           name: "rlgl",

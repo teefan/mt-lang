@@ -2159,6 +2159,7 @@ module MilkTea
 
       def argument_types_compatible?(actual_type, expected_type, external:, expression: nil)
         return true if types_compatible?(actual_type, expected_type, expression:, external_numeric: external)
+        return true if external && external_void_pointer_argument_compatibility?(actual_type, expected_type)
         return true if external && extern_enum_integer_argument_compatibility?(actual_type, expected_type)
         if external && foreign_mapping_context? && foreign_identity_projection_compatible?(actual_type, expected_type)
           return false if actual_type == @types.fetch("cstr") && char_pointer_type?(expected_type)
@@ -2167,6 +2168,22 @@ module MilkTea
         end
 
         false
+      end
+
+      def external_void_pointer_argument_compatibility?(actual_type, expected_type)
+        if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
+          return external_void_pointer_argument_compatibility?(actual_type.base, expected_type.base)
+        end
+
+        return external_void_pointer_argument_compatibility?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
+        return false if actual_type.is_a?(Types::Nullable)
+        return false unless pointer_type?(actual_type) && pointer_type?(expected_type)
+        return false if const_pointer_type?(actual_type) && mutable_pointer_type?(expected_type)
+
+        actual_pointee = pointee_type(actual_type)
+        expected_pointee = pointee_type(expected_type)
+
+        actual_pointee == @types.fetch("void") || expected_pointee == @types.fetch("void")
       end
 
       def integer_literal_numeric_compatibility?(expression, expected_type)

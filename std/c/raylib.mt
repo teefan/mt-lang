@@ -1423,15 +1423,15 @@ extern module std.c.raylib:
 
     extern def LoadFont(fileName: cstr) -> Font
 
-    extern def LoadFontEx(fileName: cstr, fontSize: i32, codepoints: ptr[i32], codepointCount: i32) -> Font
+    extern def LoadFontEx(fileName: cstr, fontSize: i32, codepoints: ptr[i32]?, codepointCount: i32) -> Font
 
     extern def LoadFontFromImage(image: Image, key: Color, firstChar: i32) -> Font
 
-    extern def LoadFontFromMemory(fileType: cstr, fileData: ptr[u8], dataSize: i32, fontSize: i32, codepoints: ptr[i32], codepointCount: i32) -> Font
+    extern def LoadFontFromMemory(fileType: cstr, fileData: ptr[u8], dataSize: i32, fontSize: i32, codepoints: ptr[i32]?, codepointCount: i32) -> Font
 
     extern def IsFontValid(font: Font) -> bool
 
-    extern def LoadFontData(fileData: ptr[u8], dataSize: i32, fontSize: i32, codepoints: ptr[i32], codepointCount: i32, type: i32, glyphCount: ptr[i32]) -> ptr[GlyphInfo]
+    extern def LoadFontData(fileData: ptr[u8], dataSize: i32, fontSize: i32, codepoints: ptr[i32]?, codepointCount: i32, type: i32, glyphCount: ptr[i32]) -> ptr[GlyphInfo]
 
     extern def GenImageFontAtlas(glyphs: ptr[GlyphInfo], glyphRecs: ptr[ptr[Rectangle]], glyphCount: i32, fontSize: i32, padding: i32, packMethod: i32) -> Image
 
