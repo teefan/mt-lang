@@ -58,7 +58,10 @@ class MilkTeaRaylibExampleRuntimeTest < Minitest::Test
       { path: "core/core_storage_values", min_unique_colors: 5 },
       { path: "core/core_text_file_loading", min_unique_colors: 2 },
       { path: "shapes/shapes_basic_shapes", min_unique_colors: 5 },
+      { path: "textures/textures_background_scrolling", min_unique_colors: 5 },
+      { path: "textures/textures_image_loading", min_unique_colors: 5 },
       { path: "textures/textures_logo_raylib", min_unique_colors: 5 },
+      { path: "textures/textures_srcrec_dstrec", min_unique_colors: 5 },
     ]
   end
 
