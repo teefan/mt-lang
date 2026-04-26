@@ -4,7 +4,6 @@
   "raw_import_alias": "c",
   "types": {
     "exclude": [
-      "__va_list_tag",
       "va_list",
       "rAudioBuffer",
       "rAudioProcessor",

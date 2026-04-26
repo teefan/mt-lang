@@ -197,9 +197,9 @@ extern module std.c.raygui:
         channels: u32
         data: ptr[void]
 
-    opaque rAudioBuffer
+    opaque rAudioBuffer = c"rAudioBuffer"
 
-    opaque rAudioProcessor
+    opaque rAudioProcessor = c"rAudioProcessor"
 
     struct AudioStream:
         buffer: ptr[rAudioBuffer]
