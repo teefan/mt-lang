@@ -232,6 +232,138 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_rejects_foreign_defs_with_span_str_to_span_cstr_boundary
+    root_source = <<~MT
+      module demo.main
+
+      import std.mem.arena as arena
+      import std.sample as sample
+
+      def main(scratch: ref[arena.Arena]) -> void:
+          var labels = array[str, 3]("Play", "Options", "Quit")
+          var active = 0
+          sample.use_names(labels, inout active) using scratch
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def UseNames(names: ptr[cstr], count: i32, active: ptr[i32]) -> i32
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def use_names(names: span[str] as span[cstr], inout active: i32) -> i32 = c.UseNames(names.data, cast[i32](names.len), active)
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(root_source, imported_sources)
+    end
+
+    assert_match(/cannot map span\[str\] as span\[cstr\]/, error.message)
+  end
+
+  def test_rejects_foreign_defs_with_span_str_to_span_ptr_char_boundary
+    root_source = <<~MT
+      module demo.main
+
+      import std.mem.arena as arena
+      import std.sample as sample
+
+      def main(scratch: ref[arena.Arena]) -> void:
+          var labels = array[str, 3]("Play", "Options", "Quit")
+          var active = 0
+          sample.use_names(labels, inout active) using scratch
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def UseNames(names: ptr[ptr[char]], count: i32, active: ptr[i32]) -> i32
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def use_names(names: span[str] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, cast[i32](names.len), active)
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(root_source, imported_sources)
+    end
+
+    assert_match(/cannot map span\[str\] as span\[ptr\[char\]\]/, error.message)
+  end
+
+  def test_rejects_foreign_defs_with_str_to_ptr_char_boundary
+    root_source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main() -> void:
+          sample.show("demo")
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def Show(text: ptr[char]) -> void
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def show(text: str as ptr[char]) -> void = c.Show
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(root_source, imported_sources)
+    end
+
+    assert_match(/cannot map str as ptr\[char\]/, error.message)
+  end
+
+  def test_type_checks_foreign_defs_with_span_cstr_to_span_ptr_char_boundary_without_scratch
+    root_source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main() -> void:
+          var labels = array[cstr, 3]("Play", "Options", "Quit")
+          var active = 0
+          sample.use_names(labels, inout active)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def UseNames(names: ptr[ptr[char]], count: i32, active: ptr[i32]) -> i32
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def use_names(names: span[cstr] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, cast[i32](names.len), active)
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.imports.key?("sample")
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_foreign_defs_with_string_literal_without_using_scratch
     root_source = <<~MT
       module demo.main
@@ -814,6 +946,42 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_generic_functions_with_literal_type_arguments
+    source = <<~MT
+      module demo.generic_builder
+
+      def capacity_of[N](buffer: str_builder[N]) -> usize:
+          return buffer.capacity()
+
+      def main() -> i32:
+          var buffer: str_builder[32]
+          return cast[i32](capacity_of(buffer) + capacity_of(buffer))
+    MT
+
+    result = check_source(source)
+
+    assert_equal ["N"], result.functions.fetch("capacity_of").type_params
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_generic_functions_with_explicit_literal_type_arguments
+    source = <<~MT
+      module demo.generic_builder_explicit
+
+      def capacity_of[N](buffer: str_builder[N]) -> usize:
+          return buffer.capacity()
+
+      def main() -> i32:
+          var buffer: str_builder[32]
+          return cast[i32](capacity_of[32](buffer))
+    MT
+
+    result = check_source(source)
+
+    assert_equal ["N"], result.functions.fetch("capacity_of").type_params
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_result_construction_from_expected_context
     source = <<~MT
       module demo.result
@@ -855,14 +1023,15 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_rejects_passing_str_to_cstr_parameter_without_explicit_boundary
+  def test_rejects_passing_stored_str_to_cstr_parameter_without_explicit_boundary
     source = <<~MT
       module demo.string_boundary
 
       extern def set_text(value: cstr) -> void
 
       def main() -> void:
-          set_text("hello")
+          let text: str = "hello"
+          set_text(text)
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -870,6 +1039,25 @@ class MilkTeaSemaTest < Minitest::Test
     end
 
     assert_match(/argument value to set_text expects cstr, got str/, error.message)
+  end
+
+  def test_type_checks_contextual_string_literals_for_cstr_surfaces
+    source = <<~MT
+      module demo.literal_cstr
+
+      extern def set_text(value: cstr) -> void
+
+      def main() -> cstr:
+          let title: cstr = "hello"
+          let labels = array[cstr, 2]("Layout", "Palette")
+          set_text("world")
+          set_text(labels[0])
+          return title
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
   end
 
   def test_type_checks_real_str_len_slice_and_cstr_conversion
@@ -896,6 +1084,21 @@ class MilkTeaSemaTest < Minitest::Test
             program = check_program_source(source)
 
             assert_equal true, program.analyses_by_module_name.key?("demo.str_methods")
+  end
+
+  def test_rejects_direct_str_construction_outside_unsafe
+    source = <<~MT
+      module demo.bad_str_constructor
+
+      def main(data: ptr[char], len: usize) -> str:
+          return str(data = data, len = len)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/str construction requires unsafe/, error.message)
   end
 
   def test_type_checks_exhaustive_match_statement_over_enum
@@ -1993,6 +2196,401 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_str_buffer_as_span_char_and_safe_index_source
+    source = <<~MT
+      module demo.str_buffer_surface
+
+      def view(items: span[char]) -> usize:
+          return items.len
+
+      def main() -> i32:
+          var buffer = zero[str_buffer[32]]()
+          buffer[0] = 65
+          let used = view(buffer)
+          return cast[i32](used)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_zero_initialized_typed_str_buffer_locals
+    source = <<~MT
+      module demo.str_buffer_zero_locals
+
+      def main() -> i32:
+          var buffer: str_buffer[32]
+          buffer[0] = 65
+          return cast[i32](buffer.capacity())
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_typed_local_without_initializer_for_non_zero_initializable_type
+    source = <<~MT
+      module demo.bad_local
+
+      def main() -> void:
+          let callback: fn(value: i32) -> void
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/without initializer requires a zero-initializable type/, error.message)
+  end
+
+  def test_type_checks_str_buffer_methods
+    source = <<~MT
+      module demo.str_buffer_methods
+
+      def main() -> i32:
+          var buffer = zero[str_buffer[16]]()
+          buffer.clear()
+          let view = buffer.as_str()
+          let label = buffer.as_cstr()
+          return cast[i32](buffer.capacity() + view.len)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_cstr_list_buffer_methods_and_foreign_span_cstr_boundary_without_scratch
+    root_source = <<~MT
+      module demo.main
+
+      import std.ui as ui
+
+      def main() -> i32:
+          var labels: cstr_list_buffer[3, 64]
+          var items = array[str, 3]("Primary", "Secondary", "About")
+          labels.assign(items)
+          ui.use_names(labels.as_cstrs())
+          labels.clear()
+          return cast[i32](labels.capacity() + labels.byte_capacity())
+    MT
+
+    imported_sources = {
+      "std/c/ui.mt" => <<~MT,
+        extern module std.c.ui:
+            include "ui.h"
+
+            extern def UseNames(names: ptr[ptr[char]], count: i32) -> void
+      MT
+      "std/ui.mt" => <<~MT,
+        module std.ui
+
+        import std.c.ui as c
+
+        pub foreign def use_names(names: span[cstr] as span[ptr[char]]) -> void = c.UseNames(names.data, cast[i32](names.len))
+      MT
+    }
+
+    result = check_program_source(root_source, imported_sources)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_rejects_str_buffer_as_str_on_temporary_receiver
+    source = <<~MT
+      module demo.str_buffer_bad_view
+
+      def main() -> str:
+          return zero[str_buffer[8]]().as_str()
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/as_str requires a safe stored receiver/, error.message)
+  end
+
+  def test_rejects_str_buffer_as_cstr_on_temporary_receiver
+    source = <<~MT
+      module demo.str_buffer_bad_cstr
+
+      def main() -> cstr:
+          return zero[str_buffer[8]]().as_cstr()
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/as_cstr requires a safe stored receiver/, error.message)
+  end
+
+  def test_rejects_cstr_list_buffer_as_cstrs_on_temporary_receiver
+    source = <<~MT
+      module demo.cstr_list_buffer_bad_view
+
+      def main() -> span[cstr]:
+          return zero[cstr_list_buffer[2, 32]]().as_cstrs()
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/as_cstrs requires a safe stored receiver/, error.message)
+  end
+
+  def test_type_checks_foreign_str_as_cstr_calls_with_str_buffer_as_cstr_without_scratch
+    root_source = <<~MT
+      module demo.main
+
+      import std.ui as ui
+
+      def main() -> void:
+          var buffer: str_buffer[32]
+          ui.label(buffer.as_cstr())
+    MT
+
+    imported_sources = {
+      "std/c/ui.mt" => <<~MT,
+        extern module std.c.ui:
+            include "ui.h"
+
+            extern def Label(text: cstr) -> void
+      MT
+      "std/ui.mt" => <<~MT,
+        module std.ui
+
+        import std.c.ui as c
+
+        pub foreign def label(text: str as cstr) -> void = c.Label
+      MT
+    }
+
+    result = check_program_source(root_source, imported_sources)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_foreign_defs_with_str_buffer_and_span_char_ptr_char_boundary
+    root_source = <<~MT
+      module demo.main
+
+      import std.mem as mem
+
+      def main() -> void:
+          var fixed = zero[str_buffer[32]]()
+          var dynamic = zero[str_buffer[64]]()
+          mem.write_fixed(fixed)
+          mem.write_dynamic(dynamic)
+    MT
+
+    imported_sources = {
+      "std/c/mem.mt" => <<~MT,
+        extern module std.c.mem:
+            include "mem.h"
+
+            extern def WriteFixed(label: ptr[char]) -> void
+            extern def WriteDynamic(label: ptr[char]) -> void
+      MT
+      "std/mem.mt" => <<~MT,
+        module std.mem
+
+        import std.c.mem as c
+
+        pub foreign def write_fixed(label: str_buffer[32] as ptr[char]) -> void = c.WriteFixed(label)
+        pub foreign def write_dynamic(label: span[char] as ptr[char]) -> void = c.WriteDynamic(label)
+      MT
+    }
+
+    result = check_program_source(root_source, imported_sources)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_foreign_mapping_public_alias_for_boundary_length_pairs
+    root_source = <<~MT
+      module demo.main
+
+      import std.ui as ui
+
+      def main() -> void:
+          var buffer = zero[str_buffer[32]]()
+          ui.text_box(buffer)
+    MT
+
+    imported_sources = {
+      "std/c/ui.mt" => <<~MT,
+        extern module std.c.ui:
+            include "ui.h"
+
+            extern def TextBox(text: ptr[char], text_size: i32) -> void
+      MT
+      "std/ui.mt" => <<~MT,
+        module std.ui
+
+        import std.c.ui as c
+
+        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.len))
+      MT
+    }
+
+    result = check_program_source(root_source, imported_sources)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_str_builder_methods_and_span_char_calls
+    source = <<~MT
+      module demo.str_builder_surface
+
+      def view(items: span[char]) -> usize:
+          return items.len
+
+      def main() -> i32:
+          var buffer: str_builder[32]
+          buffer.assign("hi")
+          buffer.append("!")
+          let text = buffer.as_str()
+          let label = buffer.as_cstr()
+          let raw = view(buffer)
+          if text.len == 0:
+              return 1
+          buffer.clear()
+          return cast[i32](raw + buffer.capacity())
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_foreign_mapping_public_alias_for_str_builder_boundary_length_pairs
+    root_source = <<~MT
+      module demo.main
+
+      import std.ui as ui
+
+      def main() -> void:
+          var buffer: str_builder[32]
+          ui.text_box(buffer)
+    MT
+
+    imported_sources = {
+      "std/c/ui.mt" => <<~MT,
+        extern module std.c.ui:
+            include "ui.h"
+
+            extern def TextBox(text: ptr[char], text_size: i32) -> void
+      MT
+      "std/ui.mt" => <<~MT,
+        module std.ui
+
+        import std.c.ui as c
+
+        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.len))
+      MT
+    }
+
+    result = check_program_source(root_source, imported_sources)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_generic_foreign_mapping_public_alias_for_str_builder_capacity_pairs
+    root_source = <<~MT
+      module demo.main
+
+      import std.ui as ui
+
+      def main() -> void:
+          var buffer: str_builder[32]
+          ui.text_box(buffer)
+    MT
+
+    imported_sources = {
+      "std/c/ui.mt" => <<~MT,
+        extern module std.c.ui:
+            include "ui.h"
+
+            extern def TextBox(text: ptr[char], text_size: i32) -> void
+      MT
+      "std/ui.mt" => <<~MT,
+        module std.ui
+
+        import std.c.ui as c
+
+        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.capacity() + 1))
+      MT
+    }
+
+    result = check_program_source(root_source, imported_sources)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_explicit_literal_specialization_for_imported_generic_foreign_defs
+    root_source = <<~MT
+      module demo.main
+
+      import std.ui as ui
+
+      def main() -> void:
+          var buffer: str_builder[32]
+          ui.text_box[32](buffer)
+    MT
+
+    imported_sources = {
+      "std/c/ui.mt" => <<~MT,
+        extern module std.c.ui:
+            include "ui.h"
+
+            extern def TextBox(text: ptr[char], text_size: i32) -> void
+      MT
+      "std/ui.mt" => <<~MT,
+        module std.ui
+
+        import std.c.ui as c
+
+        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.capacity() + 1))
+      MT
+    }
+
+    result = check_program_source(root_source, imported_sources)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_explicit_literal_specialization_for_local_generic_foreign_defs
+    root_source = <<~MT
+      module demo.main
+
+      import std.c.ui as c
+
+      pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.capacity() + 1))
+
+      def main() -> void:
+          var buffer: str_builder[32]
+          text_box[32](buffer)
+    MT
+
+    imported_sources = {
+      "std/c/ui.mt" => <<~MT,
+        extern module std.c.ui:
+            include "ui.h"
+
+            extern def TextBox(text: ptr[char], text_size: i32) -> void
+      MT
+    }
+
+    result = check_program_source(root_source, imported_sources)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
   def test_type_checks_unsafe_integer_to_char_buffer_writes
     source = <<~MT
       module demo.char_buffer_writes
@@ -2259,6 +2857,56 @@ class MilkTeaSemaTest < Minitest::Test
     end
 
     assert_match(/unknown member .*State\.moving/, error.message)
+  end
+
+  def test_rejects_foreign_external_struct_boundary_with_different_layout
+    source = <<~MT
+      module demo.main
+
+      import std.shared as shared
+      import std.sample as sample
+
+      def main() -> void:
+          sample.set_matrix(shared.IDENTITY)
+    MT
+
+    imported_sources = {
+      "std/c/shared.mt" => <<~MT,
+        extern module std.c.shared:
+            struct Matrix:
+                m0: f32
+      MT
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            struct Matrix:
+                m0: f32
+                m1: f32
+
+            extern def SetMatrix(matrix: Matrix) -> void
+      MT
+      "std/shared.mt" => <<~MT,
+        module std.shared
+
+        import std.c.shared as c
+
+        pub type Matrix = c.Matrix
+        pub const IDENTITY: Matrix = Matrix(m0 = 1.0)
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+        import std.shared as shared
+
+        pub foreign def set_matrix(matrix: shared.Matrix as c.Matrix) -> void = c.SetMatrix
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source, imported_sources)
+    end
+
+    assert_match(/foreign parameter matrix of set_matrix cannot map std\.c\.shared\.Matrix as std\.c\.sample\.Matrix/, error.message)
   end
 
   private

@@ -2,8 +2,17 @@
   "module_name": "std.rlgl",
   "raw_module_name": "std.c.rlgl",
   "raw_import_alias": "c",
+  "imports": [
+    {
+      "module_name": "std.raylib",
+      "alias": "raylib"
+    }
+  ],
   "types": {
-    "strip_prefix": "rl"
+    "strip_prefix": "rl",
+    "shared_from": [
+      "raylib"
+    ]
   },
   "constants": {},
   "functions": {

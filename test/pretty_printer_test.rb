@@ -97,6 +97,61 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_str_buffer_zero_construction_like_source
+    source = <<~MT
+      module demo.str_buffer
+
+      def main() -> i32:
+          var buffer = zero[str_buffer[64]]()
+          buffer[0] = 65
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
+  def test_formats_typed_local_without_initializer_like_source
+    source = <<~MT
+      module demo.locals
+
+      def main() -> void:
+          var buffer: str_buffer[64]
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
+  def test_formats_cstr_list_buffer_zero_construction_like_source
+    source = <<~MT
+      module demo.cstr_list_buffer
+
+      def main() -> i32:
+          var labels = zero[cstr_list_buffer[8, 256]]()
+          return cast[i32](labels.capacity())
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
+  def test_formats_cstr_list_buffer_typed_local_without_initializer_like_source
+    source = <<~MT
+      module demo.cstr_list_buffer
+
+      def main() -> void:
+          var labels: cstr_list_buffer[8, 256]
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_lowered_ir_as_structured_output
     source = <<~MT
       module demo.pretty

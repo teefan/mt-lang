@@ -33,6 +33,7 @@ module MilkTea
           raw_module_path: resolve_module_path(raw_module_name, module_roots),
           policy_path:,
           import_alias:,
+          module_roots:,
         ).generate
       end
 
@@ -44,6 +45,7 @@ module MilkTea
           raw_module_path:,
           policy_path:,
           import_alias:,
+          module_roots:,
         ).generate
         File.write(binding_path, source)
         raw_module_path
@@ -57,6 +59,7 @@ module MilkTea
           raw_module_path:,
           policy_path:,
           import_alias:,
+          module_roots:,
         ).generate
         expected = File.read(binding_path)
 
@@ -123,13 +126,15 @@ module MilkTea
     end
 
     class Generator
-      def initialize(module_name:, raw_module_name:, raw_module_path:, policy_path:, import_alias:)
+      def initialize(module_name:, raw_module_name:, raw_module_path:, policy_path:, import_alias:, module_roots:)
         @module_name = module_name
         @raw_module_name = raw_module_name
         @raw_module_path = File.expand_path(raw_module_path)
         @policy_path = File.expand_path(policy_path)
         @import_alias = import_alias
+        @module_roots = module_roots.map { |root| File.expand_path(root.to_s) }
         @public_type_names_by_raw_name = {}
+        @imported_public_types_by_alias = {}
       end
 
       def generate
@@ -142,6 +147,8 @@ module MilkTea
         import_specs = normalize_imports(policy["imports"])
         validate_import_specs!(import_specs)
         type_spec = normalize_alias_spec(policy["types"], context: "type")
+        validate_shared_import_aliases!(type_spec, import_specs) if type_spec.key?(:shared_from)
+        @imported_public_types_by_alias = build_imported_public_types(import_specs, aliases: type_spec.fetch(:shared_from, []))
         const_spec = normalize_alias_spec(policy["constants"], context: "constant")
         function_spec = normalize_function_spec(policy["functions"])
         @public_type_names_by_raw_name = build_public_type_names(type_spec, declarations)
@@ -277,7 +284,7 @@ module MilkTea
           raise Error, "duplicate generated type #{public_name} in #{@policy_path}" if seen_public_names.key?(public_name)
 
           seen_public_names[public_name] = true
-          mapping = override && override["mapping"] || "#{@import_alias}.#{raw_name}"
+          mapping = override && override["mapping"] || shared_type_mapping(raw_name, spec:) || "#{@import_alias}.#{raw_name}"
           "pub type #{public_name} = #{mapping}"
         end
       end
@@ -307,7 +314,7 @@ module MilkTea
         seen_public_names = {}
 
         declarations[:function_order].flat_map do |raw_name|
-          selected = spec[:include] == :all || spec[:include].include?(raw_name) || overrides.key?(raw_name)
+          selected = selected_by_spec?(raw_name, spec) || overrides.key?(raw_name)
           next [] unless selected
           next [] if spec[:exclude].include?(raw_name)
 
@@ -359,27 +366,38 @@ module MilkTea
       def normalize_alias_spec(value, context:)
         case value
         when nil
-          {
+          spec = {
             include: :all,
+            include_prefixes: [],
             exclude: [],
             overrides: [],
             strip_prefix: nil,
           }
+          spec[:shared_from] = [] if context == "type"
+          spec
         when Array
-          {
+          spec = {
             include: normalize_name_list(value, context:, label: "include"),
+            include_prefixes: [],
             exclude: [],
             overrides: [],
             strip_prefix: nil,
           }
+          spec[:shared_from] = [] if context == "type"
+          spec
         when Hash
-          validate_allowed_keys!(value, %w[include exclude overrides strip_prefix], context: "#{context} section")
-          {
-            include: value.key?("include") ? normalize_include(value["include"], context:) : :all,
+          allowed_keys = %w[include include_prefixes exclude overrides strip_prefix]
+          allowed_keys << "shared_from" if context == "type"
+          validate_allowed_keys!(value, allowed_keys, context: "#{context} section")
+          spec = {
+            include: default_include(value, context:),
+            include_prefixes: normalize_prefix_list(value["include_prefixes"], context:),
             exclude: normalize_name_list(value["exclude"], context:, label: "exclude"),
             overrides: normalize_alias_overrides(value["overrides"], context:),
             strip_prefix: normalize_strip_prefix(value["strip_prefix"], context:),
           }
+          spec[:shared_from] = normalize_name_list(value["shared_from"], context: "type import alias", label: "shared_from") if context == "type"
+          spec
         else
           raise Error, "#{context} section in #{@policy_path} must be an array or object"
         end
@@ -390,6 +408,7 @@ module MilkTea
         when nil
           {
             include: [],
+            include_prefixes: [],
             exclude: [],
             overrides: [],
             strip_prefix: nil,
@@ -398,6 +417,7 @@ module MilkTea
           if value.all? { |entry| entry.is_a?(String) }
             {
               include: normalize_name_list(value, context: "function", label: "include"),
+              include_prefixes: [],
               exclude: [],
               overrides: [],
               strip_prefix: nil,
@@ -405,15 +425,17 @@ module MilkTea
           else
             {
               include: [],
+              include_prefixes: [],
               exclude: [],
               overrides: normalize_function_overrides(value),
               strip_prefix: nil,
             }
           end
         when Hash
-          validate_allowed_keys!(value, %w[include exclude overrides strip_prefix], context: "function section")
+          validate_allowed_keys!(value, %w[include include_prefixes exclude overrides strip_prefix], context: "function section")
           {
-            include: value.key?("include") ? normalize_include(value["include"], context: "function") : :all,
+            include: default_include(value, context: "function"),
+            include_prefixes: normalize_prefix_list(value["include_prefixes"], context: "function"),
             exclude: normalize_name_list(value["exclude"], context: "function", label: "exclude"),
             overrides: normalize_function_overrides(value["overrides"]),
             strip_prefix: normalize_strip_prefix(value["strip_prefix"], context: "function"),
@@ -446,6 +468,30 @@ module MilkTea
         return :all if value.nil? || value == "all"
 
         normalize_name_list(value, context:, label: "include")
+      end
+
+      def default_include(value, context:)
+        return normalize_include(value["include"], context:) if value.key?("include")
+        return [] if value.key?("include_prefixes")
+
+        :all
+      end
+
+      def normalize_prefix_list(value, context:)
+        return [] if value.nil?
+        raise Error, "include_prefixes #{context}s in #{@policy_path} must be an array" unless value.is_a?(Array)
+
+        prefixes = value.map do |entry|
+          raise Error, "include_prefixes #{context} entries in #{@policy_path} must be strings" unless entry.is_a?(String)
+          raise Error, "include_prefixes #{context} entries in #{@policy_path} cannot be empty" if entry.empty?
+
+          entry
+        end
+
+        duplicate = duplicate_name(prefixes)
+        raise Error, "duplicate include_prefixes #{context} #{duplicate} in #{@policy_path}" if duplicate
+
+        prefixes
       end
 
       def normalize_name_list(value, context:, label:)
@@ -497,10 +543,16 @@ module MilkTea
                            ordered_names.dup
                          else
                            validate_known_raw_names!(spec[:include], declarations_by_name, context:)
-                           ordered_names.select { |raw_name| spec[:include].include?(raw_name) }
+                           ordered_names.select { |raw_name| selected_by_spec?(raw_name, spec) }
                          end
 
         selected_names.reject { |raw_name| spec[:exclude].include?(raw_name) }
+      end
+
+      def selected_by_spec?(raw_name, spec)
+        return true if spec[:include] == :all
+
+        spec[:include].include?(raw_name) || spec[:include_prefixes].any? { |prefix| raw_name.start_with?(prefix) }
       end
 
       def validate_known_raw_names!(names, declarations_by_name, context:)
@@ -525,6 +577,49 @@ module MilkTea
         end
 
         public_names
+      end
+
+      def validate_shared_import_aliases!(spec, import_specs)
+        known_aliases = import_specs.map { |import_spec| import_spec[:alias] }
+        spec.fetch(:shared_from).each do |import_alias|
+          next if known_aliases.include?(import_alias)
+
+          raise Error, "unknown shared_from import alias #{import_alias} in #{@policy_path}"
+        end
+      end
+
+      def build_imported_public_types(import_specs, aliases:)
+        aliases.each_with_object({}) do |import_alias, public_types_by_alias|
+          import_spec = import_specs.find { |spec| spec[:alias] == import_alias }
+          public_types_by_alias[import_alias] = public_type_names_for_module(import_spec[:module_name])
+        end
+      end
+
+      def public_type_names_for_module(module_name)
+        module_path = resolve_module_path(module_name)
+        ast = Parser.parse(File.read(module_path), path: module_path)
+
+        ast.declarations.each_with_object([]) do |declaration, names|
+          next unless declaration.respond_to?(:visibility) && declaration.visibility == :public
+          next unless declaration.is_a?(AST::TypeAliasDecl) || declaration.is_a?(AST::StructDecl) || declaration.is_a?(AST::UnionDecl) || declaration.is_a?(AST::EnumDecl) || declaration.is_a?(AST::FlagsDecl) || declaration.is_a?(AST::OpaqueDecl)
+
+          names << declaration.name
+        end
+      end
+
+      def shared_type_mapping(raw_name, spec:)
+        matching_aliases = spec.fetch(:shared_from, []).select do |import_alias|
+          @imported_public_types_by_alias.fetch(import_alias, []).include?(raw_name)
+        end
+
+        if matching_aliases.length > 1
+          raise Error, "shared type #{raw_name} in #{@policy_path} is ambiguous across imports: #{matching_aliases.join(', ')}"
+        end
+
+        import_alias = matching_aliases.first
+        return unless import_alias
+
+        "#{import_alias}.#{raw_name}"
       end
 
       def index_alias_overrides(entries, declarations_by_name, context:)
@@ -698,6 +793,14 @@ module MilkTea
 
         File.basename(@policy_path)
       end
+
+      def resolve_module_path(module_name)
+        relative_path = File.join(*module_name.split(".")) + ".mt"
+        candidate = @module_roots.lazy.map { |root| File.join(root, relative_path) }.find { |path| File.file?(path) }
+        raise Error, "module not found: #{module_name}" unless candidate
+
+        File.expand_path(candidate)
+      end
     end
 
     def self.default_bindings(root: MilkTea.root)
@@ -715,6 +818,13 @@ module MilkTea
           binding_path: root.join("std/rlgl.mt"),
           raw_module_name: "std.c.rlgl",
           policy_path: root.join("std/rlgl.binding.json"),
+        ),
+        Binding.new(
+          name: "raygui",
+          module_name: "std.raygui",
+          binding_path: root.join("std/raygui.mt"),
+          raw_module_name: "std.c.raygui",
+          policy_path: root.join("std/raygui.binding.json"),
         ),
       ]
     end

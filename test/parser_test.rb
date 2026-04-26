@@ -475,6 +475,71 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "i32", call.callee.arguments.first.value.name.to_s
   end
 
+  def test_parses_explicit_generic_function_literal_specialization_call
+    source = <<~MT
+      module demo.generic_literal_call
+
+      def capacity_of[N](buffer: str_builder[N]) -> usize:
+          return buffer.capacity()
+
+      def main() -> i32:
+          var buffer: str_builder[32]
+          return cast[i32](capacity_of[32](buffer))
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    call = ast.declarations[1].body[1].value.arguments.first.value
+
+    assert_instance_of MilkTea::AST::Call, call
+    assert_instance_of MilkTea::AST::Specialization, call.callee
+    assert_equal "capacity_of", call.callee.callee.name
+    assert_equal 32, call.callee.arguments.first.value.value
+  end
+
+  def test_parses_explicit_imported_member_literal_specialization_call
+    source = <<~MT
+      module demo.imported_generic_literal_call
+
+      import std.ui as ui
+
+      def main() -> i32:
+          var buffer: str_builder[32]
+          ui.text_box[32](buffer)
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    call = ast.declarations.first.body[1].expression
+
+    assert_instance_of MilkTea::AST::Call, call
+    assert_instance_of MilkTea::AST::Specialization, call.callee
+    assert_instance_of MilkTea::AST::MemberAccess, call.callee.callee
+    assert_equal "ui", call.callee.callee.receiver.name
+    assert_equal "text_box", call.callee.callee.member
+    assert_equal 32, call.callee.arguments.first.value.value
+  end
+
+  def test_parses_explicit_local_foreign_literal_specialization_call
+    source = <<~MT
+      module demo.local_generic_foreign_literal_call
+
+      foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text)
+
+      def main() -> i32:
+          var buffer: str_builder[32]
+          text_box[32](buffer)
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    call = ast.declarations[1].body[1].expression
+
+    assert_instance_of MilkTea::AST::Call, call
+    assert_instance_of MilkTea::AST::Specialization, call.callee
+    assert_equal "text_box", call.callee.callee.name
+    assert_equal 32, call.callee.arguments.first.value.value
+  end
+
   def test_parses_span_constructor_calls
     source = <<~MT
       module demo.spans
@@ -518,6 +583,25 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal 4, local_decl.value.arguments.length
   end
 
+  def test_parses_typed_local_without_initializer
+    source = <<~MT
+      module demo.locals
+
+      def main() -> void:
+          var buffer: str_buffer[32]
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    local_decl = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::LocalDecl, local_decl
+    assert_equal :var, local_decl.kind
+    assert_equal "buffer", local_decl.name
+    assert_equal "str_buffer", local_decl.type.name.to_s
+    assert_nil local_decl.value
+  end
+
   def test_parses_zero_constructor_calls
     source = <<~MT
       module demo.zero
@@ -541,6 +625,79 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal 2, array_type.arguments.length
     assert_equal "u32", array_type.arguments.first.value.name.to_s
     assert_equal 4, array_type.arguments[1].value.value
+    assert_equal 0, local_decl.value.arguments.length
+  end
+
+  def test_parses_str_buffer_constructor_calls
+    source = <<~MT
+      module demo.str_buffer
+
+      def main() -> i32:
+          let buffer = zero[str_buffer[64]]()
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    local_decl = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::Call, local_decl.value
+    assert_instance_of MilkTea::AST::Specialization, local_decl.value.callee
+    assert_equal "zero", local_decl.value.callee.callee.name
+    assert_equal 1, local_decl.value.callee.arguments.length
+    text_buffer_type = local_decl.value.callee.arguments.first.value
+    assert_instance_of MilkTea::AST::TypeRef, text_buffer_type
+    assert_equal "str_buffer", text_buffer_type.name.to_s
+    assert_equal 1, text_buffer_type.arguments.length
+    assert_equal 64, text_buffer_type.arguments.first.value.value
+    assert_equal 0, local_decl.value.arguments.length
+  end
+
+  def test_parses_cstr_list_buffer_typed_local_without_initializer
+    source = <<~MT
+      module demo.cstr_list_buffer
+
+      def main() -> void:
+          var labels: cstr_list_buffer[8, 256]
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    local_decl = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::LocalDecl, local_decl
+    assert_equal :var, local_decl.kind
+    assert_equal "labels", local_decl.name
+    assert_equal "cstr_list_buffer", local_decl.type.name.to_s
+    assert_equal 2, local_decl.type.arguments.length
+    assert_equal 8, local_decl.type.arguments.first.value.value
+    assert_equal 256, local_decl.type.arguments[1].value.value
+    assert_nil local_decl.value
+  end
+
+  def test_parses_cstr_list_buffer_constructor_calls
+    source = <<~MT
+      module demo.cstr_list_buffer
+
+      def main() -> i32:
+          let labels = zero[cstr_list_buffer[8, 256]]()
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    local_decl = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::Call, local_decl.value
+    assert_instance_of MilkTea::AST::Specialization, local_decl.value.callee
+    assert_equal "zero", local_decl.value.callee.callee.name
+    assert_equal 1, local_decl.value.callee.arguments.length
+    list_buffer_type = local_decl.value.callee.arguments.first.value
+    assert_instance_of MilkTea::AST::TypeRef, list_buffer_type
+    assert_equal "cstr_list_buffer", list_buffer_type.name.to_s
+    assert_equal 2, list_buffer_type.arguments.length
+    assert_equal 8, list_buffer_type.arguments.first.value.value
+    assert_equal 256, list_buffer_type.arguments[1].value.value
     assert_equal 0, local_decl.value.arguments.length
   end
 

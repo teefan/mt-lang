@@ -16,7 +16,7 @@ module MilkTea
   class Parser
     BUILTIN_TYPE_NAMES = %w[
       bool byte char i8 i16 i32 i64 u8 u16 u32 u64 isize usize f32 f64 void str cstr
-      ptr ref span array Result
+      ptr ref span array str_buffer str_builder cstr_list_buffer Result
     ].freeze
 
     def self.parse(source = nil, path: nil, tokens: nil)
@@ -30,6 +30,7 @@ module MilkTea
       @current = 0
       @known_type_names = {}
       @known_import_aliases = {}
+      @known_generic_callable_names = {}
       seed_known_names
     end
 
@@ -561,8 +562,13 @@ module MilkTea
     def parse_local_decl(kind)
       name = consume_name("expected local variable name").lexeme
       var_type = match(:colon) ? parse_type_ref : nil
-      consume(:equal, "expected '=' in local declaration")
-      value = parse_expression
+      value = if match(:equal)
+                parse_expression
+              else
+                raise ParseError, "local declaration without initializer requires a type" unless var_type
+
+                nil
+              end
       consume_end_of_statement
       AST::LocalDecl.new(kind:, name:, type: var_type, value:)
     end
@@ -938,7 +944,7 @@ module MilkTea
     end
 
     def builtin_specialization_target?(expression)
-      expression.is_a?(AST::Identifier) && %w[array cast reinterpret span zero].include?(expression.name)
+      expression.is_a?(AST::Identifier) && %w[array str_buffer cast reinterpret span zero].include?(expression.name)
     end
 
     def aggregate_specialization_target?(expression)
@@ -955,8 +961,22 @@ module MilkTea
     def specialization_call_target?(expression, arguments, call_arguments)
       return true if builtin_specialization_target?(expression)
       return true if aggregate_specialization_target?(expression) && call_arguments.all?(&:name)
+      return true if generic_callable_specialization_target?(expression) && arguments.all? { |argument| explicit_specialization_argument?(argument.value) }
+      return true if imported_member_specialization_target?(expression) && arguments.all? { |argument| explicit_specialization_argument?(argument.value) }
 
       aggregate_specialization_target?(expression) && arguments.all? { |argument| definite_type_argument?(argument.value) }
+    end
+
+    def generic_callable_specialization_target?(expression)
+      expression.is_a?(AST::Identifier) && @known_generic_callable_names.key?(expression.name)
+    end
+
+    def imported_member_specialization_target?(expression)
+      expression.is_a?(AST::MemberAccess) && expression.receiver.is_a?(AST::Identifier) && @known_import_aliases.key?(expression.receiver.name)
+    end
+
+    def explicit_specialization_argument?(value)
+      definite_type_argument?(value) || value.is_a?(AST::IntegerLiteral) || value.is_a?(AST::FloatLiteral)
     end
 
     def definite_type_argument?(value)
@@ -988,6 +1008,22 @@ module MilkTea
           depth -= 1 if depth.positive?
         when :import
           index = seed_import_alias(index + 1) if depth.zero?
+        when :def
+          if depth.zero?
+            name_token = @tokens[index + 1]
+            type_param_token = @tokens[index + 2]
+            if type_name_token?(name_token) && type_param_token&.type == :lbracket
+              @known_generic_callable_names[name_token.lexeme] = true
+            end
+          end
+        when :foreign
+          if depth.zero? && @tokens[index + 1]&.type == :def
+            name_token = @tokens[index + 2]
+            type_param_token = @tokens[index + 3]
+            if type_name_token?(name_token) && type_param_token&.type == :lbracket
+              @known_generic_callable_names[name_token.lexeme] = true
+            end
+          end
         when :struct, :union, :enum, :flags, :opaque, :type
           if depth.zero?
             name_token = @tokens[index + 1]

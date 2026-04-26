@@ -32,8 +32,13 @@ module MilkTea
         lines << ""
       end
 
+      if uses_text_buffer_helpers?
+        lines.concat(emit_text_buffer_helpers)
+        lines << ""
+      end
+
       opaque_decls = @program.opaques
-      struct_decls = sort_struct_decls(@program.structs + collect_generic_struct_decls + collect_result_decls)
+      struct_decls = sort_struct_decls(@program.structs + collect_generic_struct_decls + collect_result_decls + collect_str_builder_decls + collect_cstr_list_buffer_decls)
 
       forward_declarations = emit_forward_declarations(opaque_decls, struct_decls)
       unless forward_declarations.empty?
@@ -51,6 +56,16 @@ module MilkTea
         lines << ""
       end
 
+      if uses_cstr_list_buffer_helpers?
+        lines.concat(emit_cstr_list_buffer_helpers)
+        lines << ""
+      end
+
+      if uses_str_builder_helpers?
+        lines.concat(emit_str_builder_helpers)
+        lines << ""
+      end
+
       struct_decls.each do |struct_decl|
         lines.concat(emit_struct(struct_decl))
         lines << ""
@@ -64,6 +79,12 @@ module MilkTea
       array_return_types = collect_array_return_types
       array_return_types.each do |type|
         lines.concat(emit_array_return_wrapper(type))
+        lines << ""
+      end
+
+      function_declarations = emit_function_declarations(@program.functions)
+      unless function_declarations.empty?
+        lines.concat(function_declarations)
         lines << ""
       end
 
@@ -106,7 +127,19 @@ module MilkTea
     private
 
     def uses_panic_helper?
-      collect_checked_array_index_types.any? || collect_checked_span_index_types.any? || @program.functions.any? { |function| function_uses_panic?(function) }
+      collect_checked_array_index_types.any? || collect_checked_span_index_types.any? || @program.functions.any? { |function| function_uses_panic?(function) || function_uses_named_call?(function, %w[mt_str_buffer_len mt_str_buffer_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_assign mt_str_builder_append mt_cstr_list_buffer_assign]) }
+    end
+
+    def uses_text_buffer_helpers?
+      @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_buffer_len mt_str_buffer_clear mt_str_buffer_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_clear mt_str_builder_assign mt_str_builder_append mt_str_builder_prepare_write]) }
+    end
+
+    def uses_str_builder_helpers?
+      @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_clear mt_str_builder_assign mt_str_builder_append mt_str_builder_prepare_write]) }
+    end
+
+    def uses_cstr_list_buffer_helpers?
+      @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_cstr_list_buffer_clear mt_cstr_list_buffer_assign]) }
     end
 
     def function_uses_panic?(function)
@@ -169,6 +202,60 @@ module MilkTea
       end
     end
 
+    def function_uses_named_call?(function, callees)
+      function.body.any? { |statement| statement_uses_named_call?(statement, callees) }
+    end
+
+    def statement_uses_named_call?(statement, callees)
+      case statement
+      when IR::LocalDecl
+        expression_uses_named_call?(statement.value, callees)
+      when IR::Assignment
+        expression_uses_named_call?(statement.target, callees) || expression_uses_named_call?(statement.value, callees)
+      when IR::BlockStmt, IR::WhileStmt
+        statement.body.any? { |inner| statement_uses_named_call?(inner, callees) }
+      when IR::IfStmt
+        expression_uses_named_call?(statement.condition, callees) ||
+          statement.then_body.any? { |inner| statement_uses_named_call?(inner, callees) } ||
+          (statement.else_body && statement.else_body.any? { |inner| statement_uses_named_call?(inner, callees) })
+      when IR::SwitchStmt
+        expression_uses_named_call?(statement.expression, callees) || statement.cases.any? { |switch_case| switch_case.body.any? { |inner| statement_uses_named_call?(inner, callees) } }
+      when IR::StaticAssert
+        expression_uses_named_call?(statement.condition, callees) || expression_uses_named_call?(statement.message, callees)
+      when IR::ReturnStmt
+        statement.value && expression_uses_named_call?(statement.value, callees)
+      when IR::ExpressionStmt
+        expression_uses_named_call?(statement.expression, callees)
+      else
+        false
+      end
+    end
+
+    def expression_uses_named_call?(expression, callees)
+      case expression
+      when IR::Call
+        callees.include?(expression.callee) || expression.arguments.any? { |argument| expression_uses_named_call?(argument, callees) }
+      when IR::Member
+        expression_uses_named_call?(expression.receiver, callees)
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+        expression_uses_named_call?(expression.receiver, callees) || expression_uses_named_call?(expression.index, callees)
+      when IR::Unary
+        expression_uses_named_call?(expression.operand, callees)
+      when IR::Binary
+        expression_uses_named_call?(expression.left, callees) || expression_uses_named_call?(expression.right, callees)
+      when IR::Conditional
+        expression_uses_named_call?(expression.condition, callees) || expression_uses_named_call?(expression.then_expression, callees) || expression_uses_named_call?(expression.else_expression, callees)
+      when IR::ReinterpretExpr, IR::Cast, IR::AddressOf
+        expression_uses_named_call?(expression.expression, callees)
+      when IR::AggregateLiteral
+        expression.fields.any? { |field| expression_uses_named_call?(field.value, callees) }
+      when IR::ArrayLiteral
+        expression.elements.any? { |element| expression_uses_named_call?(element, callees) }
+      else
+        false
+      end
+    end
+
     def emit_panic_helper
       lines = [
         "static void mt_panic(const char* message) {",
@@ -186,6 +273,210 @@ module MilkTea
         "#{INDENT}abort();",
         "}",
       ])
+
+      lines
+    end
+
+    def emit_text_buffer_helpers
+      [
+        "static bool mt_is_utf8_continuation_byte(unsigned char byte) {",
+        "#{INDENT}return (byte & 0xC0u) == 0x80u;",
+        "}",
+        "",
+        "static bool mt_is_valid_utf8(const char* data, uintptr_t len) {",
+        "#{INDENT}uintptr_t index = 0;",
+        "#{INDENT}while (index < len) {",
+        "#{INDENT * 2}unsigned char lead = (unsigned char) data[index];",
+        "#{INDENT * 2}if (lead < 0x80u) {",
+        "#{INDENT * 3}index++;",
+        "#{INDENT * 3}continue;",
+        "#{INDENT * 2}}",
+        "#{INDENT * 2}if (lead < 0xC2u) return false;",
+        "#{INDENT * 2}if (lead < 0xE0u) {",
+        "#{INDENT * 3}if (index + 1 >= len) return false;",
+        "#{INDENT * 3}unsigned char byte1 = (unsigned char) data[index + 1];",
+        "#{INDENT * 3}if (!mt_is_utf8_continuation_byte(byte1)) return false;",
+        "#{INDENT * 3}index += 2;",
+        "#{INDENT * 3}continue;",
+        "#{INDENT * 2}}",
+        "#{INDENT * 2}if (lead < 0xF0u) {",
+        "#{INDENT * 3}if (index + 2 >= len) return false;",
+        "#{INDENT * 3}unsigned char byte1 = (unsigned char) data[index + 1];",
+        "#{INDENT * 3}unsigned char byte2 = (unsigned char) data[index + 2];",
+        "#{INDENT * 3}if (lead == 0xE0u) {",
+        "#{INDENT * 4}if (byte1 < 0xA0u || byte1 > 0xBFu) return false;",
+        "#{INDENT * 3}} else if (lead == 0xEDu) {",
+        "#{INDENT * 4}if (byte1 < 0x80u || byte1 > 0x9Fu) return false;",
+        "#{INDENT * 3}} else if (!mt_is_utf8_continuation_byte(byte1)) {",
+        "#{INDENT * 4}return false;",
+        "#{INDENT * 3}}",
+        "#{INDENT * 3}if (!mt_is_utf8_continuation_byte(byte2)) return false;",
+        "#{INDENT * 3}index += 3;",
+        "#{INDENT * 3}continue;",
+        "#{INDENT * 2}}",
+        "#{INDENT * 2}if (lead < 0xF5u) {",
+        "#{INDENT * 3}if (index + 3 >= len) return false;",
+        "#{INDENT * 3}unsigned char byte1 = (unsigned char) data[index + 1];",
+        "#{INDENT * 3}unsigned char byte2 = (unsigned char) data[index + 2];",
+        "#{INDENT * 3}unsigned char byte3 = (unsigned char) data[index + 3];",
+        "#{INDENT * 3}if (lead == 0xF0u) {",
+        "#{INDENT * 4}if (byte1 < 0x90u || byte1 > 0xBFu) return false;",
+        "#{INDENT * 3}} else if (lead == 0xF4u) {",
+        "#{INDENT * 4}if (byte1 < 0x80u || byte1 > 0x8Fu) return false;",
+        "#{INDENT * 3}} else if (!mt_is_utf8_continuation_byte(byte1)) {",
+        "#{INDENT * 4}return false;",
+        "#{INDENT * 3}}",
+        "#{INDENT * 3}if (!mt_is_utf8_continuation_byte(byte2) || !mt_is_utf8_continuation_byte(byte3)) return false;",
+        "#{INDENT * 3}index += 4;",
+        "#{INDENT * 3}continue;",
+        "#{INDENT * 2}}",
+        "#{INDENT * 2}return false;",
+        "#{INDENT}}",
+        "#{INDENT}return true;",
+        "}",
+        "",
+        "static uintptr_t mt_str_buffer_len(const char* data, uintptr_t cap) {",
+        "#{INDENT}uintptr_t len = 0;",
+        "#{INDENT}while (len < cap && data[len] != '\\0') {",
+        "#{INDENT * 2}len++;",
+        "#{INDENT}}",
+        "#{INDENT}if (!mt_is_valid_utf8(data, len)) mt_panic(\"str_buffer text must be valid UTF-8\");",
+        "#{INDENT}return len;",
+        "}",
+        "",
+        "static const char* mt_str_buffer_as_cstr(const char* data, uintptr_t cap) {",
+        "#{INDENT}if (mt_str_buffer_len(data, cap) == cap) mt_panic(\"str_buffer.as_cstr requires a trailing NUL within capacity\");",
+        "#{INDENT}return data;",
+        "}",
+        "",
+        "static void mt_str_buffer_clear(char* data, uintptr_t cap) {",
+        "#{INDENT}memset(data, 0, cap);",
+        "}",
+      ]
+    end
+
+    def emit_cstr_list_buffer_helpers
+      lines = []
+
+      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_cstr_list_buffer_clear]) }
+        lines.concat([
+          "static void mt_cstr_list_buffer_clear(const char** items, uintptr_t item_cap, char* data, uintptr_t data_cap, uintptr_t* len, uintptr_t* used) {",
+          "#{INDENT}memset(items, 0, item_cap * sizeof(const char*));",
+          "#{INDENT}memset(data, 0, data_cap);",
+          "#{INDENT}*len = 0;",
+          "#{INDENT}*used = 0;",
+          "}",
+        ])
+      end
+
+      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_cstr_list_buffer_assign]) }
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static void mt_cstr_list_buffer_assign(mt_span_str values, const char** items, uintptr_t item_cap, char* data, uintptr_t data_cap, uintptr_t* len, uintptr_t* used) {",
+          "#{INDENT}uintptr_t offset = 0;",
+          "#{INDENT}uintptr_t index = 0;",
+          "#{INDENT}if (values.len > item_cap) mt_panic(\"cstr_list_buffer.assign exceeds item capacity\");",
+          "#{INDENT}memset(items, 0, item_cap * sizeof(const char*));",
+          "#{INDENT}memset(data, 0, data_cap);",
+          "#{INDENT}while (index < values.len) {",
+          "#{INDENT * 2}mt_str value = values.data[index];",
+          "#{INDENT * 2}if (value.len + 1 > data_cap - offset) mt_panic(\"cstr_list_buffer.assign exceeds byte capacity\");",
+          "#{INDENT * 2}memcpy(data + offset, value.data, value.len);",
+          "#{INDENT * 2}data[offset + value.len] = '\\0';",
+          "#{INDENT * 2}items[index] = data + offset;",
+          "#{INDENT * 2}offset += value.len + 1;",
+          "#{INDENT * 2}index++;",
+          "#{INDENT}}",
+          "#{INDENT}*len = values.len;",
+          "#{INDENT}*used = offset;",
+          "}",
+        ])
+      end
+
+      lines
+    end
+
+    def emit_str_builder_helpers
+      lines = []
+
+      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_append]) }
+        lines.concat([
+          "static uintptr_t mt_str_builder_len(char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {",
+          "#{INDENT}if (*dirty) {",
+          "#{INDENT * 2}uintptr_t current = 0;",
+          "#{INDENT * 2}while (current < cap + 1 && data[current] != '\\0') {",
+          "#{INDENT * 3}current++;",
+          "#{INDENT * 2}}",
+          "#{INDENT * 2}if (current > cap) mt_panic(\"str_builder text requires a trailing NUL within capacity\");",
+          "#{INDENT * 2}if (!mt_is_valid_utf8(data, current)) mt_panic(\"str_builder text must be valid UTF-8\");",
+          "#{INDENT * 2}*len = current;",
+          "#{INDENT * 2}*dirty = false;",
+          "#{INDENT}}",
+          "#{INDENT}return *len;",
+          "}",
+        ])
+      end
+
+      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_as_cstr]) }
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static const char* mt_str_builder_as_cstr(char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {",
+          "#{INDENT}(void)mt_str_builder_len(data, cap, len, dirty);",
+          "#{INDENT}return data;",
+          "}",
+        ])
+      end
+
+      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_clear]) }
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static void mt_str_builder_clear(char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {",
+          "#{INDENT}memset(data, 0, cap + 1);",
+          "#{INDENT}*len = 0;",
+          "#{INDENT}*dirty = false;",
+          "}",
+        ])
+      end
+
+      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_assign]) }
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static void mt_str_builder_assign(mt_str value, char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {",
+          "#{INDENT}if (value.len > cap) mt_panic(\"str_builder.assign exceeds capacity\");",
+          "#{INDENT}memcpy(data, value.data, value.len);",
+          "#{INDENT}data[value.len] = '\\0';",
+          "#{INDENT}if (value.len < cap + 1) memset(data + value.len + 1, 0, cap - value.len);",
+          "#{INDENT}*len = value.len;",
+          "#{INDENT}*dirty = false;",
+          "}",
+        ])
+      end
+
+      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_append]) }
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static void mt_str_builder_append(mt_str value, char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {",
+          "#{INDENT}uintptr_t current = mt_str_builder_len(data, cap, len, dirty);",
+          "#{INDENT}if (value.len > cap - current) mt_panic(\"str_builder.append exceeds capacity\");",
+          "#{INDENT}memcpy(data + current, value.data, value.len);",
+          "#{INDENT}current += value.len;",
+          "#{INDENT}data[current] = '\\0';",
+          "#{INDENT}*len = current;",
+          "#{INDENT}*dirty = false;",
+          "}",
+        ])
+      end
+
+      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_prepare_write]) }
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static char* mt_str_builder_prepare_write(char* data, uintptr_t cap, bool* dirty) {",
+          "#{INDENT}data[cap] = '\\0';",
+          "#{INDENT}*dirty = true;",
+          "#{INDENT}return data;",
+          "}",
+        ])
+      end
 
       lines
     end
@@ -266,15 +557,25 @@ module MilkTea
       lines
     end
 
-    def emit_function(function)
-      params = if function.params.empty?
-                 "void"
-               else
-                 function.params.map { |param| c_declaration(param.pointer ? pointer_to(param.type) : param.type, param.c_name) }.join(", ")
-               end
+    def emit_function_declarations(functions)
+      functions.map { |function| "#{function_signature(function)};" }
+    end
 
+    def function_signature(function)
       prefix = function.entry_point ? "" : "static "
-      lines = ["#{prefix}#{c_function_return_type(function.return_type)} #{function.c_name}(#{params}) {"]
+      "#{prefix}#{c_function_return_type(function.return_type)} #{function.c_name}(#{function_params(function)})"
+    end
+
+    def function_params(function)
+      if function.params.empty?
+        "void"
+      else
+        function.params.map { |param| c_declaration(param.pointer ? pointer_to(param.type) : param.type, param.c_name) }.join(", ")
+      end
+    end
+
+    def emit_function(function)
+      lines = ["#{function_signature(function)} {"]
       used_labels = collect_used_labels(function.body)
       if function.body.empty?
         lines << "#{INDENT}(void)0;"
@@ -461,7 +762,11 @@ module MilkTea
       when IR::Conditional
         "#{wrap_expression(expression.condition)} ? #{wrap_expression(expression.then_expression)} : #{wrap_expression(expression.else_expression)}"
       when IR::ReinterpretExpr
-        "#{reinterpret_helper_name(expression.target_type, expression.source_type)}(#{emit_expression(expression.expression)})"
+        if no_op_reinterpret?(expression.target_type, expression.source_type)
+          emit_expression(expression.expression)
+        else
+          "#{reinterpret_helper_name(expression.target_type, expression.source_type)}(#{emit_expression(expression.expression)})"
+        end
       when IR::SizeofExpr
         "sizeof(#{layout_type_expression(expression.target_type)})"
       when IR::AlignofExpr
@@ -483,7 +788,11 @@ module MilkTea
       when IR::AddressOf
         "&#{wrap_expression(expression.expression)}"
       when IR::Cast
-        "((#{c_type(expression.target_type)}) #{wrap_expression(expression.expression)})"
+        if no_op_cast?(expression)
+          emit_expression(expression.expression)
+        else
+          "((#{c_type(expression.target_type)}) #{wrap_expression(expression.expression)})"
+        end
       when IR::AggregateLiteral
         emit_aggregate_literal(expression)
       when IR::ArrayLiteral
@@ -661,6 +970,8 @@ module MilkTea
         collect_reinterpret_helpers_from_expression(expression.then_expression, helpers, seen)
         collect_reinterpret_helpers_from_expression(expression.else_expression, helpers, seen)
       when IR::ReinterpretExpr
+        return if no_op_reinterpret?(expression.target_type, expression.source_type)
+
         key = [expression.target_type, expression.source_type]
         unless seen[key]
           helpers << expression
@@ -694,6 +1005,18 @@ module MilkTea
 
     def reinterpret_helper_name(target_type, source_type)
       "mt_reinterpret_#{sanitize_identifier(target_type.to_s)}_from_#{sanitize_identifier(source_type.to_s)}"
+    end
+
+    def no_op_cast?(expression)
+      return false if expression.expression.type.is_a?(Types::Null)
+
+      c_type(expression.target_type) == c_type(expression.expression.type)
+    rescue StandardError
+      false
+    end
+
+    def no_op_reinterpret?(target_type, source_type)
+      c_type(target_type) == c_type(source_type)
     end
 
     def checked_array_index_helper_name(type)
@@ -1010,6 +1333,39 @@ module MilkTea
       end
     end
 
+    def collect_cstr_list_buffer_decls
+      collect_cstr_list_buffer_types.map do |type|
+        IR::StructDecl.new(
+          name: type.to_s,
+          c_name: cstr_list_buffer_type_name(type),
+          fields: [
+            IR::Field.new(name: "items", type: Types::GenericInstance.new("array", [Types::Primitive.new("cstr"), Types::LiteralTypeArg.new(cstr_list_buffer_item_capacity(type))])),
+            IR::Field.new(name: "data", type: Types::GenericInstance.new("array", [Types::Primitive.new("char"), Types::LiteralTypeArg.new(cstr_list_buffer_byte_capacity(type))])),
+            IR::Field.new(name: "len", type: Types::Primitive.new("usize")),
+            IR::Field.new(name: "used", type: Types::Primitive.new("usize")),
+          ],
+          packed: false,
+          alignment: nil,
+        )
+      end
+    end
+
+    def collect_str_builder_decls
+      collect_str_builder_types.map do |type|
+        IR::StructDecl.new(
+          name: type.to_s,
+          c_name: str_builder_type_name(type),
+          fields: [
+            IR::Field.new(name: "data", type: Types::GenericInstance.new("array", [Types::Primitive.new("char"), Types::LiteralTypeArg.new(str_builder_storage_capacity(type))])),
+            IR::Field.new(name: "len", type: Types::Primitive.new("usize")),
+            IR::Field.new(name: "dirty", type: Types::Primitive.new("bool")),
+          ],
+          packed: false,
+          alignment: nil,
+        )
+      end
+    end
+
     def collect_result_types
       result_types = []
       visited = {}
@@ -1178,6 +1534,280 @@ module MilkTea
       generic_struct_types
     end
 
+    def collect_cstr_list_buffer_types
+      cstr_list_buffer_types = []
+      visited = {}
+
+      @program.constants.each do |constant|
+        collect_cstr_list_buffer_type(constant.type, cstr_list_buffer_types, visited)
+      end
+
+      @program.structs.each do |struct_decl|
+        struct_decl.fields.each do |field|
+          collect_cstr_list_buffer_type(field.type, cstr_list_buffer_types, visited)
+        end
+      end
+
+      @program.unions.each do |union_decl|
+        union_decl.fields.each do |field|
+          collect_cstr_list_buffer_type(field.type, cstr_list_buffer_types, visited)
+        end
+      end
+
+      @program.functions.each do |function|
+        collect_cstr_list_buffer_type(function.return_type, cstr_list_buffer_types, visited)
+        function.params.each do |param|
+          collect_cstr_list_buffer_type(param.type, cstr_list_buffer_types, visited)
+        end
+        collect_cstr_list_buffer_types_from_statements(function.body, cstr_list_buffer_types, visited)
+      end
+
+      @program.static_asserts.each do |statement|
+        collect_cstr_list_buffer_types_from_expression(statement.condition, cstr_list_buffer_types, visited)
+        collect_cstr_list_buffer_types_from_expression(statement.message, cstr_list_buffer_types, visited)
+      end
+
+      cstr_list_buffer_types
+    end
+
+    def collect_str_builder_types
+      str_builder_types = []
+      visited = {}
+
+      @program.constants.each do |constant|
+        collect_str_builder_type(constant.type, str_builder_types, visited)
+      end
+
+      @program.structs.each do |struct_decl|
+        struct_decl.fields.each do |field|
+          collect_str_builder_type(field.type, str_builder_types, visited)
+        end
+      end
+
+      @program.unions.each do |union_decl|
+        union_decl.fields.each do |field|
+          collect_str_builder_type(field.type, str_builder_types, visited)
+        end
+      end
+
+      @program.functions.each do |function|
+        collect_str_builder_type(function.return_type, str_builder_types, visited)
+        function.params.each do |param|
+          collect_str_builder_type(param.type, str_builder_types, visited)
+        end
+        collect_str_builder_types_from_statements(function.body, str_builder_types, visited)
+      end
+
+      @program.static_asserts.each do |statement|
+        collect_str_builder_types_from_expression(statement.condition, str_builder_types, visited)
+        collect_str_builder_types_from_expression(statement.message, str_builder_types, visited)
+      end
+
+      str_builder_types
+    end
+
+    def collect_str_builder_types_from_statements(statements, str_builder_types, visited)
+      statements.each do |statement|
+        case statement
+        when IR::LocalDecl
+          collect_str_builder_type(statement.type, str_builder_types, visited)
+          collect_str_builder_types_from_expression(statement.value, str_builder_types, visited)
+        when IR::Assignment
+          collect_str_builder_types_from_expression(statement.target, str_builder_types, visited)
+          collect_str_builder_types_from_expression(statement.value, str_builder_types, visited)
+        when IR::BlockStmt, IR::WhileStmt
+          collect_str_builder_types_from_statements(statement.body, str_builder_types, visited)
+        when IR::IfStmt
+          collect_str_builder_types_from_expression(statement.condition, str_builder_types, visited)
+          collect_str_builder_types_from_statements(statement.then_body, str_builder_types, visited)
+          collect_str_builder_types_from_statements(statement.else_body, str_builder_types, visited) if statement.else_body
+        when IR::SwitchStmt
+          collect_str_builder_types_from_expression(statement.expression, str_builder_types, visited)
+          statement.cases.each do |switch_case|
+            collect_str_builder_types_from_statements(switch_case.body, str_builder_types, visited)
+          end
+        when IR::StaticAssert
+          collect_str_builder_types_from_expression(statement.condition, str_builder_types, visited)
+          collect_str_builder_types_from_expression(statement.message, str_builder_types, visited)
+        when IR::ReturnStmt
+          collect_str_builder_types_from_expression(statement.value, str_builder_types, visited) if statement.value
+        when IR::ExpressionStmt
+          collect_str_builder_types_from_expression(statement.expression, str_builder_types, visited)
+        end
+      end
+    end
+
+    def collect_str_builder_types_from_expression(expression, str_builder_types, visited)
+      case expression
+      when IR::Member
+        collect_str_builder_types_from_expression(expression.receiver, str_builder_types, visited)
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+        collect_str_builder_types_from_expression(expression.receiver, str_builder_types, visited)
+        collect_str_builder_types_from_expression(expression.index, str_builder_types, visited)
+      when IR::Call
+        collect_str_builder_type(expression.type, str_builder_types, visited)
+        expression.arguments.each { |argument| collect_str_builder_types_from_expression(argument, str_builder_types, visited) }
+      when IR::Unary
+        collect_str_builder_types_from_expression(expression.operand, str_builder_types, visited)
+      when IR::Binary
+        collect_str_builder_types_from_expression(expression.left, str_builder_types, visited)
+        collect_str_builder_types_from_expression(expression.right, str_builder_types, visited)
+      when IR::Conditional
+        collect_str_builder_types_from_expression(expression.condition, str_builder_types, visited)
+        collect_str_builder_types_from_expression(expression.then_expression, str_builder_types, visited)
+        collect_str_builder_types_from_expression(expression.else_expression, str_builder_types, visited)
+      when IR::ReinterpretExpr
+        collect_str_builder_type(expression.target_type, str_builder_types, visited)
+        collect_str_builder_type(expression.source_type, str_builder_types, visited)
+        collect_str_builder_types_from_expression(expression.expression, str_builder_types, visited)
+      when IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
+        collect_str_builder_type(expression.target_type, str_builder_types, visited)
+      when IR::AddressOf, IR::Cast
+        collect_str_builder_types_from_expression(expression.expression, str_builder_types, visited)
+      when IR::AggregateLiteral
+        collect_str_builder_type(expression.type, str_builder_types, visited)
+        expression.fields.each { |field| collect_str_builder_types_from_expression(field.value, str_builder_types, visited) }
+      when IR::ArrayLiteral
+        expression.elements.each { |element| collect_str_builder_types_from_expression(element, str_builder_types, visited) }
+      end
+    end
+
+    def collect_str_builder_type(type, str_builder_types, visited)
+      return unless type
+      return if visited[type]
+
+      visited[type] = true
+
+      case type
+      when Types::Nullable
+        collect_str_builder_type(type.base, str_builder_types, visited)
+      when Types::Span
+        collect_str_builder_type(type.element_type, str_builder_types, visited)
+      when Types::StructInstance
+        type.arguments.each do |argument|
+          collect_str_builder_type(argument, str_builder_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
+        end
+        type.fields.each_value do |field_type|
+          collect_str_builder_type(field_type, str_builder_types, visited)
+        end
+      when Types::GenericInstance
+        str_builder_types << type if str_builder_type?(type)
+        type.arguments.each do |argument|
+          collect_str_builder_type(argument, str_builder_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
+        end
+      when Types::Function
+        type.params.each do |param|
+          collect_str_builder_type(param.type, str_builder_types, visited)
+        end
+        collect_str_builder_type(type.return_type, str_builder_types, visited)
+      when Types::Struct, Types::Union
+        type.fields.each_value do |field_type|
+          collect_str_builder_type(field_type, str_builder_types, visited)
+        end
+      end
+    end
+
+    def collect_cstr_list_buffer_types_from_statements(statements, cstr_list_buffer_types, visited)
+      statements.each do |statement|
+        case statement
+        when IR::LocalDecl
+          collect_cstr_list_buffer_type(statement.type, cstr_list_buffer_types, visited)
+          collect_cstr_list_buffer_types_from_expression(statement.value, cstr_list_buffer_types, visited)
+        when IR::Assignment
+          collect_cstr_list_buffer_types_from_expression(statement.target, cstr_list_buffer_types, visited)
+          collect_cstr_list_buffer_types_from_expression(statement.value, cstr_list_buffer_types, visited)
+        when IR::BlockStmt, IR::WhileStmt
+          collect_cstr_list_buffer_types_from_statements(statement.body, cstr_list_buffer_types, visited)
+        when IR::IfStmt
+          collect_cstr_list_buffer_types_from_expression(statement.condition, cstr_list_buffer_types, visited)
+          collect_cstr_list_buffer_types_from_statements(statement.then_body, cstr_list_buffer_types, visited)
+          collect_cstr_list_buffer_types_from_statements(statement.else_body, cstr_list_buffer_types, visited) if statement.else_body
+        when IR::SwitchStmt
+          collect_cstr_list_buffer_types_from_expression(statement.expression, cstr_list_buffer_types, visited)
+          statement.cases.each do |switch_case|
+            collect_cstr_list_buffer_types_from_statements(switch_case.body, cstr_list_buffer_types, visited)
+          end
+        when IR::StaticAssert
+          collect_cstr_list_buffer_types_from_expression(statement.condition, cstr_list_buffer_types, visited)
+          collect_cstr_list_buffer_types_from_expression(statement.message, cstr_list_buffer_types, visited)
+        when IR::ReturnStmt
+          collect_cstr_list_buffer_types_from_expression(statement.value, cstr_list_buffer_types, visited) if statement.value
+        when IR::ExpressionStmt
+          collect_cstr_list_buffer_types_from_expression(statement.expression, cstr_list_buffer_types, visited)
+        end
+      end
+    end
+
+    def collect_cstr_list_buffer_types_from_expression(expression, cstr_list_buffer_types, visited)
+      case expression
+      when IR::Member
+        collect_cstr_list_buffer_types_from_expression(expression.receiver, cstr_list_buffer_types, visited)
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+        collect_cstr_list_buffer_types_from_expression(expression.receiver, cstr_list_buffer_types, visited)
+        collect_cstr_list_buffer_types_from_expression(expression.index, cstr_list_buffer_types, visited)
+      when IR::Call
+        collect_cstr_list_buffer_type(expression.type, cstr_list_buffer_types, visited)
+        expression.arguments.each { |argument| collect_cstr_list_buffer_types_from_expression(argument, cstr_list_buffer_types, visited) }
+      when IR::Unary
+        collect_cstr_list_buffer_types_from_expression(expression.operand, cstr_list_buffer_types, visited)
+      when IR::Binary
+        collect_cstr_list_buffer_types_from_expression(expression.left, cstr_list_buffer_types, visited)
+        collect_cstr_list_buffer_types_from_expression(expression.right, cstr_list_buffer_types, visited)
+      when IR::Conditional
+        collect_cstr_list_buffer_types_from_expression(expression.condition, cstr_list_buffer_types, visited)
+        collect_cstr_list_buffer_types_from_expression(expression.then_expression, cstr_list_buffer_types, visited)
+        collect_cstr_list_buffer_types_from_expression(expression.else_expression, cstr_list_buffer_types, visited)
+      when IR::ReinterpretExpr
+        collect_cstr_list_buffer_type(expression.target_type, cstr_list_buffer_types, visited)
+        collect_cstr_list_buffer_type(expression.source_type, cstr_list_buffer_types, visited)
+        collect_cstr_list_buffer_types_from_expression(expression.expression, cstr_list_buffer_types, visited)
+      when IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
+        collect_cstr_list_buffer_type(expression.target_type, cstr_list_buffer_types, visited)
+      when IR::AddressOf, IR::Cast
+        collect_cstr_list_buffer_types_from_expression(expression.expression, cstr_list_buffer_types, visited)
+      when IR::AggregateLiteral
+        collect_cstr_list_buffer_type(expression.type, cstr_list_buffer_types, visited)
+        expression.fields.each { |field| collect_cstr_list_buffer_types_from_expression(field.value, cstr_list_buffer_types, visited) }
+      when IR::ArrayLiteral
+        expression.elements.each { |element| collect_cstr_list_buffer_types_from_expression(element, cstr_list_buffer_types, visited) }
+      end
+    end
+
+    def collect_cstr_list_buffer_type(type, cstr_list_buffer_types, visited)
+      return unless type
+      return if visited[type]
+
+      visited[type] = true
+
+      case type
+      when Types::Nullable
+        collect_cstr_list_buffer_type(type.base, cstr_list_buffer_types, visited)
+      when Types::Span
+        collect_cstr_list_buffer_type(type.element_type, cstr_list_buffer_types, visited)
+      when Types::StructInstance
+        type.arguments.each do |argument|
+          collect_cstr_list_buffer_type(argument, cstr_list_buffer_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
+        end
+        type.fields.each_value do |field_type|
+          collect_cstr_list_buffer_type(field_type, cstr_list_buffer_types, visited)
+        end
+      when Types::GenericInstance
+        cstr_list_buffer_types << type if cstr_list_buffer_type?(type)
+        type.arguments.each do |argument|
+          collect_cstr_list_buffer_type(argument, cstr_list_buffer_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
+        end
+      when Types::Function
+        type.params.each do |param|
+          collect_cstr_list_buffer_type(param.type, cstr_list_buffer_types, visited)
+        end
+        collect_cstr_list_buffer_type(type.return_type, cstr_list_buffer_types, visited)
+      when Types::Struct, Types::Union
+        type.fields.each_value do |field_type|
+          collect_cstr_list_buffer_type(field_type, cstr_list_buffer_types, visited)
+        end
+      end
+    end
+
     def collect_generic_struct_types_from_statements(statements, generic_struct_types, visited)
       statements.each do |statement|
         case statement
@@ -1332,20 +1962,31 @@ module MilkTea
         case statement
         when IR::LocalDecl
           collect_span_type(statement.type, span_types, visited)
+          collect_span_types_from_expression(statement.value, span_types, visited)
+        when IR::Assignment
+          collect_span_types_from_expression(statement.target, span_types, visited)
+          collect_span_types_from_expression(statement.value, span_types, visited)
         when IR::BlockStmt
           collect_span_types_from_statements(statement.body, span_types, visited)
         when IR::WhileStmt
+          collect_span_types_from_expression(statement.condition, span_types, visited)
           collect_span_types_from_statements(statement.body, span_types, visited)
         when IR::IfStmt
+          collect_span_types_from_expression(statement.condition, span_types, visited)
           collect_span_types_from_statements(statement.then_body, span_types, visited)
           collect_span_types_from_statements(statement.else_body, span_types, visited) if statement.else_body
         when IR::SwitchStmt
+          collect_span_types_from_expression(statement.expression, span_types, visited)
           statement.cases.each do |switch_case|
             collect_span_types_from_statements(switch_case.body, span_types, visited)
           end
         when IR::StaticAssert
           collect_span_types_from_expression(statement.condition, span_types, visited)
           collect_span_types_from_expression(statement.message, span_types, visited)
+        when IR::ReturnStmt
+          collect_span_types_from_expression(statement.value, span_types, visited) if statement.value
+        when IR::ExpressionStmt
+          collect_span_types_from_expression(statement.expression, span_types, visited)
         end
       end
     end
@@ -1358,6 +1999,7 @@ module MilkTea
         collect_span_types_from_expression(expression.receiver, span_types, visited)
         collect_span_types_from_expression(expression.index, span_types, visited)
       when IR::Call
+        collect_span_type(expression.type, span_types, visited)
         expression.arguments.each { |argument| collect_span_types_from_expression(argument, span_types, visited) }
       when IR::Unary
         collect_span_types_from_expression(expression.operand, span_types, visited)
@@ -1379,6 +2021,7 @@ module MilkTea
       when IR::Cast
         collect_span_types_from_expression(expression.expression, span_types, visited)
       when IR::AggregateLiteral
+        collect_span_type(expression.type, span_types, visited)
         expression.fields.each { |field| collect_span_types_from_expression(field.value, span_types, visited) }
       when IR::ArrayLiteral
         expression.elements.each { |element| collect_span_types_from_expression(element, span_types, visited) }
@@ -1502,6 +2145,14 @@ module MilkTea
         raise LoweringError, "ref requires exactly one type argument" unless type.arguments.length == 1
 
         "#{c_type(type.arguments.first)}*"
+      when "str_builder"
+        raise LoweringError, "str_builder requires exactly one type argument" unless str_builder_type?(type)
+
+        str_builder_type_name(type)
+      when "cstr_list_buffer"
+        raise LoweringError, "cstr_list_buffer requires exactly two type arguments" unless cstr_list_buffer_type?(type)
+
+        cstr_list_buffer_type_name(type)
       else
         raise LoweringError, "unsupported generic C type #{type.name}"
       end
@@ -1516,16 +2167,60 @@ module MilkTea
     end
 
     def array_type?(type)
-      type.is_a?(Types::GenericInstance) && type.name == "array" && type.arguments.length == 2 &&
-        type.arguments[1].is_a?(Types::LiteralTypeArg)
+      text_buffer_type?(type) ||
+        (type.is_a?(Types::GenericInstance) && type.name == "array" && type.arguments.length == 2 &&
+        type.arguments[1].is_a?(Types::LiteralTypeArg))
     end
 
     def array_element_type(type)
+      return Types::Primitive.new("char") if text_buffer_type?(type)
+
       type.arguments.first
     end
 
     def array_length(type)
+      return type.arguments.first.value if text_buffer_type?(type)
+
       type.arguments[1].value
+    end
+
+    def str_builder_type?(type)
+      type.is_a?(Types::GenericInstance) && type.name == "str_builder" && type.arguments.length == 1 &&
+        type.arguments.first.is_a?(Types::LiteralTypeArg) && type.arguments.first.value.is_a?(Integer)
+    end
+
+    def str_builder_capacity(type)
+      type.arguments.first.value
+    end
+
+    def str_builder_storage_capacity(type)
+      str_builder_capacity(type) + 1
+    end
+
+    def str_builder_type_name(type)
+      "mt_str_builder_#{str_builder_capacity(type)}"
+    end
+
+    def text_buffer_type?(type)
+      type.is_a?(Types::GenericInstance) && type.name == "str_buffer" && type.arguments.length == 1 &&
+        type.arguments.first.is_a?(Types::LiteralTypeArg) && type.arguments.first.value.is_a?(Integer)
+    end
+
+    def cstr_list_buffer_type?(type)
+      type.is_a?(Types::GenericInstance) && type.name == "cstr_list_buffer" && type.arguments.length == 2 &&
+        type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) && argument.value.is_a?(Integer) }
+    end
+
+    def cstr_list_buffer_item_capacity(type)
+      type.arguments[0].value
+    end
+
+    def cstr_list_buffer_byte_capacity(type)
+      type.arguments[1].value
+    end
+
+    def cstr_list_buffer_type_name(type)
+      "mt_cstr_list_buffer_#{cstr_list_buffer_item_capacity(type)}_#{cstr_list_buffer_byte_capacity(type)}"
     end
 
     def pointer_to(type)
