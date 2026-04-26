@@ -1886,6 +1886,31 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_extended_compound_assignment_operators
+    source = <<~MT
+      module demo.compound_assignments
+
+      flags Bits: u32
+          a = 1 << 0
+          b = 1 << 1
+
+      def main() -> i32:
+          var value = 12
+          value %= 5
+          value <<= 1
+          value >>= 1
+          var bits = Bits.a
+          bits |= Bits.b
+          bits &= Bits.b
+          bits ^= Bits.a
+          return value
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_address_of_dereference_and_deref_assignment_in_unsafe
     source = <<~MT
       module demo.pointer_surface
@@ -2281,6 +2306,40 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_const_pointer_calls_from_immutable_storage
+    source = <<~MT
+      module demo.const_pointer_call
+
+      extern def inspect(values: const_ptr[i32]) -> void
+
+      def main() -> void:
+          let value = 7
+          inspect(ro_addr(value))
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_const_pointer_for_writable_pointer_parameters
+    source = <<~MT
+      module demo.bad_const_pointer
+
+      extern def write(values: ptr[i32]) -> void
+
+      def main() -> void:
+          let value = 7
+          write(ro_addr(value))
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/expects ptr\[i32\], got const_ptr\[i32\]/, error.message)
+  end
+
   def test_type_checks_str_buffer_as_span_char_and_safe_index_source
     source = <<~MT
       module demo.str_buffer_surface
@@ -2457,6 +2516,29 @@ class MilkTeaSemaTest < Minitest::Test
     result = check_program_source(root_source, imported_sources)
 
     assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_ro_addr_on_immutable_array_elements_for_const_pointers
+    source = <<~MT
+      module demo.const_pointer_arrays
+
+      struct Vec2:
+          x: f32
+          y: f32
+
+      extern def draw(points: const_ptr[Vec2], count: i32) -> void
+
+      def main() -> void:
+          let points = array[Vec2, 2](
+              Vec2(x = 1.0, y = 2.0),
+              Vec2(x = 3.0, y = 4.0),
+          )
+          draw(ro_addr(points[0]), 2)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
   end
 
   def test_type_checks_foreign_mapping_public_alias_for_boundary_length_pairs

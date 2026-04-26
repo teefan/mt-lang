@@ -1376,6 +1376,37 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return counter\.value;/, generated)
   end
 
+  def test_generate_c_for_extended_compound_assignment_operators
+    source = [
+      "module demo.compound_assignments_surface",
+      "",
+      "flags Bits: u32",
+      "    a = 1 << 0",
+      "    b = 1 << 1",
+      "",
+      "def main() -> i32:",
+      "    var value = 12",
+      "    value %= 5",
+      "    value <<= 1",
+      "    value >>= 1",
+      "    var bits = Bits.a",
+      "    bits |= Bits.b",
+      "    bits &= Bits.b",
+      "    bits ^= Bits.a",
+      "    return value",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/value %= 5;/, generated)
+    assert_match(/value <<= 1;/, generated)
+    assert_match(/value >>= 1;/, generated)
+    assert_match(/bits \|= demo_compound_assignments_surface_Bits_b;/, generated)
+    assert_match(/bits &= demo_compound_assignments_surface_Bits_b;/, generated)
+    assert_match(/bits \^= demo_compound_assignments_surface_Bits_a;/, generated)
+  end
+
   def test_generate_c_for_safe_ref_locals_params_and_methods
     source = [
       "module demo.ref_surface",
@@ -1661,6 +1692,25 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/set_text\(\(\(const char\*\) raw_buffer\)\);/, generated)
     assert_match(/char \*writable = \(\(char\*\) clipboard\);/, generated)
+  end
+
+  def test_generate_c_for_const_pointer_ro_addr_calls
+    source = [
+      "module demo.const_pointer_call_surface",
+      "",
+      "def inspect(values: const_ptr[i32]) -> void:",
+      "    return",
+      "",
+      "def main() -> void:",
+      "    let value = 7",
+      "    inspect(ro_addr(value))",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static void demo_const_pointer_call_surface_inspect\(const int32_t\* values\)/, generated)
+    assert_match(/demo_const_pointer_call_surface_inspect\(\&value\);/, generated)
   end
 
   def test_generate_c_for_str_buffer_values_and_span_char_calls

@@ -16,7 +16,7 @@ module MilkTea
   class Parser
     BUILTIN_TYPE_NAMES = %w[
       bool byte char i8 i16 i32 i64 u8 u16 u32 u64 isize usize f32 f64 void str cstr
-      ptr ref span array str_buffer str_builder Result
+      ptr const_ptr ref span array str_buffer str_builder Result
     ].freeze
 
     def self.parse(source = nil, path: nil, tokens: nil)
