@@ -716,7 +716,7 @@ class MilkTeaParserTest < Minitest::Test
       module demo.locals
 
       def main() -> void:
-          var buffer: str_buffer[32]
+          var buffer: array[char, 32]
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -726,7 +726,9 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::LocalDecl, local_decl
     assert_equal :var, local_decl.kind
     assert_equal "buffer", local_decl.name
-    assert_equal "str_buffer", local_decl.type.name.to_s
+    assert_equal "array", local_decl.type.name.to_s
+    assert_equal "char", local_decl.type.arguments.first.value.name.to_s
+    assert_equal 32, local_decl.type.arguments[1].value.value
     assert_nil local_decl.value
   end
 
@@ -756,12 +758,12 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal 0, local_decl.value.arguments.length
   end
 
-  def test_parses_str_buffer_constructor_calls
+  def test_parses_array_char_zero_constructor_calls
     source = <<~MT
-      module demo.str_buffer
+      module demo.char_array
 
       def main() -> i32:
-          let buffer = zero[str_buffer[64]]()
+          let buffer = zero[array[char, 64]]()
           return 0
     MT
 
@@ -773,11 +775,11 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::Specialization, local_decl.value.callee
     assert_equal "zero", local_decl.value.callee.callee.name
     assert_equal 1, local_decl.value.callee.arguments.length
-    text_buffer_type = local_decl.value.callee.arguments.first.value
-    assert_instance_of MilkTea::AST::TypeRef, text_buffer_type
-    assert_equal "str_buffer", text_buffer_type.name.to_s
-    assert_equal 1, text_buffer_type.arguments.length
-    assert_equal 64, text_buffer_type.arguments.first.value.value
+    array_type = local_decl.value.callee.arguments.first.value
+    assert_instance_of MilkTea::AST::TypeRef, array_type
+    assert_equal "array", array_type.name.to_s
+    assert_equal "char", array_type.arguments.first.value.name.to_s
+    assert_equal 64, array_type.arguments[1].value.value
     assert_equal 0, local_decl.value.arguments.length
   end
 

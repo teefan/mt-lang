@@ -109,12 +109,12 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
-  def test_formats_str_buffer_zero_construction_like_source
+  def test_formats_array_char_zero_construction_like_source
     source = <<~MT
-      module demo.str_buffer
+      module demo.array_char
 
       def main() -> i32:
-          var buffer = zero[str_buffer[64]]()
+          var buffer = zero[array[char, 64]]()
           buffer[0] = 65
           return 0
     MT
@@ -129,7 +129,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       module demo.locals
 
       def main() -> void:
-          var buffer: str_buffer[64]
+          var buffer: array[char, 64]
     MT
 
     ast = MilkTea::Parser.parse(source)

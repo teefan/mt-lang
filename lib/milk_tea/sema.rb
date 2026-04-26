@@ -1016,7 +1016,7 @@ module MilkTea
         end
 
         receiver_type = infer_expression(expression.receiver, scopes:)
-        if text_buffer_type?(receiver_type) && text_buffer_method_kind(receiver_type, expression.member)
+        if char_array_text_type?(receiver_type) && char_array_text_method_kind(receiver_type, expression.member)
           raise SemaError, "method #{receiver_type}.#{expression.member} must be called"
         end
         if str_builder_type?(receiver_type) && str_builder_method_kind(receiver_type, expression.member)
@@ -1226,8 +1226,8 @@ module MilkTea
         when :callable_value
           check_callable_value_call(callable, expression.arguments, scopes:, callee_expression: expression.callee)
           callable.return_type
-        when :str_buffer_clear, :str_buffer_as_str, :str_buffer_as_cstr, :str_buffer_capacity
-          check_text_buffer_method_call(callable_kind, receiver, expression.arguments, scopes:)
+        when :char_array_as_str, :char_array_as_cstr
+          check_char_array_text_method_call(callable_kind, receiver, expression.arguments, scopes:)
         when :str_builder_clear, :str_builder_assign, :str_builder_append, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr
           check_str_builder_method_call(callable_kind, receiver, expression.arguments, scopes:)
         when :struct
@@ -1485,8 +1485,8 @@ module MilkTea
           method = lookup_method(receiver_type, callee.member)
           return [:method, method, callee.receiver] if method
 
-          if (text_buffer_method = text_buffer_method_kind(receiver_type, callee.member))
-            return [text_buffer_method, receiver_type, callee.receiver]
+          if (char_array_text_method = char_array_text_method_kind(receiver_type, callee.member))
+            return [char_array_text_method, receiver_type, callee.receiver]
           end
 
           if (str_builder_method = str_builder_method_kind(receiver_type, callee.member))
@@ -1526,15 +1526,6 @@ module MilkTea
             raise SemaError, "array specialization must be array[T, N]" unless array_type?(array_type)
 
             return [:array, array_type, nil]
-          end
-
-          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "str_buffer"
-            raise SemaError, "str_buffer requires exactly one type argument" unless callee.arguments.length == 1
-
-            text_buffer_type = resolve_type_ref(AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["str_buffer"]), arguments: callee.arguments, nullable: false))
-            raise SemaError, "str_buffer specialization must be str_buffer[N]" unless text_buffer_type?(text_buffer_type)
-
-            return [:array, text_buffer_type, nil]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "span"
@@ -1830,31 +1821,25 @@ module MilkTea
         target_type
       end
 
-      def check_text_buffer_method_call(kind, receiver, arguments, scopes:)
-        method_name = text_buffer_method_name(kind)
+      def check_char_array_text_method_call(kind, receiver, arguments, scopes:)
+        method_name = char_array_text_method_name(kind)
         raise SemaError, "#{method_name} does not support named arguments" if arguments.any?(&:name)
         raise SemaError, "#{method_name} expects 0 arguments, got #{arguments.length}" unless arguments.empty?
 
         receiver_type = infer_expression(receiver, scopes:)
-        raise SemaError, "unknown method #{receiver_type}.#{method_name}" unless text_buffer_type?(receiver_type)
+        raise SemaError, "unknown method #{receiver_type}.#{method_name}" unless char_array_text_type?(receiver_type)
 
         case kind
-        when :str_buffer_clear
-          raise SemaError, "cannot call mut method #{receiver_type}.clear on an immutable receiver" unless assignable_receiver?(receiver, scopes)
-
-          @types.fetch("void")
-        when :str_buffer_as_str
+        when :char_array_as_str
           raise SemaError, "#{receiver_type}.as_str requires a safe stored receiver" unless safe_reference_source_expression?(receiver, scopes:)
 
           @types.fetch("str")
-        when :str_buffer_as_cstr
+        when :char_array_as_cstr
           raise SemaError, "#{receiver_type}.as_cstr requires a safe stored receiver" unless safe_reference_source_expression?(receiver, scopes:)
 
           @types.fetch("cstr")
-        when :str_buffer_capacity
-          @types.fetch("usize")
         else
-          raise SemaError, "unsupported str_buffer method #{kind}"
+          raise SemaError, "unsupported array[char, N] method #{kind}"
         end
       end
 
@@ -1929,18 +1914,14 @@ module MilkTea
         nil
       end
 
-      def text_buffer_method_kind(receiver_type, name)
-        return unless text_buffer_type?(receiver_type)
+      def char_array_text_method_kind(receiver_type, name)
+        return unless char_array_text_type?(receiver_type)
 
         case name
-        when "clear"
-          :str_buffer_clear
         when "as_str"
-          :str_buffer_as_str
+          :char_array_as_str
         when "as_cstr"
-          :str_buffer_as_cstr
-        when "capacity"
-          :str_buffer_capacity
+          :char_array_as_cstr
         end
       end
 
@@ -1965,12 +1946,10 @@ module MilkTea
         end
       end
 
-      def text_buffer_method_name(kind)
+      def char_array_text_method_name(kind)
         {
-          str_buffer_clear: "clear",
-          str_buffer_as_str: "as_str",
-          str_buffer_as_cstr: "as_cstr",
-          str_buffer_capacity: "capacity",
+          char_array_as_str: "as_str",
+          char_array_as_cstr: "as_cstr",
         }.fetch(kind)
       end
 
@@ -2551,15 +2530,12 @@ module MilkTea
       end
 
       def array_type?(type)
-        text_buffer_type?(type) ||
-          (type.is_a?(Types::GenericInstance) && type.name == "array" && type.arguments.length == 2 &&
-          !type.arguments.first.is_a?(Types::LiteralTypeArg) && type.arguments[1].is_a?(Types::LiteralTypeArg))
+        type.is_a?(Types::GenericInstance) && type.name == "array" && type.arguments.length == 2 &&
+          !type.arguments.first.is_a?(Types::LiteralTypeArg) && type.arguments[1].is_a?(Types::LiteralTypeArg)
       end
 
       def array_element_type(type)
         return unless array_type?(type)
-
-        return @types.fetch("char") if text_buffer_type?(type)
 
         type.arguments.first
       end
@@ -2567,9 +2543,11 @@ module MilkTea
       def array_length(type)
         return unless array_type?(type)
 
-        return type.arguments.first.value if text_buffer_type?(type)
-
         type.arguments[1].value
+      end
+
+      def char_array_text_type?(type)
+        array_type?(type) && array_element_type(type) == @types.fetch("char")
       end
 
       def str_builder_type?(type)
@@ -2579,11 +2557,6 @@ module MilkTea
 
       def str_builder_capacity(type)
         type.arguments.first.value
-      end
-
-      def text_buffer_type?(type)
-        type.is_a?(Types::GenericInstance) && type.name == "str_buffer" && type.arguments.length == 1 &&
-          generic_integer_type_argument?(type.arguments.first)
       end
 
       def integer_type_argument?(argument)
@@ -2691,10 +2664,6 @@ module MilkTea
           raise SemaError, "array element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
           raise SemaError, "array length must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments[1])
           raise SemaError, "array length must be positive" if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
-        when "str_buffer"
-          raise SemaError, "str_buffer requires exactly one type argument" unless arguments.length == 1
-          raise SemaError, "str_buffer capacity must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments.first)
-          raise SemaError, "str_buffer capacity must be positive" if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
         when "str_builder"
           raise SemaError, "str_builder requires exactly one type argument" unless arguments.length == 1
           raise SemaError, "str_builder capacity must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments.first)
@@ -3083,9 +3052,10 @@ module MilkTea
         return false unless char_pointer_type?(boundary_type)
 
         return true if public_type.is_a?(Types::Span) && public_type.element_type == @types.fetch("char")
+        return true if char_array_text_type?(public_type)
         return true if str_builder_type?(public_type)
 
-        text_buffer_type?(public_type)
+        false
       end
 
       def foreign_cstr_argument_compatible?(actual_type, parameter, expression:)

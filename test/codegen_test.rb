@@ -1736,15 +1736,15 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/demo_const_pointer_call_surface_inspect\(\&value\);/, generated)
   end
 
-  def test_generate_c_for_str_buffer_values_and_span_char_calls
+  def test_generate_c_for_array_char_values_and_span_char_calls
     source = [
-      "module demo.str_buffer_surface",
+      "module demo.char_array_surface",
       "",
       "def view(items: span[char]) -> usize:",
       "    return items.len",
       "",
       "def main() -> i32:",
-      "    var buffer = zero[str_buffer[32]]()",
+      "    var buffer = zero[array[char, 32]]()",
       "    buffer[0] = 65",
       "    return cast[i32](view(buffer))",
       "",
@@ -1753,16 +1753,16 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_source(source)
 
     assert_match(/char buffer\[32\] = \{ 0 \};/, generated)
-    assert_match(/\(\*mt_checked_index_str_buffer_32\(&\(buffer\), 0\)\) = \(\(char\) 65\);/, generated)
+    assert_match(/\(\*mt_checked_index_array_char_32\(&\(buffer\), 0\)\) = \(\(char\) 65\);/, generated)
     assert_match(/\(mt_span_char\)\{ \.data = &buffer\[0\], \.len = 32 \}/, generated)
   end
 
-  def test_generate_c_for_typed_str_buffer_local_without_initializer
+  def test_generate_c_for_typed_array_char_local_without_initializer
     source = [
-      "module demo.str_buffer_zero_local",
+      "module demo.char_array_zero_local",
       "",
       "def main() -> i32:",
-      "    var buffer: str_buffer[16]",
+      "    var buffer: array[char, 16]",
       "    return 0",
       "",
     ].join("\n")
@@ -1772,31 +1772,28 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/char buffer\[16\] = \{ 0 \};/, generated)
   end
 
-  def test_generate_c_for_str_buffer_methods
+  def test_generate_c_for_array_char_text_borrows
     source = [
-      "module demo.str_buffer_methods",
+      "module demo.char_array_methods",
       "",
       "def main() -> i32:",
-      "    var buffer = zero[str_buffer[16]]()",
-      "    buffer.clear()",
+      "    var buffer = zero[array[char, 16]]()",
       "    let view = buffer.as_str()",
       "    let label = buffer.as_cstr()",
-      "    return cast[i32](buffer.capacity() + view.len)",
+      "    return cast[i32](view.len)",
       "",
     ].join("\n")
 
     generated = generate_c_from_source(source)
 
     assert_match(/static bool mt_is_valid_utf8\(const char\* data, uintptr_t len\)/, generated)
-    assert_match(/static const char\* mt_str_buffer_as_cstr\(const char\* data, uintptr_t cap\)/, generated)
-    assert_match(/static uintptr_t mt_str_buffer_len\(const char\* data, uintptr_t cap\)/, generated)
-    assert_match(/static void mt_str_buffer_clear\(char\* data, uintptr_t cap\)/, generated)
-    assert_match(/if \(!mt_is_valid_utf8\(data, len\)\) mt_panic\("str_buffer text must be valid UTF-8"\);/, generated)
-    assert_match(/if \(mt_str_buffer_len\(data, cap\) == cap\) mt_panic\("str_buffer\.as_cstr requires a trailing NUL within capacity"\);/, generated)
-    assert_match(/mt_str_buffer_clear\(&buffer\[0\], 16\);/, generated)
-    assert_match(/mt_str view = \(mt_str\)\{ \.data = &buffer\[0\], \.len = mt_str_buffer_len\(&buffer\[0\], 16\) \};/, generated)
-    assert_match(/const char\* label = mt_str_buffer_as_cstr\(&buffer\[0\], 16\);/, generated)
-    assert_match(/return \(\(int32_t\) \(16 \+ view.len\)\);/, generated)
+    assert_match(/static const char\* mt_char_array_as_cstr\(const char\* data, uintptr_t cap\)/, generated)
+    assert_match(/static uintptr_t mt_char_array_len\(const char\* data, uintptr_t cap\)/, generated)
+    assert_match(/if \(!mt_is_valid_utf8\(data, len\)\) mt_panic\("array\[char\] text must be valid UTF-8"\);/, generated)
+    assert_match(/if \(mt_char_array_len\(data, cap\) == cap\) mt_panic\("array\[char\]\.as_cstr requires a trailing NUL within capacity"\);/, generated)
+    assert_match(/mt_str view = \(mt_str\)\{ \.data = &buffer\[0\], \.len = mt_char_array_len\(&buffer\[0\], 16\) \};/, generated)
+    assert_match(/const char\* label = mt_char_array_as_cstr\(&buffer\[0\], 16\);/, generated)
+    assert_match(/return \(\(int32_t\) view.len\);/, generated)
   end
 
   def test_generate_c_for_str_builder_methods_and_span_char_calls
@@ -1979,14 +1976,14 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/unknown generic type cstr_list_buffer/, error.message)
   end
 
-  def test_generate_c_for_foreign_str_as_cstr_call_with_str_buffer_as_cstr_without_scratch
+  def test_generate_c_for_foreign_str_as_cstr_call_with_array_char_as_cstr_without_scratch
     source = <<~MT
       module demo.main
 
       import std.ui as ui
 
       def main() -> void:
-          var buffer: str_buffer[32]
+          var buffer: array[char, 32]
           ui.label(buffer.as_cstr())
     MT
 
@@ -2008,19 +2005,19 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(source, imported_sources)
 
-    assert_match(/Label\(mt_str_buffer_as_cstr\(&buffer\[0\], 32\)\);/, generated)
+    assert_match(/Label\(mt_char_array_as_cstr\(&buffer\[0\], 32\)\);/, generated)
     refute_match(/to_cstr/, generated)
   end
 
-  def test_generate_c_for_foreign_defs_with_str_buffer_and_span_char_ptr_char_boundary
+  def test_generate_c_for_foreign_defs_with_array_char_and_span_char_ptr_char_boundary
     source = <<~MT
       module demo.main
 
       import std.mem as mem
 
       def main() -> void:
-          var fixed = zero[str_buffer[32]]()
-          var dynamic = zero[str_buffer[64]]()
+          var fixed = zero[array[char, 32]]()
+          var dynamic = zero[array[char, 64]]()
           mem.write_fixed(fixed)
           mem.write_dynamic(dynamic)
     MT
@@ -2038,7 +2035,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.c.mem as c
 
-        pub foreign def write_fixed(label: str_buffer[32] as ptr[char]) -> void = c.WriteFixed(label)
+        pub foreign def write_fixed(label: array[char, 32] as ptr[char]) -> void = c.WriteFixed(label)
         pub foreign def write_dynamic(label: span[char] as ptr[char]) -> void = c.WriteDynamic(label)
       MT
     }
@@ -2056,7 +2053,7 @@ class MilkTeaCodegenTest < Minitest::Test
       import std.ui as ui
 
       def main() -> void:
-          var buffer = zero[str_buffer[32]]()
+          var buffer = zero[array[char, 32]]()
           ui.text_box(buffer)
     MT
 
