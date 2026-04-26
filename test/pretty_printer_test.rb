@@ -137,6 +137,21 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_defer_block_like_source
+    source = <<~MT
+      module demo.cleanup
+
+      def main() -> void:
+          defer:
+              first_cleanup()
+              second_cleanup()
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_lowered_ir_as_structured_output
     source = [
       "module demo.pretty",

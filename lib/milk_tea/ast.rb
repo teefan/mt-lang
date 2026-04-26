@@ -45,7 +45,7 @@ module MilkTea
     BreakStmt = Data.define()
     ContinueStmt = Data.define()
     ReturnStmt = Data.define(:value)
-    DeferStmt = Data.define(:expression)
+    DeferStmt = Data.define(:expression, :body)
     ExpressionStmt = Data.define(:expression)
 
     Identifier = Data.define(:name)
