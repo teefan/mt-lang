@@ -10,6 +10,8 @@ const window_title: cstr = c"raylib [core] example - custom logging"
 const prompt_text: cstr = c"Check out the console output to see the custom logger in action!"
 const time_format: cstr = c"%Y-%m-%d %H:%M:%S"
 
+foreign def vprintf_raylib_args(format: cstr, args: rl.va_list as stdio.va_list) -> i32 = stdio.vprintf
+
 def log_level_prefix(level: i32) -> cstr:
     if level == cast[i32](rl.TraceLogLevel.LOG_INFO):
         return c"[INFO] : "
@@ -21,7 +23,7 @@ def log_level_prefix(level: i32) -> cstr:
         return c"[DEBUG]: "
     return c""
 
-def custom_trace_log(level: i32, text: cstr, args: ptr[rl.__va_list_tag]) -> void:
+def custom_trace_log(level: i32, text: cstr, args: rl.va_list) -> void:
     var time_str = zero[array[char, 64]]()
     var now: ctime.time_t = 0
     now = ctime.time(raw(addr(now)))
@@ -33,7 +35,7 @@ def custom_trace_log(level: i32, text: cstr, args: ptr[rl.__va_list_tag]) -> voi
         stdio.printf(cast[cstr](raw(addr(time_str[0]))))
         stdio.printf(c"] ")
         stdio.printf(log_level_prefix(level))
-        stdio.vprintf(text, cast[ptr[stdio.__va_list_tag]](args))
+        vprintf_raylib_args(text, args)
     stdio.printf(c"\n")
 
 def main() -> i32:

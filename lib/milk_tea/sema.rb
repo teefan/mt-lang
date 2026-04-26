@@ -156,7 +156,16 @@ module MilkTea
             @types[decl.name] = Types::Flags.new(decl.name, module_name: @module_name, external: external_module?)
           when AST::OpaqueDecl
             ensure_available_type_name!(decl.name)
-            @types[decl.name] = Types::Opaque.new(decl.name, module_name: @module_name, external: external_module?)
+            if decl.c_name && !external_module?
+              raise SemaError, "opaque #{decl.name} may only specify a foreign C name in an extern module"
+            end
+
+            @types[decl.name] = Types::Opaque.new(
+              decl.name,
+              module_name: @module_name,
+              external: external_module?,
+              c_name: decl.c_name,
+            )
           end
         end
       end
@@ -1106,6 +1115,9 @@ module MilkTea
 
           check_function_call(callable, expression.arguments, scopes:)
           callable.type.return_type
+        when :callable_value
+          check_callable_value_call(callable, expression.arguments, scopes:, callee_expression: expression.callee)
+          callable.return_type
         when :str_buffer_clear, :str_buffer_as_str, :str_buffer_as_cstr, :str_buffer_capacity
           check_text_buffer_method_call(callable_kind, receiver, expression.arguments, scopes:)
         when :str_builder_clear, :str_builder_assign, :str_builder_append, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr
@@ -1318,6 +1330,12 @@ module MilkTea
       def resolve_callable(callee, scopes:)
         case callee
         when AST::Identifier
+          if (binding = lookup_value(callee.name, scopes))
+            return [:callable_value, binding.type, nil] if binding.type.is_a?(Types::Function)
+
+            raise SemaError, "#{callee.name} is not callable"
+          end
+
           return [:function, @top_level_functions.fetch(callee.name), nil] if @top_level_functions.key?(callee.name)
           return [:result_ok, nil, nil] if callee.name == "ok"
           return [:result_err, nil, nil] if callee.name == "err"
@@ -1366,6 +1384,8 @@ module MilkTea
           if (str_builder_method = str_builder_method_kind(receiver_type, callee.member))
             return [str_builder_method, receiver_type, callee.receiver]
           end
+
+          return [:callable_value, receiver_type.field(callee.member), nil] if aggregate_type?(receiver_type) && receiver_type.field(callee.member).is_a?(Types::Function)
 
           if (imported_module = imported_module_with_private_method(receiver_type, callee.member))
             raise SemaError, "#{receiver_type}.#{callee.member} is private to module #{imported_module.name}"
@@ -1438,6 +1458,9 @@ module MilkTea
 
           raise SemaError, "unsupported callable specialization #{describe_expression(callee)}"
         else
+          callee_type = infer_expression(callee, scopes:)
+          return [:callable_value, callee_type, nil] if callee_type.is_a?(Types::Function)
+
           raise SemaError, "unsupported callee #{describe_expression(callee)}"
         end
       end
@@ -1471,6 +1494,31 @@ module MilkTea
         end
 
         arguments.drop(expected_params.length).each do |argument|
+          infer_expression(argument.value, scopes:)
+        end
+      end
+
+      def check_callable_value_call(function_type, arguments, scopes:, callee_expression:)
+        if arguments.any?(&:name)
+          raise SemaError, "#{describe_expression(callee_expression)} does not support named arguments"
+        end
+
+        unless call_arity_matches?(function_type, arguments.length)
+          raise SemaError, arity_error_message(function_type, describe_expression(callee_expression), arguments.length)
+        end
+
+        function_type.params.each_with_index do |parameter, index|
+          argument = arguments.fetch(index)
+          actual_type = infer_expression(argument.value, scopes:, expected_type: parameter.type)
+          ensure_assignable!(
+            actual_type,
+            parameter.type,
+            "argument #{parameter.name || index} to #{describe_expression(callee_expression)} expects #{parameter.type}, got #{actual_type}",
+            expression: argument.value,
+          )
+        end
+
+        arguments.drop(function_type.params.length).each do |argument|
           infer_expression(argument.value, scopes:)
         end
       end
@@ -1867,6 +1915,8 @@ module MilkTea
             case argument.value
             when AST::TypeRef
               resolve_type_ref(argument.value, type_params:)
+            when AST::FunctionType
+              resolve_type_ref(argument.value, type_params:)
             when AST::IntegerLiteral
               Types::LiteralTypeArg.new(argument.value.value)
             when AST::FloatLiteral
@@ -2017,6 +2067,7 @@ module MilkTea
       def foreign_identity_projection_cast_compatible?(actual_type, expected_type)
         return true if actual_type == expected_type
         return true if mutable_to_const_pointer_compatibility?(actual_type, expected_type)
+        return true if same_external_opaque_c_name?(actual_type, expected_type)
 
         if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
           return foreign_identity_projection_cast_compatible?(actual_type.base, expected_type.base)
@@ -2040,6 +2091,17 @@ module MilkTea
         return true if actual_type == @types.fetch("cstr") && char_pointer_type?(expected_type)
 
         false
+      end
+
+      def same_external_opaque_c_name?(actual_type, expected_type)
+        return false unless actual_type.is_a?(Types::Opaque) && expected_type.is_a?(Types::Opaque)
+        return false unless actual_type.external && expected_type.external
+
+        foreign_opaque_c_name(actual_type) == foreign_opaque_c_name(expected_type)
+      end
+
+      def foreign_opaque_c_name(type)
+        type.c_name || type.name
       end
 
       def foreign_identity_projection_reinterpret_compatible?(actual_type, expected_type)

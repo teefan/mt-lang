@@ -160,7 +160,9 @@ module MilkTea
         when AST::FlagsDecl
           emit_enum_like("flags", declaration.name, declaration.backing_type, declaration.members, declaration.visibility)
         when AST::OpaqueDecl
-          line("#{visibility_prefix(declaration)}opaque #{declaration.name}")
+          text = "#{visibility_prefix(declaration)}opaque #{declaration.name}"
+          text += " = c#{declaration.c_name.inspect}" if declaration.c_name
+          line(text)
         when AST::MethodsBlock
           line("methods #{declaration.type_name}:")
           with_indent do

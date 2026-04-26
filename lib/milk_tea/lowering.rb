@@ -53,6 +53,8 @@ module MilkTea
           functions.concat(lower_functions)
         end
 
+        opaques.concat(lower_imported_external_opaques)
+
         IR::Program.new(
           module_name: @program.root_analysis.module_name,
           includes:,
@@ -286,8 +288,25 @@ module MilkTea
       def lower_opaques
         @analysis.ast.declarations.grep(AST::OpaqueDecl).map do |decl|
           opaque_type = @opaque_types.fetch(decl.name)
-          IR::OpaqueDecl.new(name: decl.name, c_name: c_type_name(opaque_type))
+          IR::OpaqueDecl.new(
+            name: decl.name,
+            c_name: opaque_c_type_name(opaque_type),
+            forward_declarable: opaque_forward_declarable?(opaque_type),
+          )
         end
+      end
+
+      def lower_imported_external_opaques
+        @program.analyses_by_module_name.each_value.flat_map do |analysis|
+          next [] unless analysis.module_kind == :extern_module
+
+          analysis.ast.declarations.grep(AST::OpaqueDecl).filter_map do |decl|
+            opaque_type = analysis.types.fetch(decl.name)
+            next unless forward_declarable_external_opaque?(opaque_type)
+
+            IR::OpaqueDecl.new(name: decl.name, c_name: opaque_c_type_name(opaque_type), forward_declarable: true)
+          end
+        end.uniq { |decl| decl.c_name }
       end
 
       def lower_static_asserts
@@ -908,7 +927,7 @@ module MilkTea
         callee_setup, callee = prepare_expression_for_inline_lowering(expression.callee, env:)
         argument_setup = []
         arguments = expression.arguments.map.with_index do |argument, index|
-          expected_arg_type = kind == :function || kind == :method || kind == :associated_method ?
+          expected_arg_type = kind == :function || kind == :method || kind == :associated_method || kind == :callable_value ?
             (index < callee_type.params.length ? callee_type.params[index].type : nil) : nil
           setup, prepared_value = prepare_expression_for_inline_lowering(argument.value, env:, expected_type: expected_arg_type)
           argument_setup.concat(setup)
@@ -1149,6 +1168,10 @@ module MilkTea
 
           arguments = lower_call_arguments(expression.arguments, callee_type, env:)
           IR::Call.new(callee: callee_name, arguments:, type:)
+        when :callable_value
+          arguments = lower_call_arguments(expression.arguments, callee_type, env:)
+          callee_expression = lower_expression(expression.callee, env:, expected_type: callee_type)
+          IR::Call.new(callee: callee_expression, arguments:, type:)
         when :method
           receiver_arg = lower_method_receiver_argument(receiver, callee_type, env:)
           arguments = [receiver_arg, *lower_call_arguments(expression.arguments, callee_type, env:)]
@@ -2670,6 +2693,12 @@ module MilkTea
       def resolve_callee(callee, env, arguments: nil)
         case callee
         when AST::Identifier
+          if (binding = lookup_value(callee.name, env))
+            return [:callable_value, nil, nil, binding[:type], nil] if binding[:type].is_a?(Types::Function)
+
+            raise LoweringError, "#{callee.name} is not callable"
+          end
+
           if @functions.key?(callee.name)
             binding = specialize_function_binding(@functions.fetch(callee.name), arguments, env)
             [ :function, function_binding_c_name(binding, module_name: @module_name), nil, binding.type, binding ]
@@ -2739,6 +2768,9 @@ module MilkTea
             return [str_builder_method, nil, callee.receiver, str_builder_method_type(str_builder_method, resolved_receiver_type)]
           end
 
+          member_type = resolved_receiver_type.respond_to?(:field) ? resolved_receiver_type.field(callee.member) : nil
+          return [:callable_value, nil, nil, member_type, nil] if member_type.is_a?(Types::Function)
+
           raise LoweringError, "unknown callee #{callee.receiver}.#{callee.member}"
         when AST::Specialization
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "cast"
@@ -2786,6 +2818,9 @@ module MilkTea
 
           raise LoweringError, "unsupported specialization callee"
         else
+          callee_type = infer_expression_type(callee, env:)
+          return [:callable_value, nil, nil, callee_type, nil] if callee_type.is_a?(Types::Function)
+
           raise LoweringError, "unsupported callee #{callee.class.name}"
         end
       end
@@ -2878,7 +2913,7 @@ module MilkTea
         when AST::Call
           kind, = resolve_callee(expression.callee, env, arguments: expression.arguments)
           case kind
-          when :function, :method, :associated_method, :str_buffer_clear, :str_buffer_as_str, :str_buffer_as_cstr, :str_buffer_capacity,
+          when :function, :method, :associated_method, :callable_value, :str_buffer_clear, :str_buffer_as_str, :str_buffer_as_cstr, :str_buffer_capacity,
             :str_builder_clear, :str_builder_assign, :str_builder_append, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             function_type.return_type
@@ -3041,6 +3076,7 @@ module MilkTea
 
       def foreign_identity_projection_cast_compatible?(actual_type, expected_type)
         return true if actual_type == expected_type
+        return true if same_external_opaque_c_name?(actual_type, expected_type)
 
         if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
           return foreign_identity_projection_cast_compatible?(actual_type.base, expected_type.base)
@@ -3063,6 +3099,17 @@ module MilkTea
         return true if actual_type == @types.fetch("cstr") && char_pointer_type?(expected_type)
 
         false
+      end
+
+      def same_external_opaque_c_name?(actual_type, expected_type)
+        return false unless actual_type.is_a?(Types::Opaque) && expected_type.is_a?(Types::Opaque)
+        return false unless actual_type.external && expected_type.external
+
+        foreign_opaque_c_name(actual_type) == foreign_opaque_c_name(expected_type)
+      end
+
+      def foreign_opaque_c_name(type)
+        type.c_name || type.name
       end
 
       def foreign_identity_projection_reinterpret_compatible?(actual_type, expected_type)
@@ -3823,7 +3870,7 @@ module MilkTea
         base = if type_ref.arguments.any?
                  name = parts.join(".")
                  args = type_ref.arguments.map do |argument|
-                   if argument.value.is_a?(AST::TypeRef)
+                   if argument.value.is_a?(AST::TypeRef) || argument.value.is_a?(AST::FunctionType)
                      resolve_type_ref(argument.value, type_params:)
                    else
                      Types::LiteralTypeArg.new(argument.value.value)
@@ -4098,6 +4145,20 @@ module MilkTea
         return type.name if type.module_name.nil?
 
         "#{type.module_name.tr('.', '_')}_#{type.name}"
+      end
+
+      def opaque_c_type_name(type)
+        type.c_name || c_type_name(type)
+      end
+
+      def opaque_forward_declarable?(type)
+        return false unless opaque_c_type_name(type).match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
+
+        !type.external || type.c_name.nil?
+      end
+
+      def forward_declarable_external_opaque?(type)
+        type.external && opaque_forward_declarable?(type)
       end
 
       def resolve_named_generic_type(parts)

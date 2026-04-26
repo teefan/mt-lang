@@ -3,9 +3,7 @@ extern module std.c.raylib:
     link "raylib"
     include "raylib.h"
 
-    opaque __va_list_tag
-
-    type va_list = array[__va_list_tag, 1]
+    opaque va_list = c"va_list"
 
     struct Vector2:
         x: f32
@@ -833,7 +831,7 @@ extern module std.c.raylib:
 
     extern def TraceLog(logLevel: i32, text: cstr, ...) -> void
 
-    extern def SetTraceLogCallback(callback: fn(arg0: i32, arg1: cstr, arg2: ptr[__va_list_tag]) -> void) -> void
+    extern def SetTraceLogCallback(callback: fn(arg0: i32, arg1: cstr, arg2: va_list) -> void) -> void
 
     extern def MemAlloc(size: u32) -> ptr[void]
 

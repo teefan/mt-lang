@@ -281,8 +281,12 @@ module MilkTea
 
     def parse_opaque_decl(visibility: :private)
       name = consume_name("expected opaque type name").lexeme
+      c_name = nil
+      if match(:equal)
+        c_name = consume(:cstring, "expected C string literal after '='").literal
+      end
       consume_end_of_statement
-      AST::OpaqueDecl.new(name:, visibility:)
+      AST::OpaqueDecl.new(name:, c_name:, visibility:)
     end
 
     def parse_methods_block

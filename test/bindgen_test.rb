@@ -79,6 +79,7 @@ class MilkTeaBindgenTest < Minitest::Test
         const char *name_of(Mode mode);
         int logf(const char *format, ...);
         void set_callback(LogCallback callback);
+        void set_trace_callback(void (*callback)(int, const char *, va_list));
         void take_hidden(struct Hidden *hidden);
 
         int consume_strings(char **restrict values, char *const *restrict tokens);
@@ -103,8 +104,7 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_match(/params: array\[f32, 4\]/, generated)
       assert_match(/name: array\[char, 32\]/, generated)
       assert_match(/type LogCallback = fn\(arg0: i32, arg1: cstr\) -> void/, generated)
-      assert_match(/opaque __va_list_tag/, generated)
-      assert_match(/type va_list = array\[__va_list_tag, 1\]/, generated)
+      assert_match(/opaque va_list = c"va_list"/, generated)
       assert_match(/type TraceCallback = fn\(arg0: i32, arg1: va_list\) -> void/, generated)
       assert_match(/const HOME: Vec2 = Vec2\(x = 1.0, y = 2.0\)/, generated)
       assert_match(/const PIXEL_RATIO: i32 = 2/, generated)
@@ -121,7 +121,7 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_match(/TRACE_ALL = 0/, generated)
       assert_match(/TRACE_LOG = 1/, generated)
       assert_match(/TRACE_DEBUG = 2/, generated)
-      assert_match(/opaque Hidden/, generated)
+      assert_match(/opaque Hidden = c"struct Hidden"/, generated)
       assert_match(/type Flags = u32/, generated)
       assert_match(/type HiddenU32 = u32/, generated)
       assert_match(/type PublicU32 = u32/, generated)
@@ -134,6 +134,7 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_match(/extern def name_of\(mode: Mode\) -> cstr/, generated)
       assert_match(/extern def logf\(format: cstr, \.\.\.\) -> i32/, generated)
       assert_match(/extern def set_callback\(callback: fn\(arg0: i32, arg1: cstr\) -> void\) -> void/, generated)
+      assert_match(/extern def set_trace_callback\(callback: fn\(arg0: i32, arg1: cstr, arg2: va_list\) -> void\) -> void/, generated)
       assert_match(/extern def take_hidden\(hidden: ptr\[Hidden\]\) -> void/, generated)
       assert_match(/extern def consume_strings\(values: ptr\[ptr\[char\]\], tokens: ptr\[ptr\[char\]\]\) -> i32/, generated)
 
