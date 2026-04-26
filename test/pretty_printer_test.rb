@@ -76,6 +76,17 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_extern_opaque_with_explicit_c_name_like_source
+    source = <<~MT
+      extern module std.c.time:
+          opaque tm = c"struct tm"
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_foreign_declarations_and_calls_like_source
     source = <<~MT
       module std.raylib

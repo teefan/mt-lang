@@ -3,7 +3,7 @@ extern module std.c.time:
 
     type time_t = i64
 
-    opaque tm
+    opaque tm = c"struct tm"
 
     extern def time(timer: ptr[time_t]) -> time_t
 

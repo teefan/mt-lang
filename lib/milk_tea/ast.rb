@@ -24,7 +24,7 @@ module MilkTea
     EnumDecl = Data.define(:name, :backing_type, :members, :visibility)
     FlagsDecl = Data.define(:name, :backing_type, :members, :visibility)
     EnumMember = Data.define(:name, :value)
-    OpaqueDecl = Data.define(:name, :visibility)
+    OpaqueDecl = Data.define(:name, :c_name, :visibility)
     MethodsBlock = Data.define(:type_name, :methods)
     FunctionDef = Data.define(:name, :type_params, :params, :return_type, :body, :visibility)
     MethodDef = Data.define(:name, :type_params, :params, :return_type, :body, :kind, :visibility)

@@ -188,6 +188,34 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("on_log")
   end
 
+  def test_type_checks_callable_value_storage_and_indirect_calls
+    source = <<~MT
+      module demo.callable_values
+
+      struct Entry:
+          callback: fn(value: f32) -> f32
+
+      def identity(value: i32) -> i32:
+          return value
+
+      def ease(value: f32) -> f32:
+          return value + 2.0
+
+      def main() -> i32:
+          let callbacks = array[fn(value: i32) -> i32, 1](identity)
+          let entry = Entry(callback = ease)
+          let callback: fn(value: f32) -> f32 = entry.callback
+          let left = callbacks[0](1)
+          let right = callback(1.0)
+          return left + cast[i32](right)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("Entry")
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_foreign_defs_with_boundary_mappings
     root_source = <<~MT
       module demo.main
@@ -3037,6 +3065,52 @@ class MilkTeaSemaTest < Minitest::Test
     end
 
     assert_match(/foreign parameter matrix of set_matrix cannot map std\.c\.shared\.Matrix as std\.c\.sample\.Matrix/, error.message)
+  end
+
+  def test_type_checks_foreign_external_opaque_boundary_with_matching_c_name
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main(logger: sample.Logger) -> void:
+          sample.write_log(logger)
+    MT
+
+    imported_sources = {
+      "std/c/shared.mt" => <<~MT,
+        extern module std.c.shared:
+            opaque va_list = c"va_list"
+      MT
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            opaque va_list = c"va_list"
+
+            extern def WriteLog(args: va_list) -> void
+      MT
+      "std/shared.mt" => <<~MT,
+        module std.shared
+
+        import std.c.shared as c
+
+        pub type Logger = c.va_list
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+        import std.shared as shared
+
+        pub type Logger = shared.Logger
+        pub foreign def write_log(args: shared.Logger as c.va_list) -> void = c.WriteLog
+      MT
+    }
+
+    program = check_program_source(source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.imports.key?("sample")
+    assert_equal true, result.functions.key?("main")
   end
 
   private

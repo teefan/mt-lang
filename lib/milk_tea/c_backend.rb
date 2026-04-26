@@ -201,6 +201,7 @@ module MilkTea
         collect_referenced_constant_names_from_expression(expression.receiver, constants_by_name, referenced_names)
         collect_referenced_constant_names_from_expression(expression.index, constants_by_name, referenced_names)
       when IR::Call
+        collect_referenced_constant_names_from_expression(expression.callee, constants_by_name, referenced_names) unless expression.callee.is_a?(String)
         expression.arguments.each { |argument| collect_referenced_constant_names_from_expression(argument, constants_by_name, referenced_names) }
       when IR::Unary
         collect_referenced_constant_names_from_expression(expression.operand, constants_by_name, referenced_names)
@@ -277,7 +278,9 @@ module MilkTea
     def expression_uses_named_call?(expression, callees)
       case expression
       when IR::Call
-        callees.include?(expression.callee) || expression.arguments.any? { |argument| expression_uses_named_call?(argument, callees) }
+        callees.include?(expression.callee) ||
+          (!expression.callee.is_a?(String) && expression_uses_named_call?(expression.callee, callees)) ||
+          expression.arguments.any? { |argument| expression_uses_named_call?(argument, callees) }
       when IR::Member
         expression_uses_named_call?(expression.receiver, callees)
       when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
@@ -585,8 +588,9 @@ module MilkTea
 
     def emit_checked_array_index_helper(type)
       helper_name = checked_array_index_helper_name(type)
+      params = [c_declaration(type, '(*array)'), c_declaration(Types::Primitive.new('usize'), 'index')].join(', ')
       [
-        "static inline #{c_declaration(pointer_to(array_element_type(type)), helper_name)}(#{c_declaration(type, '(*array)')}, #{c_declaration(Types::Primitive.new('usize'), 'index')}) {",
+        "static inline #{c_function_declaration(pointer_to(array_element_type(type)), helper_name, params)} {",
         "#{INDENT}if (index >= #{array_length(type)}) mt_panic(\"array index out of bounds\");",
         "#{INDENT}return &(*array)[index];",
         "}",
@@ -595,8 +599,9 @@ module MilkTea
 
     def emit_checked_span_index_helper(type)
       helper_name = checked_span_index_helper_name(type)
+      params = [c_declaration(type, 'span'), c_declaration(Types::Primitive.new('usize'), 'index')].join(', ')
       [
-        "static inline #{c_declaration(pointer_to(type.element_type), helper_name)}(#{c_declaration(type, 'span')}, #{c_declaration(Types::Primitive.new('usize'), 'index')}) {",
+        "static inline #{c_function_declaration(pointer_to(type.element_type), helper_name, params)} {",
         "#{INDENT}if (index >= span.len) mt_panic(\"span index out of bounds\");",
         "#{INDENT}return &span.data[index];",
         "}",
@@ -605,7 +610,10 @@ module MilkTea
 
     def emit_forward_declarations(opaque_decls, struct_decls)
       lines = []
-      opaque_decls.each do |opaque_decl|
+      opaque_decls.uniq { |opaque_decl| opaque_decl.c_name }.each do |opaque_decl|
+        next unless opaque_decl.forward_declarable
+        next unless opaque_decl.c_name.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
+
         lines << "typedef struct #{opaque_decl.c_name} #{opaque_decl.c_name};"
       end
       struct_decls.each do |struct_decl|
@@ -656,7 +664,7 @@ module MilkTea
 
     def function_signature(function)
       prefix = function.entry_point ? "" : "static "
-      "#{prefix}#{c_function_return_type(function.return_type)} #{function.c_name}(#{function_params(function)})"
+      "#{prefix}#{c_function_declaration(function.return_type, function.c_name, function_params(function))}"
     end
 
     def function_params(function)
@@ -1013,7 +1021,8 @@ module MilkTea
     end
 
     def emit_call_expression(expression)
-      "#{expression.callee}(#{expression.arguments.map { |argument| emit_expression(argument) }.join(', ')})"
+      callee = expression.callee.is_a?(String) ? expression.callee : wrap_expression(expression.callee)
+      "#{callee}(#{expression.arguments.map { |argument| emit_expression(argument) }.join(', ')})"
     end
 
     def emit_array_copy_statement(destination, source, indent)
@@ -1114,6 +1123,7 @@ module MilkTea
         collect_reinterpret_helpers_from_expression(expression.receiver, helpers, seen)
         collect_reinterpret_helpers_from_expression(expression.index, helpers, seen)
       when IR::Call
+        collect_reinterpret_helpers_from_expression(expression.callee, helpers, seen) unless expression.callee.is_a?(String)
         expression.arguments.each { |argument| collect_reinterpret_helpers_from_expression(argument, helpers, seen) }
       when IR::Unary
         collect_reinterpret_helpers_from_expression(expression.operand, helpers, seen)
@@ -1148,8 +1158,9 @@ module MilkTea
 
     def emit_reinterpret_helper(expression)
       helper_name = reinterpret_helper_name(expression.target_type, expression.source_type)
+      params = c_declaration(expression.source_type, 'value')
       [
-        "static inline #{c_function_return_type(expression.target_type)} #{helper_name}(#{c_declaration(expression.source_type, 'value')}) {",
+        "static inline #{c_function_declaration(expression.target_type, helper_name, params)} {",
         "#{INDENT}_Static_assert(sizeof(#{layout_type_expression(expression.target_type)}) == sizeof(#{layout_type_expression(expression.source_type)}), \"reinterpret requires equal sizes\");",
         "#{INDENT}#{c_declaration(expression.target_type, 'result')};",
         "#{INDENT}memcpy(&result, &value, sizeof(result));",
@@ -1214,6 +1225,12 @@ module MilkTea
       declarator.empty? ? base : "#{base} #{declarator}"
     end
 
+    def c_function_declaration(return_type, name, params)
+      return "#{array_return_wrapper_type_name(return_type)} #{name}(#{params})" if array_type?(return_type)
+
+      c_declaration(return_type, "#{name}(#{params})")
+    end
+
     def c_function_return_type(type)
       array_type?(type) ? array_return_wrapper_type_name(type) : c_type(type)
     end
@@ -1224,6 +1241,15 @@ module MilkTea
       if array_type?(type)
         declarator = declarator_needs_grouping?(name) ? "(#{name})" : name
         return c_declaration_parts(array_element_type(type), "#{declarator}[#{array_length(type)}]")
+      end
+
+      if type.is_a?(Types::Function)
+        params = type.params.each_with_index.map do |param, index|
+          c_declaration(param.type, param.name || "arg#{index}")
+        end
+        params << "..." if type.variadic
+        params = ["void"] if params.empty?
+        return [c_function_return_type(type.return_type), "(*#{name})(#{params.join(', ')})"]
       end
 
       if mutable_pointer_type?(type)
@@ -1269,8 +1295,13 @@ module MilkTea
         base = named_type_c_name(type)
         pointer ? "#{base}*" : base
       when Types::Opaque
-        base = named_type_c_name(type)
-        pointer ? "#{base}**" : "#{base}*"
+        if type.external
+          base = external_opaque_c_type(type)
+          pointer ? "#{base}*" : base
+        else
+          base = named_type_c_name(type)
+          pointer ? "#{base}**" : "#{base}*"
+        end
       else
         raise LoweringError, "unsupported C type #{type.class.name}"
       end
@@ -1344,6 +1375,7 @@ module MilkTea
         collect_checked_array_index_types_from_expression(expression.receiver, array_types)
         collect_checked_array_index_types_from_expression(expression.index, array_types)
       when IR::Call
+        collect_checked_array_index_types_from_expression(expression.callee, array_types) unless expression.callee.is_a?(String)
         expression.arguments.each { |argument| collect_checked_array_index_types_from_expression(argument, array_types) }
       when IR::Unary
         collect_checked_array_index_types_from_expression(expression.operand, array_types)
@@ -1409,6 +1441,7 @@ module MilkTea
         collect_checked_span_index_types_from_expression(expression.receiver, span_types)
         collect_checked_span_index_types_from_expression(expression.index, span_types)
       when IR::Call
+        collect_checked_span_index_types_from_expression(expression.callee, span_types) unless expression.callee.is_a?(String)
         expression.arguments.each { |argument| collect_checked_span_index_types_from_expression(argument, span_types) }
       when IR::Unary
         collect_checked_span_index_types_from_expression(expression.operand, span_types)
@@ -1575,6 +1608,7 @@ module MilkTea
         collect_result_types_from_expression(expression.receiver, result_types, visited)
         collect_result_types_from_expression(expression.index, result_types, visited)
       when IR::Call
+        collect_result_types_from_expression(expression.callee, result_types, visited) unless expression.callee.is_a?(String)
         expression.arguments.each { |argument| collect_result_types_from_expression(argument, result_types, visited) }
       when IR::Unary
         collect_result_types_from_expression(expression.operand, result_types, visited)
@@ -1752,6 +1786,7 @@ module MilkTea
         collect_str_builder_types_from_expression(expression.index, str_builder_types, visited)
       when IR::Call
         collect_str_builder_type(expression.type, str_builder_types, visited)
+        collect_str_builder_types_from_expression(expression.callee, str_builder_types, visited) unless expression.callee.is_a?(String)
         expression.arguments.each { |argument| collect_str_builder_types_from_expression(argument, str_builder_types, visited) }
       when IR::Unary
         collect_str_builder_types_from_expression(expression.operand, str_builder_types, visited)
@@ -1844,6 +1879,7 @@ module MilkTea
         collect_generic_struct_types_from_expression(expression.receiver, generic_struct_types, visited)
         collect_generic_struct_types_from_expression(expression.index, generic_struct_types, visited)
       when IR::Call
+        collect_generic_struct_types_from_expression(expression.callee, generic_struct_types, visited) unless expression.callee.is_a?(String)
         expression.arguments.each { |argument| collect_generic_struct_types_from_expression(argument, generic_struct_types, visited) }
       when IR::Unary
         collect_generic_struct_types_from_expression(expression.operand, generic_struct_types, visited)
@@ -2005,6 +2041,7 @@ module MilkTea
         collect_span_types_from_expression(expression.index, span_types, visited)
       when IR::Call
         collect_span_type(expression.type, span_types, visited)
+        collect_span_types_from_expression(expression.callee, span_types, visited) unless expression.callee.is_a?(String)
         expression.arguments.each { |argument| collect_span_types_from_expression(argument, span_types, visited) }
       when IR::Unary
         collect_span_types_from_expression(expression.operand, span_types, visited)
@@ -2111,6 +2148,10 @@ module MilkTea
       return base_name unless type.is_a?(Types::StructInstance)
 
       "#{base_name}_#{sanitize_identifier(type.arguments.join('_'))}"
+    end
+
+    def external_opaque_c_type(type)
+      type.c_name || type.name
     end
 
     def sanitize_identifier(text)

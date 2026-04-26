@@ -336,6 +336,7 @@ module MilkTea
             index:,
             kind: node["completeDefinition"] ? node["tagUsed"] : "opaque",
             name: visible_name,
+            c_name: opaque_c_name(node),
             node:,
           }
 
@@ -531,7 +532,9 @@ module MilkTea
         when "struct", "union"
           emit_aggregate_declaration(declaration[:kind], declaration[:name], declaration[:node])
         when "opaque"
-          ["    opaque #{declaration[:name]}"]
+          line = "    opaque #{declaration[:name]}"
+          line += " = c#{declaration[:c_name].inspect}" if declaration[:c_name]
+          [line]
         when "enum", "flags"
           emit_enum_declaration(declaration[:kind], declaration[:name], declaration[:node])
         when "type_alias"
@@ -649,6 +652,11 @@ module MilkTea
 
         pointer_candidate = strip_pointer_suffix_qualifiers(normalized)
         if pointer_type?(pointer_candidate)
+          if va_list_pointer?(pointer_candidate)
+            synthesize_typedef_dependency("va_list")
+            return "va_list"
+          end
+
           return "cstr" if c_string_pointer?(pointer_candidate)
 
           pointee = pointer_candidate.sub(/\s*\*\z/, "")
@@ -680,6 +688,11 @@ module MilkTea
         "array[#{element_type}, #{length}]"
       end
 
+      def va_list_pointer?(qual_type)
+        stripped = strip_qualifiers(qual_type)
+        stripped == "struct __va_list_tag *" || stripped == "__va_list_tag *"
+      end
+
       def function_pointer_type?(qual_type)
         qual_type.match?(/\A.+\(\s*\*\s*\)\s*\(.*\)\z/)
       end
@@ -688,8 +701,12 @@ module MilkTea
         function_proto = extract_function_proto(node)
         raise BindgenError, "unsupported function pointer type #{node.dig("type", "qualType").inspect} for #{context}" unless function_proto
 
+        map_function_proto_node(function_proto, context:)
+      end
+
+      def map_function_proto_node(function_proto, context:)
         inner_types = Array(function_proto["inner"])
-        raise BindgenError, "unsupported function pointer type #{node.dig("type", "qualType").inspect} for #{context}" if inner_types.empty?
+        raise BindgenError, "unsupported function pointer type #{function_proto.inspect} for #{context}" if inner_types.empty?
 
         return_type = map_type_node(inner_types.first, context: "return type of #{context}")
         param_types = inner_types.drop(1)
@@ -769,7 +786,13 @@ module MilkTea
           return alias_name
         end
 
-        map_c_type(type_qual_type(node), context:)
+        qual_type = type_qual_type(node)
+        if function_pointer_type?(qual_type)
+          function_proto = extract_function_proto(node)
+          return map_function_proto_node(function_proto, context:) if function_proto
+        end
+
+        map_c_type(qual_type, context:)
       end
 
       def preserve_typedef_name?(name)
@@ -820,8 +843,14 @@ module MilkTea
         return unless name == "va_list"
         return if @synthetic_declarations.any? { |declaration| declaration[:name] == "va_list" }
 
-        @synthetic_declarations << { kind: "opaque", name: "__va_list_tag" }
-        @synthetic_declarations << { kind: "type_alias", name: "va_list", mapped_type: "array[__va_list_tag, 1]" }
+        @synthetic_declarations << { kind: "opaque", name: "va_list", c_name: "va_list" }
+      end
+
+      def opaque_c_name(node)
+        typedef_name = @record_aliases[node["id"]]
+        return typedef_name if typedef_name
+
+        "#{node["tagUsed"]} #{node["name"]}"
       end
 
       def synthetic_declarations_for(declarations)

@@ -505,12 +505,13 @@ module MilkTea
     end
 
     class Opaque < Base
-      attr_reader :name, :module_name, :external
+      attr_reader :name, :module_name, :external, :c_name
 
-      def initialize(name, module_name: nil, external: false)
+      def initialize(name, module_name: nil, external: false, c_name: nil)
         @name = name
         @module_name = module_name
         @external = external
+        @c_name = c_name
       end
 
       def to_s

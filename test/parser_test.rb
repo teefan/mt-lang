@@ -107,6 +107,20 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal :private, methods_block.methods[1].visibility
   end
 
+  def test_parses_extern_opaque_with_explicit_c_name
+    source = <<~MT
+      extern module std.c.time:
+          opaque tm = c"struct tm"
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    opaque_decl = ast.declarations.first
+
+    assert_instance_of MilkTea::AST::OpaqueDecl, opaque_decl
+    assert_equal "tm", opaque_decl.name
+    assert_equal "struct tm", opaque_decl.c_name
+  end
+
   def test_rejects_pub_on_methods_block
     source = <<~MT
       module demo.visibility
@@ -480,6 +494,49 @@ class MilkTeaParserTest < Minitest::Test
 
     assert_instance_of MilkTea::AST::Call, call
     assert_instance_of MilkTea::AST::IndexAccess, call.callee
+  end
+
+  def test_parses_callable_value_storage_and_indirect_calls
+    source = <<~MT
+      module demo.callable_values
+
+      struct Entry:
+          callback: fn(value: f32) -> f32
+
+      def ease(value: f32) -> f32:
+          return value
+
+      def main() -> i32:
+          let callbacks = array[fn(value: i32) -> i32, 1](cast[fn(value: i32) -> i32](identity))
+          let entry = Entry(callback = ease)
+          let callback: fn(value: f32) -> f32 = entry.callback
+          let left = callbacks[0](1)
+          let right = callback(1.0)
+          return cast[i32](right) + left
+
+      def identity(value: i32) -> i32:
+          return value
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations[2]
+
+    callbacks_decl = main_fn.body[0]
+    assert_equal "array", callbacks_decl.value.callee.callee.name
+    assert_instance_of MilkTea::AST::FunctionType, callbacks_decl.value.callee.arguments[0].value
+
+    entry_decl = main_fn.body[1]
+    assert_instance_of MilkTea::AST::Call, entry_decl.value
+    assert_equal "Entry", entry_decl.value.callee.name
+
+    left_decl = main_fn.body[3]
+    assert_instance_of MilkTea::AST::Call, left_decl.value
+    assert_instance_of MilkTea::AST::IndexAccess, left_decl.value.callee
+
+    right_decl = main_fn.body[4]
+    assert_instance_of MilkTea::AST::Call, right_decl.value
+    assert_instance_of MilkTea::AST::Identifier, right_decl.value.callee
+    assert_equal "callback", right_decl.value.callee.name
   end
 
   def test_parses_explicit_generic_function_specialization_call

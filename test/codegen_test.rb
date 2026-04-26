@@ -997,7 +997,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static int32_t\* demo_generic_functions_head_i32\(demo_generic_functions_Slice_i32 items\)/, generated)
+    assert_match(/static int32_t \*demo_generic_functions_head_i32\(demo_generic_functions_Slice_i32 items\)/, generated)
     assert_match(/static int32_t demo_generic_functions_min_i32\(int32_t a, int32_t b\)/, generated)
     assert_match(/int32_t smallest = demo_generic_functions_min_i32\(9, 4\);/, generated)
     assert_match(/return \(\*demo_generic_functions_head_i32\(items\)\) \+ smallest;/, generated)
@@ -2159,6 +2159,37 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/float inverse = 1\.0f \/ value;/, generated)
     assert_match(/float scaled = \(-2\.0f\) \/ value;/, generated)
+  end
+
+  def test_generate_c_for_callable_value_storage_and_indirect_calls
+    source = [
+      "module demo.callable_values",
+      "",
+      "struct Entry:",
+      "    callback: fn(value: f32) -> f32",
+      "",
+      "def identity(value: i32) -> i32:",
+      "    return value",
+      "",
+      "def ease(value: f32) -> f32:",
+      "    return value + 2.0",
+      "",
+      "def main() -> i32:",
+      "    let callbacks = array[fn(value: i32) -> i32, 1](identity)",
+      "    let entry = Entry(callback = ease)",
+      "    let callback: fn(value: f32) -> f32 = entry.callback",
+      "    let left = callbacks[0](1)",
+      "    let right = callback(1.0)",
+      "    return left + cast[i32](right)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/float \(\*callback\)\(float value\);/, generated)
+    assert_match(/int32_t \(\*callbacks\[1\]\)\(int32_t value\)/, generated)
+    assert_match(/int32_t left = \(\(\*mt_checked_index_array_fn_1\(&\(callbacks\), 0\)\)\)\(1\);/, generated)
+    assert_match(/float right = callback\(1\.0f\);/, generated)
   end
 
   private

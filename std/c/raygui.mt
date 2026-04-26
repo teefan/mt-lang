@@ -4,9 +4,7 @@ extern module std.c.raygui:
     link "m"
     include "raygui.h"
 
-    opaque __va_list_tag
-
-    type va_list = array[__va_list_tag, 1]
+    opaque va_list = c"va_list"
 
     struct Vector2:
         x: f32
@@ -831,7 +829,7 @@ extern module std.c.raygui:
 
     extern def MemFree(ptr: ptr[void]) -> void
 
-    extern def SetTraceLogCallback(callback: fn(arg0: i32, arg1: cstr, arg2: ptr[__va_list_tag]) -> void) -> void
+    extern def SetTraceLogCallback(callback: fn(arg0: i32, arg1: cstr, arg2: va_list) -> void) -> void
 
     extern def SetLoadFileDataCallback(callback: fn(arg0: cstr, arg1: ptr[i32]) -> ptr[u8]) -> void
 

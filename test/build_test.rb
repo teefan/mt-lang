@@ -119,6 +119,45 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
+  def test_build_with_host_compiler_supports_external_opaque_pointer_ffi
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-build-external-opaque") do |dir|
+      source_path = File.join(dir, "time-smoke.mt")
+      output_path = File.join(dir, "time-smoke")
+
+      File.write(source_path, [
+        "module demo.time_smoke",
+        "",
+        "import std.c.time as ctime",
+        "",
+        "const time_format: cstr = c\"%H:%M:%S\"",
+        "",
+        "def main() -> i32:",
+        "    var now: ctime.time_t = 0",
+        "    now = ctime.time(raw(addr(now)))",
+        "    let tm_info = ctime.localtime(raw(addr(now)))",
+        "    var time_buffer = zero[array[char, 9]]()",
+        "    unsafe:",
+        "        ctime.strftime(raw(addr(time_buffer[0])), 9, time_format, tm_info)",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Build.build(source_path, output_path:, cc: compiler)
+
+      assert_equal File.expand_path(output_path), result.output_path
+      assert File.exist?(output_path)
+      assert File.executable?(output_path)
+
+      stdout, stderr, status = Open3.capture3(output_path)
+      assert_equal "", stdout
+      assert_equal "", stderr
+      assert_equal 0, status.exitstatus
+    end
+  end
+
   def test_build_with_host_compiler_uses_distinct_loop_labels_across_sibling_nested_blocks
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
