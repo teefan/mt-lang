@@ -644,9 +644,14 @@ module MilkTea
     end
 
     def parse_defer_stmt
-      expression = parse_expression
-      consume_end_of_statement
-      AST::DeferStmt.new(expression:)
+      if check(:colon)
+        body = parse_block
+        AST::DeferStmt.new(expression: nil, body:)
+      else
+        expression = parse_expression
+        consume_end_of_statement
+        AST::DeferStmt.new(expression:, body: nil)
+      end
     end
 
     def parse_assignment_or_expression_stmt

@@ -449,7 +449,7 @@ module MilkTea
         end
 
         return_type = binding.type.return_type
-        body = lower_block(decl.body, env:, active_defers: [], return_type:, loop_flow: nil)
+        body = lower_block(decl.body, env:, active_defers: [], return_type:, loop_flow: nil, allow_return: true)
         body = parameter_setup + body
 
         IR::Function.new(
@@ -464,7 +464,7 @@ module MilkTea
         @current_type_substitutions = previous_type_substitutions
       end
 
-      def lower_block(statements, env:, active_defers:, return_type:, loop_flow:)
+      def lower_block(statements, env:, active_defers:, return_type:, loop_flow:, allow_return: true)
         local_env = duplicate_env(env)
         lowered = []
         local_defers = []
@@ -472,7 +472,11 @@ module MilkTea
         statements.each do |statement|
           case statement
           when AST::DeferStmt
-            local_defers << lower_expression(statement.expression, env: local_env)
+            local_defers << if statement.body
+                              lower_defer_cleanup_body(statement.body, env: local_env, return_type:)
+                            else
+                              lower_defer_cleanup_expression(statement.expression, env: local_env)
+                            end
           when AST::UnsafeStmt
             body = lower_block(
               statement.body,
@@ -480,6 +484,7 @@ module MilkTea
               active_defers: active_defers + local_defers,
               return_type:,
               loop_flow: nested_loop_flow(loop_flow, local_defers),
+              allow_return:,
             )
             lowered << IR::BlockStmt.new(body:)
           when AST::LocalDecl
@@ -567,6 +572,7 @@ module MilkTea
                   active_defers: active_defers + local_defers,
                   return_type:,
                   loop_flow: nested_loop_flow(loop_flow, local_defers),
+                  allow_return:,
                 ),
               ]
 
@@ -579,6 +585,7 @@ module MilkTea
               active_defers: active_defers + local_defers,
               return_type:,
               loop_flow: nested_loop_flow(loop_flow, local_defers),
+              allow_return:,
             ) : []
 
             nested_if = nested_else_body
@@ -609,6 +616,7 @@ module MilkTea
                 active_defers: active_defers + local_defers,
                 return_type:,
                 loop_flow: nested_loop_flow(loop_flow, local_defers),
+                allow_return:,
               )
               IR::SwitchCase.new(value:, body:)
             end
@@ -619,9 +627,9 @@ module MilkTea
               message: lower_expression(statement.message, env: local_env, expected_type: @types.fetch("str")),
             )
           when AST::ForStmt
-            lowered << lower_for_stmt(statement, env: local_env, active_defers: active_defers + local_defers, return_type:)
+            lowered << lower_for_stmt(statement, env: local_env, active_defers: active_defers + local_defers, return_type:, allow_return:)
           when AST::WhileStmt
-            lowered << lower_while_stmt(statement, env: local_env, active_defers: active_defers + local_defers, return_type:)
+            lowered << lower_while_stmt(statement, env: local_env, active_defers: active_defers + local_defers, return_type:, allow_return:)
           when AST::BreakStmt
             raise LoweringError, "break must be inside a loop" unless loop_flow
 
@@ -631,6 +639,8 @@ module MilkTea
 
             lowered.concat(lower_loop_exit(loop_flow[:continue_label], local_defers, loop_flow[:continue_defers]))
           when AST::ReturnStmt
+            raise LoweringError, "return is not allowed inside defer blocks" unless allow_return
+
             value = nil
             prepared_setup = []
             prepared_value = statement.value
@@ -688,13 +698,13 @@ module MilkTea
         lowered
       end
 
-      def lower_for_stmt(statement, env:, active_defers:, return_type:)
-        return lower_range_for_stmt(statement, env:, active_defers:, return_type:) if range_call?(statement.iterable)
+      def lower_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
+        return lower_range_for_stmt(statement, env:, active_defers:, return_type:, allow_return:) if range_call?(statement.iterable)
 
-        lower_collection_for_stmt(statement, env:, active_defers:, return_type:)
+        lower_collection_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
       end
 
-      def lower_while_stmt(statement, env:, active_defers:, return_type:)
+      def lower_while_stmt(statement, env:, active_defers:, return_type:, allow_return:)
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
         condition_setup, prepared_condition = prepare_expression_for_inline_lowering(
@@ -709,6 +719,7 @@ module MilkTea
           active_defers:,
           return_type:,
           loop_flow: loop_flow(break_label:, continue_label:),
+          allow_return:,
         )
         body << IR::LabelStmt.new(name: continue_label)
 
@@ -741,7 +752,7 @@ module MilkTea
         ])
       end
 
-      def lower_range_for_stmt(statement, env:, active_defers:, return_type:)
+      def lower_range_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
         loop_type = infer_range_loop_type(statement.iterable, env:)
         start_expr = statement.iterable.arguments[0].value
         stop_expr = statement.iterable.arguments[1].value
@@ -767,6 +778,7 @@ module MilkTea
             active_defers:,
             return_type:,
             loop_flow: loop_flow(break_label:, continue_label:),
+            allow_return:,
           ),
         )
         body << IR::LabelStmt.new(name: continue_label)
@@ -789,7 +801,7 @@ module MilkTea
         ])
       end
 
-      def lower_collection_for_stmt(statement, env:, active_defers:, return_type:)
+      def lower_collection_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
         iterable_type = infer_expression_type(statement.iterable, env:)
         element_type = collection_loop_type(iterable_type)
         raise LoweringError, "for loop expects range(start, stop), array[T, N], or span[T], got #{iterable_type}" unless element_type
@@ -828,6 +840,7 @@ module MilkTea
             active_defers:,
             return_type:,
             loop_flow: loop_flow(break_label:, continue_label:),
+            allow_return:,
           ),
         )
         body << IR::LabelStmt.new(name: continue_label)
@@ -4119,13 +4132,19 @@ module MilkTea
       end
 
       def cleanup_statements(local_defers, outer_defers)
-        local_defers.reverse.concat(outer_defers.reverse).map do |expression|
-          IR::ExpressionStmt.new(expression:)
-        end
+        local_defers.reverse.flat_map(&:itself) + outer_defers.reverse.flat_map(&:itself)
       end
 
       def lower_loop_exit(label, local_defers, outer_defers)
         cleanup_statements(local_defers, outer_defers) + [IR::GotoStmt.new(label:)]
+      end
+
+      def lower_defer_cleanup_expression(expression, env:)
+        [IR::ExpressionStmt.new(expression: lower_expression(expression, env:))]
+      end
+
+      def lower_defer_cleanup_body(statements, env:, return_type:)
+        lower_block(statements, env:, active_defers: [], return_type:, loop_flow: nil, allow_return: false)
       end
 
       def terminating_ir_statement?(statement)

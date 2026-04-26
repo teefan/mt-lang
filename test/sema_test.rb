@@ -790,6 +790,45 @@ class MilkTeaSemaTest < Minitest::Test
     }
 
     error = assert_raises(MilkTea::SemaError) do
+
+      def test_type_checks_owned_foreign_release_inside_defer_block
+        root_source = <<~MT
+          module demo.main
+
+          import std.window as win
+
+          def main() -> void:
+              let window = win.create()
+              if window != null:
+                  defer:
+                      win.destroy(window)
+        MT
+
+        imported_sources = {
+          "std/c/window.mt" => <<~MT,
+            extern module std.c.window:
+                include "window.h"
+
+                extern def CreateWindow() -> ptr[void]?
+                extern def DestroyWindow(window: ptr[void]?) -> void
+          MT
+          "std/window.mt" => <<~MT,
+            module std.window
+
+            import std.c.window as c
+
+            pub opaque Window
+
+            pub foreign def create() -> Window? = c.CreateWindow
+            pub foreign def destroy(consuming window: Window) -> void = c.DestroyWindow
+          MT
+        }
+
+        program = check_program_source(root_source, imported_sources)
+        result = program.root_analysis
+
+        assert_equal true, result.functions.key?("main")
+      end
       check_program_source(root_source, imported_sources)
     end
 
@@ -1267,6 +1306,58 @@ class MilkTeaSemaTest < Minitest::Test
     result = check_source(source)
 
     assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_break_inside_nested_loop_in_defer_block
+    source = <<~MT
+      module demo.defer_loop
+
+      def main() -> i32:
+          for outer in range(0, 1):
+              defer:
+                  while true:
+                      break
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_return_inside_defer_block
+    source = <<~MT
+      module demo.defer_return
+
+      def main() -> i32:
+          defer:
+              return 1
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/return is not allowed inside defer blocks/, error.message)
+  end
+
+  def test_rejects_outer_loop_continue_inside_defer_block
+    source = <<~MT
+      module demo.defer_continue
+
+      def main() -> i32:
+          for outer in range(0, 1):
+              defer:
+                  continue
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/continue must be inside a loop/, error.message)
   end
 
   def test_type_checks_layout_queries_and_static_assert

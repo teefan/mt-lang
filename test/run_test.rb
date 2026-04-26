@@ -829,6 +829,42 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_defer_block_cleanup_order
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-defer-block") do |dir|
+      source_path = File.join(dir, "defer_block.mt")
+
+      File.write(source_path, [
+        "module demo.defer_block_runtime",
+        "",
+        "def push_digit(target: ptr[i32], digit: i32) -> void:",
+        "    unsafe:",
+        "        deref(target) = deref(target) * 10 + digit",
+        "",
+        "def main() -> i32:",
+        "    var total = 0",
+        "    defer push_digit(raw(addr(total)), 3)",
+        "    defer:",
+        "        push_digit(raw(addr(total)), 1)",
+        "        push_digit(raw(addr(total)), 2)",
+        "    return total",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 123, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_utf_8_str_slice_on_codepoint_boundary
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

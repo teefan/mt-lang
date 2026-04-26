@@ -308,7 +308,14 @@ module MilkTea
         when AST::ReturnStmt
           line(statement.value ? "return #{render_expression(statement.value)}" : "return")
         when AST::DeferStmt
-          line("defer #{render_expression(statement.expression)}")
+          if statement.body
+            line("defer:")
+            with_indent do
+              statement.body.each { |nested| emit_statement(nested) }
+            end
+          else
+            line("defer #{render_expression(statement.expression)}")
+          end
         when AST::ExpressionStmt
           line(render_expression(statement.expression))
         else

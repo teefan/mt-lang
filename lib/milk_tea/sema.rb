@@ -452,16 +452,16 @@ module MilkTea
         @checking_function_bindings.delete(binding.object_id)
       end
 
-      def check_block(statements, scopes:, return_type:)
+      def check_block(statements, scopes:, return_type:, allow_return: true)
         with_nested_scope(scopes) do |nested_scopes|
           statements.each do |statement|
-            refinements = check_statement(statement, scopes: nested_scopes, return_type:)
+            refinements = check_statement(statement, scopes: nested_scopes, return_type:, allow_return:)
             apply_continuation_refinements!(nested_scopes, refinements)
           end
         end
       end
 
-      def check_statement(statement, scopes:, return_type:)
+      def check_statement(statement, scopes:, return_type:, allow_return: true)
         case statement
         when AST::LocalDecl
           check_local_decl(statement, scopes:)
@@ -476,35 +476,37 @@ module MilkTea
             condition_type = infer_expression(branch.condition, scopes: branch_scopes, expected_type: @types.fetch("bool"))
             ensure_assignable!(condition_type, @types.fetch("bool"), "if condition must be bool, got #{condition_type}")
             true_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: true, scopes: branch_scopes))
-            check_block(branch.body, scopes: scopes_with_refinements(scopes, true_refinements), return_type:)
+            check_block(branch.body, scopes: scopes_with_refinements(scopes, true_refinements), return_type:, allow_return:)
             branch_bodies_terminate << block_always_terminates?(branch.body)
             false_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: false, scopes: branch_scopes))
           end
-          check_block(statement.else_body, scopes: scopes_with_refinements(scopes, false_refinements), return_type:) if statement.else_body
+          check_block(statement.else_body, scopes: scopes_with_refinements(scopes, false_refinements), return_type:, allow_return:) if statement.else_body
           return false_refinements if statement.else_body.nil? && branch_bodies_terminate.all?
         when AST::MatchStmt
-          check_match_stmt(statement, scopes:, return_type:)
+          check_match_stmt(statement, scopes:, return_type:, allow_return:)
         when AST::UnsafeStmt
           with_unsafe do
-            check_block(statement.body, scopes:, return_type:)
+            check_block(statement.body, scopes:, return_type:, allow_return:)
           end
         when AST::StaticAssert
           check_static_assert(statement, scopes:)
         when AST::ForStmt
-          check_for_stmt(statement, scopes:, return_type:)
+          check_for_stmt(statement, scopes:, return_type:, allow_return:)
         when AST::WhileStmt
           validate_consuming_foreign_expression!(statement.condition, scopes:, root_allowed: false)
           condition_type = infer_expression(statement.condition, scopes:, expected_type: @types.fetch("bool"))
           ensure_assignable!(condition_type, @types.fetch("bool"), "while condition must be bool, got #{condition_type}")
           with_loop do
             body_scopes = scopes_with_refinements(scopes, flow_refinements(statement.condition, truthy: true, scopes:))
-            check_block(statement.body, scopes: body_scopes, return_type:)
+            check_block(statement.body, scopes: body_scopes, return_type:, allow_return:)
           end
         when AST::BreakStmt
           raise SemaError, "break must be inside a loop" unless inside_loop?
         when AST::ContinueStmt
           raise SemaError, "continue must be inside a loop" unless inside_loop?
         when AST::ReturnStmt
+          raise SemaError, "return is not allowed inside defer blocks" unless allow_return
+
           validate_consuming_foreign_expression!(statement.value, scopes:, root_allowed: false) if statement.value
           value_type = statement.value ? infer_expression(statement.value, scopes:, expected_type: return_type) : @types.fetch("void")
           ensure_assignable!(
@@ -515,9 +517,15 @@ module MilkTea
             contextual_int_to_float: contextual_int_to_float_target?(return_type),
           )
         when AST::DeferStmt
-          validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: false)
-          validate_hoistable_foreign_expression!(statement.expression, scopes:, root_hoistable: false)
-          infer_expression(statement.expression, scopes:)
+          if statement.body
+            with_loop_barrier do
+              check_block(statement.body, scopes:, return_type:, allow_return: false)
+            end
+          else
+            validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: false)
+            validate_hoistable_foreign_expression!(statement.expression, scopes:, root_hoistable: false)
+            infer_expression(statement.expression, scopes:)
+          end
         when AST::ExpressionStmt
           validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: true)
           infer_expression(statement.expression, scopes:)
@@ -613,7 +621,7 @@ module MilkTea
         end
       end
 
-      def check_match_stmt(statement, scopes:, return_type:)
+      def check_match_stmt(statement, scopes:, return_type:, allow_return:)
         validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: false)
         scrutinee_type = infer_expression(statement.expression, scopes:)
         unless scrutinee_type.is_a?(Types::Enum)
@@ -632,7 +640,7 @@ module MilkTea
           raise SemaError, "duplicate match arm #{scrutinee_type}.#{member_name}" if covered_members.key?(member_name)
 
           covered_members[member_name] = true
-          check_block(arm.body, scopes:, return_type:)
+          check_block(arm.body, scopes:, return_type:, allow_return:)
         end
 
         missing_members = scrutinee_type.members - covered_members.keys
@@ -641,7 +649,7 @@ module MilkTea
         raise SemaError, "match on #{scrutinee_type} is missing cases: #{missing_members.join(', ')}"
       end
 
-      def check_for_stmt(statement, scopes:, return_type:)
+      def check_for_stmt(statement, scopes:, return_type:, allow_return:)
         validate_consuming_foreign_expression!(statement.iterable, scopes:, root_allowed: false)
         loop_type = if range_call?(statement.iterable)
                       check_range_loop(statement.iterable, scopes:)
@@ -660,7 +668,7 @@ module MilkTea
             kind: :let,
           )
           with_loop do
-            check_block(statement.body, scopes: loop_scopes, return_type:)
+            check_block(statement.body, scopes: loop_scopes, return_type:, allow_return:)
           end
         end
       end
@@ -2225,6 +2233,14 @@ module MilkTea
         yield
       ensure
         @loop_depth -= 1
+      end
+
+      def with_loop_barrier
+        previous_loop_depth = @loop_depth
+        @loop_depth = 0
+        yield
+      ensure
+        @loop_depth = previous_loop_depth
       end
 
       def unsafe_context?

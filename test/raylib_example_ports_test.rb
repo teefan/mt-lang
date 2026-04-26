@@ -19,6 +19,14 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
     end
   end
 
+  def test_textures_example_ports_check_and_lower
+    textures_example_paths.each do |path|
+      program = MilkTea::ModuleLoader.check_program(path)
+
+      assert_equal true, program.analyses_by_module_name.key?(module_name_for(path))
+    end
+  end
+
   private
 
   def core_example_paths
@@ -79,6 +87,10 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
 
   def shapes_example_paths
     Dir[File.expand_path("../examples/raylib/shapes/*.mt", __dir__)].sort
+  end
+
+  def textures_example_paths
+    Dir[File.expand_path("../examples/raylib/textures/*.mt", __dir__)].sort
   end
 
   def module_name_for(path)
