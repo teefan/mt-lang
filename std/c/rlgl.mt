@@ -430,7 +430,9 @@ extern module std.c.rlgl:
 
     extern def rlLoadShaderCode(vsCode: cstr, fsCode: cstr) -> u32
 
-    extern def rlCompileShader(shaderCode: cstr, type: i32) -> u32
+    extern def rlLoadShader(shaderCode: cstr, type: i32) -> u32
+
+    extern def rlUnloadShader(id: u32) -> void
 
     extern def rlLoadShaderProgram(vShaderId: u32, fShaderId: u32) -> u32
 
@@ -450,7 +452,7 @@ extern module std.c.rlgl:
 
     extern def rlSetShader(id: u32, locs: ptr[i32]) -> void
 
-    extern def rlLoadComputeShaderProgram(shaderId: u32) -> u32
+    extern def rlLoadShaderProgramCompute(shaderId: u32) -> u32
 
     extern def rlComputeShaderDispatch(groupX: u32, groupY: u32, groupZ: u32) -> void
 
