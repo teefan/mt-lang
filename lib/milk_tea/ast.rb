@@ -17,6 +17,7 @@ module MilkTea
     LinkDirective = Data.define(:value)
     IncludeDirective = Data.define(:value)
     ConstDecl = Data.define(:name, :type, :value, :visibility)
+    VarDecl = Data.define(:name, :type, :value, :visibility)
     TypeAliasDecl = Data.define(:name, :target, :visibility)
     StructDecl = Data.define(:name, :type_params, :fields, :packed, :alignment, :visibility)
     UnionDecl = Data.define(:name, :fields, :visibility)

@@ -112,7 +112,7 @@ module MilkTea
         when AST::StructDecl, AST::UnionDecl, AST::EnumDecl, AST::FlagsDecl, AST::OpaqueDecl, AST::TypeAliasDecl
           target = exported_declaration?(analysis, declaration) ? types : private_types
           target[declaration.name] = analysis.types.fetch(declaration.name)
-        when AST::ConstDecl
+        when AST::ConstDecl, AST::VarDecl
           target = exported_declaration?(analysis, declaration) ? values : private_values
           target[declaration.name] = analysis.values.fetch(declaration.name)
         when AST::FunctionDef, AST::ExternFunctionDecl, AST::ForeignFunctionDecl

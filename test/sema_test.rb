@@ -3295,6 +3295,59 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_module_scope_mutable_vars_and_zero_initialized_storage
+    source = <<~MT
+      module demo.module_vars
+
+      def identity(value: i32) -> i32:
+          return value
+
+      var counter: i32 = 1
+      var scratch: array[u8, 4]
+      var callbacks: array[fn(value: i32) -> i32, 1] = array[fn(value: i32) -> i32, 1](identity)
+
+      def main() -> i32:
+          counter = callbacks[0](counter + 1)
+          scratch[0] = 7
+          return counter + cast[i32](scratch[0])
+    MT
+
+    result = check_source(source)
+    counter = result.values.fetch("counter")
+    scratch = result.values.fetch("scratch")
+    callbacks = result.values.fetch("callbacks")
+
+    assert_equal true, counter.mutable
+    assert_equal :var, counter.kind
+    assert_equal "i32", counter.type.to_s
+    assert_equal true, scratch.mutable
+    assert_equal "array[u8, 4]", scratch.type.to_s
+    assert_equal true, callbacks.mutable
+    assert_equal "array", callbacks.type.name
+    assert_instance_of MilkTea::Types::Function, callbacks.type.arguments[0]
+    assert_equal "i32", callbacks.type.arguments[0].return_type.to_s
+    assert_equal "i32", callbacks.type.arguments[0].params.first.type.to_s
+    assert_equal 1, callbacks.type.arguments[1].value
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_module_scope_var_with_non_static_initializer
+    source = <<~MT
+      module demo.bad_module_var
+
+      def seed() -> i32:
+          return 41
+
+      var counter: i32 = seed()
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/module variable initializer must be static-storage-safe/, error.message)
+  end
+
   private
 
   def demo_path

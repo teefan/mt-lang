@@ -79,6 +79,7 @@ class MilkTeaParserTest < Minitest::Test
       module demo.visibility
 
       pub const answer: i32 = 42
+      pub var counter: i32 = 0
       pub type Score = i32
 
       pub struct Counter:
@@ -100,11 +101,37 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal :public, ast.declarations[0].visibility
     assert_equal :public, ast.declarations[1].visibility
     assert_equal :public, ast.declarations[2].visibility
-    assert_equal :public, ast.declarations[4].visibility
+    assert_equal :public, ast.declarations[3].visibility
+    assert_equal :public, ast.declarations[5].visibility
 
-    methods_block = ast.declarations[3]
+    assert_instance_of MilkTea::AST::VarDecl, ast.declarations[1]
+
+    methods_block = ast.declarations[4]
     assert_equal :public, methods_block.methods[0].visibility
     assert_equal :private, methods_block.methods[1].visibility
+  end
+
+  def test_parses_module_scope_vars_with_and_without_initializer
+    source = <<~MT
+      module demo.globals
+
+      var counter: i32 = 0
+      pub var scratch: array[u8, 16]
+
+      def main() -> i32:
+          counter += 1
+          return counter
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_instance_of MilkTea::AST::VarDecl, ast.declarations[0]
+    assert_equal "counter", ast.declarations[0].name
+    assert_instance_of MilkTea::AST::IntegerLiteral, ast.declarations[0].value
+
+    assert_instance_of MilkTea::AST::VarDecl, ast.declarations[1]
+    assert_equal :public, ast.declarations[1].visibility
+    assert_nil ast.declarations[1].value
   end
 
   def test_parses_extern_opaque_with_explicit_c_name

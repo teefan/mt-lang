@@ -93,6 +93,8 @@ module MilkTea
         parse_struct_decl_with_layout(visibility:)
       elsif match(:const)
         parse_const_decl(visibility:)
+      elsif match(:var)
+        parse_var_decl(visibility:)
       elsif match(:type)
         parse_type_alias_decl(visibility:)
       elsif match(:struct)
@@ -204,6 +206,20 @@ module MilkTea
       value = parse_expression
       consume_end_of_statement
       AST::ConstDecl.new(name:, type:, value:, visibility:)
+    end
+
+    def parse_var_decl(visibility: :private)
+      name = consume_name("expected variable name").lexeme
+      var_type = match(:colon) ? parse_type_ref : nil
+      value = if match(:equal)
+                parse_expression
+              else
+                raise ParseError, "module variable without initializer requires a type" unless var_type
+
+                nil
+              end
+      consume_end_of_statement
+      AST::VarDecl.new(name:, type: var_type, value:, visibility:)
     end
 
     def parse_type_alias_decl(visibility: :private)

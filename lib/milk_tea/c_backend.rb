@@ -94,7 +94,10 @@ module MilkTea
       constants.each do |constant|
         lines << "#{constant_storage(constant.type)} #{c_declaration(constant.type, constant.c_name)} = #{emit_initializer(constant.value)};"
       end
-      lines << "" unless constants.empty?
+      @program.globals.each do |global|
+        lines << "#{global_storage(global.type)} #{c_declaration(global.type, global.c_name)} = #{emit_initializer(global.value)};"
+      end
+      lines << "" unless constants.empty? && @program.globals.empty?
 
       @program.static_asserts.each do |statement|
         lines << emit_static_assert(statement)
@@ -144,6 +147,10 @@ module MilkTea
           collect_referenced_constant_names_from_expression(constant.value, constants_by_name, referenced_names)
         end
 
+        @program.globals.each do |global|
+          collect_referenced_constant_names_from_expression(global.value, constants_by_name, referenced_names)
+        end
+
         @program.static_asserts.each do |statement|
           collect_referenced_constant_names_from_expression(statement.condition, constants_by_name, referenced_names)
           collect_referenced_constant_names_from_expression(statement.message, constants_by_name, referenced_names)
@@ -180,8 +187,24 @@ module MilkTea
           collect_called_function_names_from_statements(function.body, functions_by_name, reachable_names, worklist)
         end
 
+        (@program.constants + @program.globals).each do |value|
+          collect_called_function_names_from_expression(value.value, functions_by_name, reachable_names, worklist)
+        end
+
+        until worklist.empty?
+          function = worklist.shift
+          next if reachable_names[function.c_name]
+
+          reachable_names[function.c_name] = true
+          collect_called_function_names_from_statements(function.body, functions_by_name, reachable_names, worklist)
+        end
+
         @program.functions.select { |function| reachable_names[function.c_name] }
       end
+    end
+
+    def all_emitted_top_level_values
+      emitted_constants + @program.globals
     end
 
     def collect_called_function_names_from_statements(statements, functions_by_name, reachable_names, worklist)
@@ -1642,6 +1665,10 @@ module MilkTea
       c_type(type).start_with?("const ") ? "static" : "static const"
     end
 
+    def global_storage(_type)
+      "static"
+    end
+
     def collect_array_return_types
       emitted_functions.map(&:return_type).select { |type| array_type?(type) }.uniq
     end
@@ -1814,8 +1841,8 @@ module MilkTea
       span_types = []
       visited = {}
 
-      emitted_constants.each do |constant|
-        collect_span_type(constant.type, span_types, visited)
+      all_emitted_top_level_values.each do |value|
+        collect_span_type(value.type, span_types, visited)
       end
 
       @program.structs.each do |struct_decl|
@@ -1890,8 +1917,8 @@ module MilkTea
       result_types = []
       visited = {}
 
-      emitted_constants.each do |constant|
-        collect_result_type(constant.type, result_types, visited)
+      all_emitted_top_level_values.each do |value|
+        collect_result_type(value.type, result_types, visited)
       end
 
       @program.structs.each do |struct_decl|
@@ -2029,8 +2056,8 @@ module MilkTea
       generic_struct_types = []
       visited = {}
 
-      emitted_constants.each do |constant|
-        collect_generic_struct_type(constant.type, generic_struct_types, visited)
+      all_emitted_top_level_values.each do |value|
+        collect_generic_struct_type(value.type, generic_struct_types, visited)
       end
 
       @program.structs.each do |struct_decl|
@@ -2065,8 +2092,8 @@ module MilkTea
       str_builder_types = []
       visited = {}
 
-      emitted_constants.each do |constant|
-        collect_str_builder_type(constant.type, str_builder_types, visited)
+      all_emitted_top_level_values.each do |value|
+        collect_str_builder_type(value.type, str_builder_types, visited)
       end
 
       @program.structs.each do |struct_decl|
