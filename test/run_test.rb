@@ -1303,6 +1303,43 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_addr_of_fixed_array_element_through_pointer_deref
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-ptr-array-addr") do |dir|
+      source_path = File.join(dir, "ptr-array-addr.mt")
+
+      File.write(source_path, [
+        "module demo.ptr_arrays",
+        "",
+        "struct Palette:",
+        "    colors: array[u32, 4]",
+        "",
+        "def main() -> i32:",
+        "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
+        "    unsafe:",
+        "        let base = raw(addr(holder))",
+        "        let first = raw(addr(deref(base).colors[0]))",
+        "        deref(first) = 9",
+        "    if holder.colors[0] != 9:",
+        "        return 1",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 0, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_array_indexing
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
