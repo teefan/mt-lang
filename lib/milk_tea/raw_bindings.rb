@@ -185,6 +185,7 @@ module MilkTea
           include_directives: ["raylib.h"],
           link_libraries: ["raylib"],
           link_flags: MilkTea::VendoredRaylib.link_flags,
+          compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
           env_var: "RAYLIB_HEADER",
           header_candidates: [
             root.join("third_party/raylib-upstream/src/raylib.h").to_s,
@@ -203,6 +204,7 @@ module MilkTea
           include_directives: ["raygui.h"],
           link_libraries: ["raylib", "m"],
           env_var: "RAYGUI_HEADER",
+          compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
           implementation_defines: ["RAYGUI_IMPLEMENTATION"],
           header_candidates: [
             root.join("third_party/raylib-upstream/examples/shapes/raygui.h").to_s,
@@ -218,6 +220,7 @@ module MilkTea
           include_directives: ["rlights.h"],
           link_libraries: ["raylib"],
           env_var: "RLIGHTS_HEADER",
+          compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
           implementation_defines: ["RLIGHTS_IMPLEMENTATION"],
           header_candidates: [
             root.join("third_party/raylib-upstream/examples/shaders/rlights.h").to_s,
@@ -232,6 +235,7 @@ module MilkTea
           include_directives: ["rlgl.h"],
           link_libraries: ["raylib"],
           env_var: "RLGL_HEADER",
+          compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
           header_candidates: [
             "/usr/include/rlgl.h",
             "/usr/local/include/rlgl.h",

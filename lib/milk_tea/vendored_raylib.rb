@@ -18,7 +18,7 @@ module MilkTea
 
     DEFINES = %w[
       PLATFORM_DESKTOP_GLFW
-      GRAPHICS_API_OPENGL_33
+      GRAPHICS_API_OPENGL_43
     ].freeze
 
     SYSTEM_LINK_FLAGS = %w[
@@ -37,7 +37,7 @@ module MilkTea
     end
 
     def build_root
-      MilkTea.root.join("tmp/vendored-raylib")
+      MilkTea.root.join("tmp/vendored-raylib-opengl43")
     end
 
     def archive_path
