@@ -15,10 +15,6 @@ const mvp_uniform_name: cstr = c"mvp"
 const ambient_uniform_name: cstr = c"ambient"
 const window_title: cstr = c"raylib [shaders] example - mesh instancing"
 
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def alloc_transforms(count: i32) -> ptr[rl.Matrix]:
     unsafe:
         return cast[ptr[rl.Matrix]](rl.MemAlloc(cast[u32](count) * cast[u32](sizeof(rl.Matrix))))
@@ -80,7 +76,7 @@ def main() -> i32:
 
     let ambient_loc = rl.GetShaderLocation(shader, ambient_uniform_name)
     var ambient = array[f32, 4](0.2, 0.2, 0.2, 1.0)
-    rl.SetShaderValue(shader, ambient_loc, f32_ptr_to_void(raw(addr(ambient[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shader, ambient_loc, raw(addr(ambient[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     lights.CreateLight(cast[i32](lights.LightType.LIGHT_DIRECTIONAL), rl.Vector3(x = 50.0, y = 50.0, z = 0.0), rm.Vector3.zero(), rl.WHITE, shader)
 
@@ -97,7 +93,7 @@ def main() -> i32:
         rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_ORBITAL)
 
         var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
-        rl.SetShaderValue(shader, view_loc, f32_ptr_to_void(raw(addr(camera_pos[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(shader, view_loc, raw(addr(camera_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

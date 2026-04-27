@@ -24,10 +24,6 @@ def void_ptr_to_f32(value: ptr[void]) -> ptr[f32]:
     unsafe:
         return cast[ptr[f32]](value)
 
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def allocate_delay_buffer() -> void:
     delay_buffer_size = cast[u32](48000 * 2)
     delay_read_index = 2
@@ -45,7 +41,7 @@ def free_delay_buffer() -> void:
         return
 
     unsafe:
-        rl.MemFree(f32_ptr_to_void(cast[ptr[f32]](delay_buffer)))
+        rl.MemFree(cast[ptr[f32]](delay_buffer))
 
 def audio_process_effect_lpf(buffer: ptr[void], frames: u32) -> void:
     let buffer_data = void_ptr_to_f32(buffer)

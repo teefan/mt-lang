@@ -12,6 +12,8 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
     assert_equal({ "codepoints" => "ptr[i32]?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadFontEx"))
+    assert_equal({ "vsFileName" => "cstr?", "fsFileName" => "cstr?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadShader"))
+    assert_equal({ "vsCode" => "cstr?", "fsCode" => "cstr?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadShaderFromMemory"))
     assert_equal ["RAYGUI_IMPLEMENTATION"], registry.fetch("raygui").implementation_defines
     assert_equal ["raylib", "m"], registry.fetch("raygui").link_libraries
     assert_includes registry.fetch("raygui").header_candidates.first, "third_party/raylib-upstream/examples/shapes/raygui.h"

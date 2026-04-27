@@ -14,20 +14,12 @@ const selector_text: cstr = c"< >"
 const current_palette_text: cstr = c"CURRENT PALETTE:"
 const window_title: cstr = c"raylib [shaders] example - palette switch"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def i32_ptr_to_void(value: ptr[i32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def set_palette_uniform(shader: rl.Shader, location: i32, palette: array[i32, palette_value_count]) -> void:
     var palette_data = palette
     rl.SetShaderValueV(
         shader,
         location,
-        i32_ptr_to_void(raw(addr(palette_data[0]))),
+        raw(addr(palette_data[0])),
         rl.ShaderUniformDataType.SHADER_UNIFORM_IVEC3,
         colors_per_palette,
     )
@@ -36,7 +28,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let palette_location = rl.GetShaderLocation(shader, palette_uniform_name)

@@ -15,14 +15,6 @@ const help_text: cstr = c"Scroll mouse wheel to\nchange outline size"
 const outline_format: cstr = c"Outline size: %i px"
 const window_title: cstr = c"raylib [shaders] example - texture outline"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -30,7 +22,7 @@ def main() -> i32:
     let texture = rl.LoadTexture(texture_path)
     defer rl.UnloadTexture(texture)
 
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     var outline_size: f32 = 2.0
@@ -41,9 +33,9 @@ def main() -> i32:
     let outline_color_loc = rl.GetShaderLocation(shader, outline_color_uniform_name)
     let texture_size_loc = rl.GetShaderLocation(shader, texture_size_uniform_name)
 
-    rl.SetShaderValue(shader, outline_size_loc, f32_ptr_to_void(raw(addr(outline_size))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, outline_color_loc, f32_ptr_to_void(raw(addr(outline_color[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
-    rl.SetShaderValue(shader, texture_size_loc, f32_ptr_to_void(raw(addr(texture_size[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, outline_size_loc, raw(addr(outline_size)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, outline_color_loc, raw(addr(outline_color[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shader, texture_size_loc, raw(addr(texture_size[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     rl.SetTargetFPS(60)
 
@@ -52,7 +44,7 @@ def main() -> i32:
         if outline_size < 1.0:
             outline_size = 1.0
 
-        rl.SetShaderValue(shader, outline_size_loc, f32_ptr_to_void(raw(addr(outline_size))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, outline_size_loc, raw(addr(outline_size)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

@@ -11,10 +11,6 @@ const shader_path_format: cstr = c"resources/shaders/glsl%i/grayscale.fs"
 const credit_text: cstr = c"(c) Watermill 3D model by Alberto Cano"
 const window_title: cstr = c"raylib [shaders] example - model shader"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         deref(model).materials[0].shader = shader
@@ -39,7 +35,7 @@ def main() -> i32:
     let texture = rl.LoadTexture(texture_path)
     defer rl.UnloadTexture(texture)
 
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     set_model_shader(raw(addr(model)), shader)

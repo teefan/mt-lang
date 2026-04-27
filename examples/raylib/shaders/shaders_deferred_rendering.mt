@@ -42,14 +42,6 @@ const toggle_lights_text: cstr = c"Toggle lights keys: [Y][R][G][B]"
 const switch_textures_text: cstr = c"Switch G-buffer textures: [1][2][3][4]"
 const cube_scale: f32 = 0.25
 
-def i32_ptr_to_void(value: ptr[i32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         deref(model).materials[0].shader = shader
@@ -110,9 +102,9 @@ def main() -> i32:
     var tex_unit_position = 0
     var tex_unit_normal = 1
     var tex_unit_albedo_spec = 2
-    rl.SetShaderValue(deferred_shader, rlgl.rlGetLocationUniform(deferred_shader.id, gposition_uniform_name), i32_ptr_to_void(raw(addr(tex_unit_position))), rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D)
-    rl.SetShaderValue(deferred_shader, rlgl.rlGetLocationUniform(deferred_shader.id, gnormal_uniform_name), i32_ptr_to_void(raw(addr(tex_unit_normal))), rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D)
-    rl.SetShaderValue(deferred_shader, rlgl.rlGetLocationUniform(deferred_shader.id, galbedo_spec_uniform_name), i32_ptr_to_void(raw(addr(tex_unit_albedo_spec))), rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D)
+    rl.SetShaderValue(deferred_shader, rlgl.rlGetLocationUniform(deferred_shader.id, gposition_uniform_name), raw(addr(tex_unit_position)), rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D)
+    rl.SetShaderValue(deferred_shader, rlgl.rlGetLocationUniform(deferred_shader.id, gnormal_uniform_name), raw(addr(tex_unit_normal)), rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D)
+    rl.SetShaderValue(deferred_shader, rlgl.rlGetLocationUniform(deferred_shader.id, galbedo_spec_uniform_name), raw(addr(tex_unit_albedo_spec)), rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D)
     rlgl.rlDisableShader()
 
     set_model_shader(raw(addr(model)), gbuffer_shader)
@@ -143,7 +135,7 @@ def main() -> i32:
         rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_ORBITAL)
 
         var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
-        rl.SetShaderValue(deferred_shader, view_loc, f32_ptr_to_void(raw(addr(camera_pos[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(deferred_shader, view_loc, raw(addr(camera_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_Y):
             light_sources[0].enabled = not light_sources[0].enabled

@@ -40,14 +40,6 @@ def material_map(material: rl.Material, index: i32) -> rl.MaterialMap:
     unsafe:
         return material.maps[index]
 
-def vector3_ptr_to_void(values: ptr[rl.Vector3]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](values)
-
-def vector2_ptr_to_void(values: ptr[rl.Vector2]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](values)
-
 def alloc_vector3(count: i32) -> ptr[rl.Vector3]:
     unsafe:
         return cast[ptr[rl.Vector3]](rl.MemAlloc(cast[u32](count) * cast[u32](sizeof(rl.Vector3))))
@@ -109,7 +101,7 @@ def add_triangle_to_mesh_builder(mb: ref[MeshBuilder], vertices: array[rl.Vector
             for index in range(0, value(mb).vertexCount):
                 new_vertex_view[index] = old_vertices[index]
 
-            rl.MemFree(vector3_ptr_to_void(value(mb).vertices))
+            rl.MemFree(value(mb).vertices)
 
         value(mb).vertices = new_vertices
         value(mb).vertexCapacity = new_vertex_capacity
@@ -123,9 +115,9 @@ def add_triangle_to_mesh_builder(mb: ref[MeshBuilder], vertices: array[rl.Vector
 
 def free_mesh_builder(mb: ref[MeshBuilder]) -> void:
     if value(mb).vertexCapacity > 0:
-        rl.MemFree(vector3_ptr_to_void(value(mb).vertices))
+        rl.MemFree(value(mb).vertices)
     if value(mb).hasUvs:
-        rl.MemFree(vector2_ptr_to_void(value(mb).uvs))
+        rl.MemFree(value(mb).uvs)
     value(mb) = zero[MeshBuilder]()
 
 def build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:

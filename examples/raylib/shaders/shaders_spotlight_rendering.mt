@@ -31,21 +31,13 @@ const dark_text: cstr = c"Dark"
 const raysan_path: cstr = c"resources/raysan.png"
 const window_title: cstr = c"raylib [shaders] example - spotlight rendering"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def set_vec2_uniform(shader: rl.Shader, location: i32, vector: rl.Vector2) -> void:
     var values = array[f32, 2](vector.x, vector.y)
-    rl.SetShaderValue(shader, location, f32_ptr_to_void(raw(addr(values[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, location, raw(addr(values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
 def set_float_uniform(shader: rl.Shader, location: i32, value: f32) -> void:
     var storage = value
-    rl.SetShaderValue(shader, location, f32_ptr_to_void(raw(addr(storage))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, location, raw(addr(storage)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
 def reset_star(star: ref[Star]) -> void:
     var current = value(star)
@@ -90,7 +82,7 @@ def main() -> i32:
 
     var frame_counter = 0
 
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let position_names = array[cstr, max_spots](c"spots[0].pos", c"spots[1].pos", c"spots[2].pos")

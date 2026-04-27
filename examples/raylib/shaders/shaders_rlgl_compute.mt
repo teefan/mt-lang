@@ -24,21 +24,9 @@ struct GolUpdateSSBO:
     count: u32
     commands: array[GolUpdateCmd, 48]
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
 def char_ptr_to_cstr(value: ptr[char]) -> cstr:
     unsafe:
         return cast[cstr](value)
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
-def ssbo_ptr_to_void(value: ptr[GolUpdateSSBO]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -48,17 +36,17 @@ def main() -> i32:
     var brush_size = 8
 
     let gol_logic_code = rl.LoadFileText(gol_logic_shader_path)
-    let gol_logic_shader = rlgl.compile_shader(char_ptr_to_cstr(gol_logic_code), rlgl.RL_COMPUTE_SHADER)
-    let gol_logic_program = rlgl.load_compute_shader_program(gol_logic_shader)
+    let gol_logic_shader = rlgl.load_shader(char_ptr_to_cstr(gol_logic_code), rlgl.RL_COMPUTE_SHADER)
+    let gol_logic_program = rlgl.load_shader_program_compute(gol_logic_shader)
     rl.UnloadFileText(gol_logic_code)
 
-    let gol_render_shader = rl.LoadShader(null_cstr(), gol_render_shader_path)
+    let gol_render_shader = rl.LoadShader(zero[cstr?](), gol_render_shader_path)
     defer rl.UnloadShader(gol_render_shader)
     let res_uniform_loc = rl.GetShaderLocation(gol_render_shader, resolution_uniform_name)
 
     let gol_transfert_code = rl.LoadFileText(gol_transfert_shader_path)
-    let gol_transfert_shader = rlgl.compile_shader(char_ptr_to_cstr(gol_transfert_code), rlgl.RL_COMPUTE_SHADER)
-    let gol_transfert_program = rlgl.load_compute_shader_program(gol_transfert_shader)
+    let gol_transfert_shader = rlgl.load_shader(char_ptr_to_cstr(gol_transfert_code), rlgl.RL_COMPUTE_SHADER)
+    let gol_transfert_program = rlgl.load_shader_program_compute(gol_transfert_shader)
     rl.UnloadFileText(gol_transfert_code)
 
     let ssbo_a = rlgl.load_shader_buffer(cast[u32](gol_width * gol_width * cast[i32](sizeof(u32))), zero[ptr[void]](), rlgl.RL_DYNAMIC_COPY)
@@ -97,7 +85,7 @@ def main() -> i32:
                 transfert_buffer.commands[command_index].enabled = cast[u32](0)
             transfert_buffer.count += cast[u32](1)
         elif transfert_buffer.count > 0:
-            rlgl.update_shader_buffer(ssbo_transfert, ssbo_ptr_to_void(raw(addr(transfert_buffer))), cast[u32](sizeof(GolUpdateSSBO)), 0)
+            rlgl.update_shader_buffer(ssbo_transfert, raw(addr(transfert_buffer)), cast[u32](sizeof(GolUpdateSSBO)), 0)
 
             rlgl.enable_shader(gol_transfert_program)
             rlgl.bind_shader_buffer(current_ssbo, 1)
@@ -118,7 +106,7 @@ def main() -> i32:
             next_ssbo = temp
 
         rlgl.bind_shader_buffer(current_ssbo, 1)
-        rl.SetShaderValue(gol_render_shader, res_uniform_loc, f32_ptr_to_void(raw(addr(resolution[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.SetShaderValue(gol_render_shader, res_uniform_loc, raw(addr(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

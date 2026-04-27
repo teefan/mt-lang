@@ -8,10 +8,6 @@ const glsl_version: i32 = 330
 const shader_path_format: cstr = c"resources/shaders/glsl%i/eratosthenes.fs"
 const window_title: cstr = c"raylib [shaders] example - eratosthenes sieve"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -19,7 +15,7 @@ def main() -> i32:
     let target = rl.LoadRenderTexture(screen_width, screen_height)
     defer rl.UnloadRenderTexture(target)
 
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     rl.SetTargetFPS(60)

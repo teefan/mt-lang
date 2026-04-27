@@ -12,10 +12,6 @@ const custom_shader_text: cstr = c"USING CUSTOM SHADER"
 const credit_text: cstr = c"(c) Fudesumi sprite by Eiden Marsal"
 const window_title: cstr = c"raylib [shaders] example - shapes textures"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -23,7 +19,7 @@ def main() -> i32:
     let fudesumi = rl.LoadTexture(texture_path)
     defer rl.UnloadTexture(fudesumi)
 
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     rl.SetTargetFPS(60)

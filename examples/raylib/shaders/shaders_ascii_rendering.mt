@@ -13,14 +13,6 @@ const font_size_uniform_name: cstr = c"fontSize"
 const title_format: cstr = c"Ascii effect - FontSize:%2.0f - [Left] -1 [Right] +1 "
 const window_title: cstr = c"raylib [shaders] example - ascii rendering"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -31,7 +23,7 @@ def main() -> i32:
     let raysan = rl.LoadTexture(raysan_path)
     defer rl.UnloadTexture(raysan)
 
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let resolution_location = rl.GetShaderLocation(shader, resolution_uniform_name)
@@ -39,7 +31,7 @@ def main() -> i32:
 
     var font_size: f32 = 9.0
     var resolution = array[f32, 2](cast[f32](screen_width), cast[f32](screen_height))
-    rl.SetShaderValue(shader, resolution_location, f32_ptr_to_void(raw(addr(resolution[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, resolution_location, raw(addr(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     var circle_position = rl.Vector2(x = 40.0, y = cast[f32](screen_height) * 0.5)
     var circle_speed: f32 = 1.0
@@ -59,7 +51,7 @@ def main() -> i32:
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_RIGHT) and font_size < 15.0:
             font_size += 1.0
 
-        rl.SetShaderValue(shader, font_size_location, f32_ptr_to_void(raw(addr(font_size))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, font_size_location, raw(addr(font_size)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         rl.BeginTextureMode(target)
         rl.ClearBackground(rl.WHITE)

@@ -13,14 +13,6 @@ const time_uniform_name: cstr = c"time"
 const title_text: cstr = c"Vertex displacement"
 const window_title: cstr = c"raylib [shaders] example - vertex displacement"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         deref(model).materials[0].shader = shader
@@ -69,7 +61,7 @@ def main() -> i32:
         rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_FREE)
 
         time += rl.GetFrameTime()
-        rl.SetShaderValue(shader, time_loc, f32_ptr_to_void(raw(addr(time))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, time_loc, raw(addr(time)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

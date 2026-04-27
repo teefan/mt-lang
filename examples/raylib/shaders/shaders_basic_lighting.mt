@@ -14,10 +14,6 @@ const ambient_uniform_name: cstr = c"ambient"
 const help_text: cstr = c"Use keys [Y][R][G][B] to toggle lights"
 const window_title: cstr = c"raylib [shaders] example - basic lighting"
 
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -43,7 +39,7 @@ def main() -> i32:
 
     let ambient_loc = rl.GetShaderLocation(shader, ambient_uniform_name)
     var ambient = array[f32, 4](0.1, 0.1, 0.1, 1.0)
-    rl.SetShaderValue(shader, ambient_loc, f32_ptr_to_void(raw(addr(ambient[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shader, ambient_loc, raw(addr(ambient[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     var light_sources = zero[array[lights.Light, 4]]()
     light_sources[0] = lights.CreateLight(cast[i32](lights.LightType.LIGHT_POINT), rl.Vector3(x = -2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.YELLOW, shader)
@@ -60,7 +56,7 @@ def main() -> i32:
         rl.SetShaderValue(
             shader,
             view_loc,
-            f32_ptr_to_void(raw(addr(camera_pos[0]))),
+            raw(addr(camera_pos[0])),
             rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3,
         )
 

@@ -18,10 +18,6 @@ const fog_density_uniform_name: cstr = c"fogDensity"
 const fog_density_format: cstr = c"Use KEY_UP/KEY_DOWN to change fog density [%.2f]"
 const window_title: cstr = c"raylib [shaders] example - fog rendering"
 
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         deref(model).materials[0].shader = shader
@@ -88,17 +84,17 @@ def main() -> i32:
 
     let ambient_loc = rl.GetShaderLocation(shader, ambient_uniform_name)
     var ambient = array[f32, 4](0.2, 0.2, 0.2, 1.0)
-    rl.SetShaderValue(shader, ambient_loc, f32_ptr_to_void(raw(addr(ambient[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shader, ambient_loc, raw(addr(ambient[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     let fog_color_value = rl.ColorNormalize(rl.GRAY)
     let fog_color_loc = rl.GetShaderLocation(shader, fog_color_uniform_name)
     var fog_color = array[f32, 4](fog_color_value.x, fog_color_value.y, fog_color_value.z, fog_color_value.w)
-    rl.SetShaderValue(shader, fog_color_loc, f32_ptr_to_void(raw(addr(fog_color[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shader, fog_color_loc, raw(addr(fog_color[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     var fog_density: f32 = 0.15
     let fog_density_step: f32 = 0.001
     let fog_density_loc = rl.GetShaderLocation(shader, fog_density_uniform_name)
-    rl.SetShaderValue(shader, fog_density_loc, f32_ptr_to_void(raw(addr(fog_density))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, fog_density_loc, raw(addr(fog_density)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
     set_model_shader(raw(addr(model_a)), shader)
     set_model_shader(raw(addr(model_b)), shader)
@@ -121,13 +117,13 @@ def main() -> i32:
             if fog_density < 0.0:
                 fog_density = 0.0
 
-        rl.SetShaderValue(shader, fog_density_loc, f32_ptr_to_void(raw(addr(fog_density))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, fog_density_loc, raw(addr(fog_density)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         model_a.transform = model_a.transform.multiply(rotate_x(-0.025))
         model_a.transform = model_a.transform.multiply(rm.Matrix.rotate_z(0.012))
 
         var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
-        rl.SetShaderValue(shader, view_loc, f32_ptr_to_void(raw(addr(camera_pos[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(shader, view_loc, raw(addr(camera_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

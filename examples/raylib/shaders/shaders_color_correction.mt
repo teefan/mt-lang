@@ -27,14 +27,6 @@ const brightness_text: cstr = c"Brightness"
 const reset_button_text: cstr = c"Reset"
 const window_title: cstr = c"raylib [shaders] example - color correction"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -52,7 +44,7 @@ def main() -> i32:
             rl.UnloadTexture(textures[unload_index])
             unload_index += 1
 
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let contrast_location = rl.GetShaderLocation(shader, contrast_uniform_name)
@@ -65,9 +57,9 @@ def main() -> i32:
     var saturation: f32 = 0.0
     var brightness: f32 = 0.0
 
-    rl.SetShaderValue(shader, contrast_location, f32_ptr_to_void(raw(addr(contrast))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, saturation_location, f32_ptr_to_void(raw(addr(saturation))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, brightness_location, f32_ptr_to_void(raw(addr(brightness))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, contrast_location, raw(addr(contrast)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, saturation_location, raw(addr(saturation)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, brightness_location, raw(addr(brightness)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
     rl.SetTargetFPS(60)
 
@@ -86,9 +78,9 @@ def main() -> i32:
             saturation = 0.0
             brightness = 0.0
 
-        rl.SetShaderValue(shader, contrast_location, f32_ptr_to_void(raw(addr(contrast))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-        rl.SetShaderValue(shader, saturation_location, f32_ptr_to_void(raw(addr(saturation))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-        rl.SetShaderValue(shader, brightness_location, f32_ptr_to_void(raw(addr(brightness))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, contrast_location, raw(addr(contrast)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, saturation_location, raw(addr(saturation)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, brightness_location, raw(addr(brightness)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         let selected_texture = textures[image_index]
 

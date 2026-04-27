@@ -13,10 +13,6 @@ const frequency_text: cstr = c"Up/down to change frequency"
 const pan_text: cstr = c"Left/right to pan"
 const window_title: cstr = c"raylib [audio] example - raw stream"
 
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -72,7 +68,7 @@ def main() -> i32:
                     sine_index = 0
                     sine_start_time = rl.GetTime()
 
-            rl.UpdateAudioStream(stream, f32_ptr_to_void(raw(addr(buffer[0]))), buffer_size)
+            rl.UpdateAudioStream(stream, raw(addr(buffer[0])), buffer_size)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

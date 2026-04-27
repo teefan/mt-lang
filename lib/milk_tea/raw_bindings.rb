@@ -171,10 +171,18 @@ module MilkTea
     end
 
     def self.default_bindings(root: MilkTea.root)
-      font_codepoint_param_overrides = {
+      raylib_function_param_overrides = {
         "LoadFontEx" => { "codepoints" => "ptr[i32]?" },
         "LoadFontFromMemory" => { "codepoints" => "ptr[i32]?" },
         "LoadFontData" => { "codepoints" => "ptr[i32]?" },
+        "LoadShader" => {
+          "vsFileName" => "cstr?",
+          "fsFileName" => "cstr?",
+        },
+        "LoadShaderFromMemory" => {
+          "vsCode" => "cstr?",
+          "fsCode" => "cstr?",
+        },
       }.freeze
 
       [
@@ -192,7 +200,7 @@ module MilkTea
             "/usr/include/raylib.h",
             "/usr/local/include/raylib.h",
           ],
-          function_param_type_overrides: font_codepoint_param_overrides,
+          function_param_type_overrides: raylib_function_param_overrides,
           prepare: ->(_binding, env:, cc:) do
             MilkTea::VendoredRaylib.prepare!(cc: env.fetch("RAYLIB_CC", ENV.fetch("CC", "cc")))
           end,
@@ -211,7 +219,7 @@ module MilkTea
             "/usr/include/raygui.h",
             "/usr/local/include/raygui.h",
           ],
-          function_param_type_overrides: font_codepoint_param_overrides,
+          function_param_type_overrides: raylib_function_param_overrides,
         ),
         Binding.new(
           name: "rlights",

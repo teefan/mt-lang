@@ -22,14 +22,6 @@ const specular_change_text: cstr = c"Use keys [Up][Down] to change specular expo
 const specular_exponent_format: cstr = c"Specular Exponent: %.2f"
 const window_title: cstr = c"raylib [shaders] example - normalmap rendering"
 
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
-def i32_ptr_to_void(value: ptr[i32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         deref(model).materials[0].shader = shader
@@ -136,13 +128,13 @@ def main() -> i32:
         plane.transform = rotate_y(cast[f32](rl.GetTime()) * 0.5)
 
         var light_pos = array[f32, 3](light_position.x, light_position.y, light_position.z)
-        rl.SetShaderValue(shader, light_pos_loc, f32_ptr_to_void(raw(addr(light_pos[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(shader, light_pos_loc, raw(addr(light_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
-        rl.SetShaderValue(shader, view_loc, f32_ptr_to_void(raw(addr(camera_pos[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(shader, view_loc, raw(addr(camera_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
-        rl.SetShaderValue(shader, specular_exponent_loc, f32_ptr_to_void(raw(addr(specular_exponent))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-        rl.SetShaderValue(shader, use_normal_map_loc, i32_ptr_to_void(raw(addr(use_normal_map))), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+        rl.SetShaderValue(shader, specular_exponent_loc, raw(addr(specular_exponent)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, use_normal_map_loc, raw(addr(use_normal_map)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

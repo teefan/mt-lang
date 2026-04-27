@@ -11,14 +11,6 @@ const divider_uniform_name: cstr = c"divider"
 const help_text: cstr = c"Use KEY_LEFT/KEY_RIGHT to move texture mixing in shader!"
 const window_title: cstr = c"raylib [shaders] example - multi sample2d"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -33,7 +25,7 @@ def main() -> i32:
     rl.UnloadImage(blue_image)
     defer rl.UnloadTexture(blue_texture)
 
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let blue_texture_location = rl.GetShaderLocation(shader, texture_uniform_name)
@@ -53,7 +45,7 @@ def main() -> i32:
         elif divider_value > 1.0:
             divider_value = 1.0
 
-        rl.SetShaderValue(shader, divider_location, f32_ptr_to_void(raw(addr(divider_value))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, divider_location, raw(addr(divider_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
