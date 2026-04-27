@@ -228,6 +228,26 @@ methods rl.Matrix:
             m15 = this.m12 * other.m3 + this.m13 * other.m7 + this.m14 * other.m11 + this.m15 * other.m15,
         )
 
+    pub def transpose() -> Matrix:
+        return rl.Matrix(
+            m0 = this.m0,
+            m4 = this.m1,
+            m8 = this.m2,
+            m12 = this.m3,
+            m1 = this.m4,
+            m5 = this.m5,
+            m9 = this.m6,
+            m13 = this.m7,
+            m2 = this.m8,
+            m6 = this.m9,
+            m10 = this.m10,
+            m14 = this.m11,
+            m3 = this.m12,
+            m7 = this.m13,
+            m11 = this.m14,
+            m15 = this.m15,
+        )
+
     pub def invert() -> Matrix:
         let a00 = this.m0
         let a01 = this.m1
@@ -312,6 +332,54 @@ methods rl.Matrix:
             m2 = 0.0,
             m6 = 0.0,
             m10 = z,
+            m14 = 0.0,
+            m3 = 0.0,
+            m7 = 0.0,
+            m11 = 0.0,
+            m15 = 1.0,
+        )
+
+    pub static def rotate_z(angle: f32) -> Matrix:
+        let cosz = libm.cosf(angle)
+        let sinz = libm.sinf(angle)
+        return rl.Matrix(
+            m0 = cosz,
+            m4 = -sinz,
+            m8 = 0.0,
+            m12 = 0.0,
+            m1 = sinz,
+            m5 = cosz,
+            m9 = 0.0,
+            m13 = 0.0,
+            m2 = 0.0,
+            m6 = 0.0,
+            m10 = 1.0,
+            m14 = 0.0,
+            m3 = 0.0,
+            m7 = 0.0,
+            m11 = 0.0,
+            m15 = 1.0,
+        )
+
+    pub static def rotate_xyz(angle: Vector3) -> Matrix:
+        let cosz = libm.cosf(-angle.z)
+        let sinz = libm.sinf(-angle.z)
+        let cosy = libm.cosf(-angle.y)
+        let siny = libm.sinf(-angle.y)
+        let cosx = libm.cosf(-angle.x)
+        let sinx = libm.sinf(-angle.x)
+        return rl.Matrix(
+            m0 = cosz * cosy,
+            m4 = sinz * cosy,
+            m8 = -siny,
+            m12 = 0.0,
+            m1 = (cosz * siny * sinx) - (sinz * cosx),
+            m5 = (sinz * siny * sinx) + (cosz * cosx),
+            m9 = cosy * sinx,
+            m13 = 0.0,
+            m2 = (cosz * siny * cosx) + (sinz * sinx),
+            m6 = (sinz * siny * cosx) - (cosz * sinx),
+            m10 = cosy * cosx,
             m14 = 0.0,
             m3 = 0.0,
             m7 = 0.0,

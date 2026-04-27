@@ -48,6 +48,15 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
     end
   end
 
+  def test_shaders_example_ports_check_and_lower
+    shaders_example_paths.each_with_index do |path, index|
+      announce_port_progress("shaders", index + 1, shaders_example_paths.length, path)
+      program = MilkTea::ModuleLoader.check_program(path)
+
+      assert_equal true, program.analyses_by_module_name.key?(module_name_for(path))
+    end
+  end
+
   private
 
   def announce_port_progress(category, current, total, path)
@@ -74,6 +83,10 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
 
   def models_example_paths
     Dir[File.expand_path("../examples/raylib/models/*.mt", __dir__)].sort
+  end
+
+  def shaders_example_paths
+    Dir[File.expand_path("../examples/raylib/shaders/*.mt", __dir__)].sort
   end
 
   def module_name_for(path)
