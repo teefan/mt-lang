@@ -2359,6 +2359,33 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/float right = callback\(1\.0f\);/, generated)
   end
 
+  def test_generate_c_for_module_scope_mutable_vars
+    source = [
+      "module demo.global_state",
+      "",
+      "const BASE: i32 = 1",
+      "",
+      "def identity(value: i32) -> i32:",
+      "    return value",
+      "",
+      "var counter: i32 = BASE",
+      "var scratch: array[u8, 4]",
+      "var callbacks: array[fn(value: i32) -> i32, 1] = array[fn(value: i32) -> i32, 1](identity)",
+      "",
+      "def main() -> i32:",
+      "    counter = callbacks[0](counter)",
+      "    return counter + cast[i32](scratch[0])",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static int32_t demo_global_state_counter = 1;/, generated)
+    assert_match(/static uint8_t demo_global_state_scratch\[4\] = \{ 0 \};/, generated)
+    assert_match(/static int32_t \(\*demo_global_state_callbacks\[1\]\)\(int32_t value\) = \{ demo_global_state_identity \};/, generated)
+    refute_match(/static int32_t demo_global_state_counter = demo_global_state_BASE;/, generated)
+  end
+
   private
 
   def demo_path

@@ -248,16 +248,31 @@ module MilkTea
       end
 
       def declare_top_level_values
-        @ast.declarations.grep(AST::ConstDecl).each do |decl|
-          ensure_available_value_name!(decl.name)
-          type = resolve_type_ref(decl.type)
-          validate_stored_ref_type!(type, "constant #{decl.name}")
-          @top_level_values[decl.name] = value_binding(
-            name: decl.name,
-            type: type,
-            mutable: false,
-            kind: :const,
-          )
+        @ast.declarations.each do |decl|
+          case decl
+          when AST::ConstDecl
+            ensure_available_value_name!(decl.name)
+            type = resolve_type_ref(decl.type)
+            validate_stored_ref_type!(type, "constant #{decl.name}")
+            @top_level_values[decl.name] = value_binding(
+              name: decl.name,
+              type: type,
+              mutable: false,
+              kind: :const,
+            )
+          when AST::VarDecl
+            ensure_available_value_name!(decl.name)
+            raise SemaError, "module variable #{decl.name} requires an explicit type" unless decl.type
+
+            type = resolve_type_ref(decl.type)
+            validate_stored_ref_type!(type, "module variable #{decl.name}")
+            @top_level_values[decl.name] = value_binding(
+              name: decl.name,
+              type: type,
+              mutable: true,
+              kind: :var,
+            )
+          end
         end
       end
 
@@ -398,18 +413,137 @@ module MilkTea
       end
 
       def check_top_level_values
-        @ast.declarations.grep(AST::ConstDecl).each do |decl|
-          binding = @top_level_values.fetch(decl.name)
-          validate_consuming_foreign_expression!(decl.value, scopes: [], root_allowed: false)
-          validate_hoistable_foreign_expression!(decl.value, scopes: [], root_hoistable: false)
-          actual_type = infer_expression(decl.value, scopes: [], expected_type: binding.type)
-          ensure_assignable!(
-            actual_type,
-            binding.type,
-            "cannot assign #{actual_type} to constant #{decl.name}: expected #{binding.type}",
-            expression: decl.value,
-          )
+        @ast.declarations.each do |decl|
+          case decl
+          when AST::ConstDecl
+            binding = @top_level_values.fetch(decl.name)
+            validate_consuming_foreign_expression!(decl.value, scopes: [], root_allowed: false)
+            validate_hoistable_foreign_expression!(decl.value, scopes: [], root_hoistable: false)
+            actual_type = infer_expression(decl.value, scopes: [], expected_type: binding.type)
+            ensure_assignable!(
+              actual_type,
+              binding.type,
+              "cannot assign #{actual_type} to constant #{decl.name}: expected #{binding.type}",
+              expression: decl.value,
+            )
+          when AST::VarDecl
+            binding = @top_level_values.fetch(decl.name)
+            if decl.value
+              validate_consuming_foreign_expression!(decl.value, scopes: [], root_allowed: false)
+              validate_hoistable_foreign_expression!(decl.value, scopes: [], root_hoistable: false)
+              actual_type = infer_expression(decl.value, scopes: [], expected_type: binding.type)
+              ensure_assignable!(
+                actual_type,
+                binding.type,
+                "cannot assign #{actual_type} to module variable #{decl.name}: expected #{binding.type}",
+                expression: decl.value,
+              )
+              validate_static_storage_initializer!(decl.value, scopes: [])
+            else
+              zero_initializable_type?(binding.type)
+            end
+          end
         end
+      end
+
+      def validate_static_storage_initializer!(expression, scopes:)
+        case expression
+        when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral, AST::BooleanLiteral, AST::NullLiteral,
+             AST::SizeofExpr, AST::AlignofExpr, AST::OffsetofExpr
+          return
+        when AST::Identifier
+          if (binding = lookup_value(expression.name, scopes))
+            return if binding.kind == :const
+
+            raise SemaError, "module variable initializer cannot reference mutable value #{expression.name}"
+          end
+
+          function = @top_level_functions[expression.name]
+          return if function && static_storage_function_value?(function)
+
+          raise SemaError, "module variable initializer must be static-storage-safe"
+        when AST::MemberAccess
+          return if static_storage_member_initializer?(expression, scopes:)
+
+          raise SemaError, "module variable initializer must be static-storage-safe"
+        when AST::UnaryOp
+          validate_static_storage_initializer!(expression.operand, scopes:)
+        when AST::BinaryOp
+          validate_static_storage_initializer!(expression.left, scopes:)
+          validate_static_storage_initializer!(expression.right, scopes:)
+        when AST::IfExpr
+          validate_static_storage_initializer!(expression.condition, scopes:)
+          validate_static_storage_initializer!(expression.then_expression, scopes:)
+          validate_static_storage_initializer!(expression.else_expression, scopes:)
+        when AST::Call
+          validate_static_storage_call_initializer!(expression, scopes:)
+        else
+          raise SemaError, "module variable initializer must be static-storage-safe"
+        end
+      end
+
+      def static_storage_member_initializer?(expression, scopes:)
+        if (type_expr = resolve_type_expression(expression.receiver))
+          return true if resolve_type_member(type_expr, expression.member)
+        end
+
+        return false unless expression.receiver.is_a?(AST::Identifier)
+        return false unless @imports.key?(expression.receiver.name)
+
+        imported_module = @imports.fetch(expression.receiver.name)
+        if imported_module.private_value?(expression.member) || imported_module.private_function?(expression.member) || imported_module.private_type?(expression.member)
+          raise SemaError, "#{expression.receiver.name}.#{expression.member} is private to module #{imported_module.name}"
+        end
+
+        if (binding = imported_module.values[expression.member])
+          return true if binding.kind == :const
+
+          raise SemaError, "module variable initializer cannot reference mutable value #{expression.receiver.name}.#{expression.member}"
+        end
+
+        function = imported_module.functions[expression.member]
+        function && static_storage_function_value?(function)
+      end
+
+      def validate_static_storage_call_initializer!(expression, scopes:)
+        expression.arguments.each do |argument|
+          validate_static_storage_initializer!(argument.value, scopes:)
+        end
+
+        callee = expression.callee
+        if callee.is_a?(AST::Identifier)
+          return if %w[ok err].include?(callee.name)
+
+          if (type_expr = resolve_type_expression(callee))
+            return if type_expr.is_a?(Types::Struct) || type_expr.is_a?(Types::StringView)
+          end
+        end
+
+        if callee.is_a?(AST::MemberAccess)
+          if (type_expr = resolve_type_expression(callee))
+            return if type_expr.is_a?(Types::Struct) || type_expr.is_a?(Types::StringView)
+          end
+        end
+
+        if callee.is_a?(AST::Specialization)
+          if callee.callee.is_a?(AST::Identifier)
+            case callee.callee.name
+            when "array", "span", "zero", "cast", "reinterpret"
+              return
+            end
+          end
+
+          if (type_ref = type_ref_from_specialization(callee))
+            specialized_type = resolve_type_ref(type_ref)
+            return if specialized_type.is_a?(Types::Struct) || result_type?(specialized_type)
+          end
+        end
+
+        raise SemaError, "module variable initializer must be static-storage-safe"
+      end
+
+      def static_storage_function_value?(binding)
+        !binding.external && binding.type_params.empty?
       end
 
       def finalize_top_level_const_values

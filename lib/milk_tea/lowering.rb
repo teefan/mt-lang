@@ -31,6 +31,7 @@ module MilkTea
         includes = collect_includes
 
         constants = []
+        globals = []
         opaques = []
         structs = []
         unions = []
@@ -45,6 +46,7 @@ module MilkTea
           collect_structs
 
           constants.concat(lower_constants)
+          globals.concat(lower_globals)
           opaques.concat(lower_opaques)
           structs.concat(lower_structs)
           unions.concat(lower_unions)
@@ -59,6 +61,7 @@ module MilkTea
           module_name: @program.root_analysis.module_name,
           includes:,
           constants:,
+          globals:,
           opaques:,
           structs:,
           unions:,
@@ -281,7 +284,19 @@ module MilkTea
         @analysis.ast.declarations.grep(AST::ConstDecl).map do |decl|
           type = @values.fetch(decl.name).type
           value = lower_expression(decl.value, env: empty_env, expected_type: type)
-          IR::Constant.new(name: decl.name, c_name: constant_c_name(decl.name), type:, value:)
+          IR::Constant.new(name: decl.name, c_name: value_c_name(decl.name), type:, value:)
+        end
+      end
+
+      def lower_globals
+        @analysis.ast.declarations.grep(AST::VarDecl).map do |decl|
+          type = @values.fetch(decl.name).type
+          value = if decl.value
+                    lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)
+                  else
+                    IR::ZeroInit.new(type: type)
+                  end
+          IR::Global.new(name: decl.name, c_name: value_c_name(decl.name), type:, value:)
         end
       end
 
@@ -4029,8 +4044,76 @@ module MilkTea
 
         if @values.key?(name)
           binding = @values.fetch(name)
-          { type: binding.type, storage_type: binding.storage_type, c_name: constant_c_name(name), mutable: false, pointer: false }
+          { type: binding.type, storage_type: binding.storage_type, c_name: value_c_name(name), mutable: binding.mutable, pointer: false }
         end
+      end
+
+      def lower_static_storage_initializer(expression, env:, expected_type: nil)
+        lower_expression(rewrite_static_storage_initializer(expression), env:, expected_type: expected_type)
+      end
+
+      def rewrite_static_storage_initializer(expression)
+        case expression
+        when AST::Identifier
+          binding = @values[expression.name]
+          if binding&.kind == :const
+            declaration = const_declaration_for(analysis_for_module(@module_name), expression.name)
+            return rewrite_static_storage_initializer(declaration.value)
+          end
+
+          expression
+        when AST::MemberAccess
+          if expression.receiver.is_a?(AST::Identifier) && @imports.key?(expression.receiver.name)
+            imported_module = @imports.fetch(expression.receiver.name)
+            if (binding = imported_module.values[expression.member])&.kind == :const
+              imported_analysis = analysis_for_module(imported_module.name)
+              declaration = const_declaration_for(imported_analysis, expression.member)
+              return with_analysis_context(imported_analysis) do
+                rewrite_static_storage_initializer(declaration.value)
+              end
+            end
+          end
+
+          AST::MemberAccess.new(
+            receiver: rewrite_static_storage_initializer(expression.receiver),
+            member: expression.member,
+          )
+        when AST::UnaryOp
+          AST::UnaryOp.new(operator: expression.operator, operand: rewrite_static_storage_initializer(expression.operand))
+        when AST::BinaryOp
+          AST::BinaryOp.new(
+            operator: expression.operator,
+            left: rewrite_static_storage_initializer(expression.left),
+            right: rewrite_static_storage_initializer(expression.right),
+          )
+        when AST::IfExpr
+          AST::IfExpr.new(
+            condition: rewrite_static_storage_initializer(expression.condition),
+            then_expression: rewrite_static_storage_initializer(expression.then_expression),
+            else_expression: rewrite_static_storage_initializer(expression.else_expression),
+          )
+        when AST::Call
+          AST::Call.new(
+            callee: rewrite_static_storage_initializer(expression.callee),
+            arguments: expression.arguments.map do |argument|
+              AST::Argument.new(name: argument.name, value: rewrite_static_storage_initializer(argument.value))
+            end,
+          )
+        when AST::Specialization
+          AST::Specialization.new(
+            callee: rewrite_static_storage_initializer(expression.callee),
+            arguments: expression.arguments.map { |argument| AST::TypeArgument.new(value: argument.value) },
+          )
+        else
+          expression
+        end
+      end
+
+      def const_declaration_for(analysis, name)
+        declaration = analysis.ast.declarations.find { |decl| decl.is_a?(AST::ConstDecl) && decl.name == name }
+        raise LoweringError, "unknown constant #{analysis.module_name}.#{name}" unless declaration
+
+        declaration
       end
 
       def local_binding(type:, c_name:, mutable:, pointer:, storage_type: nil, cstr_backed: false, cstr_list_backed: false)
@@ -4409,15 +4492,15 @@ module MilkTea
         module_function_c_name(module_name, binding.name, type_arguments: binding.type_arguments)
       end
 
-      def constant_c_name(name)
-        module_constant_c_name(@module_name, name)
+      def value_c_name(name)
+        module_value_c_name(@module_name, name)
       end
 
       def imported_value_c_name(imported_module, name)
         imported_analysis = analysis_for_module(imported_module.name)
         return name if imported_analysis.module_kind == :extern_module
 
-        module_constant_c_name(imported_module.name, name)
+        module_value_c_name(imported_module.name, name)
       end
 
       def module_function_c_name(module_name, name, type_arguments: [])
@@ -4427,7 +4510,7 @@ module MilkTea
         "#{base}_#{sanitize_identifier(type_arguments.join('_'))}"
       end
 
-      def module_constant_c_name(module_name, name)
+      def module_value_c_name(module_name, name)
         "#{module_name.tr('.', '_')}_#{name}"
       end
 
