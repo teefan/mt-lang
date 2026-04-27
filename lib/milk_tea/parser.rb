@@ -56,7 +56,7 @@ module MilkTea
         consume(:module, "expected module after extern")
         module_kind = :extern_module
         module_name = parse_qualified_name
-        directives, declarations = parse_extern_module_body
+        imports, directives, declarations = parse_extern_module_body
         skip_newlines
         raise error(peek, "expected end of file after extern module") unless eof?
 
@@ -134,9 +134,15 @@ module MilkTea
       consume(:newline, "expected newline before extern module body")
       consume(:indent, "expected indented extern module body")
 
+      imports = []
       directives = []
       declarations = []
       skip_newlines
+      while match(:import)
+        imports << parse_import
+        skip_newlines
+      end
+
       until check(:dedent) || eof?
         if match(:link)
           directives << parse_link_directive
@@ -149,7 +155,7 @@ module MilkTea
       end
 
       consume(:dedent, "expected end of extern module body")
-      [directives, declarations]
+      [imports, directives, declarations]
     end
 
     def parse_link_directive

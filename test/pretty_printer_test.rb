@@ -39,6 +39,22 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_extern_module_imports_like_source
+    source = <<~MT
+      extern module std.c.helper:
+          import std.c.dep as dep
+
+          include "helper.h"
+
+          struct Holder:
+              value: dep.Vec
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_public_declarations_and_methods_like_source
     source = <<~MT
       module demo.pretty
