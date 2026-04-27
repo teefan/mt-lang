@@ -582,6 +582,17 @@ module MilkTea
           with_indent do
             statement.body.each { |nested| emit_statement(nested) }
           end
+        when IR::ForStmt
+          init = render_for_clause_statement(statement.init)
+          post = render_for_clause_statement(statement.post)
+          line("for #{init}; #{render_expression(statement.condition)}; #{post}:")
+          with_indent do
+            statement.body.each { |nested| emit_statement(nested) }
+          end
+        when IR::BreakStmt
+          line("break")
+        when IR::ContinueStmt
+          line("continue")
         when IR::GotoStmt
           line("goto #{statement.label}")
         when IR::LabelStmt
@@ -650,6 +661,19 @@ module MilkTea
           "#{expression.type}(#{expression.elements.map { |element| render_expression(element) }.join(', ')})"
         else
           raise ArgumentError, "unsupported IR expression #{expression.class.name}"
+        end
+      end
+
+      def render_for_clause_statement(statement)
+        case statement
+        when IR::LocalDecl
+          "#{statement.c_name}: #{render_type(statement.type)} = #{render_expression(statement.value)}"
+        when IR::Assignment
+          "#{render_expression(statement.target)} #{statement.operator} #{render_expression(statement.value)}"
+        when IR::ExpressionStmt
+          render_expression(statement.expression)
+        else
+          raise ArgumentError, "unsupported for clause #{statement.class.name}"
         end
       end
 

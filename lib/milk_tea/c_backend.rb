@@ -10,6 +10,8 @@ module MilkTea
 
     def initialize(program)
       @program = program
+      @checked_index_alias_stack = []
+      @checked_index_alias_id = 0
     end
 
     def emit
@@ -190,9 +192,16 @@ module MilkTea
         when IR::Assignment
           collect_called_function_names_from_expression(statement.target, functions_by_name, reachable_names, worklist)
           collect_called_function_names_from_expression(statement.value, functions_by_name, reachable_names, worklist)
-        when IR::BlockStmt, IR::WhileStmt
+        when IR::BlockStmt
           collect_called_function_names_from_statements(statement.body, functions_by_name, reachable_names, worklist)
-          collect_called_function_names_from_expression(statement.condition, functions_by_name, reachable_names, worklist) if statement.is_a?(IR::WhileStmt)
+        when IR::WhileStmt
+          collect_called_function_names_from_expression(statement.condition, functions_by_name, reachable_names, worklist)
+          collect_called_function_names_from_statements(statement.body, functions_by_name, reachable_names, worklist)
+        when IR::ForStmt
+          collect_called_function_names_from_statements([statement.init], functions_by_name, reachable_names, worklist)
+          collect_called_function_names_from_expression(statement.condition, functions_by_name, reachable_names, worklist)
+          collect_called_function_names_from_statements(statement.body, functions_by_name, reachable_names, worklist)
+          collect_called_function_names_from_statements([statement.post], functions_by_name, reachable_names, worklist)
         when IR::IfStmt
           collect_called_function_names_from_expression(statement.condition, functions_by_name, reachable_names, worklist)
           collect_called_function_names_from_statements(statement.then_body, functions_by_name, reachable_names, worklist)
@@ -267,8 +276,16 @@ module MilkTea
         when IR::Assignment
           collect_referenced_constant_names_from_expression(statement.target, constants_by_name, referenced_names)
           collect_referenced_constant_names_from_expression(statement.value, constants_by_name, referenced_names)
-        when IR::BlockStmt, IR::WhileStmt
+        when IR::BlockStmt
           collect_referenced_constant_names_from_statements(statement.body, constants_by_name, referenced_names)
+        when IR::WhileStmt
+          collect_referenced_constant_names_from_expression(statement.condition, constants_by_name, referenced_names)
+          collect_referenced_constant_names_from_statements(statement.body, constants_by_name, referenced_names)
+        when IR::ForStmt
+          collect_referenced_constant_names_from_statements([statement.init], constants_by_name, referenced_names)
+          collect_referenced_constant_names_from_expression(statement.condition, constants_by_name, referenced_names)
+          collect_referenced_constant_names_from_statements(statement.body, constants_by_name, referenced_names)
+          collect_referenced_constant_names_from_statements([statement.post], constants_by_name, referenced_names)
         when IR::IfStmt
           collect_referenced_constant_names_from_expression(statement.condition, constants_by_name, referenced_names)
           collect_referenced_constant_names_from_statements(statement.then_body, constants_by_name, referenced_names)
@@ -360,8 +377,15 @@ module MilkTea
         expression_uses_named_call?(statement.value, callees)
       when IR::Assignment
         expression_uses_named_call?(statement.target, callees) || expression_uses_named_call?(statement.value, callees)
-      when IR::BlockStmt, IR::WhileStmt
+      when IR::BlockStmt
         statement.body.any? { |inner| statement_uses_named_call?(inner, callees) }
+      when IR::WhileStmt
+        expression_uses_named_call?(statement.condition, callees) || statement.body.any? { |inner| statement_uses_named_call?(inner, callees) }
+      when IR::ForStmt
+        statement_uses_named_call?(statement.init, callees) ||
+          expression_uses_named_call?(statement.condition, callees) ||
+          statement.body.any? { |inner| statement_uses_named_call?(inner, callees) } ||
+          statement_uses_named_call?(statement.post, callees)
       when IR::IfStmt
         expression_uses_named_call?(statement.condition, callees) ||
           statement.then_body.any? { |inner| statement_uses_named_call?(inner, callees) } ||
@@ -791,97 +815,249 @@ module MilkTea
 
     def emit_statement(statement, level, function:, used_labels:)
       indent = INDENT * level
-
-      case statement
-      when IR::LocalDecl
-        if array_type?(statement.type) && !statement.value.is_a?(IR::ArrayLiteral) && !statement.value.is_a?(IR::ZeroInit)
-          lines = ["#{indent}#{c_declaration(statement.type, statement.c_name)};"]
-          lines << emit_array_copy_statement(statement.c_name, statement.value, indent)
-          lines
-        else
-          ["#{indent}#{c_declaration(statement.type, statement.c_name)} = #{emit_initializer(statement.value)};"]
-        end
-      when IR::Assignment
-        if array_type?(statement.target.type) && statement.operator == "="
-          [emit_array_copy_statement(emit_expression(statement.target), statement.value, indent)]
-        else
-          ["#{indent}#{emit_expression(statement.target)} #{statement.operator} #{emit_expression(statement.value)};"]
-        end
-      when IR::BlockStmt
-        if block_requires_scope?(statement.body)
-          lines = ["#{indent}{"]
+      aliases = checked_index_aliases_for_statement(statement)
+      alias_lines = emit_checked_index_alias_declarations(aliases, indent)
+      statement_lines = with_checked_index_aliases(aliases) do
+        case statement
+        when IR::LocalDecl
+          if array_type?(statement.type) && !statement.value.is_a?(IR::ArrayLiteral) && !statement.value.is_a?(IR::ZeroInit)
+            lines = ["#{indent}#{c_declaration(statement.type, statement.c_name)};"]
+            lines << emit_array_copy_statement(statement.c_name, statement.value, indent)
+            lines
+          else
+            ["#{indent}#{c_declaration(statement.type, statement.c_name)} = #{emit_initializer(statement.value)};"]
+          end
+        when IR::Assignment
+          if array_type?(statement.target.type) && statement.operator == "="
+            [emit_array_copy_statement(emit_expression(statement.target), statement.value, indent)]
+          else
+            ["#{indent}#{emit_expression(statement.target)} #{statement.operator} #{emit_expression(statement.value)};"]
+          end
+        when IR::BlockStmt
+          if block_requires_scope?(statement.body)
+            lines = ["#{indent}{"]
+            statement.body.each do |inner|
+              lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
+            end
+            lines << "#{indent}}"
+            lines
+          else
+            statement.body.flat_map { |inner| emit_statement(inner, level, function:, used_labels:) }
+          end
+        when IR::ExpressionStmt
+          ["#{indent}#{emit_expression(statement.expression)};"]
+        when IR::ReturnStmt
+          if statement.value
+            if array_type?(function.return_type)
+              emit_array_return(statement.value, function.return_type, indent)
+            else
+              ["#{indent}return #{emit_expression(statement.value)};"]
+            end
+          else
+            ["#{indent}return;"]
+          end
+        when IR::WhileStmt
+          lines = ["#{indent}while (#{emit_expression(statement.condition)}) {"]
           statement.body.each do |inner|
             lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
           end
           lines << "#{indent}}"
           lines
-        else
-          statement.body.flat_map { |inner| emit_statement(inner, level, function:, used_labels:) }
-        end
-      when IR::ExpressionStmt
-        ["#{indent}#{emit_expression(statement.expression)};"]
-      when IR::ReturnStmt
-        if statement.value
-          if array_type?(function.return_type)
-            emit_array_return(statement.value, function.return_type, indent)
-          else
-            ["#{indent}return #{emit_expression(statement.value)};"]
-          end
-        else
-          ["#{indent}return;"]
-        end
-      when IR::WhileStmt
-        lines = ["#{indent}while (#{emit_expression(statement.condition)}) {"]
-        statement.body.each do |inner|
-          lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
-        end
-        lines << "#{indent}}"
-        lines
-      when IR::GotoStmt
-        ["#{indent}goto #{statement.label};"]
-      when IR::LabelStmt
-        return [] unless used_labels.include?(statement.name)
-
-        ["#{indent}#{statement.name}:;"]
-      when IR::StaticAssert
-        ["#{indent}#{emit_static_assert(statement)}"]
-      when IR::IfStmt
-        case constant_boolean_value(statement.condition)
-        when true
-          return emit_statement(IR::BlockStmt.new(body: statement.then_body), level, function:, used_labels:)
-        when false
-          return [] unless statement.else_body && !statement.else_body.empty?
-
-          return emit_statement(IR::BlockStmt.new(body: statement.else_body), level, function:, used_labels:)
-        end
-
-        lines = ["#{indent}if (#{emit_expression(statement.condition)}) {"]
-        statement.then_body.each do |inner|
-          lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
-        end
-        if statement.else_body && !statement.else_body.empty?
-          lines << "#{indent}} else {"
-          statement.else_body.each do |inner|
+        when IR::ForStmt
+          lines = ["#{indent}for (#{emit_for_clause_statement(statement.init)}; #{emit_expression(statement.condition)}; #{emit_for_clause_statement(statement.post)}) {"]
+          statement.body.each do |inner|
             lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
           end
-        end
-        lines << "#{indent}}"
-        lines
-      when IR::SwitchStmt
-        lines = ["#{indent}switch (#{emit_expression(statement.expression)}) {"]
-        statement.cases.each do |switch_case|
-          lines << "#{indent}#{INDENT}case #{emit_expression(switch_case.value)}: {"
-          switch_case.body.each do |inner|
-            lines.concat(emit_statement(inner, level + 2, function:, used_labels:))
+          lines << "#{indent}}"
+          lines
+        when IR::BreakStmt
+          ["#{indent}break;"]
+        when IR::ContinueStmt
+          ["#{indent}continue;"]
+        when IR::GotoStmt
+          ["#{indent}goto #{statement.label};"]
+        when IR::LabelStmt
+          return [] unless used_labels.include?(statement.name)
+
+          ["#{indent}#{statement.name}:;"]
+        when IR::StaticAssert
+          ["#{indent}#{emit_static_assert(statement)}"]
+        when IR::IfStmt
+          case constant_boolean_value(statement.condition)
+          when true
+            return emit_statement(IR::BlockStmt.new(body: statement.then_body), level, function:, used_labels:)
+          when false
+            return [] unless statement.else_body && !statement.else_body.empty?
+
+            return emit_statement(IR::BlockStmt.new(body: statement.else_body), level, function:, used_labels:)
           end
-          lines << "#{indent}#{INDENT}#{INDENT}break;" unless body_terminates?(switch_case.body)
-          lines << "#{indent}#{INDENT}}"
+
+          lines = ["#{indent}if (#{emit_expression(statement.condition)}) {"]
+          statement.then_body.each do |inner|
+            lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
+          end
+          if statement.else_body && !statement.else_body.empty?
+            lines << "#{indent}} else {"
+            statement.else_body.each do |inner|
+              lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
+            end
+          end
+          lines << "#{indent}}"
+          lines
+        when IR::SwitchStmt
+          lines = ["#{indent}switch (#{emit_expression(statement.expression)}) {"]
+          statement.cases.each do |switch_case|
+            lines << "#{indent}#{INDENT}case #{emit_expression(switch_case.value)}: {"
+            switch_case.body.each do |inner|
+              lines.concat(emit_statement(inner, level + 2, function:, used_labels:))
+            end
+            lines << "#{indent}#{INDENT}#{INDENT}break;" unless body_terminates?(switch_case.body)
+            lines << "#{indent}#{INDENT}}"
+          end
+          lines << "#{indent}}"
+          lines
+        else
+          raise LoweringError, "unsupported IR statement #{statement.class.name}"
         end
-        lines << "#{indent}}"
-        lines
-      else
-        raise LoweringError, "unsupported IR statement #{statement.class.name}"
       end
+
+      alias_lines + statement_lines
+    end
+
+    def checked_index_aliases_for_statement(statement)
+      expressions = case statement
+                    when IR::LocalDecl
+                      [statement.value]
+                    when IR::Assignment
+                      [statement.target, statement.value]
+                    when IR::ExpressionStmt
+                      [statement.expression]
+                    when IR::ReturnStmt
+                      statement.value ? [statement.value] : []
+                    else
+                      []
+                    end
+
+      collect_checked_index_aliases(expressions.compact)
+    end
+
+    def collect_checked_index_aliases(expressions)
+      counts = Hash.new(0)
+      order = []
+      expressions.each do |expression|
+        collect_checked_index_alias_candidates(expression, counts, order)
+      end
+
+      order.each_with_object({}) do |expression, aliases|
+        next unless counts[expression] > 1
+        next unless hoistable_checked_index_alias?(expression)
+
+        aliases[expression] = fresh_checked_index_alias_name
+      end
+    end
+
+    def collect_checked_index_alias_candidates(expression, counts, order)
+      case expression
+      when IR::Member
+        collect_checked_index_alias_candidates(expression.receiver, counts, order)
+      when IR::Index
+        collect_checked_index_alias_candidates(expression.receiver, counts, order)
+        collect_checked_index_alias_candidates(expression.index, counts, order)
+      when IR::CheckedIndex, IR::CheckedSpanIndex
+        order << expression unless counts.key?(expression)
+        counts[expression] += 1
+        collect_checked_index_alias_candidates(expression.receiver, counts, order)
+        collect_checked_index_alias_candidates(expression.index, counts, order)
+      when IR::Call
+        collect_checked_index_alias_candidates(expression.callee, counts, order) unless expression.callee.is_a?(String)
+        expression.arguments.each { |argument| collect_checked_index_alias_candidates(argument, counts, order) }
+      when IR::Unary
+        collect_checked_index_alias_candidates(expression.operand, counts, order)
+      when IR::Binary
+        collect_checked_index_alias_candidates(expression.left, counts, order)
+        collect_checked_index_alias_candidates(expression.right, counts, order)
+      when IR::Conditional
+        collect_checked_index_alias_candidates(expression.condition, counts, order)
+        collect_checked_index_alias_candidates(expression.then_expression, counts, order)
+        collect_checked_index_alias_candidates(expression.else_expression, counts, order)
+      when IR::ReinterpretExpr, IR::AddressOf, IR::Cast
+        collect_checked_index_alias_candidates(expression.expression, counts, order)
+      when IR::AggregateLiteral
+        expression.fields.each { |field| collect_checked_index_alias_candidates(field.value, counts, order) }
+      when IR::ArrayLiteral
+        expression.elements.each { |element| collect_checked_index_alias_candidates(element, counts, order) }
+      end
+    end
+
+    def hoistable_checked_index_alias?(expression)
+      side_effect_free_expression?(expression.receiver) && side_effect_free_expression?(expression.index)
+    end
+
+    def side_effect_free_expression?(expression)
+      case expression
+      when IR::Name, IR::IntegerLiteral, IR::FloatLiteral, IR::StringLiteral, IR::BooleanLiteral, IR::NullLiteral, IR::ZeroInit, IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
+        true
+      when IR::Member
+        side_effect_free_expression?(expression.receiver)
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+        side_effect_free_expression?(expression.receiver) && side_effect_free_expression?(expression.index)
+      when IR::Unary
+        side_effect_free_expression?(expression.operand)
+      when IR::Binary
+        side_effect_free_expression?(expression.left) && side_effect_free_expression?(expression.right)
+      when IR::Conditional
+        side_effect_free_expression?(expression.condition) &&
+          side_effect_free_expression?(expression.then_expression) &&
+          side_effect_free_expression?(expression.else_expression)
+      when IR::ReinterpretExpr, IR::AddressOf, IR::Cast
+        side_effect_free_expression?(expression.expression)
+      when IR::AggregateLiteral
+        expression.fields.all? { |field| side_effect_free_expression?(field.value) }
+      when IR::ArrayLiteral
+        expression.elements.all? { |element| side_effect_free_expression?(element) }
+      when IR::Call
+        false
+      else
+        false
+      end
+    end
+
+    def emit_checked_index_alias_declarations(aliases, indent)
+      aliases.map do |expression, alias_name|
+        "#{indent}#{c_declaration(pointer_to(expression.type), alias_name)} = #{emit_checked_index_pointer(expression)};"
+      end
+    end
+
+    def emit_checked_index_pointer(expression)
+      case expression
+      when IR::CheckedIndex
+        "#{checked_array_index_helper_name(expression.receiver_type)}(&(#{emit_expression(expression.receiver)}), #{emit_expression(expression.index)})"
+      when IR::CheckedSpanIndex
+        "#{checked_span_index_helper_name(expression.receiver_type)}(#{emit_expression(expression.receiver)}, #{emit_expression(expression.index)})"
+      else
+        raise LoweringError, "unsupported checked index alias expression #{expression.class.name}"
+      end
+    end
+
+    def fresh_checked_index_alias_name
+      @checked_index_alias_id += 1
+      "__mt_checked_index_ptr_#{@checked_index_alias_id}"
+    end
+
+    def with_checked_index_aliases(aliases)
+      @checked_index_alias_stack << aliases
+      yield
+    ensure
+      @checked_index_alias_stack.pop
+    end
+
+    def checked_index_alias(expression)
+      @checked_index_alias_stack.reverse_each do |aliases|
+        alias_name = aliases[expression]
+        return alias_name if alias_name
+      end
+
+      nil
     end
 
     def body_terminates?(statements)
@@ -947,6 +1123,8 @@ module MilkTea
       case statement
       when IR::ReturnStmt
         true
+      when IR::BreakStmt, IR::ContinueStmt
+        true
       when IR::GotoStmt
         true
       when IR::BlockStmt
@@ -969,7 +1147,7 @@ module MilkTea
     def collect_used_labels_from_statements(statements, labels)
       statements.each do |statement|
         case statement
-        when IR::BlockStmt, IR::WhileStmt
+        when IR::BlockStmt, IR::WhileStmt, IR::ForStmt
           collect_used_labels_from_statements(statement.body, labels)
         when IR::IfStmt
           collect_used_labels_from_statements(statement.then_body, labels)
@@ -986,6 +1164,25 @@ module MilkTea
 
     def block_requires_scope?(statements)
       statements.any? { |statement| statement.is_a?(IR::LocalDecl) }
+    end
+
+    def emit_for_clause_statement(statement)
+      case statement
+      when IR::LocalDecl
+        raise LoweringError, "array for-loop init declarations are unsupported" if array_type?(statement.type)
+
+        "#{c_declaration(statement.type, statement.c_name)} = #{emit_initializer(statement.value)}"
+      when IR::Assignment
+        if array_type?(statement.target.type) && statement.operator == "="
+          raise LoweringError, "array for-loop assignment clauses are unsupported"
+        end
+
+        "#{emit_expression(statement.target)} #{statement.operator} #{emit_expression(statement.value)}"
+      when IR::ExpressionStmt
+        emit_expression(statement.expression)
+      else
+        raise LoweringError, "unsupported for-loop clause #{statement.class.name}"
+      end
     end
 
     def emit_static_assert(statement)
@@ -1008,9 +1205,17 @@ module MilkTea
       when IR::Index
         "#{wrap_index_receiver(expression.receiver)}[#{emit_expression(expression.index)}]"
       when IR::CheckedIndex
-        "(*#{checked_array_index_helper_name(expression.receiver_type)}(&(#{emit_expression(expression.receiver)}), #{emit_expression(expression.index)}))"
+        if (alias_name = checked_index_alias(expression))
+          "(*#{alias_name})"
+        else
+          "(*#{checked_array_index_helper_name(expression.receiver_type)}(&(#{emit_expression(expression.receiver)}), #{emit_expression(expression.index)}))"
+        end
       when IR::CheckedSpanIndex
-        "(*#{checked_span_index_helper_name(expression.receiver_type)}(#{emit_expression(expression.receiver)}, #{emit_expression(expression.index)}))"
+        if (alias_name = checked_index_alias(expression))
+          "(*#{alias_name})"
+        else
+          "(*#{checked_span_index_helper_name(expression.receiver_type)}(#{emit_expression(expression.receiver)}, #{emit_expression(expression.index)}))"
+        end
       when IR::Call
         call = emit_call_expression(expression)
         array_type?(expression.type) ? "#{call}.value" : call
@@ -1049,7 +1254,16 @@ module MilkTea
       when IR::ZeroInit
         emit_zero_expression(expression.type)
       when IR::AddressOf
-        "&#{wrap_expression(expression.expression)}"
+        case expression.expression
+        when IR::CheckedIndex
+          alias_name = checked_index_alias(expression.expression)
+          alias_name || "#{checked_array_index_helper_name(expression.expression.receiver_type)}(&(#{emit_expression(expression.expression.receiver)}), #{emit_expression(expression.expression.index)})"
+        when IR::CheckedSpanIndex
+          alias_name = checked_index_alias(expression.expression)
+          alias_name || "#{checked_span_index_helper_name(expression.expression.receiver_type)}(#{emit_expression(expression.expression.receiver)}, #{emit_expression(expression.expression.index)})"
+        else
+          "&#{wrap_expression(expression.expression)}"
+        end
       when IR::Cast
         if no_op_cast?(expression)
           emit_expression(expression.expression)
@@ -1195,6 +1409,11 @@ module MilkTea
         when IR::WhileStmt
           collect_reinterpret_helpers_from_expression(statement.condition, helpers, seen)
           collect_reinterpret_helpers_from_statements(statement.body, helpers, seen)
+        when IR::ForStmt
+          collect_reinterpret_helpers_from_statements([statement.init], helpers, seen)
+          collect_reinterpret_helpers_from_expression(statement.condition, helpers, seen)
+          collect_reinterpret_helpers_from_statements(statement.body, helpers, seen)
+          collect_reinterpret_helpers_from_statements([statement.post], helpers, seen)
         when IR::IfStmt
           collect_reinterpret_helpers_from_expression(statement.condition, helpers, seen)
           collect_reinterpret_helpers_from_statements(statement.then_body, helpers, seen)
@@ -1295,7 +1514,9 @@ module MilkTea
 
     def wrap_member_receiver(expression)
       case expression
-      when IR::Name, IR::Member, IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+      when IR::CheckedIndex, IR::CheckedSpanIndex
+        checked_index_alias(expression) || emit_expression(expression)
+      when IR::Name, IR::Member, IR::Index
         emit_expression(expression)
       else
         "(#{emit_expression(expression)})"
@@ -1303,13 +1524,21 @@ module MilkTea
     end
 
     def pointer_member_receiver?(expression)
+      return true if checked_index_alias(expression)
+
       (expression.is_a?(IR::Name) && expression.pointer) ||
         (expression.respond_to?(:type) && (raw_pointer_type?(expression.type) || ref_type?(expression.type)))
     end
 
     def wrap_index_receiver(expression)
       case expression
-      when IR::Name, IR::Member, IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::Call
+      when IR::CheckedIndex, IR::CheckedSpanIndex
+        if (alias_name = checked_index_alias(expression))
+          "(*#{alias_name})"
+        else
+          emit_expression(expression)
+        end
+      when IR::Name, IR::Member, IR::Index, IR::Call
         emit_expression(expression)
       else
         "(#{emit_expression(expression)})"
@@ -1441,8 +1670,16 @@ module MilkTea
         when IR::Assignment
           collect_checked_array_index_types_from_expression(statement.target, array_types)
           collect_checked_array_index_types_from_expression(statement.value, array_types)
-        when IR::BlockStmt, IR::WhileStmt
+        when IR::BlockStmt
           collect_checked_array_index_types_from_statements(statement.body, array_types)
+        when IR::WhileStmt
+          collect_checked_array_index_types_from_expression(statement.condition, array_types)
+          collect_checked_array_index_types_from_statements(statement.body, array_types)
+        when IR::ForStmt
+          collect_checked_array_index_types_from_statements([statement.init], array_types)
+          collect_checked_array_index_types_from_expression(statement.condition, array_types)
+          collect_checked_array_index_types_from_statements(statement.body, array_types)
+          collect_checked_array_index_types_from_statements([statement.post], array_types)
         when IR::IfStmt
           collect_checked_array_index_types_from_expression(statement.condition, array_types)
           collect_checked_array_index_types_from_statements(statement.then_body, array_types)
@@ -1507,8 +1744,16 @@ module MilkTea
         when IR::Assignment
           collect_checked_span_index_types_from_expression(statement.target, span_types)
           collect_checked_span_index_types_from_expression(statement.value, span_types)
-        when IR::BlockStmt, IR::WhileStmt
+        when IR::BlockStmt
           collect_checked_span_index_types_from_statements(statement.body, span_types)
+        when IR::WhileStmt
+          collect_checked_span_index_types_from_expression(statement.condition, span_types)
+          collect_checked_span_index_types_from_statements(statement.body, span_types)
+        when IR::ForStmt
+          collect_checked_span_index_types_from_statements([statement.init], span_types)
+          collect_checked_span_index_types_from_expression(statement.condition, span_types)
+          collect_checked_span_index_types_from_statements(statement.body, span_types)
+          collect_checked_span_index_types_from_statements([statement.post], span_types)
         when IR::IfStmt
           collect_checked_span_index_types_from_expression(statement.condition, span_types)
           collect_checked_span_index_types_from_statements(statement.then_body, span_types)
@@ -1685,7 +1930,13 @@ module MilkTea
         when IR::BlockStmt
           collect_result_types_from_statements(statement.body, result_types, visited)
         when IR::WhileStmt
+          collect_result_types_from_expression(statement.condition, result_types, visited)
           collect_result_types_from_statements(statement.body, result_types, visited)
+        when IR::ForStmt
+          collect_result_types_from_statements([statement.init], result_types, visited)
+          collect_result_types_from_expression(statement.condition, result_types, visited)
+          collect_result_types_from_statements(statement.body, result_types, visited)
+          collect_result_types_from_statements([statement.post], result_types, visited)
         when IR::IfStmt
           collect_result_types_from_statements(statement.then_body, result_types, visited)
           collect_result_types_from_statements(statement.else_body, result_types, visited) if statement.else_body
@@ -1855,8 +2106,16 @@ module MilkTea
         when IR::Assignment
           collect_str_builder_types_from_expression(statement.target, str_builder_types, visited)
           collect_str_builder_types_from_expression(statement.value, str_builder_types, visited)
-        when IR::BlockStmt, IR::WhileStmt
+        when IR::BlockStmt
           collect_str_builder_types_from_statements(statement.body, str_builder_types, visited)
+        when IR::WhileStmt
+          collect_str_builder_types_from_expression(statement.condition, str_builder_types, visited)
+          collect_str_builder_types_from_statements(statement.body, str_builder_types, visited)
+        when IR::ForStmt
+          collect_str_builder_types_from_statements([statement.init], str_builder_types, visited)
+          collect_str_builder_types_from_expression(statement.condition, str_builder_types, visited)
+          collect_str_builder_types_from_statements(statement.body, str_builder_types, visited)
+          collect_str_builder_types_from_statements([statement.post], str_builder_types, visited)
         when IR::IfStmt
           collect_str_builder_types_from_expression(statement.condition, str_builder_types, visited)
           collect_str_builder_types_from_statements(statement.then_body, str_builder_types, visited)
@@ -1956,7 +2215,13 @@ module MilkTea
         when IR::BlockStmt
           collect_generic_struct_types_from_statements(statement.body, generic_struct_types, visited)
         when IR::WhileStmt
+          collect_generic_struct_types_from_expression(statement.condition, generic_struct_types, visited)
           collect_generic_struct_types_from_statements(statement.body, generic_struct_types, visited)
+        when IR::ForStmt
+          collect_generic_struct_types_from_statements([statement.init], generic_struct_types, visited)
+          collect_generic_struct_types_from_expression(statement.condition, generic_struct_types, visited)
+          collect_generic_struct_types_from_statements(statement.body, generic_struct_types, visited)
+          collect_generic_struct_types_from_statements([statement.post], generic_struct_types, visited)
         when IR::IfStmt
           collect_generic_struct_types_from_statements(statement.then_body, generic_struct_types, visited)
           collect_generic_struct_types_from_statements(statement.else_body, generic_struct_types, visited) if statement.else_body
@@ -2112,6 +2377,11 @@ module MilkTea
         when IR::WhileStmt
           collect_span_types_from_expression(statement.condition, span_types, visited)
           collect_span_types_from_statements(statement.body, span_types, visited)
+        when IR::ForStmt
+          collect_span_types_from_statements([statement.init], span_types, visited)
+          collect_span_types_from_expression(statement.condition, span_types, visited)
+          collect_span_types_from_statements(statement.body, span_types, visited)
+          collect_span_types_from_statements([statement.post], span_types, visited)
         when IR::IfStmt
           collect_span_types_from_expression(statement.condition, span_types, visited)
           collect_span_types_from_statements(statement.then_body, span_types, visited)
