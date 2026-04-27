@@ -57,6 +57,19 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
     end
   end
 
+  def test_shader_examples_do_not_reintroduce_null_cstr_load_shader_helpers
+    offenses = shaders_example_paths.flat_map do |path|
+      source = File.read(path)
+      relative_path = path.delete_prefix(File.expand_path("..", __dir__) + "/")
+      entries = []
+      entries << "#{relative_path}: defines null_cstr helper" if source.match?(/^def null_cstr\(\) -> cstr:$/)
+      entries << "#{relative_path}: calls LoadShader(null_cstr(), ...)" if source.match?(/LoadShader\(null_cstr\(/)
+      entries
+    end
+
+    assert_empty offenses, offenses.join("\n")
+  end
+
   def test_audio_example_ports_check_and_lower
     audio_example_paths.each_with_index do |path, index|
       announce_port_progress("audio", index + 1, audio_example_paths.length, path)

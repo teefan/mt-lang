@@ -83,6 +83,16 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub foreign def text_input_box\[N\]\(bounds: Rectangle, title: str as cstr, message: str as cstr, buttons: str as cstr, text: str_builder\[N\] as ptr\[char\], inout secret_view_active: bool\) -> i32 = c\.GuiTextInputBox\(bounds, title, message, buttons, text, cast\[i32\]\(text_public\.capacity\(\) \+ 1\), secret_view_active\)$/, source)
   end
 
+  def test_imported_bindings_outside_raylib_and_rlgl_do_not_expose_raw_ptr_void
+    offending_bindings = MilkTea::ImportedBindings.default_registry.reject do |binding|
+      %w[raylib rlgl].include?(binding.name)
+    end.filter_map do |binding|
+      binding.name if File.read(binding.binding_path).match?(/\bptr\[void\]\b/)
+    end
+
+    assert_empty offending_bindings, "unexpected raw ptr[void] surfaces in imported bindings: #{offending_bindings.join(", ")}"
+  end
+
   def test_generate_supports_imports_type_alias_overrides_and_prefix_stripping
     Dir.mktmpdir("milk-tea-imported-binding-overrides") do |dir|
       raw_path = File.join(dir, "std", "c", "sample.mt")
