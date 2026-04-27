@@ -83,7 +83,7 @@ module MilkTea
         lines << ""
       end
 
-      function_declarations = emit_function_declarations(@program.functions)
+      function_declarations = emit_function_declarations(emitted_functions)
       unless function_declarations.empty?
         lines.concat(function_declarations)
         lines << ""
@@ -117,7 +117,7 @@ module MilkTea
         lines << ""
       end
 
-      @program.functions.each do |function|
+      emitted_functions.each do |function|
         lines.concat(emit_function(function))
         lines << ""
       end
@@ -147,11 +147,115 @@ module MilkTea
           collect_referenced_constant_names_from_expression(statement.message, constants_by_name, referenced_names)
         end
 
-        @program.functions.each do |function|
+        emitted_functions.each do |function|
           collect_referenced_constant_names_from_statements(function.body, constants_by_name, referenced_names)
         end
 
         @program.constants.select { |constant| referenced_names[constant.c_name] }
+      end
+    end
+
+    def emitted_functions
+      @emitted_functions ||= begin
+        functions_by_name = @program.functions.each_with_object({}) do |function, result|
+          result[function.c_name] = function
+        end
+
+        seeds = @program.functions.select(&:entry_point)
+        if seeds.empty?
+          root_module_prefix = "#{@program.module_name.tr('.', '_')}_"
+          seeds = @program.functions.select { |function| function.c_name.start_with?(root_module_prefix) }
+        end
+
+        reachable_names = {}
+        worklist = seeds.dup
+
+        until worklist.empty?
+          function = worklist.shift
+          next if reachable_names[function.c_name]
+
+          reachable_names[function.c_name] = true
+          collect_called_function_names_from_statements(function.body, functions_by_name, reachable_names, worklist)
+        end
+
+        @program.functions.select { |function| reachable_names[function.c_name] }
+      end
+    end
+
+    def collect_called_function_names_from_statements(statements, functions_by_name, reachable_names, worklist)
+      statements.each do |statement|
+        case statement
+        when IR::LocalDecl
+          collect_called_function_names_from_expression(statement.value, functions_by_name, reachable_names, worklist)
+        when IR::Assignment
+          collect_called_function_names_from_expression(statement.target, functions_by_name, reachable_names, worklist)
+          collect_called_function_names_from_expression(statement.value, functions_by_name, reachable_names, worklist)
+        when IR::BlockStmt, IR::WhileStmt
+          collect_called_function_names_from_statements(statement.body, functions_by_name, reachable_names, worklist)
+          collect_called_function_names_from_expression(statement.condition, functions_by_name, reachable_names, worklist) if statement.is_a?(IR::WhileStmt)
+        when IR::IfStmt
+          collect_called_function_names_from_expression(statement.condition, functions_by_name, reachable_names, worklist)
+          collect_called_function_names_from_statements(statement.then_body, functions_by_name, reachable_names, worklist)
+          collect_called_function_names_from_statements(statement.else_body, functions_by_name, reachable_names, worklist) if statement.else_body
+        when IR::SwitchStmt
+          collect_called_function_names_from_expression(statement.expression, functions_by_name, reachable_names, worklist)
+          statement.cases.each do |switch_case|
+            collect_called_function_names_from_statements(switch_case.body, functions_by_name, reachable_names, worklist)
+          end
+        when IR::StaticAssert
+          collect_called_function_names_from_expression(statement.condition, functions_by_name, reachable_names, worklist)
+          collect_called_function_names_from_expression(statement.message, functions_by_name, reachable_names, worklist)
+        when IR::ReturnStmt
+          collect_called_function_names_from_expression(statement.value, functions_by_name, reachable_names, worklist) if statement.value
+        when IR::ExpressionStmt
+          collect_called_function_names_from_expression(statement.expression, functions_by_name, reachable_names, worklist)
+        end
+      end
+    end
+
+    def collect_called_function_names_from_expression(expression, functions_by_name, reachable_names, worklist)
+      case expression
+      when IR::Name
+        callee = functions_by_name[expression.name]
+        if callee && !reachable_names[callee.c_name]
+          worklist << callee
+        end
+      when IR::Member
+        collect_called_function_names_from_expression(expression.receiver, functions_by_name, reachable_names, worklist)
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+        collect_called_function_names_from_expression(expression.receiver, functions_by_name, reachable_names, worklist)
+        collect_called_function_names_from_expression(expression.index, functions_by_name, reachable_names, worklist)
+      when IR::Call
+        if expression.callee.is_a?(String)
+          callee = functions_by_name[expression.callee]
+          if callee && !reachable_names[callee.c_name]
+            worklist << callee
+          end
+        else
+          collect_called_function_names_from_expression(expression.callee, functions_by_name, reachable_names, worklist)
+        end
+        expression.arguments.each do |argument|
+          collect_called_function_names_from_expression(argument, functions_by_name, reachable_names, worklist)
+        end
+      when IR::Unary
+        collect_called_function_names_from_expression(expression.operand, functions_by_name, reachable_names, worklist)
+      when IR::Binary
+        collect_called_function_names_from_expression(expression.left, functions_by_name, reachable_names, worklist)
+        collect_called_function_names_from_expression(expression.right, functions_by_name, reachable_names, worklist)
+      when IR::Conditional
+        collect_called_function_names_from_expression(expression.condition, functions_by_name, reachable_names, worklist)
+        collect_called_function_names_from_expression(expression.then_expression, functions_by_name, reachable_names, worklist)
+        collect_called_function_names_from_expression(expression.else_expression, functions_by_name, reachable_names, worklist)
+      when IR::ReinterpretExpr, IR::AddressOf, IR::Cast
+        collect_called_function_names_from_expression(expression.expression, functions_by_name, reachable_names, worklist)
+      when IR::AggregateLiteral
+        expression.fields.each do |field|
+          collect_called_function_names_from_expression(field.value, functions_by_name, reachable_names, worklist)
+        end
+      when IR::ArrayLiteral
+        expression.elements.each do |element|
+          collect_called_function_names_from_expression(element, functions_by_name, reachable_names, worklist)
+        end
       end
     end
 
@@ -227,23 +331,23 @@ module MilkTea
 
     def uses_mt_panic_helper?
       collect_checked_array_index_types.any? || collect_checked_span_index_types.any? ||
-        @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_panic mt_char_array_len mt_char_array_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_assign mt_str_builder_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp]) }
+        emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_panic mt_char_array_len mt_char_array_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_assign mt_str_builder_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp]) }
     end
 
     def uses_mt_panic_str_helper?
-      @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_panic_str]) }
+      emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_panic_str]) }
     end
 
     def uses_foreign_temp_cstr_helpers?
-      @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_foreign_str_to_cstr_temp mt_free_foreign_cstr_temp mt_foreign_strs_to_cstrs_temp mt_free_foreign_cstrs_temp]) }
+      emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_foreign_str_to_cstr_temp mt_free_foreign_cstr_temp mt_foreign_strs_to_cstrs_temp mt_free_foreign_cstrs_temp]) }
     end
 
     def uses_text_buffer_helpers?
-      @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_char_array_len mt_char_array_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_clear mt_str_builder_assign mt_str_builder_append mt_str_builder_prepare_write]) }
+      emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_char_array_len mt_char_array_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_clear mt_str_builder_assign mt_str_builder_append mt_str_builder_prepare_write]) }
     end
 
     def uses_str_builder_helpers?
-      @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_clear mt_str_builder_assign mt_str_builder_append mt_str_builder_prepare_write]) }
+      emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_clear mt_str_builder_assign mt_str_builder_append mt_str_builder_prepare_write]) }
     end
 
     def function_uses_named_call?(function, callees)
@@ -332,7 +436,7 @@ module MilkTea
     def emit_foreign_temp_cstr_helpers
       lines = []
 
-      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_foreign_str_to_cstr_temp]) }
+      if emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_foreign_str_to_cstr_temp]) }
         lines.concat([
           "static const char* mt_foreign_str_to_cstr_temp(mt_str value) {",
           "#{INDENT}char* data = (char*)malloc(value.len + 1);",
@@ -348,7 +452,7 @@ module MilkTea
         ])
       end
 
-      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_free_foreign_cstr_temp]) }
+      if emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_free_foreign_cstr_temp]) }
         lines << "" unless lines.empty?
         lines.concat([
           "static void mt_free_foreign_cstr_temp(const char* value) {",
@@ -357,7 +461,7 @@ module MilkTea
         ])
       end
 
-      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_foreign_strs_to_cstrs_temp]) }
+      if emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_foreign_strs_to_cstrs_temp]) }
         lines << "" unless lines.empty?
         lines.concat([
           "static void mt_foreign_strs_to_cstrs_temp(mt_span_str values, char*** items_out, char** data_out, uintptr_t* len_out) {",
@@ -401,7 +505,7 @@ module MilkTea
         ])
       end
 
-      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_free_foreign_cstrs_temp]) }
+      if emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_free_foreign_cstrs_temp]) }
         lines << "" unless lines.empty?
         lines.concat([
           "static void mt_free_foreign_cstrs_temp(char** items, char* data) {",
@@ -491,7 +595,7 @@ module MilkTea
     def emit_str_builder_helpers
       lines = []
 
-      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_append]) }
+      if emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_append]) }
         lines.concat([
           "static uintptr_t mt_str_builder_len(char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {",
           "#{INDENT}if (*dirty) {",
@@ -509,7 +613,7 @@ module MilkTea
         ])
       end
 
-      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_as_cstr]) }
+      if emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_as_cstr]) }
         lines << "" unless lines.empty?
         lines.concat([
           "static const char* mt_str_builder_as_cstr(char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {",
@@ -519,7 +623,7 @@ module MilkTea
         ])
       end
 
-      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_clear]) }
+      if emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_clear]) }
         lines << "" unless lines.empty?
         lines.concat([
           "static void mt_str_builder_clear(char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {",
@@ -530,7 +634,7 @@ module MilkTea
         ])
       end
 
-      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_assign]) }
+      if emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_assign]) }
         lines << "" unless lines.empty?
         lines.concat([
           "static void mt_str_builder_assign(mt_str value, char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {",
@@ -544,7 +648,7 @@ module MilkTea
         ])
       end
 
-      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_append]) }
+      if emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_append]) }
         lines << "" unless lines.empty?
         lines.concat([
           "static void mt_str_builder_append(mt_str value, char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {",
@@ -559,7 +663,7 @@ module MilkTea
         ])
       end
 
-      if @program.functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_prepare_write]) }
+      if emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_prepare_write]) }
         lines << "" unless lines.empty?
         lines.concat([
           "static char* mt_str_builder_prepare_write(char* data, uintptr_t cap, bool* dirty) {",
@@ -1071,7 +1175,7 @@ module MilkTea
       helpers = []
       seen = {}
 
-      @program.functions.each do |function|
+      emitted_functions.each do |function|
         collect_reinterpret_helpers_from_statements(function.body, helpers, seen)
       end
 
@@ -1310,12 +1414,12 @@ module MilkTea
     end
 
     def collect_array_return_types
-      @program.functions.map(&:return_type).select { |type| array_type?(type) }.uniq
+      emitted_functions.map(&:return_type).select { |type| array_type?(type) }.uniq
     end
 
     def collect_checked_array_index_types
       array_types = []
-      @program.functions.each do |function|
+      emitted_functions.each do |function|
         collect_checked_array_index_types_from_statements(function.body, array_types)
       end
       array_types.uniq
@@ -1323,7 +1427,7 @@ module MilkTea
 
     def collect_checked_span_index_types
       span_types = []
-      @program.functions.each do |function|
+      emitted_functions.each do |function|
         collect_checked_span_index_types_from_statements(function.body, span_types)
       end
       span_types.uniq
@@ -1481,7 +1585,7 @@ module MilkTea
         end
       end
 
-      @program.functions.each do |function|
+      emitted_functions.each do |function|
         collect_span_type(function.return_type, span_types, visited)
         function.params.each do |param|
           collect_span_type(param.type, span_types, visited)
@@ -1557,7 +1661,7 @@ module MilkTea
         end
       end
 
-      @program.functions.each do |function|
+      emitted_functions.each do |function|
         collect_result_type(function.return_type, result_types, visited)
         function.params.each do |param|
           collect_result_type(param.type, result_types, visited)
@@ -1690,7 +1794,7 @@ module MilkTea
         end
       end
 
-      @program.functions.each do |function|
+      emitted_functions.each do |function|
         collect_generic_struct_type(function.return_type, generic_struct_types, visited)
         function.params.each do |param|
           collect_generic_struct_type(param.type, generic_struct_types, visited)
@@ -1726,7 +1830,7 @@ module MilkTea
         end
       end
 
-      @program.functions.each do |function|
+      emitted_functions.each do |function|
         collect_str_builder_type(function.return_type, str_builder_types, visited)
         function.params.each do |param|
           collect_str_builder_type(param.type, str_builder_types, visited)

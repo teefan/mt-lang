@@ -92,7 +92,8 @@ def main() -> i32:
             unsafe:
                 let text_input_len = cast[i32](rl.TextLength(cast[cstr](text_input_ptr)))
                 if base64_text != null:
-                    rl.MemFree(cast[ptr[void]](base64_text))
+                    let owned_base64_text = cast[ptr[char]](base64_text)
+                    rl.MemFree(cast[ptr[void]](owned_base64_text))
 
                 let input_bytes = cast[ptr[u8]](text_input_ptr)
                 base64_text = rl.EncodeDataBase64(input_bytes, text_input_len, raw(addr(base64_text_size)))
@@ -150,6 +151,7 @@ def main() -> i32:
 
     if base64_text != null:
         unsafe:
-            rl.MemFree(cast[ptr[void]](base64_text))
+            let owned_base64_text = cast[ptr[char]](base64_text)
+            rl.MemFree(cast[ptr[void]](owned_base64_text))
 
     return 0
