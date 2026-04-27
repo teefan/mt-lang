@@ -306,6 +306,8 @@ extern module std.c.rlgl:
 
     extern def rlEnablePointMode() -> void
 
+    extern def rlDisablePointMode() -> void
+
     extern def rlDisableWireMode() -> void
 
     extern def rlSetLineWidth(width: f32) -> void
