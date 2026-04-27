@@ -2331,6 +2331,27 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_addr_of_fixed_array_element_through_pointer_deref
+    source = <<~MT
+      module demo.ptr_arrays
+
+      struct Palette:
+          colors: array[u32, 4]
+
+      def main() -> u32:
+          var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))
+          unsafe:
+              let base = raw(addr(holder))
+              let first = raw(addr(deref(base).colors[0]))
+              deref(first) = 9
+          return holder.colors[0]
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_rejects_pointer_indexing_outside_unsafe
     source = <<~MT
       module demo.bad

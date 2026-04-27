@@ -1542,6 +1542,31 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/\.colors = \{ 5, 6, 7, 8 \}/, generated)
   end
 
+  def test_generate_c_for_addr_of_fixed_array_element_through_pointer_deref
+    source = [
+      "module demo.ptr_array_addr",
+      "",
+      "struct Palette:",
+      "    colors: array[u32, 4]",
+      "",
+      "def main() -> u32:",
+      "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
+      "    unsafe:",
+      "        let base = raw(addr(holder))",
+      "        let first = raw(addr(deref(base).colors[0]))",
+      "        deref(first) = 9",
+      "    return holder.colors[0]",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/demo_ptr_array_addr_Palette \*base = &holder;/, generated)
+    assert_match(/uint32_t \*first = &\(\(\*mt_checked_index_array_u32_4\(&\(\(\*base\)\.colors\), 0\)\)\);/, generated)
+    assert_match(/\*first = 9;/, generated)
+    assert_match(/return \(\*mt_checked_index_array_u32_4\(&\(holder\.colors\), 0\)\);/, generated)
+  end
+
   def test_generate_c_for_safe_array_indexing_and_assignment
     source = [
       "module demo.array_index_surface",

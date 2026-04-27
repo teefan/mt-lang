@@ -3177,10 +3177,15 @@ module MilkTea
         when AST::MemberAccess, AST::IndexAccess
           safe_reference_source_expression?(expression.receiver, scopes:)
         when AST::Call
-          return false unless value_call?(expression)
           return false unless expression.arguments.length == 1 && expression.arguments.first.name.nil?
 
-          ref_type?(infer_expression(expression.arguments.first.value, scopes:))
+          if value_call?(expression)
+            ref_type?(infer_expression(expression.arguments.first.value, scopes:))
+          elsif deref_call?(expression)
+            pointer_type?(infer_expression(expression.arguments.first.value, scopes:))
+          else
+            false
+          end
         else
           false
         end
