@@ -633,11 +633,11 @@ module MilkTea
           when AST::BreakStmt
             raise LoweringError, "break must be inside a loop" unless loop_flow
 
-            lowered.concat(lower_loop_exit(loop_flow[:break_label], local_defers, loop_flow[:break_defers]))
+            lowered.concat(lower_loop_exit(loop_flow[:break_target], local_defers, loop_flow[:break_defers]))
           when AST::ContinueStmt
             raise LoweringError, "continue must be inside a loop" unless loop_flow
 
-            lowered.concat(lower_loop_exit(loop_flow[:continue_label], local_defers, loop_flow[:continue_defers]))
+            lowered.concat(lower_loop_exit(loop_flow[:continue_target], local_defers, loop_flow[:continue_defers]))
           when AST::ReturnStmt
             raise LoweringError, "return is not allowed inside defer blocks" unless allow_return
 
@@ -718,38 +718,43 @@ module MilkTea
           env: env_with_refinements(duplicate_env(env), flow_refinements(statement.condition, truthy: true, env: env)),
           active_defers:,
           return_type:,
-          loop_flow: loop_flow(break_label:, continue_label:),
+          loop_flow: loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label)),
           allow_return:,
         )
-        body << IR::LabelStmt.new(name: continue_label)
+        body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
 
         condition = lower_expression(prepared_condition, env:, expected_type: @types.fetch("bool"))
 
         if condition_setup.empty?
-          return IR::BlockStmt.new(body: [
+          statements = [
             IR::WhileStmt.new(
               condition:,
               body:,
             ),
-            IR::LabelStmt.new(name: break_label),
-          ])
+          ]
+          statements << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
+          return IR::BlockStmt.new(body: statements)
         end
 
-        IR::BlockStmt.new(body: [
+        loop_body = [
+          *condition_setup,
+          IR::IfStmt.new(
+            condition: IR::Unary.new(operator: "not", operand: condition, type: @types.fetch("bool")),
+            then_body: [loop_exit_statement(loop_exit_break(break_label), local_defers: [], outer_defers: [])],
+            else_body: nil,
+          ),
+          *body,
+        ]
+
+        statements = [
           IR::WhileStmt.new(
             condition: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")),
-            body: [
-              *condition_setup,
-              IR::IfStmt.new(
-                condition: IR::Unary.new(operator: "not", operand: condition, type: @types.fetch("bool")),
-                then_body: [IR::GotoStmt.new(label: break_label)],
-                else_body: nil,
-              ),
-              *body,
-            ],
+            body: loop_body,
           ),
-          IR::LabelStmt.new(name: break_label),
-        ])
+        ]
+        statements << IR::LabelStmt.new(name: break_label) if contains_label_target?(loop_body, break_label)
+
+        IR::BlockStmt.new(body: statements)
       end
 
       def lower_range_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
@@ -763,7 +768,12 @@ module MilkTea
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
         index_ref = IR::Name.new(name: index_c_name, type: loop_type, pointer: false)
-        stop_ref = IR::Name.new(name: stop_c_name, type: loop_type, pointer: false)
+        inline_stop = stop_setup.empty? && compile_time_numeric_const_expression?(prepared_stop)
+        stop_value = if inline_stop
+                       lower_expression(prepared_stop, env:, expected_type: loop_type)
+                     else
+                       IR::Name.new(name: stop_c_name, type: loop_type, pointer: false)
+                     end
 
         while_env = duplicate_env(env)
         current_actual_scope(while_env[:scopes])[statement.name] = local_binding(type: loop_type, c_name: c_local_name(statement.name), mutable: false, pointer: false)
@@ -777,28 +787,37 @@ module MilkTea
             env: while_env,
             active_defers:,
             return_type:,
-            loop_flow: loop_flow(break_label:, continue_label:),
+            loop_flow: loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label)),
             allow_return:,
           ),
         )
-        body << IR::LabelStmt.new(name: continue_label)
-        body << IR::Assignment.new(
-          target: index_ref,
-          operator: "+=",
-          value: IR::IntegerLiteral.new(value: 1, type: loop_type),
+        body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
+
+        for_statement = IR::ForStmt.new(
+          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: loop_type, value: lower_expression(prepared_start, env:, expected_type: loop_type)),
+          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
+          post: IR::Assignment.new(
+            target: index_ref,
+            operator: "+=",
+            value: IR::IntegerLiteral.new(value: 1, type: loop_type),
+          ),
+          body:,
         )
 
-        IR::BlockStmt.new(body: [
+        statements = [
           *start_setup,
-          IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: loop_type, value: lower_expression(prepared_start, env:, expected_type: loop_type)),
           *stop_setup,
-          IR::LocalDecl.new(name: stop_c_name, c_name: stop_c_name, type: loop_type, value: lower_expression(prepared_stop, env:, expected_type: loop_type)),
-          IR::WhileStmt.new(
-            condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_ref, type: @types.fetch("bool")),
-            body:,
-          ),
-          IR::LabelStmt.new(name: break_label),
-        ])
+          for_statement,
+        ]
+        unless inline_stop
+          statements.insert(
+            statements.length - 1,
+            IR::LocalDecl.new(name: stop_c_name, c_name: stop_c_name, type: loop_type, value: lower_expression(prepared_stop, env:, expected_type: loop_type)),
+          )
+        end
+        statements << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
+
+        IR::BlockStmt.new(body: statements)
       end
 
       def lower_collection_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
@@ -839,27 +858,31 @@ module MilkTea
             env: while_env,
             active_defers:,
             return_type:,
-            loop_flow: loop_flow(break_label:, continue_label:),
+            loop_flow: loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label)),
             allow_return:,
           ),
         )
-        body << IR::LabelStmt.new(name: continue_label)
-        body << IR::Assignment.new(
-          target: index_ref,
-          operator: "+=",
-          value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("usize")),
+        body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
+
+        for_statement = IR::ForStmt.new(
+          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("usize"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize"))),
+          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
+          post: IR::Assignment.new(
+            target: index_ref,
+            operator: "+=",
+            value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("usize")),
+          ),
+          body:,
         )
 
-        IR::BlockStmt.new(body: [
+        statements = [
           *iterable_setup,
           IR::LocalDecl.new(name: iterable_c_name, c_name: iterable_c_name, type: iterable_type, value: lower_expression(prepared_iterable, env:, expected_type: iterable_type)),
-          IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("usize"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize"))),
-          IR::WhileStmt.new(
-            condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
-            body:,
-          ),
-          IR::LabelStmt.new(name: break_label),
-        ])
+          for_statement,
+        ]
+        statements << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
+
+        IR::BlockStmt.new(body: statements)
       end
 
       def lower_assignment_target(expression, env:)
@@ -3317,6 +3340,65 @@ module MilkTea
         binding.const_value
       end
 
+      def compile_time_numeric_const_expression?(expression)
+        value = compile_time_const_value(expression)
+        value.is_a?(Integer) || value.is_a?(Float)
+      end
+
+      def compile_time_const_value(expression)
+        case expression
+        when AST::IntegerLiteral, AST::FloatLiteral, AST::BooleanLiteral
+          expression.value
+        when AST::Identifier
+          resolve_current_module_const_value(expression.name)
+        when AST::MemberAccess
+          return unless expression.receiver.is_a?(AST::Identifier)
+
+          resolve_imported_module_const_value(expression.receiver.name, expression.member)
+        when AST::UnaryOp
+          operand = compile_time_const_value(expression.operand)
+          return if operand.nil?
+
+          case expression.operator
+          when "+"
+            operand
+          when "-"
+            -operand
+          when "not"
+            !operand
+          end
+        when AST::BinaryOp
+          left = compile_time_const_value(expression.left)
+          right = compile_time_const_value(expression.right)
+          return if left.nil? || right.nil?
+
+          case expression.operator
+          when "+"
+            left + right
+          when "-"
+            left - right
+          when "*"
+            left * right
+          when "/"
+            left / right
+          when "%"
+            left % right
+          when "<<"
+            left << right
+          when ">>"
+            left >> right
+          when "&"
+            left & right
+          when "|"
+            left | right
+          when "^"
+            left ^ right
+          else
+            nil
+          end
+        end
+      end
+
       def specialize_function_binding(binding, arguments, env)
         return binding if binding.type_params.empty?
         raise LoweringError, "generic function #{binding.name} must be called" unless arguments
@@ -4127,10 +4209,10 @@ module MilkTea
         @null_type ||= Types::Null.new
       end
 
-      def loop_flow(break_label:, continue_label:, break_defers: [], continue_defers: [])
+      def loop_flow(break_target:, continue_target:, break_defers: [], continue_defers: [])
         {
-          break_label:,
-          continue_label:,
+          break_target:,
+          continue_target:,
           break_defers:,
           continue_defers:,
         }
@@ -4140,8 +4222,8 @@ module MilkTea
         return nil unless current_loop_flow
 
         loop_flow(
-          break_label: current_loop_flow[:break_label],
-          continue_label: current_loop_flow[:continue_label],
+          break_target: current_loop_flow[:break_target],
+          continue_target: current_loop_flow[:continue_target],
           break_defers: current_loop_flow[:break_defers] + local_defers,
           continue_defers: current_loop_flow[:continue_defers] + local_defers,
         )
@@ -4151,8 +4233,58 @@ module MilkTea
         local_defers.reverse.flat_map(&:itself) + outer_defers.reverse.flat_map(&:itself)
       end
 
-      def lower_loop_exit(label, local_defers, outer_defers)
-        cleanup_statements(local_defers, outer_defers) + [IR::GotoStmt.new(label:)]
+      def loop_exit_break(label = nil)
+        { kind: :break, label: }
+      end
+
+      def loop_exit_continue(label = nil)
+        { kind: :continue, label: }
+      end
+
+      def loop_exit_label(label)
+        { kind: :label, label: }
+      end
+
+      def loop_exit_statement(target, local_defers:, outer_defers:)
+        case target[:kind]
+        when :break
+          IR::BreakStmt.new
+        when :continue
+          IR::ContinueStmt.new
+        when :label
+          IR::GotoStmt.new(label: target[:label])
+        else
+          raise LoweringError, "unsupported loop exit target #{target.inspect}"
+        end
+      end
+
+      def lower_loop_exit(target, local_defers, outer_defers)
+        cleanup = cleanup_statements(local_defers, outer_defers)
+        if cleanup.empty?
+          [loop_exit_statement(target, local_defers:, outer_defers:)]
+        else
+          label = target[:label]
+          raise LoweringError, "structured loop exits with cleanup are unsupported" unless label
+
+          cleanup + [IR::GotoStmt.new(label:)]
+        end
+      end
+
+      def contains_label_target?(statements, label)
+        statements.any? do |statement|
+          case statement
+          when IR::GotoStmt
+            statement.label == label
+          when IR::BlockStmt, IR::WhileStmt, IR::ForStmt
+            contains_label_target?(statement.body, label)
+          when IR::IfStmt
+            contains_label_target?(statement.then_body, label) || (statement.else_body && contains_label_target?(statement.else_body, label))
+          when IR::SwitchStmt
+            statement.cases.any? { |switch_case| contains_label_target?(switch_case.body, label) }
+          else
+            false
+          end
+        end
       end
 
       def lower_defer_cleanup_expression(expression, env:)

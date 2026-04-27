@@ -1188,10 +1188,31 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/while \(__mt_for_index_\d+ < 4\)/, generated)
+    assert_match(/for \(uintptr_t __mt_for_index_\d+ = 0; __mt_for_index_\d+ < 4; __mt_for_index_\d+ \+= 1\)/, generated)
     assert_match(/int32_t item = __mt_for_items_\d+\[__mt_for_index_\d+\];/, generated)
-    assert_match(/while \(__mt_for_index_\d+ < __mt_for_stop_\d+\)/, generated)
+    assert_match(/for \(int32_t __mt_for_index_\d+ = 0; __mt_for_index_\d+ < 4; __mt_for_index_\d+ \+= 1\)/, generated)
     assert_match(/int32_t i = __mt_for_index_\d+;/, generated)
+    refute_match(/int32_t __mt_for_stop_\d+ = 4;/, generated)
+  end
+
+  def test_generate_c_preserves_hoisted_stop_for_non_constant_range_bound
+    source = [
+      "module demo.for_stop_surface",
+      "",
+      "def main() -> i32:",
+      "    var stop = 4",
+      "    var total = 0",
+      "    for i in range(0, stop):",
+      "        stop += 1",
+      "        total += i",
+      "    return total + stop",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/int32_t __mt_for_stop_\d+ = stop;/, generated)
+    assert_match(/for \(int32_t __mt_for_index_\d+ = 0; __mt_for_index_\d+ < __mt_for_stop_\d+; __mt_for_index_\d+ \+= 1\)/, generated)
   end
 
   def test_generate_c_for_break_and_continue_inside_match_with_for_loop
@@ -1224,11 +1245,11 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
+    assert_match(/for \(uintptr_t __mt_for_index_\d+ = 0; __mt_for_index_\d+ < 4; __mt_for_index_\d+ \+= 1\)/, generated)
     assert_match(/goto __mt_loop_continue_\d+;/, generated)
     assert_match(/goto __mt_loop_break_\d+;/, generated)
     assert_match(/__mt_loop_continue_\d+:;/, generated)
     assert_match(/__mt_loop_break_\d+:;/, generated)
-    assert_match(/__mt_for_index_\d+ \+= 1;/, generated)
   end
 
   def test_generate_c_omits_unused_loop_labels
@@ -1251,6 +1272,73 @@ class MilkTeaCodegenTest < Minitest::Test
     refute_match(/__mt_loop_continue_\d+:;/, generated)
     refute_match(/__mt_loop_break_\d+:;/, generated)
     refute_match(/goto __mt_loop_(continue|break)_\d+;/, generated)
+  end
+
+  def test_generate_c_uses_structured_break_for_simple_loop_exit
+    source = [
+      "module demo.structured_break_surface",
+      "",
+      "def main() -> i32:",
+      "    var total = 0",
+      "    while total < 10:",
+      "        total += 1",
+      "        if total == 3:",
+      "            break",
+      "    return total",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/while \(total < 10\) \{/, generated)
+    assert_match(/if \(total == 3\) \{\n      break;/, generated)
+    refute_match(/goto __mt_loop_break_\d+;/, generated)
+    refute_match(/__mt_loop_break_\d+:;/, generated)
+  end
+
+  def test_generate_c_uses_structured_continue_for_simple_while_loop
+    source = [
+      "module demo.structured_continue_surface",
+      "",
+      "def main() -> i32:",
+      "    var total = 0",
+      "    var i = 0",
+      "    while i < 5:",
+      "        i += 1",
+      "        if i == 2:",
+      "            continue",
+      "        total += i",
+      "    return total",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/if \(i == 2\) \{\n      continue;/, generated)
+    refute_match(/goto __mt_loop_continue_\d+;/, generated)
+    refute_match(/__mt_loop_continue_\d+:;/, generated)
+  end
+
+  def test_generate_c_uses_structured_continue_for_simple_for_loop
+    source = [
+      "module demo.structured_for_continue_surface",
+      "",
+      "def main() -> i32:",
+      "    var total = 0",
+      "    for i in range(0, 5):",
+      "        if i == 2:",
+      "            continue",
+      "        total += i",
+      "    return total",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/for \(int32_t __mt_for_index_\d+ = 0; __mt_for_index_\d+ < 5; __mt_for_index_\d+ \+= 1\) \{/, generated)
+    assert_match(/if \(i == 2\) \{\n      continue;/, generated)
+    refute_match(/goto __mt_loop_continue_\d+;/, generated)
+    refute_match(/__mt_loop_continue_\d+:;/, generated)
   end
 
   def test_generate_c_for_layout_queries_and_static_assert
@@ -1562,9 +1650,43 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_source(source)
 
     assert_match(/demo_ptr_array_addr_Palette \*base = &holder;/, generated)
-    assert_match(/uint32_t \*first = &\(\(\*mt_checked_index_array_u32_4\(&\(\(\*base\)\.colors\), 0\)\)\);/, generated)
+    assert_match(/uint32_t \*first = mt_checked_index_array_u32_4\(&\(\(\*base\)\.colors\), 0\);/, generated)
     assert_match(/\*first = 9;/, generated)
     assert_match(/return \(\*mt_checked_index_array_u32_4\(&\(holder\.colors\), 0\)\);/, generated)
+  end
+
+  def test_generate_c_hoists_repeated_checked_index_helper_within_expression_statement
+    source = [
+      "module demo.checked_index_alias_surface",
+      "",
+      "struct Point:",
+      "    x: i32",
+      "    y: i32",
+      "",
+      "def use(a: i32, b: i32, c: i32, d: i32) -> void:",
+      "    return",
+      "",
+      "def next(mut cursor: ptr[i32]) -> i32:",
+      "    unsafe:",
+      "        let value = deref(cursor)",
+      "        deref(cursor) += 1",
+      "        return value",
+      "",
+      "def main() -> i32:",
+      "    var points = array[Point, 2](Point(x = 1, y = 2), Point(x = 3, y = 4))",
+      "    var index = 1",
+      "    use(points[index].x, points[index].y, points[index].x + points[index].y, points[index].x)",
+      "    var cursor = 0",
+      "    use(points[next(raw(addr(cursor)))].x, points[next(raw(addr(cursor)))].y, 0, 0)",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/demo_checked_index_alias_surface_Point \*__mt_checked_index_ptr_\d+ = mt_checked_index_array_demo_checked_index_alias_surface_Point_2\(&\(points\), index\);/, generated)
+    assert_match(/demo_checked_index_alias_surface_use\(__mt_checked_index_ptr_\d+->x, __mt_checked_index_ptr_\d+->y, __mt_checked_index_ptr_\d+->x \+ __mt_checked_index_ptr_\d+->y, __mt_checked_index_ptr_\d+->x\);/, generated)
+    refute_match(/demo_checked_index_alias_surface_Point \*__mt_checked_index_ptr_\d+ = mt_checked_index_array_demo_checked_index_alias_surface_Point_2\(&\(points\), demo_checked_index_alias_surface_next\(&cursor\)\);/, generated)
   end
 
   def test_generate_c_for_safe_array_indexing_and_assignment
