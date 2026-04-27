@@ -296,6 +296,45 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
+  def test_build_uses_default_rlights_binding_compiler_flags_when_imported
+    Dir.mktmpdir("milk-tea-build-rlights") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      source_path = File.join(dir, "rlights.mt")
+      output_path = File.join(dir, "rlights-demo")
+      c_path = File.join(dir, "rlights-demo.c")
+
+      File.write(source_path, [
+        "module demo.rlights_smoke",
+        "",
+        "import std.c.raylib as rl",
+        "import std.c.rlights as lights",
+        "",
+        "def main() -> i32:",
+        "    let shader = zero[rl.Shader]()",
+        "    let light = lights.CreateLight(cast[i32](lights.LightType.LIGHT_POINT), rl.Vector3(x = 1.0, y = 2.0, z = 3.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.WHITE, shader)",
+        "    if light.enabled:",
+        "        rl.DrawSphereEx(light.position, 0.2, 8, 8, light.color)",
+        "    lights.UpdateLightValues(shader, light)",
+        "    return lights.MAX_LIGHTS",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Build.build(source_path, output_path:, cc: compiler_path, keep_c_path: c_path)
+
+      assert_equal File.expand_path(output_path), result.output_path
+      assert_equal File.expand_path(c_path), result.c_path
+      assert_equal File.expand_path(compiler_path), result.compiler
+      assert_includes result.link_flags, "-lraylib"
+      assert_match(/#include "rlights\.h"/, File.read(c_path))
+
+      invocation = File.read(compiler_log).lines(chomp: true)
+      assert_includes invocation, "-lraylib"
+      assert_includes invocation, "-DRLIGHTS_IMPLEMENTATION"
+      assert_includes invocation, "-I#{File.expand_path('../third_party/raylib-upstream/examples/shaders', __dir__)}"
+    end
+  end
+
   private
 
   def demo_path

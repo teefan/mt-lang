@@ -7,7 +7,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raygui rlgl msf_gif libc], registry.map(&:name)
+    assert_equal %w[raylib raygui rlights rlgl msf_gif libc], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -16,6 +16,10 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal ["raylib", "m"], registry.fetch("raygui").link_libraries
     assert_includes registry.fetch("raygui").header_candidates.first, "third_party/raylib-upstream/examples/shapes/raygui.h"
     assert_equal({ "codepoints" => "ptr[i32]?" }, registry.fetch("raygui").function_param_type_overrides.fetch("LoadFontData"))
+    assert_equal "std.c.rlights", registry.fetch("rlights").module_name
+    assert_equal ["RLIGHTS_IMPLEMENTATION"], registry.fetch("rlights").implementation_defines
+    assert_equal ["raylib"], registry.fetch("rlights").link_libraries
+    assert_includes registry.fetch("rlights").header_candidates.first, "third_party/raylib-upstream/examples/shaders/rlights.h"
     assert_equal "std.c.rlgl", registry.fetch("rlgl").module_name
     assert_equal ["raylib"], registry.fetch("rlgl").link_libraries
     assert_includes registry.fetch("rlgl").header_candidates.last, "third_party/raylib-upstream/src/rlgl.h"

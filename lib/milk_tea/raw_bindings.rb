@@ -212,6 +212,20 @@ module MilkTea
           function_param_type_overrides: font_codepoint_param_overrides,
         ),
         Binding.new(
+          name: "rlights",
+          module_name: "std.c.rlights",
+          binding_path: root.join("std/c/rlights.mt"),
+          include_directives: ["rlights.h"],
+          link_libraries: ["raylib"],
+          env_var: "RLIGHTS_HEADER",
+          implementation_defines: ["RLIGHTS_IMPLEMENTATION"],
+          header_candidates: [
+            root.join("third_party/raylib-upstream/examples/shaders/rlights.h").to_s,
+            "/usr/include/rlights.h",
+            "/usr/local/include/rlights.h",
+          ],
+        ),
+        Binding.new(
           name: "rlgl",
           module_name: "std.c.rlgl",
           binding_path: root.join("std/c/rlgl.mt"),

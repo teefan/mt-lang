@@ -110,6 +110,42 @@ class MilkTeaModuleLoaderTest < Minitest::Test
     end
   end
 
+  def test_check_program_resolves_extern_module_imported_types
+    Dir.mktmpdir("milk-tea-module-loader-extern-imports") do |dir|
+      dep_path = File.join(dir, "std", "c", "dep.mt")
+      helper_path = File.join(dir, "std", "c", "helper.mt")
+
+      FileUtils.mkdir_p(File.dirname(dep_path))
+
+      File.write(dep_path, <<~MT)
+        extern module std.c.dep:
+            struct Vec:
+                x: f32
+                y: f32
+      MT
+
+      File.write(helper_path, <<~MT)
+        extern module std.c.helper:
+            import std.c.dep as dep
+
+            include "helper.h"
+
+            struct Holder:
+                value: dep.Vec
+
+            extern def wrap(value: dep.Vec) -> Holder
+      MT
+
+      program = MilkTea::ModuleLoader.new(module_roots: [dir]).check_program(helper_path)
+
+      assert_equal %w[std.c.dep std.c.helper], program.analyses_by_module_name.keys.sort
+      assert_equal :extern_module, program.root_analysis.module_kind
+      assert_equal true, program.root_analysis.types.key?("Holder")
+      assert_equal true, program.root_analysis.functions.key?("wrap")
+      assert_equal true, program.root_analysis.imports.key?("dep")
+    end
+  end
+
   private
 
   def demo_path

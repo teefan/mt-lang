@@ -121,6 +121,27 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "struct tm", opaque_decl.c_name
   end
 
+  def test_parses_leading_imports_inside_extern_modules
+    source = <<~MT
+      extern module std.c.helper:
+          import std.c.dep as dep
+
+          include "helper.h"
+
+          struct Holder:
+              value: dep.Vec
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal :extern_module, ast.module_kind
+    assert_equal 1, ast.imports.length
+    assert_equal "std.c.dep", ast.imports.first.path.to_s
+    assert_equal "dep", ast.imports.first.alias_name
+    assert_equal 1, ast.directives.length
+    assert_equal 1, ast.declarations.length
+  end
+
   def test_rejects_pub_on_methods_block
     source = <<~MT
       module demo.visibility

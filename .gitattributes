@@ -47,6 +47,17 @@
 *.wbmp            binary
 *.webp            binary
 
+# 3D Models
+*.fbx             binary
+*.obj             binary
+*.stl             binary
+*.blend           binary
+*.gltf            binary
+*.glb             binary
+*.iqm             binary
+*.m3d             binary
+*.vox             binary
+
 # Audio
 *.kar             binary
 *.m4a             binary
