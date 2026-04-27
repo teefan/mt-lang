@@ -17,14 +17,6 @@ const speed_x_uniform_name: cstr = c"speedX"
 const speed_y_uniform_name: cstr = c"speedY"
 const window_title: cstr = c"raylib [shaders] example - texture waves"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -32,7 +24,7 @@ def main() -> i32:
     let texture = rl.LoadTexture(texture_path)
     defer rl.UnloadTexture(texture)
 
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let seconds_loc = rl.GetShaderLocation(shader, seconds_uniform_name)
@@ -52,19 +44,19 @@ def main() -> i32:
     var screen_size = array[f32, 2](cast[f32](rl.GetScreenWidth()), cast[f32](rl.GetScreenHeight()))
     var seconds: f32 = 0.0
 
-    rl.SetShaderValue(shader, rl.GetShaderLocation(shader, size_uniform_name), f32_ptr_to_void(raw(addr(screen_size[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-    rl.SetShaderValue(shader, freq_x_loc, f32_ptr_to_void(raw(addr(freq_x))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, freq_y_loc, f32_ptr_to_void(raw(addr(freq_y))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, amp_x_loc, f32_ptr_to_void(raw(addr(amp_x))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, amp_y_loc, f32_ptr_to_void(raw(addr(amp_y))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, speed_x_loc, f32_ptr_to_void(raw(addr(speed_x))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, speed_y_loc, f32_ptr_to_void(raw(addr(speed_y))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, rl.GetShaderLocation(shader, size_uniform_name), raw(addr(screen_size[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, freq_x_loc, raw(addr(freq_x)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, freq_y_loc, raw(addr(freq_y)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, amp_x_loc, raw(addr(amp_x)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, amp_y_loc, raw(addr(amp_y)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, speed_x_loc, raw(addr(speed_x)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, speed_y_loc, raw(addr(speed_y)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
         seconds += rl.GetFrameTime()
-        rl.SetShaderValue(shader, seconds_loc, f32_ptr_to_void(raw(addr(seconds))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, seconds_loc, raw(addr(seconds)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

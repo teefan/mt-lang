@@ -44,14 +44,6 @@ def null_cstr() -> cstr:
     unsafe:
         return cast[cstr](null[ptr[char]])
 
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
-def vector2_ptr_to_void(value: ptr[rl.Vector2]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def swap_fft_values(left: i32, right: i32) -> void:
     let temp = work_buffer[left]
     work_buffer[left] = work_buffer[right]
@@ -165,7 +157,7 @@ def main() -> i32:
 
     let i_resolution_location = rl.GetShaderLocation(shader, resolution_uniform_name)
     let i_channel0_location = rl.GetShaderLocation(shader, channel_uniform_name)
-    rl.SetShaderValue(shader, i_resolution_location, vector2_ptr_to_void(raw(addr(i_resolution))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, i_resolution_location, raw(addr(i_resolution)), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
     rl.SetShaderValueTexture(shader, i_channel0_location, fft_texture)
 
     rl.InitAudioDevice()
@@ -200,7 +192,7 @@ def main() -> i32:
                     if wav_cursor >= wav_frame_count:
                         wav_cursor = 0
 
-            rl.UpdateAudioStream(audio_stream, f32_ptr_to_void(raw(addr(chunk_samples[0]))), audio_stream_ring_buffer_size)
+            rl.UpdateAudioStream(audio_stream, raw(addr(chunk_samples[0])), audio_stream_ring_buffer_size)
 
             for index in range(0, fft_window_size):
                 audio_samples[index] = (chunk_samples[index * 2] + chunk_samples[index * 2 + 1]) * 0.5

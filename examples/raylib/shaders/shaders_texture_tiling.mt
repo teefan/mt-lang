@@ -11,14 +11,6 @@ const tiling_uniform_name: cstr = c"tiling"
 const help_text: cstr = c"Use mouse to rotate the camera"
 const window_title: cstr = c"raylib [shaders] example - texture tiling"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         deref(model).materials[0].shader = shader
@@ -45,11 +37,11 @@ def main() -> i32:
     rl.SetMaterialTexture(model.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
 
     var tiling = array[f32, 2](3.0, 3.0)
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     rl.SetTextureWrap(texture, cast[i32](rl.TextureWrap.TEXTURE_WRAP_REPEAT))
-    rl.SetShaderValue(shader, rl.GetShaderLocation(shader, tiling_uniform_name), f32_ptr_to_void(raw(addr(tiling[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, rl.GetShaderLocation(shader, tiling_uniform_name), raw(addr(tiling[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
     set_model_shader(raw(addr(model)), shader)
 
     rl.DisableCursor()

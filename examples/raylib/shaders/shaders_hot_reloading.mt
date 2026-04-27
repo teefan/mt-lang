@@ -19,14 +19,6 @@ const auto_text: cstr = c"AUTO"
 const manual_text: cstr = c"MANUAL"
 const window_title: cstr = c"raylib [shaders] example - hot reloading"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def formatted_mod_time(mod_time: ref[ctime.time_t], buffer: ref[array[char, 64]]) -> cstr:
     let tm_info = ctime.localtime(raw(addr(value(mod_time))))
 
@@ -40,14 +32,14 @@ def main() -> i32:
 
     let shader_path = rl.TextFormat(shader_file_name_format, glsl_version)
     var frag_shader_mod_time: ctime.time_t = rl.GetFileModTime(shader_path)
-    var shader = rl.LoadShader(null_cstr(), shader_path)
+    var shader = rl.LoadShader(zero[cstr?](), shader_path)
 
     var resolution_location = rl.GetShaderLocation(shader, resolution_uniform_name)
     var mouse_location = rl.GetShaderLocation(shader, mouse_uniform_name)
     var time_location = rl.GetShaderLocation(shader, time_uniform_name)
 
     var resolution = array[f32, 2](cast[f32](screen_width), cast[f32](screen_height))
-    rl.SetShaderValue(shader, resolution_location, f32_ptr_to_void(raw(addr(resolution[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, resolution_location, raw(addr(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     var total_time: f32 = 0.0
     var shader_auto_reloading = false
@@ -61,14 +53,14 @@ def main() -> i32:
         let mouse = rl.GetMousePosition()
         var mouse_position = array[f32, 2](mouse.x, mouse.y)
 
-        rl.SetShaderValue(shader, time_location, f32_ptr_to_void(raw(addr(total_time))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-        rl.SetShaderValue(shader, mouse_location, f32_ptr_to_void(raw(addr(mouse_position[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.SetShaderValue(shader, time_location, raw(addr(total_time)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, mouse_location, raw(addr(mouse_position[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
         if shader_auto_reloading or rl.IsMouseButtonPressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
             let current_frag_shader_mod_time = rl.GetFileModTime(shader_path)
 
             if current_frag_shader_mod_time != frag_shader_mod_time:
-                let updated_shader = rl.LoadShader(null_cstr(), shader_path)
+                let updated_shader = rl.LoadShader(zero[cstr?](), shader_path)
 
                 if updated_shader.id != rlgl.rlGetShaderIdDefault():
                     rl.UnloadShader(shader)
@@ -78,7 +70,7 @@ def main() -> i32:
                     mouse_location = rl.GetShaderLocation(shader, mouse_uniform_name)
                     time_location = rl.GetShaderLocation(shader, time_uniform_name)
 
-                    rl.SetShaderValue(shader, resolution_location, f32_ptr_to_void(raw(addr(resolution[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+                    rl.SetShaderValue(shader, resolution_location, raw(addr(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
                 frag_shader_mod_time = current_frag_shader_mod_time
 

@@ -76,6 +76,27 @@
         ]
       },
       {
+        "raw": "SetShaderValue",
+        "type_params": ["T"],
+        "params": [
+          { "name": "shader", "type": "Shader" },
+          { "name": "loc_index", "type": "i32" },
+          { "name": "value", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "uniform_type", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "SetShaderValueV",
+        "type_params": ["T"],
+        "params": [
+          { "name": "shader", "type": "Shader" },
+          { "name": "loc_index", "type": "i32" },
+          { "name": "value", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "uniform_type", "type": "i32" },
+          { "name": "count", "type": "i32" }
+        ]
+      },
+      {
         "raw": "MemAlloc",
         "type_params": ["T"],
         "params": [
@@ -331,6 +352,69 @@
         "raw": "LoadTexture",
         "params": [
           { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "UpdateTexture",
+        "type_params": ["T"],
+        "params": [
+          { "name": "texture", "type": "Texture" },
+          { "name": "pixels", "type": "ptr[T]", "boundary_type": "ptr[void]" }
+        ]
+      },
+      {
+        "raw": "UpdateTextureRec",
+        "type_params": ["T"],
+        "params": [
+          { "name": "texture", "type": "Texture" },
+          { "name": "rec", "type": "Rectangle" },
+          { "name": "pixels", "type": "ptr[T]", "boundary_type": "ptr[void]" }
+        ]
+      },
+      {
+        "raw": "GetPixelColor",
+        "type_params": ["T"],
+        "params": [
+          { "name": "src_ptr", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "format", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "SetPixelColor",
+        "type_params": ["T"],
+        "params": [
+          { "name": "dst_ptr", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "color", "type": "Color" },
+          { "name": "format", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "UpdateMeshBuffer",
+        "type_params": ["T"],
+        "params": [
+          { "name": "mesh", "type": "Mesh" },
+          { "name": "index", "type": "i32" },
+          { "name": "data", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "data_size", "type": "i32" },
+          { "name": "offset", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "UpdateSound",
+        "type_params": ["T"],
+        "params": [
+          { "name": "sound", "type": "Sound" },
+          { "name": "data", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "sample_count", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "UpdateAudioStream",
+        "type_params": ["T"],
+        "params": [
+          { "name": "stream", "type": "AudioStream" },
+          { "name": "data", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "frame_count", "type": "i32" }
         ]
       },
       {

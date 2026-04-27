@@ -10,14 +10,6 @@ const background_text: cstr = c"BACKGROUND is PAINTED and ANIMATED on SHADER!"
 const shader_time_name: cstr = c"uTime"
 const window_title: cstr = c"raylib [shaders] example - texture rendering"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -27,18 +19,18 @@ def main() -> i32:
     rl.UnloadImage(blank_image)
     defer rl.UnloadTexture(texture)
 
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     var time: f32 = 0.0
     let time_loc = rl.GetShaderLocation(shader, shader_time_name)
-    rl.SetShaderValue(shader, time_loc, f32_ptr_to_void(raw(addr(time))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, time_loc, raw(addr(time)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
         time = cast[f32](rl.GetTime())
-        rl.SetShaderValue(shader, time_loc, f32_ptr_to_void(raw(addr(time))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, time_loc, raw(addr(time)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

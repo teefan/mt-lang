@@ -24,22 +24,6 @@ const use_keys_text: cstr = c"Use the arrow keys to rotate the light!"
 const footer_text: cstr = c"Shadows in raylib using the shadowmapping algorithm!"
 const screenshot_path: cstr = c"shaders_shadowmap.png"
 
-def vec3_ptr_to_void(value: ptr[rl.Vector3]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
-def vec4_ptr_to_void(value: ptr[rl.Vector4]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
-def i32_ptr_to_void(value: ptr[i32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def raylib_matrix(mat: rlgl.Matrix) -> rl.Matrix:
     return rl.Matrix(
         m0 = mat.m0,
@@ -133,16 +117,16 @@ def main() -> i32:
     let light_dir_loc = rl.GetShaderLocation(shadow_shader, light_dir_uniform_name)
     var light_color_normalized = rl.ColorNormalize(rl.WHITE)
     let light_col_loc = rl.GetShaderLocation(shadow_shader, light_color_uniform_name)
-    rl.SetShaderValue(shadow_shader, light_dir_loc, vec3_ptr_to_void(raw(addr(light_dir))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
-    rl.SetShaderValue(shadow_shader, light_col_loc, vec4_ptr_to_void(raw(addr(light_color_normalized))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shadow_shader, light_dir_loc, raw(addr(light_dir)), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+    rl.SetShaderValue(shadow_shader, light_col_loc, raw(addr(light_color_normalized)), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     let ambient_loc = rl.GetShaderLocation(shadow_shader, ambient_uniform_name)
     var ambient = array[f32, 4](0.1, 0.1, 0.1, 1.0)
-    rl.SetShaderValue(shadow_shader, ambient_loc, f32_ptr_to_void(raw(addr(ambient[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shadow_shader, ambient_loc, raw(addr(ambient[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
     let light_vp_loc = rl.GetShaderLocation(shadow_shader, light_vp_uniform_name)
     let shadow_map_loc = rl.GetShaderLocation(shadow_shader, shadow_map_uniform_name)
     var shadow_map_resolution_value = shadowmap_resolution
-    rl.SetShaderValue(shadow_shader, rl.GetShaderLocation(shadow_shader, shadow_map_resolution_uniform_name), i32_ptr_to_void(raw(addr(shadow_map_resolution_value))), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+    rl.SetShaderValue(shadow_shader, rl.GetShaderLocation(shadow_shader, shadow_map_resolution_uniform_name), raw(addr(shadow_map_resolution_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
 
     var cube = rl.LoadModelFromMesh(rl.GenMeshCube(1.0, 1.0, 1.0))
     defer rl.UnloadModel(cube)
@@ -182,7 +166,7 @@ def main() -> i32:
         let delta_time = rl.GetFrameTime()
 
         var camera_pos = rl.Vector3(x = camera.position.x, y = camera.position.y, z = camera.position.z)
-        rl.SetShaderValue(shadow_shader, view_loc, vec3_ptr_to_void(raw(addr(camera_pos))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(shadow_shader, view_loc, raw(addr(camera_pos)), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
         rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_ORBITAL)
 
         frame_counter += 1
@@ -205,7 +189,7 @@ def main() -> i32:
 
         light_dir = light_dir.normalize()
         light_camera.position = light_dir.scale(-15.0)
-        rl.SetShaderValue(shadow_shader, light_dir_loc, vec3_ptr_to_void(raw(addr(light_dir))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(shadow_shader, light_dir_loc, raw(addr(light_dir)), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         rl.BeginTextureMode(shadow_map)
         rl.ClearBackground(rl.WHITE)
@@ -226,7 +210,7 @@ def main() -> i32:
         rlgl.rlEnableShader(shadow_shader.id)
         rlgl.rlActiveTextureSlot(texture_active_slot)
         rlgl.rlEnableTexture(shadow_map.depth.id)
-        rlgl.rlSetUniform(shadow_map_loc, i32_ptr_to_void(raw(addr(texture_active_slot))), cast[i32](rl.ShaderUniformDataType.SHADER_UNIFORM_INT), 1)
+        rlgl.rlSetUniform(shadow_map_loc, raw(addr(texture_active_slot)), cast[i32](rl.ShaderUniformDataType.SHADER_UNIFORM_INT), 1)
 
         rl.BeginMode3D(camera)
         draw_scene(cube, robot)

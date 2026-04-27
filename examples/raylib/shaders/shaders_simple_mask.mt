@@ -14,14 +14,6 @@ const frame_uniform_name: cstr = c"frame"
 const frame_format: cstr = c"Frame: %i"
 const window_title: cstr = c"raylib [shaders] example - simple mask"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def i32_ptr_to_void(value: ptr[i32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         deref(model).materials[0].shader = shader
@@ -50,7 +42,7 @@ def main() -> i32:
     let model3 = rl.LoadModelFromMesh(sphere)
     defer rl.UnloadModel(model3)
 
-    var shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    var shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let tex_diffuse = rl.LoadTexture(diffuse_texture_path)
@@ -85,7 +77,7 @@ def main() -> i32:
         rotation.y += 0.005
         rotation.z -= 0.0025
 
-        rl.SetShaderValue(shader, shader_frame, i32_ptr_to_void(raw(addr(frames_counter))), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+        rl.SetShaderValue(shader, shader_frame, raw(addr(frames_counter)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
         model1.transform = rm.Matrix.rotate_xyz(rotation)
 
         let frame_text = rl.TextFormat(frame_format, frames_counter)

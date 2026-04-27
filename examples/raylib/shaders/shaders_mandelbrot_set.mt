@@ -21,23 +21,11 @@ const help_iterations_text: cstr = c"Press UP | DOWN to change number of iterati
 const help_reset_text: cstr = c"Press R to recenter the camera"
 const window_title: cstr = c"raylib [shaders] example - mandelbrot set"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
-def i32_ptr_to_void(value: ptr[i32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let target = rl.LoadRenderTexture(rl.GetScreenWidth(), rl.GetScreenHeight())
@@ -61,9 +49,9 @@ def main() -> i32:
     let offset_loc = rl.GetShaderLocation(shader, offset_uniform_name)
     let max_iterations_loc = rl.GetShaderLocation(shader, max_iterations_uniform_name)
 
-    rl.SetShaderValue(shader, zoom_loc, f32_ptr_to_void(raw(addr(zoom))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, offset_loc, f32_ptr_to_void(raw(addr(offset[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-    rl.SetShaderValue(shader, max_iterations_loc, i32_ptr_to_void(raw(addr(max_iterations))), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+    rl.SetShaderValue(shader, zoom_loc, raw(addr(zoom)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, offset_loc, raw(addr(offset[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, max_iterations_loc, raw(addr(max_iterations)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
 
     var show_controls = true
 
@@ -127,9 +115,9 @@ def main() -> i32:
         if update_shader:
             max_iterations = cast[i32](libm.sqrtf(2.0 * libm.sqrtf(libm.fabsf(1.0 - libm.sqrtf(37.5 * zoom)))) * max_iterations_multiplier)
 
-            rl.SetShaderValue(shader, zoom_loc, f32_ptr_to_void(raw(addr(zoom))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-            rl.SetShaderValue(shader, offset_loc, f32_ptr_to_void(raw(addr(offset[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-            rl.SetShaderValue(shader, max_iterations_loc, i32_ptr_to_void(raw(addr(max_iterations))), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+            rl.SetShaderValue(shader, zoom_loc, raw(addr(zoom)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+            rl.SetShaderValue(shader, offset_loc, raw(addr(offset[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+            rl.SetShaderValue(shader, max_iterations_loc, raw(addr(max_iterations)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
 
         rl.BeginTextureMode(target)
         rl.ClearBackground(rl.BLACK)

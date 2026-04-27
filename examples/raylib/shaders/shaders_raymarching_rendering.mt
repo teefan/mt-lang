@@ -13,14 +13,6 @@ const resolution_uniform_name: cstr = c"resolution"
 const credit_text: cstr = c"(c) Raymarching shader by Inigo Quilez. MIT License."
 const window_title: cstr = c"raylib [shaders] example - raymarching rendering"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE)
 
@@ -35,7 +27,7 @@ def main() -> i32:
         projection = rl.CameraProjection.CAMERA_PERSPECTIVE,
     )
 
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let view_eye_loc = rl.GetShaderLocation(shader, view_eye_uniform_name)
@@ -44,7 +36,7 @@ def main() -> i32:
     let resolution_loc = rl.GetShaderLocation(shader, resolution_uniform_name)
 
     var resolution = array[f32, 2](cast[f32](screen_width), cast[f32](screen_height))
-    rl.SetShaderValue(shader, resolution_loc, f32_ptr_to_void(raw(addr(resolution[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, resolution_loc, raw(addr(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     var run_time: f32 = 0.0
 
@@ -60,14 +52,14 @@ def main() -> i32:
 
         run_time += rl.GetFrameTime()
 
-        rl.SetShaderValue(shader, view_eye_loc, f32_ptr_to_void(raw(addr(camera_pos[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
-        rl.SetShaderValue(shader, view_center_loc, f32_ptr_to_void(raw(addr(camera_target[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
-        rl.SetShaderValue(shader, run_time_loc, f32_ptr_to_void(raw(addr(run_time))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, view_eye_loc, raw(addr(camera_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(shader, view_center_loc, raw(addr(camera_target[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(shader, run_time_loc, raw(addr(run_time)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         if rl.IsWindowResized():
             resolution[0] = cast[f32](rl.GetScreenWidth())
             resolution[1] = cast[f32](rl.GetScreenHeight())
-            rl.SetShaderValue(shader, resolution_loc, f32_ptr_to_void(raw(addr(resolution[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+            rl.SetShaderValue(shader, resolution_loc, raw(addr(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

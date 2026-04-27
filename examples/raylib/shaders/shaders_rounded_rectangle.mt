@@ -39,10 +39,6 @@ const rounded_combined_text: cstr = c"Rectangle with all three combined"
 const credit_text: cstr = c"(c) Rounded rectangle SDF by Inigo Quilez. MIT License."
 const window_title: cstr = c"raylib [shaders] example - rounded rectangle"
 
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def normalized_color(color: rl.Color) -> array[f32, 4]:
     return array[f32, 4](
         cast[f32](color.r) / 255.0,
@@ -62,15 +58,15 @@ def vector2_components(vector: rl.Vector2) -> array[f32, 2]:
 
 def set_vec4_uniform(shader: rl.Shader, location: i32, x: f32, y: f32, z: f32, w: f32) -> void:
     var values = array[f32, 4](x, y, z, w)
-    rl.SetShaderValue(shader, location, f32_ptr_to_void(raw(addr(values[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shader, location, raw(addr(values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
 def set_vec2_uniform(shader: rl.Shader, location: i32, x: f32, y: f32) -> void:
     var values = array[f32, 2](x, y)
-    rl.SetShaderValue(shader, location, f32_ptr_to_void(raw(addr(values[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, location, raw(addr(values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
 def set_float_uniform(shader: rl.Shader, location: i32, value: f32) -> void:
     var storage: f32 = value
-    rl.SetShaderValue(shader, location, f32_ptr_to_void(raw(addr(storage))), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, location, raw(addr(storage)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
 def set_rectangle_uniform(shader: rl.Shader, rounded_rectangle: RoundedRectangle, rectangle: rl.Rectangle) -> void:
     let rectangle_values = rectangle_components(rectangle)

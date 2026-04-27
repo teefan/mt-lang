@@ -20,14 +20,6 @@ const cam_dir_uniform_name: cstr = c"camDir"
 const screen_center_uniform_name: cstr = c"screenCenter"
 const window_title: cstr = c"raylib [shaders] example - hybrid rendering"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def load_render_texture_depth_tex(width: i32, height: i32) -> rl.RenderTexture2D:
     var target = zero[rl.RenderTexture2D]()
 
@@ -77,9 +69,9 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let raymarch_shader = rl.LoadShader(null_cstr(), rl.TextFormat(raymarch_shader_path_format, glsl_version))
+    let raymarch_shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(raymarch_shader_path_format, glsl_version))
     defer rl.UnloadShader(raymarch_shader)
-    let raster_shader = rl.LoadShader(null_cstr(), rl.TextFormat(raster_shader_path_format, glsl_version))
+    let raster_shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(raster_shader_path_format, glsl_version))
     defer rl.UnloadShader(raster_shader)
 
     let march_locs = RayLocs(
@@ -89,7 +81,7 @@ def main() -> i32:
     )
 
     var screen_center = array[f32, 2](cast[f32](screen_width) / 2.0, cast[f32](screen_height) / 2.0)
-    rl.SetShaderValue(raymarch_shader, march_locs.screen_center, f32_ptr_to_void(raw(addr(screen_center[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(raymarch_shader, march_locs.screen_center, raw(addr(screen_center[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     let target = load_render_texture_depth_tex(screen_width, screen_height)
     defer unload_render_texture_depth_tex(target)
@@ -110,11 +102,11 @@ def main() -> i32:
         rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_ORBITAL)
 
         var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
-        rl.SetShaderValue(raymarch_shader, march_locs.cam_pos, f32_ptr_to_void(raw(addr(camera_pos[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(raymarch_shader, march_locs.cam_pos, raw(addr(camera_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         let cam_dir_value = camera.target.subtract(camera.position).normalize().scale(cam_dist)
         var cam_dir = array[f32, 3](cam_dir_value.x, cam_dir_value.y, cam_dir_value.z)
-        rl.SetShaderValue(raymarch_shader, march_locs.cam_dir, f32_ptr_to_void(raw(addr(cam_dir[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(raymarch_shader, march_locs.cam_dir, raw(addr(cam_dir[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         rl.BeginTextureMode(target)
         rl.ClearBackground(rl.WHITE)

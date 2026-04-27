@@ -77,10 +77,6 @@ def mesh_vbo_id(mesh: rl.Mesh, index: i32) -> u32:
     unsafe:
         return deref(mesh.vboId + index)
 
-def f32_ptr_to_void(values: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](values)
-
 def is_upper_body_bone(bone_name: cstr) -> bool:
     if rl.TextIsEqual(bone_name, c"spine") or rl.TextIsEqual(bone_name, c"spine1") or rl.TextIsEqual(bone_name, c"spine2"):
         return true
@@ -194,13 +190,13 @@ def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation,
         if buffer_update_required:
             rlgl.rlUpdateVertexBuffer(
                 mesh_vbo_id(mesh, cast[i32](rl.ShaderLocationIndex.SHADER_LOC_VERTEX_POSITION)),
-                f32_ptr_to_void(mesh.animVertices),
+                mesh.animVertices,
                 mesh.vertexCount * 3 * 4,
                 0,
             )
             rlgl.rlUpdateVertexBuffer(
                 mesh_vbo_id(mesh, cast[i32](rl.ShaderLocationIndex.SHADER_LOC_VERTEX_NORMAL)),
-                f32_ptr_to_void(mesh.animNormals),
+                mesh.animNormals,
                 mesh.vertexCount * 3 * 4,
                 0,
             )

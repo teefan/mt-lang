@@ -37,10 +37,6 @@ const title_text: cstr = c"CURRENT POSTPRO SHADER:"
 const switch_text: cstr = c"< >"
 const window_title: cstr = c"raylib [shaders] example - postprocessing"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
 
@@ -78,18 +74,18 @@ def main() -> i32:
     )
 
     var shaders = zero[array[rl.Shader, max_postpro_shaders]]()
-    shaders[fx_grayscale] = rl.LoadShader(null_cstr(), rl.TextFormat(grayscale_shader_path, glsl_version))
-    shaders[fx_posterization] = rl.LoadShader(null_cstr(), rl.TextFormat(posterization_shader_path, glsl_version))
-    shaders[fx_dream_vision] = rl.LoadShader(null_cstr(), rl.TextFormat(dream_vision_shader_path, glsl_version))
-    shaders[fx_pixelizer] = rl.LoadShader(null_cstr(), rl.TextFormat(pixelizer_shader_path, glsl_version))
-    shaders[fx_cross_hatching] = rl.LoadShader(null_cstr(), rl.TextFormat(cross_hatching_shader_path, glsl_version))
-    shaders[fx_cross_stitching] = rl.LoadShader(null_cstr(), rl.TextFormat(cross_stitching_shader_path, glsl_version))
-    shaders[fx_predator_view] = rl.LoadShader(null_cstr(), rl.TextFormat(predator_shader_path, glsl_version))
-    shaders[fx_scanlines] = rl.LoadShader(null_cstr(), rl.TextFormat(scanlines_shader_path, glsl_version))
-    shaders[fx_fisheye] = rl.LoadShader(null_cstr(), rl.TextFormat(fisheye_shader_path, glsl_version))
-    shaders[fx_sobel] = rl.LoadShader(null_cstr(), rl.TextFormat(sobel_shader_path, glsl_version))
-    shaders[fx_bloom] = rl.LoadShader(null_cstr(), rl.TextFormat(bloom_shader_path, glsl_version))
-    shaders[fx_blur] = rl.LoadShader(null_cstr(), rl.TextFormat(blur_shader_path, glsl_version))
+    shaders[fx_grayscale] = rl.LoadShader(zero[cstr?](), rl.TextFormat(grayscale_shader_path, glsl_version))
+    shaders[fx_posterization] = rl.LoadShader(zero[cstr?](), rl.TextFormat(posterization_shader_path, glsl_version))
+    shaders[fx_dream_vision] = rl.LoadShader(zero[cstr?](), rl.TextFormat(dream_vision_shader_path, glsl_version))
+    shaders[fx_pixelizer] = rl.LoadShader(zero[cstr?](), rl.TextFormat(pixelizer_shader_path, glsl_version))
+    shaders[fx_cross_hatching] = rl.LoadShader(zero[cstr?](), rl.TextFormat(cross_hatching_shader_path, glsl_version))
+    shaders[fx_cross_stitching] = rl.LoadShader(zero[cstr?](), rl.TextFormat(cross_stitching_shader_path, glsl_version))
+    shaders[fx_predator_view] = rl.LoadShader(zero[cstr?](), rl.TextFormat(predator_shader_path, glsl_version))
+    shaders[fx_scanlines] = rl.LoadShader(zero[cstr?](), rl.TextFormat(scanlines_shader_path, glsl_version))
+    shaders[fx_fisheye] = rl.LoadShader(zero[cstr?](), rl.TextFormat(fisheye_shader_path, glsl_version))
+    shaders[fx_sobel] = rl.LoadShader(zero[cstr?](), rl.TextFormat(sobel_shader_path, glsl_version))
+    shaders[fx_bloom] = rl.LoadShader(zero[cstr?](), rl.TextFormat(bloom_shader_path, glsl_version))
+    shaders[fx_blur] = rl.LoadShader(zero[cstr?](), rl.TextFormat(blur_shader_path, glsl_version))
 
     defer:
         for shader_index in range(0, max_postpro_shaders):

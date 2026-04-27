@@ -40,10 +40,6 @@ def file_path_list_path(files: rl.FilePathList, index: i32) -> cstr:
     unsafe:
         return cast[cstr](deref(files.paths + cast[usize](index)))
 
-def i32_ptr_to_void(value: ptr[i32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def rlgl_matrix(mat: rl.Matrix) -> rlgl.Matrix:
     return rlgl.Matrix(
         m0 = mat.m0,
@@ -70,7 +66,7 @@ def set_shader_int(shader: rl.Shader, uniform_name: cstr, value: i32) -> void:
     rl.SetShaderValue(
         shader,
         rl.GetShaderLocation(shader, uniform_name),
-        i32_ptr_to_void(raw(addr(raw_value[0]))),
+        raw(addr(raw_value[0])),
         rl.ShaderUniformDataType.SHADER_UNIFORM_INT,
     )
 

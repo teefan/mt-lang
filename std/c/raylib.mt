@@ -763,9 +763,9 @@ extern module std.c.raylib:
 
     extern def UnloadVrStereoConfig(config: VrStereoConfig) -> void
 
-    extern def LoadShader(vsFileName: cstr, fsFileName: cstr) -> Shader
+    extern def LoadShader(vsFileName: cstr?, fsFileName: cstr?) -> Shader
 
-    extern def LoadShaderFromMemory(vsCode: cstr, fsCode: cstr) -> Shader
+    extern def LoadShaderFromMemory(vsCode: cstr?, fsCode: cstr?) -> Shader
 
     extern def IsShaderValid(shader: Shader) -> bool
 

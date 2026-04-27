@@ -16,6 +16,129 @@
   },
   "constants": {},
   "functions": {
-    "strip_prefix": "rl"
+    "strip_prefix": "rl",
+    "overrides": [
+      {
+        "raw": "rlLoadVertexBuffer",
+        "type_params": ["T"],
+        "params": [
+          { "name": "buffer", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "size", "type": "i32" },
+          { "name": "dynamic", "type": "bool" }
+        ]
+      },
+      {
+        "raw": "rlLoadVertexBufferElement",
+        "type_params": ["T"],
+        "params": [
+          { "name": "buffer", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "size", "type": "i32" },
+          { "name": "dynamic", "type": "bool" }
+        ]
+      },
+      {
+        "raw": "rlUpdateVertexBuffer",
+        "type_params": ["T"],
+        "params": [
+          { "name": "buffer_id", "type": "u32" },
+          { "name": "data", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "data_size", "type": "i32" },
+          { "name": "offset", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "rlUpdateVertexBufferElements",
+        "type_params": ["T"],
+        "params": [
+          { "name": "id", "type": "u32" },
+          { "name": "data", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "data_size", "type": "i32" },
+          { "name": "offset", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "rlSetVertexAttributeDefault",
+        "type_params": ["T"],
+        "params": [
+          { "name": "loc_index", "type": "i32" },
+          { "name": "value", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "attrib_type", "type": "i32" },
+          { "name": "count", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "rlLoadTexture",
+        "type_params": ["T"],
+        "params": [
+          { "name": "data", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "width", "type": "i32" },
+          { "name": "height", "type": "i32" },
+          { "name": "format", "type": "i32" },
+          { "name": "mipmap_count", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "rlLoadTextureCubemap",
+        "type_params": ["T"],
+        "params": [
+          { "name": "data", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "size", "type": "i32" },
+          { "name": "format", "type": "i32" },
+          { "name": "mipmap_count", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "rlUpdateTexture",
+        "type_params": ["T"],
+        "params": [
+          { "name": "id", "type": "u32" },
+          { "name": "offset_x", "type": "i32" },
+          { "name": "offset_y", "type": "i32" },
+          { "name": "width", "type": "i32" },
+          { "name": "height", "type": "i32" },
+          { "name": "format", "type": "i32" },
+          { "name": "data", "type": "ptr[T]", "boundary_type": "ptr[void]" }
+        ]
+      },
+      {
+        "raw": "rlSetUniform",
+        "type_params": ["T"],
+        "params": [
+          { "name": "loc_index", "type": "i32" },
+          { "name": "value", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "uniform_type", "type": "i32" },
+          { "name": "count", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "rlLoadShaderBuffer",
+        "type_params": ["T"],
+        "params": [
+          { "name": "size", "type": "u32" },
+          { "name": "data", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "usage_hint", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "rlUpdateShaderBuffer",
+        "type_params": ["T"],
+        "params": [
+          { "name": "id", "type": "u32" },
+          { "name": "data", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "data_size", "type": "u32" },
+          { "name": "offset", "type": "u32" }
+        ]
+      },
+      {
+        "raw": "rlReadShaderBuffer",
+        "type_params": ["T"],
+        "params": [
+          { "name": "id", "type": "u32" },
+          { "name": "dest", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "count", "type": "u32" },
+          { "name": "offset", "type": "u32" }
+        ]
+      }
+    ]
   }
 }

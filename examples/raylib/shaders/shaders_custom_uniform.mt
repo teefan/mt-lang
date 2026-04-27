@@ -14,14 +14,6 @@ const render_texture_text: cstr = c"TEXT DRAWN IN RENDER TEXTURE"
 const credit_text: cstr = c"(c) Barracks 3D model by Alberto Cano"
 const window_title: cstr = c"raylib [shaders] example - custom uniform"
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
-def f32_ptr_to_void(value: ptr[f32]) -> ptr[void]:
-    unsafe:
-        return cast[ptr[void]](value)
-
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
 
@@ -44,7 +36,7 @@ def main() -> i32:
     rl.SetMaterialTexture(model.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
 
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let swirl_center_loc = rl.GetShaderLocation(shader, swirl_center_uniform_name)
@@ -61,7 +53,7 @@ def main() -> i32:
         let mouse_position = rl.GetMousePosition()
         swirl_center[0] = mouse_position.x
         swirl_center[1] = screen_height_f - mouse_position.y
-        rl.SetShaderValue(shader, swirl_center_loc, f32_ptr_to_void(raw(addr(swirl_center[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.SetShaderValue(shader, swirl_center_loc, raw(addr(swirl_center[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
         rl.BeginTextureMode(target)
         rl.ClearBackground(rl.RAYWHITE)
