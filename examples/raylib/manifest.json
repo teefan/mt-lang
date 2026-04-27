@@ -1,6 +1,7 @@
 {
   "examples_root": "/home/teefan/Projects/Ruby/mt-lang/third_party/raylib-upstream/examples",
   "examples_list_path": "/home/teefan/Projects/Ruby/mt-lang/third_party/raylib-upstream/examples/examples_list.txt",
+  "repo_root": "/home/teefan/Projects/Ruby/mt-lang",
   "total_examples": 212,
   "category_counts": {
     "core": 49,
@@ -10,6 +11,69 @@
     "models": 30,
     "shaders": 35,
     "audio": 10
+  },
+  "progress": {
+    "raw_ported_examples": 150,
+    "idiomatic_ported_examples": 21,
+    "raw_completion_percent": 70.8,
+    "idiomatic_completion_percent": 9.9,
+    "by_category": {
+      "core": {
+        "total_examples": 49,
+        "raw_ported_examples": 49,
+        "idiomatic_ported_examples": 19,
+        "raw_completion_percent": 100.0,
+        "idiomatic_completion_percent": 38.8
+      },
+      "shapes": {
+        "total_examples": 40,
+        "raw_ported_examples": 40,
+        "idiomatic_ported_examples": 2,
+        "raw_completion_percent": 100.0,
+        "idiomatic_completion_percent": 5.0
+      },
+      "textures": {
+        "total_examples": 32,
+        "raw_ported_examples": 32,
+        "idiomatic_ported_examples": 0,
+        "raw_completion_percent": 100.0,
+        "idiomatic_completion_percent": 0.0
+      },
+      "text": {
+        "total_examples": 16,
+        "raw_ported_examples": 16,
+        "idiomatic_ported_examples": 0,
+        "raw_completion_percent": 100.0,
+        "idiomatic_completion_percent": 0.0
+      },
+      "models": {
+        "total_examples": 30,
+        "raw_ported_examples": 13,
+        "idiomatic_ported_examples": 0,
+        "raw_completion_percent": 43.3,
+        "idiomatic_completion_percent": 0.0
+      },
+      "shaders": {
+        "total_examples": 35,
+        "raw_ported_examples": 0,
+        "idiomatic_ported_examples": 0,
+        "raw_completion_percent": 0.0,
+        "idiomatic_completion_percent": 0.0
+      },
+      "audio": {
+        "total_examples": 10,
+        "raw_ported_examples": 0,
+        "idiomatic_ported_examples": 0,
+        "raw_completion_percent": 0.0,
+        "idiomatic_completion_percent": 0.0
+      }
+    },
+    "gates": {
+      "wave1_raw_core_complete": true,
+      "wave1_raw_shapes_complete": true,
+      "wave1_ready_for_textures": true,
+      "raw_corpus_complete": false
+    }
   },
   "examples": [
     {
@@ -35,7 +99,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_basic_window.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/basic_window.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -61,7 +129,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_delta_time.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/delta_time.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -87,7 +159,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_input_keys.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/input_keys.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -113,7 +189,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_input_mouse.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/input_mouse.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -139,7 +219,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_input_mouse_wheel.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/input_mouse_wheel.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -168,7 +252,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_input_gamepad.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -194,7 +282,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_input_multitouch.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/input_multitouch.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -220,7 +312,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_input_gestures.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/input_gestures.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -246,7 +342,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_input_gestures_testbed.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -272,7 +372,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_input_virtual_controls.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -298,7 +402,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_2d_camera.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -327,7 +435,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_2d_camera_mouse_zoom.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -357,7 +469,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_2d_camera_platformer.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -385,7 +501,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_2d_camera_split_screen.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -411,7 +531,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_3d_camera_mode.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -437,7 +561,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_3d_camera_free.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/camera_free.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -463,7 +591,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_3d_camera_first_person.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -489,7 +621,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_3d_camera_split_screen.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -517,7 +653,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_3d_camera_fps.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -545,7 +685,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_3d_picking.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -571,7 +715,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_world_screen.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -597,7 +745,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_window_flags.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/window_flags.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -625,7 +777,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_window_letterbox.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/window_letterbox.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -653,7 +809,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_window_should_close.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/window_should_close.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -679,7 +839,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_monitor_detector.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/monitor_detector.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -705,7 +869,11 @@
       "uses_audio_files": false,
       "uses_callbacks": true,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_custom_logging.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "callback_ffi"
       ]
@@ -733,7 +901,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": true,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_drop_files.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "directory_or_drop_apis"
       ]
@@ -761,7 +933,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_random_values.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/random_values.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -787,7 +963,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_storage_values.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -817,7 +997,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_vr_simulator.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "shader_assets"
       ]
@@ -845,7 +1029,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_scissor_test.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/scissor_test.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -871,7 +1059,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_basic_screen_manager.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/basic_screen_manager.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -899,7 +1091,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_custom_frame_control.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -925,7 +1121,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_smooth_pixelperfect.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -953,7 +1153,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_random_sequence.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/random_sequence.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -983,7 +1187,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": true,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_automation_events.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header",
         "directory_or_drop_apis"
@@ -1012,7 +1220,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_highdpi_demo.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1038,7 +1250,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_render_texture.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/render_texture.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -1064,7 +1280,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_undo_redo.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1090,7 +1310,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_viewport_scaling.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1116,7 +1340,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_input_actions.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/input_actions.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -1144,7 +1372,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": true,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_directory_files.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raygui_helper_header",
         "directory_or_drop_apis"
@@ -1173,7 +1405,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_highdpi_testbed.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1201,7 +1437,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": true,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_screen_recording.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "directory_or_drop_apis"
       ]
@@ -1231,7 +1471,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_clipboard_text.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -1263,7 +1507,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_text_file_loading.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -1293,7 +1541,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_compute_hash.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -1321,7 +1573,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_keyboard_testbed.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1347,7 +1603,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/core/core_window_web.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/window_web.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -1373,7 +1633,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_basic_shapes.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/basic_shapes.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -1399,7 +1663,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_bouncing_ball.mt",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/bouncing_ball.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -1425,7 +1693,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_bullet_hell.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1451,7 +1723,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_colors_palette.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1477,7 +1753,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_logo_raylib.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1503,7 +1783,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_logo_raylib_anim.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1529,7 +1813,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_rectangle_scaling.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1555,7 +1843,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_lines_bezier.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1581,7 +1873,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_collision_area.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1607,7 +1903,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_following_eyes.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1633,7 +1933,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_easings_ball.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1659,7 +1963,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_easings_box.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1685,7 +1993,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_easings_rectangles.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1713,7 +2025,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_recursive_tree.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -1743,7 +2059,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_ring_drawing.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -1773,7 +2093,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_circle_sector_drawing.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -1803,7 +2127,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_rounded_rectangle_drawing.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -1834,7 +2162,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_top_down_lights.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -1864,7 +2196,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_rectangle_advanced.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1892,7 +2228,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_splines_drawing.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -1920,7 +2260,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_digital_clock.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1946,7 +2290,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_double_pendulum.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -1972,7 +2320,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_dashed_line.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2000,7 +2352,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_triangle_strip.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -2030,7 +2386,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_vector_angle.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -2060,7 +2420,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_pie_chart.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -2091,7 +2455,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_kaleidoscope.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header",
         "raygui_helper_header"
@@ -2122,7 +2490,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_clock_of_clocks.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -2153,7 +2525,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_math_sine_cosine.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header",
         "raygui_helper_header"
@@ -2184,7 +2560,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_mouse_trail.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -2212,7 +2592,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_simple_particles.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2240,7 +2624,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_starfield_effect.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -2270,7 +2658,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_lines_drawing.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -2300,7 +2692,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_math_angle_rotation.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -2332,7 +2728,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_rlgl_color_wheel.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header",
         "raygui_helper_header"
@@ -2363,7 +2763,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_rlgl_triangle.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2389,7 +2793,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_ball_physics.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2415,7 +2823,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_penrose_tile.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2443,7 +2855,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_hilbert_curve.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -2471,7 +2887,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/shapes/shapes_easings_testbed.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2497,7 +2917,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_clipboard_image.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2528,7 +2952,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_magnifying_glass.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2556,7 +2984,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_logo_raylib.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2584,7 +3016,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_srcrec_dstrec.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2614,7 +3050,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_image_drawing.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2640,7 +3080,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_image_generation.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2668,7 +3112,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_image_loading.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2696,7 +3144,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_image_processing.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2725,7 +3177,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_image_text.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2753,7 +3209,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_to_image.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2781,7 +3241,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_raw_data.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2809,7 +3273,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_particles_blending.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2837,7 +3305,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_npatch_drawing.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2867,7 +3339,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_background_scrolling.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2895,7 +3371,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_sprite_animation.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2924,7 +3404,11 @@
       "uses_audio_files": true,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_sprite_button.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2953,7 +3437,11 @@
       "uses_audio_files": true,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_sprite_explosion.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -2981,7 +3469,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_bunnymark.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3009,7 +3501,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_mouse_painting.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3038,7 +3534,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_blend_modes.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3066,7 +3566,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_tiled_drawing.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3097,7 +3601,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_polygon_drawing.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -3125,7 +3633,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_fog_of_war.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3153,7 +3665,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_gif_player.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3181,7 +3697,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_image_kernel.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3209,7 +3729,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_image_channel.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3237,7 +3761,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_image_rotate.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3263,7 +3791,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_screen_buffer.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3294,7 +3826,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_textured_curve.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -3326,7 +3862,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_sprite_stacking.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -3354,7 +3894,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_cellular_automata.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3382,7 +3926,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/textures/textures_framebuffer_rendering.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -3419,7 +3967,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_sprite_fonts.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3449,7 +4001,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_font_spritefont.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3477,7 +4033,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": true,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_font_filters.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "directory_or_drop_apis"
       ]
@@ -3509,7 +4069,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_font_loading.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3540,7 +4104,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_font_sdf.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "shader_assets"
       ]
@@ -3568,7 +4136,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_format_text.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3594,7 +4166,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_input_box.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3620,7 +4196,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_writing_anim.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3646,7 +4226,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_rectangle_bounds.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3679,7 +4263,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_unicode_emojis.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3707,7 +4295,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_unicode_ranges.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3739,7 +4331,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": true,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_3d_drawing.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "shader_assets",
         "directory_or_drop_apis"
@@ -3770,7 +4366,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_codepoints_loading.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3796,7 +4396,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_inline_styling.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3824,7 +4428,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_words_alignment.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -3852,7 +4460,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/text/text_strings_management.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3882,7 +4494,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/models/models_loading_iqm.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3912,7 +4528,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/models/models_billboard_rendering.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -3940,7 +4560,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/models/models_box_collisions.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3969,7 +4593,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/models/models_cubicmap_rendering.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -3998,7 +4626,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/models/models_first_person_maze.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -4024,7 +4656,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/models/models_geometric_shapes.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -4050,7 +4686,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/models/models_mesh_generation.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -4081,7 +4721,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/models/models_mesh_picking.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -4112,7 +4756,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": true,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/models/models_loading.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "directory_or_drop_apis"
       ]
@@ -4142,7 +4790,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/models/models_loading_gltf.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -4182,7 +4834,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/models/models_loading_vox.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": [
         "raymath_helper_header",
         "rlights_helper_header",
@@ -4214,6 +4870,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": []
     },
@@ -4240,7 +4900,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/models/models_orthographic_projection.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -4268,6 +4932,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": []
     },
@@ -4296,6 +4964,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": []
     },
@@ -4327,6 +4999,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header"
@@ -4355,6 +5031,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": []
     },
@@ -4383,6 +5063,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": []
     },
@@ -4427,6 +5111,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": true,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
@@ -4461,6 +5149,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": []
     },
@@ -4497,6 +5189,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
@@ -4533,6 +5229,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header"
@@ -4563,6 +5263,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header"
@@ -4593,6 +5297,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header"
@@ -4623,7 +5331,11 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
-      "port_status": "not_started",
+      "raw_port_present": true,
+      "raw_port_path": "examples/raylib/models/models_rotating_cube.mt",
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
+      "port_status": "raw_port",
       "known_blockers": []
     },
     {
@@ -4655,6 +5367,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header"
@@ -4687,6 +5403,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header"
@@ -4726,6 +5446,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
@@ -4765,6 +5489,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raygui_helper_header",
@@ -4798,6 +5526,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raygui_helper_header"
@@ -4832,6 +5564,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -4870,6 +5606,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
@@ -4906,6 +5646,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -4939,6 +5683,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -4973,6 +5721,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -5040,6 +5792,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -5072,6 +5828,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -5104,6 +5864,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -5136,6 +5900,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -5169,6 +5937,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -5202,6 +5974,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -5234,6 +6010,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -5266,6 +6046,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -5304,6 +6088,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raygui_helper_header",
@@ -5337,6 +6125,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -5376,6 +6168,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
@@ -5414,6 +6210,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
@@ -5449,6 +6249,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -5487,6 +6291,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
@@ -5521,6 +6329,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -5561,6 +6373,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
@@ -5597,6 +6413,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
@@ -5643,6 +6463,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
@@ -5683,6 +6507,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
@@ -5717,6 +6545,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -5757,6 +6589,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
@@ -5796,6 +6632,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "rlights_helper_header",
@@ -5831,6 +6671,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -5877,6 +6721,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "rlights_helper_header",
@@ -5918,6 +6766,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
@@ -5954,6 +6806,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -5988,6 +6844,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "shader_assets"
@@ -6031,6 +6891,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raygui_helper_header",
@@ -6066,6 +6930,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": []
     },
@@ -6110,6 +6978,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
@@ -6142,6 +7014,10 @@
       "uses_audio_files": true,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": []
     },
@@ -6170,6 +7046,10 @@
       "uses_audio_files": true,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": []
     },
@@ -6196,6 +7076,10 @@
       "uses_audio_files": false,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": []
     },
@@ -6225,6 +7109,10 @@
       "uses_audio_files": true,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": []
     },
@@ -6254,6 +7142,10 @@
       "uses_audio_files": true,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": []
     },
@@ -6282,6 +7174,10 @@
       "uses_audio_files": true,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": []
     },
@@ -6310,6 +7206,10 @@
       "uses_audio_files": true,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": []
     },
@@ -6340,6 +7240,10 @@
       "uses_audio_files": true,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header"
@@ -6375,6 +7279,10 @@
       "uses_audio_files": true,
       "uses_callbacks": false,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "raymath_helper_header",
@@ -6404,6 +7312,10 @@
       "uses_audio_files": false,
       "uses_callbacks": true,
       "uses_file_drop_or_directory_api": false,
+      "raw_port_present": false,
+      "raw_port_path": null,
+      "idiomatic_port_present": false,
+      "idiomatic_port_path": null,
       "port_status": "not_started",
       "known_blockers": [
         "callback_ffi"
