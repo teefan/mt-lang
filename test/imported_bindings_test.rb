@@ -12,17 +12,17 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
-    assert_includes registry.fetch("raylib").policy_path, "/std/raylib.binding.json"
+    assert_includes registry.fetch("raylib").policy_path, "/bindings/imported/raylib.binding.json"
 
     assert_equal "std.rlgl", registry.fetch("rlgl").module_name
     assert_equal "std.c.rlgl", registry.fetch("rlgl").raw_module_name
     assert_includes registry.fetch("rlgl").binding_path, "/std/rlgl.mt"
-    assert_includes registry.fetch("rlgl").policy_path, "/std/rlgl.binding.json"
+    assert_includes registry.fetch("rlgl").policy_path, "/bindings/imported/rlgl.binding.json"
 
     assert_equal "std.raygui", registry.fetch("raygui").module_name
     assert_equal "std.c.raygui", registry.fetch("raygui").raw_module_name
     assert_includes registry.fetch("raygui").binding_path, "/std/raygui.mt"
-    assert_includes registry.fetch("raygui").policy_path, "/std/raygui.binding.json"
+    assert_includes registry.fetch("raygui").policy_path, "/bindings/imported/raygui.binding.json"
   end
 
   def test_checked_in_raylib_binding_matches_policy_and_loads
@@ -120,8 +120,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
       raw_path = File.join(dir, "std", "c", "sample.mt")
       shared_path = File.join(dir, "std", "shared.mt")
       binding_path = File.join(dir, "std", "sample.mt")
-      policy_path = File.join(dir, "std", "sample.binding.json")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
       FileUtils.mkdir_p(File.dirname(raw_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
 
       File.write(raw_path, <<~MT)
         extern module std.c.sample:
@@ -207,8 +208,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
       raw_path = File.join(dir, "std", "c", "sample.mt")
       shared_path = File.join(dir, "std", "shared.mt")
       binding_path = File.join(dir, "std", "sample.mt")
-      policy_path = File.join(dir, "std", "sample.binding.json")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
       FileUtils.mkdir_p(File.dirname(raw_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
 
       File.write(raw_path, <<~MT)
         extern module std.c.sample:
@@ -291,8 +293,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
       raw_path = File.join(dir, "std", "c", "sample.mt")
       shared_path = File.join(dir, "std", "shared.mt")
       binding_path = File.join(dir, "std", "sample.mt")
-      policy_path = File.join(dir, "std", "sample.binding.json")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
       FileUtils.mkdir_p(File.dirname(raw_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
 
       File.write(raw_path, <<~MT)
         extern module std.c.sample:
@@ -406,8 +409,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     Dir.mktmpdir("milk-tea-imported-binding-generate") do |dir|
       raw_path = File.join(dir, "std", "c", "sample.mt")
       binding_path = File.join(dir, "std", "sample.mt")
-      policy_path = File.join(dir, "std", "sample.binding.json")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
       FileUtils.mkdir_p(File.dirname(raw_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
 
       File.write(raw_path, <<~MT)
         extern module std.c.sample:
@@ -523,8 +527,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     Dir.mktmpdir("milk-tea-imported-binding-variadic-overrides") do |dir|
       raw_path = File.join(dir, "std", "c", "sample.mt")
       binding_path = File.join(dir, "std", "sample.mt")
-      policy_path = File.join(dir, "std", "sample.binding.json")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
       FileUtils.mkdir_p(File.dirname(raw_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
 
       File.write(raw_path, <<~MT)
         extern module std.c.sample:
@@ -592,8 +597,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     Dir.mktmpdir("milk-tea-imported-binding-drift") do |dir|
       raw_path = File.join(dir, "std", "c", "sample.mt")
       binding_path = File.join(dir, "std", "sample.mt")
-      policy_path = File.join(dir, "std", "sample.binding.json")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
       FileUtils.mkdir_p(File.dirname(raw_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
 
       File.write(raw_path, <<~MT)
         extern module std.c.sample:
