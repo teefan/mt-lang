@@ -199,8 +199,75 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/LoadFileData\(/, generated)
     assert_match(/&data_size/, generated)
     assert_match(/SaveFileData\(/, generated)
-    assert_match(/__mt_foreign_arg_\d+\.data/, generated)
-    assert_match(/\(\(int32_t\) __mt_foreign_arg_\d+\.len\)|\(int32_t\) __mt_foreign_arg_\d+\.len/, generated)
+    assert_match(/SaveFileData\(__mt_foreign_arg_\d+, data\.data, \(\(int32_t\) data\.len\)\);|SaveFileData\(__mt_foreign_arg_\d+, data\.data, \(int32_t\) data\.len\);/, generated)
+  end
+
+  def test_generate_c_for_cleanup_bearing_foreign_results_without_intermediate_result_temps
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main(path: str) -> i32:
+          let first = sample.load(path)
+          var second = 0
+          second = sample.load(path)
+          return first + second
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def Load(path: cstr) -> i32
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def load(path: str as cstr) -> i32 = c.Load
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    refute_match(/__mt_foreign_result_\d+/, generated)
+    assert_match(/int32_t first = Load\(__mt_foreign_arg_\d+\);/, generated)
+    assert_match(/second = Load\(__mt_foreign_arg_\d+\);/, generated)
+    assert_match(/mt_free_foreign_cstr_temp\(__mt_foreign_arg_\d+\);/, generated)
+  end
+
+  def test_generate_c_for_cstr_backed_string_constants_without_foreign_temps
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      const PATH: str = "demo.txt"
+
+      def main() -> i32:
+          return sample.load(PATH)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def Load(path: cstr) -> i32
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def load(path: str as cstr) -> i32 = c.Load
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    refute_match(/mt_foreign_str_to_cstr_temp/, generated)
+    refute_match(/mt_free_foreign_cstr_temp/, generated)
+    assert_match(/return Load\(\(\(const char\*\) demo_main_PATH\.data\)\);/, generated)
   end
 
   def test_generate_c_for_foreign_defs_with_in_const_void_pointer
@@ -421,7 +488,9 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/mt_foreign_strs_to_cstrs_temp/, generated)
     assert_match(/mt_free_foreign_cstrs_temp/, generated)
-    assert_match(/demo_main_keep\(__mt_foreign_expr_\d+\)/, generated)
+    refute_match(/__mt_foreign_expr_\d+/, generated)
+    refute_match(/int32_t __mt_foreign_arg_\d+ = 1 \+ 2;/, generated)
+    assert_match(/int32_t doubled = demo_main_keep\(PairSum\(1 \+ 2, 1 \+ 2\)\);/, generated)
     assert_match(/CountNames\(/, generated)
     assert_match(/PairSum\(/, generated)
   end
@@ -604,6 +673,45 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/DrawTriangle\(\(Vector2\)\{ \.x = center, \.y = 80\.0f \}, \(Vector2\)\{ \.x = center - 60\.0f, \.y = 150\.0f \}, \(Vector2\)\{ \.x = center \+ 60\.0f, \.y = 150\.0f \}, std_sample_VIOLET\);/, generated)
   end
 
+  def test_generate_c_for_checked_span_index_foreign_arguments_without_foreign_arg_temps
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      struct Bunny:
+          x: i32
+          y: i32
+          color: i32
+
+      def main(items: span[Bunny], count: i32) -> void:
+          for index in range(0, count):
+              sample.draw(items[index].x, items[index].y, items[index].color)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def Draw(x: i32, y: i32, color: i32) -> void
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def draw(x: i32, y: i32, color: i32) -> void = c.Draw
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    refute_match(/__mt_foreign_arg_\d+/, generated)
+    refute_match(/int32_t index = __mt_for_index_\d+;/, generated)
+    assert_match(/for \(int32_t index = 0; index < __mt_for_stop_\d+; index \+= 1\)/, generated)
+    assert_match(/demo_main_Bunny \*__mt_checked_index_ptr_\d+ = mt_checked_span_index_span_demo_main_Bunny\(items, index\);/, generated)
+    assert_match(/Draw\(__mt_checked_index_ptr_\d+->x, __mt_checked_index_ptr_\d+->y, __mt_checked_index_ptr_\d+->color\);/, generated)
+  end
+
   def test_generate_c_for_nested_foreign_calls_with_imported_arguments
     source = <<~MT
       module demo.main
@@ -647,6 +755,49 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/UseColor\(Fade\(std_sample_RED, 0\.5f\)\);/, generated)
   end
 
+  def test_generate_c_for_foreign_text_calls_without_numbered_argument_temps
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main(area: i32) -> void:
+          let label = "COLLISION!"
+          sample.draw_text(label, sample.screen_width() / 2 - sample.measure_text(label, 20) / 2, 10, 20, sample.BLACK)
+          sample.draw_text(sample.text_format_i32("Collision Area: %i", area), sample.screen_width() / 2 - 100, 20, 20, sample.BLACK)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            const BLACK: i32 = 0
+
+            extern def DrawText(text: cstr, pos_x: i32, pos_y: i32, font_size: i32, color: i32) -> void
+            extern def MeasureText(text: cstr, font_size: i32) -> i32
+            extern def GetScreenWidth() -> i32
+            extern def TextFormat(format: cstr, value: i32) -> cstr
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub const BLACK: i32 = c.BLACK
+
+        pub foreign def draw_text(text: str as cstr, pos_x: i32, pos_y: i32, font_size: i32, color: i32) -> void = c.DrawText
+        pub foreign def measure_text(text: str as cstr, font_size: i32) -> i32 = c.MeasureText
+        pub foreign def screen_width() -> i32 = c.GetScreenWidth
+        pub foreign def text_format_i32(format: str as cstr, value: i32) -> cstr = c.TextFormat(format, value)
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    refute_match(/__mt_foreign_arg_\d+/, generated)
+    assert_match(/DrawText\(\(\(const char\*\) label\.data\), \(GetScreenWidth\(\) \/ 2\) - \(MeasureText\(\(\(const char\*\) label\.data\), 20\) \/ 2\), 10, 20, std_sample_BLACK\);/, generated)
+    assert_match(/DrawText\(TextFormat\("Collision Area: %i", area\), \(GetScreenWidth\(\) \/ 2\) - 100, 20, 20, std_sample_BLACK\);/, generated)
+  end
+
   def test_generate_c_for_foreign_defs_with_identity_pointer_projections
     source = <<~MT
       module demo.main
@@ -686,8 +837,8 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_program_source(source, imported_sources)
 
     assert_match(/return \(\(\(uint8_t\*\) AllocateBytes\(16\)\)\)\[0\];/, generated)
-    assert_match(/uint8_t \*__mt_foreign_arg_\d+ = \(\(uint8_t\*\) AllocateBytes\(8\)\);/, generated)
-    assert_match(/ReleaseBytes\(__mt_foreign_arg_\d+\);/, generated)
+    refute_match(/__mt_foreign_arg_\d+/, generated)
+    assert_match(/ReleaseBytes\(\(\(uint8_t\*\) AllocateBytes\(8\)\)\);/, generated)
     assert_match(/SetLabel\(buffer\);/, generated)
   end
 
@@ -1223,8 +1374,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/for \(uintptr_t __mt_for_index_\d+ = 0; __mt_for_index_\d+ < 4; __mt_for_index_\d+ \+= 1\)/, generated)
     assert_match(/int32_t item = __mt_for_items_\d+\[__mt_for_index_\d+\];/, generated)
-    assert_match(/for \(int32_t __mt_for_index_\d+ = 0; __mt_for_index_\d+ < 4; __mt_for_index_\d+ \+= 1\)/, generated)
-    assert_match(/int32_t i = __mt_for_index_\d+;/, generated)
+    assert_match(/for \(int32_t i = 0; i < 4; i \+= 1\)/, generated)
+    refute_match(/int32_t i = __mt_for_index_\d+;/, generated)
     refute_match(/int32_t __mt_for_stop_\d+ = 4;/, generated)
   end
 
@@ -1245,7 +1396,7 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_source(source)
 
     assert_match(/int32_t __mt_for_stop_\d+ = stop;/, generated)
-    assert_match(/for \(int32_t __mt_for_index_\d+ = 0; __mt_for_index_\d+ < __mt_for_stop_\d+; __mt_for_index_\d+ \+= 1\)/, generated)
+    assert_match(/for \(int32_t i = 0; i < __mt_for_stop_\d+; i \+= 1\)/, generated)
   end
 
   def test_generate_c_for_break_and_continue_inside_match_with_for_loop
@@ -1368,7 +1519,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/for \(int32_t __mt_for_index_\d+ = 0; __mt_for_index_\d+ < 5; __mt_for_index_\d+ \+= 1\) \{/, generated)
+    assert_match(/for \(int32_t i = 0; i < 5; i \+= 1\) \{/, generated)
     assert_match(/if \(i == 2\) \{\n      continue;/, generated)
     refute_match(/goto __mt_loop_continue_\d+;/, generated)
     refute_match(/__mt_loop_continue_\d+:;/, generated)

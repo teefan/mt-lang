@@ -507,6 +507,7 @@ module MilkTea
             c_name = c_local_name(statement.name)
             prepared_setup = []
             prepared_value = statement.value
+            emitted_decl = false
             if statement.value
               prepared_setup, prepared_value = prepare_expression_for_inline_lowering(
                 statement.value,
@@ -517,8 +518,19 @@ module MilkTea
               lowered.concat(prepared_setup)
             end
             if prepared_value && (foreign_call = foreign_call_info(prepared_value, local_env))
-              setup, value = lower_foreign_call_statement(foreign_call, env: local_env, expected_type: type, statement_position: false)
+              setup, value, call_type, release_assignments, cleanup_statements = lower_foreign_call_components(
+                foreign_call,
+                env: local_env,
+                expected_type: type,
+                statement_position: false,
+              )
               lowered.concat(setup)
+              raise LoweringError, "foreign call used to initialize #{statement.name} must return a value" if call_type == @types.fetch("void")
+              raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
+
+              lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:)
+              lowered.concat(cleanup_statements)
+              emitted_decl = true
             elsif prepared_value
               value = lower_contextual_expression(
                 prepared_value,
@@ -537,7 +549,7 @@ module MilkTea
               cstr_backed: cstr_backed_storage_value?(type, prepared_value, local_env),
               cstr_list_backed: cstr_list_backed_storage_value?(type, prepared_value, local_env),
             )
-            lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:)
+            lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:) unless emitted_decl
           when AST::Assignment
             target = lower_assignment_target(statement.target, env: local_env)
             prepared_setup, prepared_value = prepare_expression_for_inline_lowering(
@@ -548,8 +560,20 @@ module MilkTea
             )
             lowered.concat(prepared_setup)
             if (foreign_call = foreign_call_info(prepared_value, local_env))
-              setup, value = lower_foreign_call_statement(foreign_call, env: local_env, expected_type: target.type, statement_position: false)
+              setup, value, call_type, release_assignments, cleanup_statements = lower_foreign_call_components(
+                foreign_call,
+                env: local_env,
+                expected_type: target.type,
+                statement_position: false,
+              )
               lowered.concat(setup)
+              raise LoweringError, "foreign call used in assignment must return a value" if call_type == @types.fetch("void")
+              raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
+
+              lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
+              lowered.concat(cleanup_statements)
+              update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
+              next
             else
               value = if statement.operator == "="
                         lower_contextual_expression(
@@ -778,7 +802,7 @@ module MilkTea
         stop_expr = statement.iterable.arguments[1].value
         start_setup, prepared_start = prepare_expression_for_inline_lowering(start_expr, env:, expected_type: loop_type)
         stop_setup, prepared_stop = prepare_expression_for_inline_lowering(stop_expr, env:, expected_type: loop_type)
-        index_c_name = fresh_c_temp_name(env, "for_index")
+        index_c_name = c_local_name(statement.name)
         stop_c_name = fresh_c_temp_name(env, "for_stop")
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
@@ -793,9 +817,7 @@ module MilkTea
         while_env = duplicate_env(env)
         current_actual_scope(while_env[:scopes])[statement.name] = local_binding(type: loop_type, c_name: c_local_name(statement.name), mutable: false, pointer: false)
 
-        body = [
-          IR::LocalDecl.new(name: statement.name, c_name: c_local_name(statement.name), type: loop_type, value: index_ref),
-        ]
+        body = []
         body.concat(
           lower_block(
             statement.body,
@@ -809,7 +831,7 @@ module MilkTea
         body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
 
         for_statement = IR::ForStmt.new(
-          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: loop_type, value: lower_expression(prepared_start, env:, expected_type: loop_type)),
+          init: IR::LocalDecl.new(name: statement.name, c_name: index_c_name, type: loop_type, value: lower_expression(prepared_start, env:, expected_type: loop_type)),
           condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
           post: IR::Assignment.new(
             target: index_ref,
@@ -1096,7 +1118,7 @@ module MilkTea
           total_references = reference_counts.fetch(param_ast.name, 0)
           total_references += reference_counts.fetch(public_alias, 0) if public_alias
           next unless total_references > 1
-          next if simple_foreign_argument_expression?(expression.arguments.fetch(index).value)
+          next if duplicable_foreign_argument_expression?(expression.arguments.fetch(index).value)
 
           return true
         end
@@ -1482,7 +1504,7 @@ module MilkTea
         binding.type.params.any? { |parameter| parameter.passing_mode == :consuming }
       end
 
-      def lower_foreign_call_statement(foreign_call, env:, expected_type:, statement_position:, discard_result: false)
+      def lower_foreign_call_components(foreign_call, env:, expected_type:, statement_position:)
         call = foreign_call.fetch(:call)
         binding = foreign_call.fetch(:binding)
         raise LoweringError, "consuming foreign calls must be top-level expression statements" if foreign_call_consumes_binding?(binding) && !statement_position
@@ -1504,6 +1526,17 @@ module MilkTea
           replacements:,
           owner_analysis:,
           expected_type: expected_type || call_type,
+        )
+
+        [lowered, lowered_call, call_type, release_assignments, cleanup_statements]
+      end
+
+      def lower_foreign_call_statement(foreign_call, env:, expected_type:, statement_position:, discard_result: false)
+        lowered, lowered_call, call_type, release_assignments, cleanup_statements = lower_foreign_call_components(
+          foreign_call,
+          env:,
+          expected_type:,
+          statement_position:,
         )
 
         if call_type == @types.fetch("void")
@@ -1700,6 +1733,13 @@ module MilkTea
               return lower_expression(argument.value, env:, expected_type: parameter.boundary_type)
             end
 
+            if cstr_backed_expression?(argument.value, env)
+              lowered_value = lower_contextual_expression(argument.value, env:, expected_type: parameter.type)
+              data_expression = IR::Member.new(receiver: lowered_value, member: "data", type: pointer_to(@types.fetch("char")))
+              converted = foreign_identity_projection_expression(data_expression, parameter.boundary_type)
+              return converted if converted
+            end
+
             IR::Call.new(
               callee: "mt_foreign_str_to_cstr_temp",
               arguments: [lower_contextual_expression(argument.value, env:, expected_type: parameter.type)],
@@ -1834,7 +1874,7 @@ module MilkTea
           total_references = reference_counts.fetch(param_ast.name, 0)
           total_references += reference_counts.fetch(public_alias, 0) if public_alias
           next unless total_references > 1
-          next if simple_foreign_argument_expression?(expression.arguments.fetch(index).value)
+          next if duplicable_foreign_argument_expression?(expression.arguments.fetch(index).value)
 
           raise LoweringError, "foreign call #{binding.name} cannot be used inline because #{param_ast.name} is referenced multiple times in its mapping; use it as a statement, local initializer, assignment, or return expression"
         end
@@ -2252,19 +2292,30 @@ module MilkTea
         counts
       end
 
-      def simple_foreign_argument_expression?(expression)
+      def duplicable_foreign_argument_expression?(expression)
         case expression
-        when AST::Identifier, AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral, AST::BooleanLiteral, AST::NullLiteral
+        when AST::Identifier, AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral, AST::BooleanLiteral, AST::NullLiteral,
+             IR::Name, IR::IntegerLiteral, IR::FloatLiteral, IR::StringLiteral, IR::BooleanLiteral, IR::NullLiteral
           true
         when AST::MemberAccess
-          simple_foreign_argument_expression?(expression.receiver)
+          duplicable_foreign_argument_expression?(expression.receiver)
+        when IR::Member
+          duplicable_foreign_argument_expression?(expression.receiver)
+        when AST::UnaryOp
+          duplicable_foreign_argument_expression?(expression.operand)
+        when IR::Unary
+          duplicable_foreign_argument_expression?(expression.operand)
+        when AST::BinaryOp
+          duplicable_foreign_argument_expression?(expression.left) && duplicable_foreign_argument_expression?(expression.right)
+        when IR::Binary
+          duplicable_foreign_argument_expression?(expression.left) && duplicable_foreign_argument_expression?(expression.right)
         else
           false
         end
       end
 
       def foreign_argument_needs_temporary_binding?(expression, reference_count:)
-        return true if reference_count > 1
+        return true if reference_count > 1 && !duplicable_foreign_argument_expression?(expression)
 
         !inlineable_foreign_argument_expression?(expression)
       end
@@ -2280,6 +2331,7 @@ module MilkTea
       def automatic_foreign_cstr_temp_needed?(parameter, expression, env:)
         return false unless parameter.boundary_type == @types.fetch("cstr") && parameter.type == @types.fetch("str")
         return false if expression.is_a?(AST::StringLiteral) && !expression.cstring
+        return false if cstr_backed_expression?(expression, env)
 
         infer_expression_type(expression, env:) != @types.fetch("cstr")
       end
@@ -2428,9 +2480,16 @@ module MilkTea
         case expression
         when IR::Name, IR::IntegerLiteral, IR::FloatLiteral, IR::StringLiteral, IR::BooleanLiteral, IR::NullLiteral, IR::ZeroInit, IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
           true
+        when IR::Call
+          return false if temporary_foreign_cstr_expression?(expression)
+
+          callee_inlineable = expression.callee.is_a?(String) || inlineable_foreign_argument_expression?(expression.callee)
+          callee_inlineable && expression.arguments.all? { |argument| inlineable_foreign_argument_expression?(argument) }
         when IR::Member
           inlineable_foreign_argument_expression?(expression.receiver)
         when IR::Index
+          inlineable_foreign_argument_expression?(expression.receiver) && inlineable_foreign_argument_expression?(expression.index)
+        when IR::CheckedIndex, IR::CheckedSpanIndex
           inlineable_foreign_argument_expression?(expression.receiver) && inlineable_foreign_argument_expression?(expression.index)
         when IR::Unary
           inlineable_foreign_argument_expression?(expression.operand)
@@ -4103,7 +4162,16 @@ module MilkTea
 
         if @values.key?(name)
           binding = @values.fetch(name)
-          { type: binding.type, storage_type: binding.storage_type, c_name: value_c_name(name), mutable: binding.mutable, pointer: false }
+          {
+            type: binding.type,
+            storage_type: binding.storage_type,
+            c_name: value_c_name(name),
+            mutable: binding.mutable,
+            pointer: false,
+            cstr_backed: cstr_trackable_type?(binding.type) && binding.const_value.is_a?(String),
+            cstr_list_backed: false,
+            const_value: binding.const_value,
+          }
         end
       end
 

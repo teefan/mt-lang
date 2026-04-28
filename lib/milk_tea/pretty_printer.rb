@@ -669,7 +669,7 @@ module MilkTea
       def render_for_clause_statement(statement)
         case statement
         when IR::LocalDecl
-          "#{statement.c_name}: #{render_type(statement.type)} = #{render_expression(statement.value)}"
+          "#{statement.c_name}: #{statement.type} = #{render_expression(statement.value)}"
         when IR::Assignment
           "#{render_expression(statement.target)} #{statement.operator} #{render_expression(statement.value)}"
         when IR::ExpressionStmt
