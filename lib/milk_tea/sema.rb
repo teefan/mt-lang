@@ -578,6 +578,8 @@ module MilkTea
         case expression
         when AST::IntegerLiteral, AST::FloatLiteral
           expression.value
+        when AST::StringLiteral
+          expression.value
         when AST::Identifier
           resolve_current_module_const_value(expression.name)
         when AST::MemberAccess

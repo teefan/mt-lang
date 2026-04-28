@@ -200,6 +200,28 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_includes output, "return counter.value"
   end
 
+  def test_formats_lowered_ir_for_clauses
+    source = [
+      "module demo.pretty_for",
+      "",
+      "def keep(value: i32) -> void:",
+      "    return",
+      "",
+      "def main() -> void:",
+      "    for i in range(0, 3):",
+      "        keep(i)",
+      "",
+    ].join("\n")
+
+    output = with_program(source) do |program|
+      MilkTea::PrettyPrinter.format_ir(MilkTea::Lowering.lower(program))
+    end
+
+    assert_includes output, "fn main() -> void [entry]:"
+    assert_includes output, "for i: i32 = 0; i < 3; i += 1:"
+    assert_includes output, "demo_pretty_for_keep(i)"
+  end
+
   private
 
   def with_program(source)
