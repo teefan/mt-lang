@@ -2392,6 +2392,39 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/float right = callback\(1\.0f\);/, generated)
   end
 
+  def test_generate_c_for_imported_function_callable_values
+    source = [
+      "module demo.main",
+      "",
+      "import std.ease as ease",
+      "",
+      "struct Entry:",
+      "    callback: fn(value: i32) -> i32",
+      "",
+      "def main() -> i32:",
+      "    let callbacks = array[fn(value: i32) -> i32, 1](ease.double)",
+      "    let entry = Entry(callback = ease.double)",
+      "    return callbacks[0](3) + entry.callback(4)",
+      "",
+    ].join("\n")
+
+    imported_sources = {
+      "std/ease.mt" => [
+        "module std.ease",
+        "",
+        "pub def double(value: i32) -> i32:",
+        "    return value * 2",
+        "",
+      ].join("\n"),
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/int32_t \(\*callbacks\[1\]\)\(int32_t value\) = \{ std_ease_double \};/, generated)
+    assert_match(/\.callback = std_ease_double/, generated)
+    assert_match(/return \(\(\*mt_checked_index_array_fn_1\(&\(callbacks\), 0\)\)\)\(3\) \+ entry\.callback\(4\);/, generated)
+  end
+
   def test_generate_c_for_module_scope_mutable_vars
     source = [
       "module demo.global_state",

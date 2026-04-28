@@ -19,10 +19,10 @@ The upstream reference is the raylib examples tree at:
 
 - `https://github.com/raysan5/raylib/tree/master/examples`
 
-The current curated upstream collection is 212 examples across 7 categories:
+The current local raw corpus is 213 examples across 7 categories:
 
 - `core`: 49
-- `shapes`: 40
+- `shapes`: 41
 - `textures`: 32
 - `text`: 16
 - `models`: 30
@@ -34,13 +34,23 @@ There is also an `others/` directory in the upstream repo. It is not part of the
 ## Current Repo Facts
 
 - The repo already has a usable `std.c.raylib` raw binding and a working build/run pipeline.
-- The repo now also has a generated `std.raylib` ordinary module for a first curated API slice, driven by a checked-in policy over `std.c.raylib`.
+- The repo now also has generated ordinary modules for curated API slices: `std.raylib`, `std.raygui`, and `std.rlgl`.
 - The generated ordinary module now explicitly excludes raw-only callback and varargs support declarations that should stay on the raw side until the language can model them honestly.
 - `examples/raylib/` is now the raw/conformance corpus. It intentionally stays close to the upstream ports and continues to import `std.c.raylib` where needed.
 - `examples/idiomatic/raylib/` is the curated showcase track. Files in that tree must import `std.raylib`, prefer `str`, and avoid `unsafe`, `c"..."`, and raw pointer syntax.
-- The repo does not currently ship raw extern modules for `raymath.h`, `rlgl.h`, `raygui.h`, or `rlights.h`.
+- The repo ships raw extern modules for `raylib.h`, `raygui.h`, `rlgl.h`, and `rlights.h`. `raymath.h` remains intentionally represented by ordinary Milk Tea helpers in `std.raylib.math` unless a future example proves that a raw surface is required.
 - Upstream examples assume `resources/...` paths are resolved relative to the example source directory.
 - `MilkTea::Run.run` now executes the built binary with `chdir: File.dirname(source_path)`, which is required for example-relative asset loading.
+
+## Current Status
+
+- Raw/conformance corpus: 213 examples.
+- Idiomatic showcase corpus: 94 examples.
+- Idiomatic `shapes` coverage is complete against the current raw `examples/raylib/shapes/` names, with `math_angle_rotation` represented as `angle_rotation`.
+- Idiomatic `textures` coverage is complete against the current raw `examples/raylib/textures/` names. The ports use `std.raylib`/`std.rlgl`, typed `inout` image mutation wrappers, string-based asset loading, and std-owned helpers for animated-image frame updates.
+- The first idiomatic `text` sanity slice is in place: formatted text and writing animation.
+- The remaining idiomatic work is outside `shapes` and `textures`: broader `text`, `models`, `shaders`, and `audio` coverage.
+- Keep this plan until the full idiomatic corpus is complete. Do not delete it merely because the shapes slice is finished.
 
 ## Non-Negotiable Constraints
 
@@ -335,12 +345,13 @@ An example port is not done until all of the following are true:
 - after each wave, review the compiler and helper-module pain points
 - only promote repeated pain into language or toolchain improvements
 
-## Recommended First Concrete Milestone
+## Current Concrete Milestone
 
-The correct next milestone is not "all examples". It is:
+The first raw corpus and low-friction idiomatic slices are already established. The next concrete milestone is:
 
-- sync upstream examples and assets
-- generate a manifest
-- port `core` first
+- keep `shapes` green while expanding idiomatic coverage into `textures` and `text`
+- promote repeated example friction into ordinary stdlib helpers only when examples prove the need
+- keep raw examples as conformance fixtures and idiomatic examples as the user-facing showcase
+- run the idiomatic suite and focused builds after each new example cluster
 
-That milestone is small enough to finish and strong enough to expose the next real compiler issues without getting buried in shader helpers, model formats, or `raygui` integration.
+This milestone is large enough to expose real string, asset, image, font, and lifecycle issues without prematurely getting buried in shader helpers, model formats, or callback-heavy APIs.

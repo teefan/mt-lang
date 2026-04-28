@@ -1199,6 +1199,14 @@ module MilkTea
 
         if expression.receiver.is_a?(AST::Identifier) && @imports.key?(expression.receiver.name)
           imported_module = @imports.fetch(expression.receiver.name)
+          if imported_module.functions.key?(expression.member)
+            function_binding = imported_module.functions.fetch(expression.member)
+            raise LoweringError, "generic function #{expression.receiver.name}.#{expression.member} cannot be used as a value" if function_binding.type_params.any?
+            raise LoweringError, "foreign function #{expression.receiver.name}.#{expression.member} cannot be used as a value" if foreign_function_binding?(function_binding)
+
+            return IR::Name.new(name: function_binding_c_name(function_binding, module_name: imported_module.name), type:, pointer: false)
+          end
+
           return IR::Name.new(name: imported_value_c_name(imported_module, expression.member), type:, pointer: false)
         end
 
@@ -2941,6 +2949,7 @@ module MilkTea
           if expression.receiver.is_a?(AST::Identifier) && @imports.key?(expression.receiver.name)
             imported_module = @imports.fetch(expression.receiver.name)
             return imported_module.values.fetch(expression.member).type if imported_module.values.key?(expression.member)
+            return imported_module.functions.fetch(expression.member).type if imported_module.functions.key?(expression.member)
           end
           receiver_type = infer_expression_type(expression.receiver, env:)
           return receiver_type.field(expression.member) if receiver_type.respond_to?(:field)

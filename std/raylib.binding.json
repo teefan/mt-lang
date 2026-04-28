@@ -58,6 +58,31 @@
         ]
       },
       {
+        "raw": "LoadShader",
+        "params": [
+          { "name": "vs_file_name", "type": "cstr?" },
+          { "name": "fs_file_name", "type": "cstr?" }
+        ]
+      },
+      {
+        "raw": "LoadShader",
+        "name": "load_vertex_shader",
+        "params": [
+          { "name": "vs_file_name", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "Shader",
+        "mapping": "c.LoadShader(vs_file_name, null)"
+      },
+      {
+        "raw": "LoadShader",
+        "name": "load_fragment_shader",
+        "params": [
+          { "name": "fs_file_name", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "Shader",
+        "mapping": "c.LoadShader(null, fs_file_name)"
+      },
+      {
         "raw": "TakeScreenshot",
         "params": [
           { "name": "file_name", "type": "str", "boundary_type": "cstr" }
@@ -154,6 +179,13 @@
         "raw": "DirectoryExists",
         "params": [
           { "name": "dir_path", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "IsFileExtension",
+        "params": [
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" },
+          { "name": "ext", "type": "str", "boundary_type": "cstr" }
         ]
       },
       {
@@ -263,6 +295,42 @@
         ]
       },
       {
+        "raw": "DrawLineStrip",
+        "name": "draw_line_strip_ptr"
+      },
+      {
+        "raw": "DrawTriangleFan",
+        "name": "draw_triangle_fan_ptr"
+      },
+      {
+        "raw": "DrawTriangleStrip",
+        "name": "draw_triangle_strip_ptr"
+      },
+      {
+        "raw": "DrawSplineLinear",
+        "name": "draw_spline_linear_ptr"
+      },
+      {
+        "raw": "DrawSplineBasis",
+        "name": "draw_spline_basis_ptr"
+      },
+      {
+        "raw": "DrawSplineCatmullRom",
+        "name": "draw_spline_catmull_rom_ptr"
+      },
+      {
+        "raw": "DrawSplineBezierQuadratic",
+        "name": "draw_spline_bezier_quadratic_ptr"
+      },
+      {
+        "raw": "DrawSplineBezierCubic",
+        "name": "draw_spline_bezier_cubic_ptr"
+      },
+      {
+        "raw": "CheckCollisionPointPoly",
+        "name": "check_collision_point_poly_ptr"
+      },
+      {
         "raw": "DrawText",
         "params": [
           { "name": "text", "type": "str", "boundary_type": "cstr" },
@@ -270,6 +338,75 @@
           { "name": "pos_y", "type": "i32" },
           { "name": "font_size", "type": "i32" },
           { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "DrawTextEx",
+        "params": [
+          { "name": "font", "type": "Font" },
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "position", "type": "Vector2" },
+          { "name": "font_size", "type": "f32" },
+          { "name": "spacing", "type": "f32" },
+          { "name": "tint", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "MeasureText",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "font_size", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "MeasureTextEx",
+        "params": [
+          { "name": "font", "type": "Font" },
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "font_size", "type": "f32" },
+          { "name": "spacing", "type": "f32" }
+        ]
+      },
+      {
+        "raw": "LoadCodepoints",
+        "name": "load_codepoints_ptr",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "count", "type": "i32", "mode": "out" }
+        ],
+        "return_type": "ptr[i32]"
+      },
+      {
+        "raw": "GetCodepointCount",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "GetCodepoint",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "codepoint_size", "type": "i32", "mode": "out" }
+        ]
+      },
+      {
+        "raw": "GetCodepointNext",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "codepoint_size", "type": "i32", "mode": "out" }
+        ]
+      },
+      {
+        "raw": "CodepointToUTF8",
+        "params": [
+          { "name": "codepoint", "type": "i32" },
+          { "name": "utf_8_size", "type": "i32", "mode": "out" }
+        ]
+      },
+      {
+        "raw": "TextLength",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" }
         ]
       },
       {
@@ -292,6 +429,18 @@
         ],
         "return_type": "cstr",
         "mapping": "c.TextFormat(format, first, second)"
+      },
+      {
+        "raw": "TextFormat",
+        "name": "text_format_i32_i32_i32",
+        "params": [
+          { "name": "format", "type": "str", "boundary_type": "cstr" },
+          { "name": "first", "type": "i32" },
+          { "name": "second", "type": "i32" },
+          { "name": "third", "type": "i32" }
+        ],
+        "return_type": "cstr",
+        "mapping": "c.TextFormat(format, first, second, third)"
       },
       {
         "raw": "TextFormat",
@@ -329,6 +478,53 @@
       },
       {
         "raw": "TextFormat",
+        "name": "text_format_cstr_cstr",
+        "params": [
+          { "name": "format", "type": "str", "boundary_type": "cstr" },
+          { "name": "first", "type": "str", "boundary_type": "cstr" },
+          { "name": "second", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "cstr",
+        "mapping": "c.TextFormat(format, first, second)"
+      },
+      {
+        "raw": "TextFormat",
+        "name": "text_format_cstr_i32_i32",
+        "params": [
+          { "name": "format", "type": "str", "boundary_type": "cstr" },
+          { "name": "label", "type": "str", "boundary_type": "cstr" },
+          { "name": "first", "type": "i32" },
+          { "name": "second", "type": "i32" }
+        ],
+        "return_type": "cstr",
+        "mapping": "c.TextFormat(format, label, first, second)"
+      },
+      {
+        "raw": "TextFormat",
+        "name": "text_format_i32_i32_f32",
+        "params": [
+          { "name": "format", "type": "str", "boundary_type": "cstr" },
+          { "name": "first", "type": "i32" },
+          { "name": "second", "type": "i32" },
+          { "name": "third", "type": "f32" }
+        ],
+        "return_type": "cstr",
+        "mapping": "c.TextFormat(format, first, second, third)"
+      },
+      {
+        "raw": "TextFormat",
+        "name": "text_format_cstr_f32_f32",
+        "params": [
+          { "name": "format", "type": "str", "boundary_type": "cstr" },
+          { "name": "label", "type": "str", "boundary_type": "cstr" },
+          { "name": "first", "type": "f32" },
+          { "name": "second", "type": "f32" }
+        ],
+        "return_type": "cstr",
+        "mapping": "c.TextFormat(format, label, first, second)"
+      },
+      {
+        "raw": "TextFormat",
         "name": "text_format_f32",
         "params": [
           { "name": "format", "type": "str", "boundary_type": "cstr" },
@@ -347,6 +543,514 @@
         ],
         "return_type": "cstr",
         "mapping": "c.TextFormat(format, first, second)"
+      },
+      {
+        "raw": "TextSubtext",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "position", "type": "i32" },
+          { "name": "length", "type": "i32" }
+        ],
+        "return_type": "cstr"
+      },
+      {
+        "raw": "TextSplit",
+        "name": "text_split_ptr",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "delimiter", "type": "char" },
+          { "name": "count", "type": "i32", "mode": "out" }
+        ],
+        "return_type": "ptr[ptr[char]]"
+      },
+      {
+        "raw": "TextToUpper",
+        "name": "text_to_upper_ptr",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "TextToLower",
+        "name": "text_to_lower_ptr",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "TextToPascal",
+        "name": "text_to_pascal_ptr",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "TextToSnake",
+        "name": "text_to_snake_ptr",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "TextToCamel",
+        "name": "text_to_camel_ptr",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "LoadImage",
+        "params": [
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "LoadImageRaw",
+        "params": [
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" },
+          { "name": "width", "type": "i32" },
+          { "name": "height", "type": "i32" },
+          { "name": "format", "type": "i32" },
+          { "name": "header_size", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "LoadImageAnim",
+        "params": [
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" },
+          { "name": "frames", "type": "i32", "mode": "out" }
+        ]
+      },
+      {
+        "raw": "ExportImage",
+        "params": [
+          { "name": "image", "type": "Image" },
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "ExportImageAsCode",
+        "params": [
+          { "name": "image", "type": "Image" },
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "GenImageText",
+        "params": [
+          { "name": "width", "type": "i32" },
+          { "name": "height", "type": "i32" },
+          { "name": "text", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "ImageText",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "font_size", "type": "i32" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageTextEx",
+        "params": [
+          { "name": "font", "type": "Font" },
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "font_size", "type": "f32" },
+          { "name": "spacing", "type": "f32" },
+          { "name": "tint", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageFormat",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "new_format", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "ImageToPOT",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "fill", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageCrop",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "crop", "type": "Rectangle" }
+        ]
+      },
+      {
+        "raw": "ImageAlphaCrop",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "threshold", "type": "f32" }
+        ]
+      },
+      {
+        "raw": "ImageAlphaClear",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "color", "type": "Color" },
+          { "name": "threshold", "type": "f32" }
+        ]
+      },
+      {
+        "raw": "ImageAlphaMask",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "alpha_mask", "type": "Image" }
+        ]
+      },
+      {
+        "raw": "ImageAlphaPremultiply",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" }
+        ]
+      },
+      {
+        "raw": "ImageBlurGaussian",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "blur_size", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "ImageKernelConvolution",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "kernel", "type": "const_ptr[f32]" },
+          { "name": "kernel_size", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "ImageResize",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "new_width", "type": "i32" },
+          { "name": "new_height", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "ImageResizeNN",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "new_width", "type": "i32" },
+          { "name": "new_height", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "ImageResizeCanvas",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "new_width", "type": "i32" },
+          { "name": "new_height", "type": "i32" },
+          { "name": "offset_x", "type": "i32" },
+          { "name": "offset_y", "type": "i32" },
+          { "name": "fill", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageMipmaps",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" }
+        ]
+      },
+      {
+        "raw": "ImageDither",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "r_bpp", "type": "i32" },
+          { "name": "g_bpp", "type": "i32" },
+          { "name": "b_bpp", "type": "i32" },
+          { "name": "a_bpp", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "ImageFlipVertical",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" }
+        ]
+      },
+      {
+        "raw": "ImageFlipHorizontal",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" }
+        ]
+      },
+      {
+        "raw": "ImageRotate",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "degrees", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "ImageRotateCW",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" }
+        ]
+      },
+      {
+        "raw": "ImageRotateCCW",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" }
+        ]
+      },
+      {
+        "raw": "ImageColorTint",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageColorInvert",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" }
+        ]
+      },
+      {
+        "raw": "ImageColorGrayscale",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" }
+        ]
+      },
+      {
+        "raw": "ImageColorContrast",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "contrast", "type": "f32" }
+        ]
+      },
+      {
+        "raw": "ImageColorBrightness",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "brightness", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "ImageColorReplace",
+        "params": [
+          { "name": "image", "type": "Image", "mode": "inout" },
+          { "name": "color", "type": "Color" },
+          { "name": "replace", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageClearBackground",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawPixel",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "pos_x", "type": "i32" },
+          { "name": "pos_y", "type": "i32" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawPixelV",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "position", "type": "Vector2" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawLine",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "start_pos_x", "type": "i32" },
+          { "name": "start_pos_y", "type": "i32" },
+          { "name": "end_pos_x", "type": "i32" },
+          { "name": "end_pos_y", "type": "i32" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawLineV",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "start", "type": "Vector2" },
+          { "name": "end", "type": "Vector2" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawLineEx",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "start", "type": "Vector2" },
+          { "name": "end", "type": "Vector2" },
+          { "name": "thick", "type": "i32" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawCircle",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "center_x", "type": "i32" },
+          { "name": "center_y", "type": "i32" },
+          { "name": "radius", "type": "i32" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawCircleV",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "center", "type": "Vector2" },
+          { "name": "radius", "type": "i32" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawCircleLines",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "center_x", "type": "i32" },
+          { "name": "center_y", "type": "i32" },
+          { "name": "radius", "type": "i32" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawCircleLinesV",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "center", "type": "Vector2" },
+          { "name": "radius", "type": "i32" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawRectangle",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "pos_x", "type": "i32" },
+          { "name": "pos_y", "type": "i32" },
+          { "name": "width", "type": "i32" },
+          { "name": "height", "type": "i32" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawRectangleV",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "position", "type": "Vector2" },
+          { "name": "size", "type": "Vector2" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawRectangleRec",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "rec", "type": "Rectangle" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawRectangleLines",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "rec", "type": "Rectangle" },
+          { "name": "thick", "type": "i32" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawTriangle",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "v_1", "type": "Vector2" },
+          { "name": "v_2", "type": "Vector2" },
+          { "name": "v_3", "type": "Vector2" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawTriangleEx",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "v_1", "type": "Vector2" },
+          { "name": "v_2", "type": "Vector2" },
+          { "name": "v_3", "type": "Vector2" },
+          { "name": "c_1", "type": "Color" },
+          { "name": "c_2", "type": "Color" },
+          { "name": "c_3", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawTriangleLines",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "v_1", "type": "Vector2" },
+          { "name": "v_2", "type": "Vector2" },
+          { "name": "v_3", "type": "Vector2" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawTriangleFan",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "points", "type": "const_ptr[Vector2]" },
+          { "name": "point_count", "type": "i32" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawTriangleStrip",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "points", "type": "const_ptr[Vector2]" },
+          { "name": "point_count", "type": "i32" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDraw",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "src", "type": "Image" },
+          { "name": "src_rec", "type": "Rectangle" },
+          { "name": "dst_rec", "type": "Rectangle" },
+          { "name": "tint", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawText",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "pos_x", "type": "i32" },
+          { "name": "pos_y", "type": "i32" },
+          { "name": "font_size", "type": "i32" },
+          { "name": "color", "type": "Color" }
+        ]
+      },
+      {
+        "raw": "ImageDrawTextEx",
+        "params": [
+          { "name": "dst", "type": "Image", "mode": "inout" },
+          { "name": "font", "type": "Font" },
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "position", "type": "Vector2" },
+          { "name": "font_size", "type": "f32" },
+          { "name": "spacing", "type": "f32" },
+          { "name": "tint", "type": "Color" }
+        ]
       },
       {
         "raw": "LoadTexture",
@@ -369,6 +1073,62 @@
           { "name": "texture", "type": "Texture" },
           { "name": "rec", "type": "Rectangle" },
           { "name": "pixels", "type": "ptr[T]", "boundary_type": "const_ptr[void]" }
+        ]
+      },
+      {
+        "raw": "GenTextureMipmaps",
+        "params": [
+          { "name": "texture", "type": "Texture2D", "mode": "inout" }
+        ]
+      },
+      {
+        "raw": "LoadFont",
+        "params": [
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "LoadFontEx",
+        "params": [
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" },
+          { "name": "font_size", "type": "i32" },
+          { "name": "codepoints", "type": "ptr[i32]?" },
+          { "name": "codepoint_count", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "LoadFontData",
+        "params": [
+          { "name": "file_data", "type": "const_ptr[u8]" },
+          { "name": "data_size", "type": "i32" },
+          { "name": "font_size", "type": "i32" },
+          { "name": "codepoints", "type": "ptr[i32]?" },
+          { "name": "codepoint_count", "type": "i32" },
+          { "name": "type", "type": "FontType" },
+          { "name": "glyph_count", "type": "i32", "mode": "out" }
+        ]
+      },
+      {
+        "raw": "GenImageFontAtlas",
+        "params": [
+          { "name": "glyphs", "type": "const_ptr[GlyphInfo]" },
+          { "name": "glyph_recs", "type": "ptr[Rectangle]", "mode": "out" },
+          { "name": "glyph_count", "type": "i32" },
+          { "name": "font_size", "type": "i32" },
+          { "name": "padding", "type": "i32" },
+          { "name": "pack_method", "type": "i32" }
+        ]
+      },
+      {
+        "raw": "LoadWave",
+        "params": [
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+        ]
+      },
+      {
+        "raw": "LoadSound",
+        "params": [
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
         ]
       },
       {
@@ -426,11 +1186,185 @@
     ]
   },
   "extra_source": [
-    "pub def load_vertex_shader(vs_file_name: cstr) -> Shader:",
-    "    return load_shader(vs_file_name, null)",
+    "pub struct CodepointList:",
+    "    data: ptr[i32]",
+    "    count: i32",
     "",
-    "pub def load_fragment_shader(fs_file_name: cstr) -> Shader:",
-    "    return load_shader(null, fs_file_name)",
+    "pub struct TextSplitResult:",
+    "    items: ptr[ptr[char]]",
+    "    count: i32",
+    "",
+    "pub struct TextCodepoint:",
+    "    value: i32",
+    "    byte_count: i32",
+    "",
+    "pub struct FileData:",
+    "    data: ptr[u8]",
+    "    size: i32",
+    "",
+    "pub def load_file_data_required(file_name: str) -> FileData:",
+    "    var size = 0",
+    "    let data = load_file_data(file_name, out size)",
+    "    if data == null:",
+    "        panic(c\"raylib load_file_data_required failed\")",
+    "    unsafe:",
+    "        return FileData(data = cast[ptr[u8]](data), size = size)",
+    "",
+    "pub def unload_file_data_block(file_data: FileData) -> void:",
+    "    let data: ptr[u8]? = file_data.data",
+    "    unload_file_data(data)",
+    "    return",
+    "",
+    "pub def file_path_at(files: FilePathList, index: i32) -> cstr:",
+    "    if index < 0 or index >= cast[i32](files.count):",
+    "        panic(c\"raylib file_path_at index out of bounds\")",
+    "    unsafe:",
+    "        return cast[cstr](deref(files.paths + index))",
+    "",
+    "pub def load_codepoints(text: str) -> CodepointList:",
+    "    var count = 0",
+    "    let data = load_codepoints_ptr(text, out count)",
+    "    return CodepointList(data = data, count = count)",
+    "",
+    "pub def unload_codepoint_list(codepoints: CodepointList) -> void:",
+    "    unload_codepoints(codepoints.data)",
+    "    return",
+    "",
+    "pub def codepoints_span(codepoints: CodepointList) -> span[i32]:",
+    "    return span[i32](data = codepoints.data, len = cast[usize](codepoints.count))",
+    "",
+    "pub def codepoint_at(codepoints: CodepointList, index: i32) -> i32:",
+    "    if index < 0 or index >= codepoints.count:",
+    "        panic(c\"raylib codepoint_at index out of bounds\")",
+    "    unsafe:",
+    "        return deref(codepoints.data + index)",
+    "",
+    "pub def text_split(text: str, delimiter: char) -> TextSplitResult:",
+    "    var count = 0",
+    "    let items = text_split_ptr(text, delimiter, out count)",
+    "    return TextSplitResult(items = items, count = count)",
+    "",
+    "pub def text_split_at(parts: TextSplitResult, index: i32) -> cstr:",
+    "    if index < 0 or index >= parts.count:",
+    "        panic(c\"raylib text_split_at index out of bounds\")",
+    "    unsafe:",
+    "        return cast[cstr](deref(parts.items + index))",
+    "",
+    "pub def codepoint_to_str(codepoint: i32) -> str:",
+    "    var byte_count = 0",
+    "    let bytes = codepoint_to_utf_8(codepoint, out byte_count)",
+    "    unsafe:",
+    "        return str(data = cast[ptr[char]](bytes), len = cast[usize](byte_count))",
+    "",
+    "pub def codepoint_in_text_at(text: str, byte_index: i32) -> TextCodepoint:",
+    "    if byte_index < 0 or cast[usize](byte_index) >= text.len:",
+    "        return TextCodepoint(value = 0, byte_count = 0)",
+    "    var byte_count = 0",
+    "    unsafe:",
+    "        let current = str(data = text.data + byte_index, len = text.len - cast[usize](byte_index))",
+    "        let value = get_codepoint(current, out byte_count)",
+    "        return TextCodepoint(value = value, byte_count = byte_count)",
+    "",
+    "pub def font_glyph_at(font: Font, index: i32) -> GlyphInfo:",
+    "    if index < 0 or index >= font.glyphCount:",
+    "        panic(c\"raylib font_glyph_at index out of bounds\")",
+    "    unsafe:",
+    "        return deref(font.glyphs + index)",
+    "",
+    "pub def font_atlas_rec_at(font: Font, index: i32) -> Rectangle:",
+    "    if index < 0 or index >= font.glyphCount:",
+    "        panic(c\"raylib font_atlas_rec_at index out of bounds\")",
+    "    unsafe:",
+    "        return deref(font.recs + index)",
+    "",
+    "pub def load_font_ex_span(file_name: str, font_size: i32, codepoints: span[i32]) -> Font:",
+    "    if codepoints.len == 0:",
+    "        return load_font_ex(file_name, font_size, null, 0)",
+    "    return load_font_ex(file_name, font_size, codepoints.data, cast[i32](codepoints.len))",
+    "",
+    "pub def text_to_upper(text: str) -> cstr:",
+    "    unsafe:",
+    "        return cast[cstr](text_to_upper_ptr(text))",
+    "",
+    "pub def text_to_lower(text: str) -> cstr:",
+    "    unsafe:",
+    "        return cast[cstr](text_to_lower_ptr(text))",
+    "",
+    "pub def text_to_pascal(text: str) -> cstr:",
+    "    unsafe:",
+    "        return cast[cstr](text_to_pascal_ptr(text))",
+    "",
+    "pub def text_to_snake(text: str) -> cstr:",
+    "    unsafe:",
+    "        return cast[cstr](text_to_snake_ptr(text))",
+    "",
+    "pub def text_to_camel(text: str) -> cstr:",
+    "    unsafe:",
+    "        return cast[cstr](text_to_camel_ptr(text))",
+    "",
+    "pub def update_texture_from_image(texture: Texture, image: Image) -> void:",
+    "    update_texture(texture, image.data)",
+    "    return",
+    "",
+    "pub def update_texture_from_image_frame(texture: Texture, image: Image, frame_index: i32) -> void:",
+    "    unsafe:",
+    "        let frame_size = image.width * image.height * 4",
+    "        let pixels = cast[ptr[u8]](image.data) + frame_size * frame_index",
+    "        update_texture(texture, pixels)",
+    "    return",
+    "",
+    "pub def draw_line_strip(points: span[Vector2], color: Color) -> void:",
+    "    if points.len == 0:",
+    "        return",
+    "    draw_line_strip_ptr(ro_addr(points[0]), cast[i32](points.len), color)",
+    "    return",
+    "",
+    "pub def draw_triangle_fan(points: span[Vector2], color: Color) -> void:",
+    "    if points.len == 0:",
+    "        return",
+    "    draw_triangle_fan_ptr(ro_addr(points[0]), cast[i32](points.len), color)",
+    "    return",
+    "",
+    "pub def draw_triangle_strip(points: span[Vector2], color: Color) -> void:",
+    "    if points.len == 0:",
+    "        return",
+    "    draw_triangle_strip_ptr(ro_addr(points[0]), cast[i32](points.len), color)",
+    "    return",
+    "",
+    "pub def draw_spline_linear(points: span[Vector2], thick: f32, color: Color) -> void:",
+    "    if points.len == 0:",
+    "        return",
+    "    draw_spline_linear_ptr(ro_addr(points[0]), cast[i32](points.len), thick, color)",
+    "    return",
+    "",
+    "pub def draw_spline_basis(points: span[Vector2], thick: f32, color: Color) -> void:",
+    "    if points.len == 0:",
+    "        return",
+    "    draw_spline_basis_ptr(ro_addr(points[0]), cast[i32](points.len), thick, color)",
+    "    return",
+    "",
+    "pub def draw_spline_catmull_rom(points: span[Vector2], thick: f32, color: Color) -> void:",
+    "    if points.len == 0:",
+    "        return",
+    "    draw_spline_catmull_rom_ptr(ro_addr(points[0]), cast[i32](points.len), thick, color)",
+    "    return",
+    "",
+    "pub def draw_spline_bezier_quadratic(points: span[Vector2], thick: f32, color: Color) -> void:",
+    "    if points.len == 0:",
+    "        return",
+    "    draw_spline_bezier_quadratic_ptr(ro_addr(points[0]), cast[i32](points.len), thick, color)",
+    "    return",
+    "",
+    "pub def draw_spline_bezier_cubic(points: span[Vector2], thick: f32, color: Color) -> void:",
+    "    if points.len == 0:",
+    "        return",
+    "    draw_spline_bezier_cubic_ptr(ro_addr(points[0]), cast[i32](points.len), thick, color)",
+    "    return",
+    "",
+    "pub def check_collision_point_poly(point: Vector2, points: span[Vector2]) -> bool:",
+    "    if points.len == 0:",
+    "        return false",
+    "    return check_collision_point_poly_ptr(point, ro_addr(points[0]), cast[i32](points.len))",
     "",
     "pub def set_shader_f32(shader: Shader, loc_index: i32, value: f32) -> void:",
     "    set_shader_value(shader, loc_index, in value, ShaderUniformDataType.SHADER_UNIFORM_FLOAT)",
