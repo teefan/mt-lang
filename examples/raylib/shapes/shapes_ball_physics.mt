@@ -46,7 +46,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let balls = heap.alloc_zeroed[Ball](cast[usize](max_balls))
+    let balls = heap.must_alloc_zeroed[Ball](cast[usize](max_balls))
     defer heap.release(balls)
 
     var ball_count = 1

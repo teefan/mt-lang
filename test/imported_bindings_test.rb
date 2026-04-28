@@ -37,14 +37,16 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     refute_match(/^pub foreign def set_trace_log_callback\(/, source)
     assert_match(/^pub foreign def load_shader\(vs_file_name: cstr\?, fs_file_name: cstr\?\) -> Shader = c\.LoadShader$/, source)
     assert_match(/^pub foreign def load_shader_from_memory\(vs_code: cstr\?, fs_code: cstr\?\) -> Shader = c\.LoadShaderFromMemory$/, source)
-    assert_match(/^pub foreign def set_shader_value\[T\]\(shader: Shader, loc_index: i32, value: ptr\[T\] as ptr\[void\], uniform_type: i32\) -> void = c\.SetShaderValue$/, source)
-    assert_match(/^pub foreign def set_shader_value_v\[T\]\(shader: Shader, loc_index: i32, value: ptr\[T\] as ptr\[void\], uniform_type: i32, count: i32\) -> void = c\.SetShaderValueV$/, source)
-    assert_match(/^pub foreign def update_texture\[T\]\(texture: Texture, pixels: ptr\[T\] as ptr\[void\]\) -> void = c\.UpdateTexture$/, source)
-    assert_match(/^pub foreign def update_mesh_buffer\[T\]\(mesh: Mesh, index: i32, data: ptr\[T\] as ptr\[void\], data_size: i32, offset: i32\) -> void = c\.UpdateMeshBuffer$/, source)
-    assert_match(/^pub foreign def update_audio_stream\[T\]\(stream: AudioStream, data: ptr\[T\] as ptr\[void\], frame_count: i32\) -> void = c\.UpdateAudioStream$/, source)
+    assert_match(/^pub foreign def set_shader_value\[T\]\(shader: Shader, loc_index: i32, in value: T as const_ptr\[void\], uniform_type: i32\) -> void = c\.SetShaderValue$/, source)
+    assert_match(/^pub foreign def set_shader_value_v\[T\]\(shader: Shader, loc_index: i32, value: ptr\[T\] as const_ptr\[void\], uniform_type: i32, count: i32\) -> void = c\.SetShaderValueV$/, source)
+    assert_match(/^pub foreign def update_texture\[T\]\(texture: Texture, pixels: ptr\[T\] as const_ptr\[void\]\) -> void = c\.UpdateTexture$/, source)
+    assert_match(/^pub foreign def update_mesh_buffer\[T\]\(mesh: Mesh, index: i32, data: ptr\[T\] as const_ptr\[void\], data_size: i32, offset: i32\) -> void = c\.UpdateMeshBuffer$/, source)
+    assert_match(/^pub foreign def update_audio_stream\[T\]\(stream: AudioStream, data: ptr\[T\] as const_ptr\[void\], frame_count: i32\) -> void = c\.UpdateAudioStream$/, source)
     assert_match(/^pub foreign def load_font_ex\(file_name: cstr, font_size: i32, codepoints: ptr\[i32\]\?, codepoint_count: i32\) -> Font = c\.LoadFontEx$/, source)
-    assert_match(/^pub foreign def load_font_from_memory\(file_type: cstr, file_data: ptr\[u8\], data_size: i32, font_size: i32, codepoints: ptr\[i32\]\?, codepoint_count: i32\) -> Font = c\.LoadFontFromMemory$/, source)
-    assert_match(/^pub foreign def load_font_data\(file_data: ptr\[u8\], data_size: i32, font_size: i32, codepoints: ptr\[i32\]\?, codepoint_count: i32, type: i32, glyph_count: ptr\[i32\]\) -> ptr\[GlyphInfo\] = c\.LoadFontData$/, source)
+    assert_match(/^pub foreign def load_font_from_memory\(file_type: cstr, file_data: const_ptr\[u8\], data_size: i32, font_size: i32, codepoints: ptr\[i32\]\?, codepoint_count: i32\) -> Font = c\.LoadFontFromMemory$/, source)
+    assert_match(/^pub foreign def load_font_data\(file_data: const_ptr\[u8\], data_size: i32, font_size: i32, codepoints: ptr\[i32\]\?, codepoint_count: i32, type: i32, glyph_count: ptr\[i32\]\) -> ptr\[GlyphInfo\] = c\.LoadFontData$/, source)
+    assert_match(/^pub def load_fragment_shader\(fs_file_name: cstr\) -> Shader:$/, source)
+    assert_match(/^pub def set_shader_vec4\(shader: Shader, loc_index: i32, value: Vector4\) -> void:$/, source)
   end
 
   def test_checked_in_rlgl_binding_matches_policy_and_loads
@@ -56,10 +58,10 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^import std\.raylib as raylib$/, source)
     assert_match(/^pub type Matrix = raylib\.Matrix$/, source)
     assert_match(/^pub foreign def matrix_mode\(mode: i32\) -> void = c\.rlMatrixMode$/, source)
-    assert_match(/^pub foreign def load_vertex_buffer\[T\]\(buffer: ptr\[T\] as ptr\[void\], size: i32, dynamic: bool\) -> u32 = c\.rlLoadVertexBuffer$/, source)
-    assert_match(/^pub foreign def set_uniform\[T\]\(loc_index: i32, value: ptr\[T\] as ptr\[void\], uniform_type: i32, count: i32\) -> void = c\.rlSetUniform$/, source)
-    assert_match(/^pub foreign def load_shader_buffer\[T\]\(size: u32, data: ptr\[T\] as ptr\[void\], usage_hint: i32\) -> u32 = c\.rlLoadShaderBuffer$/, source)
-    assert_match(/^pub foreign def update_shader_buffer\[T\]\(id: u32, data: ptr\[T\] as ptr\[void\], data_size: u32, offset: u32\) -> void = c\.rlUpdateShaderBuffer$/, source)
+    assert_match(/^pub foreign def load_vertex_buffer\[T\]\(buffer: ptr\[T\] as const_ptr\[void\], size: i32, dynamic: bool\) -> u32 = c\.rlLoadVertexBuffer$/, source)
+    assert_match(/^pub foreign def set_uniform\[T\]\(loc_index: i32, value: ptr\[T\] as const_ptr\[void\], uniform_type: i32, count: i32\) -> void = c\.rlSetUniform$/, source)
+    assert_match(/^pub foreign def load_shader_buffer\[T\]\(size: u32, data: ptr\[T\] as const_ptr\[void\], usage_hint: i32\) -> u32 = c\.rlLoadShaderBuffer$/, source)
+    assert_match(/^pub foreign def update_shader_buffer\[T\]\(id: u32, data: ptr\[T\] as const_ptr\[void\], data_size: u32, offset: u32\) -> void = c\.rlUpdateShaderBuffer$/, source)
   end
 
   def test_checked_in_raygui_binding_matches_policy_and_loads

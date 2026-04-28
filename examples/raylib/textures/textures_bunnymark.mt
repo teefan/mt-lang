@@ -24,7 +24,7 @@ def main() -> i32:
     let tex_bunny = rl.LoadTexture(bunny_path)
     defer rl.UnloadTexture(tex_bunny)
 
-    let bunnies = heap.alloc_zeroed[Bunny](cast[usize](max_bunnies))
+    let bunnies = heap.must_alloc_zeroed[Bunny](cast[usize](max_bunnies))
     defer heap.release(bunnies)
 
     var bunnies_view = span[Bunny](data = bunnies, len = cast[usize](max_bunnies))

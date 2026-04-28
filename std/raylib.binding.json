@@ -81,7 +81,7 @@
         "params": [
           { "name": "shader", "type": "Shader" },
           { "name": "loc_index", "type": "i32" },
-          { "name": "value", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "value", "type": "T", "mode": "in", "boundary_type": "const_ptr[void]" },
           { "name": "uniform_type", "type": "i32" }
         ]
       },
@@ -91,7 +91,7 @@
         "params": [
           { "name": "shader", "type": "Shader" },
           { "name": "loc_index", "type": "i32" },
-          { "name": "value", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "value", "type": "ptr[T]", "boundary_type": "const_ptr[void]" },
           { "name": "uniform_type", "type": "i32" },
           { "name": "count", "type": "i32" }
         ]
@@ -359,7 +359,7 @@
         "type_params": ["T"],
         "params": [
           { "name": "texture", "type": "Texture" },
-          { "name": "pixels", "type": "ptr[T]", "boundary_type": "ptr[void]" }
+          { "name": "pixels", "type": "ptr[T]", "boundary_type": "const_ptr[void]" }
         ]
       },
       {
@@ -368,7 +368,7 @@
         "params": [
           { "name": "texture", "type": "Texture" },
           { "name": "rec", "type": "Rectangle" },
-          { "name": "pixels", "type": "ptr[T]", "boundary_type": "ptr[void]" }
+          { "name": "pixels", "type": "ptr[T]", "boundary_type": "const_ptr[void]" }
         ]
       },
       {
@@ -394,7 +394,7 @@
         "params": [
           { "name": "mesh", "type": "Mesh" },
           { "name": "index", "type": "i32" },
-          { "name": "data", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "data", "type": "ptr[T]", "boundary_type": "const_ptr[void]" },
           { "name": "data_size", "type": "i32" },
           { "name": "offset", "type": "i32" }
         ]
@@ -404,7 +404,7 @@
         "type_params": ["T"],
         "params": [
           { "name": "sound", "type": "Sound" },
-          { "name": "data", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "data", "type": "ptr[T]", "boundary_type": "const_ptr[void]" },
           { "name": "sample_count", "type": "i32" }
         ]
       },
@@ -413,7 +413,7 @@
         "type_params": ["T"],
         "params": [
           { "name": "stream", "type": "AudioStream" },
-          { "name": "data", "type": "ptr[T]", "boundary_type": "ptr[void]" },
+          { "name": "data", "type": "ptr[T]", "boundary_type": "const_ptr[void]" },
           { "name": "frame_count", "type": "i32" }
         ]
       },
@@ -424,5 +424,32 @@
         ]
       }
     ]
-  }
+  },
+  "extra_source": [
+    "pub def load_vertex_shader(vs_file_name: cstr) -> Shader:",
+    "    return load_shader(vs_file_name, null)",
+    "",
+    "pub def load_fragment_shader(fs_file_name: cstr) -> Shader:",
+    "    return load_shader(null, fs_file_name)",
+    "",
+    "pub def set_shader_f32(shader: Shader, loc_index: i32, value: f32) -> void:",
+    "    set_shader_value(shader, loc_index, in value, ShaderUniformDataType.SHADER_UNIFORM_FLOAT)",
+    "    return",
+    "",
+    "pub def set_shader_i32(shader: Shader, loc_index: i32, value: i32) -> void:",
+    "    set_shader_value(shader, loc_index, in value, ShaderUniformDataType.SHADER_UNIFORM_INT)",
+    "    return",
+    "",
+    "pub def set_shader_vec2(shader: Shader, loc_index: i32, value: Vector2) -> void:",
+    "    set_shader_value(shader, loc_index, in value, ShaderUniformDataType.SHADER_UNIFORM_VEC2)",
+    "    return",
+    "",
+    "pub def set_shader_vec3(shader: Shader, loc_index: i32, value: Vector3) -> void:",
+    "    set_shader_value(shader, loc_index, in value, ShaderUniformDataType.SHADER_UNIFORM_VEC3)",
+    "    return",
+    "",
+    "pub def set_shader_vec4(shader: Shader, loc_index: i32, value: Vector4) -> void:",
+    "    set_shader_value(shader, loc_index, in value, ShaderUniformDataType.SHADER_UNIFORM_VEC4)",
+    "    return"
+  ]
 }

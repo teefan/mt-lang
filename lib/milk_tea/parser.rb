@@ -436,6 +436,8 @@ module MilkTea
     def parse_foreign_param
       mode = if match(:out)
                :out
+             elsif match(:in)
+               :in
              elsif match(:consuming)
                :consuming
              elsif match(:inout)
@@ -745,7 +747,7 @@ module MilkTea
     end
 
     def parse_unary
-      if match(:not, :minus, :plus, :tilde, :out, :inout)
+      if match(:not, :minus, :plus, :tilde, :out, :in, :inout)
         operator = previous.lexeme
         operand = parse_unary
         AST::UnaryOp.new(operator:, operand:)

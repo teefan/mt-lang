@@ -24,7 +24,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_includes registry.fetch("rlights").header_candidates.first, "third_party/raylib-upstream/examples/shaders/rlights.h"
     assert_equal "std.c.rlgl", registry.fetch("rlgl").module_name
     assert_equal ["raylib"], registry.fetch("rlgl").link_libraries
-    assert_includes registry.fetch("rlgl").header_candidates.last, "third_party/raylib-upstream/src/rlgl.h"
+    assert_includes registry.fetch("rlgl").header_candidates.first, "third_party/raylib-upstream/src/rlgl.h"
     assert_equal "std.c.msf_gif", registry.fetch("msf_gif").module_name
     assert_equal ["MSF_GIF_IMPL"], registry.fetch("msf_gif").implementation_defines
     assert_includes registry.fetch("msf_gif").header_candidates.first, "third_party/raylib-upstream/examples/core/msf_gif.h"
@@ -84,9 +84,12 @@ class MilkTeaRawBindingsTest < Minitest::Test
           header_path:,
           link_libraries: ["sample"],
           include_directives: ["sample.h"],
+          module_imports: [],
           clang: "clang-custom",
           clang_args: ["-I#{dir}"],
+          type_overrides: {},
           function_param_type_overrides: { "sample_function" => { "data" => "ptr[u8]?" } },
+          function_return_type_overrides: {},
         },
         observed,
       )

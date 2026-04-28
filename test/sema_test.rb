@@ -2518,6 +2518,84 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_const_void_pointer_calls_from_immutable_storage
+    source = <<~MT
+      module demo.const_void_pointer_call
+
+      extern def inspect(value: const_ptr[void]) -> void
+
+      def main() -> void:
+          let value = 7
+          inspect(ro_addr(value))
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_foreign_in_parameter
+    root_source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main() -> void:
+          let value = 7
+          sample.inspect(in value)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def Inspect(value: const_ptr[void]) -> void
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def inspect[T](in value: T as const_ptr[void]) -> void = c.Inspect
+      MT
+    }
+
+    result = check_program_source(root_source, imported_sources).root_analysis
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_foreign_in_argument_without_marker
+    root_source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main() -> void:
+          let value = 7
+          sample.inspect(value)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def Inspect(value: const_ptr[void]) -> void
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def inspect[T](in value: T as const_ptr[void]) -> void = c.Inspect
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(root_source, imported_sources)
+    end
+
+    assert_match(/argument value to inspect must use in/, error.message)
+  end
+
   def test_rejects_const_pointer_for_writable_pointer_parameters
     source = <<~MT
       module demo.bad_const_pointer

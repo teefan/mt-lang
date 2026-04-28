@@ -402,7 +402,7 @@ module MilkTea
           wrap("#{render_postfix(expression.callee)}(#{expression.arguments.map { |argument| render_argument(argument) }.join(', ')})", parent_precedence, POSTFIX_PRECEDENCE)
         when AST::UnaryOp
           operand = render_expression(expression.operand, UNARY_PRECEDENCE)
-          text = %w[not out inout].include?(expression.operator) ? "#{expression.operator} #{operand}" : "#{expression.operator}#{operand}"
+          text = %w[not out in inout].include?(expression.operator) ? "#{expression.operator} #{operand}" : "#{expression.operator}#{operand}"
           wrap(text, parent_precedence, UNARY_PRECEDENCE)
         when AST::BinaryOp
           current_precedence = precedence(expression.operator)

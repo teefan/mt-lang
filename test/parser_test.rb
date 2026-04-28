@@ -1127,18 +1127,21 @@ class MilkTeaParserTest < Minitest::Test
 
       pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
       pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
+      pub foreign def set_shader_value[T](shader: Shader, loc_index: i32, in value: T as const_ptr[void], uniform_type: i32) -> void = c.SetShaderValue
       pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
       pub foreign def close_window(consuming window: Window) -> void = c.CloseWindow
 
       def main(path: str) -> ptr[u8]?:
           var data_size = 0
+          let contrast = 1.0
+          set_shader_value(Shader(), 0, in contrast, 0)
           return load_file_data(path, out data_size)
     MT
 
     ast = MilkTea::Parser.parse(source)
 
     assert_equal(
-      %w[ForeignFunctionDecl ForeignFunctionDecl ForeignFunctionDecl ForeignFunctionDecl FunctionDef],
+      %w[ForeignFunctionDecl ForeignFunctionDecl ForeignFunctionDecl ForeignFunctionDecl ForeignFunctionDecl FunctionDef],
       ast.declarations.map { |node| node.class.name.split("::").last },
     )
 
@@ -1154,16 +1157,24 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal :out, load_file_data.params[1].mode
     assert_instance_of MilkTea::AST::MemberAccess, load_file_data.mapping
 
-    save_file_data = ast.declarations[2]
+    set_shader_value = ast.declarations[2]
+    assert_equal :in, set_shader_value.params[2].mode
+    assert_equal "const_ptr", set_shader_value.params[2].boundary_type.name.to_s
+
+    save_file_data = ast.declarations[3]
     assert_instance_of MilkTea::AST::Call, save_file_data.mapping
     assert_equal "SaveFileData", save_file_data.mapping.callee.member
 
-    close_window = ast.declarations[3]
+    close_window = ast.declarations[4]
     assert_equal :consuming, close_window.params[0].mode
     assert_instance_of MilkTea::AST::MemberAccess, close_window.mapping
 
-    main_fn = ast.declarations[4]
-    return_stmt = main_fn.body[1]
+    main_fn = ast.declarations[5]
+    shader_stmt = main_fn.body[2]
+    assert_instance_of MilkTea::AST::Call, shader_stmt.expression
+    assert_instance_of MilkTea::AST::UnaryOp, shader_stmt.expression.arguments[2].value
+    assert_equal "in", shader_stmt.expression.arguments[2].value.operator
+    return_stmt = main_fn.body[3]
     assert_instance_of MilkTea::AST::Call, return_stmt.value
     assert_instance_of MilkTea::AST::UnaryOp, return_stmt.value.arguments[1].value
     assert_equal "out", return_stmt.value.arguments[1].value.operator

@@ -137,7 +137,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let particles = heap.alloc_zeroed[Particle](cast[usize](max_particles))
+    let particles = heap.must_alloc_zeroed[Particle](cast[usize](max_particles))
     defer heap.release(particles)
 
     var head = 0

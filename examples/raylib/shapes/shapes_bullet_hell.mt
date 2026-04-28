@@ -30,7 +30,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let bullets = heap.alloc_zeroed[Bullet](cast[usize](max_bullets))
+    let bullets = heap.must_alloc_zeroed[Bullet](cast[usize](max_bullets))
     defer heap.release(bullets)
     var bullets_view = span[Bullet](data = bullets, len = cast[usize](max_bullets))
 

@@ -5,9 +5,9 @@ module MilkTea
     class Error < StandardError; end
 
     class Binding
-      attr_reader :name, :module_name, :binding_path, :include_directives, :link_libraries, :link_flags, :header_candidates, :env_var, :clang_args, :compiler_flags, :implementation_defines, :function_param_type_overrides
+      attr_reader :name, :module_name, :binding_path, :include_directives, :module_imports, :link_libraries, :link_flags, :header_candidates, :env_var, :clang_args, :compiler_flags, :implementation_defines, :type_overrides, :function_param_type_overrides, :function_return_type_overrides
 
-      def initialize(name:, module_name:, binding_path:, header_candidates:, include_directives: nil, link_libraries: [], link_flags: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [], function_param_type_overrides: {}, prepare: nil)
+      def initialize(name:, module_name:, binding_path:, header_candidates:, include_directives: nil, module_imports: [], link_libraries: [], link_flags: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, prepare: nil)
         @name = name.to_s
         @module_name = module_name
         @binding_path = File.expand_path(binding_path.to_s)
@@ -20,7 +20,10 @@ module MilkTea
         @clang_args = clang_args.dup.freeze
         @compiler_flags = compiler_flags.dup.freeze
         @implementation_defines = implementation_defines.dup.freeze
+        @module_imports = module_imports.dup.freeze
+        @type_overrides = type_overrides.transform_keys(&:to_s).freeze
         @function_param_type_overrides = normalize_function_param_type_overrides(function_param_type_overrides)
+        @function_return_type_overrides = function_return_type_overrides.transform_keys(&:to_s).freeze
         @prepare = prepare
       end
 
@@ -67,9 +70,12 @@ module MilkTea
           header_path: resolved_header_path,
           link_libraries:,
           include_directives:,
+          module_imports:,
           clang: resolved_clang(env),
           clang_args:,
+          type_overrides:,
           function_param_type_overrides:,
+          function_return_type_overrides:,
         )
       end
 
@@ -225,11 +231,18 @@ module MilkTea
           name: "rlights",
           module_name: "std.c.rlights",
           binding_path: root.join("std/c/rlights.mt"),
-          include_directives: ["rlights.h"],
+          include_directives: ["raylib.h", "rlights.h"],
+          module_imports: [{ module_name: "std.c.raylib", alias: "rl" }],
           link_libraries: ["raylib"],
           env_var: "RLIGHTS_HEADER",
-          compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
+          clang_args: ["-I#{root.join('third_party/raylib-upstream/src')}", "-include", "raylib.h"],
+          compiler_flags: ["-I#{root.join('third_party/raylib-upstream/src')}", "-DGRAPHICS_API_OPENGL_43"],
           implementation_defines: ["RLIGHTS_IMPLEMENTATION"],
+          type_overrides: {
+            "Vector3" => "rl.Vector3",
+            "Color" => "rl.Color",
+            "Shader" => "rl.Shader",
+          },
           header_candidates: [
             root.join("third_party/raylib-upstream/examples/shaders/rlights.h").to_s,
             "/usr/include/rlights.h",
@@ -245,9 +258,9 @@ module MilkTea
           env_var: "RLGL_HEADER",
           compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
           header_candidates: [
+            root.join("third_party/raylib-upstream/src/rlgl.h").to_s,
             "/usr/include/rlgl.h",
             "/usr/local/include/rlgl.h",
-            root.join("third_party/raylib-upstream/src/rlgl.h").to_s,
           ],
         ),
         Binding.new(
@@ -266,6 +279,18 @@ module MilkTea
           binding_path: root.join("std/c/libc.mt"),
           include_directives: ["stdlib.h"],
           env_var: "LIBC_HEADER",
+          function_param_type_overrides: {
+            "realloc" => { "__ptr" => "ptr[void]?" },
+            "reallocarray" => { "__ptr" => "ptr[void]?" },
+            "free" => { "__ptr" => "ptr[void]?" },
+          },
+          function_return_type_overrides: {
+            "malloc" => "ptr[void]?",
+            "calloc" => "ptr[void]?",
+            "realloc" => "ptr[void]?",
+            "reallocarray" => "ptr[void]?",
+            "aligned_alloc" => "ptr[void]?",
+          },
           header_candidates: [
             "/usr/include/stdlib.h",
             "/usr/local/include/stdlib.h",

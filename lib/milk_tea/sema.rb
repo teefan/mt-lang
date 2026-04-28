@@ -341,11 +341,12 @@ module MilkTea
           end
 
           if foreign
-            raise SemaError, "foreign parameter #{param.name} cannot use `as` with #{param.mode}" if param.mode != :plain && param.boundary_type
+            raise SemaError, "foreign parameter #{param.name} cannot use `as` with #{param.mode}" if ![:plain, :in].include?(param.mode) && param.boundary_type
             validate_consuming_foreign_parameter!(type, function_name: decl.name, parameter_name: param.name) if param.mode == :consuming
 
             boundary_type = foreign_parameter_boundary_type(param, type, type_params:)
-            validate_foreign_boundary_type!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if param.boundary_type
+            validate_foreign_boundary_type!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if param.boundary_type && param.mode != :in
+            validate_in_foreign_parameter!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if param.mode == :in
             body_params << value_binding(name: param.name, type: boundary_type || type, mutable: false, kind: :param)
             if param.boundary_type
               body_params << value_binding(
@@ -1201,7 +1202,7 @@ module MilkTea
           raise SemaError, "operator ~ requires an integer or flags operand, got #{operand_type}" unless bitwise_type?(operand_type)
 
           operand_type
-        when "out", "inout"
+        when "out", "in", "inout"
           raise SemaError, "#{expression.operator} is only allowed for foreign call arguments"
         else
           raise SemaError, "unsupported unary operator #{expression.operator}"
@@ -2783,7 +2784,6 @@ module MilkTea
         when "const_ptr"
           raise SemaError, "const_ptr requires exactly one type argument" unless arguments.length == 1
           raise SemaError, "const_ptr type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise SemaError, "const_ptr cannot target void" if arguments.first.is_a?(Types::Primitive) && arguments.first.void?
           raise SemaError, "const_ptr cannot target ref types" if contains_ref_type?(arguments.first)
         when "ref"
           raise SemaError, "ref requires exactly one type argument" unless arguments.length == 1
@@ -3220,9 +3220,23 @@ module MilkTea
 
       def foreign_parameter_boundary_type(param, public_type, type_params:)
         return resolve_type_ref(param.boundary_type, type_params:) if param.boundary_type
+        return const_pointer_to(public_type) if param.mode == :in
         return pointer_to(public_type) if [:out, :inout].include?(param.mode)
 
         nil
+      end
+
+      def validate_in_foreign_parameter!(public_type, boundary_type, function_name:, parameter_name:)
+        unless const_pointer_type?(boundary_type)
+          raise SemaError, "in parameter #{parameter_name} of #{function_name} must lower to const_ptr[...], got #{boundary_type || public_type}"
+        end
+
+        expected_public_type = pointee_type(boundary_type)
+        return if expected_public_type == public_type
+        return if expected_public_type == @types.fetch("void")
+        return if foreign_identity_projection_compatible?(public_type, expected_public_type)
+
+        raise SemaError, "in parameter #{parameter_name} of #{function_name} cannot map #{public_type} as #{boundary_type}"
       end
 
       def foreign_mapping_public_alias_name(name)
@@ -3267,7 +3281,7 @@ module MilkTea
       end
 
       def foreign_argument_expression(argument)
-        if argument.value.is_a?(AST::UnaryOp) && ["out", "inout"].include?(argument.value.operator)
+        if argument.value.is_a?(AST::UnaryOp) && ["out", "in", "inout"].include?(argument.value.operator)
           argument.value.operand
         else
           argument.value
@@ -3280,12 +3294,16 @@ module MilkTea
           infer_expression(argument.value, scopes:, expected_type:)
         when :consuming
           foreign_consuming_argument_binding(parameter, argument, scopes:, function_name:).type
-        when :out, :inout
+        when :in, :out, :inout
           unless argument.value.is_a?(AST::UnaryOp) && argument.value.operator == parameter.passing_mode.to_s
             raise SemaError, "argument #{parameter.name} to #{function_name} must use #{parameter.passing_mode}"
           end
 
-          infer_lvalue(argument.value.operand, scopes:)
+          if parameter.passing_mode == :in
+            infer_expression(argument.value.operand, scopes:, expected_type: expected_type)
+          else
+            infer_lvalue(argument.value.operand, scopes:)
+          end
         else
           raise SemaError, "unsupported foreign passing mode #{parameter.passing_mode}"
         end

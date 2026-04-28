@@ -36,8 +36,8 @@ def main() -> i32:
 
     unsafe:
         let tile_count = map.tiles_x * map.tiles_y
-        map.tile_ids = heap.alloc_zeroed[u8](cast[usize](tile_count))
-        map.tile_fog = heap.alloc_zeroed[u8](cast[usize](tile_count))
+        map.tile_ids = heap.must_alloc_zeroed[u8](cast[usize](tile_count))
+        map.tile_fog = heap.must_alloc_zeroed[u8](cast[usize](tile_count))
 
         defer:
             heap.release(map.tile_fog)
