@@ -14,9 +14,9 @@
   },
   "progress": {
     "raw_ported_examples": 212,
-    "idiomatic_ported_examples": 21,
+    "idiomatic_ported_examples": 91,
     "raw_completion_percent": 100.0,
-    "idiomatic_completion_percent": 9.9,
+    "idiomatic_completion_percent": 42.9,
     "by_category": {
       "core": {
         "total_examples": 49,
@@ -28,23 +28,23 @@
       "shapes": {
         "total_examples": 40,
         "raw_ported_examples": 40,
-        "idiomatic_ported_examples": 2,
+        "idiomatic_ported_examples": 38,
         "raw_completion_percent": 100.0,
-        "idiomatic_completion_percent": 5.0
+        "idiomatic_completion_percent": 95.0
       },
       "textures": {
         "total_examples": 32,
         "raw_ported_examples": 32,
-        "idiomatic_ported_examples": 0,
+        "idiomatic_ported_examples": 29,
         "raw_completion_percent": 100.0,
-        "idiomatic_completion_percent": 0.0
+        "idiomatic_completion_percent": 90.6
       },
       "text": {
         "total_examples": 16,
         "raw_ported_examples": 16,
-        "idiomatic_ported_examples": 0,
+        "idiomatic_ported_examples": 5,
         "raw_completion_percent": 100.0,
-        "idiomatic_completion_percent": 0.0
+        "idiomatic_completion_percent": 31.3
       },
       "models": {
         "total_examples": 30,
@@ -1695,9 +1695,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_bullet_hell.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/bullet_hell.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -1725,9 +1725,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_colors_palette.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/colors_palette.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -1755,9 +1755,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_logo_raylib.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/logo_raylib.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -1785,9 +1785,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_logo_raylib_anim.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/logo_raylib_anim.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -1815,9 +1815,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_rectangle_scaling.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/rectangle_scaling.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -1845,9 +1845,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_lines_bezier.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/lines_bezier.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -1875,9 +1875,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_collision_area.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/collision_area.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -1905,9 +1905,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_following_eyes.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/following_eyes.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -1935,9 +1935,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_easings_ball.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/easings_ball.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -1965,9 +1965,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_easings_box.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/easings_box.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -1995,9 +1995,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_easings_rectangles.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/easings_rectangles.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -2027,9 +2027,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_recursive_tree.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/recursive_tree.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -2061,9 +2061,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_ring_drawing.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/ring_drawing.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -2095,9 +2095,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_circle_sector_drawing.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/circle_sector_drawing.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -2129,9 +2129,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_rounded_rectangle_drawing.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/rounded_rectangle_drawing.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -2164,9 +2164,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_top_down_lights.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/top_down_lights.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -2198,9 +2198,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_rectangle_advanced.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/rectangle_advanced.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -2262,9 +2262,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_digital_clock.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/digital_clock.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -2292,9 +2292,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_double_pendulum.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/double_pendulum.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -2322,9 +2322,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_dashed_line.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/dashed_line.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -2354,9 +2354,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_triangle_strip.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/triangle_strip.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -2388,9 +2388,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_vector_angle.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/vector_angle.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -2422,9 +2422,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_pie_chart.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/pie_chart.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -2457,9 +2457,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_kaleidoscope.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/kaleidoscope.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raymath_helper_header",
         "raygui_helper_header"
@@ -2492,9 +2492,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_clock_of_clocks.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/clock_of_clocks.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -2562,9 +2562,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_mouse_trail.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/mouse_trail.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -2594,9 +2594,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_simple_particles.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/simple_particles.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -2626,9 +2626,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_starfield_effect.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/starfield_effect.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -2660,9 +2660,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_lines_drawing.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/lines_drawing.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -2694,9 +2694,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_math_angle_rotation.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/angle_rotation.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -2730,9 +2730,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_rlgl_color_wheel.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/rlgl_color_wheel.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raymath_helper_header",
         "raygui_helper_header"
@@ -2765,9 +2765,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_rlgl_triangle.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/rlgl_triangle.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -2795,9 +2795,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_ball_physics.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/ball_physics.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -2825,9 +2825,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_penrose_tile.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/penrose_tile.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -2857,9 +2857,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_hilbert_curve.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/hilbert_curve.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raygui_helper_header"
       ]
@@ -2889,9 +2889,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/shapes/shapes_easings_testbed.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/easings_testbed.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -2919,9 +2919,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_clipboard_image.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/clipboard_image.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -2954,9 +2954,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_magnifying_glass.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/magnifying_glass.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -2986,9 +2986,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_logo_raylib.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/textures_logo_raylib.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3018,9 +3018,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_srcrec_dstrec.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/srcrec_dstrec.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3052,9 +3052,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_image_drawing.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/image_drawing.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3082,9 +3082,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_image_generation.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/image_generation.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3114,9 +3114,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_image_loading.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/image_loading.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3146,9 +3146,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_image_processing.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/image_processing.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3179,9 +3179,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_image_text.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/image_text.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3211,9 +3211,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_to_image.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/to_image.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3243,9 +3243,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_raw_data.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/raw_data.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3275,9 +3275,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_particles_blending.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/particles_blending.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3307,9 +3307,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_npatch_drawing.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/npatch_drawing.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3341,9 +3341,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_background_scrolling.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/background_scrolling.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3373,9 +3373,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_sprite_animation.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/sprite_animation.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3406,9 +3406,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_sprite_button.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/sprite_button.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3439,9 +3439,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_sprite_explosion.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/sprite_explosion.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3471,9 +3471,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_bunnymark.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/bunnymark.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3503,9 +3503,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_mouse_painting.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/mouse_painting.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3536,9 +3536,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_blend_modes.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/blend_modes.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3568,9 +3568,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_tiled_drawing.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/tiled_drawing.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3603,9 +3603,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_polygon_drawing.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/polygon_drawing.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -3635,9 +3635,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_fog_of_war.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/fog_of_war.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3699,9 +3699,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_image_kernel.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/image_kernel.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3731,9 +3731,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_image_channel.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/image_channel.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3763,9 +3763,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_image_rotate.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/image_rotate.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -3828,9 +3828,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_textured_curve.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/textured_curve.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -3864,9 +3864,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_sprite_stacking.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/sprite_stacking.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -3928,9 +3928,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/textures/textures_framebuffer_rendering.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/framebuffer_rendering.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": [
         "raymath_helper_header"
       ]
@@ -3969,9 +3969,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/text/text_sprite_fonts.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/sprite_fonts.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -4003,9 +4003,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/text/text_font_spritefont.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/font_spritefont.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -4071,9 +4071,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/text/text_font_loading.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/font_loading.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -4138,9 +4138,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/text/text_format_text.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/format_text.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
@@ -4198,9 +4198,9 @@
       "uses_file_drop_or_directory_api": false,
       "raw_port_present": true,
       "raw_port_path": "examples/raylib/text/text_writing_anim.mt",
-      "idiomatic_port_present": false,
-      "idiomatic_port_path": null,
-      "port_status": "raw_port",
+      "idiomatic_port_present": true,
+      "idiomatic_port_path": "examples/idiomatic/raylib/writing_anim.mt",
+      "port_status": "raw_and_idiomatic",
       "known_blockers": []
     },
     {
