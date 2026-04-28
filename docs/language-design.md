@@ -690,6 +690,47 @@ span[T] is conceptually:
 
 `span[T]` is the many-element view. `ref[T]` is the safe writable single-object alias, while `const_ptr[T]` is the raw read-only single-object pointer form.
 
+### Standard library foundation
+
+The standard library follows the same rule as the language: no hidden allocation, no implicit ownership transfer, and no runtime machinery the source did not ask for.
+
+Implemented core modules:
+
+- `std.vec` is the owned heap-backed `Vec[T]`. It grows explicitly, releases explicitly, and exposes borrowed `span[T]` views.
+- `std.bytes` is an owned byte buffer on top of `Vec[u8]`.
+- `std.string` is an owned UTF-8 text buffer on top of `std.bytes`. Appending `str` preserves UTF-8. Byte-level appends are available for formatting and low-level code, but callers must keep the buffer valid.
+- `std.path`, `std.fs`, and `std.io` provide pure path helpers, byte-oriented file read/write, and stdout printing.
+- `std.fmt` formats explicitly into an owned `std.string.String`.
+- `std.log` is a tiny stdout logger built from `std.fmt` and `std.io`.
+- `std.hash`, `std.map`, and `std.set` provide deterministic hash helpers plus policy-based hash collections.
+- `std.alg` provides generic `span[T]` algorithms: search, predicates, equality, copy, fill, and insertion sort.
+
+Hash collections use explicit function pointers instead of traits:
+
+```mt
+import std.hash as hash
+import std.map as map
+
+def hash_i32(value: i32) -> u64:
+	return hash.i32_value(value)
+
+def equal_i32(left: i32, right: i32) -> bool:
+	return hash.i32_equal(left, right)
+
+def example() -> i32:
+	var scores = map.create[i32, i32](hash_i32, equal_i32)
+	defer map.release[i32, i32](addr(scores))
+
+	map.put[i32, i32](addr(scores), 7, 42)
+
+	var value = 0
+	if map.get_into[i32, i32](scores, 7, addr(value)):
+		return value
+	return 0
+```
+
+This keeps lookup semantics visible at construction time and avoids a hidden global typeclass dictionary. If a future trait system exists, it should lower to something equally explicit and readable.
+
 ### Lifetime story
 
 Milk Tea should not try to be Rust. It should instead make lifetime choices explicit at the API level.

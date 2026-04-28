@@ -661,12 +661,12 @@ module MilkTea
       end
 
       def check_function(binding)
+        previous_type_substitutions = @current_type_substitutions
         return if binding.external || binding.type_params.any?
         return if @checked_function_bindings[binding.object_id]
         return if @checking_function_bindings[binding.object_id]
 
         @checking_function_bindings[binding.object_id] = true
-        previous_type_substitutions = @current_type_substitutions
         @current_type_substitutions = binding.type_substitutions
         with_scope(binding.body_params) do |scopes|
           if binding.ast.is_a?(AST::ForeignFunctionDecl)
@@ -2924,7 +2924,7 @@ module MilkTea
 
       def resolve_specialization_type_arguments(expression)
         expression.arguments.map do |argument|
-          resolve_type_argument(argument.value)
+          resolve_type_argument(argument.value, type_params: current_type_params)
         end
       end
 

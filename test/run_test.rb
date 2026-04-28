@@ -641,6 +641,93 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_result_values
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-result") do |dir|
+      source_path = File.join(dir, "result.mt")
+
+      File.write(source_path, [
+        "module demo.result_runtime",
+        "",
+        "enum ParseError: u8",
+        "    empty = 1",
+        "    invalid = 2",
+        "",
+        "def parse(flag: i32) -> Result[i32, ParseError]:",
+        "    if flag == 0:",
+        "        return err(ParseError.empty)",
+        "    elif flag < 0:",
+        "        return err(ParseError.invalid)",
+        "    return ok(flag + 10)",
+        "",
+        "def value_or_code(result: Result[i32, ParseError]) -> i32:",
+        "    if result.is_ok:",
+        "        return result.value",
+        "    match result.error:",
+        "        ParseError.empty:",
+        "            return 2",
+        "        ParseError.invalid:",
+        "            return 3",
+        "",
+        "def main() -> i32:",
+        "    let parsed = parse(4)",
+        "    let failed = parse(0)",
+        "    return value_or_code(parsed) + value_or_code(failed)",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 16, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_callable_values
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-callable") do |dir|
+      source_path = File.join(dir, "callable.mt")
+
+      File.write(source_path, [
+        "module demo.callable_runtime",
+        "",
+        "struct Entry:",
+        "    callback: fn(value: i32) -> i32",
+        "",
+        "def add_two(value: i32) -> i32:",
+        "    return value + 2",
+        "",
+        "def triple(value: i32) -> i32:",
+        "    return value * 3",
+        "",
+        "def main() -> i32:",
+        "    let callbacks = array[fn(value: i32) -> i32, 2](add_two, triple)",
+        "    let entry = Entry(callback = callbacks[1])",
+        "    return callbacks[0](5) + entry.callback(4)",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 19, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_loop_control_in_match
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
