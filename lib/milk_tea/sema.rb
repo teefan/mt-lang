@@ -1063,7 +1063,7 @@ module MilkTea
         when AST::Identifier
           infer_identifier(expression, scopes:, expected_type:)
         when AST::MemberAccess
-          infer_member_access(expression, scopes:)
+          infer_member_access(expression, scopes:, expected_type:)
         when AST::IndexAccess
           infer_index_access(expression, scopes:)
         when AST::UnaryOp
@@ -1116,7 +1116,7 @@ module MilkTea
         raise SemaError, "unknown name #{expression.name}"
       end
 
-      def infer_member_access(expression, scopes:)
+      def infer_member_access(expression, scopes:, expected_type: nil)
         type = resolve_type_expression(expression.receiver)
         if type
           member_type = resolve_type_member(type, expression.member)
@@ -1136,6 +1136,10 @@ module MilkTea
           return value.type if value
 
           if imported_module.functions.key?(expression.member)
+            function = imported_module.functions.fetch(expression.member)
+            raise SemaError, "generic function #{expression.receiver.name}.#{expression.member} must be called" if function.type_params.any?
+            return function.type if expected_type
+
             raise SemaError, "function #{expression.receiver.name}.#{expression.member} must be called"
           end
 
@@ -3293,7 +3297,8 @@ module MilkTea
         when :plain
           infer_expression(argument.value, scopes:, expected_type:)
         when :consuming
-          foreign_consuming_argument_binding(parameter, argument, scopes:, function_name:).type
+          foreign_consuming_argument_binding(parameter, argument, scopes:, function_name:)
+          parameter.type
         when :in, :out, :inout
           unless argument.value.is_a?(AST::UnaryOp) && argument.value.operator == parameter.passing_mode.to_s
             raise SemaError, "argument #{parameter.name} to #{function_name} must use #{parameter.passing_mode}"

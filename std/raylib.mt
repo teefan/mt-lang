@@ -172,6 +172,8 @@ pub foreign def end_vr_stereo_mode() -> void = c.EndVrStereoMode
 pub foreign def load_vr_stereo_config(device: VrDeviceInfo) -> VrStereoConfig = c.LoadVrStereoConfig
 pub foreign def unload_vr_stereo_config(config: VrStereoConfig) -> void = c.UnloadVrStereoConfig
 pub foreign def load_shader(vs_file_name: cstr?, fs_file_name: cstr?) -> Shader = c.LoadShader
+pub foreign def load_vertex_shader(vs_file_name: str as cstr) -> Shader = c.LoadShader(vs_file_name, null)
+pub foreign def load_fragment_shader(fs_file_name: str as cstr) -> Shader = c.LoadShader(null, fs_file_name)
 pub foreign def load_shader_from_memory(vs_code: cstr?, fs_code: cstr?) -> Shader = c.LoadShaderFromMemory
 pub foreign def is_shader_valid(shader: Shader) -> bool = c.IsShaderValid
 pub foreign def get_shader_location(shader: Shader, uniform_name: cstr) -> i32 = c.GetShaderLocation
@@ -222,7 +224,7 @@ pub foreign def file_text_replace(file_name: cstr, search: cstr, replacement: cs
 pub foreign def file_text_find_index(file_name: cstr, search: cstr) -> i32 = c.FileTextFindIndex
 pub foreign def file_exists(file_name: str as cstr) -> bool = c.FileExists
 pub foreign def directory_exists(dir_path: str as cstr) -> bool = c.DirectoryExists
-pub foreign def is_file_extension(file_name: cstr, ext: cstr) -> bool = c.IsFileExtension
+pub foreign def is_file_extension(file_name: str as cstr, ext: str as cstr) -> bool = c.IsFileExtension
 pub foreign def get_file_length(file_name: cstr) -> i32 = c.GetFileLength
 pub foreign def get_file_mod_time(file_name: cstr) -> i64 = c.GetFileModTime
 pub foreign def get_file_extension(file_name: cstr) -> cstr = c.GetFileExtension
@@ -317,7 +319,7 @@ pub foreign def draw_pixel_v(position: Vector2, color: Color) -> void = c.DrawPi
 pub foreign def draw_line(start_pos_x: i32, start_pos_y: i32, end_pos_x: i32, end_pos_y: i32, color: Color) -> void = c.DrawLine
 pub foreign def draw_line_v(start_pos: Vector2, end_pos: Vector2, color: Color) -> void = c.DrawLineV
 pub foreign def draw_line_ex(start_pos: Vector2, end_pos: Vector2, thick: f32, color: Color) -> void = c.DrawLineEx
-pub foreign def draw_line_strip(points: const_ptr[Vector2], point_count: i32, color: Color) -> void = c.DrawLineStrip
+pub foreign def draw_line_strip_ptr(points: const_ptr[Vector2], point_count: i32, color: Color) -> void = c.DrawLineStrip
 pub foreign def draw_line_bezier(start_pos: Vector2, end_pos: Vector2, thick: f32, color: Color) -> void = c.DrawLineBezier
 pub foreign def draw_line_dashed(start_pos: Vector2, end_pos: Vector2, dash_size: i32, space_size: i32, color: Color) -> void = c.DrawLineDashed
 pub foreign def draw_circle(center_x: i32, center_y: i32, radius: f32, color: Color) -> void = c.DrawCircle
@@ -347,16 +349,16 @@ pub foreign def draw_rectangle_rounded_lines(rec: Rectangle, roundness: f32, seg
 pub foreign def draw_rectangle_rounded_lines_ex(rec: Rectangle, roundness: f32, segments: i32, line_thick: f32, color: Color) -> void = c.DrawRectangleRoundedLinesEx
 pub foreign def draw_triangle(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.DrawTriangle
 pub foreign def draw_triangle_lines(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.DrawTriangleLines
-pub foreign def draw_triangle_fan(points: const_ptr[Vector2], point_count: i32, color: Color) -> void = c.DrawTriangleFan
-pub foreign def draw_triangle_strip(points: const_ptr[Vector2], point_count: i32, color: Color) -> void = c.DrawTriangleStrip
+pub foreign def draw_triangle_fan_ptr(points: const_ptr[Vector2], point_count: i32, color: Color) -> void = c.DrawTriangleFan
+pub foreign def draw_triangle_strip_ptr(points: const_ptr[Vector2], point_count: i32, color: Color) -> void = c.DrawTriangleStrip
 pub foreign def draw_poly(center: Vector2, sides: i32, radius: f32, rotation: f32, color: Color) -> void = c.DrawPoly
 pub foreign def draw_poly_lines(center: Vector2, sides: i32, radius: f32, rotation: f32, color: Color) -> void = c.DrawPolyLines
 pub foreign def draw_poly_lines_ex(center: Vector2, sides: i32, radius: f32, rotation: f32, line_thick: f32, color: Color) -> void = c.DrawPolyLinesEx
-pub foreign def draw_spline_linear(points: const_ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineLinear
-pub foreign def draw_spline_basis(points: const_ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineBasis
-pub foreign def draw_spline_catmull_rom(points: const_ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineCatmullRom
-pub foreign def draw_spline_bezier_quadratic(points: const_ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineBezierQuadratic
-pub foreign def draw_spline_bezier_cubic(points: const_ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineBezierCubic
+pub foreign def draw_spline_linear_ptr(points: const_ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineLinear
+pub foreign def draw_spline_basis_ptr(points: const_ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineBasis
+pub foreign def draw_spline_catmull_rom_ptr(points: const_ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineCatmullRom
+pub foreign def draw_spline_bezier_quadratic_ptr(points: const_ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineBezierQuadratic
+pub foreign def draw_spline_bezier_cubic_ptr(points: const_ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineBezierCubic
 pub foreign def draw_spline_segment_linear(p_1: Vector2, p_2: Vector2, thick: f32, color: Color) -> void = c.DrawSplineSegmentLinear
 pub foreign def draw_spline_segment_basis(p_1: Vector2, p_2: Vector2, p_3: Vector2, p_4: Vector2, thick: f32, color: Color) -> void = c.DrawSplineSegmentBasis
 pub foreign def draw_spline_segment_catmull_rom(p_1: Vector2, p_2: Vector2, p_3: Vector2, p_4: Vector2, thick: f32, color: Color) -> void = c.DrawSplineSegmentCatmullRom
@@ -375,21 +377,21 @@ pub foreign def check_collision_point_rec(point: Vector2, rec: Rectangle) -> boo
 pub foreign def check_collision_point_circle(point: Vector2, center: Vector2, radius: f32) -> bool = c.CheckCollisionPointCircle
 pub foreign def check_collision_point_triangle(point: Vector2, p_1: Vector2, p_2: Vector2, p_3: Vector2) -> bool = c.CheckCollisionPointTriangle
 pub foreign def check_collision_point_line(point: Vector2, p_1: Vector2, p_2: Vector2, threshold: i32) -> bool = c.CheckCollisionPointLine
-pub foreign def check_collision_point_poly(point: Vector2, points: const_ptr[Vector2], point_count: i32) -> bool = c.CheckCollisionPointPoly
+pub foreign def check_collision_point_poly_ptr(point: Vector2, points: const_ptr[Vector2], point_count: i32) -> bool = c.CheckCollisionPointPoly
 pub foreign def check_collision_lines(start_pos_1: Vector2, end_pos_1: Vector2, start_pos_2: Vector2, end_pos_2: Vector2, collision_point: ptr[Vector2]) -> bool = c.CheckCollisionLines
 pub foreign def get_collision_rec(rec_1: Rectangle, rec_2: Rectangle) -> Rectangle = c.GetCollisionRec
-pub foreign def load_image(file_name: cstr) -> Image = c.LoadImage
-pub foreign def load_image_raw(file_name: cstr, width: i32, height: i32, format: i32, header_size: i32) -> Image = c.LoadImageRaw
-pub foreign def load_image_anim(file_name: cstr, frames: ptr[i32]) -> Image = c.LoadImageAnim
+pub foreign def load_image(file_name: str as cstr) -> Image = c.LoadImage
+pub foreign def load_image_raw(file_name: str as cstr, width: i32, height: i32, format: i32, header_size: i32) -> Image = c.LoadImageRaw
+pub foreign def load_image_anim(file_name: str as cstr, out frames: i32) -> Image = c.LoadImageAnim
 pub foreign def load_image_anim_from_memory(file_type: cstr, file_data: const_ptr[u8], data_size: i32, frames: ptr[i32]) -> Image = c.LoadImageAnimFromMemory
 pub foreign def load_image_from_memory(file_type: cstr, file_data: const_ptr[u8], data_size: i32) -> Image = c.LoadImageFromMemory
 pub foreign def load_image_from_texture(texture: Texture) -> Image = c.LoadImageFromTexture
 pub foreign def load_image_from_screen() -> Image = c.LoadImageFromScreen
 pub foreign def is_image_valid(image: Image) -> bool = c.IsImageValid
 pub foreign def unload_image(image: Image) -> void = c.UnloadImage
-pub foreign def export_image(image: Image, file_name: cstr) -> bool = c.ExportImage
+pub foreign def export_image(image: Image, file_name: str as cstr) -> bool = c.ExportImage
 pub foreign def export_image_to_memory(image: Image, file_type: cstr, file_size: ptr[i32]) -> ptr[u8] = c.ExportImageToMemory
-pub foreign def export_image_as_code(image: Image, file_name: cstr) -> bool = c.ExportImageAsCode
+pub foreign def export_image_as_code(image: Image, file_name: str as cstr) -> bool = c.ExportImageAsCode
 pub foreign def gen_image_color(width: i32, height: i32, color: Color) -> Image = c.GenImageColor
 pub foreign def gen_image_gradient_linear(width: i32, height: i32, direction: i32, start: Color, end: Color) -> Image = c.GenImageGradientLinear
 pub foreign def gen_image_gradient_radial(width: i32, height: i32, density: f32, inner: Color, outer: Color) -> Image = c.GenImageGradientRadial
@@ -398,65 +400,65 @@ pub foreign def gen_image_checked(width: i32, height: i32, checks_x: i32, checks
 pub foreign def gen_image_white_noise(width: i32, height: i32, factor: f32) -> Image = c.GenImageWhiteNoise
 pub foreign def gen_image_perlin_noise(width: i32, height: i32, offset_x: i32, offset_y: i32, scale: f32) -> Image = c.GenImagePerlinNoise
 pub foreign def gen_image_cellular(width: i32, height: i32, tile_size: i32) -> Image = c.GenImageCellular
-pub foreign def gen_image_text(width: i32, height: i32, text: cstr) -> Image = c.GenImageText
+pub foreign def gen_image_text(width: i32, height: i32, text: str as cstr) -> Image = c.GenImageText
 pub foreign def image_copy(image: Image) -> Image = c.ImageCopy
 pub foreign def image_from_image(image: Image, rec: Rectangle) -> Image = c.ImageFromImage
 pub foreign def image_from_channel(image: Image, selected_channel: i32) -> Image = c.ImageFromChannel
-pub foreign def image_text(text: cstr, font_size: i32, color: Color) -> Image = c.ImageText
-pub foreign def image_text_ex(font: Font, text: cstr, font_size: f32, spacing: f32, tint: Color) -> Image = c.ImageTextEx
-pub foreign def image_format(image: ptr[Image], new_format: i32) -> void = c.ImageFormat
-pub foreign def image_to_pot(image: ptr[Image], fill: Color) -> void = c.ImageToPOT
-pub foreign def image_crop(image: ptr[Image], crop: Rectangle) -> void = c.ImageCrop
-pub foreign def image_alpha_crop(image: ptr[Image], threshold: f32) -> void = c.ImageAlphaCrop
-pub foreign def image_alpha_clear(image: ptr[Image], color: Color, threshold: f32) -> void = c.ImageAlphaClear
-pub foreign def image_alpha_mask(image: ptr[Image], alpha_mask: Image) -> void = c.ImageAlphaMask
-pub foreign def image_alpha_premultiply(image: ptr[Image]) -> void = c.ImageAlphaPremultiply
-pub foreign def image_blur_gaussian(image: ptr[Image], blur_size: i32) -> void = c.ImageBlurGaussian
-pub foreign def image_kernel_convolution(image: ptr[Image], kernel: const_ptr[f32], kernel_size: i32) -> void = c.ImageKernelConvolution
-pub foreign def image_resize(image: ptr[Image], new_width: i32, new_height: i32) -> void = c.ImageResize
-pub foreign def image_resize_nn(image: ptr[Image], new_width: i32, new_height: i32) -> void = c.ImageResizeNN
-pub foreign def image_resize_canvas(image: ptr[Image], new_width: i32, new_height: i32, offset_x: i32, offset_y: i32, fill: Color) -> void = c.ImageResizeCanvas
-pub foreign def image_mipmaps(image: ptr[Image]) -> void = c.ImageMipmaps
-pub foreign def image_dither(image: ptr[Image], r_bpp: i32, g_bpp: i32, b_bpp: i32, a_bpp: i32) -> void = c.ImageDither
-pub foreign def image_flip_vertical(image: ptr[Image]) -> void = c.ImageFlipVertical
-pub foreign def image_flip_horizontal(image: ptr[Image]) -> void = c.ImageFlipHorizontal
-pub foreign def image_rotate(image: ptr[Image], degrees: i32) -> void = c.ImageRotate
-pub foreign def image_rotate_cw(image: ptr[Image]) -> void = c.ImageRotateCW
-pub foreign def image_rotate_ccw(image: ptr[Image]) -> void = c.ImageRotateCCW
-pub foreign def image_color_tint(image: ptr[Image], color: Color) -> void = c.ImageColorTint
-pub foreign def image_color_invert(image: ptr[Image]) -> void = c.ImageColorInvert
-pub foreign def image_color_grayscale(image: ptr[Image]) -> void = c.ImageColorGrayscale
-pub foreign def image_color_contrast(image: ptr[Image], contrast: f32) -> void = c.ImageColorContrast
-pub foreign def image_color_brightness(image: ptr[Image], brightness: i32) -> void = c.ImageColorBrightness
-pub foreign def image_color_replace(image: ptr[Image], color: Color, replace: Color) -> void = c.ImageColorReplace
+pub foreign def image_text(text: str as cstr, font_size: i32, color: Color) -> Image = c.ImageText
+pub foreign def image_text_ex(font: Font, text: str as cstr, font_size: f32, spacing: f32, tint: Color) -> Image = c.ImageTextEx
+pub foreign def image_format(inout image: Image, new_format: i32) -> void = c.ImageFormat
+pub foreign def image_to_pot(inout image: Image, fill: Color) -> void = c.ImageToPOT
+pub foreign def image_crop(inout image: Image, crop: Rectangle) -> void = c.ImageCrop
+pub foreign def image_alpha_crop(inout image: Image, threshold: f32) -> void = c.ImageAlphaCrop
+pub foreign def image_alpha_clear(inout image: Image, color: Color, threshold: f32) -> void = c.ImageAlphaClear
+pub foreign def image_alpha_mask(inout image: Image, alpha_mask: Image) -> void = c.ImageAlphaMask
+pub foreign def image_alpha_premultiply(inout image: Image) -> void = c.ImageAlphaPremultiply
+pub foreign def image_blur_gaussian(inout image: Image, blur_size: i32) -> void = c.ImageBlurGaussian
+pub foreign def image_kernel_convolution(inout image: Image, kernel: const_ptr[f32], kernel_size: i32) -> void = c.ImageKernelConvolution
+pub foreign def image_resize(inout image: Image, new_width: i32, new_height: i32) -> void = c.ImageResize
+pub foreign def image_resize_nn(inout image: Image, new_width: i32, new_height: i32) -> void = c.ImageResizeNN
+pub foreign def image_resize_canvas(inout image: Image, new_width: i32, new_height: i32, offset_x: i32, offset_y: i32, fill: Color) -> void = c.ImageResizeCanvas
+pub foreign def image_mipmaps(inout image: Image) -> void = c.ImageMipmaps
+pub foreign def image_dither(inout image: Image, r_bpp: i32, g_bpp: i32, b_bpp: i32, a_bpp: i32) -> void = c.ImageDither
+pub foreign def image_flip_vertical(inout image: Image) -> void = c.ImageFlipVertical
+pub foreign def image_flip_horizontal(inout image: Image) -> void = c.ImageFlipHorizontal
+pub foreign def image_rotate(inout image: Image, degrees: i32) -> void = c.ImageRotate
+pub foreign def image_rotate_cw(inout image: Image) -> void = c.ImageRotateCW
+pub foreign def image_rotate_ccw(inout image: Image) -> void = c.ImageRotateCCW
+pub foreign def image_color_tint(inout image: Image, color: Color) -> void = c.ImageColorTint
+pub foreign def image_color_invert(inout image: Image) -> void = c.ImageColorInvert
+pub foreign def image_color_grayscale(inout image: Image) -> void = c.ImageColorGrayscale
+pub foreign def image_color_contrast(inout image: Image, contrast: f32) -> void = c.ImageColorContrast
+pub foreign def image_color_brightness(inout image: Image, brightness: i32) -> void = c.ImageColorBrightness
+pub foreign def image_color_replace(inout image: Image, color: Color, replace: Color) -> void = c.ImageColorReplace
 pub foreign def load_image_colors(image: Image) -> ptr[Color] = c.LoadImageColors
 pub foreign def load_image_palette(image: Image, max_palette_size: i32, color_count: ptr[i32]) -> ptr[Color] = c.LoadImagePalette
 pub foreign def unload_image_colors(colors: ptr[Color]) -> void = c.UnloadImageColors
 pub foreign def unload_image_palette(colors: ptr[Color]) -> void = c.UnloadImagePalette
 pub foreign def get_image_alpha_border(image: Image, threshold: f32) -> Rectangle = c.GetImageAlphaBorder
 pub foreign def get_image_color(image: Image, x: i32, y: i32) -> Color = c.GetImageColor
-pub foreign def image_clear_background(dst: ptr[Image], color: Color) -> void = c.ImageClearBackground
-pub foreign def image_draw_pixel(dst: ptr[Image], pos_x: i32, pos_y: i32, color: Color) -> void = c.ImageDrawPixel
-pub foreign def image_draw_pixel_v(dst: ptr[Image], position: Vector2, color: Color) -> void = c.ImageDrawPixelV
-pub foreign def image_draw_line(dst: ptr[Image], start_pos_x: i32, start_pos_y: i32, end_pos_x: i32, end_pos_y: i32, color: Color) -> void = c.ImageDrawLine
-pub foreign def image_draw_line_v(dst: ptr[Image], start: Vector2, end: Vector2, color: Color) -> void = c.ImageDrawLineV
-pub foreign def image_draw_line_ex(dst: ptr[Image], start: Vector2, end: Vector2, thick: i32, color: Color) -> void = c.ImageDrawLineEx
-pub foreign def image_draw_circle(dst: ptr[Image], center_x: i32, center_y: i32, radius: i32, color: Color) -> void = c.ImageDrawCircle
-pub foreign def image_draw_circle_v(dst: ptr[Image], center: Vector2, radius: i32, color: Color) -> void = c.ImageDrawCircleV
-pub foreign def image_draw_circle_lines(dst: ptr[Image], center_x: i32, center_y: i32, radius: i32, color: Color) -> void = c.ImageDrawCircleLines
-pub foreign def image_draw_circle_lines_v(dst: ptr[Image], center: Vector2, radius: i32, color: Color) -> void = c.ImageDrawCircleLinesV
-pub foreign def image_draw_rectangle(dst: ptr[Image], pos_x: i32, pos_y: i32, width: i32, height: i32, color: Color) -> void = c.ImageDrawRectangle
-pub foreign def image_draw_rectangle_v(dst: ptr[Image], position: Vector2, size: Vector2, color: Color) -> void = c.ImageDrawRectangleV
-pub foreign def image_draw_rectangle_rec(dst: ptr[Image], rec: Rectangle, color: Color) -> void = c.ImageDrawRectangleRec
-pub foreign def image_draw_rectangle_lines(dst: ptr[Image], rec: Rectangle, thick: i32, color: Color) -> void = c.ImageDrawRectangleLines
-pub foreign def image_draw_triangle(dst: ptr[Image], v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.ImageDrawTriangle
-pub foreign def image_draw_triangle_ex(dst: ptr[Image], v_1: Vector2, v_2: Vector2, v_3: Vector2, c_1: Color, c_2: Color, c_3: Color) -> void = c.ImageDrawTriangleEx
-pub foreign def image_draw_triangle_lines(dst: ptr[Image], v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.ImageDrawTriangleLines
-pub foreign def image_draw_triangle_fan(dst: ptr[Image], points: const_ptr[Vector2], point_count: i32, color: Color) -> void = c.ImageDrawTriangleFan
-pub foreign def image_draw_triangle_strip(dst: ptr[Image], points: const_ptr[Vector2], point_count: i32, color: Color) -> void = c.ImageDrawTriangleStrip
-pub foreign def image_draw(dst: ptr[Image], src: Image, src_rec: Rectangle, dst_rec: Rectangle, tint: Color) -> void = c.ImageDraw
-pub foreign def image_draw_text(dst: ptr[Image], text: cstr, pos_x: i32, pos_y: i32, font_size: i32, color: Color) -> void = c.ImageDrawText
-pub foreign def image_draw_text_ex(dst: ptr[Image], font: Font, text: cstr, position: Vector2, font_size: f32, spacing: f32, tint: Color) -> void = c.ImageDrawTextEx
+pub foreign def image_clear_background(inout dst: Image, color: Color) -> void = c.ImageClearBackground
+pub foreign def image_draw_pixel(inout dst: Image, pos_x: i32, pos_y: i32, color: Color) -> void = c.ImageDrawPixel
+pub foreign def image_draw_pixel_v(inout dst: Image, position: Vector2, color: Color) -> void = c.ImageDrawPixelV
+pub foreign def image_draw_line(inout dst: Image, start_pos_x: i32, start_pos_y: i32, end_pos_x: i32, end_pos_y: i32, color: Color) -> void = c.ImageDrawLine
+pub foreign def image_draw_line_v(inout dst: Image, start: Vector2, end: Vector2, color: Color) -> void = c.ImageDrawLineV
+pub foreign def image_draw_line_ex(inout dst: Image, start: Vector2, end: Vector2, thick: i32, color: Color) -> void = c.ImageDrawLineEx
+pub foreign def image_draw_circle(inout dst: Image, center_x: i32, center_y: i32, radius: i32, color: Color) -> void = c.ImageDrawCircle
+pub foreign def image_draw_circle_v(inout dst: Image, center: Vector2, radius: i32, color: Color) -> void = c.ImageDrawCircleV
+pub foreign def image_draw_circle_lines(inout dst: Image, center_x: i32, center_y: i32, radius: i32, color: Color) -> void = c.ImageDrawCircleLines
+pub foreign def image_draw_circle_lines_v(inout dst: Image, center: Vector2, radius: i32, color: Color) -> void = c.ImageDrawCircleLinesV
+pub foreign def image_draw_rectangle(inout dst: Image, pos_x: i32, pos_y: i32, width: i32, height: i32, color: Color) -> void = c.ImageDrawRectangle
+pub foreign def image_draw_rectangle_v(inout dst: Image, position: Vector2, size: Vector2, color: Color) -> void = c.ImageDrawRectangleV
+pub foreign def image_draw_rectangle_rec(inout dst: Image, rec: Rectangle, color: Color) -> void = c.ImageDrawRectangleRec
+pub foreign def image_draw_rectangle_lines(inout dst: Image, rec: Rectangle, thick: i32, color: Color) -> void = c.ImageDrawRectangleLines
+pub foreign def image_draw_triangle(inout dst: Image, v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.ImageDrawTriangle
+pub foreign def image_draw_triangle_ex(inout dst: Image, v_1: Vector2, v_2: Vector2, v_3: Vector2, c_1: Color, c_2: Color, c_3: Color) -> void = c.ImageDrawTriangleEx
+pub foreign def image_draw_triangle_lines(inout dst: Image, v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.ImageDrawTriangleLines
+pub foreign def image_draw_triangle_fan(inout dst: Image, points: const_ptr[Vector2], point_count: i32, color: Color) -> void = c.ImageDrawTriangleFan
+pub foreign def image_draw_triangle_strip(inout dst: Image, points: const_ptr[Vector2], point_count: i32, color: Color) -> void = c.ImageDrawTriangleStrip
+pub foreign def image_draw(inout dst: Image, src: Image, src_rec: Rectangle, dst_rec: Rectangle, tint: Color) -> void = c.ImageDraw
+pub foreign def image_draw_text(inout dst: Image, text: str as cstr, pos_x: i32, pos_y: i32, font_size: i32, color: Color) -> void = c.ImageDrawText
+pub foreign def image_draw_text_ex(inout dst: Image, font: Font, text: str as cstr, position: Vector2, font_size: f32, spacing: f32, tint: Color) -> void = c.ImageDrawTextEx
 pub foreign def load_texture(file_name: str as cstr) -> Texture2D = c.LoadTexture
 pub foreign def load_texture_from_image(image: Image) -> Texture2D = c.LoadTextureFromImage
 pub foreign def load_texture_cubemap(image: Image, layout: i32) -> TextureCubemap = c.LoadTextureCubemap
@@ -467,7 +469,7 @@ pub foreign def is_render_texture_valid(target: RenderTexture) -> bool = c.IsRen
 pub foreign def unload_render_texture(target: RenderTexture2D) -> void = c.UnloadRenderTexture
 pub foreign def update_texture[T](texture: Texture, pixels: ptr[T] as const_ptr[void]) -> void = c.UpdateTexture
 pub foreign def update_texture_rec[T](texture: Texture, rec: Rectangle, pixels: ptr[T] as const_ptr[void]) -> void = c.UpdateTextureRec
-pub foreign def gen_texture_mipmaps(texture: ptr[Texture2D]) -> void = c.GenTextureMipmaps
+pub foreign def gen_texture_mipmaps(inout texture: Texture2D) -> void = c.GenTextureMipmaps
 pub foreign def set_texture_filter(texture: Texture, filter: i32) -> void = c.SetTextureFilter
 pub foreign def set_texture_wrap(texture: Texture, wrap: i32) -> void = c.SetTextureWrap
 pub foreign def draw_texture(texture: Texture, pos_x: i32, pos_y: i32, tint: Color) -> void = c.DrawTexture
@@ -494,51 +496,56 @@ pub foreign def get_pixel_color[T](src_ptr: ptr[T] as ptr[void], format: i32) ->
 pub foreign def set_pixel_color[T](dst_ptr: ptr[T] as ptr[void], color: Color, format: i32) -> void = c.SetPixelColor
 pub foreign def get_pixel_data_size(width: i32, height: i32, format: i32) -> i32 = c.GetPixelDataSize
 pub foreign def get_font_default() -> Font = c.GetFontDefault
-pub foreign def load_font(file_name: cstr) -> Font = c.LoadFont
-pub foreign def load_font_ex(file_name: cstr, font_size: i32, codepoints: ptr[i32]?, codepoint_count: i32) -> Font = c.LoadFontEx
+pub foreign def load_font(file_name: str as cstr) -> Font = c.LoadFont
+pub foreign def load_font_ex(file_name: str as cstr, font_size: i32, codepoints: ptr[i32]?, codepoint_count: i32) -> Font = c.LoadFontEx
 pub foreign def load_font_from_image(image: Image, key: Color, first_char: i32) -> Font = c.LoadFontFromImage
 pub foreign def load_font_from_memory(file_type: cstr, file_data: const_ptr[u8], data_size: i32, font_size: i32, codepoints: ptr[i32]?, codepoint_count: i32) -> Font = c.LoadFontFromMemory
 pub foreign def is_font_valid(font: Font) -> bool = c.IsFontValid
-pub foreign def load_font_data(file_data: const_ptr[u8], data_size: i32, font_size: i32, codepoints: ptr[i32]?, codepoint_count: i32, type: i32, glyph_count: ptr[i32]) -> ptr[GlyphInfo] = c.LoadFontData
-pub foreign def gen_image_font_atlas(glyphs: const_ptr[GlyphInfo], glyph_recs: ptr[ptr[Rectangle]], glyph_count: i32, font_size: i32, padding: i32, pack_method: i32) -> Image = c.GenImageFontAtlas
+pub foreign def load_font_data(file_data: const_ptr[u8], data_size: i32, font_size: i32, codepoints: ptr[i32]?, codepoint_count: i32, type: FontType, out glyph_count: i32) -> ptr[GlyphInfo] = c.LoadFontData
+pub foreign def gen_image_font_atlas(glyphs: const_ptr[GlyphInfo], out glyph_recs: ptr[Rectangle], glyph_count: i32, font_size: i32, padding: i32, pack_method: i32) -> Image = c.GenImageFontAtlas
 pub foreign def unload_font_data(glyphs: ptr[GlyphInfo], glyph_count: i32) -> void = c.UnloadFontData
 pub foreign def unload_font(font: Font) -> void = c.UnloadFont
 pub foreign def export_font_as_code(font: Font, file_name: cstr) -> bool = c.ExportFontAsCode
 pub foreign def draw_fps(pos_x: i32, pos_y: i32) -> void = c.DrawFPS
 pub foreign def draw_text(text: str as cstr, pos_x: i32, pos_y: i32, font_size: i32, color: Color) -> void = c.DrawText
-pub foreign def draw_text_ex(font: Font, text: cstr, position: Vector2, font_size: f32, spacing: f32, tint: Color) -> void = c.DrawTextEx
+pub foreign def draw_text_ex(font: Font, text: str as cstr, position: Vector2, font_size: f32, spacing: f32, tint: Color) -> void = c.DrawTextEx
 pub foreign def draw_text_pro(font: Font, text: cstr, position: Vector2, origin: Vector2, rotation: f32, font_size: f32, spacing: f32, tint: Color) -> void = c.DrawTextPro
 pub foreign def draw_text_codepoint(font: Font, codepoint: i32, position: Vector2, font_size: f32, tint: Color) -> void = c.DrawTextCodepoint
 pub foreign def draw_text_codepoints(font: Font, codepoints: const_ptr[i32], codepoint_count: i32, position: Vector2, font_size: f32, spacing: f32, tint: Color) -> void = c.DrawTextCodepoints
 pub foreign def set_text_line_spacing(spacing: i32) -> void = c.SetTextLineSpacing
-pub foreign def measure_text(text: cstr, font_size: i32) -> i32 = c.MeasureText
-pub foreign def measure_text_ex(font: Font, text: cstr, font_size: f32, spacing: f32) -> Vector2 = c.MeasureTextEx
+pub foreign def measure_text(text: str as cstr, font_size: i32) -> i32 = c.MeasureText
+pub foreign def measure_text_ex(font: Font, text: str as cstr, font_size: f32, spacing: f32) -> Vector2 = c.MeasureTextEx
 pub foreign def measure_text_codepoints(font: Font, codepoints: const_ptr[i32], length: i32, font_size: f32, spacing: f32) -> Vector2 = c.MeasureTextCodepoints
 pub foreign def get_glyph_index(font: Font, codepoint: i32) -> i32 = c.GetGlyphIndex
 pub foreign def get_glyph_info(font: Font, codepoint: i32) -> GlyphInfo = c.GetGlyphInfo
 pub foreign def get_glyph_atlas_rec(font: Font, codepoint: i32) -> Rectangle = c.GetGlyphAtlasRec
 pub foreign def load_utf_8(codepoints: const_ptr[i32], length: i32) -> ptr[char] = c.LoadUTF8
 pub foreign def unload_utf_8(text: ptr[char]) -> void = c.UnloadUTF8
-pub foreign def load_codepoints(text: cstr, count: ptr[i32]) -> ptr[i32] = c.LoadCodepoints
+pub foreign def load_codepoints_ptr(text: str as cstr, out count: i32) -> ptr[i32] = c.LoadCodepoints
 pub foreign def unload_codepoints(codepoints: ptr[i32]) -> void = c.UnloadCodepoints
-pub foreign def get_codepoint_count(text: cstr) -> i32 = c.GetCodepointCount
-pub foreign def get_codepoint(text: cstr, codepoint_size: ptr[i32]) -> i32 = c.GetCodepoint
-pub foreign def get_codepoint_next(text: cstr, codepoint_size: ptr[i32]) -> i32 = c.GetCodepointNext
+pub foreign def get_codepoint_count(text: str as cstr) -> i32 = c.GetCodepointCount
+pub foreign def get_codepoint(text: str as cstr, out codepoint_size: i32) -> i32 = c.GetCodepoint
+pub foreign def get_codepoint_next(text: str as cstr, out codepoint_size: i32) -> i32 = c.GetCodepointNext
 pub foreign def get_codepoint_previous(text: cstr, codepoint_size: ptr[i32]) -> i32 = c.GetCodepointPrevious
-pub foreign def codepoint_to_utf_8(codepoint: i32, utf_8size: ptr[i32]) -> cstr = c.CodepointToUTF8
+pub foreign def codepoint_to_utf_8(codepoint: i32, out utf_8_size: i32) -> cstr = c.CodepointToUTF8
 pub foreign def load_text_lines(text: cstr, count: ptr[i32]) -> ptr[ptr[char]] = c.LoadTextLines
 pub foreign def unload_text_lines(text: ptr[ptr[char]], line_count: i32) -> void = c.UnloadTextLines
 pub foreign def text_copy(dst: ptr[char], src: cstr) -> i32 = c.TextCopy
 pub foreign def text_is_equal(text_1: cstr, text_2: cstr) -> bool = c.TextIsEqual
-pub foreign def text_length(text: cstr) -> u32 = c.TextLength
+pub foreign def text_length(text: str as cstr) -> u32 = c.TextLength
 pub foreign def text_format_i32(format: str as cstr, value: i32) -> cstr = c.TextFormat(format, value)
 pub foreign def text_format_i32_i32(format: str as cstr, first: i32, second: i32) -> cstr = c.TextFormat(format, first, second)
+pub foreign def text_format_i32_i32_i32(format: str as cstr, first: i32, second: i32, third: i32) -> cstr = c.TextFormat(format, first, second, third)
 pub foreign def text_format_i32_i32_i32_i32(format: str as cstr, first: i32, second: i32, third: i32, fourth: i32) -> cstr = c.TextFormat(format, first, second, third, fourth)
 pub foreign def text_format_i32_cstr(format: str as cstr, value: i32, label: str as cstr) -> cstr = c.TextFormat(format, value, label)
 pub foreign def text_format_cstr(format: str as cstr, value: str as cstr) -> cstr = c.TextFormat(format, value)
+pub foreign def text_format_cstr_cstr(format: str as cstr, first: str as cstr, second: str as cstr) -> cstr = c.TextFormat(format, first, second)
+pub foreign def text_format_cstr_i32_i32(format: str as cstr, label: str as cstr, first: i32, second: i32) -> cstr = c.TextFormat(format, label, first, second)
+pub foreign def text_format_i32_i32_f32(format: str as cstr, first: i32, second: i32, third: f32) -> cstr = c.TextFormat(format, first, second, third)
+pub foreign def text_format_cstr_f32_f32(format: str as cstr, label: str as cstr, first: f32, second: f32) -> cstr = c.TextFormat(format, label, first, second)
 pub foreign def text_format_f32(format: str as cstr, value: f32) -> cstr = c.TextFormat(format, value)
 pub foreign def text_format_f32_f32(format: str as cstr, first: f32, second: f32) -> cstr = c.TextFormat(format, first, second)
-pub foreign def text_subtext(text: cstr, position: i32, length: i32) -> cstr = c.TextSubtext
+pub foreign def text_subtext(text: str as cstr, position: i32, length: i32) -> cstr = c.TextSubtext
 pub foreign def text_remove_spaces(text: cstr) -> cstr = c.TextRemoveSpaces
 pub foreign def get_text_between(text: cstr, begin: cstr, end: cstr) -> ptr[char] = c.GetTextBetween
 pub foreign def text_replace(text: cstr, search: cstr, replacement: cstr) -> ptr[char] = c.TextReplace
@@ -548,14 +555,14 @@ pub foreign def text_replace_between_alloc(text: cstr, begin: cstr, end: cstr, r
 pub foreign def text_insert(text: cstr, insert: cstr, position: i32) -> ptr[char] = c.TextInsert
 pub foreign def text_insert_alloc(text: cstr, insert: cstr, position: i32) -> ptr[char] = c.TextInsertAlloc
 pub foreign def text_join(text_list: ptr[ptr[char]], count: i32, delimiter: cstr) -> ptr[char] = c.TextJoin
-pub foreign def text_split(text: cstr, delimiter: char, count: ptr[i32]) -> ptr[ptr[char]] = c.TextSplit
+pub foreign def text_split_ptr(text: str as cstr, delimiter: char, out count: i32) -> ptr[ptr[char]] = c.TextSplit
 pub foreign def text_append(text: ptr[char], append: cstr, position: ptr[i32]) -> void = c.TextAppend
 pub foreign def text_find_index(text: cstr, search: cstr) -> i32 = c.TextFindIndex
-pub foreign def text_to_upper(text: cstr) -> ptr[char] = c.TextToUpper
-pub foreign def text_to_lower(text: cstr) -> ptr[char] = c.TextToLower
-pub foreign def text_to_pascal(text: cstr) -> ptr[char] = c.TextToPascal
-pub foreign def text_to_snake(text: cstr) -> ptr[char] = c.TextToSnake
-pub foreign def text_to_camel(text: cstr) -> ptr[char] = c.TextToCamel
+pub foreign def text_to_upper_ptr(text: str as cstr) -> ptr[char] = c.TextToUpper
+pub foreign def text_to_lower_ptr(text: str as cstr) -> ptr[char] = c.TextToLower
+pub foreign def text_to_pascal_ptr(text: str as cstr) -> ptr[char] = c.TextToPascal
+pub foreign def text_to_snake_ptr(text: str as cstr) -> ptr[char] = c.TextToSnake
+pub foreign def text_to_camel_ptr(text: str as cstr) -> ptr[char] = c.TextToCamel
 pub foreign def text_to_integer(text: cstr) -> i32 = c.TextToInteger
 pub foreign def text_to_float(text: cstr) -> f32 = c.TextToFloat
 pub foreign def draw_line_3d(start_pos: Vector3, end_pos: Vector3, color: Color) -> void = c.DrawLine3D
@@ -636,10 +643,10 @@ pub foreign def close_audio_device() -> void = c.CloseAudioDevice
 pub foreign def is_audio_device_ready() -> bool = c.IsAudioDeviceReady
 pub foreign def set_master_volume(volume: f32) -> void = c.SetMasterVolume
 pub foreign def get_master_volume() -> f32 = c.GetMasterVolume
-pub foreign def load_wave(file_name: cstr) -> Wave = c.LoadWave
+pub foreign def load_wave(file_name: str as cstr) -> Wave = c.LoadWave
 pub foreign def load_wave_from_memory(file_type: cstr, file_data: const_ptr[u8], data_size: i32) -> Wave = c.LoadWaveFromMemory
 pub foreign def is_wave_valid(wave: Wave) -> bool = c.IsWaveValid
-pub foreign def load_sound(file_name: cstr) -> Sound = c.LoadSound
+pub foreign def load_sound(file_name: str as cstr) -> Sound = c.LoadSound
 pub foreign def load_sound_from_wave(wave: Wave) -> Sound = c.LoadSoundFromWave
 pub foreign def load_sound_alias(source: Sound) -> Sound = c.LoadSoundAlias
 pub foreign def is_sound_valid(sound: Sound) -> bool = c.IsSoundValid
@@ -698,11 +705,185 @@ pub foreign def detach_audio_stream_processor(stream: AudioStream, processor: fn
 pub foreign def attach_audio_mixed_processor(processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void = c.AttachAudioMixedProcessor
 pub foreign def detach_audio_mixed_processor(processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void = c.DetachAudioMixedProcessor
 
-pub def load_vertex_shader(vs_file_name: cstr) -> Shader:
-    return load_shader(vs_file_name, null)
+pub struct CodepointList:
+    data: ptr[i32]
+    count: i32
 
-pub def load_fragment_shader(fs_file_name: cstr) -> Shader:
-    return load_shader(null, fs_file_name)
+pub struct TextSplitResult:
+    items: ptr[ptr[char]]
+    count: i32
+
+pub struct TextCodepoint:
+    value: i32
+    byte_count: i32
+
+pub struct FileData:
+    data: ptr[u8]
+    size: i32
+
+pub def load_file_data_required(file_name: str) -> FileData:
+    var size = 0
+    let data = load_file_data(file_name, out size)
+    if data == null:
+        panic(c"raylib load_file_data_required failed")
+    unsafe:
+        return FileData(data = cast[ptr[u8]](data), size = size)
+
+pub def unload_file_data_block(file_data: FileData) -> void:
+    let data: ptr[u8]? = file_data.data
+    unload_file_data(data)
+    return
+
+pub def file_path_at(files: FilePathList, index: i32) -> cstr:
+    if index < 0 or index >= cast[i32](files.count):
+        panic(c"raylib file_path_at index out of bounds")
+    unsafe:
+        return cast[cstr](deref(files.paths + index))
+
+pub def load_codepoints(text: str) -> CodepointList:
+    var count = 0
+    let data = load_codepoints_ptr(text, out count)
+    return CodepointList(data = data, count = count)
+
+pub def unload_codepoint_list(codepoints: CodepointList) -> void:
+    unload_codepoints(codepoints.data)
+    return
+
+pub def codepoints_span(codepoints: CodepointList) -> span[i32]:
+    return span[i32](data = codepoints.data, len = cast[usize](codepoints.count))
+
+pub def codepoint_at(codepoints: CodepointList, index: i32) -> i32:
+    if index < 0 or index >= codepoints.count:
+        panic(c"raylib codepoint_at index out of bounds")
+    unsafe:
+        return deref(codepoints.data + index)
+
+pub def text_split(text: str, delimiter: char) -> TextSplitResult:
+    var count = 0
+    let items = text_split_ptr(text, delimiter, out count)
+    return TextSplitResult(items = items, count = count)
+
+pub def text_split_at(parts: TextSplitResult, index: i32) -> cstr:
+    if index < 0 or index >= parts.count:
+        panic(c"raylib text_split_at index out of bounds")
+    unsafe:
+        return cast[cstr](deref(parts.items + index))
+
+pub def codepoint_to_str(codepoint: i32) -> str:
+    var byte_count = 0
+    let bytes = codepoint_to_utf_8(codepoint, out byte_count)
+    unsafe:
+        return str(data = cast[ptr[char]](bytes), len = cast[usize](byte_count))
+
+pub def codepoint_in_text_at(text: str, byte_index: i32) -> TextCodepoint:
+    if byte_index < 0 or cast[usize](byte_index) >= text.len:
+        return TextCodepoint(value = 0, byte_count = 0)
+    var byte_count = 0
+    unsafe:
+        let current = str(data = text.data + byte_index, len = text.len - cast[usize](byte_index))
+        let value = get_codepoint(current, out byte_count)
+        return TextCodepoint(value = value, byte_count = byte_count)
+
+pub def font_glyph_at(font: Font, index: i32) -> GlyphInfo:
+    if index < 0 or index >= font.glyphCount:
+        panic(c"raylib font_glyph_at index out of bounds")
+    unsafe:
+        return deref(font.glyphs + index)
+
+pub def font_atlas_rec_at(font: Font, index: i32) -> Rectangle:
+    if index < 0 or index >= font.glyphCount:
+        panic(c"raylib font_atlas_rec_at index out of bounds")
+    unsafe:
+        return deref(font.recs + index)
+
+pub def load_font_ex_span(file_name: str, font_size: i32, codepoints: span[i32]) -> Font:
+    if codepoints.len == 0:
+        return load_font_ex(file_name, font_size, null, 0)
+    return load_font_ex(file_name, font_size, codepoints.data, cast[i32](codepoints.len))
+
+pub def text_to_upper(text: str) -> cstr:
+    unsafe:
+        return cast[cstr](text_to_upper_ptr(text))
+
+pub def text_to_lower(text: str) -> cstr:
+    unsafe:
+        return cast[cstr](text_to_lower_ptr(text))
+
+pub def text_to_pascal(text: str) -> cstr:
+    unsafe:
+        return cast[cstr](text_to_pascal_ptr(text))
+
+pub def text_to_snake(text: str) -> cstr:
+    unsafe:
+        return cast[cstr](text_to_snake_ptr(text))
+
+pub def text_to_camel(text: str) -> cstr:
+    unsafe:
+        return cast[cstr](text_to_camel_ptr(text))
+
+pub def update_texture_from_image(texture: Texture, image: Image) -> void:
+    update_texture(texture, image.data)
+    return
+
+pub def update_texture_from_image_frame(texture: Texture, image: Image, frame_index: i32) -> void:
+    unsafe:
+        let frame_size = image.width * image.height * 4
+        let pixels = cast[ptr[u8]](image.data) + frame_size * frame_index
+        update_texture(texture, pixels)
+    return
+
+pub def draw_line_strip(points: span[Vector2], color: Color) -> void:
+    if points.len == 0:
+        return
+    draw_line_strip_ptr(ro_addr(points[0]), cast[i32](points.len), color)
+    return
+
+pub def draw_triangle_fan(points: span[Vector2], color: Color) -> void:
+    if points.len == 0:
+        return
+    draw_triangle_fan_ptr(ro_addr(points[0]), cast[i32](points.len), color)
+    return
+
+pub def draw_triangle_strip(points: span[Vector2], color: Color) -> void:
+    if points.len == 0:
+        return
+    draw_triangle_strip_ptr(ro_addr(points[0]), cast[i32](points.len), color)
+    return
+
+pub def draw_spline_linear(points: span[Vector2], thick: f32, color: Color) -> void:
+    if points.len == 0:
+        return
+    draw_spline_linear_ptr(ro_addr(points[0]), cast[i32](points.len), thick, color)
+    return
+
+pub def draw_spline_basis(points: span[Vector2], thick: f32, color: Color) -> void:
+    if points.len == 0:
+        return
+    draw_spline_basis_ptr(ro_addr(points[0]), cast[i32](points.len), thick, color)
+    return
+
+pub def draw_spline_catmull_rom(points: span[Vector2], thick: f32, color: Color) -> void:
+    if points.len == 0:
+        return
+    draw_spline_catmull_rom_ptr(ro_addr(points[0]), cast[i32](points.len), thick, color)
+    return
+
+pub def draw_spline_bezier_quadratic(points: span[Vector2], thick: f32, color: Color) -> void:
+    if points.len == 0:
+        return
+    draw_spline_bezier_quadratic_ptr(ro_addr(points[0]), cast[i32](points.len), thick, color)
+    return
+
+pub def draw_spline_bezier_cubic(points: span[Vector2], thick: f32, color: Color) -> void:
+    if points.len == 0:
+        return
+    draw_spline_bezier_cubic_ptr(ro_addr(points[0]), cast[i32](points.len), thick, color)
+    return
+
+pub def check_collision_point_poly(point: Vector2, points: span[Vector2]) -> bool:
+    if points.len == 0:
+        return false
+    return check_collision_point_poly_ptr(point, ro_addr(points[0]), cast[i32](points.len))
 
 pub def set_shader_f32(shader: Shader, loc_index: i32, value: f32) -> void:
     set_shader_value(shader, loc_index, in value, ShaderUniformDataType.SHADER_UNIFORM_FLOAT)

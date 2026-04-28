@@ -28,6 +28,15 @@ pub def lerp(start: f32, finish: f32, amount: f32) -> f32:
 pub def abs(value: f32) -> f32:
     return libm.fabsf(value)
 
+pub def ceil(value: f32) -> f32:
+    return libm.ceilf(value)
+
+pub def floor(value: f32) -> f32:
+    return libm.floorf(value)
+
+pub def trunc(value: f32) -> f32:
+    return libm.truncf(value)
+
 pub def sqrt(value: f32) -> f32:
     return libm.sqrtf(value)
 

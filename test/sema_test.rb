@@ -216,6 +216,36 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_imported_function_callable_values
+    root_source = <<~MT
+      module demo.main
+
+      import std.ease as ease
+
+      struct Entry:
+          callback: fn(value: i32) -> i32
+
+      def main() -> i32:
+          let callbacks = array[fn(value: i32) -> i32, 1](ease.double)
+          let entry = Entry(callback = ease.double)
+          return callbacks[0](3) + entry.callback(4)
+    MT
+
+    imported_sources = {
+      "std/ease.mt" => <<~MT,
+        module std.ease
+
+        pub def double(value: i32) -> i32:
+            return value * 2
+      MT
+    }
+
+    result = check_program_source(root_source, imported_sources).root_analysis
+
+    assert_equal true, result.types.key?("Entry")
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_foreign_defs_with_boundary_mappings
     root_source = <<~MT
       module demo.main
@@ -787,6 +817,44 @@ class MilkTeaSemaTest < Minitest::Test
     end
 
     assert_match(/consuming argument window to destroy must be a bare nullable local or parameter binding/, error.message)
+  end
+
+  def test_type_checks_owned_foreign_release_on_nullable_binding
+    root_source = <<~MT
+      module demo.main
+
+      import std.window as win
+
+      def main() -> void:
+          let window = win.create()
+          if window != null:
+              win.destroy(window)
+    MT
+
+    imported_sources = {
+      "std/c/window.mt" => <<~MT,
+        extern module std.c.window:
+            include "window.h"
+
+            extern def CreateWindow() -> ptr[void]?
+            extern def DestroyWindow(window: ptr[void]?) -> void
+      MT
+      "std/window.mt" => <<~MT,
+        module std.window
+
+        import std.c.window as c
+
+        pub opaque Window
+
+        pub foreign def create() -> Window? = c.CreateWindow
+        pub foreign def destroy(consuming window: Window) -> void = c.DestroyWindow
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.functions.key?("main")
   end
 
   def test_rejects_owned_foreign_release_outside_expression_statement
