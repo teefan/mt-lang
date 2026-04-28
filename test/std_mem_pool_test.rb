@@ -63,6 +63,56 @@ class MilkTeaStdMemPoolTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_typed_pool_helpers
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_mem_pool_typed",
+      "",
+      "import std.mem.pool as pool",
+      "",
+      "struct Pair:",
+      "    left: i32",
+      "    right: i32",
+      "",
+      "def main() -> i32:",
+      "    var objects = pool.create_for[Pair](2)",
+      "    defer objects.release()",
+      "",
+      "    let first = pool.alloc[Pair](addr(objects))",
+      "    let second = pool.alloc[Pair](addr(objects))",
+      "    let third = pool.alloc[Pair](addr(objects))",
+      "    if first == null or second == null:",
+      "        return 1",
+      "    if third != null:",
+      "        return 2",
+      "",
+      "    unsafe:",
+      "        deref(first).left = 8",
+      "        deref(first).right = 13",
+      "        if deref(first).left + deref(first).right != 21:",
+      "            return 3",
+      "",
+      "    if not pool.release[Pair](addr(objects), first):",
+      "        return 4",
+      "    if pool.release[Pair](addr(objects), first):",
+      "        return 5",
+      "    if not pool.release[Pair](addr(objects), second):",
+      "        return 6",
+      "",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   private
 
   def run_program(source, compiler:)

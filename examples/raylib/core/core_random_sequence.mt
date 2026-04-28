@@ -29,7 +29,7 @@ def generate_random_color() -> rl.Color:
     )
 
 def alloc_color_rects(rect_count: i32) -> ptr[ColorRect]:
-    return heap.alloc_zeroed[ColorRect](cast[usize](rect_count))
+    return heap.must_alloc_zeroed[ColorRect](cast[usize](rect_count))
 
 def release_color_rects(rectangles: ptr[ColorRect]) -> void:
     heap.release(rectangles)

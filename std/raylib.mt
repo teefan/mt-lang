@@ -176,8 +176,8 @@ pub foreign def load_shader_from_memory(vs_code: cstr?, fs_code: cstr?) -> Shade
 pub foreign def is_shader_valid(shader: Shader) -> bool = c.IsShaderValid
 pub foreign def get_shader_location(shader: Shader, uniform_name: cstr) -> i32 = c.GetShaderLocation
 pub foreign def get_shader_location_attrib(shader: Shader, attrib_name: cstr) -> i32 = c.GetShaderLocationAttrib
-pub foreign def set_shader_value[T](shader: Shader, loc_index: i32, value: ptr[T] as ptr[void], uniform_type: i32) -> void = c.SetShaderValue
-pub foreign def set_shader_value_v[T](shader: Shader, loc_index: i32, value: ptr[T] as ptr[void], uniform_type: i32, count: i32) -> void = c.SetShaderValueV
+pub foreign def set_shader_value[T](shader: Shader, loc_index: i32, in value: T as const_ptr[void], uniform_type: i32) -> void = c.SetShaderValue
+pub foreign def set_shader_value_v[T](shader: Shader, loc_index: i32, value: ptr[T] as const_ptr[void], uniform_type: i32, count: i32) -> void = c.SetShaderValueV
 pub foreign def set_shader_value_matrix(shader: Shader, loc_index: i32, mat: Matrix) -> void = c.SetShaderValueMatrix
 pub foreign def set_shader_value_texture(shader: Shader, loc_index: i32, texture: Texture) -> void = c.SetShaderValueTexture
 pub foreign def unload_shader(shader: Shader) -> void = c.UnloadShader
@@ -210,7 +210,7 @@ pub foreign def mem_free[T](memory: ptr[T]) -> void = c.MemFree
 pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
 pub foreign def unload_file_data(consuming data: ptr[u8]) -> void = c.UnloadFileData
 pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
-pub foreign def export_data_as_code(data: ptr[u8], data_size: i32, file_name: cstr) -> bool = c.ExportDataAsCode
+pub foreign def export_data_as_code(data: const_ptr[u8], data_size: i32, file_name: cstr) -> bool = c.ExportDataAsCode
 pub foreign def load_file_text(file_name: cstr) -> ptr[char] = c.LoadFileText
 pub foreign def unload_file_text(text: ptr[char]) -> void = c.UnloadFileText
 pub foreign def save_file_text(file_name: cstr, text: cstr) -> bool = c.SaveFileText
@@ -244,9 +244,9 @@ pub foreign def load_dropped_files() -> FilePathList = c.LoadDroppedFiles
 pub foreign def unload_dropped_files(files: FilePathList) -> void = c.UnloadDroppedFiles
 pub foreign def get_directory_file_count(dir_path: cstr) -> u32 = c.GetDirectoryFileCount
 pub foreign def get_directory_file_count_ex(base_path: cstr, filter: cstr, scan_subdirs: bool) -> u32 = c.GetDirectoryFileCountEx
-pub foreign def compress_data(data: ptr[u8], data_size: i32, comp_data_size: ptr[i32]) -> ptr[u8] = c.CompressData
-pub foreign def decompress_data(comp_data: ptr[u8], comp_data_size: i32, data_size: ptr[i32]) -> ptr[u8] = c.DecompressData
-pub foreign def encode_data_base_64(data: ptr[u8], data_size: i32, output_size: ptr[i32]) -> ptr[char] = c.EncodeDataBase64
+pub foreign def compress_data(data: const_ptr[u8], data_size: i32, comp_data_size: ptr[i32]) -> ptr[u8] = c.CompressData
+pub foreign def decompress_data(comp_data: const_ptr[u8], comp_data_size: i32, data_size: ptr[i32]) -> ptr[u8] = c.DecompressData
+pub foreign def encode_data_base_64(data: const_ptr[u8], data_size: i32, output_size: ptr[i32]) -> ptr[char] = c.EncodeDataBase64
 pub foreign def decode_data_base_64(text: cstr, output_size: ptr[i32]) -> ptr[u8] = c.DecodeDataBase64
 pub foreign def compute_crc_32(data: ptr[u8], data_size: i32) -> u32 = c.ComputeCRC32
 pub foreign def compute_md_5(data: ptr[u8], data_size: i32) -> ptr[u32] = c.ComputeMD5
@@ -317,7 +317,7 @@ pub foreign def draw_pixel_v(position: Vector2, color: Color) -> void = c.DrawPi
 pub foreign def draw_line(start_pos_x: i32, start_pos_y: i32, end_pos_x: i32, end_pos_y: i32, color: Color) -> void = c.DrawLine
 pub foreign def draw_line_v(start_pos: Vector2, end_pos: Vector2, color: Color) -> void = c.DrawLineV
 pub foreign def draw_line_ex(start_pos: Vector2, end_pos: Vector2, thick: f32, color: Color) -> void = c.DrawLineEx
-pub foreign def draw_line_strip(points: ptr[Vector2], point_count: i32, color: Color) -> void = c.DrawLineStrip
+pub foreign def draw_line_strip(points: const_ptr[Vector2], point_count: i32, color: Color) -> void = c.DrawLineStrip
 pub foreign def draw_line_bezier(start_pos: Vector2, end_pos: Vector2, thick: f32, color: Color) -> void = c.DrawLineBezier
 pub foreign def draw_line_dashed(start_pos: Vector2, end_pos: Vector2, dash_size: i32, space_size: i32, color: Color) -> void = c.DrawLineDashed
 pub foreign def draw_circle(center_x: i32, center_y: i32, radius: f32, color: Color) -> void = c.DrawCircle
@@ -347,16 +347,16 @@ pub foreign def draw_rectangle_rounded_lines(rec: Rectangle, roundness: f32, seg
 pub foreign def draw_rectangle_rounded_lines_ex(rec: Rectangle, roundness: f32, segments: i32, line_thick: f32, color: Color) -> void = c.DrawRectangleRoundedLinesEx
 pub foreign def draw_triangle(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.DrawTriangle
 pub foreign def draw_triangle_lines(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.DrawTriangleLines
-pub foreign def draw_triangle_fan(points: ptr[Vector2], point_count: i32, color: Color) -> void = c.DrawTriangleFan
-pub foreign def draw_triangle_strip(points: ptr[Vector2], point_count: i32, color: Color) -> void = c.DrawTriangleStrip
+pub foreign def draw_triangle_fan(points: const_ptr[Vector2], point_count: i32, color: Color) -> void = c.DrawTriangleFan
+pub foreign def draw_triangle_strip(points: const_ptr[Vector2], point_count: i32, color: Color) -> void = c.DrawTriangleStrip
 pub foreign def draw_poly(center: Vector2, sides: i32, radius: f32, rotation: f32, color: Color) -> void = c.DrawPoly
 pub foreign def draw_poly_lines(center: Vector2, sides: i32, radius: f32, rotation: f32, color: Color) -> void = c.DrawPolyLines
 pub foreign def draw_poly_lines_ex(center: Vector2, sides: i32, radius: f32, rotation: f32, line_thick: f32, color: Color) -> void = c.DrawPolyLinesEx
-pub foreign def draw_spline_linear(points: ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineLinear
-pub foreign def draw_spline_basis(points: ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineBasis
-pub foreign def draw_spline_catmull_rom(points: ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineCatmullRom
-pub foreign def draw_spline_bezier_quadratic(points: ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineBezierQuadratic
-pub foreign def draw_spline_bezier_cubic(points: ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineBezierCubic
+pub foreign def draw_spline_linear(points: const_ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineLinear
+pub foreign def draw_spline_basis(points: const_ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineBasis
+pub foreign def draw_spline_catmull_rom(points: const_ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineCatmullRom
+pub foreign def draw_spline_bezier_quadratic(points: const_ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineBezierQuadratic
+pub foreign def draw_spline_bezier_cubic(points: const_ptr[Vector2], point_count: i32, thick: f32, color: Color) -> void = c.DrawSplineBezierCubic
 pub foreign def draw_spline_segment_linear(p_1: Vector2, p_2: Vector2, thick: f32, color: Color) -> void = c.DrawSplineSegmentLinear
 pub foreign def draw_spline_segment_basis(p_1: Vector2, p_2: Vector2, p_3: Vector2, p_4: Vector2, thick: f32, color: Color) -> void = c.DrawSplineSegmentBasis
 pub foreign def draw_spline_segment_catmull_rom(p_1: Vector2, p_2: Vector2, p_3: Vector2, p_4: Vector2, thick: f32, color: Color) -> void = c.DrawSplineSegmentCatmullRom
@@ -375,14 +375,14 @@ pub foreign def check_collision_point_rec(point: Vector2, rec: Rectangle) -> boo
 pub foreign def check_collision_point_circle(point: Vector2, center: Vector2, radius: f32) -> bool = c.CheckCollisionPointCircle
 pub foreign def check_collision_point_triangle(point: Vector2, p_1: Vector2, p_2: Vector2, p_3: Vector2) -> bool = c.CheckCollisionPointTriangle
 pub foreign def check_collision_point_line(point: Vector2, p_1: Vector2, p_2: Vector2, threshold: i32) -> bool = c.CheckCollisionPointLine
-pub foreign def check_collision_point_poly(point: Vector2, points: ptr[Vector2], point_count: i32) -> bool = c.CheckCollisionPointPoly
+pub foreign def check_collision_point_poly(point: Vector2, points: const_ptr[Vector2], point_count: i32) -> bool = c.CheckCollisionPointPoly
 pub foreign def check_collision_lines(start_pos_1: Vector2, end_pos_1: Vector2, start_pos_2: Vector2, end_pos_2: Vector2, collision_point: ptr[Vector2]) -> bool = c.CheckCollisionLines
 pub foreign def get_collision_rec(rec_1: Rectangle, rec_2: Rectangle) -> Rectangle = c.GetCollisionRec
 pub foreign def load_image(file_name: cstr) -> Image = c.LoadImage
 pub foreign def load_image_raw(file_name: cstr, width: i32, height: i32, format: i32, header_size: i32) -> Image = c.LoadImageRaw
 pub foreign def load_image_anim(file_name: cstr, frames: ptr[i32]) -> Image = c.LoadImageAnim
-pub foreign def load_image_anim_from_memory(file_type: cstr, file_data: ptr[u8], data_size: i32, frames: ptr[i32]) -> Image = c.LoadImageAnimFromMemory
-pub foreign def load_image_from_memory(file_type: cstr, file_data: ptr[u8], data_size: i32) -> Image = c.LoadImageFromMemory
+pub foreign def load_image_anim_from_memory(file_type: cstr, file_data: const_ptr[u8], data_size: i32, frames: ptr[i32]) -> Image = c.LoadImageAnimFromMemory
+pub foreign def load_image_from_memory(file_type: cstr, file_data: const_ptr[u8], data_size: i32) -> Image = c.LoadImageFromMemory
 pub foreign def load_image_from_texture(texture: Texture) -> Image = c.LoadImageFromTexture
 pub foreign def load_image_from_screen() -> Image = c.LoadImageFromScreen
 pub foreign def is_image_valid(image: Image) -> bool = c.IsImageValid
@@ -412,7 +412,7 @@ pub foreign def image_alpha_clear(image: ptr[Image], color: Color, threshold: f3
 pub foreign def image_alpha_mask(image: ptr[Image], alpha_mask: Image) -> void = c.ImageAlphaMask
 pub foreign def image_alpha_premultiply(image: ptr[Image]) -> void = c.ImageAlphaPremultiply
 pub foreign def image_blur_gaussian(image: ptr[Image], blur_size: i32) -> void = c.ImageBlurGaussian
-pub foreign def image_kernel_convolution(image: ptr[Image], kernel: ptr[f32], kernel_size: i32) -> void = c.ImageKernelConvolution
+pub foreign def image_kernel_convolution(image: ptr[Image], kernel: const_ptr[f32], kernel_size: i32) -> void = c.ImageKernelConvolution
 pub foreign def image_resize(image: ptr[Image], new_width: i32, new_height: i32) -> void = c.ImageResize
 pub foreign def image_resize_nn(image: ptr[Image], new_width: i32, new_height: i32) -> void = c.ImageResizeNN
 pub foreign def image_resize_canvas(image: ptr[Image], new_width: i32, new_height: i32, offset_x: i32, offset_y: i32, fill: Color) -> void = c.ImageResizeCanvas
@@ -452,8 +452,8 @@ pub foreign def image_draw_rectangle_lines(dst: ptr[Image], rec: Rectangle, thic
 pub foreign def image_draw_triangle(dst: ptr[Image], v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.ImageDrawTriangle
 pub foreign def image_draw_triangle_ex(dst: ptr[Image], v_1: Vector2, v_2: Vector2, v_3: Vector2, c_1: Color, c_2: Color, c_3: Color) -> void = c.ImageDrawTriangleEx
 pub foreign def image_draw_triangle_lines(dst: ptr[Image], v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.ImageDrawTriangleLines
-pub foreign def image_draw_triangle_fan(dst: ptr[Image], points: ptr[Vector2], point_count: i32, color: Color) -> void = c.ImageDrawTriangleFan
-pub foreign def image_draw_triangle_strip(dst: ptr[Image], points: ptr[Vector2], point_count: i32, color: Color) -> void = c.ImageDrawTriangleStrip
+pub foreign def image_draw_triangle_fan(dst: ptr[Image], points: const_ptr[Vector2], point_count: i32, color: Color) -> void = c.ImageDrawTriangleFan
+pub foreign def image_draw_triangle_strip(dst: ptr[Image], points: const_ptr[Vector2], point_count: i32, color: Color) -> void = c.ImageDrawTriangleStrip
 pub foreign def image_draw(dst: ptr[Image], src: Image, src_rec: Rectangle, dst_rec: Rectangle, tint: Color) -> void = c.ImageDraw
 pub foreign def image_draw_text(dst: ptr[Image], text: cstr, pos_x: i32, pos_y: i32, font_size: i32, color: Color) -> void = c.ImageDrawText
 pub foreign def image_draw_text_ex(dst: ptr[Image], font: Font, text: cstr, position: Vector2, font_size: f32, spacing: f32, tint: Color) -> void = c.ImageDrawTextEx
@@ -465,8 +465,8 @@ pub foreign def is_texture_valid(texture: Texture) -> bool = c.IsTextureValid
 pub foreign def unload_texture(texture: Texture) -> void = c.UnloadTexture
 pub foreign def is_render_texture_valid(target: RenderTexture) -> bool = c.IsRenderTextureValid
 pub foreign def unload_render_texture(target: RenderTexture2D) -> void = c.UnloadRenderTexture
-pub foreign def update_texture[T](texture: Texture, pixels: ptr[T] as ptr[void]) -> void = c.UpdateTexture
-pub foreign def update_texture_rec[T](texture: Texture, rec: Rectangle, pixels: ptr[T] as ptr[void]) -> void = c.UpdateTextureRec
+pub foreign def update_texture[T](texture: Texture, pixels: ptr[T] as const_ptr[void]) -> void = c.UpdateTexture
+pub foreign def update_texture_rec[T](texture: Texture, rec: Rectangle, pixels: ptr[T] as const_ptr[void]) -> void = c.UpdateTextureRec
 pub foreign def gen_texture_mipmaps(texture: ptr[Texture2D]) -> void = c.GenTextureMipmaps
 pub foreign def set_texture_filter(texture: Texture, filter: i32) -> void = c.SetTextureFilter
 pub foreign def set_texture_wrap(texture: Texture, wrap: i32) -> void = c.SetTextureWrap
@@ -497,10 +497,10 @@ pub foreign def get_font_default() -> Font = c.GetFontDefault
 pub foreign def load_font(file_name: cstr) -> Font = c.LoadFont
 pub foreign def load_font_ex(file_name: cstr, font_size: i32, codepoints: ptr[i32]?, codepoint_count: i32) -> Font = c.LoadFontEx
 pub foreign def load_font_from_image(image: Image, key: Color, first_char: i32) -> Font = c.LoadFontFromImage
-pub foreign def load_font_from_memory(file_type: cstr, file_data: ptr[u8], data_size: i32, font_size: i32, codepoints: ptr[i32]?, codepoint_count: i32) -> Font = c.LoadFontFromMemory
+pub foreign def load_font_from_memory(file_type: cstr, file_data: const_ptr[u8], data_size: i32, font_size: i32, codepoints: ptr[i32]?, codepoint_count: i32) -> Font = c.LoadFontFromMemory
 pub foreign def is_font_valid(font: Font) -> bool = c.IsFontValid
-pub foreign def load_font_data(file_data: ptr[u8], data_size: i32, font_size: i32, codepoints: ptr[i32]?, codepoint_count: i32, type: i32, glyph_count: ptr[i32]) -> ptr[GlyphInfo] = c.LoadFontData
-pub foreign def gen_image_font_atlas(glyphs: ptr[GlyphInfo], glyph_recs: ptr[ptr[Rectangle]], glyph_count: i32, font_size: i32, padding: i32, pack_method: i32) -> Image = c.GenImageFontAtlas
+pub foreign def load_font_data(file_data: const_ptr[u8], data_size: i32, font_size: i32, codepoints: ptr[i32]?, codepoint_count: i32, type: i32, glyph_count: ptr[i32]) -> ptr[GlyphInfo] = c.LoadFontData
+pub foreign def gen_image_font_atlas(glyphs: const_ptr[GlyphInfo], glyph_recs: ptr[ptr[Rectangle]], glyph_count: i32, font_size: i32, padding: i32, pack_method: i32) -> Image = c.GenImageFontAtlas
 pub foreign def unload_font_data(glyphs: ptr[GlyphInfo], glyph_count: i32) -> void = c.UnloadFontData
 pub foreign def unload_font(font: Font) -> void = c.UnloadFont
 pub foreign def export_font_as_code(font: Font, file_name: cstr) -> bool = c.ExportFontAsCode
@@ -509,15 +509,15 @@ pub foreign def draw_text(text: str as cstr, pos_x: i32, pos_y: i32, font_size: 
 pub foreign def draw_text_ex(font: Font, text: cstr, position: Vector2, font_size: f32, spacing: f32, tint: Color) -> void = c.DrawTextEx
 pub foreign def draw_text_pro(font: Font, text: cstr, position: Vector2, origin: Vector2, rotation: f32, font_size: f32, spacing: f32, tint: Color) -> void = c.DrawTextPro
 pub foreign def draw_text_codepoint(font: Font, codepoint: i32, position: Vector2, font_size: f32, tint: Color) -> void = c.DrawTextCodepoint
-pub foreign def draw_text_codepoints(font: Font, codepoints: ptr[i32], codepoint_count: i32, position: Vector2, font_size: f32, spacing: f32, tint: Color) -> void = c.DrawTextCodepoints
+pub foreign def draw_text_codepoints(font: Font, codepoints: const_ptr[i32], codepoint_count: i32, position: Vector2, font_size: f32, spacing: f32, tint: Color) -> void = c.DrawTextCodepoints
 pub foreign def set_text_line_spacing(spacing: i32) -> void = c.SetTextLineSpacing
 pub foreign def measure_text(text: cstr, font_size: i32) -> i32 = c.MeasureText
 pub foreign def measure_text_ex(font: Font, text: cstr, font_size: f32, spacing: f32) -> Vector2 = c.MeasureTextEx
-pub foreign def measure_text_codepoints(font: Font, codepoints: ptr[i32], length: i32, font_size: f32, spacing: f32) -> Vector2 = c.MeasureTextCodepoints
+pub foreign def measure_text_codepoints(font: Font, codepoints: const_ptr[i32], length: i32, font_size: f32, spacing: f32) -> Vector2 = c.MeasureTextCodepoints
 pub foreign def get_glyph_index(font: Font, codepoint: i32) -> i32 = c.GetGlyphIndex
 pub foreign def get_glyph_info(font: Font, codepoint: i32) -> GlyphInfo = c.GetGlyphInfo
 pub foreign def get_glyph_atlas_rec(font: Font, codepoint: i32) -> Rectangle = c.GetGlyphAtlasRec
-pub foreign def load_utf_8(codepoints: ptr[i32], length: i32) -> ptr[char] = c.LoadUTF8
+pub foreign def load_utf_8(codepoints: const_ptr[i32], length: i32) -> ptr[char] = c.LoadUTF8
 pub foreign def unload_utf_8(text: ptr[char]) -> void = c.UnloadUTF8
 pub foreign def load_codepoints(text: cstr, count: ptr[i32]) -> ptr[i32] = c.LoadCodepoints
 pub foreign def unload_codepoints(codepoints: ptr[i32]) -> void = c.UnloadCodepoints
@@ -562,7 +562,7 @@ pub foreign def draw_line_3d(start_pos: Vector3, end_pos: Vector3, color: Color)
 pub foreign def draw_point_3d(position: Vector3, color: Color) -> void = c.DrawPoint3D
 pub foreign def draw_circle_3d(center: Vector3, radius: f32, rotation_axis: Vector3, rotation_angle: f32, color: Color) -> void = c.DrawCircle3D
 pub foreign def draw_triangle_3d(v_1: Vector3, v_2: Vector3, v_3: Vector3, color: Color) -> void = c.DrawTriangle3D
-pub foreign def draw_triangle_strip_3d(points: ptr[Vector3], point_count: i32, color: Color) -> void = c.DrawTriangleStrip3D
+pub foreign def draw_triangle_strip_3d(points: const_ptr[Vector3], point_count: i32, color: Color) -> void = c.DrawTriangleStrip3D
 pub foreign def draw_cube(position: Vector3, width: f32, height: f32, length: f32, color: Color) -> void = c.DrawCube
 pub foreign def draw_cube_v(position: Vector3, size: Vector3, color: Color) -> void = c.DrawCubeV
 pub foreign def draw_cube_wires(position: Vector3, width: f32, height: f32, length: f32, color: Color) -> void = c.DrawCubeWires
@@ -593,10 +593,10 @@ pub foreign def draw_billboard(camera: Camera3D, texture: Texture, position: Vec
 pub foreign def draw_billboard_rec(camera: Camera3D, texture: Texture, source: Rectangle, position: Vector3, size: Vector2, tint: Color) -> void = c.DrawBillboardRec
 pub foreign def draw_billboard_pro(camera: Camera3D, texture: Texture, source: Rectangle, position: Vector3, up: Vector3, size: Vector2, origin: Vector2, rotation: f32, tint: Color) -> void = c.DrawBillboardPro
 pub foreign def upload_mesh(mesh: ptr[Mesh], dynamic: bool) -> void = c.UploadMesh
-pub foreign def update_mesh_buffer[T](mesh: Mesh, index: i32, data: ptr[T] as ptr[void], data_size: i32, offset: i32) -> void = c.UpdateMeshBuffer
+pub foreign def update_mesh_buffer[T](mesh: Mesh, index: i32, data: ptr[T] as const_ptr[void], data_size: i32, offset: i32) -> void = c.UpdateMeshBuffer
 pub foreign def unload_mesh(mesh: Mesh) -> void = c.UnloadMesh
 pub foreign def draw_mesh(mesh: Mesh, material: Material, transform: Matrix) -> void = c.DrawMesh
-pub foreign def draw_mesh_instanced(mesh: Mesh, material: Material, transforms: ptr[Matrix], instances: i32) -> void = c.DrawMeshInstanced
+pub foreign def draw_mesh_instanced(mesh: Mesh, material: Material, transforms: const_ptr[Matrix], instances: i32) -> void = c.DrawMeshInstanced
 pub foreign def get_mesh_bounding_box(mesh: Mesh) -> BoundingBox = c.GetMeshBoundingBox
 pub foreign def gen_mesh_tangents(mesh: ptr[Mesh]) -> void = c.GenMeshTangents
 pub foreign def export_mesh(mesh: Mesh, file_name: cstr) -> bool = c.ExportMesh
@@ -637,13 +637,13 @@ pub foreign def is_audio_device_ready() -> bool = c.IsAudioDeviceReady
 pub foreign def set_master_volume(volume: f32) -> void = c.SetMasterVolume
 pub foreign def get_master_volume() -> f32 = c.GetMasterVolume
 pub foreign def load_wave(file_name: cstr) -> Wave = c.LoadWave
-pub foreign def load_wave_from_memory(file_type: cstr, file_data: ptr[u8], data_size: i32) -> Wave = c.LoadWaveFromMemory
+pub foreign def load_wave_from_memory(file_type: cstr, file_data: const_ptr[u8], data_size: i32) -> Wave = c.LoadWaveFromMemory
 pub foreign def is_wave_valid(wave: Wave) -> bool = c.IsWaveValid
 pub foreign def load_sound(file_name: cstr) -> Sound = c.LoadSound
 pub foreign def load_sound_from_wave(wave: Wave) -> Sound = c.LoadSoundFromWave
 pub foreign def load_sound_alias(source: Sound) -> Sound = c.LoadSoundAlias
 pub foreign def is_sound_valid(sound: Sound) -> bool = c.IsSoundValid
-pub foreign def update_sound[T](sound: Sound, data: ptr[T] as ptr[void], sample_count: i32) -> void = c.UpdateSound
+pub foreign def update_sound[T](sound: Sound, data: ptr[T] as const_ptr[void], sample_count: i32) -> void = c.UpdateSound
 pub foreign def unload_wave(wave: Wave) -> void = c.UnloadWave
 pub foreign def unload_sound(sound: Sound) -> void = c.UnloadSound
 pub foreign def unload_sound_alias(alias: Sound) -> void = c.UnloadSoundAlias
@@ -663,7 +663,7 @@ pub foreign def wave_format(wave: ptr[Wave], sample_rate: i32, sample_size: i32,
 pub foreign def load_wave_samples(wave: Wave) -> ptr[f32] = c.LoadWaveSamples
 pub foreign def unload_wave_samples(samples: ptr[f32]) -> void = c.UnloadWaveSamples
 pub foreign def load_music_stream(file_name: cstr) -> Music = c.LoadMusicStream
-pub foreign def load_music_stream_from_memory(file_type: cstr, data: ptr[u8], data_size: i32) -> Music = c.LoadMusicStreamFromMemory
+pub foreign def load_music_stream_from_memory(file_type: cstr, data: const_ptr[u8], data_size: i32) -> Music = c.LoadMusicStreamFromMemory
 pub foreign def is_music_valid(music: Music) -> bool = c.IsMusicValid
 pub foreign def unload_music_stream(music: Music) -> void = c.UnloadMusicStream
 pub foreign def play_music_stream(music: Music) -> void = c.PlayMusicStream
@@ -681,7 +681,7 @@ pub foreign def get_music_time_played(music: Music) -> f32 = c.GetMusicTimePlaye
 pub foreign def load_audio_stream(sample_rate: u32, sample_size: u32, channels: u32) -> AudioStream = c.LoadAudioStream
 pub foreign def is_audio_stream_valid(stream: AudioStream) -> bool = c.IsAudioStreamValid
 pub foreign def unload_audio_stream(stream: AudioStream) -> void = c.UnloadAudioStream
-pub foreign def update_audio_stream[T](stream: AudioStream, data: ptr[T] as ptr[void], frame_count: i32) -> void = c.UpdateAudioStream
+pub foreign def update_audio_stream[T](stream: AudioStream, data: ptr[T] as const_ptr[void], frame_count: i32) -> void = c.UpdateAudioStream
 pub foreign def is_audio_stream_processed(stream: AudioStream) -> bool = c.IsAudioStreamProcessed
 pub foreign def play_audio_stream(stream: AudioStream) -> void = c.PlayAudioStream
 pub foreign def pause_audio_stream(stream: AudioStream) -> void = c.PauseAudioStream
@@ -697,3 +697,29 @@ pub foreign def attach_audio_stream_processor(stream: AudioStream, processor: fn
 pub foreign def detach_audio_stream_processor(stream: AudioStream, processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void = c.DetachAudioStreamProcessor
 pub foreign def attach_audio_mixed_processor(processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void = c.AttachAudioMixedProcessor
 pub foreign def detach_audio_mixed_processor(processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void = c.DetachAudioMixedProcessor
+
+pub def load_vertex_shader(vs_file_name: cstr) -> Shader:
+    return load_shader(vs_file_name, null)
+
+pub def load_fragment_shader(fs_file_name: cstr) -> Shader:
+    return load_shader(null, fs_file_name)
+
+pub def set_shader_f32(shader: Shader, loc_index: i32, value: f32) -> void:
+    set_shader_value(shader, loc_index, in value, ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    return
+
+pub def set_shader_i32(shader: Shader, loc_index: i32, value: i32) -> void:
+    set_shader_value(shader, loc_index, in value, ShaderUniformDataType.SHADER_UNIFORM_INT)
+    return
+
+pub def set_shader_vec2(shader: Shader, loc_index: i32, value: Vector2) -> void:
+    set_shader_value(shader, loc_index, in value, ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    return
+
+pub def set_shader_vec3(shader: Shader, loc_index: i32, value: Vector3) -> void:
+    set_shader_value(shader, loc_index, in value, ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+    return
+
+pub def set_shader_vec4(shader: Shader, loc_index: i32, value: Vector4) -> void:
+    set_shader_value(shader, loc_index, in value, ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    return

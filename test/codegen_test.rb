@@ -203,6 +203,39 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/\(\(int32_t\) __mt_foreign_arg_\d+\.len\)|\(int32_t\) __mt_foreign_arg_\d+\.len/, generated)
   end
 
+  def test_generate_c_for_foreign_defs_with_in_const_void_pointer
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main() -> void:
+          let value = 7
+          sample.inspect(in value)
+          sample.inspect(in (value + 1))
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def Inspect(value: const_ptr[void]) -> void
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def inspect[T](in value: T as const_ptr[void]) -> void = c.Inspect
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/Inspect\(\(\(const void\*\) \(&value\)\)\);/, generated)
+    assert_match(/int32_t __mt_foreign_in_\d+ = value \+ 1;/, generated)
+    assert_match(/Inspect\(\(\(const void\*\) \(&__mt_foreign_in_\d+\)\)\);/, generated)
+  end
+
   def test_generate_c_for_foreign_defs_with_string_literal_without_using_scratch
     source = <<~MT
       module demo.main

@@ -773,9 +773,9 @@ extern module std.c.raylib:
 
     extern def GetShaderLocationAttrib(shader: Shader, attribName: cstr) -> i32
 
-    extern def SetShaderValue(shader: Shader, locIndex: i32, value: ptr[void], uniformType: i32) -> void
+    extern def SetShaderValue(shader: Shader, locIndex: i32, value: const_ptr[void], uniformType: i32) -> void
 
-    extern def SetShaderValueV(shader: Shader, locIndex: i32, value: ptr[void], uniformType: i32, count: i32) -> void
+    extern def SetShaderValueV(shader: Shader, locIndex: i32, value: const_ptr[void], uniformType: i32, count: i32) -> void
 
     extern def SetShaderValueMatrix(shader: Shader, locIndex: i32, mat: Matrix) -> void
 
@@ -845,7 +845,7 @@ extern module std.c.raylib:
 
     extern def SaveFileData(fileName: cstr, data: ptr[void], dataSize: i32) -> bool
 
-    extern def ExportDataAsCode(data: ptr[u8], dataSize: i32, fileName: cstr) -> bool
+    extern def ExportDataAsCode(data: const_ptr[u8], dataSize: i32, fileName: cstr) -> bool
 
     extern def LoadFileText(fileName: cstr) -> ptr[char]
 
@@ -921,11 +921,11 @@ extern module std.c.raylib:
 
     extern def GetDirectoryFileCountEx(basePath: cstr, filter: cstr, scanSubdirs: bool) -> u32
 
-    extern def CompressData(data: ptr[u8], dataSize: i32, compDataSize: ptr[i32]) -> ptr[u8]
+    extern def CompressData(data: const_ptr[u8], dataSize: i32, compDataSize: ptr[i32]) -> ptr[u8]
 
-    extern def DecompressData(compData: ptr[u8], compDataSize: i32, dataSize: ptr[i32]) -> ptr[u8]
+    extern def DecompressData(compData: const_ptr[u8], compDataSize: i32, dataSize: ptr[i32]) -> ptr[u8]
 
-    extern def EncodeDataBase64(data: ptr[u8], dataSize: i32, outputSize: ptr[i32]) -> ptr[char]
+    extern def EncodeDataBase64(data: const_ptr[u8], dataSize: i32, outputSize: ptr[i32]) -> ptr[char]
 
     extern def DecodeDataBase64(text: cstr, outputSize: ptr[i32]) -> ptr[u8]
 
@@ -1067,7 +1067,7 @@ extern module std.c.raylib:
 
     extern def DrawLineEx(startPos: Vector2, endPos: Vector2, thick: f32, color: Color) -> void
 
-    extern def DrawLineStrip(points: ptr[Vector2], pointCount: i32, color: Color) -> void
+    extern def DrawLineStrip(points: const_ptr[Vector2], pointCount: i32, color: Color) -> void
 
     extern def DrawLineBezier(startPos: Vector2, endPos: Vector2, thick: f32, color: Color) -> void
 
@@ -1127,9 +1127,9 @@ extern module std.c.raylib:
 
     extern def DrawTriangleLines(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
 
-    extern def DrawTriangleFan(points: ptr[Vector2], pointCount: i32, color: Color) -> void
+    extern def DrawTriangleFan(points: const_ptr[Vector2], pointCount: i32, color: Color) -> void
 
-    extern def DrawTriangleStrip(points: ptr[Vector2], pointCount: i32, color: Color) -> void
+    extern def DrawTriangleStrip(points: const_ptr[Vector2], pointCount: i32, color: Color) -> void
 
     extern def DrawPoly(center: Vector2, sides: i32, radius: f32, rotation: f32, color: Color) -> void
 
@@ -1137,15 +1137,15 @@ extern module std.c.raylib:
 
     extern def DrawPolyLinesEx(center: Vector2, sides: i32, radius: f32, rotation: f32, lineThick: f32, color: Color) -> void
 
-    extern def DrawSplineLinear(points: ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
+    extern def DrawSplineLinear(points: const_ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
 
-    extern def DrawSplineBasis(points: ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
+    extern def DrawSplineBasis(points: const_ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
 
-    extern def DrawSplineCatmullRom(points: ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
+    extern def DrawSplineCatmullRom(points: const_ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
 
-    extern def DrawSplineBezierQuadratic(points: ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
+    extern def DrawSplineBezierQuadratic(points: const_ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
 
-    extern def DrawSplineBezierCubic(points: ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
+    extern def DrawSplineBezierCubic(points: const_ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
 
     extern def DrawSplineSegmentLinear(p1: Vector2, p2: Vector2, thick: f32, color: Color) -> void
 
@@ -1183,7 +1183,7 @@ extern module std.c.raylib:
 
     extern def CheckCollisionPointLine(point: Vector2, p1: Vector2, p2: Vector2, threshold: i32) -> bool
 
-    extern def CheckCollisionPointPoly(point: Vector2, points: ptr[Vector2], pointCount: i32) -> bool
+    extern def CheckCollisionPointPoly(point: Vector2, points: const_ptr[Vector2], pointCount: i32) -> bool
 
     extern def CheckCollisionLines(startPos1: Vector2, endPos1: Vector2, startPos2: Vector2, endPos2: Vector2, collisionPoint: ptr[Vector2]) -> bool
 
@@ -1195,9 +1195,9 @@ extern module std.c.raylib:
 
     extern def LoadImageAnim(fileName: cstr, frames: ptr[i32]) -> Image
 
-    extern def LoadImageAnimFromMemory(fileType: cstr, fileData: ptr[u8], dataSize: i32, frames: ptr[i32]) -> Image
+    extern def LoadImageAnimFromMemory(fileType: cstr, fileData: const_ptr[u8], dataSize: i32, frames: ptr[i32]) -> Image
 
-    extern def LoadImageFromMemory(fileType: cstr, fileData: ptr[u8], dataSize: i32) -> Image
+    extern def LoadImageFromMemory(fileType: cstr, fileData: const_ptr[u8], dataSize: i32) -> Image
 
     extern def LoadImageFromTexture(texture: Texture) -> Image
 
@@ -1257,7 +1257,7 @@ extern module std.c.raylib:
 
     extern def ImageBlurGaussian(image: ptr[Image], blurSize: i32) -> void
 
-    extern def ImageKernelConvolution(image: ptr[Image], kernel: ptr[f32], kernelSize: i32) -> void
+    extern def ImageKernelConvolution(image: ptr[Image], kernel: const_ptr[f32], kernelSize: i32) -> void
 
     extern def ImageResize(image: ptr[Image], newWidth: i32, newHeight: i32) -> void
 
@@ -1337,9 +1337,9 @@ extern module std.c.raylib:
 
     extern def ImageDrawTriangleLines(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
 
-    extern def ImageDrawTriangleFan(dst: ptr[Image], points: ptr[Vector2], pointCount: i32, color: Color) -> void
+    extern def ImageDrawTriangleFan(dst: ptr[Image], points: const_ptr[Vector2], pointCount: i32, color: Color) -> void
 
-    extern def ImageDrawTriangleStrip(dst: ptr[Image], points: ptr[Vector2], pointCount: i32, color: Color) -> void
+    extern def ImageDrawTriangleStrip(dst: ptr[Image], points: const_ptr[Vector2], pointCount: i32, color: Color) -> void
 
     extern def ImageDraw(dst: ptr[Image], src: Image, srcRec: Rectangle, dstRec: Rectangle, tint: Color) -> void
 
@@ -1363,9 +1363,9 @@ extern module std.c.raylib:
 
     extern def UnloadRenderTexture(target: RenderTexture) -> void
 
-    extern def UpdateTexture(texture: Texture, pixels: ptr[void]) -> void
+    extern def UpdateTexture(texture: Texture, pixels: const_ptr[void]) -> void
 
-    extern def UpdateTextureRec(texture: Texture, rec: Rectangle, pixels: ptr[void]) -> void
+    extern def UpdateTextureRec(texture: Texture, rec: Rectangle, pixels: const_ptr[void]) -> void
 
     extern def GenTextureMipmaps(texture: ptr[Texture2D]) -> void
 
@@ -1427,13 +1427,13 @@ extern module std.c.raylib:
 
     extern def LoadFontFromImage(image: Image, key: Color, firstChar: i32) -> Font
 
-    extern def LoadFontFromMemory(fileType: cstr, fileData: ptr[u8], dataSize: i32, fontSize: i32, codepoints: ptr[i32]?, codepointCount: i32) -> Font
+    extern def LoadFontFromMemory(fileType: cstr, fileData: const_ptr[u8], dataSize: i32, fontSize: i32, codepoints: ptr[i32]?, codepointCount: i32) -> Font
 
     extern def IsFontValid(font: Font) -> bool
 
-    extern def LoadFontData(fileData: ptr[u8], dataSize: i32, fontSize: i32, codepoints: ptr[i32]?, codepointCount: i32, type: i32, glyphCount: ptr[i32]) -> ptr[GlyphInfo]
+    extern def LoadFontData(fileData: const_ptr[u8], dataSize: i32, fontSize: i32, codepoints: ptr[i32]?, codepointCount: i32, type: i32, glyphCount: ptr[i32]) -> ptr[GlyphInfo]
 
-    extern def GenImageFontAtlas(glyphs: ptr[GlyphInfo], glyphRecs: ptr[ptr[Rectangle]], glyphCount: i32, fontSize: i32, padding: i32, packMethod: i32) -> Image
+    extern def GenImageFontAtlas(glyphs: const_ptr[GlyphInfo], glyphRecs: ptr[ptr[Rectangle]], glyphCount: i32, fontSize: i32, padding: i32, packMethod: i32) -> Image
 
     extern def UnloadFontData(glyphs: ptr[GlyphInfo], glyphCount: i32) -> void
 
@@ -1451,7 +1451,7 @@ extern module std.c.raylib:
 
     extern def DrawTextCodepoint(font: Font, codepoint: i32, position: Vector2, fontSize: f32, tint: Color) -> void
 
-    extern def DrawTextCodepoints(font: Font, codepoints: ptr[i32], codepointCount: i32, position: Vector2, fontSize: f32, spacing: f32, tint: Color) -> void
+    extern def DrawTextCodepoints(font: Font, codepoints: const_ptr[i32], codepointCount: i32, position: Vector2, fontSize: f32, spacing: f32, tint: Color) -> void
 
     extern def SetTextLineSpacing(spacing: i32) -> void
 
@@ -1459,7 +1459,7 @@ extern module std.c.raylib:
 
     extern def MeasureTextEx(font: Font, text: cstr, fontSize: f32, spacing: f32) -> Vector2
 
-    extern def MeasureTextCodepoints(font: Font, codepoints: ptr[i32], length: i32, fontSize: f32, spacing: f32) -> Vector2
+    extern def MeasureTextCodepoints(font: Font, codepoints: const_ptr[i32], length: i32, fontSize: f32, spacing: f32) -> Vector2
 
     extern def GetGlyphIndex(font: Font, codepoint: i32) -> i32
 
@@ -1467,7 +1467,7 @@ extern module std.c.raylib:
 
     extern def GetGlyphAtlasRec(font: Font, codepoint: i32) -> Rectangle
 
-    extern def LoadUTF8(codepoints: ptr[i32], length: i32) -> ptr[char]
+    extern def LoadUTF8(codepoints: const_ptr[i32], length: i32) -> ptr[char]
 
     extern def UnloadUTF8(text: ptr[char]) -> void
 
@@ -1545,7 +1545,7 @@ extern module std.c.raylib:
 
     extern def DrawTriangle3D(v1: Vector3, v2: Vector3, v3: Vector3, color: Color) -> void
 
-    extern def DrawTriangleStrip3D(points: ptr[Vector3], pointCount: i32, color: Color) -> void
+    extern def DrawTriangleStrip3D(points: const_ptr[Vector3], pointCount: i32, color: Color) -> void
 
     extern def DrawCube(position: Vector3, width: f32, height: f32, length: f32, color: Color) -> void
 
@@ -1607,13 +1607,13 @@ extern module std.c.raylib:
 
     extern def UploadMesh(mesh: ptr[Mesh], dynamic: bool) -> void
 
-    extern def UpdateMeshBuffer(mesh: Mesh, index: i32, data: ptr[void], dataSize: i32, offset: i32) -> void
+    extern def UpdateMeshBuffer(mesh: Mesh, index: i32, data: const_ptr[void], dataSize: i32, offset: i32) -> void
 
     extern def UnloadMesh(mesh: Mesh) -> void
 
     extern def DrawMesh(mesh: Mesh, material: Material, transform: Matrix) -> void
 
-    extern def DrawMeshInstanced(mesh: Mesh, material: Material, transforms: ptr[Matrix], instances: i32) -> void
+    extern def DrawMeshInstanced(mesh: Mesh, material: Material, transforms: const_ptr[Matrix], instances: i32) -> void
 
     extern def GetMeshBoundingBox(mesh: Mesh) -> BoundingBox
 
@@ -1697,7 +1697,7 @@ extern module std.c.raylib:
 
     extern def LoadWave(fileName: cstr) -> Wave
 
-    extern def LoadWaveFromMemory(fileType: cstr, fileData: ptr[u8], dataSize: i32) -> Wave
+    extern def LoadWaveFromMemory(fileType: cstr, fileData: const_ptr[u8], dataSize: i32) -> Wave
 
     extern def IsWaveValid(wave: Wave) -> bool
 
@@ -1709,7 +1709,7 @@ extern module std.c.raylib:
 
     extern def IsSoundValid(sound: Sound) -> bool
 
-    extern def UpdateSound(sound: Sound, data: ptr[void], sampleCount: i32) -> void
+    extern def UpdateSound(sound: Sound, data: const_ptr[void], sampleCount: i32) -> void
 
     extern def UnloadWave(wave: Wave) -> void
 
@@ -1749,7 +1749,7 @@ extern module std.c.raylib:
 
     extern def LoadMusicStream(fileName: cstr) -> Music
 
-    extern def LoadMusicStreamFromMemory(fileType: cstr, data: ptr[u8], dataSize: i32) -> Music
+    extern def LoadMusicStreamFromMemory(fileType: cstr, data: const_ptr[u8], dataSize: i32) -> Music
 
     extern def IsMusicValid(music: Music) -> bool
 
@@ -1785,7 +1785,7 @@ extern module std.c.raylib:
 
     extern def UnloadAudioStream(stream: AudioStream) -> void
 
-    extern def UpdateAudioStream(stream: AudioStream, data: ptr[void], frameCount: i32) -> void
+    extern def UpdateAudioStream(stream: AudioStream, data: const_ptr[void], frameCount: i32) -> void
 
     extern def IsAudioStreamProcessed(stream: AudioStream) -> bool
 

@@ -111,12 +111,16 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
       pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
 
+      pub foreign def set_shader_value[T](shader: Shader, loc_index: i32, in value: T as const_ptr[void], uniform_type: i32) -> void = c.SetShaderValue
+
       pub foreign def close_window(consuming window: Window) -> void = c.CloseWindow
 
       pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
 
       def main(path: str) -> ptr[u8]?:
           var data_size = 0
+          let contrast = 1.0
+          set_shader_value(Shader(), 0, in contrast, 0)
           return load_file_data(path, out data_size)
     MT
 

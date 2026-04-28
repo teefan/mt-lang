@@ -26,8 +26,8 @@ def main() -> i32:
         palette[index] = rl.ColorFromHSV(250.0 + 150.0 * hue, saturation, value)
 
     unsafe:
-        let index_buffer = heap.alloc_zeroed[u8](cast[usize](image_width * image_height))
-        let flame_root_buffer = heap.alloc_zeroed[u8](cast[usize](flame_width))
+        let index_buffer = heap.must_alloc_zeroed[u8](cast[usize](image_width * image_height))
+        let flame_root_buffer = heap.must_alloc_zeroed[u8](cast[usize](flame_width))
         var screen_image = rl.GenImageColor(image_width, image_height, rl.BLACK)
         let screen_texture = rl.LoadTextureFromImage(screen_image)
 

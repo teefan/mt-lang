@@ -20,7 +20,7 @@ def main() -> i32:
     var file_paths = zero[array[ptr[char], 4096]]()
 
     for index in range(0, max_filepaths_recorded):
-        file_paths[index] = heap.alloc_zeroed[char](cast[usize](max_filepath_size))
+        file_paths[index] = heap.must_alloc_zeroed[char](cast[usize](max_filepath_size))
 
     rl.SetTargetFPS(60)
 

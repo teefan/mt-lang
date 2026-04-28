@@ -1,6 +1,7 @@
 module std.mem.stack
 
 import std.mem.arena as arena
+import std.mem.heap as heap
 
 pub type Mark = arena.Mark
 
@@ -24,12 +25,19 @@ methods Stack:
     pub edit def alloc_bytes(size_bytes: usize) -> ptr[byte]?:
         return this.arena.alloc_bytes(size_bytes)
 
+    pub edit def alloc_bytes_aligned(size_bytes: usize, alignment: usize) -> ptr[byte]?:
+        return this.arena.alloc_bytes_aligned(size_bytes, alignment)
+
     pub edit def release() -> void:
         this.arena.release()
         return
 
 pub def alloc[T](space: ref[Stack], count: usize) -> ptr[T]?:
-    let memory = value(space).alloc_bytes(count * cast[usize](sizeof(T)))
+    let element_size = cast[usize](sizeof(T))
+    if heap.mul_overflows(count, element_size):
+        return null
+
+    let memory = value(space).alloc_bytes_aligned(count * element_size, cast[usize](alignof(T)))
     if memory == null:
         return null
 

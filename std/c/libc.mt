@@ -188,15 +188,15 @@ extern module std.c.libc:
 
     extern def arc4random_uniform(__upper_bound: u32) -> u32
 
-    extern def malloc(__size: u64) -> ptr[void]
+    extern def malloc(__size: u64) -> ptr[void]?
 
-    extern def calloc(__nmemb: u64, __size: u64) -> ptr[void]
+    extern def calloc(__nmemb: u64, __size: u64) -> ptr[void]?
 
-    extern def realloc(__ptr: ptr[void], __size: u64) -> ptr[void]
+    extern def realloc(__ptr: ptr[void]?, __size: u64) -> ptr[void]?
 
-    extern def free(__ptr: ptr[void]) -> void
+    extern def free(__ptr: ptr[void]?) -> void
 
-    extern def reallocarray(__ptr: ptr[void], __nmemb: u64, __size: u64) -> ptr[void]
+    extern def reallocarray(__ptr: ptr[void]?, __nmemb: u64, __size: u64) -> ptr[void]?
 
     extern def alloca(__size: u64) -> ptr[void]
 
@@ -204,7 +204,7 @@ extern module std.c.libc:
 
     extern def posix_memalign(__memptr: ptr[ptr[void]], __alignment: u64, __size: u64) -> i32
 
-    extern def aligned_alloc(__alignment: u64, __size: u64) -> ptr[void]
+    extern def aligned_alloc(__alignment: u64, __size: u64) -> ptr[void]?
 
     extern def abort() -> void
 
@@ -242,11 +242,11 @@ extern module std.c.libc:
 
     extern def realpath(__name: cstr, __resolved: ptr[char]) -> ptr[char]
 
-    type __compar_fn_t = fn(arg0: ptr[void], arg1: ptr[void]) -> i32
+    type __compar_fn_t = fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> i32
 
-    extern def bsearch(__key: ptr[void], __base: ptr[void], __nmemb: u64, __size: u64, __compar: fn(arg0: ptr[void], arg1: ptr[void]) -> i32) -> ptr[void]
+    extern def bsearch(__key: const_ptr[void], __base: const_ptr[void], __nmemb: u64, __size: u64, __compar: fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> i32) -> ptr[void]
 
-    extern def qsort(__base: ptr[void], __nmemb: u64, __size: u64, __compar: fn(arg0: ptr[void], arg1: ptr[void]) -> i32) -> void
+    extern def qsort(__base: ptr[void], __nmemb: u64, __size: u64, __compar: fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> i32) -> void
 
     extern def abs(__x: i32) -> i32
 
@@ -278,11 +278,11 @@ extern module std.c.libc:
 
     extern def mbstowcs(__pwcs: ptr[i32], __s: cstr, __n: u64) -> usize
 
-    extern def wcstombs(__s: ptr[char], __pwcs: ptr[i32], __n: u64) -> usize
+    extern def wcstombs(__s: ptr[char], __pwcs: const_ptr[i32], __n: u64) -> usize
 
     extern def rpmatch(__response: cstr) -> i32
 
-    extern def getsubopt(__optionp: ptr[ptr[char]], __tokens: ptr[ptr[char]], __valuep: ptr[ptr[char]]) -> i32
+    extern def getsubopt(__optionp: ptr[ptr[char]], __tokens: const_ptr[ptr[char]], __valuep: ptr[ptr[char]]) -> i32
 
     extern def getloadavg(__loadavg: ptr[f64], __nelem: i32) -> i32
 

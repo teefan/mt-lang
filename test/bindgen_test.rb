@@ -81,6 +81,8 @@ class MilkTeaBindgenTest < Minitest::Test
         void set_callback(LogCallback callback);
         void set_trace_callback(void (*callback)(int, const char *, va_list));
         void take_hidden(struct Hidden *hidden);
+        void inspect_pointer(const void *data);
+        void read_vec(const Vec2 *vec);
 
         int consume_strings(char **restrict values, char *const *restrict tokens);
       C
@@ -136,7 +138,9 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_match(/extern def set_callback\(callback: fn\(arg0: i32, arg1: cstr\) -> void\) -> void/, generated)
       assert_match(/extern def set_trace_callback\(callback: fn\(arg0: i32, arg1: cstr, arg2: va_list\) -> void\) -> void/, generated)
       assert_match(/extern def take_hidden\(hidden: ptr\[Hidden\]\) -> void/, generated)
-      assert_match(/extern def consume_strings\(values: ptr\[ptr\[char\]\], tokens: ptr\[ptr\[char\]\]\) -> i32/, generated)
+      assert_match(/extern def inspect_pointer\(data: const_ptr\[void\]\) -> void/, generated)
+      assert_match(/extern def read_vec\(vec: const_ptr\[Vec2\]\) -> void/, generated)
+      assert_match(/extern def consume_strings\(values: ptr\[ptr\[char\]\], tokens: const_ptr\[ptr\[char\]\]\) -> i32/, generated)
 
       File.write(output_path, generated)
       analysis = MilkTea::ModuleLoader.check_file(output_path)
@@ -179,6 +183,61 @@ class MilkTeaBindgenTest < Minitest::Test
       )
 
       assert_match(/extern def load_font_ex\(codepoints: ptr\[i32\]\?, codepointCount: i32\) -> i32/, generated)
+    end
+  end
+
+  def test_generate_applies_function_return_type_overrides
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-return-overrides") do |dir|
+      header_path = File.join(dir, "sample.h")
+      File.write(header_path, <<~C)
+        void *allocate(int count);
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+        function_return_type_overrides: {
+          "allocate" => "ptr[void]?",
+        },
+      )
+
+      assert_match(/extern def allocate\(count: i32\) -> ptr\[void\]\?/, generated)
+    end
+  end
+
+  def test_generate_applies_module_imports_and_type_overrides
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-type-overrides") do |dir|
+      dep_path = File.join(dir, "dep.h")
+      header_path = File.join(dir, "sample.h")
+      File.write(dep_path, <<~C)
+        typedef struct Vec3 { float x; float y; float z; } Vec3;
+      C
+      File.write(header_path, <<~C)
+        typedef struct Light { Vec3 position; } Light;
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["dep.h", "sample.h"],
+        module_imports: [{ module_name: "std.c.dep", alias: "dep" }],
+        clang:,
+        clang_args: ["-I#{dir}", "-include", "dep.h"],
+        type_overrides: { "Vec3" => "dep.Vec3" },
+      )
+
+      assert_match(/^    import std\.c\.dep as dep$/, generated)
+      assert_match(/^    include "dep\.h"$/, generated)
+      assert_match(/^    include "sample\.h"$/, generated)
+      assert_match(/^        position: dep\.Vec3$/, generated)
     end
   end
 

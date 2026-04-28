@@ -22,7 +22,7 @@ def add_codepoint_range(font: rl.Font, font_path: cstr, start: i32, stop: i32) -
     let range_size = stop - start + 1
     let current_range_size = font.glyphCount
     let updated_codepoint_count = current_range_size + range_size
-    let updated_codepoints = heap.alloc_zeroed[i32](cast[usize](updated_codepoint_count))
+    let updated_codepoints = heap.must_alloc_zeroed[i32](cast[usize](updated_codepoint_count))
     defer heap.release(updated_codepoints)
 
     unsafe:

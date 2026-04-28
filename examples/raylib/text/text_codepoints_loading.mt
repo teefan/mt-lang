@@ -13,7 +13,7 @@ const atlas_codepoints_format: cstr = c"Total codepoints required for font atlas
 const toggle_atlas_text: cstr = c"Press SPACE to toggle font atlas view!"
 
 def codepoint_remove_duplicates(codepoints: ptr[i32], codepoint_count: i32, codepoints_result_count: ptr[i32]) -> ptr[i32]:
-    let codepoints_no_dups = heap.alloc_zeroed[i32](cast[usize](codepoint_count))
+    let codepoints_no_dups = heap.must_alloc_zeroed[i32](cast[usize](codepoint_count))
     var codepoints_no_dups_count = codepoint_count
 
     unsafe:

@@ -604,12 +604,14 @@ Heap allocation is always explicit and allocator-driven.
 import std.mem.heap as heap
 
 def spawn_enemy(start: Vec2) -> ptr[Enemy]:
-	let enemy = heap.alloc[Enemy](1)
+	let enemy = heap.must_alloc[Enemy](1)
 	unsafe:
-		value(enemy).position = start
-		value(enemy).health = 100
+		deref(enemy).position = start
+		deref(enemy).health = 100
 	return enemy
 ```
+
+The default heap allocation functions return nullable pointers because C allocation can fail: `alloc_bytes`, `alloc_zeroed_bytes`, `resize_bytes`, `alloc[T]`, `alloc_zeroed[T]`, and `resize[T]` all return `...?`. Code that wants explicit error handling checks for `null`. Code that wants simple fail-fast behavior uses `must_alloc*` or `must_resize*`, which panic on allocation failure.
 
 Recommended standard memory surfaces:
 
@@ -618,7 +620,7 @@ Recommended standard memory surfaces:
 - `std.mem.pool` for fixed-size object pools
 - `std.mem.stack` for explicit temporary allocators
 
-Typed allocation helpers live on the module surface where generic methods are not available yet. For example, `heap.alloc[Enemy](1)`, `arena.alloc[Enemy](addr(scratch), 4)`, and `stack.alloc[Enemy](addr(temp), 2)` all stay explicit about allocator choice, while raw byte APIs remain available for lower-level storage work.
+Typed allocation helpers live on the module surface where generic methods are not available yet. For example, `heap.must_alloc[Enemy](1)`, `arena.alloc[Enemy](addr(scratch), 4)`, `pool.alloc[Enemy](addr(objects))`, and `stack.alloc[Enemy](addr(temp), 2)` all stay explicit about allocator choice, while raw byte APIs remain available for lower-level storage work.
 
 ### Pointers and references
 
@@ -652,7 +654,7 @@ Rules for raw pointers:
 - there is no source `&expr`, `*ptr`, or `ptr->field`.
 - spell writable address formation as `addr(expr)`, read-only raw address formation as `ro_addr(expr)`, and writable raw pointer formation as `raw(addr(expr))` when you truly need a raw pointer.
 - `deref(ptr)` dereferences a raw pointer and requires `unsafe`.
-- `const_ptr[T]` is the read-only raw-pointer surface and lowers to C `const T*`.
+- `const_ptr[T]` is the read-only raw-pointer surface and lowers to C `const T*`. `const_ptr[void]` is valid and represents C `const void *`.
 - `deref(ptr).field` accesses a member through a raw pointer and requires `unsafe`.
 - pointer arithmetic and pointer indexing remain `unsafe`.
 - raw pointer offsets and indices may use ordinary integer expressions directly; code does not need a pre-emptive cast to `usize` just to write `ptr[i]` or `ptr + offset`.
@@ -850,6 +852,7 @@ pub foreign def get_frame_time() -> f32 = c.GetFrameTime
 pub foreign def load_texture(path: str as cstr) -> Texture = c.LoadTexture
 pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
 pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
+pub foreign def set_shader_value[T](shader: Shader, loc_index: i32, in value: T as const_ptr[void], uniform_type: i32) -> void = c.SetShaderValue
 
 pub foreign def mem_alloc[T](count: usize) -> ptr[T]? = c.MemAlloc(count * cast[u32](sizeof(T)))
 pub foreign def mem_realloc[T](memory: ptr[T]?, count: usize) -> ptr[T]? = c.MemRealloc(memory, count * cast[u32](sizeof(T)))
@@ -893,7 +896,7 @@ An imported foreign declaration must be able to express at least:
 - a `str` parameter that lowers to `cstr` at the foreign boundary
 - ordinary `span[str]` or `array[str, N]` inputs for foreign string-list APIs
 - automatic transient boundary marshalling for dynamic text when the imported declaration chooses that public surface
-- `out` and `inout` parameters that lower to raw pointers
+- `in`, `out`, and `inout` parameters that lower to raw pointers
 - release-style functions that consume a handle and null the caller binding afterward
 - pointer-plus-length views that lower from `span[T]`
 - identity ABI projections such as `ptr[T]?` to `ptr[void]` or `cstr?` to `ptr[char]?`
@@ -905,6 +908,7 @@ Parameter and boundary rules:
 - a string literal or existing `cstr` value may satisfy `str as cstr` without temporary storage
 - a dynamic `str` argument for `str as cstr` is materialized automatically at the foreign boundary for the duration of the call
 - imported foreign declarations may accept `span[str]` or `array[str, N]` for string-list APIs even when the raw callee wants `span[cstr]`, `span[ptr[char]]`, or pointer-plus-length forms; that marshalling belongs to the declaration, not to the call site
+- `in name: T` means the raw foreign target takes a read-only pointer and the call site must pass `in expr`; the boundary lowers by taking a const address, materializing a temporary first when the expression is not directly addressable
 - `out name: T` means the raw foreign target takes a writable pointer and the call site must pass `out lvalue`
 - `inout name: T` means the raw foreign target reads and writes through a pointer and the call site must pass `inout lvalue`
 - `consuming name: Handle` means the public Milk Tea parameter is a non-null opaque handle or `ptr[T]`, and v1 uses it only for release-style foreign calls that consume an existing nullable binding
@@ -928,6 +932,7 @@ Shorthand symbol mapping rules:
 - the public parameter count must match the raw parameter count, excluding raw varargs
 - parameters map positionally in source order
 - each mapped pair must satisfy one of: exact type match, declared boundary mapping such as `str as cstr`, directional pointer mapping through `out` or `inout`, or an allowed identity ABI projection
+- an `in` parameter may use `as const_ptr[...]`, including `as const_ptr[void]`, to express read-only foreign borrows such as Raylib shader uniform values
 - aliasing a public imported-binding type to a different raw module type does not create a new identity ABI projection. Two raw structs from different `std.c.*` modules remain distinct unless the language grows an explicit foreign type-projection rule for that pair.
 - the public return type must either exactly match the raw return type or be reachable through an allowed identity ABI projection
 - shorthand mapping is rejected if any surface parameter must fan out into multiple raw arguments, if any raw argument needs arithmetic over more than one parameter, or if raw argument order differs from public argument order
@@ -946,6 +951,7 @@ Parameter consumption rules:
 - a plain parameter may be referenced one or more times in the RHS
 - a `span[T]` parameter may be split into `.data` and `.len`
 - an `out` parameter must appear exactly once as a bare parameter reference in the raw argument position that receives the writable pointer
+- an `in` parameter must appear exactly once as a bare parameter reference in the raw argument position that receives the read-only pointer
 - an `inout` parameter must appear exactly once as a bare parameter reference in the raw argument position that receives the mutable pointer
 - a `consuming` parameter lowers through the same identity value as a plain handle parameter; v1 ownership affects call-site validation and post-call flow, not the RHS mapping expression shape
 - a `str as cstr` parameter may appear only in raw argument positions whose target type is `cstr` or `ptr[char]`
@@ -953,12 +959,14 @@ Parameter consumption rules:
 Call-site checking rules:
 
 - a call to a `foreign def` with `out` parameters requires `out lvalue` at the corresponding argument position
+- a call to a `foreign def` with `in` parameters requires `in expr` at the corresponding argument position
 - a call to a `foreign def` with `inout` parameters requires `inout lvalue` at the corresponding argument position
 - a call to a `foreign def` with `consuming` parameters requires a bare identifier naming a nullable local or parameter binding
 - the current flow type of that binding must already be the non-null handle type required by the `consuming` parameter
 - in v1, a foreign call with any `consuming` parameter must be a top-level expression statement; `defer`, local initializers, assignments, returns, and larger expressions are rejected
 - after a `consuming` foreign call, continuation flow refines each consumed binding to `null`
-- `out` and `inout` are rejected outside calls to `foreign def`
+- `in`, `out`, and `inout` are rejected outside calls to `foreign def`
+- `in` accepts ordinary expressions; if an expression is not addressable, lowering creates a short-lived temporary before taking its const address
 - `out` requires a mutable addressable lvalue and does not read the old value before the call
 - `inout` requires a mutable addressable lvalue and exposes both the old and new value to the callee
 - automatic foreign text marshalling is part of imported-boundary checking, not an extra source clause
@@ -967,6 +975,7 @@ Call-site checking rules:
 Allowed identity ABI projections in v1 are deliberately narrow:
 
 - `ptr[T]` or `ptr[T]?` to `ptr[void]` or `ptr[void]?`
+- `ptr[T]` or `ptr[T]?` to `const_ptr[void]` or `const_ptr[void]?` for read-only foreign pointer projections
 - `ptr[void]` or `ptr[void]?` to `opaque Handle` or `opaque Handle?` when the imported declaration chooses that handle surface
 - `ptr[char]` or `ptr[char]?` to `cstr` or `ptr[char]?` when mutability rules permit the raw direction
 - raw opaque pointer returns to typed pointer-like public returns when the representation is unchanged
@@ -1004,6 +1013,7 @@ Automatic text marshalling lowering:
 Directional pointer lowering:
 
 - `out x` lowers to address-taking of `x` at the raw call boundary without exposing `raw(addr(x))` in user source
+- `in value` lowers to const address-taking at the raw call boundary without exposing `ro_addr(value)` or casts in user source; non-addressable operands lower through a visible temporary in statement-shaped foreign calls
 - `inout x` lowers to the same address-taking form, but sema preserves the read-write contract instead of pure output
 - if the raw target expects `ptr[void]` or another identity-projection pointer type, lowering inserts only the minimal cast required by the raw C signature
 
@@ -1032,7 +1042,7 @@ let ints = rl.mem_alloc[i32](16)
 
 `str as cstr` and `span[str]` foreign boundaries use ordinary imported-call syntax. When the boundary needs synthesized temporary C-compatible storage or other statement-shaped setup, lowering hoists that work into visible temporary locals and branch-local control flow as needed, so nested call arguments, arithmetic, `if ... then ... else ...` expressions, and short-circuit boolean expressions still read like ordinary Milk Tea while generated C stays explicit about the temporary storage.
 
-`out name` and `inout name` are foreign-boundary forms, not raw pointer expressions. They lower to address-taking at the imported call site without exposing `raw(addr(...))` in ordinary code.
+`in name`, `out name`, and `inout name` are foreign-boundary forms, not raw pointer expressions. They lower to address-taking at the imported call site without exposing `ro_addr(...)`, `raw(addr(...))`, or ABI casts in ordinary code.
 
 This is the C# part worth copying: declarations say how the boundary works, while raw pointer code remains explicitly low-level.
 

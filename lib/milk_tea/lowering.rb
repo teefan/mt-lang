@@ -1617,6 +1617,7 @@ module MilkTea
                               entry[:argument]
                             end
           source_env = entry[:public_reference_count].positive? ? mapping_env : env
+          source_argument = prepare_foreign_in_argument(entry[:parameter], source_argument, source_env:, lowered:, env:)
           entry[:lowered_value] = if automatic_foreign_cstr_list_temp_needed?(entry[:parameter], source_argument.value, env: source_env)
                                     lower_foreign_cstr_list_argument_value(entry[:parameter], source_argument.value, env: source_env, lowered:, cleanup:)
                                   else
@@ -1707,6 +1708,8 @@ module MilkTea
 
             raise LoweringError, "unsupported foreign boundary mapping #{parameter.type} as #{parameter.boundary_type}"
           end
+        when :in
+          lower_foreign_in_argument_value(parameter, argument, env:)
         when :out, :inout
           lower_foreign_pointer_argument_value(parameter, argument, env:)
         else
@@ -1748,6 +1751,40 @@ module MilkTea
         return converted if converted
 
         raise LoweringError, "unsupported foreign pointer boundary mapping #{parameter.type} as #{parameter.boundary_type}"
+      end
+
+      def prepare_foreign_in_argument(parameter, argument, source_env:, lowered:, env:)
+        return argument unless parameter.passing_mode == :in
+
+        operand = argument.value.operand
+        return argument if addressable_storage_expression?(operand)
+
+        temp_name = fresh_c_temp_name(env, "foreign_in")
+        lowered << IR::LocalDecl.new(
+          name: temp_name,
+          c_name: temp_name,
+          type: parameter.type,
+          value: lower_contextual_expression(operand, env: source_env, expected_type: parameter.type),
+        )
+        current_actual_scope(source_env[:scopes])[temp_name] = local_binding(type: parameter.type, c_name: temp_name, mutable: false, pointer: false)
+
+        AST::Argument.new(
+          name: argument.name,
+          value: AST::UnaryOp.new(operator: "in", operand: AST::Identifier.new(name: temp_name)),
+        )
+      end
+
+      def lower_foreign_in_argument_value(parameter, argument, env:)
+        address = lower_addr_expression(
+          argument.value.operand,
+          env:,
+          target_type: const_pointer_to(parameter.type),
+        )
+
+        converted = foreign_identity_projection_expression(address, parameter.boundary_type)
+        return converted if converted
+
+        raise LoweringError, "unsupported foreign in boundary mapping #{parameter.type} as #{parameter.boundary_type}"
       end
 
       def lower_foreign_char_pointer_buffer_argument_value(parameter, argument, env:)
@@ -1800,6 +1837,15 @@ module MilkTea
                       automatic_foreign_cstr_list_temp_needed?(parameter, expression.arguments.fetch(index).value, env:)
 
           raise LoweringError, "foreign call #{binding.name} cannot be used inline because #{param_ast.name} needs temporary foreign text storage; use it as a statement, local initializer, assignment, or return expression"
+        end
+
+        binding.ast.params.each_with_index do |param_ast, index|
+          parameter = binding.type.params.fetch(index)
+          argument = expression.arguments.fetch(index)
+          next unless parameter.passing_mode == :in
+          next if addressable_storage_expression?(argument.value.operand)
+
+          raise LoweringError, "foreign call #{binding.name} cannot be used inline because #{param_ast.name} needs temporary in storage; use it as a statement, local initializer, assignment, or return expression"
         end
 
         replacements = {}
@@ -3919,6 +3965,10 @@ module MilkTea
 
       def pointer_to(type)
         Types::GenericInstance.new("ptr", [type])
+      end
+
+      def const_pointer_to(type)
+        Types::GenericInstance.new("const_ptr", [type])
       end
 
       def analysis_for_module(module_name)

@@ -151,6 +151,7 @@ module MilkTea
         @imported_public_types_by_alias = build_imported_public_types(import_specs, aliases: type_spec.fetch(:shared_from, []))
         const_spec = normalize_alias_spec(policy["constants"], context: "constant")
         function_spec = normalize_function_spec(policy["functions"])
+        extra_source = normalize_extra_source(policy["extra_source"])
         @public_type_names_by_raw_name = build_public_type_names(type_spec, declarations)
 
         lines = []
@@ -166,6 +167,7 @@ module MilkTea
           emit_type_aliases(type_spec, declarations),
           emit_const_aliases(const_spec, declarations),
           emit_foreign_functions(function_spec, declarations),
+          extra_source,
         ].reject(&:empty?)
 
         sections.each do |section_lines|
@@ -231,6 +233,17 @@ module MilkTea
             module_name:,
             alias: import_alias,
           }
+        end
+      end
+
+      def normalize_extra_source(value)
+        return [] if value.nil?
+        raise Error, "extra_source in #{@policy_path} must be an array" unless value.is_a?(Array)
+
+        value.map do |line|
+          raise Error, "extra_source in #{@policy_path} must contain only strings" unless line.is_a?(String)
+
+          line
         end
       end
 
