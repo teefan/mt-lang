@@ -30,7 +30,7 @@ pub def write(level: Level, message: str, scratch: ref[arena.Arena]) -> bool:
     fmt.append_str(addr(line), level_name(level))
     fmt.append_str(addr(line), "] ")
     fmt.append_str(addr(line), message)
-    let ok = io.println(string.as_str(line), scratch)
+    let ok = io.write_error_line(string.as_str(line))
     return ok
 
 pub def debug(message: str, scratch: ref[arena.Arena]) -> bool:

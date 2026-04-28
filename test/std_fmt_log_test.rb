@@ -45,7 +45,7 @@ class MilkTeaStdFmtLogTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
-  def test_host_runtime_executes_stdout_logging
+  def test_host_runtime_executes_stderr_logging
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
@@ -68,8 +68,8 @@ class MilkTeaStdFmtLogTest < Minitest::Test
 
     result = run_program(source, compiler:)
 
-    assert_equal "[info] ready\n[warn] careful\n", result.stdout
-    assert_equal "", result.stderr
+    assert_equal "", result.stdout
+    assert_equal "[info] ready\n[warn] careful\n", result.stderr
     assert_equal 0, result.exit_status
     assert_equal [], result.link_flags
   end

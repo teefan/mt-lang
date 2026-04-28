@@ -696,14 +696,22 @@ The standard library follows the same rule as the language: no hidden allocation
 
 Implemented core modules:
 
+- `std.option` is a plain generic optional-value container for APIs where a nullable pointer would be the wrong surface.
+- `std.ascii` provides byte-level classification and conversion helpers for lexers and parsers.
 - `std.vec` is the owned heap-backed `Vec[T]`. It grows explicitly, releases explicitly, and exposes borrowed `span[T]` views.
 - `std.bytes` is an owned byte buffer on top of `Vec[u8]`.
 - `std.string` is an owned UTF-8 text buffer on top of `std.bytes`. Appending `str` preserves UTF-8. Byte-level appends are available for formatting and low-level code, but callers must keep the buffer valid.
-- `std.path`, `std.fs`, and `std.io` provide pure path helpers, byte-oriented file read/write, and stdout printing.
+- `std.str` provides borrowed string helpers: UTF-8 validation, byte lookup, prefix/suffix/equality, ASCII trimming, and byte search.
+- `std.path`, `std.fs`, and `std.io` provide pure path helpers, byte/text file read/write, stdout printing, and stderr diagnostics.
 - `std.fmt` formats explicitly into an owned `std.string.String`.
-- `std.log` is a tiny stdout logger built from `std.fmt` and `std.io`.
+- `std.log` is a tiny stderr logger built from `std.fmt` and `std.io`.
 - `std.hash`, `std.map`, and `std.set` provide deterministic hash helpers plus policy-based hash collections.
+- `std.str_map` and `std.str_set` provide borrowed-string-key wrappers for symbol tables and keyword sets.
 - `std.alg` provides generic `span[T]` algorithms: search, predicates, equality, copy, fill, and insertion sort.
+- `std.random` provides deterministic local PRNG state.
+- `std.time` provides Unix time and explicit `strftime`-style UTC/local formatting.
+- `std.process` exposes `argc`/`argv`, environment lookup, and explicit process exit.
+- `std.json` provides an explicit JSON tokenizer and writer helpers. It is not reflection or automatic serialization.
 
 Hash collections use explicit function pointers instead of traits:
 
@@ -730,6 +738,8 @@ def example() -> i32:
 ```
 
 This keeps lookup semantics visible at construction time and avoids a hidden global typeclass dictionary. If a future trait system exists, it should lower to something equally explicit and readable.
+
+The self-hosting preparation boundary is now clear: the standard library has dynamic arrays, owned text, borrowed string helpers, maps/sets, path and file loading, process arguments, diagnostics, time, random, and JSON token/writer support. The remaining self-hosting work is not another hidden stdlib dependency; it is the actual compiler port: AST data structures, lexer, parser, type representation, semantic analysis, lowering, C generation, module loading, CLI behavior, and eventually bindgen strategy.
 
 ### Lifetime story
 

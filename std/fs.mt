@@ -3,12 +3,15 @@ module std.fs
 import std.bytes as bytes
 import std.c.stdio as c
 import std.mem.arena as arena
+import std.str as text
+import std.string as string
 
 pub enum Error: u8
     open_failed = 1
     read_failed = 2
     write_failed = 3
     close_failed = 4
+    invalid_utf8 = 5
 
 pub def exists(path: str, scratch: ref[arena.Arena]) -> bool:
     let mark = value(scratch).mark()
@@ -51,6 +54,24 @@ pub def read_bytes(path: str, scratch: ref[arena.Arena]) -> Result[bytes.Buffer,
 
     return ok(result)
 
+pub def read_text(path: str, scratch: ref[arena.Arena]) -> Result[string.String, Error]:
+    let loaded = read_bytes(path, scratch)
+    if not loaded.is_ok:
+        return err(loaded.error)
+
+    var data = loaded.value
+    let view = bytes.as_span(data)
+    unsafe:
+        let borrowed = str(data = cast[ptr[char]](view.data), len = view.len)
+        if not text.is_valid_utf8(borrowed):
+            bytes.release(addr(data))
+            return err(Error.invalid_utf8)
+
+        var result = string.with_capacity(borrowed.len)
+        string.append(addr(result), borrowed)
+        bytes.release(addr(data))
+        return ok(result)
+
 pub def write_bytes(path: str, data: span[u8], scratch: ref[arena.Arena]) -> Result[bool, Error]:
     let mark = value(scratch).mark()
     defer value(scratch).reset(mark)
@@ -72,3 +93,8 @@ pub def write_bytes(path: str, data: span[u8], scratch: ref[arena.Arena]) -> Res
         return err(Error.close_failed)
 
     return ok(true)
+
+pub def write_text(path: str, data: str, scratch: ref[arena.Arena]) -> Result[bool, Error]:
+    unsafe:
+        let bytes_view = span[u8](data = cast[ptr[u8]](data.data), len = data.len)
+        return write_bytes(path, bytes_view, scratch)
