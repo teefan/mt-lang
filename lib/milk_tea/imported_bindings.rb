@@ -823,21 +823,21 @@ module MilkTea
           module_name: "std.raylib",
           binding_path: root.join("std/raylib.mt"),
           raw_module_name: "std.c.raylib",
-          policy_path: root.join("std/raylib.binding.json"),
+          policy_path: root.join("bindings/imported/raylib.binding.json"),
         ),
         Binding.new(
           name: "rlgl",
           module_name: "std.rlgl",
           binding_path: root.join("std/rlgl.mt"),
           raw_module_name: "std.c.rlgl",
-          policy_path: root.join("std/rlgl.binding.json"),
+          policy_path: root.join("bindings/imported/rlgl.binding.json"),
         ),
         Binding.new(
           name: "raygui",
           module_name: "std.raygui",
           binding_path: root.join("std/raygui.mt"),
           raw_module_name: "std.c.raygui",
-          policy_path: root.join("std/raygui.binding.json"),
+          policy_path: root.join("bindings/imported/raygui.binding.json"),
         ),
       ]
     end
