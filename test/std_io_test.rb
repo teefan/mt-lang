@@ -34,6 +34,32 @@ class MilkTeaStdIoTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_stderr_printing
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_io_error",
+      "",
+      "import std.io as io",
+      "",
+      "def main() -> i32:",
+      "    if not io.write_error(\"warn\"):",
+      "        return 1",
+      "    if not io.write_error_line(\"ing\"):",
+      "        return 2",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "warning\n", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   private
 
   def run_program(source, compiler:)

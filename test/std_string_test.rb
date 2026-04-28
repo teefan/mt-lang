@@ -82,6 +82,39 @@ class MilkTeaStdStringTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_str_helpers
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_str_helpers",
+      "",
+      "import std.option as option",
+      "import std.str as text",
+      "",
+      "def main() -> i32:",
+      "    let trimmed = text.trim_ascii_whitespace(\"  Milk Tea  \")",
+      "    if not text.equal(trimmed, \"Milk Tea\"):",
+      "        return 1",
+      "    if not text.starts_with(trimmed, \"Milk\"):",
+      "        return 2",
+      "    if not text.ends_with(trimmed, \"Tea\"):",
+      "        return 3",
+      "    if not text.is_valid_utf8(trimmed):",
+      "        return 4",
+      "    let found = text.find_byte(trimmed, cast[u8](32))",
+      "    return cast[i32](trimmed.len) + cast[i32](option.unwrap[usize](found))",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 12, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   private
 
   def run_program(source, compiler:)

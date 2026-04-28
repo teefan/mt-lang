@@ -43,6 +43,43 @@ class MilkTeaStdPathFsTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_path_normalize_expand_and_names
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_path_expand",
+      "",
+      "import std.path as path",
+      "import std.string as string",
+      "",
+      "def main() -> i32:",
+      "    var normalized = path.normalize(\"/a//b/../c/.\")",
+      "    defer string.release(addr(normalized))",
+      "    var expanded = path.expand(\"src/../main.mt\", \"/work/project\")",
+      "    defer string.release(addr(expanded))",
+      "    var base = path.basename(\"/tmp/demo/main.mt\")",
+      "    defer string.release(addr(base))",
+      "    var dir = path.dirname(\"/tmp/demo/main.mt\")",
+      "    defer string.release(addr(dir))",
+      "",
+      "    let normalized_view = string.as_str(normalized)",
+      "    let expanded_view = string.as_str(expanded)",
+      "    let base_view = string.as_str(base)",
+      "    let dir_view = string.as_str(dir)",
+      "    let total = cast[i32](normalized_view.len + expanded_view.len + base_view.len + dir_view.len)",
+      "    return total",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 41, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   def test_host_runtime_executes_fs_write_exists_and_read_bytes
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
@@ -89,6 +126,63 @@ class MilkTeaStdPathFsTest < Minitest::Test
       assert_equal 66, result.exit_status
       assert_equal [], result.link_flags
       assert_equal [11, 22, 33].pack("C*"), File.binread(data_path)
+    end
+  end
+
+  def test_host_runtime_executes_fs_write_and_read_text_with_utf8_validation
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-std-fs-text") do |data_dir|
+      text_path = File.join(data_dir, "sample.txt")
+      invalid_path = File.join(data_dir, "invalid.txt")
+      source = [
+        "module demo.std_fs_text",
+        "",
+        "import std.bytes as bytes",
+        "import std.fs as fs",
+        "import std.mem.arena as arena",
+        "import std.string as string",
+        "",
+        "def main() -> i32:",
+        "    var scratch = arena.create(256)",
+        "    defer scratch.release()",
+        "",
+        "    let saved = fs.write_text(#{text_path.inspect}, \"Milk Tea\", addr(scratch))",
+        "    if not saved.is_ok:",
+        "        return cast[i32](saved.error)",
+        "    let loaded = fs.read_text(#{text_path.inspect}, addr(scratch))",
+        "    if not loaded.is_ok:",
+        "        return 10 + cast[i32](loaded.error)",
+        "    var text_data = loaded.value",
+        "    defer string.release(addr(text_data))",
+        "",
+        "    var invalid = bytes.create()",
+        "    defer bytes.release(addr(invalid))",
+        "    bytes.push(addr(invalid), cast[u8](0xC3))",
+        "    bytes.push(addr(invalid), cast[u8](0x28))",
+        "    let invalid_saved = fs.write_bytes(#{invalid_path.inspect}, bytes.as_span(invalid), addr(scratch))",
+        "    if not invalid_saved.is_ok:",
+        "        return 20 + cast[i32](invalid_saved.error)",
+        "    let rejected = fs.read_text(#{invalid_path.inspect}, addr(scratch))",
+        "    if rejected.is_ok:",
+        "        var rejected_text = rejected.value",
+        "        string.release(addr(rejected_text))",
+        "        return 30",
+        "",
+        "    let view = string.as_str(text_data)",
+        "    let total = cast[i32](view.len) + cast[i32](rejected.error)",
+        "    return total",
+        "",
+      ].join("\n")
+
+      result = run_program(source, compiler:)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 13, result.exit_status
+      assert_equal [], result.link_flags
+      assert_equal "Milk Tea", File.read(text_path)
     end
   end
 
