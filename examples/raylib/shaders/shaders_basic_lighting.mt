@@ -7,8 +7,8 @@ import std.raylib.math as rm
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glsl_version: i32 = 330
-const shader_vertex_path_format: cstr = c"resources/shaders/glsl%i/lighting.vs"
-const shader_fragment_path_format: cstr = c"resources/shaders/glsl%i/lighting.fs"
+const shader_vertex_path_format: cstr = c"../resources/shaders/glsl%i/lighting.vs"
+const shader_fragment_path_format: cstr = c"../resources/shaders/glsl%i/lighting.fs"
 const view_pos_uniform_name: cstr = c"viewPos"
 const ambient_uniform_name: cstr = c"ambient"
 const help_text: cstr = c"Use keys [Y][R][G][B] to toggle lights"

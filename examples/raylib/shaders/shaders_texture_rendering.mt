@@ -5,7 +5,7 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glsl_version: i32 = 330
-const shader_path_format: cstr = c"resources/shaders/glsl%i/cubes_panning.fs"
+const shader_path_format: cstr = c"../resources/shaders/glsl%i/cubes_panning.fs"
 const background_text: cstr = c"BACKGROUND is PAINTED and ANIMATED on SHADER!"
 const shader_time_name: cstr = c"uTime"
 const window_title: cstr = c"raylib [shaders] example - texture rendering"

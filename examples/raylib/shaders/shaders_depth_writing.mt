@@ -7,7 +7,7 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glsl_version: i32 = 330
 const depth_texture_format: i32 = 19
-const shader_path_format: cstr = c"resources/shaders/glsl%i/depth_write.fs"
+const shader_path_format: cstr = c"../resources/shaders/glsl%i/depth_write.fs"
 const window_title: cstr = c"raylib [shaders] example - depth writing"
 
 def load_render_texture_depth_tex(width: i32, height: i32) -> rl.RenderTexture2D:

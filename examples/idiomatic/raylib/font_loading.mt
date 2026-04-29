@@ -5,8 +5,8 @@ import std.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const message: str = "!#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHI\nJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmn\nopqrstuvwxyz{|}~¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓ\nÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷\nøùúûüýþÿ"
-const font_bm_path: str = "../../raylib/text/resources/pixantiqua.fnt"
-const font_ttf_path: str = "../../raylib/text/resources/pixantiqua.ttf"
+const font_bm_path: str = "../../raylib/resources/pixantiqua.fnt"
+const font_ttf_path: str = "../../raylib/resources/pixantiqua.ttf"
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Font Loading")

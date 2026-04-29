@@ -5,7 +5,7 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glsl_version: i32 = 330
-const shader_path_format: cstr = c"resources/shaders/glsl%i/raymarching.fs"
+const shader_path_format: cstr = c"../resources/shaders/glsl%i/raymarching.fs"
 const view_eye_uniform_name: cstr = c"viewEye"
 const view_center_uniform_name: cstr = c"viewCenter"
 const run_time_uniform_name: cstr = c"runTime"

@@ -5,7 +5,7 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [textures] example - npatch drawing"
-const npatch_texture_path: cstr = c"resources/ninepatch_button.png"
+const npatch_texture_path: cstr = c"../resources/ninepatch_button.png"
 const help_text: cstr = c"Move the mouse to stretch or shrink the n-patches"
 const texture_label: cstr = c"TEXTURE"
 

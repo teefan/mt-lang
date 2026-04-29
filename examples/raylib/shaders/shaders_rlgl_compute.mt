@@ -8,9 +8,9 @@ const max_buffered_transferts: i32 = 48
 const screen_width: i32 = gol_width
 const screen_height: i32 = gol_width
 const window_title: cstr = c"raylib [shaders] example - rlgl compute"
-const gol_logic_shader_path: cstr = c"resources/shaders/glsl430/gol.glsl"
-const gol_render_shader_path: cstr = c"resources/shaders/glsl430/gol_render.glsl"
-const gol_transfert_shader_path: cstr = c"resources/shaders/glsl430/gol_transfert.glsl"
+const gol_logic_shader_path: cstr = c"../resources/shaders/glsl430/gol.glsl"
+const gol_render_shader_path: cstr = c"../resources/shaders/glsl430/gol_render.glsl"
+const gol_transfert_shader_path: cstr = c"../resources/shaders/glsl430/gol_transfert.glsl"
 const resolution_uniform_name: cstr = c"resolution"
 const brush_text: cstr = c"Use Mouse wheel to increase/decrease brush size"
 

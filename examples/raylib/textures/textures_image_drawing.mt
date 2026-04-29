@@ -5,9 +5,9 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [textures] example - image drawing"
-const cat_path: cstr = c"resources/cat.png"
-const parrots_path: cstr = c"resources/parrots.png"
-const font_path: cstr = c"resources/custom_jupiter_crash.png"
+const cat_path: cstr = c"../resources/cat.png"
+const parrots_path: cstr = c"../resources/parrots.png"
+const font_path: cstr = c"../resources/custom_jupiter_crash.png"
 const line_one_text: cstr = c"We are drawing only one texture from various images composed!"
 const line_two_text: cstr = c"Source images have been cropped, scaled, flipped and copied one over the other."
 const title_text: cstr = c"PARROTS & CAT"

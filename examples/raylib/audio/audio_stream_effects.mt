@@ -4,7 +4,7 @@ import std.c.raylib as rl
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const music_path: cstr = c"resources/country.mp3"
+const music_path: cstr = c"../resources/country.mp3"
 const playing_text: cstr = c"MUSIC SHOULD BE PLAYING!"
 const restart_text: cstr = c"PRESS SPACE TO RESTART MUSIC"
 const pause_text: cstr = c"PRESS P TO PAUSE/RESUME MUSIC"

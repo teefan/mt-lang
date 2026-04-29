@@ -21,8 +21,8 @@ struct RoundedRectangle:
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glsl_version: i32 = 330
-const vertex_shader_path_format: cstr = c"resources/shaders/glsl%i/base.vs"
-const fragment_shader_path_format: cstr = c"resources/shaders/glsl%i/rounded_rectangle.fs"
+const vertex_shader_path_format: cstr = c"../resources/shaders/glsl%i/base.vs"
+const fragment_shader_path_format: cstr = c"../resources/shaders/glsl%i/rounded_rectangle.fs"
 const rectangle_uniform_name: cstr = c"rectangle"
 const radius_uniform_name: cstr = c"radius"
 const color_uniform_name: cstr = c"color"

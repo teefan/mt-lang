@@ -5,7 +5,7 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glsl_version: i32 = 330
-const shader_path_format: cstr = c"resources/shaders/glsl%i/color_mix.fs"
+const shader_path_format: cstr = c"../resources/shaders/glsl%i/color_mix.fs"
 const texture_uniform_name: cstr = c"texture1"
 const divider_uniform_name: cstr = c"divider"
 const help_text: cstr = c"Use KEY_LEFT/KEY_RIGHT to move texture mixing in shader!"

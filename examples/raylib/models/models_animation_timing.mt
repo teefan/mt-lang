@@ -10,7 +10,7 @@ const empty_text: cstr = c""
 const anim_speed_format: cstr = c"x%.1f"
 const current_frame_format: cstr = c"CURRENT FRAME: %.2f / %i"
 const frame_speed_label: cstr = c"FRAME SPEED: "
-const model_path: cstr = c"resources/models/gltf/robot.glb"
+const model_path: cstr = c"../resources/models/gltf/robot.glb"
 const window_title: cstr = c"raylib [models] example - animation timing"
 
 def chars_to_cstr(text: ptr[char]) -> cstr:

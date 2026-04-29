@@ -14,7 +14,7 @@ const process_flip_vertical: i32 = 7
 const process_flip_horizontal: i32 = 8
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const parrots_path: str = "../../raylib/textures/resources/parrots.png"
+const parrots_path: str = "../../raylib/resources/parrots.png"
 
 def process_label(process: i32) -> str:
     if process == process_none:

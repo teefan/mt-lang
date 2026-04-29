@@ -46,12 +46,12 @@ pub def hour_12(clock: ClockTime) -> i32:
     return wrapped
 
 pub def clock_utc(timestamp: i64) -> Result[ClockTime, Error]:
-    var time_value: c.time_t = timestamp
+    var time_value: c.time_t = cast[c.time_t](timestamp)
     let time_info = c.gmtime(raw(addr(time_value)))
     return clock_from_tm(time_info)
 
 pub def clock_local(timestamp: i64) -> Result[ClockTime, Error]:
-    var time_value: c.time_t = timestamp
+    var time_value: c.time_t = cast[c.time_t](timestamp)
     let time_info = c.localtime(raw(addr(time_value)))
     return clock_from_tm(time_info)
 
@@ -78,11 +78,11 @@ def format_tm(time_info: ptr[c.tm], format: str, scratch: ref[arena.Arena]) -> R
     return ok(result)
 
 pub def format_utc(timestamp: i64, format: str, scratch: ref[arena.Arena]) -> Result[string.String, Error]:
-    var time_value: c.time_t = timestamp
+    var time_value: c.time_t = cast[c.time_t](timestamp)
     let time_info = c.gmtime(raw(addr(time_value)))
     return format_tm(time_info, format, scratch)
 
 pub def format_local(timestamp: i64, format: str, scratch: ref[arena.Arena]) -> Result[string.String, Error]:
-    var time_value: c.time_t = timestamp
+    var time_value: c.time_t = cast[c.time_t](timestamp)
     let time_info = c.localtime(raw(addr(time_value)))
     return format_tm(time_info, format, scratch)

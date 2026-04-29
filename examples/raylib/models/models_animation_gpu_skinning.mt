@@ -5,11 +5,11 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glsl_version: i32 = 330
-const model_path: cstr = c"resources/models/gltf/greenman.glb"
+const model_path: cstr = c"../resources/models/gltf/greenman.glb"
 const current_animation_format: cstr = c"Current animation: %s"
 const controls_text: cstr = c"Use the LEFT/RIGHT keys to switch animation"
-const shader_vertex_path_format: cstr = c"resources/shaders/glsl%i/skinning.vs"
-const shader_fragment_path_format: cstr = c"resources/shaders/glsl%i/skinning.fs"
+const shader_vertex_path_format: cstr = c"../resources/shaders/glsl%i/skinning.vs"
+const shader_fragment_path_format: cstr = c"../resources/shaders/glsl%i/skinning.fs"
 const window_title: cstr = c"raylib [models] example - animation gpu skinning"
 
 def chars_to_cstr(text: ptr[char]) -> cstr:

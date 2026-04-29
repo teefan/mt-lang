@@ -14,7 +14,7 @@ const max_particles: i32 = 200
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [textures] example - particles blending"
-const smoke_path: cstr = c"resources/spark_flame.png"
+const smoke_path: cstr = c"../resources/spark_flame.png"
 const help_text: cstr = c"PRESS SPACE to CHANGE BLENDING MODE"
 
 def blend_label(blend_mode: i32) -> cstr:

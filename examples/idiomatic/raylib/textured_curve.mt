@@ -10,7 +10,7 @@ const start_handle: i32 = 0
 const start_tangent_handle: i32 = 1
 const end_handle: i32 = 2
 const end_tangent_handle: i32 = 3
-const road_path: str = "../../raylib/textures/resources/road.png"
+const road_path: str = "../../raylib/resources/road.png"
 
 def hovered_handle(mouse: rl.Vector2, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2) -> i32:
     if rl.check_collision_point_circle(mouse, curve_start_position, 6.0):

@@ -7,9 +7,9 @@ const screen_height: i32 = 450
 const msg1: str = "THIS IS A custom SPRITE FONT..."
 const msg2: str = "...and this is ANOTHER CUSTOM font..."
 const msg3: str = "...and a THIRD one! GREAT! :D"
-const font1_path: str = "../../raylib/text/resources/custom_mecha.png"
-const font2_path: str = "../../raylib/text/resources/custom_alagard.png"
-const font3_path: str = "../../raylib/text/resources/custom_jupiter_crash.png"
+const font1_path: str = "../../raylib/resources/custom_mecha.png"
+const font2_path: str = "../../raylib/resources/custom_alagard.png"
+const font3_path: str = "../../raylib/resources/custom_jupiter_crash.png"
 
 def centered_position(font: rl.Font, text: str, spacing: f32, y_offset: f32) -> rl.Vector2:
     let size = rl.measure_text_ex(font, text, cast[f32](font.baseSize), spacing)

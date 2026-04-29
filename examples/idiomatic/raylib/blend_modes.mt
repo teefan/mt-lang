@@ -4,8 +4,8 @@ import std.raylib as rl
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const background_path: str = "../../raylib/textures/resources/cyberpunk_street_background.png"
-const foreground_path: str = "../../raylib/textures/resources/cyberpunk_street_foreground.png"
+const background_path: str = "../../raylib/resources/cyberpunk_street_background.png"
+const foreground_path: str = "../../raylib/resources/cyberpunk_street_foreground.png"
 const blend_count_max: i32 = 4
 
 def blend_label(blend_mode: i32) -> str:

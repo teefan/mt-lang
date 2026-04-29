@@ -5,8 +5,8 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [textures] example - image text"
-const parrots_path: cstr = c"resources/parrots.png"
-const font_path: cstr = c"resources/KAISG.ttf"
+const parrots_path: cstr = c"../resources/parrots.png"
+const font_path: cstr = c"../resources/KAISG.ttf"
 const title_text: cstr = c"[Parrots font drawing]"
 const help_text: cstr = c"PRESS SPACE to SHOW FONT ATLAS USED"
 const font_size: i32 = 64

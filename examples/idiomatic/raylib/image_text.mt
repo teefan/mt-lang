@@ -4,8 +4,8 @@ import std.raylib as rl
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const parrots_path: str = "../../raylib/textures/resources/parrots.png"
-const font_path: str = "../../raylib/textures/resources/KAISG.ttf"
+const parrots_path: str = "../../raylib/resources/parrots.png"
+const font_path: str = "../../raylib/resources/KAISG.ttf"
 const font_size: i32 = 64
 
 def main() -> i32:

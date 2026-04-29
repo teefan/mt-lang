@@ -5,7 +5,7 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [textures] example - image kernel"
-const cat_path: cstr = c"resources/cat.png"
+const cat_path: cstr = c"../resources/cat.png"
 
 def normalize_kernel(kernel: ptr[f32], size: i32) -> void:
     unsafe:

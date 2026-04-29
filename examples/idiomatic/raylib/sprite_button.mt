@@ -5,8 +5,8 @@ import std.raylib as rl
 const num_frames: i32 = 3
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const button_fx_path: str = "../../raylib/textures/resources/buttonfx.wav"
-const button_path: str = "../../raylib/textures/resources/button.png"
+const button_fx_path: str = "../../raylib/resources/buttonfx.wav"
+const button_path: str = "../../raylib/resources/button.png"
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Sprite Button")

@@ -6,7 +6,7 @@ import std.raylib.math as rm
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const stack_count: i32 = 122
-const booth_path: str = "../../raylib/textures/resources/booth.png"
+const booth_path: str = "../../raylib/resources/booth.png"
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Sprite Stacking")

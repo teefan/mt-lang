@@ -5,7 +5,7 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [models] example - loading gltf"
-const model_path: cstr = c"resources/models/gltf/robot.glb"
+const model_path: cstr = c"../resources/models/gltf/robot.glb"
 const current_animation_format: cstr = c"Current animation: %s"
 const controls_text: cstr = c"Use the LEFT/RIGHT keys to switch animation"
 

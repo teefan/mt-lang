@@ -23,12 +23,12 @@ const screen_height: i32 = 450
 const screen_width_f: f32 = 800.0
 const screen_height_f: f32 = 450.0
 const glsl_version: i32 = 330
-const shader_path_format: cstr = c"resources/shaders/glsl%i/spotlight.fs"
+const shader_path_format: cstr = c"../resources/shaders/glsl%i/spotlight.fs"
 const screen_width_uniform_name: cstr = c"screenWidth"
 const move_text: cstr = c"Move the mouse!"
 const pitch_black_text: cstr = c"Pitch Black"
 const dark_text: cstr = c"Dark"
-const raysan_path: cstr = c"resources/raysan.png"
+const raysan_path: cstr = c"../resources/raysan.png"
 const window_title: cstr = c"raylib [shaders] example - spotlight rendering"
 
 def set_vec2_uniform(shader: rl.Shader, location: i32, vector: rl.Vector2) -> void:

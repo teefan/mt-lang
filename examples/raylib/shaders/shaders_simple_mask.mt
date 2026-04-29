@@ -6,9 +6,9 @@ import std.raylib.math as rm
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glsl_version: i32 = 330
-const shader_path_format: cstr = c"resources/shaders/glsl%i/mask.fs"
-const diffuse_texture_path: cstr = c"resources/plasma.png"
-const mask_texture_path: cstr = c"resources/mask.png"
+const shader_path_format: cstr = c"../resources/shaders/glsl%i/mask.fs"
+const diffuse_texture_path: cstr = c"../resources/plasma.png"
+const mask_texture_path: cstr = c"../resources/mask.png"
 const mask_uniform_name: cstr = c"mask"
 const frame_uniform_name: cstr = c"frame"
 const frame_format: cstr = c"Frame: %i"

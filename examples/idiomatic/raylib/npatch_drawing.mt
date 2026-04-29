@@ -4,7 +4,7 @@ import std.raylib as rl
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const npatch_texture_path: str = "../../raylib/textures/resources/ninepatch_button.png"
+const npatch_texture_path: str = "../../raylib/resources/ninepatch_button.png"
 
 def clamp_min(value: f32, minimum: f32) -> f32:
     if value < minimum:

@@ -10,7 +10,7 @@ const wrap_width: i32 = screen_width - 20
 const text_top: i32 = 25 + font_size
 const line_gap: i32 = 10
 const window_title: cstr = c"raylib [core] example - text file loading"
-const file_name: cstr = c"resources/text_file.txt"
+const file_name: cstr = c"../resources/text_file.txt"
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

@@ -6,8 +6,8 @@ import std.raylib.math as rm
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [models] example - yaw pitch roll"
-const model_path: cstr = c"resources/models/obj/plane.obj"
-const texture_path: cstr = c"resources/models/obj/plane_diffuse.png"
+const model_path: cstr = c"../resources/models/obj/plane.obj"
+const texture_path: cstr = c"../resources/models/obj/plane_diffuse.png"
 const pitch_controls_text: cstr = c"Pitch controlled with: KEY_UP / KEY_DOWN"
 const roll_controls_text: cstr = c"Roll controlled with: KEY_LEFT / KEY_RIGHT"
 const yaw_controls_text: cstr = c"Yaw controlled with: KEY_A / KEY_S"

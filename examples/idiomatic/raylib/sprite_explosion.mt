@@ -6,8 +6,8 @@ const num_frames_per_line: i32 = 5
 const num_lines: i32 = 5
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const boom_path: str = "../../raylib/textures/resources/boom.wav"
-const explosion_path: str = "../../raylib/textures/resources/explosion.png"
+const boom_path: str = "../../raylib/resources/boom.wav"
+const explosion_path: str = "../../raylib/resources/explosion.png"
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Sprite Explosion")

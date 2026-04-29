@@ -5,9 +5,9 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glsl_version: i32 = 330
-const fudesumi_path: cstr = c"resources/fudesumi.png"
-const raysan_path: cstr = c"resources/raysan.png"
-const shader_path_format: cstr = c"resources/shaders/glsl%i/ascii.fs"
+const fudesumi_path: cstr = c"../resources/fudesumi.png"
+const raysan_path: cstr = c"../resources/raysan.png"
+const shader_path_format: cstr = c"../resources/shaders/glsl%i/ascii.fs"
 const resolution_uniform_name: cstr = c"resolution"
 const font_size_uniform_name: cstr = c"fontSize"
 const title_format: cstr = c"Ascii effect - FontSize:%2.0f - [Left] -1 [Right] +1 "

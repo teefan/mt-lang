@@ -8,8 +8,8 @@ const screen_height: i32 = 450
 const glass_size: i32 = 256
 const glass_radius: f32 = 128.0
 const window_title: cstr = c"raylib [textures] example - magnifying glass"
-const bunny_path: cstr = c"resources/raybunny.png"
-const parrots_path: cstr = c"resources/parrots.png"
+const bunny_path: cstr = c"../resources/raybunny.png"
+const parrots_path: cstr = c"../resources/parrots.png"
 const help_text: cstr = c"Use the magnifying glass to find hidden bunnies!"
 
 def main() -> i32:

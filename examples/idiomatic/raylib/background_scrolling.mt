@@ -4,9 +4,9 @@ import std.raylib as rl
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const background_path: str = "../../raylib/textures/resources/cyberpunk_street_background.png"
-const midground_path: str = "../../raylib/textures/resources/cyberpunk_street_midground.png"
-const foreground_path: str = "../../raylib/textures/resources/cyberpunk_street_foreground.png"
+const background_path: str = "../../raylib/resources/cyberpunk_street_background.png"
+const midground_path: str = "../../raylib/resources/cyberpunk_street_midground.png"
+const foreground_path: str = "../../raylib/resources/cyberpunk_street_foreground.png"
 const background_scale: f32 = 2.0
 
 def reset_scroll(scroll: f32, texture_width: i32) -> f32:

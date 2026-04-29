@@ -19,7 +19,7 @@ const world_height: i32 = 2048
 const random_tiles: i32 = 8
 const number_of_presets: i32 = 10
 const glsl_version: i32 = 330
-const shader_path_format: cstr = c"resources/shaders/glsl%i/game_of_life.fs"
+const shader_path_format: cstr = c"../resources/shaders/glsl%i/game_of_life.fs"
 const resolution_uniform_name: cstr = c"resolution"
 const toggle_group_text: cstr = c"Run\nPause\nDraw"
 const zoom_format: cstr = c"Zoom: %ix"
@@ -37,22 +37,22 @@ def free_image_to_draw(image_to_draw: ref[rl.Image], has_image_to_draw: ref[bool
 
 def load_preset_image(preset: i32) -> rl.Image:
     if preset == 0:
-        return rl.LoadImage(c"resources/game_of_life/glider.png")
+        return rl.LoadImage(c"../resources/game_of_life/glider.png")
     if preset == 1:
-        return rl.LoadImage(c"resources/game_of_life/r_pentomino.png")
+        return rl.LoadImage(c"../resources/game_of_life/r_pentomino.png")
     if preset == 2:
-        return rl.LoadImage(c"resources/game_of_life/acorn.png")
+        return rl.LoadImage(c"../resources/game_of_life/acorn.png")
     if preset == 3:
-        return rl.LoadImage(c"resources/game_of_life/spaceships.png")
+        return rl.LoadImage(c"../resources/game_of_life/spaceships.png")
     if preset == 4:
-        return rl.LoadImage(c"resources/game_of_life/still_lifes.png")
+        return rl.LoadImage(c"../resources/game_of_life/still_lifes.png")
     if preset == 5:
-        return rl.LoadImage(c"resources/game_of_life/oscillators.png")
+        return rl.LoadImage(c"../resources/game_of_life/oscillators.png")
     if preset == 6:
-        return rl.LoadImage(c"resources/game_of_life/puffer_train.png")
+        return rl.LoadImage(c"../resources/game_of_life/puffer_train.png")
     if preset == 7:
-        return rl.LoadImage(c"resources/game_of_life/glider_gun.png")
-    return rl.LoadImage(c"resources/game_of_life/breeder.png")
+        return rl.LoadImage(c"../resources/game_of_life/glider_gun.png")
+    return rl.LoadImage(c"../resources/game_of_life/breeder.png")
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -117,7 +117,7 @@ def main() -> i32:
     rl.ClearBackground(rl.RAYWHITE)
     rl.EndTextureMode()
 
-    var start_pattern = rl.LoadImage(c"resources/game_of_life/r_pentomino.png")
+    var start_pattern = rl.LoadImage(c"../resources/game_of_life/r_pentomino.png")
     rl.UpdateTextureRec(
         world2.texture,
         rl.Rectangle(

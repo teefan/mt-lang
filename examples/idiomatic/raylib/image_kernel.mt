@@ -4,7 +4,7 @@ import std.raylib as rl
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const cat_path: str = "../../raylib/textures/resources/cat.png"
+const cat_path: str = "../../raylib/resources/cat.png"
 
 def normalize_kernel(kernel: array[f32, 9]) -> array[f32, 9]:
     var values = kernel

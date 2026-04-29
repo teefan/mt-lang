@@ -5,8 +5,8 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glsl_version: i32 = 330
-const texture_path: cstr = c"resources/space.png"
-const shader_path_format: cstr = c"resources/shaders/glsl%i/wave.fs"
+const texture_path: cstr = c"../resources/space.png"
+const shader_path_format: cstr = c"../resources/shaders/glsl%i/wave.fs"
 const size_uniform_name: cstr = c"size"
 const seconds_uniform_name: cstr = c"seconds"
 const freq_x_uniform_name: cstr = c"freqX"

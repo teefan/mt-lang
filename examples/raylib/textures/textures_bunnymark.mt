@@ -13,7 +13,7 @@ const max_batch_elements: i32 = 8192
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [textures] example - bunnymark"
-const bunny_path: cstr = c"resources/raybunny.png"
+const bunny_path: cstr = c"../resources/raybunny.png"
 const bunnies_format: cstr = c"bunnies: %i"
 const draw_calls_format: cstr = c"batched draw calls: %i"
 

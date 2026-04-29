@@ -7,9 +7,9 @@ import std.raylib.math as rm
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glsl_version: i32 = 330
-const model_path: cstr = c"resources/models/gltf/greenman.glb"
-const shader_vertex_path_format: cstr = c"resources/shaders/glsl%i/skinning.vs"
-const shader_fragment_path_format: cstr = c"resources/shaders/glsl%i/skinning.fs"
+const model_path: cstr = c"../resources/models/gltf/greenman.glb"
+const shader_vertex_path_format: cstr = c"../resources/shaders/glsl%i/skinning.vs"
+const shader_fragment_path_format: cstr = c"../resources/shaders/glsl%i/skinning.fs"
 const anim0_format: cstr = c"ANIM 0: %s"
 const anim1_format: cstr = c"ANIM 1: %s"
 const mode_format: cstr = c"[SPACE] Toggle blending mode: %s"

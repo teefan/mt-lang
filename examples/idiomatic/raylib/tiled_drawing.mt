@@ -9,7 +9,7 @@ const max_colors: i32 = 10
 const pattern_count: i32 = 6
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const pattern_path: str = "../../raylib/textures/resources/patterns.png"
+const pattern_path: str = "../../raylib/resources/patterns.png"
 
 def draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rectangle, origin: rl.Vector2, rotation: f32, scale: f32, tint: rl.Color) -> void:
     if texture.id <= 0 or scale <= 0.0:

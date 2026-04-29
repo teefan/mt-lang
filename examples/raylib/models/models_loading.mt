@@ -5,8 +5,8 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [models] example - loading"
-const castle_model_path: cstr = c"resources/models/obj/castle.obj"
-const castle_texture_path: cstr = c"resources/models/obj/castle_diffuse.png"
+const castle_model_path: cstr = c"../resources/models/obj/castle.obj"
+const castle_texture_path: cstr = c"../resources/models/obj/castle_diffuse.png"
 const drag_drop_text: cstr = c"Drag & drop model to load mesh/texture."
 const selected_text: cstr = c"MODEL SELECTED"
 const castle_credit: cstr = c"(c) Castle 3D model by Alberto Cano"

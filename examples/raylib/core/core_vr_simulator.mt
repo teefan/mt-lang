@@ -5,7 +5,7 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [core] example - vr simulator"
-const distortion_shader_path: cstr = c"../../../third_party/raylib-upstream/examples/core/resources/shaders/glsl330/distortion.fs"
+const distortion_shader_path: cstr = c"../resources/shaders/glsl330/distortion.fs"
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

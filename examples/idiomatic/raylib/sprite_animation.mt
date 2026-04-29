@@ -6,7 +6,7 @@ const max_frame_speed: i32 = 15
 const min_frame_speed: i32 = 1
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const scarfy_path: str = "../../raylib/textures/resources/scarfy.png"
+const scarfy_path: str = "../../raylib/resources/scarfy.png"
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Sprite Animation")

@@ -7,7 +7,7 @@ import std.raylib.math as rm
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [models] example - directional billboard"
-const skillbot_path: cstr = c"resources/skillbot.png"
+const skillbot_path: cstr = c"../resources/skillbot.png"
 const animation_format: cstr = c"animation: %d"
 const direction_frame_format: cstr = c"direction frame: %.0f"
 
