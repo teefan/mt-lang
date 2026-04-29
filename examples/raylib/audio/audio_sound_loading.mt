@@ -4,8 +4,8 @@ import std.c.raylib as rl
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const wav_path: cstr = c"resources/sound.wav"
-const ogg_path: cstr = c"resources/target.ogg"
+const wav_path: cstr = c"../resources/sound.wav"
+const ogg_path: cstr = c"../resources/target.ogg"
 const wav_text: cstr = c"Press SPACE to PLAY the WAV sound!"
 const ogg_text: cstr = c"Press ENTER to PLAY the OGG sound!"
 const window_title: cstr = c"raylib [audio] example - sound loading"

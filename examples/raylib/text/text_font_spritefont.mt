@@ -8,9 +8,9 @@ const window_title: cstr = c"raylib [text] example - font spritefont"
 const msg1: cstr = c"THIS IS A custom SPRITE FONT..."
 const msg2: cstr = c"...and this is ANOTHER CUSTOM font..."
 const msg3: cstr = c"...and a THIRD one! GREAT! :D"
-const font1_path: cstr = c"resources/custom_mecha.png"
-const font2_path: cstr = c"resources/custom_alagard.png"
-const font3_path: cstr = c"resources/custom_jupiter_crash.png"
+const font1_path: cstr = c"../resources/custom_mecha.png"
+const font2_path: cstr = c"../resources/custom_alagard.png"
+const font3_path: cstr = c"../resources/custom_jupiter_crash.png"
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

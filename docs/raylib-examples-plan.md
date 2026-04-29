@@ -82,14 +82,13 @@ Recommended example layout:
 
 ```text
 examples/raylib/core/core_basic_window.mt
-examples/raylib/core/resources/...
+examples/raylib/resources/...
 examples/raylib/textures/textures_logo_raylib.mt
-examples/raylib/textures/resources/...
 examples/idiomatic/raylib/basic_window.mt
 examples/idiomatic/raylib/bouncing_ball.mt
 ```
 
-This preserves the upstream relative asset convention exactly. With the current `Run.run` cwd fix, `resources/...` paths stay valid without adding special runtime path logic.
+Raw raylib examples load assets from `../resources/...`, and idiomatic raylib examples load them from `../../raylib/resources/...`. That keeps the runtime layout vendored and shared without adding special path resolution logic.
 
 ## Example Tracks
 

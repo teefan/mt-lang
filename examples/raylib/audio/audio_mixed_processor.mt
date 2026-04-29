@@ -6,8 +6,8 @@ import std.c.raylib as rl
 const average_volume_size: i32 = 400
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const music_path: cstr = c"resources/country.mp3"
-const sound_path: cstr = c"resources/coin.wav"
+const music_path: cstr = c"../resources/country.mp3"
+const sound_path: cstr = c"../resources/coin.wav"
 const playing_text: cstr = c"MUSIC SHOULD BE PLAYING!"
 const exponent_format: cstr = c"EXPONENT = %.2f"
 const sound_text: cstr = c"PRESS SPACE TO PLAY OTHER SOUND"

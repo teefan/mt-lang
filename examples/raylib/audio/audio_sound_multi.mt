@@ -5,7 +5,7 @@ import std.c.raylib as rl
 const max_sounds: i32 = 10
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const sound_path: cstr = c"resources/sound.wav"
+const sound_path: cstr = c"../resources/sound.wav"
 const prompt_text: cstr = c"Press SPACE to PLAY a WAV sound!"
 const window_title: cstr = c"raylib [audio] example - sound multi"
 

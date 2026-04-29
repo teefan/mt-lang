@@ -12,7 +12,7 @@ struct CircleWave:
 const max_circles: i32 = 64
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const music_path: cstr = c"resources/mini1111.xm"
+const music_path: cstr = c"../resources/mini1111.xm"
 const restart_text: cstr = c"PRESS SPACE TO RESTART MUSIC"
 const pause_text: cstr = c"PRESS P TO PAUSE/RESUME"
 const speed_text: cstr = c"PRESS UP/DOWN TO CHANGE SPEED"

@@ -9,7 +9,7 @@ const text_max_layers: i32 = 32
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [text] example - 3d drawing"
-const alpha_discard_shader_path: cstr = c"resources/shaders/glsl330/alpha_discard.fs"
+const alpha_discard_shader_path: cstr = c"../resources/shaders/glsl330/alpha_discard.fs"
 const initial_text: cstr = c"Hello ~~World~~ in 3D!"
 
 struct WaveTextConfig:

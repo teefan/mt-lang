@@ -7,8 +7,8 @@ const num_lines: i32 = 5
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [textures] example - sprite explosion"
-const boom_path: cstr = c"resources/boom.wav"
-const explosion_path: cstr = c"resources/explosion.png"
+const boom_path: cstr = c"../resources/boom.wav"
+const explosion_path: cstr = c"../resources/explosion.png"
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

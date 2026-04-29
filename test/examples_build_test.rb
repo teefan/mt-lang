@@ -39,7 +39,63 @@ class MilkTeaExamplesBuildTest < Minitest::Test
     end
   end
 
+  def test_raylib_example_resources_are_vendored
+    manifest = raylib_resource_manifest
+    refute_empty manifest
+
+    missing = manifest.reject { |entry| File.exist?(entry.fetch(:resource_path)) }
+
+    assert_empty missing, missing.map { |entry| "#{entry.fetch(:example_relative_path)}: missing #{entry.fetch(:resource_relative_path)}" }.join("\n")
+  end
+
   private
+
+  def raylib_resource_manifest
+    examples_root = File.expand_path("../examples", __dir__)
+    raylib_examples_root = File.join(examples_root, "raylib")
+    idiomatic_examples_root = File.join(examples_root, "idiomatic", "raylib")
+    resources_root = File.join(raylib_examples_root, "resources")
+
+    raw_manifest = Dir[File.join(raylib_examples_root, "**", "*.mt")].sort.flat_map do |path|
+      source = File.read(path)
+      example_relative_path = path.delete_prefix(examples_root + "/")
+
+      source.scan(%r{\.\./resources/([^"\s]+)}).flatten.uniq.flat_map do |resource_relative_path|
+        expand_raylib_resource_path(resource_relative_path).map do |expanded_path|
+          {
+            example_relative_path:,
+            resource_relative_path: expanded_path,
+            resource_path: File.join(resources_root, expanded_path),
+          }
+        end
+      end
+    end
+
+    idiomatic_manifest = Dir[File.join(idiomatic_examples_root, "*.mt")].sort.flat_map do |path|
+      source = File.read(path)
+      example_relative_path = path.delete_prefix(examples_root + "/")
+
+      source.scan(%r{\.\./\.\./raylib/resources/([^"\s]+)}).flatten.uniq.flat_map do |resource_relative_path|
+        expand_raylib_resource_path(resource_relative_path).map do |expanded_path|
+          {
+            example_relative_path:,
+            resource_relative_path: expanded_path,
+            resource_path: File.join(resources_root, expanded_path),
+          }
+        end
+      end
+    end
+
+    raw_manifest + idiomatic_manifest
+  end
+
+  def expand_raylib_resource_path(resource_relative_path)
+    return MilkTea::RaylibExamplesManifest::GLSL_VERSIONS.map do |version|
+      resource_relative_path.gsub("glsl%i", "glsl#{version}")
+    end if resource_relative_path.include?("glsl%i")
+
+    [resource_relative_path]
+  end
 
   def announce_build_progress(current, total, relative_path)
     $stdout.puts("[examples_build_test #{current}/#{total}] #{relative_path}")

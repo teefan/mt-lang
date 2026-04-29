@@ -5,7 +5,7 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [textures] example - srcrec dstrec"
-const scarfy_path: cstr = c"resources/scarfy.png"
+const scarfy_path: cstr = c"../resources/scarfy.png"
 const credit_text: cstr = c"(c) Scarfy sprite by Eiden Marsal"
 
 def main() -> i32:

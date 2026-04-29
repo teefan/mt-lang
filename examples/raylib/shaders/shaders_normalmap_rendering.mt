@@ -6,11 +6,11 @@ import std.raylib.math as rm
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glsl_version: i32 = 330
-const model_path: cstr = c"resources/models/plane.glb"
-const diffuse_texture_path: cstr = c"resources/tiles_diffuse.png"
-const normal_texture_path: cstr = c"resources/tiles_normal.png"
-const shader_vertex_path_format: cstr = c"resources/shaders/glsl%i/normalmap.vs"
-const shader_fragment_path_format: cstr = c"resources/shaders/glsl%i/normalmap.fs"
+const model_path: cstr = c"../resources/models/plane.glb"
+const diffuse_texture_path: cstr = c"../resources/tiles_diffuse.png"
+const normal_texture_path: cstr = c"../resources/tiles_normal.png"
+const shader_vertex_path_format: cstr = c"../resources/shaders/glsl%i/normalmap.vs"
+const shader_fragment_path_format: cstr = c"../resources/shaders/glsl%i/normalmap.fs"
 const normal_map_uniform_name: cstr = c"normalMap"
 const view_pos_uniform_name: cstr = c"viewPos"
 const light_pos_uniform_name: cstr = c"lightPos"

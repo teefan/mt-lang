@@ -7,8 +7,8 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glass_size: i32 = 256
 const glass_radius: f32 = 128.0
-const bunny_path: str = "../../raylib/textures/resources/raybunny.png"
-const parrots_path: str = "../../raylib/textures/resources/parrots.png"
+const bunny_path: str = "../../raylib/resources/raybunny.png"
+const parrots_path: str = "../../raylib/resources/parrots.png"
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Magnifying Glass")

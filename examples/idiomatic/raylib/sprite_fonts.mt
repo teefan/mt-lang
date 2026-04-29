@@ -11,14 +11,14 @@ def main() -> i32:
     defer rl.close_window()
 
     let font_paths = array[str, max_fonts](
-        "../../raylib/text/resources/sprite_fonts/alagard.png",
-        "../../raylib/text/resources/sprite_fonts/pixelplay.png",
-        "../../raylib/text/resources/sprite_fonts/mecha.png",
-        "../../raylib/text/resources/sprite_fonts/setback.png",
-        "../../raylib/text/resources/sprite_fonts/romulus.png",
-        "../../raylib/text/resources/sprite_fonts/pixantiqua.png",
-        "../../raylib/text/resources/sprite_fonts/alpha_beta.png",
-        "../../raylib/text/resources/sprite_fonts/jupiter_crash.png",
+        "../../raylib/resources/sprite_fonts/alagard.png",
+        "../../raylib/resources/sprite_fonts/pixelplay.png",
+        "../../raylib/resources/sprite_fonts/mecha.png",
+        "../../raylib/resources/sprite_fonts/setback.png",
+        "../../raylib/resources/sprite_fonts/romulus.png",
+        "../../raylib/resources/sprite_fonts/pixantiqua.png",
+        "../../raylib/resources/sprite_fonts/alpha_beta.png",
+        "../../raylib/resources/sprite_fonts/jupiter_crash.png",
     )
     let messages = array[str, max_fonts](
         "ALAGARD FONT designed by Hewett Tsoi",

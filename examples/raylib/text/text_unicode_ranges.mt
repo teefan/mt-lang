@@ -6,7 +6,7 @@ import std.mem.heap as heap
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [text] example - unicode ranges"
-const font_path: cstr = c"resources/NotoSansTC-Regular.ttf"
+const font_path: cstr = c"../resources/NotoSansTC-Regular.ttf"
 const add_codepoints_text: cstr = c"ADD CODEPOINTS: [1][2][3][4]"
 const english_text: cstr = c"> English: Hello World!"
 const spanish_text: cstr = c"> Español: Hola mundo!"

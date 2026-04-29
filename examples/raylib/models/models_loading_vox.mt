@@ -11,8 +11,8 @@ const max_lights: i32 = 4
 const glsl_version: i32 = 330
 const window_title: cstr = c"raylib [models] example - loading vox"
 const model_load_time_format: cstr = c"[%s] Model file loaded in %.3f ms"
-const shader_vertex_path_format: cstr = c"resources/shaders/glsl%i/voxel_lighting.vs"
-const shader_fragment_path_format: cstr = c"resources/shaders/glsl%i/voxel_lighting.fs"
+const shader_vertex_path_format: cstr = c"../resources/shaders/glsl%i/voxel_lighting.vs"
+const shader_fragment_path_format: cstr = c"../resources/shaders/glsl%i/voxel_lighting.fs"
 const vox_model_label_format: cstr = c"VOX model file: %s"
 const cycle_models_text: cstr = c"- MOUSE LEFT BUTTON: CYCLE VOX MODELS"
 const camera_rotate_text: cstr = c"- MOUSE MIDDLE BUTTON: ZOOM OR ROTATE CAMERA"
@@ -30,10 +30,10 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     let vox_file_names = array[cstr, max_vox_files](
-        c"resources/models/vox/chr_knight.vox",
-        c"resources/models/vox/chr_sword.vox",
-        c"resources/models/vox/monu9.vox",
-        c"resources/models/vox/fez.vox",
+        c"../resources/models/vox/chr_knight.vox",
+        c"../resources/models/vox/chr_sword.vox",
+        c"../resources/models/vox/monu9.vox",
+        c"../resources/models/vox/fez.vox",
     )
 
     var camera = rl.Camera3D(

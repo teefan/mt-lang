@@ -5,8 +5,8 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [textures] example - blend modes"
-const background_path: cstr = c"resources/cyberpunk_street_background.png"
-const foreground_path: cstr = c"resources/cyberpunk_street_foreground.png"
+const background_path: cstr = c"../resources/cyberpunk_street_background.png"
+const foreground_path: cstr = c"../resources/cyberpunk_street_foreground.png"
 const blend_count_max: i32 = 4
 const help_text: cstr = c"Press SPACE to change blend modes."
 const credit_text: cstr = c"(c) Cyberpunk Street Environment by Luis Zuno (@ansimuz)"

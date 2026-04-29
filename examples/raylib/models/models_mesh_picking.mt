@@ -7,8 +7,8 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [models] example - mesh picking"
 const float_max: f32 = 340282346638528859811704183484516925440.0
-const turret_model_path: cstr = c"resources/models/obj/turret.obj"
-const turret_texture_path: cstr = c"resources/models/obj/turret_diffuse.png"
+const turret_model_path: cstr = c"../resources/models/obj/turret.obj"
+const turret_texture_path: cstr = c"../resources/models/obj/turret_diffuse.png"
 const toggle_text: cstr = c"Right click mouse to toggle camera controls"
 const turret_credit: cstr = c"(c) Turret 3D model by Alberto Cano"
 

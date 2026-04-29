@@ -5,7 +5,7 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [text] example - font filters"
-const font_path: cstr = c"resources/KAISG.ttf"
+const font_path: cstr = c"../resources/KAISG.ttf"
 const msg: cstr = c"Loaded Font"
 const info_size_text: cstr = c"Use mouse wheel to change font size"
 const info_move_text: cstr = c"Use KEY_RIGHT and KEY_LEFT to move text"

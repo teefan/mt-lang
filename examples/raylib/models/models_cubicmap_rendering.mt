@@ -5,8 +5,8 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [models] example - cubicmap rendering"
-const cubicmap_path: cstr = c"resources/cubicmap.png"
-const atlas_path: cstr = c"resources/cubicmap_atlas.png"
+const cubicmap_path: cstr = c"../resources/cubicmap.png"
+const atlas_path: cstr = c"../resources/cubicmap_atlas.png"
 const cubicmap_caption_top: cstr = c"cubicmap image used to"
 const cubicmap_caption_bottom: cstr = c"generate map 3d model"
 

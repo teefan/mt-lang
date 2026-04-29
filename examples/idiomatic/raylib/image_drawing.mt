@@ -4,9 +4,9 @@ import std.raylib as rl
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const cat_path: str = "../../raylib/textures/resources/cat.png"
-const parrots_path: str = "../../raylib/textures/resources/parrots.png"
-const font_path: str = "../../raylib/textures/resources/custom_jupiter_crash.png"
+const cat_path: str = "../../raylib/resources/cat.png"
+const parrots_path: str = "../../raylib/resources/parrots.png"
+const font_path: str = "../../raylib/resources/custom_jupiter_crash.png"
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Image Drawing")

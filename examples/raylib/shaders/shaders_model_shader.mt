@@ -5,9 +5,9 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glsl_version: i32 = 330
-const model_path: cstr = c"resources/models/watermill.obj"
-const texture_path: cstr = c"resources/models/watermill_diffuse.png"
-const shader_path_format: cstr = c"resources/shaders/glsl%i/grayscale.fs"
+const model_path: cstr = c"../resources/models/watermill.obj"
+const texture_path: cstr = c"../resources/models/watermill_diffuse.png"
+const shader_path_format: cstr = c"../resources/shaders/glsl%i/grayscale.fs"
 const credit_text: cstr = c"(c) Watermill 3D model by Alberto Cano"
 const window_title: cstr = c"raylib [shaders] example - model shader"
 

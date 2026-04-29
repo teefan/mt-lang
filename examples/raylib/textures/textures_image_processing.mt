@@ -15,7 +15,7 @@ const process_flip_horizontal: i32 = 8
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [textures] example - image processing"
-const parrots_path: cstr = c"resources/parrots.png"
+const parrots_path: cstr = c"../resources/parrots.png"
 const title_text: cstr = c"IMAGE PROCESSING:"
 
 def main() -> i32:

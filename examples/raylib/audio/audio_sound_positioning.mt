@@ -5,7 +5,7 @@ import std.raylib.math as rm
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const sound_path: cstr = c"resources/coin.wav"
+const sound_path: cstr = c"../resources/coin.wav"
 const window_title: cstr = c"raylib [audio] example - sound positioning"
 
 def set_sound_position(listener: rl.Camera3D, sound: rl.Sound, position: rl.Vector3, max_dist: f32) -> void:

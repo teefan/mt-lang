@@ -5,7 +5,7 @@ import std.raylib as rl
 const num_textures: i32 = 3
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const logo_path: str = "../../raylib/textures/resources/raylib_logo.png"
+const logo_path: str = "../../raylib/resources/raylib_logo.png"
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Image Rotate")

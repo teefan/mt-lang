@@ -5,7 +5,7 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [models] example - loading m3d"
-const model_path: cstr = c"resources/models/m3d/cesium_man.m3d"
+const model_path: cstr = c"../resources/models/m3d/cesium_man.m3d"
 const current_animation_format: cstr = c"Current animation: %s"
 const skeleton_text: cstr = c"Press SPACE to draw skeleton"
 const credit_text: cstr = c"(c) CesiumMan model by KhronosGroup"

@@ -9,10 +9,10 @@ const map_size: i32 = 16
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [shaders] example - lightmap rendering"
-const vertex_shader_path_format: cstr = c"resources/shaders/glsl%i/lightmap.vs"
-const fragment_shader_path_format: cstr = c"resources/shaders/glsl%i/lightmap.fs"
-const texture_path: cstr = c"resources/cubicmap_atlas.png"
-const light_path: cstr = c"resources/spark_flame.png"
+const vertex_shader_path_format: cstr = c"../resources/shaders/glsl%i/lightmap.vs"
+const fragment_shader_path_format: cstr = c"../resources/shaders/glsl%i/lightmap.fs"
+const texture_path: cstr = c"../resources/cubicmap_atlas.png"
+const light_path: cstr = c"../resources/spark_flame.png"
 const lightmap_label_format: cstr = c"LIGHTMAP: %ix%i pixels"
 
 def main() -> i32:

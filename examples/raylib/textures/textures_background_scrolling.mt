@@ -5,9 +5,9 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [textures] example - background scrolling"
-const background_path: cstr = c"resources/cyberpunk_street_background.png"
-const midground_path: cstr = c"resources/cyberpunk_street_midground.png"
-const foreground_path: cstr = c"resources/cyberpunk_street_foreground.png"
+const background_path: cstr = c"../resources/cyberpunk_street_background.png"
+const midground_path: cstr = c"../resources/cyberpunk_street_midground.png"
+const foreground_path: cstr = c"../resources/cyberpunk_street_foreground.png"
 const background_scale: f32 = 2.0
 
 def reset_scroll(scroll: f32, texture_width: i32) -> f32:

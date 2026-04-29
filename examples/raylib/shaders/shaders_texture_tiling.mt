@@ -5,8 +5,8 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glsl_version: i32 = 330
-const texture_path: cstr = c"resources/cubicmap_atlas.png"
-const shader_path_format: cstr = c"resources/shaders/glsl%i/tiling.fs"
+const texture_path: cstr = c"../resources/cubicmap_atlas.png"
+const shader_path_format: cstr = c"../resources/shaders/glsl%i/tiling.fs"
 const tiling_uniform_name: cstr = c"tiling"
 const help_text: cstr = c"Use mouse to rotate the camera"
 const window_title: cstr = c"raylib [shaders] example - texture tiling"

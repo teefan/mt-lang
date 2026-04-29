@@ -7,14 +7,14 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [text] example - sprite fonts"
 const title_text: cstr = c"free sprite fonts included with raylib"
-const font0_path: cstr = c"resources/sprite_fonts/alagard.png"
-const font1_path: cstr = c"resources/sprite_fonts/pixelplay.png"
-const font2_path: cstr = c"resources/sprite_fonts/mecha.png"
-const font3_path: cstr = c"resources/sprite_fonts/setback.png"
-const font4_path: cstr = c"resources/sprite_fonts/romulus.png"
-const font5_path: cstr = c"resources/sprite_fonts/pixantiqua.png"
-const font6_path: cstr = c"resources/sprite_fonts/alpha_beta.png"
-const font7_path: cstr = c"resources/sprite_fonts/jupiter_crash.png"
+const font0_path: cstr = c"../resources/sprite_fonts/alagard.png"
+const font1_path: cstr = c"../resources/sprite_fonts/pixelplay.png"
+const font2_path: cstr = c"../resources/sprite_fonts/mecha.png"
+const font3_path: cstr = c"../resources/sprite_fonts/setback.png"
+const font4_path: cstr = c"../resources/sprite_fonts/romulus.png"
+const font5_path: cstr = c"../resources/sprite_fonts/pixantiqua.png"
+const font6_path: cstr = c"../resources/sprite_fonts/alpha_beta.png"
+const font7_path: cstr = c"../resources/sprite_fonts/jupiter_crash.png"
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

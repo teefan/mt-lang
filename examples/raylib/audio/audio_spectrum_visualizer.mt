@@ -28,10 +28,10 @@ const fft_row: i32 = 0
 const unused_channel: f32 = 0.0
 const screen_width: i32 = 800
 const screen_height: i32 = 450
-const shader_path_format: cstr = c"resources/shaders/glsl%i/fft.fs"
+const shader_path_format: cstr = c"../resources/shaders/glsl%i/fft.fs"
 const resolution_uniform_name: cstr = c"iResolution"
 const channel_uniform_name: cstr = c"iChannel0"
-const wave_path: cstr = c"resources/country.mp3"
+const wave_path: cstr = c"../resources/country.mp3"
 const window_title: cstr = c"raylib [audio] example - spectrum visualizer"
 
 var work_buffer: array[FFTComplex, 1024]

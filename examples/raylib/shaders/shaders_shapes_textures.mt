@@ -5,8 +5,8 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const glsl_version: i32 = 330
-const texture_path: cstr = c"resources/fudesumi.png"
-const shader_path_format: cstr = c"resources/shaders/glsl%i/grayscale.fs"
+const texture_path: cstr = c"../resources/fudesumi.png"
+const shader_path_format: cstr = c"../resources/shaders/glsl%i/grayscale.fs"
 const default_shader_text: cstr = c"USING DEFAULT SHADER"
 const custom_shader_text: cstr = c"USING CUSTOM SHADER"
 const credit_text: cstr = c"(c) Fudesumi sprite by Eiden Marsal"

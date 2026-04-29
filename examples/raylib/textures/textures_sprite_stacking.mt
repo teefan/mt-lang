@@ -7,7 +7,7 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const stack_count: i32 = 122
 const window_title: cstr = c"raylib [textures] example - sprite stacking"
-const booth_path: cstr = c"resources/booth.png"
+const booth_path: cstr = c"../resources/booth.png"
 const help_text: cstr = c"A/D to spin\nmouse wheel to change separation (aka 'angle')"
 const credit_text: cstr = c"redbooth model (c) kluchek under cc 4.0"
 

@@ -5,9 +5,9 @@ import std.c.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [models] example - loading iqm"
-const model_path: cstr = c"resources/models/iqm/guy.iqm"
-const texture_path: cstr = c"resources/models/iqm/guytex.png"
-const animation_path: cstr = c"resources/models/iqm/guyanim.iqm"
+const model_path: cstr = c"../resources/models/iqm/guy.iqm"
+const texture_path: cstr = c"../resources/models/iqm/guytex.png"
+const animation_path: cstr = c"../resources/models/iqm/guyanim.iqm"
 const current_animation_format: cstr = c"Current animation: %s"
 const credit_text: cstr = c"(c) Guy IQM 3D model by @culacant"
 

@@ -6,8 +6,8 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [text] example - font loading"
 const msg: cstr = c"!#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHI\nJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmn\nopqrstuvwxyz{|}~¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓ\nÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷\nøùúûüýþÿ"
-const font_bm_path: cstr = c"resources/pixantiqua.fnt"
-const font_ttf_path: cstr = c"resources/pixantiqua.ttf"
+const font_bm_path: cstr = c"../resources/pixantiqua.fnt"
+const font_ttf_path: cstr = c"../resources/pixantiqua.ttf"
 const hold_space_text: cstr = c"Hold SPACE to use TTF generated font"
 const bm_text: cstr = c"Using BMFont (Angelcode) imported"
 const ttf_text: cstr = c"Using TTF font generated"
