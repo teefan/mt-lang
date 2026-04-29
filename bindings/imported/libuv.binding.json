@@ -1,0 +1,18 @@
+{
+  "module_name": "std.libuv",
+  "raw_module_name": "std.c.libuv",
+  "raw_import_alias": "c",
+  "types": {},
+  "constants": {
+    "strip_prefix": "UV_"
+  },
+  "functions": {
+    "include_prefixes": [
+      "uv_"
+    ],
+    "exclude": [
+      "uv_loop_configure"
+    ],
+    "strip_prefix": "uv_"
+  }
+}
