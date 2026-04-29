@@ -41,10 +41,14 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub type InitFlags = c\.SDL_InitFlags$/, source)
     assert_match(/^pub const INIT_VIDEO: u32 = c\.SDL_INIT_VIDEO$/, source)
     assert_match(/^pub foreign def malloc\(size: usize\) -> ptr\[void\] = c\.SDL_malloc$/, source)
-    assert_match(/^pub foreign def create_window\(title: cstr, w: i32, h: i32, flags: usize\) -> ptr\[Window\] = c\.SDL_CreateWindow$/, source)
+    assert_match(/^pub foreign def create_window\(title: str as cstr, w: i32, h: i32, flags: usize\) -> ptr\[Window\] = c\.SDL_CreateWindow$/, source)
+    assert_match(/^pub foreign def create_window_and_renderer\(title: str as cstr, width: i32, height: i32, window_flags: usize, out window: ptr\[Window\], out renderer: ptr\[Renderer\]\) -> bool = c\.SDL_CreateWindowAndRenderer$/, source)
     assert_match(/^pub foreign def run_app\(argc: i32, argv: ptr\[ptr\[char\]\], main_function: MainFunc\) -> i32 = c\.SDL_RunApp\(argc, argv, main_function, null\)$/, source)
     assert_match(/^pub foreign def set_app_metadata\(app_name: str as cstr, app_version: str as cstr, app_identifier: str as cstr\) -> bool = c\.SDL_SetAppMetadata$/, source)
     assert_match(/^pub foreign def init\(flags: InitFlags\) -> bool = c\.SDL_Init$/, source)
+    assert_match(/^pub foreign def poll_event\(out event: Event\) -> bool = c\.SDL_PollEvent$/, source)
+    assert_match(/^pub foreign def get_render_output_size\(renderer: ptr\[Renderer\], out w: i32, out h: i32\) -> bool = c\.SDL_GetRenderOutputSize$/, source)
+    assert_match(/^pub foreign def load_png\(file_name: str as cstr\) -> ptr\[Surface\]\? = c\.SDL_LoadPNG$/, source)
     assert_match(/^pub foreign def quit\(\) -> void = c\.SDL_Quit$/, source)
   end
 

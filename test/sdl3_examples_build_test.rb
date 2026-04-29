@@ -56,9 +56,14 @@ class MilkTeaSdl3ExamplesBuildTest < Minitest::Test
   end
 
   def example_manifest
-    examples_root = File.expand_path("../examples/sdl3", __dir__)
+    examples_root = File.expand_path("../examples", __dir__)
+    raw_examples_root = File.join(examples_root, "sdl3")
+    idiomatic_examples_root = File.join(examples_root, "idiomatic", "sdl3")
 
-    Dir[File.join(examples_root, "**", "*.mt")].sort.map do |path|
+    Dir[
+      File.join(raw_examples_root, "**", "*.mt"),
+      File.join(idiomatic_examples_root, "*.mt"),
+    ].sort.map do |path|
       {
         path: path,
         relative_path: path.delete_prefix(examples_root + "/"),
@@ -69,7 +74,11 @@ class MilkTeaSdl3ExamplesBuildTest < Minitest::Test
   def resource_manifest
     resources_root = File.expand_path("../examples/sdl3/resources", __dir__)
 
-    example_manifest.flat_map do |entry|
+    raw_manifest, idiomatic_manifest = example_manifest.partition do |entry|
+      entry.fetch(:relative_path).start_with?("sdl3/")
+    end
+
+    raw_resources = raw_manifest.flat_map do |entry|
       source = File.read(entry.fetch(:path))
 
       source.scan(%r{\.\./resources/([^"\s]+)}).flatten.uniq.map do |resource_relative_path|
@@ -80,6 +89,20 @@ class MilkTeaSdl3ExamplesBuildTest < Minitest::Test
         }
       end
     end
+
+    idiomatic_resources = idiomatic_manifest.flat_map do |entry|
+      source = File.read(entry.fetch(:path))
+
+      source.scan(%r{\.\./\.\./sdl3/resources/([^"\s]+)}).flatten.uniq.map do |resource_relative_path|
+        {
+          relative_path: entry.fetch(:relative_path),
+          resource_relative_path: resource_relative_path,
+          resource_path: File.join(resources_root, resource_relative_path),
+        }
+      end
+    end
+
+    raw_resources + idiomatic_resources
   end
 
   def compiler_available?(compiler)

@@ -4,11 +4,12 @@ require "tmpdir"
 require_relative "test_helper"
 
 class MilkTeaExamplesBuildTest < Minitest::Test
-  def test_all_examples_build_with_host_compiler
+  def test_raylib_examples_build_with_host_compiler
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     manifest = example_manifest
+    refute_empty manifest
 
     Dir.mktmpdir("milk-tea-examples-build") do |dir|
       manifest.each_with_index do |entry, index|
@@ -105,7 +106,11 @@ class MilkTeaExamplesBuildTest < Minitest::Test
   def example_manifest
     examples_root = File.expand_path("../examples", __dir__)
 
-    Dir[File.join(examples_root, "**", "*.mt")].sort.map do |path|
+    Dir[
+      File.join(examples_root, "*.mt"),
+      File.join(examples_root, "raylib", "**", "*.mt"),
+      File.join(examples_root, "idiomatic", "raylib", "*.mt"),
+    ].sort.map do |path|
       source = File.read(path)
 
       {
