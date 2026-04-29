@@ -5,9 +5,9 @@ module MilkTea
     class Error < StandardError; end
 
     class Binding
-      attr_reader :name, :module_name, :binding_path, :include_directives, :bindgen_defines, :bindgen_include_directives, :module_imports, :link_libraries, :header_candidates, :tracked_header_paths, :tracked_header_prefixes, :declaration_name_prefixes, :env_var, :clang_args, :compiler_flags, :implementation_defines, :type_overrides, :function_param_type_overrides, :function_return_type_overrides, :vendored_library
+      attr_reader :name, :module_name, :binding_path, :include_directives, :bindgen_defines, :bindgen_include_directives, :module_imports, :link_libraries, :header_candidates, :tracked_header_paths, :tracked_header_prefixes, :declaration_name_prefixes, :env_var, :clang_args, :compiler_flags, :implementation_defines, :type_overrides, :function_param_type_overrides, :function_return_type_overrides, :field_type_overrides, :vendored_library
 
-      def initialize(name:, module_name:, binding_path:, header_candidates:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], link_libraries: [], link_flags: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, vendored_library: nil, prepare: nil)
+      def initialize(name:, module_name:, binding_path:, header_candidates:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], link_libraries: [], link_flags: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, vendored_library: nil, prepare: nil)
         @name = name.to_s
         @module_name = module_name
         @binding_path = File.expand_path(binding_path.to_s)
@@ -29,6 +29,7 @@ module MilkTea
         @type_overrides = type_overrides.transform_keys(&:to_s).freeze
         @function_param_type_overrides = normalize_function_param_type_overrides(function_param_type_overrides)
         @function_return_type_overrides = function_return_type_overrides.transform_keys(&:to_s).freeze
+        @field_type_overrides = normalize_field_type_overrides(field_type_overrides)
         @vendored_library = vendored_library
         @prepare = prepare
       end
@@ -91,6 +92,7 @@ module MilkTea
           type_overrides:,
           function_param_type_overrides:,
           function_return_type_overrides:,
+          field_type_overrides:,
         }
         bindgen_kwargs[:tracked_header_paths] = tracked_header_paths unless tracked_header_paths.empty?
         bindgen_kwargs[:tracked_header_prefixes] = tracked_header_prefixes unless tracked_header_prefixes.empty?
@@ -144,6 +146,14 @@ module MilkTea
         overrides.each_with_object({}) do |(function_name, param_overrides), normalized|
           normalized[function_name.to_s] = param_overrides.each_with_object({}) do |(param_name, type), params|
             params[param_name.to_s] = type.to_s
+          end.freeze
+        end.freeze
+      end
+
+      def normalize_field_type_overrides(overrides)
+        overrides.each_with_object({}) do |(type_name, field_overrides), normalized|
+          normalized[type_name.to_s] = field_overrides.each_with_object({}) do |(field_name, type), fields|
+            fields[field_name.to_s] = type.to_s
           end.freeze
         end.freeze
       end
@@ -202,6 +212,10 @@ module MilkTea
       vendored_sdl3 = MilkTea::VendoredSDL3
       vendored_sdl3_library = vendored_sdl3.library
 
+      raylib_field_type_overrides = {
+        "Mesh" => { "indices" => "ptr[u16]?" },
+      }.freeze
+
       raylib_function_param_overrides = {
         "LoadAutomationEventList" => { "fileName" => "cstr?" },
         "LoadFontEx" => { "codepoints" => "ptr[i32]?" },
@@ -222,6 +236,7 @@ module MilkTea
         "SDL_OpenAudioDevice" => { "spec" => "const_ptr[SDL_AudioSpec]?" },
         "SDL_CreateAudioStream" => { "dst_spec" => "const_ptr[SDL_AudioSpec]?" },
         "SDL_OpenAudioDeviceStream" => { "userdata" => "ptr[void]?" },
+        "SDL_StepUTF8" => { "pslen" => "ptr[usize]?" },
         "SDL_MapRGB" => { "palette" => "const_ptr[SDL_Palette]?" },
         "SDL_MapRGBA" => { "palette" => "const_ptr[SDL_Palette]?" },
         "SDL_FillSurfaceRect" => { "rect" => "const_ptr[SDL_Rect]?" },
@@ -250,6 +265,8 @@ module MilkTea
         "SDL_CreateTexture" => "ptr[SDL_Texture]?",
         "SDL_CreateTextureFromSurface" => "ptr[SDL_Texture]?",
         "SDL_CreateAudioStream" => "ptr[SDL_AudioStream]?",
+        "SDL_strdup" => "ptr[char]?",
+        "SDL_LoadFile" => "ptr[void]?",
         "SDL_strchr" => "ptr[char]?",
         "SDL_GetClipboardText" => "ptr[char]?",
         "SDL_GetPrimarySelectionText" => "ptr[char]?",
@@ -281,6 +298,7 @@ module MilkTea
           header_candidates: [
             vendored_raylib.source_root.join("raylib.h").to_s,
           ],
+          field_type_overrides: raylib_field_type_overrides,
           function_param_type_overrides: raylib_function_param_overrides,
         ),
         Binding.new(
@@ -351,6 +369,14 @@ module MilkTea
           include_directives: ["stdlib.h"],
           env_var: "LIBC_HEADER",
           function_param_type_overrides: {
+            "strtod" => { "__endptr" => "ptr[ptr[char]]?" },
+            "strtof" => { "__endptr" => "ptr[ptr[char]]?" },
+            "strtol" => { "__endptr" => "ptr[ptr[char]]?" },
+            "strtoul" => { "__endptr" => "ptr[ptr[char]]?" },
+            "strtoq" => { "__endptr" => "ptr[ptr[char]]?" },
+            "strtouq" => { "__endptr" => "ptr[ptr[char]]?" },
+            "strtoll" => { "__endptr" => "ptr[ptr[char]]?" },
+            "strtoull" => { "__endptr" => "ptr[ptr[char]]?" },
             "realloc" => { "__ptr" => "ptr[void]?" },
             "reallocarray" => { "__ptr" => "ptr[void]?" },
             "free" => { "__ptr" => "ptr[void]?" },

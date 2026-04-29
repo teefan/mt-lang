@@ -198,7 +198,7 @@ extern module std.c.sdl3:
 
     extern def SDL_strlcat(dst: ptr[char], src: cstr, maxlen: usize) -> usize
 
-    extern def SDL_strdup(str: cstr) -> ptr[char]
+    extern def SDL_strdup(str: cstr) -> ptr[char]?
 
     extern def SDL_strndup(str: cstr, maxlen: usize) -> ptr[char]
 
@@ -260,7 +260,7 @@ extern module std.c.sdl3:
 
     extern def SDL_strpbrk(str: cstr, breakset: cstr) -> ptr[char]
 
-    extern def SDL_StepUTF8(pstr: ptr[cstr], pslen: ptr[usize]) -> Uint32
+    extern def SDL_StepUTF8(pstr: ptr[cstr], pslen: ptr[usize]?) -> Uint32
 
     extern def SDL_StepBackUTF8(start: cstr, pstr: ptr[cstr]) -> Uint32
 
@@ -767,7 +767,7 @@ extern module std.c.sdl3:
 
     extern def SDL_LoadFile_IO(src: ptr[SDL_IOStream], datasize: ptr[usize], closeio: bool) -> ptr[void]
 
-    extern def SDL_LoadFile(file: cstr, datasize: ptr[usize]) -> ptr[void]
+    extern def SDL_LoadFile(file: cstr, datasize: ptr[usize]) -> ptr[void]?
 
     extern def SDL_SaveFile_IO(src: ptr[SDL_IOStream], data: const_ptr[void], datasize: usize, closeio: bool) -> bool
 

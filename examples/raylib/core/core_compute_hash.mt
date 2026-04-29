@@ -79,10 +79,10 @@ def main() -> i32:
     var text_box_edit_mode = false
     var btn_compute_hashes = false
     var hash_crc32: u32 = 0
-    var hash_md5: ptr[u32]? = null[ptr[u32]]
-    var hash_sha1: ptr[u32]? = null[ptr[u32]]
-    var hash_sha256: ptr[u32]? = null[ptr[u32]]
-    var base64_text: ptr[char]? = null[ptr[char]]
+    var hash_md5: ptr[u32]? = null
+    var hash_sha1: ptr[u32]? = null
+    var hash_sha256: ptr[u32]? = null
+    var base64_text: ptr[char]? = null
     var base64_text_size = 0
 
     rl.SetTargetFPS(60)

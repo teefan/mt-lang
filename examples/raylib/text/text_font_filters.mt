@@ -23,7 +23,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var font = rl.LoadFontEx(font_path, 96, zero[ptr[i32]](), 0)
+    var font = rl.LoadFontEx(font_path, 96, null, 0)
     defer rl.UnloadFont(font)
 
     rl.GenTextureMipmaps(raw(addr(font.texture)))
@@ -64,7 +64,7 @@ def main() -> i32:
                     let dropped_path = cast[cstr](deref(dropped_files.paths))
                     if rl.IsFileExtension(dropped_path, ttf_ext):
                         rl.UnloadFont(font)
-                        font = rl.LoadFontEx(dropped_path, cast[i32](font_size), zero[ptr[i32]](), 0)
+                        font = rl.LoadFontEx(dropped_path, cast[i32](font_size), null, 0)
             rl.UnloadDroppedFiles(dropped_files)
 
         rl.BeginDrawing()

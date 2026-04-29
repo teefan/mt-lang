@@ -21,7 +21,7 @@ var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 var colors: array[c.SDL_Color, 64] = zero[array[c.SDL_Color, 64]]()
 var messages: EventMessage = zero[EventMessage]()
-var messages_tail: ptr[EventMessage]? = null[ptr[EventMessage]]
+var messages_tail: ptr[EventMessage]? = null
 var axis_motion_cooldown_time: c.Uint64 = 0
 var ball_motion_cooldown_time: c.Uint64 = 0
 
@@ -94,13 +94,13 @@ def append_message(jid: u32, text: ptr[char]?) -> void:
         deref(message).str = cast[ptr[char]](message_text)
         deref(message).color = colors[color_index]
         deref(message).start_ticks = c.SDL_GetTicks()
-        deref(message).next = null[ptr[EventMessage]]
+        deref(message).next = null
         deref(tail).next = message
 
     messages_tail = message
 
 def add_plain_message(jid: u32, text: cstr) -> void:
-    var message: ptr[char]? = null[ptr[char]]
+    var message: ptr[char]? = null
 
     unsafe:
         c.SDL_asprintf(cast[ptr[ptr[char]]](raw(addr(message))), c"%s", text)
@@ -108,7 +108,7 @@ def add_plain_message(jid: u32, text: cstr) -> void:
     append_message(jid, message)
 
 def add_added_message(which: u32, joystick: ptr[c.SDL_Joystick]?) -> void:
-    var message: ptr[char]? = null[ptr[char]]
+    var message: ptr[char]? = null
 
     if joystick == null:
         unsafe:
@@ -120,7 +120,7 @@ def add_added_message(which: u32, joystick: ptr[c.SDL_Joystick]?) -> void:
     append_message(which, message)
 
 def add_removed_message(which: u32) -> void:
-    var message: ptr[char]? = null[ptr[char]]
+    var message: ptr[char]? = null
 
     unsafe:
         c.SDL_asprintf(cast[ptr[ptr[char]]](raw(addr(message))), c"Joystick #%u removed", which)
@@ -128,7 +128,7 @@ def add_removed_message(which: u32) -> void:
     append_message(which, message)
 
 def add_axis_message(which: u32, axis: c.Uint8, value: c.Sint16) -> void:
-    var message: ptr[char]? = null[ptr[char]]
+    var message: ptr[char]? = null
 
     unsafe:
         c.SDL_asprintf(cast[ptr[ptr[char]]](raw(addr(message))), c"Joystick #%u axis %d -> %d", which, cast[i32](axis), cast[i32](value))
@@ -136,7 +136,7 @@ def add_axis_message(which: u32, axis: c.Uint8, value: c.Sint16) -> void:
     append_message(which, message)
 
 def add_ball_message(which: u32, ball: c.Uint8, xrel: c.Sint16, yrel: c.Sint16) -> void:
-    var message: ptr[char]? = null[ptr[char]]
+    var message: ptr[char]? = null
 
     unsafe:
         c.SDL_asprintf(cast[ptr[ptr[char]]](raw(addr(message))), c"Joystick #%u ball %d -> %d, %d", which, cast[i32](ball), cast[i32](xrel), cast[i32](yrel))
@@ -144,7 +144,7 @@ def add_ball_message(which: u32, ball: c.Uint8, xrel: c.Sint16, yrel: c.Sint16) 
     append_message(which, message)
 
 def add_hat_message(which: u32, hat: c.Uint8, value: c.Uint8) -> void:
-    var message: ptr[char]? = null[ptr[char]]
+    var message: ptr[char]? = null
 
     unsafe:
         c.SDL_asprintf(cast[ptr[ptr[char]]](raw(addr(message))), c"Joystick #%u hat %d -> %s", which, cast[i32](hat), hat_state_string(value))
@@ -152,7 +152,7 @@ def add_hat_message(which: u32, hat: c.Uint8, value: c.Uint8) -> void:
     append_message(which, message)
 
 def add_button_message(which: u32, button: c.Uint8, down: bool) -> void:
-    var message: ptr[char]? = null[ptr[char]]
+    var message: ptr[char]? = null
     let state_text = if down then c"PRESSED" else c"RELEASED"
 
     unsafe:
@@ -161,7 +161,7 @@ def add_button_message(which: u32, button: c.Uint8, down: bool) -> void:
     append_message(which, message)
 
 def add_battery_message(which: u32, state: c.SDL_PowerState, percent: i32) -> void:
-    var message: ptr[char]? = null[ptr[char]]
+    var message: ptr[char]? = null
 
     unsafe:
         c.SDL_asprintf(cast[ptr[ptr[char]]](raw(addr(message))), c"Joystick #%u battery -> %s - %d%%", which, battery_state_string(state), percent)

@@ -27,7 +27,7 @@ def render_frame() -> void:
     let direction = if (now % 2000) >= 1000 then 1.0 else -1.0
     let scale = (cast[f32]((now % 1000) - 500) / 500.0) * direction
 
-    var surface: ptr[c.SDL_Surface] = zero[ptr[c.SDL_Surface]]()
+    var surface: ptr[c.SDL_Surface]
     if c.SDL_LockTextureToSurface(texture, null, raw(addr(surface))):
         unsafe:
             let format_details = c.SDL_GetPixelFormatDetails(deref(surface).format)

@@ -75,7 +75,7 @@ def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32]) -> Turtl
     return zero[TurtleState]()
 
 def create_penrose_lsystem(draw_length: f32) -> PenroseLSystem:
-    var production = zero[ptr[char]]()
+    var production: ptr[char]
     unsafe:
         production = cast[ptr[char]](rl.MemAlloc(cast[u32](str_max_size)))
         production[0] = cast[char](0)
@@ -93,7 +93,7 @@ def create_penrose_lsystem(draw_length: f32) -> PenroseLSystem:
     )
 
 def build_production_step(ls: ref[PenroseLSystem]) -> void:
-    var new_production = zero[ptr[char]]()
+    var new_production: ptr[char]
     unsafe:
         new_production = cast[ptr[char]](rl.MemAlloc(cast[u32](str_max_size)))
         new_production[0] = cast[char](0)

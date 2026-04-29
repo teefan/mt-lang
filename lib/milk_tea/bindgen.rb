@@ -46,7 +46,7 @@ module MilkTea
       "double" => "f64",
     }.freeze
 
-    def self.generate(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {})
+    def self.generate(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {})
       Generator.new(
         module_name:,
         header_path:,
@@ -63,11 +63,12 @@ module MilkTea
         type_overrides:,
         function_param_type_overrides:,
         function_return_type_overrides:,
+        field_type_overrides:,
       ).generate
     end
 
     class Generator
-      def initialize(module_name:, header_path:, tracked_header_paths:, tracked_header_prefixes:, declaration_name_prefixes:, link_libraries:, include_directives:, bindgen_defines:, bindgen_include_directives:, module_imports:, clang:, clang_args:, type_overrides:, function_param_type_overrides:, function_return_type_overrides:)
+      def initialize(module_name:, header_path:, tracked_header_paths:, tracked_header_prefixes:, declaration_name_prefixes:, link_libraries:, include_directives:, bindgen_defines:, bindgen_include_directives:, module_imports:, clang:, clang_args:, type_overrides:, function_param_type_overrides:, function_return_type_overrides:, field_type_overrides:)
         @module_name = module_name
         @header_path = File.expand_path(header_path)
         @tracked_header_paths = ([header_path] + tracked_header_paths).map { |path| File.expand_path(path) }.uniq.freeze
@@ -83,6 +84,7 @@ module MilkTea
         @type_overrides = normalize_type_overrides(type_overrides)
         @function_param_type_overrides = normalize_function_param_type_overrides(function_param_type_overrides)
         @function_return_type_overrides = normalize_function_return_type_overrides(function_return_type_overrides)
+        @field_type_overrides = normalize_field_type_overrides(field_type_overrides)
         @record_aliases = {}
         @enum_aliases = {}
         @record_visible_names = {}
@@ -101,6 +103,7 @@ module MilkTea
 
         declarations = []
         declarations.concat(select_record_declarations(top_level_nodes))
+        validate_field_type_overrides!(declarations)
         discover_synthetic_aggregate_dependencies(declarations)
         declarations.concat(select_enum_declarations(top_level_nodes))
         declarations.concat(select_type_alias_declarations(top_level_nodes))
@@ -596,6 +599,24 @@ module MilkTea
         end
       end
 
+      def validate_field_type_overrides!(record_declarations)
+        return if @field_type_overrides.empty?
+
+        declarations_by_name = record_declarations.to_h { |declaration| [declaration[:name], declaration] }
+
+        @field_type_overrides.each do |type_name, field_overrides|
+          declaration = declarations_by_name[type_name]
+          raise BindgenError, "field_type_overrides references unknown type #{type_name} for #{@header_path}" unless declaration
+
+          field_names = Array(declaration[:node]["inner"]).select { |child| child["kind"] == "FieldDecl" }.map { |field| field["name"] }
+          field_overrides.each_key do |field_name|
+            next if field_names.include?(field_name)
+
+            raise BindgenError, "field_type_overrides references unknown field #{type_name}.#{field_name} for #{@header_path}"
+          end
+        end
+      end
+
       def select_constant_declarations(nodes)
         nodes.each_with_index.filter_map do |node, index|
           next unless node["kind"] == "VarDecl"
@@ -750,6 +771,9 @@ module MilkTea
       end
 
       def aggregate_field_type(field, owner_name:, aggregate_node:)
+        override = field_type_override(owner_name, field["name"])
+        return override if override
+
         anonymous_record = anonymous_record_decl_for_field(field, aggregate_node)
         return "#{owner_name}_#{field["name"]}" if anonymous_record
 
@@ -878,6 +902,10 @@ module MilkTea
         @function_return_type_overrides[function_name]
       end
 
+      def field_type_override(type_name, field_name)
+        @field_type_overrides.dig(type_name, field_name)
+      end
+
       def normalize_function_param_type_overrides(overrides)
         return {} if overrides.nil?
 
@@ -898,6 +926,30 @@ module MilkTea
             raise BindgenError, "function_param_type_overrides for #{function_name}.#{param_name} must be a non-empty string" unless type.is_a?(String) && !type.empty?
 
             params[param_name.to_s] = type
+          end.freeze
+        end.freeze
+      end
+
+      def normalize_field_type_overrides(overrides)
+        return {} if overrides.nil?
+
+        raise BindgenError, "field_type_overrides must be a hash" unless overrides.is_a?(Hash)
+
+        overrides.each_with_object({}) do |(type_name, field_overrides), normalized|
+          unless type_name.is_a?(String) || type_name.is_a?(Symbol)
+            raise BindgenError, "field_type_overrides type names must be strings or symbols"
+          end
+
+          raise BindgenError, "field_type_overrides for #{type_name} must be a hash" unless field_overrides.is_a?(Hash)
+
+          normalized[type_name.to_s] = field_overrides.each_with_object({}) do |(field_name, type), fields|
+            unless field_name.is_a?(String) || field_name.is_a?(Symbol)
+              raise BindgenError, "field_type_overrides field names must be strings or symbols"
+            end
+
+            raise BindgenError, "field_type_overrides for #{type_name}.#{field_name} must be a non-empty string" unless type.is_a?(String) && !type.empty?
+
+            fields[field_name.to_s] = type
           end.freeze
         end.freeze
       end

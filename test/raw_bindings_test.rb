@@ -11,6 +11,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
+    assert_equal({ "indices" => "ptr[u16]?" }, registry.fetch("raylib").field_type_overrides.fetch("Mesh"))
     assert_equal({ "fileName" => "cstr?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadAutomationEventList"))
     assert_equal({ "codepoints" => "ptr[i32]?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadFontEx"))
     assert_equal({ "vsFileName" => "cstr?", "fsFileName" => "cstr?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadShader"))
@@ -45,6 +46,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal({ "spec" => "const_ptr[SDL_AudioSpec]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_OpenAudioDevice"))
     assert_equal({ "dst_spec" => "const_ptr[SDL_AudioSpec]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_CreateAudioStream"))
     assert_equal({ "userdata" => "ptr[void]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_OpenAudioDeviceStream"))
+    assert_equal({ "pslen" => "ptr[usize]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_StepUTF8"))
     assert_equal({ "palette" => "const_ptr[SDL_Palette]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_MapRGB"))
     assert_equal({ "palette" => "const_ptr[SDL_Palette]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_MapRGBA"))
     assert_equal({ "rect" => "const_ptr[SDL_Rect]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_LockTextureToSurface"))
@@ -64,6 +66,8 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "ptr[SDL_Texture]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_CreateTexture")
     assert_equal "ptr[SDL_Texture]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_CreateTextureFromSurface")
     assert_equal "ptr[SDL_AudioStream]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_CreateAudioStream")
+    assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_strdup")
+    assert_equal "ptr[void]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_LoadFile")
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_strchr")
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetClipboardText")
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetPrimarySelectionText")
@@ -82,6 +86,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetGamepadMappingForID")
     assert_equal "ptr[SDL_Surface]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_RenderReadPixels")
     assert_equal "bindgen:check:libc", registry.fetch("libc").check_task_name
+    assert_equal({ "__endptr" => "ptr[ptr[char]]?" }, registry.fetch("libc").function_param_type_overrides.fetch("strtoul"))
     assert_equal "bindgen:check_raylib", registry.fetch("raylib").legacy_check_task_name
   end
 
@@ -123,6 +128,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
         env_var: "SAMPLE_HEADER",
         clang_args: ["-I#{dir}"],
         function_param_type_overrides: { "sample_function" => { "data" => "ptr[u8]?" } },
+        field_type_overrides: { "Sample" => { "data" => "ptr[u8]?" } },
       )
 
       observed = nil
@@ -147,6 +153,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
           type_overrides: {},
           function_param_type_overrides: { "sample_function" => { "data" => "ptr[u8]?" } },
           function_return_type_overrides: {},
+          field_type_overrides: { "Sample" => { "data" => "ptr[u8]?" } },
         },
         observed,
       )

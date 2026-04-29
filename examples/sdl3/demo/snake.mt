@@ -38,7 +38,7 @@ struct SnakeContext:
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
-var joystick: ptr[c.SDL_Joystick]? = null[ptr[c.SDL_Joystick]]
+var joystick: ptr[c.SDL_Joystick]? = null
 var snake_ctx: SnakeContext = zero[SnakeContext]()
 var last_step: c.Uint64 = 0
 
@@ -235,7 +235,7 @@ def pump_events() -> bool:
                     if joystick != null:
                         if c.SDL_GetJoystickID(joystick) == event.jdevice.which:
                             c.SDL_CloseJoystick(joystick)
-                            joystick = null[ptr[c.SDL_Joystick]]
+                            joystick = null
                 else:
                     if event.jhat.type == c.SDL_EventType.SDL_EVENT_JOYSTICK_HAT_MOTION:
                         handle_hat_event(event.jhat.value)

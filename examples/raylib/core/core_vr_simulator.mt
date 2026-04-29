@@ -26,8 +26,7 @@ def main() -> i32:
     defer rl.UnloadVrStereoConfig(config)
 
     var distortion = zero[rl.Shader]()
-    unsafe:
-        distortion = rl.LoadShader(cast[cstr](null[ptr[char]]), distortion_shader_path)
+    distortion = rl.LoadShader(null, distortion_shader_path)
     defer rl.UnloadShader(distortion)
 
     unsafe:
