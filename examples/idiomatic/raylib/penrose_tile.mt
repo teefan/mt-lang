@@ -29,19 +29,19 @@ const byte_nine: u8 = 57
 
 def append_rule(output: ref[string.String], step: u8) -> void:
     if step == byte_w:
-        string.append(output, "YF++ZF4-XF[-YF4-WF]++")
+        value(output).append("YF++ZF4-XF[-YF4-WF]++")
     elif step == byte_x:
-        string.append(output, "+YF--ZF[3-WF--XF]+")
+        value(output).append("+YF--ZF[3-WF--XF]+")
     elif step == byte_y:
-        string.append(output, "-WF++XF[+++YF++ZF]-")
+        value(output).append("-WF++XF[+++YF++ZF]-")
     elif step == byte_z:
-        string.append(output, "--YF++++WF[+ZF++++XF]--XF")
+        value(output).append("--YF++++WF[+ZF++++XF]--XF")
     elif step != byte_f:
-        string.push_byte(output, step)
+        value(output).push_byte(step)
 
 def build_production_step(production: string.String) -> string.String:
-    let production_view = string.as_str(production)
-    var next = string.with_capacity(production_view.len * 4)
+    let production_view = production.as_str()
+    var next = string.String.with_capacity(production_view.len * 4)
     var index: usize = 0
     while index < production_view.len:
         append_rule(addr(next), text.byte_at(production_view, index))
@@ -49,10 +49,10 @@ def build_production_step(production: string.String) -> string.String:
     return next
 
 def rebuild_production(generations: i32) -> string.String:
-    var production = string.from_str("[X]++[X]++[X]++[X]++[X]")
+    var production = string.String.from_str("[X]++[X]++[X]++[X]++[X]")
     for generation in range(0, generations):
         var next = build_production_step(production)
-        string.release(addr(production))
+        production.release()
         production = next
     return production
 
@@ -72,7 +72,7 @@ def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32]) -> Turtl
     return zero[TurtleState]()
 
 def draw_penrose_lsystem(production: string.String, draw_length: f32, steps: ref[i32], turtle_stack: ref[array[TurtleState, 50]], turtle_top: ref[i32]) -> void:
-    let production_view = string.as_str(production)
+    let production_view = production.as_str()
     let screen_center = rl.Vector2(x = cast[f32](rl.get_screen_width()) / 2.0, y = cast[f32](rl.get_screen_height()) / 2.0)
     var turtle = TurtleState(origin = rl.Vector2(x = 0.0, y = 0.0), angle = -90.0)
     var repeats = 1
@@ -130,7 +130,7 @@ def main() -> i32:
 
     var generations = 0
     var production = rebuild_production(generations)
-    defer string.release(addr(production))
+    defer production.release()
     var steps = 0
     var turtle_stack = zero[array[TurtleState, 50]]()
     var turtle_top = -1
@@ -147,7 +147,7 @@ def main() -> i32:
             rebuild = true
 
         if rebuild:
-            string.release(addr(production))
+            production.release()
             production = rebuild_production(generations)
             steps = 0
 

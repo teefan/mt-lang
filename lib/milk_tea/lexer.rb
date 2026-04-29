@@ -121,6 +121,11 @@ module MilkTea
           next
         end
 
+        if char == "f" && line[index + 1] == '"'
+          index = lex_format_string(line, index, line_number)
+          next
+        end
+
         if char == '"'
           index = lex_string(line, index, line_number)
           next
@@ -259,6 +264,103 @@ module MilkTea
       end
 
       raise LexError.new("unterminated string literal", line: line_number, column: start + 1, path: @path)
+    end
+
+    def lex_format_string(line, index, line_number)
+      start = index
+      index += 2
+      text = +""
+      parts = []
+
+      while index < line.length
+        char = line[index]
+        if char == '"'
+          parts << { kind: :text, value: text } unless text.empty?
+          lexeme = line[start..index]
+          @tokens << token(:fstring, lexeme, parts, line_number, start + 1)
+          return index + 1
+        end
+
+        if char == "#" && line[index + 1] == "{"
+          parts << { kind: :text, value: text } unless text.empty?
+          text = +""
+          expr_start = index + 2
+          expr_end = scan_format_interpolation_end(line, expr_start, line_number, start + 1)
+          source = line[expr_start...expr_end]
+          if source.strip.empty?
+            raise LexError.new("empty format interpolation", line: line_number, column: index + 1, path: @path)
+          end
+
+          parts << { kind: :expr, source:, line: line_number, column: expr_start + 1 }
+          index = expr_end + 1
+          next
+        end
+
+        if char == "\\"
+          next_char = line[index + 1]
+          raise LexError.new("unterminated format string literal", line: line_number, column: start + 1, path: @path) unless next_char
+
+          text << decode_escape(next_char)
+          index += 2
+          next
+        end
+
+        text << char
+        index += 1
+      end
+
+      raise LexError.new("unterminated format string literal", line: line_number, column: start + 1, path: @path)
+    end
+
+    def scan_format_interpolation_end(line, index, line_number, column)
+      depth = 1
+
+      while index < line.length
+        char = line[index]
+
+        if char == '"'
+          index = skip_string_contents(line, index, line_number)
+          next
+        end
+
+        if char == "{"
+          depth += 1
+          index += 1
+          next
+        end
+
+        if char == "}"
+          depth -= 1
+          return index if depth == 0
+
+          index += 1
+          next
+        end
+
+        index += 1
+      end
+
+      raise LexError.new("unterminated format interpolation", line: line_number, column:, path: @path)
+    end
+
+    def skip_string_contents(line, index, line_number)
+      index += 1
+
+      while index < line.length
+        char = line[index]
+        return index + 1 if char == '"'
+
+        if char == "\\"
+          raise LexError.new("unterminated string literal", line: line_number, column: index + 1, path: @path) unless line[index + 1]
+
+          index += 2
+          next
+        end
+
+        index += 1
+      end
+
+      raise LexError.new("unterminated string literal", line: line_number, column: index + 1, path: @path)
     end
 
     def lex_symbol(line, index, line_number)

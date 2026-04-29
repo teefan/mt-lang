@@ -68,11 +68,11 @@ def format_tm(time_info: ptr[c.tm], format: str, scratch: ref[arena.Arena]) -> R
     if written == 0:
         return err(Error.output_too_large)
 
-    var result = string.with_capacity(written)
+    var result = string.String.with_capacity(written)
     var index: usize = 0
     while index < written:
         unsafe:
-            string.push_byte(addr(result), cast[u8](deref(raw(addr(buffer[0])) + index)))
+            result.push_byte(cast[u8](deref(raw(addr(buffer[0])) + index)))
         index += 1
 
     return ok(result)

@@ -1,0 +1,33 @@
+module std.sdl3.runtime
+
+import std.sdl3 as sdl
+import std.str as text
+import std.string as string
+
+pub def free_chars(text_ptr: ptr[char]?) -> void:
+    if text_ptr != null:
+        unsafe:
+            sdl.free(cast[ptr[void]](cast[ptr[char]](text_ptr)))
+    return
+
+pub def free_locale_list(locales: ptr[ptr[sdl.Locale]]?) -> void:
+    if locales != null:
+        unsafe:
+            sdl.free(cast[ptr[void]](cast[ptr[ptr[sdl.Locale]]](locales)))
+    return
+
+pub def locale_list(locales: ptr[ptr[sdl.Locale]], count: i32) -> span[ptr[sdl.Locale]?]:
+    unsafe:
+        return span[ptr[sdl.Locale]?](data = cast[ptr[ptr[sdl.Locale]?]](locales), len = cast[usize](count))
+
+pub def locale_string(locale: ptr[sdl.Locale]) -> string.String:
+    unsafe:
+        var result = string.String.from_str(text.cstr_as_str(deref(locale).language))
+        let country = cast[ptr[char]?](deref(locale).country)
+        if country != null:
+            result.append("_")
+            result.append(text.chars_as_str(cast[ptr[char]](country)))
+        return result
+
+pub def debug_text_width(text_value: str) -> f32:
+    return cast[f32](sdl.DEBUG_TEXT_FONT_CHARACTER_SIZE) * cast[f32](text_value.len)

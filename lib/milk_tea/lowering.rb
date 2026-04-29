@@ -991,6 +991,10 @@ module MilkTea
       def prepare_call_expression_for_inline_lowering(expression, env:, expected_type: nil, allow_root_statement_foreign: false)
         kind, _callee_name, _receiver, callee_type, binding = resolve_callee(expression.callee, env, arguments: expression.arguments)
 
+        if format_string_call?(binding, expression.arguments)
+          return lower_format_string_call_to_temp(expression.arguments.first.value, env:)
+        end
+
         if binding && foreign_function_binding?(binding) && !allow_root_statement_foreign && foreign_call_requires_statement_lowering?(expression, binding, env:)
           type = infer_expression_type(expression, env:, expected_type:)
           setup, value = lower_foreign_call_statement({ call: expression, binding: binding }, env:, expected_type: type, statement_position: false)
@@ -1008,6 +1012,99 @@ module MilkTea
         end
 
         [callee_setup + argument_setup, AST::Call.new(callee:, arguments:)]
+      end
+
+      def lower_format_string_call_to_temp(format_string, env:)
+        string_type = std_string_type
+        ref_string_type = Types::GenericInstance.new("ref", [string_type])
+        temp_name = fresh_c_temp_name(env, "fmt_string")
+        temp_value = IR::Name.new(name: temp_name, type: string_type, pointer: false)
+        temp_ref = IR::AddressOf.new(expression: temp_value, type: ref_string_type)
+        register_prepared_temp!(env, temp_name, string_type)
+
+        setup = [
+          IR::LocalDecl.new(
+            name: temp_name,
+            c_name: temp_name,
+            type: string_type,
+            value: IR::Call.new(callee: std_string_create_c_name, arguments: [], type: string_type),
+          ),
+        ]
+
+        format_string.parts.each do |part|
+          if part.is_a?(AST::FormatTextPart)
+            next if part.value.empty?
+
+            setup << IR::ExpressionStmt.new(
+              expression: IR::Call.new(
+                callee: std_fmt_function_c_name("append"),
+                arguments: [temp_ref, IR::StringLiteral.new(value: part.value, type: @types.fetch("str"), cstring: false)],
+                type: @types.fetch("void"),
+              ),
+            )
+            next
+          end
+
+          expression_setup, prepared_expression = prepare_expression_for_inline_lowering(part.expression, env:)
+          setup.concat(expression_setup)
+          value_type = infer_expression_type(prepared_expression, env:)
+          append_function_name, append_argument_type = format_string_append_plan(value_type)
+          lowered_expression = lower_contextual_expression(prepared_expression, env:, expected_type: value_type)
+          setup << IR::ExpressionStmt.new(
+            expression: IR::Call.new(
+              callee: std_fmt_function_c_name(append_function_name),
+              arguments: [temp_ref, cast_expression(lowered_expression, append_argument_type)],
+              type: @types.fetch("void"),
+            ),
+          )
+        end
+
+        [setup, AST::Identifier.new(name: temp_name)]
+      end
+
+      def format_string_call?(binding, arguments)
+        return false unless binding
+        return false unless binding.owner.module_name == "std.fmt"
+        return false unless binding.name == "string"
+        return false unless arguments.length == 1
+
+        arguments.first.value.is_a?(AST::FormatString)
+      end
+
+      def format_string_append_plan(type)
+        return ["append", @types.fetch("str")] if type == @types.fetch("str")
+        return ["append_cstr", @types.fetch("cstr")] if type == @types.fetch("cstr")
+        return ["append_bool", @types.fetch("bool")] if type == @types.fetch("bool")
+
+        if type.is_a?(Types::Primitive) && type.integer?
+          return ["append_i32", @types.fetch("i32")] if %w[i8 i16 i32].include?(type.name)
+          return ["append_u32", @types.fetch("u32")] if %w[u8 u16 u32].include?(type.name)
+          return ["append_usize", @types.fetch("usize")] if type.name == "usize"
+          return ["append_i64", @types.fetch("i64")] if %w[i64 isize].include?(type.name)
+          return ["append_u64", @types.fetch("u64")] if type.name == "u64"
+        end
+
+        if type.is_a?(Types::EnumBase) && type.backing_type.is_a?(Types::Primitive) && type.backing_type.integer?
+          return format_string_append_plan(type.backing_type)
+        end
+
+        raise LoweringError, "formatted string interpolation supports str, cstr, bool, integer primitives, and integer-backed enums/flags, got #{type}"
+      end
+
+      def std_fmt_function_c_name(name)
+        binding = analysis_for_module("std.fmt").functions.fetch(name)
+        function_binding_c_name(binding, module_name: binding.owner.module_name)
+      end
+
+      def std_string_type
+        analysis_for_module("std.string").types.fetch("String")
+      end
+
+      def std_string_create_c_name
+        analysis = analysis_for_module("std.string")
+        string_type = analysis.types.fetch("String")
+        binding = analysis.methods.fetch(string_type).fetch("create")
+        function_binding_c_name(binding, module_name: binding.owner.module_name, receiver_type: string_type)
       end
 
       def prepare_binary_expression_for_inline_lowering(expression, env:, expected_type: nil)
@@ -1150,6 +1247,8 @@ module MilkTea
           IR::OffsetofExpr.new(target_type: resolve_type_ref(expression.type), field: expression.field, type:)
         when AST::StringLiteral
           IR::StringLiteral.new(value: expression.value, type:, cstring: expression.cstring)
+        when AST::FormatString
+          raise LoweringError, "formatted string literals are only valid in std.fmt.string(...)"
         when AST::BooleanLiteral
           IR::BooleanLiteral.new(value: expression.value, type:)
         when AST::NullLiteral
@@ -1257,36 +1356,6 @@ module MilkTea
           receiver_arg = lower_method_receiver_argument(receiver, callee_type, env:)
           arguments = [receiver_arg, *lower_call_arguments(expression.arguments, callee_type, env:)]
           IR::Call.new(callee: callee_name, arguments:, type:)
-        when :char_array_as_str
-          receiver_type = infer_expression_type(receiver, env:)
-          data_pointer = lower_char_array_data_pointer(receiver, env:)
-          IR::AggregateLiteral.new(
-            type:,
-            fields: [
-              IR::AggregateField.new(name: "data", value: data_pointer),
-              IR::AggregateField.new(
-                name: "len",
-                value: IR::Call.new(
-                  callee: "mt_char_array_len",
-                  arguments: [
-                    data_pointer,
-                    IR::IntegerLiteral.new(value: array_length(receiver_type), type: @types.fetch("usize")),
-                  ],
-                  type: @types.fetch("usize"),
-                ),
-              ),
-            ],
-          )
-        when :char_array_as_cstr
-          receiver_type = infer_expression_type(receiver, env:)
-          IR::Call.new(
-            callee: "mt_char_array_as_cstr",
-            arguments: [
-              lower_char_array_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: array_length(receiver_type), type: @types.fetch("usize")),
-            ],
-            type:,
-          )
         when :str_builder_clear
           receiver_type = infer_expression_type(receiver, env:)
           IR::Call.new(
@@ -2906,10 +2975,6 @@ module MilkTea
             return [:method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: resolved_receiver_type), callee.receiver, method_binding.type]
           end
 
-          if (char_array_text_method = char_array_text_method_kind(resolved_receiver_type, callee.member))
-            return [char_array_text_method, nil, callee.receiver, char_array_text_method_type(char_array_text_method, resolved_receiver_type)]
-          end
-
           if (str_builder_method = str_builder_method_kind(resolved_receiver_type, callee.member))
             return [str_builder_method, nil, callee.receiver, str_builder_method_type(str_builder_method, resolved_receiver_type)]
           end
@@ -2984,6 +3049,8 @@ module MilkTea
           @types.fetch("usize")
         when AST::StringLiteral
           @types.fetch(expression.cstring ? "cstr" : "str")
+        when AST::FormatString
+          raise LoweringError, "formatted string literals are only valid in std.fmt.string(...)"
         when AST::BooleanLiteral
           @types.fetch("bool")
         when AST::NullLiteral
@@ -3055,7 +3122,7 @@ module MilkTea
         when AST::Call
           kind, = resolve_callee(expression.callee, env, arguments: expression.arguments)
           case kind
-          when :function, :method, :associated_method, :callable_value, :char_array_as_str, :char_array_as_cstr,
+          when :function, :method, :associated_method, :callable_value,
             :str_builder_clear, :str_builder_assign, :str_builder_append, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             function_type.return_type
@@ -3771,17 +3838,6 @@ module MilkTea
         str_builder_capacity(type) + 1
       end
 
-      def char_array_text_method_kind(receiver_type, name)
-        return unless char_array_text_type?(receiver_type)
-
-        case name
-        when "as_str"
-          :char_array_as_str
-        when "as_cstr"
-          :char_array_as_cstr
-        end
-      end
-
       def str_builder_method_kind(receiver_type, name)
         return unless str_builder_type?(receiver_type)
 
@@ -3801,26 +3857,6 @@ module MilkTea
         when "as_cstr"
           :str_builder_as_cstr
         end
-      end
-
-      def char_array_text_method_type(kind, receiver_type)
-        return_type = case kind
-                      when :char_array_as_str
-                        @types.fetch("str")
-                      when :char_array_as_cstr
-                        @types.fetch("cstr")
-                      else
-                        raise LoweringError, "unsupported array[char, N] method #{kind}"
-                      end
-
-        Types::Function.new(
-          kind.to_s,
-          params: [],
-          return_type:,
-          receiver_type:,
-          receiver_mutable: false,
-          external: false,
-        )
       end
 
       def str_builder_method_type(kind, receiver_type)

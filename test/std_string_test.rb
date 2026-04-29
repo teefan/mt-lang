@@ -18,18 +18,18 @@ class MilkTeaStdStringTest < Minitest::Test
       "        return cast[i32](cast[u8](deref(text.data + index)))",
       "",
       "def main() -> i32:",
-      "    var name = string.from_str(\"Milk\")",
-      "    defer string.release(addr(name))",
+      "    var name = string.String.from_str(\"Milk\")",
+      "    defer name.release()",
       "",
-      "    string.append(addr(name), \" Tea\")",
-      "    let view = string.as_str(name)",
+      "    name.append(\" Tea\")",
+      "    let view = name.as_str()",
       "    if view.len != 8:",
       "        return 1",
       "    if byte_at(view, 4) != 32:",
       "        return 2",
       "",
-      "    string.assign(addr(name), \"MT\")",
-      "    let compact = string.as_str(name)",
+      "    name.assign(\"MT\")",
+      "    let compact = name.as_str()",
       "    let total = cast[i32](compact.len) + byte_at(compact, 0) + byte_at(compact, 1)",
       "    return total",
       "",
@@ -64,11 +64,11 @@ class MilkTeaStdStringTest < Minitest::Test
       "def main() -> i32:",
       "    var scratch = arena.create(64)",
       "    defer scratch.release()",
-      "    var owned = string.from_str(\"abc\")",
-      "    defer string.release(addr(owned))",
+      "    var owned = string.String.from_str(\"abc\")",
+      "    defer owned.release()",
       "",
-      "    string.append(addr(owned), \"def\")",
-      "    let raw = string.to_cstr(owned, addr(scratch))",
+      "    owned.append(\"def\")",
+      "    let raw = owned.to_cstr(addr(scratch))",
       "    let length = cstr_len(raw)",
       "    return length",
       "",
@@ -112,6 +112,40 @@ class MilkTeaStdStringTest < Minitest::Test
     assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 12, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+  def test_host_runtime_executes_c_string_borrows
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_str_cstr_helpers",
+      "",
+      "import std.mem.arena as arena",
+      "import std.str as text",
+      "",
+      "def main() -> i32:",
+      "    var scratch = arena.create(64)",
+      "    defer scratch.release()",
+      "    let raw = scratch.to_cstr(\"Milk Tea\")",
+      "    let borrowed = text.cstr_as_str(raw)",
+      "    var borrowed_chars: str = \"\"",
+      "    unsafe:",
+      "        borrowed_chars = text.chars_as_str(cast[ptr[char]](raw))",
+      "    if not text.equal(borrowed, \"Milk Tea\"):",
+      "        return 1",
+      "    if not text.equal(borrowed_chars, borrowed):",
+      "        return 2",
+      "    return cast[i32](borrowed.len) + cast[i32](borrowed_chars.len)",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 16, result.exit_status
     assert_equal [], result.link_flags
   end
 

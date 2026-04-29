@@ -13,7 +13,7 @@ const max_pixels_per_second: f32 = 60.0
 
 var window: ptr[sdl.Window]
 var renderer: ptr[sdl.Renderer]
-var last_time: sdl.Uint64 = 0
+var last_time: usize = 0
 var points: array[sdl.FPoint, 500] = zero[array[sdl.FPoint, 500]]()
 var point_speeds: array[f32, 500] = zero[array[f32, 500]]()
 

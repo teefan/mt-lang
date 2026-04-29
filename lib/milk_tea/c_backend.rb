@@ -371,7 +371,7 @@ module MilkTea
 
     def uses_mt_panic_helper?
       collect_checked_array_index_types.any? || collect_checked_span_index_types.any? ||
-        emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_panic mt_char_array_len mt_char_array_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_assign mt_str_builder_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp]) }
+        emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_panic mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_assign mt_str_builder_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp]) }
     end
 
     def uses_mt_panic_str_helper?
@@ -383,7 +383,7 @@ module MilkTea
     end
 
     def uses_text_buffer_helpers?
-      emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_char_array_len mt_char_array_as_cstr mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_clear mt_str_builder_assign mt_str_builder_append mt_str_builder_prepare_write]) }
+      emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_clear mt_str_builder_assign mt_str_builder_append mt_str_builder_prepare_write]) }
     end
 
     def uses_str_builder_helpers?
@@ -421,8 +421,6 @@ module MilkTea
         statement.value && expression_uses_named_call?(statement.value, callees)
       when IR::ExpressionStmt
         expression_uses_named_call?(statement.expression, callees)
-      else
-        false
       end
     end
 
@@ -621,20 +619,6 @@ module MilkTea
         "#{INDENT * 2}return false;",
         "#{INDENT}}",
         "#{INDENT}return true;",
-        "}",
-        "",
-        "static uintptr_t mt_char_array_len(const char* data, uintptr_t cap) {",
-        "#{INDENT}uintptr_t len = 0;",
-        "#{INDENT}while (len < cap && data[len] != '\\0') {",
-        "#{INDENT * 2}len++;",
-        "#{INDENT}}",
-        "#{INDENT}if (!mt_is_valid_utf8(data, len)) mt_panic(\"array[char] text must be valid UTF-8\");",
-        "#{INDENT}return len;",
-        "}",
-        "",
-        "static const char* mt_char_array_as_cstr(const char* data, uintptr_t cap) {",
-        "#{INDENT}if (mt_char_array_len(data, cap) == cap) mt_panic(\"array[char].as_cstr requires a trailing NUL within capacity\");",
-        "#{INDENT}return data;",
         "}",
       ]
     end

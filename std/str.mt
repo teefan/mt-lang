@@ -4,6 +4,22 @@ import std.ascii as ascii
 import std.mem.arena as arena
 import std.option as option
 
+pub def cstr_len(text: cstr) -> usize:
+    var count: usize = 0
+    unsafe:
+        let data = cast[ptr[char]](text)
+        while deref(data + count) != zero[char]():
+            count += 1
+    return count
+
+pub def cstr_as_str(text: cstr) -> str:
+    unsafe:
+        return str(data = cast[ptr[char]](text), len = cstr_len(text))
+
+pub def chars_as_str(text: ptr[char]) -> str:
+    unsafe:
+        return str(data = text, len = cstr_len(cast[cstr](text)))
+
 pub def utf8_continuation_byte(byte: u8) -> bool:
     return (byte & cast[u8](0xC0)) == cast[u8](0x80)
 

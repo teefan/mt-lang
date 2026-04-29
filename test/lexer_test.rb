@@ -117,4 +117,16 @@ class MilkTeaLexerTest < Minitest::Test
 
     assert_includes types, :ellipsis
   end
+
+  def test_lexes_format_string_literal_parts
+    tokens = MilkTea::Lexer.lex("const message = f\"value=\#{count} ok=\#{true}\"\n")
+    format_token = tokens.find { |token| token.type == :fstring }
+
+    refute_nil format_token
+    assert_equal [:text, :expr, :text, :expr], format_token.literal.map { |part| part.fetch(:kind) }
+    assert_equal "value=", format_token.literal[0].fetch(:value)
+    assert_equal "count", format_token.literal[1].fetch(:source)
+    assert_equal " ok=", format_token.literal[2].fetch(:value)
+    assert_equal "true", format_token.literal[3].fetch(:source)
+  end
 end

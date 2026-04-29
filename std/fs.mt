@@ -67,8 +67,8 @@ pub def read_text(path: str, scratch: ref[arena.Arena]) -> Result[string.String,
             bytes.release(addr(data))
             return err(Error.invalid_utf8)
 
-        var result = string.with_capacity(borrowed.len)
-        string.append(addr(result), borrowed)
+        var result = string.String.with_capacity(borrowed.len)
+        result.append(borrowed)
         bytes.release(addr(data))
         return ok(result)
 

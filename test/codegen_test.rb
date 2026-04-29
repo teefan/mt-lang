@@ -237,6 +237,29 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/mt_free_foreign_cstr_temp\(__mt_foreign_arg_\d+\);/, generated)
   end
 
+  def test_generate_c_for_std_fmt_string_format_literals
+    source = <<~MT
+      module demo.format_codegen
+
+      import std.fmt as fmt
+      import std.string as string
+
+      def main(value: u8, delta: i16, ticks: u64, raw: cstr) -> i32:
+          let text = fmt.string(f"value=\#{value} delta=\#{delta} ticks=\#{ticks} raw=\#{raw} ok=\#{true}")
+          return cast[i32](text.count())
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/std_string_String_create\(\)/, generated)
+    assert_match(/std_fmt_append\(/, generated)
+    assert_match(/std_fmt_append_u32\(/, generated)
+    assert_match(/std_fmt_append_i32\(/, generated)
+    assert_match(/std_fmt_append_u64\(/, generated)
+    assert_match(/std_fmt_append_cstr\(/, generated)
+    assert_match(/std_fmt_append_bool\(/, generated)
+  end
+
   def test_generate_c_for_cstr_backed_string_constants_without_foreign_temps
     source = <<~MT
       module demo.main
@@ -2119,7 +2142,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/char buffer\[16\] = \{ 0 \};/, generated)
   end
 
-  def test_generate_c_for_array_char_text_borrows
+  def test_rejects_generate_c_for_array_char_text_methods
     source = [
       "module demo.char_array_methods",
       "",
@@ -2131,16 +2154,11 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
     ].join("\n")
 
-    generated = generate_c_from_source(source)
+    error = assert_raises(MilkTea::SemaError) do
+      generate_c_from_source(source)
+    end
 
-    assert_match(/static bool mt_is_valid_utf8\(const char\* data, uintptr_t len\)/, generated)
-    assert_match(/static const char\* mt_char_array_as_cstr\(const char\* data, uintptr_t cap\)/, generated)
-    assert_match(/static uintptr_t mt_char_array_len\(const char\* data, uintptr_t cap\)/, generated)
-    assert_match(/if \(!mt_is_valid_utf8\(data, len\)\) mt_panic\("array\[char\] text must be valid UTF-8"\);/, generated)
-    assert_match(/if \(mt_char_array_len\(data, cap\) == cap\) mt_panic\("array\[char\]\.as_cstr requires a trailing NUL within capacity"\);/, generated)
-    assert_match(/mt_str view = \(mt_str\)\{ \.data = &buffer\[0\], \.len = mt_char_array_len\(&buffer\[0\], 16\) \};/, generated)
-    assert_match(/const char\* label = mt_char_array_as_cstr\(&buffer\[0\], 16\);/, generated)
-    assert_match(/return \(\(int32_t\) view.len\);/, generated)
+    assert_match(/array\[char, 16\]\.as_str is not available; array\[char, N\] is raw storage/, error.message)
   end
 
   def test_generate_c_for_str_builder_methods_and_span_char_calls
@@ -2323,7 +2341,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/unknown generic type cstr_list_buffer/, error.message)
   end
 
-  def test_generate_c_for_foreign_str_as_cstr_call_with_array_char_as_cstr_without_scratch
+  def test_rejects_generate_c_for_foreign_str_as_cstr_call_with_array_char_as_cstr
     source = <<~MT
       module demo.main
 
@@ -2350,10 +2368,11 @@ class MilkTeaCodegenTest < Minitest::Test
       MT
     }
 
-    generated = generate_c_from_program_source(source, imported_sources)
+    error = assert_raises(MilkTea::SemaError) do
+      generate_c_from_program_source(source, imported_sources)
+    end
 
-    assert_match(/Label\(mt_char_array_as_cstr\(&buffer\[0\], 32\)\);/, generated)
-    refute_match(/to_cstr/, generated)
+    assert_match(/array\[char, 32\]\.as_cstr is not available; array\[char, N\] is raw storage/, error.message)
   end
 
   def test_generate_c_for_foreign_defs_with_array_char_and_span_char_ptr_char_boundary

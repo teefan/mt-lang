@@ -849,6 +849,8 @@ module MilkTea
         AST::StringLiteral.new(lexeme: previous.lexeme, value: previous.literal, cstring: false)
       elsif match(:cstring)
         AST::StringLiteral.new(lexeme: previous.lexeme, value: previous.literal, cstring: true)
+      elsif match(:fstring)
+        parse_format_string_literal(previous.literal)
       elsif match(:true)
         AST::BooleanLiteral.new(value: true)
       elsif match(:false)
@@ -898,6 +900,44 @@ module MilkTea
         parts << consume_name("expected identifier after '.'").lexeme
       end
       AST::QualifiedName.new(parts:)
+    end
+
+    def parse_format_string_literal(parts)
+      AST::FormatString.new(parts: parts.map { |part| parse_format_string_part(part) })
+    end
+
+    def parse_format_string_part(part)
+      case part.fetch(:kind)
+      when :text
+        AST::FormatTextPart.new(value: part.fetch(:value))
+      when :expr
+        AST::FormatExprPart.new(expression: parse_embedded_expression(part.fetch(:source), line: part.fetch(:line), column: part.fetch(:column)))
+      else
+        raise error(peek, "unsupported format string part #{part.inspect}")
+      end
+    end
+
+    def parse_embedded_expression(source, line:, column:)
+      tokens = Lexer.lex(source, path: @path).map do |token|
+        Token.new(
+          type: token.type,
+          lexeme: token.lexeme,
+          literal: token.literal,
+          line: token.line + line - 1,
+          column: token.column + column - 1,
+        )
+      end
+
+      parser = self.class.send(:new, tokens, path: @path)
+      parser.instance_variable_set(:@known_type_names, @known_type_names.dup)
+      parser.instance_variable_set(:@known_import_aliases, @known_import_aliases.dup)
+      parser.instance_variable_set(:@known_generic_callable_names, @known_generic_callable_names.dup)
+
+      expression = parser.send(:parse_expression)
+      parser.send(:skip_newlines)
+      raise parser.send(:error, parser.send(:peek), "expected end of interpolation") unless parser.send(:eof?)
+
+      expression
     end
 
     def parse_left_associative(operand_method, *operator_types)
