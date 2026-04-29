@@ -66,6 +66,18 @@ class MilkTeaLexerTest < Minitest::Test
     assert_nil tokens.find { |token| token.type == :null }.literal
   end
 
+  def test_lexes_scientific_float_literals
+    source = <<~MT
+      const epsilon: f32 = 1.1920929E-7
+      const large: f64 = 2e+3
+    MT
+
+    tokens = MilkTea::Lexer.lex(source)
+
+    assert_in_delta 1.1920929e-7, tokens.find { |token| token.lexeme == "1.1920929E-7" }.literal, 1e-15
+    assert_in_delta 2000.0, tokens.find { |token| token.lexeme == "2e+3" }.literal, 1e-12
+  end
+
   def test_reports_indentation_and_grouping_errors
     indentation_error = assert_raises(MilkTea::LexError) do
       MilkTea::Lexer.lex("def main() -> i32:\n  return 0\n")

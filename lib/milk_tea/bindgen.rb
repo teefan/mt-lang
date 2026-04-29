@@ -30,6 +30,12 @@ module MilkTea
       "signed int" => "i32",
       "unsigned" => "u32",
       "unsigned int" => "u32",
+      "long" => "isize",
+      "long int" => "isize",
+      "signed long" => "isize",
+      "signed long int" => "isize",
+      "unsigned long" => "usize",
+      "unsigned long int" => "usize",
       "long long" => "i64",
       "long long int" => "i64",
       "signed long long" => "i64",
@@ -40,12 +46,17 @@ module MilkTea
       "double" => "f64",
     }.freeze
 
-    def self.generate(module_name:, header_path:, link_libraries: [], include_directives: nil, module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {})
+    def self.generate(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {})
       Generator.new(
         module_name:,
         header_path:,
+        tracked_header_paths:,
+        tracked_header_prefixes:,
+        declaration_name_prefixes:,
         link_libraries:,
         include_directives:,
+        bindgen_defines:,
+        bindgen_include_directives:,
         module_imports:,
         clang:,
         clang_args:,
@@ -56,11 +67,16 @@ module MilkTea
     end
 
     class Generator
-      def initialize(module_name:, header_path:, link_libraries:, include_directives:, module_imports:, clang:, clang_args:, type_overrides:, function_param_type_overrides:, function_return_type_overrides:)
+      def initialize(module_name:, header_path:, tracked_header_paths:, tracked_header_prefixes:, declaration_name_prefixes:, link_libraries:, include_directives:, bindgen_defines:, bindgen_include_directives:, module_imports:, clang:, clang_args:, type_overrides:, function_param_type_overrides:, function_return_type_overrides:)
         @module_name = module_name
         @header_path = File.expand_path(header_path)
+        @tracked_header_paths = ([header_path] + tracked_header_paths).map { |path| File.expand_path(path) }.uniq.freeze
+        @tracked_header_prefixes = tracked_header_prefixes.map { |path| File.expand_path(path) }.uniq.freeze
+        @declaration_name_prefixes = declaration_name_prefixes.dup.freeze
         @link_libraries = link_libraries.dup
         @include_directives = include_directives&.dup
+        @bindgen_defines = bindgen_defines.dup.freeze
+        @bindgen_include_directives = bindgen_include_directives.dup.freeze
         @module_imports = normalize_module_imports(module_imports)
         @clang = clang
         @clang_args = clang_args.dup
@@ -78,11 +94,14 @@ module MilkTea
       def generate
         ast = dump_ast
         top_level_nodes = extract_top_level_header_nodes(ast)
-        @visible_typedef_names = top_level_nodes.filter_map { |node| node["name"] if node["kind"] == "TypedefDecl" }
+        @visible_typedef_names = top_level_nodes.filter_map do |node|
+          node["name"] if node["kind"] == "TypedefDecl" && allowed_declaration_name?(node["name"])
+        end
         build_alias_maps(top_level_nodes)
 
         declarations = []
         declarations.concat(select_record_declarations(top_level_nodes))
+        discover_synthetic_aggregate_dependencies(declarations)
         declarations.concat(select_enum_declarations(top_level_nodes))
         declarations.concat(select_type_alias_declarations(top_level_nodes))
         declarations.concat(select_constant_declarations(top_level_nodes))
@@ -100,7 +119,7 @@ module MilkTea
       def dump_ast
         Tempfile.create(["milk-tea-bindgen", ".c"]) do |translation_unit|
           @translation_unit_path = translation_unit.path
-          translation_unit.write(%(#include #{@header_path.dump}\n))
+          write_translation_unit_prelude(translation_unit)
           translation_unit.flush
           @active_macro_names = preprocessed_macro_names(translation_unit.path)
           macro_probe_declarations.each do |declaration|
@@ -122,17 +141,35 @@ module MilkTea
             translation_unit.path,
           ]
           stdout, stderr, status = Open3.capture3(*command)
-          unless status.success?
+          begin
+            return JSON.parse(stdout)
+          rescue JSON::ParserError
             details = [stdout, stderr].reject(&:empty?).join
-            raise BindgenError, details.empty? ? "clang bindgen failed" : "clang bindgen failed:\n#{details}"
-          end
+            raise BindgenError, details.empty? ? "clang bindgen failed" : "clang bindgen failed:\n#{details}" unless status.success?
 
-          JSON.parse(stdout)
+            raise
+          end
         end
       rescue Errno::ENOENT
         raise BindgenError, "clang not found: #{@clang}"
       rescue JSON::ParserError => e
         raise BindgenError, "failed to parse clang AST JSON: #{e.message}"
+      end
+
+      def write_translation_unit_prelude(translation_unit)
+        @bindgen_defines.each do |define|
+          name, value = define.split("=", 2)
+          if value.nil?
+            translation_unit.write("#define #{name}\n")
+          else
+            translation_unit.write("#define #{name} #{value}\n")
+          end
+        end
+
+        translation_unit.write(%(#include #{@header_path.dump}\n))
+        @bindgen_include_directives.each do |directive|
+          translation_unit.write(%(#include #{directive.dump}\n))
+        end
       end
 
       def extract_top_level_header_nodes(ast)
@@ -146,19 +183,55 @@ module MilkTea
       end
 
       def node_from_header?(node)
-        files = location_files(node)
-        files.include?(@header_path) || files.include?(@translation_unit_path)
+        source_files = node_source_files(node).map { |path| File.expand_path(path) }
+        return true if source_files.include?(@translation_unit_path)
+        return true if source_files.any? { |path| tracked_header_path?(path) }
+
+        return false unless source_files.empty?
+
+        include_files = node_include_files(node).map { |path| File.expand_path(path) }
+        return true if include_files.include?(@translation_unit_path)
+
+        include_files.any? { |path| tracked_header_path?(path) }
       end
 
-      def location_files(node)
+      def tracked_header_path?(path)
+        return true if @tracked_header_paths.include?(path)
+
+        @tracked_header_prefixes.any? do |prefix|
+          path == prefix || path.start_with?(prefix + File::SEPARATOR)
+        end
+      end
+
+      def allowed_declaration_name?(name)
+        return true if @declaration_name_prefixes.empty?
+        return false unless name
+
+        @declaration_name_prefixes.any? { |prefix| name.start_with?(prefix) }
+      end
+
+      def node_source_files(node)
         [
           node.dig("loc", "file"),
-          node.dig("loc", "includedFrom", "file"),
           node.dig("loc", "spellingLoc", "file"),
+          node.dig("loc", "expansionLoc", "file"),
           node.dig("range", "begin", "file"),
           node.dig("range", "end", "file"),
           node.dig("range", "begin", "spellingLoc", "file"),
+          node.dig("range", "begin", "expansionLoc", "file"),
           node.dig("range", "end", "spellingLoc", "file"),
+          node.dig("range", "end", "expansionLoc", "file"),
+        ].compact.uniq
+      end
+
+      def node_include_files(node)
+        [
+          node.dig("loc", "includedFrom", "file"),
+          node.dig("loc", "spellingLoc", "includedFrom", "file"),
+          node.dig("range", "begin", "includedFrom", "file"),
+          node.dig("range", "end", "includedFrom", "file"),
+          node.dig("range", "begin", "spellingLoc", "includedFrom", "file"),
+          node.dig("range", "end", "spellingLoc", "includedFrom", "file"),
         ].compact.uniq
       end
 
@@ -201,8 +274,9 @@ module MilkTea
 
       def each_macro_definition
         logical_line = +""
+        current_file = nil
 
-        File.foreach(@header_path) do |line|
+        preprocessed_macro_source.each_line do |line|
           current = line.delete_suffix("\n")
           if logical_line.empty?
             logical_line = current
@@ -215,8 +289,15 @@ module MilkTea
             next
           end
 
+          line_marker = logical_line.match(/\A#\s+\d+\s+"([^"]+)"/)
+          if line_marker
+            current_file = normalize_preprocessor_path(line_marker[1])
+            logical_line = +""
+            next
+          end
+
           match = logical_line.match(/\A\s*#define\s+([A-Za-z_][A-Za-z0-9_]*)(.*)\z/)
-          if match
+          if match && current_file && tracked_header_path?(current_file)
             name = match[1]
             suffix = match[2]
             yield(name, suffix.strip) unless suffix.start_with?("(")
@@ -228,10 +309,12 @@ module MilkTea
 
       def macro_constant_candidate?(name, body)
         return false unless name.match?(/\A[A-Z][A-Z0-9_]*\z/)
+        return false unless allowed_declaration_name?(name)
         return false unless active_macro_name?(name)
 
         normalized = normalize_macro_body(body)
         return false if normalized.empty?
+        return false if normalized.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
         return false if normalized.include?('"') || normalized.include?("'")
         return false if contains_disallowed_macro_call?(normalized)
 
@@ -275,13 +358,12 @@ module MilkTea
           match = source.match(/\b[A-Za-z_][A-Za-z0-9_]*\s*\(/, index)
           return false unless match
 
+          callee = match[0][/\A[A-Za-z_][A-Za-z0-9_]*/]
           open_index = match[0].rindex("(") + match.begin(0)
           close_index = matching_paren_index(source, open_index)
           return true unless close_index
 
-          next_index = close_index + 1
-          next_index += 1 while next_index < source.length && source[next_index].match?(/\s/)
-          return true unless next_index < source.length && source[next_index] == "{"
+          return true unless callee&.match?(/\A[A-Z][A-Z0-9_]*\z/)
 
           index = close_index + 1
         end
@@ -342,6 +424,7 @@ module MilkTea
 
           visible_name = @record_aliases[node["id"]] || node["name"]
           next unless visible_name
+          next unless allowed_declaration_name?(visible_name)
 
           candidate = {
             index:,
@@ -375,6 +458,7 @@ module MilkTea
 
           visible_name = @enum_aliases[node["id"]] || node["name"]
           next unless visible_name
+          next unless allowed_declaration_name?(visible_name)
 
           selected[visible_name] = { index:, kind: enum_kind(node), name: visible_name, node: }
         end
@@ -394,6 +478,7 @@ module MilkTea
         nodes.each_with_index.filter_map do |node, index|
           next unless node["kind"] == "TypedefDecl"
           next if typedef_target(node)
+          next unless allowed_declaration_name?(node["name"])
 
           qual_type = alias_qual_type(node)
           mapped_type = if function_pointer_type?(qual_type)
@@ -412,6 +497,35 @@ module MilkTea
         rescue BindgenError
           nil
         end
+
+      end
+
+      private
+
+      def preprocessed_macro_source
+        command = [
+          @clang,
+          "-x",
+          "c",
+          "-fno-builtin",
+          *@clang_args,
+          "-E",
+          "-dD",
+          @translation_unit_path,
+        ]
+        stdout, stderr, status = Open3.capture3(*command)
+        unless status.success?
+          details = [stdout, stderr].reject(&:empty?).join
+          raise BindgenError, details.empty? ? "clang bindgen macro dump failed" : "clang bindgen macro dump failed:\n#{details}"
+        end
+
+        stdout
+      end
+
+      def normalize_preprocessor_path(path)
+        return nil if path.start_with?("<") && path.end_with?(">")
+
+        File.expand_path(path)
       end
 
       def alias_qual_type(node)
@@ -425,6 +539,7 @@ module MilkTea
           next unless node["kind"] == "FunctionDecl"
           next if node["storageClass"] == "static"
           next if Array(node["inner"]).any? { |child| child["kind"] == "CompoundStmt" }
+          next unless allowed_declaration_name?(node["name"])
 
           params = Array(node["inner"]).select { |child| child["kind"] == "ParmVarDecl" }.each_with_index.map do |param, param_index|
             param_name = param["name"] || "arg#{param_index}"
@@ -484,7 +599,9 @@ module MilkTea
       def select_constant_declarations(nodes)
         nodes.each_with_index.filter_map do |node, index|
           next unless node["kind"] == "VarDecl"
+          next if node["isInvalid"]
           next unless constant_var_decl?(node)
+          next unless allowed_declaration_name?(constant_name_for(node))
 
           begin
             type = map_c_type(constant_qual_type(node), context: constant_name_for(node))
@@ -598,10 +715,73 @@ module MilkTea
         lines = ["    #{kind} #{name}:"]
         fields = Array(node["inner"]).select { |child| child["kind"] == "FieldDecl" }
         fields.each do |field|
-          field_type = map_type_node(field, context: "field #{name}.#{field["name"]}")
+          field_type = aggregate_field_type(field, owner_name: name, aggregate_node: node)
           lines << "        #{field["name"]}: #{field_type}"
         end
         lines
+      end
+
+      def discover_synthetic_aggregate_dependencies(declarations)
+        pending = declarations.select { |declaration| %w[struct union].include?(declaration[:kind]) }.map do |declaration|
+          [declaration[:name], declaration[:node]]
+        end
+        seen = {}
+
+        until pending.empty?
+          owner_name, aggregate_node = pending.shift
+          key = [owner_name, aggregate_node["id"]]
+          next if seen[key]
+
+          seen[key] = true
+
+          Array(aggregate_node["inner"]).select { |child| child["kind"] == "FieldDecl" }.each do |field|
+            anonymous_record = anonymous_record_decl_for_field(field, aggregate_node)
+            next unless anonymous_record
+
+            synthetic_name = "#{owner_name}_#{field["name"]}"
+            unless @synthetic_declarations.any? { |declaration| declaration[:name] == synthetic_name }
+              @synthetic_declarations << { kind: anonymous_record.fetch("tagUsed"), name: synthetic_name, node: anonymous_record }
+              @aggregate_declarations[synthetic_name] = anonymous_record
+            end
+
+            pending << [synthetic_name, anonymous_record]
+          end
+        end
+      end
+
+      def aggregate_field_type(field, owner_name:, aggregate_node:)
+        anonymous_record = anonymous_record_decl_for_field(field, aggregate_node)
+        return "#{owner_name}_#{field["name"]}" if anonymous_record
+
+        map_type_node(field, context: "field #{owner_name}.#{field["name"]}")
+      end
+
+      def anonymous_record_decl_for_field(field, aggregate_node)
+        qual_type = type_qual_type(field)
+        return unless qual_type&.match?(/\A(?:struct|union) \(unnamed at /)
+
+        field_begin = source_location_key(field.dig("range", "begin"))
+        return unless field_begin
+
+        expected_tag = qual_type.split.first
+        Array(aggregate_node["inner"]).find do |child|
+          next false unless child["kind"] == "RecordDecl"
+          next false unless child["tagUsed"] == expected_tag
+
+          source_location_key(child["loc"]) == field_begin
+        end
+      end
+
+      def source_location_key(location)
+        return unless location
+
+        [
+          location["offset"],
+          location["line"],
+          location["col"],
+          location.dig("includedFrom", "file"),
+          location["file"],
+        ]
       end
 
       def emit_enum_declaration(kind, name, node)
@@ -686,8 +866,8 @@ module MilkTea
       end
 
       def emit_float_value(value, expected_type)
-        literal = value.include?(".") ? value : "#{value}.0"
-        expected_type == "f32" ? "#{literal}" : literal
+        literal = value.match?(/[.eE]/) ? value : "#{value}.0"
+        expected_type == "f32" ? literal : literal
       end
 
       def function_param_type_override(function_name, param_name)
@@ -790,6 +970,10 @@ module MilkTea
         end
 
         unqualified = strip_qualifiers(normalized)
+        if unqualified == "__va_list_tag" || unqualified == "struct __va_list_tag"
+          synthesize_typedef_dependency("__va_list_tag")
+          return "__va_list_tag"
+        end
         return standard_typedef_primitive(unqualified) if standard_typedef_primitive(unqualified)
         return PRIMITIVE_TYPE_MAP.fetch(unqualified) if PRIMITIVE_TYPE_MAP.key?(unqualified)
         return @type_overrides.fetch(unqualified) if @type_overrides.key?(unqualified)
@@ -801,7 +985,11 @@ module MilkTea
         return record_name_for(unqualified) if unqualified.start_with?("struct ")
         return record_name_for(unqualified) if unqualified.start_with?("union ")
         return enum_name_for(unqualified) if unqualified.start_with?("enum ")
-        return unqualified if unqualified.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
+        if unqualified.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
+          return unqualified if known_generated_type_name?(unqualified, @visible_typedef_names)
+
+          raise BindgenError, "unknown referenced C type #{unqualified.inspect} for #{context}"
+        end
 
         raise BindgenError, "unsupported C type #{qual_type.inspect} for #{context}"
       end
@@ -973,10 +1161,16 @@ module MilkTea
       end
 
       def synthesize_typedef_dependency(name)
-        return unless name == "va_list"
-        return if @synthetic_declarations.any? { |declaration| declaration[:name] == "va_list" }
+        case name
+        when "va_list"
+          return if @synthetic_declarations.any? { |declaration| declaration[:name] == "va_list" }
 
-        @synthetic_declarations << { kind: "opaque", name: "va_list", c_name: "va_list" }
+          @synthetic_declarations << { kind: "opaque", name: "va_list", c_name: "va_list" }
+        when "__va_list_tag"
+          return if @synthetic_declarations.any? { |declaration| declaration[:name] == "__va_list_tag" }
+
+          @synthetic_declarations << { kind: "opaque", name: "__va_list_tag", c_name: "__va_list_tag" }
+        end
       end
 
       def opaque_c_name(node)

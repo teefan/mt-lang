@@ -5,14 +5,19 @@ module MilkTea
     class Error < StandardError; end
 
     class Binding
-      attr_reader :name, :module_name, :binding_path, :include_directives, :module_imports, :link_libraries, :link_flags, :header_candidates, :env_var, :clang_args, :compiler_flags, :implementation_defines, :type_overrides, :function_param_type_overrides, :function_return_type_overrides
+      attr_reader :name, :module_name, :binding_path, :include_directives, :bindgen_defines, :bindgen_include_directives, :module_imports, :link_libraries, :header_candidates, :tracked_header_paths, :tracked_header_prefixes, :declaration_name_prefixes, :env_var, :clang_args, :compiler_flags, :implementation_defines, :type_overrides, :function_param_type_overrides, :function_return_type_overrides, :vendored_library
 
-      def initialize(name:, module_name:, binding_path:, header_candidates:, include_directives: nil, module_imports: [], link_libraries: [], link_flags: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, prepare: nil)
+      def initialize(name:, module_name:, binding_path:, header_candidates:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], link_libraries: [], link_flags: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, vendored_library: nil, prepare: nil)
         @name = name.to_s
         @module_name = module_name
         @binding_path = File.expand_path(binding_path.to_s)
         @header_candidates = header_candidates.map { |path| File.expand_path(path) }.freeze
+        @tracked_header_paths = tracked_header_paths.map { |path| File.expand_path(path) }.freeze
+        @tracked_header_prefixes = tracked_header_prefixes.map { |path| File.expand_path(path) }.freeze
+        @declaration_name_prefixes = declaration_name_prefixes.dup.freeze
         @include_directives = include_directives&.dup&.freeze
+        @bindgen_defines = bindgen_defines.dup.freeze
+        @bindgen_include_directives = bindgen_include_directives.dup.freeze
         @link_libraries = link_libraries.dup.freeze
         @link_flags = link_flags.dup.freeze
         @env_var = env_var
@@ -24,6 +29,7 @@ module MilkTea
         @type_overrides = type_overrides.transform_keys(&:to_s).freeze
         @function_param_type_overrides = normalize_function_param_type_overrides(function_param_type_overrides)
         @function_return_type_overrides = function_return_type_overrides.transform_keys(&:to_s).freeze
+        @vendored_library = vendored_library
         @prepare = prepare
       end
 
@@ -46,6 +52,13 @@ module MilkTea
         name
       end
 
+      def link_flags
+        flags = []
+        flags.concat(vendored_library.link_flags) if vendored_library
+        flags.concat(@link_flags)
+        flags.uniq
+      end
+
       def header_path(env: ENV)
         candidates = []
         override = env_var && env[env_var]
@@ -65,18 +78,25 @@ module MilkTea
       def generate(env: ENV, header_path: nil)
         resolved_header_path = header_path || self.header_path(env:)
 
-        MilkTea::Bindgen.generate(
+        bindgen_kwargs = {
           module_name:,
           header_path: resolved_header_path,
           link_libraries:,
           include_directives:,
+          bindgen_defines:,
+          bindgen_include_directives:,
           module_imports:,
           clang: resolved_clang(env),
           clang_args:,
           type_overrides:,
           function_param_type_overrides:,
           function_return_type_overrides:,
-        )
+        }
+        bindgen_kwargs[:tracked_header_paths] = tracked_header_paths unless tracked_header_paths.empty?
+        bindgen_kwargs[:tracked_header_prefixes] = tracked_header_prefixes unless tracked_header_prefixes.empty?
+        bindgen_kwargs[:declaration_name_prefixes] = declaration_name_prefixes unless declaration_name_prefixes.empty?
+
+        MilkTea::Bindgen.generate(**bindgen_kwargs)
       end
 
       def build_flags(env: ENV, header_path: nil)
@@ -114,6 +134,7 @@ module MilkTea
       end
 
       def prepare!(env: ENV, cc: ENV.fetch("CC", "cc"))
+        vendored_library&.prepare!(env:, cc:)
         @prepare&.call(self, env:, cc:)
       end
 
@@ -177,6 +198,10 @@ module MilkTea
     end
 
     def self.default_bindings(root: MilkTea.root)
+      vendored_raylib = MilkTea::VendoredRaylib.library
+      vendored_sdl3 = MilkTea::VendoredSDL3
+      vendored_sdl3_library = vendored_sdl3.library
+
       raylib_function_param_overrides = {
         "LoadFontEx" => { "codepoints" => "ptr[i32]?" },
         "LoadFontFromMemory" => { "codepoints" => "ptr[i32]?" },
@@ -198,18 +223,12 @@ module MilkTea
           binding_path: root.join("std/c/raylib.mt"),
           include_directives: ["raylib.h"],
           link_libraries: ["raylib"],
-          link_flags: MilkTea::VendoredRaylib.link_flags,
+          vendored_library: vendored_raylib,
           compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
-          env_var: "RAYLIB_HEADER",
           header_candidates: [
-            root.join("third_party/raylib-upstream/src/raylib.h").to_s,
-            "/usr/include/raylib.h",
-            "/usr/local/include/raylib.h",
+            vendored_raylib.source_root.join("raylib.h").to_s,
           ],
           function_param_type_overrides: raylib_function_param_overrides,
-          prepare: ->(_binding, env:, cc:) do
-            MilkTea::VendoredRaylib.prepare!(cc: env.fetch("RAYLIB_CC", ENV.fetch("CC", "cc")))
-          end,
         ),
         Binding.new(
           name: "raygui",
@@ -217,13 +236,11 @@ module MilkTea
           binding_path: root.join("std/c/raygui.mt"),
           include_directives: ["raygui.h"],
           link_libraries: ["raylib", "m"],
-          env_var: "RAYGUI_HEADER",
+          vendored_library: vendored_raylib,
           compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
           implementation_defines: ["RAYGUI_IMPLEMENTATION"],
           header_candidates: [
             root.join("third_party/raylib-upstream/examples/shapes/raygui.h").to_s,
-            "/usr/include/raygui.h",
-            "/usr/local/include/raygui.h",
           ],
           function_param_type_overrides: raylib_function_param_overrides,
         ),
@@ -234,7 +251,7 @@ module MilkTea
           include_directives: ["raylib.h", "rlights.h"],
           module_imports: [{ module_name: "std.c.raylib", alias: "rl" }],
           link_libraries: ["raylib"],
-          env_var: "RLIGHTS_HEADER",
+          vendored_library: vendored_raylib,
           clang_args: ["-I#{root.join('third_party/raylib-upstream/src')}", "-include", "raylib.h"],
           compiler_flags: ["-I#{root.join('third_party/raylib-upstream/src')}", "-DGRAPHICS_API_OPENGL_43"],
           implementation_defines: ["RLIGHTS_IMPLEMENTATION"],
@@ -245,8 +262,6 @@ module MilkTea
           },
           header_candidates: [
             root.join("third_party/raylib-upstream/examples/shaders/rlights.h").to_s,
-            "/usr/include/rlights.h",
-            "/usr/local/include/rlights.h",
           ],
         ),
         Binding.new(
@@ -255,12 +270,10 @@ module MilkTea
           binding_path: root.join("std/c/rlgl.mt"),
           include_directives: ["rlgl.h"],
           link_libraries: ["raylib"],
-          env_var: "RLGL_HEADER",
+          vendored_library: vendored_raylib,
           compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
           header_candidates: [
             root.join("third_party/raylib-upstream/src/rlgl.h").to_s,
-            "/usr/include/rlgl.h",
-            "/usr/local/include/rlgl.h",
           ],
         ),
         Binding.new(
@@ -294,6 +307,32 @@ module MilkTea
           header_candidates: [
             "/usr/include/stdlib.h",
             "/usr/local/include/stdlib.h",
+          ],
+        ),
+        Binding.new(
+          name: "sdl3",
+          module_name: "std.c.sdl3",
+          binding_path: root.join("std/c/sdl3.mt"),
+          include_directives: ["SDL3/SDL.h", "SDL3/SDL_main.h"],
+          bindgen_defines: ["SDL_MAIN_HANDLED=1"],
+          bindgen_include_directives: ["SDL3/SDL_main.h"],
+          link_libraries: ["SDL3"],
+          vendored_library: vendored_sdl3_library,
+          clang_args: vendored_sdl3.include_flags,
+          compiler_flags: ["-DSDL_MAIN_HANDLED=1", *vendored_sdl3.include_flags],
+          tracked_header_paths: [
+            vendored_sdl3.header_root.join("SDL.h").to_s,
+            vendored_sdl3.header_root.join("SDL_main.h").to_s,
+          ],
+          tracked_header_prefixes: [
+            vendored_sdl3.header_root.to_s,
+          ],
+          declaration_name_prefixes: ["SDL_", "Sint", "Uint"],
+          function_param_type_overrides: {
+            "SDL_RunApp" => { "reserved" => "ptr[void]?" },
+          },
+          header_candidates: [
+            vendored_sdl3.header_root.join("SDL.h").to_s,
           ],
         ),
       ]

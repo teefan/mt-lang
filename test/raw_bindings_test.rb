@@ -7,7 +7,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raygui rlights rlgl msf_gif libc], registry.map(&:name)
+    assert_equal %w[raylib raygui rlights rlgl msf_gif libc sdl3], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -28,6 +28,16 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "std.c.msf_gif", registry.fetch("msf_gif").module_name
     assert_equal ["MSF_GIF_IMPL"], registry.fetch("msf_gif").implementation_defines
     assert_includes registry.fetch("msf_gif").header_candidates.first, "third_party/raylib-upstream/examples/core/msf_gif.h"
+    assert_equal "std.c.sdl3", registry.fetch("sdl3").module_name
+    assert_equal ["SDL3"], registry.fetch("sdl3").link_libraries
+    assert_includes registry.fetch("sdl3").compiler_flags, "-DSDL_MAIN_HANDLED=1"
+    assert_includes registry.fetch("sdl3").compiler_flags, "-I#{MilkTea::VendoredSDL3.include_root}"
+    assert_includes registry.fetch("sdl3").header_candidates.first, "third_party/sdl3-upstream/include/SDL3/SDL.h"
+    assert_equal ["SDL_MAIN_HANDLED=1"], registry.fetch("sdl3").bindgen_defines
+    assert_equal ["SDL3/SDL_main.h"], registry.fetch("sdl3").bindgen_include_directives
+    assert_includes registry.fetch("sdl3").link_flags, "-L#{MilkTea::VendoredSDL3.archive_path.dirname}"
+    assert_equal ["SDL_", "Sint", "Uint"], registry.fetch("sdl3").declaration_name_prefixes
+    assert_equal({ "reserved" => "ptr[void]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_RunApp"))
     assert_equal "bindgen:check:libc", registry.fetch("libc").check_task_name
     assert_equal "bindgen:check_raylib", registry.fetch("raylib").legacy_check_task_name
   end
@@ -64,6 +74,8 @@ class MilkTeaRawBindingsTest < Minitest::Test
         binding_path: File.join(dir, "sample.mt"),
         header_candidates: [header_path],
         include_directives: ["sample.h"],
+        bindgen_defines: ["SAMPLE_MAIN_HANDLED=1"],
+        bindgen_include_directives: ["sample_main.h"],
         link_libraries: ["sample"],
         env_var: "SAMPLE_HEADER",
         clang_args: ["-I#{dir}"],
@@ -84,6 +96,8 @@ class MilkTeaRawBindingsTest < Minitest::Test
           header_path:,
           link_libraries: ["sample"],
           include_directives: ["sample.h"],
+          bindgen_defines: ["SAMPLE_MAIN_HANDLED=1"],
+          bindgen_include_directives: ["sample_main.h"],
           module_imports: [],
           clang: "clang-custom",
           clang_args: ["-I#{dir}"],
@@ -138,6 +152,30 @@ class MilkTeaRawBindingsTest < Minitest::Test
     )
 
     binding.prepare!(env: { "MARKER" => "ok", "CC" => "cc" }, cc: "clang")
+
+    assert_equal [["ok", "clang"]], invoked
+  end
+
+  def test_binding_uses_vendored_library_for_link_flags_and_prepare
+    invoked = []
+    vendored_library = Object.new
+    vendored_library.define_singleton_method(:link_flags) { ["-L/tmp/vendored", "-lvendored"] }
+    vendored_library.define_singleton_method(:prepare!) do |env:, cc:|
+      invoked << [env.fetch("MARKER"), cc]
+    end
+
+    binding = MilkTea::RawBindings::Binding.new(
+      name: "sample",
+      module_name: "std.c.sample",
+      binding_path: "/tmp/sample.mt",
+      header_candidates: ["/tmp/sample.h"],
+      vendored_library:,
+      link_flags: ["-lsample"],
+    )
+
+    assert_equal ["-L/tmp/vendored", "-lvendored", "-lsample"], binding.link_flags
+
+    binding.prepare!(env: { "MARKER" => "ok" }, cc: "clang")
 
     assert_equal [["ok", "clang"]], invoked
   end

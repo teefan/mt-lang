@@ -28,4 +28,6 @@ module MilkTea
   end
 end
 
+require_relative 'milk_tea/vendored_c_library'
 require_relative 'milk_tea/vendored_raylib'
+require_relative 'milk_tea/vendored_sdl3'
