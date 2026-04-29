@@ -145,7 +145,7 @@ module MilkTea
         raw_ast = Parser.parse(File.read(@raw_module_path), path: @raw_module_path)
         validate_raw_module!(raw_ast)
         declarations = index_raw_declarations(raw_ast)
-        import_specs = normalize_imports(policy["imports"])
+        import_specs = merge_import_specs(raw_import_specs(raw_ast), normalize_imports(policy["imports"]))
         validate_import_specs!(import_specs)
         type_spec = normalize_alias_spec(policy["types"], context: "type")
         validate_shared_import_aliases!(type_spec, import_specs) if type_spec.key?(:shared_from)
@@ -238,6 +238,29 @@ module MilkTea
             alias: import_alias,
           }
         end
+      end
+
+      def raw_import_specs(raw_ast)
+        raw_ast.imports.map do |import|
+          {
+            module_name: import.path.parts.join("."),
+            alias: import.alias_name,
+          }
+        end
+      end
+
+      def merge_import_specs(*groups)
+        merged = []
+
+        groups.each do |group|
+          group.each do |spec|
+            next if merged.include?(spec)
+
+            merged << spec
+          end
+        end
+
+        merged
       end
 
       def validate_import_specs!(import_specs)
@@ -855,6 +878,13 @@ module MilkTea
           binding_path: root.join("std/sdl3.mt"),
           raw_module_name: "std.c.sdl3",
           policy_path: root.join("bindings/imported/sdl3.binding.json"),
+        ),
+        Binding.new(
+          name: "libuv",
+          module_name: "std.libuv",
+          binding_path: root.join("std/libuv.mt"),
+          raw_module_name: "std.c.libuv",
+          policy_path: root.join("bindings/imported/libuv.binding.json"),
         ),
       ]
     end

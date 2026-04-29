@@ -8,7 +8,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raylib", "rlgl", "raygui", "sdl3"], registry.map(&:name)
+    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "libuv"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -28,6 +28,33 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_equal "std.c.sdl3", registry.fetch("sdl3").raw_module_name
     assert_includes registry.fetch("sdl3").binding_path, "/std/sdl3.mt"
     assert_includes registry.fetch("sdl3").policy_path, "/bindings/imported/sdl3.binding.json"
+
+    assert_equal "std.libuv", registry.fetch("libuv").module_name
+    assert_equal "std.c.libuv", registry.fetch("libuv").raw_module_name
+    assert_includes registry.fetch("libuv").binding_path, "/std/libuv.mt"
+    assert_includes registry.fetch("libuv").policy_path, "/bindings/imported/libuv.binding.json"
+  end
+
+  def test_checked_in_libuv_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("libuv")
+
+    assert_includes binding.check!, "/std/c/libuv.mt"
+
+    source = File.read(binding.binding_path)
+    assert_match(/^import std\.c\.libuv_system as sys$/, source)
+    assert_match(/^pub type uv_loop_t = c\.uv_loop_t$/, source)
+    assert_match(/^pub type uv_run_mode = c\.uv_run_mode$/, source)
+    assert_match(/^pub type uv_alloc_cb = c\.uv_alloc_cb$/, source)
+    assert_match(/^pub const RUN_DEFAULT: uv_run_mode = c\.UV_RUN_DEFAULT$/, source)
+    assert_match(/^pub const RUN_NOWAIT: uv_run_mode = c\.UV_RUN_NOWAIT$/, source)
+    assert_match(/^pub foreign def version\(\) -> u32 = c\.uv_version$/, source)
+    assert_match(/^pub foreign def version_string\(\) -> cstr = c\.uv_version_string$/, source)
+    assert_match(/^pub foreign def default_loop\(\) -> ptr\[uv_loop_t\] = c\.uv_default_loop$/, source)
+    assert_match(/^pub foreign def loop_init\(loop: ptr\[uv_loop_t\]\) -> i32 = c\.uv_loop_init$/, source)
+    assert_match(/^pub foreign def loop_close\(loop: ptr\[uv_loop_t\]\) -> i32 = c\.uv_loop_close$/, source)
+    assert_match(/^pub foreign def run\(arg0: ptr\[uv_loop_t\], mode: uv_run_mode\) -> i32 = c\.uv_run$/, source)
+    refute_match(/^pub foreign def uv_version\(/, source)
+    refute_match(/^pub foreign def loop_configure\(/, source)
   end
 
   def test_checked_in_sdl3_binding_matches_policy_and_loads
@@ -120,6 +147,57 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     end
   end
 
+  def test_generate_replays_raw_module_imports_needed_by_exposed_types
+    Dir.mktmpdir("milk-tea-imported-binding-raw-imports") do |dir|
+      dep_path = File.join(dir, "std", "c", "dep.mt")
+      raw_path = File.join(dir, "std", "c", "sample.mt")
+      binding_path = File.join(dir, "std", "sample.mt")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
+      FileUtils.mkdir_p(File.dirname(dep_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
+
+      File.write(dep_path, <<~MT)
+        extern module std.c.dep:
+            opaque Thing = c"Thing"
+      MT
+
+      File.write(raw_path, <<~MT)
+        extern module std.c.sample:
+            import std.c.dep as dep
+
+            extern def sample(arg: ptr[dep.Thing]) -> void
+      MT
+
+      File.write(policy_path, JSON.pretty_generate({
+        module_name: "std.sample",
+        raw_module_name: "std.c.sample",
+        raw_import_alias: "c",
+        types: {},
+        constants: {},
+        functions: {
+          include: ["sample"],
+        },
+      }))
+
+      binding = MilkTea::ImportedBindings::Binding.new(
+        name: "sample",
+        module_name: "std.sample",
+        binding_path:,
+        raw_module_name: "std.c.sample",
+        policy_path:,
+      )
+
+      source = binding.generate(module_roots: [dir])
+
+      assert_match(/^import std\.c\.sample as c$/, source)
+      assert_match(/^import std\.c\.dep as dep$/, source)
+      assert_match(/^pub foreign def sample\(arg: ptr\[dep\.Thing\]\) -> void = c\.sample$/, source)
+
+      File.write(binding_path, source)
+      assert_includes binding.check!(module_roots: [dir]), "/std/c/sample.mt"
+    end
+  end
+
   def test_checked_in_raylib_binding_matches_policy_and_loads
     binding = MilkTea::ImportedBindings.default_registry.fetch("raylib")
 
@@ -204,7 +282,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
 
   def test_imported_bindings_outside_raylib_and_rlgl_do_not_expose_raw_ptr_void
     offending_bindings = MilkTea::ImportedBindings.default_registry.reject do |binding|
-      %w[raylib rlgl sdl3].include?(binding.name)
+      %w[raylib rlgl sdl3 libuv].include?(binding.name)
     end.filter_map do |binding|
       binding.name if File.read(binding.binding_path).match?(/\bptr\[void\]\b/)
     end
