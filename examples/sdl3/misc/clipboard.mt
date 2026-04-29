@@ -20,7 +20,7 @@ var paste_button_rect: c.SDL_FRect = zero[c.SDL_FRect]()
 var copy_pressed: bool = false
 var paste_pressed: bool = false
 var current_time: array[char, 64] = zero[array[char, 64]]()
-var pasted_str: ptr[char]? = null[ptr[char]]
+var pasted_str: ptr[char]? = null
 
 def text_width(text: cstr) -> f32:
     return cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) * cast[f32](c.SDL_strlen(text))
@@ -134,7 +134,7 @@ def render_pasted_text() -> void:
         if line == null:
             break
 
-        var newline: ptr[char]? = null[ptr[char]]
+        var newline: ptr[char]? = null
         unsafe:
             newline = c.SDL_strchr(cast[cstr](line), 10)
         if newline == null:

@@ -124,7 +124,7 @@ extern module std.c.raylib:
         normals: ptr[f32]
         tangents: ptr[f32]
         colors: ptr[u8]
-        indices: ptr[u16]
+        indices: ptr[u16]?
         boneCount: i32
         boneIndices: ptr[u8]
         boneWeights: ptr[f32]

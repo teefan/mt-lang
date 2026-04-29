@@ -54,7 +54,7 @@ def alloc_f32(count: i32) -> ptr[f32]:
 
 def mesh_has_indices(mesh: rl.Mesh) -> bool:
     unsafe:
-        return mesh.indices != zero[ptr[u16]]()
+        return mesh.indices != null
 
 def mesh_vertex(mesh: rl.Mesh, index: i32) -> rl.Vector3:
     unsafe:
@@ -65,8 +65,12 @@ def mesh_vertex(mesh: rl.Mesh, index: i32) -> rl.Vector3:
         )
 
 def mesh_index(mesh: rl.Mesh, index: i32) -> i32:
-    unsafe:
-        return cast[i32](mesh.indices[index])
+    let indices = mesh.indices
+    if indices != null:
+        unsafe:
+            return cast[i32](indices[index])
+
+    panic("mesh indices missing")
 
 def triangle_vertices(v0: rl.Vector3, v1: rl.Vector3, v2: rl.Vector3) -> array[rl.Vector3, 3]:
     var vertices = zero[array[rl.Vector3, 3]]()

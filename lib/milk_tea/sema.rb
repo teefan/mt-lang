@@ -1380,7 +1380,7 @@ module MilkTea
         when :reinterpret
           check_reinterpret_call(callable, expression.arguments, scopes:)
         when :zero
-          check_zero_call(callable, expression.arguments)
+          check_zero_call(callable, expression.arguments, expected_type:)
         when :result_ok, :result_err
           check_result_construction(callable_kind, expression.arguments, scopes:, expected_type:)
         when :panic
@@ -1955,10 +1955,14 @@ module MilkTea
         target_type
       end
 
-      def check_zero_call(target_type, arguments)
+      def check_zero_call(target_type, arguments, expected_type: nil)
         raise SemaError, "zero expects 0 arguments, got #{arguments.length}" unless arguments.empty?
 
         zero_initializable_type?(target_type)
+        if expected_type.is_a?(Types::Nullable) && typed_null_target_type?(expected_type.base) && types_compatible?(target_type, expected_type.base)
+          raise SemaError, "use null instead of zero[#{target_type}]() in nullable pointer-like context #{expected_type}"
+        end
+
         target_type
       end
 

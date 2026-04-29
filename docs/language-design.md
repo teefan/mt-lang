@@ -157,6 +157,7 @@ flags DrawFlags: u32
 - `var` creates a mutable local binding.
 - `const` defines a compile-time constant.
 - A typed local declaration without `= ...` zero-initializes that local. This is the normal local-storage form and is only valid for types that `zero[T]()` already supports. Use `zero[T]()` or `Type()` only when you need a value expression.
+- For pointer-like absence, use a nullable type plus `null`. `zero[ptr[T]]()` remains available for low-level zero-initialized pointer storage, but the compiler rejects it when the surrounding expected type is already a nullable pointer-like type. In those contexts, write `null`.
 
 ```mt
 let width: i32 = 1280
@@ -380,6 +381,8 @@ let name: cstr? = null
 ```
 
 Only nullable pointer-like types may hold `null`.
+When contextual typing already determines the nullable pointer-like type, prefer bare `null` over a typed form such as `null[ptr[Window]]`. Use a typed `null[...]` only when the surrounding context does not provide the target nullable pointer-like type.
+Do not use `zero[ptr[T]]()` as a replacement for `null`; `null` expresses absence, while `zero[T]()` is the generic value-initialization surface. When the expected type is already a nullable pointer-like type, the compiler rejects `zero[ptr[T]]()` and requires `null`.
 
 ### User-defined types
 

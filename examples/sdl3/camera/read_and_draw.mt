@@ -10,8 +10,8 @@ const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogic
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
-var camera: ptr[c.SDL_Camera]? = null[ptr[c.SDL_Camera]]
-var texture: ptr[c.SDL_Texture]? = null[ptr[c.SDL_Texture]]
+var camera: ptr[c.SDL_Camera]? = null
+var texture: ptr[c.SDL_Texture]? = null
 var exit_status: i32 = 0
 
 def pump_events() -> bool:
@@ -70,7 +70,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
-    var devices: ptr[c.SDL_CameraID]? = null[ptr[c.SDL_CameraID]]
+    var devices: ptr[c.SDL_CameraID]? = null
     var device_count: i32 = 0
 
     c.SDL_SetAppMetadata(c"Example Camera Read and Draw", c"1.0", c"com.example.camera-read-and-draw")

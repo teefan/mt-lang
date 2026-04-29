@@ -14,7 +14,7 @@ const sample_chunk_size: i32 = 128
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
-var stream: ptr[c.SDL_AudioStream]? = null[ptr[c.SDL_AudioStream]]
+var stream: ptr[c.SDL_AudioStream]? = null
 var current_sine_sample: i32 = 0
 
 def min_i32(lhs: i32, rhs: i32) -> i32:

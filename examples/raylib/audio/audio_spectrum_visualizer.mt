@@ -40,10 +40,6 @@ var fft_history: array[array[f32, 512], 45]
 var history_pos: i32 = 0
 var tapback_pos: f32 = 0.01
 
-def null_cstr() -> cstr:
-    unsafe:
-        return cast[cstr](null[ptr[char]])
-
 def swap_fft_values(left: i32, right: i32) -> void:
     let temp = work_buffer[left]
     work_buffer[left] = work_buffer[right]
@@ -152,7 +148,7 @@ def main() -> i32:
     defer rl.UnloadRenderTexture(buffer_a)
 
     var i_resolution = rl.Vector2(x = cast[f32](screen_width), y = cast[f32](screen_height))
-    let shader = rl.LoadShader(null_cstr(), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(null, rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let i_resolution_location = rl.GetShaderLocation(shader, resolution_uniform_name)

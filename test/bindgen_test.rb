@@ -212,6 +212,34 @@ class MilkTeaBindgenTest < Minitest::Test
     end
   end
 
+  def test_generate_applies_field_type_overrides
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-field-overrides") do |dir|
+      header_path = File.join(dir, "sample.h")
+      File.write(header_path, <<~C)
+        typedef struct Mesh {
+          unsigned short *indices;
+          float *vertices;
+        } Mesh;
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+        field_type_overrides: {
+          "Mesh" => { "indices" => "ptr[u16]?" },
+        },
+      )
+
+      assert_match(/indices: ptr\[u16\]\?/, generated)
+      assert_match(/vertices: ptr\[f32\]/, generated)
+    end
+  end
+
   def test_generate_applies_module_imports_and_type_overrides
     clang = ENV.fetch("CLANG", "clang")
     skip "clang not available: #{clang}" unless executable_available?(clang)

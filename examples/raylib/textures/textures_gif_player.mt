@@ -27,7 +27,7 @@ def main() -> i32:
     let tex_scarfy_anim = rl.LoadTextureFromImage(im_scarfy_anim)
     defer rl.UnloadTexture(tex_scarfy_anim)
 
-    var frame_pixels = zero[ptr[u8]]()
+    var frame_pixels: ptr[u8]
     unsafe:
         frame_pixels = cast[ptr[u8]](im_scarfy_anim.data)
 

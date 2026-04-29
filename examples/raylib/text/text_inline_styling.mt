@@ -61,7 +61,7 @@ def draw_text_styled(font: rl.Font, text: cstr, position: rl.Vector2, font_size:
                         else:
                             break
 
-                    let color_value = libc.strtoul(cast[cstr](raw(addr(color_text[0]))), zero[ptr[ptr[char]]](), 16)
+                    let color_value = libc.strtoul(cast[cstr](raw(addr(color_text[0]))), null, 16)
                     if color_kind == cast[char](99):
                         col_front = rl.GetColor(cast[u32](color_value))
                     elif color_kind == cast[char](98):

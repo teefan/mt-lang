@@ -3130,6 +3130,69 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_rejects_zero_pointer_initializer_for_nullable_pointer_local
+    source = <<~MT
+      module demo.bad_zero_pointer_initializer
+
+      def main() -> void:
+          let maybe_buffer: ptr[char]? = zero[ptr[char]]()
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/use null instead of zero\[ptr\[char\]\]\(\) in nullable pointer-like context ptr\[char\]\?/, error.message)
+  end
+
+  def test_rejects_zero_pointer_assignment_to_nullable_pointer_local
+    source = <<~MT
+      module demo.bad_zero_pointer_assignment
+
+      def main() -> void:
+          var maybe_buffer: ptr[char]? = null
+          maybe_buffer = zero[ptr[char]]()
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/use null instead of zero\[ptr\[char\]\]\(\) in nullable pointer-like context ptr\[char\]\?/, error.message)
+  end
+
+  def test_rejects_zero_pointer_argument_for_nullable_pointer_parameter
+    source = <<~MT
+      module demo.bad_zero_pointer_argument
+
+      extern def set_buffer(value: ptr[char]?) -> void
+
+      def main() -> void:
+          set_buffer(zero[ptr[char]]())
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/use null instead of zero\[ptr\[char\]\]\(\) in nullable pointer-like context ptr\[char\]\?/, error.message)
+  end
+
+  def test_rejects_zero_pointer_return_for_nullable_pointer_return
+    source = <<~MT
+      module demo.bad_zero_pointer_return
+
+      def main() -> ptr[char]?:
+          return zero[ptr[char]]()
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/use null instead of zero\[ptr\[char\]\]\(\) in nullable pointer-like context ptr\[char\]\?/, error.message)
+  end
+
   def test_rejects_char_as_general_numeric_type
     source = <<~MT
       module demo.bad_char_numeric

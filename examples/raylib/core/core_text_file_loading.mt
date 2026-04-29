@@ -25,7 +25,7 @@ def main() -> i32:
 
     let text = rl.LoadFileText(file_name)
     var line_count = 0
-    var lines: ptr[ptr[char]] = zero[ptr[ptr[char]]]()
+    var lines: ptr[ptr[char]]
     unsafe:
         lines = rl.LoadTextLines(cast[cstr](text), raw(addr(line_count)))
 

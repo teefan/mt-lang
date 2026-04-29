@@ -323,8 +323,7 @@ def main() -> i32:
     var light = rl.MAROON
     var dark = rl.RED
     var alpha_discard = zero[rl.Shader]()
-    unsafe:
-        alpha_discard = rl.LoadShader(cast[cstr](null[ptr[char]]), alpha_discard_shader_path)
+    alpha_discard = rl.LoadShader(null, alpha_discard_shader_path)
     defer rl.UnloadShader(alpha_discard)
 
     var multi = zero[array[rl.Color, 32]]()
@@ -342,7 +341,7 @@ def main() -> i32:
                     let dropped_path = cast[cstr](deref(dropped_files.paths))
                     if rl.IsFileExtension(dropped_path, c".ttf"):
                         rl.UnloadFont(font)
-                        font = rl.LoadFontEx(dropped_path, cast[i32](font_size), zero[ptr[i32]](), 0)
+                        font = rl.LoadFontEx(dropped_path, cast[i32](font_size), null, 0)
                     elif rl.IsFileExtension(dropped_path, c".fnt"):
                         rl.UnloadFont(font)
                         font = rl.LoadFont(dropped_path)

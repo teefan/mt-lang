@@ -26,7 +26,7 @@ def main() -> i32:
     var font_default = zero[rl.Font]()
     font_default.baseSize = 16
     font_default.glyphCount = 95
-    font_default.glyphs = rl.LoadFontData(file_data, file_size, 16, zero[ptr[i32]](), 95, rl.FontType.FONT_DEFAULT, raw(addr(font_default.glyphCount)))
+    font_default.glyphs = rl.LoadFontData(file_data, file_size, 16, null, 95, rl.FontType.FONT_DEFAULT, raw(addr(font_default.glyphCount)))
     var atlas = rl.GenImageFontAtlas(font_default.glyphs, raw(addr(font_default.recs)), 95, 16, 4, 0)
     font_default.texture = rl.LoadTextureFromImage(atlas)
     rl.UnloadImage(atlas)
@@ -35,15 +35,14 @@ def main() -> i32:
     var font_sdf = zero[rl.Font]()
     font_sdf.baseSize = 16
     font_sdf.glyphCount = 95
-    font_sdf.glyphs = rl.LoadFontData(file_data, file_size, 16, zero[ptr[i32]](), 0, rl.FontType.FONT_SDF, raw(addr(font_sdf.glyphCount)))
+    font_sdf.glyphs = rl.LoadFontData(file_data, file_size, 16, null, 0, rl.FontType.FONT_SDF, raw(addr(font_sdf.glyphCount)))
     atlas = rl.GenImageFontAtlas(font_sdf.glyphs, raw(addr(font_sdf.recs)), 95, 16, 0, 1)
     font_sdf.texture = rl.LoadTextureFromImage(atlas)
     rl.UnloadImage(atlas)
     defer rl.UnloadFont(font_sdf)
 
     var shader = zero[rl.Shader]()
-    unsafe:
-        shader = rl.LoadShader(cast[cstr](null[ptr[char]]), shader_path)
+    shader = rl.LoadShader(null, shader_path)
     defer rl.UnloadShader(shader)
 
     rl.SetTextureFilter(font_sdf.texture, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)

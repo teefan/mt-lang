@@ -11,7 +11,7 @@ const joystick_size: f32 = 30.0
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
-var joystick: ptr[c.SDL_Joystick]? = null[ptr[c.SDL_Joystick]]
+var joystick: ptr[c.SDL_Joystick]? = null
 var colors: array[c.SDL_Color, 64] = zero[array[c.SDL_Color, 64]]()
 
 def pump_events() -> bool:
@@ -29,7 +29,7 @@ def pump_events() -> bool:
                     if joystick != null:
                         if c.SDL_GetJoystickID(joystick) == event.jdevice.which:
                             c.SDL_CloseJoystick(joystick)
-                            joystick = null[ptr[c.SDL_Joystick]]
+                            joystick = null
 
     return true
 

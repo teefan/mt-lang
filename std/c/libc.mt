@@ -7,8 +7,8 @@ extern module std.c.libc:
         rem: i32
 
     struct ldiv_t:
-        quot: i64
-        rem: i64
+        quot: isize
+        rem: isize
 
     struct lldiv_t:
         quot: i64
@@ -20,63 +20,61 @@ extern module std.c.libc:
 
     extern def atoi(__nptr: cstr) -> i32
 
-    extern def atol(__nptr: cstr) -> i64
+    extern def atol(__nptr: cstr) -> isize
 
     extern def atoll(__nptr: cstr) -> i64
 
-    extern def strtod(__nptr: cstr, __endptr: ptr[ptr[char]]) -> f64
+    extern def strtod(__nptr: cstr, __endptr: ptr[ptr[char]]?) -> f64
 
-    extern def strtof(__nptr: cstr, __endptr: ptr[ptr[char]]) -> f32
+    extern def strtof(__nptr: cstr, __endptr: ptr[ptr[char]]?) -> f32
 
-    extern def strtol(__nptr: cstr, __endptr: ptr[ptr[char]], __base: i32) -> i64
+    extern def strtol(__nptr: cstr, __endptr: ptr[ptr[char]]?, __base: i32) -> isize
 
-    extern def strtoul(__nptr: cstr, __endptr: ptr[ptr[char]], __base: i32) -> u64
+    extern def strtoul(__nptr: cstr, __endptr: ptr[ptr[char]]?, __base: i32) -> usize
 
-    extern def strtoq(__nptr: cstr, __endptr: ptr[ptr[char]], __base: i32) -> i64
+    extern def strtoq(__nptr: cstr, __endptr: ptr[ptr[char]]?, __base: i32) -> i64
 
-    extern def strtouq(__nptr: cstr, __endptr: ptr[ptr[char]], __base: i32) -> u64
+    extern def strtouq(__nptr: cstr, __endptr: ptr[ptr[char]]?, __base: i32) -> u64
 
-    extern def strtoll(__nptr: cstr, __endptr: ptr[ptr[char]], __base: i32) -> i64
+    extern def strtoll(__nptr: cstr, __endptr: ptr[ptr[char]]?, __base: i32) -> i64
 
-    extern def strtoull(__nptr: cstr, __endptr: ptr[ptr[char]], __base: i32) -> u64
+    extern def strtoull(__nptr: cstr, __endptr: ptr[ptr[char]]?, __base: i32) -> u64
 
-    extern def l64a(__n: i64) -> ptr[char]
+    extern def l64a(__n: isize) -> ptr[char]
 
-    extern def a64l(__s: cstr) -> i64
-
-    type u_char = u8
+    extern def a64l(__s: cstr) -> isize
 
     type u_short = u16
 
     type u_int = u32
 
-    type u_long = u64
+    type u_long = usize
 
-    type quad_t = i64
+    type quad_t = isize
 
-    type u_quad_t = u64
+    type u_quad_t = usize
 
-    type loff_t = i64
+    type loff_t = isize
 
-    type ino_t = u64
+    type ino_t = usize
 
-    type dev_t = u64
+    type dev_t = usize
 
     type gid_t = u32
 
     type mode_t = u32
 
-    type nlink_t = u64
+    type nlink_t = usize
 
     type uid_t = u32
 
-    type off_t = i64
+    type off_t = isize
 
     type pid_t = i32
 
     type id_t = u32
 
-    type ssize_t = i64
+    type ssize_t = isize
 
     type daddr_t = i32
 
@@ -84,35 +82,29 @@ extern module std.c.libc:
 
     type key_t = i32
 
-    type ulong = u64
-
     type ushort = u16
 
     type uint = u32
-
-    type u_int8_t = u8
 
     type u_int16_t = u16
 
     type u_int32_t = u32
 
-    type u_int64_t = u64
+    type u_int64_t = usize
 
-    type register_t = i64
+    type register_t = isize
 
-    type blksize_t = i64
+    type blkcnt_t = isize
 
-    type blkcnt_t = i64
+    type fsblkcnt_t = usize
 
-    type fsblkcnt_t = u64
+    type fsfilcnt_t = usize
 
-    type fsfilcnt_t = u64
-
-    extern def random() -> i64
+    extern def random() -> isize
 
     extern def srandom(__seed: u32) -> void
 
-    extern def initstate(__seed: u32, __statebuf: ptr[char], __statelen: u64) -> ptr[char]
+    extern def initstate(__seed: u32, __statebuf: ptr[char], __statelen: usize) -> ptr[char]
 
     extern def setstate(__statebuf: ptr[char]) -> ptr[char]
 
@@ -129,7 +121,7 @@ extern module std.c.libc:
 
     extern def srandom_r(__seed: u32, __buf: ptr[random_data]) -> i32
 
-    extern def initstate_r(__seed: u32, __statebuf: ptr[char], __statelen: u64, __buf: ptr[random_data]) -> i32
+    extern def initstate_r(__seed: u32, __statebuf: ptr[char], __statelen: usize, __buf: ptr[random_data]) -> i32
 
     extern def setstate_r(__statebuf: ptr[char], __buf: ptr[random_data]) -> i32
 
@@ -143,15 +135,15 @@ extern module std.c.libc:
 
     extern def erand48(__xsubi: ptr[u16]) -> f64
 
-    extern def lrand48() -> i64
+    extern def lrand48() -> isize
 
-    extern def nrand48(__xsubi: ptr[u16]) -> i64
+    extern def nrand48(__xsubi: ptr[u16]) -> isize
 
-    extern def mrand48() -> i64
+    extern def mrand48() -> isize
 
-    extern def jrand48(__xsubi: ptr[u16]) -> i64
+    extern def jrand48(__xsubi: ptr[u16]) -> isize
 
-    extern def srand48(__seedval: i64) -> void
+    extern def srand48(__seedval: isize) -> void
 
     extern def seed48(__seed16v: ptr[u16]) -> ptr[u16]
 
@@ -168,15 +160,15 @@ extern module std.c.libc:
 
     extern def erand48_r(__xsubi: ptr[u16], __buffer: ptr[drand48_data], __result: ptr[f64]) -> i32
 
-    extern def lrand48_r(__buffer: ptr[drand48_data], __result: ptr[i64]) -> i32
+    extern def lrand48_r(__buffer: ptr[drand48_data], __result: ptr[isize]) -> i32
 
-    extern def nrand48_r(__xsubi: ptr[u16], __buffer: ptr[drand48_data], __result: ptr[i64]) -> i32
+    extern def nrand48_r(__xsubi: ptr[u16], __buffer: ptr[drand48_data], __result: ptr[isize]) -> i32
 
-    extern def mrand48_r(__buffer: ptr[drand48_data], __result: ptr[i64]) -> i32
+    extern def mrand48_r(__buffer: ptr[drand48_data], __result: ptr[isize]) -> i32
 
-    extern def jrand48_r(__xsubi: ptr[u16], __buffer: ptr[drand48_data], __result: ptr[i64]) -> i32
+    extern def jrand48_r(__xsubi: ptr[u16], __buffer: ptr[drand48_data], __result: ptr[isize]) -> i32
 
-    extern def srand48_r(__seedval: i64, __buffer: ptr[drand48_data]) -> i32
+    extern def srand48_r(__seedval: isize, __buffer: ptr[drand48_data]) -> i32
 
     extern def seed48_r(__seed16v: ptr[u16], __buffer: ptr[drand48_data]) -> i32
 
@@ -184,27 +176,25 @@ extern module std.c.libc:
 
     extern def arc4random() -> u32
 
-    extern def arc4random_buf(__buf: ptr[void], __size: u64) -> void
+    extern def arc4random_buf(__buf: ptr[void], __size: usize) -> void
 
     extern def arc4random_uniform(__upper_bound: u32) -> u32
 
-    extern def malloc(__size: u64) -> ptr[void]?
+    extern def malloc(__size: usize) -> ptr[void]?
 
-    extern def calloc(__nmemb: u64, __size: u64) -> ptr[void]?
+    extern def calloc(__nmemb: usize, __size: usize) -> ptr[void]?
 
-    extern def realloc(__ptr: ptr[void]?, __size: u64) -> ptr[void]?
+    extern def realloc(__ptr: ptr[void]?, __size: usize) -> ptr[void]?
 
     extern def free(__ptr: ptr[void]?) -> void
 
-    extern def reallocarray(__ptr: ptr[void]?, __nmemb: u64, __size: u64) -> ptr[void]?
+    extern def reallocarray(__ptr: ptr[void]?, __nmemb: usize, __size: usize) -> ptr[void]?
 
-    extern def alloca(__size: u64) -> ptr[void]
+    extern def valloc(__size: usize) -> ptr[void]
 
-    extern def valloc(__size: u64) -> ptr[void]
+    extern def posix_memalign(__memptr: ptr[ptr[void]], __alignment: usize, __size: usize) -> i32
 
-    extern def posix_memalign(__memptr: ptr[ptr[void]], __alignment: u64, __size: u64) -> i32
-
-    extern def aligned_alloc(__alignment: u64, __size: u64) -> ptr[void]?
+    extern def aligned_alloc(__alignment: usize, __size: usize) -> ptr[void]?
 
     extern def abort() -> void
 
@@ -244,19 +234,19 @@ extern module std.c.libc:
 
     type __compar_fn_t = fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> i32
 
-    extern def bsearch(__key: const_ptr[void], __base: const_ptr[void], __nmemb: u64, __size: u64, __compar: fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> i32) -> ptr[void]
+    extern def bsearch(__key: const_ptr[void], __base: const_ptr[void], __nmemb: usize, __size: usize, __compar: fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> i32) -> ptr[void]
 
-    extern def qsort(__base: ptr[void], __nmemb: u64, __size: u64, __compar: fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> i32) -> void
+    extern def qsort(__base: ptr[void], __nmemb: usize, __size: usize, __compar: fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> i32) -> void
 
     extern def abs(__x: i32) -> i32
 
-    extern def labs(__x: i64) -> i64
+    extern def labs(__x: isize) -> isize
 
     extern def llabs(__x: i64) -> i64
 
     extern def div(__numer: i32, __denom: i32) -> div_t
 
-    extern def ldiv(__numer: i64, __denom: i64) -> ldiv_t
+    extern def ldiv(__numer: isize, __denom: isize) -> ldiv_t
 
     extern def lldiv(__numer: i64, __denom: i64) -> lldiv_t
 
@@ -266,19 +256,19 @@ extern module std.c.libc:
 
     extern def gcvt(__value: f64, __ndigit: i32, __buf: ptr[char]) -> ptr[char]
 
-    extern def ecvt_r(__value: f64, __ndigit: i32, __decpt: ptr[i32], __sign: ptr[i32], __buf: ptr[char], __len: u64) -> i32
+    extern def ecvt_r(__value: f64, __ndigit: i32, __decpt: ptr[i32], __sign: ptr[i32], __buf: ptr[char], __len: usize) -> i32
 
-    extern def fcvt_r(__value: f64, __ndigit: i32, __decpt: ptr[i32], __sign: ptr[i32], __buf: ptr[char], __len: u64) -> i32
+    extern def fcvt_r(__value: f64, __ndigit: i32, __decpt: ptr[i32], __sign: ptr[i32], __buf: ptr[char], __len: usize) -> i32
 
-    extern def mblen(__s: cstr, __n: u64) -> i32
+    extern def mblen(__s: cstr, __n: usize) -> i32
 
-    extern def mbtowc(__pwc: ptr[i32], __s: cstr, __n: u64) -> i32
+    extern def mbtowc(__pwc: ptr[i32], __s: cstr, __n: usize) -> i32
 
     extern def wctomb(__s: ptr[char], __wchar: i32) -> i32
 
-    extern def mbstowcs(__pwcs: ptr[i32], __s: cstr, __n: u64) -> usize
+    extern def mbstowcs(__pwcs: ptr[i32], __s: cstr, __n: usize) -> usize
 
-    extern def wcstombs(__s: ptr[char], __pwcs: const_ptr[i32], __n: u64) -> usize
+    extern def wcstombs(__s: ptr[char], __pwcs: const_ptr[i32], __n: usize) -> usize
 
     extern def rpmatch(__response: cstr) -> i32
 
