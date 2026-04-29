@@ -926,7 +926,7 @@ extern module std.c.sdl3:
 
     extern def SDL_PutAudioStreamDataNoCopy(stream: ptr[SDL_AudioStream], buf: const_ptr[void], len: i32, callback: fn(arg0: ptr[void], arg1: const_ptr[void], arg2: i32) -> void, userdata: ptr[void]) -> bool
 
-    extern def SDL_PutAudioStreamPlanarData(stream: ptr[SDL_AudioStream], channel_buffers: const_ptr[const_ptr[void]], num_channels: i32, num_samples: i32) -> bool
+    extern def SDL_PutAudioStreamPlanarData(stream: ptr[SDL_AudioStream], channel_buffers: const_ptr[const_ptr[void]?], num_channels: i32, num_samples: i32) -> bool
 
     extern def SDL_GetAudioStreamData(stream: ptr[SDL_AudioStream], buf: ptr[void], len: i32) -> i32
 

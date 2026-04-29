@@ -4570,6 +4570,10 @@ module MilkTea
         when "ptr"
           raise LoweringError, "ptr requires exactly one type argument" unless arguments.length == 1
           raise LoweringError, "ptr type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
+        when "const_ptr"
+          raise LoweringError, "const_ptr requires exactly one type argument" unless arguments.length == 1
+          raise LoweringError, "const_ptr type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
+          raise LoweringError, "const_ptr cannot target ref types" if contains_ref_type?(arguments.first)
         when "ref"
           raise LoweringError, "ref requires exactly one type argument" unless arguments.length == 1
           raise LoweringError, "ref type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)

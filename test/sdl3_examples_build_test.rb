@@ -4,6 +4,18 @@ require "tmpdir"
 require_relative "test_helper"
 
 class MilkTeaSdl3ExamplesBuildTest < Minitest::Test
+  def test_sdl3_example_resources_are_vendored
+    manifest = resource_manifest
+    refute_empty manifest
+
+    missing = manifest.reject { |entry| File.exist?(entry.fetch(:resource_path)) }
+
+    assert_empty missing, <<~MSG
+      Missing SDL3 example resources:
+      #{missing.map { |entry| "#{entry.fetch(:relative_path)} -> #{entry.fetch(:resource_relative_path)}" }.join("\n")}
+    MSG
+  end
+
   def test_sdl3_examples_build_with_host_compiler
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
@@ -51,6 +63,22 @@ class MilkTeaSdl3ExamplesBuildTest < Minitest::Test
         path: path,
         relative_path: path.delete_prefix(examples_root + "/"),
       }
+    end
+  end
+
+  def resource_manifest
+    resources_root = File.expand_path("../examples/sdl3/resources", __dir__)
+
+    example_manifest.flat_map do |entry|
+      source = File.read(entry.fetch(:path))
+
+      source.scan(%r{\.\./resources/([^"\s]+)}).flatten.uniq.map do |resource_relative_path|
+        {
+          relative_path: entry.fetch(:relative_path),
+          resource_relative_path: resource_relative_path,
+          resource_path: File.join(resources_root, resource_relative_path),
+        }
+      end
     end
   end
 

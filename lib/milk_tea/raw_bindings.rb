@@ -236,6 +236,7 @@ module MilkTea
         "SDL_OpenAudioDevice" => { "spec" => "const_ptr[SDL_AudioSpec]?" },
         "SDL_CreateAudioStream" => { "dst_spec" => "const_ptr[SDL_AudioSpec]?" },
         "SDL_OpenAudioDeviceStream" => { "userdata" => "ptr[void]?" },
+        "SDL_PutAudioStreamPlanarData" => { "channel_buffers" => "const_ptr[const_ptr[void]?]" },
         "SDL_StepUTF8" => { "pslen" => "ptr[usize]?" },
         "SDL_MapRGB" => { "palette" => "const_ptr[SDL_Palette]?" },
         "SDL_MapRGBA" => { "palette" => "const_ptr[SDL_Palette]?" },
