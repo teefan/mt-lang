@@ -881,7 +881,7 @@ extern module std.c.raylib:
 
     extern def GetFileLength(fileName: cstr) -> i32
 
-    extern def GetFileModTime(fileName: cstr) -> i64
+    extern def GetFileModTime(fileName: cstr) -> isize
 
     extern def GetFileExtension(fileName: cstr) -> cstr
 
@@ -937,7 +937,7 @@ extern module std.c.raylib:
 
     extern def ComputeSHA256(data: ptr[u8], dataSize: i32) -> ptr[u32]
 
-    extern def LoadAutomationEventList(fileName: cstr) -> AutomationEventList
+    extern def LoadAutomationEventList(fileName: cstr?) -> AutomationEventList
 
     extern def UnloadAutomationEventList(list: AutomationEventList) -> void
 

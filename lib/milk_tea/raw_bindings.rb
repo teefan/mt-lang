@@ -203,6 +203,7 @@ module MilkTea
       vendored_sdl3_library = vendored_sdl3.library
 
       raylib_function_param_overrides = {
+        "LoadAutomationEventList" => { "fileName" => "cstr?" },
         "LoadFontEx" => { "codepoints" => "ptr[i32]?" },
         "LoadFontFromMemory" => { "codepoints" => "ptr[i32]?" },
         "LoadFontData" => { "codepoints" => "ptr[i32]?" },
@@ -214,6 +215,35 @@ module MilkTea
           "vsCode" => "cstr?",
           "fsCode" => "cstr?",
         },
+      }.freeze
+
+      sdl3_function_param_overrides = {
+        "SDL_RunApp" => { "reserved" => "ptr[void]?" },
+        "SDL_MapRGB" => { "palette" => "const_ptr[SDL_Palette]?" },
+        "SDL_MapRGBA" => { "palette" => "const_ptr[SDL_Palette]?" },
+        "SDL_FillSurfaceRect" => { "rect" => "const_ptr[SDL_Rect]?" },
+        "SDL_LockTextureToSurface" => { "rect" => "const_ptr[SDL_Rect]?" },
+        "SDL_SetRenderViewport" => { "rect" => "const_ptr[SDL_Rect]?" },
+        "SDL_SetRenderClipRect" => { "rect" => "const_ptr[SDL_Rect]?" },
+        "SDL_RenderTexture" => {
+          "srcrect" => "const_ptr[SDL_FRect]?",
+          "dstrect" => "const_ptr[SDL_FRect]?",
+        },
+        "SDL_RenderTextureRotated" => { "srcrect" => "const_ptr[SDL_FRect]?" },
+        "SDL_RenderTextureAffine" => { "srcrect" => "const_ptr[SDL_FRect]?" },
+        "SDL_RenderGeometry" => {
+          "texture" => "ptr[SDL_Texture]?",
+          "indices" => "const_ptr[i32]?",
+        },
+        "SDL_RenderReadPixels" => { "rect" => "const_ptr[SDL_Rect]?" },
+      }.freeze
+
+      sdl3_function_return_overrides = {
+        "SDL_LoadPNG" => "ptr[SDL_Surface]?",
+        "SDL_ConvertSurface" => "ptr[SDL_Surface]?",
+        "SDL_CreateTexture" => "ptr[SDL_Texture]?",
+        "SDL_CreateTextureFromSurface" => "ptr[SDL_Texture]?",
+        "SDL_RenderReadPixels" => "ptr[SDL_Surface]?",
       }.freeze
 
       [
@@ -272,6 +302,11 @@ module MilkTea
           link_libraries: ["raylib"],
           vendored_library: vendored_raylib,
           compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
+          function_param_type_overrides: {
+            "rlLoadTexture" => { "data" => "const_ptr[void]?" },
+            "rlLoadTextureCubemap" => { "data" => "const_ptr[void]?" },
+            "rlLoadShaderBuffer" => { "data" => "const_ptr[void]?" },
+          },
           header_candidates: [
             root.join("third_party/raylib-upstream/src/rlgl.h").to_s,
           ],
@@ -328,9 +363,8 @@ module MilkTea
             vendored_sdl3.header_root.to_s,
           ],
           declaration_name_prefixes: ["SDL_", "Sint", "Uint"],
-          function_param_type_overrides: {
-            "SDL_RunApp" => { "reserved" => "ptr[void]?" },
-          },
+          function_param_type_overrides: sdl3_function_param_overrides,
+          function_return_type_overrides: sdl3_function_return_overrides,
           header_candidates: [
             vendored_sdl3.header_root.join("SDL.h").to_s,
           ],

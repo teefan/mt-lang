@@ -411,11 +411,11 @@ extern module std.c.rlgl:
 
     extern def rlDrawVertexArrayElementsInstanced(offset: i32, count: i32, buffer: const_ptr[void], instances: i32) -> void
 
-    extern def rlLoadTexture(data: const_ptr[void], width: i32, height: i32, format: i32, mipmapCount: i32) -> u32
+    extern def rlLoadTexture(data: const_ptr[void]?, width: i32, height: i32, format: i32, mipmapCount: i32) -> u32
 
     extern def rlLoadTextureDepth(width: i32, height: i32, useRenderBuffer: bool) -> u32
 
-    extern def rlLoadTextureCubemap(data: const_ptr[void], size: i32, format: i32, mipmapCount: i32) -> u32
+    extern def rlLoadTextureCubemap(data: const_ptr[void]?, size: i32, format: i32, mipmapCount: i32) -> u32
 
     extern def rlUpdateTexture(id: u32, offsetX: i32, offsetY: i32, width: i32, height: i32, format: i32, data: const_ptr[void]) -> void
 
@@ -471,7 +471,7 @@ extern module std.c.rlgl:
 
     extern def rlComputeShaderDispatch(groupX: u32, groupY: u32, groupZ: u32) -> void
 
-    extern def rlLoadShaderBuffer(size: u32, data: const_ptr[void], usageHint: i32) -> u32
+    extern def rlLoadShaderBuffer(size: u32, data: const_ptr[void]?, usageHint: i32) -> u32
 
     extern def rlUnloadShaderBuffer(ssboId: u32) -> void
 

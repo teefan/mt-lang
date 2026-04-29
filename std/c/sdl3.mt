@@ -1258,9 +1258,9 @@ extern module std.c.sdl3:
 
     extern def SDL_DestroyPalette(palette: ptr[SDL_Palette]) -> void
 
-    extern def SDL_MapRGB(format: const_ptr[SDL_PixelFormatDetails], palette: const_ptr[SDL_Palette], r: u8, g: u8, b: u8) -> Uint32
+    extern def SDL_MapRGB(format: const_ptr[SDL_PixelFormatDetails], palette: const_ptr[SDL_Palette]?, r: u8, g: u8, b: u8) -> Uint32
 
-    extern def SDL_MapRGBA(format: const_ptr[SDL_PixelFormatDetails], palette: const_ptr[SDL_Palette], r: u8, g: u8, b: u8, a: u8) -> Uint32
+    extern def SDL_MapRGBA(format: const_ptr[SDL_PixelFormatDetails], palette: const_ptr[SDL_Palette]?, r: u8, g: u8, b: u8, a: u8) -> Uint32
 
     extern def SDL_GetRGB(pixelvalue: u32, format: const_ptr[SDL_PixelFormatDetails], palette: const_ptr[SDL_Palette], r: ptr[Uint8], g: ptr[Uint8], b: ptr[Uint8]) -> void
 
@@ -1374,7 +1374,7 @@ extern module std.c.sdl3:
 
     extern def SDL_LoadPNG_IO(src: ptr[SDL_IOStream], closeio: bool) -> ptr[SDL_Surface]
 
-    extern def SDL_LoadPNG(file: cstr) -> ptr[SDL_Surface]
+    extern def SDL_LoadPNG(file: cstr) -> ptr[SDL_Surface]?
 
     extern def SDL_SavePNG_IO(surface: ptr[SDL_Surface], dst: ptr[SDL_IOStream], closeio: bool) -> bool
 
@@ -1414,7 +1414,7 @@ extern module std.c.sdl3:
 
     extern def SDL_ScaleSurface(surface: ptr[SDL_Surface], width: i32, height: i32, scaleMode: SDL_ScaleMode) -> ptr[SDL_Surface]
 
-    extern def SDL_ConvertSurface(surface: ptr[SDL_Surface], format: SDL_PixelFormat) -> ptr[SDL_Surface]
+    extern def SDL_ConvertSurface(surface: ptr[SDL_Surface], format: SDL_PixelFormat) -> ptr[SDL_Surface]?
 
     extern def SDL_ConvertSurfaceAndColorspace(surface: ptr[SDL_Surface], format: SDL_PixelFormat, palette: ptr[SDL_Palette], colorspace: SDL_Colorspace, props: u32) -> ptr[SDL_Surface]
 
@@ -1428,7 +1428,7 @@ extern module std.c.sdl3:
 
     extern def SDL_ClearSurface(surface: ptr[SDL_Surface], r: f32, g: f32, b: f32, a: f32) -> bool
 
-    extern def SDL_FillSurfaceRect(dst: ptr[SDL_Surface], rect: const_ptr[SDL_Rect], color: u32) -> bool
+    extern def SDL_FillSurfaceRect(dst: ptr[SDL_Surface], rect: const_ptr[SDL_Rect]?, color: u32) -> bool
 
     extern def SDL_FillSurfaceRects(dst: ptr[SDL_Surface], rects: const_ptr[SDL_Rect], count: i32, color: u32) -> bool
 
@@ -4809,9 +4809,9 @@ extern module std.c.sdl3:
 
     extern def SDL_GetCurrentRenderOutputSize(renderer: ptr[SDL_Renderer], w: ptr[i32], h: ptr[i32]) -> bool
 
-    extern def SDL_CreateTexture(renderer: ptr[SDL_Renderer], format: SDL_PixelFormat, access: SDL_TextureAccess, w: i32, h: i32) -> ptr[SDL_Texture]
+    extern def SDL_CreateTexture(renderer: ptr[SDL_Renderer], format: SDL_PixelFormat, access: SDL_TextureAccess, w: i32, h: i32) -> ptr[SDL_Texture]?
 
-    extern def SDL_CreateTextureFromSurface(renderer: ptr[SDL_Renderer], surface: ptr[SDL_Surface]) -> ptr[SDL_Texture]
+    extern def SDL_CreateTextureFromSurface(renderer: ptr[SDL_Renderer], surface: ptr[SDL_Surface]) -> ptr[SDL_Texture]?
 
     extern def SDL_CreateTextureWithProperties(renderer: ptr[SDL_Renderer], props: u32) -> ptr[SDL_Texture]
 
@@ -4857,7 +4857,7 @@ extern module std.c.sdl3:
 
     extern def SDL_LockTexture(texture: ptr[SDL_Texture], rect: const_ptr[SDL_Rect], pixels: ptr[ptr[void]], pitch: ptr[i32]) -> bool
 
-    extern def SDL_LockTextureToSurface(texture: ptr[SDL_Texture], rect: const_ptr[SDL_Rect], surface: ptr[ptr[SDL_Surface]]) -> bool
+    extern def SDL_LockTextureToSurface(texture: ptr[SDL_Texture], rect: const_ptr[SDL_Rect]?, surface: ptr[ptr[SDL_Surface]]) -> bool
 
     extern def SDL_UnlockTexture(texture: ptr[SDL_Texture]) -> void
 
@@ -4877,7 +4877,7 @@ extern module std.c.sdl3:
 
     extern def SDL_ConvertEventToRenderCoordinates(renderer: ptr[SDL_Renderer], event: ptr[SDL_Event]) -> bool
 
-    extern def SDL_SetRenderViewport(renderer: ptr[SDL_Renderer], rect: const_ptr[SDL_Rect]) -> bool
+    extern def SDL_SetRenderViewport(renderer: ptr[SDL_Renderer], rect: const_ptr[SDL_Rect]?) -> bool
 
     extern def SDL_GetRenderViewport(renderer: ptr[SDL_Renderer], rect: ptr[SDL_Rect]) -> bool
 
@@ -4885,7 +4885,7 @@ extern module std.c.sdl3:
 
     extern def SDL_GetRenderSafeArea(renderer: ptr[SDL_Renderer], rect: ptr[SDL_Rect]) -> bool
 
-    extern def SDL_SetRenderClipRect(renderer: ptr[SDL_Renderer], rect: const_ptr[SDL_Rect]) -> bool
+    extern def SDL_SetRenderClipRect(renderer: ptr[SDL_Renderer], rect: const_ptr[SDL_Rect]?) -> bool
 
     extern def SDL_GetRenderClipRect(renderer: ptr[SDL_Renderer], rect: ptr[SDL_Rect]) -> bool
 
@@ -4929,11 +4929,11 @@ extern module std.c.sdl3:
 
     extern def SDL_RenderFillRects(renderer: ptr[SDL_Renderer], rects: const_ptr[SDL_FRect], count: i32) -> bool
 
-    extern def SDL_RenderTexture(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], srcrect: const_ptr[SDL_FRect], dstrect: const_ptr[SDL_FRect]) -> bool
+    extern def SDL_RenderTexture(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], srcrect: const_ptr[SDL_FRect]?, dstrect: const_ptr[SDL_FRect]?) -> bool
 
-    extern def SDL_RenderTextureRotated(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], srcrect: const_ptr[SDL_FRect], dstrect: const_ptr[SDL_FRect], angle: f64, center: const_ptr[SDL_FPoint], flip: SDL_FlipMode) -> bool
+    extern def SDL_RenderTextureRotated(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], srcrect: const_ptr[SDL_FRect]?, dstrect: const_ptr[SDL_FRect], angle: f64, center: const_ptr[SDL_FPoint], flip: SDL_FlipMode) -> bool
 
-    extern def SDL_RenderTextureAffine(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], srcrect: const_ptr[SDL_FRect], origin: const_ptr[SDL_FPoint], right: const_ptr[SDL_FPoint], down: const_ptr[SDL_FPoint]) -> bool
+    extern def SDL_RenderTextureAffine(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], srcrect: const_ptr[SDL_FRect]?, origin: const_ptr[SDL_FPoint], right: const_ptr[SDL_FPoint], down: const_ptr[SDL_FPoint]) -> bool
 
     extern def SDL_RenderTextureTiled(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], srcrect: const_ptr[SDL_FRect], scale: f32, dstrect: const_ptr[SDL_FRect]) -> bool
 
@@ -4941,7 +4941,7 @@ extern module std.c.sdl3:
 
     extern def SDL_RenderTexture9GridTiled(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], srcrect: const_ptr[SDL_FRect], left_width: f32, right_width: f32, top_height: f32, bottom_height: f32, scale: f32, dstrect: const_ptr[SDL_FRect], tileScale: f32) -> bool
 
-    extern def SDL_RenderGeometry(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], vertices: const_ptr[SDL_Vertex], num_vertices: i32, indices: const_ptr[i32], num_indices: i32) -> bool
+    extern def SDL_RenderGeometry(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture]?, vertices: const_ptr[SDL_Vertex], num_vertices: i32, indices: const_ptr[i32]?, num_indices: i32) -> bool
 
     extern def SDL_RenderGeometryRaw(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], xy: const_ptr[f32], xy_stride: i32, color: const_ptr[SDL_FColor], color_stride: i32, uv: const_ptr[f32], uv_stride: i32, num_vertices: i32, indices: const_ptr[void], num_indices: i32, size_indices: i32) -> bool
 
@@ -4949,7 +4949,7 @@ extern module std.c.sdl3:
 
     extern def SDL_GetRenderTextureAddressMode(renderer: ptr[SDL_Renderer], u_mode: ptr[SDL_TextureAddressMode], v_mode: ptr[SDL_TextureAddressMode]) -> bool
 
-    extern def SDL_RenderReadPixels(renderer: ptr[SDL_Renderer], rect: const_ptr[SDL_Rect]) -> ptr[SDL_Surface]
+    extern def SDL_RenderReadPixels(renderer: ptr[SDL_Renderer], rect: const_ptr[SDL_Rect]?) -> ptr[SDL_Surface]?
 
     extern def SDL_RenderPresent(renderer: ptr[SDL_Renderer]) -> bool
 

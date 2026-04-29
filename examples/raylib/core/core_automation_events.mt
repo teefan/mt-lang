@@ -120,8 +120,7 @@ def main() -> i32:
     reset_scene(addr(player), addr(camera))
 
     var aelist = zero[rl.AutomationEventList]()
-    unsafe:
-        aelist = rl.LoadAutomationEventList(cast[cstr](null[ptr[char]]))
+    aelist = rl.LoadAutomationEventList(null)
     rl.SetAutomationEventList(raw(addr(aelist)))
 
     var event_recording = false
