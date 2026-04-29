@@ -208,7 +208,7 @@ extern module std.c.sdl3:
 
     extern def SDL_strlwr(str: ptr[char]) -> ptr[char]
 
-    extern def SDL_strchr(str: cstr, c: i32) -> ptr[char]
+    extern def SDL_strchr(str: cstr, c: i32) -> ptr[char]?
 
     extern def SDL_strrchr(str: cstr, c: i32) -> ptr[char]
 
@@ -868,7 +868,7 @@ extern module std.c.sdl3:
 
     extern def SDL_GetAudioDeviceChannelMap(devid: u32, count: ptr[i32]) -> ptr[i32]
 
-    extern def SDL_OpenAudioDevice(devid: u32, spec: const_ptr[SDL_AudioSpec]) -> SDL_AudioDeviceID
+    extern def SDL_OpenAudioDevice(devid: u32, spec: const_ptr[SDL_AudioSpec]?) -> SDL_AudioDeviceID
 
     extern def SDL_IsAudioDevicePhysical(devid: u32) -> bool
 
@@ -896,7 +896,7 @@ extern module std.c.sdl3:
 
     extern def SDL_GetAudioStreamDevice(stream: ptr[SDL_AudioStream]) -> SDL_AudioDeviceID
 
-    extern def SDL_CreateAudioStream(src_spec: const_ptr[SDL_AudioSpec], dst_spec: const_ptr[SDL_AudioSpec]) -> ptr[SDL_AudioStream]
+    extern def SDL_CreateAudioStream(src_spec: const_ptr[SDL_AudioSpec], dst_spec: const_ptr[SDL_AudioSpec]?) -> ptr[SDL_AudioStream]?
 
     extern def SDL_GetAudioStreamProperties(stream: ptr[SDL_AudioStream]) -> SDL_PropertiesID
 
@@ -956,7 +956,7 @@ extern module std.c.sdl3:
 
     extern def SDL_DestroyAudioStream(stream: ptr[SDL_AudioStream]) -> void
 
-    extern def SDL_OpenAudioDeviceStream(devid: u32, spec: const_ptr[SDL_AudioSpec], callback: fn(arg0: ptr[void], arg1: ptr[SDL_AudioStream], arg2: i32, arg3: i32) -> void, userdata: ptr[void]) -> ptr[SDL_AudioStream]
+    extern def SDL_OpenAudioDeviceStream(devid: u32, spec: const_ptr[SDL_AudioSpec], callback: fn(arg0: ptr[void], arg1: ptr[SDL_AudioStream], arg2: i32, arg3: i32) -> void, userdata: ptr[void]?) -> ptr[SDL_AudioStream]?
 
     type SDL_AudioPostmixCallback = fn(arg0: ptr[void], arg1: SDL_AudioSpec, arg2: ptr[f32], arg3: i32) -> void
 
@@ -1488,7 +1488,7 @@ extern module std.c.sdl3:
 
     extern def SDL_GetCurrentCameraDriver() -> cstr
 
-    extern def SDL_GetCameras(count: ptr[i32]) -> ptr[SDL_CameraID]
+    extern def SDL_GetCameras(count: ptr[i32]) -> ptr[SDL_CameraID]?
 
     extern def SDL_GetCameraSupportedFormats(instance_id: u32, count: ptr[i32]) -> ptr[ptr[SDL_CameraSpec]]
 
@@ -1496,7 +1496,7 @@ extern module std.c.sdl3:
 
     extern def SDL_GetCameraPosition(instance_id: u32) -> SDL_CameraPosition
 
-    extern def SDL_OpenCamera(instance_id: u32, spec: const_ptr[SDL_CameraSpec]) -> ptr[SDL_Camera]
+    extern def SDL_OpenCamera(instance_id: u32, spec: const_ptr[SDL_CameraSpec]?) -> ptr[SDL_Camera]?
 
     extern def SDL_GetCameraPermissionState(camera: ptr[SDL_Camera]) -> SDL_CameraPermissionState
 
@@ -1506,7 +1506,7 @@ extern module std.c.sdl3:
 
     extern def SDL_GetCameraFormat(camera: ptr[SDL_Camera], spec: ptr[SDL_CameraSpec]) -> bool
 
-    extern def SDL_AcquireCameraFrame(camera: ptr[SDL_Camera], timestampNS: ptr[Uint64]) -> ptr[SDL_Surface]
+    extern def SDL_AcquireCameraFrame(camera: ptr[SDL_Camera], timestampNS: ptr[Uint64]) -> ptr[SDL_Surface]?
 
     extern def SDL_ReleaseCameraFrame(camera: ptr[SDL_Camera], frame: ptr[SDL_Surface]) -> void
 
@@ -1514,13 +1514,13 @@ extern module std.c.sdl3:
 
     extern def SDL_SetClipboardText(text: cstr) -> bool
 
-    extern def SDL_GetClipboardText() -> ptr[char]
+    extern def SDL_GetClipboardText() -> ptr[char]?
 
     extern def SDL_HasClipboardText() -> bool
 
     extern def SDL_SetPrimarySelectionText(text: cstr) -> bool
 
-    extern def SDL_GetPrimarySelectionText() -> ptr[char]
+    extern def SDL_GetPrimarySelectionText() -> ptr[char]?
 
     extern def SDL_HasPrimarySelectionText() -> bool
 
@@ -2048,9 +2048,9 @@ extern module std.c.sdl3:
 
     extern def SDL_GetJoystickTypeForID(instance_id: u32) -> SDL_JoystickType
 
-    extern def SDL_OpenJoystick(instance_id: u32) -> ptr[SDL_Joystick]
+    extern def SDL_OpenJoystick(instance_id: u32) -> ptr[SDL_Joystick]?
 
-    extern def SDL_GetJoystickFromID(instance_id: u32) -> ptr[SDL_Joystick]
+    extern def SDL_GetJoystickFromID(instance_id: u32) -> ptr[SDL_Joystick]?
 
     extern def SDL_GetJoystickFromPlayerIndex(player_index: i32) -> ptr[SDL_Joystick]
 
@@ -2266,9 +2266,9 @@ extern module std.c.sdl3:
 
     extern def SDL_GetGamepadMappings(count: ptr[i32]) -> ptr[ptr[char]]
 
-    extern def SDL_GetGamepadMappingForGUID(guid: SDL_GUID) -> ptr[char]
+    extern def SDL_GetGamepadMappingForGUID(guid: SDL_GUID) -> ptr[char]?
 
-    extern def SDL_GetGamepadMapping(gamepad: ptr[SDL_Gamepad]) -> ptr[char]
+    extern def SDL_GetGamepadMapping(gamepad: ptr[SDL_Gamepad]) -> ptr[char]?
 
     extern def SDL_SetGamepadMapping(instance_id: u32, mapping: cstr) -> bool
 
@@ -2296,11 +2296,11 @@ extern module std.c.sdl3:
 
     extern def SDL_GetRealGamepadTypeForID(instance_id: u32) -> SDL_GamepadType
 
-    extern def SDL_GetGamepadMappingForID(instance_id: u32) -> ptr[char]
+    extern def SDL_GetGamepadMappingForID(instance_id: u32) -> ptr[char]?
 
-    extern def SDL_OpenGamepad(instance_id: u32) -> ptr[SDL_Gamepad]
+    extern def SDL_OpenGamepad(instance_id: u32) -> ptr[SDL_Gamepad]?
 
-    extern def SDL_GetGamepadFromID(instance_id: u32) -> ptr[SDL_Gamepad]
+    extern def SDL_GetGamepadFromID(instance_id: u32) -> ptr[SDL_Gamepad]?
 
     extern def SDL_GetGamepadFromPlayerIndex(player_index: i32) -> ptr[SDL_Gamepad]
 
@@ -3427,7 +3427,7 @@ extern module std.c.sdl3:
 
     extern def SDL_GetEventDescription(event: const_ptr[SDL_Event], buf: ptr[char], buflen: i32) -> i32
 
-    extern def SDL_GetBasePath() -> cstr
+    extern def SDL_GetBasePath() -> cstr?
 
     extern def SDL_GetPrefPath(org: cstr, app: cstr) -> ptr[char]
 
@@ -4601,7 +4601,7 @@ extern module std.c.sdl3:
         language: cstr
         country: cstr
 
-    extern def SDL_GetPreferredLocales(count: ptr[i32]) -> ptr[ptr[SDL_Locale]]
+    extern def SDL_GetPreferredLocales(count: ptr[i32]) -> ptr[ptr[SDL_Locale]]?
 
     enum SDL_LogCategory: i32
         SDL_LOG_CATEGORY_APPLICATION = 0
@@ -4849,7 +4849,7 @@ extern module std.c.sdl3:
 
     extern def SDL_GetTextureScaleMode(texture: ptr[SDL_Texture], scaleMode: ptr[SDL_ScaleMode]) -> bool
 
-    extern def SDL_UpdateTexture(texture: ptr[SDL_Texture], rect: const_ptr[SDL_Rect], pixels: const_ptr[void], pitch: i32) -> bool
+    extern def SDL_UpdateTexture(texture: ptr[SDL_Texture], rect: const_ptr[SDL_Rect]?, pixels: const_ptr[void], pitch: i32) -> bool
 
     extern def SDL_UpdateYUVTexture(texture: ptr[SDL_Texture], rect: const_ptr[SDL_Rect], Yplane: const_ptr[Uint8], Ypitch: i32, Uplane: const_ptr[Uint8], Upitch: i32, Vplane: const_ptr[Uint8], Vpitch: i32) -> bool
 
@@ -4861,7 +4861,7 @@ extern module std.c.sdl3:
 
     extern def SDL_UnlockTexture(texture: ptr[SDL_Texture]) -> void
 
-    extern def SDL_SetRenderTarget(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture]) -> bool
+    extern def SDL_SetRenderTarget(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture]?) -> bool
 
     extern def SDL_GetRenderTarget(renderer: ptr[SDL_Renderer]) -> ptr[SDL_Texture]
 

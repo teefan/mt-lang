@@ -959,7 +959,7 @@ module MilkTea
           raise SemaError, "unknown name #{expression.name}" unless binding
           raise SemaError, "cannot assign to immutable #{expression.name}" unless binding.mutable
 
-          binding.type
+          binding.storage_type
         when AST::MemberAccess
           receiver_type = infer_lvalue_receiver(expression.receiver, scopes:)
           unless aggregate_type?(receiver_type)
