@@ -303,6 +303,22 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/Inspect\(\(\(const void\*\) \(&__mt_foreign_in_\d+\)\)\);/, generated)
   end
 
+  def test_generate_c_for_local_const_ptr_typed_binding
+    source = <<~MT
+      module demo.main
+
+      def main() -> void:
+          let value = 7
+          let pointer: const_ptr[i32] = ro_addr(value)
+          let copy: const_ptr[i32] = pointer
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/const int32_t\* pointer = &value;/, generated)
+    assert_match(/const int32_t\* copy = pointer;/, generated)
+  end
+
   def test_generate_c_for_foreign_defs_with_string_literal_without_using_scratch
     source = <<~MT
       module demo.main

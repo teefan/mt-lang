@@ -46,6 +46,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal({ "spec" => "const_ptr[SDL_AudioSpec]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_OpenAudioDevice"))
     assert_equal({ "dst_spec" => "const_ptr[SDL_AudioSpec]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_CreateAudioStream"))
     assert_equal({ "userdata" => "ptr[void]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_OpenAudioDeviceStream"))
+    assert_equal({ "channel_buffers" => "const_ptr[const_ptr[void]?]" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_PutAudioStreamPlanarData"))
     assert_equal({ "pslen" => "ptr[usize]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_StepUTF8"))
     assert_equal({ "palette" => "const_ptr[SDL_Palette]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_MapRGB"))
     assert_equal({ "palette" => "const_ptr[SDL_Palette]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_MapRGBA"))
