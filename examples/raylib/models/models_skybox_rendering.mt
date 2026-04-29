@@ -88,7 +88,7 @@ def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: i32, fo
     rlgl.rlDisableBackfaceCulling()
 
     let rbo = rlgl.rlLoadTextureDepth(size, size, true)
-    cubemap.id = rlgl.rlLoadTextureCubemap(zero[ptr[void]](), size, format, 1)
+    cubemap.id = rlgl.rlLoadTextureCubemap(null, size, format, 1)
 
     let fbo = rlgl.rlLoadFramebuffer()
     rlgl.rlFramebufferAttach(

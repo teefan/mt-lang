@@ -102,8 +102,10 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub type Matrix = raylib\.Matrix$/, source)
     assert_match(/^pub foreign def matrix_mode\(mode: i32\) -> void = c\.rlMatrixMode$/, source)
     assert_match(/^pub foreign def load_vertex_buffer\[T\]\(buffer: ptr\[T\] as const_ptr\[void\], size: i32, dynamic: bool\) -> u32 = c\.rlLoadVertexBuffer$/, source)
+    assert_match(/^pub foreign def load_texture\(data: const_ptr\[void\]\?, width: i32, height: i32, format: i32, mipmap_count: i32\) -> u32 = c\.rlLoadTexture$/, source)
+    assert_match(/^pub foreign def load_texture_cubemap\(data: const_ptr\[void\]\?, size: i32, format: i32, mipmap_count: i32\) -> u32 = c\.rlLoadTextureCubemap$/, source)
     assert_match(/^pub foreign def set_uniform\[T\]\(loc_index: i32, value: ptr\[T\] as const_ptr\[void\], uniform_type: i32, count: i32\) -> void = c\.rlSetUniform$/, source)
-    assert_match(/^pub foreign def load_shader_buffer\[T\]\(size: u32, data: ptr\[T\] as const_ptr\[void\], usage_hint: i32\) -> u32 = c\.rlLoadShaderBuffer$/, source)
+    assert_match(/^pub foreign def load_shader_buffer\(size: u32, data: const_ptr\[void\]\?, usage_hint: i32\) -> u32 = c\.rlLoadShaderBuffer$/, source)
     assert_match(/^pub foreign def update_shader_buffer\[T\]\(id: u32, data: ptr\[T\] as const_ptr\[void\], data_size: u32, offset: u32\) -> void = c\.rlUpdateShaderBuffer$/, source)
   end
 

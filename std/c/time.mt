@@ -1,7 +1,7 @@
 extern module std.c.time:
     include "time.h"
 
-    type time_t = i64
+    type time_t = isize
 
     opaque tm = c"struct tm"
 

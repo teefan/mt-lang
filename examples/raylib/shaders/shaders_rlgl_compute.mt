@@ -49,13 +49,13 @@ def main() -> i32:
     let gol_transfert_program = rlgl.load_shader_program_compute(gol_transfert_shader)
     rl.UnloadFileText(gol_transfert_code)
 
-    let ssbo_a = rlgl.load_shader_buffer(cast[u32](gol_width * gol_width * cast[i32](sizeof(u32))), zero[ptr[void]](), rlgl.RL_DYNAMIC_COPY)
+    let ssbo_a = rlgl.load_shader_buffer(cast[u32](gol_width * gol_width * cast[i32](sizeof(u32))), null, rlgl.RL_DYNAMIC_COPY)
     defer rlgl.unload_shader_buffer(ssbo_a)
     var current_ssbo = ssbo_a
-    let ssbo_b = rlgl.load_shader_buffer(cast[u32](gol_width * gol_width * cast[i32](sizeof(u32))), zero[ptr[void]](), rlgl.RL_DYNAMIC_COPY)
+    let ssbo_b = rlgl.load_shader_buffer(cast[u32](gol_width * gol_width * cast[i32](sizeof(u32))), null, rlgl.RL_DYNAMIC_COPY)
     defer rlgl.unload_shader_buffer(ssbo_b)
     var next_ssbo = ssbo_b
-    let ssbo_transfert = rlgl.load_shader_buffer(cast[u32](sizeof(GolUpdateSSBO)), zero[ptr[void]](), rlgl.RL_DYNAMIC_COPY)
+    let ssbo_transfert = rlgl.load_shader_buffer(cast[u32](sizeof(GolUpdateSSBO)), null, rlgl.RL_DYNAMIC_COPY)
     defer rlgl.unload_shader_buffer(ssbo_transfert)
 
     var transfert_buffer = zero[GolUpdateSSBO]()

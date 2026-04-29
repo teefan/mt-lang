@@ -85,9 +85,9 @@ def main() -> i32:
     gbuffer.framebuffer_id = rlgl.rlLoadFramebuffer()
     rlgl.rlEnableFramebuffer(gbuffer.framebuffer_id)
 
-    gbuffer.position_texture_id = rlgl.rlLoadTexture(zero[ptr[void]](), screen_width, screen_height, pixel_format_r16g16b16, 1)
-    gbuffer.normal_texture_id = rlgl.rlLoadTexture(zero[ptr[void]](), screen_width, screen_height, pixel_format_r16g16b16, 1)
-    gbuffer.albedo_spec_texture_id = rlgl.rlLoadTexture(zero[ptr[void]](), screen_width, screen_height, pixel_format_r8g8b8a8, 1)
+    gbuffer.position_texture_id = rlgl.rlLoadTexture(null, screen_width, screen_height, pixel_format_r16g16b16, 1)
+    gbuffer.normal_texture_id = rlgl.rlLoadTexture(null, screen_width, screen_height, pixel_format_r16g16b16, 1)
+    gbuffer.albedo_spec_texture_id = rlgl.rlLoadTexture(null, screen_width, screen_height, pixel_format_r8g8b8a8, 1)
 
     rlgl.rlActiveDrawBuffers(3)
     rlgl.rlFramebufferAttach(gbuffer.framebuffer_id, gbuffer.position_texture_id, cast[i32](rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0), cast[i32](rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D), 0)

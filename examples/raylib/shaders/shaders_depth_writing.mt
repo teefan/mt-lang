@@ -17,7 +17,7 @@ def load_render_texture_depth_tex(width: i32, height: i32) -> rl.RenderTexture2D
     if target.id > 0:
         rlgl.rlEnableFramebuffer(target.id)
 
-        target.texture.id = rlgl.rlLoadTexture(zero[ptr[void]](), width, height, cast[i32](rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8), 1)
+        target.texture.id = rlgl.rlLoadTexture(null, width, height, cast[i32](rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8), 1)
         target.texture.width = width
         target.texture.height = height
         target.texture.format = cast[i32](rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)

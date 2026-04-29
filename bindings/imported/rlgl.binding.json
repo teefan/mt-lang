@@ -68,9 +68,8 @@
       },
       {
         "raw": "rlLoadTexture",
-        "type_params": ["T"],
         "params": [
-          { "name": "data", "type": "ptr[T]", "boundary_type": "const_ptr[void]" },
+          { "name": "data", "type": "const_ptr[void]?" },
           { "name": "width", "type": "i32" },
           { "name": "height", "type": "i32" },
           { "name": "format", "type": "i32" },
@@ -79,9 +78,8 @@
       },
       {
         "raw": "rlLoadTextureCubemap",
-        "type_params": ["T"],
         "params": [
-          { "name": "data", "type": "ptr[T]", "boundary_type": "const_ptr[void]" },
+          { "name": "data", "type": "const_ptr[void]?" },
           { "name": "size", "type": "i32" },
           { "name": "format", "type": "i32" },
           { "name": "mipmap_count", "type": "i32" }
@@ -112,10 +110,9 @@
       },
       {
         "raw": "rlLoadShaderBuffer",
-        "type_params": ["T"],
         "params": [
           { "name": "size", "type": "u32" },
-          { "name": "data", "type": "ptr[T]", "boundary_type": "const_ptr[void]" },
+          { "name": "data", "type": "const_ptr[void]?" },
           { "name": "usage_hint", "type": "i32" }
         ]
       },
