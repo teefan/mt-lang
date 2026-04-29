@@ -37,11 +37,56 @@
         "return_type": "bool"
       },
       {
+        "raw": "SDL_CreateWindow",
+        "params": [
+          { "name": "title", "type": "str", "boundary_type": "cstr" },
+          { "name": "w", "type": "i32" },
+          { "name": "h", "type": "i32" },
+          { "name": "flags", "type": "usize" }
+        ],
+        "return_type": "ptr[Window]"
+      },
+      {
+        "raw": "SDL_CreateWindowAndRenderer",
+        "params": [
+          { "name": "title", "type": "str", "boundary_type": "cstr" },
+          { "name": "width", "type": "i32" },
+          { "name": "height", "type": "i32" },
+          { "name": "window_flags", "type": "usize" },
+          { "name": "window", "type": "ptr[Window]", "mode": "out" },
+          { "name": "renderer", "type": "ptr[Renderer]", "mode": "out" }
+        ],
+        "return_type": "bool"
+      },
+      {
         "raw": "SDL_Init",
         "params": [
           { "name": "flags", "type": "InitFlags" }
         ],
         "return_type": "bool"
+      },
+      {
+        "raw": "SDL_PollEvent",
+        "params": [
+          { "name": "event", "type": "Event", "mode": "out" }
+        ],
+        "return_type": "bool"
+      },
+      {
+        "raw": "SDL_GetRenderOutputSize",
+        "params": [
+          { "name": "renderer", "type": "ptr[Renderer]" },
+          { "name": "w", "type": "i32", "mode": "out" },
+          { "name": "h", "type": "i32", "mode": "out" }
+        ],
+        "return_type": "bool"
+      },
+      {
+        "raw": "SDL_LoadPNG",
+        "params": [
+          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "ptr[Surface]?"
       }
     ]
   }
