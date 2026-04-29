@@ -62,6 +62,41 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("read")
   end
 
+  def test_type_checks_assignment_to_nullable_local_in_null_branch
+    source = <<~MT
+      module demo.null_flow
+
+      def open_handle() -> ptr[i32]?:
+          return null[ptr[i32]]
+
+      def main() -> i32:
+          var handle: ptr[i32]? = null[ptr[i32]]
+          if handle == null:
+              handle = open_handle()
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_assignment_to_nullable_local_in_non_null_branch
+    source = <<~MT
+      module demo.null_flow
+
+      def main(input: ptr[i32]?) -> ptr[i32]?:
+          var handle = input
+          if handle != null:
+              handle = null[ptr[i32]]
+          return handle
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_if_expression
     source = <<~MT
       module demo.if_expr
