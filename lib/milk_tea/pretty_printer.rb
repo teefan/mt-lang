@@ -422,6 +422,8 @@ module MilkTea
           "offsetof(#{render_type(expression.type)}, #{expression.field})"
         when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral
           expression.lexeme
+        when AST::FormatString
+          "f\"#{expression.parts.map { |part| render_format_string_part(part) }.join}\""
         when AST::BooleanLiteral
           expression.value ? "true" : "false"
         when AST::NullLiteral
@@ -435,6 +437,17 @@ module MilkTea
         return render_expression(argument.value) unless argument.name
 
         "#{argument.name} = #{render_expression(argument.value)}"
+      end
+
+      def render_format_string_part(part)
+        case part
+        when AST::FormatTextPart
+          part.value.gsub("\\", "\\\\").gsub('"', '\\"')
+        when AST::FormatExprPart
+          "\#{#{render_expression(part.expression)}}"
+        else
+          raise ArgumentError, "unsupported format string part #{part.class.name}"
+        end
       end
 
       def render_postfix(expression)

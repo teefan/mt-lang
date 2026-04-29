@@ -1058,6 +1058,8 @@ module MilkTea
           @types.fetch("usize")
         when AST::StringLiteral
           @types.fetch(expression.cstring ? "cstr" : "str")
+        when AST::FormatString
+          raise SemaError, "formatted string literals are only valid in std.fmt.string(...)"
         when AST::BooleanLiteral
           @types.fetch("bool")
         when AST::NullLiteral
@@ -1157,8 +1159,8 @@ module MilkTea
         end
 
         receiver_type = infer_expression(expression.receiver, scopes:)
-        if char_array_text_type?(receiver_type) && char_array_text_method_kind(receiver_type, expression.member)
-          raise SemaError, "method #{receiver_type}.#{expression.member} must be called"
+        if char_array_removed_text_method?(receiver_type, expression.member)
+          raise SemaError, "#{receiver_type}.#{expression.member} is not available; array[char, N] is raw storage, use str_builder[N] or an explicit helper"
         end
         if str_builder_type?(receiver_type) && str_builder_method_kind(receiver_type, expression.member)
           raise SemaError, "method #{receiver_type}.#{expression.member} must be called"
@@ -1356,6 +1358,8 @@ module MilkTea
         case callable_kind
         when :function
           callable = specialize_function_binding(callable, expression.arguments, scopes:)
+          return check_format_string_call(callable, expression.arguments, scopes:) if format_string_call?(callable, expression.arguments)
+
           check_function_call(callable, expression.arguments, scopes:)
           callable.owner.send(:check_function, callable) unless callable.type_arguments.empty?
           callable.type.return_type
@@ -1367,8 +1371,6 @@ module MilkTea
         when :callable_value
           check_callable_value_call(callable, expression.arguments, scopes:, callee_expression: expression.callee)
           callable.return_type
-        when :char_array_as_str, :char_array_as_cstr
-          check_char_array_text_method_call(callable_kind, receiver, expression.arguments, scopes:)
         when :str_builder_clear, :str_builder_assign, :str_builder_append, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr
           check_str_builder_method_call(callable_kind, receiver, expression.arguments, scopes:)
         when :struct
@@ -1422,6 +1424,12 @@ module MilkTea
           validate_consuming_foreign_expression!(expression.condition, scopes:, root_allowed: false)
           validate_consuming_foreign_expression!(expression.then_expression, scopes:, root_allowed: false)
           validate_consuming_foreign_expression!(expression.else_expression, scopes:, root_allowed: false)
+        when AST::FormatString
+          expression.parts.each do |part|
+            next unless part.is_a?(AST::FormatExprPart)
+
+            validate_consuming_foreign_expression!(part.expression, scopes:, root_allowed: false)
+          end
         when AST::MemberAccess
           validate_consuming_foreign_expression!(expression.receiver, scopes:, root_allowed: false)
         when AST::IndexAccess
@@ -1452,6 +1460,12 @@ module MilkTea
           validate_hoistable_foreign_expression!(expression.condition, scopes:, root_hoistable: false)
           validate_hoistable_foreign_expression!(expression.then_expression, scopes:, root_hoistable: false)
           validate_hoistable_foreign_expression!(expression.else_expression, scopes:, root_hoistable: false)
+        when AST::FormatString
+          expression.parts.each do |part|
+            next unless part.is_a?(AST::FormatExprPart)
+
+            validate_hoistable_foreign_expression!(part.expression, scopes:, root_hoistable: false)
+          end
         when AST::MemberAccess
           validate_hoistable_foreign_expression!(expression.receiver, scopes:, root_hoistable: false)
         when AST::IndexAccess
@@ -1626,8 +1640,8 @@ module MilkTea
           method = lookup_method(receiver_type, callee.member)
           return [:method, method, callee.receiver] if method
 
-          if (char_array_text_method = char_array_text_method_kind(receiver_type, callee.member))
-            return [char_array_text_method, receiver_type, callee.receiver]
+          if char_array_removed_text_method?(receiver_type, callee.member)
+            raise SemaError, "#{receiver_type}.#{callee.member} is not available; array[char, N] is raw storage, use str_builder[N] or an explicit helper"
           end
 
           if (str_builder_method = str_builder_method_kind(receiver_type, callee.member))
@@ -1736,6 +1750,41 @@ module MilkTea
         arguments.drop(expected_params.length).each do |argument|
           infer_expression(argument.value, scopes:)
         end
+      end
+
+      def format_string_call?(binding, arguments)
+        return false unless binding.owner.module_name == "std.fmt"
+        return false unless binding.name == "string"
+        return false unless arguments.length == 1
+
+        arguments.first.value.is_a?(AST::FormatString)
+      end
+
+      def check_format_string_call(binding, arguments, scopes:)
+        raise SemaError, "function #{binding.name} does not support named arguments" if arguments.any?(&:name)
+        raise SemaError, "function #{binding.name} expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+
+        format_string = arguments.first.value
+        format_string.parts.each do |part|
+          next unless part.is_a?(AST::FormatExprPart)
+
+          value_type = infer_expression(part.expression, scopes:)
+          next if format_string_interpolation_supported?(value_type)
+
+          raise SemaError, "formatted string interpolation supports str, cstr, bool, integer primitives, and integer-backed enums/flags, got #{value_type}"
+        end
+
+        binding.type.return_type
+      end
+
+      def format_string_interpolation_supported?(type)
+        return true if type == @types.fetch("str")
+        return true if type == @types.fetch("cstr")
+        return true if type == @types.fetch("bool")
+        return true if type.is_a?(Types::Primitive) && type.integer?
+        return true if type.is_a?(Types::EnumBase) && type.backing_type.is_a?(Types::Primitive) && type.backing_type.integer?
+
+        false
       end
 
       def check_callable_value_call(function_type, arguments, scopes:, callee_expression:)
@@ -1966,28 +2015,6 @@ module MilkTea
         target_type
       end
 
-      def check_char_array_text_method_call(kind, receiver, arguments, scopes:)
-        method_name = char_array_text_method_name(kind)
-        raise SemaError, "#{method_name} does not support named arguments" if arguments.any?(&:name)
-        raise SemaError, "#{method_name} expects 0 arguments, got #{arguments.length}" unless arguments.empty?
-
-        receiver_type = infer_expression(receiver, scopes:)
-        raise SemaError, "unknown method #{receiver_type}.#{method_name}" unless char_array_text_type?(receiver_type)
-
-        case kind
-        when :char_array_as_str
-          raise SemaError, "#{receiver_type}.as_str requires a safe stored receiver" unless safe_reference_source_expression?(receiver, scopes:)
-
-          @types.fetch("str")
-        when :char_array_as_cstr
-          raise SemaError, "#{receiver_type}.as_cstr requires a safe stored receiver" unless safe_reference_source_expression?(receiver, scopes:)
-
-          @types.fetch("cstr")
-        else
-          raise SemaError, "unsupported array[char, N] method #{kind}"
-        end
-      end
-
       def check_str_builder_method_call(kind, receiver, arguments, scopes:)
         method_name = str_builder_method_name(kind)
         receiver_type = infer_expression(receiver, scopes:)
@@ -2059,15 +2086,10 @@ module MilkTea
         nil
       end
 
-      def char_array_text_method_kind(receiver_type, name)
+      def char_array_removed_text_method?(receiver_type, name)
         return unless char_array_text_type?(receiver_type)
 
-        case name
-        when "as_str"
-          :char_array_as_str
-        when "as_cstr"
-          :char_array_as_cstr
-        end
+        name == "as_str" || name == "as_cstr"
       end
 
       def str_builder_method_kind(receiver_type, name)
@@ -2089,13 +2111,6 @@ module MilkTea
         when "as_cstr"
           :str_builder_as_cstr
         end
-      end
-
-      def char_array_text_method_name(kind)
-        {
-          char_array_as_str: "as_str",
-          char_array_as_cstr: "as_cstr",
-        }.fetch(kind)
       end
 
       def str_builder_method_name(kind)
@@ -3609,6 +3624,8 @@ module MilkTea
           "#{describe_expression(expression.receiver)}[...]"
         when AST::Specialization
           "#{describe_expression(expression.callee)}[...]"
+        when AST::FormatString
+          'f"..."'
         else
           expression.class.name.split("::").last
         end

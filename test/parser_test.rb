@@ -237,6 +237,30 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "and", return_stmt.value.left.operator
   end
 
+  def test_parses_format_string_literal
+    source = <<~MT
+      module demo.format
+
+      import std.fmt as fmt
+      import std.string as string
+
+      def main(count: i32) -> i32:
+          let text = fmt.string(f"count=\#{count} ok=\#{true}")
+          return cast[i32](text.count())
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    local_decl = ast.declarations.first.body.first
+    format_string = local_decl.value.arguments.first.value
+
+    assert_instance_of MilkTea::AST::FormatString, format_string
+    assert_equal 4, format_string.parts.length
+    assert_instance_of MilkTea::AST::FormatTextPart, format_string.parts[0]
+    assert_instance_of MilkTea::AST::FormatExprPart, format_string.parts[1]
+    assert_equal "count=", format_string.parts[0].value
+    assert_instance_of MilkTea::AST::Identifier, format_string.parts[1].expression
+  end
+
   def test_parses_for_range_statement
     source = <<~MT
       module demo.flow

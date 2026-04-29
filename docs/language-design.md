@@ -28,7 +28,7 @@ The output target is beautiful C. The generated C should be readable enough that
 - No macro system that rewrites arbitrary ASTs
 - No garbage collector
 - No implicit conversions between unrelated primitive types
-- No hidden allocation for strings, collections, closures, or method calls
+- No user-invisible allocation for strings, collections, closures, or method calls. If a surface allocates owned text or storage, the allocating surface must be spelled in source.
 
 ## Design rules
 
@@ -37,6 +37,8 @@ The output target is beautiful C. The generated C should be readable enough that
 If code allocates, takes an address, dereferences a raw pointer, performs an FFI call, or enters unsafe territory, the source should say so directly.
 
 FFI visibility belongs at the declaration site. Raw `extern module` declarations expose exact ABI types. Imported foreign declarations may project those raw types into ordinary Milk Tea types, but the projection rule, temporary-storage rule, and ownership rule must be declared there instead of repeated at every call site.
+
+The same rule applies to text construction. Plain string literals are borrowed `str` values. Any surface that builds owned text must say so explicitly, for example `std.fmt.string(f"...")`.
 
 ### 2. C is the ABI ground truth
 
@@ -53,6 +55,28 @@ Plain structs, arrays, spans, pools, and arenas matter more than elaborate objec
 ### 5. The language surface stays small
 
 If a feature saves five lines but makes lowering, tooling, or debugging much harder, it does not belong in v1.
+
+### 6. One job, one canonical surface
+
+Milk Tea should not accumulate multiple everyday spellings for the same job.
+
+When two surfaces overlap, one must be the normal user-facing form and the other must be either a low-level escape hatch or an implementation detail.
+
+The intended reductions are deliberate:
+
+- borrowed text is `str`
+- raw ABI text is `cstr`
+- fixed-capacity mutable text is `str_builder[N]`
+- growable owned text is `std.string.String`
+- raw character storage is `array[char, N]` or `span[char]`, not an alternate text object
+- safe single-object aliasing is `ref[T]`
+- raw writable pointers are `ptr[T]`
+- raw read-only pointers are `const_ptr[T]`
+- sized many-element borrows are `span[T]`
+- pointer-like absence is `null`, not `zero[ptr[T]]()` in typed nullable contexts
+- imported foreign declarations own marshalling policy; raw `std.c.*` declarations stay exact
+
+If a new feature introduces a second ordinary way to express the same concept, the language should delete one of them instead of documenting both.
 
 ## Overall shape
 
@@ -321,7 +345,7 @@ Notes:
 - `cstr` is the raw ABI-facing NUL-terminated C string type. It belongs primarily in raw `extern module` declarations and low-level interop code.
 - `char` is the ABI-facing single-byte character type for C text and raw buffers. It is not a general arithmetic integer type.
 - String literals produce `str`.
-- Safe code does not fabricate `str` values from raw parts. Source code ordinarily obtains `str` values from literals, validated borrowed views such as `array[char, N].as_str()`, `str_builder.as_str()`, slicing an existing `str`, or other compiler/runtime surfaces that preserve the UTF-8 invariant.
+- Safe code does not fabricate `str` values from raw parts. Source code ordinarily obtains `str` values from literals, `str_builder.as_str()`, slicing an existing `str`, imported foreign boundaries that declare borrowed text, or other compiler/runtime surfaces that preserve the UTF-8 invariant.
 - Low-level code may construct `str(data = ..., len = ...)` only inside `unsafe`, and the caller is then responsible for pointer validity, lifetime, and the UTF-8 invariant.
 - A string literal may satisfy an expected `cstr` directly when the compiler has contextual type information, such as a typed local, an `array[cstr, N]` element, or a borrowed C-string argument position, because static storage is known.
 - `c"hello"` produces `cstr` with static storage for raw ABI work and low-level interop.
@@ -351,10 +375,9 @@ Notes:
 
 - Fixed-array indexing is bounds-checked and safe by default.
 - Safe array indexing requires an addressable array value; bind temporaries before indexing them.
-- `array[char, N]` and `span[char]` are the ordinary source-level forms for raw writable character storage and byte-oriented foreign buffers. There is no separate source-level raw text-buffer type.
-- Addressable `array[char, N]` values also expose borrowed text views with `.as_str()` and `.as_cstr()`. Both scan for the first trailing NUL within the stored capacity, validate the borrowed bytes as UTF-8, and require a safe stored receiver so the returned view cannot outlive the backing array.
+- `array[char, N]` and `span[char]` are the ordinary source-level forms for raw writable character storage and byte-oriented foreign buffers. They are not alternate text objects and should not grow a parallel everyday text API.
 - `str_builder[N]` is the one source-level mutable UTF-8 text type. It owns `N` editable text bytes plus an implementation-managed trailing NUL slot, tracks current text length, and refreshes that length when a writable buffer alias mutates the underlying storage.
-- The naming here is deliberate: `str`, `cstr`, and `str_builder` stay one vocabulary family, and both `str_builder[N]` and `array[char, N]` use the same borrowed-view projection names `.as_str()` and `.as_cstr()`.
+- If low-level code needs to validate raw `array[char, N]` storage as text, that conversion belongs in an explicit helper or imported boundary, not as a built-in method family on raw arrays.
 - Addressable `str_builder[N]` values also coerce to `span[char]`, so writable foreign text APIs can still accept builders directly when they do not want a second application-facing text abstraction.
 - `str_builder[N]` is not an ABI type. Raw bindings still spell writable text as `ptr[char]` or `span[char]`; `str_builder[N]` is the caller-side text object.
 - `str_builder[N]` has a built-in text surface: `.clear()`, `.assign(str)`, `.append(str)`, `.len()`, `.capacity()`, `.as_str()`, and `.as_cstr()`.
@@ -616,6 +639,8 @@ def spawn_enemy(start: Vec2) -> ptr[Enemy]:
 
 The default heap allocation functions return nullable pointers because C allocation can fail: `alloc_bytes`, `alloc_zeroed_bytes`, `resize_bytes`, `alloc[T]`, `alloc_zeroed[T]`, and `resize[T]` all return `...?`. Code that wants explicit error handling checks for `null`. Code that wants simple fail-fast behavior uses `must_alloc*` or `must_resize*`, which panic on allocation failure.
 
+Allocator surfaces are semantic, not stylistic. Heap, arena, pool, and stack model different ownership and lifetime stories; the language should not add alias APIs that make them feel interchangeable.
+
 Recommended standard memory surfaces:
 
 - `std.mem.heap` for general allocation and the raw `*_bytes` boundary
@@ -702,11 +727,11 @@ Implemented core modules:
 - `std.option` is a plain generic optional-value container for APIs where a nullable pointer would be the wrong surface.
 - `std.ascii` provides byte-level classification and conversion helpers for lexers and parsers.
 - `std.vec` is the owned heap-backed `Vec[T]`. It grows explicitly, releases explicitly, and exposes borrowed `span[T]` views.
-- `std.bytes` is an owned byte buffer on top of `Vec[u8]`.
-- `std.string` is an owned UTF-8 text buffer on top of `std.bytes`. Appending `str` preserves UTF-8. Byte-level appends are available for formatting and low-level code, but callers must keep the buffer valid.
+- `std.bytes` is an owned byte buffer on top of `Vec[u8]`. It is a low-level substrate, not the default application-facing text tool.
+- `std.string.String` is the normal growable owned UTF-8 text surface. Its public API should mirror the mutable-text shape of `str_builder[N]`: method-style `append`, `assign`, `clear`, `as_str`, `to_cstr`, and explicit constructors, not a parallel module-function vocabulary. Byte-level appends exist as low-level escape hatches.
 - `std.str` provides borrowed string helpers: UTF-8 validation, byte lookup, prefix/suffix/equality, ASCII trimming, and byte search.
 - `std.path`, `std.fs`, and `std.io` provide pure path helpers, byte/text file read/write, stdout printing, and stderr diagnostics.
-- `std.fmt` formats explicitly into an owned `std.string.String`.
+- `std.fmt` is the explicit formatting subsystem. It should be the single normal formatting engine for owned and fixed-capacity text rather than one option among many formatting styles. The normal owned-text allocation path is `fmt.string(f"...")`; low-level append helpers remain implementation building blocks.
 - `std.log` is a tiny stderr logger built from `std.fmt` and `std.io`.
 - `std.hash`, `std.map`, and `std.set` provide deterministic hash helpers plus policy-based hash collections.
 - `std.str_map` and `std.str_set` provide borrowed-string-key wrappers for symbol tables and keyword sets.

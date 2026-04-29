@@ -1047,10 +1047,7 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
-  def test_run_with_host_compiler_rejects_array_char_as_str_with_invalid_utf_8
-    compiler = ENV.fetch("CC", "cc")
-    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
-
+  def test_run_rejects_array_char_as_str_method
     Dir.mktmpdir("milk-tea-run-array-char-bad-str") do |dir|
       source_path = File.join(dir, "array_char_bad_str.mt")
 
@@ -1059,28 +1056,20 @@ class MilkTeaRunTest < Minitest::Test
         "",
         "def main() -> i32:",
         "    var buffer: array[char, 2]",
-        "    buffer[0] = cast[char](0xC3)",
         "    let view = buffer.as_str()",
         "    return cast[i32](view.len)",
         "",
       ].join("\n"))
 
-      result = MilkTea::Run.run(source_path, cc: compiler)
+      error = assert_raises(MilkTea::SemaError) do
+        MilkTea::Run.run(source_path)
+      end
 
-      assert_equal "", result.stdout
-      assert_includes result.stderr, "array[char] text must be valid UTF-8"
-      assert_equal 134, result.exit_status
-      assert_nil result.output_path
-      assert_nil result.c_path
-      assert_equal compiler, result.compiler
-      assert_equal [], result.link_flags
+      assert_match(/array\[char, 2\]\.as_str is not available; array\[char, N\] is raw storage/, error.message)
     end
   end
 
-  def test_run_with_host_compiler_rejects_array_char_as_cstr_with_invalid_utf_8
-    compiler = ENV.fetch("CC", "cc")
-    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
-
+  def test_run_rejects_array_char_as_cstr_method
     Dir.mktmpdir("milk-tea-run-array-char-bad-cstr") do |dir|
       source_path = File.join(dir, "array_char_bad_cstr.mt")
 
@@ -1089,21 +1078,16 @@ class MilkTeaRunTest < Minitest::Test
         "",
         "def main() -> i32:",
         "    var buffer: array[char, 2]",
-        "    buffer[0] = cast[char](0xC3)",
         "    let label = buffer.as_cstr()",
         "    return 0",
         "",
       ].join("\n"))
 
-      result = MilkTea::Run.run(source_path, cc: compiler)
+      error = assert_raises(MilkTea::SemaError) do
+        MilkTea::Run.run(source_path)
+      end
 
-      assert_equal "", result.stdout
-      assert_includes result.stderr, "array[char] text must be valid UTF-8"
-      assert_equal 134, result.exit_status
-      assert_nil result.output_path
-      assert_nil result.c_path
-      assert_equal compiler, result.compiler
-      assert_equal [], result.link_flags
+      assert_match(/array\[char, 2\]\.as_cstr is not available; array\[char, N\] is raw storage/, error.message)
     end
   end
 

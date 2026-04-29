@@ -64,6 +64,9 @@ module MilkTea
     IntegerLiteral = Data.define(:lexeme, :value)
     FloatLiteral = Data.define(:lexeme, :value)
     StringLiteral = Data.define(:lexeme, :value, :cstring)
+    FormatString = Data.define(:parts)
+    FormatTextPart = Data.define(:value)
+    FormatExprPart = Data.define(:expression)
     BooleanLiteral = Data.define(:value)
     NullLiteral = Data.define(:type)
   end

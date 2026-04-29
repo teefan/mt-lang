@@ -2,7 +2,6 @@ module std.log
 
 import std.fmt as fmt
 import std.io as io
-import std.mem.arena as arena
 import std.string as string
 
 pub enum Level: u8
@@ -22,25 +21,25 @@ pub def level_name(level: Level) -> str:
         Level.error:
             return "error"
 
-pub def write(level: Level, message: str, scratch: ref[arena.Arena]) -> bool:
-    var line = string.create()
-    defer string.release(addr(line))
+pub def write(level: Level, message: str) -> bool:
+    var line = string.String.create()
+    defer line.release()
 
     fmt.append_str(addr(line), "[")
     fmt.append_str(addr(line), level_name(level))
     fmt.append_str(addr(line), "] ")
     fmt.append_str(addr(line), message)
-    let ok = io.write_error_line(string.as_str(line))
+    let ok = io.write_error_line(line.as_str())
     return ok
 
-pub def debug(message: str, scratch: ref[arena.Arena]) -> bool:
-    return write(Level.debug, message, scratch)
+pub def debug(message: str) -> bool:
+    return write(Level.debug, message)
 
-pub def info(message: str, scratch: ref[arena.Arena]) -> bool:
-    return write(Level.info, message, scratch)
+pub def info(message: str) -> bool:
+    return write(Level.info, message)
 
-pub def warn(message: str, scratch: ref[arena.Arena]) -> bool:
-    return write(Level.warn, message, scratch)
+pub def warn(message: str) -> bool:
+    return write(Level.warn, message)
 
-pub def error(message: str, scratch: ref[arena.Arena]) -> bool:
-    return write(Level.error, message, scratch)
+pub def error(message: str) -> bool:
+    return write(Level.error, message)

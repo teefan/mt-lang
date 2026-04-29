@@ -26,38 +26,38 @@ pub def is_absolute(path: str) -> bool:
 
 pub def join(left: str, right: str) -> string.String:
     if left.len == 0:
-        return string.from_str(right)
+        return string.String.from_str(right)
     if right.len == 0:
-        return string.from_str(left)
+        return string.String.from_str(left)
 
     unsafe:
         if deref(right.data) == cast[char](47):
-            return string.from_str(right)
+            return string.String.from_str(right)
 
-    var result = string.with_capacity(left.len + right.len + 1)
-    string.append(addr(result), left)
+    var result = string.String.with_capacity(left.len + right.len + 1)
+    result.append(left)
 
     unsafe:
         let last = deref(left.data + (left.len - 1))
         if last != cast[char](47):
-            string.append(addr(result), "/")
+            result.append("/")
 
-    string.append(addr(result), right)
+    result.append(right)
     return result
 
 pub def module_relative_path(module_name: str) -> string.String:
-    var result = string.with_capacity(module_name.len + 3)
+    var result = string.String.with_capacity(module_name.len + 3)
     var index: usize = 0
     while index < module_name.len:
         unsafe:
             let byte = cast[u8](deref(module_name.data + index))
             if byte == cast[u8](46):
-                string.push_byte(addr(result), cast[u8](47))
+                result.push_byte(cast[u8](47))
             else:
-                string.push_byte(addr(result), byte)
+                result.push_byte(byte)
         index += 1
 
-    string.append(addr(result), ".mt")
+    result.append(".mt")
     return result
 
 pub def normalize(path: str) -> string.String:
@@ -90,20 +90,20 @@ pub def normalize(path: str) -> string.String:
                 else:
                     vec.push[Segment](addr(segments), segment)
 
-    var result = string.with_capacity(path.len)
+    var result = string.String.with_capacity(path.len)
     if absolute:
-        string.append(addr(result), "/")
+        result.append("/")
 
     if vec.count[Segment](segments) == 0:
         if not absolute:
-            string.append(addr(result), ".")
+            result.append(".")
     else:
         var segment_index: usize = 0
         while segment_index < vec.count[Segment](segments):
             if segment_index > 0:
-                string.append(addr(result), "/")
+                result.append("/")
             let segment = vec.get[Segment](segments, segment_index)
-            string.append(addr(result), segment_text(path, segment))
+            result.append(segment_text(path, segment))
             segment_index += 1
 
     vec.release[Segment](addr(segments))
@@ -114,31 +114,31 @@ pub def expand(path: str, cwd: str) -> string.String:
         return normalize(path)
 
     var joined = join(cwd, path)
-    let result = normalize(string.as_str(joined))
-    string.release(addr(joined))
+    let result = normalize(joined.as_str())
+    joined.release()
     return result
 
 pub def basename(path: str) -> string.String:
     if path.len == 0:
-        return string.from_str(".")
+        return string.String.from_str(".")
 
     var stop = path.len
     while stop > 1 and byte_at(path, stop - 1) == cast[u8](47):
         stop -= 1
 
     if stop == 1 and byte_at(path, 0) == cast[u8](47):
-        return string.from_str("/")
+        return string.String.from_str("/")
 
     var start = stop
     while start > 0 and byte_at(path, start - 1) != cast[u8](47):
         start -= 1
 
     unsafe:
-        return string.from_str(str(data = path.data + start, len = stop - start))
+        return string.String.from_str(str(data = path.data + start, len = stop - start))
 
 pub def dirname(path: str) -> string.String:
     if path.len == 0:
-        return string.from_str(".")
+        return string.String.from_str(".")
 
     var stop = path.len
     while stop > 1 and byte_at(path, stop - 1) == cast[u8](47):
@@ -149,10 +149,10 @@ pub def dirname(path: str) -> string.String:
         slash -= 1
 
     if slash == 0:
-        return string.from_str(".")
+        return string.String.from_str(".")
 
     while slash > 1 and byte_at(path, slash - 1) == cast[u8](47):
         slash -= 1
 
     unsafe:
-        return string.from_str(str(data = path.data, len = slash))
+        return string.String.from_str(str(data = path.data, len = slash))

@@ -212,7 +212,7 @@ pub def next(lexer: ref[Lexer]) -> Result[Token, Error]:
     return err(Error.unexpected_char)
 
 pub def append_null(output: ref[string.String]) -> void:
-    string.append(output, "null")
+    value(output).append("null")
     return
 
 pub def append_bool(output: ref[string.String], value: bool) -> void:
@@ -227,38 +227,38 @@ pub def append_usize(output: ref[string.String], value: usize) -> void:
     fmt.append_usize(output, value)
     return
 
-def append_hex_nibble(output: ref[string.String], value: u8) -> void:
-    if value < cast[u8](10):
-        string.push_byte(output, cast[u8](48) + value)
+def append_hex_nibble(output: ref[string.String], nibble: u8) -> void:
+    if nibble < cast[u8](10):
+        value(output).push_byte(cast[u8](48) + nibble)
     else:
-        string.push_byte(output, cast[u8](65) + (value - cast[u8](10)))
+        value(output).push_byte(cast[u8](65) + (nibble - cast[u8](10)))
     return
 
-pub def append_string(output: ref[string.String], value: str) -> void:
-    string.append(output, "\"")
+pub def append_string(output: ref[string.String], text_value: str) -> void:
+    value(output).append("\"")
     var index: usize = 0
-    while index < value.len:
-        let byte = byte_at(value, index)
+    while index < text_value.len:
+        let byte = byte_at(text_value, index)
         if byte == cast[u8](34):
-            string.append(output, "\\\"")
+            value(output).append("\\\"")
         elif byte == cast[u8](92):
-            string.append(output, "\\\\")
+            value(output).append("\\\\")
         elif byte == cast[u8](8):
-            string.append(output, "\\b")
+            value(output).append("\\b")
         elif byte == cast[u8](12):
-            string.append(output, "\\f")
+            value(output).append("\\f")
         elif byte == cast[u8](10):
-            string.append(output, "\\n")
+            value(output).append("\\n")
         elif byte == cast[u8](13):
-            string.append(output, "\\r")
+            value(output).append("\\r")
         elif byte == cast[u8](9):
-            string.append(output, "\\t")
+            value(output).append("\\t")
         elif byte < cast[u8](32):
-            string.append(output, "\\u00")
+            value(output).append("\\u00")
             append_hex_nibble(output, byte >> 4)
             append_hex_nibble(output, byte & cast[u8](15))
         else:
-            string.push_byte(output, byte)
+            value(output).push_byte(byte)
         index += 1
-    string.append(output, "\"")
+    value(output).append("\"")
     return

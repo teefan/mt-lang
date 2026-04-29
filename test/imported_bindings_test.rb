@@ -36,8 +36,18 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_includes binding.check!, "/std/c/sdl3.mt"
 
     source = File.read(binding.binding_path)
+    refute_match(/^import std\.mem\.arena as arena$/, source)
+    refute_match(/^import std\.string as string$/, source)
     assert_match(/^pub type Window = c\.SDL_Window$/, source)
     assert_match(/^pub type MainFunc = c\.SDL_main_func$/, source)
+    refute_match(/^pub type Sint8 = /, source)
+    refute_match(/^pub type Uint8 = /, source)
+    refute_match(/^pub type Sint16 = /, source)
+    refute_match(/^pub type Uint16 = /, source)
+    refute_match(/^pub type Sint32 = /, source)
+    refute_match(/^pub type Uint32 = /, source)
+    refute_match(/^pub type Sint64 = /, source)
+    refute_match(/^pub type Uint64 = /, source)
     assert_match(/^pub type InitFlags = c\.SDL_InitFlags$/, source)
     assert_match(/^pub const INIT_VIDEO: u32 = c\.SDL_INIT_VIDEO$/, source)
     assert_match(/^pub foreign def malloc\(size: usize\) -> ptr\[void\] = c\.SDL_malloc$/, source)
@@ -47,9 +57,67 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub foreign def set_app_metadata\(app_name: str as cstr, app_version: str as cstr, app_identifier: str as cstr\) -> bool = c\.SDL_SetAppMetadata$/, source)
     assert_match(/^pub foreign def init\(flags: InitFlags\) -> bool = c\.SDL_Init$/, source)
     assert_match(/^pub foreign def poll_event\(out event: Event\) -> bool = c\.SDL_PollEvent$/, source)
+    assert_match(/^pub foreign def set_clipboard_text\(text: str as cstr\) -> bool = c\.SDL_SetClipboardText$/, source)
+    assert_match(/^pub foreign def get_window_size\(window: ptr\[Window\], out w: i32, out h: i32\) -> bool = c\.SDL_GetWindowSize$/, source)
     assert_match(/^pub foreign def get_render_output_size\(renderer: ptr\[Renderer\], out w: i32, out h: i32\) -> bool = c\.SDL_GetRenderOutputSize$/, source)
+    assert_match(/^pub foreign def get_power_info\(out seconds: i32, out percent: i32\) -> PowerState = c\.SDL_GetPowerInfo$/, source)
+    assert_match(/^pub foreign def get_preferred_locales\(out count: i32\) -> ptr\[ptr\[Locale\]\]\? = c\.SDL_GetPreferredLocales$/, source)
+    assert_match(/^pub foreign def convert_event_to_render_coordinates\(renderer: ptr\[Renderer\], inout event: Event\) -> bool = c\.SDL_ConvertEventToRenderCoordinates$/, source)
+    assert_match(/^pub foreign def get_current_time\(out ticks: Time\) -> bool = c\.SDL_GetCurrentTime$/, source)
+    assert_match(/^pub foreign def time_to_date_time\(ticks: Time, out dt: DateTime, local_time: bool\) -> bool = c\.SDL_TimeToDateTime$/, source)
+    assert_match(/^pub foreign def render_debug_text\(renderer: ptr\[Renderer\], x: f32, y: f32, text: str as cstr\) -> bool = c\.SDL_RenderDebugText$/, source)
     assert_match(/^pub foreign def load_png\(file_name: str as cstr\) -> ptr\[Surface\]\? = c\.SDL_LoadPNG$/, source)
+    refute_match(/^pub def cstr_as_str\(text: cstr\) -> str:$/, source)
+    refute_match(/^pub def free_chars\(text: ptr\[char\]\?\) -> void:$/, source)
+    refute_match(/^pub def preferred_locale_at\(locales: ptr\[ptr\[Locale\]\], index: i32\) -> ptr\[Locale\]\?:$/, source)
+    refute_match(/^pub def free_preferred_locales\(locales: ptr\[ptr\[Locale\]\]\?\) -> void:$/, source)
+    refute_match(/^pub def preferred_locale_string\(locale: ptr\[Locale\]\) -> string\.String:$/, source)
+    refute_match(/^pub def render_debug_text_str\(renderer: ptr\[Renderer\], x: f32, y: f32, text: str\) -> bool:$/, source)
     assert_match(/^pub foreign def quit\(\) -> void = c\.SDL_Quit$/, source)
+  end
+
+  def test_generate_rejects_extra_source_policy_escape_hatch
+    Dir.mktmpdir("milk-tea-imported-binding-extra-source") do |dir|
+      raw_path = File.join(dir, "std", "c", "sample.mt")
+      binding_path = File.join(dir, "std", "sample.mt")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
+      FileUtils.mkdir_p(File.dirname(raw_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
+
+      File.write(raw_path, <<~MT)
+        extern module std.c.sample:
+            extern def sample() -> void
+      MT
+
+      File.write(policy_path, JSON.pretty_generate({
+        module_name: "std.sample",
+        raw_module_name: "std.c.sample",
+        raw_import_alias: "c",
+        types: {},
+        constants: {},
+        functions: {
+          include: ["sample"],
+        },
+        extra_source: [
+          "pub def helper() -> void:",
+          "    return",
+        ],
+      }))
+
+      binding = MilkTea::ImportedBindings::Binding.new(
+        name: "sample",
+        module_name: "std.sample",
+        binding_path:,
+        raw_module_name: "std.c.sample",
+        policy_path:,
+      )
+
+      error = assert_raises(MilkTea::ImportedBindings::Error) do
+        binding.generate(module_roots: [dir])
+      end
+
+      assert_match(/extra_source .* no longer supported/, error.message)
+    end
   end
 
   def test_checked_in_raylib_binding_matches_policy_and_loads

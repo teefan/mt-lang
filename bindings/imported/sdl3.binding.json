@@ -4,6 +4,16 @@
   "raw_import_alias": "c",
   "types": {
     "strip_prefix": "SDL_",
+    "exclude": [
+      "Sint8",
+      "Uint8",
+      "Sint16",
+      "Uint16",
+      "Sint32",
+      "Uint32",
+      "Sint64",
+      "Uint64"
+    ],
     "overrides": [
       {
         "raw": "SDL_main_func",
@@ -87,6 +97,94 @@
           { "name": "file_name", "type": "str", "boundary_type": "cstr" }
         ],
         "return_type": "ptr[Surface]?"
+      },
+      {
+        "raw": "SDL_SetClipboardText",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "bool"
+      },
+      {
+        "raw": "SDL_GetWindowSize",
+        "params": [
+          { "name": "window", "type": "ptr[Window]" },
+          { "name": "w", "type": "i32", "mode": "out" },
+          { "name": "h", "type": "i32", "mode": "out" }
+        ],
+        "return_type": "bool"
+      },
+      {
+        "raw": "SDL_GetWindowSizeInPixels",
+        "params": [
+          { "name": "window", "type": "ptr[Window]" },
+          { "name": "w", "type": "i32", "mode": "out" },
+          { "name": "h", "type": "i32", "mode": "out" }
+        ],
+        "return_type": "bool"
+      },
+      {
+        "raw": "SDL_GetPowerInfo",
+        "params": [
+          { "name": "seconds", "type": "i32", "mode": "out" },
+          { "name": "percent", "type": "i32", "mode": "out" }
+        ],
+        "return_type": "PowerState"
+      },
+      {
+        "raw": "SDL_GetJoysticks",
+        "params": [
+          { "name": "count", "type": "i32", "mode": "out" }
+        ],
+        "return_type": "ptr[JoystickID]"
+      },
+      {
+        "raw": "SDL_GetGamepads",
+        "params": [
+          { "name": "count", "type": "i32", "mode": "out" }
+        ],
+        "return_type": "ptr[JoystickID]"
+      },
+      {
+        "raw": "SDL_GetPreferredLocales",
+        "params": [
+          { "name": "count", "type": "i32", "mode": "out" }
+        ],
+        "return_type": "ptr[ptr[Locale]]?"
+      },
+      {
+        "raw": "SDL_ConvertEventToRenderCoordinates",
+        "params": [
+          { "name": "renderer", "type": "ptr[Renderer]" },
+          { "name": "event", "type": "Event", "mode": "inout" }
+        ],
+        "return_type": "bool"
+      },
+      {
+        "raw": "SDL_GetCurrentTime",
+        "params": [
+          { "name": "ticks", "type": "Time", "mode": "out" }
+        ],
+        "return_type": "bool"
+      },
+      {
+        "raw": "SDL_TimeToDateTime",
+        "params": [
+          { "name": "ticks", "type": "Time" },
+          { "name": "dt", "type": "DateTime", "mode": "out" },
+          { "name": "local_time", "type": "bool" }
+        ],
+        "return_type": "bool"
+      },
+      {
+        "raw": "SDL_RenderDebugText",
+        "params": [
+          { "name": "renderer", "type": "ptr[Renderer]" },
+          { "name": "x", "type": "f32" },
+          { "name": "y", "type": "f32" },
+          { "name": "text", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "bool"
       }
     ]
   }

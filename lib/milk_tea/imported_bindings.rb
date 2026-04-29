@@ -135,6 +135,7 @@ module MilkTea
         @module_roots = module_roots.map { |root| File.expand_path(root.to_s) }
         @public_type_names_by_raw_name = {}
         @imported_public_types_by_alias = {}
+        @raw_type_declarations = {}
       end
 
       def generate
@@ -151,7 +152,7 @@ module MilkTea
         @imported_public_types_by_alias = build_imported_public_types(import_specs, aliases: type_spec.fetch(:shared_from, []))
         const_spec = normalize_alias_spec(policy["constants"], context: "constant")
         function_spec = normalize_function_spec(policy["functions"])
-        extra_source = normalize_extra_source(policy["extra_source"])
+        @raw_type_declarations = declarations[:types]
         @public_type_names_by_raw_name = build_public_type_names(type_spec, declarations)
 
         lines = []
@@ -167,7 +168,6 @@ module MilkTea
           emit_type_aliases(type_spec, declarations),
           emit_const_aliases(const_spec, declarations),
           emit_foreign_functions(function_spec, declarations),
-          extra_source,
         ].reject(&:empty?)
 
         sections.each do |section_lines|
@@ -191,6 +191,10 @@ module MilkTea
       def validate_policy!(policy)
         unless policy.is_a?(Hash)
           raise Error, "imported binding policy #{@policy_path} must be a JSON object"
+        end
+
+        if policy.key?("extra_source")
+          raise Error, "extra_source in #{@policy_path} is no longer supported; move helper code into a normal .mt module"
         end
 
         policy_module_name = policy.fetch("module_name")
@@ -233,17 +237,6 @@ module MilkTea
             module_name:,
             alias: import_alias,
           }
-        end
-      end
-
-      def normalize_extra_source(value)
-        return [] if value.nil?
-        raise Error, "extra_source in #{@policy_path} must be an array" unless value.is_a?(Array)
-
-        value.map do |line|
-          raise Error, "extra_source in #{@policy_path} must contain only strings" unless line.is_a?(String)
-
-          line
         end
       end
 
@@ -761,7 +754,7 @@ module MilkTea
       def render_type(type)
         case type
         when AST::TypeRef
-          text = +(@public_type_names_by_raw_name.fetch(type.name.to_s, type.name.to_s))
+          text = +(rendered_type_name(type.name.to_s))
           unless type.arguments.empty?
             rendered_arguments = type.arguments.map { |argument| render_type_argument(argument.value) }
             text << "[#{rendered_arguments.join(', ')}]"
@@ -798,6 +791,23 @@ module MilkTea
         else
           raise Error, "unsupported raw type argument #{argument.class.name} in #{@raw_module_path}"
         end
+      end
+
+      def rendered_type_name(raw_name, seen = [])
+        public_name = @public_type_names_by_raw_name[raw_name]
+        return public_name if public_name
+
+        raise Error, "cyclic raw type alias #{raw_name} in #{@raw_module_path}" if seen.include?(raw_name)
+
+        raw_declaration = @raw_type_declarations[raw_name]
+        if raw_declaration.is_a?(AST::TypeAliasDecl) &&
+            raw_declaration.target.is_a?(AST::TypeRef) &&
+            raw_declaration.target.arguments.empty? &&
+            !raw_declaration.target.nullable
+          return rendered_type_name(raw_declaration.target.name.to_s, seen + [raw_name])
+        end
+
+        raw_name
       end
 
       def policy_label

@@ -6,59 +6,60 @@ import std.mem.arena as arena
 pub struct String:
     buffer: bytes.Buffer
 
-pub def create() -> String:
-    return String(buffer = bytes.create())
+methods String:
+    pub static def create() -> String:
+        return String(buffer = bytes.create())
 
-pub def with_capacity(capacity: usize) -> String:
-    return String(buffer = bytes.with_capacity(capacity))
+    pub static def with_capacity(capacity: usize) -> String:
+        return String(buffer = bytes.with_capacity(capacity))
 
-pub def from_str(text: str) -> String:
-    var result = with_capacity(text.len)
-    append(addr(result), text)
-    return result
+    pub static def from_str(text: str) -> String:
+        var result = String(buffer = bytes.with_capacity(text.len))
+        result.append(text)
+        return result
 
-pub def count(text: String) -> usize:
-    return bytes.count(text.buffer)
+    pub def count() -> usize:
+        return bytes.count(this.buffer)
 
-pub def capacity(text: String) -> usize:
-    return bytes.capacity(text.buffer)
+    pub def capacity() -> usize:
+        return bytes.capacity(this.buffer)
 
-pub def is_empty(text: String) -> bool:
-    return bytes.is_empty(text.buffer)
+    pub def is_empty() -> bool:
+        return bytes.is_empty(this.buffer)
 
-pub def clear(text: ref[String]) -> void:
-    bytes.clear(addr(value(text).buffer))
-    return
+    pub edit def clear() -> void:
+        bytes.clear(addr(this.buffer))
+        return
 
-pub def release(text: ref[String]) -> void:
-    bytes.release(addr(value(text).buffer))
-    return
+    pub edit def release() -> void:
+        bytes.release(addr(this.buffer))
+        return
 
-pub def reserve(text: ref[String], min_capacity: usize) -> void:
-    bytes.reserve(addr(value(text).buffer), min_capacity)
-    return
+    pub edit def reserve(min_capacity: usize) -> void:
+        bytes.reserve(addr(this.buffer), min_capacity)
+        return
 
-pub def push_byte(text: ref[String], byte: u8) -> void:
-    bytes.push(addr(value(text).buffer), byte)
-    return
+    pub edit def push_byte(byte: u8) -> void:
+        bytes.push(addr(this.buffer), byte)
+        return
 
-pub def append(text: ref[String], suffix: str) -> void:
-    var index: usize = 0
-    while index < suffix.len:
+    pub edit def append(suffix: str) -> void:
+        var index: usize = 0
+        while index < suffix.len:
+            unsafe:
+                this.push_byte(cast[u8](deref(suffix.data + index)))
+            index += 1
+        return
+
+    pub edit def assign(value_text: str) -> void:
+        this.clear()
+        this.append(value_text)
+        return
+
+    pub def as_str() -> str:
+        let data = bytes.data_ptr(this.buffer)
         unsafe:
-            push_byte(text, cast[u8](deref(suffix.data + index)))
-        index += 1
-    return
+            return str(data = cast[ptr[char]](data), len = bytes.count(this.buffer))
 
-pub def assign(text: ref[String], value_text: str) -> void:
-    clear(text)
-    append(text, value_text)
-    return
-
-pub def as_str(text: String) -> str:
-    let data = bytes.data_ptr(text.buffer)
-    unsafe:
-        return str(data = cast[ptr[char]](data), len = bytes.count(text.buffer))
-
-pub def to_cstr(text: String, space: ref[arena.Arena]) -> cstr:
-    return value(space).to_cstr(as_str(text))
+    pub def to_cstr(space: ref[arena.Arena]) -> cstr:
+        return value(space).to_cstr(this.as_str())

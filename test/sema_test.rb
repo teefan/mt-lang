@@ -76,9 +76,9 @@ class MilkTeaSemaTest < Minitest::Test
           return 0
     MT
 
-    result = check_source(source)
+    result = check_program_source(source)
 
-    assert_equal true, result.functions.key?("main")
+    assert_equal true, result.root_analysis.functions.key?("main")
   end
 
   def test_type_checks_assignment_to_nullable_local_in_non_null_branch
@@ -92,9 +92,9 @@ class MilkTeaSemaTest < Minitest::Test
           return handle
     MT
 
-    result = check_source(source)
+    result = check_program_source(source)
 
-    assert_equal true, result.functions.key?("main")
+    assert_equal true, result.root_analysis.functions.key?("main")
   end
 
   def test_type_checks_if_expression
@@ -105,9 +105,43 @@ class MilkTeaSemaTest < Minitest::Test
           return if ready then 1 else 0
     MT
 
-    result = check_source(source)
+    result = check_program_source(source)
 
-    assert_equal true, result.functions.key?("main")
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_std_fmt_string_with_format_literal
+    source = <<~MT
+      module demo.format
+
+      import std.fmt as fmt
+      import std.string as string
+
+      def main(count: u8, delta: i16, ticks: u64) -> i32:
+          var text = fmt.string(f"count=\#{count} delta=\#{delta} ticks=\#{ticks} ok=\#{true}")
+          defer text.release()
+          return cast[i32](text.count())
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_rejects_format_literal_outside_std_fmt_string
+    source = <<~MT
+      module demo.format
+
+      def main(count: i32) -> i32:
+          let text = f"count=\#{count}"
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/formatted string literals are only valid in std\.fmt\.string/, error.message)
   end
 
   def test_rejects_wrong_return_type
@@ -2766,7 +2800,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/without initializer requires a zero-initializable type/, error.message)
   end
 
-  def test_type_checks_array_char_text_borrows
+  def test_rejects_array_char_text_methods
     source = <<~MT
       module demo.char_array_methods
 
@@ -2777,9 +2811,11 @@ class MilkTeaSemaTest < Minitest::Test
           return cast[i32](view.len)
     MT
 
-    result = check_source(source)
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
 
-    assert_equal true, result.functions.key?("main")
+    assert_match(/array\[char, 16\]\.as_str is not available; array\[char, N\] is raw storage/, error.message)
   end
 
   def test_rejects_removed_str_buffer_type
@@ -2824,7 +2860,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/as_str requires a safe stored receiver/, error.message)
+    assert_match(/array\[char, 8\]\.as_str is not available; array\[char, N\] is raw storage/, error.message)
   end
 
   def test_rejects_array_char_as_cstr_on_temporary_receiver
@@ -2839,10 +2875,10 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/as_cstr requires a safe stored receiver/, error.message)
+    assert_match(/array\[char, 8\]\.as_cstr is not available; array\[char, N\] is raw storage/, error.message)
   end
 
-  def test_type_checks_foreign_str_as_cstr_calls_with_array_char_as_cstr_without_scratch
+  def test_rejects_foreign_str_as_cstr_calls_with_array_char_as_cstr
     root_source = <<~MT
       module demo.main
 
@@ -2868,9 +2904,11 @@ class MilkTeaSemaTest < Minitest::Test
       MT
     }
 
-    result = check_program_source(root_source, imported_sources)
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(root_source, imported_sources)
+    end
 
-    assert_equal true, result.root_analysis.functions.key?("main")
+    assert_match(/array\[char, 32\]\.as_cstr is not available; array\[char, N\] is raw storage/, error.message)
   end
 
   def test_type_checks_foreign_defs_with_array_char_and_span_char_ptr_char_boundary
