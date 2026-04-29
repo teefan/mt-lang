@@ -1,0 +1,48 @@
+{
+  "module_name": "std.sdl3",
+  "raw_module_name": "std.c.sdl3",
+  "raw_import_alias": "c",
+  "types": {
+    "strip_prefix": "SDL_",
+    "overrides": [
+      {
+        "raw": "SDL_main_func",
+        "name": "MainFunc"
+      }
+    ]
+  },
+  "constants": {
+    "strip_prefix": "SDL_"
+  },
+  "functions": {
+    "strip_prefix": "SDL_",
+    "overrides": [
+      {
+        "raw": "SDL_RunApp",
+        "params": [
+          { "name": "argc", "type": "i32" },
+          { "name": "argv", "type": "ptr[ptr[char]]" },
+          { "name": "main_function", "type": "MainFunc" }
+        ],
+        "return_type": "i32",
+        "mapping": "c.SDL_RunApp(argc, argv, main_function, null)"
+      },
+      {
+        "raw": "SDL_SetAppMetadata",
+        "params": [
+          { "name": "app_name", "type": "str", "boundary_type": "cstr" },
+          { "name": "app_version", "type": "str", "boundary_type": "cstr" },
+          { "name": "app_identifier", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "bool"
+      },
+      {
+        "raw": "SDL_Init",
+        "params": [
+          { "name": "flags", "type": "InitFlags" }
+        ],
+        "return_type": "bool"
+      }
+    ]
+  }
+}

@@ -8,7 +8,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raylib", "rlgl", "raygui"], registry.map(&:name)
+    assert_equal ["raylib", "rlgl", "raygui", "sdl3"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -23,6 +23,29 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_equal "std.c.raygui", registry.fetch("raygui").raw_module_name
     assert_includes registry.fetch("raygui").binding_path, "/std/raygui.mt"
     assert_includes registry.fetch("raygui").policy_path, "/bindings/imported/raygui.binding.json"
+
+    assert_equal "std.sdl3", registry.fetch("sdl3").module_name
+    assert_equal "std.c.sdl3", registry.fetch("sdl3").raw_module_name
+    assert_includes registry.fetch("sdl3").binding_path, "/std/sdl3.mt"
+    assert_includes registry.fetch("sdl3").policy_path, "/bindings/imported/sdl3.binding.json"
+  end
+
+  def test_checked_in_sdl3_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("sdl3")
+
+    assert_includes binding.check!, "/std/c/sdl3.mt"
+
+    source = File.read(binding.binding_path)
+    assert_match(/^pub type Window = c\.SDL_Window$/, source)
+    assert_match(/^pub type MainFunc = c\.SDL_main_func$/, source)
+    assert_match(/^pub type InitFlags = c\.SDL_InitFlags$/, source)
+    assert_match(/^pub const INIT_VIDEO: u32 = c\.SDL_INIT_VIDEO$/, source)
+    assert_match(/^pub foreign def malloc\(size: usize\) -> ptr\[void\] = c\.SDL_malloc$/, source)
+    assert_match(/^pub foreign def create_window\(title: cstr, w: i32, h: i32, flags: usize\) -> ptr\[Window\] = c\.SDL_CreateWindow$/, source)
+    assert_match(/^pub foreign def run_app\(argc: i32, argv: ptr\[ptr\[char\]\], main_function: MainFunc\) -> i32 = c\.SDL_RunApp\(argc, argv, main_function, null\)$/, source)
+    assert_match(/^pub foreign def set_app_metadata\(app_name: str as cstr, app_version: str as cstr, app_identifier: str as cstr\) -> bool = c\.SDL_SetAppMetadata$/, source)
+    assert_match(/^pub foreign def init\(flags: InitFlags\) -> bool = c\.SDL_Init$/, source)
+    assert_match(/^pub foreign def quit\(\) -> void = c\.SDL_Quit$/, source)
   end
 
   def test_checked_in_raylib_binding_matches_policy_and_loads
@@ -107,7 +130,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
 
   def test_imported_bindings_outside_raylib_and_rlgl_do_not_expose_raw_ptr_void
     offending_bindings = MilkTea::ImportedBindings.default_registry.reject do |binding|
-      %w[raylib rlgl].include?(binding.name)
+      %w[raylib rlgl sdl3].include?(binding.name)
     end.filter_map do |binding|
       binding.name if File.read(binding.binding_path).match?(/\bptr\[void\]\b/)
     end

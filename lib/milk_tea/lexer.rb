@@ -215,6 +215,15 @@ module MilkTea
             index += 1
           end
         end
+
+        if exponent_part?(line, index)
+          type = :float
+          index += 1
+          index += 1 if %w[+ -].include?(line[index])
+          while index < line.length && numeric_part?(line[index])
+            index += 1
+          end
+        end
       end
 
       lexeme = line[start...index]
@@ -333,6 +342,14 @@ module MilkTea
 
     def numeric_part?(char)
       char && char.match?(/[0-9_]/)
+    end
+
+    def exponent_part?(line, index)
+      return false unless %w[e E].include?(line[index])
+
+      exponent_index = index + 1
+      exponent_index += 1 if %w[+ -].include?(line[exponent_index])
+      digit?(line[exponent_index])
     end
 
     def token(type, lexeme, literal, line, column)

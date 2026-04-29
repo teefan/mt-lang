@@ -44,6 +44,7 @@ class MilkTeaBindgenTest < Minitest::Test
         typedef _Complex double ComplexValue;
 
         static const int MAGIC = 7;
+        static const unsigned long WINDOW_FLAG = 32UL;
         static const float SCALE = 2.5f;
         static const Vec2 ORIGIN = { 0.0f, 0.0f };
         static const char *TITLE = "Milk";
@@ -102,7 +103,7 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_match(/struct Counters:/, generated)
       assert_match(/struct Material:/, generated)
       assert_match(/value: i32/, generated)
-      assert_match(/capacity: u64/, generated)
+      assert_match(/capacity: usize/, generated)
       assert_match(/params: array\[f32, 4\]/, generated)
       assert_match(/name: array\[char, 32\]/, generated)
       assert_match(/type LogCallback = fn\(arg0: i32, arg1: cstr\) -> void/, generated)
@@ -114,6 +115,7 @@ class MilkTeaBindgenTest < Minitest::Test
       refute_match(/const DYNAMIC_SIZE:/, generated)
       refute_match(/const INACTIVE_LIMIT:/, generated)
       assert_match(/const MAGIC: i32 = 7/, generated)
+      assert_match(/const WINDOW_FLAG: usize = 32/, generated)
       assert_match(/const SCALE: f32 = 2.5/, generated)
       assert_match(/const ORIGIN: Vec2 = Vec2\(x = 0.0, y = 0.0\)/, generated)
       assert_match(/const TITLE: cstr = c"Milk"/, generated)
@@ -131,7 +133,7 @@ class MilkTeaBindgenTest < Minitest::Test
       refute_match(/extern def measure_long_double/, generated)
       assert_match(/extern def add\(a: i32, b: i32\) -> i32/, generated)
       assert_equal 1, generated.scan("extern def add(a: i32, b: i32) -> i32").length
-      assert_match(/extern def fill_buffer\(value: u32, count: u64\) -> usize/, generated)
+      assert_match(/extern def fill_buffer\(value: u32, count: usize\) -> usize/, generated)
       assert_match(/extern def widen\(value: i32\) -> i32/, generated)
       assert_match(/extern def name_of\(mode: Mode\) -> cstr/, generated)
       assert_match(/extern def logf\(format: cstr, \.\.\.\) -> i32/, generated)
@@ -238,6 +240,78 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_match(/^    include "dep\.h"$/, generated)
       assert_match(/^    include "sample\.h"$/, generated)
       assert_match(/^        position: dep\.Vec3$/, generated)
+    end
+  end
+
+  def test_generate_captures_macro_constants_from_nested_tracked_headers
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-tracked-macros") do |dir|
+      inner_path = File.join(dir, "inner.h")
+      outer_path = File.join(dir, "outer.h")
+      wrapper_path = File.join(dir, "wrapper.h")
+
+      File.write(inner_path, <<~C)
+        #define SAMPLE_INIT_VIDEO 0x00000020u
+        #define SAMPLE_OLD_ALIAS renamed_SAMPLE_INIT_VIDEO
+        #define SAMPLE_EPSILON 1.25E-4f
+      C
+      File.write(outer_path, <<~C)
+        #include "inner.h"
+        typedef unsigned int SampleFlags;
+      C
+      File.write(wrapper_path, <<~C)
+        #include "outer.h"
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path: wrapper_path,
+        tracked_header_prefixes: [dir],
+        declaration_name_prefixes: ["SAMPLE_", "Sample"],
+        include_directives: ["wrapper.h"],
+        clang: clang,
+        clang_args: ["-I#{dir}"],
+      )
+
+      assert_match(/type SampleFlags = u32/, generated)
+      assert_match(/const SAMPLE_INIT_VIDEO: u32 = 32/, generated)
+      assert_match(/const SAMPLE_EPSILON: f32 = 1\.25\d*E-4/, generated)
+      refute_match(/const SAMPLE_OLD_ALIAS:/, generated)
+    end
+  end
+
+  def test_generate_supports_bindgen_defines_and_extra_include_directives
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-extra-includes") do |dir|
+      header_path = File.join(dir, "sample.h")
+      main_header_path = File.join(dir, "sample_main.h")
+
+      File.write(header_path, <<~C)
+        typedef unsigned int SampleFlags;
+      C
+      File.write(main_header_path, <<~C)
+        #ifdef SAMPLE_MAIN_HANDLED
+        typedef int (*SampleMain)(int argc, char **argv);
+        int SampleRun(int argc, char **argv, SampleMain main_fn);
+        #endif
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h", "sample_main.h"],
+        bindgen_defines: ["SAMPLE_MAIN_HANDLED=1"],
+        bindgen_include_directives: ["sample_main.h"],
+        clang:,
+        clang_args: ["-I#{dir}"],
+      )
+
+      assert_match(/type SampleFlags = u32/, generated)
+      assert_match(/extern def SampleRun\(argc: i32, argv: ptr\[ptr\[char\]\], main_fn: fn\(arg0: i32, arg1: ptr\[ptr\[char\]\]\) -> i32\) -> i32/, generated)
     end
   end
 

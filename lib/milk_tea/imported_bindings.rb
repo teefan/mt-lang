@@ -839,6 +839,13 @@ module MilkTea
           raw_module_name: "std.c.raygui",
           policy_path: root.join("bindings/imported/raygui.binding.json"),
         ),
+        Binding.new(
+          name: "sdl3",
+          module_name: "std.sdl3",
+          binding_path: root.join("std/sdl3.mt"),
+          raw_module_name: "std.c.sdl3",
+          policy_path: root.join("bindings/imported/sdl3.binding.json"),
+        ),
       ]
     end
 

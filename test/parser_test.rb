@@ -201,6 +201,24 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::IntegerLiteral, return_stmt.value.else_expression
   end
 
+  def test_parses_scientific_float_literals
+    source = <<~MT
+      module demo.float_literals
+
+      const epsilon: f32 = 1.1920929E-7
+
+      def main() -> f32:
+          return epsilon
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    const_decl = ast.declarations.first
+
+    assert_instance_of MilkTea::AST::FloatLiteral, const_decl.value
+    assert_equal "1.1920929E-7", const_decl.value.lexeme
+    assert_in_delta 1.1920929e-7, const_decl.value.value, 1e-15
+  end
+
   def test_parses_return_boolean_chain_without_forced_parentheses
     source = <<~MT
       module demo.expr
