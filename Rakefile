@@ -1,5 +1,6 @@
 require 'rake/testtask'
 require_relative 'lib/milk_tea'
+require_relative 'lib/milk_tea/bindings'
 
 RAW_BINDINGS = MilkTea::RawBindings.default_registry(root: MilkTea.root)
 IMPORTED_BINDINGS = MilkTea::ImportedBindings.default_registry(root: MilkTea.root)
@@ -7,9 +8,35 @@ IMPORTED_BINDINGS = MilkTea::ImportedBindings.default_registry(root: MilkTea.roo
 task default: :test
 task verify: [:test, *RAW_BINDINGS.check_task_names, *IMPORTED_BINDINGS.check_task_names]
 
+desc 'Run all tests'
 Rake::TestTask.new do |t|
   t.libs << 'test'
   t.pattern = 'test/**/*_test.rb'
+end
+
+namespace :test do
+  {
+    compiler: 'test/compiler/**/*_test.rb',
+    tooling: 'test/tooling/**/*_test.rb',
+    std: 'test/std/**/*_test.rb',
+    examples: 'test/examples/**/*_test.rb',
+  }.each do |name, pattern|
+    desc "Run #{name} tests"
+    Rake::TestTask.new(name) do |t|
+      t.libs << 'test'
+      t.pattern = pattern
+    end
+  end
+end
+
+namespace :deps do
+  desc 'Ensure vendored third_party upstream folders are present at the pinned revisions'
+  task :bootstrap do
+    MilkTea::UpstreamSources.bootstrap_all!.each do |result|
+      verb = result.status == :present ? 'kept' : 'bootstrapped'
+      puts "#{verb} #{result.source.name} -> #{result.path}"
+    end
+  end
 end
 
 namespace :imported_bindings do
