@@ -38,7 +38,7 @@ If code allocates, takes an address, dereferences a raw pointer, performs an FFI
 
 FFI visibility belongs at the declaration site. Raw `extern module` declarations expose exact ABI types. Imported foreign declarations may project those raw types into ordinary Milk Tea types, but the projection rule, temporary-storage rule, and ownership rule must be declared there instead of repeated at every call site.
 
-The same rule applies to text construction. Plain string literals are borrowed `str` values. Any surface that builds owned text must say so explicitly, for example `std.fmt.string(f"...")`.
+The same rule applies to text construction. Plain string literals and format string literals are borrowed `str` values. Any surface that builds owned text must say so explicitly, for example `std.fmt.string(f"...")` when ownership must escape.
 
 ### 2. C is the ABI ground truth
 
@@ -731,7 +731,7 @@ Implemented core modules:
 - `std.string.String` is the normal growable owned UTF-8 text surface. Its public API should mirror the mutable-text shape of `str_builder[N]`: method-style `append`, `assign`, `clear`, `as_str`, `to_cstr`, and explicit constructors, not a parallel module-function vocabulary. Byte-level appends exist as low-level escape hatches.
 - `std.str` provides borrowed string helpers: UTF-8 validation, byte lookup, prefix/suffix/equality, ASCII trimming, and byte search.
 - `std.path`, `std.fs`, and `std.io` provide pure path helpers, byte/text file read/write, stdout printing, and stderr diagnostics.
-- `std.fmt` is the explicit formatting subsystem. It should be the single normal formatting engine for owned and fixed-capacity text rather than one option among many formatting styles. The normal owned-text allocation path is `fmt.string(f"...")`; low-level append helpers remain implementation building blocks.
+- `std.fmt` is the explicit formatting subsystem. It should be the single normal formatting engine for owned and fixed-capacity text rather than one option among many formatting styles. `f"..."` produces borrowed `str`; `fmt.string(f"...")` is the explicit owned-text allocation path when you need a `std.string.String`. Low-level append helpers remain implementation building blocks.
 - `std.log` is a tiny stderr logger built from `std.fmt` and `std.io`.
 - `std.hash`, `std.map`, and `std.set` provide deterministic hash helpers plus policy-based hash collections.
 - `std.str_map` and `std.str_set` provide borrowed-string-key wrappers for symbol tables and keyword sets.

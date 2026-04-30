@@ -481,20 +481,23 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("main")
   end
 
-  def test_rejects_format_literal_outside_std_fmt_string
+  def test_type_checks_format_literal_as_general_str_expression
     source = <<~MT
       module demo.format
 
+      def length(text: str) -> usize:
+          return text.len
+
       def main(count: i32) -> i32:
           let text = f"count=\#{count}"
-          return 0
+          if length(f"ok=\#{true}") == 0:
+              return 1
+          return i32<-text.len
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_program_source(source)
-    end
+    result = check_program_source(source)
 
-    assert_match(/formatted string literals are only valid in std\.fmt\.string/, error.message)
+    assert_equal true, result.root_analysis.functions.key?("main")
   end
 
   def test_rejects_wrong_return_type

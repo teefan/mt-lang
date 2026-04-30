@@ -1150,7 +1150,7 @@ module MilkTea
         when AST::StringLiteral
           @types.fetch(expression.cstring ? "cstr" : "str")
         when AST::FormatString
-          raise SemaError, "formatted string literals are only valid in std.fmt.string(...) or std.io print helpers"
+          @types.fetch("str")
         when AST::BooleanLiteral
           @types.fetch("bool")
         when AST::NullLiteral

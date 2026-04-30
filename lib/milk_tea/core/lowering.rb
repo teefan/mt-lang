@@ -2396,9 +2396,10 @@ module MilkTea
             c_name = c_local_name(statement.name)
             prepared_setup = []
             prepared_value = statement.value
+            prepared_cleanups = []
             emitted_decl = false
             if statement.value
-              prepared_setup, prepared_value = prepare_expression_for_inline_lowering(
+              prepared_setup, prepared_value, prepared_cleanups = prepare_expression_with_cleanups(
                 statement.value,
                 env: local_env,
                 expected_type: type,
@@ -2419,6 +2420,7 @@ module MilkTea
 
               lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:)
               lowered.concat(cleanup_statements)
+              local_defers.concat(prepared_cleanups)
               emitted_decl = true
             elsif prepared_value.is_a?(AST::ProcExpr)
               setup, value = lower_proc_expression_for_local(prepared_value, env: local_env, local_name: statement.name, proc_type: type)
@@ -2442,6 +2444,7 @@ module MilkTea
               cstr_list_backed: cstr_list_backed_storage_value?(type, prepared_value, local_env),
             )
             lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:) unless emitted_decl
+            local_defers.concat(prepared_cleanups)
             if contains_proc_storage_type?(type)
               local_value = IR::Name.new(name: c_name, type:, pointer: false)
               # Use guarded release so zero-initialized var locals are safe (invoke == NULL guard).
@@ -2452,7 +2455,8 @@ module MilkTea
             end
           when AST::Assignment
             target = lower_assignment_target(statement.target, env: local_env)
-            prepared_setup, prepared_value = prepare_expression_for_inline_lowering(
+            prepared_cleanups = []
+            prepared_setup, prepared_value, prepared_cleanups = prepare_expression_with_cleanups(
               statement.value,
               env: local_env,
               expected_type: target.type,
@@ -2473,6 +2477,7 @@ module MilkTea
               lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
               lowered.concat(cleanup_statements)
               update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
+              local_defers.concat(prepared_cleanups)
               next
             else
               value = if statement.operator == "="
@@ -2488,6 +2493,7 @@ module MilkTea
                       end
             end
             update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
+            local_defers.concat(prepared_cleanups)
             if statement.operator == "=" && contains_proc_storage_type?(target.type)
               # Materialize the RHS to a C temp to avoid evaluating aggregate literals multiple times
               # and to ensure retain/release operate on a stable struct value throughout the sequence.
@@ -2509,7 +2515,7 @@ module MilkTea
 
             statement.branches.each do |branch|
               branch_env = env_with_refinements(local_env, false_refinements)
-              condition_setup, prepared_condition = prepare_expression_for_inline_lowering(
+              condition_setup, prepared_condition, condition_cleanups = prepare_expression_with_cleanups(
                 branch.condition,
                 env: branch_env,
                 expected_type: @types.fetch("bool"),
@@ -2518,6 +2524,7 @@ module MilkTea
 
               branch_entries << [
                 condition_setup,
+                condition_cleanups,
                 lower_expression(prepared_condition, env: branch_env, expected_type: @types.fetch("bool")),
                 lower_block(
                   branch.body,
@@ -2542,8 +2549,16 @@ module MilkTea
             ) : []
 
             nested_if = nested_else_body
-            branch_entries.reverse_each do |condition_setup, condition, then_body|
-              nested_if = [*condition_setup, IR::IfStmt.new(condition:, then_body:, else_body: nested_if)]
+            branch_entries.reverse_each do |condition_setup, condition_cleanups, condition, then_body|
+              condition_cleanup_statements = condition_cleanups.flat_map(&:itself)
+              nested_if = [
+                *condition_setup,
+                IR::IfStmt.new(
+                  condition:,
+                  then_body: condition_cleanup_statements + then_body,
+                  else_body: condition_cleanup_statements + nested_if,
+                ),
+              ]
             end
             lowered.concat(nested_if)
 
@@ -2554,7 +2569,7 @@ module MilkTea
             end
           when AST::MatchStmt
             scrutinee_type = infer_expression_type(statement.expression, env: local_env)
-            expression_setup, prepared_expression = prepare_expression_for_inline_lowering(
+            expression_setup, prepared_expression, expression_cleanups = prepare_expression_with_cleanups(
               statement.expression,
               env: local_env,
               expected_type: scrutinee_type,
@@ -2578,6 +2593,7 @@ module MilkTea
               end
             end
             lowered << IR::SwitchStmt.new(expression:, cases:)
+            lowered.concat(expression_cleanups.flat_map(&:itself))
           when AST::StaticAssert
             lowered << IR::StaticAssert.new(
               condition: lower_expression(statement.condition, env: local_env, expected_type: @types.fetch("bool")),
@@ -2601,8 +2617,9 @@ module MilkTea
             value = nil
             prepared_setup = []
             prepared_value = statement.value
+            prepared_cleanups = []
             if statement.value
-              prepared_setup, prepared_value = prepare_expression_for_inline_lowering(
+              prepared_setup, prepared_value, prepared_cleanups = prepare_expression_with_cleanups(
                 statement.value,
                 env: local_env,
                 expected_type: return_type,
@@ -2620,7 +2637,11 @@ module MilkTea
               expected_type: return_type,
               contextual_int_to_float: contextual_int_to_float_target?(return_type),
             ) : nil
-            cleanup = cleanup_statements(local_defers, active_defers)
+            if prepared_cleanups.any? && cstr_trackable_type?(return_type)
+              raise LoweringError, "formatted string temporaries cannot be returned as borrowed text; use fmt.string(...) when ownership must escape"
+            end
+
+            cleanup = prepared_cleanups.flat_map(&:itself) + cleanup_statements(local_defers, active_defers)
             needs_proc_retain = value && contains_proc_storage_type?(return_type) && !local_defers.empty? && !expression_contains_proc_expr?(prepared_value)
             if value && (!cleanup.empty? && !cleanup_safe_return_expression?(prepared_value) || needs_proc_retain)
               return_value_name = fresh_c_temp_name(local_env, "return_value")
@@ -2631,7 +2652,7 @@ module MilkTea
             lowered.concat(cleanup)
             lowered << IR::ReturnStmt.new(value:)
           when AST::ExpressionStmt
-            prepared_setup, prepared_expression = prepare_expression_for_inline_lowering(
+            prepared_setup, prepared_expression, prepared_cleanups = prepare_expression_with_cleanups(
               statement.expression,
               env: local_env,
               expected_type: infer_expression_type(statement.expression, env: local_env),
@@ -2647,9 +2668,11 @@ module MilkTea
                 discard_result: true,
               )
               lowered.concat(setup)
+              lowered.concat(prepared_cleanups.flat_map(&:itself))
               local_env[:scopes] = scopes_with_refinements(local_env[:scopes], consuming_foreign_call_refinements(foreign_call, local_env))
             else
               lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env: local_env))
+              lowered.concat(prepared_cleanups.flat_map(&:itself))
             end
           else
             raise LoweringError, "unsupported statement #{statement.class.name}"
@@ -3116,7 +3139,7 @@ module MilkTea
       def lower_while_stmt(statement, env:, active_defers:, return_type:, allow_return:)
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
-        condition_setup, prepared_condition = prepare_expression_for_inline_lowering(
+        condition_setup, prepared_condition, condition_cleanups = prepare_expression_with_cleanups(
           statement.condition,
           env:,
           expected_type: @types.fetch("bool"),
@@ -3134,7 +3157,7 @@ module MilkTea
 
         condition = lower_expression(prepared_condition, env:, expected_type: @types.fetch("bool"))
 
-        if condition_setup.empty?
+        if condition_setup.empty? && condition_cleanups.empty?
           statements = [
             IR::WhileStmt.new(
               condition:,
@@ -3149,8 +3172,8 @@ module MilkTea
           *condition_setup,
           IR::IfStmt.new(
             condition: IR::Unary.new(operator: "not", operand: condition, type: @types.fetch("bool")),
-            then_body: [loop_exit_statement(loop_exit_break(break_label), local_defers: [], outer_defers: [])],
-            else_body: nil,
+            then_body: condition_cleanups.flat_map(&:itself) + [loop_exit_statement(loop_exit_break(break_label), local_defers: [], outer_defers: [])],
+            else_body: condition_cleanups.flat_map(&:itself),
           ),
           *body,
         ]
@@ -3326,6 +3349,20 @@ module MilkTea
         end
       end
 
+      def prepare_expression_with_cleanups(expression, env:, expected_type: nil, allow_root_statement_foreign: false)
+        env[:prepared_expression_cleanups] ||= []
+        start_index = env[:prepared_expression_cleanups].length
+        setup, prepared_expression = prepare_expression_for_inline_lowering(
+          expression,
+          env:,
+          expected_type:,
+          allow_root_statement_foreign:,
+        )
+        cleanup_count = env[:prepared_expression_cleanups].length - start_index
+        cleanups = cleanup_count.positive? ? env[:prepared_expression_cleanups].slice!(start_index, cleanup_count) : []
+        [setup, prepared_expression, cleanups || []]
+      end
+
       def prepare_expression_for_inline_lowering(expression, env:, expected_type: nil, allow_root_statement_foreign: false)
         return [[], expression] unless expression
 
@@ -3337,6 +3374,8 @@ module MilkTea
         end
 
         case expression
+        when AST::FormatString
+          prepare_format_string_expression_for_inline_lowering(expression, env:)
         when AST::MemberAccess
           receiver_setup, receiver = prepare_expression_for_inline_lowering(expression.receiver, env:)
           [receiver_setup, AST::MemberAccess.new(receiver:, member: expression.member)]
@@ -3400,6 +3439,21 @@ module MilkTea
       def lower_format_string_call_to_temp(format_string, env:)
         setup, temp_name, = build_format_string_temp_setup(format_string, env:)
         [setup, AST::Identifier.new(name: temp_name)]
+      end
+
+      def prepare_format_string_expression_for_inline_lowering(format_string, env:)
+        setup, temp_name, = build_format_string_temp_setup(format_string, env:)
+        receiver = AST::Identifier.new(name: temp_name)
+
+        (env[:prepared_expression_cleanups] ||= []) << lower_defer_cleanup_expression(
+          AST::Call.new(callee: AST::MemberAccess.new(receiver:, member: "release"), arguments: []),
+          env:,
+        )
+
+        [
+          setup,
+          AST::Call.new(callee: AST::MemberAccess.new(receiver:, member: "as_str"), arguments: []),
+        ]
       end
 
       def build_format_string_temp_setup(format_string, env:)
@@ -3807,7 +3861,7 @@ module MilkTea
         when AST::StringLiteral
           IR::StringLiteral.new(value: expression.value, type:, cstring: expression.cstring)
         when AST::FormatString
-          raise LoweringError, "formatted string literals are only valid in std.fmt.string(...) or std.io print helpers"
+          raise LoweringError, "unprepared format string reached raw lowering; format strings should be materialized before direct lowering"
         when AST::BooleanLiteral
           IR::BooleanLiteral.new(value: expression.value, type:)
         when AST::NullLiteral
@@ -5789,7 +5843,7 @@ module MilkTea
         when AST::StringLiteral
           @types.fetch(expression.cstring ? "cstr" : "str")
         when AST::FormatString
-          raise LoweringError, "formatted string literals are only valid in std.fmt.string(...) or std.io print helpers"
+          @types.fetch("str")
         when AST::BooleanLiteral
           @types.fetch("bool")
         when AST::NullLiteral
