@@ -187,7 +187,7 @@ def main() -> i32:
         projection = rl.CameraProjection.CAMERA_PERSPECTIVE,
     )
 
-    state.update_camera(addr(camera), player)
+    state.update_camera(ref_of(camera), player)
     rl.DisableCursor()
     rl.SetTargetFPS(60)
 
@@ -230,7 +230,7 @@ def main() -> i32:
         state.lean.x = rm.lerp(state.lean.x, f32<-sideway * 0.02, 10.0 * delta)
         state.lean.y = rm.lerp(state.lean.y, f32<-forward * 0.015, 10.0 * delta)
 
-        state.update_camera(addr(camera), player)
+        state.update_camera(ref_of(camera), player)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

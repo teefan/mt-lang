@@ -228,7 +228,7 @@ def main() -> i32:
             else:
                 clock_mode = clock_digital
 
-        update_clock(addr(clock))
+        update_clock(ref_of(clock))
 
         rl.begin_drawing()
         defer rl.end_drawing()

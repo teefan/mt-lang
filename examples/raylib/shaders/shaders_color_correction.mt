@@ -57,9 +57,9 @@ def main() -> i32:
     var saturation: f32 = 0.0
     var brightness: f32 = 0.0
 
-    rl.SetShaderValue(shader, contrast_location, raw(addr(contrast)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, saturation_location, raw(addr(saturation)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, brightness_location, raw(addr(brightness)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, contrast_location, ptr_of(ref_of(contrast)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, saturation_location, ptr_of(ref_of(saturation)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, brightness_location, ptr_of(ref_of(brightness)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
     rl.SetTargetFPS(60)
 
@@ -78,9 +78,9 @@ def main() -> i32:
             saturation = 0.0
             brightness = 0.0
 
-        rl.SetShaderValue(shader, contrast_location, raw(addr(contrast)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-        rl.SetShaderValue(shader, saturation_location, raw(addr(saturation)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-        rl.SetShaderValue(shader, brightness_location, raw(addr(brightness)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, contrast_location, ptr_of(ref_of(contrast)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, saturation_location, ptr_of(ref_of(saturation)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, brightness_location, ptr_of(ref_of(brightness)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         let selected_texture = textures[image_index]
 
@@ -101,13 +101,13 @@ def main() -> i32:
         rl.DrawText(change_picture_text, 600, 230, 8, rl.GRAY)
         rl.DrawText(reset_text, 600, 250, 8, rl.GRAY)
 
-        gui.GuiToggleGroup(gui.Rectangle(x = 645.0, y = 70.0, width = 20.0, height = 20.0), toggle_group_text, raw(addr(image_index)))
+        gui.GuiToggleGroup(gui.Rectangle(x = 645.0, y = 70.0, width = 20.0, height = 20.0), toggle_group_text, ptr_of(ref_of(image_index)))
 
         gui.GuiSliderBar(
             gui.Rectangle(x = 645.0, y = 100.0, width = 120.0, height = 20.0),
             contrast_text,
             rl.TextFormat(contrast_format, contrast),
-            raw(addr(contrast)),
+            ptr_of(ref_of(contrast)),
             -100.0,
             100.0,
         )
@@ -115,7 +115,7 @@ def main() -> i32:
             gui.Rectangle(x = 645.0, y = 130.0, width = 120.0, height = 20.0),
             saturation_text,
             rl.TextFormat(contrast_format, saturation),
-            raw(addr(saturation)),
+            ptr_of(ref_of(saturation)),
             -100.0,
             100.0,
         )
@@ -123,7 +123,7 @@ def main() -> i32:
             gui.Rectangle(x = 645.0, y = 160.0, width = 120.0, height = 20.0),
             brightness_text,
             rl.TextFormat(contrast_format, brightness),
-            raw(addr(brightness)),
+            ptr_of(ref_of(brightness)),
             -100.0,
             100.0,
         )

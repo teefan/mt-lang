@@ -74,8 +74,8 @@ methods Pool:
         while index < this.slot_count:
             unsafe:
                 let state_ptr = ptr[bool]<-occupancy + index
-                if deref(state_ptr) == false:
-                    deref(state_ptr) = true
+                if read(state_ptr) == false:
+                    read(state_ptr) = true
                     this.used_count = this.used_count + 1
                     return ptr[byte]<-memory + (index * this.slot_size)
             index = index + 1
@@ -99,10 +99,10 @@ methods Pool:
                 let candidate = ptr[byte]<-memory + (index * this.slot_size)
                 if candidate == ptr[byte]<-slot:
                     let state_ptr = ptr[bool]<-occupancy + index
-                    if deref(state_ptr) == false:
+                    if read(state_ptr) == false:
                         return false
 
-                    deref(state_ptr) = false
+                    read(state_ptr) = false
                     this.used_count = this.used_count - 1
                     return true
             index = index + 1

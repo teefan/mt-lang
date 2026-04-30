@@ -41,7 +41,7 @@ def main() -> i32:
     var labels = zero[array[array[char, 32], 10]]()
     var editing_label = zero[array[bool, 10]]()
     for index in range(0, max_pie_slices):
-        rl.TextCopy(raw(addr(labels[index][0])), rl.TextFormat(slice_name_format, index + 1))
+        rl.TextCopy(ptr_of(ref_of(labels[index][0])), rl.TextFormat(slice_name_format, index + 1))
 
     var show_values = true
     var show_percentages = false
@@ -132,15 +132,15 @@ def main() -> i32:
         rl.DrawRectangleRec(panel_rect, rl.Fade(rl.LIGHTGRAY, 0.5))
         rl.DrawRectangleLinesEx(panel_rect, 1.0, rl.GRAY)
 
-        gui.GuiSpinner(gui.Rectangle(x = panel_pos_x + 95.0, y = panel_pos_y + 12.0, width = 125.0, height = 25.0), slices_text, raw(addr(slice_count)), 1, max_pie_slices, false)
-        gui.GuiCheckBox(gui.Rectangle(x = panel_pos_x + 20.0, y = panel_pos_y + 52.0, width = 20.0, height = 20.0), show_values_text, raw(addr(show_values)))
-        gui.GuiCheckBox(gui.Rectangle(x = panel_pos_x + 20.0, y = panel_pos_y + 82.0, width = 20.0, height = 20.0), show_percentages_text, raw(addr(show_percentages)))
-        gui.GuiCheckBox(gui.Rectangle(x = panel_pos_x + 20.0, y = panel_pos_y + 112.0, width = 20.0, height = 20.0), make_donut_text, raw(addr(show_donut)))
+        gui.GuiSpinner(gui.Rectangle(x = panel_pos_x + 95.0, y = panel_pos_y + 12.0, width = 125.0, height = 25.0), slices_text, ptr_of(ref_of(slice_count)), 1, max_pie_slices, false)
+        gui.GuiCheckBox(gui.Rectangle(x = panel_pos_x + 20.0, y = panel_pos_y + 52.0, width = 20.0, height = 20.0), show_values_text, ptr_of(ref_of(show_values)))
+        gui.GuiCheckBox(gui.Rectangle(x = panel_pos_x + 20.0, y = panel_pos_y + 82.0, width = 20.0, height = 20.0), show_percentages_text, ptr_of(ref_of(show_percentages)))
+        gui.GuiCheckBox(gui.Rectangle(x = panel_pos_x + 20.0, y = panel_pos_y + 112.0, width = 20.0, height = 20.0), make_donut_text, ptr_of(ref_of(show_donut)))
 
         if show_donut:
             gui.GuiDisable()
 
-        gui.GuiSliderBar(gui.Rectangle(x = panel_pos_x + 80.0, y = panel_pos_y + 142.0, width = panel_rect.width - 100.0, height = 30.0), inner_radius_text, empty_text, raw(addr(donut_inner_radius)), 5.0, radius - 10.0)
+        gui.GuiSliderBar(gui.Rectangle(x = panel_pos_x + 80.0, y = panel_pos_y + 142.0, width = panel_rect.width - 100.0, height = 30.0), inner_radius_text, empty_text, ptr_of(ref_of(donut_inner_radius)), 5.0, radius - 10.0)
         gui.GuiEnable()
 
         gui.GuiLine(gui.Rectangle(x = panel_pos_x + 10.0, y = panel_pos_y + 182.0, width = panel_rect.width - 20.0, height = 1.0), empty_text)
@@ -157,8 +157,8 @@ def main() -> i32:
             scroll_panel_bounds,
             empty_text,
             gui.Rectangle(x = 0.0, y = 0.0, width = panel_rect.width - 25.0, height = f32<-content_height),
-            raw(addr(scroll_content_offset)),
-            raw(addr(view)),
+            ptr_of(ref_of(scroll_content_offset)),
+            ptr_of(ref_of(view)),
         )
 
         let content_x = view.x + scroll_content_offset.x
@@ -170,10 +170,10 @@ def main() -> i32:
             let color = rl.ColorFromHSV(f32<-index / f32<-slice_count * 360.0, 0.75, 0.9)
             rl.DrawRectangle(i32<-(content_x + 15.0), row_y + 5, 20, 20, color)
 
-            if gui.GuiTextBox(gui.Rectangle(x = content_x + 45.0, y = f32<-row_y, width = 75.0, height = 30.0), raw(addr(labels[index][0])), 32, editing_label[index]) != 0:
+            if gui.GuiTextBox(gui.Rectangle(x = content_x + 45.0, y = f32<-row_y, width = 75.0, height = 30.0), ptr_of(ref_of(labels[index][0])), 32, editing_label[index]) != 0:
                 editing_label[index] = not editing_label[index]
 
-            gui.GuiSliderBar(gui.Rectangle(x = content_x + 130.0, y = f32<-row_y, width = 110.0, height = 30.0), empty_text, empty_text, raw(addr(values[index])), 0.0, 1000.0)
+            gui.GuiSliderBar(gui.Rectangle(x = content_x + 130.0, y = f32<-row_y, width = 110.0, height = 30.0), empty_text, empty_text, ptr_of(ref_of(values[index])), 0.0, 1000.0)
 
         rl.EndScissorMode()
 

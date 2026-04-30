@@ -165,7 +165,7 @@ class MilkTeaStdLibuvAsyncTest < Minitest::Test
       "        async.pump(loop)",
       "",
       "    let pair = async.finish(task)",
-      "    if rt.loop_release(addr(loop)) != 0:",
+      "    if rt.loop_release(ref_of(loop)) != 0:",
       "        return 2",
       "    return pair.left + pair.right",
       "",

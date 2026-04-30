@@ -41,7 +41,7 @@ var right_thumb_last: c.Uint64 = 0
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
@@ -88,7 +88,7 @@ def render_frame() -> void:
         c.SDL_SetRenderDrawColor(renderer, 0, 255, 0, c.SDL_ALPHA_OPAQUE)
         for index in range(0, button_rect_count):
             if c.SDL_GetGamepadButton(gamepad, c.SDL_GamepadButton<-index):
-                c.SDL_RenderFillRect(renderer, raw(addr(button_rects[index])))
+                c.SDL_RenderFillRect(renderer, ptr_of(ref_of(button_rects[index])))
 
         c.SDL_SetRenderDrawColor(renderer, 255, 255, 0, c.SDL_ALPHA_OPAQUE)
 
@@ -98,7 +98,7 @@ def render_frame() -> void:
             left_thumb_last = now
         if now - left_thumb_last < 500:
             var left_box = c.SDL_FRect(x = thumbbox_x(107.0, axis_x), y = thumbbox_y(252.0, axis_y), w = thumbbox_size, h = thumbbox_size)
-            c.SDL_RenderFillRect(renderer, raw(addr(left_box)))
+            c.SDL_RenderFillRect(renderer, ptr_of(ref_of(left_box)))
 
         axis_x = c.SDL_GetGamepadAxis(gamepad, c.SDL_GamepadAxis.SDL_GAMEPAD_AXIS_RIGHTX)
         axis_y = c.SDL_GetGamepadAxis(gamepad, c.SDL_GamepadAxis.SDL_GAMEPAD_AXIS_RIGHTY)
@@ -106,17 +106,17 @@ def render_frame() -> void:
             right_thumb_last = now
         if now - right_thumb_last < 500:
             var right_box = c.SDL_FRect(x = thumbbox_x(397.0, axis_x), y = thumbbox_y(370.0, axis_y), w = thumbbox_size, h = thumbbox_size)
-            c.SDL_RenderFillRect(renderer, raw(addr(right_box)))
+            c.SDL_RenderFillRect(renderer, ptr_of(ref_of(right_box)))
 
         axis_y = c.SDL_GetGamepadAxis(gamepad, c.SDL_GamepadAxis.SDL_GAMEPAD_AXIS_LEFT_TRIGGER)
         if i32<-axis_y > 1000:
             var left_trigger = trigger_box(127.0, axis_y)
-            c.SDL_RenderFillRect(renderer, raw(addr(left_trigger)))
+            c.SDL_RenderFillRect(renderer, ptr_of(ref_of(left_trigger)))
 
         axis_y = c.SDL_GetGamepadAxis(gamepad, c.SDL_GamepadAxis.SDL_GAMEPAD_AXIS_RIGHT_TRIGGER)
         if i32<-axis_y > 1000:
             var right_trigger = trigger_box(481.0, axis_y)
-            c.SDL_RenderFillRect(renderer, raw(addr(right_trigger)))
+            c.SDL_RenderFillRect(renderer, ptr_of(ref_of(right_trigger)))
 
     let text_width = f32<-(c.SDL_strlen(text) * usize<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
     x = (f32<-window_width - text_width) / 2.0
@@ -136,7 +136,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)

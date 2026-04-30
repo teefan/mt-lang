@@ -49,7 +49,7 @@ def main() -> i32:
     let plane_mesh = rl.GenMeshPlane(50.0, 50.0, 50, 50)
     var plane_model = rl.LoadModelFromMesh(plane_mesh)
     defer rl.UnloadModel(plane_model)
-    set_model_shader(raw(addr(plane_model)), shader)
+    set_model_shader(ptr_of(ref_of(plane_model)), shader)
 
     let plane_position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
     let time_loc = rl.GetShaderLocation(shader, time_uniform_name)
@@ -58,10 +58,10 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_FREE)
+        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_FREE)
 
         time += rl.GetFrameTime()
-        rl.SetShaderValue(shader, time_loc, raw(addr(time)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, time_loc, ptr_of(ref_of(time)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

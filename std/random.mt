@@ -5,7 +5,7 @@ pub struct Random:
 
 pub def create(seed: u64) -> Random:
     var generator = Random(state = 0)
-    reseed(addr(generator), seed)
+    reseed(ref_of(generator), seed)
     return generator
 
 pub def reseed(generator: ref[Random], seed: u64) -> void:

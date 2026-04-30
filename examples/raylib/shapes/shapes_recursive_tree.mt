@@ -83,12 +83,12 @@ def main() -> i32:
         rl.DrawLine(580, 0, 580, rl.GetScreenHeight(), rl.Color(r = 218, g = 218, b = 218, a = 255))
         rl.DrawRectangle(580, 0, rl.GetScreenWidth(), rl.GetScreenHeight(), rl.Color(r = 232, g = 232, b = 232, a = 255))
 
-        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0), c"Angle", rl.TextFormat(c"%.0f", angle), raw(addr(angle)), 0.0, 180.0)
-        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 70.0, width = 120.0, height = 20.0), c"Length", rl.TextFormat(c"%.0f", length), raw(addr(length)), 12.0, 240.0)
-        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 100.0, width = 120.0, height = 20.0), c"Decay", rl.TextFormat(c"%.2f", branch_decay), raw(addr(branch_decay)), 0.1, 0.78)
-        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 130.0, width = 120.0, height = 20.0), c"Depth", rl.TextFormat(c"%.0f", tree_depth), raw(addr(tree_depth)), 1.0, 10.0)
-        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 160.0, width = 120.0, height = 20.0), c"Thick", rl.TextFormat(c"%.0f", thick), raw(addr(thick)), 1.0, 8.0)
-        gui.GuiCheckBox(gui.Rectangle(x = 640.0, y = 190.0, width = 20.0, height = 20.0), c"Bezier", raw(addr(bezier)))
+        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0), c"Angle", rl.TextFormat(c"%.0f", angle), ptr_of(ref_of(angle)), 0.0, 180.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 70.0, width = 120.0, height = 20.0), c"Length", rl.TextFormat(c"%.0f", length), ptr_of(ref_of(length)), 12.0, 240.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 100.0, width = 120.0, height = 20.0), c"Decay", rl.TextFormat(c"%.2f", branch_decay), ptr_of(ref_of(branch_decay)), 0.1, 0.78)
+        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 130.0, width = 120.0, height = 20.0), c"Depth", rl.TextFormat(c"%.0f", tree_depth), ptr_of(ref_of(tree_depth)), 1.0, 10.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 160.0, width = 120.0, height = 20.0), c"Thick", rl.TextFormat(c"%.0f", thick), ptr_of(ref_of(thick)), 1.0, 8.0)
+        gui.GuiCheckBox(gui.Rectangle(x = 640.0, y = 190.0, width = 20.0, height = 20.0), c"Bezier", ptr_of(ref_of(bezier)))
 
         rl.DrawFPS(10, 10)
 

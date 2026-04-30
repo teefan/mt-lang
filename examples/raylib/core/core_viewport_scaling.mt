@@ -30,146 +30,146 @@ def viewport_type_name(viewport_type: ViewportType) -> cstr:
     return c"KEEP_WIDTH"
 
 def keep_aspect_centered_integer(screen_width: i32, screen_height: i32, game_width: i32, game_height: i32, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
-    var source = value(source_rect)
+    var source = read(source_rect)
     source.x = 0.0
     source.y = game_height
     source.width = game_width
     source.height = -game_height
-    value(source_rect) = source
+    read(source_rect) = source
 
     let ratio_x = screen_width / game_width
     let ratio_y = screen_height / game_height
     let resize_ratio = if ratio_x < ratio_y then ratio_x else ratio_y
 
-    var dest = value(dest_rect)
+    var dest = read(dest_rect)
     dest.x = f32<-(i32<-((screen_width - game_width * resize_ratio) * 0.5))
     dest.y = f32<-(i32<-((screen_height - game_height * resize_ratio) * 0.5))
     dest.width = f32<-(game_width * resize_ratio)
     dest.height = f32<-(game_height * resize_ratio)
-    value(dest_rect) = dest
+    read(dest_rect) = dest
     return
 
 def keep_height_centered_integer(screen_width: i32, screen_height: i32, game_width: i32, game_height: i32, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
     let resize_ratio: f32 = f32<-screen_height / game_height
 
-    var source = value(source_rect)
+    var source = read(source_rect)
     source.x = 0.0
     source.y = 0.0
     source.width = f32<-(i32<-(screen_width / resize_ratio))
     source.height = -game_height
-    value(source_rect) = source
+    read(source_rect) = source
 
-    var dest = value(dest_rect)
+    var dest = read(dest_rect)
     dest.x = f32<-(i32<-((screen_width - source.width * resize_ratio) * 0.5))
     dest.y = f32<-(i32<-((screen_height - game_height * resize_ratio) * 0.5))
     dest.width = f32<-(i32<-(source.width * resize_ratio))
     dest.height = f32<-(i32<-(game_height * resize_ratio))
-    value(dest_rect) = dest
+    read(dest_rect) = dest
     return
 
 def keep_width_centered_integer(screen_width: i32, screen_height: i32, game_width: i32, game_height: i32, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
     let resize_ratio: f32 = f32<-screen_width / game_width
 
-    var source = value(source_rect)
+    var source = read(source_rect)
     source.x = 0.0
     source.y = 0.0
     source.width = game_width
     source.height = f32<-(i32<-(screen_height / resize_ratio))
-    value(source_rect) = source
+    read(source_rect) = source
 
-    var dest = value(dest_rect)
+    var dest = read(dest_rect)
     dest.x = f32<-(i32<-((screen_width - game_width * resize_ratio) * 0.5))
     dest.y = f32<-(i32<-((screen_height - source.height * resize_ratio) * 0.5))
     dest.width = f32<-(i32<-(game_width * resize_ratio))
     dest.height = f32<-(i32<-(source.height * resize_ratio))
-    value(dest_rect) = dest
+    read(dest_rect) = dest
 
-    source = value(source_rect)
+    source = read(source_rect)
     source.height *= -1.0
-    value(source_rect) = source
+    read(source_rect) = source
     return
 
 def keep_aspect_centered(screen_width: i32, screen_height: i32, game_width: i32, game_height: i32, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
-    var source = value(source_rect)
+    var source = read(source_rect)
     source.x = 0.0
     source.y = game_height
     source.width = game_width
     source.height = -game_height
-    value(source_rect) = source
+    read(source_rect) = source
 
     let ratio_x: f32 = f32<-screen_width / game_width
     let ratio_y: f32 = f32<-screen_height / game_height
     let resize_ratio = if ratio_x < ratio_y then ratio_x else ratio_y
 
-    var dest = value(dest_rect)
+    var dest = read(dest_rect)
     dest.x = f32<-(i32<-((screen_width - game_width * resize_ratio) * 0.5))
     dest.y = f32<-(i32<-((screen_height - game_height * resize_ratio) * 0.5))
     dest.width = f32<-(i32<-(game_width * resize_ratio))
     dest.height = f32<-(i32<-(game_height * resize_ratio))
-    value(dest_rect) = dest
+    read(dest_rect) = dest
     return
 
 def keep_height_centered(screen_width: i32, screen_height: i32, game_width: i32, game_height: i32, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
     let resize_ratio: f32 = f32<-screen_height / game_height
 
-    var source = value(source_rect)
+    var source = read(source_rect)
     source.x = 0.0
     source.y = 0.0
     source.width = f32<-(i32<-(f32<-screen_width / resize_ratio))
     source.height = -game_height
-    value(source_rect) = source
+    read(source_rect) = source
 
-    var dest = value(dest_rect)
+    var dest = read(dest_rect)
     dest.x = f32<-(i32<-((screen_width - source.width * resize_ratio) * 0.5))
     dest.y = f32<-(i32<-((screen_height - game_height * resize_ratio) * 0.5))
     dest.width = f32<-(i32<-(source.width * resize_ratio))
     dest.height = f32<-(i32<-(game_height * resize_ratio))
-    value(dest_rect) = dest
+    read(dest_rect) = dest
     return
 
 def keep_width_centered(screen_width: i32, screen_height: i32, game_width: i32, game_height: i32, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
     let resize_ratio: f32 = f32<-screen_width / game_width
 
-    var source = value(source_rect)
+    var source = read(source_rect)
     source.x = 0.0
     source.y = 0.0
     source.width = game_width
     source.height = f32<-(i32<-(f32<-screen_height / resize_ratio))
-    value(source_rect) = source
+    read(source_rect) = source
 
-    var dest = value(dest_rect)
+    var dest = read(dest_rect)
     dest.x = f32<-(i32<-((screen_width - game_width * resize_ratio) * 0.5))
     dest.y = f32<-(i32<-((screen_height - source.height * resize_ratio) * 0.5))
     dest.width = f32<-(i32<-(game_width * resize_ratio))
     dest.height = f32<-(i32<-(source.height * resize_ratio))
-    value(dest_rect) = dest
+    read(dest_rect) = dest
 
-    source = value(source_rect)
+    source = read(source_rect)
     source.height *= -1.0
-    value(source_rect) = source
+    read(source_rect) = source
     return
 
 def resize_render_size(viewport_type: ViewportType, screen_width: ref[i32], screen_height: ref[i32], game_width: i32, game_height: i32, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle], target: ref[rl.RenderTexture2D]) -> void:
-    value(screen_width) = rl.GetScreenWidth()
-    value(screen_height) = rl.GetScreenHeight()
+    read(screen_width) = rl.GetScreenWidth()
+    read(screen_height) = rl.GetScreenHeight()
 
     if viewport_type == ViewportType.KEEP_ASPECT_INTEGER:
-        keep_aspect_centered_integer(value(screen_width), value(screen_height), game_width, game_height, source_rect, dest_rect)
+        keep_aspect_centered_integer(read(screen_width), read(screen_height), game_width, game_height, source_rect, dest_rect)
     elif viewport_type == ViewportType.KEEP_HEIGHT_INTEGER:
-        keep_height_centered_integer(value(screen_width), value(screen_height), game_width, game_height, source_rect, dest_rect)
+        keep_height_centered_integer(read(screen_width), read(screen_height), game_width, game_height, source_rect, dest_rect)
     elif viewport_type == ViewportType.KEEP_WIDTH_INTEGER:
-        keep_width_centered_integer(value(screen_width), value(screen_height), game_width, game_height, source_rect, dest_rect)
+        keep_width_centered_integer(read(screen_width), read(screen_height), game_width, game_height, source_rect, dest_rect)
     elif viewport_type == ViewportType.KEEP_ASPECT:
-        keep_aspect_centered(value(screen_width), value(screen_height), game_width, game_height, source_rect, dest_rect)
+        keep_aspect_centered(read(screen_width), read(screen_height), game_width, game_height, source_rect, dest_rect)
     elif viewport_type == ViewportType.KEEP_HEIGHT:
-        keep_height_centered(value(screen_width), value(screen_height), game_width, game_height, source_rect, dest_rect)
+        keep_height_centered(read(screen_width), read(screen_height), game_width, game_height, source_rect, dest_rect)
     else:
-        keep_width_centered(value(screen_width), value(screen_height), game_width, game_height, source_rect, dest_rect)
+        keep_width_centered(read(screen_width), read(screen_height), game_width, game_height, source_rect, dest_rect)
 
-    let current_target = value(target)
+    let current_target = read(target)
     if current_target.id != 0:
         rl.UnloadRenderTexture(current_target)
-    value(target) = rl.LoadRenderTexture(i32<-source_rect.width, -i32<-source_rect.height)
+    read(target) = rl.LoadRenderTexture(i32<-source_rect.width, -i32<-source_rect.height)
     return
 
 def screen_to_render_texture_position(point: rl.Vector2, texture_rect: rl.Rectangle, scaled_rect: rl.Rectangle) -> rl.Vector2:
@@ -210,7 +210,7 @@ def main() -> i32:
     var dest_rect = zero[rl.Rectangle]()
 
     var viewport_type = ViewportType.KEEP_ASPECT_INTEGER
-    resize_render_size(viewport_type, addr(screen_width), addr(screen_height), game_width, game_height, addr(source_rect), addr(dest_rect), addr(target))
+    resize_render_size(viewport_type, ref_of(screen_width), ref_of(screen_height), game_width, game_height, ref_of(source_rect), ref_of(dest_rect), ref_of(target))
 
     let decrease_resolution_button = rl.Rectangle(x = 200.0, y = 30.0, width = 10.0, height = 10.0)
     let increase_resolution_button = rl.Rectangle(x = 215.0, y = 30.0, width = 10.0, height = 10.0)
@@ -221,7 +221,7 @@ def main() -> i32:
 
     while not rl.WindowShouldClose():
         if rl.IsWindowResized():
-            resize_render_size(viewport_type, addr(screen_width), addr(screen_height), game_width, game_height, addr(source_rect), addr(dest_rect), addr(target))
+            resize_render_size(viewport_type, ref_of(screen_width), ref_of(screen_height), game_width, game_height, ref_of(source_rect), ref_of(dest_rect), ref_of(target))
 
         let mouse_position = rl.GetMousePosition()
         let mouse_pressed = rl.IsMouseButtonPressed(rl.MouseButton.MOUSE_BUTTON_LEFT)
@@ -230,21 +230,21 @@ def main() -> i32:
             resolution_index = (resolution_index + resolution_count - 1) % resolution_count
             game_width = i32<-resolution_list[resolution_index].x
             game_height = i32<-resolution_list[resolution_index].y
-            resize_render_size(viewport_type, addr(screen_width), addr(screen_height), game_width, game_height, addr(source_rect), addr(dest_rect), addr(target))
+            resize_render_size(viewport_type, ref_of(screen_width), ref_of(screen_height), game_width, game_height, ref_of(source_rect), ref_of(dest_rect), ref_of(target))
 
         if rl.CheckCollisionPointRec(mouse_position, increase_resolution_button) and mouse_pressed:
             resolution_index = (resolution_index + 1) % resolution_count
             game_width = i32<-resolution_list[resolution_index].x
             game_height = i32<-resolution_list[resolution_index].y
-            resize_render_size(viewport_type, addr(screen_width), addr(screen_height), game_width, game_height, addr(source_rect), addr(dest_rect), addr(target))
+            resize_render_size(viewport_type, ref_of(screen_width), ref_of(screen_height), game_width, game_height, ref_of(source_rect), ref_of(dest_rect), ref_of(target))
 
         if rl.CheckCollisionPointRec(mouse_position, decrease_type_button) and mouse_pressed:
             viewport_type = ViewportType<-((i32<-viewport_type + viewport_type_count - 1) % viewport_type_count)
-            resize_render_size(viewport_type, addr(screen_width), addr(screen_height), game_width, game_height, addr(source_rect), addr(dest_rect), addr(target))
+            resize_render_size(viewport_type, ref_of(screen_width), ref_of(screen_height), game_width, game_height, ref_of(source_rect), ref_of(dest_rect), ref_of(target))
 
         if rl.CheckCollisionPointRec(mouse_position, increase_type_button) and mouse_pressed:
             viewport_type = ViewportType<-((i32<-viewport_type + 1) % viewport_type_count)
-            resize_render_size(viewport_type, addr(screen_width), addr(screen_height), game_width, game_height, addr(source_rect), addr(dest_rect), addr(target))
+            resize_render_size(viewport_type, ref_of(screen_width), ref_of(screen_height), game_width, game_height, ref_of(source_rect), ref_of(dest_rect), ref_of(target))
 
         let texture_mouse_position = screen_to_render_texture_position(mouse_position, source_rect, dest_rect)
 

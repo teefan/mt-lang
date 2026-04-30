@@ -440,11 +440,11 @@ Special recognized callables:
 
 - `ok(value)` / `err(value)`
 - `panic(message)`
-- `addr(x)`
-- `ro_addr(x)`
-- `value(r)`
-- `deref(p)`
-- `raw(r)`
+- `ref_of(x)`
+- `const_ptr_of(x)`
+- `read(r)`
+- `read(p)`
+- `ptr_of(r)`
 - `T<-value` (preferred shorthand for `cast[T](value)`)
 - `cast[T](value)` (equivalent explicit form)
 - `reinterpret[T](value)`
@@ -454,7 +454,7 @@ Special recognized callables:
 
 `range(start, stop)` is a reserved loop helper for `for` typing.
 
-`value(r)` still explicitly projects a `ref[T]` to its referent value, but ordinary member access and method calls auto-dereference `ref[T]` receivers. That means `handle.field`, `handle.edit_method()`, and `handle.read()` are accepted without writing `value(handle)` first.
+`read(r)` still explicitly projects a `ref[T]` to its referent value, but ordinary member access and method calls auto-dereference `ref[T]` receivers. That means `handle.field`, `handle.edit_method()`, and `handle.read()` are accepted without writing `read(handle)` first.
 
 ## 8. Strings, C Strings, And Format Strings
 
@@ -499,7 +499,7 @@ Current restriction:
 - shift operators require integer operands
 - safe array indexing requires an addressable array value
 - pointer indexing requires `unsafe`
-- `deref(...)` of raw pointer requires `unsafe`
+- `read(...)` of raw pointer requires `unsafe`
 - pointer casts require `unsafe`
 - `reinterpret[...]` requires `unsafe` and non-array concrete sized types
 

@@ -33,7 +33,7 @@ def draw_text_styled(font: rl.Font, text: cstr, position: rl.Vector2, font_size:
         while index < text_len:
             let current_ptr = raw_text + index
             var codepoint_byte_count = 0
-            let codepoint = rl.GetCodepointNext(cstr<-current_ptr, raw(addr(codepoint_byte_count)))
+            let codepoint = rl.GetCodepointNext(cstr<-current_ptr, ptr_of(ref_of(codepoint_byte_count)))
 
             if codepoint == 10:
                 text_offset_y += font_size + text_line_spacing
@@ -42,26 +42,26 @@ def draw_text_styled(font: rl.Font, text: cstr, position: rl.Vector2, font_size:
                 continue
 
             if codepoint == 91:
-                if index + 2 < text_len and deref(current_ptr + 1) == char<-114 and deref(current_ptr + 2) == char<-93:
+                if index + 2 < text_len and read(current_ptr + 1) == char<-114 and read(current_ptr + 2) == char<-93:
                     col_front = color
                     col_back = rl.BLANK
                     index += 3
                     continue
-                elif index + 1 < text_len and (deref(current_ptr + 1) == char<-99 or deref(current_ptr + 1) == char<-98):
-                    let color_kind = deref(current_ptr + 1)
+                elif index + 1 < text_len and (read(current_ptr + 1) == char<-99 or read(current_ptr + 1) == char<-98):
+                    let color_kind = read(current_ptr + 1)
                     let color_ptr = current_ptr + 2
                     var color_text = zero[array[char, 9]]()
                     var color_count = 0
 
-                    while deref(color_ptr + color_count) != char<-0 and deref(color_ptr + color_count) != char<-93:
-                        let digit = deref(color_ptr + color_count)
+                    while read(color_ptr + color_count) != char<-0 and read(color_ptr + color_count) != char<-93:
+                        let digit = read(color_ptr + color_count)
                         if (digit >= char<-48 and digit <= char<-57) or (digit >= char<-65 and digit <= char<-70) or (digit >= char<-97 and digit <= char<-102):
                             color_text[color_count] = digit
                             color_count += 1
                         else:
                             break
 
-                    let color_value = libc.strtoul(cstr<-raw(addr(color_text[0])), null, 16)
+                    let color_value = libc.strtoul(cstr<-ptr_of(ref_of(color_text[0])), null, 16)
                     if color_kind == char<-99:
                         col_front = rl.GetColor(u32<-color_value)
                     elif color_kind == char<-98:
@@ -115,18 +115,18 @@ def measure_text_styled(font: rl.Font, text: cstr, font_size: f32, spacing: f32)
         while index < text_len:
             let current_ptr = raw_text + index
             var codepoint_byte_count = 0
-            let codepoint = rl.GetCodepointNext(cstr<-current_ptr, raw(addr(codepoint_byte_count)))
+            let codepoint = rl.GetCodepointNext(cstr<-current_ptr, ptr_of(ref_of(codepoint_byte_count)))
 
             if codepoint == 91:
-                if index + 2 < text_len and deref(current_ptr + 1) == char<-114 and deref(current_ptr + 2) == char<-93:
+                if index + 2 < text_len and read(current_ptr + 1) == char<-114 and read(current_ptr + 2) == char<-93:
                     index += 3
                     continue
-                elif index + 1 < text_len and (deref(current_ptr + 1) == char<-99 or deref(current_ptr + 1) == char<-98):
+                elif index + 1 < text_len and (read(current_ptr + 1) == char<-99 or read(current_ptr + 1) == char<-98):
                     let color_ptr = current_ptr + 2
                     var color_count = 0
 
-                    while deref(color_ptr + color_count) != char<-0 and deref(color_ptr + color_count) != char<-93:
-                        let digit = deref(color_ptr + color_count)
+                    while read(color_ptr + color_count) != char<-0 and read(color_ptr + color_count) != char<-93:
+                        let digit = read(color_ptr + color_count)
                         if (digit >= char<-48 and digit <= char<-57) or (digit >= char<-65 and digit <= char<-70) or (digit >= char<-97 and digit <= char<-102):
                             color_count += 1
                         else:

@@ -30,12 +30,12 @@ pub def append_bool(output: ref[string.String], bool_value: bool) -> void:
 
 def append_formatted_float(output: ref[string.String], format: cstr, number: f64) -> void:
     var buffer = zero[array[char, 64]]()
-    let written = c.snprintf(raw(addr(buffer[0])), float_buffer_capacity, format, number)
+    let written = c.snprintf(ptr_of(ref_of(buffer[0])), float_buffer_capacity, format, number)
     if written < 0 or usize<-written >= float_buffer_capacity:
         panic("fmt could not format float")
 
     unsafe:
-        append_cstr(output, cstr<-raw(addr(buffer[0])))
+        append_cstr(output, cstr<-ptr_of(ref_of(buffer[0])))
     return
 
 pub def append_f32(output: ref[string.String], number: f32) -> void:
@@ -108,10 +108,10 @@ pub def append_i32(output: ref[string.String], number: i32) -> void:
 
 pub def to_string_usize(value: usize) -> string.String:
     var result = string.String.create()
-    append_usize(addr(result), value)
+    append_usize(ref_of(result), value)
     return result
 
 pub def to_string_i32(value: i32) -> string.String:
     var result = string.String.create()
-    append_i32(addr(result), value)
+    append_i32(ref_of(result), value)
     return result

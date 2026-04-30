@@ -38,7 +38,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
         while i < length:
             let current_ptr = raw_text + i
             var codepoint_byte_count = 0
-            let codepoint = rl.GetCodepoint(cstr<-current_ptr, raw(addr(codepoint_byte_count)))
+            let codepoint = rl.GetCodepoint(cstr<-current_ptr, ptr_of(ref_of(codepoint_byte_count)))
             let glyph_index = rl.GetGlyphIndex(font, codepoint)
 
             if codepoint == 0x3f:

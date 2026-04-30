@@ -18,7 +18,7 @@ var texture_height: i32 = 0
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
@@ -36,17 +36,17 @@ def render_frame() -> void:
     c.SDL_RenderClear(renderer)
 
     c.SDL_SetTextureColorModFloat(texture, 0.0, 0.0, 1.0)
-    c.SDL_RenderTexture(renderer, texture, null, raw(addr(destination)))
+    c.SDL_RenderTexture(renderer, texture, null, ptr_of(ref_of(destination)))
 
     destination.x = f32<-(window_width - texture_width) / 2.0
     destination.y = f32<-(window_height - texture_height) / 2.0
     c.SDL_SetTextureColorModFloat(texture, red, green, blue)
-    c.SDL_RenderTexture(renderer, texture, null, raw(addr(destination)))
+    c.SDL_RenderTexture(renderer, texture, null, ptr_of(ref_of(destination)))
 
     destination.x = f32<-(window_width - texture_width)
     destination.y = f32<-(window_height - texture_height)
     c.SDL_SetTextureColorModFloat(texture, 1.0, 0.0, 0.0)
-    c.SDL_RenderTexture(renderer, texture, null, raw(addr(destination)))
+    c.SDL_RenderTexture(renderer, texture, null, ptr_of(ref_of(destination)))
 
     c.SDL_RenderPresent(renderer)
 
@@ -57,7 +57,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)

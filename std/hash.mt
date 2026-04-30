@@ -29,7 +29,7 @@ pub def str_value(text: str) -> u64:
     var index: usize = 0
     while index < text.len:
         unsafe:
-            hash = hash ^ u64<-u8<-deref(text.data + index)
+            hash = hash ^ u64<-u8<-read(text.data + index)
         hash = hash * u64<-1099511628211
         index += 1
 
@@ -42,7 +42,7 @@ pub def str_equal(left: str, right: str) -> bool:
     var index: usize = 0
     while index < left.len:
         unsafe:
-            if deref(left.data + index) != deref(right.data + index):
+            if read(left.data + index) != read(right.data + index):
                 return false
         index += 1
 

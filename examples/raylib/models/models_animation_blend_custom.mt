@@ -23,31 +23,31 @@ def chars_to_cstr(text: ptr[char]) -> cstr:
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
-        return deref(anims + index)
+        return read(anims + index)
 
 def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
     unsafe:
-        return chars_to_cstr(raw(addr((anims + index).name[0])))
+        return chars_to_cstr(ptr_of(ref_of((anims + index).name[0])))
 
 def model_animation_pose(anim: rl.ModelAnimation, frame: i32) -> rl.ModelAnimPose:
     unsafe:
-        return deref(anim.keyframePoses + frame)
+        return read(anim.keyframePoses + frame)
 
 def pose_transform(pose: rl.ModelAnimPose, index: i32) -> rl.Transform:
     unsafe:
-        return deref(pose + index)
+        return read(pose + index)
 
 def bind_pose_transform(skeleton: rl.ModelSkeleton, index: i32) -> rl.Transform:
     unsafe:
-        return deref(skeleton.bindPose + index)
+        return read(skeleton.bindPose + index)
 
 def skeleton_bone_name(skeleton: rl.ModelSkeleton, index: i32) -> cstr:
     unsafe:
-        return chars_to_cstr(raw(addr((skeleton.bones + index).name[0])))
+        return chars_to_cstr(ptr_of(ref_of((skeleton.bones + index).name[0])))
 
 def model_value(model: ptr[rl.Model]) -> rl.Model:
     unsafe:
-        return deref(model)
+        return read(model)
 
 def model_mesh(model: rl.Model, index: i32) -> rl.Mesh:
     unsafe:
@@ -55,27 +55,27 @@ def model_mesh(model: rl.Model, index: i32) -> rl.Mesh:
 
 def model_bone_matrix(model: rl.Model, index: i32) -> rl.Matrix:
     unsafe:
-        return deref(model.boneMatrices + index)
+        return read(model.boneMatrices + index)
 
 def set_model_bone_matrix(model: rl.Model, index: i32, matrix: rl.Matrix) -> void:
     unsafe:
-        deref(model.boneMatrices + index) = matrix
+        read(model.boneMatrices + index) = matrix
 
 def read_f32(values: ptr[f32], index: i32) -> f32:
     unsafe:
-        return deref(values + index)
+        return read(values + index)
 
 def write_f32(values: ptr[f32], index: i32, value: f32) -> void:
     unsafe:
-        deref(values + index) = value
+        read(values + index) = value
 
 def read_u8(values: ptr[u8], index: i32) -> u8:
     unsafe:
-        return deref(values + index)
+        return read(values + index)
 
 def mesh_vbo_id(mesh: rl.Mesh, index: i32) -> u32:
     unsafe:
-        return deref(mesh.vboId + index)
+        return read(mesh.vboId + index)
 
 def is_upper_body_bone(bone_name: cstr) -> bool:
     if rl.TextIsEqual(bone_name, c"spine") or rl.TextIsEqual(bone_name, c"spine1") or rl.TextIsEqual(bone_name, c"spine2"):
@@ -226,7 +226,7 @@ def main() -> i32:
         model.materials[1].shader = skinning_shader
 
     var anim_count = 0
-    let anims = rl.LoadModelAnimations(model_path, raw(addr(anim_count)))
+    let anims = rl.LoadModelAnimations(model_path, ptr_of(ref_of(anim_count)))
     defer rl.UnloadModelAnimations(anims, anim_count)
 
     var anim_index0 = 2
@@ -244,7 +244,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_SPACE):
             upper_body_blend = not upper_body_blend
@@ -256,7 +256,7 @@ def main() -> i32:
         anim_current_frame1 = (anim_current_frame1 + 1) % anim1.keyframeCount
 
         let blend_factor = if upper_body_blend then f32<-1.0 else f32<-0.5
-        update_model_animation_bones(raw(addr(model)), anim0, anim_current_frame0, anim1, anim_current_frame1, blend_factor, upper_body_blend)
+        update_model_animation_bones(ptr_of(ref_of(model)), anim0, anim_current_frame0, anim1, anim_current_frame1, blend_factor, upper_body_blend)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

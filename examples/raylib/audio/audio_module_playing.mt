@@ -20,8 +20,8 @@ const speed_format: cstr = c"SPEED: %f"
 const window_title: cstr = c"raylib [audio] example - module playing"
 
 def random_circle(circles: ref[array[CircleWave, 64]], index: i32, colors: ref[array[rl.Color, 14]]) -> void:
-    var items = value(circles)
-    var palette = value(colors)
+    var items = read(circles)
+    var palette = read(colors)
     var circle = items[index]
     circle.alpha = 0.0
     circle.radius = f32<-rl.GetRandomValue(10, 40)
@@ -30,7 +30,7 @@ def random_circle(circles: ref[array[CircleWave, 64]], index: i32, colors: ref[a
     circle.speed = f32<-rl.GetRandomValue(1, 100) / 2000.0
     circle.color = palette[rl.GetRandomValue(0, 13)]
     items[index] = circle
-    value(circles) = items
+    read(circles) = items
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
@@ -58,7 +58,7 @@ def main() -> i32:
 
     var circles = zero[array[CircleWave, 64]]()
     for index in range(0, max_circles):
-        random_circle(addr(circles), max_circles - 1 - index, addr(colors))
+        random_circle(ref_of(circles), max_circles - 1 - index, ref_of(colors))
 
     var music = rl.LoadMusicStream(music_path)
     defer rl.UnloadMusicStream(music)
@@ -104,7 +104,7 @@ def main() -> i32:
                     circle.speed *= -1.0
 
                 if circle.alpha <= 0.0:
-                    random_circle(addr(circles), max_circles - 1 - index, addr(colors))
+                    random_circle(ref_of(circles), max_circles - 1 - index, ref_of(colors))
                 else:
                     circles[max_circles - 1 - index] = circle
 

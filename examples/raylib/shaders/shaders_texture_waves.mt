@@ -44,19 +44,19 @@ def main() -> i32:
     var screen_size = array[f32, 2](f32<-rl.GetScreenWidth(), f32<-rl.GetScreenHeight())
     var seconds: f32 = 0.0
 
-    rl.SetShaderValue(shader, rl.GetShaderLocation(shader, size_uniform_name), raw(addr(screen_size[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-    rl.SetShaderValue(shader, freq_x_loc, raw(addr(freq_x)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, freq_y_loc, raw(addr(freq_y)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, amp_x_loc, raw(addr(amp_x)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, amp_y_loc, raw(addr(amp_y)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, speed_x_loc, raw(addr(speed_x)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, speed_y_loc, raw(addr(speed_y)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, rl.GetShaderLocation(shader, size_uniform_name), ptr_of(ref_of(screen_size[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, freq_x_loc, ptr_of(ref_of(freq_x)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, freq_y_loc, ptr_of(ref_of(freq_y)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, amp_x_loc, ptr_of(ref_of(amp_x)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, amp_y_loc, ptr_of(ref_of(amp_y)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, speed_x_loc, ptr_of(ref_of(speed_x)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, speed_y_loc, ptr_of(ref_of(speed_y)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
         seconds += rl.GetFrameTime()
-        rl.SetShaderValue(shader, seconds_loc, raw(addr(seconds)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, seconds_loc, ptr_of(ref_of(seconds)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

@@ -88,8 +88,8 @@ def update_camera(camera: ref[rl.Camera2D], player: Player, env_elements: array[
         if max_y < element.rect.y + element.rect.height:
             max_y = element.rect.y + element.rect.height
 
-    let max_screen = rl.GetWorldToScreen2D(rl.Vector2(x = max_x, y = max_y), value(camera))
-    let min_screen = rl.GetWorldToScreen2D(rl.Vector2(x = min_x, y = min_y), value(camera))
+    let max_screen = rl.GetWorldToScreen2D(rl.Vector2(x = max_x, y = max_y), read(camera))
+    let min_screen = rl.GetWorldToScreen2D(rl.Vector2(x = min_x, y = min_y), read(camera))
 
     if max_screen.x < screen_width:
         camera.offset.x = screen_width - (max_screen.x - screen_half(screen_width))
@@ -117,11 +117,11 @@ def main() -> i32:
         EnvElement(rect = rl.Rectangle(x = 650.0, y = 300.0, width = 100.0, height = 10.0), blocking = true, color = rl.GRAY),
     )
     var camera = zero[rl.Camera2D]()
-    reset_scene(addr(player), addr(camera))
+    reset_scene(ref_of(player), ref_of(camera))
 
     var aelist = zero[rl.AutomationEventList]()
     aelist = rl.LoadAutomationEventList(null)
-    rl.SetAutomationEventList(raw(addr(aelist)))
+    rl.SetAutomationEventList(ptr_of(ref_of(aelist)))
 
     var event_recording = false
     var event_playing = false
@@ -138,7 +138,7 @@ def main() -> i32:
             let dropped_files = rl.LoadDroppedFiles()
 
             unsafe:
-                let dropped_path = deref(dropped_files.paths)
+                let dropped_path = read(dropped_files.paths)
                 if rl.IsFileExtension(cstr<-dropped_path, automation_extensions):
                     rl.UnloadAutomationEventList(aelist)
                     aelist = rl.LoadAutomationEventList(cstr<-dropped_path)
@@ -146,14 +146,14 @@ def main() -> i32:
                     event_playing = true
                     play_frame_counter = 0
                     current_play_frame = 0
-                    reset_scene(addr(player), addr(camera))
+                    reset_scene(ref_of(player), ref_of(camera))
 
             rl.UnloadDroppedFiles(dropped_files)
 
         player.update(env_elements, delta_time)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_R):
-            reset_scene(addr(player), addr(camera))
+            reset_scene(ref_of(player), ref_of(camera))
 
         if event_playing:
             if current_play_frame >= aelist.count:
@@ -163,7 +163,7 @@ def main() -> i32:
             else:
                 unsafe:
                     while current_play_frame < aelist.count:
-                        let event = deref(aelist.events + usize<-current_play_frame)
+                        let event = read(aelist.events + usize<-current_play_frame)
                         if play_frame_counter != event.frame:
                             break
 
@@ -180,7 +180,7 @@ def main() -> i32:
                 if event_playing:
                     play_frame_counter += 1
 
-        update_camera(addr(camera), player, env_elements)
+        update_camera(ref_of(camera), player, env_elements)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_S):
             if not event_playing:
@@ -198,7 +198,7 @@ def main() -> i32:
                 event_playing = true
                 play_frame_counter = 0
                 current_play_frame = 0
-                reset_scene(addr(player), addr(camera))
+                reset_scene(ref_of(player), ref_of(camera))
 
         if event_recording or event_playing:
             frame_counter += 1

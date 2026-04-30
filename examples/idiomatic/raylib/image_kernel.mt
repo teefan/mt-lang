@@ -23,7 +23,7 @@ def apply_kernel(image: rl.Image, kernel: array[f32, 9], passes: i32) -> rl.Imag
     var kernel_values = kernel
     for index in range(0, passes):
         let _ = index
-        rl.image_kernel_convolution(inout result, ro_addr(kernel_values[0]), 9)
+        rl.image_kernel_convolution(inout result, const_ptr_of(kernel_values[0]), 9)
     return result
 
 def main() -> i32:

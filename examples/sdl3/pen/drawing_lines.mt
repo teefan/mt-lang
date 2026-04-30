@@ -18,7 +18,7 @@ var tilt_y: f32 = 0.0
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
@@ -56,8 +56,8 @@ def render_frame() -> void:
     c.SDL_RenderTexture(renderer, render_target, null, null)
 
     unsafe:
-        c.SDL_snprintf(raw(addr(debug_text[0])), 1024, c"Tilt: %f %f", tilt_x, tilt_y)
-        c.SDL_RenderDebugText(renderer, 0.0, 8.0, cstr<-raw(addr(debug_text[0])))
+        c.SDL_snprintf(ptr_of(ref_of(debug_text[0])), 1024, c"Tilt: %f %f", tilt_x, tilt_y)
+        c.SDL_RenderDebugText(renderer, 0.0, 8.0, cstr<-ptr_of(ref_of(debug_text[0])))
 
     c.SDL_RenderPresent(renderer)
 
@@ -71,12 +71,12 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, 0, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, 0, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)
 
-    if not c.SDL_GetRenderOutputSize(renderer, raw(addr(output_width)), raw(addr(output_height))):
+    if not c.SDL_GetRenderOutputSize(renderer, ptr_of(ref_of(output_width)), ptr_of(ref_of(output_height))):
         return 1
 
     let created_target = c.SDL_CreateTexture(

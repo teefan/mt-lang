@@ -12,18 +12,18 @@ pub def count[T](items: HashSet[T]) -> usize:
     return map.count[T, bool](items.items)
 
 pub def release[T](items: ref[HashSet[T]]) -> void:
-    map.release[T, bool](addr(items.items))
+    map.release[T, bool](ref_of(items.items))
     return
 
 pub def add[T](items: ref[HashSet[T]], value_item: T) -> void:
-    map.put[T, bool](addr(items.items), value_item, true)
+    map.put[T, bool](ref_of(items.items), value_item, true)
     return
 
 pub def try_add[T](items: ref[HashSet[T]], value_item: T) -> bool:
-    return map.try_put[T, bool](addr(items.items), value_item, true)
+    return map.try_put[T, bool](ref_of(items.items), value_item, true)
 
 pub def contains[T](items: HashSet[T], value_item: T) -> bool:
     return map.contains[T, bool](items.items, value_item)
 
 pub def remove[T](items: ref[HashSet[T]], value_item: T) -> bool:
-    return map.remove[T, bool](addr(items.items), value_item)
+    return map.remove[T, bool](ref_of(items.items), value_item)

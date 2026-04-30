@@ -148,7 +148,7 @@ Milk Tea should use a deliberately small punctuation set. The only everyday symb
 
 Everything else should prefer words over symbols.
 
-Address formation and dereference stay as word forms: `addr(expr)`, `ro_addr(expr)`, `raw(ref_value)`, `value(ref_value)`, and `deref(ptr_value)`.
+Address formation and dereference stay as word forms: `ref_of(expr)`, `const_ptr_of(expr)`, `ptr_of(ref_value)`, `read(ref_value)`, and `read(ptr_value)`.
 
 ### Declarations
 
@@ -315,7 +315,7 @@ def load_texture(path: str) -> Result[Texture, LoadError]:
 ```mt
 unsafe:
 	let p = pixels + offset
-	let pixel = deref(ptr[u32]<-p)
+	let pixel = read(ptr[u32]<-p)
 ```
 
 The point is not to forbid sharp tools. The point is to mark them.
@@ -648,15 +648,15 @@ Recommended standard memory surfaces:
 - `std.mem.pool` for fixed-size object pools
 - `std.mem.stack` for explicit temporary allocators
 
-Typed allocation helpers live on the module surface where generic methods are not available yet. For example, `heap.must_alloc[Enemy](1)`, `arena.alloc[Enemy](addr(scratch), 4)`, `pool.alloc[Enemy](addr(objects))`, and `stack.alloc[Enemy](addr(temp), 2)` all stay explicit about allocator choice, while raw byte APIs remain available for lower-level storage work.
+Typed allocation helpers live on the module surface where generic methods are not available yet. For example, `heap.must_alloc[Enemy](1)`, `arena.alloc[Enemy](ref_of(scratch), 4)`, `pool.alloc[Enemy](ref_of(objects))`, and `stack.alloc[Enemy](ref_of(temp), 2)` all stay explicit about allocator choice, while raw byte APIs remain available for lower-level storage work.
 
 ### Pointers and references
 
 Pointers are still first-class because game code needs raw memory and FFI. The source model is explicit and uniform.
 
 ```mt
-let position_ref = addr(player.position)
-let position_ptr = raw(position_ref)
+let position_ref = ref_of(player.position)
+let position_ptr = ptr_of(position_ref)
 
 position_ref.x += 1
 
@@ -667,12 +667,12 @@ unsafe:
 Rules for safe references:
 
 - `ref[T]` is a non-null writable safe alias to one live object.
-- `addr(expr)` requires a mutable addressable lvalue source and produces `ref[T]`.
-- `ro_addr(expr)` requires an addressable lvalue source and produces `const_ptr[T]` for read-only raw interop.
-- `value(ref_value)` is safe and yields the referenced lvalue/value.
-- `raw(ref_value)` converts a safe reference to `ptr[T]` explicitly.
+- `ref_of(expr)` requires a mutable addressable lvalue source and produces `ref[T]`.
+- `const_ptr_of(expr)` requires an addressable lvalue source and produces `const_ptr[T]` for read-only raw interop.
+- `read(ref_value)` is safe and yields the referenced lvalue/value.
+- `ptr_of(ref_value)` converts a safe reference to `ptr[T]` explicitly.
 - member access and method calls auto-project through refs, so `handle.field` and `handle.edit_method()` are the preferred forms.
-- there is no implicit ref-to-value call conversion: if a function expects `T`, pass `value(handle)`.
+- there is no implicit ref-to-value call conversion: if a function expects `T`, pass `read(handle)`.
 - references do not support arithmetic, pointer indexing, or nullable semantics.
 - writable references are non-escaping in the current implementation: they may be used in locals and non-extern function parameters, and imported foreign parameters may expose `out` or `inout` boundary forms that lower to raw pointers, but refs themselves still cannot be stored, nested inside other types, returned, or used directly in raw `extern module` declarations.
 
@@ -680,8 +680,8 @@ Rules for raw pointers:
 
 - `ptr[T]`, `ptr[T]?`, `const_ptr[T]`, and `const_ptr[T]?` are raw pointer values.
 - there is no source `&expr`, `*ptr`, or `ptr->field`.
-- spell writable address formation as `addr(expr)`, read-only raw address formation as `ro_addr(expr)`, and writable raw pointer formation as `raw(addr(expr))` when you truly need a raw pointer.
-- `deref(ptr)` dereferences a raw pointer and requires `unsafe`.
+- spell writable address formation as `ref_of(expr)`, read-only raw address formation as `const_ptr_of(expr)`, and writable raw pointer formation as `ptr_of(ref_of(expr))` when you truly need a raw pointer.
+- `read(ptr)` dereferences a raw pointer and requires `unsafe`.
 - `const_ptr[T]` is the read-only raw-pointer surface and lowers to C `const T*`. `const_ptr[void]` is valid and represents C `const void *`.
 - `ptr.field` and `ptr.method()` access pointee fields and methods through a raw pointer and require `unsafe`.
 - pointer arithmetic and pointer indexing remain `unsafe`.
@@ -755,12 +755,12 @@ def equal_i32(left: i32, right: i32) -> bool:
 
 def example() -> i32:
 	var scores = map.create[i32, i32](hash_i32, equal_i32)
-	defer map.release[i32, i32](addr(scores))
+	defer map.release[i32, i32](ref_of(scores))
 
-	map.put[i32, i32](addr(scores), 7, 42)
+	map.put[i32, i32](ref_of(scores), 7, 42)
 
 	var value = 0
-	if map.get_into[i32, i32](scores, 7, addr(value)):
+	if map.get_into[i32, i32](scores, 7, ref_of(value)):
 		return value
 	return 0
 ```
@@ -1091,8 +1091,8 @@ Automatic text marshalling lowering:
 
 Directional pointer lowering:
 
-- `out x` lowers to address-taking of `x` at the raw call boundary without exposing `raw(addr(x))` in user source
-- `in value` lowers to const address-taking at the raw call boundary without exposing `ro_addr(value)` or casts in user source; non-addressable operands lower through a visible temporary in statement-shaped foreign calls
+- `out x` lowers to address-taking of `x` at the raw call boundary without exposing `ptr_of(ref_of(x))` in user source
+- `in value` lowers to const address-taking at the raw call boundary without exposing `const_ptr_of(value)` or casts in user source; non-addressable operands lower through a visible temporary in statement-shaped foreign calls
 - `inout x` lowers to the same address-taking form, but sema preserves the read-write contract instead of pure output
 - if the raw target expects `ptr[void]` or another identity-projection pointer type, lowering inserts only the minimal cast required by the raw C signature
 
@@ -1121,7 +1121,7 @@ let ints = rl.mem_alloc[i32](16)
 
 `str as cstr` and `span[str]` foreign boundaries use ordinary imported-call syntax. When the boundary needs synthesized temporary C-compatible storage or other statement-shaped setup, lowering hoists that work into visible temporary locals and branch-local control flow as needed, so nested call arguments, arithmetic, `if ... then ... else ...` expressions, and short-circuit boolean expressions still read like ordinary Milk Tea while generated C stays explicit about the temporary storage.
 
-`in name`, `out name`, and `inout name` are foreign-boundary forms, not raw pointer expressions. They lower to address-taking at the imported call site without exposing `ro_addr(...)`, `raw(addr(...))`, or ABI casts in ordinary code.
+`in name`, `out name`, and `inout name` are foreign-boundary forms, not raw pointer expressions. They lower to address-taking at the imported call site without exposing `const_ptr_of(...)`, `ptr_of(ref_of(...))`, or ABI casts in ordinary code.
 
 This is the C# part worth copying: declarations say how the boundary works, while raw pointer code remains explicitly low-level.
 

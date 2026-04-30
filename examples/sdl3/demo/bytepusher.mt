@@ -46,17 +46,17 @@ def read_u24(addr: i32) -> c.Uint32:
     return (c.Uint32<-ram[addr] << 16) | (c.Uint32<-ram[addr + 1] << 8) | c.Uint32<-ram[addr + 2]
 
 def set_status_message(message: cstr) -> void:
-    c.SDL_strlcpy(raw(addr(status[0])), message, usize<-status_buffer_len)
+    c.SDL_strlcpy(ptr_of(ref_of(status[0])), message, usize<-status_buffer_len)
     status[status_buffer_len - 1] = char<-0
     status_ticks = i32<-(frames_per_second * 3)
 
 def set_status_filename(prefix: cstr, path: cstr) -> void:
-    c.SDL_snprintf(raw(addr(status[0])), usize<-status_buffer_len, prefix, filename(path))
+    c.SDL_snprintf(ptr_of(ref_of(status[0])), usize<-status_buffer_len, prefix, filename(path))
     status[status_buffer_len - 1] = char<-0
     status_ticks = i32<-(frames_per_second * 3)
 
 def set_status_renderer(name: cstr) -> void:
-    c.SDL_snprintf(raw(addr(status[0])), usize<-status_buffer_len, c"renderer: %s", name)
+    c.SDL_snprintf(ptr_of(ref_of(status[0])), usize<-status_buffer_len, c"renderer: %s", name)
     status[status_buffer_len - 1] = char<-0
     status_ticks = i32<-(frames_per_second * 3)
 
@@ -69,7 +69,7 @@ def filename(path: cstr) -> cstr:
 
         while index > 0:
             index -= 1
-            let ch = deref(path_ptr + usize<-index)
+            let ch = read(path_ptr + usize<-index)
             if ch == char<-47 or ch == char<-92:
                 result = cstr<-(path_ptr + usize<-(index + 1))
                 break
@@ -80,13 +80,13 @@ def load_stream(stream: ptr[c.SDL_IOStream]?, close_io: bool) -> bool:
     var bytes_read: usize = 0
     var ok = true
 
-    c.SDL_memset(raw(addr(ram[0])), 0, usize<-ram_size)
+    c.SDL_memset(ptr_of(ref_of(ram[0])), 0, usize<-ram_size)
 
     if stream == null:
         return false
 
     while bytes_read < usize<-ram_size:
-        let read_count = c.SDL_ReadIO(stream, raw(addr(ram[i32<-bytes_read])), usize<-ram_size - bytes_read)
+        let read_count = c.SDL_ReadIO(stream, ptr_of(ref_of(ram[i32<-bytes_read])), usize<-ram_size - bytes_read)
         bytes_read += read_count
         if read_count == 0:
             ok = c.SDL_GetIOStatus(stream) == c.SDL_IOStatus.SDL_IO_STATUS_EOF
@@ -167,7 +167,7 @@ def scancode_mask(scancode: c.SDL_Scancode) -> c.Uint16:
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         elif event.quit.type == c.SDL_EventType.SDL_EVENT_DROP_FILE:
@@ -228,11 +228,11 @@ def render_frame() -> void:
 
         if (not skip_audio or tick_acc < ns_per_second) and active_audio_stream != null:
             let audio_offset = i32<-read_u16(io_audio_bank) * 256
-            c.SDL_PutAudioStreamData(active_audio_stream, raw(addr(ram[audio_offset])), samples_per_frame)
+            c.SDL_PutAudioStreamData(active_audio_stream, ptr_of(ref_of(ram[audio_offset])), samples_per_frame)
 
     if updated and active_texture != null and active_render_target != null:
         let pixel_offset = i32<-ram[io_screen_page] << 16
-        c.SDL_UpdateTexture(active_texture, null, raw(addr(ram[pixel_offset])), screen_width)
+        c.SDL_UpdateTexture(active_texture, null, ptr_of(ref_of(ram[pixel_offset])), screen_width)
 
         c.SDL_SetRenderTarget(renderer, active_render_target)
         c.SDL_RenderTexture(renderer, active_texture, null, null)
@@ -245,7 +245,7 @@ def render_frame() -> void:
 
         if status_ticks > 0:
             status_ticks -= 1
-            print_text(4, screen_height - 12, chars_to_cstr(raw(addr(status[0]))))
+            print_text(4, screen_height - 12, chars_to_cstr(ptr_of(ref_of(status[0]))))
 
     c.SDL_SetRenderTarget(renderer, null)
     c.SDL_RenderClear(renderer)
@@ -288,7 +288,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     display_help = true
 
     let primary_display = c.SDL_GetPrimaryDisplay()
-    if c.SDL_GetDisplayUsableBounds(primary_display, raw(addr(usable_bounds))):
+    if c.SDL_GetDisplayUsableBounds(primary_display, ptr_of(ref_of(usable_bounds))):
         let zoom_w = (usable_bounds.w - usable_bounds.x) * 2 / 3 / screen_width
         let zoom_h = (usable_bounds.h - usable_bounds.y) * 2 / 3 / screen_height
         if zoom_w < zoom_h:
@@ -299,7 +299,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         if zoom < 1:
             zoom = 1
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, screen_width * zoom, screen_height * zoom, window_flags, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, screen_width * zoom, screen_height * zoom, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)
@@ -349,7 +349,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     if audio_device == 0:
         return 1
 
-    let created_stream = c.SDL_CreateAudioStream(raw(addr(audio_spec)), null)
+    let created_stream = c.SDL_CreateAudioStream(ptr_of(ref_of(audio_spec)), null)
     if created_stream == null:
         return 1
     if not c.SDL_BindAudioStream(audio_device, created_stream):
@@ -367,7 +367,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
 
     if argc > 1:
         unsafe:
-            load_file(cstr<-deref(argv + usize<-1))
+            load_file(cstr<-read(argv + usize<-1))
 
     while pump_events():
         render_frame()

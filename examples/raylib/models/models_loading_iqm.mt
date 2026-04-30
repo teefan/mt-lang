@@ -17,11 +17,11 @@ def chars_to_cstr(text: ptr[char]) -> cstr:
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
-        return deref(anims + index)
+        return read(anims + index)
 
 def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
     unsafe:
-        return chars_to_cstr(raw(addr((anims + index).name[0])))
+        return chars_to_cstr(ptr_of(ref_of((anims + index).name[0])))
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -46,7 +46,7 @@ def main() -> i32:
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 
     var anim_count = 0
-    let anims = rl.LoadModelAnimations(animation_path, raw(addr(anim_count)))
+    let anims = rl.LoadModelAnimations(animation_path, ptr_of(ref_of(anim_count)))
     defer rl.UnloadModelAnimations(anims, anim_count)
 
     let anim_index = 0
@@ -55,7 +55,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
 
         let anim = model_animation(anims, anim_index)
         anim_current_frame += 1.0

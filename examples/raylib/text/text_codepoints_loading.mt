@@ -18,21 +18,21 @@ def codepoint_remove_duplicates(codepoints: ptr[i32], codepoint_count: i32, code
 
     unsafe:
         for index in range(0, codepoint_count):
-            deref(codepoints_no_dups + index) = deref(codepoints + index)
+            read(codepoints_no_dups + index) = read(codepoints + index)
 
         for index in range(0, codepoints_no_dups_count):
             var check = index + 1
             while check < codepoints_no_dups_count:
-                if deref(codepoints_no_dups + index) == deref(codepoints_no_dups + check):
+                if read(codepoints_no_dups + index) == read(codepoints_no_dups + check):
                     var shift = check
                     while shift + 1 < codepoints_no_dups_count:
-                        deref(codepoints_no_dups + shift) = deref(codepoints_no_dups + shift + 1)
+                        read(codepoints_no_dups + shift) = read(codepoints_no_dups + shift + 1)
                         shift += 1
                     codepoints_no_dups_count -= 1
                 else:
                     check += 1
 
-        deref(codepoints_result_count) = codepoints_no_dups_count
+        read(codepoints_result_count) = codepoints_no_dups_count
 
     return codepoints_no_dups
 
@@ -41,11 +41,11 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var codepoint_count = 0
-    let codepoints = rl.LoadCodepoints(text, raw(addr(codepoint_count)))
+    let codepoints = rl.LoadCodepoints(text, ptr_of(ref_of(codepoint_count)))
     defer rl.UnloadCodepoints(codepoints)
 
     var codepoints_no_dups_count = 0
-    let codepoints_no_dups = codepoint_remove_duplicates(codepoints, codepoint_count, raw(addr(codepoints_no_dups_count)))
+    let codepoints_no_dups = codepoint_remove_duplicates(codepoints, codepoint_count, ptr_of(ref_of(codepoints_no_dups_count)))
     defer heap.release(codepoints_no_dups)
 
     let font = rl.LoadFontEx(font_path, 36, codepoints_no_dups, codepoints_no_dups_count)

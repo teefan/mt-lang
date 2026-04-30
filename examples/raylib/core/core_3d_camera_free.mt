@@ -28,7 +28,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_FREE)
+        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_FREE)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_Z):
             camera.target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)

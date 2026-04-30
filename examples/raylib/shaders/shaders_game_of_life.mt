@@ -30,10 +30,10 @@ def gui_rect(x: f32, y: f32, width: f32, height: f32) -> gui.Rectangle:
     return gui.Rectangle(x = x, y = y, width = width, height = height)
 
 def free_image_to_draw(image_to_draw: ref[rl.Image], has_image_to_draw: ref[bool]) -> void:
-    if value(has_image_to_draw):
-        rl.UnloadImage(value(image_to_draw))
-        value(image_to_draw) = zero[rl.Image]()
-        value(has_image_to_draw) = false
+    if read(has_image_to_draw):
+        rl.UnloadImage(read(image_to_draw))
+        read(image_to_draw) = zero[rl.Image]()
+        read(has_image_to_draw) = false
 
 def load_preset_image(preset: i32) -> rl.Image:
     if preset == 0:
@@ -105,7 +105,7 @@ def main() -> i32:
 
     let resolution_loc = rl.GetShaderLocation(shader, resolution_uniform_name)
     var resolution = array[f32, 2](f32<-world_width, f32<-world_height)
-    rl.SetShaderValue(shader, resolution_loc, raw(addr(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, resolution_loc, ptr_of(ref_of(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     let world1 = rl.LoadRenderTexture(world_width, world_height)
     let world2 = rl.LoadRenderTexture(world_width, world_height)
@@ -146,7 +146,7 @@ def main() -> i32:
 
         let mouse_wheel_move = rl.GetMouseWheelMove()
         if button_zoom_in or (button_zoom_out and zoom > 1) or mouse_wheel_move != 0.0:
-            free_image_to_draw(addr(image_to_draw), addr(has_image_to_draw))
+            free_image_to_draw(ref_of(image_to_draw), ref_of(has_image_to_draw))
 
             let zoom_f = f32<-zoom
             let center_x = offset_x + f32<-window_width / 2.0 / zoom_f
@@ -165,7 +165,7 @@ def main() -> i32:
             frames_per_step += 1
 
         if mode == i32<-InteractionMode.MODE_RUN or mode == i32<-InteractionMode.MODE_PAUSE:
-            free_image_to_draw(addr(image_to_draw), addr(has_image_to_draw))
+            free_image_to_draw(ref_of(image_to_draw), ref_of(has_image_to_draw))
 
             let mouse_position = rl.GetMousePosition()
             if rl.IsMouseButtonDown(rl.MouseButton.MOUSE_BUTTON_LEFT) and mouse_position.x < f32<-window_width:
@@ -211,7 +211,7 @@ def main() -> i32:
                     first_color = if rl.GetImageColor(image_to_draw, mouse_x, mouse_y).r < 5 then 0 else 1
                 let previous_color = if rl.GetImageColor(image_to_draw, mouse_x, mouse_y).r < 5 then 0 else 1
 
-                rl.ImageDrawPixel(raw(addr(image_to_draw)), mouse_x, mouse_y, if first_color != 0 then rl.BLACK else rl.RAYWHITE)
+                rl.ImageDrawPixel(ptr_of(ref_of(image_to_draw)), mouse_x, mouse_y, if first_color != 0 then rl.BLACK else rl.RAYWHITE)
 
                 if previous_color != first_color:
                     rl.UpdateTextureRec(
@@ -243,11 +243,11 @@ def main() -> i32:
                 var pattern = rl.GenImageColor(world_width / random_tiles, world_height / random_tiles, rl.RAYWHITE)
                 for tile_x in range(0, random_tiles):
                     for tile_y in range(0, random_tiles):
-                        rl.ImageClearBackground(raw(addr(pattern)), rl.RAYWHITE)
+                        rl.ImageClearBackground(ptr_of(ref_of(pattern)), rl.RAYWHITE)
                         for pixel_x in range(0, pattern.width):
                             for pixel_y in range(0, pattern.height):
                                 if rl.GetRandomValue(0, 100) < 15:
-                                    rl.ImageDrawPixel(raw(addr(pattern)), pixel_x, pixel_y, rl.BLACK)
+                                    rl.ImageDrawPixel(ptr_of(ref_of(pattern)), pixel_x, pixel_y, rl.BLACK)
                         rl.UpdateTextureRec(
                             current_world.texture,
                             rl.Rectangle(
@@ -310,7 +310,7 @@ def main() -> i32:
             if gui.GuiButton(gui_rect(710.0, 70.0 + 18.0 * f32<-index, 80.0, 16.0), preset_names[index]) != 0:
                 preset = index
 
-        gui.GuiToggleGroup(gui_rect(710.0, 258.0, 80.0, 16.0), toggle_group_text, raw(addr(mode)))
+        gui.GuiToggleGroup(gui_rect(710.0, 258.0, 80.0, 16.0), toggle_group_text, ptr_of(ref_of(mode)))
 
         rl.DrawText(rl.TextFormat(zoom_format, zoom), 710, 316, 8, rl.GRAY)
         button_zoom_in = gui.GuiButton(gui_rect(710.0, 328.0, 80.0, 16.0), c"Zoom in") != 0
@@ -322,5 +322,5 @@ def main() -> i32:
 
         rl.DrawFPS(712, 426)
 
-    free_image_to_draw(addr(image_to_draw), addr(has_image_to_draw))
+    free_image_to_draw(ref_of(image_to_draw), ref_of(has_image_to_draw))
     return 0

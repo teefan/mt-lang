@@ -33,9 +33,9 @@ def next_buffer_index(index: i32) -> i32:
     return (index + 1) % max_particles
 
 def add_to_circular_buffer(head: ref[i32], tail: i32) -> i32:
-    if next_buffer_index(value(head)) != tail:
-        let particle_index = value(head)
-        value(head) = next_buffer_index(value(head))
+    if next_buffer_index(read(head)) != tail:
+        let particle_index = read(head)
+        read(head) = next_buffer_index(read(head))
         return particle_index
     return -1
 
@@ -113,8 +113,8 @@ def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32,
 
 def update_circular_buffer(particles: ptr[Particle], head: i32, tail: ref[i32]) -> void:
     let particles_view = span[Particle](data = particles, len = usize<-max_particles)
-    while value(tail) != head and not particles_view[value(tail)].alive:
-        value(tail) = next_buffer_index(value(tail))
+    while read(tail) != head and not particles_view[read(tail)].alive:
+        read(tail) = next_buffer_index(read(tail))
     return
 
 def draw_particles(particles: ptr[Particle], head: i32, tail: i32) -> void:
@@ -144,14 +144,14 @@ def main() -> i32:
     while not rl.window_should_close():
         if emission_rate < 0:
             if rl.get_random_value(0, -emission_rate - 1) == 0:
-                emit_particle(particles, addr(head), tail, emitter_position, current_type)
+                emit_particle(particles, ref_of(head), tail, emitter_position, current_type)
         else:
             for index in range(0, emission_rate + 1):
                 let _ = index
-                emit_particle(particles, addr(head), tail, emitter_position, current_type)
+                emit_particle(particles, ref_of(head), tail, emitter_position, current_type)
 
         update_particles(particles, head, tail, screen_width, screen_height)
-        update_circular_buffer(particles, head, addr(tail))
+        update_circular_buffer(particles, head, ref_of(tail))
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_UP):
             emission_rate += 1

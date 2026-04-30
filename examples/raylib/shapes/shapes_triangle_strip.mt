@@ -65,8 +65,8 @@ def main() -> i32:
         rl.DrawLine(580, 0, 580, rl.GetScreenHeight(), rl.Color(r = 218, g = 218, b = 218, a = 255))
         rl.DrawRectangle(580, 0, rl.GetScreenWidth(), rl.GetScreenHeight(), rl.Color(r = 232, g = 232, b = 232, a = 255))
 
-        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0), c"Segments", rl.TextFormat(c"%.0f", segments), raw(addr(segments)), 6.0, 60.0)
-        gui.GuiCheckBox(gui.Rectangle(x = 640.0, y = 70.0, width = 20.0, height = 20.0), c"Outline", raw(addr(outline)))
+        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0), c"Segments", rl.TextFormat(c"%.0f", segments), ptr_of(ref_of(segments)), 6.0, 60.0)
+        gui.GuiCheckBox(gui.Rectangle(x = 640.0, y = 70.0, width = 20.0, height = 20.0), c"Outline", ptr_of(ref_of(outline)))
 
         rl.DrawFPS(10, 10)
 

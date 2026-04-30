@@ -320,16 +320,16 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^import std\.raylib as raylib$/, source)
     assert_match(/^pub type Rectangle = raylib\.Rectangle$/, source)
     assert_match(/^pub type State = c\.GuiState$/, source)
-    assert_match(/^pub foreign def set_state\(state: State\) -> void = c\.GuiSetState\(cast\[i32\]\(state\)\)$/, source)
-    assert_match(/^pub foreign def get_state\(\) -> State = cast\[State\]\(c\.GuiGetState\(\)\)$/, source)
+    assert_match(/^pub foreign def set_state\(state: State\) -> void = c\.GuiSetState\(i32<-state\)$/, source)
+    assert_match(/^pub foreign def get_state\(\) -> State = State<-c\.GuiGetState\(\)$/, source)
     assert_match(/^pub foreign def get_icons\(\) -> span\[u32\] = span\[u32\]\(data = c\.GuiGetIcons\(\), len = 2048\)$/, source)
-    assert_match(/^pub foreign def tab_bar\(bounds: Rectangle, text: span\[str\] as span\[ptr\[char\]\], inout active: i32\) -> i32 = c\.GuiTabBar\(bounds, text\.data, cast\[i32\]\(text\.len\), active\)$/, source)
+    assert_match(/^pub foreign def tab_bar\(bounds: Rectangle, text: span\[str\] as span\[ptr\[char\]\], inout active: i32\) -> i32 = c\.GuiTabBar\(bounds, text\.data, i32<-text\.len, active\)$/, source)
     assert_match(/^pub foreign def scroll_panel\(bounds: Rectangle, text: str as cstr, content: Rectangle, inout scroll: Vector2, out view: Rectangle\) -> i32 = c\.GuiScrollPanel$/, source)
     assert_match(/^pub foreign def toggle\(bounds: Rectangle, text: str as cstr, inout active: bool\) -> i32 = c\.GuiToggle$/, source)
-    assert_match(/^pub foreign def list_view_ex\(bounds: Rectangle, text: span\[str\] as span\[ptr\[char\]\], inout scroll_index: i32, inout active: i32, inout focus: i32\) -> i32 = c\.GuiListViewEx\(bounds, text\.data, cast\[i32\]\(text\.len\), scroll_index, active, focus\)$/, source)
+    assert_match(/^pub foreign def list_view_ex\(bounds: Rectangle, text: span\[str\] as span\[ptr\[char\]\], inout scroll_index: i32, inout active: i32, inout focus: i32\) -> i32 = c\.GuiListViewEx\(bounds, text\.data, i32<-text\.len, scroll_index, active, focus\)$/, source)
     assert_match(/^pub foreign def value_box_float\[N\]\(bounds: Rectangle, text: str as cstr, text_value: str_builder\[N\] as ptr\[char\], inout value: f32, edit_mode: bool\) -> i32 = c\.GuiValueBoxFloat\(bounds, text, text_value, value, edit_mode\)$/, source)
-    assert_match(/^pub foreign def text_box\[N\]\(bounds: Rectangle, text: str_builder\[N\] as ptr\[char\], edit_mode: bool\) -> i32 = c\.GuiTextBox\(bounds, text, cast\[i32\]\(text_public\.capacity\(\) \+ 1\), edit_mode\)$/, source)
-    assert_match(/^pub foreign def text_input_box\[N\]\(bounds: Rectangle, title: str as cstr, message: str as cstr, buttons: str as cstr, text: str_builder\[N\] as ptr\[char\], inout secret_view_active: bool\) -> i32 = c\.GuiTextInputBox\(bounds, title, message, buttons, text, cast\[i32\]\(text_public\.capacity\(\) \+ 1\), secret_view_active\)$/, source)
+    assert_match(/^pub foreign def text_box\[N\]\(bounds: Rectangle, text: str_builder\[N\] as ptr\[char\], edit_mode: bool\) -> i32 = c\.GuiTextBox\(bounds, text, i32<-\(text_public\.capacity\(\) \+ 1\), edit_mode\)$/, source)
+    assert_match(/^pub foreign def text_input_box\[N\]\(bounds: Rectangle, title: str as cstr, message: str as cstr, buttons: str as cstr, text: str_builder\[N\] as ptr\[char\], inout secret_view_active: bool\) -> i32 = c\.GuiTextInputBox\(bounds, title, message, buttons, text, i32<-\(text_public\.capacity\(\) \+ 1\), secret_view_active\)$/, source)
   end
 
   def test_imported_bindings_outside_raylib_and_rlgl_do_not_expose_raw_ptr_void

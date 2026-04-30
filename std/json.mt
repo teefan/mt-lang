@@ -80,7 +80,7 @@ def slice_token(kind: TokenKind, source: str, start: usize, stop: usize) -> Toke
 
 def byte_at(source: str, index: usize) -> u8:
     unsafe:
-        return u8<-deref(source.data + index)
+        return u8<-read(source.data + index)
 
 def skip_space(lexer: ref[Lexer]) -> void:
     while lexer.index < lexer.source.len and ascii.is_space(byte_at(lexer.source, lexer.index)):

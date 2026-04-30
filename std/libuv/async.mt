@@ -136,7 +136,7 @@ pub def sleep_release(frame: ptr[void]) -> void:
         if not state.ready:
             return
         if state.timer.storage != null:
-            rt.handle_release(addr(state.timer))
+            rt.handle_release(ref_of(state.timer))
     heap.release[SleepState](state)
     return
 
@@ -164,7 +164,7 @@ pub def work_release[T](frame: ptr[void]) -> void:
         if not state.ready:
             return
         if state.request.storage != null:
-            rt.request_release(addr(state.request))
+            rt.request_release(ref_of(state.request))
     heap.release[WorkState[T]](state)
     return
 
@@ -212,7 +212,7 @@ pub def work_on[T](loop: rt.Loop, run_work: fn() -> T) -> Task[T]:
         status = rt.queue_work(loop, state.request, on_work_request[T], on_work_done[T])
     if status != 0:
         unsafe:
-            rt.request_release(addr(state.request))
+            rt.request_release(ref_of(state.request))
         heap.release[WorkState[T]](state)
         panic(c"libuv.async.work queue_work failed")
     return work_task[T](state)
@@ -274,7 +274,7 @@ pub def block_on[T](root: proc() -> Task[T]) -> T:
     activate_current_loop(loop)
     let result = block_on_loop[T](loop, root())
     deactivate_current_loop()
-    must_release_loop(addr(loop))
+    must_release_loop(ref_of(loop))
     return result
 
 pub def run(root: proc() -> Task[void]) -> void:
@@ -286,5 +286,5 @@ pub def run(root: proc() -> Task[void]) -> void:
     activate_current_loop(loop)
     run_loop(loop, root())
     deactivate_current_loop()
-    must_release_loop(addr(loop))
+    must_release_loop(ref_of(loop))
     return

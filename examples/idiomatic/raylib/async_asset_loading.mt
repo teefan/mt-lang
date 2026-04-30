@@ -16,7 +16,7 @@ def load_logo_bytes() -> bytes.Buffer:
     var scratch = arena.create(96)
     defer scratch.release()
 
-    let loaded = fs.read_bytes(logo_path, addr(scratch))
+    let loaded = fs.read_bytes(logo_path, ref_of(scratch))
     if not loaded.is_ok:
         panic("could not read raylib logo bytes")
     return loaded.value
@@ -25,7 +25,7 @@ def load_sound_bytes() -> bytes.Buffer:
     var scratch = arena.create(96)
     defer scratch.release()
 
-    let loaded = fs.read_bytes(sound_path, addr(scratch))
+    let loaded = fs.read_bytes(sound_path, ref_of(scratch))
     if not loaded.is_ok:
         panic("could not read raylib sound bytes")
     return loaded.value
@@ -86,7 +86,7 @@ def main() -> i32:
             rl.unload_texture(logo)
         if sound_loaded:
             rl.unload_sound(ping)
-        if rt.loop_release(addr(loop)) != 0:
+        if rt.loop_release(ref_of(loop)) != 0:
             panic("libuv loop release failed")
 
     rl.set_target_fps(60)
@@ -98,13 +98,13 @@ def main() -> i32:
             var logo_bytes = async.finish(logo_task)
             logo = texture_from_png_bytes(logo_bytes)
             logo_loaded = true
-            bytes.release(addr(logo_bytes))
+            bytes.release(ref_of(logo_bytes))
 
         if not sound_loaded and async.ready(sound_task):
             var sound_bytes = async.finish(sound_task)
             ping = sound_from_wav_bytes(sound_bytes)
             sound_loaded = true
-            bytes.release(addr(sound_bytes))
+            bytes.release(ref_of(sound_bytes))
 
         if logo_loaded and sound_loaded and not played_ready_sound:
             rl.play_sound(ping)

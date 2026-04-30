@@ -44,7 +44,7 @@ def main() -> i32:
             heap.release(map.tile_ids)
 
         for index in range(0, tile_count):
-            deref(map.tile_ids + index) = u8<-rl.GetRandomValue(0, 1)
+            read(map.tile_ids + index) = u8<-rl.GetRandomValue(0, 1)
 
         rl.SetTargetFPS(60)
 
@@ -69,8 +69,8 @@ def main() -> i32:
                 player_position.y = f32<-(map.tiles_y * map_tile_size - player_size)
 
             for index in range(0, tile_count):
-                if deref(map.tile_fog + index) == 1:
-                    deref(map.tile_fog + index) = 2
+                if read(map.tile_fog + index) == 1:
+                    read(map.tile_fog + index) = 2
 
             player_tile_x = i32<-((player_position.x + f32<-map_tile_size / 2.0) / f32<-map_tile_size)
             player_tile_y = i32<-((player_position.y + f32<-map_tile_size / 2.0) / f32<-map_tile_size)
@@ -78,13 +78,13 @@ def main() -> i32:
             for y in range(player_tile_y - player_tile_visibility, player_tile_y + player_tile_visibility):
                 for x in range(player_tile_x - player_tile_visibility, player_tile_x + player_tile_visibility):
                     if x >= 0 and x < map.tiles_x and y >= 0 and y < map.tiles_y:
-                        deref(map.tile_fog + (y * map.tiles_x + x)) = 1
+                        read(map.tile_fog + (y * map.tiles_x + x)) = 1
 
             rl.BeginTextureMode(fog_of_war)
             rl.ClearBackground(rl.BLANK)
             for y in range(0, map.tiles_y):
                 for x in range(0, map.tiles_x):
-                    let fog_value = deref(map.tile_fog + (y * map.tiles_x + x))
+                    let fog_value = read(map.tile_fog + (y * map.tiles_x + x))
                     if fog_value == 0:
                         rl.DrawRectangle(x, y, 1, 1, rl.BLACK)
                     elif fog_value == 2:
@@ -97,7 +97,7 @@ def main() -> i32:
             for y in range(0, map.tiles_y):
                 for x in range(0, map.tiles_x):
                     let tile_index = y * map.tiles_x + x
-                    let tile_color = if deref(map.tile_ids + tile_index) == 0 then rl.BLUE else rl.Fade(rl.BLUE, 0.9)
+                    let tile_color = if read(map.tile_ids + tile_index) == 0 then rl.BLUE else rl.Fade(rl.BLUE, 0.9)
                     rl.DrawRectangle(x * map_tile_size, y * map_tile_size, map_tile_size, map_tile_size, tile_color)
                     rl.DrawRectangleLines(x * map_tile_size, y * map_tile_size, map_tile_size, map_tile_size, rl.Fade(rl.DARKBLUE, 0.5))
 

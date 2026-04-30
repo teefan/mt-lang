@@ -15,7 +15,7 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var directory = zero[array[char, 1024]]()
-    let directory_ptr = raw(addr(directory[0]))
+    let directory_ptr = ptr_of(ref_of(directory[0]))
     unsafe:
         rl.TextCopy(directory_ptr, rl.GetWorkingDirectory())
 
@@ -55,9 +55,9 @@ def main() -> i32:
             gui.Rectangle(x = 0.0, y = 50.0, width = rl.GetScreenWidth(), height = rl.GetScreenHeight() - 50.0),
             files.paths,
             i32<-files.count,
-            raw(addr(list_scroll_index)),
-            raw(addr(list_item_active)),
-            raw(addr(list_item_focused)),
+            ptr_of(ref_of(list_scroll_index)),
+            ptr_of(ref_of(list_item_active)),
+            ptr_of(ref_of(list_item_focused)),
         )
 
     rl.UnloadDirectoryFiles(files)

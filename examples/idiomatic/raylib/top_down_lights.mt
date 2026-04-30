@@ -81,10 +81,10 @@ def draw_light_mask(light: LightInfo) -> void:
     rl.end_texture_mode()
 
 def move_light_slot(lights: ref[array[LightInfo, 16]], slot: i32, x: f32, y: f32) -> void:
-    value(lights)[slot] = move_light(value(lights)[slot], x, y)
+    read(lights)[slot] = move_light(read(lights)[slot], x, y)
 
 def setup_light(lights: ref[array[LightInfo, 16]], slot: i32, x: f32, y: f32, radius: f32) -> void:
-    var light = value(lights)[slot]
+    var light = read(lights)[slot]
     light.active = true
     light.valid = false
     light.mask = rl.load_render_texture(rl.get_screen_width(), rl.get_screen_height())
@@ -92,11 +92,11 @@ def setup_light(lights: ref[array[LightInfo, 16]], slot: i32, x: f32, y: f32, ra
     light.bounds.width = radius * 2.0
     light.bounds.height = radius * 2.0
     light = move_light(light, x, y)
-    value(lights)[slot] = light
+    read(lights)[slot] = light
     draw_light_mask(light)
 
 def update_light(lights: ref[array[LightInfo, 16]], slot: i32, boxes: array[rl.Rectangle, 20], count: i32) -> bool:
-    var light = value(lights)[slot]
+    var light = read(lights)[slot]
 
     if not light.active or not light.dirty:
         return false
@@ -109,7 +109,7 @@ def update_light(lights: ref[array[LightInfo, 16]], slot: i32, boxes: array[rl.R
         let box = boxes[index]
 
         if rl.check_collision_point_rec(light.position, box):
-            value(lights)[slot] = light
+            read(lights)[slot] = light
             return false
 
         if not rl.check_collision_recs(light.bounds, box):
@@ -135,26 +135,26 @@ def update_light(lights: ref[array[LightInfo, 16]], slot: i32, boxes: array[rl.R
         light = push_shadow(light, top_left, bottom_left, bottom_right, top_right)
 
     light.valid = true
-    value(lights)[slot] = light
+    read(lights)[slot] = light
     draw_light_mask(light)
     return true
 
 def setup_boxes(boxes: ref[array[rl.Rectangle, 20]], count: ref[i32]) -> void:
-    value(boxes)[0] = rl.Rectangle(x = 150.0, y = 80.0, width = 40.0, height = 40.0)
-    value(boxes)[1] = rl.Rectangle(x = 1200.0, y = 700.0, width = 40.0, height = 40.0)
-    value(boxes)[2] = rl.Rectangle(x = 200.0, y = 600.0, width = 40.0, height = 40.0)
-    value(boxes)[3] = rl.Rectangle(x = 1000.0, y = 50.0, width = 40.0, height = 40.0)
-    value(boxes)[4] = rl.Rectangle(x = 500.0, y = 350.0, width = 40.0, height = 40.0)
+    read(boxes)[0] = rl.Rectangle(x = 150.0, y = 80.0, width = 40.0, height = 40.0)
+    read(boxes)[1] = rl.Rectangle(x = 1200.0, y = 700.0, width = 40.0, height = 40.0)
+    read(boxes)[2] = rl.Rectangle(x = 200.0, y = 600.0, width = 40.0, height = 40.0)
+    read(boxes)[3] = rl.Rectangle(x = 1000.0, y = 50.0, width = 40.0, height = 40.0)
+    read(boxes)[4] = rl.Rectangle(x = 500.0, y = 350.0, width = 40.0, height = 40.0)
 
     for index in range(5, max_boxes):
-        value(boxes)[index] = rl.Rectangle(
+        read(boxes)[index] = rl.Rectangle(
             x = f32<-rl.get_random_value(0, rl.get_screen_width()),
             y = f32<-rl.get_random_value(0, rl.get_screen_height()),
             width = f32<-rl.get_random_value(10, 100),
             height = f32<-rl.get_random_value(10, 100),
         )
 
-    value(count) = max_boxes
+    read(count) = max_boxes
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Top-Down Lights")
@@ -162,7 +162,7 @@ def main() -> i32:
 
     var box_count: i32 = 0
     var boxes = zero[array[rl.Rectangle, 20]]()
-    setup_boxes(addr(boxes), addr(box_count))
+    setup_boxes(ref_of(boxes), ref_of(box_count))
 
     let image = rl.gen_image_checked(64, 64, 32, 32, rl.DARKBROWN, rl.DARKGRAY)
     let background_texture = rl.load_texture_from_image(image)
@@ -173,7 +173,7 @@ def main() -> i32:
     defer rl.unload_render_texture(light_mask)
 
     var lights = zero[array[LightInfo, 16]]()
-    setup_light(addr(lights), 0, 600.0, 400.0, 300.0)
+    setup_light(ref_of(lights), 0, 600.0, 400.0, 300.0)
     var next_light = 1
     var show_lines = false
 
@@ -196,11 +196,11 @@ def main() -> i32:
     while not rl.window_should_close():
         if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT):
             let mouse_position = rl.get_mouse_position()
-            move_light_slot(addr(lights), 0, mouse_position.x, mouse_position.y)
+            move_light_slot(ref_of(lights), 0, mouse_position.x, mouse_position.y)
 
         if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_RIGHT) and next_light < max_lights:
             let mouse_position = rl.get_mouse_position()
-            setup_light(addr(lights), next_light, mouse_position.x, mouse_position.y, 200.0)
+            setup_light(ref_of(lights), next_light, mouse_position.x, mouse_position.y, 200.0)
             next_light += 1
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_F1):
@@ -208,7 +208,7 @@ def main() -> i32:
 
         var dirty_lights = false
         for index in range(0, max_lights):
-            if update_light(addr(lights), index, boxes, box_count):
+            if update_light(ref_of(lights), index, boxes, box_count):
                 dirty_lights = true
 
         if dirty_lights:

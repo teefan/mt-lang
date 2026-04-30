@@ -38,7 +38,7 @@ class MilkTeaSemaTest < Minitest::Test
           if handle == null:
               return 0
           unsafe:
-              return deref(handle)
+              return read(handle)
     MT
 
     result = check_source(source)
@@ -52,8 +52,8 @@ class MilkTeaSemaTest < Minitest::Test
 
       def read(handle: ptr[i32]?) -> i32:
           unsafe:
-              if handle != null and deref(handle) > 0:
-                  return deref(handle)
+              if handle != null and read(handle) > 0:
+                  return read(handle)
           return 0
     MT
 
@@ -1370,7 +1370,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> void:
           var pixels = zero[array[i32, 4]]()
-          let data = raw(addr(pixels[0]))
+          let data = ptr_of(ref_of(pixels[0]))
           update_texture(data)
     MT
 
@@ -1656,23 +1656,23 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.spans
 
-      def read(items: span[i32]) -> i32:
+      def first(items: span[i32]) -> i32:
           if items.len == 0:
               return 0
           unsafe:
-              return deref(items.data)
+              return read(items.data)
 
       def main() -> i32:
           var value = 7
-          let items = span[i32](data = raw(addr(value)), len = 1)
-          return read(items)
+          let items = span[i32](data = ptr_of(ref_of(value)), len = 1)
+          return first(items)
     MT
 
     result = check_source(source)
 
-    assert_equal true, result.functions.key?("read")
+    assert_equal true, result.functions.key?("first")
     assert_equal true, result.functions.key?("main")
-    assert_equal "span[i32]", result.functions.fetch("read").type.params.first.type.to_s
+    assert_equal "span[i32]", result.functions.fetch("first").type.params.first.type.to_s
   end
 
   def test_type_checks_safe_span_indexing_and_element_assignment
@@ -1686,7 +1686,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var value = 7
-          let items = span[i32](data = raw(addr(value)), len = 1)
+          let items = span[i32](data = ptr_of(ref_of(value)), len = 1)
           return bump(items)
     MT
 
@@ -1707,16 +1707,16 @@ class MilkTeaSemaTest < Minitest::Test
       "struct Holder:",
       "    items: Slice[i32]",
       "",
-      "def read(items: Slice[i32]) -> i32:",
+      "def first(items: Slice[i32]) -> i32:",
       "    if items.len == 0:",
       "        return 0",
       "    unsafe:",
-      "        return deref(items.data)",
+      "        return read(items.data)",
       "",
       "def main() -> i32:",
       "    var value = 7",
-      "    let holder = Holder(items = Slice[i32](data = raw(addr(value)), len = 1))",
-      "    return read(holder.items)",
+      "    let holder = Holder(items = Slice[i32](data = ptr_of(ref_of(value)), len = 1))",
+      "    return first(holder.items)",
       "",
     ].join("\n")
 
@@ -1724,7 +1724,7 @@ class MilkTeaSemaTest < Minitest::Test
 
     assert_equal true, result.types.key?("Slice")
     assert_equal true, result.types.key?("Holder")
-    assert_equal "demo.generics.Slice[i32]", result.functions.fetch("read").type.params.first.type.to_s
+    assert_equal "demo.generics.Slice[i32]", result.functions.fetch("first").type.params.first.type.to_s
   end
 
   def test_type_checks_generic_functions_with_inferred_type_arguments
@@ -1745,10 +1745,10 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var value = 7
-          let items = Slice[i32](data = raw(addr(value)), len = 1)
+          let items = Slice[i32](data = ptr_of(ref_of(value)), len = 1)
           let smallest = min(9, 4)
           unsafe:
-              return deref(head(items)) + smallest
+              return read(head(items)) + smallest
     MT
 
     result = check_source(source)
@@ -1958,7 +1958,7 @@ class MilkTeaSemaTest < Minitest::Test
 
           let text: str = "hello world"
           let part = text.slice(6, 5)
-          let copied = part.to_cstr(addr(scratch))
+          let copied = part.to_cstr(ref_of(scratch))
 
           if text.len == usize<-11 and part.len == usize<-5:
               return i32<-part.len
@@ -2041,12 +2041,12 @@ class MilkTeaSemaTest < Minitest::Test
 
       def add(target: ptr[i32], amount: i32) -> void:
           unsafe:
-              deref(target) += amount
+              read(target) += amount
 
       def main() -> i32:
           var total = 0
           for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):
-              defer add(raw(addr(total)), 1)
+              defer add(ptr_of(ref_of(total)), 1)
               match step:
                   Step.skip:
                       continue
@@ -2793,9 +2793,9 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let counter_ptr = raw(addr(counter))
+          let counter_ptr = ptr_of(ref_of(counter))
           unsafe:
-              deref(counter_ptr).value = 7
+              read(counter_ptr).value = 7
           return counter.value
     MT
 
@@ -2814,7 +2814,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let counter_ptr = raw(addr(counter))
+          let counter_ptr = ptr_of(ref_of(counter))
           unsafe:
               counter_ptr.value = 7
               return counter_ptr.value
@@ -2842,7 +2842,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let counter_ptr = raw(addr(counter))
+          let counter_ptr = ptr_of(ref_of(counter))
           unsafe:
               counter_ptr.add(4)
               return counter_ptr.read()
@@ -3088,9 +3088,9 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> u32:
           var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))
           unsafe:
-              let base = raw(addr(holder))
-              let first = raw(addr(deref(base).colors[0]))
-              deref(first) = 9
+              let base = ptr_of(ref_of(holder))
+              let first = ptr_of(ref_of(read(base).colors[0]))
+              read(first) = 9
           return holder.colors[0]
     MT
 
@@ -3126,8 +3126,8 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let counter_ptr = raw(addr(counter))
-          return deref(counter_ptr).value
+          let counter_ptr = ptr_of(ref_of(counter))
+          return read(counter_ptr).value
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -3146,7 +3146,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let counter_ptr = raw(addr(counter))
+          let counter_ptr = ptr_of(ref_of(counter))
           counter_ptr.value = 7
           return counter.value
     MT
@@ -3171,7 +3171,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let counter_ptr = raw(addr(counter))
+          let counter_ptr = ptr_of(ref_of(counter))
           return counter_ptr.read()
     MT
 
@@ -3195,7 +3195,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let counter_ptr = ro_addr(counter)
+          let counter_ptr = const_ptr_of(counter)
           unsafe:
               counter_ptr.add(1)
           return counter.value
@@ -3231,17 +3231,17 @@ class MilkTeaSemaTest < Minitest::Test
       struct Item:
           value: i32
 
-      def read(items: ref[array[Item, 4]]) -> i32:
-          return value(items)[0].value
+      def project(items: ref[array[Item, 4]]) -> i32:
+          return read(items)[0].value
 
       def write(items: ref[array[Item, 4]]) -> void:
-          value(items)[0].value = 7
+          read(items)[0].value = 7
           return
     MT
 
     result = check_source(source)
 
-    assert_equal true, result.functions.key?("read")
+    assert_equal true, result.functions.key?("project")
     assert_equal true, result.functions.key?("write")
   end
 
@@ -3250,7 +3250,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.bad
 
       def main() -> i32:
-          let value = deref(1)
+          let value = read(1)
           return value
     MT
 
@@ -3258,10 +3258,10 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/deref expects ptr\[\.\.\.\], got i32/, error.message)
+    assert_match(/read expects ref\[\.\.\.\] or ptr\[\.\.\.\], got i32/, error.message)
   end
 
-  def test_rejects_value_on_raw_pointer
+  def test_rejects_read_on_raw_pointer_outside_unsafe
     source = <<~MT
       module demo.bad
 
@@ -3270,16 +3270,15 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let counter_ptr = raw(addr(counter))
-          unsafe:
-              return value(counter_ptr).value
+          let counter_ptr = ptr_of(ref_of(counter))
+          return read(counter_ptr).value
     MT
 
     error = assert_raises(MilkTea::SemaError) do
       check_source(source)
     end
 
-    assert_match(/value expects ref\[\.\.\.\], got ptr\[demo\.bad\.Counter\]/, error.message)
+    assert_match(/raw pointer dereference requires unsafe/, error.message)
   end
 
   def test_rejects_pointer_cast_outside_unsafe
@@ -3330,7 +3329,7 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> void:
           var buffer = zero[array[char, 32]]()
           unsafe:
-              let raw_buffer = raw(addr(buffer[0]))
+              let raw_buffer = ptr_of(ref_of(buffer[0]))
               set_text(cstr<-raw_buffer)
               let clipboard = get_text()
               let writable = ptr[char]<-clipboard
@@ -3349,7 +3348,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> void:
           let value = 7
-          inspect(ro_addr(value))
+          inspect(const_ptr_of(value))
     MT
 
     result = check_source(source)
@@ -3365,7 +3364,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> void:
           let value = 7
-          inspect(ro_addr(value))
+          inspect(const_ptr_of(value))
     MT
 
     result = check_source(source)
@@ -3443,7 +3442,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> void:
           let value = 7
-          write(ro_addr(value))
+          write(const_ptr_of(value))
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -3664,7 +3663,7 @@ class MilkTeaSemaTest < Minitest::Test
               Vec2(x = 1.0, y = 2.0),
               Vec2(x = 3.0, y = 4.0),
           )
-          draw(ro_addr(points[0]), 2)
+          draw(const_ptr_of(points[0]), 2)
     MT
 
     result = check_source(source)
@@ -4016,13 +4015,13 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let handle = addr(counter)
+          let handle = ref_of(counter)
           increment(handle, 4)
-          let value_ref = addr(handle.value)
-          value(value_ref) += 2
+          let value_ref = ref_of(handle.value)
+          read(value_ref) += 2
           unsafe:
-              let raw_counter = raw(handle)
-              deref(raw_counter).value += 1
+              let raw_counter = ptr_of(handle)
+              read(raw_counter).value += 1
           return handle.read()
     MT
 
@@ -4038,7 +4037,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           let value = 1
-          let handle = addr(value)
+          let handle = ref_of(value)
           return 0
     MT
 
@@ -4098,19 +4097,19 @@ class MilkTeaSemaTest < Minitest::Test
 
       extern def consume(counter: Counter) -> void
 
-      def read(counter: Counter) -> i32:
+      def project(counter: Counter) -> i32:
           return counter.value
 
       def main() -> i32:
           var counter = Counter(value = 7)
-          let handle = addr(counter)
-          consume(value(handle))
-          return read(value(handle))
+          let handle = ref_of(counter)
+          consume(read(handle))
+          return project(read(handle))
     MT
 
     result = check_source(source)
 
-    assert_equal "demo.ref_value_args.Counter", result.functions.fetch("read").type.params.first.type.to_s
+    assert_equal "demo.ref_value_args.Counter", result.functions.fetch("project").type.params.first.type.to_s
     assert_equal true, result.functions.key?("main")
   end
 
@@ -4120,7 +4119,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var value = 1
-          let handle = addr(value)
+          let handle = ref_of(value)
           let raw = ptr[i32]<-handle
           return 0
     MT
@@ -4141,9 +4140,9 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let handle = addr(counter)
-          let value_ref = addr(handle.value)
-          value(value_ref) += 2
+          let handle = ref_of(counter)
+          let value_ref = ref_of(handle.value)
+          read(value_ref) += 2
           return handle.value
     MT
 

@@ -28,26 +28,26 @@ methods String:
         return bytes.is_empty(this.buffer)
 
     pub edit def clear() -> void:
-        bytes.clear(addr(this.buffer))
+        bytes.clear(ref_of(this.buffer))
         return
 
     pub edit def release() -> void:
-        bytes.release(addr(this.buffer))
+        bytes.release(ref_of(this.buffer))
         return
 
     pub edit def reserve(min_capacity: usize) -> void:
-        bytes.reserve(addr(this.buffer), min_capacity)
+        bytes.reserve(ref_of(this.buffer), min_capacity)
         return
 
     pub edit def push_byte(byte: u8) -> void:
-        bytes.push(addr(this.buffer), byte)
+        bytes.push(ref_of(this.buffer), byte)
         return
 
     pub edit def append(suffix: str) -> void:
         var index: usize = 0
         while index < suffix.len:
             unsafe:
-                this.push_byte(u8<-deref(suffix.data + index))
+                this.push_byte(u8<-read(suffix.data + index))
             index += 1
         return
 

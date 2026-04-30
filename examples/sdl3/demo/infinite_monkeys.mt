@@ -57,7 +57,7 @@ def on_window_size_changed() -> void:
     var w: i32 = 0
     var h: i32 = 0
 
-    if not c.SDL_GetCurrentRenderOutputSize(renderer, raw(addr(w)), raw(addr(h))):
+    if not c.SDL_GetCurrentRenderOutputSize(renderer, ptr_of(ref_of(w)), ptr_of(ref_of(h))):
         return
 
     free_lines()
@@ -83,7 +83,7 @@ def on_window_size_changed() -> void:
     if monkey_text != null:
         for index in range(0, cols):
             unsafe:
-                deref(monkey_text + usize<-index) = u32<-32
+                read(monkey_text + usize<-index) = u32<-32
 
 def step_progress() -> void:
     if progress_remaining == 0:
@@ -91,7 +91,7 @@ def step_progress() -> void:
 
     var next = progress
     var remaining = progress_remaining
-    c.SDL_StepUTF8(raw(addr(next)), raw(addr(remaining)))
+    c.SDL_StepUTF8(ptr_of(ref_of(next)), ptr_of(ref_of(remaining)))
     progress = next
     progress_remaining = remaining
 
@@ -117,14 +117,14 @@ def display_line(x: f32, y: f32, line: ptr[Line]) -> void:
         var spot = utf8
 
         for index in range(0, line_length):
-            spot = c.SDL_UCS4ToUTF8(deref(line_text + usize<-index), spot)
+            spot = c.SDL_UCS4ToUTF8(read(line_text + usize<-index), spot)
 
-        deref(spot) = char<-0
+        read(spot) = char<-0
         c.SDL_RenderDebugText(renderer, x, y, cstr<-utf8)
 
 def can_monkey_type(ch: u32) -> bool:
     var modstate: c.SDL_Keymod = 0
-    let scancode = c.SDL_GetScancodeFromKey(ch, raw(addr(modstate)))
+    let scancode = c.SDL_GetScancodeFromKey(ch, ptr_of(ref_of(modstate)))
     let scancode_value = i32<-scancode
 
     if scancode_value < min_monkey_scancode or scancode_value > max_monkey_scancode:
@@ -152,7 +152,7 @@ def add_monkey_char(monkey: i32, ch: u32) -> void:
     let monkey_text = monkey_chars.text
     if monkey >= 0 and monkey_text != null and cols > 0:
         unsafe:
-            deref(monkey_text + usize<-(monkey % cols)) = ch
+            read(monkey_text + usize<-(monkey % cols)) = ch
 
     let line_storage = lines
     if line_storage != null:
@@ -165,7 +165,7 @@ def add_monkey_char(monkey: i32, ch: u32) -> void:
                 let line_length = line.length
 
                 if line_text != null and line_length < cols:
-                    deref(line_text + usize<-line_length) = ch
+                    read(line_text + usize<-line_length) = ch
                     line.length = line_length + 1
                     if line.length == cols:
                         advance_row()
@@ -176,7 +176,7 @@ def get_next_char() -> u32:
     while progress_remaining > 0:
         var spot = progress
         var remaining = progress_remaining
-        let ch = c.SDL_StepUTF8(raw(addr(spot)), raw(addr(remaining)))
+        let ch = c.SDL_StepUTF8(ptr_of(ref_of(spot)), ptr_of(ref_of(remaining)))
 
         if ch == 0:
             return 0
@@ -197,7 +197,7 @@ def monkey_play() -> u32:
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
         if event.window.type == c.SDL_EventType.SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
             on_window_size_changed()
         else:
@@ -243,10 +243,10 @@ def render_frame() -> void:
         var now: c.SDL_Time = 0
         if progress_remaining == 0:
             if end_time == 0:
-                c.SDL_GetCurrentTime(raw(addr(end_time)))
+                c.SDL_GetCurrentTime(ptr_of(ref_of(end_time)))
             now = end_time
         else:
-            c.SDL_GetCurrentTime(raw(addr(now)))
+            c.SDL_GetCurrentTime(ptr_of(ref_of(now)))
 
         var elapsed = (now - start_time) / c.SDL_Time<-c.SDL_NS_PER_SECOND
         let seconds = i32<-(elapsed % c.SDL_Time<-60)
@@ -257,7 +257,7 @@ def render_frame() -> void:
         var caption: ptr[char]? = null
 
         unsafe:
-            c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(caption)), c"Monkeys: %d - %dH:%dM:%dS", monkeys, hours, minutes, seconds)
+            c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(ref_of(caption)), c"Monkeys: %d - %dH:%dM:%dS", monkeys, hours, minutes, seconds)
 
         if caption != null:
             unsafe:
@@ -268,7 +268,7 @@ def render_frame() -> void:
 
         let monkey_text = monkey_chars.text
         if monkey_text != null:
-            display_line(x, y, raw(addr(monkey_chars)))
+            display_line(x, y, ptr_of(ref_of(monkey_chars)))
             y += f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE
 
     c.SDL_SetRenderDrawColor(renderer, 0, 255, 0, c.SDL_ALPHA_OPAQUE)
@@ -277,7 +277,7 @@ def render_frame() -> void:
         let completed = text_length - progress_remaining
         rect.w = (f32<-completed / f32<-text_length) * f32<-(cols * c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
 
-    c.SDL_RenderFillRect(renderer, raw(addr(rect)))
+    c.SDL_RenderFillRect(renderer, ptr_of(ref_of(rect)))
     c.SDL_RenderPresent(renderer)
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
@@ -301,7 +301,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
             c.SDL_free(text_data)
             text_data = null
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         c.SDL_Log(c"Couldn't create window/renderer: %s", c.SDL_GetError())
         return 1
     defer c.SDL_DestroyRenderer(renderer)
@@ -312,22 +312,22 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     var arg: i32 = 1
     unsafe:
         if arg < argc:
-            let maybe_flag = cstr<-deref(argv + usize<-arg)
+            let maybe_flag = cstr<-read(argv + usize<-arg)
             if c.SDL_strcmp(maybe_flag, c"--monkeys") == 0:
                 arg += 1
                 if arg < argc:
-                    let maybe_count = cstr<-deref(argv + usize<-arg)
+                    let maybe_count = cstr<-read(argv + usize<-arg)
                     monkeys = c.SDL_atoi(maybe_count)
                     arg += 1
                 else:
-                    let program_name = if argc > 0 then cstr<-deref(argv) else c"infinite-monkeys"
+                    let program_name = if argc > 0 then cstr<-read(argv) else c"infinite-monkeys"
                     c.SDL_Log(c"Usage: %s [--monkeys N] [file.txt]", program_name)
                     return 1
 
         if arg < argc:
-            let file = cstr<-deref(argv + usize<-arg)
+            let file = cstr<-read(argv + usize<-arg)
             var size: usize = 0
-            let loaded = c.SDL_LoadFile(file, raw(addr(size)))
+            let loaded = c.SDL_LoadFile(file, ptr_of(ref_of(size)))
             if loaded == null:
                 c.SDL_Log(c"Couldn't open %s: %s", file, c.SDL_GetError())
                 return 1
@@ -351,7 +351,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     unsafe:
         progress = cstr<-loaded_text
     progress_remaining = text_length
-    c.SDL_GetCurrentTime(raw(addr(start_time)))
+    c.SDL_GetCurrentTime(ptr_of(ref_of(start_time)))
     on_window_size_changed()
 
     while pump_events():

@@ -103,7 +103,7 @@ def add_plain_message(jid: u32, text: cstr) -> void:
     var message: ptr[char]? = null
 
     unsafe:
-        c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(message)), c"%s", text)
+        c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(ref_of(message)), c"%s", text)
 
     append_message(jid, message)
 
@@ -112,10 +112,10 @@ def add_added_message(which: u32, joystick: ptr[c.SDL_Joystick]?) -> void:
 
     if joystick == null:
         unsafe:
-            c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(message)), c"Joystick #%u add, but not opened: %s", which, c.SDL_GetError())
+            c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(ref_of(message)), c"Joystick #%u add, but not opened: %s", which, c.SDL_GetError())
     else:
         unsafe:
-            c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(message)), c"Joystick #%u ('%s') added", which, c.SDL_GetJoystickName(joystick))
+            c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(ref_of(message)), c"Joystick #%u ('%s') added", which, c.SDL_GetJoystickName(joystick))
 
     append_message(which, message)
 
@@ -123,7 +123,7 @@ def add_removed_message(which: u32) -> void:
     var message: ptr[char]? = null
 
     unsafe:
-        c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(message)), c"Joystick #%u removed", which)
+        c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(ref_of(message)), c"Joystick #%u removed", which)
 
     append_message(which, message)
 
@@ -131,7 +131,7 @@ def add_axis_message(which: u32, axis: c.Uint8, value: c.Sint16) -> void:
     var message: ptr[char]? = null
 
     unsafe:
-        c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(message)), c"Joystick #%u axis %d -> %d", which, i32<-axis, i32<-value)
+        c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(ref_of(message)), c"Joystick #%u axis %d -> %d", which, i32<-axis, i32<-value)
 
     append_message(which, message)
 
@@ -139,7 +139,7 @@ def add_ball_message(which: u32, ball: c.Uint8, xrel: c.Sint16, yrel: c.Sint16) 
     var message: ptr[char]? = null
 
     unsafe:
-        c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(message)), c"Joystick #%u ball %d -> %d, %d", which, i32<-ball, i32<-xrel, i32<-yrel)
+        c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(ref_of(message)), c"Joystick #%u ball %d -> %d, %d", which, i32<-ball, i32<-xrel, i32<-yrel)
 
     append_message(which, message)
 
@@ -147,7 +147,7 @@ def add_hat_message(which: u32, hat: c.Uint8, value: c.Uint8) -> void:
     var message: ptr[char]? = null
 
     unsafe:
-        c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(message)), c"Joystick #%u hat %d -> %s", which, i32<-hat, hat_state_string(value))
+        c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(ref_of(message)), c"Joystick #%u hat %d -> %s", which, i32<-hat, hat_state_string(value))
 
     append_message(which, message)
 
@@ -156,7 +156,7 @@ def add_button_message(which: u32, button: c.Uint8, down: bool) -> void:
     let state_text = if down then c"PRESSED" else c"RELEASED"
 
     unsafe:
-        c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(message)), c"Joystick #%u button %d -> %s", which, i32<-button, state_text)
+        c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(ref_of(message)), c"Joystick #%u button %d -> %s", which, i32<-button, state_text)
 
     append_message(which, message)
 
@@ -164,14 +164,14 @@ def add_battery_message(which: u32, state: c.SDL_PowerState, percent: i32) -> vo
     var message: ptr[char]? = null
 
     unsafe:
-        c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(message)), c"Joystick #%u battery -> %s - %d%%", which, battery_state_string(state), percent)
+        c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(ref_of(message)), c"Joystick #%u battery -> %s - %d%%", which, battery_state_string(state), percent)
 
     append_message(which, message)
 
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
@@ -212,7 +212,7 @@ def pump_events() -> bool:
 
 def render_frame() -> void:
     let now = c.SDL_GetTicks()
-    var previous: ptr[EventMessage]? = ptr[EventMessage]<-raw(addr(messages))
+    var previous: ptr[EventMessage]? = ptr[EventMessage]<-ptr_of(ref_of(messages))
     var current = messages.next
     var prev_y: f32 = 0.0
     var winw: i32 = window_width
@@ -220,7 +220,7 @@ def render_frame() -> void:
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
-    c.SDL_GetWindowSize(window, raw(addr(winw)), raw(addr(winh)))
+    c.SDL_GetWindowSize(window, ptr_of(ref_of(winw)), ptr_of(ref_of(winh)))
 
     while true:
         let message = current
@@ -269,13 +269,13 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)
 
     messages = zero[EventMessage]()
-    messages_tail = ptr[EventMessage]<-raw(addr(messages))
+    messages_tail = ptr[EventMessage]<-ptr_of(ref_of(messages))
     axis_motion_cooldown_time = 0
     ball_motion_cooldown_time = 0
 

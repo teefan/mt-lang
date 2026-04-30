@@ -44,7 +44,7 @@ def build_production_step(production: string.String) -> string.String:
     var next = string.String.with_capacity(production_view.len * 4)
     var index: usize = 0
     while index < production_view.len:
-        append_rule(addr(next), text.byte_at(production_view, index))
+        append_rule(ref_of(next), text.byte_at(production_view, index))
         index += 1
     return next
 
@@ -57,17 +57,17 @@ def rebuild_production(generations: i32) -> string.String:
     return production
 
 def push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32], state: TurtleState) -> void:
-    if value(top) < turtle_stack_max_size - 1:
-        var items = value(stack)
-        value(top) += 1
-        items[value(top)] = state
-        value(stack) = items
+    if read(top) < turtle_stack_max_size - 1:
+        var items = read(stack)
+        read(top) += 1
+        items[read(top)] = state
+        read(stack) = items
 
 def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32]) -> TurtleState:
-    if value(top) >= 0:
-        let items = value(stack)
-        let state = items[value(top)]
-        value(top) -= 1
+    if read(top) >= 0:
+        let items = read(stack)
+        let state = items[read(top)]
+        read(top) -= 1
         return state
     return zero[TurtleState]()
 
@@ -77,11 +77,11 @@ def draw_penrose_lsystem(production: string.String, draw_length: f32, steps: ref
     var turtle = TurtleState(origin = rl.Vector2(x = 0.0, y = 0.0), angle = -90.0)
     var repeats = 1
 
-    value(steps) += 12
-    if value(steps) > i32<-production_view.len:
-        value(steps) = i32<-production_view.len
+    read(steps) += 12
+    if read(steps) > i32<-production_view.len:
+        read(steps) = i32<-production_view.len
 
-    for index in range(0, value(steps)):
+    for index in range(0, read(steps)):
         let step = text.byte_at(production_view, usize<-index)
         if step == byte_f:
             for repeat_index in range(0, repeats):
@@ -118,7 +118,7 @@ def draw_penrose_lsystem(production: string.String, draw_length: f32, steps: ref
         elif step >= byte_zero and step <= byte_nine:
             repeats = i32<-(step - byte_zero)
 
-    value(turtle_top) = -1
+    read(turtle_top) = -1
 
 def draw_length_for(generations: i32) -> f32:
     return draw_length_base * f32<-generations / f32<-max_generations
@@ -157,7 +157,7 @@ def main() -> i32:
         rl.clear_background(rl.RAYWHITE)
 
         if generations > 0:
-            draw_penrose_lsystem(production, draw_length_for(generations), addr(steps), addr(turtle_stack), addr(turtle_top))
+            draw_penrose_lsystem(production, draw_length_for(generations), ref_of(steps), ref_of(turtle_stack), ref_of(turtle_top))
 
         rl.draw_text("penrose l-system", 10, 10, 20, rl.DARKGRAY)
         rl.draw_text("press up or down to change generations", 10, 30, 20, rl.DARKGRAY)

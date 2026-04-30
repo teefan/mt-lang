@@ -20,7 +20,7 @@ var wav_data_len: c.Uint32 = 0
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
@@ -49,7 +49,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
             c.SDL_DestroyAudioStream(stream)
         c.SDL_free(wav_data)
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)
@@ -57,7 +57,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     if not c.SDL_SetRenderLogicalPresentation(renderer, window_width, window_height, presentation_mode):
         return 1
 
-    if not c.SDL_LoadWAV(sample_wav_path, raw(addr(spec)), raw(addr(wav_data)), raw(addr(wav_data_len))):
+    if not c.SDL_LoadWAV(sample_wav_path, ptr_of(ref_of(spec)), ptr_of(ref_of(wav_data)), ptr_of(ref_of(wav_data_len))):
         return 1
 
     audio_device = c.SDL_OpenAudioDevice(default_playback_device, null)
@@ -65,7 +65,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_CloseAudioDevice(audio_device)
 
-    let created_stream = c.SDL_CreateAudioStream(raw(addr(spec)), null)
+    let created_stream = c.SDL_CreateAudioStream(ptr_of(ref_of(spec)), null)
     if created_stream == null:
         return 1
     if not c.SDL_BindAudioStream(audio_device, created_stream):

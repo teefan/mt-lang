@@ -146,7 +146,7 @@ pub def create_timer(loop: Loop) -> Result[Handle[uv.uv_timer_t], i32]:
     var timer = alloc_handle[uv.uv_timer_t](c.uv_handle_type.UV_TIMER)
     let status = uv.timer_init(loop.raw, timer.raw)
     if failed(status):
-        handle_release[uv.uv_timer_t](addr(timer))
+        handle_release[uv.uv_timer_t](ref_of(timer))
         return err(status)
     return ok(timer)
 
@@ -169,7 +169,7 @@ pub def create_tcp(loop: Loop) -> Result[Handle[uv.uv_tcp_t], i32]:
     var tcp = alloc_handle[uv.uv_tcp_t](c.uv_handle_type.UV_TCP)
     let status = uv.tcp_init(loop.raw, tcp.raw)
     if failed(status):
-        handle_release[uv.uv_tcp_t](addr(tcp))
+        handle_release[uv.uv_tcp_t](ref_of(tcp))
         return err(status)
     return ok(tcp)
 
@@ -192,7 +192,7 @@ pub def tcp_bind_ipv4(tcp: Handle[uv.uv_tcp_t], ip: str, port: i32, flags: u32, 
         return address.error
 
     var ipv4 = address.value
-    defer release_ipv4_address(addr(ipv4))
+    defer release_ipv4_address(ref_of(ipv4))
     let status = uv.tcp_bind(tcp.raw, ipv4_const_sockaddr(ipv4), flags)
     return status
 
@@ -201,7 +201,7 @@ pub def tcp_local_port(tcp: Handle[uv.uv_tcp_t]) -> Result[i32, i32]:
     unsafe:
         let raw_addr = ptr[sys.sockaddr_in]<-storage
         var name_len: i32 = i32<-helper.mt_libuv_sockaddr_in_size()
-        let status = uv.tcp_getsockname(tcp.raw, ptr[sys.sockaddr]<-raw_addr, raw(addr(name_len)))
+        let status = uv.tcp_getsockname(tcp.raw, ptr[sys.sockaddr]<-raw_addr, ptr_of(ref_of(name_len)))
         if failed(status):
             heap.release_bytes(storage)
             return err(status)
@@ -216,7 +216,7 @@ pub def tcp_connect_ipv4(request: Request[uv.uv_connect_t], tcp: Handle[uv.uv_tc
         return address.error
 
     var ipv4 = address.value
-    defer release_ipv4_address(addr(ipv4))
+    defer release_ipv4_address(ref_of(ipv4))
     let status = uv.tcp_connect(request.raw, tcp.raw, ipv4_const_sockaddr(ipv4), callback)
     return status
 
@@ -241,11 +241,11 @@ pub def fs_open(loop: Loop, request: Request[uv.uv_fs_t], path: str, flags: i32,
 
 pub def fs_write(loop: Loop, request: Request[uv.uv_fs_t], file: i32, data: span[u8], offset: isize, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> i32:
     var buffer = byte_buffer(data)
-    return uv.fs_write(loop.raw, request.raw, file, raw(addr(buffer)), 1, offset, callback)
+    return uv.fs_write(loop.raw, request.raw, file, ptr_of(ref_of(buffer)), 1, offset, callback)
 
 pub def fs_read(loop: Loop, request: Request[uv.uv_fs_t], file: i32, mut data: span[u8], offset: isize, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> i32:
     var buffer = byte_buffer(data)
-    return uv.fs_read(loop.raw, request.raw, file, raw(addr(buffer)), 1, offset, callback)
+    return uv.fs_read(loop.raw, request.raw, file, ptr_of(ref_of(buffer)), 1, offset, callback)
 
 pub def fs_close(loop: Loop, request: Request[uv.uv_fs_t], file: i32, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> i32:
     return uv.fs_close(loop.raw, request.raw, file, callback)

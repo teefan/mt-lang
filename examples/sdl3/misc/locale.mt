@@ -14,7 +14,7 @@ var renderer: ptr[c.SDL_Renderer]
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
@@ -24,7 +24,7 @@ def render_frame() -> void:
     let frame = c.SDL_FRect(x = 0.0, y = 0.0, w = 640.0, h = 480.0)
     var msgbuf = zero[array[char, 128]]()
     var count: i32 = 0
-    let locales_memory = c.SDL_GetPreferredLocales(raw(addr(count)))
+    let locales_memory = c.SDL_GetPreferredLocales(ptr_of(ref_of(count)))
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
@@ -37,16 +37,16 @@ def render_frame() -> void:
     else:
         unsafe:
             let locales = ptr[ptr[c.SDL_Locale]?]<-locales_memory
-            let msg = cstr<-raw(addr(msgbuf[0]))
+            let msg = cstr<-ptr_of(ref_of(msgbuf[0]))
 
-            c.SDL_snprintf(raw(addr(msgbuf[0])), 128, c"Locales, in order of preference (%d total):", count)
+            c.SDL_snprintf(ptr_of(ref_of(msgbuf[0])), 128, c"Locales, in order of preference (%d total):", count)
 
             let header_x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msg))) / 2.0)
             c.SDL_RenderDebugText(renderer, header_x, frame.y, msg)
 
             var index: i32 = 0
             while true:
-                let locale = deref(locales + index)
+                let locale = read(locales + index)
                 if locale == null:
                     break
 
@@ -54,7 +54,7 @@ def render_frame() -> void:
                 let separator = if country_ptr != null then c"_" else c""
                 let country = if country_ptr != null then cstr<-country_ptr else c""
 
-                c.SDL_snprintf(raw(addr(msgbuf[0])), 128, c" - %s%s%s", locale.language, separator, country)
+                c.SDL_snprintf(ptr_of(ref_of(msgbuf[0])), 128, c" - %s%s%s", locale.language, separator, country)
 
                 let x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msg))) / 2.0)
                 let y = frame.y + (f32<-(c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2) * f32<-(index + 1))
@@ -73,7 +73,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)

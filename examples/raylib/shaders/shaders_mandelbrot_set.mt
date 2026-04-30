@@ -49,9 +49,9 @@ def main() -> i32:
     let offset_loc = rl.GetShaderLocation(shader, offset_uniform_name)
     let max_iterations_loc = rl.GetShaderLocation(shader, max_iterations_uniform_name)
 
-    rl.SetShaderValue(shader, zoom_loc, raw(addr(zoom)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, offset_loc, raw(addr(offset[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-    rl.SetShaderValue(shader, max_iterations_loc, raw(addr(max_iterations)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+    rl.SetShaderValue(shader, zoom_loc, ptr_of(ref_of(zoom)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, offset_loc, ptr_of(ref_of(offset[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, max_iterations_loc, ptr_of(ref_of(max_iterations)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
 
     var show_controls = true
 
@@ -115,9 +115,9 @@ def main() -> i32:
         if update_shader:
             max_iterations = i32<-(libm.sqrtf(2.0 * libm.sqrtf(libm.fabsf(1.0 - libm.sqrtf(37.5 * zoom)))) * max_iterations_multiplier)
 
-            rl.SetShaderValue(shader, zoom_loc, raw(addr(zoom)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-            rl.SetShaderValue(shader, offset_loc, raw(addr(offset[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-            rl.SetShaderValue(shader, max_iterations_loc, raw(addr(max_iterations)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+            rl.SetShaderValue(shader, zoom_loc, ptr_of(ref_of(zoom)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+            rl.SetShaderValue(shader, offset_loc, ptr_of(ref_of(offset[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+            rl.SetShaderValue(shader, max_iterations_loc, ptr_of(ref_of(max_iterations)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
 
         rl.BeginTextureMode(target)
         rl.ClearBackground(rl.BLACK)

@@ -122,7 +122,7 @@ def free_mesh_builder(mb: ref[MeshBuilder]) -> void:
         rl.MemFree(mb.vertices)
     if mb.hasUvs:
         rl.MemFree(mb.uvs)
-    value(mb) = zero[MeshBuilder]()
+    read(mb) = zero[MeshBuilder]()
 
 def build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:
     var out_mesh = zero[rl.Mesh]()
@@ -146,7 +146,7 @@ def build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:
                 out_mesh.texcoords[index * 2] = uvs[index].x
                 out_mesh.texcoords[index * 2 + 1] = uvs[index].y
 
-    rl.UploadMesh(raw(addr(out_mesh)), false)
+    rl.UploadMesh(ptr_of(ref_of(out_mesh)), false)
     return out_mesh
 
 def clip_segment(v0: rl.Vector3, v1: rl.Vector3, plane: rl.Vector3, distance: f32) -> rl.Vector3:
@@ -164,8 +164,8 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
     let inv_proj = projection.invert()
     var mesh_builders = zero[array[MeshBuilder, 2]]()
     defer:
-        free_mesh_builder(addr(mesh_builders[0]))
-        free_mesh_builder(addr(mesh_builders[1]))
+        free_mesh_builder(ref_of(mesh_builders[0]))
+        free_mesh_builder(ref_of(mesh_builders[1]))
 
     var mb_index = 0
 
@@ -182,7 +182,7 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
                 vertices[index] = projected
 
             if inside_count > 0:
-                add_triangle_to_mesh_builder(addr(mesh_builders[mb_index]), vertices)
+                add_triangle_to_mesh_builder(ref_of(mesh_builders[mb_index]), vertices)
 
     var planes = zero[array[rl.Vector3, 6]]()
     planes[0] = rl.Vector3(x = 1.0, y = 0.0, z = 0.0)
@@ -196,8 +196,8 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
         mb_index = 1 - mb_index
 
         let in_index = 1 - mb_index
-        let in_mesh = addr(mesh_builders[in_index])
-        let out_mesh = addr(mesh_builders[mb_index])
+        let in_mesh = ref_of(mesh_builders[in_index])
+        let out_mesh = ref_of(mesh_builders[mb_index])
         out_mesh.vertexCount = 0
 
         let clip_distance = 0.5 * decal_size
@@ -267,7 +267,7 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
 
             vertex_index += 3
 
-    let final_mesh = addr(mesh_builders[mb_index])
+    let final_mesh = ref_of(mesh_builders[mb_index])
     if final_mesh.vertexCount > 0:
         final_mesh.uvs = alloc_vector2(final_mesh.vertexCount)
         final_mesh.hasUvs = true
@@ -349,7 +349,7 @@ def main() -> i32:
         decal_material.maps[0].color = rl.YELLOW
 
     var decal_image = rl.LoadImage(decal_texture_path)
-    rl.ImageResizeNN(raw(addr(decal_image)), decal_image.width / 4, decal_image.height / 4)
+    rl.ImageResizeNN(ptr_of(ref_of(decal_image)), decal_image.width / 4, decal_image.height / 4)
     let decal_texture = rl.LoadTextureFromImage(decal_image)
     defer rl.UnloadTexture(decal_texture)
     rl.UnloadImage(decal_image)
@@ -370,7 +370,7 @@ def main() -> i32:
 
     while not rl.WindowShouldClose():
         if rl.IsMouseButtonDown(rl.MouseButton.MOUSE_BUTTON_RIGHT):
-            rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_THIRD_PERSON)
+            rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_THIRD_PERSON)
 
         var collision = zero[rl.RayCollision]()
         collision.distance = float_max

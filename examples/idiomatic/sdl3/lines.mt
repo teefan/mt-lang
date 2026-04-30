@@ -43,7 +43,7 @@ def render_frame() -> void:
     sdl.render_line(renderer, f32<-400.0, f32<-356.0, f32<-400.0, f32<-450.0)
 
     sdl.set_render_draw_color(renderer, 0, 255, 0, 255)
-    sdl.render_lines(renderer, ro_addr(line_points[0]), 9)
+    sdl.render_lines(renderer, const_ptr_of(line_points[0]), 9)
 
     for angle in range(0, 360):
         let size: f32 = 30.0

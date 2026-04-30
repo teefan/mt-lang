@@ -37,11 +37,11 @@ def process_audio(buffer: ptr[void], frames: u32) -> void:
         for frame in range(0, frame_count):
             let left_index = frame * 2
             let right_index = left_index + 1
-            let left_sample = signed_power(deref(samples + left_index))
-            let right_sample = signed_power(deref(samples + right_index))
+            let left_sample = signed_power(read(samples + left_index))
+            let right_sample = signed_power(read(samples + right_index))
 
-            deref(samples + left_index) = left_sample
-            deref(samples + right_index) = right_sample
+            read(samples + left_index) = left_sample
+            read(samples + right_index) = right_sample
 
             average += libm.fabsf(left_sample) / frames_f
             average += libm.fabsf(right_sample) / frames_f

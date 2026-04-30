@@ -27,10 +27,10 @@ def init_sound(path: cstr, sound_index: i32) -> bool:
     var wav_data: ptr[c.Uint8]
     var wav_data_len: c.Uint32 = 0
 
-    if not c.SDL_LoadWAV(path, raw(addr(spec)), raw(addr(wav_data)), raw(addr(wav_data_len))):
+    if not c.SDL_LoadWAV(path, ptr_of(ref_of(spec)), ptr_of(ref_of(wav_data)), ptr_of(ref_of(wav_data_len))):
         return false
 
-    let created_stream = c.SDL_CreateAudioStream(raw(addr(spec)), null)
+    let created_stream = c.SDL_CreateAudioStream(ptr_of(ref_of(spec)), null)
     if created_stream == null:
         c.SDL_free(wav_data)
         return false
@@ -48,7 +48,7 @@ def init_sound(path: cstr, sound_index: i32) -> bool:
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
@@ -90,7 +90,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         for index in range(0, sound_count):
             cleanup_sound(index)
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)

@@ -35,7 +35,7 @@ const turtle_stack_underflow_text: cstr = c"TURTLE STACK UNDERFLOW!"
 
 def append_text(buffer: ptr[char], position: ptr[i32], text: cstr) -> void:
     unsafe:
-        let remaining = str_max_size - deref(position) - 1
+        let remaining = str_max_size - read(position) - 1
         if remaining <= 0:
             return
 
@@ -47,28 +47,28 @@ def append_text(buffer: ptr[char], position: ptr[i32], text: cstr) -> void:
 
 def append_char(buffer: ptr[char], position: ptr[i32], ch: char) -> void:
     unsafe:
-        let remaining = str_max_size - deref(position) - 1
+        let remaining = str_max_size - read(position) - 1
         if remaining <= 0:
             return
 
         var scratch = zero[array[char, 2]]()
         scratch[0] = ch
-        rl.TextAppend(buffer, cstr<-raw(addr(scratch[0])), position)
+        rl.TextAppend(buffer, cstr<-ptr_of(ref_of(scratch[0])), position)
 
 def push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32], state: TurtleState) -> void:
-    if value(top) < turtle_stack_max_size - 1:
-        var items = value(stack)
-        value(top) += 1
-        items[value(top)] = state
-        value(stack) = items
+    if read(top) < turtle_stack_max_size - 1:
+        var items = read(stack)
+        read(top) += 1
+        items[read(top)] = state
+        read(stack) = items
     else:
         rl.TraceLog(rl.TraceLogLevel.LOG_WARNING, turtle_stack_overflow_text)
 
 def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32]) -> TurtleState:
-    if value(top) >= 0:
-        let items = value(stack)
-        let state = items[value(top)]
-        value(top) -= 1
+    if read(top) >= 0:
+        let items = read(stack)
+        let state = items[read(top)]
+        read(top) -= 1
         return state
 
     rl.TraceLog(rl.TraceLogLevel.LOG_WARNING, turtle_stack_underflow_text)
@@ -104,15 +104,15 @@ def build_production_step(ls: ref[PenroseLSystem]) -> void:
         for index in range(0, production_length):
             let step = ls.production[index]
             if step == char<-87:
-                append_text(new_production, raw(addr(new_length)), ls.rule_w)
+                append_text(new_production, ptr_of(ref_of(new_length)), ls.rule_w)
             elif step == char<-88:
-                append_text(new_production, raw(addr(new_length)), ls.rule_x)
+                append_text(new_production, ptr_of(ref_of(new_length)), ls.rule_x)
             elif step == char<-89:
-                append_text(new_production, raw(addr(new_length)), ls.rule_y)
+                append_text(new_production, ptr_of(ref_of(new_length)), ls.rule_y)
             elif step == char<-90:
-                append_text(new_production, raw(addr(new_length)), ls.rule_z)
+                append_text(new_production, ptr_of(ref_of(new_length)), ls.rule_z)
             elif step != char<-70:
-                append_char(new_production, raw(addr(new_length)), step)
+                append_char(new_production, ptr_of(ref_of(new_length)), step)
 
         ls.draw_length *= 0.5
         rl.TextCopy(ls.production, cstr<-new_production)
@@ -166,7 +166,7 @@ def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[Turtle
             elif i32<-step >= 48 and i32<-step <= 57:
                 repeats = i32<-step - 48
 
-    value(turtle_top) = -1
+    read(turtle_top) = -1
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
@@ -176,7 +176,7 @@ def main() -> i32:
     var generations = 0
     var ls = create_penrose_lsystem(draw_length_base * f32<-generations / f32<-max_generations)
     for index in range(0, generations):
-        build_production_step(addr(ls))
+        build_production_step(ref_of(ls))
 
     var turtle_stack = zero[array[TurtleState, 50]]()
     var turtle_top = -1
@@ -200,7 +200,7 @@ def main() -> i32:
                 rl.MemFree(ptr[void]<-ls.production)
             ls = create_penrose_lsystem(draw_length_base * f32<-generations / f32<-max_generations)
             for index in range(0, generations):
-                build_production_step(addr(ls))
+                build_production_step(ref_of(ls))
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
@@ -208,7 +208,7 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
 
         if generations > 0:
-            draw_penrose_lsystem(addr(ls), addr(turtle_stack), addr(turtle_top))
+            draw_penrose_lsystem(ref_of(ls), ref_of(turtle_stack), ref_of(turtle_top))
 
         rl.DrawText(title_text, 10, 10, 20, rl.DARKGRAY)
         rl.DrawText(help_text, 10, 30, 20, rl.DARKGRAY)

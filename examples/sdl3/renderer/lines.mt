@@ -25,7 +25,7 @@ var renderer: ptr[c.SDL_Renderer]
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
@@ -42,7 +42,7 @@ def render_frame() -> void:
     c.SDL_RenderLine(renderer, 400.0, 356.0, 400.0, 450.0)
 
     c.SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255)
-    c.SDL_RenderLines(renderer, raw(addr(line_points[0])), 9)
+    c.SDL_RenderLines(renderer, ptr_of(ref_of(line_points[0])), 9)
 
     for angle in range(0, 360):
         let size = 30.0
@@ -68,7 +68,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)

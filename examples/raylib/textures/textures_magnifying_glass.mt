@@ -20,7 +20,7 @@ def main() -> i32:
     let parrots = rl.LoadTexture(parrots_path)
 
     var circle = rl.GenImageColor(glass_size, glass_size, rl.BLANK)
-    rl.ImageDrawCircle(raw(addr(circle)), 128, 128, 128, rl.WHITE)
+    rl.ImageDrawCircle(ptr_of(ref_of(circle)), 128, 128, 128, rl.WHITE)
     let mask = rl.LoadTextureFromImage(circle)
     rl.UnloadImage(circle)
 

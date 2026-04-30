@@ -123,10 +123,10 @@ def main() -> i32:
                 let hue = f32<-index / f32<-stroke_count * 360.0
                 rl.DrawLineEx(hilbert_path[index], hilbert_path[index - 1], thick, rl.ColorFromHSV(hue, 1.0, 1.0))
 
-        gui.GuiCheckBox(gui.Rectangle(x = 450.0, y = 50.0, width = 20.0, height = 20.0), animate_text, raw(addr(animate)))
-        gui.GuiSpinner(gui.Rectangle(x = 585.0, y = 100.0, width = 180.0, height = 30.0), order_text, raw(addr(order)), min_order, max_order, false)
-        gui.GuiSlider(gui.Rectangle(x = 524.0, y = 150.0, width = 240.0, height = 24.0), thickness_text, empty_text, raw(addr(thick)), 1.0, 10.0)
-        gui.GuiSlider(gui.Rectangle(x = 524.0, y = 190.0, width = 240.0, height = 24.0), size_text, empty_text, raw(addr(size)), 10.0, size_max)
+        gui.GuiCheckBox(gui.Rectangle(x = 450.0, y = 50.0, width = 20.0, height = 20.0), animate_text, ptr_of(ref_of(animate)))
+        gui.GuiSpinner(gui.Rectangle(x = 585.0, y = 100.0, width = 180.0, height = 30.0), order_text, ptr_of(ref_of(order)), min_order, max_order, false)
+        gui.GuiSlider(gui.Rectangle(x = 524.0, y = 150.0, width = 240.0, height = 24.0), thickness_text, empty_text, ptr_of(ref_of(thick)), 1.0, 10.0)
+        gui.GuiSlider(gui.Rectangle(x = 524.0, y = 190.0, width = 240.0, height = 24.0), size_text, empty_text, ptr_of(ref_of(size)), 10.0, size_max)
         rl.DrawRectangleLinesEx(
             rl.Rectangle(
                 x = panel_position.x - 10.0,

@@ -34,7 +34,7 @@ def allocate_delay_buffer() -> void:
         if delay_buffer != null:
             let samples = ptr[f32]<-delay_buffer
             for index in range(0, i32<-delay_buffer_size):
-                deref(samples + index) = 0.0
+                read(samples + index) = 0.0
 
 def free_delay_buffer() -> void:
     if delay_buffer == null:
@@ -50,13 +50,13 @@ def audio_process_effect_lpf(buffer: ptr[void], frames: u32) -> void:
     unsafe:
         var index = 0
         while index < sample_count:
-            let left = deref(buffer_data + index)
-            let right = deref(buffer_data + index + 1)
+            let left = read(buffer_data + index)
+            let right = read(buffer_data + index + 1)
 
             low_pass_state[0] += lpf_k * (left - low_pass_state[0])
             low_pass_state[1] += lpf_k * (right - low_pass_state[1])
-            deref(buffer_data + index) = low_pass_state[0]
-            deref(buffer_data + index + 1) = low_pass_state[1]
+            read(buffer_data + index) = low_pass_state[0]
+            read(buffer_data + index + 1) = low_pass_state[1]
 
             index += 2
 
@@ -72,23 +72,23 @@ def audio_process_effect_delay(buffer: ptr[void], frames: u32) -> void:
         var index = 0
 
         while index < sample_count:
-            let left_delay = deref(delay_samples + i32<-delay_read_index)
+            let left_delay = read(delay_samples + i32<-delay_read_index)
             delay_read_index += 1
-            let right_delay = deref(delay_samples + i32<-delay_read_index)
+            let right_delay = read(delay_samples + i32<-delay_read_index)
             delay_read_index += 1
 
             if delay_read_index == delay_buffer_size:
                 delay_read_index = 0
 
-            let left_value = 0.5 * deref(buffer_data + index) + 0.5 * left_delay
-            let right_value = 0.5 * deref(buffer_data + index + 1) + 0.5 * right_delay
+            let left_value = 0.5 * read(buffer_data + index) + 0.5 * left_delay
+            let right_value = 0.5 * read(buffer_data + index + 1) + 0.5 * right_delay
 
-            deref(buffer_data + index) = left_value
-            deref(buffer_data + index + 1) = right_value
+            read(buffer_data + index) = left_value
+            read(buffer_data + index + 1) = right_value
 
-            deref(delay_samples + i32<-delay_write_index) = left_value
+            read(delay_samples + i32<-delay_write_index) = left_value
             delay_write_index += 1
-            deref(delay_samples + i32<-delay_write_index) = right_value
+            read(delay_samples + i32<-delay_write_index) = right_value
             delay_write_index += 1
 
             if delay_write_index == delay_buffer_size:

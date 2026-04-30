@@ -36,10 +36,10 @@ def main() -> i32:
         rl.DrawCircleSector(center, outer_radius, start_angle, end_angle, i32<-segments, rl.Fade(rl.MAROON, 0.3))
         rl.DrawCircleSectorLines(center, outer_radius, start_angle, end_angle, i32<-segments, rl.Fade(rl.MAROON, 0.6))
 
-        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 40.0, width = 120.0, height = 20.0), c"StartAngle", rl.TextFormat(c"%.2f", start_angle), raw(addr(start_angle)), 0.0, 720.0)
-        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 70.0, width = 120.0, height = 20.0), c"EndAngle", rl.TextFormat(c"%.2f", end_angle), raw(addr(end_angle)), 0.0, 720.0)
-        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 140.0, width = 120.0, height = 20.0), c"Radius", rl.TextFormat(c"%.2f", outer_radius), raw(addr(outer_radius)), 0.0, 200.0)
-        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 170.0, width = 120.0, height = 20.0), c"Segments", rl.TextFormat(c"%.2f", segments), raw(addr(segments)), 0.0, 100.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 40.0, width = 120.0, height = 20.0), c"StartAngle", rl.TextFormat(c"%.2f", start_angle), ptr_of(ref_of(start_angle)), 0.0, 720.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 70.0, width = 120.0, height = 20.0), c"EndAngle", rl.TextFormat(c"%.2f", end_angle), ptr_of(ref_of(end_angle)), 0.0, 720.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 140.0, width = 120.0, height = 20.0), c"Radius", rl.TextFormat(c"%.2f", outer_radius), ptr_of(ref_of(outer_radius)), 0.0, 200.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 170.0, width = 120.0, height = 20.0), c"Segments", rl.TextFormat(c"%.2f", segments), ptr_of(ref_of(segments)), 0.0, 100.0)
 
         min_segments = math.truncf(math.ceilf((end_angle - start_angle) / 90.0))
 

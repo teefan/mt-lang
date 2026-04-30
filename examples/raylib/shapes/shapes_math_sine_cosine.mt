@@ -100,13 +100,13 @@ def main() -> i32:
         rl.DrawLineDashed(rl.Vector2(x = point.x, y = center.y), rl.Vector2(x = point.x, y = point.y), 10, 4, rl.RED)
         rl.DrawText(rl.TextFormat(sine_format, sin_rad), 640, 190, 6, rl.RED)
         rl.DrawCircleV(rl.Vector2(x = start.x + angle / 360.0 * start.width, y = start.y + (-sin_rad + 1.0) * half_wave_height), 4.0, rl.RED)
-        rl.DrawSplineLinear(raw(addr(sine_points[0])), wave_points, 1.0, rl.RED)
+        rl.DrawSplineLinear(ptr_of(ref_of(sine_points[0])), wave_points, 1.0, rl.RED)
 
         rl.DrawLineEx(rl.Vector2(x = center.x, y = center.y), rl.Vector2(x = point.x, y = center.y), 2.0, rl.BLUE)
         rl.DrawLineDashed(rl.Vector2(x = center.x, y = point.y), rl.Vector2(x = point.x, y = point.y), 10, 4, rl.BLUE)
         rl.DrawText(rl.TextFormat(cosine_format, cos_rad), 640, 210, 6, rl.BLUE)
         rl.DrawCircleV(rl.Vector2(x = start.x + angle / 360.0 * start.width, y = start.y + (-cos_rad + 1.0) * half_wave_height), 4.0, rl.BLUE)
-        rl.DrawSplineLinear(raw(addr(cos_points[0])), wave_points, 1.0, rl.BLUE)
+        rl.DrawSplineLinear(ptr_of(ref_of(cos_points[0])), wave_points, 1.0, rl.BLUE)
 
         rl.DrawLineEx(rl.Vector2(x = limit_max.x, y = center.y), rl.Vector2(x = limit_max.x, y = tangent_point.y), 2.0, rl.PURPLE)
         rl.DrawLineDashed(center, tangent_point, 10, 4, rl.PURPLE)
@@ -128,9 +128,9 @@ def main() -> i32:
         rl.DrawCircleV(point, 4.0, rl.BLACK)
 
         gui.GuiSetStyle(gui.GuiControl.LABEL, gui.GuiControlProperty.TEXT_COLOR_NORMAL, rl.ColorToInt(rl.GRAY))
-        gui.GuiToggle(gui.Rectangle(x = 640.0, y = 70.0, width = 120.0, height = 20.0), pause_text, raw(addr(pause)))
+        gui.GuiToggle(gui.Rectangle(x = 640.0, y = 70.0, width = 120.0, height = 20.0), pause_text, ptr_of(ref_of(pause)))
         gui.GuiSetStyle(gui.GuiControl.LABEL, gui.GuiControlProperty.TEXT_COLOR_NORMAL, rl.ColorToInt(rl.LIME))
-        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0), angle_text, rl.TextFormat(c"%.0f deg", angle), raw(addr(angle)), 0.0, 360.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0), angle_text, rl.TextFormat(c"%.0f deg", angle), ptr_of(ref_of(angle)), 0.0, 360.0)
         gui.GuiGroupBox(gui.Rectangle(x = 620.0, y = 110.0, width = 140.0, height = 170.0), angle_values_text)
 
         rl.DrawFPS(10, 10)

@@ -16,7 +16,7 @@ var renderer: ptr[c.SDL_Renderer]
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
@@ -26,7 +26,7 @@ def render_frame() -> void:
     var frame = c.SDL_FRect(x = 100.0, y = 200.0, w = 440.0, h = 80.0)
     var seconds: i32 = 0
     var percent: i32 = 0
-    let state = c.SDL_GetPowerInfo(raw(addr(seconds)), raw(addr(percent)))
+    let state = c.SDL_GetPowerInfo(ptr_of(ref_of(seconds)), ptr_of(ref_of(percent)))
 
     var clear_r: c.Uint8 = 0
     var clear_g: c.Uint8 = 0
@@ -90,31 +90,31 @@ def render_frame() -> void:
         var y: f32 = 0.0
 
         unsafe:
-            let remainstr_ptr = cstr<-raw(addr(remainstr[0]))
-            let msgbuf_ptr = cstr<-raw(addr(msgbuf[0]))
+            let remainstr_ptr = cstr<-ptr_of(ref_of(remainstr[0]))
+            let msgbuf_ptr = cstr<-ptr_of(ref_of(msgbuf[0]))
 
             pct_rect.w *= f32<-percent / 100.0
 
             if seconds < 0:
-                c.SDL_strlcpy(raw(addr(remainstr[0])), unknown_time_text, 64)
+                c.SDL_strlcpy(ptr_of(ref_of(remainstr[0])), unknown_time_text, 64)
             else:
                 let hours = seconds / (60 * 60)
                 seconds -= hours * (60 * 60)
                 let minutes = seconds / 60
                 seconds -= minutes * 60
-                c.SDL_snprintf(raw(addr(remainstr[0])), 64, c"%02d:%02d:%02d", hours, minutes, seconds)
+                c.SDL_snprintf(ptr_of(ref_of(remainstr[0])), 64, c"%02d:%02d:%02d", hours, minutes, seconds)
 
-            c.SDL_snprintf(raw(addr(msgbuf[0])), 128, battery_format, percent, remainstr_ptr)
+            c.SDL_snprintf(ptr_of(ref_of(msgbuf[0])), 128, battery_format, percent, remainstr_ptr)
             x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msgbuf_ptr))) / 2.0)
             y = frame.y + frame.h + f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE
 
         c.SDL_SetRenderDrawColor(renderer, bar_r, bar_g, bar_b, c.SDL_ALPHA_OPAQUE)
-        c.SDL_RenderFillRect(renderer, raw(addr(pct_rect)))
+        c.SDL_RenderFillRect(renderer, ptr_of(ref_of(pct_rect)))
         c.SDL_SetRenderDrawColor(renderer, frame_r, frame_g, frame_b, c.SDL_ALPHA_OPAQUE)
-        c.SDL_RenderRect(renderer, raw(addr(frame)))
+        c.SDL_RenderRect(renderer, ptr_of(ref_of(frame)))
         c.SDL_SetRenderDrawColor(renderer, text_r, text_g, text_b, c.SDL_ALPHA_OPAQUE)
         unsafe:
-            c.SDL_RenderDebugText(renderer, x, y, cstr<-raw(addr(msgbuf[0])))
+            c.SDL_RenderDebugText(renderer, x, y, cstr<-ptr_of(ref_of(msgbuf[0])))
 
     if has_msg:
         let x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msg))) / 2.0)
@@ -137,7 +137,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)
