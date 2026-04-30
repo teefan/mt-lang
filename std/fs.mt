@@ -41,15 +41,15 @@ pub def read_bytes(path: str, scratch: ref[arena.Arena]) -> Result[bytes.Buffer,
         if ch == c.EOF:
             done = true
         else:
-            bytes.push(addr(result), u8<-ch)
+            bytes.push(ref_of(result), u8<-ch)
 
     if c.ferror(file) != 0:
-        bytes.release(addr(result))
+        bytes.release(ref_of(result))
         c.fclose(file)
         return err(Error.read_failed)
 
     if c.fclose(file) != 0:
-        bytes.release(addr(result))
+        bytes.release(ref_of(result))
         return err(Error.close_failed)
 
     return ok(result)
@@ -64,12 +64,12 @@ pub def read_text(path: str, scratch: ref[arena.Arena]) -> Result[string.String,
     unsafe:
         let borrowed = str(data = ptr[char]<-view.data, len = view.len)
         if not text.is_valid_utf8(borrowed):
-            bytes.release(addr(data))
+            bytes.release(ref_of(data))
             return err(Error.invalid_utf8)
 
         var result = string.String.with_capacity(borrowed.len)
         result.append(borrowed)
-        bytes.release(addr(data))
+        bytes.release(ref_of(data))
         return ok(result)
 
 pub def write_bytes(path: str, data: span[u8], scratch: ref[arena.Arena]) -> Result[bool, Error]:
@@ -84,7 +84,7 @@ pub def write_bytes(path: str, data: span[u8], scratch: ref[arena.Arena]) -> Res
     var index: usize = 0
     while index < data.len:
         unsafe:
-            if c.fputc(i32<-deref(data.data + index), file) == c.EOF:
+            if c.fputc(i32<-read(data.data + index), file) == c.EOF:
                 c.fclose(file)
                 return err(Error.write_failed)
         index += 1

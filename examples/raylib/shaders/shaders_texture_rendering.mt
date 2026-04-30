@@ -24,13 +24,13 @@ def main() -> i32:
 
     var time: f32 = 0.0
     let time_loc = rl.GetShaderLocation(shader, shader_time_name)
-    rl.SetShaderValue(shader, time_loc, raw(addr(time)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, time_loc, ptr_of(ref_of(time)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
         time = f32<-rl.GetTime()
-        rl.SetShaderValue(shader, time_loc, raw(addr(time)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, time_loc, ptr_of(ref_of(time)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

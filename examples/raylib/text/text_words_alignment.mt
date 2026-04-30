@@ -34,7 +34,7 @@ def main() -> i32:
 
     var word_index = 0
     var word_count = 0
-    let words = rl.TextSplit(words_source, char<-32, raw(addr(word_count)))
+    let words = rl.TextSplit(words_source, char<-32, ptr_of(ref_of(word_count)))
 
     let font_size = 40
     let font = rl.GetFontDefault()
@@ -69,7 +69,7 @@ def main() -> i32:
             word_index = 0
 
         unsafe:
-            let current_word = cstr<-deref(words + word_index)
+            let current_word = cstr<-read(words + word_index)
             let text_size = rl.MeasureTextEx(font, current_word, f32<-font_size, f32<-font_size * 0.1)
             let text_pos = rl.Vector2(
                 x = text_container_rect.x + rm.lerp(0.0, text_container_rect.width - text_size.x, f32<-h_align * 0.5),

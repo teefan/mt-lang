@@ -89,8 +89,8 @@ def update_camera_center_inside_map(camera: ref[rl.Camera2D], player: Player, en
         if max_y < item.rect.y + item.rect.height:
             max_y = item.rect.y + item.rect.height
 
-    let max_screen = rl.GetWorldToScreen2D(rl.Vector2(x = max_x, y = max_y), value(camera))
-    let min_screen = rl.GetWorldToScreen2D(rl.Vector2(x = min_x, y = min_y), value(camera))
+    let max_screen = rl.GetWorldToScreen2D(rl.Vector2(x = max_x, y = max_y), read(camera))
+    let min_screen = rl.GetWorldToScreen2D(rl.Vector2(x = min_x, y = min_y), read(camera))
 
     if max_screen.x < width:
         camera.offset.x = width - (max_screen.x - half_width)
@@ -137,14 +137,14 @@ def update_camera_player_bounds_push(camera: ref[rl.Camera2D], player: Player, w
             x = (1.0 - bbox_factor_x) * 0.5 * width,
             y = (1.0 - bbox_factor_y) * 0.5 * height,
         ),
-        value(camera),
+        read(camera),
     )
     let bbox_world_max = rl.GetScreenToWorld2D(
         rl.Vector2(
             x = (1.0 + bbox_factor_x) * 0.5 * width,
             y = (1.0 + bbox_factor_y) * 0.5 * height,
         ),
-        value(camera),
+        read(camera),
     )
     camera.offset = rl.Vector2(
         x = (1.0 - bbox_factor_x) * 0.5 * width,
@@ -224,7 +224,7 @@ def main() -> i32:
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_C):
             camera_option = (camera_option + 1) % camera_option_count
 
-        update_camera_for_mode(camera_option, addr(camera), player, env_items, delta_time, screen_width, screen_height, addr(landing_state))
+        update_camera_for_mode(camera_option, ref_of(camera), player, env_items, delta_time, screen_width, screen_height, ref_of(landing_state))
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

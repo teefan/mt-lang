@@ -140,11 +140,11 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
 
         if spline_type_active == spline_linear:
-            rl.DrawSplineLinear(raw(addr(points[0])), point_count, spline_thickness, rl.RED)
+            rl.DrawSplineLinear(ptr_of(ref_of(points[0])), point_count, spline_thickness, rl.RED)
         elif spline_type_active == spline_basis:
-            rl.DrawSplineBasis(raw(addr(points[0])), point_count, spline_thickness, rl.RED)
+            rl.DrawSplineBasis(ptr_of(ref_of(points[0])), point_count, spline_thickness, rl.RED)
         elif spline_type_active == spline_catmull_rom:
-            rl.DrawSplineCatmullRom(raw(addr(points[0])), point_count, spline_thickness, rl.RED)
+            rl.DrawSplineCatmullRom(ptr_of(ref_of(points[0])), point_count, spline_thickness, rl.RED)
         elif spline_type_active == spline_bezier:
             for index in range(0, point_count - 1):
                 points_interleaved[3 * index] = points[index]
@@ -152,7 +152,7 @@ def main() -> i32:
                 points_interleaved[3 * index + 2] = control_points[index].end
 
             points_interleaved[3 * (point_count - 1)] = points[point_count - 1]
-            rl.DrawSplineBezierCubic(raw(addr(points_interleaved[0])), 3 * (point_count - 1) + 1, spline_thickness, rl.RED)
+            rl.DrawSplineBezierCubic(ptr_of(ref_of(points_interleaved[0])), 3 * (point_count - 1) + 1, spline_thickness, rl.RED)
 
             for index in range(0, point_count - 1):
                 rl.DrawCircleV(control_points[index].start, 6.0, rl.GOLD)
@@ -189,14 +189,14 @@ def main() -> i32:
             gui.GuiLock()
 
         gui.GuiLabel(gui.Rectangle(x = 12.0, y = 62.0, width = 140.0, height = 24.0), rl.TextFormat(spline_thickness_format, i32<-spline_thickness))
-        gui.GuiSliderBar(gui.Rectangle(x = 12.0, y = 84.0, width = 140.0, height = 16.0), empty_text, empty_text, raw(addr(spline_thickness)), 1.0, 40.0)
-        gui.GuiCheckBox(gui.Rectangle(x = 12.0, y = 110.0, width = 20.0, height = 20.0), show_point_helpers_text, raw(addr(spline_helpers_active)))
+        gui.GuiSliderBar(gui.Rectangle(x = 12.0, y = 84.0, width = 140.0, height = 16.0), empty_text, empty_text, ptr_of(ref_of(spline_thickness)), 1.0, 40.0)
+        gui.GuiCheckBox(gui.Rectangle(x = 12.0, y = 110.0, width = 20.0, height = 20.0), show_point_helpers_text, ptr_of(ref_of(spline_helpers_active)))
 
         if spline_type_edit_mode:
             gui.GuiUnlock()
 
         gui.GuiLabel(gui.Rectangle(x = 12.0, y = 10.0, width = 140.0, height = 24.0), spline_type_label)
-        if gui.GuiDropdownBox(gui.Rectangle(x = 12.0, y = 32.0, width = 140.0, height = 28.0), spline_type_options, raw(addr(spline_type_active)), spline_type_edit_mode) != 0:
+        if gui.GuiDropdownBox(gui.Rectangle(x = 12.0, y = 32.0, width = 140.0, height = 28.0), spline_type_options, ptr_of(ref_of(spline_type_active)), spline_type_edit_mode) != 0:
             spline_type_edit_mode = not spline_type_edit_mode
 
         gui.GuiUnlock()

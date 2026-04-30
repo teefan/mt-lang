@@ -45,7 +45,7 @@ def main() -> i32:
         elif divider_value > 1.0:
             divider_value = 1.0
 
-        rl.SetShaderValue(shader, divider_location, raw(addr(divider_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, divider_location, ptr_of(ref_of(divider_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

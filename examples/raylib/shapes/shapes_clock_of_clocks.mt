@@ -131,12 +131,12 @@ def digit_value(time_buffer: array[char, 7], index: i32) -> i32:
 
 def load_time_digits(time_buffer: ref[array[char, 7]], hour_mode: i32) -> void:
     var now: ctime.time_t = 0
-    now = ctime.time(raw(addr(now)))
-    let tm_info = ctime.localtime(raw(addr(now)))
+    now = ctime.time(ptr_of(ref_of(now)))
+    let tm_info = ctime.localtime(ptr_of(ref_of(now)))
     let format = if hour_mode == hour_mode_24 then time_format_24 else time_format_12
 
     unsafe:
-        ctime.strftime(raw(addr(value(time_buffer)[0])), 7, format, tm_info)
+        ctime.strftime(ptr_of(ref_of(read(time_buffer)[0])), 7, format, tm_info)
 
 def angle_slot(digit: i32, cell: i32) -> i32:
     return digit * cells_per_digit + cell
@@ -171,7 +171,7 @@ def main() -> i32:
             else:
                 hour_mode = hour_mode_24
 
-        load_time_digits(addr(time_buffer), hour_mode)
+        load_time_digits(ref_of(time_buffer), hour_mode)
         let current_second = digit_value(time_buffer, 4) * 10 + digit_value(time_buffer, 5)
 
         if current_second != previous_second or hour_mode != previous_hour_mode:

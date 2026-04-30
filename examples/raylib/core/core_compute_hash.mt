@@ -24,10 +24,10 @@ def hash_md5_text(hash_md5: ptr[u32]?) -> cstr:
     unsafe:
         return rl.TextFormat(
             c"%08X%08X%08X%08X",
-            deref(hash_md5),
-            deref(hash_md5 + 1),
-            deref(hash_md5 + 2),
-            deref(hash_md5 + 3),
+            read(hash_md5),
+            read(hash_md5 + 1),
+            read(hash_md5 + 2),
+            read(hash_md5 + 3),
         )
 
 def hash_sha1_text(hash_sha1: ptr[u32]?) -> cstr:
@@ -37,11 +37,11 @@ def hash_sha1_text(hash_sha1: ptr[u32]?) -> cstr:
     unsafe:
         return rl.TextFormat(
             c"%08X%08X%08X%08X%08X",
-            deref(hash_sha1),
-            deref(hash_sha1 + 1),
-            deref(hash_sha1 + 2),
-            deref(hash_sha1 + 3),
-            deref(hash_sha1 + 4),
+            read(hash_sha1),
+            read(hash_sha1 + 1),
+            read(hash_sha1 + 2),
+            read(hash_sha1 + 3),
+            read(hash_sha1 + 4),
         )
 
 def hash_sha256_text(hash_sha256: ptr[u32]?) -> cstr:
@@ -51,14 +51,14 @@ def hash_sha256_text(hash_sha256: ptr[u32]?) -> cstr:
     unsafe:
         return rl.TextFormat(
             c"%08X%08X%08X%08X%08X%08X%08X%08X",
-            deref(hash_sha256),
-            deref(hash_sha256 + 1),
-            deref(hash_sha256 + 2),
-            deref(hash_sha256 + 3),
-            deref(hash_sha256 + 4),
-            deref(hash_sha256 + 5),
-            deref(hash_sha256 + 6),
-            deref(hash_sha256 + 7),
+            read(hash_sha256),
+            read(hash_sha256 + 1),
+            read(hash_sha256 + 2),
+            read(hash_sha256 + 3),
+            read(hash_sha256 + 4),
+            read(hash_sha256 + 5),
+            read(hash_sha256 + 6),
+            read(hash_sha256 + 7),
         )
 
 def base64_display_text(base64_text: ptr[char]?) -> cstr:
@@ -73,7 +73,7 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var text_input = zero[array[char, 96]]()
-    let text_input_ptr = raw(addr(text_input[0]))
+    let text_input_ptr = ptr_of(ref_of(text_input[0]))
     rl.TextCopy(text_input_ptr, default_input_text)
 
     var text_box_edit_mode = false
@@ -96,7 +96,7 @@ def main() -> i32:
                     rl.MemFree(ptr[void]<-owned_base64_text)
 
                 let input_bytes = ptr[u8]<-text_input_ptr
-                base64_text = rl.EncodeDataBase64(input_bytes, text_input_len, raw(addr(base64_text_size)))
+                base64_text = rl.EncodeDataBase64(input_bytes, text_input_len, ptr_of(ref_of(base64_text_size)))
                 hash_crc32 = rl.ComputeCRC32(input_bytes, text_input_len)
                 hash_md5 = rl.ComputeMD5(input_bytes, text_input_len)
                 hash_sha1 = rl.ComputeSHA1(input_bytes, text_input_len)

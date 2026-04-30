@@ -15,7 +15,7 @@ pub def arg(argc: i32, argv: ptr[cstr], index: usize) -> option.Option[str]:
         return option.none[str]()
 
     unsafe:
-        return option.some[str](text_ops.cstr_as_str(deref(argv + index)))
+        return option.some[str](text_ops.cstr_as_str(read(argv + index)))
 
 pub def env(name: str, scratch: ref[arena.Arena]) -> option.Option[str]:
     let mark = scratch.mark()

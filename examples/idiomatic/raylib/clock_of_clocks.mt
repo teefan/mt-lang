@@ -146,13 +146,13 @@ def refresh_digits(current_clock: time.ClockTime, hour_mode: i32, current_angles
         for cell in range(0, cells_per_digit):
             let slot = angle_slot(digit, cell)
             let target_angle = digit_angles[cell]
-            value(src_angles)[slot] = current_angles[slot]
-            value(dst_angles)[slot] = target_angle
+            read(src_angles)[slot] = current_angles[slot]
+            read(dst_angles)[slot] = target_angle
 
-            if value(src_angles)[slot].x > target_angle.x:
-                value(src_angles)[slot].x -= 360.0
-            if value(src_angles)[slot].y > target_angle.y:
-                value(src_angles)[slot].y -= 360.0
+            if read(src_angles)[slot].x > target_angle.x:
+                read(src_angles)[slot].x -= 360.0
+            if read(src_angles)[slot].y > target_angle.y:
+                read(src_angles)[slot].y -= 360.0
 
 def main() -> i32:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
@@ -191,7 +191,7 @@ def main() -> i32:
         if current_clock.second != previous_second or hour_mode != previous_hour_mode:
             previous_second = current_clock.second
             previous_hour_mode = hour_mode
-            refresh_digits(current_clock, hour_mode, current_angles, addr(src_angles), addr(dst_angles))
+            refresh_digits(current_clock, hour_mode, current_angles, ref_of(src_angles), ref_of(dst_angles))
             hands_move_timer = -rl.get_frame_time()
 
         if hands_move_timer < hands_move_duration:

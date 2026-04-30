@@ -33,14 +33,14 @@ const window_title: cstr = c"raylib [shaders] example - spotlight rendering"
 
 def set_vec2_uniform(shader: rl.Shader, location: i32, vector: rl.Vector2) -> void:
     var values = array[f32, 2](vector.x, vector.y)
-    rl.SetShaderValue(shader, location, raw(addr(values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, location, ptr_of(ref_of(values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
 def set_float_uniform(shader: rl.Shader, location: i32, value: f32) -> void:
     var storage = value
-    rl.SetShaderValue(shader, location, raw(addr(storage)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, location, ptr_of(ref_of(storage)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
 def reset_star(star: ref[Star]) -> void:
-    var current = value(star)
+    var current = read(star)
     current.position = rl.Vector2(x = screen_width_f / 2.0, y = screen_height_f / 2.0)
     current.speed.x = f32<-rl.GetRandomValue(-1000, 1000) / 100.0
     current.speed.y = f32<-rl.GetRandomValue(-1000, 1000) / 100.0
@@ -50,18 +50,18 @@ def reset_star(star: ref[Star]) -> void:
         current.speed.y = f32<-rl.GetRandomValue(-1000, 1000) / 100.0
 
     current.position = current.position.add(current.speed.multiply(rl.Vector2(x = 8.0, y = 8.0)))
-    value(star) = current
+    read(star) = current
 
 def update_star(star: ref[Star]) -> void:
-    var current = value(star)
+    var current = read(star)
     current.position = current.position.add(current.speed)
 
     if current.position.x < 0.0 or current.position.x > screen_width_f or current.position.y < 0.0 or current.position.y > screen_height_f:
-        value(star) = current
+        read(star) = current
         reset_star(star)
         return
 
-    value(star) = current
+    read(star) = current
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -74,11 +74,11 @@ def main() -> i32:
 
     var stars = zero[array[Star, max_stars]]()
     for index in range(0, max_stars):
-        reset_star(addr(stars[index]))
+        reset_star(ref_of(stars[index]))
 
     for _ in range(0, screen_width / 2):
         for index in range(0, max_stars):
-            update_star(addr(stars[index]))
+            update_star(ref_of(stars[index]))
 
     var frame_counter = 0
 
@@ -120,7 +120,7 @@ def main() -> i32:
         frame_counter += 1
 
         for index in range(0, max_stars):
-            update_star(addr(stars[index]))
+            update_star(ref_of(stars[index]))
 
         for index in range(0, max_spots):
             if index == 0:

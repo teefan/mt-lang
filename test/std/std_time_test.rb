@@ -19,7 +19,7 @@ class MilkTeaStdTimeTest < Minitest::Test
       "def main() -> i32:",
       "    var scratch = arena.create(256)",
       "    defer scratch.release()",
-      "    let formatted = time.format_utc(0, \"%Y-%m-%d\", addr(scratch))",
+      "    let formatted = time.format_utc(0, \"%Y-%m-%d\", ref_of(scratch))",
       "    if not formatted.is_ok:",
       "        return i32<-formatted.error",
       "    var stamp = formatted.value",

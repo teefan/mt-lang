@@ -40,7 +40,7 @@ def chars_to_cstr(text: ptr[char]) -> cstr:
 
 def text_particle_text_ptr(tp: ptr[TextParticle]) -> ptr[char]:
     unsafe:
-        return raw(addr(tp.text[0]))
+        return ptr_of(ref_of(tp.text[0]))
 
 def text_particle_text(tp: ptr[TextParticle]) -> cstr:
     return chars_to_cstr(text_particle_text_ptr(tp))
@@ -65,45 +65,45 @@ def create_text_particle(text: cstr, x: f32, y: f32, color: rl.Color) -> TextPar
     tp.color = color
     tp.grabbed = false
 
-    rl.TextCopy(raw(addr(tp.text[0])), text)
-    tp.rect.width = f32<-rl.MeasureText(chars_to_cstr(raw(addr(tp.text[0]))), font_size) + tp.padding * 2.0
+    rl.TextCopy(ptr_of(ref_of(tp.text[0])), text)
+    tp.rect.width = f32<-rl.MeasureText(chars_to_cstr(ptr_of(ref_of(tp.text[0]))), font_size) + tp.padding * 2.0
     tp.rect.height = f32<-font_size + tp.padding * 2.0
 
     return tp
 
 def prepare_first_text_particle(text: cstr, tps: ptr[TextParticle], particle_count: ptr[i32]) -> void:
     unsafe:
-        deref(tps) = create_text_particle(
+        read(tps) = create_text_particle(
             text,
             f32<-rl.GetScreenWidth() / 2.0,
             f32<-rl.GetScreenHeight() / 2.0,
             rl.RAYWHITE,
         )
-        deref(particle_count) = 1
+        read(particle_count) = 1
 
 def append_particle(tps: ptr[TextParticle], particle_count: ptr[i32], particle: TextParticle) -> void:
     unsafe:
-        let next_index = deref(particle_count)
-        deref(tps + next_index) = particle
-        deref(particle_count) = next_index + 1
+        let next_index = read(particle_count)
+        read(tps + next_index) = particle
+        read(particle_count) = next_index + 1
 
 def reallocate_text_particles(tps: ptr[TextParticle], particle_pos: i32, particle_count: ptr[i32]) -> void:
     unsafe:
         var index = particle_pos + 1
-        while index < deref(particle_count):
-            deref(tps + index - 1) = deref(tps + index)
+        while index < read(particle_count):
+            read(tps + index - 1) = read(tps + index)
             index += 1
 
-        deref(particle_count) = deref(particle_count) - 1
+        read(particle_count) = read(particle_count) - 1
 
 def slice_text_particle(tp: ptr[TextParticle], particle_pos: i32, slice_length: i32, tps: ptr[TextParticle], particle_count: ptr[i32]) -> void:
     let length = i32<-rl.TextLength(text_particle_text(tp))
 
     unsafe:
-        if slice_length > 0 and length > 1 and (deref(particle_count) + length) < max_text_particles:
+        if slice_length > 0 and length > 1 and (read(particle_count) + length) < max_text_particles:
             var index = 0
             while index < length:
-                let piece_text = if slice_length == 1 then rl.TextFormat(char_format, i32<-deref(text_particle_text_ptr(tp) + index)) else rl.TextSubtext(text_particle_text(tp), index, slice_length)
+                let piece_text = if slice_length == 1 then rl.TextFormat(char_format, i32<-read(text_particle_text_ptr(tp) + index)) else rl.TextSubtext(text_particle_text(tp), index, slice_length)
                 append_particle(
                     tps,
                     particle_count,
@@ -120,14 +120,14 @@ def slice_text_particle(tp: ptr[TextParticle], particle_pos: i32, slice_length: 
 
 def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps: ptr[TextParticle], particle_count: ptr[i32]) -> void:
     var token_count = 0
-    let tokens = rl.TextSplit(text_particle_text(tp), char_to_slice, raw(addr(token_count)))
+    let tokens = rl.TextSplit(text_particle_text(tp), char_to_slice, ptr_of(ref_of(token_count)))
 
     unsafe:
         if token_count > 1:
             let text_length = i32<-rl.TextLength(text_particle_text(tp))
             var index = 0
             while index < text_length:
-                if deref(text_particle_text_ptr(tp) + index) == char_to_slice:
+                if read(text_particle_text_ptr(tp) + index) == char_to_slice:
                     append_particle(
                         tps,
                         particle_count,
@@ -142,7 +142,7 @@ def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps:
 
             index = 0
             while index < token_count:
-                let token = chars_to_cstr(deref(tokens + index))
+                let token = chars_to_cstr(read(tokens + index))
                 let token_length = i32<-rl.TextLength(token)
                 append_particle(
                     tps,
@@ -163,7 +163,7 @@ def shatter_text_particle(tp: ptr[TextParticle], particle_pos: i32, tps: ptr[Tex
 
 def glue_text_particles(grabbed_index: i32, target_index: i32, tps: ptr[TextParticle], particle_count: ptr[i32]) -> i32:
     unsafe:
-        if grabbed_index >= 0 and target_index >= 0 and grabbed_index < deref(particle_count) and target_index < deref(particle_count):
+        if grabbed_index >= 0 and target_index >= 0 and grabbed_index < read(particle_count) and target_index < read(particle_count):
             let grabbed = tps + grabbed_index
             let target = tps + target_index
             var merged = create_text_particle(
@@ -184,7 +184,7 @@ def glue_text_particles(grabbed_index: i32, target_index: i32, tps: ptr[TextPart
                 reallocate_text_particles(tps, grabbed_index, particle_count)
                 reallocate_text_particles(tps, target_index, particle_count)
 
-            return deref(particle_count) - 1
+            return read(particle_count) - 1
 
     return grabbed_index
 
@@ -197,7 +197,7 @@ def main() -> i32:
     var grabbed_particle_index = -1
     var press_offset = rl.Vector2(x = 0.0, y = 0.0)
 
-    prepare_first_text_particle(base_text, raw(addr(text_particles[0])), raw(addr(particle_count)))
+    prepare_first_text_particle(base_text, ptr_of(ref_of(text_particles[0])), ptr_of(ref_of(particle_count)))
 
     rl.SetTargetFPS(60)
 
@@ -226,9 +226,9 @@ def main() -> i32:
             while index >= 0:
                 if rl.CheckCollisionPointRec(mouse_pos, text_particles[index].rect):
                     if rl.IsKeyDown(rl.KeyboardKey.KEY_LEFT_SHIFT):
-                        shatter_text_particle(raw(addr(text_particles[index])), index, raw(addr(text_particles[0])), raw(addr(particle_count)))
+                        shatter_text_particle(ptr_of(ref_of(text_particles[index])), index, ptr_of(ref_of(text_particles[0])), ptr_of(ref_of(particle_count)))
                     else:
-                        slice_text_particle(raw(addr(text_particles[index])), index, i32<-rl.TextLength(text_particle_text(raw(addr(text_particles[index])))) / 2, raw(addr(text_particles[0])), raw(addr(particle_count)))
+                        slice_text_particle(ptr_of(ref_of(text_particles[index])), index, i32<-rl.TextLength(text_particle_text(ptr_of(ref_of(text_particles[index])))) / 2, ptr_of(ref_of(text_particles[0])), ptr_of(ref_of(particle_count)))
                     break
                 index -= 1
 
@@ -243,27 +243,27 @@ def main() -> i32:
                 index += 1
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_ONE):
-            prepare_first_text_particle(base_text, raw(addr(text_particles[0])), raw(addr(particle_count)))
+            prepare_first_text_particle(base_text, ptr_of(ref_of(text_particles[0])), ptr_of(ref_of(particle_count)))
             grabbed_particle_index = -1
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_TWO):
-            prepare_first_text_particle(chars_to_cstr(rl.TextToUpper(base_text)), raw(addr(text_particles[0])), raw(addr(particle_count)))
+            prepare_first_text_particle(chars_to_cstr(rl.TextToUpper(base_text)), ptr_of(ref_of(text_particles[0])), ptr_of(ref_of(particle_count)))
             grabbed_particle_index = -1
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_THREE):
-            prepare_first_text_particle(chars_to_cstr(rl.TextToLower(base_text)), raw(addr(text_particles[0])), raw(addr(particle_count)))
+            prepare_first_text_particle(chars_to_cstr(rl.TextToLower(base_text)), ptr_of(ref_of(text_particles[0])), ptr_of(ref_of(particle_count)))
             grabbed_particle_index = -1
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_FOUR):
-            prepare_first_text_particle(chars_to_cstr(rl.TextToPascal(snake_source)), raw(addr(text_particles[0])), raw(addr(particle_count)))
+            prepare_first_text_particle(chars_to_cstr(rl.TextToPascal(snake_source)), ptr_of(ref_of(text_particles[0])), ptr_of(ref_of(particle_count)))
             grabbed_particle_index = -1
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_FIVE):
-            prepare_first_text_particle(chars_to_cstr(rl.TextToSnake(camel_source)), raw(addr(text_particles[0])), raw(addr(particle_count)))
+            prepare_first_text_particle(chars_to_cstr(rl.TextToSnake(camel_source)), ptr_of(ref_of(text_particles[0])), ptr_of(ref_of(particle_count)))
             grabbed_particle_index = -1
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_SIX):
-            prepare_first_text_particle(chars_to_cstr(rl.TextToCamel(snake_source)), raw(addr(text_particles[0])), raw(addr(particle_count)))
+            prepare_first_text_particle(chars_to_cstr(rl.TextToCamel(snake_source)), ptr_of(ref_of(text_particles[0])), ptr_of(ref_of(particle_count)))
             grabbed_particle_index = -1
 
         let char_pressed = rl.GetCharPressed()
         if char_pressed >= 65 and char_pressed <= 122 and particle_count == 1:
-            slice_text_particle_by_char(raw(addr(text_particles[0])), char<-char_pressed, raw(addr(text_particles[0])), raw(addr(particle_count)))
+            slice_text_particle_by_char(ptr_of(ref_of(text_particles[0])), char<-char_pressed, ptr_of(ref_of(text_particles[0])), ptr_of(ref_of(particle_count)))
 
         var index = 0
         while index < particle_count:
@@ -300,7 +300,7 @@ def main() -> i32:
                     while other_index < particle_count:
                         if other_index != grabbed_particle_index and grabbed_particle_index >= 0 and text_particles[grabbed_particle_index].grabbed:
                             if rl.CheckCollisionRecs(text_particles[grabbed_particle_index].rect, text_particles[other_index].rect):
-                                grabbed_particle_index = glue_text_particles(grabbed_particle_index, other_index, raw(addr(text_particles[0])), raw(addr(particle_count)))
+                                grabbed_particle_index = glue_text_particles(grabbed_particle_index, other_index, ptr_of(ref_of(text_particles[0])), ptr_of(ref_of(particle_count)))
                         other_index += 1
             index += 1
 
@@ -322,7 +322,7 @@ def main() -> i32:
             )
             rl.DrawRectangleRec(text_particles[index].rect, text_particles[index].color)
             rl.DrawText(
-                text_particle_text(raw(addr(text_particles[index]))),
+                text_particle_text(ptr_of(ref_of(text_particles[index]))),
                 i32<-(text_particles[index].rect.x + text_particles[index].padding),
                 i32<-(text_particles[index].rect.y + text_particles[index].padding),
                 font_size,

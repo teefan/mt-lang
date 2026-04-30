@@ -25,10 +25,10 @@ pub def write(level: Level, message: str) -> bool:
     var line = string.String.create()
     defer line.release()
 
-    fmt.append_str(addr(line), "[")
-    fmt.append_str(addr(line), level_name(level))
-    fmt.append_str(addr(line), "] ")
-    fmt.append_str(addr(line), message)
+    fmt.append_str(ref_of(line), "[")
+    fmt.append_str(ref_of(line), level_name(level))
+    fmt.append_str(ref_of(line), "] ")
+    fmt.append_str(ref_of(line), message)
     let ok = io.write_error_line(line.as_str())
     return ok
 

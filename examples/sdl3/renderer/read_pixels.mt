@@ -21,7 +21,7 @@ var converted_texture_height: i32 = 0
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
@@ -44,7 +44,7 @@ def render_frame() -> bool:
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
-    c.SDL_RenderTextureRotated(renderer, texture, null, raw(addr(destination)), f64<-rotation, raw(addr(center)), c.SDL_FlipMode.SDL_FLIP_NONE)
+    c.SDL_RenderTextureRotated(renderer, texture, null, ptr_of(ref_of(destination)), f64<-rotation, ptr_of(ref_of(center)), c.SDL_FlipMode.SDL_FLIP_NONE)
 
     var surface = c.SDL_RenderReadPixels(renderer, null)
     var processed_surface: ptr[c.SDL_Surface]? = surface
@@ -83,17 +83,17 @@ def render_frame() -> bool:
 
                     for x in range(0, processed_surface.w):
                         let pixel_bytes = ptr[c.Uint8]<-(row_pixels + x)
-                        let average = (u32<-deref(pixel_bytes + 1) + u32<-deref(pixel_bytes + 2) + u32<-deref(pixel_bytes + 3)) / 3
+                        let average = (u32<-read(pixel_bytes + 1) + u32<-read(pixel_bytes + 2) + u32<-read(pixel_bytes + 3)) / 3
 
                         if average == 0:
-                            deref(pixel_bytes + 0) = 0xFF
-                            deref(pixel_bytes + 1) = 0
-                            deref(pixel_bytes + 2) = 0
-                            deref(pixel_bytes + 3) = 0xFF
+                            read(pixel_bytes + 0) = 0xFF
+                            read(pixel_bytes + 1) = 0
+                            read(pixel_bytes + 2) = 0
+                            read(pixel_bytes + 3) = 0xFF
                         else:
-                            deref(pixel_bytes + 1) = if average > 50 then 0xFF else 0
-                            deref(pixel_bytes + 2) = if average > 50 then 0xFF else 0
-                            deref(pixel_bytes + 3) = if average > 50 then 0xFF else 0
+                            read(pixel_bytes + 1) = if average > 50 then 0xFF else 0
+                            read(pixel_bytes + 2) = if average > 50 then 0xFF else 0
+                            read(pixel_bytes + 3) = if average > 50 then 0xFF else 0
 
                 if converted_texture != null:
                     c.SDL_UpdateTexture(converted_texture, null, processed_surface.pixels, processed_surface.pitch)
@@ -103,7 +103,7 @@ def render_frame() -> bool:
                     destination.y = 0.0
                     destination.w = f32<-window_width / 4.0
                     destination.h = f32<-window_height / 4.0
-                    c.SDL_RenderTexture(renderer, converted_texture, null, raw(addr(destination)))
+                    c.SDL_RenderTexture(renderer, converted_texture, null, ptr_of(ref_of(destination)))
                 else:
                     c.SDL_DestroySurface(processed_surface)
                     return false
@@ -118,7 +118,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)

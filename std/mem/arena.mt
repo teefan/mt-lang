@@ -67,9 +67,9 @@ methods Arena:
             let buffer = ptr[char]<-memory
             var index: usize = 0
             while index < text.len:
-                deref(buffer + index) = deref(text.data + index)
+                read(buffer + index) = read(text.data + index)
                 index += 1
-            deref(buffer + text.len) = zero[char]()
+            read(buffer + text.len) = zero[char]()
             return cstr<-buffer
 
     pub edit def to_cstr(text: str) -> cstr:
@@ -81,9 +81,9 @@ methods Arena:
             let buffer = ptr[char]<-memory
             var index: usize = 0
             while index < text.len:
-                deref(buffer + index) = deref(text.data + index)
+                read(buffer + index) = read(text.data + index)
                 index += 1
-            deref(buffer + text.len) = zero[char]()
+            read(buffer + text.len) = zero[char]()
             return cstr<-buffer
 
     pub edit def release() -> void:

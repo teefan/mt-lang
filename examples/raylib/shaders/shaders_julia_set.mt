@@ -47,9 +47,9 @@ def main() -> i32:
     let zoom_loc = rl.GetShaderLocation(shader, zoom_uniform_name)
     let offset_loc = rl.GetShaderLocation(shader, offset_uniform_name)
 
-    rl.SetShaderValue(shader, c_loc, raw(addr(c_values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-    rl.SetShaderValue(shader, zoom_loc, raw(addr(zoom)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, offset_loc, raw(addr(offset[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, c_loc, ptr_of(ref_of(c_values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, zoom_loc, ptr_of(ref_of(zoom)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, offset_loc, ptr_of(ref_of(offset[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     var increment_speed = 0
     var show_controls = true
@@ -74,14 +74,14 @@ def main() -> i32:
         if selected_point >= 0:
             c_values[0] = points_of_interest[selected_point][0]
             c_values[1] = points_of_interest[selected_point][1]
-            rl.SetShaderValue(shader, c_loc, raw(addr(c_values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+            rl.SetShaderValue(shader, c_loc, ptr_of(ref_of(c_values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_R):
             zoom = starting_zoom
             offset[0] = 0.0
             offset[1] = 0.0
-            rl.SetShaderValue(shader, zoom_loc, raw(addr(zoom)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-            rl.SetShaderValue(shader, offset_loc, raw(addr(offset[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+            rl.SetShaderValue(shader, zoom_loc, ptr_of(ref_of(zoom)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+            rl.SetShaderValue(shader, offset_loc, ptr_of(ref_of(offset[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_SPACE):
             increment_speed = 0
@@ -108,13 +108,13 @@ def main() -> i32:
             offset[0] += rl.GetFrameTime() * offset_velocity.x
             offset[1] += rl.GetFrameTime() * offset_velocity.y
 
-            rl.SetShaderValue(shader, zoom_loc, raw(addr(zoom)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-            rl.SetShaderValue(shader, offset_loc, raw(addr(offset[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+            rl.SetShaderValue(shader, zoom_loc, ptr_of(ref_of(zoom)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+            rl.SetShaderValue(shader, offset_loc, ptr_of(ref_of(offset[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
         let dc = rl.GetFrameTime() * f32<-increment_speed * 0.0005
         c_values[0] += dc
         c_values[1] += dc
-        rl.SetShaderValue(shader, c_loc, raw(addr(c_values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.SetShaderValue(shader, c_loc, ptr_of(ref_of(c_values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
         rl.BeginTextureMode(target)
         rl.ClearBackground(rl.BLACK)

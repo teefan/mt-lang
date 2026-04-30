@@ -21,21 +21,21 @@ const window_title: cstr = c"raylib [textures] example - cellular automata"
 def compute_line(image: ref[rl.Image], line: i32, rule: i32) -> void:
     for index in range(1, image_width - 1):
         let prev_value = (
-            if rl.GetImageColor(value(image), index - 1, line - 1).r < 5 then 4 else 0
+            if rl.GetImageColor(read(image), index - 1, line - 1).r < 5 then 4 else 0
         ) + (
-            if rl.GetImageColor(value(image), index, line - 1).r < 5 then 2 else 0
+            if rl.GetImageColor(read(image), index, line - 1).r < 5 then 2 else 0
         ) + (
-            if rl.GetImageColor(value(image), index + 1, line - 1).r < 5 then 1 else 0
+            if rl.GetImageColor(read(image), index + 1, line - 1).r < 5 then 1 else 0
         )
         let curr_value = (rule & (1 << prev_value)) != 0
-        rl.ImageDrawPixel(raw(image), index, line, if curr_value then rl.BLACK else rl.RAYWHITE)
+        rl.ImageDrawPixel(ptr_of(image), index, line, if curr_value then rl.BLACK else rl.RAYWHITE)
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
     var image = rl.GenImageColor(image_width, image_height, rl.RAYWHITE)
-    rl.ImageDrawPixel(raw(addr(image)), image_width / 2, 0, rl.BLACK)
+    rl.ImageDrawPixel(ptr_of(ref_of(image)), image_width / 2, 0, rl.BLACK)
 
     let texture = rl.LoadTextureFromImage(image)
     defer:
@@ -73,15 +73,15 @@ def main() -> i32:
             else:
                 rule = preset_values[mouse_in_cell - 8]
 
-            rl.ImageClearBackground(raw(addr(image)), rl.RAYWHITE)
-            rl.ImageDrawPixel(raw(addr(image)), image_width / 2, 0, rl.BLACK)
+            rl.ImageClearBackground(ptr_of(ref_of(image)), rl.RAYWHITE)
+            rl.ImageDrawPixel(ptr_of(ref_of(image)), image_width / 2, 0, rl.BLACK)
             line = 1
 
         if line < image_height:
             for index in range(0, lines_updated_per_frame):
                 if line + index >= image_height:
                     break
-                compute_line(addr(image), line + index, rule)
+                compute_line(ref_of(image), line + index, rule)
             line += lines_updated_per_frame
 
             rl.UpdateTexture(texture, image.data)

@@ -75,7 +75,7 @@ def draw_light_mask(light: LightInfo) -> void:
 
     for index in range(0, light.shadow_count):
         var shadow_vertices = light.shadows[index].vertices
-        rl.DrawTriangleFan(raw(addr(shadow_vertices[0])), 4, rl.WHITE)
+        rl.DrawTriangleFan(ptr_of(ref_of(shadow_vertices[0])), 4, rl.WHITE)
 
     rlgl.rlDrawRenderBatchActive()
     rlgl.rlSetBlendMode(rl.BlendMode.BLEND_ALPHA)
@@ -83,13 +83,13 @@ def draw_light_mask(light: LightInfo) -> void:
     return
 
 def move_light_slot(lights: ref[array[LightInfo, 16]], slot: i32, x: f32, y: f32) -> void:
-    var lights_view = value(lights)
+    var lights_view = read(lights)
     lights_view[slot] = move_light(lights_view[slot], x, y)
-    value(lights) = lights_view
+    read(lights) = lights_view
     return
 
 def setup_light(lights: ref[array[LightInfo, 16]], slot: i32, x: f32, y: f32, radius: f32) -> void:
-    var lights_view = value(lights)
+    var lights_view = read(lights)
     var light = lights_view[slot]
     light.active = true
     light.valid = false
@@ -99,12 +99,12 @@ def setup_light(lights: ref[array[LightInfo, 16]], slot: i32, x: f32, y: f32, ra
     light.bounds.height = radius * 2.0
     light = move_light(light, x, y)
     lights_view[slot] = light
-    value(lights) = lights_view
+    read(lights) = lights_view
     draw_light_mask(light)
     return
 
 def update_light(lights: ref[array[LightInfo, 16]], slot: i32, boxes: array[rl.Rectangle, 20], count: i32) -> bool:
-    var lights_view = value(lights)
+    var lights_view = read(lights)
     var light = lights_view[slot]
 
     if not light.active or not light.dirty:
@@ -119,7 +119,7 @@ def update_light(lights: ref[array[LightInfo, 16]], slot: i32, boxes: array[rl.R
 
         if rl.CheckCollisionPointRec(light.position, box):
             lights_view[slot] = light
-            value(lights) = lights_view
+            read(lights) = lights_view
             return false
 
         if not rl.CheckCollisionRecs(light.bounds, box):
@@ -146,12 +146,12 @@ def update_light(lights: ref[array[LightInfo, 16]], slot: i32, boxes: array[rl.R
 
     light.valid = true
     lights_view[slot] = light
-    value(lights) = lights_view
+    read(lights) = lights_view
     draw_light_mask(light)
     return true
 
 def setup_boxes(boxes: ref[array[rl.Rectangle, 20]], count: ref[i32]) -> void:
-    var items = value(boxes)
+    var items = read(boxes)
     items[0] = rl.Rectangle(x = 150.0, y = 80.0, width = 40.0, height = 40.0)
     items[1] = rl.Rectangle(x = 1200.0, y = 700.0, width = 40.0, height = 40.0)
     items[2] = rl.Rectangle(x = 200.0, y = 600.0, width = 40.0, height = 40.0)
@@ -166,8 +166,8 @@ def setup_boxes(boxes: ref[array[rl.Rectangle, 20]], count: ref[i32]) -> void:
             height = f32<-rl.GetRandomValue(10, 100),
         )
 
-    value(boxes) = items
-    value(count) = max_boxes
+    read(boxes) = items
+    read(count) = max_boxes
     return
 
 def main() -> i32:
@@ -176,7 +176,7 @@ def main() -> i32:
 
     var box_count: i32 = 0
     var boxes = zero[array[rl.Rectangle, 20]]()
-    setup_boxes(addr(boxes), addr(box_count))
+    setup_boxes(ref_of(boxes), ref_of(box_count))
 
     let image = rl.GenImageChecked(64, 64, 32, 32, rl.DARKBROWN, rl.DARKGRAY)
     let background_texture = rl.LoadTextureFromImage(image)
@@ -187,7 +187,7 @@ def main() -> i32:
     defer rl.UnloadRenderTexture(light_mask)
 
     var lights = zero[array[LightInfo, 16]]()
-    setup_light(addr(lights), 0, 600.0, 400.0, 300.0)
+    setup_light(ref_of(lights), 0, 600.0, 400.0, 300.0)
     var next_light = 1
     var show_lines = false
 
@@ -210,11 +210,11 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         if rl.IsMouseButtonDown(rl.MouseButton.MOUSE_BUTTON_LEFT):
             let mouse_position = rl.GetMousePosition()
-            move_light_slot(addr(lights), 0, mouse_position.x, mouse_position.y)
+            move_light_slot(ref_of(lights), 0, mouse_position.x, mouse_position.y)
 
         if rl.IsMouseButtonPressed(rl.MouseButton.MOUSE_BUTTON_RIGHT) and next_light < max_lights:
             let mouse_position = rl.GetMousePosition()
-            setup_light(addr(lights), next_light, mouse_position.x, mouse_position.y, 200.0)
+            setup_light(ref_of(lights), next_light, mouse_position.x, mouse_position.y, 200.0)
             next_light += 1
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_F1):
@@ -222,7 +222,7 @@ def main() -> i32:
 
         var dirty_lights = false
         for index in range(0, max_lights):
-            if update_light(addr(lights), index, boxes, box_count):
+            if update_light(ref_of(lights), index, boxes, box_count):
                 dirty_lights = true
 
         if dirty_lights:
@@ -262,7 +262,7 @@ def main() -> i32:
         if show_lines:
             for index in range(0, lights[0].shadow_count):
                 var shadow_vertices = lights[0].shadows[index].vertices
-                rl.DrawTriangleFan(raw(addr(shadow_vertices[0])), 4, rl.DARKPURPLE)
+                rl.DrawTriangleFan(ptr_of(ref_of(shadow_vertices[0])), 4, rl.DARKPURPLE)
 
             for index in range(0, box_count):
                 if rl.CheckCollisionRecs(boxes[index], lights[0].bounds):

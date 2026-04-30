@@ -133,16 +133,16 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.span_surface",
       "",
-      "def read(items: span[i32]) -> i32:",
+      "def first(items: span[i32]) -> i32:",
       "    if items.len == 0:",
       "        return 0",
       "    unsafe:",
-      "        return deref(items.data)",
+      "        return read(items.data)",
       "",
       "def main() -> i32:",
       "    var value = 7",
-      "    let items = span[i32](data = raw(addr(value)), len = 1)",
-      "    return read(items)",
+      "    let items = span[i32](data = ptr_of(ref_of(value)), len = 1)",
+      "    return first(items)",
       "",
     ].join("\n")
 
@@ -151,7 +151,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/typedef struct mt_span_i32/, generated)
     assert_match(/int32_t \*data;/, generated)
     assert_match(/uintptr_t len;/, generated)
-    assert_match(/static int32_t demo_span_surface_read\(mt_span_i32 items\)/, generated)
+    assert_match(/static int32_t demo_span_surface_first\(mt_span_i32 items\)/, generated)
     assert_match(/if \(items\.len == 0\)/, generated)
     assert_match(/return \*items\.data;/, generated)
     assert_match(/mt_span_i32 items = \(mt_span_i32\)\{ \.data = &value, \.len = 1 \};/, generated)
@@ -585,7 +585,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       def main() -> void:
           let value = 7
-          let pointer: const_ptr[i32] = ro_addr(value)
+          let pointer: const_ptr[i32] = const_ptr_of(value)
           let copy: const_ptr[i32] = pointer
     MT
 
@@ -1177,7 +1177,7 @@ class MilkTeaCodegenTest < Minitest::Test
       def main() -> shared.Matrix:
           var matrix = sample.get_matrix()
           sample.set_matrix(shared.IDENTITY)
-          sample.set_matrix_ptr(raw(addr(matrix)))
+          sample.set_matrix_ptr(ptr_of(ref_of(matrix)))
           return matrix
     MT
 
@@ -1321,7 +1321,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var value = 7",
-      "    let items = span[i32](data = raw(addr(value)), len = 1)",
+      "    let items = span[i32](data = ptr_of(ref_of(value)), len = 1)",
       "    return bump(items)",
       "",
     ].join("\n")
@@ -1470,16 +1470,16 @@ class MilkTeaCodegenTest < Minitest::Test
       "struct Holder:",
       "    items: Slice[i32]",
       "",
-      "def read(items: Slice[i32]) -> i32:",
+      "def first(items: Slice[i32]) -> i32:",
       "    if items.len == 0:",
       "        return 0",
       "    unsafe:",
-      "        return deref(items.data)",
+      "        return read(items.data)",
       "",
       "def main() -> i32:",
       "    var value = 7",
-      "    let holder = Holder(items = Slice[i32](data = raw(addr(value)), len = 1))",
-      "    return read(holder.items)",
+      "    let holder = Holder(items = Slice[i32](data = ptr_of(ref_of(value)), len = 1))",
+      "    return first(holder.items)",
       "",
     ].join("\n")
 
@@ -1492,7 +1492,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/uintptr_t len;/, generated)
     assert_match(/struct demo_generic_surface_Holder \{/, generated)
     assert_match(/demo_generic_surface_Slice_i32 items;/, generated)
-    assert_match(/static int32_t demo_generic_surface_read\(demo_generic_surface_Slice_i32 items\)/, generated)
+    assert_match(/static int32_t demo_generic_surface_first\(demo_generic_surface_Slice_i32 items\)/, generated)
     assert_match(/demo_generic_surface_Holder holder = \(demo_generic_surface_Holder\)\{ \.items = \(demo_generic_surface_Slice_i32\)\{ \.data = &value, \.len = 1 \} \};/, generated)
   end
 
@@ -1514,10 +1514,10 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var value = 7",
-      "    let items = Slice[i32](data = raw(addr(value)), len = 1)",
+      "    let items = Slice[i32](data = ptr_of(ref_of(value)), len = 1)",
       "    let smallest = min(9, 4)",
       "    unsafe:",
-      "        return deref(head(items)) + smallest",
+      "        return read(head(items)) + smallest",
       "",
     ].join("\n")
 
@@ -1796,12 +1796,12 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def add(target: ptr[i32], amount: i32) -> void:",
       "    unsafe:",
-      "        deref(target) += amount",
+      "        read(target) += amount",
       "",
       "def main() -> i32:",
       "    var total = 0",
       "    for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):",
-      "        defer add(raw(addr(total)), 1)",
+      "        defer add(ptr_of(ref_of(total)), 1)",
       "        match step:",
       "            Step.skip:",
       "                continue",
@@ -1968,7 +1968,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    defer scratch.release()",
       "    let text = \"hello world\"",
       "    let part = text.slice(6, 5)",
-      "    let copied = part.to_cstr(addr(scratch))",
+      "    let copied = part.to_cstr(ref_of(scratch))",
       "    panic(copied)",
       "    if part.len == usize<-5:",
       "        return i32<-part.len",
@@ -2043,9 +2043,9 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var counter = Counter(value = 3)",
-      "    let counter_ptr = raw(addr(counter))",
+      "    let counter_ptr = ptr_of(ref_of(counter))",
       "    unsafe:",
-      "        deref(counter_ptr).value = 7",
+      "        read(counter_ptr).value = 7",
       "    return counter.value",
       "",
     ].join("\n")
@@ -2066,7 +2066,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var counter = Counter(value = 3)",
-      "    let counter_ptr = raw(addr(counter))",
+      "    let counter_ptr = ptr_of(ref_of(counter))",
       "    unsafe:",
       "        counter_ptr.value = 7",
       "        return counter_ptr.value",
@@ -2096,7 +2096,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var counter = Counter(value = 3)",
-      "    let counter_ptr = raw(addr(counter))",
+      "    let counter_ptr = ptr_of(ref_of(counter))",
       "    unsafe:",
       "        counter_ptr.add(4)",
       "        return counter_ptr.read()",
@@ -2163,13 +2163,13 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var counter = Counter(value = 3)",
-      "    let handle = addr(counter)",
+      "    let handle = ref_of(counter)",
       "    increment(handle, 4)",
-      "    let value_ref = addr(handle.value)",
-      "    value(value_ref) += 2",
+      "    let value_ref = ref_of(handle.value)",
+      "    read(value_ref) += 2",
       "    unsafe:",
-      "        let raw_counter = raw(handle)",
-      "        deref(raw_counter).value += 1",
+      "        let raw_counter = ptr_of(handle)",
+      "        read(raw_counter).value += 1",
       "    return handle.read()",
       "",
     ].join("\n")
@@ -2242,9 +2242,9 @@ class MilkTeaCodegenTest < Minitest::Test
       "    var palette = array[u32, 4](1, 2, 3, 4)",
       "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
       "    unsafe:",
-      "        if deref(raw(addr(palette[0]))) != 1:",
+      "        if read(ptr_of(ref_of(palette[0]))) != 1:",
       "            return 1",
-      "        if deref(raw(addr(holder.colors[0]))) != 5:",
+      "        if read(ptr_of(ref_of(holder.colors[0]))) != 5:",
       "            return 2",
       "    return 0",
       "",
@@ -2269,9 +2269,9 @@ class MilkTeaCodegenTest < Minitest::Test
       "def main() -> u32:",
       "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
       "    unsafe:",
-      "        let base = raw(addr(holder))",
-      "        let first = raw(addr(deref(base).colors[0]))",
-      "        deref(first) = 9",
+      "        let base = ptr_of(ref_of(holder))",
+      "        let first = ptr_of(ref_of(read(base).colors[0]))",
+      "        read(first) = 9",
       "    return holder.colors[0]",
       "",
     ].join("\n")
@@ -2297,8 +2297,8 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def next(mut cursor: ptr[i32]) -> i32:",
       "    unsafe:",
-      "        let value = deref(cursor)",
-      "        deref(cursor) += 1",
+      "        let value = read(cursor)",
+      "        read(cursor) += 1",
       "        return value",
       "",
       "def main() -> i32:",
@@ -2306,7 +2306,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    var index = 1",
       "    use(points[index].x, points[index].y, points[index].x + points[index].y, points[index].x)",
       "    var cursor = 0",
-      "    use(points[next(raw(addr(cursor)))].x, points[next(raw(addr(cursor)))].y, 0, 0)",
+      "    use(points[next(ptr_of(ref_of(cursor)))].x, points[next(ptr_of(ref_of(cursor)))].y, 0, 0)",
       "    return 0",
       "",
     ].join("\n")
@@ -2480,7 +2480,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "def main() -> void:",
       "    var buffer = zero[array[char, 32]]()",
       "    unsafe:",
-      "        let raw_buffer = raw(addr(buffer[0]))",
+      "        let raw_buffer = ptr_of(ref_of(buffer[0]))",
       "        set_text(cstr<-raw_buffer)",
       "        let clipboard = get_text()",
       "        let writable = ptr[char]<-clipboard",
@@ -2502,7 +2502,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> void:",
       "    let value = 7",
-      "    inspect(ro_addr(value))",
+      "    inspect(const_ptr_of(value))",
       "",
     ].join("\n")
 
@@ -2916,21 +2916,21 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "extern def consume(counter: Counter) -> void",
       "",
-      "def read(counter: Counter) -> i32:",
+      "def project(counter: Counter) -> i32:",
       "    return counter.value",
       "",
       "def main() -> i32:",
       "    var counter = Counter(value = 7)",
-      "    let handle = addr(counter)",
-      "    consume(value(handle))",
-      "    return read(value(handle))",
+      "    let handle = ref_of(counter)",
+      "    consume(read(handle))",
+      "    return project(read(handle))",
       "",
     ].join("\n")
 
     generated = generate_c_from_source(source)
 
     assert_match(/consume\(\*handle\);/, generated)
-    assert_match(/return demo_ref_value_args_read\(\*handle\);/, generated)
+    assert_match(/return demo_ref_value_args_project\(\*handle\);/, generated)
   end
 
   def test_generate_c_for_left_biased_float_literal_inference
@@ -3130,7 +3130,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    # Struct assignment retain: ca is an existing proc value (not a direct proc expr in the assignment RHS),
+    # Struct assignment retain: ca is an existing proc read(not a direct proc expr in the assignment RHS),
     # so it gets retained for b's ownership.
     assert_match(/__mt_proc_assign_\d+\.callback\.retain\(__mt_proc_assign_\d+\.callback\.env\)/, generated)
     # Old b.callback released (guarded) before overwrite.

@@ -94,7 +94,7 @@ def capture_frame(audio_samples: ptr[f32]) -> void:
         let x = (2.0 * rl.PI * f32<-index) / f32<-(fft_window_size - 1)
         let blackman_weight = 0.42 - 0.5 * rm.cos(x) + 0.08 * rm.cos(2.0 * x)
         unsafe:
-            work_buffer[index].real = deref(audio_samples + index) * blackman_weight
+            work_buffer[index].real = read(audio_samples + index) * blackman_weight
         work_buffer[index].imaginary = 0.0
 
     cooley_tukey_fft_slow()
@@ -153,7 +153,7 @@ def main() -> i32:
 
     let i_resolution_location = rl.GetShaderLocation(shader, resolution_uniform_name)
     let i_channel0_location = rl.GetShaderLocation(shader, channel_uniform_name)
-    rl.SetShaderValue(shader, i_resolution_location, raw(addr(i_resolution)), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, i_resolution_location, ptr_of(ref_of(i_resolution)), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
     rl.SetShaderValueTexture(shader, i_channel0_location, fft_texture)
 
     rl.InitAudioDevice()
@@ -163,7 +163,7 @@ def main() -> i32:
 
     var wav = rl.LoadWave(wave_path)
     defer rl.UnloadWave(wav)
-    rl.WaveFormat(raw(addr(wav)), sample_rate, per_sample_bit_depth, mono)
+    rl.WaveFormat(ptr_of(ref_of(wav)), sample_rate, per_sample_bit_depth, mono)
 
     let wav_samples = rl.LoadWaveSamples(wav)
     defer rl.UnloadWaveSamples(wav_samples)
@@ -183,18 +183,18 @@ def main() -> i32:
         while rl.IsAudioStreamProcessed(audio_stream):
             unsafe:
                 for index in range(0, audio_stream_ring_buffer_size):
-                    chunk_samples[index] = deref(wav_samples + wav_cursor)
+                    chunk_samples[index] = read(wav_samples + wav_cursor)
                     wav_cursor += 1
                     if wav_cursor >= wav_frame_count:
                         wav_cursor = 0
 
-            rl.UpdateAudioStream(audio_stream, raw(addr(chunk_samples[0])), audio_stream_ring_buffer_size)
+            rl.UpdateAudioStream(audio_stream, ptr_of(ref_of(chunk_samples[0])), audio_stream_ring_buffer_size)
 
             for index in range(0, fft_window_size):
                 audio_samples[index] = (chunk_samples[index * 2] + chunk_samples[index * 2 + 1]) * 0.5
 
-        capture_frame(raw(addr(audio_samples[0])))
-        render_frame(raw(addr(fft_image)))
+        capture_frame(ptr_of(ref_of(audio_samples[0])))
+        render_frame(ptr_of(ref_of(fft_image)))
         rl.UpdateTexture(fft_texture, fft_image.data)
 
         rl.BeginDrawing()

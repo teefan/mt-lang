@@ -52,7 +52,7 @@ def render_frame() -> void:
     sdl.set_render_draw_color(renderer, 0, 0, 0, 255)
     sdl.render_clear(renderer)
     sdl.set_render_draw_color(renderer, 255, 255, 255, 255)
-    sdl.render_points(renderer, ro_addr(points[0]), point_count)
+    sdl.render_points(renderer, const_ptr_of(points[0]), point_count)
     sdl.render_present(renderer)
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:

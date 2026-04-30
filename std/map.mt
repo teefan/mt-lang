@@ -56,7 +56,7 @@ def insert_existing[K, V](entries: ptr[Entry[K, V]], capacity: usize, entry: Ent
         unsafe:
             let slot = entries + index
             if slot.state != full_state:
-                deref(slot) = entry
+                read(slot) = entry
                 return
         index = (index + 1) % capacity
         probes += 1
@@ -85,7 +85,7 @@ pub def try_reserve[K, V](items: ref[HashMap[K, V]], min_capacity: usize) -> boo
         var index: usize = 0
         while index < items.capacity:
             unsafe:
-                let entry = deref(old_entries + index)
+                let entry = read(old_entries + index)
                 if entry.state == full_state:
                     insert_existing[K, V](new_entries, new_capacity, entry)
             index += 1
@@ -174,7 +174,7 @@ pub def get_into[K, V](items: HashMap[K, V], key: K, target: ref[V]) -> bool:
             if slot.state == empty_state:
                 return false
             elif slot.state == full_state and slot.hash == hash and items.equals_fn(slot.key, key):
-                value(target) = slot.value
+                read(target) = slot.value
                 return true
 
         index = (index + 1) % items.capacity

@@ -19,7 +19,7 @@ def set_palette_uniform(shader: rl.Shader, location: i32, palette: array[i32, pa
     rl.SetShaderValueV(
         shader,
         location,
-        raw(addr(palette_data[0])),
+        ptr_of(ref_of(palette_data[0])),
         rl.ShaderUniformDataType.SHADER_UNIFORM_IVEC3,
         colors_per_palette,
     )

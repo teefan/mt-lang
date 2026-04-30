@@ -85,7 +85,7 @@ def main() -> i32:
                 transfert_buffer.commands[command_index].enabled = u32<-0
             transfert_buffer.count += u32<-1
         elif transfert_buffer.count > 0:
-            rlgl.update_shader_buffer(ssbo_transfert, raw(addr(transfert_buffer)), u32<-sizeof(GolUpdateSSBO), 0)
+            rlgl.update_shader_buffer(ssbo_transfert, ptr_of(ref_of(transfert_buffer)), u32<-sizeof(GolUpdateSSBO), 0)
 
             rlgl.enable_shader(gol_transfert_program)
             rlgl.bind_shader_buffer(current_ssbo, 1)
@@ -106,7 +106,7 @@ def main() -> i32:
             next_ssbo = temp
 
         rlgl.bind_shader_buffer(current_ssbo, 1)
-        rl.SetShaderValue(gol_render_shader, res_uniform_loc, raw(addr(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.SetShaderValue(gol_render_shader, res_uniform_loc, ptr_of(ref_of(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

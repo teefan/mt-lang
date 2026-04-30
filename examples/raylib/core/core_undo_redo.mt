@@ -37,12 +37,12 @@ def random_player_color() -> rl.Color:
     )
 
 def initialize_states(states: ref[array[PlayerState, 26]], player: PlayerState) -> void:
-    var items = value(states)
+    var items = read(states)
     var index = 0
     while index < max_undo_states:
         items[index] = player
         index += 1
-    value(states) = items
+    read(states) = items
     return
 
 def clamp_player(player: ref[PlayerState]) -> void:
@@ -160,7 +160,7 @@ def main() -> i32:
     )
 
     var states = zero[array[PlayerState, 26]]()
-    initialize_states(addr(states), player)
+    initialize_states(ref_of(states), player)
 
     let grid_position = rl.Vector2(x = 40.0, y = 60.0)
 
@@ -176,7 +176,7 @@ def main() -> i32:
         elif rl.IsKeyPressed(rl.KeyboardKey.KEY_DOWN):
             player.cell.y += 1
 
-        clamp_player(addr(player))
+        clamp_player(ref_of(player))
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_SPACE):
             player.color = random_player_color()

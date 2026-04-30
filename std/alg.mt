@@ -9,7 +9,7 @@ pub def index_of[T](items: span[T], needle: T, equals: fn(left: T, right: T) -> 
     var index: usize = 0
     while index < items.len:
         if equals(items[index], needle):
-            value(index_out) = index
+            read(index_out) = index
             return true
         index += 1
     return false

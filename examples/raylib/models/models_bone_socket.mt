@@ -27,23 +27,23 @@ def chars_to_cstr(text: ptr[char]) -> cstr:
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
-        return deref(anims + index)
+        return read(anims + index)
 
 def model_animation_pose(anim: rl.ModelAnimation, frame: i32) -> rl.ModelAnimPose:
     unsafe:
-        return deref(anim.keyframePoses + frame)
+        return read(anim.keyframePoses + frame)
 
 def pose_transform(pose: rl.ModelAnimPose, index: i32) -> rl.Transform:
     unsafe:
-        return deref(pose + index)
+        return read(pose + index)
 
 def skeleton_bone_name(skeleton: rl.ModelSkeleton, index: i32) -> cstr:
     unsafe:
-        return chars_to_cstr(raw(addr((skeleton.bones + index).name[0])))
+        return chars_to_cstr(ptr_of(ref_of((skeleton.bones + index).name[0])))
 
 def bind_pose_transform(skeleton: rl.ModelSkeleton, index: i32) -> rl.Transform:
     unsafe:
-        return deref(skeleton.bindPose + index)
+        return read(skeleton.bindPose + index)
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -71,7 +71,7 @@ def main() -> i32:
     var show_equip = array[bool, bone_sockets](true, true, true)
 
     var anims_count = 0
-    let model_animations = rl.LoadModelAnimations(character_model_path, raw(addr(anims_count)))
+    let model_animations = rl.LoadModelAnimations(character_model_path, ptr_of(ref_of(anims_count)))
     defer rl.UnloadModelAnimations(model_animations, anims_count)
 
     var anim_index = 0
@@ -96,7 +96,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_THIRD_PERSON)
+        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_THIRD_PERSON)
 
         if rl.IsKeyDown(rl.KeyboardKey.KEY_F):
             angle = (angle + 1) % 360

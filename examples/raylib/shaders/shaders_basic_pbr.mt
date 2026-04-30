@@ -81,7 +81,7 @@ def set_material_map_value(materials: ptr[rl.Material], map_index: i32, value: f
 
 def set_shader_int(shader: rl.Shader, location: i32, value: i32) -> void:
     var storage = value
-    rl.SetShaderValue(shader, location, raw(addr(storage)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+    rl.SetShaderValue(shader, location, ptr_of(ref_of(storage)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
 
 def update_light(shader: rl.Shader, light: Light) -> void:
     var enabled = light.enabled
@@ -91,12 +91,12 @@ def update_light(shader: rl.Shader, light: Light) -> void:
     var color = array[f32, 4](light.color[0], light.color[1], light.color[2], light.color[3])
     var intensity = light.intensity
 
-    rl.SetShaderValue(shader, light.enabled_loc, raw(addr(enabled)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
-    rl.SetShaderValue(shader, light.type_loc, raw(addr(type_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
-    rl.SetShaderValue(shader, light.position_loc, raw(addr(position[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
-    rl.SetShaderValue(shader, light.target_loc, raw(addr(target[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
-    rl.SetShaderValue(shader, light.color_loc, raw(addr(color[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
-    rl.SetShaderValue(shader, light.intensity_loc, raw(addr(intensity)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, light.enabled_loc, ptr_of(ref_of(enabled)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+    rl.SetShaderValue(shader, light.type_loc, ptr_of(ref_of(type_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+    rl.SetShaderValue(shader, light.position_loc, ptr_of(ref_of(position[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+    rl.SetShaderValue(shader, light.target_loc, ptr_of(ref_of(target[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+    rl.SetShaderValue(shader, light.color_loc, ptr_of(ref_of(color[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shader, light.intensity_loc, ptr_of(ref_of(intensity)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
 def create_light(type: i32, position: rl.Vector3, target: rl.Vector3, color: rl.Color, intensity: f32, shader: rl.Shader) -> Light:
     var light = Light(
@@ -181,8 +181,8 @@ def main() -> i32:
     let ambient_intensity_loc = rl.GetShaderLocation(shader, ambient_uniform_name)
     let ambient_color_loc = rl.GetShaderLocation(shader, ambient_color_uniform_name)
     var ambient_intensity: f32 = 0.02
-    rl.SetShaderValue(shader, ambient_color_loc, raw(addr(ambient_color[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
-    rl.SetShaderValue(shader, ambient_intensity_loc, raw(addr(ambient_intensity)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, ambient_color_loc, ptr_of(ref_of(ambient_color[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+    rl.SetShaderValue(shader, ambient_intensity_loc, ptr_of(ref_of(ambient_intensity)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
     let metallic_value_loc = rl.GetShaderLocation(shader, metallic_value_uniform_name)
     let roughness_value_loc = rl.GetShaderLocation(shader, roughness_value_uniform_name)
@@ -192,7 +192,7 @@ def main() -> i32:
 
     var car = rl.LoadModel(car_model_path)
     defer rl.UnloadModel(car)
-    set_model_shader(raw(addr(car)), shader)
+    set_model_shader(ptr_of(ref_of(car)), shader)
 
     set_material_map_color(car.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, rl.WHITE)
     set_material_map_value(car.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_METALNESS, 1.0)
@@ -216,7 +216,7 @@ def main() -> i32:
 
     var floor = rl.LoadModel(floor_model_path)
     defer rl.UnloadModel(floor)
-    set_model_shader(raw(addr(floor)), shader)
+    set_model_shader(ptr_of(ref_of(floor)), shader)
 
     set_material_map_color(floor.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, rl.WHITE)
     set_material_map_value(floor.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_METALNESS, 0.8)
@@ -260,14 +260,14 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
 
         var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
         unsafe:
             rl.SetShaderValue(
                 shader,
-                deref(shader.locs + usize<-(i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW)),
-                raw(addr(camera_pos[0])),
+                read(shader.locs + usize<-(i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW)),
+                ptr_of(ref_of(camera_pos[0])),
                 rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3,
             )
 
@@ -290,17 +290,17 @@ def main() -> i32:
 
         rl.BeginMode3D(camera)
 
-        rl.SetShaderValue(shader, texture_tiling_loc, raw(addr(floor_texture_tiling[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-        rl.SetShaderValue(shader, emissive_color_loc, raw(addr(floor_emissive[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
-        rl.SetShaderValue(shader, metallic_value_loc, raw(addr(floor_metallic_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-        rl.SetShaderValue(shader, roughness_value_loc, raw(addr(floor_roughness_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, texture_tiling_loc, ptr_of(ref_of(floor_texture_tiling[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.SetShaderValue(shader, emissive_color_loc, ptr_of(ref_of(floor_emissive[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+        rl.SetShaderValue(shader, metallic_value_loc, ptr_of(ref_of(floor_metallic_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, roughness_value_loc, ptr_of(ref_of(floor_roughness_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
         rl.DrawModel(floor, rm.Vector3.zero(), 5.0, rl.WHITE)
 
-        rl.SetShaderValue(shader, texture_tiling_loc, raw(addr(car_texture_tiling[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-        rl.SetShaderValue(shader, emissive_color_loc, raw(addr(car_emissive[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
-        rl.SetShaderValue(shader, emissive_intensity_loc, raw(addr(emissive_intensity)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-        rl.SetShaderValue(shader, metallic_value_loc, raw(addr(car_metallic_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-        rl.SetShaderValue(shader, roughness_value_loc, raw(addr(car_roughness_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, texture_tiling_loc, ptr_of(ref_of(car_texture_tiling[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.SetShaderValue(shader, emissive_color_loc, ptr_of(ref_of(car_emissive[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+        rl.SetShaderValue(shader, emissive_intensity_loc, ptr_of(ref_of(emissive_intensity)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, metallic_value_loc, ptr_of(ref_of(car_metallic_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, roughness_value_loc, ptr_of(ref_of(car_roughness_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
         rl.DrawModel(car, rm.Vector3.zero(), 0.25, rl.WHITE)
 
         for light_index in range(0, max_lights):

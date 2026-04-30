@@ -3337,7 +3337,7 @@ module MilkTea
             IR::Index.new(receiver:, index:, type:)
           end
         when AST::Call
-          if value_call?(expression) || deref_call?(expression)
+          if read_call?(expression)
             type = infer_expression_type(expression, env:)
             operand = lower_expression(expression.arguments.first.value, env:)
             return IR::Unary.new(operator: "*", operand:, type:)
@@ -4128,19 +4128,16 @@ module MilkTea
           message_type = infer_expression_type(argument.value, env:)
           callee = message_type == @types.fetch("cstr") ? "mt_panic" : "mt_panic_str"
           IR::Call.new(callee:, arguments: [lower_expression(argument.value, env:, expected_type: message_type)], type:)
-        when :addr
+        when :ref_of
           argument = expression.arguments.fetch(0)
           lower_addr_expression(argument.value, env:, target_type: type)
-        when :ro_addr
+        when :const_ptr_of
           argument = expression.arguments.fetch(0)
           lower_addr_expression(argument.value, env:, target_type: type)
-        when :value
+        when :read
           argument = expression.arguments.fetch(0)
           IR::Unary.new(operator: "*", operand: lower_expression(argument.value, env:), type:)
-        when :deref
-          argument = expression.arguments.fetch(0)
-          IR::Unary.new(operator: "*", operand: lower_expression(argument.value, env:), type:)
-        when :raw
+        when :ptr_of
           argument = expression.arguments.fetch(0)
           IR::Cast.new(target_type: type, expression: lower_expression(argument.value, env:), type:)
         else
@@ -4801,7 +4798,7 @@ module MilkTea
           )
         when :zero
           IR::ZeroInit.new(type:)
-        when :addr
+        when :ref_of
           argument = expression.arguments.fetch(0)
           lowered_argument = lower_inline_foreign_mapping_expression(
             argument.value,
@@ -4816,7 +4813,7 @@ module MilkTea
           else
             IR::AddressOf.new(expression: lowered_argument, type:)
           end
-        when :ro_addr
+        when :const_ptr_of
           argument = expression.arguments.fetch(0)
           lowered_argument = lower_inline_foreign_mapping_expression(
             argument.value,
@@ -4831,19 +4828,7 @@ module MilkTea
           else
             IR::AddressOf.new(expression: lowered_argument, type:)
           end
-        when :value
-          argument = expression.arguments.fetch(0)
-          IR::Unary.new(
-            operator: "*",
-            operand: lower_inline_foreign_mapping_expression(
-              argument.value,
-              mapping_env:,
-              replacements:,
-              owner_analysis:,
-            ),
-            type:,
-          )
-        when :deref
+        when :read
           argument = expression.arguments.fetch(0)
           IR::Unary.new(
             operator: "*",
@@ -4860,7 +4845,7 @@ module MilkTea
             infer_expression_type(receiver, env: mapping_env)
           end
           IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type:)
-        when :raw
+        when :ptr_of
           argument = expression.arguments.fetch(0)
           IR::Cast.new(
             target_type: type,
@@ -4905,12 +4890,12 @@ module MilkTea
 
       def raw_pointer_argument_expression(operand)
         AST::Call.new(
-          callee: AST::Identifier.new(name: "raw"),
+          callee: AST::Identifier.new(name: "ptr_of"),
           arguments: [
             AST::Argument.new(
               name: nil,
               value: AST::Call.new(
-                callee: AST::Identifier.new(name: "addr"),
+                callee: AST::Identifier.new(name: "ref_of"),
                 arguments: [AST::Argument.new(name: nil, value: operand)],
               ),
             ),
@@ -5704,16 +5689,14 @@ module MilkTea
             [:result_err, nil, nil, nil]
           elsif callee.name == "panic"
             [:panic, nil, nil, nil]
-          elsif callee.name == "addr"
-            [:addr, nil, nil, nil]
-          elsif callee.name == "ro_addr"
-            [:ro_addr, nil, nil, nil]
-          elsif callee.name == "value"
-            [:value, nil, nil, nil]
-          elsif callee.name == "deref"
-            [:deref, nil, nil, nil]
-          elsif callee.name == "raw"
-            [:raw, nil, nil, nil]
+          elsif callee.name == "ref_of"
+            [:ref_of, nil, nil, nil]
+          elsif callee.name == "const_ptr_of"
+            [:const_ptr_of, nil, nil, nil]
+          elsif callee.name == "read"
+            [:read, nil, nil, nil]
+          elsif callee.name == "ptr_of"
+            [:ptr_of, nil, nil, nil]
           elsif (type = @types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type)
             [ :struct_literal, nil, nil, type ]
           else
@@ -5924,17 +5907,15 @@ module MilkTea
           when :struct_literal, :array
             _, _, _, struct_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             struct_type
-          when :addr
+          when :ref_of
             argument_type = infer_expression_type(expression.arguments.fetch(0).value, env:)
             Types::GenericInstance.new("ref", [argument_type])
-          when :ro_addr
+          when :const_ptr_of
             argument_type = infer_expression_type(expression.arguments.fetch(0).value, env:)
             Types::GenericInstance.new("const_ptr", [argument_type])
-          when :value
+          when :read
             infer_value_type(expression.arguments.fetch(0).value, env:)
-          when :deref
-            infer_deref_type(expression.arguments.fetch(0).value, env:)
-          when :raw
+          when :ptr_of
             Types::GenericInstance.new("ptr", [infer_ref_argument_type(expression.arguments.fetch(0).value, env:)])
           when :cast
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
@@ -6794,25 +6775,22 @@ module MilkTea
         when AST::MemberAccess, AST::IndexAccess
           addressable_storage_expression?(expression.receiver)
         when AST::Call
-          value_call?(expression) || deref_call?(expression)
+          read_call?(expression)
         else
           false
         end
       end
 
-      def value_call?(expression)
-        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "value"
-      end
-
-      def deref_call?(expression)
-        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "deref"
+      def read_call?(expression)
+        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "read"
       end
 
       def infer_value_type(handle_expression, env:)
         handle_type = infer_expression_type(handle_expression, env:)
         return referenced_type(handle_type) if ref_type?(handle_type)
+        return pointee_type(handle_type) if pointer_type?(handle_type)
 
-        raise LoweringError, "value expects ref[...], got #{handle_type}"
+        raise LoweringError, "read expects ref[...] or ptr[...], got #{handle_type}"
       end
 
       def infer_method_receiver_type(receiver_expression, env:)
@@ -6831,17 +6809,11 @@ module MilkTea
         receiver_type
       end
 
-      def infer_deref_type(handle_expression, env:)
-        handle_type = infer_expression_type(handle_expression, env:)
-
-        pointee_type(handle_type) || raise(LoweringError, "deref expects ptr[...], got #{handle_type}")
-      end
-
       def infer_ref_argument_type(handle_expression, env:)
         handle_type = infer_expression_type(handle_expression, env:)
         return referenced_type(handle_type) if ref_type?(handle_type)
 
-        raise LoweringError, "raw expects ref[...] argument, got #{handle_type}"
+        raise LoweringError, "ptr_of expects ref[...] argument, got #{handle_type}"
       end
 
       def collection_loop_type(type)

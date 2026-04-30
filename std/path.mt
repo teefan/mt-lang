@@ -10,7 +10,7 @@ struct Segment:
 
 def byte_at(path: str, index: usize) -> u8:
     unsafe:
-        return u8<-deref(path.data + index)
+        return u8<-read(path.data + index)
 
 def segment_text(path: str, segment: Segment) -> str:
     unsafe:
@@ -31,14 +31,14 @@ pub def join(left: str, right: str) -> string.String:
         return string.String.from_str(left)
 
     unsafe:
-        if deref(right.data) == char<-47:
+        if read(right.data) == char<-47:
             return string.String.from_str(right)
 
     var result = string.String.with_capacity(left.len + right.len + 1)
     result.append(left)
 
     unsafe:
-        let last = deref(left.data + (left.len - 1))
+        let last = read(left.data + (left.len - 1))
         if last != char<-47:
             result.append("/")
 
@@ -50,7 +50,7 @@ pub def module_relative_path(module_name: str) -> string.String:
     var index: usize = 0
     while index < module_name.len:
         unsafe:
-            let byte = u8<-deref(module_name.data + index)
+            let byte = u8<-read(module_name.data + index)
             if byte == u8<-46:
                 result.push_byte(u8<-47)
             else:
@@ -82,13 +82,13 @@ pub def normalize(path: str) -> string.String:
                         let last_index = vec.count[Segment](segments) - 1
                         let last = vec.get[Segment](segments, last_index)
                         if not segment_equals(path, last, ".."):
-                            vec.remove_ordered[Segment](addr(segments), last_index)
+                            vec.remove_ordered[Segment](ref_of(segments), last_index)
                         elif not absolute:
-                            vec.push[Segment](addr(segments), segment)
+                            vec.push[Segment](ref_of(segments), segment)
                     elif not absolute:
-                        vec.push[Segment](addr(segments), segment)
+                        vec.push[Segment](ref_of(segments), segment)
                 else:
-                    vec.push[Segment](addr(segments), segment)
+                    vec.push[Segment](ref_of(segments), segment)
 
     var result = string.String.with_capacity(path.len)
     if absolute:
@@ -106,7 +106,7 @@ pub def normalize(path: str) -> string.String:
             result.append(segment_text(path, segment))
             segment_index += 1
 
-    vec.release[Segment](addr(segments))
+    vec.release[Segment](ref_of(segments))
     return result
 
 pub def expand(path: str, cwd: str) -> string.String:

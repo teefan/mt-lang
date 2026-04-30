@@ -223,7 +223,7 @@ def handle_hat_event(hat: u8) -> void:
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
@@ -264,18 +264,18 @@ def render_frame() -> void:
             if cell_type == SnakeCell.SNAKE_CELL_NOTHING:
                 continue
 
-            set_rect_xy(raw(addr(rect)), x, y)
+            set_rect_xy(ptr_of(ref_of(rect)), x, y)
 
             if cell_type == SnakeCell.SNAKE_CELL_FOOD:
                 c.SDL_SetRenderDrawColor(renderer, 80, 80, 255, c.SDL_ALPHA_OPAQUE)
             else:
                 c.SDL_SetRenderDrawColor(renderer, 0, 128, 0, c.SDL_ALPHA_OPAQUE)
 
-            c.SDL_RenderFillRect(renderer, raw(addr(rect)))
+            c.SDL_RenderFillRect(renderer, ptr_of(ref_of(rect)))
 
     c.SDL_SetRenderDrawColor(renderer, 255, 255, 0, c.SDL_ALPHA_OPAQUE)
-    set_rect_xy(raw(addr(rect)), snake_ctx.head_xpos, snake_ctx.head_ypos)
-    c.SDL_RenderFillRect(renderer, raw(addr(rect)))
+    set_rect_xy(ptr_of(ref_of(rect)), snake_ctx.head_xpos, snake_ctx.head_ypos)
+    c.SDL_RenderFillRect(renderer, ptr_of(ref_of(rect)))
     c.SDL_RenderPresent(renderer)
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
@@ -298,7 +298,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         if joystick != null:
             c.SDL_CloseJoystick(joystick)
 
-    if not c.SDL_CreateWindowAndRenderer(c"examples/demo/snake", window_width, window_height, window_flags, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(c"examples/demo/snake", window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)

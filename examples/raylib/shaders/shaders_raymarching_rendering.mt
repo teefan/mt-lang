@@ -36,7 +36,7 @@ def main() -> i32:
     let resolution_loc = rl.GetShaderLocation(shader, resolution_uniform_name)
 
     var resolution = array[f32, 2](f32<-screen_width, f32<-screen_height)
-    rl.SetShaderValue(shader, resolution_loc, raw(addr(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, resolution_loc, ptr_of(ref_of(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     var run_time: f32 = 0.0
 
@@ -45,21 +45,21 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_FIRST_PERSON)
+        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_FIRST_PERSON)
 
         var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
         var camera_target = array[f32, 3](camera.target.x, camera.target.y, camera.target.z)
 
         run_time += rl.GetFrameTime()
 
-        rl.SetShaderValue(shader, view_eye_loc, raw(addr(camera_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
-        rl.SetShaderValue(shader, view_center_loc, raw(addr(camera_target[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
-        rl.SetShaderValue(shader, run_time_loc, raw(addr(run_time)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, view_eye_loc, ptr_of(ref_of(camera_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(shader, view_center_loc, ptr_of(ref_of(camera_target[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(shader, run_time_loc, ptr_of(ref_of(run_time)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         if rl.IsWindowResized():
             resolution[0] = f32<-rl.GetScreenWidth()
             resolution[1] = f32<-rl.GetScreenHeight()
-            rl.SetShaderValue(shader, resolution_loc, raw(addr(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+            rl.SetShaderValue(shader, resolution_loc, ptr_of(ref_of(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

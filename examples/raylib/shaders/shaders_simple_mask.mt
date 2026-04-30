@@ -59,8 +59,8 @@ def main() -> i32:
         shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_MAP_EMISSION] = rl.GetShaderLocation(shader, mask_uniform_name)
 
     let shader_frame = rl.GetShaderLocation(shader, frame_uniform_name)
-    set_model_shader(raw(addr(model1)), shader)
-    set_model_shader(raw(addr(model2)), shader)
+    set_model_shader(ptr_of(ref_of(model1)), shader)
+    set_model_shader(ptr_of(ref_of(model2)), shader)
 
     var frames_counter = 0
     var rotation = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
@@ -70,14 +70,14 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_FIRST_PERSON)
+        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_FIRST_PERSON)
 
         frames_counter += 1
         rotation.x += 0.01
         rotation.y += 0.005
         rotation.z -= 0.0025
 
-        rl.SetShaderValue(shader, shader_frame, raw(addr(frames_counter)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+        rl.SetShaderValue(shader, shader_frame, ptr_of(ref_of(frames_counter)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
         model1.transform = rm.Matrix.rotate_xyz(rotation)
 
         let frame_text = rl.TextFormat(frame_format, frames_counter)

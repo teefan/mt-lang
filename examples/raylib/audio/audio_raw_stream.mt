@@ -68,7 +68,7 @@ def main() -> i32:
                     sine_index = 0
                     sine_start_time = rl.GetTime()
 
-            rl.UpdateAudioStream(stream, raw(addr(buffer[0])), buffer_size)
+            rl.UpdateAudioStream(stream, ptr_of(ref_of(buffer[0])), buffer_size)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

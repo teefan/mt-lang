@@ -27,8 +27,8 @@ def main() -> i32:
     var clipboard_text = c""
     var input_buffer = zero[array[char, 256]]()
     var clipboard_buffer = zero[array[char, 256]]()
-    let input_buffer_ptr = raw(addr(input_buffer[0]))
-    let clipboard_buffer_ptr = raw(addr(clipboard_buffer[0]))
+    let input_buffer_ptr = ptr_of(ref_of(input_buffer[0]))
+    let clipboard_buffer_ptr = ptr_of(ref_of(clipboard_buffer[0]))
 
     rl.TextCopy(input_buffer_ptr, c"Hello from raylib!")
     rl.TextCopy(clipboard_buffer_ptr, clipboard_text)

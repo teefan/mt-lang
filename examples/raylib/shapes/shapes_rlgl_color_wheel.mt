@@ -181,7 +181,7 @@ def main() -> i32:
         rl.DrawText(copy_text, 8, 425 - copy_offset, 20, copy_color)
         rl.DrawText(rl.TextFormat(triangle_count_format, triangle_count), 8, 395, 20, rl.DARKGRAY)
 
-        gui.GuiSliderBar(slider_rectangle, slider_left_text, slider_right_text, raw(addr(value)), 0.0, 1.0)
+        gui.GuiSliderBar(slider_rectangle, slider_left_text, slider_right_text, ptr_of(ref_of(value)), 0.0, 1.0)
         rl.DrawFPS(80, 8)
 
     return 0

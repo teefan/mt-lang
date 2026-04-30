@@ -14,7 +14,7 @@ def storage_size_bytes(position: usize) -> i32:
 
 def save_storage_value(position: usize, stored_value: i32) -> bool:
     var data_size = 0
-    let loaded_file_data: ptr[u8]? = rl.LoadFileData(storage_data_file, raw(addr(data_size)))
+    let loaded_file_data: ptr[u8]? = rl.LoadFileData(storage_data_file, ptr_of(ref_of(data_size)))
     let required_size = storage_size_bytes(position)
 
     if loaded_file_data != null:
@@ -33,7 +33,7 @@ def save_storage_value(position: usize, stored_value: i32) -> bool:
 
             if can_store_value:
                 let data_ptr = ptr[i32]<-writable_file_data
-                deref(data_ptr + position) = stored_value
+                read(data_ptr + position) = stored_value
 
             let success = rl.SaveFileData(storage_data_file, ptr[void]<-writable_file_data, writable_size)
             rl.MemFree(ptr[void]<-writable_file_data)
@@ -41,14 +41,14 @@ def save_storage_value(position: usize, stored_value: i32) -> bool:
 
     unsafe:
         let new_file_data = ptr[i32]<-rl.MemAlloc(u32<-required_size)
-        deref(new_file_data + position) = stored_value
+        read(new_file_data + position) = stored_value
         let success = rl.SaveFileData(storage_data_file, ptr[void]<-new_file_data, required_size)
         rl.MemFree(ptr[void]<-new_file_data)
         return success
 
 def load_storage_value(position: usize) -> i32:
     var data_size = 0
-    let loaded_file_data: ptr[u8]? = rl.LoadFileData(storage_data_file, raw(addr(data_size)))
+    let loaded_file_data: ptr[u8]? = rl.LoadFileData(storage_data_file, ptr_of(ref_of(data_size)))
     if loaded_file_data == null:
         return 0
 
@@ -60,7 +60,7 @@ def load_storage_value(position: usize) -> i32:
             return 0
 
         let data_ptr = ptr[i32]<-file_data
-        let stored_value = deref(data_ptr + position)
+        let stored_value = read(data_ptr + position)
         rl.UnloadFileData(file_data)
         return stored_value
 

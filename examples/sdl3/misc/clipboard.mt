@@ -36,7 +36,7 @@ def point_in_rect(point: c.SDL_FPoint, rect: c.SDL_FRect) -> bool:
 
 def current_time_text() -> cstr:
     unsafe:
-        return cstr<-raw(addr(current_time[0]))
+        return cstr<-ptr_of(ref_of(current_time[0]))
 
 def calculate_current_time_string() -> void:
     let month_names = array[cstr, 12](
@@ -57,11 +57,11 @@ def calculate_current_time_string() -> void:
     var ticks: c.SDL_Time = 0
     var dt = zero[c.SDL_DateTime]()
 
-    if not c.SDL_GetCurrentTime(raw(addr(ticks))) or not c.SDL_TimeToDateTime(ticks, raw(addr(dt)), true):
-        c.SDL_snprintf(raw(addr(current_time[0])), 64, c"%s", unknown_time_text)
+    if not c.SDL_GetCurrentTime(ptr_of(ref_of(ticks))) or not c.SDL_TimeToDateTime(ticks, ptr_of(ref_of(dt)), true):
+        c.SDL_snprintf(ptr_of(ref_of(current_time[0])), 64, c"%s", unknown_time_text)
     else:
         c.SDL_snprintf(
-            raw(addr(current_time[0])),
+            ptr_of(ref_of(current_time[0])),
             64,
             c"%s, %s %d, %d   %02d:%02d:%02d",
             day_names[dt.day_of_week],
@@ -76,8 +76,8 @@ def calculate_current_time_string() -> void:
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
-        c.SDL_ConvertEventToRenderCoordinates(renderer, raw(addr(event)))
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
+        c.SDL_ConvertEventToRenderCoordinates(renderer, ptr_of(ref_of(event)))
 
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
@@ -111,10 +111,10 @@ def render_truncated_line(text: ptr[char], x: f32, y: f32, max_chars_per_line: u
     unsafe:
         let line_length = min_usize(c.SDL_strlen(cstr<-text), max_chars_per_line)
         let end_ptr = text + i32<-line_length
-        let saved_char = deref(end_ptr)
-        deref(end_ptr) = char<-0
+        let saved_char = read(end_ptr)
+        read(end_ptr) = char<-0
         c.SDL_RenderDebugText(renderer, x, y, cstr<-text)
-        deref(end_ptr) = saved_char
+        read(end_ptr) = saved_char
 
 def render_pasted_text() -> void:
     let initial_text = pasted_str
@@ -143,18 +143,18 @@ def render_pasted_text() -> void:
         var ignore_cr = false
 
         unsafe:
-            if newline != line and deref(newline - 1) == char<-13:
+            if newline != line and read(newline - 1) == char<-13:
                 ignore_cr = true
-                deref(newline - 1) = char<-0
+                read(newline - 1) = char<-0
 
-            deref(newline) = char<-0
+            read(newline) = char<-0
 
         render_truncated_line(line, x, y, max_chars_per_line)
 
         unsafe:
             if ignore_cr:
-                deref(newline - 1) = char<-13
-            deref(newline) = char<-10
+                read(newline - 1) = char<-13
+            read(newline) = char<-10
             text_ptr = newline + 1
 
         y += line_height
@@ -173,9 +173,9 @@ def render_frame() -> void:
     c.SDL_RenderClear(renderer)
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 255, c.SDL_ALPHA_OPAQUE)
-    c.SDL_RenderFillRect(renderer, raw(addr(current_time_rect)))
+    c.SDL_RenderFillRect(renderer, ptr_of(ref_of(current_time_rect)))
     c.SDL_SetRenderDrawColor(renderer, 255, 255, 255, c.SDL_ALPHA_OPAQUE)
-    c.SDL_RenderRect(renderer, raw(addr(current_time_rect)))
+    c.SDL_RenderRect(renderer, ptr_of(ref_of(current_time_rect)))
 
     let current_time_x = current_time_rect.x + ((current_time_rect.w - text_width(current_time_text())) / 2.0)
     c.SDL_SetRenderDrawColor(renderer, 255, 255, 0, c.SDL_ALPHA_OPAQUE)
@@ -185,15 +185,15 @@ def render_frame() -> void:
         c.SDL_SetRenderDrawColor(renderer, 0, 255, 0, c.SDL_ALPHA_OPAQUE)
     else:
         c.SDL_SetRenderDrawColor(renderer, 255, 0, 0, c.SDL_ALPHA_OPAQUE)
-    c.SDL_RenderFillRect(renderer, raw(addr(copy_button_rect)))
+    c.SDL_RenderFillRect(renderer, ptr_of(ref_of(copy_button_rect)))
     c.SDL_SetRenderDrawColor(renderer, 255, 255, 255, c.SDL_ALPHA_OPAQUE)
-    c.SDL_RenderRect(renderer, raw(addr(copy_button_rect)))
+    c.SDL_RenderRect(renderer, ptr_of(ref_of(copy_button_rect)))
     c.SDL_RenderDebugText(renderer, copy_button_rect.x + 5.0, copy_button_rect.y + 5.0, copy_button_text)
 
     c.SDL_SetRenderDrawColor(renderer, 0, 53, 25, c.SDL_ALPHA_OPAQUE)
-    c.SDL_RenderFillRect(renderer, raw(addr(paste_text_rect)))
+    c.SDL_RenderFillRect(renderer, ptr_of(ref_of(paste_text_rect)))
     c.SDL_SetRenderDrawColor(renderer, 255, 255, 255, c.SDL_ALPHA_OPAQUE)
-    c.SDL_RenderRect(renderer, raw(addr(paste_text_rect)))
+    c.SDL_RenderRect(renderer, ptr_of(ref_of(paste_text_rect)))
 
     c.SDL_SetRenderDrawColor(renderer, 0, 219, 107, c.SDL_ALPHA_OPAQUE)
     render_pasted_text()
@@ -202,9 +202,9 @@ def render_frame() -> void:
         c.SDL_SetRenderDrawColor(renderer, 0, 255, 0, c.SDL_ALPHA_OPAQUE)
     else:
         c.SDL_SetRenderDrawColor(renderer, 255, 0, 0, c.SDL_ALPHA_OPAQUE)
-    c.SDL_RenderFillRect(renderer, raw(addr(paste_button_rect)))
+    c.SDL_RenderFillRect(renderer, ptr_of(ref_of(paste_button_rect)))
     c.SDL_SetRenderDrawColor(renderer, 255, 255, 255, c.SDL_ALPHA_OPAQUE)
-    c.SDL_RenderRect(renderer, raw(addr(paste_button_rect)))
+    c.SDL_RenderRect(renderer, ptr_of(ref_of(paste_button_rect)))
     c.SDL_RenderDebugText(renderer, paste_button_rect.x + 5.0, paste_button_rect.y + 5.0, paste_button_text)
 
     c.SDL_RenderPresent(renderer)
@@ -216,7 +216,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)

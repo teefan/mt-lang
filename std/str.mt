@@ -8,7 +8,7 @@ pub def cstr_len(text: cstr) -> usize:
     var count: usize = 0
     unsafe:
         let data = ptr[char]<-text
-        while deref(data + count) != zero[char]():
+        while read(data + count) != zero[char]():
             count += 1
     return count
 
@@ -28,7 +28,7 @@ def utf8_boundary(text: str, index: usize) -> bool:
         return true
 
     unsafe:
-        let byte = u8<-deref(text.data + index)
+        let byte = u8<-read(text.data + index)
         return not utf8_continuation_byte(byte)
 
 pub def byte_at(text: str, index: usize) -> u8:
@@ -36,7 +36,7 @@ pub def byte_at(text: str, index: usize) -> u8:
         panic(c"str.byte_at index out of bounds")
 
     unsafe:
-        return u8<-deref(text.data + index)
+        return u8<-read(text.data + index)
 
 pub def equal(left: str, right: str) -> bool:
     if left.len != right.len:

@@ -37,14 +37,14 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
 
         if rl.IsFileDropped():
             let dropped_files = rl.LoadDroppedFiles()
 
             if dropped_files.count == 1:
                 unsafe:
-                    let dropped_path = cstr<-deref(dropped_files.paths)
+                    let dropped_path = cstr<-read(dropped_files.paths)
 
                     if is_supported_model_path(dropped_path):
                         rl.UnloadModel(model)

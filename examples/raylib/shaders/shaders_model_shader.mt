@@ -38,7 +38,7 @@ def main() -> i32:
     let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
-    set_model_shader(raw(addr(model)), shader)
+    set_model_shader(ptr_of(ref_of(model)), shader)
     rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
@@ -48,7 +48,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_FREE)
+        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_FREE)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

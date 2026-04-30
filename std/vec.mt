@@ -12,7 +12,7 @@ pub def create[T]() -> Vec[T]:
 
 pub def with_capacity[T](capacity: usize) -> Vec[T]:
     var items = create[T]()
-    reserve[T](addr(items), capacity)
+    reserve[T](ref_of(items), capacity)
     return items
 
 pub def count[T](items: Vec[T]) -> usize:
@@ -80,7 +80,7 @@ pub def try_push[T](items: ref[Vec[T]], item: T) -> bool:
         return false
     else:
         unsafe:
-            deref(data + items.len) = item
+            read(data + items.len) = item
 
     items.len += 1
     return true
@@ -99,7 +99,7 @@ pub def get[T](items: Vec[T], index: usize) -> T:
         panic(c"vec.get missing storage")
     else:
         unsafe:
-            return deref(data + index)
+            return read(data + index)
 
 pub def set[T](items: ref[Vec[T]], index: usize, item: T) -> void:
     if index >= items.len:
@@ -110,7 +110,7 @@ pub def set[T](items: ref[Vec[T]], index: usize, item: T) -> void:
         panic(c"vec.set missing storage")
     else:
         unsafe:
-            deref(data + index) = item
+            read(data + index) = item
     return
 
 pub def pop_into[T](items: ref[Vec[T]], target: ref[T]) -> bool:
@@ -118,9 +118,9 @@ pub def pop_into[T](items: ref[Vec[T]], target: ref[T]) -> bool:
         return false
 
     let last_index = items.len - 1
-    let result = get[T](value(items), last_index)
+    let result = get[T](read(items), last_index)
     items.len -= 1
-    value(target) = result
+    read(target) = result
     return true
 
 pub def remove_swap[T](items: ref[Vec[T]], index: usize) -> T:
@@ -128,8 +128,8 @@ pub def remove_swap[T](items: ref[Vec[T]], index: usize) -> T:
         panic(c"vec.remove_swap index out of bounds")
 
     let last_index = items.len - 1
-    let result = get[T](value(items), index)
-    set[T](items, index, get[T](value(items), last_index))
+    let result = get[T](read(items), index)
+    set[T](items, index, get[T](read(items), last_index))
     items.len = last_index
     return result
 
@@ -137,11 +137,11 @@ pub def remove_ordered[T](items: ref[Vec[T]], index: usize) -> T:
     if index >= items.len:
         panic(c"vec.remove_ordered index out of bounds")
 
-    let result = get[T](value(items), index)
+    let result = get[T](read(items), index)
     var cursor = index
     while cursor + 1 < items.len:
         let next = cursor + 1
-        set[T](items, cursor, get[T](value(items), next))
+        set[T](items, cursor, get[T](read(items), next))
         cursor += 1
 
     items.len -= 1

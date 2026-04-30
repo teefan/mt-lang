@@ -596,7 +596,7 @@ class MilkTeaParserTest < Minitest::Test
 
       def main() -> void:
           let value = 7
-          inspect(ro_addr(value))
+          inspect(const_ptr_of(value))
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -612,7 +612,7 @@ class MilkTeaParserTest < Minitest::Test
 
     ro_addr_call = inspect_call.arguments.first.value
     assert_instance_of MilkTea::AST::Call, ro_addr_call
-    assert_equal "ro_addr", ro_addr_call.callee.name
+    assert_equal "const_ptr_of", ro_addr_call.callee.name
   end
 
   def test_parses_generic_struct_declaration_and_constructor_call
@@ -625,7 +625,7 @@ class MilkTeaParserTest < Minitest::Test
 
       def main() -> i32:
           let value = 7
-          let items = Slice[i32](data = raw(addr(value)), len = 1)
+          let items = Slice[i32](data = ptr_of(ref_of(value)), len = 1)
           return items.len
     MT
 
@@ -1122,12 +1122,12 @@ class MilkTeaParserTest < Minitest::Test
 
       def main() -> i32:
           var counter = Counter(value = 3)
-          let handle = addr(counter)
+          let handle = ref_of(counter)
           unsafe:
-              let counter_ptr = raw(handle)
+              let counter_ptr = ptr_of(handle)
               counter_ptr.value = 7
-          let value_ref = addr(handle.value)
-          value(value_ref) += 2
+          let value_ref = ref_of(handle.value)
+          read(value_ref) += 2
           return handle.value
     MT
 
@@ -1136,12 +1136,12 @@ class MilkTeaParserTest < Minitest::Test
 
     handle_decl = main_fn.body[1]
     assert_instance_of MilkTea::AST::Call, handle_decl.value
-    assert_equal "addr", handle_decl.value.callee.name
+    assert_equal "ref_of", handle_decl.value.callee.name
 
     unsafe_stmt = main_fn.body[2]
     pointer_decl = unsafe_stmt.body[0]
     assert_instance_of MilkTea::AST::Call, pointer_decl.value
-    assert_equal "raw", pointer_decl.value.callee.name
+    assert_equal "ptr_of", pointer_decl.value.callee.name
 
     assignment = unsafe_stmt.body[1]
     assert_instance_of MilkTea::AST::MemberAccess, assignment.target

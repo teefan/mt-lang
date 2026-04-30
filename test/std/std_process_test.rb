@@ -26,7 +26,7 @@ class MilkTeaStdProcessTest < Minitest::Test
         "",
         "    let first = process.arg(argc, argv, 1)",
         "    let second = process.arg(argc, argv, 2)",
-        "    let env_value = process.env(\"MT_PROCESS_TEST\", addr(scratch))",
+        "    let env_value = process.env(\"MT_PROCESS_TEST\", ref_of(scratch))",
         "    if option.is_none[str](first) or option.is_none[str](second) or option.is_none[str](env_value):",
         "        return 1",
         "    if not text.equal(option.unwrap[str](first), \"alpha\"):",

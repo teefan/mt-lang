@@ -27,18 +27,18 @@ def chars_to_cstr(text: ptr[char]) -> cstr:
         return cstr<-text
 
 def text_buffer_ptr(text: ref[array[char, 256]]) -> ptr[char]:
-    return raw(addr(value(text)[0]))
+    return ptr_of(ref_of(read(text)[0]))
 
 def text_buffer_cstr(text: ref[array[char, 256]]) -> cstr:
     return chars_to_cstr(text_buffer_ptr(text))
 
 def shader_location(shader: rl.Shader, location_index: i32) -> i32:
     unsafe:
-        return deref(shader.locs + location_index)
+        return read(shader.locs + location_index)
 
 def file_path_list_path(files: rl.FilePathList, index: i32) -> cstr:
     unsafe:
-        return cstr<-deref(files.paths + usize<-index)
+        return cstr<-read(files.paths + usize<-index)
 
 def rlgl_matrix(mat: rl.Matrix) -> rlgl.Matrix:
     return rlgl.Matrix(
@@ -66,7 +66,7 @@ def set_shader_int(shader: rl.Shader, uniform_name: cstr, value: i32) -> void:
     rl.SetShaderValue(
         shader,
         rl.GetShaderLocation(shader, uniform_name),
-        raw(addr(raw_value[0])),
+        ptr_of(ref_of(raw_value[0])),
         rl.ShaderUniformDataType.SHADER_UNIFORM_INT,
     )
 
@@ -199,7 +199,7 @@ def main() -> i32:
         rl.TextFormat(skybox_shader_fragment_path_format, glsl_version),
     )
     defer rl.UnloadShader(skybox_shader)
-    set_skybox_shader(raw(addr(skybox)), skybox_shader)
+    set_skybox_shader(ptr_of(ref_of(skybox)), skybox_shader)
 
     set_shader_int(skybox_shader, environment_map_text, i32<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP)
     set_shader_int(skybox_shader, do_gamma_text, if use_hdr then 1 else 0)
@@ -213,13 +213,13 @@ def main() -> i32:
     set_shader_int(cubemap_shader, equirectangular_map_text, 0)
 
     var skybox_file_name = zero[array[char, 256]]()
-    load_skybox_texture(raw(addr(skybox)), cubemap_shader, use_hdr, addr(skybox_file_name), if use_hdr then skybox_hdr_path else skybox_texture_path)
+    load_skybox_texture(ptr_of(ref_of(skybox)), cubemap_shader, use_hdr, ref_of(skybox_file_name), if use_hdr then skybox_hdr_path else skybox_texture_path)
 
     rl.DisableCursor()
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_FIRST_PERSON)
+        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_FIRST_PERSON)
 
         if rl.IsFileDropped():
             let dropped_files = rl.LoadDroppedFiles()
@@ -228,7 +228,7 @@ def main() -> i32:
                 let dropped_path = file_path_list_path(dropped_files, 0)
                 if rl.IsFileExtension(dropped_path, drop_extensions):
                     rl.UnloadTexture(skybox_cubemap(skybox))
-                    load_skybox_texture(raw(addr(skybox)), cubemap_shader, use_hdr, addr(skybox_file_name), dropped_path)
+                    load_skybox_texture(ptr_of(ref_of(skybox)), cubemap_shader, use_hdr, ref_of(skybox_file_name), dropped_path)
 
             rl.UnloadDroppedFiles(dropped_files)
 
@@ -246,9 +246,9 @@ def main() -> i32:
         rl.EndMode3D()
 
         if use_hdr:
-            rl.DrawText(rl.TextFormat(hdr_caption_format, rl.GetFileName(text_buffer_cstr(addr(skybox_file_name)))), 10, rl.GetScreenHeight() - 20, 10, rl.BLACK)
+            rl.DrawText(rl.TextFormat(hdr_caption_format, rl.GetFileName(text_buffer_cstr(ref_of(skybox_file_name)))), 10, rl.GetScreenHeight() - 20, 10, rl.BLACK)
         else:
-            rl.DrawText(rl.TextFormat(caption_format, rl.GetFileName(text_buffer_cstr(addr(skybox_file_name)))), 10, rl.GetScreenHeight() - 20, 10, rl.BLACK)
+            rl.DrawText(rl.TextFormat(caption_format, rl.GetFileName(text_buffer_cstr(ref_of(skybox_file_name)))), 10, rl.GetScreenHeight() - 20, 10, rl.BLACK)
 
         rl.DrawFPS(10, 10)
 

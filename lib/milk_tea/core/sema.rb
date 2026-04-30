@@ -1057,14 +1057,9 @@ module MilkTea
           index_type = infer_expression(expression.index, scopes:)
           infer_index_result_type(receiver_type, index_type)
         when AST::Call
-          if value_call?(expression)
-            validate_value_call_arguments!(expression.arguments)
+          if read_call?(expression)
+            validate_read_call_arguments!(expression.arguments)
             return infer_reference_value_type(expression.arguments.first.value, scopes:)
-          end
-
-          if deref_call?(expression)
-            validate_deref_call_arguments!(expression.arguments)
-            return infer_deref_target_type(expression.arguments.first.value, scopes:)
           end
 
           raise SemaError, "invalid assignment target"
@@ -1106,14 +1101,9 @@ module MilkTea
           index_type = infer_expression(expression.index, scopes:)
           infer_index_result_type(receiver_type, index_type)
         when AST::Call
-          if value_call?(expression)
-            validate_value_call_arguments!(expression.arguments)
+          if read_call?(expression)
+            validate_read_call_arguments!(expression.arguments)
             return infer_reference_value_type(expression.arguments.first.value, scopes:)
-          end
-
-          if deref_call?(expression)
-            validate_deref_call_arguments!(expression.arguments)
-            return infer_deref_target_type(expression.arguments.first.value, scopes:)
           end
 
           raise SemaError, "invalid assignment target"
@@ -1517,16 +1507,14 @@ module MilkTea
           check_result_construction(callable_kind, expression.arguments, scopes:, expected_type:)
         when :panic
           check_panic_call(expression.arguments, scopes:)
-        when :addr
-          check_addr_call(expression.arguments, scopes:)
-        when :ro_addr
-          check_ro_addr_call(expression.arguments, scopes:)
-        when :value
-          check_value_call(expression.arguments, scopes:)
-        when :deref
-          check_deref_call(expression.arguments, scopes:)
-        when :raw
-          check_raw_call(expression.arguments, scopes:)
+        when :ref_of
+          check_ref_of_call(expression.arguments, scopes:)
+        when :const_ptr_of
+          check_const_ptr_of_call(expression.arguments, scopes:)
+        when :read
+          check_read_call(expression.arguments, scopes:)
+        when :ptr_of
+          check_ptr_of_call(expression.arguments, scopes:)
         else
           raise SemaError, "#{describe_expression(expression.callee)} is not callable"
         end
@@ -1733,11 +1721,10 @@ module MilkTea
           return [:result_ok, nil, nil] if callee.name == "ok"
           return [:result_err, nil, nil] if callee.name == "err"
           return [:panic, nil, nil] if callee.name == "panic"
-          return [:addr, nil, nil] if callee.name == "addr"
-          return [:ro_addr, nil, nil] if callee.name == "ro_addr"
-          return [:value, nil, nil] if callee.name == "value"
-          return [:deref, nil, nil] if callee.name == "deref"
-          return [:raw, nil, nil] if callee.name == "raw"
+          return [:ref_of, nil, nil] if callee.name == "ref_of"
+          return [:const_ptr_of, nil, nil] if callee.name == "const_ptr_of"
+          return [:read, nil, nil] if callee.name == "read"
+          return [:ptr_of, nil, nil] if callee.name == "ptr_of"
 
           type = @types[callee.name]
           return [:struct, type, nil] if type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type)
@@ -1988,40 +1975,34 @@ module MilkTea
         raise SemaError, "panic expects str or cstr, got #{message_type}"
       end
 
-      def check_addr_call(arguments, scopes:)
-        raise SemaError, "addr does not support named arguments" if arguments.any?(&:name)
-        raise SemaError, "addr expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+      def check_ref_of_call(arguments, scopes:)
+        raise SemaError, "ref_of does not support named arguments" if arguments.any?(&:name)
+        raise SemaError, "ref_of expects 1 argument, got #{arguments.length}" unless arguments.length == 1
 
         source_type = infer_addr_source_type(arguments.first.value, scopes:)
         Types::GenericInstance.new("ref", [source_type])
       end
 
-      def check_ro_addr_call(arguments, scopes:)
-        raise SemaError, "ro_addr does not support named arguments" if arguments.any?(&:name)
-        raise SemaError, "ro_addr expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+      def check_const_ptr_of_call(arguments, scopes:)
+        raise SemaError, "const_ptr_of does not support named arguments" if arguments.any?(&:name)
+        raise SemaError, "const_ptr_of expects 1 argument, got #{arguments.length}" unless arguments.length == 1
 
         source_type = infer_ro_addr_source_type(arguments.first.value, scopes:)
         const_pointer_to(source_type)
       end
 
-      def check_value_call(arguments, scopes:)
-        validate_value_call_arguments!(arguments)
+      def check_read_call(arguments, scopes:)
+        validate_read_call_arguments!(arguments)
 
         infer_reference_value_type(arguments.first.value, scopes:)
       end
 
-      def check_deref_call(arguments, scopes:)
-        validate_deref_call_arguments!(arguments)
-
-        infer_deref_target_type(arguments.first.value, scopes:)
-      end
-
-      def check_raw_call(arguments, scopes:)
-        raise SemaError, "raw does not support named arguments" if arguments.any?(&:name)
-        raise SemaError, "raw expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+      def check_ptr_of_call(arguments, scopes:)
+        raise SemaError, "ptr_of does not support named arguments" if arguments.any?(&:name)
+        raise SemaError, "ptr_of expects 1 argument, got #{arguments.length}" unless arguments.length == 1
 
         source_type = infer_expression(arguments.first.value, scopes:)
-        raise SemaError, "raw expects ref[...] argument, got #{source_type}" unless ref_type?(source_type)
+        raise SemaError, "ptr_of expects ref[...] argument, got #{source_type}" unless ref_type?(source_type)
 
         pointer_to(referenced_type(source_type))
       end
@@ -3251,7 +3232,7 @@ module MilkTea
         when AST::Call
           return false unless expression.arguments.length == 1 && expression.arguments.first.name.nil?
 
-          value_call?(expression) && ref_type?(infer_expression(expression.arguments.first.value, scopes:))
+          read_call?(expression) && ref_type?(infer_expression(expression.arguments.first.value, scopes:))
         else
           false
         end
@@ -3906,10 +3887,9 @@ module MilkTea
         when AST::Call
           return false unless expression.arguments.length == 1 && expression.arguments.first.name.nil?
 
-          if value_call?(expression)
-            ref_type?(infer_expression(expression.arguments.first.value, scopes:))
-          elsif deref_call?(expression)
-            pointer_type?(infer_expression(expression.arguments.first.value, scopes:))
+          if read_call?(expression)
+            argument_type = infer_expression(expression.arguments.first.value, scopes:)
+            ref_type?(argument_type) || pointer_type?(argument_type)
           else
             false
           end
@@ -3936,21 +3916,23 @@ module MilkTea
         source_type
       end
 
-      def validate_value_call_arguments!(arguments)
-        raise SemaError, "value does not support named arguments" if arguments.any?(&:name)
-        raise SemaError, "value expects 1 argument, got #{arguments.length}" unless arguments.length == 1
-      end
-
-      def validate_deref_call_arguments!(arguments)
-        raise SemaError, "deref does not support named arguments" if arguments.any?(&:name)
-        raise SemaError, "deref expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+      def validate_read_call_arguments!(arguments)
+        raise SemaError, "read does not support named arguments" if arguments.any?(&:name)
+        raise SemaError, "read expects 1 argument, got #{arguments.length}" unless arguments.length == 1
       end
 
       def infer_reference_value_type(handle_expression, scopes:)
         handle_type = infer_expression(handle_expression, scopes:)
         return referenced_type(handle_type) if ref_type?(handle_type)
 
-        raise SemaError, "value expects ref[...], got #{handle_type}"
+        pointee = pointee_type(handle_type)
+        if pointee
+          raise SemaError, "raw pointer dereference requires unsafe" unless unsafe_context?
+
+          return pointee
+        end
+
+        raise SemaError, "read expects ref[...] or ptr[...], got #{handle_type}"
       end
 
       def infer_method_receiver_type(receiver_expression, scopes:)
@@ -3984,16 +3966,6 @@ module MilkTea
         pointee_type(receiver_type)
       end
 
-      def infer_deref_target_type(handle_expression, scopes:)
-        handle_type = infer_expression(handle_expression, scopes:)
-
-        pointee = pointee_type(handle_type)
-        raise SemaError, "deref expects ptr[...], got #{handle_type}" unless pointee
-        raise SemaError, "raw pointer dereference requires unsafe" unless unsafe_context?
-
-        pointee
-      end
-
       def mutable_to_const_pointer_compatibility?(actual_type, expected_type)
         return mutable_to_const_pointer_compatibility?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
         return false if actual_type.is_a?(Types::Nullable)
@@ -4002,12 +3974,8 @@ module MilkTea
         pointee_type(actual_type) == pointee_type(expected_type)
       end
 
-      def value_call?(expression)
-        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "value"
-      end
-
-      def deref_call?(expression)
-        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "deref"
+      def read_call?(expression)
+        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "read"
       end
 
       def external_module?

@@ -29,17 +29,17 @@ def render_frame() -> void:
     sdl.render_clear(renderer)
 
     sdl.set_render_draw_color(renderer, 0, 0, 255, 255)
-    sdl.render_fill_rect(renderer, ro_addr(rect))
+    sdl.render_fill_rect(renderer, const_ptr_of(rect))
 
     sdl.set_render_draw_color(renderer, 255, 0, 0, 255)
-    sdl.render_points(renderer, ro_addr(points[0]), point_count)
+    sdl.render_points(renderer, const_ptr_of(points[0]), point_count)
 
     sdl.set_render_draw_color(renderer, 0, 255, 0, 255)
     rect.x += 30.0
     rect.y += 30.0
     rect.w -= 60.0
     rect.h -= 60.0
-    sdl.render_rect(renderer, ro_addr(rect))
+    sdl.render_rect(renderer, const_ptr_of(rect))
 
     sdl.set_render_draw_color(renderer, 255, 255, 0, 255)
     sdl.render_line(renderer, f32<-0.0, f32<-0.0, f32<-window_width, f32<-window_height)

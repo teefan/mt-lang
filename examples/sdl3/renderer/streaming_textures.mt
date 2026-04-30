@@ -16,7 +16,7 @@ var texture: ptr[c.SDL_Texture]
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
@@ -28,7 +28,7 @@ def render_frame() -> void:
     let scale = (f32<-((now % 1000) - 500) / 500.0) * direction
 
     var surface: ptr[c.SDL_Surface]
-    if c.SDL_LockTextureToSurface(texture, null, raw(addr(surface))):
+    if c.SDL_LockTextureToSurface(texture, null, ptr_of(ref_of(surface))):
         unsafe:
             let format_details = c.SDL_GetPixelFormatDetails(surface.format)
             let black = c.SDL_MapRGB(format_details, null, 0, 0, 0)
@@ -38,7 +38,7 @@ def render_frame() -> void:
             c.SDL_FillSurfaceRect(surface, null, black)
 
             strip.y = i32<-(f32<-(texture_size - strip.h) * ((scale + 1.0) / 2.0))
-            c.SDL_FillSurfaceRect(surface, raw(addr(strip)), green)
+            c.SDL_FillSurfaceRect(surface, ptr_of(ref_of(strip)), green)
 
         c.SDL_UnlockTexture(texture)
 
@@ -51,7 +51,7 @@ def render_frame() -> void:
 
     c.SDL_SetRenderDrawColor(renderer, 66, 66, 66, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
-    c.SDL_RenderTexture(renderer, texture, null, raw(addr(destination)))
+    c.SDL_RenderTexture(renderer, texture, null, ptr_of(ref_of(destination)))
     c.SDL_RenderPresent(renderer)
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
@@ -61,7 +61,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)

@@ -36,15 +36,15 @@ def parse_two_digits(time_buffer: array[char, 9], index: i32) -> i32:
 
 def update_clock(clock: ref[Clock], time_buffer: ref[array[char, 9]]) -> void:
     var now: ctime.time_t = 0
-    now = ctime.time(raw(addr(now)))
-    let tm_info = ctime.localtime(raw(addr(now)))
+    now = ctime.time(ptr_of(ref_of(now)))
+    let tm_info = ctime.localtime(ptr_of(ref_of(now)))
 
     unsafe:
-        ctime.strftime(raw(addr(value(time_buffer)[0])), 9, time_format, tm_info)
+        ctime.strftime(ptr_of(ref_of(read(time_buffer)[0])), 9, time_format, tm_info)
 
-    clock.hour.value = parse_two_digits(value(time_buffer), 0)
-    clock.minute.value = parse_two_digits(value(time_buffer), 3)
-    clock.second.value = parse_two_digits(value(time_buffer), 6)
+    clock.hour.value = parse_two_digits(read(time_buffer), 0)
+    clock.minute.value = parse_two_digits(read(time_buffer), 3)
+    clock.second.value = parse_two_digits(read(time_buffer), 6)
 
     clock.hour.angle = f32<-(clock.hour.value % 12) * 180.0 / 6.0
     clock.hour.angle += f32<-(clock.minute.value % 60) * 30.0 / 60.0
@@ -106,7 +106,7 @@ def draw_display_segment(center: rl.Vector2, length: i32, thick: i32, vertical: 
             rl.Vector2(x = center.x + f32<-length / 2.0, y = center.y - f32<-thick / 2.0),
             rl.Vector2(x = center.x + f32<-length / 2.0 + f32<-thick / 2.0, y = center.y),
         )
-        rl.DrawTriangleStrip(raw(addr(segment_points[0])), 6, color)
+        rl.DrawTriangleStrip(ptr_of(ref_of(segment_points[0])), 6, color)
     else:
         var segment_points = array[rl.Vector2, 6](
             rl.Vector2(x = center.x, y = center.y - f32<-length / 2.0 - f32<-thick / 2.0),
@@ -116,7 +116,7 @@ def draw_display_segment(center: rl.Vector2, length: i32, thick: i32, vertical: 
             rl.Vector2(x = center.x + f32<-thick / 2.0, y = center.y + f32<-length / 2.0),
             rl.Vector2(x = center.x, y = center.y + f32<-length / 2.0 + f32<-thick / 2.0),
         )
-        rl.DrawTriangleStrip(raw(addr(segment_points[0])), 6, color)
+        rl.DrawTriangleStrip(ptr_of(ref_of(segment_points[0])), 6, color)
 
 def draw_7s_display(position: rl.Vector2, segments: i32, color_on: rl.Color, color_off: rl.Color) -> void:
     let segment_len = 60
@@ -235,7 +235,7 @@ def main() -> i32:
             else:
                 clock_mode = clock_digital
 
-        update_clock(addr(clock), addr(time_buffer))
+        update_clock(ref_of(clock), ref_of(time_buffer))
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
@@ -247,7 +247,7 @@ def main() -> i32:
         else:
             draw_clock_digital(clock, rl.Vector2(x = 30.0, y = 60.0))
             unsafe:
-                let clock_time = cstr<-raw(addr(time_buffer[0]))
+                let clock_time = cstr<-ptr_of(ref_of(time_buffer[0]))
                 rl.DrawText(clock_time, rl.GetScreenWidth() / 2 - rl.MeasureText(clock_time, 150) / 2, 300, 150, rl.BLACK)
 
         rl.DrawText(

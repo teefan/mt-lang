@@ -19,7 +19,7 @@ def main() -> i32:
     let font = rl.LoadFontEx(font_path, font_size, null, 0)
     defer rl.UnloadFont(font)
 
-    rl.ImageDrawTextEx(raw(addr(parrots)), font, title_text, rl.Vector2(x = 20.0, y = 20.0), f32<-font.baseSize, 0.0, rl.RED)
+    rl.ImageDrawTextEx(ptr_of(ref_of(parrots)), font, title_text, rl.Vector2(x = 20.0, y = 20.0), f32<-font.baseSize, 0.0, rl.RED)
 
     let texture = rl.LoadTextureFromImage(parrots)
     rl.UnloadImage(parrots)

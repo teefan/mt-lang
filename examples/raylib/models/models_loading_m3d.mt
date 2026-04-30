@@ -16,15 +16,15 @@ def chars_to_cstr(text: ptr[char]) -> cstr:
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
-        return deref(anims + index)
+        return read(anims + index)
 
 def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
     unsafe:
-        return chars_to_cstr(raw(addr((anims + index).name[0])))
+        return chars_to_cstr(ptr_of(ref_of((anims + index).name[0])))
 
 def model_animation_pose(anim: rl.ModelAnimation, frame: i32) -> rl.ModelAnimPose:
     unsafe:
-        return deref(anim.keyframePoses + frame)
+        return read(anim.keyframePoses + frame)
 
 def pose_translation(pose: rl.ModelAnimPose, index: i32) -> rl.Vector3:
     unsafe:
@@ -61,7 +61,7 @@ def main() -> i32:
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 
     var anim_count = 0
-    let anims = rl.LoadModelAnimations(model_path, raw(addr(anim_count)))
+    let anims = rl.LoadModelAnimations(model_path, ptr_of(ref_of(anim_count)))
     defer rl.UnloadModelAnimations(anims, anim_count)
 
     var anim_index = 0
@@ -70,7 +70,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_RIGHT):
             anim_index = (anim_index + 1) % anim_count

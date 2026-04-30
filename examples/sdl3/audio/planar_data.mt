@@ -36,8 +36,8 @@ def play_left_sound() -> void:
     var planes = array[const_ptr[void]?, 2](null, null)
     var channel_buffers: const_ptr[const_ptr[void]?]
     unsafe:
-        planes[0] = const_ptr[void]?<-raw(addr(left_channel_data[0]))
-        channel_buffers = const_ptr[const_ptr[void]?]<-raw(addr(planes[0]))
+        planes[0] = const_ptr[void]?<-ptr_of(ref_of(left_channel_data[0]))
+        channel_buffers = const_ptr[const_ptr[void]?]<-ptr_of(ref_of(planes[0]))
 
     if not c.SDL_PutAudioStreamPlanarData(active_stream, channel_buffers, -1, left_channel_sample_count):
         return
@@ -54,8 +54,8 @@ def play_right_sound() -> void:
     var planes = array[const_ptr[void]?, 2](null, null)
     var channel_buffers: const_ptr[const_ptr[void]?]
     unsafe:
-        planes[1] = const_ptr[void]?<-raw(addr(right_channel_data[0]))
-        channel_buffers = const_ptr[const_ptr[void]?]<-raw(addr(planes[0]))
+        planes[1] = const_ptr[void]?<-ptr_of(ref_of(right_channel_data[0]))
+        channel_buffers = const_ptr[const_ptr[void]?]<-ptr_of(ref_of(planes[0]))
 
     if not c.SDL_PutAudioStreamPlanarData(active_stream, channel_buffers, -1, right_channel_sample_count):
         return
@@ -67,8 +67,8 @@ def play_right_sound() -> void:
 def pump_events() -> bool:
     var event = c.SDL_Event(type = 0)
 
-    while c.SDL_PollEvent(raw(addr(event))):
-        c.SDL_ConvertEventToRenderCoordinates(renderer, raw(addr(event)))
+    while c.SDL_PollEvent(ptr_of(ref_of(event))):
+        c.SDL_ConvertEventToRenderCoordinates(renderer, ptr_of(ref_of(event)))
 
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
@@ -91,7 +91,7 @@ def render_button(rect: c.SDL_FRect, text: cstr, button_value: i32) -> void:
     else:
         c.SDL_SetRenderDrawColor(renderer, 0, 0, 255, c.SDL_ALPHA_OPAQUE)
 
-    c.SDL_RenderFillRect(renderer, raw(addr(draw_rect)))
+    c.SDL_RenderFillRect(renderer, ptr_of(ref_of(draw_rect)))
     c.SDL_SetRenderDrawColor(renderer, 255, 255, 255, c.SDL_ALPHA_OPAQUE)
 
     let text_width = f32<-(c.SDL_strlen(text) * usize<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
@@ -126,7 +126,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         if audio_device != 0:
             c.SDL_CloseAudioDevice(audio_device)
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, raw(addr(window)), raw(addr(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)
@@ -142,7 +142,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     spec.format = c.SDL_AudioFormat.SDL_AUDIO_U8
     spec.freq = audio_sample_rate
 
-    let created_stream = c.SDL_CreateAudioStream(raw(addr(spec)), null)
+    let created_stream = c.SDL_CreateAudioStream(ptr_of(ref_of(spec)), null)
     if created_stream == null:
         return 1
     if not c.SDL_BindAudioStream(audio_device, created_stream):
