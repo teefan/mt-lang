@@ -211,6 +211,7 @@ module MilkTea
       vendored_raylib = MilkTea::VendoredRaylib.library
       vendored_sdl3 = MilkTea::VendoredSDL3
       vendored_sdl3_library = vendored_sdl3.library
+      vendored_box2d = MilkTea::VendoredBox2D
 
       raylib_field_type_overrides = {
         "Mesh" => { "indices" => "ptr[u16]?" },
@@ -417,6 +418,26 @@ module MilkTea
           function_return_type_overrides: sdl3_function_return_overrides,
           header_candidates: [
             vendored_sdl3.header_root.join("SDL.h").to_s,
+          ],
+        ),
+        Binding.new(
+          name: "box2d",
+          module_name: "std.c.box2d",
+          binding_path: root.join("std/c/box2d.mt"),
+          include_directives: ["box2d/box2d.h"],
+          link_libraries: ["box2d"],
+          vendored_library: vendored_box2d.library,
+          clang_args: vendored_box2d.include_flags,
+          compiler_flags: vendored_box2d.include_flags,
+          tracked_header_paths: [
+            vendored_box2d.header_root.join("box2d.h").to_s,
+          ],
+          tracked_header_prefixes: [
+            vendored_box2d.header_root.to_s,
+          ],
+          declaration_name_prefixes: ["b2", "B2_"],
+          header_candidates: [
+            vendored_box2d.header_root.join("box2d.h").to_s,
           ],
         ),
         Binding.new(

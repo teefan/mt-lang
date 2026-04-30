@@ -7,7 +7,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raygui rlights rlgl msf_gif libc sdl3 libuv libuv_runtime], registry.map(&:name)
+    assert_equal %w[raylib raygui rlights rlgl msf_gif libc sdl3 box2d libuv libuv_runtime], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -86,6 +86,15 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetGamepadMappingForGUID")
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetGamepadMappingForID")
     assert_equal "ptr[SDL_Surface]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_RenderReadPixels")
+    assert_equal "std.c.box2d", registry.fetch("box2d").module_name
+    assert_equal ["box2d"], registry.fetch("box2d").link_libraries
+    assert_includes registry.fetch("box2d").compiler_flags, "-I#{MilkTea::VendoredBox2D.include_root}"
+    assert_includes registry.fetch("box2d").header_candidates.first, "third_party/box2d-upstream/include/box2d/box2d.h"
+    assert_includes registry.fetch("box2d").tracked_header_paths.first, "third_party/box2d-upstream/include/box2d/box2d.h"
+    assert_includes registry.fetch("box2d").tracked_header_prefixes.first, "third_party/box2d-upstream/include/box2d"
+    assert_includes registry.fetch("box2d").link_flags, "-L#{MilkTea::VendoredBox2D.archive_path.dirname}"
+    assert_includes registry.fetch("box2d").link_flags, "-lm"
+    assert_equal ["b2", "B2_"], registry.fetch("box2d").declaration_name_prefixes
     assert_equal "std.c.libuv", registry.fetch("libuv").module_name
     assert_equal ["uv"], registry.fetch("libuv").link_libraries
     assert_equal ["-D_GNU_SOURCE"], registry.fetch("libuv").compiler_flags
