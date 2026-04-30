@@ -683,7 +683,7 @@ Rules for raw pointers:
 - spell writable address formation as `addr(expr)`, read-only raw address formation as `ro_addr(expr)`, and writable raw pointer formation as `raw(addr(expr))` when you truly need a raw pointer.
 - `deref(ptr)` dereferences a raw pointer and requires `unsafe`.
 - `const_ptr[T]` is the read-only raw-pointer surface and lowers to C `const T*`. `const_ptr[void]` is valid and represents C `const void *`.
-- `ptr.field` accesses a member through a raw pointer and requires `unsafe`.
+- `ptr.field` and `ptr.method()` access pointee fields and methods through a raw pointer and require `unsafe`.
 - pointer arithmetic and pointer indexing remain `unsafe`.
 - raw pointer offsets and indices may use ordinary integer expressions directly; code does not need a pre-emptive cast to `usize` just to write `ptr[i]` or `ptr + offset`.
 - pointer comparison is explicit and never treated as boolean truthiness.

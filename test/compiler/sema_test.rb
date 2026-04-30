@@ -2823,6 +2823,34 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_raw_pointer_method_calls_in_unsafe
+    source = <<~MT
+      module demo.pointer_methods
+
+      struct Counter:
+          value: i32
+
+      methods Counter:
+          edit def add(delta: i32):
+              this.value += delta
+
+          def read() -> i32:
+              return this.value
+
+      def main() -> i32:
+          var counter = Counter(value = 3)
+          let counter_ptr = raw(addr(counter))
+          unsafe:
+              counter_ptr.add(4)
+              return counter_ptr.read()
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("Counter")
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_associated_functions_on_local_structs
     source = <<~MT
       module demo.associated
@@ -3125,6 +3153,56 @@ class MilkTeaSemaTest < Minitest::Test
     end
 
     assert_match(/raw pointer dereference requires unsafe/, error.message)
+  end
+
+  def test_rejects_raw_pointer_method_call_outside_unsafe
+    source = <<~MT
+      module demo.bad
+
+      struct Counter:
+          value: i32
+
+      methods Counter:
+          def read() -> i32:
+              return this.value
+
+      def main() -> i32:
+          var counter = Counter(value = 3)
+          let counter_ptr = raw(addr(counter))
+          return counter_ptr.read()
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/raw pointer dereference requires unsafe/, error.message)
+  end
+
+  def test_rejects_mut_method_call_on_read_only_raw_pointer
+    source = <<~MT
+      module demo.bad
+
+      struct Counter:
+          value: i32
+
+      methods Counter:
+          edit def add(delta: i32):
+              this.value += delta
+
+      def main() -> i32:
+          var counter = Counter(value = 3)
+          let counter_ptr = ro_addr(counter)
+          unsafe:
+              counter_ptr.add(1)
+          return counter.value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/cannot call mut method add on an immutable receiver/, error.message)
   end
 
   def test_rejects_safe_indexing_of_temporary_array_values

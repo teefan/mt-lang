@@ -4099,6 +4099,7 @@ module MilkTea
 
         if callee_type.receiver_mutable
           return lowered_receiver if ref_type?(lowered_receiver.type)
+          return lowered_receiver if pointer_type?(lowered_receiver.type)
 
           if lowered_receiver.is_a?(IR::Name) && lowered_receiver.pointer
             return lowered_receiver
@@ -4113,6 +4114,10 @@ module MilkTea
 
         if ref_type?(lowered_receiver.type)
           return IR::Unary.new(operator: "*", operand: lowered_receiver, type: referenced_type(lowered_receiver.type))
+        end
+
+        if pointer_type?(lowered_receiver.type)
+          return IR::Unary.new(operator: "*", operand: lowered_receiver, type: pointee_type(lowered_receiver.type))
         end
 
         lowered_receiver
@@ -6759,6 +6764,7 @@ module MilkTea
       def infer_method_receiver_type(receiver_expression, env:)
         receiver_type = infer_expression_type(receiver_expression, env:)
         return referenced_type(receiver_type) if ref_type?(receiver_type)
+        return pointee_type(receiver_type) if pointer_type?(receiver_type)
 
         receiver_type
       end

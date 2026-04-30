@@ -278,6 +278,47 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_raw_pointer_methods
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-pointer-methods") do |dir|
+      source_path = File.join(dir, "pointer-methods.mt")
+
+      File.write(source_path, [
+        "module demo.pointer_methods_runtime",
+        "",
+        "struct Counter:",
+        "    value: i32",
+        "",
+        "methods Counter:",
+        "    edit def add(delta: i32):",
+        "        this.value += delta",
+        "",
+        "    def read() -> i32:",
+        "        return this.value",
+        "",
+        "def main() -> i32:",
+        "    var counter = Counter(value = 3)",
+        "    let counter_ptr = raw(addr(counter))",
+        "    unsafe:",
+        "        counter_ptr.add(4)",
+        "        return counter_ptr.read()",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 7, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_explicit_value_for_by_value_parameters
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

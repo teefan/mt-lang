@@ -1052,8 +1052,7 @@ module MilkTea
 
           field_type
         when AST::IndexAccess
-          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_pointer_identifier: true)
-          raise SemaError, "cannot assign through read-only raw pointer #{receiver_type}" if const_pointer_type?(receiver_type)
+          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_pointer_identifier: true, require_mutable_pointer: true)
 
           index_type = infer_expression(expression.index, scopes:)
           infer_index_result_type(receiver_type, index_type)
@@ -1074,7 +1073,7 @@ module MilkTea
         end
       end
 
-      def infer_lvalue_receiver(expression, scopes:, allow_ref_identifier: false, allow_pointer_identifier: false)
+      def infer_lvalue_receiver(expression, scopes:, allow_ref_identifier: false, allow_pointer_identifier: false, require_mutable_pointer: false)
         case expression
         when AST::Identifier
           binding = lookup_value(expression.name, scopes)
@@ -1083,6 +1082,7 @@ module MilkTea
           return referenced_type(binding.type) if allow_ref_identifier && ref_type?(binding.type)
           if allow_pointer_identifier && pointer_type?(binding.type)
             raise SemaError, "raw pointer dereference requires unsafe" unless unsafe_context?
+            raise SemaError, "cannot assign through read-only raw pointer #{binding.type}" if require_mutable_pointer && const_pointer_type?(binding.type)
 
             return binding.type
           end
@@ -1091,8 +1091,8 @@ module MilkTea
 
           binding.type
         when AST::MemberAccess
-          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_ref_identifier:, allow_pointer_identifier:)
-          receiver_type = project_field_receiver_type(receiver_type)
+          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_ref_identifier:, allow_pointer_identifier:, require_mutable_pointer:)
+          receiver_type = project_field_receiver_type(receiver_type, require_mutable_pointer:)
           unless aggregate_type?(receiver_type)
             raise SemaError, "cannot access member #{expression.member} of #{receiver_type}"
           end
@@ -1102,7 +1102,7 @@ module MilkTea
 
           field_type
         when AST::IndexAccess
-          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_ref_identifier:, allow_pointer_identifier:)
+          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_ref_identifier:, allow_pointer_identifier:, require_mutable_pointer:)
           index_type = infer_expression(expression.index, scopes:)
           infer_index_result_type(receiver_type, index_type)
         when AST::Call
@@ -3955,7 +3955,7 @@ module MilkTea
 
       def infer_method_receiver_type(receiver_expression, scopes:)
         receiver_type = infer_expression(receiver_expression, scopes:)
-        ref_type?(receiver_type) ? referenced_type(receiver_type) : receiver_type
+        project_method_receiver_type(receiver_type)
       end
 
       def infer_field_receiver_type(receiver_expression, scopes:, require_mutable_pointer: false)
@@ -3971,6 +3971,15 @@ module MilkTea
         if require_mutable_pointer && const_pointer_type?(receiver_type)
           raise SemaError, "cannot assign through read-only raw pointer #{receiver_type}"
         end
+
+        pointee_type(receiver_type)
+      end
+
+      def project_method_receiver_type(receiver_type)
+        return referenced_type(receiver_type) if ref_type?(receiver_type)
+        return receiver_type unless pointer_type?(receiver_type)
+
+        raise SemaError, "raw pointer dereference requires unsafe" unless unsafe_context?
 
         pointee_type(receiver_type)
       end
@@ -4006,7 +4015,7 @@ module MilkTea
       end
 
       def assignable_receiver?(receiver_expression, scopes)
-        infer_lvalue_receiver(receiver_expression, scopes:, allow_ref_identifier: true, allow_pointer_identifier: true)
+        infer_lvalue_receiver(receiver_expression, scopes:, allow_ref_identifier: true, allow_pointer_identifier: true, require_mutable_pointer: true)
         true
       rescue SemaError
         false
