@@ -2041,6 +2041,38 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return counter_ptr->value;/, generated)
   end
 
+  def test_generate_c_for_raw_pointer_method_calls
+    source = [
+      "module demo.pointer_method_surface",
+      "",
+      "struct Counter:",
+      "    value: i32",
+      "",
+      "methods Counter:",
+      "    edit def add(delta: i32):",
+      "        this.value += delta",
+      "",
+      "    def read() -> i32:",
+      "        return this.value",
+      "",
+      "def main() -> i32:",
+      "    var counter = Counter(value = 3)",
+      "    let counter_ptr = raw(addr(counter))",
+      "    unsafe:",
+      "        counter_ptr.add(4)",
+      "        return counter_ptr.read()",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static void demo_pointer_method_surface_Counter_add\(demo_pointer_method_surface_Counter \*this, int32_t delta\)/, generated)
+    assert_match(/static int32_t demo_pointer_method_surface_Counter_read\(demo_pointer_method_surface_Counter this\)/, generated)
+    assert_match(/demo_pointer_method_surface_Counter \*counter_ptr = &counter;/, generated)
+    assert_match(/demo_pointer_method_surface_Counter_add\(counter_ptr, 4\);/, generated)
+    assert_match(/return demo_pointer_method_surface_Counter_read\(\*counter_ptr\);/, generated)
+  end
+
   def test_generate_c_for_extended_compound_assignment_operators
     source = [
       "module demo.compound_assignments_surface",
