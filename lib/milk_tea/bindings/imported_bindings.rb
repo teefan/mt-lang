@@ -887,6 +887,13 @@ module MilkTea
           policy_path: root.join("bindings/imported/box2d.binding.json"),
         ),
         Binding.new(
+          name: "cjson",
+          module_name: "std.cjson",
+          binding_path: root.join("std/cjson.mt"),
+          raw_module_name: "std.c.cjson",
+          policy_path: root.join("bindings/imported/cjson.binding.json"),
+        ),
+        Binding.new(
           name: "libuv",
           module_name: "std.libuv",
           binding_path: root.join("std/libuv.mt"),

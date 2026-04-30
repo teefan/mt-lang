@@ -1,0 +1,90 @@
+{
+  "module_name": "std.cjson",
+  "raw_module_name": "std.c.cjson",
+  "raw_import_alias": "c",
+  "types": {
+    "include": [
+      "cJSON",
+      "cJSON_Hooks",
+      "cJSON_bool"
+    ],
+    "overrides": [
+      { "raw": "cJSON", "name": "JSON" },
+      { "raw": "cJSON_Hooks", "name": "Hooks" },
+      { "raw": "cJSON_bool", "name": "Bool" }
+    ]
+  },
+  "constants": {
+    "include_prefixes": [
+      "CJSON_"
+    ],
+    "strip_prefix": "CJSON_"
+  },
+  "functions": {
+    "include_prefixes": [
+      "cJSON_"
+    ],
+    "exclude": [
+      "cJSON_malloc",
+      "cJSON_free"
+    ],
+    "strip_prefix": "cJSON_",
+    "overrides": [
+      {
+        "raw": "cJSON_Parse",
+        "name": "parse",
+        "params": [
+          { "name": "value", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "ptr[JSON]?"
+      },
+      {
+        "raw": "cJSON_ParseWithLength",
+        "name": "parse_with_length",
+        "params": [
+          { "name": "value", "type": "str", "boundary_type": "cstr" },
+          { "name": "buffer_length", "type": "usize" }
+        ],
+        "return_type": "ptr[JSON]?"
+      },
+      {
+        "raw": "cJSON_GetObjectItem",
+        "name": "get_object_item",
+        "params": [
+          { "name": "object", "type": "const_ptr[JSON]" },
+          { "name": "string", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "ptr[JSON]?"
+      },
+      {
+        "raw": "cJSON_GetObjectItemCaseSensitive",
+        "name": "get_object_item_case_sensitive",
+        "params": [
+          { "name": "object", "type": "const_ptr[JSON]" },
+          { "name": "string", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "ptr[JSON]?"
+      },
+      {
+        "raw": "cJSON_AddStringToObject",
+        "name": "add_string_to_object",
+        "params": [
+          { "name": "object", "type": "ptr[JSON]" },
+          { "name": "name", "type": "str", "boundary_type": "cstr" },
+          { "name": "string", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "ptr[JSON]"
+      },
+      {
+        "raw": "cJSON_AddRawToObject",
+        "name": "add_raw_to_object",
+        "params": [
+          { "name": "object", "type": "ptr[JSON]" },
+          { "name": "name", "type": "str", "boundary_type": "cstr" },
+          { "name": "raw", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "ptr[JSON]"
+      }
+    ]
+  }
+}

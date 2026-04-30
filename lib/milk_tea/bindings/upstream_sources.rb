@@ -82,6 +82,16 @@ module MilkTea
             include/box2d/box2d.h
           ],
         ),
+        Source.new(
+          name: "cjson",
+          checkout_root: root.join("third_party/cjson-upstream"),
+          repository_url: "https://github.com/DaveGamble/cJSON.git",
+          revision: "c859b25da02955fef659d658b8f324b5cde87be3",
+          sentinel_paths: %w[
+            cJSON.h
+            cJSON.c
+          ],
+        ),
       ]
     end
 
