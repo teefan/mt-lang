@@ -314,11 +314,9 @@ module MilkTea
         async_function = decl.respond_to?(:async) ? decl.async : false
         type_param_names = decl.type_params.map(&:name)
         raise SemaError, "extern function #{decl.name} cannot be generic" if external && type_param_names.any?
-        raise SemaError, "generic methods are not supported yet in #{decl.name}" if receiver_type && type_param_names.any?
         raise SemaError, "main cannot be generic" if decl.name == "main" && type_param_names.any?
         raise SemaError, "extern function #{decl.name} cannot be async" if external && async_function
         raise SemaError, "foreign function #{decl.name} cannot be async" if foreign && async_function
-        raise SemaError, "async methods are not supported yet in #{decl.name}" if receiver_type && async_function
         if decl.name == "main" && async_function
           raise SemaError, "async main requires importing std.async or std.libuv.async" unless async_runtime_import_available?
         end
@@ -1450,9 +1448,11 @@ module MilkTea
           callable.owner.send(:check_function, callable) unless callable.type_arguments.empty?
           callable.type.return_type
         when :method
+          callable = specialize_function_binding(callable, expression.arguments, scopes:) if callable.type_params.any?
           raise SemaError, "cannot call mut method #{callable.name} on an immutable receiver" if callable.type.receiver_mutable && !assignable_receiver?(receiver, scopes)
 
           check_function_call(callable, expression.arguments, scopes:)
+          callable.owner.send(:check_function, callable) unless callable.type_arguments.empty?
           callable.type.return_type
         when :callable_value
           check_callable_value_call(callable, expression.arguments, scopes:, callee_expression: expression.callee)
@@ -2726,27 +2726,49 @@ module MilkTea
       end
 
       def validate_async_function_body!(statements)
-        statements.each do |statement|
-          case statement
-          when AST::LocalDecl
-            next unless statement.value
+        statements.each { |statement| validate_async_statement!(statement) }
+      end
 
-            validate_async_expression_support!(statement.value, context: "local initializer")
-          when AST::Assignment
-            if expression_contains_await?(statement.target)
-              raise SemaError, "await in async functions is not supported inside assignment targets yet"
-            end
+      def validate_async_statement!(statement)
+        case statement
+        when AST::LocalDecl
+          return unless statement.value
 
-            validate_async_expression_support!(statement.value, context: "assignment")
-          when AST::ExpressionStmt
-            validate_async_expression_support!(statement.expression, context: "expression statement")
-          when AST::ReturnStmt
-            next unless statement.value
+          validate_async_expression_support!(statement.value, context: "local initializer")
+        when AST::Assignment
+          validate_async_expression_support!(statement.target, context: "assignment target")
+          validate_async_expression_support!(statement.value, context: "assignment")
+        when AST::ExpressionStmt
+          validate_async_expression_support!(statement.expression, context: "expression statement")
+        when AST::ReturnStmt
+          return unless statement.value
 
-            validate_async_expression_support!(statement.value, context: "return statement")
-          else
-            raise SemaError, "async functions currently only support straight-line local declarations, assignments, expression statements, and return statements"
+          validate_async_expression_support!(statement.value, context: "return statement")
+        when AST::IfStmt
+          statement.branches.each do |branch|
+            validate_async_expression_support!(branch.condition, context: "if conditions")
+
+            branch.body.each { |s| validate_async_statement!(s) }
           end
+          statement.else_body&.each { |s| validate_async_statement!(s) }
+        when AST::WhileStmt
+          validate_async_expression_support!(statement.condition, context: "while conditions")
+
+          statement.body.each { |s| validate_async_statement!(s) }
+        when AST::ForStmt
+          validate_async_expression_support!(statement.iterable, context: "for iterables")
+
+          statement.body.each { |s| validate_async_statement!(s) }
+        when AST::MatchStmt
+          validate_async_expression_support!(statement.expression, context: "match discriminants")
+
+          statement.arms.each { |arm| arm.body.each { |s| validate_async_statement!(s) } }
+        when AST::UnsafeStmt
+          statement.body.each { |s| validate_async_statement!(s) }
+        when AST::BreakStmt, AST::ContinueStmt, AST::StaticAssert
+          nil
+        else
+          raise SemaError, "async functions currently only support straight-line local declarations, assignments, expression statements, and return statements"
         end
       end
 
@@ -2766,15 +2788,11 @@ module MilkTea
         when AST::UnaryOp
           unsupported_async_await_context(expression.operand)
         when AST::BinaryOp
-          if %w[and or].include?(expression.operator) && (expression_contains_await?(expression.left) || expression_contains_await?(expression.right))
-            "short-circuit #{expression.operator} expressions"
-          else
-            unsupported_async_await_context(expression.left) || unsupported_async_await_context(expression.right)
-          end
+          unsupported_async_await_context(expression.left) || unsupported_async_await_context(expression.right)
         when AST::IfExpr
-          return "if expressions" if expression_contains_await?(expression.condition) || expression_contains_await?(expression.then_expression) || expression_contains_await?(expression.else_expression)
-
-          nil
+          unsupported_async_await_context(expression.condition) ||
+            unsupported_async_await_context(expression.then_expression) ||
+            unsupported_async_await_context(expression.else_expression)
         when AST::MemberAccess
           unsupported_async_await_context(expression.receiver)
         when AST::IndexAccess

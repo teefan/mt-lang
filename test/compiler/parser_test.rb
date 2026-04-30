@@ -1010,7 +1010,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "void", callback.target.return_type.name.to_s
   end
 
-  def test_rejects_async_methods
+  def test_parses_async_methods
     source = <<~MT
       module demo.async_methods
 
@@ -1019,12 +1019,20 @@ class MilkTeaParserTest < Minitest::Test
 
       methods Counter:
           async def read() -> i32:
-              return value(this)
+              return this.value
+
+          async edit def bump() -> void:
+              this.value += 1
     MT
 
-    error = assert_raises(MilkTea::ParseError) { MilkTea::Parser.parse(source) }
+    ast = MilkTea::Parser.parse(source)
+    methods = ast.declarations[1]
 
-    assert_match(/async methods are not supported yet/, error.message)
+    assert_instance_of MilkTea::AST::MethodsBlock, methods
+    assert_equal true, methods.methods[0].async
+    assert_equal :plain, methods.methods[0].kind
+    assert_equal true, methods.methods[1].async
+    assert_equal :edit, methods.methods[1].kind
   end
 
   def test_parses_unsafe_blocks_with_pointer_cast_and_arithmetic

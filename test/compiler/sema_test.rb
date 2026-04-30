@@ -212,6 +212,39 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal "Task[i32]", result.root_analysis.functions.fetch("main").type.return_type.to_s
   end
 
+  def test_type_checks_async_methods
+    source = <<~MT
+      module demo.async_methods
+
+      import std.async as async
+
+      struct Counter:
+          value: i32
+
+      methods Counter:
+          async def read() -> i32:
+              return this.value
+
+          async edit def bump() -> void:
+              this.value += 1
+
+      async def main() -> i32:
+          var counter = Counter(value = 1)
+          await counter.bump()
+          return await counter.read()
+    MT
+
+    result = check_program_source(source)
+
+    counter_type = result.root_analysis.types.fetch("Counter")
+    read_method = result.root_analysis.methods.fetch(counter_type).fetch("read")
+    bump_method = result.root_analysis.methods.fetch(counter_type).fetch("bump")
+
+    assert_equal "Task[i32]", read_method.type.return_type.to_s
+    assert_equal "Task[void]", bump_method.type.return_type.to_s
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
   def test_type_checks_direct_function_identity_for_proc_parameter
     source = <<~MT
       module demo.proc_coercion
@@ -231,7 +264,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("main")
   end
 
-  def test_rejects_await_in_if_expressions_inside_async_functions
+  def test_type_checks_await_in_if_expressions_inside_async_functions
     source = <<~MT
       module demo.async_flow
 
@@ -242,16 +275,15 @@ class MilkTeaSemaTest < Minitest::Test
           return if flag then await child() else 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_program_source(source)
-    end
-
-    assert_match(/await in async functions is not supported inside if expressions yet/, error.message)
+    result = check_program_source(source)
+    assert_equal true, result.root_analysis.functions.key?("parent")
   end
 
-  def test_rejects_control_flow_in_async_functions
+  def test_type_checks_control_flow_in_async_functions
     source = <<~MT
       module demo.async_flow
+
+      import std.async as async
 
       async def parent(flag: bool) -> i32:
           if flag:
@@ -259,11 +291,176 @@ class MilkTeaSemaTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_program_source(source)
-    end
+    result = check_program_source(source)
 
-    assert_match(/async functions currently only support straight-line local declarations, assignments, expression statements, and return statements/, error.message)
+    assert_equal true, result.root_analysis.functions.key?("main") || result.root_analysis.functions.key?("parent")
+  end
+
+  def test_rejects_await_inside_if_statement_in_async_functions
+    source = <<~MT
+      module demo.async_await_in_if
+
+      import std.async as async
+
+      async def child() -> i32:
+          return 1
+
+      async def parent() -> i32:
+          if true:
+              return await child()
+          return 0
+    MT
+
+    result = check_program_source(source)
+    assert_equal true, result.root_analysis.functions.key?("parent")
+  end
+
+  def test_rejects_await_inside_if_condition_in_async_functions
+    source = <<~MT
+      module demo.async_await_in_if_cond
+
+      import std.async as async
+
+      async def child() -> bool:
+          return true
+
+      async def parent() -> i32:
+          if await child():
+              return 1
+          return 0
+    MT
+
+    result = check_program_source(source)
+    assert_equal true, result.root_analysis.functions.key?("parent")
+  end
+
+  def test_type_checks_await_inside_while_condition_in_async_functions
+    source = <<~MT
+      module demo.async_await_in_while_cond
+
+      import std.async as async
+
+      async def ready() -> bool:
+          return false
+
+      async def parent() -> i32:
+          while await ready():
+              return 1
+          return 0
+    MT
+
+    result = check_program_source(source)
+    assert_equal true, result.root_analysis.functions.key?("parent")
+  end
+
+  def test_type_checks_await_inside_match_discriminant_in_async_functions
+    source = <<~MT
+      module demo.async_await_in_match
+
+      import std.async as async
+
+      enum Mode: i32
+          a = 0
+          b = 1
+
+      async def mode() -> Mode:
+          return Mode.a
+
+      async def parent() -> i32:
+          match await mode():
+              Mode.a:
+                  return 1
+              Mode.b:
+                  return 2
+    MT
+
+    result = check_program_source(source)
+    assert_equal true, result.root_analysis.functions.key?("parent")
+  end
+
+  def test_type_checks_await_inside_for_iterable_in_async_functions
+    source = <<~MT
+      module demo.async_await_in_for_iterable
+
+      import std.async as async
+
+      async def upper() -> i32:
+          return 3
+
+      async def parent() -> i32:
+          var total = 0
+          for i in range(0, await upper()):
+              total += i
+          return total
+    MT
+
+    result = check_program_source(source)
+    assert_equal true, result.root_analysis.functions.key?("parent")
+  end
+
+  def test_type_checks_await_inside_short_circuit_and_or_in_async_functions
+    source = <<~MT
+      module demo.async_short_circuit
+
+      import std.async as async
+
+      async def t() -> bool:
+          return true
+
+      async def f() -> bool:
+          return false
+
+      async def parent() -> i32:
+          if await t() and await t():
+              return 1
+          if await f() or await t():
+              return 2
+          return 0
+    MT
+
+    result = check_program_source(source)
+    assert_equal true, result.root_analysis.functions.key?("parent")
+  end
+
+  def test_type_checks_await_inside_assignment_target_in_async_functions
+    source = <<~MT
+      module demo.async_assign_target
+
+      import std.async as async
+
+      async def idx() -> i32:
+          return 0
+
+      async def parent() -> i32:
+          var values = array[i32, 1](0)
+          values[await idx()] = 7
+          return values[0]
+    MT
+
+    result = check_program_source(source)
+    assert_equal true, result.root_analysis.functions.key?("parent")
+  end
+
+  def test_type_checks_await_in_while_body_in_async_functions
+    source = <<~MT
+      module demo.async_await_in_while
+
+      import std.async as async
+
+      async def child() -> i32:
+          return 1
+
+      async def parent() -> i32:
+          var count = 0
+          var i = 0
+          while i < 3:
+              count = count + await child()
+              i = i + 1
+          return count
+    MT
+
+    result = check_program_source(source)
+    assert_equal true, result.root_analysis.functions.key?("parent")
   end
 
   def test_type_checks_std_fmt_string_with_format_literal
@@ -1543,6 +1740,38 @@ class MilkTeaSemaTest < Minitest::Test
     result = check_source(source)
 
     assert_equal ["N"], result.functions.fetch("capacity_of").type_params
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_generic_methods
+    source = <<~MT
+      module demo.generic_methods
+
+      struct Box:
+          value: i32
+
+      methods Box:
+          def echo[T](input: T) -> T:
+              return input
+
+          static def make[T](input: T) -> T:
+              return input
+
+      def main() -> i32:
+          let box = Box(value = 1)
+          let a = box.echo(3)
+          let b = Box.make(4)
+          return a + b
+    MT
+
+    result = check_source(source)
+
+    box_type = result.types.fetch("Box")
+    echo_binding = result.methods.fetch(box_type).fetch("echo")
+    make_binding = result.methods.fetch(box_type).fetch("make")
+
+    assert_equal ["T"], echo_binding.type_params
+    assert_equal ["T"], make_binding.type_params
     assert_equal true, result.functions.key?("main")
   end
 

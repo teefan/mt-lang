@@ -60,6 +60,18 @@ class MilkTeaLibuvIdiomaticExamplesTest < Minitest::Test
     assert_includes result.link_flags, "-luv"
   end
 
+  def test_async_latest_showcase_example_runs
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    result = MilkTea::Run.run(example_path("async_latest_showcase"), cc: compiler)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 18, result.exit_status
+    assert_includes result.link_flags, "-luv"
+  end
+
   private
 
   def idiomatic_example_paths

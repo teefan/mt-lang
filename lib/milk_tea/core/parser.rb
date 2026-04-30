@@ -333,7 +333,7 @@ module MilkTea
 
     def parse_method_def
       visibility, _visibility_token = parse_visibility
-      raise error(previous, "async methods are not supported yet") if match(:async)
+      async = match(:async)
 
       kind = if match(:edit)
                :edit
@@ -349,7 +349,7 @@ module MilkTea
       params = parse_params
       return_type = match(:arrow) ? parse_type_ref : nil
       body = parse_block
-      AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async: false)
+      AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:)
     end
 
     def parse_visibility
