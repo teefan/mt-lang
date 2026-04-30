@@ -880,6 +880,13 @@ module MilkTea
           policy_path: root.join("bindings/imported/sdl3.binding.json"),
         ),
         Binding.new(
+          name: "box2d",
+          module_name: "std.box2d",
+          binding_path: root.join("std/box2d.mt"),
+          raw_module_name: "std.c.box2d",
+          policy_path: root.join("bindings/imported/box2d.binding.json"),
+        ),
+        Binding.new(
           name: "libuv",
           module_name: "std.libuv",
           binding_path: root.join("std/libuv.mt"),

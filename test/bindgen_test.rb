@@ -188,6 +188,111 @@ class MilkTeaBindgenTest < Minitest::Test
     end
   end
 
+  def test_generate_handles_implicit_zero_initialized_aggregate_constants
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-zero-init") do |dir|
+      header_path = File.join(dir, "sample.h")
+      output_path = File.join(dir, "sample.mt")
+      File.write(header_path, <<~C)
+        #include <stdint.h>
+
+        typedef struct Cache {
+          uint16_t count;
+          uint8_t indexA[3];
+          uint8_t indexB[3];
+        } Cache;
+
+        static const Cache EMPTY = {0};
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+      )
+
+      assert_match(/const EMPTY: Cache = Cache\(count = 0, indexA = array\[u8, 3\]\(0, 0, 0\), indexB = array\[u8, 3\]\(0, 0, 0\)\)/, generated)
+
+      File.write(output_path, generated)
+      analysis = MilkTea::ModuleLoader.check_file(output_path)
+
+      assert_equal :extern_module, analysis.module_kind
+      assert_equal "std.c.sample", analysis.module_name
+      assert_includes analysis.values.keys, "EMPTY"
+    end
+  end
+
+  def test_generate_synthesizes_opaque_record_for_leaked_pointer_tag
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-opaque-record") do |dir|
+      header_path = File.join(dir, "sample.h")
+      output_path = File.join(dir, "sample.mt")
+      File.write(header_path, <<~C)
+        typedef struct Holder {
+          struct HiddenNode *node;
+        } Holder;
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+      )
+
+      assert_match(/opaque HiddenNode = c"struct HiddenNode"/, generated)
+      assert_match(/struct Holder:\n\s+node: ptr\[HiddenNode\]/, generated)
+
+      File.write(output_path, generated)
+      analysis = MilkTea::ModuleLoader.check_file(output_path)
+
+      assert_equal :extern_module, analysis.module_kind
+      assert_equal "std.c.sample", analysis.module_name
+      assert_includes analysis.types.keys, "HiddenNode"
+      assert_includes analysis.types.keys, "Holder"
+    end
+  end
+
+  def test_generate_supports_function_type_typedefs
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-function-typedef") do |dir|
+      header_path = File.join(dir, "sample.h")
+      output_path = File.join(dir, "sample.mt")
+      File.write(header_path, <<~C)
+        typedef float FrictionCallback(float a, unsigned long long material_a, float b, unsigned long long material_b);
+
+        typedef struct WorldDef {
+          FrictionCallback *friction_callback;
+        } WorldDef;
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+      )
+
+      assert_match(/type FrictionCallback = fn\(arg0: f32, arg1: u64, arg2: f32, arg3: u64\) -> f32/, generated)
+      assert_match(/struct WorldDef:\n\s+friction_callback: ptr\[FrictionCallback\]/, generated)
+
+      File.write(output_path, generated)
+      analysis = MilkTea::ModuleLoader.check_file(output_path)
+
+      assert_equal :extern_module, analysis.module_kind
+      assert_equal "std.c.sample", analysis.module_name
+      assert_includes analysis.types.keys, "FrictionCallback"
+      assert_includes analysis.types.keys, "WorldDef"
+    end
+  end
+
   def test_generate_applies_function_return_type_overrides
     clang = ENV.fetch("CLANG", "clang")
     skip "clang not available: #{clang}" unless executable_available?(clang)

@@ -8,7 +8,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "libuv"], registry.map(&:name)
+    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "box2d", "libuv"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -28,6 +28,11 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_equal "std.c.sdl3", registry.fetch("sdl3").raw_module_name
     assert_includes registry.fetch("sdl3").binding_path, "/std/sdl3.mt"
     assert_includes registry.fetch("sdl3").policy_path, "/bindings/imported/sdl3.binding.json"
+
+    assert_equal "std.box2d", registry.fetch("box2d").module_name
+    assert_equal "std.c.box2d", registry.fetch("box2d").raw_module_name
+    assert_includes registry.fetch("box2d").binding_path, "/std/box2d.mt"
+    assert_includes registry.fetch("box2d").policy_path, "/bindings/imported/box2d.binding.json"
 
     assert_equal "std.libuv", registry.fetch("libuv").module_name
     assert_equal "std.c.libuv", registry.fetch("libuv").raw_module_name
@@ -101,6 +106,28 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     refute_match(/^pub def preferred_locale_string\(locale: ptr\[Locale\]\) -> string\.String:$/, source)
     refute_match(/^pub def render_debug_text_str\(renderer: ptr\[Renderer\], x: f32, y: f32, text: str\) -> bool:$/, source)
     assert_match(/^pub foreign def quit\(\) -> void = c\.SDL_Quit$/, source)
+  end
+
+  def test_checked_in_box2d_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("box2d")
+
+    assert_includes binding.check!, "/std/c/box2d.mt"
+
+    source = File.read(binding.binding_path)
+    assert_match(/^import std\.c\.box2d as c$/, source)
+    assert_match(/^pub type WorldId = c\.b2WorldId$/, source)
+    assert_match(/^pub type Vec2 = c\.b2Vec2$/, source)
+    assert_match(/^pub type DebugDraw = c\.b2DebugDraw$/, source)
+    assert_match(/^pub const b2_nullWorldId: WorldId = c\.b2_nullWorldId$/, source)
+    assert_match(/^pub foreign def default_world_def\(\) -> WorldDef = c\.b2DefaultWorldDef$/, source)
+    assert_match(/^pub foreign def default_body_def\(\) -> BodyDef = c\.b2DefaultBodyDef$/, source)
+    assert_match(/^pub foreign def default_shape_def\(\) -> ShapeDef = c\.b2DefaultShapeDef$/, source)
+    assert_match(/^pub foreign def make_box\(half_width: f32, half_height: f32\) -> Polygon = c\.b2MakeBox$/, source)
+    assert_match(/^pub foreign def create_world\(in world_def: WorldDef\) -> WorldId = c\.b2CreateWorld$/, source)
+    assert_match(/^pub foreign def world_step\(world_id: WorldId, time_step: f32, sub_step_count: i32\) -> void = c\.b2World_Step$/, source)
+    assert_match(/^pub foreign def create_body\(world_id: WorldId, in body_def: BodyDef\) -> BodyId = c\.b2CreateBody$/, source)
+    assert_match(/^pub foreign def create_polygon_shape\(body_id: BodyId, in shape_def: ShapeDef, in polygon: Polygon\) -> ShapeId = c\.b2CreatePolygonShape$/, source)
+    assert_match(/^pub foreign def world_draw\(world_id: WorldId, inout draw: DebugDraw\) -> void = c\.b2World_Draw$/, source)
   end
 
   def test_generate_rejects_extra_source_policy_escape_hatch
@@ -282,7 +309,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
 
   def test_imported_bindings_outside_raylib_and_rlgl_do_not_expose_raw_ptr_void
     offending_bindings = MilkTea::ImportedBindings.default_registry.reject do |binding|
-      %w[raylib rlgl sdl3 libuv].include?(binding.name)
+      %w[raylib rlgl sdl3 box2d libuv].include?(binding.name)
     end.filter_map do |binding|
       binding.name if File.read(binding.binding_path).match?(/\bptr\[void\]\b/)
     end

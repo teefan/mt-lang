@@ -105,6 +105,7 @@ module MilkTea
         declarations.concat(select_record_declarations(top_level_nodes))
         validate_field_type_overrides!(declarations)
         discover_synthetic_aggregate_dependencies(declarations)
+        discover_synthetic_field_type_dependencies(declarations)
         declarations.concat(select_enum_declarations(top_level_nodes))
         declarations.concat(select_type_alias_declarations(top_level_nodes))
         declarations.concat(select_constant_declarations(top_level_nodes))
@@ -484,7 +485,7 @@ module MilkTea
           next unless allowed_declaration_name?(node["name"])
 
           qual_type = alias_qual_type(node)
-          mapped_type = if function_pointer_type?(qual_type)
+          mapped_type = if extract_function_proto(node)
                           map_function_pointer_typedef(node, context: node["name"])
                         else
                           map_c_type(qual_type, context: node["name"])
@@ -770,6 +771,35 @@ module MilkTea
         end
       end
 
+      def discover_synthetic_field_type_dependencies(declarations)
+        pending = declarations.select { |declaration| %w[struct union].include?(declaration[:kind]) }.map do |declaration|
+          [declaration[:name], declaration[:node]]
+        end
+        pending.concat(
+          @synthetic_declarations.select { |declaration| %w[struct union].include?(declaration[:kind]) }.map do |declaration|
+            [declaration[:name], declaration[:node]]
+          end,
+        )
+        seen = {}
+
+        until pending.empty?
+          owner_name, aggregate_node = pending.shift
+          key = [owner_name, aggregate_node["id"]]
+          next if seen[key]
+
+          seen[key] = true
+
+          Array(aggregate_node["inner"]).select { |child| child["kind"] == "FieldDecl" }.each do |field|
+            aggregate_field_type(field, owner_name:, aggregate_node:)
+
+            anonymous_record = anonymous_record_decl_for_field(field, aggregate_node)
+            next unless anonymous_record
+
+            pending << ["#{owner_name}_#{field["name"]}", anonymous_record]
+          end
+        end
+      end
+
       def aggregate_field_type(field, owner_name:, aggregate_node:)
         override = field_type_override(owner_name, field["name"])
         return override if override
@@ -859,6 +889,8 @@ module MilkTea
           emit_float_value(node.fetch("value"), expected_type)
         when "StringLiteral"
           %(c#{node.fetch("value")})
+        when "ImplicitValueInitExpr"
+          lower_zero_value(expected_type:, context:)
         when "ImplicitCastExpr", "ConstantExpr", "CompoundLiteralExpr", "ParenExpr"
           child = Array(node["inner"]).first
           lower_constant_expression(child, expected_type:, context:)
@@ -874,17 +906,22 @@ module MilkTea
       end
 
       def lower_init_list_expression(node, expected_type:, context:)
-        aggregate = @aggregate_declarations[expected_type]
-        raise BindgenError, "unsupported aggregate constant type #{expected_type} for #{context}" unless aggregate
-
-        fields = Array(aggregate["inner"]).select { |child| child["kind"] == "FieldDecl" }
         values = Array(node["inner"])
-        raise BindgenError, "initializer field count mismatch for #{context}" unless fields.length == values.length
 
-        arguments = fields.zip(values).map do |field, value|
-          field_type = map_type_node(field, context: "field #{expected_type}.#{field["name"]}")
-          lowered = lower_constant_expression(value, expected_type: field_type, context: "field #{field["name"]} of #{context}")
-          "#{field["name"]} = #{lowered}"
+        aggregate = @aggregate_declarations[expected_type]
+        return lower_aggregate_init_list(values, aggregate:, expected_type:, context:) if aggregate
+
+        element_type, length = parse_array_type(expected_type)
+        raise BindgenError, "unsupported aggregate constant type #{expected_type} for #{context}" unless element_type
+        raise BindgenError, "initializer field count mismatch for #{context}" if values.length > length
+
+        arguments = (0...length).map do |index|
+          value = values[index]
+          if value
+            lower_constant_expression(value, expected_type: element_type, context: "element #{index} of #{context}")
+          else
+            lower_zero_value(expected_type: element_type, context: "element #{index} of #{context}")
+          end
         end
         "#{expected_type}(#{arguments.join(', ')})"
       end
@@ -892,6 +929,55 @@ module MilkTea
       def emit_float_value(value, expected_type)
         literal = value.match?(/[.eE]/) ? value : "#{value}.0"
         expected_type == "f32" ? literal : literal
+      end
+
+      def lower_aggregate_init_list(values, aggregate:, expected_type:, context:)
+        fields = Array(aggregate["inner"]).select { |child| child["kind"] == "FieldDecl" }
+        raise BindgenError, "initializer field count mismatch for #{context}" if values.length > fields.length
+
+        arguments = fields.each_with_index.map do |field, index|
+          field_type = map_type_node(field, context: "field #{expected_type}.#{field["name"]}")
+          value = values[index]
+          lowered = if value
+                      lower_constant_expression(value, expected_type: field_type, context: "field #{field["name"]} of #{context}")
+                    else
+                      lower_zero_value(expected_type: field_type, context: "field #{field["name"]} of #{context}")
+                    end
+          "#{field["name"]} = #{lowered}"
+        end
+        "#{expected_type}(#{arguments.join(', ')})"
+      end
+
+      def lower_zero_value(expected_type:, context:)
+        return "false" if expected_type == "bool"
+        return "0" if %w[char i8 u8 i16 u16 i32 u32 i64 u64 isize usize].include?(expected_type)
+        return "0.0" if %w[f32 f64].include?(expected_type)
+        return "null" if expected_type == "cstr" || expected_type == "cstr?" || expected_type.start_with?("ptr[") || expected_type.start_with?("const_ptr[")
+
+        if @aggregate_declarations.key?(expected_type)
+          return lower_aggregate_init_list([], aggregate: @aggregate_declarations.fetch(expected_type), expected_type:, context:)
+        end
+
+        element_type, length = parse_array_type(expected_type)
+        if element_type
+          values = Array.new(length) do |index|
+            lower_zero_value(expected_type: element_type, context: "element #{index} of #{context}")
+          end
+          return "#{expected_type}(#{values.join(', ')})"
+        end
+
+        "cast[#{expected_type}](0)"
+      end
+
+      def parse_array_type(type)
+        return [nil, nil] unless type.start_with?("array[") && type.end_with?("]")
+
+        parts = split_top_level_csv(type.delete_prefix("array[").delete_suffix("]"))
+        return [nil, nil] unless parts.length == 2
+
+        [parts[0], Integer(parts[1], 10)]
+      rescue ArgumentError
+        [nil, nil]
       end
 
       def function_param_type_override(function_name, param_name)
@@ -1347,6 +1433,7 @@ module MilkTea
       end
 
       def record_name_for(unqualified)
+        synthesize_opaque_record_dependency(unqualified)
         tag_name = unqualified.split.last
         @record_visible_names[tag_name] || tag_name
       end
@@ -1354,6 +1441,20 @@ module MilkTea
       def enum_name_for(unqualified)
         tag_name = unqualified.split.last
         @enum_visible_names[tag_name] || tag_name
+      end
+
+      def synthesize_opaque_record_dependency(unqualified)
+        kind, tag_name = unqualified.split(" ", 2)
+        return unless %w[struct union].include?(kind)
+        return if tag_name.nil? || tag_name.empty?
+        return if @record_visible_names.key?(tag_name) || @record_visible_names.value?(tag_name)
+        return if @synthetic_declarations.any? { |declaration| declaration[:name] == tag_name }
+
+        @synthetic_declarations << {
+          kind: "opaque",
+          name: tag_name,
+          c_name: "#{kind} #{tag_name}",
+        }
       end
     end
   end

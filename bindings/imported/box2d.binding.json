@@ -1,0 +1,145 @@
+{
+  "module_name": "std.box2d",
+  "raw_module_name": "std.c.box2d",
+  "raw_import_alias": "c",
+  "types": {
+    "strip_prefix": "b2"
+  },
+  "constants": {},
+  "functions": {
+    "strip_prefix": "b2",
+    "overrides": [
+      {
+        "raw": "b2World_Draw",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "draw", "type": "DebugDraw", "mode": "inout" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "b2CreateWorld",
+        "params": [
+          { "name": "world_def", "type": "WorldDef", "mode": "in" }
+        ],
+        "return_type": "WorldId"
+      },
+      {
+        "raw": "b2World_Explode",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "explosion_def", "type": "ExplosionDef", "mode": "in" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "b2CreateBody",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "body_def", "type": "BodyDef", "mode": "in" }
+        ],
+        "return_type": "BodyId"
+      },
+      {
+        "raw": "b2CreateCircleShape",
+        "params": [
+          { "name": "body_id", "type": "BodyId" },
+          { "name": "shape_def", "type": "ShapeDef", "mode": "in" },
+          { "name": "circle", "type": "Circle", "mode": "in" }
+        ],
+        "return_type": "ShapeId"
+      },
+      {
+        "raw": "b2CreateSegmentShape",
+        "params": [
+          { "name": "body_id", "type": "BodyId" },
+          { "name": "shape_def", "type": "ShapeDef", "mode": "in" },
+          { "name": "segment", "type": "Segment", "mode": "in" }
+        ],
+        "return_type": "ShapeId"
+      },
+      {
+        "raw": "b2CreateCapsuleShape",
+        "params": [
+          { "name": "body_id", "type": "BodyId" },
+          { "name": "shape_def", "type": "ShapeDef", "mode": "in" },
+          { "name": "capsule", "type": "Capsule", "mode": "in" }
+        ],
+        "return_type": "ShapeId"
+      },
+      {
+        "raw": "b2CreatePolygonShape",
+        "params": [
+          { "name": "body_id", "type": "BodyId" },
+          { "name": "shape_def", "type": "ShapeDef", "mode": "in" },
+          { "name": "polygon", "type": "Polygon", "mode": "in" }
+        ],
+        "return_type": "ShapeId"
+      },
+      {
+        "raw": "b2CreateChain",
+        "params": [
+          { "name": "body_id", "type": "BodyId" },
+          { "name": "chain_def", "type": "ChainDef", "mode": "in" }
+        ],
+        "return_type": "ChainId"
+      },
+      {
+        "raw": "b2CreateDistanceJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "DistanceJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      },
+      {
+        "raw": "b2CreateMotorJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "MotorJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      },
+      {
+        "raw": "b2CreateFilterJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "FilterJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      },
+      {
+        "raw": "b2CreatePrismaticJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "PrismaticJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      },
+      {
+        "raw": "b2CreateRevoluteJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "RevoluteJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      },
+      {
+        "raw": "b2CreateWeldJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "WeldJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      },
+      {
+        "raw": "b2CreateWheelJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "WheelJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      }
+    ]
+  }
+}
