@@ -20,6 +20,10 @@ module MilkTea
         @functions = {}
         @struct_types = {}
         @union_types = {}
+        @synthetic_structs = []
+        @synthetic_functions = []
+        @synthetic_proc_counter = 0
+        @synthetic_format_counter = 0
         @method_definitions = build_method_definitions
       end
 
@@ -56,6 +60,8 @@ module MilkTea
         end
 
         opaques.concat(lower_imported_external_opaques)
+        structs.concat(@synthetic_structs)
+        functions.concat(@synthetic_functions)
 
         IR::Program.new(
           module_name: @program.root_analysis.module_name,
@@ -87,22 +93,31 @@ module MilkTea
       end
 
       def collect_includes
-        headers = ["<stdbool.h>", "<stdint.h>", "<string.h>"]
+        headers = ["<stdbool.h>", "<stdint.h>", "<stdlib.h>", "<string.h>"]
         headers << "<stddef.h>" if program_uses_offsetof?
         if program_uses_panic?
           headers << "<stdio.h>"
-          headers << "<stdlib.h>"
         end
 
         @program.analyses_by_module_name.each_value do |analysis|
           next unless analysis.module_kind == :extern_module
 
           analysis.directives.grep(AST::IncludeDirective).each do |directive|
-            headers << %("#{directive.value}")
+            headers << normalized_include_header(directive.value)
           end
         end
 
         headers.uniq.map { |header| IR::Include.new(header:) }
+      end
+
+      def normalized_include_header(header_name)
+        return "<#{header_name}>" if standard_c_runtime_header?(header_name)
+
+        %("#{header_name}")
+      end
+
+      def standard_c_runtime_header?(header_name)
+        %w[stdbool.h stdint.h stdlib.h string.h stddef.h stdio.h].include?(header_name)
       end
 
       def program_uses_panic?
@@ -207,6 +222,8 @@ module MilkTea
 
       def expression_uses_panic?(expression)
         case expression
+        when AST::AwaitExpr
+          expression_uses_panic?(expression.expression)
         when AST::Call
           identifier = expression.callee
           return true if identifier.is_a?(AST::Identifier) && identifier.name == "panic"
@@ -231,6 +248,8 @@ module MilkTea
 
       def expression_uses_offsetof?(expression)
         case expression
+        when AST::AwaitExpr
+          expression_uses_offsetof?(expression.expression)
         when AST::OffsetofExpr
           true
         when AST::Call
@@ -379,22 +398,44 @@ module MilkTea
 
       def lower_functions
         lowered = []
+        lowered_function_c_names = {}
 
-        @analysis.ast.declarations.each do |decl|
-          case decl
-          when AST::FunctionDef
-            binding = @functions.fetch(decl.name)
-            if binding.type_params.any?
-              binding.instances.values.sort_by { |instance| instance.type_arguments.map(&:to_s).join(",") }.each do |instance|
-                lowered << lower_function_decl(instance)
+        changed = true
+        while changed
+          changed = false
+
+          @analysis.ast.declarations.each do |decl|
+            case decl
+            when AST::FunctionDef
+              binding = @functions.fetch(decl.name)
+              if binding.type_params.any?
+                binding.instances.values.sort_by { |instance| instance.type_arguments.map(&:to_s).join(",") }.each do |instance|
+                  c_name = function_binding_c_name(instance, module_name: @module_name)
+                  next if lowered_function_c_names[c_name]
+
+                  lowered << lower_function_decl(instance)
+                  lowered_function_c_names[c_name] = true
+                  changed = true
+                end
+              else
+                c_name = function_binding_c_name(binding, module_name: @module_name)
+                next if lowered_function_c_names[c_name]
+
+                lowered << lower_function_decl(binding)
+                lowered_function_c_names[c_name] = true
+                changed = true
               end
-            else
-              lowered << lower_function_decl(binding)
-            end
-          when AST::MethodsBlock
-            receiver_type = resolve_methods_receiver_type(@analysis, decl.type_name)
-            decl.methods.each do |method|
-              lowered << lower_function_decl(@analysis.methods.fetch(receiver_type).fetch(method.name), receiver_type:)
+            when AST::MethodsBlock
+              receiver_type = resolve_methods_receiver_type(@analysis, decl.type_name)
+              decl.methods.each do |method|
+                binding = @analysis.methods.fetch(receiver_type).fetch(method.name)
+                c_name = function_binding_c_name(binding, module_name: @module_name, receiver_type:)
+                next if lowered_function_c_names[c_name]
+
+                lowered << lower_function_decl(binding, receiver_type:)
+                lowered_function_c_names[c_name] = true
+                changed = true
+              end
             end
           end
         end
@@ -423,6 +464,8 @@ module MilkTea
         parameter_setup = []
         previous_type_substitutions = @current_type_substitutions
         @current_type_substitutions = binding.type_substitutions
+
+        return lower_async_function_decl(binding, receiver_type:) if binding.async
 
         body_params = binding.body_params.dup
         if binding.type.receiver_type
@@ -479,6 +522,1007 @@ module MilkTea
         @current_type_substitutions = previous_type_substitutions
       end
 
+      def lower_async_function_decl(binding, receiver_type: nil)
+        raise LoweringError, "async methods are unsupported" if receiver_type || binding.type.receiver_type
+
+        decl = binding.ast
+        normalized_statements = normalize_async_body(decl.body)
+        constructor_c_name = function_binding_c_name(binding, module_name: @module_name, receiver_type:)
+        frame_c_name = "#{constructor_c_name}__frame"
+        resume_c_name = "#{constructor_c_name}__resume"
+        ready_c_name = "#{constructor_c_name}__ready"
+        set_waiter_c_name = "#{constructor_c_name}__set_waiter"
+        release_c_name = "#{constructor_c_name}__release"
+        take_result_c_name = "#{constructor_c_name}__take_result"
+
+        async_info = analyze_async_function(binding, normalized_statements)
+        frame_type = build_async_frame_type(frame_c_name, async_info)
+
+        @synthetic_structs << IR::StructDecl.new(
+          name: frame_c_name,
+          c_name: frame_c_name,
+          fields: frame_type.fields.map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) },
+          packed: false,
+          alignment: nil,
+        )
+        @synthetic_functions << build_async_resume_function(binding, normalized_statements, frame_type, resume_c_name, async_info)
+        @synthetic_functions << build_async_ready_function(frame_type, ready_c_name, async_info)
+        @synthetic_functions << build_async_set_waiter_function(frame_type, set_waiter_c_name, async_info)
+        @synthetic_functions << build_async_release_function(frame_type, release_c_name, async_info)
+        @synthetic_functions << build_async_take_result_function(frame_type, take_result_c_name, async_info)
+
+        if decl.name == "main" && binding.type_arguments.empty?
+          @synthetic_functions << build_async_constructor_function(
+            binding,
+            decl,
+            frame_type,
+            constructor_c_name,
+            resume_c_name,
+            ready_c_name,
+            set_waiter_c_name,
+            release_c_name,
+            take_result_c_name,
+            async_info,
+          )
+
+          return build_async_main_entrypoint(binding, constructor_c_name, async_info)
+        end
+
+        build_async_constructor_function(
+          binding,
+          decl,
+          frame_type,
+          constructor_c_name,
+          resume_c_name,
+          ready_c_name,
+          set_waiter_c_name,
+          release_c_name,
+          take_result_c_name,
+          async_info,
+        )
+      end
+
+      def build_async_main_entrypoint(binding, constructor_c_name, async_info)
+        libuv_async = analysis_for_module("std.libuv.async")
+        loop_type = analysis_for_module("std.libuv.runtime").types.fetch("Loop")
+        task_type = async_info[:task_type]
+        body = []
+
+        loop_name = "__mt_loop"
+        task_name = "__mt_task"
+        status_name = "__mt_status"
+        result_name = "__mt_result"
+
+        loop_expr = IR::Name.new(name: loop_name, type: loop_type, pointer: false)
+        task_expr = IR::Name.new(name: task_name, type: task_type, pointer: false)
+
+        body << IR::LocalDecl.new(
+          name: loop_name,
+          c_name: loop_name,
+          type: loop_type,
+          value: IR::Call.new(
+            callee: module_function_c_name(libuv_async.module_name, "must_create_loop"),
+            arguments: [],
+            type: loop_type,
+          ),
+        )
+        body << IR::ExpressionStmt.new(
+          expression: IR::Call.new(
+            callee: module_function_c_name(libuv_async.module_name, "activate_current_loop"),
+            arguments: [loop_expr],
+            type: @types.fetch("void"),
+          ),
+        )
+        body << IR::LocalDecl.new(
+          name: task_name,
+          c_name: task_name,
+          type: task_type,
+          value: IR::Call.new(callee: constructor_c_name, arguments: [], type: task_type),
+        )
+        body << IR::WhileStmt.new(
+          condition: IR::Unary.new(
+            operator: "not",
+            operand: IR::Call.new(
+              callee: IR::Member.new(receiver: task_expr, member: "ready", type: task_type.field("ready")),
+              arguments: [IR::Member.new(receiver: task_expr, member: "frame", type: task_type.field("frame"))],
+              type: @types.fetch("bool"),
+            ),
+            type: @types.fetch("bool"),
+          ),
+          body: [
+            IR::LocalDecl.new(
+              name: status_name,
+              c_name: status_name,
+              type: @types.fetch("i32"),
+              value: IR::Call.new(
+                callee: module_function_c_name("std.libuv.runtime", "loop_run_default"),
+                arguments: [loop_expr],
+                type: @types.fetch("i32"),
+              ),
+            ),
+            IR::IfStmt.new(
+              condition: IR::Binary.new(
+                operator: "!=",
+                left: IR::Name.new(name: status_name, type: @types.fetch("i32"), pointer: false),
+                right: IR::IntegerLiteral.new(value: 0, type: @types.fetch("i32")),
+                type: @types.fetch("bool"),
+              ),
+              then_body: [
+                IR::ExpressionStmt.new(
+                  expression: IR::Call.new(
+                    callee: "mt_panic",
+                    arguments: [IR::StringLiteral.new(value: "async main loop_run_default failed", type: @types.fetch("cstr"), cstring: true)],
+                    type: @types.fetch("void"),
+                  ),
+                ),
+              ],
+              else_body: nil,
+            ),
+          ],
+        )
+
+        if async_info[:result_type] == @types.fetch("i32")
+          body << IR::LocalDecl.new(
+            name: result_name,
+            c_name: result_name,
+            type: @types.fetch("i32"),
+            value: IR::Call.new(
+              callee: IR::Member.new(receiver: task_expr, member: "take_result", type: task_type.field("take_result")),
+              arguments: [IR::Member.new(receiver: task_expr, member: "frame", type: task_type.field("frame"))],
+              type: @types.fetch("i32"),
+            ),
+          )
+        else
+          body << IR::ExpressionStmt.new(
+            expression: IR::Call.new(
+              callee: IR::Member.new(receiver: task_expr, member: "take_result", type: task_type.field("take_result")),
+              arguments: [IR::Member.new(receiver: task_expr, member: "frame", type: task_type.field("frame"))],
+              type: @types.fetch("void"),
+            ),
+          )
+        end
+
+        body << IR::ExpressionStmt.new(
+          expression: IR::Call.new(
+            callee: IR::Member.new(receiver: task_expr, member: "release", type: task_type.field("release")),
+            arguments: [IR::Member.new(receiver: task_expr, member: "frame", type: task_type.field("frame"))],
+            type: @types.fetch("void"),
+          ),
+        )
+        body << IR::ExpressionStmt.new(
+          expression: IR::Call.new(
+            callee: module_function_c_name(libuv_async.module_name, "deactivate_current_loop"),
+            arguments: [],
+            type: @types.fetch("void"),
+          ),
+        )
+        body << IR::ExpressionStmt.new(
+          expression: IR::Call.new(
+            callee: module_function_c_name(libuv_async.module_name, "must_release_loop"),
+            arguments: [IR::AddressOf.new(expression: loop_expr, type: pointer_to(loop_type))],
+            type: @types.fetch("void"),
+          ),
+        )
+        body << IR::ReturnStmt.new(
+          value: async_info[:result_type] == @types.fetch("i32") ? IR::Name.new(name: result_name, type: @types.fetch("i32"), pointer: false) : IR::IntegerLiteral.new(value: 0, type: @types.fetch("i32")),
+        )
+
+        IR::Function.new(
+          name: binding.name,
+          c_name: "main",
+          params: [],
+          return_type: @types.fetch("i32"),
+          body: body,
+          entry_point: true,
+        )
+      end
+
+      def analyze_async_function(binding, statements)
+        env = empty_env
+        void_ptr = pointer_to(@types.fetch("void"))
+        wake_type = Types::Function.new(
+          nil,
+          params: [Types::Parameter.new("frame", void_ptr)],
+          return_type: @types.fetch("void"),
+        )
+        param_fields = {}
+        local_fields = {}
+        await_fields = {}
+        await_counter = 0
+
+        binding.body_params.each do |param_binding|
+          field_name = "param_#{param_binding.name}"
+          param_fields[param_binding.name] = { field_name:, type: param_binding.type, mutable: param_binding.mutable }
+          env[:scopes].last[param_binding.name] = local_binding(
+            type: param_binding.type,
+            c_name: field_name,
+            mutable: param_binding.mutable,
+            pointer: false,
+          )
+        end
+
+        statements.each_with_index do |statement, index|
+          case statement
+          when AST::LocalDecl
+            type = statement.type ? resolve_type_ref(statement.type) : infer_expression_type(statement.value, env:)
+            local_fields[statement.name] = { field_name: "local_#{statement.name}", type:, mutable: statement.kind == :var }
+            if statement.value.is_a?(AST::AwaitExpr)
+              await_fields[index] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
+              await_counter += 1
+            end
+            env[:scopes].last[statement.name] = local_binding(type:, c_name: statement.name, mutable: statement.kind == :var, pointer: false)
+          when AST::Assignment
+            next unless statement.value.is_a?(AST::AwaitExpr)
+
+            await_fields[index] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
+            await_counter += 1
+          when AST::ExpressionStmt
+            next unless statement.expression.is_a?(AST::AwaitExpr)
+
+            await_fields[index] = build_async_await_field_info(statement.expression, await_counter, env:, param_fields:, local_fields:)
+            await_counter += 1
+          when AST::ReturnStmt
+            next unless statement.value&.is_a?(AST::AwaitExpr)
+
+            await_fields[index] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
+            await_counter += 1
+          else
+            raise LoweringError, "unsupported async statement #{statement.class.name}"
+          end
+        end
+
+        {
+          task_type: binding.type.return_type,
+          result_type: binding.body_return_type,
+          void_ptr:,
+          wake_type:,
+          param_fields:,
+          local_fields:,
+          await_fields:,
+        }
+      end
+
+      def build_async_await_field_info(await_expression, await_counter, env:, param_fields:, local_fields:)
+        task_expression = await_expression.expression
+        reused_field_name = reusable_async_await_task_field_name(task_expression, param_fields:, local_fields:)
+        {
+          field_name: reused_field_name || "await_#{await_counter}",
+          task_type: infer_expression_type(task_expression, env:),
+          result_type: infer_expression_type(await_expression, env:),
+          state: await_counter + 1,
+          reuse_existing_storage: !reused_field_name.nil?,
+        }
+      end
+
+      def reusable_async_await_task_field_name(task_expression, param_fields:, local_fields:)
+        return unless task_expression.is_a?(AST::Identifier)
+        return local_fields.fetch(task_expression.name)[:field_name] if local_fields.key?(task_expression.name)
+        return param_fields.fetch(task_expression.name)[:field_name] if param_fields.key?(task_expression.name)
+
+        nil
+      end
+
+      def build_async_frame_type(frame_c_name, async_info)
+        fields = {
+          "state" => @types.fetch("i32"),
+          "ready" => @types.fetch("bool"),
+          "waiter_frame" => async_info[:void_ptr],
+          "waiter" => async_info[:wake_type],
+        }
+        unless async_info[:result_type] == @types.fetch("void")
+          fields["result"] = async_info[:result_type]
+        end
+        async_info[:param_fields].each_value do |field_info|
+          fields[field_info[:field_name]] = field_info[:type]
+        end
+        async_info[:local_fields].each_value do |field_info|
+          fields[field_info[:field_name]] = field_info[:type]
+        end
+        async_info[:await_fields].each_value do |field_info|
+          next if fields.key?(field_info[:field_name])
+
+          fields[field_info[:field_name]] = field_info[:task_type]
+        end
+
+        Types::Struct.new(frame_c_name).define_fields(fields)
+      end
+
+      def build_async_constructor_function(binding, decl, frame_type, constructor_c_name, resume_c_name, ready_c_name, set_waiter_c_name, release_c_name, take_result_c_name, async_info)
+        params = []
+        body = []
+        frame_pointer_type = pointer_to(frame_type)
+        frame_expr = IR::Name.new(name: async_frame_local_name, type: frame_pointer_type, pointer: false)
+        raw_frame_expr = IR::Cast.new(target_type: async_info[:void_ptr], expression: frame_expr, type: async_info[:void_ptr])
+
+        body << IR::LocalDecl.new(
+          name: async_frame_local_name,
+          c_name: async_frame_local_name,
+          type: frame_pointer_type,
+          value: IR::Cast.new(
+            target_type: frame_pointer_type,
+            expression: IR::Call.new(
+              callee: "mt_async_alloc",
+              arguments: [IR::SizeofExpr.new(target_type: frame_type, type: @types.fetch("usize"))],
+              type: async_info[:void_ptr],
+            ),
+            type: frame_pointer_type,
+          ),
+        )
+
+        binding.body_params.each do |param_binding|
+          field_info = async_info[:param_fields].fetch(param_binding.name)
+          type = param_binding.type
+          c_name = c_local_name(param_binding.name)
+          input_c_name = array_type?(type) ? "#{c_name}_input" : c_name
+          params << IR::Param.new(name: param_binding.name, c_name: input_c_name, type:, pointer: false)
+          body << IR::Assignment.new(
+            target: async_frame_field_expression(frame_expr, field_info[:field_name], type),
+            operator: "=",
+            value: IR::Name.new(name: input_c_name, type:, pointer: false),
+          )
+        end
+
+        body << IR::ExpressionStmt.new(
+          expression: IR::Call.new(callee: resume_c_name, arguments: [raw_frame_expr], type: @types.fetch("void")),
+        )
+        body << IR::ReturnStmt.new(
+          value: IR::AggregateLiteral.new(
+            type: async_info[:task_type],
+            fields: [
+              IR::AggregateField.new(name: "frame", value: raw_frame_expr),
+              IR::AggregateField.new(name: "ready", value: IR::Name.new(name: ready_c_name, type: async_info[:task_type].field("ready"), pointer: false)),
+              IR::AggregateField.new(name: "set_waiter", value: IR::Name.new(name: set_waiter_c_name, type: async_info[:task_type].field("set_waiter"), pointer: false)),
+              IR::AggregateField.new(name: "release", value: IR::Name.new(name: release_c_name, type: async_info[:task_type].field("release"), pointer: false)),
+              IR::AggregateField.new(name: "take_result", value: IR::Name.new(name: take_result_c_name, type: async_info[:task_type].field("take_result"), pointer: false)),
+            ],
+          ),
+        )
+
+        IR::Function.new(
+          name: decl.name,
+          c_name: constructor_c_name,
+          params:,
+          return_type: async_info[:task_type],
+          body:,
+          entry_point: false,
+        )
+      end
+
+      def build_async_resume_function(binding, statements, frame_type, resume_c_name, async_info)
+        frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
+        raw_frame_expr = IR::Name.new(name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)
+        body = [async_frame_cast_declaration(frame_type, async_info)]
+
+        cases = (0..async_info[:await_fields].length).map do |state|
+          IR::SwitchCase.new(
+            value: IR::IntegerLiteral.new(value: state, type: @types.fetch("i32")),
+            body: [IR::GotoStmt.new(label: async_state_label(resume_c_name, state))],
+          )
+        end
+        body << IR::SwitchStmt.new(expression: async_frame_field_expression(frame_expr, "state", @types.fetch("i32")), cases:)
+        body << IR::ReturnStmt.new(value: nil)
+        body << IR::LabelStmt.new(name: async_state_label(resume_c_name, 0))
+
+        env = async_resume_env_for(async_info)
+
+        statements.each_with_index do |statement, index|
+          await_info = async_info[:await_fields][index]
+          case statement
+          when AST::LocalDecl
+            field_info = async_info[:local_fields].fetch(statement.name)
+            if await_info
+              body.concat(lower_async_await_statement(statement, field_info:, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
+            else
+              body.concat(lower_async_local_decl_statement(statement, field_info:, env:, frame_expr:))
+            end
+            async_bind_local!(env, statement.name, field_info)
+          when AST::Assignment
+            if await_info
+              body.concat(lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
+            else
+              body.concat(lower_async_assignment_statement(statement, env:))
+            end
+          when AST::ExpressionStmt
+            if await_info
+              body.concat(lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
+            else
+              body.concat(lower_async_expression_statement(statement, env:))
+            end
+          when AST::ReturnStmt
+            if await_info
+              body.concat(lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
+            else
+              body.concat(lower_async_return_statement(statement, env:, frame_expr:, raw_frame_expr:, async_info:))
+            end
+          else
+            raise LoweringError, "unsupported async statement #{statement.class.name}"
+          end
+        end
+
+        if async_info[:result_type] == @types.fetch("void") && !block_always_terminates?(statements)
+          body.concat(async_complete_statements(frame_expr:, raw_frame_expr:, async_info:, value: nil, result_already_stored: true))
+        end
+
+        IR::Function.new(
+          name: "#{binding.name}__resume",
+          c_name: resume_c_name,
+          params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
+          return_type: @types.fetch("void"),
+          body:,
+          entry_point: false,
+        )
+      end
+
+      def build_async_ready_function(frame_type, ready_c_name, async_info)
+        frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
+
+        IR::Function.new(
+          name: "#{ready_c_name}_fn",
+          c_name: ready_c_name,
+          params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
+          return_type: @types.fetch("bool"),
+          body: [
+            async_frame_cast_declaration(frame_type, async_info),
+            IR::ReturnStmt.new(value: async_frame_field_expression(frame_expr, "ready", @types.fetch("bool"))),
+          ],
+          entry_point: false,
+        )
+      end
+
+      def build_async_set_waiter_function(frame_type, set_waiter_c_name, async_info)
+        frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
+        waiter_frame_expr = IR::Name.new(name: "waiter_frame", type: async_info[:void_ptr], pointer: false)
+        waiter_expr = IR::Name.new(name: "waiter", type: async_info[:wake_type], pointer: false)
+
+        IR::Function.new(
+          name: "#{set_waiter_c_name}_fn",
+          c_name: set_waiter_c_name,
+          params: [
+            IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false),
+            IR::Param.new(name: "waiter_frame", c_name: "waiter_frame", type: async_info[:void_ptr], pointer: false),
+            IR::Param.new(name: "waiter", c_name: "waiter", type: async_info[:wake_type], pointer: false),
+          ],
+          return_type: @types.fetch("void"),
+          body: [
+            async_frame_cast_declaration(frame_type, async_info),
+            IR::IfStmt.new(
+              condition: async_frame_field_expression(frame_expr, "ready", @types.fetch("bool")),
+              then_body: [
+                IR::ExpressionStmt.new(expression: IR::Call.new(callee: waiter_expr, arguments: [waiter_frame_expr], type: @types.fetch("void"))),
+                IR::ReturnStmt.new(value: nil),
+              ],
+              else_body: nil,
+            ),
+            IR::Assignment.new(target: async_frame_field_expression(frame_expr, "waiter_frame", async_info[:void_ptr]), operator: "=", value: waiter_frame_expr),
+            IR::Assignment.new(target: async_frame_field_expression(frame_expr, "waiter", async_info[:wake_type]), operator: "=", value: waiter_expr),
+            IR::ReturnStmt.new(value: nil),
+          ],
+          entry_point: false,
+        )
+      end
+
+      def build_async_release_function(frame_type, release_c_name, async_info)
+        frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
+        raw_frame_expr = IR::Name.new(name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)
+
+        IR::Function.new(
+          name: "#{release_c_name}_fn",
+          c_name: release_c_name,
+          params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
+          return_type: @types.fetch("void"),
+          body: [
+            async_frame_cast_declaration(frame_type, async_info),
+            IR::IfStmt.new(
+              condition: IR::Unary.new(operator: "not", operand: async_frame_field_expression(frame_expr, "ready", @types.fetch("bool")), type: @types.fetch("bool")),
+              then_body: [IR::ReturnStmt.new(value: nil)],
+              else_body: nil,
+            ),
+            IR::ExpressionStmt.new(expression: IR::Call.new(callee: "mt_async_free", arguments: [raw_frame_expr], type: @types.fetch("void"))),
+            IR::ReturnStmt.new(value: nil),
+          ],
+          entry_point: false,
+        )
+      end
+
+      def build_async_take_result_function(frame_type, take_result_c_name, async_info)
+        frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
+        body = [async_frame_cast_declaration(frame_type, async_info)]
+        if async_info[:result_type] == @types.fetch("void")
+          body << IR::ReturnStmt.new(value: nil)
+        else
+          body << IR::ReturnStmt.new(value: async_frame_field_expression(frame_expr, "result", async_info[:result_type]))
+        end
+
+        IR::Function.new(
+          name: "#{take_result_c_name}_fn",
+          c_name: take_result_c_name,
+          params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
+          return_type: async_info[:result_type],
+          body:,
+          entry_point: false,
+        )
+      end
+
+      def async_resume_env_for(async_info)
+        env = empty_env
+        async_info[:param_fields].each do |name, field_info|
+          env[:scopes].last[name] = local_binding(
+            type: field_info[:type],
+            c_name: async_frame_field_c_name(field_info[:field_name]),
+            mutable: field_info[:mutable],
+            pointer: false,
+          )
+        end
+        env
+      end
+
+      def async_bind_local!(env, name, field_info)
+        current_actual_scope(env[:scopes])[name] = local_binding(
+          type: field_info[:type],
+          c_name: async_frame_field_c_name(field_info[:field_name]),
+          mutable: field_info[:mutable],
+          pointer: false,
+        )
+      end
+
+      def async_frame_cast_declaration(frame_type, async_info)
+        IR::LocalDecl.new(
+          name: async_frame_local_name,
+          c_name: async_frame_local_name,
+          type: pointer_to(frame_type),
+          value: IR::Cast.new(
+            target_type: pointer_to(frame_type),
+            expression: IR::Name.new(name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false),
+            type: pointer_to(frame_type),
+          ),
+        )
+      end
+
+      def async_frame_local_name
+        "__mt_frame"
+      end
+
+      def async_frame_raw_name
+        "__mt_frame_raw"
+      end
+
+      def async_frame_field_c_name(field_name)
+        "#{async_frame_local_name}->#{field_name}"
+      end
+
+      def async_state_label(resume_c_name, state)
+        "#{resume_c_name}_state_#{state}"
+      end
+
+      def async_frame_field_expression(frame_expr, field_name, field_type)
+        IR::Member.new(receiver: frame_expr, member: field_name, type: field_type)
+      end
+
+      def async_task_frame_expression(task_expr, task_type)
+        IR::Member.new(receiver: task_expr, member: "frame", type: task_type.field("frame"))
+      end
+
+      def async_task_call(task_expr, task_type, member, arguments, return_type)
+        IR::Call.new(
+          callee: IR::Member.new(receiver: task_expr, member:, type: task_type.field(member)),
+          arguments:,
+          type: return_type,
+        )
+      end
+
+      def lower_async_local_decl_statement(statement, field_info:, env:, frame_expr:)
+        lowered = []
+        type = field_info[:type]
+        target = async_frame_field_expression(frame_expr, field_info[:field_name], type)
+        prepared_setup = []
+        prepared_value = statement.value
+
+        if statement.value
+          prepared_setup, prepared_value = prepare_expression_for_inline_lowering(
+            statement.value,
+            env:,
+            expected_type: type,
+            allow_root_statement_foreign: true,
+          )
+          lowered.concat(prepared_setup)
+        end
+
+        if prepared_value && (foreign_call = foreign_call_info(prepared_value, env))
+          setup, value, call_type, release_assignments, cleanup_statements = lower_foreign_call_components(
+            foreign_call,
+            env:,
+            expected_type: type,
+            statement_position: false,
+          )
+          lowered.concat(setup)
+          raise LoweringError, "foreign call used to initialize #{statement.name} must return a value" if call_type == @types.fetch("void")
+          raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
+
+          lowered << IR::Assignment.new(target:, operator: "=", value:)
+          lowered.concat(cleanup_statements)
+        else
+          value = if prepared_value
+                    lower_contextual_expression(
+                      prepared_value,
+                      env:,
+                      expected_type: type,
+                      contextual_int_to_float: statement.type && contextual_int_to_float_target?(type),
+                    )
+                  else
+                    IR::ZeroInit.new(type:)
+                  end
+          lowered << IR::Assignment.new(target:, operator: "=", value:)
+        end
+
+        lowered
+      end
+
+      def normalize_async_body(statements)
+        counter = { value: 0 }
+        statements.flat_map { |statement| normalize_async_statement(statement, counter) }
+      end
+
+      def normalize_async_statement(statement, counter)
+        case statement
+        when AST::LocalDecl
+          return [statement] unless statement.value
+          return [statement] if statement.value.is_a?(AST::AwaitExpr)
+
+          setup, value = normalize_async_expression(statement.value, counter)
+          setup + [AST::LocalDecl.new(kind: statement.kind, name: statement.name, type: statement.type, value: value)]
+        when AST::Assignment
+          return [statement] if statement.value.is_a?(AST::AwaitExpr)
+
+          setup, value = normalize_async_expression(statement.value, counter)
+          setup + [AST::Assignment.new(target: statement.target, operator: statement.operator, value: value)]
+        when AST::ExpressionStmt
+          return [statement] if statement.expression.is_a?(AST::AwaitExpr)
+
+          setup, expression = normalize_async_expression(statement.expression, counter)
+          setup + [AST::ExpressionStmt.new(expression: expression)]
+        when AST::ReturnStmt
+          return [statement] unless statement.value
+          return [statement] if statement.value.is_a?(AST::AwaitExpr)
+
+          setup, value = normalize_async_expression(statement.value, counter)
+          setup + [AST::ReturnStmt.new(value: value)]
+        else
+          raise LoweringError, "unsupported async statement #{statement.class.name}"
+        end
+      end
+
+      def normalize_async_expression(expression, counter)
+        case expression
+        when AST::AwaitExpr
+          temp_name = fresh_async_temp_name(counter)
+          [
+            [AST::LocalDecl.new(kind: :let, name: temp_name, type: nil, value: expression)],
+            AST::Identifier.new(name: temp_name),
+          ]
+        when AST::Call
+          setup = []
+          callee_setup, callee = normalize_async_expression(expression.callee, counter)
+          setup.concat(callee_setup)
+          arguments = expression.arguments.map do |argument|
+            argument_setup, value = normalize_async_expression(argument.value, counter)
+            setup.concat(argument_setup)
+            AST::Argument.new(name: argument.name, value: value)
+          end
+          [setup, AST::Call.new(callee: callee, arguments: arguments)]
+        when AST::Specialization
+          setup = []
+          callee_setup, callee = normalize_async_expression(expression.callee, counter)
+          setup.concat(callee_setup)
+          arguments = expression.arguments.map do |argument|
+            argument_setup, value = normalize_async_expression(argument.value, counter)
+            setup.concat(argument_setup)
+            AST::TypeArgument.new(value: value)
+          end
+          [setup, AST::Specialization.new(callee: callee, arguments: arguments)]
+        when AST::UnaryOp
+          setup, operand = normalize_async_expression(expression.operand, counter)
+          [setup, AST::UnaryOp.new(operator: expression.operator, operand: operand)]
+        when AST::BinaryOp
+          raise LoweringError, "await is not supported inside short-circuit #{expression.operator} expressions yet" if %w[and or].include?(expression.operator) && async_expression_contains_await?(expression)
+
+          left_setup, left = normalize_async_expression(expression.left, counter)
+          right_setup, right = normalize_async_expression(expression.right, counter)
+          [left_setup + right_setup, AST::BinaryOp.new(operator: expression.operator, left: left, right: right)]
+        when AST::IfExpr
+          raise LoweringError, "await is not supported inside if expressions yet" if async_expression_contains_await?(expression)
+
+          [[], expression]
+        when AST::MemberAccess
+          setup, receiver = normalize_async_expression(expression.receiver, counter)
+          [setup, AST::MemberAccess.new(receiver: receiver, member: expression.member)]
+        when AST::IndexAccess
+          receiver_setup, receiver = normalize_async_expression(expression.receiver, counter)
+          index_setup, index = normalize_async_expression(expression.index, counter)
+          [receiver_setup + index_setup, AST::IndexAccess.new(receiver: receiver, index: index)]
+        when AST::FormatString
+          setup = []
+          parts = expression.parts.map do |part|
+            if part.is_a?(AST::FormatExprPart)
+              expression_setup, inner_expression = normalize_async_expression(part.expression, counter)
+              setup.concat(expression_setup)
+              AST::FormatExprPart.new(expression: inner_expression)
+            else
+              part
+            end
+          end
+          [setup, AST::FormatString.new(parts: parts)]
+        else
+          [[], expression]
+        end
+      end
+
+      def async_expression_contains_await?(expression)
+        case expression
+        when AST::AwaitExpr
+          true
+        when AST::Call, AST::Specialization
+          async_expression_contains_await?(expression.callee) || expression.arguments.any? { |argument| async_expression_contains_await?(argument.value) }
+        when AST::UnaryOp
+          async_expression_contains_await?(expression.operand)
+        when AST::BinaryOp
+          async_expression_contains_await?(expression.left) || async_expression_contains_await?(expression.right)
+        when AST::IfExpr
+          async_expression_contains_await?(expression.condition) || async_expression_contains_await?(expression.then_expression) || async_expression_contains_await?(expression.else_expression)
+        when AST::MemberAccess
+          async_expression_contains_await?(expression.receiver)
+        when AST::IndexAccess
+          async_expression_contains_await?(expression.receiver) || async_expression_contains_await?(expression.index)
+        when AST::FormatString
+          expression.parts.any? { |part| part.is_a?(AST::FormatExprPart) && async_expression_contains_await?(part.expression) }
+        else
+          false
+        end
+      end
+
+      def fresh_async_temp_name(counter)
+        counter[:value] += 1
+        "__mt_async_tmp_#{counter[:value]}"
+      end
+
+      def lower_async_assignment_statement(statement, env:)
+        lowered = []
+        target = lower_assignment_target(statement.target, env:)
+        prepared_setup, prepared_value = prepare_expression_for_inline_lowering(
+          statement.value,
+          env:,
+          expected_type: target.type,
+          allow_root_statement_foreign: true,
+        )
+        lowered.concat(prepared_setup)
+
+        if (foreign_call = foreign_call_info(prepared_value, env))
+          setup, value, call_type, release_assignments, cleanup_statements = lower_foreign_call_components(
+            foreign_call,
+            env:,
+            expected_type: target.type,
+            statement_position: false,
+          )
+          lowered.concat(setup)
+          raise LoweringError, "foreign call used in assignment must return a value" if call_type == @types.fetch("void")
+          raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
+
+          lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
+          lowered.concat(cleanup_statements)
+          update_cstr_metadata_for_assignment!(statement, prepared_value, env)
+          return lowered
+        end
+
+        value = if statement.operator == "="
+                  lower_contextual_expression(
+                    prepared_value,
+                    env:,
+                    expected_type: target.type,
+                    external_numeric: external_numeric_assignment_target?(statement.target, env:),
+                    contextual_int_to_float: contextual_int_to_float_target?(target.type),
+                  )
+                else
+                  lower_expression(statement.value, env:, expected_type: target.type)
+                end
+        update_cstr_metadata_for_assignment!(statement, prepared_value, env)
+        lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
+        lowered
+      end
+
+      def lower_async_expression_statement(statement, env:)
+        lowered = []
+        prepared_setup, prepared_expression = prepare_expression_for_inline_lowering(
+          statement.expression,
+          env:,
+          expected_type: infer_expression_type(statement.expression, env:),
+          allow_root_statement_foreign: true,
+        )
+        lowered.concat(prepared_setup)
+
+        if (foreign_call = foreign_call_info(prepared_expression, env))
+          setup, = lower_foreign_call_statement(
+            foreign_call,
+            env:,
+            expected_type: foreign_call[:binding].type.return_type,
+            statement_position: true,
+            discard_result: true,
+          )
+          lowered.concat(setup)
+        else
+          lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env:))
+        end
+
+        lowered
+      end
+
+      def lower_async_return_statement(statement, env:, frame_expr:, raw_frame_expr:, async_info:)
+        lowered = []
+        value = nil
+        prepared_setup = []
+        prepared_value = statement.value
+
+        if statement.value
+          prepared_setup, prepared_value = prepare_expression_for_inline_lowering(
+            statement.value,
+            env:,
+            expected_type: async_info[:result_type],
+            allow_root_statement_foreign: true,
+          )
+          lowered.concat(prepared_setup)
+        end
+
+        if prepared_value && (foreign_call = foreign_call_info(prepared_value, env))
+          setup, value = lower_foreign_call_statement(foreign_call, env:, expected_type: async_info[:result_type], statement_position: false)
+          lowered.concat(setup)
+        elsif prepared_value
+          value = lower_contextual_expression(
+            prepared_value,
+            env:,
+            expected_type: async_info[:result_type],
+            contextual_int_to_float: contextual_int_to_float_target?(async_info[:result_type]),
+          )
+        end
+
+        lowered.concat(async_complete_statements(frame_expr:, raw_frame_expr:, async_info:, value:))
+        lowered
+      end
+
+      def lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, field_info: nil)
+        lowered = []
+        await_expression = case statement
+                           when AST::LocalDecl then statement.value
+                           when AST::Assignment then statement.value
+                           when AST::ExpressionStmt then statement.expression
+                           when AST::ReturnStmt then statement.value
+                           end
+        prepared_setup, prepared_task = prepare_expression_for_inline_lowering(
+          await_expression.expression,
+          env:,
+          expected_type: await_info[:task_type],
+        )
+        lowered.concat(prepared_setup)
+        raise LoweringError, "await does not support foreign task expressions" if foreign_call_info(prepared_task, env)
+
+        task_expr = async_frame_field_expression(frame_expr, await_info[:field_name], await_info[:task_type])
+        task_frame_expr = async_task_frame_expression(task_expr, await_info[:task_type])
+        ready_call = async_task_call(task_expr, await_info[:task_type], "ready", [task_frame_expr], @types.fetch("bool"))
+        set_waiter_call = async_task_call(
+          task_expr,
+          await_info[:task_type],
+          "set_waiter",
+          [
+            task_frame_expr,
+            raw_frame_expr,
+            IR::Name.new(name: resume_c_name, type: async_info[:wake_type], pointer: false),
+          ],
+          @types.fetch("void"),
+        )
+        take_result_call = async_task_call(task_expr, await_info[:task_type], "take_result", [task_frame_expr], await_info[:result_type])
+        release_call = async_task_call(task_expr, await_info[:task_type], "release", [task_frame_expr], @types.fetch("void"))
+
+        unless await_info[:reuse_existing_storage]
+          lowered << IR::Assignment.new(
+            target: task_expr,
+            operator: "=",
+            value: lower_contextual_expression(prepared_task, env:, expected_type: await_info[:task_type]),
+          )
+        end
+        lowered << IR::IfStmt.new(
+          condition: IR::Unary.new(operator: "not", operand: ready_call, type: @types.fetch("bool")),
+          then_body: [
+            IR::Assignment.new(
+              target: async_frame_field_expression(frame_expr, "state", @types.fetch("i32")),
+              operator: "=",
+              value: IR::IntegerLiteral.new(value: await_info[:state], type: @types.fetch("i32")),
+            ),
+            IR::ExpressionStmt.new(expression: set_waiter_call),
+            IR::ReturnStmt.new(value: nil),
+          ],
+          else_body: nil,
+        )
+        lowered << IR::LabelStmt.new(name: async_state_label(resume_c_name, await_info[:state]))
+
+        case statement
+        when AST::LocalDecl
+          target = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:type])
+          lowered << IR::Assignment.new(target:, operator: "=", value: take_result_call)
+          lowered << IR::ExpressionStmt.new(expression: release_call)
+        when AST::Assignment
+          lowered << IR::Assignment.new(target: lower_assignment_target(statement.target, env:), operator: "=", value: take_result_call)
+          lowered << IR::ExpressionStmt.new(expression: release_call)
+        when AST::ExpressionStmt
+          lowered << IR::ExpressionStmt.new(expression: take_result_call)
+          lowered << IR::ExpressionStmt.new(expression: release_call)
+        when AST::ReturnStmt
+          if await_info[:result_type] == @types.fetch("void")
+            lowered << IR::ExpressionStmt.new(expression: take_result_call)
+            lowered << IR::ExpressionStmt.new(expression: release_call)
+            lowered.concat(async_complete_statements(frame_expr:, raw_frame_expr:, async_info:, value: nil, result_already_stored: true))
+          else
+            lowered << IR::Assignment.new(
+              target: async_frame_field_expression(frame_expr, "result", async_info[:result_type]),
+              operator: "=",
+              value: take_result_call,
+            )
+            lowered << IR::ExpressionStmt.new(expression: release_call)
+            lowered.concat(async_complete_statements(frame_expr:, raw_frame_expr:, async_info:, value: nil, result_already_stored: true))
+          end
+        end
+
+        lowered
+      end
+
+      def async_complete_statements(frame_expr:, raw_frame_expr:, async_info:, value:, result_already_stored: false)
+        lowered = []
+
+        if async_info[:result_type] != @types.fetch("void") && !result_already_stored
+          lowered << IR::Assignment.new(
+            target: async_frame_field_expression(frame_expr, "result", async_info[:result_type]),
+            operator: "=",
+            value: value,
+          )
+        end
+
+        lowered << IR::Assignment.new(
+          target: async_frame_field_expression(frame_expr, "ready", @types.fetch("bool")),
+          operator: "=",
+          value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")),
+        )
+
+        waiter_frame_field = async_frame_field_expression(frame_expr, "waiter_frame", async_info[:void_ptr])
+        lowered << IR::IfStmt.new(
+          condition: IR::Binary.new(
+            operator: "!=",
+            left: waiter_frame_field,
+            right: IR::NullLiteral.new(type: async_info[:void_ptr]),
+            type: @types.fetch("bool"),
+          ),
+          then_body: [
+            IR::LocalDecl.new(
+              name: "waiter_frame",
+              c_name: "__mt_waiter_frame",
+              type: async_info[:void_ptr],
+              value: waiter_frame_field,
+            ),
+            IR::Assignment.new(
+              target: waiter_frame_field,
+              operator: "=",
+              value: IR::NullLiteral.new(type: async_info[:void_ptr]),
+            ),
+            IR::ExpressionStmt.new(
+              expression: IR::Call.new(
+                callee: async_frame_field_expression(frame_expr, "waiter", async_info[:wake_type]),
+                arguments: [IR::Name.new(name: "__mt_waiter_frame", type: async_info[:void_ptr], pointer: false)],
+                type: @types.fetch("void"),
+              ),
+            ),
+            IR::ReturnStmt.new(value: nil),
+          ],
+          else_body: nil,
+        )
+        lowered << IR::ReturnStmt.new(value: nil)
+        lowered
+      end
+
       def lower_block(statements, env:, active_defers:, return_type:, loop_flow:, allow_return: true)
         local_env = duplicate_env(env)
         lowered = []
@@ -531,6 +1575,9 @@ module MilkTea
               lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:)
               lowered.concat(cleanup_statements)
               emitted_decl = true
+            elsif prepared_value.is_a?(AST::ProcExpr)
+              setup, value = lower_proc_expression_for_local(prepared_value, env: local_env, local_name: statement.name, proc_type: type)
+              lowered.concat(setup)
             elsif prepared_value
               value = lower_contextual_expression(
                 prepared_value,
@@ -550,6 +1597,10 @@ module MilkTea
               cstr_list_backed: cstr_list_backed_storage_value?(type, prepared_value, local_env),
             )
             lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:) unless emitted_decl
+            if proc_type?(type)
+              proc_name = IR::Name.new(name: c_name, type:, pointer: false)
+              local_defers << [IR::ExpressionStmt.new(expression: lower_proc_release_expression(proc_name, type))]
+            end
           when AST::Assignment
             target = lower_assignment_target(statement.target, env: local_env)
             prepared_setup, prepared_value = prepare_expression_for_inline_lowering(
@@ -696,14 +1747,19 @@ module MilkTea
               setup, value = lower_foreign_call_statement(foreign_call, env: local_env, expected_type: return_type, statement_position: false)
               lowered.concat(setup)
             end
-            cleanup = cleanup_statements(local_defers, active_defers)
-            lowered.concat(cleanup)
             value ||= prepared_value ? lower_contextual_expression(
               prepared_value,
               env: local_env,
               expected_type: return_type,
               contextual_int_to_float: contextual_int_to_float_target?(return_type),
             ) : nil
+            cleanup = cleanup_statements(local_defers, active_defers)
+            if value && !cleanup.empty?
+              return_value_name = fresh_c_temp_name(local_env, "return_value")
+              lowered << IR::LocalDecl.new(name: return_value_name, c_name: return_value_name, type: return_type, value:)
+              value = IR::Name.new(name: return_value_name, type: return_type, pointer: false)
+            end
+            lowered.concat(cleanup)
             lowered << IR::ReturnStmt.new(value:)
           when AST::ExpressionStmt
             prepared_setup, prepared_expression = prepare_expression_for_inline_lowering(
@@ -735,6 +1791,275 @@ module MilkTea
           lowered.concat(cleanup_statements(local_defers, []))
         end
         lowered
+      end
+
+      def lower_proc_expression_for_local(expression, env:, local_name:, proc_type:)
+        captures = proc_capture_entries(expression, env)
+        captures.each do |capture|
+          if ref_type?(capture[:type]) || contains_ref_type?(capture[:type])
+            raise LoweringError, "proc capture #{capture[:name]} cannot use ref types"
+          end
+          raise LoweringError, "proc capture #{capture[:name]} cannot capture proc values" if proc_type?(capture[:type])
+          raise LoweringError, "proc capture #{capture[:name]} cannot capture array values yet" if array_type?(capture[:type])
+        end
+
+        proc_id = fresh_proc_symbol
+        invoke_c_name = "#{@module_prefix}__proc_#{proc_id}__invoke"
+        release_c_name = "#{@module_prefix}__proc_#{proc_id}__release"
+        env_struct_type = nil
+        setup = []
+
+        env_value = if captures.empty?
+                      IR::NullLiteral.new(type: proc_env_pointer_type)
+                    else
+                      env_struct_type = Types::Struct.new("#{@module_prefix}__proc_#{proc_id}__env").define_fields(
+                        captures.each_with_object({}) { |capture, fields| fields[capture[:field_name]] = capture[:type] },
+                      )
+                      @synthetic_structs << IR::StructDecl.new(
+                        name: env_struct_type.name,
+                        c_name: env_struct_type.name,
+                        fields: captures.map { |capture| IR::Field.new(name: capture[:field_name], type: capture[:type]) },
+                        packed: false,
+                        alignment: nil,
+                      )
+
+                      env_pointer_type = pointer_to(env_struct_type)
+                      env_name = fresh_c_temp_name(env, "#{local_name}_env")
+                      raw_allocation = IR::Call.new(
+                        callee: "malloc",
+                        arguments: [IR::SizeofExpr.new(target_type: env_struct_type, type: @types.fetch("usize"))],
+                        type: proc_env_pointer_type,
+                      )
+                      setup << IR::LocalDecl.new(
+                        name: env_name,
+                        c_name: env_name,
+                        type: env_pointer_type,
+                        value: IR::Cast.new(target_type: env_pointer_type, expression: raw_allocation, type: env_pointer_type),
+                      )
+                      env_pointer = IR::Name.new(name: env_name, type: env_pointer_type, pointer: false)
+                      captures.each do |capture|
+                        setup << IR::Assignment.new(
+                          target: IR::Member.new(receiver: env_pointer, member: capture[:field_name], type: capture[:type]),
+                          operator: "=",
+                          value: lower_expression(AST::Identifier.new(name: capture[:name]), env:, expected_type: capture[:type]),
+                        )
+                      end
+                      IR::Cast.new(target_type: proc_env_pointer_type, expression: env_pointer, type: proc_env_pointer_type)
+                    end
+
+        @synthetic_functions << build_proc_invoke_function(expression, proc_type, captures, env_struct_type, invoke_c_name)
+        @synthetic_functions << build_proc_release_function(release_c_name)
+
+        [
+          setup,
+          IR::AggregateLiteral.new(
+            type: proc_type,
+            fields: [
+              IR::AggregateField.new(name: "env", value: env_value),
+              IR::AggregateField.new(name: "invoke", value: IR::Name.new(name: invoke_c_name, type: proc_invoke_function_type(proc_type), pointer: false)),
+              IR::AggregateField.new(name: "release", value: IR::Name.new(name: release_c_name, type: proc_release_function_type, pointer: false)),
+            ],
+          ),
+        ]
+      end
+
+      def build_proc_invoke_function(expression, proc_type, captures, env_struct_type, invoke_c_name)
+        env = empty_env
+        params = [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)]
+        parameter_setup = []
+
+        if env_struct_type
+          env_pointer_type = pointer_to(env_struct_type)
+          env_pointer_name = "__mt_proc_env_ptr"
+          env[:scopes].last[env_pointer_name] = local_binding(type: env_pointer_type, c_name: env_pointer_name, mutable: false, pointer: false)
+          parameter_setup << IR::LocalDecl.new(
+            name: env_pointer_name,
+            c_name: env_pointer_name,
+            type: env_pointer_type,
+            value: IR::Cast.new(
+              target_type: env_pointer_type,
+              expression: IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false),
+              type: env_pointer_type,
+            ),
+          )
+
+          env_pointer = IR::Name.new(name: env_pointer_name, type: env_pointer_type, pointer: false)
+          captures.each do |capture|
+            capture_c_name = "__mt_capture_#{capture[:name]}"
+            env[:scopes].last[capture[:name]] = local_binding(type: capture[:type], c_name: capture_c_name, mutable: false, pointer: false)
+            parameter_setup << IR::LocalDecl.new(
+              name: capture[:name],
+              c_name: capture_c_name,
+              type: capture[:type],
+              value: IR::Member.new(receiver: env_pointer, member: capture[:field_name], type: capture[:type]),
+            )
+          end
+        end
+
+        expression.params.each_with_index do |param, index|
+          type = proc_type.params.fetch(index).type
+          c_name = c_local_name(param.name)
+          if array_type?(type)
+            input_c_name = "#{c_name}_input"
+            params << IR::Param.new(name: param.name, c_name: input_c_name, type:, pointer: false)
+            env[:scopes].last[param.name] = local_binding(type:, c_name:, mutable: param.mutable, pointer: false)
+            parameter_setup << IR::LocalDecl.new(
+              name: param.name,
+              c_name:,
+              type:,
+              value: IR::Name.new(name: input_c_name, type:, pointer: false),
+            )
+          else
+            env[:scopes].last[param.name] = local_binding(type:, c_name:, mutable: param.mutable, pointer: false)
+            params << IR::Param.new(name: param.name, c_name:, type:, pointer: false)
+          end
+        end
+
+        body = parameter_setup + lower_block(expression.body, env:, active_defers: [], return_type: proc_type.return_type, loop_flow: nil, allow_return: true)
+        IR::Function.new(name: invoke_c_name, c_name: invoke_c_name, params:, return_type: proc_type.return_type, body:, entry_point: false)
+      end
+
+      def build_proc_release_function(release_c_name)
+        IR::Function.new(
+          name: release_c_name,
+          c_name: release_c_name,
+          params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
+          return_type: @types.fetch("void"),
+          body: [
+            IR::ExpressionStmt.new(
+              expression: IR::Call.new(
+                callee: "free",
+                arguments: [IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
+                type: @types.fetch("void"),
+              ),
+            ),
+            IR::ReturnStmt.new(value: nil),
+          ],
+          entry_point: false,
+        )
+      end
+
+      def proc_capture_entries(expression, env)
+        local_scopes = [expression.params.each_with_object({}) { |param, names| names[param.name] = true }]
+        captures = {}
+        collect_proc_captures_from_statements(expression.body, env, local_scopes, captures)
+        captures.values
+      end
+
+      def collect_proc_captures_from_statements(statements, env, local_scopes, captures)
+        statements.each do |statement|
+          collect_proc_captures_from_statement(statement, env, local_scopes, captures)
+        end
+      end
+
+      def collect_proc_captures_from_statement(statement, env, local_scopes, captures)
+        case statement
+        when AST::LocalDecl
+          collect_proc_captures_from_expression(statement.value, env, local_scopes, captures) if statement.value
+          local_scopes.last[statement.name] = true
+        when AST::Assignment
+          collect_proc_captures_from_expression(statement.target, env, local_scopes, captures)
+          collect_proc_captures_from_expression(statement.value, env, local_scopes, captures)
+        when AST::IfStmt
+          statement.branches.each do |branch|
+            collect_proc_captures_from_expression(branch.condition, env, local_scopes, captures)
+            collect_proc_captures_from_statements(branch.body, env, local_scopes + [{}], captures)
+          end
+          collect_proc_captures_from_statements(statement.else_body, env, local_scopes + [{}], captures) if statement.else_body
+        when AST::MatchStmt
+          collect_proc_captures_from_expression(statement.expression, env, local_scopes, captures)
+          statement.arms.each do |arm|
+            collect_proc_captures_from_expression(arm.pattern, env, local_scopes, captures)
+            collect_proc_captures_from_statements(arm.body, env, local_scopes + [{}], captures)
+          end
+        when AST::UnsafeStmt
+          collect_proc_captures_from_statements(statement.body, env, local_scopes + [{}], captures)
+        when AST::StaticAssert
+          collect_proc_captures_from_expression(statement.condition, env, local_scopes, captures)
+          collect_proc_captures_from_expression(statement.message, env, local_scopes, captures)
+        when AST::ForStmt
+          collect_proc_captures_from_expression(statement.iterable, env, local_scopes, captures)
+          collect_proc_captures_from_statements(statement.body, env, local_scopes + [{ statement.name => true }], captures)
+        when AST::WhileStmt
+          collect_proc_captures_from_expression(statement.condition, env, local_scopes, captures)
+          collect_proc_captures_from_statements(statement.body, env, local_scopes + [{}], captures)
+        when AST::ReturnStmt
+          collect_proc_captures_from_expression(statement.value, env, local_scopes, captures) if statement.value
+        when AST::DeferStmt
+          if statement.body
+            collect_proc_captures_from_statements(statement.body, env, local_scopes + [{}], captures)
+          else
+            collect_proc_captures_from_expression(statement.expression, env, local_scopes, captures)
+          end
+        when AST::ExpressionStmt
+          collect_proc_captures_from_expression(statement.expression, env, local_scopes, captures)
+        when AST::BreakStmt, AST::ContinueStmt
+          nil
+        else
+          raise LoweringError, "unsupported proc capture statement #{statement.class.name}"
+        end
+      end
+
+      def collect_proc_captures_from_expression(expression, env, local_scopes, captures)
+        return unless expression
+
+        case expression
+        when AST::Identifier
+          return if local_scopes.any? { |scope| scope.key?(expression.name) }
+
+          if (binding = proc_capture_binding(expression.name, env))
+            captures[expression.name] ||= { name: expression.name, field_name: expression.name, type: binding[:type] }
+          end
+        when AST::MemberAccess
+          collect_proc_captures_from_expression(expression.receiver, env, local_scopes, captures)
+        when AST::IndexAccess
+          collect_proc_captures_from_expression(expression.receiver, env, local_scopes, captures)
+          collect_proc_captures_from_expression(expression.index, env, local_scopes, captures)
+        when AST::Specialization
+          collect_proc_captures_from_expression(expression.callee, env, local_scopes, captures)
+          expression.arguments.each { |argument| collect_proc_captures_from_expression(argument.value, env, local_scopes, captures) }
+        when AST::Call
+          collect_proc_captures_from_expression(expression.callee, env, local_scopes, captures)
+          expression.arguments.each { |argument| collect_proc_captures_from_expression(argument.value, env, local_scopes, captures) }
+        when AST::UnaryOp
+          collect_proc_captures_from_expression(expression.operand, env, local_scopes, captures)
+        when AST::BinaryOp
+          collect_proc_captures_from_expression(expression.left, env, local_scopes, captures)
+          collect_proc_captures_from_expression(expression.right, env, local_scopes, captures)
+        when AST::IfExpr
+          collect_proc_captures_from_expression(expression.condition, env, local_scopes, captures)
+          collect_proc_captures_from_expression(expression.then_expression, env, local_scopes, captures)
+          collect_proc_captures_from_expression(expression.else_expression, env, local_scopes, captures)
+        when AST::AwaitExpr
+          collect_proc_captures_from_expression(expression.expression, env, local_scopes, captures)
+        when AST::FormatString
+          expression.parts.each do |part|
+            collect_proc_captures_from_expression(part.expression, env, local_scopes, captures) if part.is_a?(AST::FormatExprPart)
+          end
+        when AST::ProcExpr, AST::TypeRef, AST::FunctionType, AST::ProcType,
+             AST::SizeofExpr, AST::AlignofExpr, AST::OffsetofExpr,
+             AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral,
+             AST::BooleanLiteral, AST::NullLiteral
+          nil
+        else
+          raise LoweringError, "unsupported proc capture expression #{expression.class.name}"
+        end
+      end
+
+      def proc_capture_binding(name, env)
+        env[:scopes].reverse_each do |scope|
+          return scope[name] if scope.key?(name)
+        end
+
+        nil
+      end
+
+      def lower_proc_release_expression(proc_expression, _proc_type)
+        IR::Call.new(
+          callee: IR::Member.new(receiver: proc_expression, member: "release", type: proc_release_function_type),
+          arguments: [IR::Member.new(receiver: proc_expression, member: "env", type: proc_env_pointer_type)],
+          type: @types.fetch("void"),
+        )
       end
 
       def lower_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
@@ -991,8 +2316,17 @@ module MilkTea
       def prepare_call_expression_for_inline_lowering(expression, env:, expected_type: nil, allow_root_statement_foreign: false)
         kind, _callee_name, _receiver, callee_type, binding = resolve_callee(expression.callee, env, arguments: expression.arguments)
 
-        if format_string_call?(binding, expression.arguments)
+        case format_string_call_kind(binding, expression.arguments)
+        when :fmt_string
           return lower_format_string_call_to_temp(expression.arguments.first.value, env:)
+        when :io_print
+          return lower_io_format_string_call_to_temp(expression.arguments.first.value, env:, helper_name: "print_formatted")
+        when :io_println
+          return lower_io_format_string_call_to_temp(expression.arguments.first.value, env:, helper_name: "println_formatted")
+        when :io_write_error
+          return lower_io_format_string_call_to_temp(expression.arguments.first.value, env:, helper_name: "write_error_formatted")
+        when :io_write_error_line
+          return lower_io_format_string_call_to_temp(expression.arguments.first.value, env:, helper_name: "write_error_line_formatted")
         end
 
         if binding && foreign_function_binding?(binding) && !allow_root_statement_foreign && foreign_call_requires_statement_lowering?(expression, binding, env:)
@@ -1015,6 +2349,17 @@ module MilkTea
       end
 
       def lower_format_string_call_to_temp(format_string, env:)
+        setup, temp_name, = build_format_string_temp_setup(format_string, env:)
+        [setup, AST::Identifier.new(name: temp_name)]
+      end
+
+      def build_format_string_temp_setup(format_string, env:)
+        return build_static_format_string_temp_setup(format_string, env:) unless format_string_has_dynamic_parts?(format_string)
+
+        build_extracted_format_string_temp_setup(format_string, env:)
+      end
+
+      def build_static_format_string_temp_setup(format_string, env:)
         string_type = std_string_type
         ref_string_type = Types::GenericInstance.new("ref", [string_type])
         temp_name = fresh_c_temp_name(env, "fmt_string")
@@ -1022,26 +2367,58 @@ module MilkTea
         temp_ref = IR::AddressOf.new(expression: temp_value, type: ref_string_type)
         register_prepared_temp!(env, temp_name, string_type)
 
+        text = format_string.parts.filter_map do |part|
+          next unless part.is_a?(AST::FormatTextPart)
+
+          part.value
+        end.join
+
         setup = [
           IR::LocalDecl.new(
             name: temp_name,
             c_name: temp_name,
             type: string_type,
-            value: IR::Call.new(callee: std_string_create_c_name, arguments: [], type: string_type),
+            value: IR::Call.new(
+              callee: std_string_from_str_c_name,
+              arguments: [IR::StringLiteral.new(value: text, type: @types.fetch("str"), cstring: false)],
+              type: string_type,
+            ),
           ),
         ]
+
+        [setup, temp_name, temp_ref]
+      end
+
+      def build_extracted_format_string_temp_setup(format_string, env:)
+        string_type = std_string_type
+        ref_string_type = Types::GenericInstance.new("ref", [string_type])
+        temp_name = fresh_c_temp_name(env, "fmt_string")
+        temp_value = IR::Name.new(name: temp_name, type: string_type, pointer: false)
+        temp_ref = IR::AddressOf.new(expression: temp_value, type: ref_string_type)
+        register_prepared_temp!(env, temp_name, string_type)
+
+        setup, builder_c_name, builder_arguments = build_format_string_builder_call(format_string, env:)
+        setup << IR::LocalDecl.new(
+          name: temp_name,
+          c_name: temp_name,
+          type: string_type,
+          value: IR::Call.new(callee: builder_c_name, arguments: builder_arguments, type: string_type),
+        )
+
+        [setup, temp_name, temp_ref]
+      end
+
+      def build_format_string_builder_call(format_string, env:)
+        helper_parts = []
+        helper_params = []
+        helper_arguments = []
+        setup = []
 
         format_string.parts.each do |part|
           if part.is_a?(AST::FormatTextPart)
             next if part.value.empty?
 
-            setup << IR::ExpressionStmt.new(
-              expression: IR::Call.new(
-                callee: std_fmt_function_c_name("append"),
-                arguments: [temp_ref, IR::StringLiteral.new(value: part.value, type: @types.fetch("str"), cstring: false)],
-                type: @types.fetch("void"),
-              ),
-            )
+            helper_parts << { kind: :text, value: part.value }
             next
           end
 
@@ -1049,32 +2426,130 @@ module MilkTea
           setup.concat(expression_setup)
           value_type = infer_expression_type(prepared_expression, env:)
           append_function_name, append_argument_type = format_string_append_plan(value_type)
-          lowered_expression = lower_contextual_expression(prepared_expression, env:, expected_type: value_type)
-          setup << IR::ExpressionStmt.new(
+          parameter_name = "part_#{helper_params.length + 1}"
+          parameter_c_name = "__mt_fmt_#{parameter_name}"
+
+          helper_params << IR::Param.new(name: parameter_name, c_name: parameter_c_name, type: append_argument_type, pointer: false)
+          helper_arguments << cast_expression(
+            lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
+            append_argument_type,
+          )
+          helper_parts << {
+            kind: :expression,
+            append_function_name: append_function_name,
+            parameter_c_name: parameter_c_name,
+            parameter_type: append_argument_type,
+          }
+        end
+
+        helper_c_name = "#{@module_prefix}__fmt_#{fresh_format_symbol}"
+        @synthetic_functions << build_format_string_builder_function(helper_c_name, helper_params, helper_parts)
+        [setup, helper_c_name, helper_arguments]
+      end
+
+      def build_format_string_builder_function(helper_c_name, helper_params, helper_parts)
+        string_type = std_string_type
+        ref_string_type = Types::GenericInstance.new("ref", [string_type])
+        result_name = "__mt_result"
+        result_value = IR::Name.new(name: result_name, type: string_type, pointer: false)
+        result_ref = IR::AddressOf.new(expression: result_value, type: ref_string_type)
+        literal_capacity = helper_parts.sum { |part| part[:kind] == :text ? part[:value].bytesize : 0 }
+        initializer = if literal_capacity.zero?
+                        IR::Call.new(callee: std_string_create_c_name, arguments: [], type: string_type)
+                      else
+                        IR::Call.new(
+                          callee: std_string_with_capacity_c_name,
+                          arguments: [IR::IntegerLiteral.new(value: literal_capacity, type: @types.fetch("usize"))],
+                          type: string_type,
+                        )
+                      end
+
+        body = [
+          IR::LocalDecl.new(name: result_name, c_name: result_name, type: string_type, value: initializer),
+        ]
+
+        helper_parts.each do |part|
+          if part[:kind] == :text
+            body << IR::ExpressionStmt.new(
+              expression: IR::Call.new(
+                callee: std_fmt_function_c_name("append"),
+                arguments: [result_ref, IR::StringLiteral.new(value: part[:value], type: @types.fetch("str"), cstring: false)],
+                type: @types.fetch("void"),
+              ),
+            )
+            next
+          end
+
+          body << IR::ExpressionStmt.new(
             expression: IR::Call.new(
-              callee: std_fmt_function_c_name(append_function_name),
-              arguments: [temp_ref, cast_expression(lowered_expression, append_argument_type)],
+              callee: std_fmt_function_c_name(part[:append_function_name]),
+              arguments: [
+                result_ref,
+                IR::Name.new(name: part[:parameter_c_name], type: part[:parameter_type], pointer: false),
+              ],
               type: @types.fetch("void"),
             ),
           )
         end
 
-        [setup, AST::Identifier.new(name: temp_name)]
+        body << IR::ReturnStmt.new(value: result_value)
+
+        IR::Function.new(
+          name: helper_c_name,
+          c_name: helper_c_name,
+          params: helper_params,
+          return_type: string_type,
+          body: body,
+          entry_point: false,
+        )
+      end
+
+      def format_string_has_dynamic_parts?(format_string)
+        format_string.parts.any? { |part| part.is_a?(AST::FormatExprPart) }
+      end
+
+      def lower_io_format_string_call_to_temp(format_string, env:, helper_name:)
+        setup, temp_name, temp_ref = build_format_string_temp_setup(format_string, env:)
+        result_name = fresh_c_temp_name(env, helper_name)
+        register_prepared_temp!(env, result_name, @types.fetch("bool"))
+        setup << IR::LocalDecl.new(
+          name: result_name,
+          c_name: result_name,
+          type: @types.fetch("bool"),
+          value: IR::Call.new(
+            callee: std_io_function_c_name(helper_name),
+            arguments: [temp_ref],
+            type: @types.fetch("bool"),
+          ),
+        )
+
+        [setup, AST::Identifier.new(name: result_name)]
       end
 
       def format_string_call?(binding, arguments)
-        return false unless binding
-        return false unless binding.owner.module_name == "std.fmt"
-        return false unless binding.name == "string"
-        return false unless arguments.length == 1
+        !format_string_call_kind(binding, arguments).nil?
+      end
 
-        arguments.first.value.is_a?(AST::FormatString)
+      def format_string_call_kind(binding, arguments)
+        return nil unless binding
+        return nil unless arguments.length == 1
+        return nil unless arguments.first.value.is_a?(AST::FormatString)
+
+        return :fmt_string if binding.owner.module_name == "std.fmt" && binding.name == "string"
+        return :io_print if binding.owner.module_name == "std.io" && binding.name == "print"
+        return :io_println if binding.owner.module_name == "std.io" && binding.name == "println"
+        return :io_write_error if binding.owner.module_name == "std.io" && binding.name == "write_error"
+        return :io_write_error_line if binding.owner.module_name == "std.io" && binding.name == "write_error_line"
+
+        nil
       end
 
       def format_string_append_plan(type)
         return ["append", @types.fetch("str")] if type == @types.fetch("str")
         return ["append_cstr", @types.fetch("cstr")] if type == @types.fetch("cstr")
         return ["append_bool", @types.fetch("bool")] if type == @types.fetch("bool")
+        return ["append_f32", @types.fetch("f32")] if type == @types.fetch("f32")
+        return ["append_f64", @types.fetch("f64")] if type == @types.fetch("f64")
 
         if type.is_a?(Types::Primitive) && type.integer?
           return ["append_i32", @types.fetch("i32")] if %w[i8 i16 i32].include?(type.name)
@@ -1088,12 +2563,31 @@ module MilkTea
           return format_string_append_plan(type.backing_type)
         end
 
-        raise LoweringError, "formatted string interpolation supports str, cstr, bool, integer primitives, and integer-backed enums/flags, got #{type}"
+        raise LoweringError, "formatted string interpolation supports str, cstr, bool, numeric primitives, and integer-backed enums/flags, got #{type}"
       end
 
       def std_fmt_function_c_name(name)
         binding = analysis_for_module("std.fmt").functions.fetch(name)
         function_binding_c_name(binding, module_name: binding.owner.module_name)
+      end
+
+      def std_io_function_c_name(name)
+        binding = analysis_for_module("std.io").functions.fetch(name)
+        function_binding_c_name(binding, module_name: binding.owner.module_name)
+      end
+
+      def canonical_std_io_direct_call_c_name(binding)
+        return nil unless binding
+        return nil unless binding.owner.module_name == "std.io"
+
+        case binding.name
+        when "print"
+          std_io_function_c_name("write")
+        when "println"
+          std_io_function_c_name("write_line")
+        else
+          nil
+        end
       end
 
       def std_string_type
@@ -1104,6 +2598,20 @@ module MilkTea
         analysis = analysis_for_module("std.string")
         string_type = analysis.types.fetch("String")
         binding = analysis.methods.fetch(string_type).fetch("create")
+        function_binding_c_name(binding, module_name: binding.owner.module_name, receiver_type: string_type)
+      end
+
+      def std_string_with_capacity_c_name
+        analysis = analysis_for_module("std.string")
+        string_type = analysis.types.fetch("String")
+        binding = analysis.methods.fetch(string_type).fetch("with_capacity")
+        function_binding_c_name(binding, module_name: binding.owner.module_name, receiver_type: string_type)
+      end
+
+      def std_string_from_str_c_name
+        analysis = analysis_for_module("std.string")
+        string_type = analysis.types.fetch("String")
+        binding = analysis.methods.fetch(string_type).fetch("from_str")
         function_binding_c_name(binding, module_name: binding.owner.module_name, receiver_type: string_type)
       end
 
@@ -1235,6 +2743,8 @@ module MilkTea
         type = infer_expression_type(expression, env:, expected_type:)
 
         case expression
+        when AST::AwaitExpr
+          raise LoweringError, "await expressions must be lowered in async statement context"
         when AST::IntegerLiteral
           IR::IntegerLiteral.new(value: expression.value, type:)
         when AST::FloatLiteral
@@ -1248,7 +2758,7 @@ module MilkTea
         when AST::StringLiteral
           IR::StringLiteral.new(value: expression.value, type:, cstring: expression.cstring)
         when AST::FormatString
-          raise LoweringError, "formatted string literals are only valid in std.fmt.string(...)"
+          raise LoweringError, "formatted string literals are only valid in std.fmt.string(...) or std.io print helpers"
         when AST::BooleanLiteral
           IR::BooleanLiteral.new(value: expression.value, type:)
         when AST::NullLiteral
@@ -1299,6 +2809,8 @@ module MilkTea
             else_expression: lower_contextual_expression(expression.else_expression, env: else_env, expected_type: type),
             type:,
           )
+        when AST::ProcExpr
+          raise LoweringError, "proc expressions must be lowered in local initializer context"
         when AST::Call
           lower_call(expression, env:, type:)
         when AST::Specialization
@@ -1346,12 +2858,25 @@ module MilkTea
             return lower_foreign_call_inline(expression, callee_binding, env:, type:)
           end
 
+          canonical_callee_name = canonical_std_io_direct_call_c_name(callee_binding) || callee_name
           arguments = lower_call_arguments(expression.arguments, callee_type, env:)
-          IR::Call.new(callee: callee_name, arguments:, type:)
+          IR::Call.new(callee: canonical_callee_name, arguments:, type:)
         when :callable_value
-          arguments = lower_call_arguments(expression.arguments, callee_type, env:)
           callee_expression = lower_expression(expression.callee, env:, expected_type: callee_type)
-          IR::Call.new(callee: callee_expression, arguments:, type:)
+          if proc_type?(callee_type)
+            arguments = [
+              IR::Member.new(receiver: callee_expression, member: "env", type: proc_env_pointer_type),
+              *lower_call_arguments(expression.arguments, callee_type, env:),
+            ]
+            IR::Call.new(
+              callee: IR::Member.new(receiver: callee_expression, member: "invoke", type: proc_invoke_function_type(callee_type)),
+              arguments:,
+              type:,
+            )
+          else
+            arguments = lower_call_arguments(expression.arguments, callee_type, env:)
+            IR::Call.new(callee: callee_expression, arguments:, type:)
+          end
         when :method
           receiver_arg = lower_method_receiver_argument(receiver, callee_type, env:)
           arguments = [receiver_arg, *lower_call_arguments(expression.arguments, callee_type, env:)]
@@ -1552,7 +3077,12 @@ module MilkTea
       def lower_call_arguments(arguments, callee_type, env:)
         arguments.map.with_index do |argument, index|
           expected_type = index < callee_type.params.length ? callee_type.params[index].type : nil
-          lower_contextual_expression(argument.value, env:, expected_type:, external_numeric: callee_type.external && !expected_type.nil?)
+          lower_contextual_expression(
+            argument.value,
+            env:,
+            expected_type:,
+            external_numeric: callee_type.respond_to?(:external) && callee_type.external && !expected_type.nil?,
+          )
         end
       end
 
@@ -2587,11 +4117,120 @@ module MilkTea
         lowered = lower_expression(expression, env:, expected_type: expected_type)
         return lowered unless expected_type
         return lowered if lowered.type == expected_type
+        return lower_direct_function_to_proc_expression(expression, lowered, env:, expected_type:) if direct_function_to_proc_contextual_compatibility?(expression, lowered.type, env:, expected_type:)
         return lower_str_builder_to_span_expression(lowered, expected_type) if str_builder_to_span_compatible?(lowered.type, expected_type)
         return lower_array_to_span_expression(lowered, expected_type) if array_to_span_compatible?(lowered.type, expected_type)
         return cast_expression(lowered, expected_type) if contextual_numeric_compatibility?(expression, lowered.type, expected_type, external_numeric:, contextual_int_to_float:)
 
         lowered
+      end
+
+      def direct_function_to_proc_contextual_compatibility?(expression, actual_type, env:, expected_type:)
+        return false unless actual_type.is_a?(Types::Function) && proc_type?(expected_type)
+        return false unless direct_function_identity_expression?(expression, env)
+
+        function_type_matches_proc_type?(actual_type, expected_type)
+      end
+
+      def function_type_matches_proc_type?(function_type, proc_type)
+        return false if function_type.receiver_type || function_type.variadic
+        return false unless function_type.params.length == proc_type.params.length
+        return false unless function_type.return_type == proc_type.return_type
+
+        function_type.params.zip(proc_type.params).all? do |function_param, proc_param|
+          function_param.type == proc_param.type && function_param.mutable == proc_param.mutable
+        end
+      end
+
+      def direct_function_identity_expression?(expression, env)
+        case expression
+        when AST::Identifier
+          return false if lookup_value(expression.name, env)
+          return false unless @functions.key?(expression.name)
+
+          binding = @functions.fetch(expression.name)
+          !binding.type_params.any? && !foreign_function_binding?(binding)
+        when AST::MemberAccess
+          return false unless expression.receiver.is_a?(AST::Identifier) && @imports.key?(expression.receiver.name)
+
+          imported_module = @imports.fetch(expression.receiver.name)
+          return false unless imported_module.functions.key?(expression.member)
+
+          binding = imported_module.functions.fetch(expression.member)
+          !binding.type_params.any? && !foreign_function_binding?(binding)
+        when AST::Specialization
+          binding = resolve_specialized_function_binding(expression)
+          binding && !foreign_function_binding?(binding)
+        else
+          false
+        end
+      end
+
+      def lower_direct_function_to_proc_expression(source_expression, source_function, env:, expected_type:)
+        raise LoweringError, "function-to-proc coercion requires a direct function name" unless source_function.is_a?(IR::Name)
+
+        proc_id = fresh_proc_symbol
+        invoke_c_name = "#{@module_prefix}__proc_#{proc_id}__invoke"
+        release_c_name = "#{@module_prefix}__proc_#{proc_id}__release"
+
+        @synthetic_functions << build_direct_function_proc_invoke_function(source_expression, source_function.name, source_function.type, expected_type, invoke_c_name)
+        @synthetic_functions << build_proc_noop_release_function(release_c_name)
+
+        IR::AggregateLiteral.new(
+          type: expected_type,
+          fields: [
+            IR::AggregateField.new(name: "env", value: IR::NullLiteral.new(type: proc_env_pointer_type)),
+            IR::AggregateField.new(name: "invoke", value: IR::Name.new(name: invoke_c_name, type: proc_invoke_function_type(expected_type), pointer: false)),
+            IR::AggregateField.new(name: "release", value: IR::Name.new(name: release_c_name, type: proc_release_function_type, pointer: false)),
+          ],
+        )
+      end
+
+      def build_direct_function_proc_invoke_function(source_expression, function_c_name, function_type, proc_type, invoke_c_name)
+        env = empty_env
+        params = [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)]
+        parameter_setup = []
+        call_arguments = []
+
+        proc_type.params.each_with_index do |param, index|
+          c_name = c_local_name(param.name || "arg#{index}")
+          if array_type?(param.type)
+            input_c_name = "#{c_name}_input"
+            params << IR::Param.new(name: param.name || "arg#{index}", c_name: input_c_name, type: param.type, pointer: false)
+            env[:scopes].last[param.name || "arg#{index}"] = local_binding(type: param.type, c_name:, mutable: param.mutable, pointer: false)
+            parameter_setup << IR::LocalDecl.new(
+              name: param.name || "arg#{index}",
+              c_name:,
+              type: param.type,
+              value: IR::Name.new(name: input_c_name, type: param.type, pointer: false),
+            )
+            call_arguments << IR::Name.new(name: c_name, type: param.type, pointer: false)
+          else
+            env[:scopes].last[param.name || "arg#{index}"] = local_binding(type: param.type, c_name:, mutable: param.mutable, pointer: false)
+            params << IR::Param.new(name: param.name || "arg#{index}", c_name:, type: param.type, pointer: false)
+            call_arguments << IR::Name.new(name: c_name, type: param.type, pointer: false)
+          end
+        end
+
+        call = IR::Call.new(callee: function_c_name, arguments: call_arguments, type: proc_type.return_type)
+        body = if proc_type.return_type == @types.fetch("void")
+                 parameter_setup + [IR::ExpressionStmt.new(expression: call), IR::ReturnStmt.new(value: nil)]
+               else
+                 parameter_setup + [IR::ReturnStmt.new(value: call)]
+               end
+
+        IR::Function.new(name: invoke_c_name, c_name: invoke_c_name, params:, return_type: proc_type.return_type, body:, entry_point: false)
+      end
+
+      def build_proc_noop_release_function(release_c_name)
+        IR::Function.new(
+          name: release_c_name,
+          c_name: release_c_name,
+          params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
+          return_type: @types.fetch("void"),
+          body: [IR::ReturnStmt.new(value: nil)],
+          entry_point: false,
+        )
       end
 
       def lower_array_to_span_expression(expression, target_type)
@@ -2900,6 +4539,20 @@ module MilkTea
       end
 
       def lower_specialization(expression, env:, type:)
+        if (function_binding = resolve_specialized_function_binding(expression))
+          raise LoweringError, "foreign function #{function_binding.name} cannot be used as a value" if foreign_function_binding?(function_binding)
+
+          if function_binding.external
+            return IR::Name.new(name: function_binding.name, type:, pointer: false)
+          end
+
+          return IR::Name.new(
+            name: function_binding_c_name(function_binding, module_name: function_binding.owner.module_name),
+            type:,
+            pointer: false,
+          )
+        end
+
         raise LoweringError, "specialization #{expression.callee.name} must be called" if expression.callee.is_a?(AST::Identifier)
 
         raise LoweringError, "unsupported specialization #{expression.class.name}"
@@ -2909,7 +4562,7 @@ module MilkTea
         case callee
         when AST::Identifier
           if (binding = lookup_value(callee.name, env))
-            return [:callable_value, nil, nil, binding[:type], nil] if binding[:type].is_a?(Types::Function)
+            return [:callable_value, nil, nil, binding[:type], nil] if callable_type?(binding[:type])
 
             raise LoweringError, "#{callee.name} is not callable"
           end
@@ -2933,7 +4586,7 @@ module MilkTea
             [:deref, nil, nil, nil]
           elsif callee.name == "raw"
             [:raw, nil, nil, nil]
-          elsif (type = @types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView)
+          elsif (type = @types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type)
             [ :struct_literal, nil, nil, type ]
           else
             raise LoweringError, "unknown callee #{callee.name}"
@@ -2948,7 +4601,7 @@ module MilkTea
               return [:function, binding.name, nil, binding.type, binding]
             end
             imported_type = imported_module.types[callee.member]
-            if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView)
+            if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView) || task_type?(imported_type)
               return [:struct_literal, nil, nil, imported_module.types.fetch(callee.member)]
             end
           end
@@ -2980,7 +4633,7 @@ module MilkTea
           end
 
           member_type = resolved_receiver_type.respond_to?(:field) ? resolved_receiver_type.field(callee.member) : nil
-          return [:callable_value, nil, nil, member_type, nil] if member_type.is_a?(Types::Function)
+          return [:callable_value, nil, nil, member_type, nil] if callable_type?(member_type)
 
           raise LoweringError, "unknown callee #{callee.receiver}.#{callee.member}"
         when AST::Specialization
@@ -3019,13 +4672,13 @@ module MilkTea
 
           if (type_ref = type_ref_from_specialization(callee))
             specialized_type = resolve_type_ref(type_ref)
-            return [:struct_literal, nil, nil, specialized_type] if specialized_type.is_a?(Types::Struct) || result_type?(specialized_type)
+            return [:struct_literal, nil, nil, specialized_type] if specialized_type.is_a?(Types::Struct) || result_type?(specialized_type) || task_type?(specialized_type)
           end
 
           raise LoweringError, "unsupported specialization callee"
         else
           callee_type = infer_expression_type(callee, env:)
-          return [:callable_value, nil, nil, callee_type, nil] if callee_type.is_a?(Types::Function)
+          return [:callable_value, nil, nil, callee_type, nil] if callable_type?(callee_type)
 
           raise LoweringError, "unsupported callee #{callee.class.name}"
         end
@@ -3033,6 +4686,11 @@ module MilkTea
 
       def infer_expression_type(expression, env:, expected_type: nil)
         case expression
+        when AST::AwaitExpr
+          task_type = infer_expression_type(expression.expression, env:)
+          raise LoweringError, "await requires a Task value, got #{task_type}" unless task_type.is_a?(Types::Task)
+
+          task_type.result_type
         when AST::IntegerLiteral
           if expected_type.is_a?(Types::Primitive) && expected_type.integer?
             expected_type
@@ -3050,7 +4708,7 @@ module MilkTea
         when AST::StringLiteral
           @types.fetch(expression.cstring ? "cstr" : "str")
         when AST::FormatString
-          raise LoweringError, "formatted string literals are only valid in std.fmt.string(...)"
+          raise LoweringError, "formatted string literals are only valid in std.fmt.string(...) or std.io print helpers"
         when AST::BooleanLiteral
           @types.fetch("bool")
         when AST::NullLiteral
@@ -3119,6 +4777,8 @@ module MilkTea
           end
 
           conditional_common_type(then_type, else_type) || raise(LoweringError, "if expression branches require compatible types, got #{then_type} and #{else_type}")
+        when AST::ProcExpr
+          resolve_type_ref(AST::ProcType.new(params: expression.params, return_type: expression.return_type))
         when AST::Call
           kind, = resolve_callee(expression.callee, env, arguments: expression.arguments)
           case kind
@@ -3162,6 +4822,8 @@ module MilkTea
         when AST::Specialization
           if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "cast"
             resolve_type_ref(expression.arguments.fetch(0).value)
+          elsif (function_binding = resolve_specialized_function_binding(expression))
+            function_binding.type
           else
             raise LoweringError, "unsupported specialization"
           end
@@ -3624,8 +5286,10 @@ module MilkTea
           name: binding.name,
           type: substitute_type(binding.type, substitutions),
           body_params: binding.body_params.map { |param| substitute_value_binding(param, substitutions) },
+          body_return_type: substitute_type(binding.body_return_type, substitutions),
           ast: binding.ast,
           external: binding.external,
+          async: binding.async,
           type_params: [].freeze,
           instances: {},
           type_arguments: key,
@@ -3657,13 +5321,13 @@ module MilkTea
       end
 
       def call_arity_matches?(function_type, actual_count)
-        return actual_count >= function_type.params.length if function_type.variadic
+        return actual_count >= function_type.params.length if function_type.is_a?(Types::Function) && function_type.variadic
 
         actual_count == function_type.params.length
       end
 
       def arity_error_message(function_type, name, actual_count)
-        if function_type.variadic
+        if function_type.is_a?(Types::Function) && function_type.variadic
           "function #{name} expects at least #{function_type.params.length} arguments, got #{actual_count}"
         else
           "function #{name} expects #{function_type.params.length} arguments, got #{actual_count}"
@@ -3700,6 +5364,30 @@ module MilkTea
 
           collect_type_substitutions(pattern_type.ok_type, actual_type.ok_type, substitutions, function_name)
           collect_type_substitutions(pattern_type.error_type, actual_type.error_type, substitutions, function_name)
+        when Types::Task
+          return unless actual_type.is_a?(Types::Task)
+
+          collect_type_substitutions(pattern_type.result_type, actual_type.result_type, substitutions, function_name)
+        when Types::Proc
+          actual_params = case actual_type
+                          when Types::Proc
+                            return unless actual_type.params.length == pattern_type.params.length
+
+                            actual_type.params
+                          when Types::Function
+                            return if actual_type.receiver_type || actual_type.variadic
+                            return unless actual_type.params.length == pattern_type.params.length
+                            return unless actual_type.params.zip(pattern_type.params).all? { |actual_param, expected_param| actual_param.mutable == expected_param.mutable }
+
+                            actual_type.params
+                          else
+                            return
+                          end
+
+          pattern_type.params.zip(actual_params).each do |expected_param, actual_param|
+            collect_type_substitutions(expected_param.type, actual_param.type, substitutions, function_name)
+          end
+          collect_type_substitutions(pattern_type.return_type, actual_type.return_type, substitutions, function_name)
         when Types::StructInstance
           return unless actual_type.is_a?(Types::StructInstance)
           return unless actual_type.definition == pattern_type.definition && actual_type.arguments.length == pattern_type.arguments.length
@@ -3744,6 +5432,21 @@ module MilkTea
           Types::Span.new(substitute_type(type.element_type, substitutions))
         when Types::Result
           Types::Result.new(substitute_type(type.ok_type, substitutions), substitute_type(type.error_type, substitutions))
+        when Types::Task
+          Types::Task.new(substitute_type(type.result_type, substitutions))
+        when Types::Proc
+          Types::Proc.new(
+            params: type.params.map do |param|
+              Types::Parameter.new(
+                param.name,
+                substitute_type(param.type, substitutions),
+                mutable: param.mutable,
+                passing_mode: param.passing_mode,
+                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
+              )
+            end,
+            return_type: substitute_type(type.return_type, substitutions),
+          )
         when Types::StructInstance
           type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
         when Types::Function
@@ -3783,6 +5486,10 @@ module MilkTea
 
       def result_type?(type)
         type.is_a?(Types::Result)
+      end
+
+      def task_type?(type)
+        type.is_a?(Types::Task)
       end
 
       def array_type?(type)
@@ -4056,8 +5763,12 @@ module MilkTea
           contains_ref_type?(type.element_type)
         when Types::Result
           contains_ref_type?(type.ok_type) || contains_ref_type?(type.error_type)
+        when Types::Task
+          contains_ref_type?(type.result_type)
         when Types::StructInstance
           type.arguments.any? { |argument| contains_ref_type?(argument) }
+        when Types::Proc
+          type.params.any? { |param| contains_ref_type?(param.type) } || contains_ref_type?(type.return_type)
         when Types::Function
           type.params.any? { |param| contains_ref_type?(param.type) } ||
             contains_ref_type?(type.return_type) ||
@@ -4145,6 +5856,13 @@ module MilkTea
           return Types::Function.new(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
         end
 
+        if type_ref.is_a?(AST::ProcType)
+          params = type_ref.params.map do |param|
+            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:), mutable: param.mutable)
+          end
+          return Types::Proc.new(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
+        end
+
         parts = type_ref.name.parts
         base = if type_ref.arguments.any?
                  name = parts.join(".")
@@ -4155,6 +5873,9 @@ module MilkTea
                  if name == "Result"
                    validate_generic_type!(name, args)
                    Types::Result.new(args.fetch(0), args.fetch(1))
+                 elsif name == "Task"
+                   validate_generic_type!(name, args)
+                   Types::Task.new(args.fetch(0))
                  elsif (generic_type = resolve_named_generic_type(parts))
                    generic_type.instantiate(args)
                  elsif name == "span"
@@ -4281,6 +6002,42 @@ module MilkTea
 
       def local_binding(type:, c_name:, mutable:, pointer:, storage_type: nil, cstr_backed: false, cstr_list_backed: false)
         { type:, storage_type: storage_type || type, c_name:, mutable:, pointer:, cstr_backed:, cstr_list_backed: }
+      end
+
+      def callable_type?(type)
+        type.is_a?(Types::Function) || proc_type?(type)
+      end
+
+      def proc_type?(type)
+        type.is_a?(Types::Proc)
+      end
+
+      def proc_env_pointer_type
+        @proc_env_pointer_type ||= pointer_to(@types.fetch("void"))
+      end
+
+      def proc_invoke_function_type(proc_type)
+        Types::Function.new(
+          nil,
+          params: [Types::Parameter.new("env", proc_env_pointer_type), *proc_type.params],
+          return_type: proc_type.return_type,
+        )
+      end
+
+      def proc_release_function_type
+        @proc_release_function_type ||= Types::Function.new(
+          nil,
+          params: [Types::Parameter.new("env", proc_env_pointer_type)],
+          return_type: @types.fetch("void"),
+        )
+      end
+
+      def fresh_proc_symbol
+        @synthetic_proc_counter += 1
+      end
+
+      def fresh_format_symbol
+        @synthetic_format_counter += 1
       end
 
       def current_actual_scope(scopes)
@@ -4631,6 +6388,9 @@ module MilkTea
           raise LoweringError, "Result requires exactly two type arguments" unless arguments.length == 2
           raise LoweringError, "Result ok type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
           raise LoweringError, "Result error type must be a type" if arguments[1].is_a?(Types::LiteralTypeArg)
+        when "Task"
+          raise LoweringError, "Task requires exactly one type argument" unless arguments.length == 1
+          raise LoweringError, "Task result type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
         else
           raise LoweringError, "unknown generic type #{name}"
         end
@@ -4653,7 +6413,9 @@ module MilkTea
       end
 
       def function_binding_c_name(binding, module_name:, receiver_type: nil)
-        return "main" if receiver_type.nil? && binding.name == "main" && binding.type_arguments.empty?
+        if receiver_type.nil? && binding.name == "main" && binding.type_arguments.empty?
+          return binding.async ? module_function_c_name(module_name, "__async_main") : "main"
+        end
         return "#{c_type_name(receiver_type)}_#{binding.name}" if receiver_type
 
         module_function_c_name(module_name, binding.name, type_arguments: binding.type_arguments)

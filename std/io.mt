@@ -1,36 +1,58 @@
 module std.io
 
-import std.c.stdio as c
+import std.fmt as fmt
 import std.c.unistd as unistd
-import std.mem.arena as arena
+import std.string as string
 
+const stdout_fd: i32 = 1
 const stderr_fd: i32 = 2
 
-pub def write_error(text: str) -> bool:
+def write_fd(fd: i32, text: str) -> bool:
     if text.len == 0:
         return true
 
     unsafe:
-        let written = unistd.write(stderr_fd, cast[ptr[void]](text.data), text.len)
+        let written = unistd.write(fd, cast[ptr[void]](text.data), text.len)
         return written == cast[i64](text.len)
+
+pub def write(text: str) -> bool:
+    return write_fd(stdout_fd, text)
+
+pub def write_line(text: str) -> bool:
+    if not write(text):
+        return false
+    return write("\n")
+
+pub def write_error(text: str) -> bool:
+    return write_fd(stderr_fd, text)
 
 pub def write_error_line(text: str) -> bool:
     if not write_error(text):
         return false
     return write_error("\n")
 
-pub def print(text: str, scratch: ref[arena.Arena]) -> bool:
-    let mark = value(scratch).mark()
-    defer value(scratch).reset(mark)
+pub def print(text: str) -> bool:
+    return write(text)
 
-    let c_text = value(scratch).to_cstr(text)
-    let written = c.printf(c"%s", c_text)
-    return written >= 0
+pub def println(text: str) -> bool:
+    return write_line(text)
 
-pub def println(text: str, scratch: ref[arena.Arena]) -> bool:
-    let mark = value(scratch).mark()
-    defer value(scratch).reset(mark)
+def print_formatted(text: ref[string.String]) -> bool:
+    let ok = write(value(text).as_str())
+    value(text).release()
+    return ok
 
-    let c_text = value(scratch).to_cstr(text)
-    let written = c.printf(c"%s\n", c_text)
-    return written >= 0
+def println_formatted(text: ref[string.String]) -> bool:
+    let ok = write_line(value(text).as_str())
+    value(text).release()
+    return ok
+
+def write_error_formatted(text: ref[string.String]) -> bool:
+    let ok = write_error(value(text).as_str())
+    value(text).release()
+    return ok
+
+def write_error_line_formatted(text: ref[string.String]) -> bool:
+    let ok = write_error_line(value(text).as_str())
+    value(text).release()
+    return ok

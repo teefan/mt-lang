@@ -201,6 +201,28 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::IntegerLiteral, return_stmt.value.else_expression
   end
 
+  def test_parses_async_functions_and_await_expressions
+    source = <<~MT
+      module demo.async_expr
+
+      async def compute() -> i32:
+          let value = await child()
+          return value
+
+      async def child() -> i32:
+          return 41
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    compute = ast.declarations.first
+    local_decl = compute.body.first
+
+    assert_equal true, compute.async
+    assert_instance_of MilkTea::AST::LocalDecl, local_decl
+    assert_instance_of MilkTea::AST::AwaitExpr, local_decl.value
+    assert_instance_of MilkTea::AST::Call, local_decl.value.expression
+  end
+
   def test_parses_scientific_float_literals
     source = <<~MT
       module demo.float_literals
@@ -650,6 +672,45 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "callback", right_decl.value.callee.name
   end
 
+  def test_parses_proc_type_refs_in_function_parameters
+    source = <<~MT
+      module demo.proc_params
+
+      def apply(callback: proc(value: i32) -> i32, value: i32) -> i32:
+          return callback(value)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    apply_fn = ast.declarations.first
+    callback_param = apply_fn.params.first
+
+    assert_instance_of MilkTea::AST::ProcType, callback_param.type
+    assert_equal "value", callback_param.type.params.first.name
+    assert_equal "i32", callback_param.type.return_type.name.to_s
+  end
+
+  def test_parses_proc_expressions
+    source = <<~MT
+      module demo.proc_values
+
+      def main() -> i32:
+          let offset = 4
+          let callback = proc(value: i32) -> i32:
+              return value + offset
+          return callback(3)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    callback_decl = main_fn.body[1]
+
+    assert_instance_of MilkTea::AST::LocalDecl, callback_decl
+    assert_instance_of MilkTea::AST::ProcExpr, callback_decl.value
+    assert_equal "i32", callback_decl.value.return_type.name.to_s
+    assert_equal "value", callback_decl.value.params.first.name
+    assert_equal "i32", callback_decl.value.params.first.type.name.to_s
+  end
+
   def test_parses_explicit_generic_function_specialization_call
     source = <<~MT
       module demo.generic_call
@@ -947,6 +1008,23 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "i32", callback.target.params[0].type.name.to_s
     assert_equal "ptr", callback.target.params[2].type.name.to_s
     assert_equal "void", callback.target.return_type.name.to_s
+  end
+
+  def test_rejects_async_methods
+    source = <<~MT
+      module demo.async_methods
+
+      struct Counter:
+          value: i32
+
+      methods Counter:
+          async def read() -> i32:
+              return value(this)
+    MT
+
+    error = assert_raises(MilkTea::ParseError) { MilkTea::Parser.parse(source) }
+
+    assert_match(/async methods are not supported yet/, error.message)
   end
 
   def test_parses_unsafe_blocks_with_pointer_cast_and_arithmetic

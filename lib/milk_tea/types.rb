@@ -358,6 +358,74 @@ module MilkTea
       end
     end
 
+    class Task < Base
+      attr_reader :result_type
+
+      def initialize(result_type)
+        @result_type = result_type
+        void_ptr = GenericInstance.new("ptr", [Primitive.new("void")])
+        wake_fn = Function.new(
+          nil,
+          params: [Parameter.new("frame", void_ptr)],
+          return_type: Primitive.new("void"),
+        )
+        @fields = {
+          "frame" => void_ptr,
+          "ready" => Function.new(
+            nil,
+            params: [Parameter.new("frame", void_ptr)],
+            return_type: Primitive.new("bool"),
+          ),
+          "set_waiter" => Function.new(
+            nil,
+            params: [
+              Parameter.new("frame", void_ptr),
+              Parameter.new("waiter_frame", void_ptr),
+              Parameter.new("waiter", wake_fn),
+            ],
+            return_type: Primitive.new("void"),
+          ),
+          "release" => Function.new(
+            nil,
+            params: [Parameter.new("frame", void_ptr)],
+            return_type: Primitive.new("void"),
+          ),
+          "take_result" => Function.new(
+            nil,
+            params: [Parameter.new("frame", void_ptr)],
+            return_type: result_type,
+          ),
+        }.freeze
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(Task) && other.result_type == result_type
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, result_type].hash
+      end
+
+      def name
+        to_s
+      end
+
+      def fields
+        @fields
+      end
+
+      def field(name)
+        @fields[name]
+      end
+
+      def to_s
+        "Task[#{result_type}]"
+      end
+    end
+
     class GenericStructDefinition < Base
       attr_reader :name, :type_params, :module_name, :external, :packed, :alignment
 
@@ -415,6 +483,21 @@ module MilkTea
           Span.new(substitute_type(type.element_type, substitutions))
         when Result
           Result.new(substitute_type(type.ok_type, substitutions), substitute_type(type.error_type, substitutions))
+        when Task
+          Task.new(substitute_type(type.result_type, substitutions))
+        when Proc
+          Proc.new(
+            params: type.params.map do |param|
+              Parameter.new(
+                param.name,
+                substitute_type(param.type, substitutions),
+                mutable: param.mutable,
+                passing_mode: param.passing_mode,
+                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
+              )
+            end,
+            return_type: substitute_type(type.return_type, substitutions),
+          )
         when Function
           Function.new(
             type.name,
@@ -625,6 +708,30 @@ module MilkTea
         pieces << receiver_type.to_s if receiver_type
         pieces << name if name
         "fn #{pieces.join('.')}"
+      end
+    end
+
+    class Proc < Base
+      attr_reader :params, :return_type
+
+      def initialize(params:, return_type:)
+        @params = params.freeze
+        @return_type = return_type
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(Proc) && other.params == params && other.return_type == return_type
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, params, return_type].hash
+      end
+
+      def to_s
+        "proc(#{params.map(&:type).join(', ')}) -> #{return_type}"
       end
     end
   end

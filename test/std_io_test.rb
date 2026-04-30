@@ -12,15 +12,11 @@ class MilkTeaStdIoTest < Minitest::Test
       "module demo.std_io",
       "",
       "import std.io as io",
-      "import std.mem.arena as arena",
       "",
       "def main() -> i32:",
-      "    var scratch = arena.create(128)",
-      "    defer scratch.release()",
-      "",
-      "    if not io.print(\"Milk\", addr(scratch)):",
+      "    if not io.print(\"Milk\"):",
       "        return 1",
-      "    if not io.println(\" Tea\", addr(scratch)):",
+      "    if not io.println(\" Tea\"):",
       "        return 2",
       "    return 0",
       "",
@@ -30,6 +26,87 @@ class MilkTeaStdIoTest < Minitest::Test
 
     assert_equal "Milk Tea\n", result.stdout
     assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+  def test_host_runtime_executes_stdout_format_printing
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_io_fmt",
+      "",
+      "import std.io as io",
+      "",
+      "def main() -> i32:",
+      "    let count: i16 = -42",
+      "    let ticks: u64 = 9",
+      "    if not io.print(f\"count=\#{count} ok=\#{true} ticks=\#{ticks}\"):",
+      "        return 1",
+      "    if not io.println(f\" done=\#{cast[u8](7)}\"):",
+      "        return 2",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "count=-42 ok=true ticks=9 done=7\n", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+  def test_host_runtime_executes_stdout_float_format_printing
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_io_float_fmt",
+      "",
+      "import std.io as io",
+      "",
+      "def main() -> i32:",
+      "    let angle: f32 = 45.5",
+      "    let ratio: f64 = 0.25",
+      "    if not io.println(f\"angle=\#{angle} ratio=\#{ratio}\"):",
+      "        return 1",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "angle=45.5 ratio=0.25\n", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+  def test_host_runtime_executes_stderr_format_printing
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_io_error_fmt",
+      "",
+      "import std.io as io",
+      "",
+      "def main() -> i32:",
+      "    let ratio: f64 = 0.25",
+      "    if not io.write_error(f\"warn=\#{true}\"):",
+      "        return 1",
+      "    if not io.write_error_line(f\" ratio=\#{ratio} count=\#{cast[u8](7)}\"):",
+      "        return 2",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "warn=true ratio=0.25 count=7\n", result.stderr
     assert_equal 0, result.exit_status
     assert_equal [], result.link_flags
   end

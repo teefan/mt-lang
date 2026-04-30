@@ -728,6 +728,39 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_proc_closures
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-proc") do |dir|
+      source_path = File.join(dir, "proc_closure.mt")
+
+      File.write(source_path, [
+        "module demo.proc_closure_runtime",
+        "",
+        "def apply(callback: proc(value: i32) -> i32, value: i32) -> i32:",
+        "    return callback(value)",
+        "",
+        "def main() -> i32:",
+        "    let offset = 4",
+        "    let callback = proc(value: i32) -> i32:",
+        "        return value * 2 + offset",
+        "    return apply(callback, 3)",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 10, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_loop_control_in_match
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

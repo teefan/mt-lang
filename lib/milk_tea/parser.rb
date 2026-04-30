@@ -16,7 +16,7 @@ module MilkTea
   class Parser
     BUILTIN_TYPE_NAMES = %w[
       bool byte char i8 i16 i32 i64 u8 u16 u32 u64 isize usize f32 f64 void str cstr
-      ptr const_ptr ref span array str_builder Result
+      ptr const_ptr ref span array str_builder Result Task
     ].freeze
 
     def self.parse(source = nil, path: nil, tokens: nil)
@@ -115,6 +115,9 @@ module MilkTea
         raise error(peek, "#{peek.lexeme} def is only allowed inside methods blocks")
       elsif match(:foreign)
         parse_foreign_decl(visibility:)
+      elsif match(:async)
+        consume(:def, "expected def after async")
+        parse_function_def(visibility:, async: true)
       elsif match(:def)
         parse_function_def(visibility:)
       elsif match(:extern)
@@ -319,17 +322,19 @@ module MilkTea
       AST::MethodsBlock.new(type_name:, methods:)
     end
 
-    def parse_function_def(visibility: :private)
+    def parse_function_def(visibility: :private, async: false)
       name = consume_name("expected function name").lexeme
       type_params = parse_declaration_type_params
       params = parse_params
       return_type = match(:arrow) ? parse_type_ref : nil
       body = parse_block
-      AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:, visibility:)
+      AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:, visibility:, async:)
     end
 
     def parse_method_def
       visibility, _visibility_token = parse_visibility
+      raise error(previous, "async methods are not supported yet") if match(:async)
+
       kind = if match(:edit)
                :edit
              elsif match(:static)
@@ -344,7 +349,7 @@ module MilkTea
       params = parse_params
       return_type = match(:arrow) ? parse_type_ref : nil
       body = parse_block
-      AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:)
+      AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async: false)
     end
 
     def parse_visibility
@@ -456,6 +461,7 @@ module MilkTea
 
     def parse_type_ref
       return parse_function_type_ref if match(:fn)
+      return parse_proc_type_ref if match(:proc)
 
       name = parse_qualified_name
       arguments = []
@@ -488,6 +494,23 @@ module MilkTea
       consume(:arrow, "expected '->' after function type parameters")
       return_type = parse_type_ref
       AST::FunctionType.new(params:, return_type:)
+    end
+
+    def parse_proc_type_ref
+      consume(:lparen, "expected '(' after proc")
+      params = []
+
+      unless check(:rparen)
+        loop do
+          params << parse_function_type_param
+          break unless match(:comma)
+        end
+      end
+
+      consume(:rparen, "expected ')' after proc type parameters")
+      consume(:arrow, "expected '->' after proc type parameters")
+      return_type = parse_type_ref
+      AST::ProcType.new(params:, return_type:)
     end
 
     def parse_function_type_param
@@ -597,7 +620,7 @@ module MilkTea
 
                 nil
               end
-      consume_end_of_statement
+      consume_end_of_statement unless block_expression?(value)
       AST::LocalDecl.new(kind:, name:, type: var_type, value:)
     end
 
@@ -663,7 +686,7 @@ module MilkTea
 
     def parse_return_stmt
       value = check(:newline) ? nil : parse_expression
-      consume_end_of_statement
+      consume_end_of_statement unless block_expression?(value)
       AST::ReturnStmt.new(value:)
     end
 
@@ -673,7 +696,7 @@ module MilkTea
         AST::DeferStmt.new(expression: nil, body:)
       else
         expression = parse_expression
-        consume_end_of_statement
+        consume_end_of_statement unless block_expression?(expression)
         AST::DeferStmt.new(expression:, body: nil)
       end
     end
@@ -683,10 +706,10 @@ module MilkTea
       if match(*Token::ASSIGNMENT_TYPES)
         operator = previous.lexeme
         value = parse_expression
-        consume_end_of_statement
+        consume_end_of_statement unless block_expression?(value)
         AST::Assignment.new(target: expression, operator:, value:)
       else
-        consume_end_of_statement
+        consume_end_of_statement unless block_expression?(expression)
         AST::ExpressionStmt.new(expression:)
       end
     end
@@ -747,7 +770,9 @@ module MilkTea
     end
 
     def parse_unary
-      if match(:not, :minus, :plus, :tilde, :out, :in, :inout)
+      if match(:await)
+        AST::AwaitExpr.new(expression: parse_unary)
+      elsif match(:not, :minus, :plus, :tilde, :out, :in, :inout)
         operator = previous.lexeme
         operand = parse_unary
         AST::UnaryOp.new(operator:, operand:)
@@ -764,8 +789,8 @@ module MilkTea
           member = consume_name("expected member name after '.'").lexeme
           expression = AST::MemberAccess.new(receiver: expression, member:)
         elsif check(:lbracket)
-          if (specialized_call = try_parse_specialization_call(expression))
-            expression = specialized_call
+          if (specialization = try_parse_specialization(expression))
+            expression = specialization
           else
             advance
             index = parse_expression
@@ -782,7 +807,7 @@ module MilkTea
       expression
     end
 
-    def try_parse_specialization_call(expression)
+    def try_parse_specialization(expression)
       return nil unless postfix_bracket_starts_specialization?(expression)
 
       saved_current = @current
@@ -795,15 +820,23 @@ module MilkTea
         end
       end
       consume(:rbracket, "expected ']' after specialization arguments")
-      consume(:lparen, "expected '(' after specialization arguments")
-      call_arguments = parse_call_arguments
 
-      unless specialization_call_target?(expression, arguments, call_arguments)
+      if match(:lparen)
+        call_arguments = parse_call_arguments
+        unless specialization_call_target?(expression, arguments, call_arguments)
+          @current = saved_current
+          return nil
+        end
+
+        return AST::Call.new(callee: AST::Specialization.new(callee: expression, arguments:), arguments: call_arguments)
+      end
+
+      unless specialization_value_target?(expression, arguments)
         @current = saved_current
         return nil
       end
 
-      AST::Call.new(callee: AST::Specialization.new(callee: expression, arguments:), arguments: call_arguments)
+      AST::Specialization.new(callee: expression, arguments:)
     rescue ParseError
       @current = saved_current
       nil
@@ -839,6 +872,8 @@ module MilkTea
         parse_alignof_expr
       elsif match(:offsetof)
         parse_offsetof_expr
+      elsif match(:proc)
+        parse_proc_expr
       elsif match_name
         AST::Identifier.new(name: previous.lexeme)
       elsif match(:integer)
@@ -869,6 +904,28 @@ module MilkTea
       else
         raise error(peek, "expected expression")
       end
+    end
+
+    def parse_proc_expr
+      consume(:lparen, "expected '(' after proc")
+      params = []
+
+      unless check(:rparen)
+        loop do
+          params << parse_function_type_param
+          break unless match(:comma)
+        end
+      end
+
+      consume(:rparen, "expected ')' after proc parameters")
+      consume(:arrow, "expected '->' after proc parameters")
+      return_type = parse_type_ref
+      body = parse_block
+      AST::ProcExpr.new(params:, return_type:, body:)
+    end
+
+    def block_expression?(expression)
+      expression.is_a?(AST::ProcExpr)
     end
 
     def parse_sizeof_expr
@@ -997,13 +1054,7 @@ module MilkTea
     end
 
     def postfix_bracket_starts_specialization?(expression)
-      return false unless specialization_target?(expression)
-
-      closing_index = matching_rbracket_index(@current)
-      return false unless closing_index
-
-      closing_index += 1
-      closing_index < @tokens.length && @tokens[closing_index].type == :lparen
+      specialization_target?(expression) && matching_rbracket_index(@current)
     end
 
     def specialization_target?(expression)
@@ -1032,6 +1083,13 @@ module MilkTea
       return true if imported_member_specialization_target?(expression) && arguments.all? { |argument| explicit_specialization_argument?(argument.value) }
 
       aggregate_specialization_target?(expression) && arguments.all? { |argument| definite_type_argument?(argument.value) }
+    end
+
+    def specialization_value_target?(expression, arguments)
+      return true if generic_callable_specialization_target?(expression) && arguments.all? { |argument| explicit_specialization_argument?(argument.value) }
+      return true if imported_member_specialization_target?(expression) && arguments.all? { |argument| explicit_specialization_argument?(argument.value) }
+
+      false
     end
 
     def generic_callable_specialization_target?(expression)
@@ -1086,6 +1144,14 @@ module MilkTea
           if depth.zero?
             name_token = @tokens[index + 1]
             type_param_token = @tokens[index + 2]
+            if type_name_token?(name_token) && type_param_token&.type == :lbracket
+              @known_generic_callable_names[name_token.lexeme] = true
+            end
+          end
+        when :async
+          if depth.zero? && @tokens[index + 1]&.type == :def
+            name_token = @tokens[index + 2]
+            type_param_token = @tokens[index + 3]
             if type_name_token?(name_token) && type_param_token&.type == :lbracket
               @known_generic_callable_names[name_token.lexeme] = true
             end

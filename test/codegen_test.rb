@@ -251,13 +251,16 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/std_string_String_create\(\)/, generated)
+    assert_match(/static std_string_String demo_format_codegen__fmt_1\(/, generated)
+    assert_match(/std_string_String text = demo_format_codegen__fmt_1\(\(\(uint32_t\) value\), \(\(int32_t\) delta\), ticks, raw, true\);/, generated)
+    assert_match(/std_string_String_with_capacity\(29\)/, generated)
     assert_match(/std_fmt_append\(/, generated)
     assert_match(/std_fmt_append_u32\(/, generated)
     assert_match(/std_fmt_append_i32\(/, generated)
     assert_match(/std_fmt_append_u64\(/, generated)
     assert_match(/std_fmt_append_cstr\(/, generated)
     assert_match(/std_fmt_append_bool\(/, generated)
+    refute_match(/std_fmt_append\(&text/, generated)
   end
 
   def test_generate_c_for_cstr_backed_string_constants_without_foreign_temps
@@ -1246,6 +1249,29 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/uintptr_t total = demo_generic_layout_bytes_for_i32\(4\);/, generated)
   end
 
+  def test_generate_c_for_async_await_of_task_locals_without_redundant_await_slots
+    source = [
+      "module demo.async_clean",
+      "",
+      "import std.async as async",
+      "",
+      "async def child() -> i32:",
+      "    let task = async.sleep(1)",
+      "    return await task + 1",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/mt_task_i32 local_task;/, generated)
+    refute_match(/mt_task_i32 await_0;/, generated)
+    refute_match(/__mt_frame->await_0 = __mt_frame->local_task;/, generated)
+    assert_match(/if \(!__mt_frame->local_task\.ready\(__mt_frame->local_task\.frame\)\)/, generated)
+    assert_match(/__mt_frame->local___mt_async_tmp_1 = __mt_frame->local_task\.take_result\(__mt_frame->local_task\.frame\);/, generated)
+    assert_match(/__mt_frame->result = __mt_frame->local___mt_async_tmp_1 \+ 1;/, generated)
+    assert_match(/__mt_frame->local_task\.release\(__mt_frame->local_task\.frame\);/, generated)
+  end
+
   def test_generate_c_for_generic_functions_with_literal_type_arguments
     source = [
       "module demo.generic_builder",
@@ -1361,6 +1387,27 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/fwrite\(message\.data, 1, message\.len, stderr\);/, generated)
     assert_match(/abort\(\);/, generated)
     assert_match(/mt_panic_str\(\(mt_str\)\{ \.data = "bad state", \.len = 9 \}\);/, generated)
+  end
+
+  def test_generate_c_dedupes_standard_runtime_headers_from_extern_imports
+    source = [
+      "module demo.include_surface",
+      "",
+      "import std.fs as fs",
+      "import std.raylib as rl",
+      "",
+      "def main() -> i32:",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_equal 1, generated.scan('#include <stdio.h>').length
+    assert_equal 1, generated.scan('#include <stdlib.h>').length
+    refute_match(/#include "stdio\.h"/, generated)
+    refute_match(/#include "stdlib\.h"/, generated)
+    assert_match(/#include "raylib\.h"/, generated)
   end
 
   def test_generate_c_for_enum_match_statement_as_switch
@@ -2609,6 +2656,30 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/int32_t \(\*callbacks\[1\]\)\(int32_t value\) = \{ std_ease_double \};/, generated)
     assert_match(/\.callback = std_ease_double/, generated)
     assert_match(/return \(\(\*mt_checked_index_array_fn_1\(&\(callbacks\), 0\)\)\)\(3\) \+ entry\.callback\(4\);/, generated)
+  end
+
+  def test_generate_c_for_proc_closure_capture_and_param_calls
+    source = [
+      "module demo.proc_codegen",
+      "",
+      "def apply(callback: proc(value: i32) -> i32, value: i32) -> i32:",
+      "    return callback(value)",
+      "",
+      "def main() -> i32:",
+      "    let offset = 4",
+      "    let callback = proc(value: i32) -> i32:",
+      "        return value * 2 + offset",
+      "    return apply(callback, 3)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/typedef struct mt_proc_proc_i32_i32/, generated)
+    assert_match(/typedef struct demo_proc_codegen__proc_1__env/, generated)
+    assert_match(/malloc\(sizeof\(demo_proc_codegen__proc_1__env\)\)/, generated)
+    assert_match(/\.invoke = demo_proc_codegen__proc_1__invoke/, generated)
+    assert_match(/callback\.invoke\(callback\.env, value\)/, generated)
   end
 
   def test_generate_c_for_module_scope_mutable_vars
