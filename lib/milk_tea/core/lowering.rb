@@ -5600,7 +5600,7 @@ module MilkTea
       def external_numeric_assignment_target?(expression, env:)
         case expression
         when AST::MemberAccess
-          receiver_type = infer_member_receiver_type(expression.receiver, env:)
+          receiver_type = infer_field_receiver_type(expression.receiver, env:)
           receiver_type.respond_to?(:external) && receiver_type.external
         else
           false
@@ -5689,7 +5689,7 @@ module MilkTea
             raise LoweringError, "unknown associated function #{type_expr}.#{callee.member}"
           end
 
-          resolved_receiver_type = infer_member_receiver_type(callee.receiver, env:)
+          resolved_receiver_type = infer_method_receiver_type(callee.receiver, env:)
           method_entry = @method_definitions[[resolved_receiver_type, callee.member]]
           if method_entry
             method_analysis, method_ast = method_entry
@@ -5707,7 +5707,8 @@ module MilkTea
             return [str_builder_method, nil, callee.receiver, str_builder_method_type(str_builder_method, resolved_receiver_type)]
           end
 
-          member_type = resolved_receiver_type.respond_to?(:field) ? resolved_receiver_type.field(callee.member) : nil
+          field_receiver_type = infer_field_receiver_type(callee.receiver, env:)
+          member_type = field_receiver_type.respond_to?(:field) ? field_receiver_type.field(callee.member) : nil
           return [:callable_value, nil, nil, member_type, nil] if callable_type?(member_type)
 
           raise LoweringError, "unknown callee #{callee.receiver}.#{callee.member}"
@@ -5810,7 +5811,7 @@ module MilkTea
             return imported_module.values.fetch(expression.member).type if imported_module.values.key?(expression.member)
             return imported_module.functions.fetch(expression.member).type if imported_module.functions.key?(expression.member)
           end
-          receiver_type = infer_member_receiver_type(expression.receiver, env:)
+          receiver_type = infer_field_receiver_type(expression.receiver, env:)
           return receiver_type.field(expression.member) if receiver_type.respond_to?(:field)
 
           raise LoweringError, "unknown member #{expression.member}"
@@ -6755,9 +6756,17 @@ module MilkTea
         raise LoweringError, "value expects ref[...], got #{handle_type}"
       end
 
-      def infer_member_receiver_type(receiver_expression, env:)
+      def infer_method_receiver_type(receiver_expression, env:)
         receiver_type = infer_expression_type(receiver_expression, env:)
         return referenced_type(receiver_type) if ref_type?(receiver_type)
+
+        receiver_type
+      end
+
+      def infer_field_receiver_type(receiver_expression, env:)
+        receiver_type = infer_expression_type(receiver_expression, env:)
+        return referenced_type(receiver_type) if ref_type?(receiver_type)
+        return pointee_type(receiver_type) if pointer_type?(receiver_type)
 
         receiver_type
       end

@@ -40,15 +40,15 @@ def render_frame() -> void:
         if frame != null:
             if texture == null:
                 unsafe:
-                    c.SDL_SetWindowSize(window, deref(frame).w, deref(frame).h)
-                    c.SDL_SetRenderLogicalPresentation(renderer, deref(frame).w, deref(frame).h, presentation_mode)
+                    c.SDL_SetWindowSize(window, frame.w, frame.h)
+                    c.SDL_SetRenderLogicalPresentation(renderer, frame.w, frame.h, presentation_mode)
 
                     let created_texture = c.SDL_CreateTexture(
                         renderer,
-                        deref(frame).format,
+                        frame.format,
                         c.SDL_TextureAccess.SDL_TEXTUREACCESS_STREAMING,
-                        deref(frame).w,
-                        deref(frame).h,
+                        frame.w,
+                        frame.h,
                     )
 
                     if created_texture != null:
@@ -57,7 +57,7 @@ def render_frame() -> void:
             let frame_texture = texture
             if frame_texture != null:
                 unsafe:
-                    c.SDL_UpdateTexture(frame_texture, null, deref(frame).pixels, deref(frame).pitch)
+                    c.SDL_UpdateTexture(frame_texture, null, frame.pixels, frame.pitch)
 
             c.SDL_ReleaseCameraFrame(camera, frame)
 

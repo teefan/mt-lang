@@ -178,8 +178,8 @@ class MilkTeaRunTest < Minitest::Test
         "    let counter_ptr = raw(addr(counter))",
         "    var value = 0",
         "    unsafe:",
-        "        deref(counter_ptr).value = 7",
-        "        value = deref(counter_ptr).value",
+        "        counter_ptr.value = 7",
+        "        value = counter_ptr.value",
         "    return value",
         "",
       ].join("\n"))
@@ -261,7 +261,7 @@ class MilkTeaRunTest < Minitest::Test
         "    value(value_ref) += 2",
         "    unsafe:",
         "        let raw_counter = raw(handle)",
-        "        deref(raw_counter).value += 1",
+        "        raw_counter.value += 1",
         "    return handle.read()",
         "",
       ].join("\n"))
@@ -1424,7 +1424,7 @@ class MilkTeaRunTest < Minitest::Test
         "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
         "    unsafe:",
         "        let base = raw(addr(holder))",
-        "        let first = raw(addr(deref(base).colors[0]))",
+        "        let first = raw(addr(base.colors[0]))",
         "        deref(first) = 9",
         "    if holder.colors[0] != 9:",
         "        return 1",

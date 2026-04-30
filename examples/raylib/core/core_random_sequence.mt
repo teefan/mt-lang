@@ -60,12 +60,12 @@ def generate_random_color_rect_sequence(rect_count: i32, rect_width: f32, width:
 
 def swap_color_rect_values(left: ref[ColorRect], right: ref[ColorRect]) -> void:
     let tmp = value(left)
-    value(left).color = value(right).color
-    value(left).rect.height = value(right).rect.height
-    value(left).rect.y = value(right).rect.y
-    value(right).color = tmp.color
-    value(right).rect.height = tmp.rect.height
-    value(right).rect.y = tmp.rect.y
+    left.color = right.color
+    left.rect.height = right.rect.height
+    left.rect.y = right.rect.y
+    right.color = tmp.color
+    right.rect.height = tmp.rect.height
+    right.rect.y = tmp.rect.y
     return
 
 def shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: i32) -> void:

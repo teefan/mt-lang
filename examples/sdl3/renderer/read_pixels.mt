@@ -51,14 +51,14 @@ def render_frame() -> bool:
 
     if surface != null:
         unsafe:
-            if (deref(surface).format != c.SDL_PixelFormat.SDL_PIXELFORMAT_RGBA8888) and (deref(surface).format != c.SDL_PixelFormat.SDL_PIXELFORMAT_BGRA8888):
+            if (surface.format != c.SDL_PixelFormat.SDL_PIXELFORMAT_RGBA8888) and (surface.format != c.SDL_PixelFormat.SDL_PIXELFORMAT_BGRA8888):
                 let converted = c.SDL_ConvertSurface(surface, c.SDL_PixelFormat.SDL_PIXELFORMAT_RGBA8888)
                 c.SDL_DestroySurface(surface)
                 processed_surface = converted
 
         if processed_surface != null:
             unsafe:
-                if (deref(processed_surface).w != converted_texture_width) or (deref(processed_surface).h != converted_texture_height):
+                if (processed_surface.w != converted_texture_width) or (processed_surface.h != converted_texture_height):
                     if converted_texture != null:
                         c.SDL_DestroyTexture(converted_texture)
 
@@ -66,22 +66,22 @@ def render_frame() -> bool:
                         renderer,
                         c.SDL_PixelFormat.SDL_PIXELFORMAT_RGBA8888,
                         c.SDL_TextureAccess.SDL_TEXTUREACCESS_STREAMING,
-                        deref(processed_surface).w,
-                        deref(processed_surface).h,
+                        processed_surface.w,
+                        processed_surface.h,
                     )
                     if rebuilt_texture == null:
                         c.SDL_DestroySurface(processed_surface)
                         return false
 
                     converted_texture = rebuilt_texture
-                    converted_texture_width = deref(processed_surface).w
-                    converted_texture_height = deref(processed_surface).h
+                    converted_texture_width = processed_surface.w
+                    converted_texture_height = processed_surface.h
 
-                for y in range(0, deref(processed_surface).h):
-                    let row_bytes = ptr[c.Uint8]<-deref(processed_surface).pixels + (y * deref(processed_surface).pitch)
+                for y in range(0, processed_surface.h):
+                    let row_bytes = ptr[c.Uint8]<-processed_surface.pixels + (y * processed_surface.pitch)
                     let row_pixels = ptr[c.Uint32]<-row_bytes
 
-                    for x in range(0, deref(processed_surface).w):
+                    for x in range(0, processed_surface.w):
                         let pixel_bytes = ptr[c.Uint8]<-(row_pixels + x)
                         let average = (u32<-deref(pixel_bytes + 1) + u32<-deref(pixel_bytes + 2) + u32<-deref(pixel_bytes + 3)) / 3
 
@@ -96,7 +96,7 @@ def render_frame() -> bool:
                             deref(pixel_bytes + 3) = if average > 50 then 0xFF else 0
 
                 if converted_texture != null:
-                    c.SDL_UpdateTexture(converted_texture, null, deref(processed_surface).pixels, deref(processed_surface).pitch)
+                    c.SDL_UpdateTexture(converted_texture, null, processed_surface.pixels, processed_surface.pitch)
                     c.SDL_DestroySurface(processed_surface)
 
                     destination.x = 0.0
@@ -132,8 +132,8 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     defer c.SDL_DestroySurface(surface)
 
     unsafe:
-        texture_width = deref(surface).w
-        texture_height = deref(surface).h
+        texture_width = surface.w
+        texture_height = surface.h
 
     let created_texture = c.SDL_CreateTextureFromSurface(renderer, surface)
     if created_texture == null:

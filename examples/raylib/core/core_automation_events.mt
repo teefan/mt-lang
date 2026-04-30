@@ -53,24 +53,24 @@ def screen_half(value: i32) -> f32:
     return 0.5 * value
 
 def reset_scene(player: ref[Player], camera: ref[rl.Camera2D]) -> void:
-    value(player).position = rl.Vector2(x = 400.0, y = 280.0)
-    value(player).speed = 0.0
-    value(player).can_jump = false
+    player.position = rl.Vector2(x = 400.0, y = 280.0)
+    player.speed = 0.0
+    player.can_jump = false
 
-    value(camera).target = value(player).position
-    value(camera).offset = rl.Vector2(x = screen_half(screen_width), y = screen_half(screen_height))
-    value(camera).rotation = 0.0
-    value(camera).zoom = 1.0
+    camera.target = player.position
+    camera.offset = rl.Vector2(x = screen_half(screen_width), y = screen_half(screen_height))
+    camera.rotation = 0.0
+    camera.zoom = 1.0
 
 def update_camera(camera: ref[rl.Camera2D], player: Player, env_elements: array[EnvElement, 5]) -> void:
-    value(camera).target = player.position
-    value(camera).offset = rl.Vector2(x = screen_half(screen_width), y = screen_half(screen_height))
+    camera.target = player.position
+    camera.offset = rl.Vector2(x = screen_half(screen_width), y = screen_half(screen_height))
 
-    value(camera).zoom += rl.GetMouseWheelMove() * 0.05
-    if value(camera).zoom > 3.0:
-        value(camera).zoom = 3.0
-    elif value(camera).zoom < 0.25:
-        value(camera).zoom = 0.25
+    camera.zoom += rl.GetMouseWheelMove() * 0.05
+    if camera.zoom > 3.0:
+        camera.zoom = 3.0
+    elif camera.zoom < 0.25:
+        camera.zoom = 0.25
 
     var min_x: f32 = 1000.0
     var min_y: f32 = 1000.0
@@ -92,13 +92,13 @@ def update_camera(camera: ref[rl.Camera2D], player: Player, env_elements: array[
     let min_screen = rl.GetWorldToScreen2D(rl.Vector2(x = min_x, y = min_y), value(camera))
 
     if max_screen.x < screen_width:
-        value(camera).offset.x = screen_width - (max_screen.x - screen_half(screen_width))
+        camera.offset.x = screen_width - (max_screen.x - screen_half(screen_width))
     if max_screen.y < screen_height:
-        value(camera).offset.y = screen_height - (max_screen.y - screen_half(screen_height))
+        camera.offset.y = screen_height - (max_screen.y - screen_half(screen_height))
     if min_screen.x > 0.0:
-        value(camera).offset.x = screen_half(screen_width) - min_screen.x
+        camera.offset.x = screen_half(screen_width) - min_screen.x
     if min_screen.y > 0.0:
-        value(camera).offset.y = screen_half(screen_height) - min_screen.y
+        camera.offset.y = screen_half(screen_height) - min_screen.y
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

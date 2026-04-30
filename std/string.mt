@@ -62,4 +62,4 @@ methods String:
             return str(data = ptr[char]<-data, len = bytes.count(this.buffer))
 
     pub def to_cstr(space: ref[arena.Arena]) -> cstr:
-        return value(space).to_cstr(this.as_str())
+        return space.to_cstr(this.as_str())

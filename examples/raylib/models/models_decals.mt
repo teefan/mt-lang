@@ -94,55 +94,55 @@ def mesh_triangle(mesh: rl.Mesh, triangle_index: i32) -> array[rl.Vector3, 3]:
     )
 
 def add_triangle_to_mesh_builder(mb: ref[MeshBuilder], vertices: array[rl.Vector3, 3]) -> void:
-    if value(mb).vertexCapacity <= value(mb).vertexCount + 3:
-        let new_vertex_capacity = (1 + value(mb).vertexCapacity / 256) * 256
+    if mb.vertexCapacity <= mb.vertexCount + 3:
+        let new_vertex_capacity = (1 + mb.vertexCapacity / 256) * 256
 
         let new_vertices = alloc_vector3(new_vertex_capacity)
 
-        if value(mb).vertexCapacity > 0:
-            let old_vertices = span[rl.Vector3](data = value(mb).vertices, len = usize<-value(mb).vertexCount)
-            var new_vertex_view = span[rl.Vector3](data = new_vertices, len = usize<-value(mb).vertexCount)
-            for index in range(0, value(mb).vertexCount):
+        if mb.vertexCapacity > 0:
+            let old_vertices = span[rl.Vector3](data = mb.vertices, len = usize<-mb.vertexCount)
+            var new_vertex_view = span[rl.Vector3](data = new_vertices, len = usize<-mb.vertexCount)
+            for index in range(0, mb.vertexCount):
                 new_vertex_view[index] = old_vertices[index]
 
-            rl.MemFree(value(mb).vertices)
+            rl.MemFree(mb.vertices)
 
-        value(mb).vertices = new_vertices
-        value(mb).vertexCapacity = new_vertex_capacity
+        mb.vertices = new_vertices
+        mb.vertexCapacity = new_vertex_capacity
 
-    let start = value(mb).vertexCount
-    value(mb).vertexCount += 3
+    let start = mb.vertexCount
+    mb.vertexCount += 3
 
-    var vertex_view = span[rl.Vector3](data = value(mb).vertices, len = usize<-value(mb).vertexCount)
+    var vertex_view = span[rl.Vector3](data = mb.vertices, len = usize<-mb.vertexCount)
     for index in range(0, 3):
         vertex_view[start + index] = vertices[index]
 
 def free_mesh_builder(mb: ref[MeshBuilder]) -> void:
-    if value(mb).vertexCapacity > 0:
-        rl.MemFree(value(mb).vertices)
-    if value(mb).hasUvs:
-        rl.MemFree(value(mb).uvs)
+    if mb.vertexCapacity > 0:
+        rl.MemFree(mb.vertices)
+    if mb.hasUvs:
+        rl.MemFree(mb.uvs)
     value(mb) = zero[MeshBuilder]()
 
 def build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:
     var out_mesh = zero[rl.Mesh]()
-    out_mesh.vertexCount = value(mb).vertexCount
-    out_mesh.triangleCount = value(mb).vertexCount / 3
+    out_mesh.vertexCount = mb.vertexCount
+    out_mesh.triangleCount = mb.vertexCount / 3
 
     out_mesh.vertices = alloc_f32(out_mesh.vertexCount * 3)
-    if value(mb).hasUvs:
+    if mb.hasUvs:
         out_mesh.texcoords = alloc_f32(out_mesh.vertexCount * 2)
 
-    let vertices = span[rl.Vector3](data = value(mb).vertices, len = usize<-value(mb).vertexCount)
-    let uvs = if value(mb).hasUvs then span[rl.Vector2](data = value(mb).uvs, len = usize<-value(mb).vertexCount) else zero[span[rl.Vector2]]()
+    let vertices = span[rl.Vector3](data = mb.vertices, len = usize<-mb.vertexCount)
+    let uvs = if mb.hasUvs then span[rl.Vector2](data = mb.uvs, len = usize<-mb.vertexCount) else zero[span[rl.Vector2]]()
 
     unsafe:
-        for index in range(0, value(mb).vertexCount):
+        for index in range(0, mb.vertexCount):
             out_mesh.vertices[index * 3] = vertices[index].x
             out_mesh.vertices[index * 3 + 1] = vertices[index].y
             out_mesh.vertices[index * 3 + 2] = vertices[index].z
 
-            if value(mb).hasUvs:
+            if mb.hasUvs:
                 out_mesh.texcoords[index * 2] = uvs[index].x
                 out_mesh.texcoords[index * 2 + 1] = uvs[index].y
 
@@ -198,13 +198,13 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
         let in_index = 1 - mb_index
         let in_mesh = addr(mesh_builders[in_index])
         let out_mesh = addr(mesh_builders[mb_index])
-        value(out_mesh).vertexCount = 0
+        out_mesh.vertexCount = 0
 
         let clip_distance = 0.5 * decal_size
-        let in_vertices = span[rl.Vector3](data = value(in_mesh).vertices, len = usize<-value(in_mesh).vertexCount)
+        let in_vertices = span[rl.Vector3](data = in_mesh.vertices, len = usize<-in_mesh.vertexCount)
 
         var vertex_index = 0
-        while vertex_index < value(in_mesh).vertexCount:
+        while vertex_index < in_mesh.vertexCount:
             var next_v1 = zero[rl.Vector3]()
             var next_v2 = zero[rl.Vector3]()
             var next_v3 = zero[rl.Vector3]()
@@ -268,14 +268,14 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
             vertex_index += 3
 
     let final_mesh = addr(mesh_builders[mb_index])
-    if value(final_mesh).vertexCount > 0:
-        value(final_mesh).uvs = alloc_vector2(value(final_mesh).vertexCount)
-        value(final_mesh).hasUvs = true
+    if final_mesh.vertexCount > 0:
+        final_mesh.uvs = alloc_vector2(final_mesh.vertexCount)
+        final_mesh.hasUvs = true
 
-        var vertices = span[rl.Vector3](data = value(final_mesh).vertices, len = usize<-value(final_mesh).vertexCount)
-        var uvs = span[rl.Vector2](data = value(final_mesh).uvs, len = usize<-value(final_mesh).vertexCount)
+        var vertices = span[rl.Vector3](data = final_mesh.vertices, len = usize<-final_mesh.vertexCount)
+        var uvs = span[rl.Vector2](data = final_mesh.uvs, len = usize<-final_mesh.vertexCount)
 
-        for index in range(0, value(final_mesh).vertexCount):
+        for index in range(0, final_mesh.vertexCount):
             uvs[index].x = vertices[index].x / decal_size + 0.5
             uvs[index].y = vertices[index].y / decal_size + 0.5
             vertices[index].z -= decal_offset

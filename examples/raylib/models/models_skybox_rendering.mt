@@ -72,11 +72,11 @@ def set_shader_int(shader: rl.Shader, uniform_name: cstr, value: i32) -> void:
 
 def set_skybox_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
-        deref(model).materials[0].shader = shader
+        model.materials[0].shader = shader
 
 def set_skybox_cubemap(model: ptr[rl.Model], texture: rl.TextureCubemap) -> void:
     unsafe:
-        deref(model).materials[0].maps[i32<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = texture
+        model.materials[0].maps[i32<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = texture
 
 def skybox_cubemap(model: rl.Model) -> rl.TextureCubemap:
     unsafe:

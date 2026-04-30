@@ -110,13 +110,13 @@ methods FpsState:
 
         let head_sin = rm.sin(this.head_timer * math.pi)
         let head_cos = rm.cos(this.head_timer * math.pi)
-        value(camera).up = up.rotate_by_axis_angle(pitch, head_sin * step_rotation + this.lean.x)
+        camera.up = up.rotate_by_axis_angle(pitch, head_sin * step_rotation + this.lean.x)
 
         var bobbing = right.scale(head_sin * bob_side)
         bobbing.y = rm.abs(head_cos * bob_up)
 
-        value(camera).position = value(camera).position.add(bobbing.scale(this.walk_lerp))
-        value(camera).target = value(camera).position.add(pitch)
+        camera.position = camera.position.add(bobbing.scale(this.walk_lerp))
+        camera.target = camera.position.add(pitch)
 
 def draw_level() -> void:
     let floor_extent = 25

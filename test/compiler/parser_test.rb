@@ -1125,7 +1125,7 @@ class MilkTeaParserTest < Minitest::Test
           let handle = addr(counter)
           unsafe:
               let counter_ptr = raw(handle)
-              deref(counter_ptr).value = 7
+              counter_ptr.value = 7
           let value_ref = addr(handle.value)
           value(value_ref) += 2
           return handle.value
@@ -1145,8 +1145,8 @@ class MilkTeaParserTest < Minitest::Test
 
     assignment = unsafe_stmt.body[1]
     assert_instance_of MilkTea::AST::MemberAccess, assignment.target
-    assert_instance_of MilkTea::AST::Call, assignment.target.receiver
-    assert_equal "deref", assignment.target.receiver.callee.name
+    assert_instance_of MilkTea::AST::Identifier, assignment.target.receiver
+    assert_equal "counter_ptr", assignment.target.receiver.name
   end
 
   def test_parses_extended_compound_assignment_operators

@@ -19,15 +19,15 @@ pub def count[V](items: StrMap[V]) -> usize:
     return map.count[str, V](items.items)
 
 pub def release[V](items: ref[StrMap[V]]) -> void:
-    map.release[str, V](addr(value(items).items))
+    map.release[str, V](addr(items.items))
     return
 
 pub def put[V](items: ref[StrMap[V]], key: str, value_item: V) -> void:
-    map.put[str, V](addr(value(items).items), key, value_item)
+    map.put[str, V](addr(items.items), key, value_item)
     return
 
 pub def try_put[V](items: ref[StrMap[V]], key: str, value_item: V) -> bool:
-    return map.try_put[str, V](addr(value(items).items), key, value_item)
+    return map.try_put[str, V](addr(items.items), key, value_item)
 
 pub def get_into[V](items: StrMap[V], key: str, target: ref[V]) -> bool:
     return map.get_into[str, V](items.items, key, target)
@@ -36,4 +36,4 @@ pub def contains[V](items: StrMap[V], key: str) -> bool:
     return map.contains[str, V](items.items, key)
 
 pub def remove[V](items: ref[StrMap[V]], key: str) -> bool:
-    return map.remove[str, V](addr(value(items).items), key)
+    return map.remove[str, V](addr(items.items), key)

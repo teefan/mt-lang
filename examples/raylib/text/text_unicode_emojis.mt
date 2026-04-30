@@ -49,9 +49,9 @@ def randomize_emoji(emojis: ptr[EmojiSlot], hovered: ref[i32], selected: ref[i32
     unsafe:
         var index = 0
         while index < emoji_count:
-            deref(emojis + index).index = rl.GetRandomValue(0, 179) * 5
-            deref(emojis + index).color = rl.Fade(rl.ColorFromHSV(f32<-((start * (index + 1)) % 360), 0.6, 0.85), 0.8)
-            deref(emojis + index).message = rl.GetRandomValue(0, total_messages - 1)
+            (emojis + index).index = rl.GetRandomValue(0, 179) * 5
+            (emojis + index).color = rl.Fade(rl.ColorFromHSV(f32<-((start * (index + 1)) % 360), 0.6, 0.85), 0.8)
+            (emojis + index).message = rl.GetRandomValue(0, total_messages - 1)
             index += 1
 
 def draw_text_boxed(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: f32, spacing: f32, word_wrap: bool, tint: rl.Color) -> void:

@@ -24,7 +24,7 @@ const window_title: cstr = c"raylib [shaders] example - normalmap rendering"
 
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
-        deref(model).materials[0].shader = shader
+        model.materials[0].shader = shader
 
 def rotate_y(angle: f32) -> rl.Matrix:
     let cosy = rm.cos(angle)

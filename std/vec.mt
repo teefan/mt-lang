@@ -33,21 +33,21 @@ pub def as_span[T](items: Vec[T]) -> span[T]:
         return span[T](data = ptr[T]<-data, len = items.len)
 
 pub def clear[T](items: ref[Vec[T]]) -> void:
-    value(items).len = 0
+    items.len = 0
     return
 
 pub def release[T](items: ref[Vec[T]]) -> void:
-    heap.release(value(items).data)
-    value(items).data = null
-    value(items).len = 0
-    value(items).capacity = 0
+    heap.release(items.data)
+    items.data = null
+    items.len = 0
+    items.capacity = 0
     return
 
 pub def try_reserve[T](items: ref[Vec[T]], min_capacity: usize) -> bool:
-    if min_capacity <= value(items).capacity:
+    if min_capacity <= items.capacity:
         return true
 
-    var new_capacity = value(items).capacity
+    var new_capacity = items.capacity
     if new_capacity == 0:
         new_capacity = 4
 
@@ -57,12 +57,12 @@ pub def try_reserve[T](items: ref[Vec[T]], min_capacity: usize) -> bool:
         else:
             new_capacity *= 2
 
-    let resized = heap.resize[T](value(items).data, new_capacity)
+    let resized = heap.resize[T](items.data, new_capacity)
     if resized == null:
         return false
 
-    value(items).data = resized
-    value(items).capacity = new_capacity
+    items.data = resized
+    items.capacity = new_capacity
     return true
 
 pub def reserve[T](items: ref[Vec[T]], min_capacity: usize) -> void:
@@ -71,18 +71,18 @@ pub def reserve[T](items: ref[Vec[T]], min_capacity: usize) -> void:
     return
 
 pub def try_push[T](items: ref[Vec[T]], item: T) -> bool:
-    if value(items).len == value(items).capacity:
-        if not try_reserve[T](items, value(items).len + 1):
+    if items.len == items.capacity:
+        if not try_reserve[T](items, items.len + 1):
             return false
 
-    let data = value(items).data
+    let data = items.data
     if data == null:
         return false
     else:
         unsafe:
-            deref(data + value(items).len) = item
+            deref(data + items.len) = item
 
-    value(items).len += 1
+    items.len += 1
     return true
 
 pub def push[T](items: ref[Vec[T]], item: T) -> void:
@@ -102,10 +102,10 @@ pub def get[T](items: Vec[T], index: usize) -> T:
             return deref(data + index)
 
 pub def set[T](items: ref[Vec[T]], index: usize, item: T) -> void:
-    if index >= value(items).len:
+    if index >= items.len:
         panic(c"vec.set index out of bounds")
 
-    let data = value(items).data
+    let data = items.data
     if data == null:
         panic(c"vec.set missing storage")
     else:
@@ -114,35 +114,35 @@ pub def set[T](items: ref[Vec[T]], index: usize, item: T) -> void:
     return
 
 pub def pop_into[T](items: ref[Vec[T]], target: ref[T]) -> bool:
-    if value(items).len == 0:
+    if items.len == 0:
         return false
 
-    let last_index = value(items).len - 1
+    let last_index = items.len - 1
     let result = get[T](value(items), last_index)
-    value(items).len -= 1
+    items.len -= 1
     value(target) = result
     return true
 
 pub def remove_swap[T](items: ref[Vec[T]], index: usize) -> T:
-    if index >= value(items).len:
+    if index >= items.len:
         panic(c"vec.remove_swap index out of bounds")
 
-    let last_index = value(items).len - 1
+    let last_index = items.len - 1
     let result = get[T](value(items), index)
     set[T](items, index, get[T](value(items), last_index))
-    value(items).len = last_index
+    items.len = last_index
     return result
 
 pub def remove_ordered[T](items: ref[Vec[T]], index: usize) -> T:
-    if index >= value(items).len:
+    if index >= items.len:
         panic(c"vec.remove_ordered index out of bounds")
 
     let result = get[T](value(items), index)
     var cursor = index
-    while cursor + 1 < value(items).len:
+    while cursor + 1 < items.len:
         let next = cursor + 1
         set[T](items, cursor, get[T](value(items), next))
         cursor += 1
 
-    value(items).len -= 1
+    items.len -= 1
     return result

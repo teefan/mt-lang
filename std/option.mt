@@ -27,11 +27,11 @@ pub def unwrap_or[T](item: Option[T], fallback: T) -> T:
     return fallback
 
 pub def set_some[T](item: ref[Option[T]], value_item: T) -> void:
-    value(item).is_some = true
-    value(item).value = value_item
+    item.is_some = true
+    item.value = value_item
     return
 
 pub def clear[T](item: ref[Option[T]]) -> void:
-    value(item).is_some = false
-    value(item).value = zero[T]()
+    item.is_some = false
+    item.value = zero[T]()
     return

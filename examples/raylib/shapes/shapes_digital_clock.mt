@@ -42,20 +42,20 @@ def update_clock(clock: ref[Clock], time_buffer: ref[array[char, 9]]) -> void:
     unsafe:
         ctime.strftime(raw(addr(value(time_buffer)[0])), 9, time_format, tm_info)
 
-    value(clock).hour.value = parse_two_digits(value(time_buffer), 0)
-    value(clock).minute.value = parse_two_digits(value(time_buffer), 3)
-    value(clock).second.value = parse_two_digits(value(time_buffer), 6)
+    clock.hour.value = parse_two_digits(value(time_buffer), 0)
+    clock.minute.value = parse_two_digits(value(time_buffer), 3)
+    clock.second.value = parse_two_digits(value(time_buffer), 6)
 
-    value(clock).hour.angle = f32<-(value(clock).hour.value % 12) * 180.0 / 6.0
-    value(clock).hour.angle += f32<-(value(clock).minute.value % 60) * 30.0 / 60.0
-    value(clock).hour.angle -= 90.0
+    clock.hour.angle = f32<-(clock.hour.value % 12) * 180.0 / 6.0
+    clock.hour.angle += f32<-(clock.minute.value % 60) * 30.0 / 60.0
+    clock.hour.angle -= 90.0
 
-    value(clock).minute.angle = f32<-(value(clock).minute.value % 60) * 6.0
-    value(clock).minute.angle += f32<-(value(clock).second.value % 60) * 6.0 / 60.0
-    value(clock).minute.angle -= 90.0
+    clock.minute.angle = f32<-(clock.minute.value % 60) * 6.0
+    clock.minute.angle += f32<-(clock.second.value % 60) * 6.0 / 60.0
+    clock.minute.angle -= 90.0
 
-    value(clock).second.angle = f32<-(value(clock).second.value % 60) * 6.0
-    value(clock).second.angle -= 90.0
+    clock.second.angle = f32<-(clock.second.value % 60) * 6.0
+    clock.second.angle -= 90.0
 
 def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
     rl.DrawCircleV(position, f32<-clock.second.length + 40.0, rl.LIGHTGRAY)

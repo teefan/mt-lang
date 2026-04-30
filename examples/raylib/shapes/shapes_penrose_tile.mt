@@ -98,24 +98,24 @@ def build_production_step(ls: ref[PenroseLSystem]) -> void:
         new_production = ptr[char]<-rl.MemAlloc(u32<-str_max_size)
         new_production[0] = char<-0
 
-        let production_length = i32<-rl.TextLength(cstr<-value(ls).production)
+        let production_length = i32<-rl.TextLength(cstr<-ls.production)
         var new_length = 0
 
         for index in range(0, production_length):
-            let step = value(ls).production[index]
+            let step = ls.production[index]
             if step == char<-87:
-                append_text(new_production, raw(addr(new_length)), value(ls).rule_w)
+                append_text(new_production, raw(addr(new_length)), ls.rule_w)
             elif step == char<-88:
-                append_text(new_production, raw(addr(new_length)), value(ls).rule_x)
+                append_text(new_production, raw(addr(new_length)), ls.rule_x)
             elif step == char<-89:
-                append_text(new_production, raw(addr(new_length)), value(ls).rule_y)
+                append_text(new_production, raw(addr(new_length)), ls.rule_y)
             elif step == char<-90:
-                append_text(new_production, raw(addr(new_length)), value(ls).rule_z)
+                append_text(new_production, raw(addr(new_length)), ls.rule_z)
             elif step != char<-70:
                 append_char(new_production, raw(addr(new_length)), step)
 
-        value(ls).draw_length *= 0.5
-        rl.TextCopy(value(ls).production, cstr<-new_production)
+        ls.draw_length *= 0.5
+        rl.TextCopy(ls.production, cstr<-new_production)
         rl.MemFree(ptr[void]<-new_production)
 
 def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[TurtleState, 50]], turtle_top: ref[i32]) -> void:
@@ -124,19 +124,19 @@ def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[Turtle
     var repeats = 1
 
     unsafe:
-        let production_length = i32<-rl.TextLength(cstr<-value(ls).production)
-        value(ls).steps += 12
-        if value(ls).steps > production_length:
-            value(ls).steps = production_length
+        let production_length = i32<-rl.TextLength(cstr<-ls.production)
+        ls.steps += 12
+        if ls.steps > production_length:
+            ls.steps = production_length
 
-        for index in range(0, value(ls).steps):
-            let step = value(ls).production[index]
+        for index in range(0, ls.steps):
+            let step = ls.production[index]
             if step == char<-70:
                 for repeat_index in range(0, repeats):
                     let start_pos_world = turtle.origin
                     let rad_angle = mt_math.deg2rad * turtle.angle
-                    turtle.origin.x += value(ls).draw_length * math.cosf(rad_angle)
-                    turtle.origin.y += value(ls).draw_length * math.sinf(rad_angle)
+                    turtle.origin.x += ls.draw_length * math.cosf(rad_angle)
+                    turtle.origin.y += ls.draw_length * math.sinf(rad_angle)
 
                     let start_pos_screen = rl.Vector2(
                         x = start_pos_world.x + screen_center.x,
@@ -151,12 +151,12 @@ def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[Turtle
                 repeats = 1
             elif step == char<-43:
                 for repeat_index in range(0, repeats):
-                    turtle.angle += value(ls).theta
+                    turtle.angle += ls.theta
 
                 repeats = 1
             elif step == char<-45:
                 for repeat_index in range(0, repeats):
-                    turtle.angle -= value(ls).theta
+                    turtle.angle -= ls.theta
 
                 repeats = 1
             elif step == char<-91:

@@ -20,7 +20,7 @@ def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimat
 
 def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
     unsafe:
-        return chars_to_cstr(raw(addr(deref(anims + index).name[0])))
+        return chars_to_cstr(raw(addr((anims + index).name[0])))
 
 def model_animation_pose(anim: rl.ModelAnimation, frame: i32) -> rl.ModelAnimPose:
     unsafe:
@@ -28,11 +28,11 @@ def model_animation_pose(anim: rl.ModelAnimation, frame: i32) -> rl.ModelAnimPos
 
 def pose_translation(pose: rl.ModelAnimPose, index: i32) -> rl.Vector3:
     unsafe:
-        return deref(pose + index).translation
+        return (pose + index).translation
 
 def skeleton_bone_parent(skeleton: rl.ModelSkeleton, index: i32) -> i32:
     unsafe:
-        return deref(skeleton.bones + index).parent
+        return (skeleton.bones + index).parent
 
 def draw_model_skeleton(skeleton: rl.ModelSkeleton, pose: rl.ModelAnimPose, scale: f32, color: rl.Color) -> void:
     for index in range(0, skeleton.boneCount - 1):

@@ -2802,6 +2802,27 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_raw_pointer_member_access_in_unsafe
+    source = <<~MT
+      module demo.pointer_surface
+
+      struct Counter:
+          value: i32
+
+      def main() -> i32:
+          var counter = Counter(value = 3)
+          let counter_ptr = raw(addr(counter))
+          unsafe:
+              counter_ptr.value = 7
+              return counter_ptr.value
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("Counter")
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_associated_functions_on_local_structs
     source = <<~MT
       module demo.associated
@@ -3076,6 +3097,27 @@ class MilkTeaSemaTest < Minitest::Test
           var counter = Counter(value = 3)
           let counter_ptr = raw(addr(counter))
           return deref(counter_ptr).value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/raw pointer dereference requires unsafe/, error.message)
+  end
+
+  def test_rejects_raw_pointer_member_access_outside_unsafe
+    source = <<~MT
+      module demo.bad
+
+      struct Counter:
+          value: i32
+
+      def main() -> i32:
+          var counter = Counter(value = 3)
+          let counter_ptr = raw(addr(counter))
+          counter_ptr.value = 7
+          return counter.value
     MT
 
     error = assert_raises(MilkTea::SemaError) do

@@ -22,11 +22,11 @@ def draw_texture_poly(texture: rl.Texture, center: rl.Vector2, points: ptr[rl.Ve
             rlgl.rlTexCoord2f(0.5, 0.5)
             rlgl.rlVertex2f(center.x, center.y)
 
-            rlgl.rlTexCoord2f(deref(texcoords + index).x, deref(texcoords + index).y)
-            rlgl.rlVertex2f(deref(points + index).x + center.x, deref(points + index).y + center.y)
+            rlgl.rlTexCoord2f((texcoords + index).x, (texcoords + index).y)
+            rlgl.rlVertex2f((points + index).x + center.x, (points + index).y + center.y)
 
-            rlgl.rlTexCoord2f(deref(texcoords + index + 1).x, deref(texcoords + index + 1).y)
-            rlgl.rlVertex2f(deref(points + index + 1).x + center.x, deref(points + index + 1).y + center.y)
+            rlgl.rlTexCoord2f((texcoords + index + 1).x, (texcoords + index + 1).y)
+            rlgl.rlVertex2f((points + index + 1).x + center.x, (points + index + 1).y + center.y)
 
         rlgl.rlEnd()
         rlgl.rlSetTexture(u32<-0)

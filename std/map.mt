@@ -35,10 +35,10 @@ pub def capacity[K, V](items: HashMap[K, V]) -> usize:
     return items.capacity
 
 pub def release[K, V](items: ref[HashMap[K, V]]) -> void:
-    heap.release(value(items).entries)
-    value(items).entries = null
-    value(items).len = 0
-    value(items).capacity = 0
+    heap.release(items.entries)
+    items.entries = null
+    items.len = 0
+    items.capacity = 0
     return
 
 def index_for(hash: u64, capacity: usize) -> usize:
@@ -55,7 +55,7 @@ def insert_existing[K, V](entries: ptr[Entry[K, V]], capacity: usize, entry: Ent
     while probes < capacity:
         unsafe:
             let slot = entries + index
-            if deref(slot).state != full_state:
+            if slot.state != full_state:
                 deref(slot) = entry
                 return
         index = (index + 1) % capacity
@@ -64,10 +64,10 @@ def insert_existing[K, V](entries: ptr[Entry[K, V]], capacity: usize, entry: Ent
     panic(c"map.insert_existing table full")
 
 pub def try_reserve[K, V](items: ref[HashMap[K, V]], min_capacity: usize) -> bool:
-    if min_capacity <= value(items).capacity:
+    if min_capacity <= items.capacity:
         return true
 
-    var new_capacity = value(items).capacity
+    var new_capacity = items.capacity
     if new_capacity == 0:
         new_capacity = 8
     while new_capacity < min_capacity:
@@ -80,10 +80,10 @@ pub def try_reserve[K, V](items: ref[HashMap[K, V]], min_capacity: usize) -> boo
     if new_entries == null:
         return false
 
-    let old_entries = value(items).entries
+    let old_entries = items.entries
     if old_entries != null:
         var index: usize = 0
-        while index < value(items).capacity:
+        while index < items.capacity:
             unsafe:
                 let entry = deref(old_entries + index)
                 if entry.state == full_state:
@@ -91,8 +91,8 @@ pub def try_reserve[K, V](items: ref[HashMap[K, V]], min_capacity: usize) -> boo
             index += 1
         heap.release(old_entries)
 
-    value(items).entries = new_entries
-    value(items).capacity = new_capacity
+    items.entries = new_entries
+    items.capacity = new_capacity
     return true
 
 pub def reserve[K, V](items: ref[HashMap[K, V]], min_capacity: usize) -> void:
@@ -101,53 +101,53 @@ pub def reserve[K, V](items: ref[HashMap[K, V]], min_capacity: usize) -> void:
     return
 
 pub def try_put[K, V](items: ref[HashMap[K, V]], key: K, value_item: V) -> bool:
-    if should_grow(value(items).len, value(items).capacity):
-        if not try_reserve[K, V](items, value(items).capacity * 2 + 8):
+    if should_grow(items.len, items.capacity):
+        if not try_reserve[K, V](items, items.capacity * 2 + 8):
             return false
 
-    let entries = value(items).entries
+    let entries = items.entries
     if entries == null:
         return false
 
-    let hash = value(items).hash_fn(key)
-    var index = index_for(hash, value(items).capacity)
+    let hash = items.hash_fn(key)
+    var index = index_for(hash, items.capacity)
     var probes: usize = 0
     var tombstone_index: usize = 0
     var has_tombstone = false
 
-    while probes < value(items).capacity:
+    while probes < items.capacity:
         unsafe:
             let slot = entries + index
-            if deref(slot).state == empty_state:
+            if slot.state == empty_state:
                 var target_index = index
                 if has_tombstone:
                     target_index = tombstone_index
                 let target = entries + target_index
-                deref(target).key = key
-                deref(target).value = value_item
-                deref(target).hash = hash
-                deref(target).state = full_state
-                value(items).len += 1
+                target.key = key
+                target.value = value_item
+                target.hash = hash
+                target.state = full_state
+                items.len += 1
                 return true
-            elif deref(slot).state == tombstone_state:
+            elif slot.state == tombstone_state:
                 if not has_tombstone:
                     tombstone_index = index
                     has_tombstone = true
-            elif deref(slot).hash == hash and value(items).equals_fn(deref(slot).key, key):
-                deref(slot).value = value_item
+            elif slot.hash == hash and items.equals_fn(slot.key, key):
+                slot.value = value_item
                 return true
 
-        index = (index + 1) % value(items).capacity
+        index = (index + 1) % items.capacity
         probes += 1
 
     if has_tombstone:
         unsafe:
             let target = entries + tombstone_index
-            deref(target).key = key
-            deref(target).value = value_item
-            deref(target).hash = hash
-            deref(target).state = full_state
-        value(items).len += 1
+            target.key = key
+            target.value = value_item
+            target.hash = hash
+            target.state = full_state
+        items.len += 1
         return true
 
     return false
@@ -171,10 +171,10 @@ pub def get_into[K, V](items: HashMap[K, V], key: K, target: ref[V]) -> bool:
     while probes < items.capacity:
         unsafe:
             let slot = entries + index
-            if deref(slot).state == empty_state:
+            if slot.state == empty_state:
                 return false
-            elif deref(slot).state == full_state and deref(slot).hash == hash and items.equals_fn(deref(slot).key, key):
-                value(target) = deref(slot).value
+            elif slot.state == full_state and slot.hash == hash and items.equals_fn(slot.key, key):
+                value(target) = slot.value
                 return true
 
         index = (index + 1) % items.capacity
@@ -196,9 +196,9 @@ pub def contains[K, V](items: HashMap[K, V], key: K) -> bool:
     while probes < items.capacity:
         unsafe:
             let slot = entries + index
-            if deref(slot).state == empty_state:
+            if slot.state == empty_state:
                 return false
-            elif deref(slot).state == full_state and deref(slot).hash == hash and items.equals_fn(deref(slot).key, key):
+            elif slot.state == full_state and slot.hash == hash and items.equals_fn(slot.key, key):
                 return true
 
         index = (index + 1) % items.capacity
@@ -207,27 +207,27 @@ pub def contains[K, V](items: HashMap[K, V], key: K) -> bool:
     return false
 
 pub def remove[K, V](items: ref[HashMap[K, V]], key: K) -> bool:
-    if value(items).capacity == 0:
+    if items.capacity == 0:
         return false
 
-    let entries = value(items).entries
+    let entries = items.entries
     if entries == null:
         return false
 
-    let hash = value(items).hash_fn(key)
-    var index = index_for(hash, value(items).capacity)
+    let hash = items.hash_fn(key)
+    var index = index_for(hash, items.capacity)
     var probes: usize = 0
-    while probes < value(items).capacity:
+    while probes < items.capacity:
         unsafe:
             let slot = entries + index
-            if deref(slot).state == empty_state:
+            if slot.state == empty_state:
                 return false
-            elif deref(slot).state == full_state and deref(slot).hash == hash and value(items).equals_fn(deref(slot).key, key):
-                deref(slot).state = tombstone_state
-                value(items).len -= 1
+            elif slot.state == full_state and slot.hash == hash and items.equals_fn(slot.key, key):
+                slot.state = tombstone_state
+                items.len -= 1
                 return true
 
-        index = (index + 1) % value(items).capacity
+        index = (index + 1) % items.capacity
         probes += 1
 
     return false

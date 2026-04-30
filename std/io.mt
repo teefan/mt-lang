@@ -38,21 +38,21 @@ pub def println(text: str) -> bool:
     return write_line(text)
 
 def print_formatted(text: ref[string.String]) -> bool:
-    let ok = write(value(text).as_str())
-    value(text).release()
+    let ok = write(text.as_str())
+    text.release()
     return ok
 
 def println_formatted(text: ref[string.String]) -> bool:
-    let ok = write_line(value(text).as_str())
-    value(text).release()
+    let ok = write_line(text.as_str())
+    text.release()
     return ok
 
 def write_error_formatted(text: ref[string.String]) -> bool:
-    let ok = write_error(value(text).as_str())
-    value(text).release()
+    let ok = write_error(text.as_str())
+    text.release()
     return ok
 
 def write_error_line_formatted(text: ref[string.String]) -> bool:
-    let ok = write_error_line(value(text).as_str())
-    value(text).release()
+    let ok = write_error_line(text.as_str())
+    text.release()
     return ok

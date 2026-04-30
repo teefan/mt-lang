@@ -18,10 +18,10 @@ pub def arg(argc: i32, argv: ptr[cstr], index: usize) -> option.Option[str]:
         return option.some[str](text_ops.cstr_as_str(deref(argv + index)))
 
 pub def env(name: str, scratch: ref[arena.Arena]) -> option.Option[str]:
-    let mark = value(scratch).mark()
-    defer value(scratch).reset(mark)
+    let mark = scratch.mark()
+    defer scratch.reset(mark)
 
-    let c_name = value(scratch).to_cstr(name)
+    let c_name = scratch.to_cstr(name)
     let value_ptr: ptr[char]? = libc.getenv(c_name)
     if value_ptr == null:
         return option.none[str]()

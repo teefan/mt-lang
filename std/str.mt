@@ -164,4 +164,4 @@ methods str:
             return str(data = this.data + start, len = len)
 
     pub def to_cstr(space: ref[arena.Arena]) -> cstr:
-        return value(space).to_cstr(this)
+        return space.to_cstr(this)

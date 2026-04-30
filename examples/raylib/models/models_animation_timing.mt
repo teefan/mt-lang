@@ -23,7 +23,7 @@ def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimat
 
 def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
     unsafe:
-        return chars_to_cstr(raw(addr(deref(anims + index).name[0])))
+        return chars_to_cstr(raw(addr((anims + index).name[0])))
 
 def text_join(text_list: ptr[cstr], count: i32, delimiter: cstr) -> cstr:
     unsafe:

@@ -632,8 +632,8 @@ import std.mem.heap as heap
 def spawn_enemy(start: Vec2) -> ptr[Enemy]:
 	let enemy = heap.must_alloc[Enemy](1)
 	unsafe:
-		deref(enemy).position = start
-		deref(enemy).health = 100
+		enemy.position = start
+		enemy.health = 100
 	return enemy
 ```
 
@@ -658,10 +658,10 @@ Pointers are still first-class because game code needs raw memory and FFI. The s
 let position_ref = addr(player.position)
 let position_ptr = raw(position_ref)
 
-value(position_ref).x += 1
+position_ref.x += 1
 
 unsafe:
-	deref(position_ptr).x += 1
+	position_ptr.x += 1
 ```
 
 Rules for safe references:
@@ -671,7 +671,7 @@ Rules for safe references:
 - `ro_addr(expr)` requires an addressable lvalue source and produces `const_ptr[T]` for read-only raw interop.
 - `value(ref_value)` is safe and yields the referenced lvalue/value.
 - `raw(ref_value)` converts a safe reference to `ptr[T]` explicitly.
-- there is no auto projection through refs: use `value(handle).field` and `value(handle).edit_method()`.
+- member access and method calls auto-project through refs, so `handle.field` and `handle.edit_method()` are the preferred forms.
 - there is no implicit ref-to-value call conversion: if a function expects `T`, pass `value(handle)`.
 - references do not support arithmetic, pointer indexing, or nullable semantics.
 - writable references are non-escaping in the current implementation: they may be used in locals and non-extern function parameters, and imported foreign parameters may expose `out` or `inout` boundary forms that lower to raw pointers, but refs themselves still cannot be stored, nested inside other types, returned, or used directly in raw `extern module` declarations.
@@ -683,7 +683,7 @@ Rules for raw pointers:
 - spell writable address formation as `addr(expr)`, read-only raw address formation as `ro_addr(expr)`, and writable raw pointer formation as `raw(addr(expr))` when you truly need a raw pointer.
 - `deref(ptr)` dereferences a raw pointer and requires `unsafe`.
 - `const_ptr[T]` is the read-only raw-pointer surface and lowers to C `const T*`. `const_ptr[void]` is valid and represents C `const void *`.
-- `deref(ptr).field` accesses a member through a raw pointer and requires `unsafe`.
+- `ptr.field` accesses a member through a raw pointer and requires `unsafe`.
 - pointer arithmetic and pointer indexing remain `unsafe`.
 - raw pointer offsets and indices may use ordinary integer expressions directly; code does not need a pre-emptive cast to `usize` just to write `ptr[i]` or `ptr + offset`.
 - pointer comparison is explicit and never treated as boolean truthiness.

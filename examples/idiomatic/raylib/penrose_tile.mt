@@ -29,15 +29,15 @@ const byte_nine: u8 = 57
 
 def append_rule(output: ref[string.String], step: u8) -> void:
     if step == byte_w:
-        value(output).append("YF++ZF4-XF[-YF4-WF]++")
+        output.append("YF++ZF4-XF[-YF4-WF]++")
     elif step == byte_x:
-        value(output).append("+YF--ZF[3-WF--XF]+")
+        output.append("+YF--ZF[3-WF--XF]+")
     elif step == byte_y:
-        value(output).append("-WF++XF[+++YF++ZF]-")
+        output.append("-WF++XF[+++YF++ZF]-")
     elif step == byte_z:
-        value(output).append("--YF++++WF[+ZF++++XF]--XF")
+        output.append("--YF++++WF[+ZF++++XF]--XF")
     elif step != byte_f:
-        value(output).push_byte(step)
+        output.push_byte(step)
 
 def build_production_step(production: string.String) -> string.String:
     let production_view = production.as_str()

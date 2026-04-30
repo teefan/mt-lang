@@ -14,10 +14,10 @@ pub enum Error: u8
     invalid_utf8 = 5
 
 pub def exists(path: str, scratch: ref[arena.Arena]) -> bool:
-    let mark = value(scratch).mark()
-    defer value(scratch).reset(mark)
+    let mark = scratch.mark()
+    defer scratch.reset(mark)
 
-    let c_path = value(scratch).to_cstr(path)
+    let c_path = scratch.to_cstr(path)
     let file = c.fopen(c_path, c"rb")
     if file == null:
         return false
@@ -26,10 +26,10 @@ pub def exists(path: str, scratch: ref[arena.Arena]) -> bool:
     return true
 
 pub def read_bytes(path: str, scratch: ref[arena.Arena]) -> Result[bytes.Buffer, Error]:
-    let mark = value(scratch).mark()
-    defer value(scratch).reset(mark)
+    let mark = scratch.mark()
+    defer scratch.reset(mark)
 
-    let c_path = value(scratch).to_cstr(path)
+    let c_path = scratch.to_cstr(path)
     let file = c.fopen(c_path, c"rb")
     if file == null:
         return err(Error.open_failed)
@@ -73,10 +73,10 @@ pub def read_text(path: str, scratch: ref[arena.Arena]) -> Result[string.String,
         return ok(result)
 
 pub def write_bytes(path: str, data: span[u8], scratch: ref[arena.Arena]) -> Result[bool, Error]:
-    let mark = value(scratch).mark()
-    defer value(scratch).reset(mark)
+    let mark = scratch.mark()
+    defer scratch.reset(mark)
 
-    let c_path = value(scratch).to_cstr(path)
+    let c_path = scratch.to_cstr(path)
     let file = c.fopen(c_path, c"wb")
     if file == null:
         return err(Error.open_failed)

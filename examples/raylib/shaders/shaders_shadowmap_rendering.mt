@@ -46,12 +46,12 @@ def raylib_matrix(mat: rlgl.Matrix) -> rl.Matrix:
 
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
-        deref(model).materials[0].shader = shader
+        model.materials[0].shader = shader
 
 def set_all_model_shaders(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
-        for index in range(0, deref(model).materialCount):
-            deref(model).materials[index].shader = shader
+        for index in range(0, model.materialCount):
+            model.materials[index].shader = shader
 
 def load_shadowmap_render_texture(width: i32, height: i32) -> rl.RenderTexture2D:
     var target = zero[rl.RenderTexture2D]()

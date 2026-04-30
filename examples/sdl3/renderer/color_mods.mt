@@ -71,8 +71,8 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     defer c.SDL_DestroySurface(surface)
 
     unsafe:
-        texture_width = deref(surface).w
-        texture_height = deref(surface).h
+        texture_width = surface.w
+        texture_height = surface.h
 
     let created_texture = c.SDL_CreateTextureFromSurface(renderer, surface)
     if created_texture == null:

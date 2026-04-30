@@ -44,7 +44,7 @@ const cube_scale: f32 = 0.25
 
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
-        deref(model).materials[0].shader = shader
+        model.materials[0].shader = shader
 
 def gbuffer_texture(id: u32, width: i32, height: i32) -> rl.Texture:
     return rl.Texture(id = id, width = width, height = height, mipmaps = 1, format = 0)
