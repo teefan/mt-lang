@@ -19,7 +19,7 @@ const window_title: cstr = c"raylib [models] example - animation blend custom"
 
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
-        return cast[cstr](text)
+        return cstr<-text
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
@@ -118,7 +118,7 @@ def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation,
             if is_upper_body_bone(skeleton_bone_name(current_model.skeleton, bone_index)):
                 bone_blend_factor = clamped_blend
             else:
-                bone_blend_factor = cast[f32](1.0) - clamped_blend
+                bone_blend_factor = f32<-1.0 - clamped_blend
 
         let bind_transform = bind_pose_transform(current_model.skeleton, bone_index)
         let anim_transform0 = pose_transform(pose0, bone_index)
@@ -157,7 +157,7 @@ def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation,
 
             for _ in range(0, 4):
                 let bone_weight = read_f32(mesh.boneWeights, bone_counter)
-                let bone_index = cast[i32](read_u8(mesh.boneIndices, bone_counter))
+                let bone_index = i32<-read_u8(mesh.boneIndices, bone_counter)
 
                 if bone_weight != 0.0:
                     let bone_matrix = model_bone_matrix(current_model, bone_index)
@@ -189,13 +189,13 @@ def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation,
 
         if buffer_update_required:
             rlgl.rlUpdateVertexBuffer(
-                mesh_vbo_id(mesh, cast[i32](rl.ShaderLocationIndex.SHADER_LOC_VERTEX_POSITION)),
+                mesh_vbo_id(mesh, i32<-rl.ShaderLocationIndex.SHADER_LOC_VERTEX_POSITION),
                 mesh.animVertices,
                 mesh.vertexCount * 3 * 4,
                 0,
             )
             rlgl.rlUpdateVertexBuffer(
-                mesh_vbo_id(mesh, cast[i32](rl.ShaderLocationIndex.SHADER_LOC_VERTEX_NORMAL)),
+                mesh_vbo_id(mesh, i32<-rl.ShaderLocationIndex.SHADER_LOC_VERTEX_NORMAL),
                 mesh.animNormals,
                 mesh.vertexCount * 3 * 4,
                 0,
@@ -255,7 +255,7 @@ def main() -> i32:
         anim_current_frame0 = (anim_current_frame0 + 1) % anim0.keyframeCount
         anim_current_frame1 = (anim_current_frame1 + 1) % anim1.keyframeCount
 
-        let blend_factor = if upper_body_blend then cast[f32](1.0) else cast[f32](0.5)
+        let blend_factor = if upper_body_blend then f32<-1.0 else f32<-0.5
         update_model_animation_bones(raw(addr(model)), anim0, anim_current_frame0, anim1, anim_current_frame1, blend_factor, upper_body_blend)
 
         rl.BeginDrawing()

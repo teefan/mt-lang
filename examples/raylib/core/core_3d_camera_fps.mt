@@ -227,8 +227,8 @@ def main() -> i32:
             state.walk_lerp = rm.lerp(state.walk_lerp, 0.0, 10.0 * delta)
             camera.fovy = rm.lerp(camera.fovy, 60.0, 5.0 * delta)
 
-        state.lean.x = rm.lerp(state.lean.x, cast[f32](sideway) * 0.02, 10.0 * delta)
-        state.lean.y = rm.lerp(state.lean.y, cast[f32](forward) * 0.015, 10.0 * delta)
+        state.lean.x = rm.lerp(state.lean.x, f32<-sideway * 0.02, 10.0 * delta)
+        state.lean.y = rm.lerp(state.lean.y, f32<-forward * 0.015, 10.0 * delta)
 
         state.update_camera(addr(camera), player)
 

@@ -16,14 +16,14 @@ def main() -> i32:
     let tiles_x = 25
     let tiles_y = 15
     let tile_count = tiles_x * tiles_y
-    let tile_ids_ptr = heap.must_alloc_zeroed[u8](cast[usize](tile_count))
-    let tile_fog_ptr = heap.must_alloc_zeroed[u8](cast[usize](tile_count))
+    let tile_ids_ptr = heap.must_alloc_zeroed[u8](usize<-tile_count)
+    let tile_fog_ptr = heap.must_alloc_zeroed[u8](usize<-tile_count)
     defer:
         heap.release(tile_fog_ptr)
         heap.release(tile_ids_ptr)
 
-    var tile_ids = span[u8](data = tile_ids_ptr, len = cast[usize](tile_count))
-    var tile_fog = span[u8](data = tile_fog_ptr, len = cast[usize](tile_count))
+    var tile_ids = span[u8](data = tile_ids_ptr, len = usize<-tile_count)
+    var tile_fog = span[u8](data = tile_fog_ptr, len = usize<-tile_count)
 
     var player_position = rl.Vector2(x = 180.0, y = 130.0)
     var player_tile_x = 0
@@ -34,7 +34,7 @@ def main() -> i32:
     defer rl.unload_render_texture(fog_of_war)
 
     for index in range(0, tile_count):
-        tile_ids[index] = cast[u8](rl.get_random_value(0, 1))
+        tile_ids[index] = u8<-rl.get_random_value(0, 1)
 
     rl.set_target_fps(60)
 
@@ -50,20 +50,20 @@ def main() -> i32:
 
         if player_position.x < 0.0:
             player_position.x = 0.0
-        elif player_position.x + player_size > cast[f32](tiles_x * map_tile_size):
-            player_position.x = cast[f32](tiles_x * map_tile_size - player_size)
+        elif player_position.x + player_size > f32<-(tiles_x * map_tile_size):
+            player_position.x = f32<-(tiles_x * map_tile_size - player_size)
 
         if player_position.y < 0.0:
             player_position.y = 0.0
-        elif player_position.y + player_size > cast[f32](tiles_y * map_tile_size):
-            player_position.y = cast[f32](tiles_y * map_tile_size - player_size)
+        elif player_position.y + player_size > f32<-(tiles_y * map_tile_size):
+            player_position.y = f32<-(tiles_y * map_tile_size - player_size)
 
         for index in range(0, tile_count):
             if tile_fog[index] == 1:
                 tile_fog[index] = 2
 
-        player_tile_x = cast[i32]((player_position.x + cast[f32](map_tile_size) / 2.0) / cast[f32](map_tile_size))
-        player_tile_y = cast[i32]((player_position.y + cast[f32](map_tile_size) / 2.0) / cast[f32](map_tile_size))
+        player_tile_x = i32<-((player_position.x + f32<-map_tile_size / 2.0) / f32<-map_tile_size)
+        player_tile_y = i32<-((player_position.y + f32<-map_tile_size / 2.0) / f32<-map_tile_size)
 
         for y in range(player_tile_y - player_tile_visibility, player_tile_y + player_tile_visibility):
             for x in range(player_tile_x - player_tile_visibility, player_tile_x + player_tile_visibility):
@@ -93,11 +93,11 @@ def main() -> i32:
                 rl.draw_rectangle(x * map_tile_size, y * map_tile_size, map_tile_size, map_tile_size, tile_color)
                 rl.draw_rectangle_lines(x * map_tile_size, y * map_tile_size, map_tile_size, map_tile_size, rl.fade(rl.DARKBLUE, 0.5))
 
-        rl.draw_rectangle_v(player_position, rl.Vector2(x = cast[f32](player_size), y = cast[f32](player_size)), rl.RED)
+        rl.draw_rectangle_v(player_position, rl.Vector2(x = f32<-player_size, y = f32<-player_size), rl.RED)
         rl.draw_texture_pro(
             fog_of_war.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](fog_of_war.texture.width), height = -cast[f32](fog_of_war.texture.height)),
-            rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](tiles_x * map_tile_size), height = cast[f32](tiles_y * map_tile_size)),
+            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-fog_of_war.texture.width, height = -f32<-fog_of_war.texture.height),
+            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-(tiles_x * map_tile_size), height = f32<-(tiles_y * map_tile_size)),
             rl.Vector2(x = 0.0, y = 0.0),
             0.0,
             rl.WHITE,

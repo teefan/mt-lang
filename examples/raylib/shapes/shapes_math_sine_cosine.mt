@@ -35,7 +35,7 @@ def main() -> i32:
     var pause = false
 
     for index in range(0, wave_points):
-        let t = cast[f32](index) / cast[f32](wave_points - 1)
+        let t = f32<-index / f32<-(wave_points - 1)
         let current_angle = t * 360.0 * rm.deg2rad
         sine_points[index] = rl.Vector2(
             x = start.x + t * start.width,
@@ -90,11 +90,11 @@ def main() -> i32:
         rl.DrawLineEx(rl.Vector2(x = start.x + start.width, y = start.y), rl.Vector2(x = start.x + start.width, y = start.y + start.height), 2.0, rl.GRAY)
         rl.DrawLineEx(rl.Vector2(x = start.x, y = start.y + half_wave_height), rl.Vector2(x = start.x + start.width, y = start.y + half_wave_height), 2.0, rl.GRAY)
 
-        rl.DrawText(c"1", cast[i32](start.x) - 8, cast[i32](start.y), 6, rl.GRAY)
-        rl.DrawText(c"0", cast[i32](start.x) - 8, cast[i32](start.y + half_wave_height) - 6, 6, rl.GRAY)
-        rl.DrawText(c"-1", cast[i32](start.x) - 12, cast[i32](start.y + start.height) - 8, 6, rl.GRAY)
-        rl.DrawText(c"0", cast[i32](start.x) - 2, cast[i32](start.y + start.height) + 4, 6, rl.GRAY)
-        rl.DrawText(c"360", cast[i32](start.x + start.width) - 8, cast[i32](start.y + start.height) + 4, 6, rl.GRAY)
+        rl.DrawText(c"1", i32<-start.x - 8, i32<-start.y, 6, rl.GRAY)
+        rl.DrawText(c"0", i32<-start.x - 8, i32<-(start.y + half_wave_height) - 6, 6, rl.GRAY)
+        rl.DrawText(c"-1", i32<-start.x - 12, i32<-(start.y + start.height) - 8, 6, rl.GRAY)
+        rl.DrawText(c"0", i32<-start.x - 2, i32<-(start.y + start.height) + 4, 6, rl.GRAY)
+        rl.DrawText(c"360", i32<-(start.x + start.width) - 8, i32<-(start.y + start.height) + 4, 6, rl.GRAY)
 
         rl.DrawLineEx(rl.Vector2(x = center.x, y = center.y), rl.Vector2(x = center.x, y = point.y), 2.0, rl.RED)
         rl.DrawLineDashed(rl.Vector2(x = point.x, y = center.y), rl.Vector2(x = point.x, y = point.y), 10, 4, rl.RED)

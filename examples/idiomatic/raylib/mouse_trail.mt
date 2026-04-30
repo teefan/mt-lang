@@ -31,7 +31,7 @@ def main() -> i32:
 
         for index in range(0, max_trail_length):
             if trail_positions[index].x != 0.0 or trail_positions[index].y != 0.0:
-                let ratio: f32 = cast[f32](max_trail_length - index) / cast[f32](max_trail_length)
+                let ratio: f32 = f32<-(max_trail_length - index) / f32<-max_trail_length
                 rl.draw_circle_v(trail_positions[index], 15.0 * ratio, rl.fade(rl.SKYBLUE, ratio * 0.5 + 0.5))
 
         rl.draw_circle_v(mouse_position, 15.0, rl.WHITE)

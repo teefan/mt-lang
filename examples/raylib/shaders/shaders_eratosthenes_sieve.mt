@@ -34,7 +34,7 @@ def main() -> i32:
         rl.BeginShaderMode(shader)
         rl.DrawTextureRec(
             target.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](target.texture.width), height = -cast[f32](target.texture.height)),
+            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-target.texture.width, height = -f32<-target.texture.height),
             rl.Vector2(x = 0.0, y = 0.0),
             rl.WHITE,
         )

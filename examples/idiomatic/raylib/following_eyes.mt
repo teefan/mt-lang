@@ -22,9 +22,9 @@ def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Following Eyes")
     defer rl.close_window()
 
-    let center_y = cast[f32](screen_height) / 2.0
-    let left_eye = rl.Vector2(x = cast[f32](screen_width) / 2.0 - 100.0, y = center_y)
-    let right_eye = rl.Vector2(x = cast[f32](screen_width) / 2.0 + 100.0, y = center_y)
+    let center_y = f32<-screen_height / 2.0
+    let left_eye = rl.Vector2(x = f32<-screen_width / 2.0 - 100.0, y = center_y)
+    let right_eye = rl.Vector2(x = f32<-screen_width / 2.0 + 100.0, y = center_y)
     let sclera_radius: f32 = 80.0
     let iris_radius: f32 = 24.0
     let iris_limit = sclera_radius - iris_radius

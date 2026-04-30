@@ -127,7 +127,7 @@ def digit_angles_for(digit: i32) -> array[rl.Vector2, 24]:
     return blank_digit_angles()
 
 def digit_value(time_buffer: array[char, 7], index: i32) -> i32:
-    return cast[i32](time_buffer[index]) - 48
+    return i32<-time_buffer[index] - 48
 
 def load_time_digits(time_buffer: ref[array[char, 7]], hour_mode: i32) -> void:
     var now: ctime.time_t = 0
@@ -180,7 +180,7 @@ def main() -> i32:
 
             for digit in range(0, digit_count):
                 var digit_angles = blank_digit_angles()
-                if digit == 0 and hour_mode == hour_mode_12 and cast[i32](time_buffer[0]) == 48:
+                if digit == 0 and hour_mode == hour_mode_12 and i32<-time_buffer[0] == 48:
                     digit_angles = blank_digit_angles()
                 else:
                     digit_angles = digit_angles_for(digit_value(time_buffer, digit))
@@ -219,8 +219,8 @@ def main() -> i32:
             for row in range(0, 6):
                 for col in range(0, 4):
                     let center = rl.Vector2(
-                        x = x_offset + cast[f32](col) * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
-                        y = 100.0 + cast[f32](row) * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
+                        x = x_offset + f32<-col * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
+                        y = 100.0 + f32<-row * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
                     )
                     let slot = angle_slot(digit, row * 4 + col)
 

@@ -5,9 +5,9 @@ import std.c.sdl3 as c
 const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/audio/load-wav"
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const default_playback_device: u32 = cast[u32](0xFFFFFFFF)
+const default_playback_device: u32 = u32<-0xFFFFFFFF
 const sample_wav_path: cstr = c"../resources/sample.wav"
 
 var window: ptr[c.SDL_Window]
@@ -30,8 +30,8 @@ def render_frame() -> void:
     let active_stream = stream
 
     if active_stream != null:
-        if c.SDL_GetAudioStreamQueued(active_stream) < cast[i32](wav_data_len):
-            c.SDL_PutAudioStreamData(active_stream, wav_data, cast[i32](wav_data_len))
+        if c.SDL_GetAudioStreamQueued(active_stream) < i32<-wav_data_len:
+            c.SDL_PutAudioStreamData(active_stream, wav_data, i32<-wav_data_len)
 
     c.SDL_RenderClear(renderer)
     c.SDL_RenderPresent(renderer)

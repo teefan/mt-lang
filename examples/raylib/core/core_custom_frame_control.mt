@@ -61,17 +61,17 @@ def main() -> i32:
         for column in range(0, rl.GetScreenWidth() / 200):
             rl.DrawRectangle(200 * column, 0, 1, rl.GetScreenHeight(), rl.SKYBLUE)
 
-        rl.DrawCircle(cast[i32](position), rl.GetScreenHeight() / 2 - 25, 50.0, rl.RED)
+        rl.DrawCircle(i32<-position, rl.GetScreenHeight() / 2 - 25, 50.0, rl.RED)
 
-        rl.DrawText(rl.TextFormat(c"%03.0f ms", time_counter * 1000.0), cast[i32](position) - 40, rl.GetScreenHeight() / 2 - 100, 20, rl.MAROON)
-        rl.DrawText(rl.TextFormat(c"PosX: %03.0f", position), cast[i32](position) - 50, rl.GetScreenHeight() / 2 + 40, 20, rl.BLACK)
+        rl.DrawText(rl.TextFormat(c"%03.0f ms", time_counter * 1000.0), i32<-position - 40, rl.GetScreenHeight() / 2 - 100, 20, rl.MAROON)
+        rl.DrawText(rl.TextFormat(c"PosX: %03.0f", position), i32<-position - 50, rl.GetScreenHeight() / 2 + 40, 20, rl.BLACK)
 
         rl.DrawText(instructions_text, 10, 10, 20, rl.DARKGRAY)
         rl.DrawText(pause_text, 10, rl.GetScreenHeight() - 60, 20, rl.GRAY)
         rl.DrawText(target_text, 10, rl.GetScreenHeight() - 30, 20, rl.GRAY)
         rl.DrawText(rl.TextFormat(c"TARGET FPS: %i", target_fps), rl.GetScreenWidth() - 220, 10, 20, rl.LIME)
         if delta_time != 0.0:
-            rl.DrawText(rl.TextFormat(c"CURRENT FPS: %i", cast[i32](1.0 / delta_time)), rl.GetScreenWidth() - 220, 40, 20, rl.GREEN)
+            rl.DrawText(rl.TextFormat(c"CURRENT FPS: %i", i32<-(1.0 / delta_time)), rl.GetScreenWidth() - 220, 40, 20, rl.GREEN)
 
         rl.EndDrawing()
 
@@ -83,15 +83,15 @@ def main() -> i32:
             update_draw_time = current_time - previous_time
 
             if target_fps > 0:
-                wait_time = 1.0 / cast[f64](target_fps) - update_draw_time
+                wait_time = 1.0 / f64<-target_fps - update_draw_time
                 if wait_time > 0.0:
                     rl.WaitTime(wait_time)
                     current_time = rl.GetTime()
-                    delta_time = cast[f32](current_time - previous_time)
+                    delta_time = f32<-(current_time - previous_time)
                 else:
-                    delta_time = cast[f32](update_draw_time)
+                    delta_time = f32<-update_draw_time
             else:
-                delta_time = cast[f32](update_draw_time)
+                delta_time = f32<-update_draw_time
 
             previous_time = current_time
         else:

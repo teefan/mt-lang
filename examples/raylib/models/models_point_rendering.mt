@@ -18,7 +18,7 @@ const using_draw_model_points_text: cstr = c"Using: DrawModelPoints()"
 const using_draw_point3d_text: cstr = c"Using: DrawPoint3D()"
 
 def random_unit() -> f32:
-    return cast[f32](rl.GetRandomValue(0, random_resolution)) / cast[f32](random_resolution)
+    return f32<-rl.GetRandomValue(0, random_resolution) / f32<-random_resolution
 
 def gen_mesh_points(num_points: i32) -> rl.Mesh:
     var mesh = zero[rl.Mesh]()
@@ -26,11 +26,11 @@ def gen_mesh_points(num_points: i32) -> rl.Mesh:
     mesh.vertexCount = num_points
 
     unsafe:
-        let vertex_count = cast[u32](num_points * 3)
-        let color_count = cast[u32](num_points * 4)
+        let vertex_count = u32<-(num_points * 3)
+        let color_count = u32<-(num_points * 4)
 
-        mesh.vertices = cast[ptr[f32]](rl.MemAlloc(vertex_count * cast[u32](sizeof(f32))))
-        mesh.colors = cast[ptr[u8]](rl.MemAlloc(color_count * cast[u32](sizeof(u8))))
+        mesh.vertices = ptr[f32]<-rl.MemAlloc(vertex_count * u32<-sizeof(f32))
+        mesh.colors = ptr[u8]<-rl.MemAlloc(color_count * u32<-sizeof(u8))
 
         for index in range(0, num_points):
             let theta = pi * random_unit()

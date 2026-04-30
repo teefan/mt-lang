@@ -50,9 +50,9 @@ def main() -> i32:
             if rl.IsTextureValid(texture):
                 rl.DrawTexturePro(
                     texture,
-                    rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](texture.width), height = cast[f32](texture.height)),
-                    rl.Rectangle(x = position.x, y = position.y, width = cast[f32](texture.width), height = cast[f32](texture.height)),
-                    rl.Vector2(x = cast[f32](texture.width) * 0.5, y = cast[f32](texture.height) * 0.5),
+                    rl.Rectangle(x = 0.0, y = 0.0, width = f32<-texture.width, height = f32<-texture.height),
+                    rl.Rectangle(x = position.x, y = position.y, width = f32<-texture.width, height = f32<-texture.height),
+                    rl.Vector2(x = f32<-texture.width * 0.5, y = f32<-texture.height * 0.5),
                     0.0,
                     rl.WHITE,
                 )

@@ -53,7 +53,7 @@ def main() -> i32:
     var ball_position_x = -100
     var ball_radius = 20
     var ball_alpha: f32 = 0.0
-    let ball_position_delta = cast[f32](screen_width / 2 + 100)
+    let ball_position_delta = f32<-(screen_width / 2 + 100)
 
     var state = 0
     var frames_counter = 0
@@ -63,21 +63,21 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         if state == 0:
             frames_counter += 1
-            ball_position_x = cast[i32](ease_elastic_out(cast[f32](frames_counter), -100.0, ball_position_delta, 120.0))
+            ball_position_x = i32<-ease_elastic_out(f32<-frames_counter, -100.0, ball_position_delta, 120.0)
 
             if frames_counter >= 120:
                 frames_counter = 0
                 state = 1
         elif state == 1:
             frames_counter += 1
-            ball_radius = cast[i32](ease_elastic_in(cast[f32](frames_counter), 20.0, 500.0, 200.0))
+            ball_radius = i32<-ease_elastic_in(f32<-frames_counter, 20.0, 500.0, 200.0)
 
             if frames_counter >= 200:
                 frames_counter = 0
                 state = 2
         elif state == 2:
             frames_counter += 1
-            ball_alpha = ease_cubic_out(cast[f32](frames_counter), 0.0, 1.0, 200.0)
+            ball_alpha = ease_cubic_out(f32<-frames_counter, 0.0, 1.0, 200.0)
 
             if frames_counter >= 200:
                 frames_counter = 0
@@ -100,7 +100,7 @@ def main() -> i32:
         if state >= 2:
             rl.DrawRectangle(0, 0, screen_width, screen_height, rl.GREEN)
 
-        rl.DrawCircle(ball_position_x, 200, cast[f32](ball_radius), rl.Fade(rl.RED, 1.0 - ball_alpha))
+        rl.DrawCircle(ball_position_x, 200, f32<-ball_radius, rl.Fade(rl.RED, 1.0 - ball_alpha))
 
         if state == 3:
             rl.DrawText(replay_text, 240, 200, 20, rl.BLACK)

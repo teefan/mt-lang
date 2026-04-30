@@ -26,11 +26,11 @@ def main() -> i32:
     rl.ImageDraw(
         raw(addr(parrots)),
         cat,
-        rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](cat.width), height = cast[f32](cat.height)),
-        rl.Rectangle(x = 30.0, y = 40.0, width = cast[f32](cat.width) * 1.5, height = cast[f32](cat.height) * 1.5),
+        rl.Rectangle(x = 0.0, y = 0.0, width = f32<-cat.width, height = f32<-cat.height),
+        rl.Rectangle(x = 30.0, y = 40.0, width = f32<-cat.width * 1.5, height = f32<-cat.height * 1.5),
         rl.WHITE,
     )
-    rl.ImageCrop(raw(addr(parrots)), rl.Rectangle(x = 0.0, y = 50.0, width = cast[f32](parrots.width), height = cast[f32](parrots.height) - 100.0))
+    rl.ImageCrop(raw(addr(parrots)), rl.Rectangle(x = 0.0, y = 50.0, width = f32<-parrots.width, height = f32<-parrots.height - 100.0))
 
     rl.ImageDrawPixel(raw(addr(parrots)), 10, 10, rl.RAYWHITE)
     rl.ImageDrawCircleLines(raw(addr(parrots)), 10, 10, 5, rl.RAYWHITE)
@@ -39,7 +39,7 @@ def main() -> i32:
     rl.UnloadImage(cat)
 
     let font = rl.LoadFont(font_path)
-    rl.ImageDrawTextEx(raw(addr(parrots)), font, title_text, rl.Vector2(x = 300.0, y = 230.0), cast[f32](font.baseSize), -2.0, rl.WHITE)
+    rl.ImageDrawTextEx(raw(addr(parrots)), font, title_text, rl.Vector2(x = 300.0, y = 230.0), f32<-font.baseSize, -2.0, rl.WHITE)
     rl.UnloadFont(font)
 
     let texture = rl.LoadTextureFromImage(parrots)

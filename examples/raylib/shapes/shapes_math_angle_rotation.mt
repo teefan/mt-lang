@@ -51,7 +51,7 @@ def main() -> i32:
         rl.DrawText(title_text, 10, 10, 20, rl.LIGHTGRAY)
 
         for index in range(0, angle_count):
-            let radians = cast[f32](angles[index]) * mt_math.deg2rad
+            let radians = f32<-angles[index] * mt_math.deg2rad
             let end = rl.Vector2(
                 x = center.x + math.cosf(radians) * line_length,
                 y = center.y + math.sinf(radians) * line_length,
@@ -64,7 +64,7 @@ def main() -> i32:
                 x = center.x + math.cosf(radians) * (line_length + 20.0),
                 y = center.y + math.sinf(radians) * (line_length + 20.0),
             )
-            rl.DrawText(rl.TextFormat(label_format, angles[index]), cast[i32](text_position.x), cast[i32](text_position.y), 20, color)
+            rl.DrawText(rl.TextFormat(label_format, angles[index]), i32<-text_position.x, i32<-text_position.y, 20, color)
 
         let animated_radians = total_angle * mt_math.deg2rad
         let animated_end = rl.Vector2(

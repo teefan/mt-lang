@@ -100,17 +100,17 @@ def main() -> i32:
 
             if rl.IsKeyDown(rl.KeyboardKey.KEY_SPACE) or color_state[index] != 0:
                 rl.DrawRectangle(
-                    cast[i32](color_rects[index].x),
-                    cast[i32](color_rects[index].y + color_rects[index].height - 26.0),
-                    cast[i32](color_rects[index].width),
+                    i32<-color_rects[index].x,
+                    i32<-(color_rects[index].y + color_rects[index].height - 26.0),
+                    i32<-color_rects[index].width,
                     20,
                     rl.BLACK,
                 )
                 rl.DrawRectangleLinesEx(color_rects[index], 6.0, rl.Fade(rl.BLACK, 0.3))
                 rl.DrawText(
                     color_names[index],
-                    cast[i32](color_rects[index].x + color_rects[index].width - cast[f32](rl.MeasureText(color_names[index], 10)) - 12.0),
-                    cast[i32](color_rects[index].y + color_rects[index].height - 20.0),
+                    i32<-(color_rects[index].x + color_rects[index].width - f32<-rl.MeasureText(color_names[index], 10) - 12.0),
+                    i32<-(color_rects[index].y + color_rects[index].height - 20.0),
                     10,
                     colors[index],
                 )

@@ -40,8 +40,8 @@ def main() -> i32:
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        let width_scale: f32 = cast[f32](rl.get_screen_width()) / game_screen_width
-        let height_scale: f32 = cast[f32](rl.get_screen_height()) / game_screen_height
+        let width_scale: f32 = f32<-rl.get_screen_width() / game_screen_width
+        let height_scale: f32 = f32<-rl.get_screen_height() / game_screen_height
         var scale = width_scale
         if height_scale < scale:
             scale = height_scale
@@ -73,8 +73,8 @@ def main() -> i32:
             color_index += 1
 
         rl.draw_text("If executed inside a window,\nyou can resize the window,\nand see the screen scaling!", 10, 25, 20, rl.WHITE)
-        rl.draw_text(rl.text_format_i32_i32("Default Mouse: [%i , %i]", cast[i32](mouse.x), cast[i32](mouse.y)), 350, 25, 20, rl.GREEN)
-        rl.draw_text(rl.text_format_i32_i32("Virtual Mouse: [%i , %i]", cast[i32](virtual_mouse.x), cast[i32](virtual_mouse.y)), 350, 55, 20, rl.YELLOW)
+        rl.draw_text(rl.text_format_i32_i32("Default Mouse: [%i , %i]", i32<-mouse.x, i32<-mouse.y), 350, 25, 20, rl.GREEN)
+        rl.draw_text(rl.text_format_i32_i32("Virtual Mouse: [%i , %i]", i32<-virtual_mouse.x, i32<-virtual_mouse.y), 350, 55, 20, rl.YELLOW)
 
         rl.end_texture_mode()
 

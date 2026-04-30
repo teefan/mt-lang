@@ -216,8 +216,8 @@ def main() -> i32:
             for row in range(0, 6):
                 for col in range(0, 4):
                     let center = rl.Vector2(
-                        x = x_offset + cast[f32](col) * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
-                        y = 100.0 + cast[f32](row) * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
+                        x = x_offset + f32<-col * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
+                        y = 100.0 + f32<-row * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
                     )
                     let slot = angle_slot(digit, row * 4 + col)
 

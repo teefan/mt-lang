@@ -49,7 +49,7 @@ def main() -> i32:
     let texture = rl.LoadTexture(turret_texture_path)
     defer rl.UnloadTexture(texture)
 
-    rl.SetMaterialTexture(tower.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
+    rl.SetMaterialTexture(tower.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let tower_pos = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
     let tower_bbox = rl.GetModelBoundingBox(tower)

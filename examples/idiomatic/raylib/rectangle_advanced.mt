@@ -43,7 +43,7 @@ def draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: f32, ro
     if radius_left <= 0.0 and radius_right <= 0.0:
         return
 
-    let step_length = 90.0 / cast[f32](segments)
+    let step_length = 90.0 / f32<-segments
 
     let points = array[rl.Vector2, 12](
         rl.Vector2(x = rec.x + radius_left, y = rec.y),

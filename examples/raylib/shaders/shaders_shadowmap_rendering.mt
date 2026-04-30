@@ -71,8 +71,8 @@ def load_shadowmap_render_texture(width: i32, height: i32) -> rl.RenderTexture2D
         rlgl.rlFramebufferAttach(
             target.id,
             target.depth.id,
-            cast[i32](rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH),
-            cast[i32](rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D),
+            i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH,
+            i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
             0,
         )
 
@@ -111,7 +111,7 @@ def main() -> i32:
 
     let view_loc = rl.GetShaderLocation(shadow_shader, view_pos_uniform_name)
     unsafe:
-        shadow_shader.locs[cast[i32](rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW)] = view_loc
+        shadow_shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     var light_dir = rl.Vector3(x = 0.35, y = -1.0, z = -0.35).normalize()
     let light_dir_loc = rl.GetShaderLocation(shadow_shader, light_dir_uniform_name)
@@ -171,7 +171,7 @@ def main() -> i32:
 
         frame_counter += 1
         frame_counter %= anim.keyframeCount
-        rl.UpdateModelAnimation(robot, anim, cast[f32](frame_counter))
+        rl.UpdateModelAnimation(robot, anim, f32<-frame_counter)
 
         let camera_speed: f32 = 0.05
         if rl.IsKeyDown(rl.KeyboardKey.KEY_LEFT):
@@ -210,7 +210,7 @@ def main() -> i32:
         rlgl.rlEnableShader(shadow_shader.id)
         rlgl.rlActiveTextureSlot(texture_active_slot)
         rlgl.rlEnableTexture(shadow_map.depth.id)
-        rlgl.rlSetUniform(shadow_map_loc, raw(addr(texture_active_slot)), cast[i32](rl.ShaderUniformDataType.SHADER_UNIFORM_INT), 1)
+        rlgl.rlSetUniform(shadow_map_loc, raw(addr(texture_active_slot)), i32<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT, 1)
 
         rl.BeginMode3D(camera)
         draw_scene(cube, robot)

@@ -22,8 +22,8 @@ def main() -> i32:
     var frame_rec = rl.Rectangle(
         x = 0.0,
         y = 0.0,
-        width = cast[f32](frame_width),
-        height = cast[f32](frame_height),
+        width = f32<-frame_width,
+        height = f32<-frame_height,
     )
     var current_frame = 0
     var frames_counter = 0
@@ -41,7 +41,7 @@ def main() -> i32:
             if current_frame > 5:
                 current_frame = 0
 
-            frame_rec.x = cast[f32](current_frame * frame_width)
+            frame_rec.x = f32<-(current_frame * frame_width)
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_RIGHT):
             frames_speed += 1
@@ -60,7 +60,7 @@ def main() -> i32:
 
         rl.draw_texture(scarfy, 15, 40, rl.WHITE)
         rl.draw_rectangle_lines(15, 40, scarfy.width, scarfy.height, rl.LIME)
-        rl.draw_rectangle_lines(15 + cast[i32](frame_rec.x), 40 + cast[i32](frame_rec.y), cast[i32](frame_rec.width), cast[i32](frame_rec.height), rl.RED)
+        rl.draw_rectangle_lines(15 + i32<-frame_rec.x, 40 + i32<-frame_rec.y, i32<-frame_rec.width, i32<-frame_rec.height, rl.RED)
 
         rl.draw_text("FRAME SPEED: ", 165, 210, 10, rl.DARKGRAY)
         rl.draw_text(rl.text_format_i32("%02i FPS", frames_speed), 575, 210, 10, rl.DARKGRAY)

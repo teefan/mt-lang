@@ -26,9 +26,9 @@ def main() -> i32:
 
     var checked = zero[rl.Texture2D]()
     unsafe:
-        let pixel_count = cast[u32](checked_width * checked_height)
-        let allocation_size = pixel_count * cast[u32](sizeof(rl.Color))
-        let pixels = cast[ptr[rl.Color]](rl.MemAlloc(allocation_size))
+        let pixel_count = u32<-(checked_width * checked_height)
+        let allocation_size = pixel_count * u32<-sizeof(rl.Color)
+        let pixels = ptr[rl.Color]<-rl.MemAlloc(allocation_size)
 
         for pos_y in range(0, checked_height):
             for pos_x in range(0, checked_width):
@@ -37,7 +37,7 @@ def main() -> i32:
                 deref(pixels + pixel_index) = color
 
         let checked_image = rl.Image(
-            data = cast[ptr[void]](pixels),
+            data = ptr[void]<-pixels,
             width = checked_width,
             height = checked_height,
             mipmaps = 1,

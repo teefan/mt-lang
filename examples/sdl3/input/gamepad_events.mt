@@ -6,7 +6,7 @@ import std.mem.heap as heap
 const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/input/gamepad-events"
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const color_count: i32 = 64
 const motion_event_cooldown: c.Uint64 = 40
 const message_lifetime_ms: f32 = 3500.0
@@ -50,7 +50,7 @@ def append_message(jid: u32, text: ptr[char]?) -> void:
     if message_text == null:
         return
 
-    let color_index = cast[i32](jid % cast[u32](color_count))
+    let color_index = i32<-(jid % u32<-color_count)
     let message = heap.must_alloc_zeroed[EventMessage](1)
     let tail = messages_tail
 
@@ -58,7 +58,7 @@ def append_message(jid: u32, text: ptr[char]?) -> void:
         return
 
     unsafe:
-        deref(message).str = cast[ptr[char]](message_text)
+        deref(message).str = ptr[char]<-message_text
         deref(message).color = colors[color_index]
         deref(message).start_ticks = c.SDL_GetTicks()
         deref(message).next = null
@@ -70,7 +70,7 @@ def add_plain_message(jid: u32, text: cstr) -> void:
     var message: ptr[char]? = null
 
     unsafe:
-        c.SDL_asprintf(cast[ptr[ptr[char]]](raw(addr(message))), c"%s", text)
+        c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(message)), c"%s", text)
 
     append_message(jid, message)
 
@@ -79,12 +79,12 @@ def add_added_message(which: u32, gamepad: ptr[c.SDL_Gamepad]?) -> void:
 
     if gamepad == null:
         unsafe:
-            c.SDL_asprintf(cast[ptr[ptr[char]]](raw(addr(message))), c"Gamepad #%u add, but not opened: %s", which, c.SDL_GetError())
+            c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(message)), c"Gamepad #%u add, but not opened: %s", which, c.SDL_GetError())
         append_message(which, message)
         return
 
     unsafe:
-        c.SDL_asprintf(cast[ptr[ptr[char]]](raw(addr(message))), c"Gamepad #%u ('%s') added", which, c.SDL_GetGamepadName(gamepad))
+        c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(message)), c"Gamepad #%u ('%s') added", which, c.SDL_GetGamepadName(gamepad))
 
     append_message(which, message)
 
@@ -93,8 +93,8 @@ def add_added_message(which: u32, gamepad: ptr[c.SDL_Gamepad]?) -> void:
         var mapping_message: ptr[char]? = null
 
         unsafe:
-            c.SDL_asprintf(cast[ptr[ptr[char]]](raw(addr(mapping_message))), c"Gamepad #%u mapping: %s", which, cast[cstr](mapping))
-            c.SDL_free(cast[ptr[void]](cast[ptr[char]](mapping)))
+            c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(mapping_message)), c"Gamepad #%u mapping: %s", which, cstr<-mapping)
+            c.SDL_free(ptr[void]<-(ptr[char]<-mapping))
 
         append_message(which, mapping_message)
 
@@ -102,7 +102,7 @@ def add_removed_message(which: u32) -> void:
     var message: ptr[char]? = null
 
     unsafe:
-        c.SDL_asprintf(cast[ptr[ptr[char]]](raw(addr(message))), c"Gamepad #%u removed", which)
+        c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(message)), c"Gamepad #%u removed", which)
 
     append_message(which, message)
 
@@ -111,11 +111,11 @@ def add_axis_message(which: u32, axis: c.Uint8, value: c.Sint16) -> void:
 
     unsafe:
         c.SDL_asprintf(
-            cast[ptr[ptr[char]]](raw(addr(message))),
+            ptr[ptr[char]]<-raw(addr(message)),
             c"Gamepad #%u axis %s -> %d",
             which,
-            c.SDL_GetGamepadStringForAxis(cast[c.SDL_GamepadAxis](cast[i32](axis))),
-            cast[i32](value),
+            c.SDL_GetGamepadStringForAxis(c.SDL_GamepadAxis<-(i32<-axis)),
+            i32<-value,
         )
 
     append_message(which, message)
@@ -126,10 +126,10 @@ def add_button_message(which: u32, button: c.Uint8, down: bool) -> void:
 
     unsafe:
         c.SDL_asprintf(
-            cast[ptr[ptr[char]]](raw(addr(message))),
+            ptr[ptr[char]]<-raw(addr(message)),
             c"Gamepad #%u button %s -> %s",
             which,
-            c.SDL_GetGamepadStringForButton(cast[c.SDL_GamepadButton](cast[i32](button))),
+            c.SDL_GetGamepadStringForButton(c.SDL_GamepadButton<-(i32<-button)),
             state_text,
         )
 
@@ -139,7 +139,7 @@ def add_battery_message(which: u32, state: c.SDL_PowerState, percent: i32) -> vo
     var message: ptr[char]? = null
 
     unsafe:
-        c.SDL_asprintf(cast[ptr[ptr[char]]](raw(addr(message))), c"Gamepad #%u battery -> %s - %d%%", which, battery_state_string(state), percent)
+        c.SDL_asprintf(ptr[ptr[char]]<-raw(addr(message)), c"Gamepad #%u battery -> %s - %d%%", which, battery_state_string(state), percent)
 
     append_message(which, message)
 
@@ -179,7 +179,7 @@ def pump_events() -> bool:
 
 def render_frame() -> void:
     let now = c.SDL_GetTicks()
-    var previous: ptr[EventMessage]? = cast[ptr[EventMessage]](raw(addr(messages)))
+    var previous: ptr[EventMessage]? = ptr[EventMessage]<-raw(addr(messages))
     var current = messages.next
     var prev_y: f32 = 0.0
     var winw: i32 = window_width
@@ -197,7 +197,7 @@ def render_frame() -> void:
             break
 
         unsafe:
-            let life_percent = cast[f32](now - deref(message).start_ticks) / message_lifetime_ms
+            let life_percent = f32<-(now - deref(message).start_ticks) / message_lifetime_ms
 
             if life_percent >= 1.0:
                 let next = deref(message).next
@@ -206,22 +206,22 @@ def render_frame() -> void:
                 if messages_tail == message:
                     messages_tail = previous_message
 
-                c.SDL_free(cast[ptr[void]](deref(message).str))
+                c.SDL_free(ptr[void]<-deref(message).str)
                 heap.release(message)
                 current = next
                 continue
 
-            let text_width = cast[f32](c.SDL_strlen(cast[cstr](deref(message).str)) * cast[usize](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE))
-            let x = (cast[f32](winw) - text_width) / 2.0
-            let y = cast[f32](winh) * life_percent
+            let text_width = f32<-(c.SDL_strlen(cstr<-deref(message).str) * usize<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
+            let x = (f32<-winw - text_width) / 2.0
+            let y = f32<-winh * life_percent
 
-            if prev_y != 0.0 and (prev_y - y) < cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE):
+            if prev_y != 0.0 and (prev_y - y) < f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE:
                 deref(message).start_ticks = now
                 break
 
-            let alpha = cast[c.Uint8](cast[f32](deref(message).color.a) * (1.0 - life_percent))
+            let alpha = c.Uint8<-(f32<-deref(message).color.a * (1.0 - life_percent))
             c.SDL_SetRenderDrawColor(renderer, deref(message).color.r, deref(message).color.g, deref(message).color.b, alpha)
-            c.SDL_RenderDebugText(renderer, x, y, cast[cstr](deref(message).str))
+            c.SDL_RenderDebugText(renderer, x, y, cstr<-deref(message).str)
 
             prev_y = y
             previous = message
@@ -242,7 +242,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     defer c.SDL_DestroyWindow(window)
 
     messages = zero[EventMessage]()
-    messages_tail = cast[ptr[EventMessage]](raw(addr(messages)))
+    messages_tail = ptr[EventMessage]<-raw(addr(messages))
     axis_motion_cooldown_time = 0
 
     colors[0].r = 255
@@ -251,9 +251,9 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     colors[0].a = 255
 
     for index in range(1, color_count):
-        colors[index].r = cast[c.Uint8](c.SDL_rand(255))
-        colors[index].g = cast[c.Uint8](c.SDL_rand(255))
-        colors[index].b = cast[c.Uint8](c.SDL_rand(255))
+        colors[index].r = c.Uint8<-c.SDL_rand(255)
+        colors[index].g = c.Uint8<-c.SDL_rand(255)
+        colors[index].b = c.Uint8<-c.SDL_rand(255)
         colors[index].a = 255
 
     add_plain_message(0, c"Please plug in a gamepad.")

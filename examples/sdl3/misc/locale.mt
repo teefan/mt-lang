@@ -5,7 +5,7 @@ import std.c.sdl3 as c
 const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/misc/locale"
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
 
 var window: ptr[c.SDL_Window]
@@ -32,16 +32,16 @@ def render_frame() -> void:
 
     if locales_memory == null:
         let error_text = c.SDL_GetError()
-        let x = frame.x + ((frame.w - (cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) * cast[f32](c.SDL_strlen(error_text)))) / 2.0)
+        let x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(error_text))) / 2.0)
         c.SDL_RenderDebugText(renderer, x, frame.y, error_text)
     else:
         unsafe:
-            let locales = cast[ptr[ptr[c.SDL_Locale]?]](locales_memory)
-            let msg = cast[cstr](raw(addr(msgbuf[0])))
+            let locales = ptr[ptr[c.SDL_Locale]?]<-locales_memory
+            let msg = cstr<-raw(addr(msgbuf[0]))
 
             c.SDL_snprintf(raw(addr(msgbuf[0])), 128, c"Locales, in order of preference (%d total):", count)
 
-            let header_x = frame.x + ((frame.w - (cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) * cast[f32](c.SDL_strlen(msg)))) / 2.0)
+            let header_x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msg))) / 2.0)
             c.SDL_RenderDebugText(renderer, header_x, frame.y, msg)
 
             var index: i32 = 0
@@ -50,19 +50,19 @@ def render_frame() -> void:
                 if locale == null:
                     break
 
-                let country_ptr = cast[ptr[char]?](deref(locale).country)
+                let country_ptr = ptr[char]?<-deref(locale).country
                 let separator = if country_ptr != null then c"_" else c""
-                let country = if country_ptr != null then cast[cstr](country_ptr) else c""
+                let country = if country_ptr != null then cstr<-country_ptr else c""
 
                 c.SDL_snprintf(raw(addr(msgbuf[0])), 128, c" - %s%s%s", deref(locale).language, separator, country)
 
-                let x = frame.x + ((frame.w - (cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) * cast[f32](c.SDL_strlen(msg)))) / 2.0)
-                let y = frame.y + (cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2) * cast[f32](index + 1))
+                let x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msg))) / 2.0)
+                let y = frame.y + (f32<-(c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2) * f32<-(index + 1))
                 c.SDL_RenderDebugText(renderer, x, y, msg)
 
                 index += 1
 
-            c.SDL_free(cast[ptr[void]](locales_memory))
+            c.SDL_free(ptr[void]<-locales_memory)
 
     c.SDL_RenderPresent(renderer)
 

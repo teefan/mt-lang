@@ -5,7 +5,7 @@ import std.c.sdl3 as c
 const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/input/gamepad-polling"
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_STRETCH
 const gamepad_texture_path: cstr = c"../resources/gamepad_front.png"
 const button_rect_count: i32 = 16
@@ -58,16 +58,16 @@ def pump_events() -> bool:
     return true
 
 def thumbbox_x(origin: f32, axis_x: c.Sint16) -> f32:
-    return origin + ((cast[f32](axis_x) / 32767.0) * thumbbox_size)
+    return origin + ((f32<-axis_x / 32767.0) * thumbbox_size)
 
 def thumbbox_y(origin: f32, axis_y: c.Sint16) -> f32:
-    return origin + ((cast[f32](axis_y) / 32767.0) * thumbbox_size)
+    return origin + ((f32<-axis_y / 32767.0) * thumbbox_size)
 
 def axis_active(axis_x: c.Sint16, axis_y: c.Sint16) -> bool:
-    return c.SDL_abs(cast[i32](axis_x)) > 1000 or c.SDL_abs(cast[i32](axis_y)) > 1000
+    return c.SDL_abs(i32<-axis_x) > 1000 or c.SDL_abs(i32<-axis_y) > 1000
 
 def trigger_box(x: f32, axis_y: c.Sint16) -> c.SDL_FRect:
-    let height = (cast[f32](axis_y) / 32767.0) * trigger_height
+    let height = (f32<-axis_y / 32767.0) * trigger_height
     return c.SDL_FRect(x = x, y = 1.0 + (trigger_height - height), w = 37.0, h = height)
 
 def render_frame() -> void:
@@ -87,7 +87,7 @@ def render_frame() -> void:
 
         c.SDL_SetRenderDrawColor(renderer, 0, 255, 0, c.SDL_ALPHA_OPAQUE)
         for index in range(0, button_rect_count):
-            if c.SDL_GetGamepadButton(gamepad, cast[c.SDL_GamepadButton](index)):
+            if c.SDL_GetGamepadButton(gamepad, c.SDL_GamepadButton<-index):
                 c.SDL_RenderFillRect(renderer, raw(addr(button_rects[index])))
 
         c.SDL_SetRenderDrawColor(renderer, 255, 255, 0, c.SDL_ALPHA_OPAQUE)
@@ -109,21 +109,21 @@ def render_frame() -> void:
             c.SDL_RenderFillRect(renderer, raw(addr(right_box)))
 
         axis_y = c.SDL_GetGamepadAxis(gamepad, c.SDL_GamepadAxis.SDL_GAMEPAD_AXIS_LEFT_TRIGGER)
-        if cast[i32](axis_y) > 1000:
+        if i32<-axis_y > 1000:
             var left_trigger = trigger_box(127.0, axis_y)
             c.SDL_RenderFillRect(renderer, raw(addr(left_trigger)))
 
         axis_y = c.SDL_GetGamepadAxis(gamepad, c.SDL_GamepadAxis.SDL_GAMEPAD_AXIS_RIGHT_TRIGGER)
-        if cast[i32](axis_y) > 1000:
+        if i32<-axis_y > 1000:
             var right_trigger = trigger_box(481.0, axis_y)
             c.SDL_RenderFillRect(renderer, raw(addr(right_trigger)))
 
-    let text_width = cast[f32](c.SDL_strlen(text) * cast[usize](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE))
-    x = (cast[f32](window_width) - text_width) / 2.0
+    let text_width = f32<-(c.SDL_strlen(text) * usize<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
+    x = (f32<-window_width - text_width) / 2.0
     if gamepad != null:
-        y = cast[f32](window_height - (c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + 2))
+        y = f32<-(window_height - (c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + 2))
     else:
-        y = (cast[f32](window_height) - cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)) / 2.0
+        y = (f32<-window_height - f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) / 2.0
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 255, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderDebugText(renderer, x, y, text)

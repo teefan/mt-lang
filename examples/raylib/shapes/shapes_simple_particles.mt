@@ -51,13 +51,13 @@ def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_p
     if particle_index < 0:
         return
 
-    var particles_view = span[Particle](data = particles, len = cast[usize](max_particles))
+    var particles_view = span[Particle](data = particles, len = usize<-max_particles)
     particles_view[particle_index].position = emitter_position
     particles_view[particle_index].alive = true
     particles_view[particle_index].life_time = 0.0
     particles_view[particle_index].type = particle_type
 
-    var speed = cast[f32](rl.GetRandomValue(0, 9)) / 5.0
+    var speed = f32<-rl.GetRandomValue(0, 9) / 5.0
     if particle_type == ParticleType.WATER:
         particles_view[particle_index].radius = 5.0
         particles_view[particle_index].color = rl.BLUE
@@ -69,7 +69,7 @@ def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_p
         particles_view[particle_index].color = rl.YELLOW
         speed /= 10.0
 
-    let direction = cast[f32](rl.GetRandomValue(0, 359)) * mt_math.deg2rad
+    let direction = f32<-rl.GetRandomValue(0, 359) * mt_math.deg2rad
     particles_view[particle_index].velocity = rl.Vector2(
         x = speed * math.cosf(direction),
         y = speed * math.sinf(direction),
@@ -77,7 +77,7 @@ def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_p
     return
 
 def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32, height: i32) -> void:
-    var particles_view = span[Particle](data = particles, len = cast[usize](max_particles))
+    var particles_view = span[Particle](data = particles, len = usize<-max_particles)
     var index = tail
     while index != head:
         particles_view[index].life_time += 1.0 / 60.0
@@ -95,7 +95,7 @@ def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32,
             if particles_view[index].color.a < 4:
                 particles_view[index].alive = false
             else:
-                particles_view[index].color.a = cast[u8](cast[i32](particles_view[index].color.a) - 4)
+                particles_view[index].color.a = u8<-(i32<-particles_view[index].color.a - 4)
         else:
             particles_view[index].position.x += particles_view[index].velocity.x + math.cosf(particles_view[index].life_time * 215.0)
             particles_view[index].velocity.y -= 0.05
@@ -103,7 +103,7 @@ def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32,
             particles_view[index].radius -= 0.15
 
             if particles_view[index].color.g > 3:
-                particles_view[index].color.g = cast[u8](cast[i32](particles_view[index].color.g) - 3)
+                particles_view[index].color.g = u8<-(i32<-particles_view[index].color.g - 3)
             else:
                 particles_view[index].color.g = 0
 
@@ -119,13 +119,13 @@ def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32,
     return
 
 def update_circular_buffer(particles: ptr[Particle], head: i32, tail: ref[i32]) -> void:
-    let particles_view = span[Particle](data = particles, len = cast[usize](max_particles))
+    let particles_view = span[Particle](data = particles, len = usize<-max_particles)
     while value(tail) != head and not particles_view[value(tail)].alive:
         value(tail) = next_buffer_index(value(tail))
     return
 
 def draw_particles(particles: ptr[Particle], head: i32, tail: i32) -> void:
-    let particles_view = span[Particle](data = particles, len = cast[usize](max_particles))
+    let particles_view = span[Particle](data = particles, len = usize<-max_particles)
     var index = tail
     while index != head:
         if particles_view[index].alive:
@@ -137,7 +137,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let particles = heap.must_alloc_zeroed[Particle](cast[usize](max_particles))
+    let particles = heap.must_alloc_zeroed[Particle](usize<-max_particles)
     defer heap.release(particles)
 
     var head = 0

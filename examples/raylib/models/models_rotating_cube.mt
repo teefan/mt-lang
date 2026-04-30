@@ -37,7 +37,7 @@ def main() -> i32:
     rl.UnloadImage(image)
     rl.UnloadImage(crop)
 
-    rl.SetMaterialTexture(model.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
+    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     var rotation = 0.0
 

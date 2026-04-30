@@ -30,10 +30,10 @@ def main() -> i32:
     let font_size_location = rl.GetShaderLocation(shader, font_size_uniform_name)
 
     var font_size: f32 = 9.0
-    var resolution = array[f32, 2](cast[f32](screen_width), cast[f32](screen_height))
+    var resolution = array[f32, 2](f32<-screen_width, f32<-screen_height)
     rl.SetShaderValue(shader, resolution_location, raw(addr(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
-    var circle_position = rl.Vector2(x = 40.0, y = cast[f32](screen_height) * 0.5)
+    var circle_position = rl.Vector2(x = 40.0, y = f32<-screen_height * 0.5)
     var circle_speed: f32 = 1.0
 
     let target = rl.LoadRenderTexture(screen_width, screen_height)
@@ -67,7 +67,7 @@ def main() -> i32:
         rl.BeginShaderMode(shader)
         rl.DrawTextureRec(
             target.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](target.texture.width), height = -cast[f32](target.texture.height)),
+            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-target.texture.width, height = -f32<-target.texture.height),
             rl.Vector2(x = 0.0, y = 0.0),
             rl.WHITE,
         )

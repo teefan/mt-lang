@@ -283,6 +283,62 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::Identifier, format_string.parts[1].expression
   end
 
+  def test_parses_prefix_cast_with_identifier_rhs
+    source = <<~MT
+      module demo.prefix_cast
+
+      def main(value: f32) -> i32:
+          return i32<-value
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    return_stmt = ast.declarations.first.body.first
+
+    assert_instance_of MilkTea::AST::ReturnStmt, return_stmt
+    assert_instance_of MilkTea::AST::Call, return_stmt.value
+    assert_equal "cast", return_stmt.value.callee.callee.name
+    assert_equal "i32", return_stmt.value.callee.arguments.first.value.name.to_s
+    assert_instance_of MilkTea::AST::Identifier, return_stmt.value.arguments.first.value
+    assert_equal "value", return_stmt.value.arguments.first.value.name
+  end
+
+  def test_parses_prefix_cast_with_parenthesized_rhs
+    source = <<~MT
+      module demo.prefix_cast
+
+      def main(a: i32, b: i32) -> u8:
+          return u8<-(a - b)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    return_stmt = ast.declarations.first.body.first
+
+    assert_instance_of MilkTea::AST::ReturnStmt, return_stmt
+    assert_instance_of MilkTea::AST::Call, return_stmt.value
+    assert_equal "cast", return_stmt.value.callee.callee.name
+    assert_equal "u8", return_stmt.value.callee.arguments.first.value.name.to_s
+    assert_instance_of MilkTea::AST::BinaryOp, return_stmt.value.arguments.first.value
+    assert_equal "-", return_stmt.value.arguments.first.value.operator
+  end
+
+  def test_parses_nested_prefix_casts
+    source = <<~MT
+      module demo.prefix_cast
+
+      def main(value: i32) -> f64:
+          return f64<-f32<-value
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    return_stmt = ast.declarations.first.body.first
+
+    assert_instance_of MilkTea::AST::Call, return_stmt.value
+    assert_equal "f64", return_stmt.value.callee.arguments.first.value.name.to_s
+    inner = return_stmt.value.arguments.first.value
+    assert_instance_of MilkTea::AST::Call, inner
+    assert_equal "f32", inner.callee.arguments.first.value.name.to_s
+  end
+
   def test_parses_for_range_statement
     source = <<~MT
       module demo.flow

@@ -37,7 +37,7 @@ def main() -> i32:
     let pixel_grid_bottom = pixel_grid_top + 80
     let pixel_grid_label_y = pixel_grid_bottom + 30
     let pixel_grid_desc_y = pixel_grid_label_y + 30
-    var cell_size_px: f32 = cast[f32](cell_size)
+    var cell_size_px: f32 = f32<-cell_size
 
     rl.SetTargetFPS(60)
 
@@ -48,7 +48,7 @@ def main() -> i32:
 
         let current_monitor = rl.GetCurrentMonitor()
         let dpi_scale = rl.GetWindowScaleDPI()
-        cell_size_px = cast[f32](cell_size) / dpi_scale.x
+        cell_size_px = f32<-cell_size / dpi_scale.x
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
@@ -78,7 +78,7 @@ def main() -> i32:
         var last_text_x = -min_text_space
         var pixel_x = cell_size
         while pixel_x < rl.GetRenderWidth():
-            let x: i32 = cast[i32](cast[f32](pixel_x) / dpi_scale.x)
+            let x: i32 = i32<-(f32<-pixel_x / dpi_scale.x)
             if odd:
                 rl.DrawRectangle(
                     x,

@@ -19,15 +19,15 @@ def main() -> i32:
 
     var palette = zero[array[rl.Color, 256]]()
     for index in range(0, max_colors):
-        let t = cast[f32](index) / cast[f32](max_colors - 1)
+        let t = f32<-index / f32<-(max_colors - 1)
         let hue = t * t
         let saturation = t
         let value = t
         palette[index] = rl.ColorFromHSV(250.0 + 150.0 * hue, saturation, value)
 
     unsafe:
-        let index_buffer = heap.must_alloc_zeroed[u8](cast[usize](image_width * image_height))
-        let flame_root_buffer = heap.must_alloc_zeroed[u8](cast[usize](flame_width))
+        let index_buffer = heap.must_alloc_zeroed[u8](usize<-(image_width * image_height))
+        let flame_root_buffer = heap.must_alloc_zeroed[u8](usize<-flame_width)
         var screen_image = rl.GenImageColor(image_width, image_height, rl.BLACK)
         let screen_texture = rl.LoadTextureFromImage(screen_image)
 
@@ -41,9 +41,9 @@ def main() -> i32:
 
         while not rl.WindowShouldClose():
             for x in range(2, flame_width):
-                var flame = cast[i32](deref(flame_root_buffer + x))
+                var flame = i32<-deref(flame_root_buffer + x)
                 flame += rl.GetRandomValue(0, 2)
-                deref(flame_root_buffer + x) = if flame > 255 then cast[u8](255) else cast[u8](flame)
+                deref(flame_root_buffer + x) = if flame > 255 then u8<-255 else u8<-flame
 
             for x in range(0, flame_width):
                 let index = x + (image_height - 1) * image_width
@@ -56,7 +56,7 @@ def main() -> i32:
             for y in range(1, image_height):
                 for x in range(0, image_width):
                     let index = x + y * image_width
-                    let color_index = cast[i32](deref(index_buffer + index))
+                    let color_index = i32<-deref(index_buffer + index)
 
                     if color_index != 0:
                         deref(index_buffer + index) = 0
@@ -67,12 +67,12 @@ def main() -> i32:
                             let index_above = index - image_width + move_x
                             let decay = rl.GetRandomValue(0, 3)
                             let next_color_index = color_index - (if decay < color_index then decay else color_index)
-                            deref(index_buffer + index_above) = cast[u8](next_color_index)
+                            deref(index_buffer + index_above) = u8<-next_color_index
 
             for y in range(1, image_height):
                 for x in range(0, image_width):
                     let index = x + y * image_width
-                    let color_index = cast[i32](deref(index_buffer + index))
+                    let color_index = i32<-deref(index_buffer + index)
                     rl.ImageDrawPixel(raw(addr(screen_image)), x, y, palette[color_index])
 
             rl.UpdateTexture(screen_texture, screen_image.data)

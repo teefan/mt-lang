@@ -79,7 +79,7 @@ def main() -> i32:
     defer rl.UnloadShader(deferred_shader)
     let view_loc = rl.GetShaderLocation(deferred_shader, view_position_uniform_name)
     unsafe:
-        deferred_shader.locs[cast[i32](rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW)] = view_loc
+        deferred_shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     var gbuffer = zero[GBuffer]()
     gbuffer.framebuffer_id = rlgl.rlLoadFramebuffer()
@@ -90,12 +90,12 @@ def main() -> i32:
     gbuffer.albedo_spec_texture_id = rlgl.rlLoadTexture(null, screen_width, screen_height, pixel_format_r8g8b8a8, 1)
 
     rlgl.rlActiveDrawBuffers(3)
-    rlgl.rlFramebufferAttach(gbuffer.framebuffer_id, gbuffer.position_texture_id, cast[i32](rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0), cast[i32](rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D), 0)
-    rlgl.rlFramebufferAttach(gbuffer.framebuffer_id, gbuffer.normal_texture_id, cast[i32](rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL1), cast[i32](rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D), 0)
-    rlgl.rlFramebufferAttach(gbuffer.framebuffer_id, gbuffer.albedo_spec_texture_id, cast[i32](rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL2), cast[i32](rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D), 0)
+    rlgl.rlFramebufferAttach(gbuffer.framebuffer_id, gbuffer.position_texture_id, i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0, i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D, 0)
+    rlgl.rlFramebufferAttach(gbuffer.framebuffer_id, gbuffer.normal_texture_id, i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL1, i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D, 0)
+    rlgl.rlFramebufferAttach(gbuffer.framebuffer_id, gbuffer.albedo_spec_texture_id, i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL2, i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D, 0)
 
     gbuffer.depth_renderbuffer_id = rlgl.rlLoadTextureDepth(screen_width, screen_height, true)
-    rlgl.rlFramebufferAttach(gbuffer.framebuffer_id, gbuffer.depth_renderbuffer_id, cast[i32](rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH), cast[i32](rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_RENDERBUFFER), 0)
+    rlgl.rlFramebufferAttach(gbuffer.framebuffer_id, gbuffer.depth_renderbuffer_id, i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH, i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_RENDERBUFFER, 0)
     rlgl.rlFramebufferComplete(gbuffer.framebuffer_id)
 
     rlgl.rlEnableShader(deferred_shader.id)
@@ -111,22 +111,22 @@ def main() -> i32:
     set_model_shader(raw(addr(cube)), gbuffer_shader)
 
     var light_sources = zero[array[lights.Light, 4]]()
-    light_sources[0] = lights.CreateLight(cast[i32](lights.LightType.LIGHT_POINT), rl.Vector3(x = -2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.YELLOW, deferred_shader)
-    light_sources[1] = lights.CreateLight(cast[i32](lights.LightType.LIGHT_POINT), rl.Vector3(x = 2.0, y = 1.0, z = 2.0), rm.Vector3.zero(), rl.RED, deferred_shader)
-    light_sources[2] = lights.CreateLight(cast[i32](lights.LightType.LIGHT_POINT), rl.Vector3(x = -2.0, y = 1.0, z = 2.0), rm.Vector3.zero(), rl.GREEN, deferred_shader)
-    light_sources[3] = lights.CreateLight(cast[i32](lights.LightType.LIGHT_POINT), rl.Vector3(x = 2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.BLUE, deferred_shader)
+    light_sources[0] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.YELLOW, deferred_shader)
+    light_sources[1] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = 2.0), rm.Vector3.zero(), rl.RED, deferred_shader)
+    light_sources[2] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = 2.0), rm.Vector3.zero(), rl.GREEN, deferred_shader)
+    light_sources[3] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.BLUE, deferred_shader)
 
     var cube_positions = zero[array[rl.Vector3, 30]]()
     var cube_rotations = zero[array[f32, 30]]()
     for index in range(0, max_cubes):
         cube_positions[index] = rl.Vector3(
-            x = cast[f32](rl.GetRandomValue(0, 9)) - 5.0,
-            y = cast[f32](rl.GetRandomValue(0, 4)),
-            z = cast[f32](rl.GetRandomValue(0, 9)) - 5.0,
+            x = f32<-rl.GetRandomValue(0, 9) - 5.0,
+            y = f32<-rl.GetRandomValue(0, 4),
+            z = f32<-rl.GetRandomValue(0, 9) - 5.0,
         )
-        cube_rotations[index] = cast[f32](rl.GetRandomValue(0, 359))
+        cube_rotations[index] = f32<-rl.GetRandomValue(0, 359)
 
-    var mode = cast[i32](DeferredMode.DEFERRED_SHADING)
+    var mode = i32<-DeferredMode.DEFERRED_SHADING
 
     rlgl.rlEnableDepthTest()
     rl.SetTargetFPS(60)
@@ -147,13 +147,13 @@ def main() -> i32:
             light_sources[3].enabled = not light_sources[3].enabled
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_ONE):
-            mode = cast[i32](DeferredMode.DEFERRED_POSITION)
+            mode = i32<-DeferredMode.DEFERRED_POSITION
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_TWO):
-            mode = cast[i32](DeferredMode.DEFERRED_NORMAL)
+            mode = i32<-DeferredMode.DEFERRED_NORMAL
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_THREE):
-            mode = cast[i32](DeferredMode.DEFERRED_ALBEDO)
+            mode = i32<-DeferredMode.DEFERRED_ALBEDO
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_FOUR):
-            mode = cast[i32](DeferredMode.DEFERRED_SHADING)
+            mode = i32<-DeferredMode.DEFERRED_SHADING
 
         for index in range(0, lights.MAX_LIGHTS):
             lights.UpdateLightValues(deferred_shader, light_sources[index])
@@ -180,7 +180,7 @@ def main() -> i32:
         rlgl.rlDisableFramebuffer()
         rlgl.rlClearScreenBuffers()
 
-        if mode == cast[i32](DeferredMode.DEFERRED_SHADING):
+        if mode == i32<-DeferredMode.DEFERRED_SHADING:
             rl.BeginMode3D(camera)
             rlgl.rlDisableColorBlend()
             rlgl.rlEnableShader(deferred_shader.id)
@@ -195,8 +195,8 @@ def main() -> i32:
             rlgl.rlEnableColorBlend()
             rl.EndMode3D()
 
-            rlgl.rlBindFramebuffer(cast[u32](rlgl.RL_READ_FRAMEBUFFER), gbuffer.framebuffer_id)
-            rlgl.rlBindFramebuffer(cast[u32](rlgl.RL_DRAW_FRAMEBUFFER), 0)
+            rlgl.rlBindFramebuffer(u32<-rlgl.RL_READ_FRAMEBUFFER, gbuffer.framebuffer_id)
+            rlgl.rlBindFramebuffer(u32<-rlgl.RL_DRAW_FRAMEBUFFER, 0)
             rlgl.rlBlitFramebuffer(0, 0, screen_width, screen_height, 0, 0, screen_width, screen_height, depth_buffer_bit)
             rlgl.rlDisableFramebuffer()
 
@@ -211,14 +211,14 @@ def main() -> i32:
             rl.EndMode3D()
 
             rl.DrawText(final_result_text, 10, screen_height - 30, 20, rl.DARKGREEN)
-        elif mode == cast[i32](DeferredMode.DEFERRED_POSITION):
-            rl.DrawTextureRec(gbuffer_texture(gbuffer.position_texture_id, screen_width, screen_height), rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](screen_width), height = -cast[f32](screen_height)), rm.Vector2.zero(), rl.RAYWHITE)
+        elif mode == i32<-DeferredMode.DEFERRED_POSITION:
+            rl.DrawTextureRec(gbuffer_texture(gbuffer.position_texture_id, screen_width, screen_height), rl.Rectangle(x = 0.0, y = 0.0, width = f32<-screen_width, height = -f32<-screen_height), rm.Vector2.zero(), rl.RAYWHITE)
             rl.DrawText(position_texture_text, 10, screen_height - 30, 20, rl.DARKGREEN)
-        elif mode == cast[i32](DeferredMode.DEFERRED_NORMAL):
-            rl.DrawTextureRec(gbuffer_texture(gbuffer.normal_texture_id, screen_width, screen_height), rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](screen_width), height = -cast[f32](screen_height)), rm.Vector2.zero(), rl.RAYWHITE)
+        elif mode == i32<-DeferredMode.DEFERRED_NORMAL:
+            rl.DrawTextureRec(gbuffer_texture(gbuffer.normal_texture_id, screen_width, screen_height), rl.Rectangle(x = 0.0, y = 0.0, width = f32<-screen_width, height = -f32<-screen_height), rm.Vector2.zero(), rl.RAYWHITE)
             rl.DrawText(normal_texture_text, 10, screen_height - 30, 20, rl.DARKGREEN)
-        elif mode == cast[i32](DeferredMode.DEFERRED_ALBEDO):
-            rl.DrawTextureRec(gbuffer_texture(gbuffer.albedo_spec_texture_id, screen_width, screen_height), rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](screen_width), height = -cast[f32](screen_height)), rm.Vector2.zero(), rl.RAYWHITE)
+        elif mode == i32<-DeferredMode.DEFERRED_ALBEDO:
+            rl.DrawTextureRec(gbuffer_texture(gbuffer.albedo_spec_texture_id, screen_width, screen_height), rl.Rectangle(x = 0.0, y = 0.0, width = f32<-screen_width, height = -f32<-screen_height), rm.Vector2.zero(), rl.RAYWHITE)
             rl.DrawText(albedo_texture_text, 10, screen_height - 30, 20, rl.DARKGREEN)
 
         rl.DrawText(toggle_lights_text, 10, 40, 20, rl.DARKGRAY)

@@ -22,7 +22,7 @@ def add_codepoint_range(font: rl.Font, font_path: cstr, start: i32, stop: i32) -
     let range_size = stop - start + 1
     let current_range_size = font.glyphCount
     let updated_codepoint_count = current_range_size + range_size
-    let updated_codepoints = heap.must_alloc_zeroed[i32](cast[usize](updated_codepoint_count))
+    let updated_codepoints = heap.must_alloc_zeroed[i32](usize<-updated_codepoint_count)
     defer heap.release(updated_codepoints)
 
     unsafe:
@@ -103,20 +103,20 @@ def main() -> i32:
         rl.DrawTextEx(font, chinese_text, rl.Vector2(x = 50.0, y = 270.0), 32.0, 1.0, rl.DARKGRAY)
         rl.DrawTextEx(font, japanese_text, rl.Vector2(x = 50.0, y = 320.0), 32.0, 1.0, rl.DARKGRAY)
 
-        let atlas_scale = 380.0 / cast[f32](font.texture.width)
+        let atlas_scale = 380.0 / f32<-font.texture.width
         rl.DrawRectangleRec(
             rl.Rectangle(
                 x = 400.0,
                 y = 16.0,
-                width = cast[f32](font.texture.width) * atlas_scale,
-                height = cast[f32](font.texture.height) * atlas_scale,
+                width = f32<-font.texture.width * atlas_scale,
+                height = f32<-font.texture.height * atlas_scale,
             ),
             rl.BLACK,
         )
         rl.DrawTexturePro(
             font.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](font.texture.width), height = cast[f32](font.texture.height)),
-            rl.Rectangle(x = 400.0, y = 16.0, width = cast[f32](font.texture.width) * atlas_scale, height = cast[f32](font.texture.height) * atlas_scale),
+            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-font.texture.width, height = f32<-font.texture.height),
+            rl.Rectangle(x = 400.0, y = 16.0, width = f32<-font.texture.width * atlas_scale, height = f32<-font.texture.height * atlas_scale),
             rl.Vector2(x = 0.0, y = 0.0),
             0.0,
             rl.WHITE,

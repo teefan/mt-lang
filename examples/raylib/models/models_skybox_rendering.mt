@@ -24,7 +24,7 @@ const window_title: cstr = c"raylib [models] example - skybox rendering"
 
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
-        return cast[cstr](text)
+        return cstr<-text
 
 def text_buffer_ptr(text: ref[array[char, 256]]) -> ptr[char]:
     return raw(addr(value(text)[0]))
@@ -38,7 +38,7 @@ def shader_location(shader: rl.Shader, location_index: i32) -> i32:
 
 def file_path_list_path(files: rl.FilePathList, index: i32) -> cstr:
     unsafe:
-        return cast[cstr](deref(files.paths + cast[usize](index)))
+        return cstr<-deref(files.paths + usize<-index)
 
 def rlgl_matrix(mat: rl.Matrix) -> rlgl.Matrix:
     return rlgl.Matrix(
@@ -76,11 +76,11 @@ def set_skybox_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
 
 def set_skybox_cubemap(model: ptr[rl.Model], texture: rl.TextureCubemap) -> void:
     unsafe:
-        deref(model).materials[0].maps[cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP)].texture = texture
+        deref(model).materials[0].maps[i32<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = texture
 
 def skybox_cubemap(model: rl.Model) -> rl.TextureCubemap:
     unsafe:
-        return model.materials[0].maps[cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP)].texture
+        return model.materials[0].maps[i32<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture
 
 def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: i32, format: i32) -> rl.TextureCubemap:
     var cubemap = zero[rl.TextureCubemap]()
@@ -94,15 +94,15 @@ def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: i32, fo
     rlgl.rlFramebufferAttach(
         fbo,
         rbo,
-        cast[i32](rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH),
-        cast[i32](rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_RENDERBUFFER),
+        i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH,
+        i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_RENDERBUFFER,
         0,
     )
     rlgl.rlFramebufferAttach(
         fbo,
         cubemap.id,
-        cast[i32](rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0),
-        cast[i32](rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_CUBEMAP_POSITIVE_X),
+        i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0,
+        i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_CUBEMAP_POSITIVE_X,
         0,
     )
 
@@ -111,10 +111,10 @@ def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: i32, fo
     let projection = rm.Matrix.perspective(
         90.0 * rm.deg2rad,
         1.0,
-        cast[f32](rlgl.rlGetCullDistanceNear()),
-        cast[f32](rlgl.rlGetCullDistanceFar()),
+        f32<-rlgl.rlGetCullDistanceNear(),
+        f32<-rlgl.rlGetCullDistanceFar(),
     )
-    rlgl.rlSetUniformMatrix(shader_location(shader, cast[i32](rl.ShaderLocationIndex.SHADER_LOC_MATRIX_PROJECTION)), rlgl_matrix(projection))
+    rlgl.rlSetUniformMatrix(shader_location(shader, i32<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_PROJECTION), rlgl_matrix(projection))
 
     var fbo_views = zero[array[rl.Matrix, 6]]()
     fbo_views[0] = rm.Matrix.look_at(rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector3(x = 1.0, y = 0.0, z = 0.0), rl.Vector3(x = 0.0, y = -1.0, z = 0.0))
@@ -129,12 +129,12 @@ def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: i32, fo
     rlgl.rlEnableTexture(panorama.id)
 
     for index in range(0, 6):
-        rlgl.rlSetUniformMatrix(shader_location(shader, cast[i32](rl.ShaderLocationIndex.SHADER_LOC_MATRIX_VIEW)), rlgl_matrix(fbo_views[index]))
+        rlgl.rlSetUniformMatrix(shader_location(shader, i32<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_VIEW), rlgl_matrix(fbo_views[index]))
         rlgl.rlFramebufferAttach(
             fbo,
             cubemap.id,
-            cast[i32](rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0),
-            cast[i32](rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_CUBEMAP_POSITIVE_X) + index,
+            i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0,
+            i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_CUBEMAP_POSITIVE_X + index,
             0,
         )
         rlgl.rlEnableFramebuffer(fbo)
@@ -167,13 +167,13 @@ def load_skybox_texture(skybox: ptr[rl.Model], cubemap_shader: rl.Shader, use_hd
                 cubemap_shader,
                 panorama,
                 1024,
-                cast[i32](rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8),
+                i32<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
             ),
         )
         rl.UnloadTexture(panorama)
     else:
         let image = rl.LoadImage(file_path)
-        set_skybox_cubemap(skybox, rl.LoadTextureCubemap(image, cast[i32](rl.CubemapLayout.CUBEMAP_LAYOUT_AUTO_DETECT)))
+        set_skybox_cubemap(skybox, rl.LoadTextureCubemap(image, i32<-rl.CubemapLayout.CUBEMAP_LAYOUT_AUTO_DETECT))
         rl.UnloadImage(image)
 
 def main() -> i32:
@@ -201,7 +201,7 @@ def main() -> i32:
     defer rl.UnloadShader(skybox_shader)
     set_skybox_shader(raw(addr(skybox)), skybox_shader)
 
-    set_shader_int(skybox_shader, environment_map_text, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP))
+    set_shader_int(skybox_shader, environment_map_text, i32<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP)
     set_shader_int(skybox_shader, do_gamma_text, if use_hdr then 1 else 0)
     set_shader_int(skybox_shader, vflipped_text, if use_hdr then 1 else 0)
 

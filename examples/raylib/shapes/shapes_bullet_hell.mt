@@ -30,9 +30,9 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let bullets = heap.must_alloc_zeroed[Bullet](cast[usize](max_bullets))
+    let bullets = heap.must_alloc_zeroed[Bullet](usize<-max_bullets)
     defer heap.release(bullets)
-    var bullets_view = span[Bullet](data = bullets, len = cast[usize](max_bullets))
+    var bullets_view = span[Bullet](data = bullets, len = usize<-max_bullets)
 
     var bullet_count = 0
     var bullet_disabled_count = 0
@@ -51,8 +51,8 @@ def main() -> i32:
     defer rl.UnloadRenderTexture(bullet_texture)
 
     rl.BeginTextureMode(bullet_texture)
-    rl.DrawCircle(12, 12, cast[f32](bullet_radius), rl.WHITE)
-    rl.DrawCircleLines(12, 12, cast[f32](bullet_radius), rl.BLACK)
+    rl.DrawCircle(12, 12, f32<-bullet_radius, rl.WHITE)
+    rl.DrawCircleLines(12, 12, f32<-bullet_radius, rl.BLACK)
     rl.EndTextureMode()
 
     var draw_in_performance_mode = true
@@ -68,14 +68,14 @@ def main() -> i32:
         if spawn_cooldown_timer < 0.0:
             spawn_cooldown_timer = spawn_cooldown
 
-            let degrees_per_row = 360.0 / cast[f32](bullet_rows)
+            let degrees_per_row = 360.0 / f32<-bullet_rows
             for row in range(0, bullet_rows):
                 if bullet_count < max_bullets:
                     bullets_view[bullet_count].position = rl.Vector2(x = screen_width / 2.0, y = screen_height / 2.0)
                     bullets_view[bullet_count].disabled = false
                     bullets_view[bullet_count].color = bullet_colors[row % 2]
 
-                    let bullet_direction = base_direction + degrees_per_row * cast[f32](row)
+                    let bullet_direction = base_direction + degrees_per_row * f32<-row
                     let radians = bullet_direction * mt_math.deg2rad
                     bullets_view[bullet_count].acceleration = rl.Vector2(
                         x = bullet_speed * math.cosf(radians),
@@ -84,14 +84,14 @@ def main() -> i32:
 
                     bullet_count += 1
 
-            base_direction += cast[f32](angle_increment)
+            base_direction += f32<-angle_increment
 
         for index in range(0, bullet_count):
             if not bullets_view[index].disabled:
                 bullets_view[index].position.x += bullets_view[index].acceleration.x
                 bullets_view[index].position.y += bullets_view[index].acceleration.y
 
-                let out_of_bounds = bullets_view[index].position.x < -cast[f32](bullet_radius * 2) or bullets_view[index].position.x > cast[f32](screen_width + bullet_radius * 2) or bullets_view[index].position.y < -cast[f32](bullet_radius * 2) or bullets_view[index].position.y > cast[f32](screen_height + bullet_radius * 2)
+                let out_of_bounds = bullets_view[index].position.x < -f32<-(bullet_radius * 2) or bullets_view[index].position.x > f32<-(screen_width + bullet_radius * 2) or bullets_view[index].position.y < -f32<-(bullet_radius * 2) or bullets_view[index].position.y > f32<-(screen_height + bullet_radius * 2)
                 if out_of_bounds:
                     bullets_view[index].disabled = true
                     bullet_disabled_count += 1
@@ -146,15 +146,15 @@ def main() -> i32:
                 if not bullets_view[index].disabled:
                     rl.DrawTexture(
                         bullet_texture.texture,
-                        cast[i32](bullets_view[index].position.x - cast[f32](bullet_texture.texture.width) * 0.5),
-                        cast[i32](bullets_view[index].position.y - cast[f32](bullet_texture.texture.height) * 0.5),
+                        i32<-(bullets_view[index].position.x - f32<-bullet_texture.texture.width * 0.5),
+                        i32<-(bullets_view[index].position.y - f32<-bullet_texture.texture.height * 0.5),
                         bullets_view[index].color,
                     )
         else:
             for index in range(0, bullet_count):
                 if not bullets_view[index].disabled:
-                    rl.DrawCircleV(bullets_view[index].position, cast[f32](bullet_radius), bullets_view[index].color)
-                    rl.DrawCircleLinesV(bullets_view[index].position, cast[f32](bullet_radius), rl.BLACK)
+                    rl.DrawCircleV(bullets_view[index].position, f32<-bullet_radius, bullets_view[index].color)
+                    rl.DrawCircleLinesV(bullets_view[index].position, f32<-bullet_radius, rl.BLACK)
 
         let overlay_color = rl.Color(r = 0, g = 0, b = 0, a = 200)
         rl.DrawRectangle(10, 10, 280, 150, overlay_color)

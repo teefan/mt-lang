@@ -48,15 +48,15 @@ def shuffled_ranks(rect_count: i32) -> array[i32, 22]:
 def generate_rectangles(rect_count: i32, rect_width: f32, width: f32, height: f32) -> array[ColorRect, 22]:
     var rectangles = zero[array[ColorRect, 22]]()
     let ranks = shuffled_ranks(rect_count)
-    let rect_sequence_width = cast[f32](rect_count) * rect_width
+    let rect_sequence_width = f32<-rect_count * rect_width
     let start_x = (width - rect_sequence_width) * 0.5
 
     var index = 0
     while index < rect_count:
-        let rect_height = remap(cast[f32](ranks[index]), 0.0, cast[f32](rect_count - 1), 0.0, height)
+        let rect_height = remap(f32<-ranks[index], 0.0, f32<-(rect_count - 1), 0.0, height)
         rectangles[index].color = generate_random_color()
         rectangles[index].rect = rl.Rectangle(
-            x = start_x + cast[f32](index) * rect_width,
+            x = start_x + f32<-index * rect_width,
             y = height - rect_height,
             width = rect_width,
             height = rect_height,
@@ -90,12 +90,12 @@ def main() -> i32:
     defer rl.close_window()
 
     var rect_count = initial_rect_count
-    var rect_size = cast[f32](screen_width) / cast[f32](rect_count)
+    var rect_size = f32<-screen_width / f32<-rect_count
     var rectangles = generate_rectangles(
         rect_count,
         rect_size,
-        cast[f32](screen_width),
-        sequence_height_factor * cast[f32](screen_height),
+        f32<-screen_width,
+        sequence_height_factor * f32<-screen_height,
     )
 
     rl.set_target_fps(60)
@@ -106,22 +106,22 @@ def main() -> i32:
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_UP) and rect_count < max_rect_count:
             rect_count += 1
-            rect_size = cast[f32](screen_width) / cast[f32](rect_count)
+            rect_size = f32<-screen_width / f32<-rect_count
             rectangles = generate_rectangles(
                 rect_count,
                 rect_size,
-                cast[f32](screen_width),
-                sequence_height_factor * cast[f32](screen_height),
+                f32<-screen_width,
+                sequence_height_factor * f32<-screen_height,
             )
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_DOWN) and rect_count > min_rect_count:
             rect_count -= 1
-            rect_size = cast[f32](screen_width) / cast[f32](rect_count)
+            rect_size = f32<-screen_width / f32<-rect_count
             rectangles = generate_rectangles(
                 rect_count,
                 rect_size,
-                cast[f32](screen_width),
-                sequence_height_factor * cast[f32](screen_height),
+                f32<-screen_width,
+                sequence_height_factor * f32<-screen_height,
             )
 
         rl.begin_drawing()

@@ -47,8 +47,8 @@ def main() -> i32:
             if rec.height < mouse_scale_mark_size:
                 rec.height = mouse_scale_mark_size
 
-            let screen_width_f = cast[f32](rl.GetScreenWidth())
-            let screen_height_f = cast[f32](rl.GetScreenHeight())
+            let screen_width_f = f32<-rl.GetScreenWidth()
+            let screen_height_f = f32<-rl.GetScreenHeight()
 
             if rec.width > screen_width_f - rec.x:
                 rec.width = screen_width_f - rec.x

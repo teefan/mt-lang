@@ -7,16 +7,16 @@ const screen_height: i32 = 256
 const ram_size: i32 = 0x1000000
 const frames_per_second: c.Uint64 = 60
 const samples_per_frame: i32 = 256
-const ns_per_second: c.Uint64 = cast[c.Uint64](c.SDL_NS_PER_SECOND)
+const ns_per_second: c.Uint64 = c.Uint64<-c.SDL_NS_PER_SECOND
 const max_audio_latency_frames: c.Uint64 = 5
 const io_keyboard: i32 = 0
 const io_pc: i32 = 2
 const io_screen_page: i32 = 5
 const io_audio_bank: i32 = 6
 const window_title: cstr = c"SDL 3 BytePusher"
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_INTEGER_SCALE
-const default_playback_device: u32 = cast[u32](0xFFFFFFFF)
+const default_playback_device: u32 = u32<-0xFFFFFFFF
 const status_buffer_len: i32 = screen_width / 8
 
 var ram: array[c.Uint8, 16777224] = zero[array[c.Uint8, 16777224]]()
@@ -37,41 +37,41 @@ var positional_input: bool = false
 
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
-        return cast[cstr](text)
+        return cstr<-text
 
 def read_u16(addr: i32) -> c.Uint16:
-    return (cast[c.Uint16](ram[addr]) << 8) | cast[c.Uint16](ram[addr + 1])
+    return (c.Uint16<-ram[addr] << 8) | c.Uint16<-ram[addr + 1]
 
 def read_u24(addr: i32) -> c.Uint32:
-    return (cast[c.Uint32](ram[addr]) << 16) | (cast[c.Uint32](ram[addr + 1]) << 8) | cast[c.Uint32](ram[addr + 2])
+    return (c.Uint32<-ram[addr] << 16) | (c.Uint32<-ram[addr + 1] << 8) | c.Uint32<-ram[addr + 2]
 
 def set_status_message(message: cstr) -> void:
-    c.SDL_strlcpy(raw(addr(status[0])), message, cast[usize](status_buffer_len))
-    status[status_buffer_len - 1] = cast[char](0)
-    status_ticks = cast[i32](frames_per_second * 3)
+    c.SDL_strlcpy(raw(addr(status[0])), message, usize<-status_buffer_len)
+    status[status_buffer_len - 1] = char<-0
+    status_ticks = i32<-(frames_per_second * 3)
 
 def set_status_filename(prefix: cstr, path: cstr) -> void:
-    c.SDL_snprintf(raw(addr(status[0])), cast[usize](status_buffer_len), prefix, filename(path))
-    status[status_buffer_len - 1] = cast[char](0)
-    status_ticks = cast[i32](frames_per_second * 3)
+    c.SDL_snprintf(raw(addr(status[0])), usize<-status_buffer_len, prefix, filename(path))
+    status[status_buffer_len - 1] = char<-0
+    status_ticks = i32<-(frames_per_second * 3)
 
 def set_status_renderer(name: cstr) -> void:
-    c.SDL_snprintf(raw(addr(status[0])), cast[usize](status_buffer_len), c"renderer: %s", name)
-    status[status_buffer_len - 1] = cast[char](0)
-    status_ticks = cast[i32](frames_per_second * 3)
+    c.SDL_snprintf(raw(addr(status[0])), usize<-status_buffer_len, c"renderer: %s", name)
+    status[status_buffer_len - 1] = char<-0
+    status_ticks = i32<-(frames_per_second * 3)
 
 def filename(path: cstr) -> cstr:
-    var index = cast[i32](c.SDL_strlen(path))
+    var index = i32<-c.SDL_strlen(path)
     var result = path
 
     unsafe:
-        let path_ptr = cast[ptr[char]](path)
+        let path_ptr = ptr[char]<-path
 
         while index > 0:
             index -= 1
-            let ch = deref(path_ptr + cast[usize](index))
-            if ch == cast[char](47) or ch == cast[char](92):
-                result = cast[cstr](path_ptr + cast[usize](index + 1))
+            let ch = deref(path_ptr + usize<-index)
+            if ch == char<-47 or ch == char<-92:
+                result = cstr<-(path_ptr + usize<-(index + 1))
                 break
 
     return result
@@ -80,13 +80,13 @@ def load_stream(stream: ptr[c.SDL_IOStream]?, close_io: bool) -> bool:
     var bytes_read: usize = 0
     var ok = true
 
-    c.SDL_memset(raw(addr(ram[0])), 0, cast[usize](ram_size))
+    c.SDL_memset(raw(addr(ram[0])), 0, usize<-ram_size)
 
     if stream == null:
         return false
 
-    while bytes_read < cast[usize](ram_size):
-        let read_count = c.SDL_ReadIO(stream, raw(addr(ram[cast[i32](bytes_read)])), cast[usize](ram_size) - bytes_read)
+    while bytes_read < usize<-ram_size:
+        let read_count = c.SDL_ReadIO(stream, raw(addr(ram[i32<-bytes_read])), usize<-ram_size - bytes_read)
         bytes_read += read_count
         if read_count == 0:
             ok = c.SDL_GetIOStatus(stream) == c.SDL_IOStatus.SDL_IO_STATUS_EOF
@@ -111,56 +111,56 @@ def load_file(path: cstr) -> bool:
 
 def print_text(x: i32, y: i32, text: cstr) -> void:
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
-    c.SDL_RenderDebugText(renderer, cast[f32](x + 1), cast[f32](y + 1), text)
+    c.SDL_RenderDebugText(renderer, f32<-(x + 1), f32<-(y + 1), text)
     c.SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, c.SDL_ALPHA_OPAQUE)
-    c.SDL_RenderDebugText(renderer, cast[f32](x), cast[f32](y), text)
+    c.SDL_RenderDebugText(renderer, f32<-x, f32<-y, text)
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
 
 def keycode_mask(key: u32) -> c.Uint16:
-    if key >= cast[u32](48) and key <= cast[u32](57):
-        return cast[c.Uint16](1) << cast[c.Uint16](key - cast[u32](48))
+    if key >= u32<-48 and key <= u32<-57:
+        return c.Uint16<-1 << c.Uint16<-(key - u32<-48)
 
-    if key >= cast[u32](65) and key <= cast[u32](70):
-        return cast[c.Uint16](1) << cast[c.Uint16](key - cast[u32](65) + cast[u32](10))
+    if key >= u32<-65 and key <= u32<-70:
+        return c.Uint16<-1 << c.Uint16<-(key - u32<-65 + u32<-10)
 
-    if key >= cast[u32](97) and key <= cast[u32](102):
-        return cast[c.Uint16](1) << cast[c.Uint16](key - cast[u32](97) + cast[u32](10))
+    if key >= u32<-97 and key <= u32<-102:
+        return c.Uint16<-1 << c.Uint16<-(key - u32<-97 + u32<-10)
 
     return 0
 
 def scancode_mask(scancode: c.SDL_Scancode) -> c.Uint16:
     if scancode == c.SDL_Scancode.SDL_SCANCODE_1:
-        return cast[c.Uint16](1) << cast[c.Uint16](0x1)
+        return c.Uint16<-1 << c.Uint16<-0x1
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_2:
-        return cast[c.Uint16](1) << cast[c.Uint16](0x2)
+        return c.Uint16<-1 << c.Uint16<-0x2
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_3:
-        return cast[c.Uint16](1) << cast[c.Uint16](0x3)
+        return c.Uint16<-1 << c.Uint16<-0x3
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_4:
-        return cast[c.Uint16](1) << cast[c.Uint16](0xC)
+        return c.Uint16<-1 << c.Uint16<-0xC
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_Q:
-        return cast[c.Uint16](1) << cast[c.Uint16](0x4)
+        return c.Uint16<-1 << c.Uint16<-0x4
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_W:
-        return cast[c.Uint16](1) << cast[c.Uint16](0x5)
+        return c.Uint16<-1 << c.Uint16<-0x5
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_E:
-        return cast[c.Uint16](1) << cast[c.Uint16](0x6)
+        return c.Uint16<-1 << c.Uint16<-0x6
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_R:
-        return cast[c.Uint16](1) << cast[c.Uint16](0xD)
+        return c.Uint16<-1 << c.Uint16<-0xD
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_A:
-        return cast[c.Uint16](1) << cast[c.Uint16](0x7)
+        return c.Uint16<-1 << c.Uint16<-0x7
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_S:
-        return cast[c.Uint16](1) << cast[c.Uint16](0x8)
+        return c.Uint16<-1 << c.Uint16<-0x8
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_D:
-        return cast[c.Uint16](1) << cast[c.Uint16](0x9)
+        return c.Uint16<-1 << c.Uint16<-0x9
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_F:
-        return cast[c.Uint16](1) << cast[c.Uint16](0xE)
+        return c.Uint16<-1 << c.Uint16<-0xE
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_Z:
-        return cast[c.Uint16](1) << cast[c.Uint16](0xA)
+        return c.Uint16<-1 << c.Uint16<-0xA
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_X:
-        return cast[c.Uint16](1) << cast[c.Uint16](0x0)
+        return c.Uint16<-1 << c.Uint16<-0x0
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_C:
-        return cast[c.Uint16](1) << cast[c.Uint16](0xB)
+        return c.Uint16<-1 << c.Uint16<-0xB
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_V:
-        return cast[c.Uint16](1) << cast[c.Uint16](0xF)
+        return c.Uint16<-1 << c.Uint16<-0xF
 
     return 0
 
@@ -191,10 +191,10 @@ def pump_events() -> bool:
         elif event.quit.type == c.SDL_EventType.SDL_EVENT_KEY_UP:
             if positional_input:
                 let mask = scancode_mask(event.key.scancode)
-                keystate &= cast[c.Uint16](~mask)
+                keystate &= c.Uint16<-~mask
             else:
                 let mask = keycode_mask(event.key.key)
-                keystate &= cast[c.Uint16](~mask)
+                keystate &= c.Uint16<-~mask
 
     return true
 
@@ -216,22 +216,22 @@ def render_frame() -> void:
 
     while tick_acc >= ns_per_second:
         tick_acc -= ns_per_second
-        ram[io_keyboard] = cast[c.Uint8](keystate >> 8)
-        ram[io_keyboard + 1] = cast[c.Uint8](keystate)
+        ram[io_keyboard] = c.Uint8<-(keystate >> 8)
+        ram[io_keyboard + 1] = c.Uint8<-keystate
 
-        var pc = cast[i32](read_u24(io_pc))
+        var pc = i32<-read_u24(io_pc)
         for index in range(0, screen_width * screen_height):
-            let src = cast[i32](read_u24(pc))
-            let dst = cast[i32](read_u24(pc + 3))
+            let src = i32<-read_u24(pc)
+            let dst = i32<-read_u24(pc + 3)
             ram[dst] = ram[src]
-            pc = cast[i32](read_u24(pc + 6))
+            pc = i32<-read_u24(pc + 6)
 
         if (not skip_audio or tick_acc < ns_per_second) and active_audio_stream != null:
-            let audio_offset = cast[i32](read_u16(io_audio_bank)) * 256
+            let audio_offset = i32<-read_u16(io_audio_bank) * 256
             c.SDL_PutAudioStreamData(active_audio_stream, raw(addr(ram[audio_offset])), samples_per_frame)
 
     if updated and active_texture != null and active_render_target != null:
-        let pixel_offset = cast[i32](ram[io_screen_page]) << 16
+        let pixel_offset = i32<-ram[io_screen_page] << 16
         c.SDL_UpdateTexture(active_texture, null, raw(addr(ram[pixel_offset])), screen_width)
 
         c.SDL_SetRenderTarget(renderer, active_render_target)
@@ -316,9 +316,9 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
             for green in range(0, 6):
                 for blue in range(0, 6):
                     deref(created_palette).colors[color_index] = c.SDL_Color(
-                        r = cast[c.Uint8](red * 0x33),
-                        g = cast[c.Uint8](green * 0x33),
-                        b = cast[c.Uint8](blue * 0x33),
+                        r = c.Uint8<-(red * 0x33),
+                        g = c.Uint8<-(green * 0x33),
+                        b = c.Uint8<-(blue * 0x33),
                         a = c.SDL_ALPHA_OPAQUE,
                     )
                     color_index += 1
@@ -343,7 +343,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
 
     audio_spec.channels = 1
     audio_spec.format = c.SDL_AudioFormat.SDL_AUDIO_S8
-    audio_spec.freq = samples_per_frame * cast[i32](frames_per_second)
+    audio_spec.freq = samples_per_frame * i32<-frames_per_second
 
     audio_device = c.SDL_OpenAudioDevice(default_playback_device, null)
     if audio_device == 0:
@@ -367,7 +367,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
 
     if argc > 1:
         unsafe:
-            load_file(cast[cstr](deref(argv + cast[usize](1))))
+            load_file(cstr<-deref(argv + usize<-1))
 
     while pump_events():
         render_frame()

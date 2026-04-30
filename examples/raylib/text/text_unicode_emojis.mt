@@ -34,11 +34,11 @@ struct EmojiMessage:
 
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
-        return cast[cstr](text)
+        return cstr<-text
 
 def emoji_text_at(offset: i32) -> cstr:
     unsafe:
-        return cast[cstr](cast[ptr[char]](emoji_codepoints) + offset)
+        return cstr<-(ptr[char]<-emoji_codepoints + offset)
 
 def randomize_emoji(emojis: ptr[EmojiSlot], hovered: ref[i32], selected: ref[i32], total_messages: i32) -> void:
     value(hovered) = -1
@@ -50,7 +50,7 @@ def randomize_emoji(emojis: ptr[EmojiSlot], hovered: ref[i32], selected: ref[i32
         var index = 0
         while index < emoji_count:
             deref(emojis + index).index = rl.GetRandomValue(0, 179) * 5
-            deref(emojis + index).color = rl.Fade(rl.ColorFromHSV(cast[f32]((start * (index + 1)) % 360), 0.6, 0.85), 0.8)
+            deref(emojis + index).color = rl.Fade(rl.ColorFromHSV(f32<-((start * (index + 1)) % 360), 0.6, 0.85), 0.8)
             deref(emojis + index).message = rl.GetRandomValue(0, total_messages - 1)
             index += 1
 
@@ -58,11 +58,11 @@ def draw_text_boxed(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: f32
     draw_text_boxed_selectable(font, text, rec, font_size, spacing, word_wrap, tint, 0, 0, rl.WHITE, rl.WHITE)
 
 def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: f32, spacing: f32, word_wrap: bool, tint: rl.Color, select_start: i32, select_length: i32, select_tint: rl.Color, select_back_tint: rl.Color) -> void:
-    let length = cast[i32](rl.TextLength(text))
+    let length = i32<-rl.TextLength(text)
 
     var text_offset_y: f32 = 0.0
     var text_offset_x: f32 = 0.0
-    let scale_factor = font_size / cast[f32](font.baseSize)
+    let scale_factor = font_size / f32<-font.baseSize
 
     var state = if word_wrap then measure_state else draw_state
     var start_line = -1
@@ -71,13 +71,13 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
     var select_start_mut = select_start
 
     unsafe:
-        let raw_text = cast[ptr[char]](text)
+        let raw_text = ptr[char]<-text
         var i = 0
         var k = 0
         while i < length:
             let current_ptr = raw_text + i
             var codepoint_byte_count = 0
-            let codepoint = rl.GetCodepoint(cast[cstr](current_ptr), raw(addr(codepoint_byte_count)))
+            let codepoint = rl.GetCodepoint(cstr<-current_ptr, raw(addr(codepoint_byte_count)))
             let glyph_index = rl.GetGlyphIndex(font, codepoint)
 
             if codepoint == 0x3f:
@@ -90,7 +90,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
                 if font.glyphs[glyph_index].advanceX == 0:
                     glyph_width = font.recs[glyph_index].width * scale_factor
                 else:
-                    glyph_width = cast[f32](font.glyphs[glyph_index].advanceX) * scale_factor
+                    glyph_width = f32<-font.glyphs[glyph_index].advanceX * scale_factor
 
                 if i + 1 < length:
                     glyph_width += spacing
@@ -124,14 +124,14 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
             else:
                 if codepoint == 10:
                     if not word_wrap:
-                        text_offset_y += (cast[f32](font.baseSize) + cast[f32](font.baseSize) / 2.0) * scale_factor
+                        text_offset_y += (f32<-font.baseSize + f32<-font.baseSize / 2.0) * scale_factor
                         text_offset_x = 0.0
                 else:
                     if not word_wrap and (text_offset_x + glyph_width) > rec.width:
-                        text_offset_y += (cast[f32](font.baseSize) + cast[f32](font.baseSize) / 2.0) * scale_factor
+                        text_offset_y += (f32<-font.baseSize + f32<-font.baseSize / 2.0) * scale_factor
                         text_offset_x = 0.0
 
-                    if (text_offset_y + cast[f32](font.baseSize) * scale_factor) > rec.height:
+                    if (text_offset_y + f32<-font.baseSize * scale_factor) > rec.height:
                         break
 
                     var is_glyph_selected = false
@@ -141,7 +141,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
                                 x = rec.x + text_offset_x - 1.0,
                                 y = rec.y + text_offset_y,
                                 width = glyph_width,
-                                height = cast[f32](font.baseSize) * scale_factor,
+                                height = f32<-font.baseSize * scale_factor,
                             ),
                             select_back_tint,
                         )
@@ -157,7 +157,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
                         )
 
                 if word_wrap and i == end_line:
-                    text_offset_y += (cast[f32](font.baseSize) + cast[f32](font.baseSize) / 2.0) * scale_factor
+                    text_offset_y += (f32<-font.baseSize + f32<-font.baseSize / 2.0) * scale_factor
                     text_offset_x = 0.0
                     start_line = end_line
                     end_line = -1
@@ -265,20 +265,20 @@ def main() -> i32:
         var index = 0
         while index < emoji_count:
             let txt = emoji_text_at(emojis[index].index)
-            let emoji_rect = rl.Rectangle(x = position.x, y = position.y, width = cast[f32](font_emoji.baseSize), height = cast[f32](font_emoji.baseSize))
+            let emoji_rect = rl.Rectangle(x = position.x, y = position.y, width = f32<-font_emoji.baseSize, height = f32<-font_emoji.baseSize)
 
             if not rl.CheckCollisionPointRec(mouse, emoji_rect):
-                rl.DrawTextEx(font_emoji, txt, position, cast[f32](font_emoji.baseSize), 1.0, if selected == index then emojis[index].color else rl.Fade(rl.LIGHTGRAY, 0.4))
+                rl.DrawTextEx(font_emoji, txt, position, f32<-font_emoji.baseSize, 1.0, if selected == index then emojis[index].color else rl.Fade(rl.LIGHTGRAY, 0.4))
             else:
-                rl.DrawTextEx(font_emoji, txt, position, cast[f32](font_emoji.baseSize), 1.0, emojis[index].color)
+                rl.DrawTextEx(font_emoji, txt, position, f32<-font_emoji.baseSize, 1.0, emojis[index].color)
                 hovered = index
                 hovered_pos = position
 
             if index != 0 and (index % emoji_per_width) == 0:
-                position.y += cast[f32](font_emoji.baseSize) + 24.25
+                position.y += f32<-font_emoji.baseSize + 24.25
                 position.x = 28.8
             else:
-                position.x += cast[f32](font_emoji.baseSize) + 28.8
+                position.x += f32<-font_emoji.baseSize + 28.8
 
             index += 1
 
@@ -288,7 +288,7 @@ def main() -> i32:
             if rl.TextIsEqual(messages[message_index].language, chinese_text) or rl.TextIsEqual(messages[message_index].language, korean_text) or rl.TextIsEqual(messages[message_index].language, japanese_text):
                 message_font = font_asian
 
-            var sz = rl.MeasureTextEx(message_font, messages[message_index].text, cast[f32](message_font.baseSize), 1.0)
+            var sz = rl.MeasureTextEx(message_font, messages[message_index].text, f32<-message_font.baseSize, 1.0)
             if sz.x > 300.0:
                 sz.y *= sz.x / 300.0
                 sz.x = 300.0
@@ -301,8 +301,8 @@ def main() -> i32:
             var msg_rect = rl.Rectangle(
                 x = selected_pos.x - 38.8,
                 y = selected_pos.y,
-                width = cast[f32](2 * horizontal_padding) + sz.x,
-                height = cast[f32](2 * vertical_padding) + sz.y,
+                width = f32<-(2 * horizontal_padding) + sz.x,
+                height = f32<-(2 * vertical_padding) + sz.y,
             )
             msg_rect.y -= msg_rect.height
 
@@ -322,25 +322,25 @@ def main() -> i32:
                 a = b
                 b = tmp
 
-            if msg_rect.x + msg_rect.width > cast[f32](screen_width):
-                msg_rect.x -= (msg_rect.x + msg_rect.width) - cast[f32](screen_width) + 10.0
+            if msg_rect.x + msg_rect.width > f32<-screen_width:
+                msg_rect.x -= (msg_rect.x + msg_rect.width) - f32<-screen_width + 10.0
 
             rl.DrawRectangleRec(msg_rect, emojis[selected].color)
             rl.DrawTriangle(a, b, c, emojis[selected].color)
 
             let text_rect = rl.Rectangle(
-                x = msg_rect.x + cast[f32](horizontal_padding) / 2.0,
-                y = msg_rect.y + cast[f32](vertical_padding) / 2.0,
-                width = msg_rect.width - cast[f32](horizontal_padding),
+                x = msg_rect.x + f32<-horizontal_padding / 2.0,
+                y = msg_rect.y + f32<-vertical_padding / 2.0,
+                width = msg_rect.width - f32<-horizontal_padding,
                 height = msg_rect.height,
             )
-            draw_text_boxed(message_font, messages[message_index].text, text_rect, cast[f32](message_font.baseSize), 1.0, true, rl.WHITE)
+            draw_text_boxed(message_font, messages[message_index].text, text_rect, f32<-message_font.baseSize, 1.0, true, rl.WHITE)
 
-            let byte_count = cast[i32](rl.TextLength(messages[message_index].text))
+            let byte_count = i32<-rl.TextLength(messages[message_index].text)
             let codepoint_count = rl.GetCodepointCount(messages[message_index].text)
             let info = rl.TextFormat(info_format, messages[message_index].language, codepoint_count, byte_count)
             sz = rl.MeasureTextEx(rl.GetFontDefault(), info, 10.0, 1.0)
-            rl.DrawText(info, cast[i32](text_rect.x + text_rect.width - sz.x), cast[i32](msg_rect.y + msg_rect.height - sz.y - 2.0), 10, rl.RAYWHITE)
+            rl.DrawText(info, i32<-(text_rect.x + text_rect.width - sz.x), i32<-(msg_rect.y + msg_rect.height - sz.y - 2.0), 10, rl.RAYWHITE)
 
         rl.DrawText(main_info_text, (screen_width - 650) / 2, screen_height - 40, 20, rl.GRAY)
         rl.DrawText(sub_info_text, (screen_width - 484) / 2, screen_height - 16, 10, rl.GRAY)

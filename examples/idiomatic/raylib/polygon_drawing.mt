@@ -25,7 +25,7 @@ def draw_texture_poly(texture: rl.Texture2D, center: rl.Vector2, points: array[r
         rlgl.vertex_2f(points[index + 1].x + center.x, points[index + 1].y + center.y)
 
     rlgl.end()
-    rlgl.set_texture(cast[u32](0))
+    rlgl.set_texture(u32<-0)
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Polygon Drawing")
@@ -75,7 +75,7 @@ def main() -> i32:
 
         draw_texture_poly(
             texture,
-            rl.Vector2(x = cast[f32](rl.get_screen_width()) / 2.0, y = cast[f32](rl.get_screen_height()) / 2.0),
+            rl.Vector2(x = f32<-rl.get_screen_width() / 2.0, y = f32<-rl.get_screen_height() / 2.0),
             positions,
             texcoords,
             rl.WHITE,

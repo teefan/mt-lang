@@ -53,7 +53,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        triangle_count += cast[i32](rl.GetMouseWheelMove())
+        triangle_count += i32<-rl.GetMouseWheelMove()
         if triangle_count < points_min:
             triangle_count = points_min
         if triangle_count > points_max:
@@ -68,16 +68,16 @@ def main() -> i32:
                 rl.SetClipboardText(rl.TextFormat(copy_hex_format, color.r, color.g, color.b))
 
         if rl.IsKeyDown(rl.KeyboardKey.KEY_UP):
-            point_scale *= cast[f32](1.025)
-            if point_scale > cast[f32](screen_height) / cast[f32](2):
-                point_scale = cast[f32](screen_height) / cast[f32](2)
+            point_scale *= f32<-1.025
+            if point_scale > f32<-screen_height / f32<-2:
+                point_scale = f32<-screen_height / f32<-2
             else:
                 circle_position = circle_position.subtract(center).multiply(rl.Vector2(x = 1.025, y = 1.025)).add(center)
 
         if rl.IsKeyDown(rl.KeyboardKey.KEY_DOWN):
-            point_scale *= cast[f32](0.975)
-            if point_scale < cast[f32](32.0):
-                point_scale = cast[f32](32.0)
+            point_scale *= f32<-0.975
+            if point_scale < f32<-32.0:
+                point_scale = f32<-32.0
             else:
                 circle_position = circle_position.subtract(center).multiply(rl.Vector2(x = 0.975, y = 0.975)).add(center)
                 circle_position = clamp_handle_position(center, circle_position, point_scale)
@@ -113,7 +113,7 @@ def main() -> i32:
             let saturation = mt_math.clamp(distance, 0.0, 1.0)
             let value_actual = mt_math.clamp(distance, 0.0, 1.0)
             color = rl.ColorLerp(
-                rl.Color(r = cast[i32](value * 255.0), g = cast[i32](value * 255.0), b = cast[i32](value * 255.0), a = 255),
+                rl.Color(r = i32<-(value * 255.0), g = i32<-(value * 255.0), b = i32<-(value * 255.0), a = 255),
                 rl.ColorFromHSV(angle_360, saturation, 1.0),
                 value_actual,
             )
@@ -125,9 +125,9 @@ def main() -> i32:
 
         rlgl.rlBegin(render_type)
         for index in range(0, triangle_count):
-            let angle_offset = (rl.PI * 2.0) / cast[f32](triangle_count)
-            let angle = angle_offset * cast[f32](index)
-            let angle_offset_calculated = (cast[f32](index) + 1.0) * angle_offset
+            let angle_offset = (rl.PI * 2.0) / f32<-triangle_count
+            let angle = angle_offset * f32<-index
+            let angle_offset_calculated = (f32<-index + 1.0) * angle_offset
             let scale = rl.Vector2(x = point_scale, y = point_scale)
 
             let offset = rl.Vector2(x = math.sinf(angle), y = -math.cosf(angle)).multiply(scale)

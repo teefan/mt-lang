@@ -11,7 +11,7 @@ const controls_text: cstr = c"Use the LEFT/RIGHT keys to switch animation"
 
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
-        return cast[cstr](text)
+        return cstr<-text
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
@@ -58,7 +58,7 @@ def main() -> i32:
         let anim = model_animation(anims, anim_index)
         anim_current_frame += 1.0
         rl.UpdateModelAnimation(model, anim, anim_current_frame)
-        if anim_current_frame >= cast[f32](anim.keyframeCount):
+        if anim_current_frame >= f32<-anim.keyframeCount:
             anim_current_frame = 0.0
 
         rl.BeginDrawing()

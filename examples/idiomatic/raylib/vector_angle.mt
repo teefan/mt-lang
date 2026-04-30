@@ -13,7 +13,7 @@ def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Vector Angle")
     defer rl.close_window()
 
-    let origin = rl.Vector2(x = cast[f32](screen_width) / 2.0, y = cast[f32](screen_height) / 2.0)
+    let origin = rl.Vector2(x = f32<-screen_width / 2.0, y = f32<-screen_height / 2.0)
     var first_vector = origin.add(rl.Vector2(x = 100.0, y = 80.0))
     var second_vector = math.Vector2.zero()
     var angle: f32 = 0.0
@@ -58,15 +58,15 @@ def main() -> i32:
             rl.draw_line_ex(origin, second_vector, 2.0, rl.RED)
             rl.draw_circle_sector(origin, 40.0, start_angle, start_angle - angle, 32, rl.fade(rl.GREEN, 0.6))
 
-        rl.draw_text("v0", cast[i32](origin.x), cast[i32](origin.y), 10, rl.DARKGRAY)
+        rl.draw_text("v0", i32<-origin.x, i32<-origin.y, 10, rl.DARKGRAY)
         if angle_mode == 0 and origin.subtract(first_vector).y > 0.0:
-            rl.draw_text("v1", cast[i32](first_vector.x), cast[i32](first_vector.y) - 10, 10, rl.DARKGRAY)
+            rl.draw_text("v1", i32<-first_vector.x, i32<-first_vector.y - 10, 10, rl.DARKGRAY)
         elif angle_mode == 0 and origin.subtract(first_vector).y < 0.0:
-            rl.draw_text("v1", cast[i32](first_vector.x), cast[i32](first_vector.y), 10, rl.DARKGRAY)
+            rl.draw_text("v1", i32<-first_vector.x, i32<-first_vector.y, 10, rl.DARKGRAY)
         elif angle_mode == 1:
-            rl.draw_text("v1", cast[i32](origin.x) + 40, cast[i32](origin.y), 10, rl.DARKGRAY)
+            rl.draw_text("v1", i32<-origin.x + 40, i32<-origin.y, 10, rl.DARKGRAY)
 
-        rl.draw_text("v2", cast[i32](second_vector.x) - 10, cast[i32](second_vector.y) - 10, 10, rl.DARKGRAY)
+        rl.draw_text("v2", i32<-second_vector.x - 10, i32<-second_vector.y - 10, 10, rl.DARKGRAY)
         rl.draw_text("Press SPACE to change MODE", 460, 10, 20, rl.DARKGRAY)
         rl.draw_text(rl.text_format_f32("ANGLE: %2.2f", angle), 10, 70, 20, rl.LIME)
 

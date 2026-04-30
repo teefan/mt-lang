@@ -32,7 +32,7 @@ def main() -> i32:
     defer rl.UnloadTexture(texture)
 
     rl.SetTextureWrap(texture, rl.TextureWrap.TEXTURE_WRAP_REPEAT)
-    rl.SetMaterialTexture(model.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
+    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     var pitch: f32 = 0.0
     var roll: f32 = 0.0

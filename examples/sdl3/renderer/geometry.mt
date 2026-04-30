@@ -7,7 +7,7 @@ const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/renderer/geometry"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
@@ -25,9 +25,9 @@ def pump_events() -> bool:
     return true
 
 def render_frame() -> void:
-    let now = cast[i32](c.SDL_GetTicks())
+    let now = i32<-c.SDL_GetTicks()
     let direction = if (now % 2000) >= 1000 then 1.0 else -1.0
-    let scale = (cast[f32]((now % 1000) - 500) / 500.0) * direction
+    let scale = (f32<-((now % 1000) - 500) / 500.0) * direction
     let size = 200.0 + (200.0 * scale)
 
     var vertices = zero[array[c.SDL_Vertex, 4]]()
@@ -36,18 +36,18 @@ def render_frame() -> void:
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
 
-    vertices[0].position.x = cast[f32](window_width) / 2.0
-    vertices[0].position.y = (cast[f32](window_height) - size) / 2.0
+    vertices[0].position.x = f32<-window_width / 2.0
+    vertices[0].position.y = (f32<-window_height - size) / 2.0
     vertices[0].color.r = 1.0
     vertices[0].color.a = 1.0
 
-    vertices[1].position.x = (cast[f32](window_width) + size) / 2.0
-    vertices[1].position.y = (cast[f32](window_height) + size) / 2.0
+    vertices[1].position.x = (f32<-window_width + size) / 2.0
+    vertices[1].position.y = (f32<-window_height + size) / 2.0
     vertices[1].color.g = 1.0
     vertices[1].color.a = 1.0
 
-    vertices[2].position.x = (cast[f32](window_width) - size) / 2.0
-    vertices[2].position.y = (cast[f32](window_height) + size) / 2.0
+    vertices[2].position.x = (f32<-window_width - size) / 2.0
+    vertices[2].position.y = (f32<-window_height + size) / 2.0
     vertices[2].color.b = 1.0
     vertices[2].color.a = 1.0
 

@@ -24,8 +24,8 @@ def main() -> i32:
         rl.UnloadTexture(explosion)
         rl.UnloadSound(fx_boom)
 
-    let frame_width = cast[f32](explosion.width) / cast[f32](num_frames_per_line)
-    let frame_height = cast[f32](explosion.height) / cast[f32](num_lines)
+    let frame_width = f32<-explosion.width / f32<-num_frames_per_line
+    let frame_height = f32<-explosion.height / f32<-num_lines
 
     var current_frame = 0
     var current_line = 0
@@ -62,8 +62,8 @@ def main() -> i32:
 
                 frames_counter = 0
 
-        frame_rec.x = frame_width * cast[f32](current_frame)
-        frame_rec.y = frame_height * cast[f32](current_line)
+        frame_rec.x = frame_width * f32<-current_frame
+        frame_rec.y = frame_height * f32<-current_line
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

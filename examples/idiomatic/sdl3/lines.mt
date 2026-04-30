@@ -37,10 +37,10 @@ def render_frame() -> void:
     sdl.render_clear(renderer)
 
     sdl.set_render_draw_color(renderer, 127, 49, 32, 255)
-    sdl.render_line(renderer, cast[f32](240.0), cast[f32](450.0), cast[f32](400.0), cast[f32](450.0))
-    sdl.render_line(renderer, cast[f32](240.0), cast[f32](356.0), cast[f32](400.0), cast[f32](356.0))
-    sdl.render_line(renderer, cast[f32](240.0), cast[f32](356.0), cast[f32](240.0), cast[f32](450.0))
-    sdl.render_line(renderer, cast[f32](400.0), cast[f32](356.0), cast[f32](400.0), cast[f32](450.0))
+    sdl.render_line(renderer, f32<-240.0, f32<-450.0, f32<-400.0, f32<-450.0)
+    sdl.render_line(renderer, f32<-240.0, f32<-356.0, f32<-400.0, f32<-356.0)
+    sdl.render_line(renderer, f32<-240.0, f32<-356.0, f32<-240.0, f32<-450.0)
+    sdl.render_line(renderer, f32<-400.0, f32<-356.0, f32<-400.0, f32<-450.0)
 
     sdl.set_render_draw_color(renderer, 0, 255, 0, 255)
     sdl.render_lines(renderer, ro_addr(line_points[0]), 9)
@@ -49,13 +49,13 @@ def render_frame() -> void:
         let size: f32 = 30.0
         let x: f32 = 320.0
         let y: f32 = 95.0 - (size / 2.0)
-        let radians: f32 = cast[f32](angle) * (sdl.PI_F / 180.0)
+        let radians: f32 = f32<-angle * (sdl.PI_F / 180.0)
 
         sdl.set_render_draw_color(
             renderer,
-            cast[u8](sdl.rand(256)),
-            cast[u8](sdl.rand(256)),
-            cast[u8](sdl.rand(256)),
+            u8<-sdl.rand(256),
+            u8<-sdl.rand(256),
+            u8<-sdl.rand(256),
             255,
         )
         sdl.render_line(renderer, x, y, x + (sdl.cosf(radians) * size), y + (sdl.sinf(radians) * size))

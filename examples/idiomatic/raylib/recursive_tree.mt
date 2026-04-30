@@ -23,7 +23,7 @@ def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Recursive Tree")
     defer rl.close_window()
 
-    let start_position = rl.Vector2(x = screen_width / 2.0 - 125.0, y = cast[f32](screen_height))
+    let start_position = rl.Vector2(x = screen_width / 2.0 - 125.0, y = f32<-screen_height)
     var angle: f32 = 40.0
     var thick: f32 = 1.0
     var tree_depth: f32 = 10.0
@@ -35,7 +35,7 @@ def main() -> i32:
 
     while not rl.window_should_close():
         let theta = angle * math.deg2rad
-        let max_branches = branch_limit(cast[i32](math.floor(tree_depth)))
+        let max_branches = branch_limit(i32<-math.floor(tree_depth))
         var branches = zero[array[Branch, 1030]]()
         var count = 0
 

@@ -19,7 +19,7 @@ var average_volume: array[f32, 400]
 
 def void_ptr_to_f32(value: ptr[void]) -> ptr[f32]:
     unsafe:
-        return cast[ptr[f32]](value)
+        return ptr[f32]<-value
 
 def signed_power(value: f32) -> f32:
     var sign: f32 = 1.0
@@ -29,8 +29,8 @@ def signed_power(value: f32) -> f32:
 
 def process_audio(buffer: ptr[void], frames: u32) -> void:
     let samples = void_ptr_to_f32(buffer)
-    let frame_count = cast[i32](frames)
-    let frames_f = cast[f32](frame_count)
+    let frame_count = i32<-frames
+    let frames_f = f32<-frame_count
     var average: f32 = 0.0
 
     unsafe:
@@ -95,7 +95,7 @@ def main() -> i32:
 
         rl.DrawRectangle(199, 199, 402, 34, rl.LIGHTGRAY)
         for index in range(0, average_volume_size):
-            rl.DrawLine(201 + index, 232 - cast[i32](average_volume[index] * 32.0), 201 + index, 232, rl.MAROON)
+            rl.DrawLine(201 + index, 232 - i32<-(average_volume[index] * 32.0), 201 + index, 232, rl.MAROON)
         rl.DrawRectangleLines(199, 199, 402, 34, rl.GRAY)
 
         rl.DrawText(sound_text, 200, 250, 20, rl.LIGHTGRAY)

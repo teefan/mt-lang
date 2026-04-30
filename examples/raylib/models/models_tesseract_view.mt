@@ -45,7 +45,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        let rotation = rm.deg2rad * 45.0 * cast[f32](rl.GetTime())
+        let rotation = rm.deg2rad * 45.0 * f32<-rl.GetTime()
 
         for index in range(0, vertex_count):
             var point = tesseract[index]

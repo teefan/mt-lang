@@ -33,7 +33,7 @@ def main() -> i32:
 
     let texture = rl.LoadTexture(texture_path)
     defer rl.UnloadTexture(texture)
-    rl.SetMaterialTexture(model.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
+    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
     let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
@@ -72,7 +72,7 @@ def main() -> i32:
         rl.BeginShaderMode(shader)
         rl.DrawTextureRec(
             target.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](target.texture.width), height = -cast[f32](target.texture.height)),
+            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-target.texture.width, height = -f32<-target.texture.height),
             rl.Vector2(x = 0.0, y = 0.0),
             rl.WHITE,
         )

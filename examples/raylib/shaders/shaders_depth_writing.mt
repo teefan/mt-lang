@@ -17,10 +17,10 @@ def load_render_texture_depth_tex(width: i32, height: i32) -> rl.RenderTexture2D
     if target.id > 0:
         rlgl.rlEnableFramebuffer(target.id)
 
-        target.texture.id = rlgl.rlLoadTexture(null, width, height, cast[i32](rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8), 1)
+        target.texture.id = rlgl.rlLoadTexture(null, width, height, i32<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, 1)
         target.texture.width = width
         target.texture.height = height
-        target.texture.format = cast[i32](rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
+        target.texture.format = i32<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
         target.texture.mipmaps = 1
 
         target.depth.id = rlgl.rlLoadTextureDepth(width, height, false)
@@ -32,15 +32,15 @@ def load_render_texture_depth_tex(width: i32, height: i32) -> rl.RenderTexture2D
         rlgl.rlFramebufferAttach(
             target.id,
             target.texture.id,
-            cast[i32](rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0),
-            cast[i32](rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D),
+            i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0,
+            i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
             0,
         )
         rlgl.rlFramebufferAttach(
             target.id,
             target.depth.id,
-            cast[i32](rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH),
-            cast[i32](rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D),
+            i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH,
+            i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
             0,
         )
 
@@ -97,7 +97,7 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
         rl.DrawTextureRec(
             target.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](screen_width), height = -cast[f32](screen_height)),
+            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-screen_width, height = -f32<-screen_height),
             rl.Vector2(x = 0.0, y = 0.0),
             rl.WHITE,
         )

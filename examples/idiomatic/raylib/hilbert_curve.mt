@@ -35,13 +35,13 @@ def compute_hilbert_step(order: i32, index_start: i32) -> rl.Vector2:
             vect.x = vect.y
             vect.y = temp
         elif hilbert_index == 1:
-            vect.y += cast[f32](len)
+            vect.y += f32<-len
         elif hilbert_index == 2:
-            vect.x += cast[f32](len)
-            vect.y += cast[f32](len)
+            vect.x += f32<-len
+            vect.y += f32<-len
         elif hilbert_index == 3:
-            temp = cast[f32](len - 1) - vect.x
-            vect.x = cast[f32](2 * len - 1) - vect.y
+            temp = f32<-(len - 1) - vect.x
+            vect.x = f32<-(2 * len - 1) - vect.y
             vect.y = temp
 
     return vect
@@ -49,7 +49,7 @@ def compute_hilbert_step(order: i32, index_start: i32) -> rl.Vector2:
 def rebuild_path(mut hilbert_path: span[rl.Vector2], order: i32, size: f32) -> i32:
     let path_count = 1 << order
     let stroke_count = path_count * path_count
-    let path_len = size / cast[f32](path_count)
+    let path_len = size / f32<-path_count
 
     for index in range(0, stroke_count):
         hilbert_path[index] = compute_hilbert_step(order, index)
@@ -63,21 +63,21 @@ def main() -> i32:
     defer rl.close_window()
 
     var order = min_order
-    var size: f32 = cast[f32](rl.get_screen_height())
+    var size: f32 = f32<-rl.get_screen_height()
     var stroke_count = 0
-    let hilbert_storage = heap.must_alloc_zeroed[rl.Vector2](cast[usize](max_stroke_count))
+    let hilbert_storage = heap.must_alloc_zeroed[rl.Vector2](usize<-max_stroke_count)
     defer heap.release(hilbert_storage)
-    var path_view = span[rl.Vector2](data = hilbert_storage, len = cast[usize](max_stroke_count))
+    var path_view = span[rl.Vector2](data = hilbert_storage, len = usize<-max_stroke_count)
 
     var previous_order = order
-    var previous_size = cast[i32](size)
+    var previous_size = i32<-size
     var counter = 0
     var thick: f32 = 2.0
     var animate = true
 
-    let screen_height_value = cast[f32](rl.get_screen_height())
+    let screen_height_value = f32<-rl.get_screen_height()
     let panel_margin: f32 = 5.0
-    let panel_position = rl.Vector2(x = cast[f32](screen_width) - panel_margin - panel_width, y = panel_margin)
+    let panel_position = rl.Vector2(x = f32<-screen_width - panel_margin - panel_width, y = panel_margin)
     let size_max = screen_height_value * 1.5
 
     stroke_count = rebuild_path(path_view, order, size)
@@ -87,7 +87,7 @@ def main() -> i32:
     while not rl.window_should_close():
         var should_reload = previous_order != order
         if not should_reload:
-            should_reload = previous_size != cast[i32](size)
+            should_reload = previous_size != i32<-size
 
         if should_reload:
             stroke_count = rebuild_path(path_view, order, size)
@@ -98,7 +98,7 @@ def main() -> i32:
                 counter = stroke_count
 
             previous_order = order
-            previous_size = cast[i32](size)
+            previous_size = i32<-size
 
         rl.begin_drawing()
         defer rl.end_drawing()
@@ -107,13 +107,13 @@ def main() -> i32:
 
         if counter < stroke_count:
             for index in range(1, counter + 1):
-                let hue = cast[f32](index) / cast[f32](stroke_count) * 360.0
+                let hue = f32<-index / f32<-stroke_count * 360.0
                 rl.draw_line_ex(path_view[index], path_view[index - 1], thick, rl.color_from_hsv(hue, 1.0, 1.0))
 
             counter += 1
         else:
             for index in range(1, stroke_count):
-                let hue = cast[f32](index) / cast[f32](stroke_count) * 360.0
+                let hue = f32<-index / f32<-stroke_count * 360.0
                 rl.draw_line_ex(path_view[index], path_view[index - 1], thick, rl.color_from_hsv(hue, 1.0, 1.0))
 
         gui.check_box(rl.Rectangle(x = 450.0, y = 50.0, width = 20.0, height = 20.0), "ANIMATE GENERATION ON CHANGE", inout animate)

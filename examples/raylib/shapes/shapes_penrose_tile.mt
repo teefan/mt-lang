@@ -39,7 +39,7 @@ def append_text(buffer: ptr[char], position: ptr[i32], text: cstr) -> void:
         if remaining <= 0:
             return
 
-        let text_length = cast[i32](rl.TextLength(text))
+        let text_length = i32<-rl.TextLength(text)
         if text_length <= remaining:
             rl.TextAppend(buffer, text, position)
         else:
@@ -53,7 +53,7 @@ def append_char(buffer: ptr[char], position: ptr[i32], ch: char) -> void:
 
         var scratch = zero[array[char, 2]]()
         scratch[0] = ch
-        rl.TextAppend(buffer, cast[cstr](raw(addr(scratch[0]))), position)
+        rl.TextAppend(buffer, cstr<-raw(addr(scratch[0])), position)
 
 def push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32], state: TurtleState) -> void:
     if value(top) < turtle_stack_max_size - 1:
@@ -77,8 +77,8 @@ def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32]) -> Turtl
 def create_penrose_lsystem(draw_length: f32) -> PenroseLSystem:
     var production: ptr[char]
     unsafe:
-        production = cast[ptr[char]](rl.MemAlloc(cast[u32](str_max_size)))
-        production[0] = cast[char](0)
+        production = ptr[char]<-rl.MemAlloc(u32<-str_max_size)
+        production[0] = char<-0
         rl.TextCopy(production, initial_production)
 
     return PenroseLSystem(
@@ -95,28 +95,28 @@ def create_penrose_lsystem(draw_length: f32) -> PenroseLSystem:
 def build_production_step(ls: ref[PenroseLSystem]) -> void:
     var new_production: ptr[char]
     unsafe:
-        new_production = cast[ptr[char]](rl.MemAlloc(cast[u32](str_max_size)))
-        new_production[0] = cast[char](0)
+        new_production = ptr[char]<-rl.MemAlloc(u32<-str_max_size)
+        new_production[0] = char<-0
 
-        let production_length = cast[i32](rl.TextLength(cast[cstr](value(ls).production)))
+        let production_length = i32<-rl.TextLength(cstr<-value(ls).production)
         var new_length = 0
 
         for index in range(0, production_length):
             let step = value(ls).production[index]
-            if step == cast[char](87):
+            if step == char<-87:
                 append_text(new_production, raw(addr(new_length)), value(ls).rule_w)
-            elif step == cast[char](88):
+            elif step == char<-88:
                 append_text(new_production, raw(addr(new_length)), value(ls).rule_x)
-            elif step == cast[char](89):
+            elif step == char<-89:
                 append_text(new_production, raw(addr(new_length)), value(ls).rule_y)
-            elif step == cast[char](90):
+            elif step == char<-90:
                 append_text(new_production, raw(addr(new_length)), value(ls).rule_z)
-            elif step != cast[char](70):
+            elif step != char<-70:
                 append_char(new_production, raw(addr(new_length)), step)
 
         value(ls).draw_length *= 0.5
-        rl.TextCopy(value(ls).production, cast[cstr](new_production))
-        rl.MemFree(cast[ptr[void]](new_production))
+        rl.TextCopy(value(ls).production, cstr<-new_production)
+        rl.MemFree(ptr[void]<-new_production)
 
 def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[TurtleState, 50]], turtle_top: ref[i32]) -> void:
     let screen_center = rl.Vector2(x = rl.GetScreenWidth() / 2.0, y = rl.GetScreenHeight() / 2.0)
@@ -124,14 +124,14 @@ def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[Turtle
     var repeats = 1
 
     unsafe:
-        let production_length = cast[i32](rl.TextLength(cast[cstr](value(ls).production)))
+        let production_length = i32<-rl.TextLength(cstr<-value(ls).production)
         value(ls).steps += 12
         if value(ls).steps > production_length:
             value(ls).steps = production_length
 
         for index in range(0, value(ls).steps):
             let step = value(ls).production[index]
-            if step == cast[char](70):
+            if step == char<-70:
                 for repeat_index in range(0, repeats):
                     let start_pos_world = turtle.origin
                     let rad_angle = mt_math.deg2rad * turtle.angle
@@ -149,22 +149,22 @@ def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[Turtle
                     rl.DrawLineEx(start_pos_screen, end_pos_screen, 2.0, rl.Fade(rl.BLACK, 0.2))
 
                 repeats = 1
-            elif step == cast[char](43):
+            elif step == char<-43:
                 for repeat_index in range(0, repeats):
                     turtle.angle += value(ls).theta
 
                 repeats = 1
-            elif step == cast[char](45):
+            elif step == char<-45:
                 for repeat_index in range(0, repeats):
                     turtle.angle -= value(ls).theta
 
                 repeats = 1
-            elif step == cast[char](91):
+            elif step == char<-91:
                 push_turtle_state(turtle_stack, turtle_top, turtle)
-            elif step == cast[char](93):
+            elif step == char<-93:
                 turtle = pop_turtle_state(turtle_stack, turtle_top)
-            elif cast[i32](step) >= 48 and cast[i32](step) <= 57:
-                repeats = cast[i32](step) - 48
+            elif i32<-step >= 48 and i32<-step <= 57:
+                repeats = i32<-step - 48
 
     value(turtle_top) = -1
 
@@ -174,7 +174,7 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var generations = 0
-    var ls = create_penrose_lsystem(draw_length_base * cast[f32](generations) / cast[f32](max_generations))
+    var ls = create_penrose_lsystem(draw_length_base * f32<-generations / f32<-max_generations)
     for index in range(0, generations):
         build_production_step(addr(ls))
 
@@ -197,8 +197,8 @@ def main() -> i32:
 
         if rebuild:
             unsafe:
-                rl.MemFree(cast[ptr[void]](ls.production))
-            ls = create_penrose_lsystem(draw_length_base * cast[f32](generations) / cast[f32](max_generations))
+                rl.MemFree(ptr[void]<-ls.production)
+            ls = create_penrose_lsystem(draw_length_base * f32<-generations / f32<-max_generations)
             for index in range(0, generations):
                 build_production_step(addr(ls))
 
@@ -215,6 +215,6 @@ def main() -> i32:
         rl.DrawText(rl.TextFormat(generations_format, generations), 10, 50, 20, rl.DARKGRAY)
 
     unsafe:
-        rl.MemFree(cast[ptr[void]](ls.production))
+        rl.MemFree(ptr[void]<-ls.production)
 
     return 0

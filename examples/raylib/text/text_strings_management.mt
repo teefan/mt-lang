@@ -36,7 +36,7 @@ struct TextParticle:
 
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
-        return cast[cstr](text)
+        return cstr<-text
 
 def text_particle_text_ptr(tp: ptr[TextParticle]) -> ptr[char]:
     unsafe:
@@ -47,16 +47,16 @@ def text_particle_text(tp: ptr[TextParticle]) -> cstr:
 
 def random_color() -> rl.Color:
     return rl.Color(
-        r = cast[u8](rl.GetRandomValue(0, 255)),
-        g = cast[u8](rl.GetRandomValue(0, 255)),
-        b = cast[u8](rl.GetRandomValue(0, 255)),
+        r = u8<-rl.GetRandomValue(0, 255),
+        g = u8<-rl.GetRandomValue(0, 255),
+        b = u8<-rl.GetRandomValue(0, 255),
         a = 255,
     )
 
 def create_text_particle(text: cstr, x: f32, y: f32, color: rl.Color) -> TextParticle:
     var tp = zero[TextParticle]()
     tp.rect = rl.Rectangle(x = x, y = y, width = 30.0, height = 30.0)
-    tp.vel = rl.Vector2(x = cast[f32](rl.GetRandomValue(-200, 200)), y = cast[f32](rl.GetRandomValue(-200, 200)))
+    tp.vel = rl.Vector2(x = f32<-rl.GetRandomValue(-200, 200), y = f32<-rl.GetRandomValue(-200, 200))
     tp.ppos = rl.Vector2(x = 0.0, y = 0.0)
     tp.padding = 5.0
     tp.border_width = 5.0
@@ -66,8 +66,8 @@ def create_text_particle(text: cstr, x: f32, y: f32, color: rl.Color) -> TextPar
     tp.grabbed = false
 
     rl.TextCopy(raw(addr(tp.text[0])), text)
-    tp.rect.width = cast[f32](rl.MeasureText(chars_to_cstr(raw(addr(tp.text[0]))), font_size)) + tp.padding * 2.0
-    tp.rect.height = cast[f32](font_size) + tp.padding * 2.0
+    tp.rect.width = f32<-rl.MeasureText(chars_to_cstr(raw(addr(tp.text[0]))), font_size) + tp.padding * 2.0
+    tp.rect.height = f32<-font_size + tp.padding * 2.0
 
     return tp
 
@@ -75,8 +75,8 @@ def prepare_first_text_particle(text: cstr, tps: ptr[TextParticle], particle_cou
     unsafe:
         deref(tps) = create_text_particle(
             text,
-            cast[f32](rl.GetScreenWidth()) / 2.0,
-            cast[f32](rl.GetScreenHeight()) / 2.0,
+            f32<-rl.GetScreenWidth() / 2.0,
+            f32<-rl.GetScreenHeight() / 2.0,
             rl.RAYWHITE,
         )
         deref(particle_count) = 1
@@ -97,19 +97,19 @@ def reallocate_text_particles(tps: ptr[TextParticle], particle_pos: i32, particl
         deref(particle_count) = deref(particle_count) - 1
 
 def slice_text_particle(tp: ptr[TextParticle], particle_pos: i32, slice_length: i32, tps: ptr[TextParticle], particle_count: ptr[i32]) -> void:
-    let length = cast[i32](rl.TextLength(text_particle_text(tp)))
+    let length = i32<-rl.TextLength(text_particle_text(tp))
 
     unsafe:
         if slice_length > 0 and length > 1 and (deref(particle_count) + length) < max_text_particles:
             var index = 0
             while index < length:
-                let piece_text = if slice_length == 1 then rl.TextFormat(char_format, cast[i32](deref(text_particle_text_ptr(tp) + index))) else rl.TextSubtext(text_particle_text(tp), index, slice_length)
+                let piece_text = if slice_length == 1 then rl.TextFormat(char_format, i32<-deref(text_particle_text_ptr(tp) + index)) else rl.TextSubtext(text_particle_text(tp), index, slice_length)
                 append_particle(
                     tps,
                     particle_count,
                     create_text_particle(
                         piece_text,
-                        deref(tp).rect.x + cast[f32](index) * deref(tp).rect.width / cast[f32](length),
+                        deref(tp).rect.x + f32<-index * deref(tp).rect.width / f32<-length,
                         deref(tp).rect.y,
                         random_color(),
                     ),
@@ -124,7 +124,7 @@ def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps:
 
     unsafe:
         if token_count > 1:
-            let text_length = cast[i32](rl.TextLength(text_particle_text(tp)))
+            let text_length = i32<-rl.TextLength(text_particle_text(tp))
             var index = 0
             while index < text_length:
                 if deref(text_particle_text_ptr(tp) + index) == char_to_slice:
@@ -132,7 +132,7 @@ def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps:
                         tps,
                         particle_count,
                         create_text_particle(
-                            rl.TextFormat(char_format, cast[i32](char_to_slice)),
+                            rl.TextFormat(char_format, i32<-char_to_slice),
                             deref(tp).rect.x,
                             deref(tp).rect.y,
                             random_color(),
@@ -143,13 +143,13 @@ def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps:
             index = 0
             while index < token_count:
                 let token = chars_to_cstr(deref(tokens + index))
-                let token_length = cast[i32](rl.TextLength(token))
+                let token_length = i32<-rl.TextLength(token)
                 append_particle(
                     tps,
                     particle_count,
                     create_text_particle(
                         rl.TextFormat(copy_format, token),
-                        deref(tp).rect.x + cast[f32](index) * deref(tp).rect.width / cast[f32](token_length),
+                        deref(tp).rect.x + f32<-index * deref(tp).rect.width / f32<-token_length,
                         deref(tp).rect.y,
                         random_color(),
                     ),
@@ -228,7 +228,7 @@ def main() -> i32:
                     if rl.IsKeyDown(rl.KeyboardKey.KEY_LEFT_SHIFT):
                         shatter_text_particle(raw(addr(text_particles[index])), index, raw(addr(text_particles[0])), raw(addr(particle_count)))
                     else:
-                        slice_text_particle(raw(addr(text_particles[index])), index, cast[i32](rl.TextLength(text_particle_text(raw(addr(text_particles[index]))))) / 2, raw(addr(text_particles[0])), raw(addr(particle_count)))
+                        slice_text_particle(raw(addr(text_particles[index])), index, i32<-rl.TextLength(text_particle_text(raw(addr(text_particles[index])))) / 2, raw(addr(text_particles[0])), raw(addr(particle_count)))
                     break
                 index -= 1
 
@@ -237,8 +237,8 @@ def main() -> i32:
             while index < particle_count:
                 if not text_particles[index].grabbed:
                     text_particles[index].vel = rl.Vector2(
-                        x = cast[f32](rl.GetRandomValue(-2000, 2000)),
-                        y = cast[f32](rl.GetRandomValue(-2000, 2000)),
+                        x = f32<-rl.GetRandomValue(-2000, 2000),
+                        y = f32<-rl.GetRandomValue(-2000, 2000),
                     )
                 index += 1
 
@@ -263,7 +263,7 @@ def main() -> i32:
 
         let char_pressed = rl.GetCharPressed()
         if char_pressed >= 65 and char_pressed <= 122 and particle_count == 1:
-            slice_text_particle_by_char(raw(addr(text_particles[0])), cast[char](char_pressed), raw(addr(text_particles[0])), raw(addr(particle_count)))
+            slice_text_particle_by_char(raw(addr(text_particles[0])), char<-char_pressed, raw(addr(text_particles[0])), raw(addr(particle_count)))
 
         var index = 0
         while index < particle_count:
@@ -271,15 +271,15 @@ def main() -> i32:
                 text_particles[index].rect.x += text_particles[index].vel.x * delta
                 text_particles[index].rect.y += text_particles[index].vel.y * delta
 
-                if text_particles[index].rect.x + text_particles[index].rect.width >= cast[f32](screen_width):
-                    text_particles[index].rect.x = cast[f32](screen_width) - text_particles[index].rect.width
+                if text_particles[index].rect.x + text_particles[index].rect.width >= f32<-screen_width:
+                    text_particles[index].rect.x = f32<-screen_width - text_particles[index].rect.width
                     text_particles[index].vel.x = -text_particles[index].vel.x * text_particles[index].elasticity
                 elif text_particles[index].rect.x <= 0.0:
                     text_particles[index].rect.x = 0.0
                     text_particles[index].vel.x = -text_particles[index].vel.x * text_particles[index].elasticity
 
-                if text_particles[index].rect.y + text_particles[index].rect.height >= cast[f32](screen_height):
-                    text_particles[index].rect.y = cast[f32](screen_height) - text_particles[index].rect.height
+                if text_particles[index].rect.y + text_particles[index].rect.height >= f32<-screen_height:
+                    text_particles[index].rect.y = f32<-screen_height - text_particles[index].rect.height
                     text_particles[index].vel.y = -text_particles[index].vel.y * text_particles[index].elasticity
                 elif text_particles[index].rect.y <= 0.0:
                     text_particles[index].rect.y = 0.0
@@ -323,8 +323,8 @@ def main() -> i32:
             rl.DrawRectangleRec(text_particles[index].rect, text_particles[index].color)
             rl.DrawText(
                 text_particle_text(raw(addr(text_particles[index]))),
-                cast[i32](text_particles[index].rect.x + text_particles[index].padding),
-                cast[i32](text_particles[index].rect.y + text_particles[index].padding),
+                i32<-(text_particles[index].rect.x + text_particles[index].padding),
+                i32<-(text_particles[index].rect.y + text_particles[index].padding),
                 font_size,
                 rl.BLACK,
             )

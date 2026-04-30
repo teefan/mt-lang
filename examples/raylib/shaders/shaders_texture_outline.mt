@@ -27,7 +27,7 @@ def main() -> i32:
 
     var outline_size: f32 = 2.0
     var outline_color = array[f32, 4](1.0, 0.0, 0.0, 1.0)
-    var texture_size = array[f32, 2](cast[f32](texture.width), cast[f32](texture.height))
+    var texture_size = array[f32, 2](f32<-texture.width, f32<-texture.height)
 
     let outline_size_loc = rl.GetShaderLocation(shader, outline_size_uniform_name)
     let outline_color_loc = rl.GetShaderLocation(shader, outline_color_uniform_name)
@@ -57,7 +57,7 @@ def main() -> i32:
 
         rl.DrawText(title_text, 10, 10, 20, rl.GRAY)
         rl.DrawText(help_text, 10, 72, 20, rl.GRAY)
-        rl.DrawText(rl.TextFormat(outline_format, cast[i32](outline_size)), 10, 120, 20, rl.MAROON)
+        rl.DrawText(rl.TextFormat(outline_format, i32<-outline_size), 10, 120, 20, rl.MAROON)
         rl.DrawFPS(710, 10)
 
     return 0

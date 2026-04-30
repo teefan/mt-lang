@@ -28,8 +28,8 @@ def main() -> i32:
 
     while not rl.WindowShouldClose():
         let rec = rl.Rectangle(
-            x = (cast[f32](rl.GetScreenWidth()) - width - 250.0) / 2.0,
-            y = (cast[f32](rl.GetScreenHeight()) - height) / 2.0,
+            x = (f32<-rl.GetScreenWidth() - width - 250.0) / 2.0,
+            y = (f32<-rl.GetScreenHeight() - height) / 2.0,
             width = width,
             height = height,
         )
@@ -46,13 +46,13 @@ def main() -> i32:
             rl.DrawRectangleRec(rec, rl.Fade(rl.GOLD, 0.6))
 
         if draw_rounded_rect:
-            rl.DrawRectangleRounded(rec, roundness, cast[i32](segments), rl.Fade(rl.MAROON, 0.2))
+            rl.DrawRectangleRounded(rec, roundness, i32<-segments, rl.Fade(rl.MAROON, 0.2))
 
         if draw_rounded_lines:
-            rl.DrawRectangleRoundedLinesEx(rec, roundness, cast[i32](segments), line_thick, rl.Fade(rl.MAROON, 0.4))
+            rl.DrawRectangleRoundedLinesEx(rec, roundness, i32<-segments, line_thick, rl.Fade(rl.MAROON, 0.4))
 
-        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 40.0, width = 105.0, height = 20.0), c"Width", rl.TextFormat(c"%.2f", width), raw(addr(width)), 0.0, cast[f32](rl.GetScreenWidth()) - 300.0)
-        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 70.0, width = 105.0, height = 20.0), c"Height", rl.TextFormat(c"%.2f", height), raw(addr(height)), 0.0, cast[f32](rl.GetScreenHeight()) - 50.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 40.0, width = 105.0, height = 20.0), c"Width", rl.TextFormat(c"%.2f", width), raw(addr(width)), 0.0, f32<-rl.GetScreenWidth() - 300.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 70.0, width = 105.0, height = 20.0), c"Height", rl.TextFormat(c"%.2f", height), raw(addr(height)), 0.0, f32<-rl.GetScreenHeight() - 50.0)
         gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 140.0, width = 105.0, height = 20.0), c"Roundness", rl.TextFormat(c"%.2f", roundness), raw(addr(roundness)), 0.0, 1.0)
         gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 170.0, width = 105.0, height = 20.0), c"Thickness", rl.TextFormat(c"%.2f", line_thick), raw(addr(line_thick)), 0.0, 20.0)
         gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 240.0, width = 105.0, height = 20.0), c"Segments", rl.TextFormat(c"%.2f", segments), raw(addr(segments)), 0.0, 60.0)

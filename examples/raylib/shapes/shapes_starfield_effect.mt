@@ -24,15 +24,15 @@ def main() -> i32:
     var stars_screen_pos = zero[array[rl.Vector2, 420]]()
 
     for index in range(0, star_count):
-        stars[index].x = cast[f32](rl.GetRandomValue(-screen_width / 2, screen_width / 2))
-        stars[index].y = cast[f32](rl.GetRandomValue(-screen_height / 2, screen_height / 2))
+        stars[index].x = f32<-rl.GetRandomValue(-screen_width / 2, screen_width / 2)
+        stars[index].y = f32<-rl.GetRandomValue(-screen_height / 2, screen_height / 2)
         stars[index].z = 1.0
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
         let mouse_move = rl.GetMouseWheelMove()
-        if cast[i32](mouse_move) != 0:
+        if i32<-mouse_move != 0:
             speed += 2.0 * mouse_move / 9.0
         if speed < 0.0:
             speed = 0.1
@@ -52,8 +52,8 @@ def main() -> i32:
             )
 
             if stars[index].z < 0.0 or stars_screen_pos[index].x < 0.0 or stars_screen_pos[index].y < 0.0 or stars_screen_pos[index].x > screen_width or stars_screen_pos[index].y > screen_height:
-                stars[index].x = cast[f32](rl.GetRandomValue(-screen_width / 2, screen_width / 2))
-                stars[index].y = cast[f32](rl.GetRandomValue(-screen_height / 2, screen_height / 2))
+                stars[index].x = f32<-rl.GetRandomValue(-screen_width / 2, screen_width / 2)
+                stars[index].y = f32<-rl.GetRandomValue(-screen_height / 2, screen_height / 2)
                 stars[index].z = 1.0
 
         rl.BeginDrawing()

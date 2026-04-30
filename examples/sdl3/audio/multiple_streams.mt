@@ -5,9 +5,9 @@ import std.c.sdl3 as c
 const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/audio/multiple-streams"
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const default_playback_device: u32 = cast[u32](0xFFFFFFFF)
+const default_playback_device: u32 = u32<-0xFFFFFFFF
 const sample_wav_path: cstr = c"../resources/sample.wav"
 const sword_wav_path: cstr = c"../resources/sword.wav"
 const sound_count: i32 = 2
@@ -60,8 +60,8 @@ def render_frame() -> void:
         if stream != null:
             let wav_data = sounds[index].wav_data
             if wav_data != null:
-                if c.SDL_GetAudioStreamQueued(stream) < cast[i32](sounds[index].wav_data_len):
-                    c.SDL_PutAudioStreamData(stream, wav_data, cast[i32](sounds[index].wav_data_len))
+                if c.SDL_GetAudioStreamQueued(stream) < i32<-sounds[index].wav_data_len:
+                    c.SDL_PutAudioStreamData(stream, wav_data, i32<-sounds[index].wav_data_len)
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)

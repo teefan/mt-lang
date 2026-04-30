@@ -12,7 +12,7 @@ const credit_text: cstr = c"(c) CesiumMan model by KhronosGroup"
 
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
-        return cast[cstr](text)
+        return cstr<-text
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
@@ -79,7 +79,7 @@ def main() -> i32:
 
         let anim = model_animation(anims, anim_index)
         anim_current_frame += 1.0
-        if anim_current_frame >= cast[f32](anim.keyframeCount):
+        if anim_current_frame >= f32<-anim.keyframeCount:
             anim_current_frame = 0.0
 
         rl.UpdateModelAnimation(model, anim, anim_current_frame)
@@ -93,7 +93,7 @@ def main() -> i32:
         if not rl.IsKeyDown(rl.KeyboardKey.KEY_SPACE):
             rl.DrawModel(model, position, 1.0, rl.WHITE)
         else:
-            draw_model_skeleton(model.skeleton, model_animation_pose(anim, cast[i32](anim_current_frame)), 1.0, rl.RED)
+            draw_model_skeleton(model.skeleton, model_animation_pose(anim, i32<-anim_current_frame), 1.0, rl.RED)
 
         rl.DrawGrid(10, 1.0)
         rl.EndMode3D()

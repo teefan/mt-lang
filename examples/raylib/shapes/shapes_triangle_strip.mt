@@ -23,12 +23,12 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        let point_count = cast[i32](segments)
-        let angle_step = 360.0 / cast[f32](point_count) * mt_math.deg2rad
+        let point_count = i32<-segments
+        let angle_step = 360.0 / f32<-point_count * mt_math.deg2rad
 
         for index in range(0, point_count):
             let point_index = index * 2
-            let angle1 = cast[f32](index) * angle_step
+            let angle1 = f32<-index * angle_step
             points[point_index] = rl.Vector2(
                 x = center.x + math.cosf(angle1) * inside_radius,
                 y = center.y + math.sinf(angle1) * inside_radius,
@@ -54,7 +54,7 @@ def main() -> i32:
             let c = points[index * 2 + 2]
             let d = points[index * 2 + 3]
 
-            let angle1 = cast[f32](index) * angle_step
+            let angle1 = f32<-index * angle_step
             rl.DrawTriangle(c, b, a, rl.ColorFromHSV(angle1 * mt_math.rad2deg, 1.0, 1.0))
             rl.DrawTriangle(d, b, c, rl.ColorFromHSV((angle1 + angle_step / 2.0) * mt_math.rad2deg, 1.0, 1.0))
 

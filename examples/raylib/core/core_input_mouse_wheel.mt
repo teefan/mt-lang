@@ -17,7 +17,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        box_position_y -= cast[i32](rl.GetMouseWheelMove() * scroll_speed)
+        box_position_y -= i32<-(rl.GetMouseWheelMove() * scroll_speed)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

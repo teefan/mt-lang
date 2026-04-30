@@ -7,7 +7,7 @@ const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/renderer/textures"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
@@ -25,11 +25,11 @@ def pump_events() -> bool:
     return true
 
 def render_frame() -> void:
-    let now = cast[i32](c.SDL_GetTicks())
+    let now = i32<-c.SDL_GetTicks()
     let direction = if (now % 2000) >= 1000 then 1.0 else -1.0
-    let scale = (cast[f32]((now % 1000) - 500) / 500.0) * direction
-    let texture_width_f = cast[f32](texture_width)
-    let texture_height_f = cast[f32](texture_height)
+    let scale = (f32<-((now % 1000) - 500) / 500.0) * direction
+    let texture_width_f = f32<-texture_width
+    let texture_height_f = f32<-texture_height
 
     var destination = c.SDL_FRect(x = 100.0 * scale, y = 0.0, w = texture_width_f, h = texture_height_f)
 
@@ -38,12 +38,12 @@ def render_frame() -> void:
 
     c.SDL_RenderTexture(renderer, texture, null, raw(addr(destination)))
 
-    destination.x = (cast[f32](window_width - texture_width)) / 2.0
-    destination.y = (cast[f32](window_height - texture_height)) / 2.0
+    destination.x = (f32<-(window_width - texture_width)) / 2.0
+    destination.y = (f32<-(window_height - texture_height)) / 2.0
     c.SDL_RenderTexture(renderer, texture, null, raw(addr(destination)))
 
-    destination.x = cast[f32](window_width - texture_width) - (100.0 * scale)
-    destination.y = cast[f32](window_height - texture_height)
+    destination.x = f32<-(window_width - texture_width) - (100.0 * scale)
+    destination.y = f32<-(window_height - texture_height)
     c.SDL_RenderTexture(renderer, texture, null, raw(addr(destination)))
 
     c.SDL_RenderPresent(renderer)

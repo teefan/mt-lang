@@ -29,10 +29,10 @@ def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Ellipse Collision")
     defer rl.close_window()
 
-    var ellipse_a_center = rl.Vector2(x = cast[f32](screen_width) / 4.0, y = cast[f32](screen_height) / 2.0)
+    var ellipse_a_center = rl.Vector2(x = f32<-screen_width / 4.0, y = f32<-screen_height / 2.0)
     let ellipse_a_radius_x: f32 = 120.0
     let ellipse_a_radius_y: f32 = 70.0
-    var ellipse_b_center = rl.Vector2(x = cast[f32](screen_width) * 3.0 / 4.0, y = cast[f32](screen_height) / 2.0)
+    var ellipse_b_center = rl.Vector2(x = f32<-screen_width * 3.0 / 4.0, y = f32<-screen_height / 2.0)
     let ellipse_b_radius_x: f32 = 90.0
     let ellipse_b_radius_y: f32 = 140.0
     var controlled = 0
@@ -66,10 +66,10 @@ def main() -> i32:
         defer rl.end_drawing()
 
         rl.clear_background(rl.RAYWHITE)
-        rl.draw_ellipse(cast[i32](ellipse_a_center.x), cast[i32](ellipse_a_center.y), ellipse_a_radius_x, ellipse_a_radius_y, if ellipses_collide then rl.RED else rl.BLUE)
-        rl.draw_ellipse(cast[i32](ellipse_b_center.x), cast[i32](ellipse_b_center.y), ellipse_b_radius_x, ellipse_b_radius_y, if ellipses_collide then rl.RED else rl.GREEN)
-        rl.draw_ellipse_lines(cast[i32](ellipse_a_center.x), cast[i32](ellipse_a_center.y), ellipse_a_radius_x, ellipse_a_radius_y, rl.WHITE)
-        rl.draw_ellipse_lines(cast[i32](ellipse_b_center.x), cast[i32](ellipse_b_center.y), ellipse_b_radius_x, ellipse_b_radius_y, rl.WHITE)
+        rl.draw_ellipse(i32<-ellipse_a_center.x, i32<-ellipse_a_center.y, ellipse_a_radius_x, ellipse_a_radius_y, if ellipses_collide then rl.RED else rl.BLUE)
+        rl.draw_ellipse(i32<-ellipse_b_center.x, i32<-ellipse_b_center.y, ellipse_b_radius_x, ellipse_b_radius_y, if ellipses_collide then rl.RED else rl.GREEN)
+        rl.draw_ellipse_lines(i32<-ellipse_a_center.x, i32<-ellipse_a_center.y, ellipse_a_radius_x, ellipse_a_radius_y, rl.WHITE)
+        rl.draw_ellipse_lines(i32<-ellipse_b_center.x, i32<-ellipse_b_center.y, ellipse_b_radius_x, ellipse_b_radius_y, rl.WHITE)
         rl.draw_circle_v(ellipse_a_center, 4.0, rl.WHITE)
         rl.draw_circle_v(ellipse_b_center, 4.0, rl.WHITE)
 

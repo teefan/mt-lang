@@ -42,12 +42,12 @@ def set_float_uniform(shader: rl.Shader, location: i32, value: f32) -> void:
 def reset_star(star: ref[Star]) -> void:
     var current = value(star)
     current.position = rl.Vector2(x = screen_width_f / 2.0, y = screen_height_f / 2.0)
-    current.speed.x = cast[f32](rl.GetRandomValue(-1000, 1000)) / 100.0
-    current.speed.y = cast[f32](rl.GetRandomValue(-1000, 1000)) / 100.0
+    current.speed.x = f32<-rl.GetRandomValue(-1000, 1000) / 100.0
+    current.speed.y = f32<-rl.GetRandomValue(-1000, 1000) / 100.0
 
     while rm.abs(current.speed.x) + rm.abs(current.speed.y) <= 1.0:
-        current.speed.x = cast[f32](rl.GetRandomValue(-1000, 1000)) / 100.0
-        current.speed.y = cast[f32](rl.GetRandomValue(-1000, 1000)) / 100.0
+        current.speed.x = f32<-rl.GetRandomValue(-1000, 1000) / 100.0
+        current.speed.y = f32<-rl.GetRandomValue(-1000, 1000) / 100.0
 
     current.position = current.position.add(current.speed.multiply(rl.Vector2(x = 8.0, y = 8.0)))
     value(star) = current
@@ -99,16 +99,16 @@ def main() -> i32:
     set_float_uniform(shader, screen_width_loc, screen_width_f)
 
     for index in range(0, max_spots):
-        spots[index].position.x = cast[f32](rl.GetRandomValue(64, screen_width - 64))
-        spots[index].position.y = cast[f32](rl.GetRandomValue(64, screen_height - 64))
+        spots[index].position.x = f32<-rl.GetRandomValue(64, screen_width - 64)
+        spots[index].position.y = f32<-rl.GetRandomValue(64, screen_height - 64)
         spots[index].speed = rl.Vector2(x = 0.0, y = 0.0)
 
         while rm.abs(spots[index].speed.x) + rm.abs(spots[index].speed.y) < 2.0:
-            spots[index].speed.x = cast[f32](rl.GetRandomValue(-400, 40)) / 25.0
-            spots[index].speed.y = cast[f32](rl.GetRandomValue(-400, 40)) / 25.0
+            spots[index].speed.x = f32<-rl.GetRandomValue(-400, 40) / 25.0
+            spots[index].speed.y = f32<-rl.GetRandomValue(-400, 40) / 25.0
 
-        spots[index].inner = 28.0 * cast[f32](index + 1)
-        spots[index].radius = 48.0 * cast[f32](index + 1)
+        spots[index].inner = 28.0 * f32<-(index + 1)
+        spots[index].radius = 48.0 * f32<-(index + 1)
 
         set_vec2_uniform(shader, spots[index].position_loc, spots[index].position)
         set_float_uniform(shader, spots[index].inner_loc, spots[index].inner)
@@ -148,12 +148,12 @@ def main() -> i32:
         rl.ClearBackground(rl.DARKBLUE)
 
         for index in range(0, max_stars):
-            rl.DrawRectangle(cast[i32](stars[index].position.x), cast[i32](stars[index].position.y), 2, 2, rl.WHITE)
+            rl.DrawRectangle(i32<-stars[index].position.x, i32<-stars[index].position.y, 2, 2, rl.WHITE)
 
         for index in range(0, 16):
-            let phase = cast[f32](frame_counter + index * 8)
-            let bob_x = cast[i32](screen_width_f / 2.0 + rm.cos(phase / 51.45) * (screen_width_f / 2.2) - 32.0)
-            let bob_y = cast[i32](screen_height_f / 2.0 + rm.sin(phase / 17.87) * (screen_height_f / 4.2))
+            let phase = f32<-(frame_counter + index * 8)
+            let bob_x = i32<-(screen_width_f / 2.0 + rm.cos(phase / 51.45) * (screen_width_f / 2.2) - 32.0)
+            let bob_y = i32<-(screen_height_f / 2.0 + rm.sin(phase / 17.87) * (screen_height_f / 4.2))
             rl.DrawTexture(tex_ray, bob_x, bob_y, rl.WHITE)
 
         rl.BeginShaderMode(shader)
@@ -162,7 +162,7 @@ def main() -> i32:
 
         rl.DrawFPS(10, 10)
         rl.DrawText(move_text, 10, 30, 20, rl.GREEN)
-        rl.DrawText(pitch_black_text, cast[i32](screen_width_f * 0.2), screen_height / 2, 20, rl.GREEN)
-        rl.DrawText(dark_text, cast[i32](screen_width_f * 0.66), screen_height / 2, 20, rl.GREEN)
+        rl.DrawText(pitch_black_text, i32<-(screen_width_f * 0.2), screen_height / 2, 20, rl.GREEN)
+        rl.DrawText(dark_text, i32<-(screen_width_f * 0.66), screen_height / 2, 20, rl.GREEN)
 
     return 0

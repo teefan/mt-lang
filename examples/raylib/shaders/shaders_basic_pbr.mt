@@ -119,10 +119,10 @@ def create_light(type: i32, position: rl.Vector3, target: rl.Vector3, color: rl.
         light.type = type
         light.position = position
         light.target = target
-        light.color[0] = cast[f32](color.r) / 255.0
-        light.color[1] = cast[f32](color.g) / 255.0
-        light.color[2] = cast[f32](color.b) / 255.0
-        light.color[3] = cast[f32](color.a) / 255.0
+        light.color[0] = f32<-color.r / 255.0
+        light.color[1] = f32<-color.g / 255.0
+        light.color[2] = f32<-color.b / 255.0
+        light.color[3] = f32<-color.a / 255.0
         light.intensity = intensity
 
         light.enabled_loc = rl.GetShaderLocation(shader, rl.TextFormat(light_enabled_format, light_count))
@@ -139,10 +139,10 @@ def create_light(type: i32, position: rl.Vector3, target: rl.Vector3, color: rl.
 
 def light_display_color(light: Light) -> rl.Color:
     return rl.Color(
-        r = cast[u8](light.color[0] * 255.0),
-        g = cast[u8](light.color[1] * 255.0),
-        b = cast[u8](light.color[2] * 255.0),
-        a = cast[u8](light.color[3] * 255.0),
+        r = u8<-(light.color[0] * 255.0),
+        g = u8<-(light.color[1] * 255.0),
+        b = u8<-(light.color[2] * 255.0),
+        a = u8<-(light.color[3] * 255.0),
     )
 
 def main() -> i32:
@@ -167,12 +167,12 @@ def main() -> i32:
     defer rl.UnloadShader(shader)
 
     unsafe:
-        shader.locs[cast[i32](rl.ShaderLocationIndex.SHADER_LOC_MAP_ALBEDO)] = rl.GetShaderLocation(shader, albedo_map_uniform_name)
-        shader.locs[cast[i32](rl.ShaderLocationIndex.SHADER_LOC_MAP_METALNESS)] = rl.GetShaderLocation(shader, mra_map_uniform_name)
-        shader.locs[cast[i32](rl.ShaderLocationIndex.SHADER_LOC_MAP_NORMAL)] = rl.GetShaderLocation(shader, normal_map_uniform_name)
-        shader.locs[cast[i32](rl.ShaderLocationIndex.SHADER_LOC_MAP_EMISSION)] = rl.GetShaderLocation(shader, emissive_map_uniform_name)
-        shader.locs[cast[i32](rl.ShaderLocationIndex.SHADER_LOC_COLOR_DIFFUSE)] = rl.GetShaderLocation(shader, albedo_color_uniform_name)
-        shader.locs[cast[i32](rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW)] = rl.GetShaderLocation(shader, view_pos_uniform_name)
+        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_MAP_ALBEDO] = rl.GetShaderLocation(shader, albedo_map_uniform_name)
+        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_MAP_METALNESS] = rl.GetShaderLocation(shader, mra_map_uniform_name)
+        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_MAP_NORMAL] = rl.GetShaderLocation(shader, normal_map_uniform_name)
+        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_MAP_EMISSION] = rl.GetShaderLocation(shader, emissive_map_uniform_name)
+        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_COLOR_DIFFUSE] = rl.GetShaderLocation(shader, albedo_color_uniform_name)
+        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = rl.GetShaderLocation(shader, view_pos_uniform_name)
 
     let light_count_loc = rl.GetShaderLocation(shader, light_count_uniform_name)
     set_shader_int(shader, light_count_loc, max_lights)
@@ -194,12 +194,12 @@ def main() -> i32:
     defer rl.UnloadModel(car)
     set_model_shader(raw(addr(car)), shader)
 
-    set_material_map_color(car.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), rl.WHITE)
-    set_material_map_value(car.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_METALNESS), 1.0)
-    set_material_map_value(car.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ROUGHNESS), 0.0)
-    set_material_map_value(car.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_OCCLUSION), 1.0)
+    set_material_map_color(car.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, rl.WHITE)
+    set_material_map_value(car.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_METALNESS, 1.0)
+    set_material_map_value(car.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ROUGHNESS, 0.0)
+    set_material_map_value(car.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_OCCLUSION, 1.0)
     let car_emissive_color = rl.Color(r = 255, g = 162, b = 0, a = 255)
-    set_material_map_color(car.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_EMISSION), car_emissive_color)
+    set_material_map_color(car.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_EMISSION, car_emissive_color)
 
     let car_albedo_texture = rl.LoadTexture(car_albedo_path)
     defer rl.UnloadTexture(car_albedo_texture)
@@ -209,21 +209,21 @@ def main() -> i32:
     defer rl.UnloadTexture(car_normal_texture)
     let car_emission_texture = rl.LoadTexture(car_emission_path)
     defer rl.UnloadTexture(car_emission_texture)
-    rl.SetMaterialTexture(car.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), car_albedo_texture)
-    rl.SetMaterialTexture(car.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_METALNESS), car_mra_texture)
-    rl.SetMaterialTexture(car.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_NORMAL), car_normal_texture)
-    rl.SetMaterialTexture(car.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_EMISSION), car_emission_texture)
+    rl.SetMaterialTexture(car.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, car_albedo_texture)
+    rl.SetMaterialTexture(car.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_METALNESS, car_mra_texture)
+    rl.SetMaterialTexture(car.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_NORMAL, car_normal_texture)
+    rl.SetMaterialTexture(car.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_EMISSION, car_emission_texture)
 
     var floor = rl.LoadModel(floor_model_path)
     defer rl.UnloadModel(floor)
     set_model_shader(raw(addr(floor)), shader)
 
-    set_material_map_color(floor.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), rl.WHITE)
-    set_material_map_value(floor.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_METALNESS), 0.8)
-    set_material_map_value(floor.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ROUGHNESS), 0.1)
-    set_material_map_value(floor.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_OCCLUSION), 1.0)
+    set_material_map_color(floor.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, rl.WHITE)
+    set_material_map_value(floor.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_METALNESS, 0.8)
+    set_material_map_value(floor.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ROUGHNESS, 0.1)
+    set_material_map_value(floor.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_OCCLUSION, 1.0)
     let floor_emissive_color = rl.BLACK
-    set_material_map_color(floor.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_EMISSION), floor_emissive_color)
+    set_material_map_color(floor.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_EMISSION, floor_emissive_color)
 
     let floor_albedo_texture = rl.LoadTexture(floor_albedo_path)
     defer rl.UnloadTexture(floor_albedo_texture)
@@ -231,9 +231,9 @@ def main() -> i32:
     defer rl.UnloadTexture(floor_mra_texture)
     let floor_normal_texture = rl.LoadTexture(floor_normal_path)
     defer rl.UnloadTexture(floor_normal_texture)
-    rl.SetMaterialTexture(floor.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), floor_albedo_texture)
-    rl.SetMaterialTexture(floor.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_METALNESS), floor_mra_texture)
-    rl.SetMaterialTexture(floor.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_NORMAL), floor_normal_texture)
+    rl.SetMaterialTexture(floor.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, floor_albedo_texture)
+    rl.SetMaterialTexture(floor.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_METALNESS, floor_mra_texture)
+    rl.SetMaterialTexture(floor.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_NORMAL, floor_normal_texture)
 
     var car_texture_tiling = array[f32, 2](0.5, 0.5)
     var floor_texture_tiling = array[f32, 2](0.5, 0.5)
@@ -246,10 +246,10 @@ def main() -> i32:
     var floor_emissive = array[f32, 4](0.0, 0.0, 0.0, 1.0)
 
     var light_sources = zero[array[Light, 4]]()
-    light_sources[0] = create_light(cast[i32](LightType.LIGHT_POINT), rl.Vector3(x = -1.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.YELLOW, 4.0, shader)
-    light_sources[1] = create_light(cast[i32](LightType.LIGHT_POINT), rl.Vector3(x = 2.0, y = 1.0, z = 1.0), rm.Vector3.zero(), rl.GREEN, 3.3, shader)
-    light_sources[2] = create_light(cast[i32](LightType.LIGHT_POINT), rl.Vector3(x = -2.0, y = 1.0, z = 1.0), rm.Vector3.zero(), rl.RED, 8.3, shader)
-    light_sources[3] = create_light(cast[i32](LightType.LIGHT_POINT), rl.Vector3(x = 1.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.BLUE, 2.0, shader)
+    light_sources[0] = create_light(i32<-LightType.LIGHT_POINT, rl.Vector3(x = -1.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.YELLOW, 4.0, shader)
+    light_sources[1] = create_light(i32<-LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = 1.0), rm.Vector3.zero(), rl.GREEN, 3.3, shader)
+    light_sources[2] = create_light(i32<-LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = 1.0), rm.Vector3.zero(), rl.RED, 8.3, shader)
+    light_sources[3] = create_light(i32<-LightType.LIGHT_POINT, rl.Vector3(x = 1.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.BLUE, 2.0, shader)
 
     let usage = 1
     set_shader_int(shader, rl.GetShaderLocation(shader, use_tex_albedo_uniform_name), usage)
@@ -266,7 +266,7 @@ def main() -> i32:
         unsafe:
             rl.SetShaderValue(
                 shader,
-                deref(shader.locs + cast[usize](cast[i32](rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW))),
+                deref(shader.locs + usize<-(i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW)),
                 raw(addr(camera_pos[0])),
                 rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3,
             )

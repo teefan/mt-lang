@@ -40,17 +40,17 @@ def main() -> i32:
         rl.BeginDrawing()
         rl.ClearBackground(rl.RAYWHITE)
 
-        let frame_width = cast[f32](booth.width)
-        let frame_height = cast[f32](booth.height) / cast[f32](stack_count)
+        let frame_width = f32<-booth.width
+        let frame_height = f32<-booth.height / f32<-stack_count
         let scaled_width = frame_width * stack_scale
         let scaled_height = frame_height * stack_scale
 
         var index = stack_count - 1
         while index >= 0:
-            let source = rl.Rectangle(x = 0.0, y = cast[f32](index) * frame_height, width = frame_width, height = frame_height)
+            let source = rl.Rectangle(x = 0.0, y = f32<-index * frame_height, width = frame_width, height = frame_height)
             let dest = rl.Rectangle(
-                x = cast[f32](screen_width) / 2.0,
-                y = cast[f32](screen_height) / 2.0 + cast[f32](index) * stack_spacing - stack_spacing * cast[f32](stack_count) / 2.0,
+                x = f32<-screen_width / 2.0,
+                y = f32<-screen_height / 2.0 + f32<-index * stack_spacing - stack_spacing * f32<-stack_count / 2.0,
                 width = scaled_width,
                 height = scaled_height,
             )

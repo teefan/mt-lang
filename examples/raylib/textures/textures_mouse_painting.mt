@@ -22,7 +22,7 @@ def main() -> i32:
 
     var colors_recs = zero[array[rl.Rectangle, max_colors_count]]()
     for index in range(0, max_colors_count):
-        colors_recs[index].x = 10.0 + 30.0 * cast[f32](index) + 2.0 * cast[f32](index)
+        colors_recs[index].x = 10.0 + 30.0 * f32<-index + 2.0 * f32<-index
         colors_recs[index].y = 10.0
         colors_recs[index].width = 30.0
         colors_recs[index].height = 30.0
@@ -84,7 +84,7 @@ def main() -> i32:
         if rl.IsMouseButtonDown(rl.MouseButton.MOUSE_BUTTON_LEFT) or rl.GetGestureDetected() == rl.Gesture.GESTURE_DRAG:
             rl.BeginTextureMode(target)
             if mouse_pos.y > 50.0:
-                rl.DrawCircle(cast[i32](mouse_pos.x), cast[i32](mouse_pos.y), brush_size, colors[color_selected])
+                rl.DrawCircle(i32<-mouse_pos.x, i32<-mouse_pos.y, brush_size, colors[color_selected])
             rl.EndTextureMode()
 
         if rl.IsMouseButtonDown(rl.MouseButton.MOUSE_BUTTON_RIGHT):
@@ -96,7 +96,7 @@ def main() -> i32:
 
             rl.BeginTextureMode(target)
             if mouse_pos.y > 50.0:
-                rl.DrawCircle(cast[i32](mouse_pos.x), cast[i32](mouse_pos.y), brush_size, colors[0])
+                rl.DrawCircle(i32<-mouse_pos.x, i32<-mouse_pos.y, brush_size, colors[0])
             rl.EndTextureMode()
         elif rl.IsMouseButtonReleased(rl.MouseButton.MOUSE_BUTTON_RIGHT) and mouse_was_pressed:
             color_selected = color_selected_prev
@@ -130,7 +130,7 @@ def main() -> i32:
 
         if mouse_pos.y > 50.0:
             if rl.IsMouseButtonDown(rl.MouseButton.MOUSE_BUTTON_RIGHT):
-                rl.DrawCircleLines(cast[i32](mouse_pos.x), cast[i32](mouse_pos.y), brush_size, rl.GRAY)
+                rl.DrawCircleLines(i32<-mouse_pos.x, i32<-mouse_pos.y, brush_size, rl.GRAY)
             else:
                 rl.DrawCircle(rl.GetMouseX(), rl.GetMouseY(), brush_size, colors[color_selected])
 

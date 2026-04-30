@@ -7,7 +7,7 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const virtual_screen_width: i32 = 160
 const virtual_screen_height: i32 = 90
-const virtual_ratio: f32 = cast[f32](screen_width) / virtual_screen_width
+const virtual_ratio: f32 = f32<-screen_width / virtual_screen_width
 const window_title: cstr = c"raylib [core] example - smooth pixelperfect"
 
 def main() -> i32:
@@ -30,14 +30,14 @@ def main() -> i32:
     let source_rec = rl.Rectangle(
         x = 0.0,
         y = 0.0,
-        width = cast[f32](target.texture.width),
-        height = -cast[f32](target.texture.height),
+        width = f32<-target.texture.width,
+        height = -f32<-target.texture.height,
     )
     let dest_rec = rl.Rectangle(
         x = -virtual_ratio,
         y = -virtual_ratio,
-        width = cast[f32](screen_width) + virtual_ratio * 2.0,
-        height = cast[f32](screen_height) + virtual_ratio * 2.0,
+        width = f32<-screen_width + virtual_ratio * 2.0,
+        height = f32<-screen_height + virtual_ratio * 2.0,
     )
     let origin = rl.Vector2(x = 0.0, y = 0.0)
 
@@ -50,7 +50,7 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         rotation += 60.0 * rl.GetFrameTime()
 
-        let time = cast[f32](rl.GetTime())
+        let time = f32<-rl.GetTime()
         camera_x = math.sinf(time) * 50.0 - 10.0
         camera_y = math.cosf(time) * 30.0
 

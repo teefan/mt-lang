@@ -27,7 +27,7 @@ var buffer: array[f32, 44100]
 
 def void_ptr_to_f32(value: ptr[void]) -> ptr[f32]:
     unsafe:
-        return cast[ptr[f32]](value)
+        return ptr[f32]<-value
 
 def advance_wave_state(wavelength: i32) -> void:
     wave_index += 1
@@ -45,19 +45,19 @@ def save_wave_samples(samples: ptr[f32], frame_count: i32) -> void:
 
 def sine_callback(frames_out: ptr[void], frame_count: u32) -> void:
     let samples = void_ptr_to_f32(frames_out)
-    let count = cast[i32](frame_count)
+    let count = i32<-frame_count
     let wavelength = sample_rate / wave_frequency
 
     unsafe:
         for index in range(0, count):
-            deref(samples + index) = rm.sin(2.0 * rl.PI * cast[f32](wave_index) / cast[f32](wavelength))
+            deref(samples + index) = rm.sin(2.0 * rl.PI * f32<-wave_index / f32<-wavelength)
             advance_wave_state(wavelength)
 
     save_wave_samples(samples, count)
 
 def square_callback(frames_out: ptr[void], frame_count: u32) -> void:
     let samples = void_ptr_to_f32(frames_out)
-    let count = cast[i32](frame_count)
+    let count = i32<-frame_count
     let wavelength = sample_rate / wave_frequency
     let half_wavelength = wavelength / 2
 
@@ -70,7 +70,7 @@ def square_callback(frames_out: ptr[void], frame_count: u32) -> void:
 
 def triangle_callback(frames_out: ptr[void], frame_count: u32) -> void:
     let samples = void_ptr_to_f32(frames_out)
-    let count = cast[i32](frame_count)
+    let count = i32<-frame_count
     let wavelength = sample_rate / wave_frequency
     let half_wavelength = wavelength / 2
 
@@ -78,9 +78,9 @@ def triangle_callback(frames_out: ptr[void], frame_count: u32) -> void:
         for index in range(0, count):
             var sample: f32 = 0.0
             if wave_index < half_wavelength:
-                sample = -1.0 + 2.0 * cast[f32](wave_index) / cast[f32](half_wavelength)
+                sample = -1.0 + 2.0 * f32<-wave_index / f32<-half_wavelength
             else:
-                sample = 1.0 - 2.0 * cast[f32](wave_index - half_wavelength) / cast[f32](half_wavelength)
+                sample = 1.0 - 2.0 * f32<-(wave_index - half_wavelength) / f32<-half_wavelength
 
             deref(samples + index) = sample
             advance_wave_state(wavelength)
@@ -89,12 +89,12 @@ def triangle_callback(frames_out: ptr[void], frame_count: u32) -> void:
 
 def sawtooth_callback(frames_out: ptr[void], frame_count: u32) -> void:
     let samples = void_ptr_to_f32(frames_out)
-    let count = cast[i32](frame_count)
+    let count = i32<-frame_count
     let wavelength = sample_rate / wave_frequency
 
     unsafe:
         for index in range(0, count):
-            deref(samples + index) = -1.0 + 2.0 * cast[f32](wave_index) / cast[f32](wavelength)
+            deref(samples + index) = -1.0 + 2.0 * f32<-wave_index / f32<-wavelength
             advance_wave_state(wavelength)
 
     save_wave_samples(samples, count)
@@ -128,7 +128,7 @@ def main() -> i32:
 
     var wave_type = WaveType.SINE
     rl.PlayAudioStream(stream)
-    rl.SetAudioStreamCallback(stream, wave_callbacks[cast[i32](wave_type)])
+    rl.SetAudioStreamCallback(stream, wave_callbacks[i32<-wave_type])
 
     rl.SetTargetFPS(30)
 
@@ -153,7 +153,7 @@ def main() -> i32:
             else:
                 wave_type = WaveType.TRIANGLE
 
-            rl.SetAudioStreamCallback(stream, wave_callbacks[cast[i32](wave_type)])
+            rl.SetAudioStreamCallback(stream, wave_callbacks[i32<-wave_type])
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_RIGHT):
             if wave_type == WaveType.SINE:
@@ -165,14 +165,14 @@ def main() -> i32:
             else:
                 wave_type = WaveType.SINE
 
-            rl.SetAudioStreamCallback(stream, wave_callbacks[cast[i32](wave_type)])
+            rl.SetAudioStreamCallback(stream, wave_callbacks[i32<-wave_type])
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
 
         rl.ClearBackground(rl.RAYWHITE)
         rl.DrawText(rl.TextFormat(frequency_format, new_wave_frequency), screen_width - 220, 10, 20, rl.RED)
-        rl.DrawText(rl.TextFormat(wave_type_format, wave_type_names[cast[i32](wave_type)]), screen_width - 220, 30, 20, rl.RED)
+        rl.DrawText(rl.TextFormat(wave_type_format, wave_type_names[i32<-wave_type]), screen_width - 220, 30, 20, rl.RED)
         rl.DrawText(frequency_text, 10, 10, 20, rl.DARKGRAY)
         rl.DrawText(wave_type_text, 10, 30, 20, rl.DARKGRAY)
 
@@ -180,11 +180,11 @@ def main() -> i32:
             let start_sample = preview_sample_index(index)
             let end_sample = preview_sample_index(index + 1)
             let start_pos = rl.Vector2(
-                x = cast[f32](index),
+                x = f32<-index,
                 y = 250.0 - 50.0 * buffer[start_sample],
             )
             let end_pos = rl.Vector2(
-                x = cast[f32](index + 1),
+                x = f32<-(index + 1),
                 y = 250.0 - 50.0 * buffer[end_sample],
             )
             rl.DrawLineV(start_pos, end_pos, rl.RED)

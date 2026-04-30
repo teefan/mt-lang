@@ -59,7 +59,7 @@ def main() -> i32:
         if rl.IsAudioStreamProcessed(stream):
             for index in range(0, buffer_size):
                 let wavelength = sample_rate / sine_frequency
-                let phase = 2.0 * rl.PI * cast[f32](sine_index) / cast[f32](wavelength)
+                let phase = 2.0 * rl.PI * f32<-sine_index / f32<-wavelength
                 buffer[index] = rm.sin(phase)
                 sine_index += 1
 
@@ -80,20 +80,20 @@ def main() -> i32:
         rl.DrawText(frequency_text, 10, 10, 20, rl.DARKGRAY)
         rl.DrawText(pan_text, 10, 30, 20, rl.DARKGRAY)
 
-        let window_start = cast[i32]((rl.GetTime() - sine_start_time) * cast[f64](sample_rate))
-        let window_size = cast[i32](0.1 * cast[f32](sample_rate))
+        let window_start = i32<-((rl.GetTime() - sine_start_time) * f64<-sample_rate)
+        let window_size = i32<-(0.1 * f32<-sample_rate)
         let wavelength = sample_rate / sine_frequency
 
         for index in range(0, screen_width):
             let t0 = window_start + index * window_size / screen_width
             let t1 = window_start + (index + 1) * window_size / screen_width
             let start_pos = rl.Vector2(
-                x = cast[f32](index),
-                y = 250.0 + 50.0 * rm.sin(2.0 * rl.PI * cast[f32](t0) / cast[f32](wavelength)),
+                x = f32<-index,
+                y = 250.0 + 50.0 * rm.sin(2.0 * rl.PI * f32<-t0 / f32<-wavelength),
             )
             let end_pos = rl.Vector2(
-                x = cast[f32](index + 1),
-                y = 250.0 + 50.0 * rm.sin(2.0 * rl.PI * cast[f32](t1) / cast[f32](wavelength)),
+                x = f32<-(index + 1),
+                y = 250.0 + 50.0 * rm.sin(2.0 * rl.PI * f32<-t1 / f32<-wavelength),
             )
             rl.DrawLineV(start_pos, end_pos, rl.RED)
 

@@ -21,7 +21,7 @@ def main() -> i32:
 
     var files = zero[rl.FilePathList]()
     unsafe:
-        files = rl.LoadDirectoryFilesEx(cast[cstr](directory_ptr), filter_text, false)
+        files = rl.LoadDirectoryFilesEx(cstr<-directory_ptr, filter_text, false)
 
     var btn_back_pressed = false
     var list_scroll_index = 0
@@ -33,9 +33,9 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         if btn_back_pressed:
             unsafe:
-                rl.TextCopy(directory_ptr, rl.GetPrevDirectoryPath(cast[cstr](directory_ptr)))
+                rl.TextCopy(directory_ptr, rl.GetPrevDirectoryPath(cstr<-directory_ptr))
                 rl.UnloadDirectoryFiles(files)
-                files = rl.LoadDirectoryFiles(cast[cstr](directory_ptr))
+                files = rl.LoadDirectoryFiles(cstr<-directory_ptr)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
@@ -46,7 +46,7 @@ def main() -> i32:
 
         gui.GuiSetStyle(gui.GuiControl.DEFAULT, gui.GuiDefaultProperty.TEXT_SIZE, gui.GuiGetFont().baseSize * 2)
         unsafe:
-            gui.GuiLabel(gui.Rectangle(x = 98.0, y = 10.0, width = 700.0, height = 28.0), cast[cstr](directory_ptr))
+            gui.GuiLabel(gui.Rectangle(x = 98.0, y = 10.0, width = 700.0, height = 28.0), cstr<-directory_ptr)
         gui.GuiSetStyle(gui.GuiControl.DEFAULT, gui.GuiDefaultProperty.TEXT_SIZE, gui.GuiGetFont().baseSize)
 
         gui.GuiSetStyle(gui.GuiControl.LISTVIEW, gui.GuiControlProperty.TEXT_ALIGNMENT, gui.GuiTextAlignment.TEXT_ALIGN_LEFT)
@@ -54,7 +54,7 @@ def main() -> i32:
         gui.GuiListViewEx(
             gui.Rectangle(x = 0.0, y = 50.0, width = rl.GetScreenWidth(), height = rl.GetScreenHeight() - 50.0),
             files.paths,
-            cast[i32](files.count),
+            i32<-files.count,
             raw(addr(list_scroll_index)),
             raw(addr(list_item_active)),
             raw(addr(list_item_focused)),

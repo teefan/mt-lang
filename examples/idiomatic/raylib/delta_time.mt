@@ -20,7 +20,7 @@ def main() -> i32:
     while not rl.window_should_close():
         let mouse_wheel = rl.get_mouse_wheel_move()
         if mouse_wheel != 0.0:
-            current_fps += cast[i32](mouse_wheel)
+            current_fps += i32<-mouse_wheel
             if current_fps < 0:
                 current_fps = 0
             rl.set_target_fps(current_fps)

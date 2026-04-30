@@ -47,8 +47,8 @@ def main() -> i32:
     var positions = zero[array[rl.Vector2, max_fonts]]()
 
     for index in range(0, max_fonts):
-        positions[index].x = cast[f32](screen_width) / 2.0 - rl.MeasureTextEx(fonts[index], messages[index], cast[f32](fonts[index].baseSize) * 2.0, cast[f32](spacings[index])).x / 2.0
-        positions[index].y = 60.0 + cast[f32](fonts[index].baseSize) + 45.0 * cast[f32](index)
+        positions[index].x = f32<-screen_width / 2.0 - rl.MeasureTextEx(fonts[index], messages[index], f32<-fonts[index].baseSize * 2.0, f32<-spacings[index]).x / 2.0
+        positions[index].y = 60.0 + f32<-fonts[index].baseSize + 45.0 * f32<-index
 
     positions[3].y += 8.0
     positions[4].y += 2.0
@@ -68,6 +68,6 @@ def main() -> i32:
         rl.DrawLine(220, 50, 600, 50, rl.DARKGRAY)
 
         for index in range(0, max_fonts):
-            rl.DrawTextEx(fonts[index], messages[index], positions[index], cast[f32](fonts[index].baseSize) * 2.0, cast[f32](spacings[index]), colors[index])
+            rl.DrawTextEx(fonts[index], messages[index], positions[index], f32<-fonts[index].baseSize * 2.0, f32<-spacings[index], colors[index])
 
     return 0

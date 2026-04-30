@@ -10,7 +10,7 @@ const snake_game_height: i32 = 18
 const snake_matrix_size: i32 = snake_game_width * snake_game_height
 const window_width: i32 = snake_block_size_in_pixels * snake_game_width
 const window_height: i32 = snake_block_size_in_pixels * snake_game_height
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
 
 enum SnakeCell: i32
@@ -69,8 +69,8 @@ def wrap_coordinate(value: i32, max_value: i32) -> i32:
 
 def set_rect_xy(rect: ptr[c.SDL_FRect], x: i32, y: i32) -> void:
     unsafe:
-        deref(rect).x = cast[f32](x * snake_block_size_in_pixels)
-        deref(rect).y = cast[f32](y * snake_block_size_in_pixels)
+        deref(rect).x = f32<-(x * snake_block_size_in_pixels)
+        deref(rect).y = f32<-(y * snake_block_size_in_pixels)
 
 def are_cells_full() -> bool:
     for index in range(0, snake_matrix_size):

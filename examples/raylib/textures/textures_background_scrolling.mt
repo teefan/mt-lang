@@ -11,7 +11,7 @@ const foreground_path: cstr = c"../resources/cyberpunk_street_foreground.png"
 const background_scale: f32 = 2.0
 
 def reset_scroll(scroll: f32, texture_width: i32) -> f32:
-    if scroll <= -cast[f32](texture_width * 2):
+    if scroll <= -f32<-(texture_width * 2):
         return 0.0
     return scroll
 
@@ -43,13 +43,13 @@ def main() -> i32:
         rl.ClearBackground(rl.GetColor(0x052c46ff))
 
         rl.DrawTextureEx(background, rl.Vector2(x = scrolling_back, y = 20.0), 0.0, background_scale, rl.WHITE)
-        rl.DrawTextureEx(background, rl.Vector2(x = cast[f32](background.width * 2) + scrolling_back, y = 20.0), 0.0, background_scale, rl.WHITE)
+        rl.DrawTextureEx(background, rl.Vector2(x = f32<-(background.width * 2) + scrolling_back, y = 20.0), 0.0, background_scale, rl.WHITE)
 
         rl.DrawTextureEx(midground, rl.Vector2(x = scrolling_mid, y = 20.0), 0.0, background_scale, rl.WHITE)
-        rl.DrawTextureEx(midground, rl.Vector2(x = cast[f32](midground.width * 2) + scrolling_mid, y = 20.0), 0.0, background_scale, rl.WHITE)
+        rl.DrawTextureEx(midground, rl.Vector2(x = f32<-(midground.width * 2) + scrolling_mid, y = 20.0), 0.0, background_scale, rl.WHITE)
 
         rl.DrawTextureEx(foreground, rl.Vector2(x = scrolling_fore, y = 70.0), 0.0, background_scale, rl.WHITE)
-        rl.DrawTextureEx(foreground, rl.Vector2(x = cast[f32](foreground.width * 2) + scrolling_fore, y = 70.0), 0.0, background_scale, rl.WHITE)
+        rl.DrawTextureEx(foreground, rl.Vector2(x = f32<-(foreground.width * 2) + scrolling_fore, y = 70.0), 0.0, background_scale, rl.WHITE)
 
         rl.DrawText(c"BACKGROUND SCROLLING & PARALLAX", 10, 10, 20, rl.RED)
         rl.DrawText(c"(c) Cyberpunk Street Environment by Luis Zuno (@ansimuz)", screen_width - 330, screen_height - 20, 10, rl.RAYWHITE)

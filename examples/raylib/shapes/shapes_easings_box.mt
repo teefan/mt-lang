@@ -60,7 +60,7 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     let center_x = rl.GetScreenWidth() / 2.0
-    let center_y_delta = cast[f32](rl.GetScreenHeight() / 2 + 100)
+    let center_y_delta = f32<-(rl.GetScreenHeight() / 2 + 100)
 
     var rec = rl.Rectangle(x = center_x, y = -100.0, width = 100.0, height = 100.0)
     var rotation: f32 = 0.0
@@ -74,36 +74,36 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         if state == 0:
             frames_counter += 1
-            rec.y = ease_elastic_out(cast[f32](frames_counter), -100.0, center_y_delta, 120.0)
+            rec.y = ease_elastic_out(f32<-frames_counter, -100.0, center_y_delta, 120.0)
 
             if frames_counter >= 120:
                 frames_counter = 0
                 state = 1
         elif state == 1:
             frames_counter += 1
-            rec.height = ease_bounce_out(cast[f32](frames_counter), 100.0, -90.0, 120.0)
-            rec.width = ease_bounce_out(cast[f32](frames_counter), 100.0, cast[f32](rl.GetScreenWidth()), 120.0)
+            rec.height = ease_bounce_out(f32<-frames_counter, 100.0, -90.0, 120.0)
+            rec.width = ease_bounce_out(f32<-frames_counter, 100.0, f32<-rl.GetScreenWidth(), 120.0)
 
             if frames_counter >= 120:
                 frames_counter = 0
                 state = 2
         elif state == 2:
             frames_counter += 1
-            rotation = ease_quad_out(cast[f32](frames_counter), 0.0, 270.0, 240.0)
+            rotation = ease_quad_out(f32<-frames_counter, 0.0, 270.0, 240.0)
 
             if frames_counter >= 240:
                 frames_counter = 0
                 state = 3
         elif state == 3:
             frames_counter += 1
-            rec.height = ease_circ_out(cast[f32](frames_counter), 10.0, cast[f32](rl.GetScreenWidth()), 120.0)
+            rec.height = ease_circ_out(f32<-frames_counter, 10.0, f32<-rl.GetScreenWidth(), 120.0)
 
             if frames_counter >= 120:
                 frames_counter = 0
                 state = 4
         elif state == 4:
             frames_counter += 1
-            alpha = ease_sine_out(cast[f32](frames_counter), 1.0, -1.0, 160.0)
+            alpha = ease_sine_out(f32<-frames_counter, 1.0, -1.0, 160.0)
 
             if frames_counter >= 160:
                 frames_counter = 0

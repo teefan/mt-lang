@@ -24,10 +24,10 @@ def random_circle(circles: ref[array[CircleWave, 64]], index: i32, colors: ref[a
     var palette = value(colors)
     var circle = items[index]
     circle.alpha = 0.0
-    circle.radius = cast[f32](rl.GetRandomValue(10, 40))
-    circle.position.x = cast[f32](rl.GetRandomValue(cast[i32](circle.radius), cast[i32](screen_width - cast[i32](circle.radius))))
-    circle.position.y = cast[f32](rl.GetRandomValue(cast[i32](circle.radius), cast[i32](screen_height - cast[i32](circle.radius))))
-    circle.speed = cast[f32](rl.GetRandomValue(1, 100)) / 2000.0
+    circle.radius = f32<-rl.GetRandomValue(10, 40)
+    circle.position.x = f32<-rl.GetRandomValue(i32<-circle.radius, i32<-(screen_width - i32<-circle.radius))
+    circle.position.y = f32<-rl.GetRandomValue(i32<-circle.radius, i32<-(screen_height - i32<-circle.radius))
+    circle.speed = f32<-rl.GetRandomValue(1, 100) / 2000.0
     circle.color = palette[rl.GetRandomValue(0, 13)]
     items[index] = circle
     value(circles) = items
@@ -92,7 +92,7 @@ def main() -> i32:
             pitch += 0.01
 
         rl.SetMusicPitch(music, pitch)
-        time_played = rl.GetMusicTimePlayed(music) / rl.GetMusicTimeLength(music) * cast[f32](screen_width - 40)
+        time_played = rl.GetMusicTimePlayed(music) / rl.GetMusicTimeLength(music) * f32<-(screen_width - 40)
 
         if not pause:
             for index in range(0, max_circles):
@@ -118,7 +118,7 @@ def main() -> i32:
             rl.DrawCircleV(circle.position, circle.radius, rl.Fade(circle.color, circle.alpha))
 
         rl.DrawRectangle(20, screen_height - 32, screen_width - 40, 12, rl.LIGHTGRAY)
-        rl.DrawRectangle(20, screen_height - 32, cast[i32](time_played), 12, rl.MAROON)
+        rl.DrawRectangle(20, screen_height - 32, i32<-time_played, 12, rl.MAROON)
         rl.DrawRectangleLines(20, screen_height - 32, screen_width - 40, 12, rl.GRAY)
 
         rl.DrawRectangle(20, 20, 425, 145, rl.WHITE)

@@ -15,8 +15,8 @@ const fft_window_size: i32 = 1024
 const buffer_size: i32 = 512
 const per_sample_bit_depth: i32 = 32
 const audio_stream_ring_buffer_size: i32 = fft_window_size * 2
-const effective_sample_rate: f32 = cast[f32](sample_rate) * 0.5
-const window_time: f32 = cast[f32](fft_window_size) / effective_sample_rate
+const effective_sample_rate: f32 = f32<-sample_rate * 0.5
+const window_time: f32 = f32<-fft_window_size / effective_sample_rate
 const fft_history_len: i32 = 45
 const min_decibels: f32 = -100.0
 const max_decibels: f32 = -30.0
@@ -58,7 +58,7 @@ def cooley_tukey_fft_slow() -> void:
 
     var length = 2
     while length <= fft_window_size:
-        let angle = -2.0 * rl.PI / cast[f32](length)
+        let angle = -2.0 * rl.PI / f32<-length
         let twiddle_unit = FFTComplex(real = rm.cos(angle), imaginary = rm.sin(angle))
         var offset = 0
 
@@ -91,7 +91,7 @@ def cooley_tukey_fft_slow() -> void:
 
 def capture_frame(audio_samples: ptr[f32]) -> void:
     for index in range(0, fft_window_size):
-        let x = (2.0 * rl.PI * cast[f32](index)) / cast[f32](fft_window_size - 1)
+        let x = (2.0 * rl.PI * f32<-index) / f32<-(fft_window_size - 1)
         let blackman_weight = 0.42 - 0.5 * rm.cos(x) + 0.08 * rm.cos(2.0 * x)
         unsafe:
             work_buffer[index].real = deref(audio_samples + index) * blackman_weight
@@ -103,7 +103,7 @@ def capture_frame(audio_samples: ptr[f32]) -> void:
     for bin in range(0, buffer_size):
         let re = work_buffer[bin].real
         let im = work_buffer[bin].imaginary
-        let linear_magnitude = rm.sqrt(re * re + im * im) / cast[f32](fft_window_size)
+        let linear_magnitude = rm.sqrt(re * re + im * im) / f32<-fft_window_size
         let smoothed_magnitude = smoothing_time_constant * prev_magnitudes[bin] + (1.0 - smoothing_time_constant) * linear_magnitude
         prev_magnitudes[bin] = smoothed_magnitude
 
@@ -119,9 +119,9 @@ def capture_frame(audio_samples: ptr[f32]) -> void:
 
 def render_frame(fft_image: ptr[rl.Image]) -> void:
     var frames_since_tapback = libm.floorf(tapback_pos / window_time)
-    frames_since_tapback = rm.clamp(frames_since_tapback, 0.0, cast[f32](fft_history_len - 1))
+    frames_since_tapback = rm.clamp(frames_since_tapback, 0.0, f32<-(fft_history_len - 1))
 
-    var history_position = (history_pos - 1 - cast[i32](frames_since_tapback)) % fft_history_len
+    var history_position = (history_pos - 1 - i32<-frames_since_tapback) % fft_history_len
     if history_position < 0:
         history_position += fft_history_len
 
@@ -147,7 +147,7 @@ def main() -> i32:
     let buffer_a = rl.LoadRenderTexture(screen_width, screen_height)
     defer rl.UnloadRenderTexture(buffer_a)
 
-    var i_resolution = rl.Vector2(x = cast[f32](screen_width), y = cast[f32](screen_height))
+    var i_resolution = rl.Vector2(x = f32<-screen_width, y = f32<-screen_height)
     let shader = rl.LoadShader(null, rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
@@ -173,7 +173,7 @@ def main() -> i32:
     rl.PlayAudioStream(audio_stream)
 
     var wav_cursor = 0
-    let wav_frame_count = cast[i32](wav.frameCount)
+    let wav_frame_count = i32<-wav.frameCount
     var chunk_samples = zero[array[f32, 2048]]()
     var audio_samples = zero[array[f32, 1024]]()
 
@@ -206,7 +206,7 @@ def main() -> i32:
         rl.SetShaderValueTexture(shader, i_channel0_location, fft_texture)
         rl.DrawTextureRec(
             buffer_a.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](screen_width), height = -cast[f32](screen_height)),
+            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-screen_width, height = -f32<-screen_height),
             rl.Vector2(x = 0.0, y = 0.0),
             rl.WHITE,
         )

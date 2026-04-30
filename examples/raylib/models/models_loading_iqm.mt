@@ -13,7 +13,7 @@ const credit_text: cstr = c"(c) Guy IQM 3D model by @culacant"
 
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
-        return cast[cstr](text)
+        return cstr<-text
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
@@ -41,7 +41,7 @@ def main() -> i32:
     let texture = rl.LoadTexture(texture_path)
     defer rl.UnloadTexture(texture)
 
-    rl.SetMaterialTexture(model.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
+    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 
@@ -60,7 +60,7 @@ def main() -> i32:
         let anim = model_animation(anims, anim_index)
         anim_current_frame += 1.0
         rl.UpdateModelAnimation(model, anim, anim_current_frame)
-        if anim_current_frame >= cast[f32](anim.keyframeCount):
+        if anim_current_frame >= f32<-anim.keyframeCount:
             anim_current_frame = 0.0
 
         rl.BeginDrawing()

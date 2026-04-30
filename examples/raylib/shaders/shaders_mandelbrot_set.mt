@@ -104,8 +104,8 @@ def main() -> i32:
 
             let mouse_pos = rl.GetMousePosition()
             let offset_velocity = rl.Vector2(
-                x = (mouse_pos.x / cast[f32](screen_width) - 0.5) * offset_speed_mul / zoom,
-                y = (mouse_pos.y / cast[f32](screen_height) - 0.5) * offset_speed_mul / zoom,
+                x = (mouse_pos.x / f32<-screen_width - 0.5) * offset_speed_mul / zoom,
+                y = (mouse_pos.y / f32<-screen_height - 0.5) * offset_speed_mul / zoom,
             )
 
             offset[0] += rl.GetFrameTime() * offset_velocity.x
@@ -113,7 +113,7 @@ def main() -> i32:
             update_shader = true
 
         if update_shader:
-            max_iterations = cast[i32](libm.sqrtf(2.0 * libm.sqrtf(libm.fabsf(1.0 - libm.sqrtf(37.5 * zoom)))) * max_iterations_multiplier)
+            max_iterations = i32<-(libm.sqrtf(2.0 * libm.sqrtf(libm.fabsf(1.0 - libm.sqrtf(37.5 * zoom)))) * max_iterations_multiplier)
 
             rl.SetShaderValue(shader, zoom_loc, raw(addr(zoom)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
             rl.SetShaderValue(shader, offset_loc, raw(addr(offset[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)

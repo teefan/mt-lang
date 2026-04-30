@@ -55,7 +55,7 @@ def main() -> i32:
         for index in range(0, 8):
             let cell_x = draw_rule_start_x - draw_rule_group_spacing * index + draw_rule_spacing
             let cell_y = draw_rule_start_y + draw_rule_spacing
-            if mouse.x >= cast[f32](cell_x) and mouse.x <= cast[f32](cell_x + draw_rule_size) and mouse.y >= cast[f32](cell_y) and mouse.y <= cast[f32](cell_y + draw_rule_size):
+            if mouse.x >= f32<-cell_x and mouse.x <= f32<-(cell_x + draw_rule_size) and mouse.y >= f32<-cell_y and mouse.y <= f32<-(cell_y + draw_rule_size):
                 mouse_in_cell = index
                 break
 
@@ -63,7 +63,7 @@ def main() -> i32:
             for index in range(0, presets_count):
                 let cell_x = 4 + (presets_size_x + 2) * (index / 2)
                 let cell_y = 2 + (presets_size_y + 2) * (index % 2)
-                if mouse.x >= cast[f32](cell_x) and mouse.x <= cast[f32](cell_x + presets_size_x) and mouse.y >= cast[f32](cell_y) and mouse.y <= cast[f32](cell_y + presets_size_y):
+                if mouse.x >= f32<-cell_x and mouse.x <= f32<-(cell_x + presets_size_x) and mouse.y >= f32<-cell_y and mouse.y <= f32<-(cell_y + presets_size_y):
                     mouse_in_cell = index + 8
                     break
 
@@ -99,7 +99,7 @@ def main() -> i32:
 
             if mouse_in_cell == index + 8:
                 rl.DrawRectangleLinesEx(
-                    rl.Rectangle(x = cast[f32](preset_x - 2), y = cast[f32](preset_y - 2), width = cast[f32](presets_size_x + 4), height = cast[f32](presets_size_y + 4)),
+                    rl.Rectangle(x = f32<-(preset_x - 2), y = f32<-(preset_y - 2), width = f32<-(presets_size_x + 4), height = f32<-(presets_size_y + 4)),
                     3.0,
                     rl.RED,
                 )
@@ -119,7 +119,7 @@ def main() -> i32:
 
             if mouse_in_cell == index:
                 rl.DrawRectangleLinesEx(
-                    rl.Rectangle(x = cast[f32](output_x - 2), y = cast[f32](output_y - 2), width = cast[f32](draw_rule_size + 4), height = cast[f32](draw_rule_size + 4)),
+                    rl.Rectangle(x = f32<-(output_x - 2), y = f32<-(output_y - 2), width = f32<-(draw_rule_size + 4), height = f32<-(draw_rule_size + 4)),
                     3.0,
                     rl.RED,
                 )

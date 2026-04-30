@@ -5,7 +5,7 @@ import std.c.sdl3 as c
 const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/misc/power"
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
 const unknown_time_text: cstr = c"unknown time"
 const battery_format: cstr = c"Battery: %3d percent, %s remaining"
@@ -90,10 +90,10 @@ def render_frame() -> void:
         var y: f32 = 0.0
 
         unsafe:
-            let remainstr_ptr = cast[cstr](raw(addr(remainstr[0])))
-            let msgbuf_ptr = cast[cstr](raw(addr(msgbuf[0])))
+            let remainstr_ptr = cstr<-raw(addr(remainstr[0]))
+            let msgbuf_ptr = cstr<-raw(addr(msgbuf[0]))
 
-            pct_rect.w *= cast[f32](percent) / 100.0
+            pct_rect.w *= f32<-percent / 100.0
 
             if seconds < 0:
                 c.SDL_strlcpy(raw(addr(remainstr[0])), unknown_time_text, 64)
@@ -105,8 +105,8 @@ def render_frame() -> void:
                 c.SDL_snprintf(raw(addr(remainstr[0])), 64, c"%02d:%02d:%02d", hours, minutes, seconds)
 
             c.SDL_snprintf(raw(addr(msgbuf[0])), 128, battery_format, percent, remainstr_ptr)
-            x = frame.x + ((frame.w - (cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) * cast[f32](c.SDL_strlen(msgbuf_ptr)))) / 2.0)
-            y = frame.y + frame.h + cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
+            x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msgbuf_ptr))) / 2.0)
+            y = frame.y + frame.h + f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE
 
         c.SDL_SetRenderDrawColor(renderer, bar_r, bar_g, bar_b, c.SDL_ALPHA_OPAQUE)
         c.SDL_RenderFillRect(renderer, raw(addr(pct_rect)))
@@ -114,17 +114,17 @@ def render_frame() -> void:
         c.SDL_RenderRect(renderer, raw(addr(frame)))
         c.SDL_SetRenderDrawColor(renderer, text_r, text_g, text_b, c.SDL_ALPHA_OPAQUE)
         unsafe:
-            c.SDL_RenderDebugText(renderer, x, y, cast[cstr](raw(addr(msgbuf[0]))))
+            c.SDL_RenderDebugText(renderer, x, y, cstr<-raw(addr(msgbuf[0])))
 
     if has_msg:
-        let x = frame.x + ((frame.w - (cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) * cast[f32](c.SDL_strlen(msg)))) / 2.0)
-        let y = frame.y - (cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) * 2.0)
+        let x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msg))) / 2.0)
+        let y = frame.y - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2.0)
         c.SDL_SetRenderDrawColor(renderer, text_r, text_g, text_b, c.SDL_ALPHA_OPAQUE)
         c.SDL_RenderDebugText(renderer, x, y, msg)
 
     if has_msg2:
-        let x = frame.x + ((frame.w - (cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) * cast[f32](c.SDL_strlen(msg2)))) / 2.0)
-        let y = frame.y - (cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) * 4.0)
+        let x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msg2))) / 2.0)
+        let y = frame.y - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 4.0)
         c.SDL_SetRenderDrawColor(renderer, text_r, text_g, text_b, c.SDL_ALPHA_OPAQUE)
         c.SDL_RenderDebugText(renderer, x, y, msg2)
 

@@ -139,9 +139,9 @@ def main() -> i32:
 
             unsafe:
                 let dropped_path = deref(dropped_files.paths)
-                if rl.IsFileExtension(cast[cstr](dropped_path), automation_extensions):
+                if rl.IsFileExtension(cstr<-dropped_path, automation_extensions):
                     rl.UnloadAutomationEventList(aelist)
-                    aelist = rl.LoadAutomationEventList(cast[cstr](dropped_path))
+                    aelist = rl.LoadAutomationEventList(cstr<-dropped_path)
                     event_recording = false
                     event_playing = true
                     play_frame_counter = 0
@@ -163,7 +163,7 @@ def main() -> i32:
             else:
                 unsafe:
                     while current_play_frame < aelist.count:
-                        let event = deref(aelist.events + cast[usize](current_play_frame))
+                        let event = deref(aelist.events + usize<-current_play_frame)
                         if play_frame_counter != event.frame:
                             break
 
@@ -188,7 +188,7 @@ def main() -> i32:
                     rl.StopAutomationEventRecording()
                     event_recording = false
                     rl.ExportAutomationEventList(aelist, automation_export_path)
-                    rl.TraceLog(rl.TraceLogLevel.LOG_INFO, c"RECORDED FRAMES: %i", cast[i32](aelist.count))
+                    rl.TraceLog(rl.TraceLogLevel.LOG_INFO, c"RECORDED FRAMES: %i", i32<-aelist.count)
                 else:
                     rl.SetAutomationEventBaseFrame(180)
                     rl.StartAutomationEventRecording()
@@ -234,7 +234,7 @@ def main() -> i32:
             rl.DrawCircle(30, 175, 10.0, rl.MAROON)
 
             if (frame_counter / 15) % 2 == 1:
-                rl.DrawText(rl.TextFormat(c"RECORDING EVENTS... [%i]", cast[i32](aelist.count)), 50, 170, 10, rl.MAROON)
+                rl.DrawText(rl.TextFormat(c"RECORDING EVENTS... [%i]", i32<-aelist.count), 50, 170, 10, rl.MAROON)
         elif event_playing:
             rl.DrawRectangle(10, 160, 290, 30, rl.Fade(rl.LIME, 0.3))
             rl.DrawRectangleLines(10, 160, 290, 30, rl.Fade(rl.DARKGREEN, 0.8))
@@ -246,7 +246,7 @@ def main() -> i32:
             )
 
             if (frame_counter / 15) % 2 == 1:
-                rl.DrawText(rl.TextFormat(c"PLAYING RECORDED EVENTS... [%i]", cast[i32](current_play_frame)), 50, 170, 10, rl.DARKGREEN)
+                rl.DrawText(rl.TextFormat(c"PLAYING RECORDED EVENTS... [%i]", i32<-current_play_frame), 50, 170, 10, rl.DARKGREEN)
 
     rl.UnloadAutomationEventList(aelist)
     return 0

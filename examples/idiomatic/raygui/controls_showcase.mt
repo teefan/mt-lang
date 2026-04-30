@@ -111,8 +111,8 @@ def main() -> i32:
 
         if mouse_cell.x >= 0.0:
             if mouse_cell.y >= 0.0:
-                let marker_x = 660 + cast[i32](mouse_cell.x * 24.0) + 12
-                let marker_y = 214 + cast[i32](mouse_cell.y * 24.0) + 12
+                let marker_x = 660 + i32<-(mouse_cell.x * 24.0) + 12
+                let marker_y = 214 + i32<-(mouse_cell.y * 24.0) + 12
                 rl.draw_circle(marker_x, marker_y, 5.0, accent)
 
     return 0

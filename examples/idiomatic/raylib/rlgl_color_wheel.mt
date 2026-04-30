@@ -45,7 +45,7 @@ def main() -> i32:
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        triangle_count += cast[i32](rl.get_mouse_wheel_move())
+        triangle_count += i32<-rl.get_mouse_wheel_move()
         if triangle_count < points_min:
             triangle_count = points_min
         if triangle_count > points_max:
@@ -57,12 +57,12 @@ def main() -> i32:
 
         if rl.is_key_down(rl.KeyboardKey.KEY_LEFT_CONTROL) and rl.is_key_down(rl.KeyboardKey.KEY_C):
             if rl.is_key_pressed(rl.KeyboardKey.KEY_C):
-                rl.set_clipboard_text(rl.text_format_i32_i32_i32("#%02X%02X%02X", cast[i32](color.r), cast[i32](color.g), cast[i32](color.b)))
+                rl.set_clipboard_text(rl.text_format_i32_i32_i32("#%02X%02X%02X", i32<-color.r, i32<-color.g, i32<-color.b))
 
         if rl.is_key_down(rl.KeyboardKey.KEY_UP):
             point_scale *= 1.025
-            if point_scale > cast[f32](screen_height) / 2.0:
-                point_scale = cast[f32](screen_height) / 2.0
+            if point_scale > f32<-screen_height / 2.0:
+                point_scale = f32<-screen_height / 2.0
             else:
                 circle_position = circle_position.subtract(center).multiply(rl.Vector2(x = 1.025, y = 1.025)).add(center)
 
@@ -105,7 +105,7 @@ def main() -> i32:
             let saturation = math.clamp(distance, 0.0, 1.0)
             let value_actual = math.clamp(distance, 0.0, 1.0)
             color = rl.color_lerp(
-                rl.Color(r = cast[u8](value * 255.0), g = cast[u8](value * 255.0), b = cast[u8](value * 255.0), a = 255),
+                rl.Color(r = u8<-(value * 255.0), g = u8<-(value * 255.0), b = u8<-(value * 255.0), a = 255),
                 rl.color_from_hsv(angle_360, saturation, 1.0),
                 value_actual,
             )
@@ -117,9 +117,9 @@ def main() -> i32:
 
         rlgl.begin(render_type)
         for index in range(0, triangle_count):
-            let angle_offset = (rl.PI * 2.0) / cast[f32](triangle_count)
-            let angle = angle_offset * cast[f32](index)
-            let angle_offset_calculated = (cast[f32](index) + 1.0) * angle_offset
+            let angle_offset = (rl.PI * 2.0) / f32<-triangle_count
+            let angle = angle_offset * f32<-index
+            let angle_offset_calculated = (f32<-index + 1.0) * angle_offset
             let scale = rl.Vector2(x = point_scale, y = point_scale)
 
             let offset = rl.Vector2(x = math.sin(angle), y = -math.cos(angle)).multiply(scale)
@@ -165,10 +165,10 @@ def main() -> i32:
         rl.draw_text(
             rl.text_format_i32_i32_i32_i32(
                 "%02X%02X%02X (%d)",
-                cast[i32](color.r),
-                cast[i32](color.g),
-                cast[i32](color.b),
-                cast[i32](color.a),
+                i32<-color.r,
+                i32<-color.g,
+                i32<-color.b,
+                i32<-color.a,
             ),
             8,
             80,

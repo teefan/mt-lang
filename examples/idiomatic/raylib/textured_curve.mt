@@ -24,7 +24,7 @@ def hovered_handle(mouse: rl.Vector2, curve_start_position: rl.Vector2, curve_st
     return -1
 
 def draw_textured_curve(tex_road: rl.Texture2D, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2, curve_width: f32, curve_segments: i32) -> void:
-    let step = 1.0 / cast[f32](curve_segments)
+    let step = 1.0 / f32<-curve_segments
 
     var previous = curve_start_position
     var previous_tangent = rl.Vector2.zero()
@@ -32,11 +32,11 @@ def draw_textured_curve(tex_road: rl.Texture2D, curve_start_position: rl.Vector2
     var tangent_set = false
 
     for index in range(1, curve_segments + 1):
-        let t = step * cast[f32](index)
+        let t = step * f32<-index
         let current = rl.get_spline_point_bezier_cubic(curve_start_position, curve_start_position_tangent, curve_end_position_tangent, curve_end_position, t)
         let delta = current.subtract(previous)
         let normal = rl.Vector2(x = -delta.y, y = delta.x).normalize()
-        let v = previous_v + delta.length() / cast[f32](tex_road.height * 2)
+        let v = previous_v + delta.length() / f32<-(tex_road.height * 2)
 
         if not tangent_set:
             previous_tangent = normal
@@ -66,7 +66,7 @@ def draw_textured_curve(tex_road: rl.Texture2D, curve_start_position: rl.Vector2
         previous_tangent = normal
         previous_v = v
 
-    rlgl.set_texture(cast[u32](0))
+    rlgl.set_texture(u32<-0)
 
 def main() -> i32:
     rl.set_config_flags(rl.ConfigFlags.FLAG_VSYNC_HINT | rl.ConfigFlags.FLAG_MSAA_4X_HINT)

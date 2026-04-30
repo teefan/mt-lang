@@ -26,10 +26,10 @@ def main() -> i32:
             let height = rl.get_monitor_height(index)
 
             if position.x < monitor_offset_x:
-                monitor_offset_x = -cast[i32](position.x)
+                monitor_offset_x = -i32<-position.x
 
-            let right_edge = cast[i32](position.x) + width
-            let bottom_edge = cast[i32](position.y) + height
+            let right_edge = i32<-position.x + width
+            let bottom_edge = i32<-position.y + height
             if max_width < right_edge:
                 max_width = right_edge
             if max_height < bottom_edge:
@@ -47,9 +47,9 @@ def main() -> i32:
 
         var monitor_scale: f32 = 0.6
         if max_height > max_width + monitor_offset_x:
-            monitor_scale *= cast[f32](screen_height) / max_height
+            monitor_scale *= f32<-screen_height / max_height
         else:
-            monitor_scale *= cast[f32](screen_width) / (max_width + monitor_offset_x)
+            monitor_scale *= f32<-screen_width / (max_width + monitor_offset_x)
 
         let monitor_offset_x_f: f32 = monitor_offset_x
 
@@ -71,9 +71,9 @@ def main() -> i32:
                 width = width * monitor_scale,
                 height = height * monitor_scale,
             )
-            let label_x = cast[i32](rec.x + 10.0)
-            let label_y = cast[i32](rec.y + 10.0)
-            let current_y = cast[i32](rec.y + 40.0)
+            let label_x = i32<-(rec.x + 10.0)
+            let label_y = i32<-(rec.y + 10.0)
+            let current_y = i32<-(rec.y + 40.0)
 
             rl.draw_text(rl.get_monitor_name(draw_index), label_x, label_y, 20, rl.BLUE)
 

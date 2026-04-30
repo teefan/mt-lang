@@ -33,8 +33,8 @@ def main() -> i32:
         rl.DrawLine(500, 0, 500, rl.GetScreenHeight(), rl.Fade(rl.LIGHTGRAY, 0.6))
         rl.DrawRectangle(500, 0, rl.GetScreenWidth() - 500, rl.GetScreenHeight(), rl.Fade(rl.LIGHTGRAY, 0.3))
 
-        rl.DrawCircleSector(center, outer_radius, start_angle, end_angle, cast[i32](segments), rl.Fade(rl.MAROON, 0.3))
-        rl.DrawCircleSectorLines(center, outer_radius, start_angle, end_angle, cast[i32](segments), rl.Fade(rl.MAROON, 0.6))
+        rl.DrawCircleSector(center, outer_radius, start_angle, end_angle, i32<-segments, rl.Fade(rl.MAROON, 0.3))
+        rl.DrawCircleSectorLines(center, outer_radius, start_angle, end_angle, i32<-segments, rl.Fade(rl.MAROON, 0.6))
 
         gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 40.0, width = 120.0, height = 20.0), c"StartAngle", rl.TextFormat(c"%.2f", start_angle), raw(addr(start_angle)), 0.0, 720.0)
         gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 70.0, width = 120.0, height = 20.0), c"EndAngle", rl.TextFormat(c"%.2f", end_angle), raw(addr(end_angle)), 0.0, 720.0)

@@ -9,7 +9,7 @@ const cliprect_size: i32 = 250
 const cliprect_speed: f32 = 200.0
 const window_title: cstr = c"examples/renderer/cliprect"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
@@ -29,35 +29,35 @@ def pump_events() -> bool:
 
 def render_frame() -> void:
     let now = c.SDL_GetTicks()
-    let elapsed = cast[f32](now - last_time) / 1000.0
+    let elapsed = f32<-(now - last_time) / 1000.0
     let distance = elapsed * cliprect_speed
     var cliprect = c.SDL_Rect(
-        x = cast[i32](c.SDL_roundf(cliprect_position.x)),
-        y = cast[i32](c.SDL_roundf(cliprect_position.y)),
+        x = i32<-c.SDL_roundf(cliprect_position.x),
+        y = i32<-c.SDL_roundf(cliprect_position.y),
         w = cliprect_size,
         h = cliprect_size,
     )
 
     cliprect_position.x += distance * cliprect_direction.x
-    if cliprect_position.x < -cast[f32](cliprect_size):
-        cliprect_position.x = -cast[f32](cliprect_size)
+    if cliprect_position.x < -f32<-cliprect_size:
+        cliprect_position.x = -f32<-cliprect_size
         cliprect_direction.x = 1.0
     else:
-        if cliprect_position.x >= cast[f32](window_width):
-            cliprect_position.x = cast[f32](window_width - 1)
+        if cliprect_position.x >= f32<-window_width:
+            cliprect_position.x = f32<-(window_width - 1)
             cliprect_direction.x = -1.0
 
     cliprect_position.y += distance * cliprect_direction.y
-    if cliprect_position.y < -cast[f32](cliprect_size):
-        cliprect_position.y = -cast[f32](cliprect_size)
+    if cliprect_position.y < -f32<-cliprect_size:
+        cliprect_position.y = -f32<-cliprect_size
         cliprect_direction.y = 1.0
     else:
-        if cliprect_position.y >= cast[f32](window_height):
-            cliprect_position.y = cast[f32](window_height - 1)
+        if cliprect_position.y >= f32<-window_height:
+            cliprect_position.y = f32<-(window_height - 1)
             cliprect_direction.y = -1.0
 
-    cliprect.x = cast[i32](c.SDL_roundf(cliprect_position.x))
-    cliprect.y = cast[i32](c.SDL_roundf(cliprect_position.y))
+    cliprect.x = i32<-c.SDL_roundf(cliprect_position.x)
+    cliprect.y = i32<-c.SDL_roundf(cliprect_position.y)
     c.SDL_SetRenderClipRect(renderer, raw(addr(cliprect)))
 
     last_time = now

@@ -28,7 +28,7 @@ def main() -> i32:
 
     var model = rl.LoadModel(castle_model_path)
     var texture = rl.LoadTexture(castle_texture_path)
-    rl.SetMaterialTexture(model.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
+    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
     var bounds = rl.GetModelBoundingBox(model)
@@ -44,12 +44,12 @@ def main() -> i32:
 
             if dropped_files.count == 1:
                 unsafe:
-                    let dropped_path = cast[cstr](deref(dropped_files.paths))
+                    let dropped_path = cstr<-deref(dropped_files.paths)
 
                     if is_supported_model_path(dropped_path):
                         rl.UnloadModel(model)
                         model = rl.LoadModel(dropped_path)
-                        rl.SetMaterialTexture(model.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
+                        rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
                         bounds = rl.GetModelBoundingBox(model)
                         camera.position.x = bounds.max.x + 10.0
@@ -58,7 +58,7 @@ def main() -> i32:
                     elif rl.IsFileExtension(dropped_path, c".png"):
                         rl.UnloadTexture(texture)
                         texture = rl.LoadTexture(dropped_path)
-                        rl.SetMaterialTexture(model.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
+                        rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
             rl.UnloadDroppedFiles(dropped_files)
 

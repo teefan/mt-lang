@@ -5,12 +5,12 @@ import std.c.sdl3 as c
 const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/audio/simple-playback"
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const default_playback_device: u32 = cast[u32](0xFFFFFFFF)
+const default_playback_device: u32 = u32<-0xFFFFFFFF
 const audio_sample_rate: i32 = 8000
 const tone_frequency: i32 = 440
-const minimum_audio: i32 = (audio_sample_rate * cast[i32](sizeof(f32))) / 2
+const minimum_audio: i32 = (audio_sample_rate * i32<-sizeof(f32)) / 2
 const sample_chunk_size: i32 = 512
 
 var window: ptr[c.SDL_Window]
@@ -35,12 +35,12 @@ def render_frame() -> void:
             var samples = zero[array[f32, 512]]()
 
             for index in range(0, sample_chunk_size):
-                let phase = cast[f32](current_sine_sample * tone_frequency) / cast[f32](audio_sample_rate)
+                let phase = f32<-(current_sine_sample * tone_frequency) / f32<-audio_sample_rate
                 samples[index] = c.SDL_sinf(phase * 2.0 * c.SDL_PI_F)
                 current_sine_sample += 1
 
             current_sine_sample %= audio_sample_rate
-            c.SDL_PutAudioStreamData(active_stream, raw(addr(samples[0])), sample_chunk_size * cast[i32](sizeof(f32)))
+            c.SDL_PutAudioStreamData(active_stream, raw(addr(samples[0])), sample_chunk_size * i32<-sizeof(f32))
 
     c.SDL_RenderClear(renderer)
     c.SDL_RenderPresent(renderer)

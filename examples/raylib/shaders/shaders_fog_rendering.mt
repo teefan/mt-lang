@@ -66,9 +66,9 @@ def main() -> i32:
 
     let texture = rl.LoadTexture(texture_path)
     defer rl.UnloadTexture(texture)
-    rl.SetMaterialTexture(model_a.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
-    rl.SetMaterialTexture(model_b.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
-    rl.SetMaterialTexture(model_c.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
+    rl.SetMaterialTexture(model_a.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+    rl.SetMaterialTexture(model_b.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+    rl.SetMaterialTexture(model_c.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     var shader = rl.LoadShader(
         rl.TextFormat(shader_vertex_path_format, glsl_version),
@@ -79,8 +79,8 @@ def main() -> i32:
     let matrix_model_loc = rl.GetShaderLocation(shader, matrix_model_uniform_name)
     let view_loc = rl.GetShaderLocation(shader, view_pos_uniform_name)
     unsafe:
-        shader.locs[cast[i32](rl.ShaderLocationIndex.SHADER_LOC_MATRIX_MODEL)] = matrix_model_loc
-        shader.locs[cast[i32](rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW)] = view_loc
+        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_MODEL] = matrix_model_loc
+        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     let ambient_loc = rl.GetShaderLocation(shader, ambient_uniform_name)
     var ambient = array[f32, 4](0.2, 0.2, 0.2, 1.0)
@@ -100,7 +100,7 @@ def main() -> i32:
     set_model_shader(raw(addr(model_b)), shader)
     set_model_shader(raw(addr(model_c)), shader)
 
-    lights.CreateLight(cast[i32](lights.LightType.LIGHT_POINT), rl.Vector3(x = 0.0, y = 2.0, z = 6.0), rm.Vector3.zero(), rl.WHITE, shader)
+    lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 0.0, y = 2.0, z = 6.0), rm.Vector3.zero(), rl.WHITE, shader)
 
     rl.SetTargetFPS(60)
 
@@ -137,7 +137,7 @@ def main() -> i32:
 
         var torus_x = -20
         while torus_x < 20:
-            rl.DrawModel(model_a, rl.Vector3(x = cast[f32](torus_x), y = 0.0, z = 2.0), 1.0, rl.WHITE)
+            rl.DrawModel(model_a, rl.Vector3(x = f32<-torus_x, y = 0.0, z = 2.0), 1.0, rl.WHITE)
             torus_x += 2
         rl.EndMode3D()
 

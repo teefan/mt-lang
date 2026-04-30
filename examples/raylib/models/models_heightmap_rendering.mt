@@ -27,7 +27,7 @@ def main() -> i32:
     let model = rl.LoadModelFromMesh(mesh)
     defer rl.UnloadModel(model)
 
-    rl.SetMaterialTexture(model.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
+    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let map_position = rl.Vector3(x = -8.0, y = 0.0, z = -8.0)
 

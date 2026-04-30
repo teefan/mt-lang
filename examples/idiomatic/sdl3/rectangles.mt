@@ -22,10 +22,10 @@ def pump_events() -> bool:
     return true
 
 def render_frame() -> void:
-    let now = cast[i32](sdl.get_ticks())
+    let now = i32<-sdl.get_ticks()
     let direction = if (now % 2000) >= 1000 then 1.0 else -1.0
-    let scale = (cast[f32]((now % 1000) - 500) / 500.0) * direction
-    let column_width = cast[f32](window_width) / cast[f32](rect_count)
+    let scale = (f32<-((now % 1000) - 500) / 500.0) * direction
+    let column_width = f32<-window_width / f32<-rect_count
 
     var rects = zero[array[sdl.FRect, 16]]()
 
@@ -40,11 +40,11 @@ def render_frame() -> void:
     sdl.render_rect(renderer, ro_addr(rects[0]))
 
     for index in range(0, 3):
-        let size = cast[f32](index + 1) * 50.0
+        let size = f32<-(index + 1) * 50.0
         rects[index].w = size + (size * scale)
         rects[index].h = size + (size * scale)
-        rects[index].x = (cast[f32](window_width) - rects[index].w) / 2.0
-        rects[index].y = (cast[f32](window_height) - rects[index].h) / 2.0
+        rects[index].x = (f32<-window_width - rects[index].w) / 2.0
+        rects[index].y = (f32<-window_height - rects[index].h) / 2.0
 
     sdl.set_render_draw_color(renderer, 0, 255, 0, 255)
     sdl.render_rects(renderer, ro_addr(rects[0]), 3)
@@ -57,9 +57,9 @@ def render_frame() -> void:
     sdl.render_fill_rect(renderer, ro_addr(rects[0]))
 
     for index in range(0, rect_count):
-        let height = cast[f32](index) * 8.0
-        rects[index].x = cast[f32](index) * column_width
-        rects[index].y = cast[f32](window_height) - height
+        let height = f32<-index * 8.0
+        rects[index].x = f32<-index * column_width
+        rects[index].y = f32<-window_height - height
         rects[index].w = column_width
         rects[index].h = height
 

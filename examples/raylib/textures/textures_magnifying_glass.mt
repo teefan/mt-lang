@@ -72,15 +72,15 @@ def main() -> i32:
 
         rl.DrawTextureRec(
             magnified_world.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](glass_size), height = -cast[f32](glass_size)),
+            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-glass_size, height = -f32<-glass_size),
             rl.Vector2(x = mouse_pos.x - glass_radius, y = mouse_pos.y - glass_radius),
             rl.WHITE,
         )
 
         rl.DrawRing(mouse_pos, 126.0, 130.0, 0.0, 360.0, 64, rl.BLACK)
 
-        let rx = mouse_pos.x / cast[f32](screen_width)
-        let ry = mouse_pos.y / cast[f32](screen_width)
-        rl.DrawCircle(cast[i32](mouse_pos.x - 64.0 * rx) - 32, cast[i32](mouse_pos.y - 64.0 * ry) - 32, 4.0, rl.ColorAlpha(rl.WHITE, 0.5))
+        let rx = mouse_pos.x / f32<-screen_width
+        let ry = mouse_pos.y / f32<-screen_width
+        rl.DrawCircle(i32<-(mouse_pos.x - 64.0 * rx) - 32, i32<-(mouse_pos.y - 64.0 * ry) - 32, 4.0, rl.ColorAlpha(rl.WHITE, 0.5))
 
     return 0

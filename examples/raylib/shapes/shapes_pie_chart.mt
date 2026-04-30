@@ -51,15 +51,15 @@ def main() -> i32:
     var scroll_content_offset = gui.Vector2(x = 0.0, y = 0.0)
     var view = gui.Rectangle(x = 0.0, y = 0.0, width = 0.0, height = 0.0)
 
-    let panel_pos_x = cast[f32](screen_width) - panel_margin - panel_width
+    let panel_pos_x = f32<-screen_width - panel_margin - panel_width
     let panel_pos_y = panel_margin
     let panel_rect = rl.Rectangle(
         x = panel_pos_x,
         y = panel_pos_y,
         width = panel_width,
-        height = cast[f32](screen_height) - 2.0 * panel_margin,
+        height = f32<-screen_height - 2.0 * panel_margin,
     )
-    let canvas = rl.Rectangle(x = 0.0, y = 0.0, width = panel_pos_x, height = cast[f32](screen_height))
+    let canvas = rl.Rectangle(x = 0.0, y = 0.0, width = panel_pos_x, height = f32<-screen_height)
     let center = rl.Vector2(x = canvas.width / 2.0, y = canvas.height / 2.0)
 
     rl.SetTargetFPS(60)
@@ -79,11 +79,11 @@ def main() -> i32:
             if distance <= radius:
                 var angle = math.atan2f(dy, dx) * rm.rad2deg
                 if angle < 0.0:
-                    angle = angle + cast[f32](360.0)
+                    angle = angle + f32<-360.0
 
                 var current_angle: f32 = 0.0
                 for index in range(0, slice_count):
-                    let sweep = if total_value > 0.0 then values[index] / total_value * cast[f32](360.0) else cast[f32](0.0)
+                    let sweep = if total_value > 0.0 then values[index] / total_value * f32<-360.0 else f32<-0.0
 
                     if angle >= current_angle and angle < current_angle + sweep:
                         hovered_slice = index
@@ -98,13 +98,13 @@ def main() -> i32:
 
         var start_angle: f32 = 0.0
         for index in range(0, slice_count):
-            let sweep_angle = if total_value > 0.0 then values[index] / total_value * cast[f32](360.0) else cast[f32](0.0)
+            let sweep_angle = if total_value > 0.0 then values[index] / total_value * f32<-360.0 else f32<-0.0
             let mid_angle = start_angle + sweep_angle / 2.0
-            let color = rl.ColorFromHSV(cast[f32](index) / cast[f32](slice_count) * 360.0, 0.75, 0.9)
+            let color = rl.ColorFromHSV(f32<-index / f32<-slice_count * 360.0, 0.75, 0.9)
             var current_radius = radius
 
             if index == hovered_slice:
-                current_radius = current_radius + cast[f32](20.0)
+                current_radius = current_radius + f32<-20.0
 
             rl.DrawCircleSector(center, current_radius, start_angle, start_angle + sweep_angle, 120, color)
 
@@ -122,7 +122,7 @@ def main() -> i32:
                     x = center.x + math.cosf(mid_angle * rm.deg2rad) * label_radius - text_size.x / 2.0,
                     y = center.y + math.sinf(mid_angle * rm.deg2rad) * label_radius - text_size.y / 2.0,
                 )
-                rl.DrawText(label_text, cast[i32](label_pos.x), cast[i32](label_pos.y), 20, rl.WHITE)
+                rl.DrawText(label_text, i32<-label_pos.x, i32<-label_pos.y, 20, rl.WHITE)
 
             if show_donut:
                 rl.DrawCircleV(center, donut_inner_radius, rl.RAYWHITE)
@@ -156,7 +156,7 @@ def main() -> i32:
         gui.GuiScrollPanel(
             scroll_panel_bounds,
             empty_text,
-            gui.Rectangle(x = 0.0, y = 0.0, width = panel_rect.width - 25.0, height = cast[f32](content_height)),
+            gui.Rectangle(x = 0.0, y = 0.0, width = panel_rect.width - 25.0, height = f32<-content_height),
             raw(addr(scroll_content_offset)),
             raw(addr(view)),
         )
@@ -164,16 +164,16 @@ def main() -> i32:
         let content_x = view.x + scroll_content_offset.x
         let content_y = view.y + scroll_content_offset.y
 
-        rl.BeginScissorMode(cast[i32](view.x), cast[i32](view.y), cast[i32](view.width), cast[i32](view.height))
+        rl.BeginScissorMode(i32<-view.x, i32<-view.y, i32<-view.width, i32<-view.height)
         for index in range(0, slice_count):
-            let row_y = cast[i32](content_y + 5.0 + cast[f32](index * 35))
-            let color = rl.ColorFromHSV(cast[f32](index) / cast[f32](slice_count) * 360.0, 0.75, 0.9)
-            rl.DrawRectangle(cast[i32](content_x + 15.0), row_y + 5, 20, 20, color)
+            let row_y = i32<-(content_y + 5.0 + f32<-(index * 35))
+            let color = rl.ColorFromHSV(f32<-index / f32<-slice_count * 360.0, 0.75, 0.9)
+            rl.DrawRectangle(i32<-(content_x + 15.0), row_y + 5, 20, 20, color)
 
-            if gui.GuiTextBox(gui.Rectangle(x = content_x + 45.0, y = cast[f32](row_y), width = 75.0, height = 30.0), raw(addr(labels[index][0])), 32, editing_label[index]) != 0:
+            if gui.GuiTextBox(gui.Rectangle(x = content_x + 45.0, y = f32<-row_y, width = 75.0, height = 30.0), raw(addr(labels[index][0])), 32, editing_label[index]) != 0:
                 editing_label[index] = not editing_label[index]
 
-            gui.GuiSliderBar(gui.Rectangle(x = content_x + 130.0, y = cast[f32](row_y), width = 110.0, height = 30.0), empty_text, empty_text, raw(addr(values[index])), 0.0, 1000.0)
+            gui.GuiSliderBar(gui.Rectangle(x = content_x + 130.0, y = f32<-row_y, width = 110.0, height = 30.0), empty_text, empty_text, raw(addr(values[index])), 0.0, 1000.0)
 
         rl.EndScissorMode()
 

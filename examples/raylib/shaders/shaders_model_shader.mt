@@ -39,7 +39,7 @@ def main() -> i32:
     defer rl.UnloadShader(shader)
 
     set_model_shader(raw(addr(model)), shader)
-    rl.SetMaterialTexture(model.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
+    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 

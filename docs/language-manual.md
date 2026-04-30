@@ -446,6 +446,7 @@ Special recognized callables:
 - `deref(p)`
 - `raw(r)`
 - `cast[T](value)`
+- `T<-value` (shorthand for `cast[T](value)`)
 - `reinterpret[T](value)`
 - `zero[T]()`
 - `array[T, N](...)`

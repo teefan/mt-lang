@@ -24,7 +24,7 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         let mouse_wheel = rl.GetMouseWheelMove()
         if mouse_wheel != 0.0:
-            current_fps += cast[i32](mouse_wheel)
+            current_fps += i32<-mouse_wheel
             if current_fps < 0:
                 current_fps = 0
             rl.SetTargetFPS(current_fps)

@@ -23,12 +23,12 @@ def main() -> i32:
         rl.UnloadTexture(button)
         rl.UnloadSound(fx_button)
 
-    let frame_height = cast[f32](button.height) / cast[f32](num_frames)
-    var source_rec = rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](button.width), height = frame_height)
+    let frame_height = f32<-button.height / f32<-num_frames
+    var source_rec = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-button.width, height = frame_height)
     let btn_bounds = rl.Rectangle(
-        x = cast[f32](screen_width) / 2.0 - cast[f32](button.width) / 2.0,
-        y = cast[f32](screen_height) / 2.0 - cast[f32](button.height) / cast[f32](num_frames) / 2.0,
-        width = cast[f32](button.width),
+        x = f32<-screen_width / 2.0 - f32<-button.width / 2.0,
+        y = f32<-screen_height / 2.0 - f32<-button.height / f32<-num_frames / 2.0,
+        width = f32<-button.width,
         height = frame_height,
     )
 
@@ -55,7 +55,7 @@ def main() -> i32:
         if btn_action:
             rl.PlaySound(fx_button)
 
-        source_rec.y = cast[f32](btn_state) * frame_height
+        source_rec.y = f32<-btn_state * frame_height
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

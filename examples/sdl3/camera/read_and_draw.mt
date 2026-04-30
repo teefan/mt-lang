@@ -5,7 +5,7 @@ import std.c.sdl3 as c
 const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/camera/read-and-draw"
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
 
 var window: ptr[c.SDL_Window]
@@ -96,12 +96,12 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
 
     if device_count == 0:
         unsafe:
-            c.SDL_free(cast[ptr[void]](devices))
+            c.SDL_free(ptr[void]<-devices)
         return 1
 
     unsafe:
         let opened_camera = c.SDL_OpenCamera(deref(devices), null)
-        c.SDL_free(cast[ptr[void]](devices))
+        c.SDL_free(ptr[void]<-devices)
 
         if opened_camera == null:
             return 1

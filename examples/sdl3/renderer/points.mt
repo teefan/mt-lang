@@ -6,7 +6,7 @@ const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/renderer/points"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const point_count: i32 = 500
 const min_pixels_per_second: f32 = 30.0
 const max_pixels_per_second: f32 = 60.0
@@ -28,9 +28,9 @@ def pump_events() -> bool:
 
 def render_frame() -> void:
     let now = c.SDL_GetTicks()
-    let elapsed = cast[f32](now - last_time) / 1000.0
-    let width_f = cast[f32](window_width)
-    let height_f = cast[f32](window_height)
+    let elapsed = f32<-(now - last_time) / 1000.0
+    let width_f = f32<-window_width
+    let height_f = f32<-window_height
 
     for index in range(0, point_count):
         let distance = elapsed * point_speeds[index]
@@ -71,8 +71,8 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
 
     for index in range(0, point_count):
-        points[index].x = c.SDL_randf() * cast[f32](window_width)
-        points[index].y = c.SDL_randf() * cast[f32](window_height)
+        points[index].x = c.SDL_randf() * f32<-window_width
+        points[index].y = c.SDL_randf() * f32<-window_height
         point_speeds[index] = min_pixels_per_second + (c.SDL_randf() * (max_pixels_per_second - min_pixels_per_second))
 
     last_time = c.SDL_GetTicks()

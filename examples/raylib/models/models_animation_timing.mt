@@ -15,7 +15,7 @@ const window_title: cstr = c"raylib [models] example - animation timing"
 
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
-        return cast[cstr](text)
+        return cstr<-text
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
@@ -27,7 +27,7 @@ def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
 
 def text_join(text_list: ptr[cstr], count: i32, delimiter: cstr) -> cstr:
     unsafe:
-        return cast[cstr](rl.TextJoin(cast[ptr[ptr[char]]](text_list), count, delimiter))
+        return cstr<-rl.TextJoin(ptr[ptr[char]]<-text_list, count, delimiter)
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -73,7 +73,7 @@ def main() -> i32:
         if not anim_pause and anim_index < anim_count:
             let anim = model_animation(anims, anim_index)
             anim_current_frame += anim_frame_speed
-            if anim_current_frame >= cast[f32](anim.keyframeCount):
+            if anim_current_frame >= f32<-anim.keyframeCount:
                 anim_current_frame = 0.0
             rl.UpdateModelAnimation(model, anim, anim_current_frame)
 
@@ -88,7 +88,7 @@ def main() -> i32:
         rl.DrawGrid(10, 1.0)
         rl.EndMode3D()
 
-        gui.GuiSetStyle(gui.GuiControl.DROPDOWNBOX, cast[i32](gui.GuiDropdownBoxProperty.DROPDOWN_ITEMS_SPACING), 1)
+        gui.GuiSetStyle(gui.GuiControl.DROPDOWNBOX, i32<-gui.GuiDropdownBoxProperty.DROPDOWN_ITEMS_SPACING, 1)
         if gui.GuiDropdownBox(
             gui.Rectangle(x = 10.0, y = 10.0, width = 140.0, height = 24.0),
             text_join(raw(addr(anim_names[0])), anim_count, c";"),
@@ -117,11 +117,11 @@ def main() -> i32:
             empty_text,
             raw(addr(anim_frame_progress)),
             0.0,
-            cast[f32](anim.keyframeCount),
+            f32<-anim.keyframeCount,
         )
 
         for index in range(0, anim.keyframeCount):
-            let timeline_x = 10 + cast[i32]((cast[f32](rl.GetScreenWidth() - 20) / cast[f32](anim.keyframeCount)) * cast[f32](index))
+            let timeline_x = 10 + i32<-((f32<-(rl.GetScreenWidth() - 20) / f32<-anim.keyframeCount) * f32<-index)
             rl.DrawRectangle(timeline_x, rl.GetScreenHeight() - 40, 1, 24, rl.BLUE)
 
     return 0

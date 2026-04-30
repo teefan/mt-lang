@@ -26,16 +26,16 @@ def main() -> i32:
     defer rl.UnloadFont(font3)
 
     let font_position1 = rl.Vector2(
-        x = cast[f32](screen_width) / 2.0 - rl.MeasureTextEx(font1, msg1, cast[f32](font1.baseSize), -3.0).x / 2.0,
-        y = cast[f32](screen_height) / 2.0 - cast[f32](font1.baseSize) / 2.0 - 80.0,
+        x = f32<-screen_width / 2.0 - rl.MeasureTextEx(font1, msg1, f32<-font1.baseSize, -3.0).x / 2.0,
+        y = f32<-screen_height / 2.0 - f32<-font1.baseSize / 2.0 - 80.0,
     )
     let font_position2 = rl.Vector2(
-        x = cast[f32](screen_width) / 2.0 - rl.MeasureTextEx(font2, msg2, cast[f32](font2.baseSize), -2.0).x / 2.0,
-        y = cast[f32](screen_height) / 2.0 - cast[f32](font2.baseSize) / 2.0 - 10.0,
+        x = f32<-screen_width / 2.0 - rl.MeasureTextEx(font2, msg2, f32<-font2.baseSize, -2.0).x / 2.0,
+        y = f32<-screen_height / 2.0 - f32<-font2.baseSize / 2.0 - 10.0,
     )
     let font_position3 = rl.Vector2(
-        x = cast[f32](screen_width) / 2.0 - rl.MeasureTextEx(font3, msg3, cast[f32](font3.baseSize), 2.0).x / 2.0,
-        y = cast[f32](screen_height) / 2.0 - cast[f32](font3.baseSize) / 2.0 + 50.0,
+        x = f32<-screen_width / 2.0 - rl.MeasureTextEx(font3, msg3, f32<-font3.baseSize, 2.0).x / 2.0,
+        y = f32<-screen_height / 2.0 - f32<-font3.baseSize / 2.0 + 50.0,
     )
 
     rl.SetTargetFPS(60)
@@ -46,8 +46,8 @@ def main() -> i32:
 
         rl.ClearBackground(rl.RAYWHITE)
 
-        rl.DrawTextEx(font1, msg1, font_position1, cast[f32](font1.baseSize), -3.0, rl.WHITE)
-        rl.DrawTextEx(font2, msg2, font_position2, cast[f32](font2.baseSize), -2.0, rl.WHITE)
-        rl.DrawTextEx(font3, msg3, font_position3, cast[f32](font3.baseSize), 2.0, rl.WHITE)
+        rl.DrawTextEx(font1, msg1, font_position1, f32<-font1.baseSize, -3.0, rl.WHITE)
+        rl.DrawTextEx(font2, msg2, font_position2, f32<-font2.baseSize, -2.0, rl.WHITE)
+        rl.DrawTextEx(font3, msg3, font_position3, f32<-font3.baseSize, 2.0, rl.WHITE)
 
     return 0

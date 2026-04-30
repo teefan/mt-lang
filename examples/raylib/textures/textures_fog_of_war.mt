@@ -36,15 +36,15 @@ def main() -> i32:
 
     unsafe:
         let tile_count = map.tiles_x * map.tiles_y
-        map.tile_ids = heap.must_alloc_zeroed[u8](cast[usize](tile_count))
-        map.tile_fog = heap.must_alloc_zeroed[u8](cast[usize](tile_count))
+        map.tile_ids = heap.must_alloc_zeroed[u8](usize<-tile_count)
+        map.tile_fog = heap.must_alloc_zeroed[u8](usize<-tile_count)
 
         defer:
             heap.release(map.tile_fog)
             heap.release(map.tile_ids)
 
         for index in range(0, tile_count):
-            deref(map.tile_ids + index) = cast[u8](rl.GetRandomValue(0, 1))
+            deref(map.tile_ids + index) = u8<-rl.GetRandomValue(0, 1)
 
         rl.SetTargetFPS(60)
 
@@ -60,20 +60,20 @@ def main() -> i32:
 
             if player_position.x < 0.0:
                 player_position.x = 0.0
-            elif player_position.x + player_size > cast[f32](map.tiles_x * map_tile_size):
-                player_position.x = cast[f32](map.tiles_x * map_tile_size - player_size)
+            elif player_position.x + player_size > f32<-(map.tiles_x * map_tile_size):
+                player_position.x = f32<-(map.tiles_x * map_tile_size - player_size)
 
             if player_position.y < 0.0:
                 player_position.y = 0.0
-            elif player_position.y + player_size > cast[f32](map.tiles_y * map_tile_size):
-                player_position.y = cast[f32](map.tiles_y * map_tile_size - player_size)
+            elif player_position.y + player_size > f32<-(map.tiles_y * map_tile_size):
+                player_position.y = f32<-(map.tiles_y * map_tile_size - player_size)
 
             for index in range(0, tile_count):
                 if deref(map.tile_fog + index) == 1:
                     deref(map.tile_fog + index) = 2
 
-            player_tile_x = cast[i32]((player_position.x + cast[f32](map_tile_size) / 2.0) / cast[f32](map_tile_size))
-            player_tile_y = cast[i32]((player_position.y + cast[f32](map_tile_size) / 2.0) / cast[f32](map_tile_size))
+            player_tile_x = i32<-((player_position.x + f32<-map_tile_size / 2.0) / f32<-map_tile_size)
+            player_tile_y = i32<-((player_position.y + f32<-map_tile_size / 2.0) / f32<-map_tile_size)
 
             for y in range(player_tile_y - player_tile_visibility, player_tile_y + player_tile_visibility):
                 for x in range(player_tile_x - player_tile_visibility, player_tile_x + player_tile_visibility):
@@ -101,11 +101,11 @@ def main() -> i32:
                     rl.DrawRectangle(x * map_tile_size, y * map_tile_size, map_tile_size, map_tile_size, tile_color)
                     rl.DrawRectangleLines(x * map_tile_size, y * map_tile_size, map_tile_size, map_tile_size, rl.Fade(rl.DARKBLUE, 0.5))
 
-            rl.DrawRectangleV(player_position, rl.Vector2(x = cast[f32](player_size), y = cast[f32](player_size)), rl.RED)
+            rl.DrawRectangleV(player_position, rl.Vector2(x = f32<-player_size, y = f32<-player_size), rl.RED)
             rl.DrawTexturePro(
                 fog_of_war.texture,
-                rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](fog_of_war.texture.width), height = -cast[f32](fog_of_war.texture.height)),
-                rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](map.tiles_x * map_tile_size), height = cast[f32](map.tiles_y * map_tile_size)),
+                rl.Rectangle(x = 0.0, y = 0.0, width = f32<-fog_of_war.texture.width, height = -f32<-fog_of_war.texture.height),
+                rl.Rectangle(x = 0.0, y = 0.0, width = f32<-(map.tiles_x * map_tile_size), height = f32<-(map.tiles_y * map_tile_size)),
                 rl.Vector2(x = 0.0, y = 0.0),
                 0.0,
                 rl.WHITE,

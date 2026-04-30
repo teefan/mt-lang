@@ -37,8 +37,8 @@ def main() -> i32:
             frames_counter += 1
 
             for index in range(0, rec_count):
-                recs[index].height = ease.circ_out(cast[f32](frames_counter), cast[f32](recs_height), -cast[f32](recs_height), cast[f32](play_time_in_frames))
-                recs[index].width = ease.circ_out(cast[f32](frames_counter), cast[f32](recs_width), -cast[f32](recs_width), cast[f32](play_time_in_frames))
+                recs[index].height = ease.circ_out(f32<-frames_counter, f32<-recs_height, -f32<-recs_height, f32<-play_time_in_frames)
+                recs[index].width = ease.circ_out(f32<-frames_counter, f32<-recs_width, -f32<-recs_width, f32<-play_time_in_frames)
 
                 if recs[index].height < 0.0:
                     recs[index].height = 0.0
@@ -48,7 +48,7 @@ def main() -> i32:
                 if recs[index].height == 0.0 and recs[index].width == 0.0:
                     state = 1
 
-                rotation = ease.linear_in(cast[f32](frames_counter), 0.0, 360.0, cast[f32](play_time_in_frames))
+                rotation = ease.linear_in(f32<-frames_counter, 0.0, 360.0, f32<-play_time_in_frames)
         elif state == 1 and rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE):
             frames_counter = 0
 

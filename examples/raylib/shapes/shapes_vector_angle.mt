@@ -75,17 +75,17 @@ def main() -> i32:
             rl.DrawLineEx(v0, v2, 2.0, rl.RED)
             rl.DrawCircleSector(v0, 40.0, start_angle, start_angle - angle, 32, rl.Fade(rl.GREEN, 0.6))
 
-        rl.DrawText(v0_label, cast[i32](v0.x), cast[i32](v0.y), 10, rl.DARKGRAY)
+        rl.DrawText(v0_label, i32<-v0.x, i32<-v0.y, 10, rl.DARKGRAY)
 
         if angle_mode == 0 and v0.subtract(v1).y > 0.0:
-            rl.DrawText(v1_label, cast[i32](v1.x), cast[i32](v1.y) - 10, 10, rl.DARKGRAY)
+            rl.DrawText(v1_label, i32<-v1.x, i32<-v1.y - 10, 10, rl.DARKGRAY)
         elif angle_mode == 0 and v0.subtract(v1).y < 0.0:
-            rl.DrawText(v1_label, cast[i32](v1.x), cast[i32](v1.y), 10, rl.DARKGRAY)
+            rl.DrawText(v1_label, i32<-v1.x, i32<-v1.y, 10, rl.DARKGRAY)
 
         if angle_mode == 1:
-            rl.DrawText(v1_label, cast[i32](v0.x) + 40, cast[i32](v0.y), 10, rl.DARKGRAY)
+            rl.DrawText(v1_label, i32<-v0.x + 40, i32<-v0.y, 10, rl.DARKGRAY)
 
-        rl.DrawText(v2_label, cast[i32](v2.x) - 10, cast[i32](v2.y) - 10, 10, rl.DARKGRAY)
+        rl.DrawText(v2_label, i32<-v2.x - 10, i32<-v2.y - 10, 10, rl.DARKGRAY)
         rl.DrawText(mode_help, 460, 10, 20, rl.DARKGRAY)
         rl.DrawText(rl.TextFormat(angle_format, angle), 10, 70, 20, rl.LIME)
 

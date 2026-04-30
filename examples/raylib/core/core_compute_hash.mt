@@ -12,7 +12,7 @@ const default_input_text: cstr = c"The quick brown fox jumps over the lazy dog."
 
 def readonly_text_box(bounds: gui.Rectangle, text: cstr, text_size: i32) -> void:
     unsafe:
-        gui.GuiTextBox(bounds, cast[ptr[char]](text), text_size, false)
+        gui.GuiTextBox(bounds, ptr[char]<-text, text_size, false)
 
 def hash_crc32_text(hash_crc32: u32) -> cstr:
     return rl.TextFormat(c"%08X", hash_crc32)
@@ -66,7 +66,7 @@ def base64_display_text(base64_text: ptr[char]?) -> cstr:
         return c""
 
     unsafe:
-        return cast[cstr](base64_text)
+        return cstr<-base64_text
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -90,12 +90,12 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         if btn_compute_hashes:
             unsafe:
-                let text_input_len = cast[i32](rl.TextLength(cast[cstr](text_input_ptr)))
+                let text_input_len = i32<-rl.TextLength(cstr<-text_input_ptr)
                 if base64_text != null:
-                    let owned_base64_text = cast[ptr[char]](base64_text)
-                    rl.MemFree(cast[ptr[void]](owned_base64_text))
+                    let owned_base64_text = ptr[char]<-base64_text
+                    rl.MemFree(ptr[void]<-owned_base64_text)
 
-                let input_bytes = cast[ptr[u8]](text_input_ptr)
+                let input_bytes = ptr[u8]<-text_input_ptr
                 base64_text = rl.EncodeDataBase64(input_bytes, text_input_len, raw(addr(base64_text_size)))
                 hash_crc32 = rl.ComputeCRC32(input_bytes, text_input_len)
                 hash_md5 = rl.ComputeMD5(input_bytes, text_input_len)
@@ -151,7 +151,7 @@ def main() -> i32:
 
     if base64_text != null:
         unsafe:
-            let owned_base64_text = cast[ptr[char]](base64_text)
-            rl.MemFree(cast[ptr[void]](owned_base64_text))
+            let owned_base64_text = ptr[char]<-base64_text
+            rl.MemFree(ptr[void]<-owned_base64_text)
 
     return 0

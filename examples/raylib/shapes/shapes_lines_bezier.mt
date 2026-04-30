@@ -13,7 +13,7 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var start_point = rl.Vector2(x = 30.0, y = 30.0)
-    var end_point = rl.Vector2(x = cast[f32](screen_width - 30), y = cast[f32](screen_height - 30))
+    var end_point = rl.Vector2(x = f32<-(screen_width - 30), y = f32<-(screen_height - 30))
     var move_start_point = false
     var move_end_point = false
 

@@ -37,8 +37,8 @@ def main() -> i32:
     let total_mass = mass1 + mass2
 
     var previous_position = calculate_double_pendulum_end_point(length1, theta1, length2, theta2)
-    previous_position.x += cast[f32](screen_width) / 2.0
-    previous_position.y += cast[f32](screen_height) / 2.0 - 100.0
+    previous_position.x += f32<-screen_width / 2.0
+    previous_position.y += f32<-screen_height / 2.0 - 100.0
 
     let line_thickness: f32 = 20.0
     let trail_thickness: f32 = 2.0
@@ -52,7 +52,7 @@ def main() -> i32:
 
     while not rl.WindowShouldClose():
         let delta_time = rl.GetFrameTime()
-        let step = delta_time / cast[f32](simulation_steps)
+        let step = delta_time / f32<-simulation_steps
         let step2 = step * step
 
         for _ in range(0, simulation_steps):
@@ -83,8 +83,8 @@ def main() -> i32:
             omega2 += alpha2 * step
 
         var current_position = calculate_double_pendulum_end_point(length1, theta1, length2, theta2)
-        current_position.x += cast[f32](screen_width) / 2.0
-        current_position.y += cast[f32](screen_height) / 2.0 - 100.0
+        current_position.x += f32<-screen_width / 2.0
+        current_position.y += f32<-screen_height / 2.0 - 100.0
 
         rl.BeginTextureMode(target)
         rl.DrawRectangle(0, 0, screen_width, screen_height, rl.Fade(rl.BLACK, fade_alpha))
@@ -113,8 +113,8 @@ def main() -> i32:
 
         rl.DrawRectanglePro(
             rl.Rectangle(
-                x = cast[f32](screen_width) / 2.0,
-                y = cast[f32](screen_height) / 2.0 - 100.0,
+                x = f32<-screen_width / 2.0,
+                y = f32<-screen_height / 2.0 - 100.0,
                 width = 10.0 * length1,
                 height = line_thickness,
             ),
@@ -124,8 +124,8 @@ def main() -> i32:
         )
         rl.DrawRectanglePro(
             rl.Rectangle(
-                x = cast[f32](screen_width) / 2.0 + endpoint1.x,
-                y = cast[f32](screen_height) / 2.0 - 100.0 + endpoint1.y,
+                x = f32<-screen_width / 2.0 + endpoint1.x,
+                y = f32<-screen_height / 2.0 - 100.0 + endpoint1.y,
                 width = 10.0 * length2,
                 height = line_thickness,
             ),

@@ -42,12 +42,12 @@ def custom_mesh() -> rl.Mesh:
     mesh.vertexCount = mesh.triangleCount * 3
 
     unsafe:
-        let vertex_count = cast[u32](mesh.vertexCount * 3)
-        let texcoord_count = cast[u32](mesh.vertexCount * 2)
+        let vertex_count = u32<-(mesh.vertexCount * 3)
+        let texcoord_count = u32<-(mesh.vertexCount * 2)
 
-        mesh.vertices = cast[ptr[f32]](rl.MemAlloc(vertex_count * cast[u32](sizeof(f32))))
-        mesh.texcoords = cast[ptr[f32]](rl.MemAlloc(texcoord_count * cast[u32](sizeof(f32))))
-        mesh.normals = cast[ptr[f32]](rl.MemAlloc(vertex_count * cast[u32](sizeof(f32))))
+        mesh.vertices = ptr[f32]<-rl.MemAlloc(vertex_count * u32<-sizeof(f32))
+        mesh.texcoords = ptr[f32]<-rl.MemAlloc(texcoord_count * u32<-sizeof(f32))
+        mesh.normals = ptr[f32]<-rl.MemAlloc(vertex_count * u32<-sizeof(f32))
 
         mesh.vertices[0] = 0.0
         mesh.vertices[1] = 0.0
@@ -103,7 +103,7 @@ def main() -> i32:
             rl.UnloadModel(models[index])
 
     for index in range(0, num_models):
-        rl.SetMaterialTexture(models[index].materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
+        rl.SetMaterialTexture(models[index].materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     var camera = rl.Camera3D(
         position = rl.Vector3(x = 5.0, y = 5.0, z = 5.0),

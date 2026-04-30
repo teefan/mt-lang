@@ -27,10 +27,10 @@ def load_render_texture_depth_tex(width: i32, height: i32) -> rl.RenderTexture2D
     if target.id > 0:
         rlgl.rlEnableFramebuffer(target.id)
 
-        target.texture.id = rlgl.rlLoadTexture(null, width, height, cast[i32](rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8), 1)
+        target.texture.id = rlgl.rlLoadTexture(null, width, height, i32<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, 1)
         target.texture.width = width
         target.texture.height = height
-        target.texture.format = cast[i32](rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
+        target.texture.format = i32<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
         target.texture.mipmaps = 1
 
         target.depth.id = rlgl.rlLoadTextureDepth(width, height, false)
@@ -42,15 +42,15 @@ def load_render_texture_depth_tex(width: i32, height: i32) -> rl.RenderTexture2D
         rlgl.rlFramebufferAttach(
             target.id,
             target.texture.id,
-            cast[i32](rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0),
-            cast[i32](rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D),
+            i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0,
+            i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
             0,
         )
         rlgl.rlFramebufferAttach(
             target.id,
             target.depth.id,
-            cast[i32](rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH),
-            cast[i32](rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D),
+            i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH,
+            i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
             0,
         )
 
@@ -80,7 +80,7 @@ def main() -> i32:
         screen_center = rl.GetShaderLocation(raymarch_shader, screen_center_uniform_name),
     )
 
-    var screen_center = array[f32, 2](cast[f32](screen_width) / 2.0, cast[f32](screen_height) / 2.0)
+    var screen_center = array[f32, 2](f32<-screen_width / 2.0, f32<-screen_height / 2.0)
     rl.SetShaderValue(raymarch_shader, march_locs.screen_center, raw(addr(screen_center[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     let target = load_render_texture_depth_tex(screen_width, screen_height)
@@ -94,7 +94,7 @@ def main() -> i32:
         projection = rl.CameraProjection.CAMERA_PERSPECTIVE,
     )
 
-    let cam_dist = cast[f32](1.0) / rm.tan(camera.fovy * 0.5 * rm.deg2rad)
+    let cam_dist = f32<-1.0 / rm.tan(camera.fovy * 0.5 * rm.deg2rad)
 
     rl.SetTargetFPS(60)
 
@@ -113,7 +113,7 @@ def main() -> i32:
 
         rlgl.rlEnableDepthTest()
         rl.BeginShaderMode(raymarch_shader)
-        rl.DrawRectangleRec(rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](screen_width), height = cast[f32](screen_height)), rl.WHITE)
+        rl.DrawRectangleRec(rl.Rectangle(x = 0.0, y = 0.0, width = f32<-screen_width, height = f32<-screen_height), rl.WHITE)
         rl.EndShaderMode()
 
         rl.BeginMode3D(camera)
@@ -133,7 +133,7 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
         rl.DrawTextureRec(
             target.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](screen_width), height = -cast[f32](screen_height)),
+            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-screen_width, height = -f32<-screen_height),
             rl.Vector2(x = 0.0, y = 0.0),
             rl.WHITE,
         )

@@ -51,7 +51,7 @@ def main() -> i32:
 
         rl.DrawText(rl.TextFormat(c"CURRENT MONITOR: %i/%i (%ix%i)", current_monitor + 1, rl.GetMonitorCount(), rl.GetMonitorWidth(current_monitor), rl.GetMonitorHeight(current_monitor)), 50, 50, 20, rl.DARKGRAY)
 
-        rl.DrawText(rl.TextFormat(c"WINDOW POSITION: %ix%i", cast[i32](window_pos.x), cast[i32](window_pos.y)), 50, 90, 20, rl.DARKGRAY)
+        rl.DrawText(rl.TextFormat(c"WINDOW POSITION: %ix%i", i32<-window_pos.x, i32<-window_pos.y), 50, 90, 20, rl.DARKGRAY)
 
         rl.DrawText(rl.TextFormat(c"SCREEN SIZE: %ix%i", rl.GetScreenWidth(), rl.GetScreenHeight()), 50, 130, 20, rl.DARKGRAY)
 
@@ -72,7 +72,7 @@ def main() -> i32:
             rl.BLACK,
         )
 
-        let mouse_text_y = if mouse_pos.y > rl.GetScreenHeight() - 60 then cast[i32](mouse_pos.y) - 46 else cast[i32](mouse_pos.y) + 30
+        let mouse_text_y = if mouse_pos.y > rl.GetScreenHeight() - 60 then i32<-mouse_pos.y - 46 else i32<-mouse_pos.y + 30
 
         rl.DrawText(rl.TextFormat(c"[%i,%i]", rl.GetMouseX(), rl.GetMouseY()), mouse_pos.x - 44, mouse_text_y, 20, rl.BLACK)
 
