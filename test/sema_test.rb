@@ -110,6 +110,162 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("main")
   end
 
+  def test_type_checks_async_functions_and_await
+    source = <<~MT
+      module demo.async_flow
+
+      async def child() -> i32:
+          return 41
+
+      async def parent() -> i32:
+          let value = await child()
+          return value + 1
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal "Task[i32]", result.root_analysis.functions.fetch("child").type.return_type.to_s
+    assert_equal "Task[i32]", result.root_analysis.functions.fetch("parent").type.return_type.to_s
+  end
+
+  def test_type_checks_async_main_with_std_async_import
+    source = <<~MT
+      module demo.async_main
+
+      import std.async as async
+
+      async def main() -> i32:
+          let waited = await async.sleep(1)
+          return waited + 42
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal "Task[i32]", result.root_analysis.functions.fetch("main").type.return_type.to_s
+  end
+
+  def test_rejects_async_main_without_async_runtime_import
+    source = <<~MT
+      module demo.async_main
+
+      async def main() -> i32:
+          return 42
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/async main requires importing std\.async or std\.libuv\.async/, error.message)
+  end
+
+  def test_rejects_async_main_with_non_exit_return_type
+    source = <<~MT
+      module demo.async_main
+
+      import std.async as async
+
+      async def main() -> bool:
+          return true
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/async main must return i32 or void/, error.message)
+  end
+
+  def test_rejects_await_outside_async_functions
+    source = <<~MT
+      module demo.async_flow
+
+      async def child() -> i32:
+          return 41
+
+      def parent() -> i32:
+          return await child()
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/await is only allowed inside async functions/, error.message)
+  end
+
+  def test_type_checks_nested_await_expressions_in_async_functions
+    source = <<~MT
+      module demo.async_flow
+
+      import std.async as async
+
+      async def child() -> i32:
+          return 41
+
+      async def main() -> i32:
+          return await child() + await async.sleep(1) + 1
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal "Task[i32]", result.root_analysis.functions.fetch("main").type.return_type.to_s
+  end
+
+  def test_type_checks_direct_function_identity_for_proc_parameter
+    source = <<~MT
+      module demo.proc_coercion
+
+      def apply(callback: proc(value: i32) -> i32, value: i32) -> i32:
+          return callback(value)
+
+      def double(value: i32) -> i32:
+          return value * 2
+
+      def main() -> i32:
+          return apply(double, 21)
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_rejects_await_in_if_expressions_inside_async_functions
+    source = <<~MT
+      module demo.async_flow
+
+      async def child() -> i32:
+          return 41
+
+      async def parent(flag: bool) -> i32:
+          return if flag then await child() else 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/await in async functions is not supported inside if expressions yet/, error.message)
+  end
+
+  def test_rejects_control_flow_in_async_functions
+    source = <<~MT
+      module demo.async_flow
+
+      async def parent(flag: bool) -> i32:
+          if flag:
+              return 1
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/async functions currently only support straight-line local declarations, assignments, expression statements, and return statements/, error.message)
+  end
+
   def test_type_checks_std_fmt_string_with_format_literal
     source = <<~MT
       module demo.format
@@ -313,6 +469,114 @@ class MilkTeaSemaTest < Minitest::Test
 
     assert_equal true, result.types.key?("Entry")
     assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_generic_function_calls_with_callable_value_arguments
+    source = <<~MT
+      module demo.generic_callable_values
+
+      def apply[T](callback: fn(value: i32) -> T, value: i32) -> T:
+          return callback(value)
+
+      def double(value: i32) -> i32:
+          return value * 2
+
+      def main() -> i32:
+          return apply(double, 21)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("apply")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_proc_closure_capture_and_param_calls
+    source = <<~MT
+      module demo.proc_values
+
+      def apply(callback: proc(value: i32) -> i32, value: i32) -> i32:
+          return callback(value)
+
+      def main() -> i32:
+          let offset = 4
+          let callback = proc(value: i32) -> i32:
+              return value * 2 + offset
+          return apply(callback, 3)
+    MT
+
+    result = check_source(source)
+
+    assert_equal "proc(i32) -> i32", result.functions.fetch("apply").type.params.fetch(0).type.to_s
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_proc_storage_in_struct_fields
+    source = <<~MT
+      module demo.bad_proc_field
+
+      struct Holder:
+          callback: proc(value: i32) -> i32
+
+      def main() -> i32:
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/field Holder\.callback cannot store proc values/, error.message)
+  end
+
+  def test_rejects_proc_return_types
+    source = <<~MT
+      module demo.bad_proc_return
+
+      def factory() -> proc(value: i32) -> i32:
+          let offset = 1
+          let callback = proc(value: i32) -> i32:
+              return value + offset
+          return callback
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/function factory cannot return proc values/, error.message)
+  end
+
+  def test_rejects_async_functions_with_proc_parameters
+    source = <<~MT
+      module demo.bad_async_proc_param
+
+      async def run(callback: proc(value: i32) -> i32) -> i32:
+          return callback(1)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/async function run cannot take proc parameters yet/, error.message)
+  end
+
+  def test_rejects_proc_expressions_inside_async_functions
+    source = <<~MT
+      module demo.bad_async_proc_expr
+
+      async def run() -> i32:
+          let callback = proc(value: i32) -> i32:
+              return value + 1
+          return callback(1)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/proc expressions are not supported inside async functions yet/, error.message)
   end
 
   def test_type_checks_foreign_defs_with_boundary_mappings

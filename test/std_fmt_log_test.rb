@@ -110,6 +110,36 @@ class MilkTeaStdFmtLogTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_float_format_literals
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_fmt_float_string",
+      "",
+      "import std.fmt as fmt",
+      "import std.io as io",
+      "import std.string as string",
+      "",
+      "def main() -> i32:",
+      "    let ratio: f32 = 2.5",
+      "    let scale: f64 = 0.125",
+      "    var output = fmt.string(f\"ratio=\#{ratio} scale=\#{scale}\")",
+      "    defer output.release()",
+      "    if not io.println(output.as_str()):",
+      "        return 1",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "ratio=2.5 scale=0.125\n", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   private
 
   def run_program(source, compiler:)

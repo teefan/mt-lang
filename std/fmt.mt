@@ -1,7 +1,10 @@
 module std.fmt
 
+import std.c.stdio as c
 import std.str as text_ops
 import std.string as string
+
+const float_buffer_capacity: usize = 64
 
 pub def append(output: ref[string.String], text: str) -> void:
     value(output).append(text)
@@ -23,6 +26,24 @@ pub def append_bool(output: ref[string.String], bool_value: bool) -> void:
         value(output).append("true")
     else:
         value(output).append("false")
+    return
+
+def append_formatted_float(output: ref[string.String], format: cstr, number: f64) -> void:
+    var buffer = zero[array[char, 64]]()
+    let written = c.snprintf(raw(addr(buffer[0])), float_buffer_capacity, format, number)
+    if written < 0 or cast[usize](written) >= float_buffer_capacity:
+        panic("fmt could not format float")
+
+    unsafe:
+        append_cstr(output, cast[cstr](raw(addr(buffer[0]))))
+    return
+
+pub def append_f32(output: ref[string.String], number: f32) -> void:
+    append_formatted_float(output, c"%g", cast[f64](number))
+    return
+
+pub def append_f64(output: ref[string.String], number: f64) -> void:
+    append_formatted_float(output, c"%g", number)
     return
 
 pub def append_usize(output: ref[string.String], number: usize) -> void:

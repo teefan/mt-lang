@@ -7,6 +7,7 @@ extern module std.c.stdio:
     const EOF: i32 = -1
 
     extern def printf(format: cstr, ...) -> i32
+    extern def snprintf(text: ptr[char], maxlen: usize, format: cstr, ...) -> i32
 
     extern def vprintf(format: cstr, args: va_list) -> i32
 

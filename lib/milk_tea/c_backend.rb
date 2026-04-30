@@ -22,6 +22,7 @@ module MilkTea
         headers << "<stdio.h>"
         headers << "<stdlib.h>"
       end
+      headers << "<stdlib.h>" if uses_async_memory_helpers?
       headers.uniq.each do |header|
         lines << "#include #{header}"
       end
@@ -40,8 +41,13 @@ module MilkTea
         lines << ""
       end
 
+      if uses_async_memory_helpers?
+        lines.concat(emit_async_memory_helpers)
+        lines << ""
+      end
+
       opaque_decls = @program.opaques
-      struct_decls = sort_struct_decls(@program.structs + collect_generic_struct_decls + collect_result_decls + collect_str_builder_decls)
+      struct_decls = sort_struct_decls(@program.structs + collect_generic_struct_decls + collect_result_decls + collect_task_decls + collect_proc_decls + collect_str_builder_decls)
 
       forward_declarations = emit_forward_declarations(opaque_decls, struct_decls)
       unless forward_declarations.empty?
@@ -390,6 +396,10 @@ module MilkTea
       emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_clear mt_str_builder_assign mt_str_builder_append mt_str_builder_prepare_write]) }
     end
 
+    def uses_async_memory_helpers?
+      emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_async_alloc mt_async_free]) }
+    end
+
     def function_uses_named_call?(function, callees)
       function.body.any? { |statement| statement_uses_named_call?(statement, callees) }
     end
@@ -476,6 +486,22 @@ module MilkTea
       end
 
       lines
+    end
+
+    def emit_async_memory_helpers
+      [
+        "static void* mt_async_alloc(uintptr_t size) {",
+        "#{INDENT}void* memory = calloc(1, (size_t) size);",
+        "#{INDENT}if (memory == NULL) {",
+        "#{INDENT * 2}abort();",
+        "#{INDENT}}",
+        "#{INDENT}return memory;",
+        "}",
+        "",
+        "static void mt_async_free(void* memory) {",
+        "#{INDENT}free(memory);",
+        "}",
+      ]
     end
 
     def emit_foreign_temp_cstr_helpers
@@ -807,17 +833,20 @@ module MilkTea
     end
 
     def emit_function(function)
+      body = compact_generated_statement_sequence(function.body)
       lines = ["#{function_signature(function)} {"]
-      used_labels = collect_used_labels(function.body)
-      if function.body.empty?
+      used_labels = collect_used_labels(body)
+      if body.empty?
         lines << "#{INDENT}(void)0;"
       else
-        function.body.each do |statement|
-          lines.concat(emit_statement(statement, 1, function:, used_labels:))
-        end
+        lines.concat(emit_statement_sequence(body, 1, function:, used_labels:))
       end
       lines << "}"
       lines
+    end
+
+    def emit_statement_sequence(statements, level, function:, used_labels:)
+      statements.flat_map { |statement| emit_statement(statement, level, function:, used_labels:) }
     end
 
     def emit_statement(statement, level, function:, used_labels:)
@@ -843,13 +872,11 @@ module MilkTea
         when IR::BlockStmt
           if block_requires_scope?(statement.body)
             lines = ["#{indent}{"]
-            statement.body.each do |inner|
-              lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
-            end
+            lines.concat(emit_statement_sequence(statement.body, level + 1, function:, used_labels:))
             lines << "#{indent}}"
             lines
           else
-            statement.body.flat_map { |inner| emit_statement(inner, level, function:, used_labels:) }
+            emit_statement_sequence(statement.body, level, function:, used_labels:)
           end
         when IR::ExpressionStmt
           ["#{indent}#{emit_expression(statement.expression)};"]
@@ -865,16 +892,12 @@ module MilkTea
           end
         when IR::WhileStmt
           lines = ["#{indent}while (#{emit_expression(statement.condition)}) {"]
-          statement.body.each do |inner|
-            lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
-          end
+          lines.concat(emit_statement_sequence(statement.body, level + 1, function:, used_labels:))
           lines << "#{indent}}"
           lines
         when IR::ForStmt
           lines = ["#{indent}for (#{emit_for_clause_statement(statement.init)}; #{emit_expression(statement.condition)}; #{emit_for_clause_statement(statement.post)}) {"]
-          statement.body.each do |inner|
-            lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
-          end
+          lines.concat(emit_statement_sequence(statement.body, level + 1, function:, used_labels:))
           lines << "#{indent}}"
           lines
         when IR::BreakStmt
@@ -900,14 +923,10 @@ module MilkTea
           end
 
           lines = ["#{indent}if (#{emit_expression(statement.condition)}) {"]
-          statement.then_body.each do |inner|
-            lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
-          end
+          lines.concat(emit_statement_sequence(statement.then_body, level + 1, function:, used_labels:))
           if statement.else_body && !statement.else_body.empty?
             lines << "#{indent}} else {"
-            statement.else_body.each do |inner|
-              lines.concat(emit_statement(inner, level + 1, function:, used_labels:))
-            end
+            lines.concat(emit_statement_sequence(statement.else_body, level + 1, function:, used_labels:))
           end
           lines << "#{indent}}"
           lines
@@ -915,9 +934,7 @@ module MilkTea
           lines = ["#{indent}switch (#{emit_expression(statement.expression)}) {"]
           statement.cases.each do |switch_case|
             lines << "#{indent}#{INDENT}case #{emit_expression(switch_case.value)}: {"
-            switch_case.body.each do |inner|
-              lines.concat(emit_statement(inner, level + 2, function:, used_labels:))
-            end
+            lines.concat(emit_statement_sequence(switch_case.body, level + 2, function:, used_labels:))
             lines << "#{indent}#{INDENT}#{INDENT}break;" unless body_terminates?(switch_case.body)
             lines << "#{indent}#{INDENT}}"
           end
@@ -929,6 +946,184 @@ module MilkTea
       end
 
       alias_lines + statement_lines
+    end
+
+    def compact_generated_statement_sequence(statements)
+      transformed = statements.map { |statement| transform_compactable_nested_bodies(statement) }
+      compacted = []
+      index = 0
+
+      while index < transformed.length
+        current = transformed[index]
+        following = transformed[index + 1]
+        remaining = transformed[(index + 2)..] || []
+
+        if following && (folded_local_alias = fold_single_use_local_alias(current, following, remaining))
+          compacted << folded_local_alias
+          index += 2
+          next
+        end
+
+        if following && (folded_if = fold_single_use_bool_if_temp(current, following, remaining))
+          compacted << folded_if
+          index += 2
+          next
+        end
+
+        compacted << current
+        index += 1
+      end
+
+      compacted
+    end
+
+    def transform_compactable_nested_bodies(statement)
+      case statement
+      when IR::BlockStmt
+        IR::BlockStmt.new(body: compact_generated_statement_sequence(statement.body))
+      when IR::WhileStmt
+        IR::WhileStmt.new(condition: statement.condition, body: compact_generated_statement_sequence(statement.body))
+      when IR::ForStmt
+        IR::ForStmt.new(
+          init: statement.init,
+          condition: statement.condition,
+          post: statement.post,
+          body: compact_generated_statement_sequence(statement.body),
+        )
+      when IR::IfStmt
+        IR::IfStmt.new(
+          condition: statement.condition,
+          then_body: compact_generated_statement_sequence(statement.then_body),
+          else_body: statement.else_body ? compact_generated_statement_sequence(statement.else_body) : nil,
+        )
+      when IR::SwitchStmt
+        IR::SwitchStmt.new(
+          expression: statement.expression,
+          cases: statement.cases.map do |switch_case|
+            IR::SwitchCase.new(value: switch_case.value, body: compact_generated_statement_sequence(switch_case.body))
+          end,
+        )
+      else
+        statement
+      end
+    end
+
+    def fold_single_use_local_alias(source_decl, alias_decl, remaining_statements)
+      return unless source_decl.is_a?(IR::LocalDecl)
+      return unless alias_decl.is_a?(IR::LocalDecl)
+      return unless compiler_generated_local_name?(source_decl.c_name)
+      return if array_type?(source_decl.type) || array_type?(alias_decl.type)
+      return unless source_decl.type == alias_decl.type
+      return unless alias_decl.value.is_a?(IR::Name) && alias_decl.value.name == source_decl.c_name
+      return unless name_reference_count_in_statements(remaining_statements, source_decl.c_name).zero?
+
+      IR::LocalDecl.new(name: alias_decl.name, c_name: alias_decl.c_name, type: alias_decl.type, value: source_decl.value)
+    end
+
+    def compiler_generated_local_name?(name)
+      name.start_with?("__mt_")
+    end
+
+    def fold_single_use_bool_if_temp(local_decl, if_stmt, remaining_statements)
+      return unless local_decl.is_a?(IR::LocalDecl)
+      return unless if_stmt.is_a?(IR::IfStmt)
+      return unless bool_type?(local_decl.type)
+
+      condition_kind = single_use_bool_if_condition_kind(if_stmt.condition, local_decl.c_name)
+      return unless condition_kind
+      return unless name_reference_count_in_statements(if_stmt.then_body, local_decl.c_name).zero?
+      return unless name_reference_count_in_statements(if_stmt.else_body || [], local_decl.c_name).zero?
+      return unless name_reference_count_in_statements(remaining_statements, local_decl.c_name).zero?
+
+      condition = if condition_kind == :direct
+                    local_decl.value
+                  else
+                    IR::Unary.new(operator: "not", operand: local_decl.value, type: local_decl.type)
+                  end
+
+      IR::IfStmt.new(condition:, then_body: if_stmt.then_body, else_body: if_stmt.else_body)
+    end
+
+    def single_use_bool_if_condition_kind(condition, temp_name)
+      return :direct if condition.is_a?(IR::Name) && condition.name == temp_name
+
+      if condition.is_a?(IR::Unary) && condition.operator == "not" && condition.operand.is_a?(IR::Name) && condition.operand.name == temp_name
+        return :negated
+      end
+
+      nil
+    end
+
+    def name_reference_count_in_statements(statements, name)
+      statements.sum { |statement| name_reference_count_in_statement(statement, name) }
+    end
+
+    def name_reference_count_in_statement(statement, name)
+      case statement
+      when IR::LocalDecl
+        name_reference_count_in_expression(statement.value, name)
+      when IR::Assignment
+        name_reference_count_in_expression(statement.target, name) + name_reference_count_in_expression(statement.value, name)
+      when IR::BlockStmt, IR::WhileStmt, IR::ForStmt
+        count = name_reference_count_in_statements(statement.body, name)
+        return count unless statement.is_a?(IR::WhileStmt) || statement.is_a?(IR::ForStmt)
+
+        count += name_reference_count_in_expression(statement.condition, name)
+        count += name_reference_count_in_statement(statement.init, name) if statement.is_a?(IR::ForStmt)
+        count += name_reference_count_in_statement(statement.post, name) if statement.is_a?(IR::ForStmt)
+        count
+      when IR::IfStmt
+        name_reference_count_in_expression(statement.condition, name) +
+          name_reference_count_in_statements(statement.then_body, name) +
+          name_reference_count_in_statements(statement.else_body || [], name)
+      when IR::SwitchStmt
+        name_reference_count_in_expression(statement.expression, name) +
+          statement.cases.sum { |switch_case| name_reference_count_in_expression(switch_case.value, name) + name_reference_count_in_statements(switch_case.body, name) }
+      when IR::StaticAssert
+        name_reference_count_in_expression(statement.condition, name) + name_reference_count_in_expression(statement.message, name)
+      when IR::ReturnStmt
+        statement.value ? name_reference_count_in_expression(statement.value, name) : 0
+      when IR::ExpressionStmt
+        name_reference_count_in_expression(statement.expression, name)
+      else
+        0
+      end
+    end
+
+    def name_reference_count_in_expression(expression, name)
+      case expression
+      when IR::Name
+        expression.name == name ? 1 : 0
+      when IR::Member
+        name_reference_count_in_expression(expression.receiver, name)
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+        name_reference_count_in_expression(expression.receiver, name) + name_reference_count_in_expression(expression.index, name)
+      when IR::Call
+        callee_count = expression.callee.is_a?(String) ? 0 : name_reference_count_in_expression(expression.callee, name)
+        callee_count + expression.arguments.sum { |argument| name_reference_count_in_expression(argument, name) }
+      when IR::Unary
+        name_reference_count_in_expression(expression.operand, name)
+      when IR::Binary
+        name_reference_count_in_expression(expression.left, name) + name_reference_count_in_expression(expression.right, name)
+      when IR::Conditional
+        name_reference_count_in_expression(expression.condition, name) +
+          name_reference_count_in_expression(expression.then_expression, name) +
+          name_reference_count_in_expression(expression.else_expression, name)
+      when IR::ReinterpretExpr
+        name_reference_count_in_expression(expression.expression, name)
+      when IR::AddressOf, IR::Cast
+        name_reference_count_in_expression(expression.expression, name)
+      when IR::AggregateLiteral
+        expression.fields.sum { |field| name_reference_count_in_expression(field.value, name) }
+      when IR::ArrayLiteral
+        expression.elements.sum { |element| name_reference_count_in_expression(element, name) }
+      else
+        0
+      end
+    end
+
+    def bool_type?(type)
+      type.is_a?(Types::Primitive) && type.name == "bool"
     end
 
     def checked_index_aliases_for_statement(statement)
@@ -1588,6 +1783,10 @@ module MilkTea
         return [c_function_return_type(type.return_type), "(*#{name})(#{params.join(', ')})"]
       end
 
+      if type.is_a?(Types::Proc)
+        return [proc_type_name(type), name]
+      end
+
       if mutable_pointer_type?(type)
         return c_declaration_parts(type.arguments.first, "*#{name}")
       end
@@ -1623,6 +1822,12 @@ module MilkTea
         pointer ? "#{base}*" : base
       when Types::Result
         base = result_type_name(type)
+        pointer ? "#{base}*" : base
+      when Types::Task
+        base = task_type_name(type)
+        pointer ? "#{base}*" : base
+      when Types::Proc
+        base = proc_type_name(type)
         pointer ? "#{base}*" : base
       when Types::GenericInstance
         base = generic_c_type(type)
@@ -1881,6 +2086,34 @@ module MilkTea
       end
     end
 
+    def collect_task_decls
+      collect_task_types.map do |type|
+        IR::StructDecl.new(
+          name: type.to_s,
+          c_name: task_type_name(type),
+          fields: type.fields.map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) },
+          packed: false,
+          alignment: nil,
+        )
+      end
+    end
+
+    def collect_proc_decls
+      collect_proc_types.map do |type|
+        IR::StructDecl.new(
+          name: type.to_s,
+          c_name: proc_type_name(type),
+          fields: [
+            IR::Field.new(name: "env", type: Types::GenericInstance.new("ptr", [Types::Primitive.new("void")])),
+            IR::Field.new(name: "invoke", type: Types::Function.new(nil, params: [Types::Parameter.new("env", Types::GenericInstance.new("ptr", [Types::Primitive.new("void")]))] + type.params, return_type: type.return_type)),
+            IR::Field.new(name: "release", type: Types::Function.new(nil, params: [Types::Parameter.new("env", Types::GenericInstance.new("ptr", [Types::Primitive.new("void")]))], return_type: Types::Primitive.new("void"))),
+          ],
+          packed: false,
+          alignment: nil,
+        )
+      end
+    end
+
     def collect_str_builder_decls
       collect_str_builder_types.map do |type|
         IR::StructDecl.new(
@@ -1931,6 +2164,313 @@ module MilkTea
       end
 
       result_types
+    end
+
+    def collect_task_types
+      task_types = []
+      visited = {}
+
+      all_emitted_top_level_values.each do |value|
+        collect_task_type(value.type, task_types, visited)
+      end
+
+      @program.structs.each do |struct_decl|
+        struct_decl.fields.each do |field|
+          collect_task_type(field.type, task_types, visited)
+        end
+      end
+
+      @program.unions.each do |union_decl|
+        union_decl.fields.each do |field|
+          collect_task_type(field.type, task_types, visited)
+        end
+      end
+
+      emitted_functions.each do |function|
+        collect_task_type(function.return_type, task_types, visited)
+        function.params.each do |param|
+          collect_task_type(param.type, task_types, visited)
+        end
+        collect_task_types_from_statements(function.body, task_types, visited)
+      end
+
+      @program.static_asserts.each do |statement|
+        collect_task_types_from_expression(statement.condition, task_types, visited)
+        collect_task_types_from_expression(statement.message, task_types, visited)
+      end
+
+      task_types
+    end
+
+    def collect_proc_types
+      proc_types = []
+      visited = {}
+
+      all_emitted_top_level_values.each do |value|
+        collect_proc_type(value.type, proc_types, visited)
+      end
+
+      @program.structs.each do |struct_decl|
+        struct_decl.fields.each do |field|
+          collect_proc_type(field.type, proc_types, visited)
+        end
+      end
+
+      @program.unions.each do |union_decl|
+        union_decl.fields.each do |field|
+          collect_proc_type(field.type, proc_types, visited)
+        end
+      end
+
+      emitted_functions.each do |function|
+        collect_proc_type(function.return_type, proc_types, visited)
+        function.params.each do |param|
+          collect_proc_type(param.type, proc_types, visited)
+        end
+        collect_proc_types_from_statements(function.body, proc_types, visited)
+      end
+
+      @program.static_asserts.each do |statement|
+        collect_proc_types_from_expression(statement.condition, proc_types, visited)
+        collect_proc_types_from_expression(statement.message, proc_types, visited)
+      end
+
+      proc_types
+    end
+
+    def collect_proc_types_from_statements(statements, proc_types, visited)
+      statements.each do |statement|
+        case statement
+        when IR::LocalDecl
+          collect_proc_type(statement.type, proc_types, visited)
+          collect_proc_types_from_expression(statement.value, proc_types, visited)
+        when IR::Assignment
+          collect_proc_types_from_expression(statement.target, proc_types, visited)
+          collect_proc_types_from_expression(statement.value, proc_types, visited)
+        when IR::BlockStmt
+          collect_proc_types_from_statements(statement.body, proc_types, visited)
+        when IR::WhileStmt
+          collect_proc_types_from_expression(statement.condition, proc_types, visited)
+          collect_proc_types_from_statements(statement.body, proc_types, visited)
+        when IR::ForStmt
+          collect_proc_types_from_statements([statement.init], proc_types, visited)
+          collect_proc_types_from_expression(statement.condition, proc_types, visited)
+          collect_proc_types_from_statements(statement.body, proc_types, visited)
+          collect_proc_types_from_statements([statement.post], proc_types, visited)
+        when IR::IfStmt
+          collect_proc_types_from_expression(statement.condition, proc_types, visited)
+          collect_proc_types_from_statements(statement.then_body, proc_types, visited)
+          collect_proc_types_from_statements(statement.else_body, proc_types, visited) if statement.else_body
+        when IR::SwitchStmt
+          collect_proc_types_from_expression(statement.expression, proc_types, visited)
+          statement.cases.each do |switch_case|
+            collect_proc_types_from_statements(switch_case.body, proc_types, visited)
+          end
+        when IR::StaticAssert
+          collect_proc_types_from_expression(statement.condition, proc_types, visited)
+          collect_proc_types_from_expression(statement.message, proc_types, visited)
+        when IR::ReturnStmt
+          collect_proc_types_from_expression(statement.value, proc_types, visited) if statement.value
+        when IR::ExpressionStmt
+          collect_proc_types_from_expression(statement.expression, proc_types, visited)
+        end
+      end
+    end
+
+    def collect_proc_types_from_expression(expression, proc_types, visited)
+      case expression
+      when IR::Member
+        collect_proc_types_from_expression(expression.receiver, proc_types, visited)
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+        collect_proc_types_from_expression(expression.receiver, proc_types, visited)
+        collect_proc_types_from_expression(expression.index, proc_types, visited)
+      when IR::Call
+        collect_proc_type(expression.type, proc_types, visited)
+        collect_proc_types_from_expression(expression.callee, proc_types, visited) unless expression.callee.is_a?(String)
+        expression.arguments.each { |argument| collect_proc_types_from_expression(argument, proc_types, visited) }
+      when IR::Unary
+        collect_proc_types_from_expression(expression.operand, proc_types, visited)
+      when IR::Binary
+        collect_proc_types_from_expression(expression.left, proc_types, visited)
+        collect_proc_types_from_expression(expression.right, proc_types, visited)
+      when IR::Conditional
+        collect_proc_types_from_expression(expression.condition, proc_types, visited)
+        collect_proc_types_from_expression(expression.then_expression, proc_types, visited)
+        collect_proc_types_from_expression(expression.else_expression, proc_types, visited)
+      when IR::ReinterpretExpr
+        collect_proc_type(expression.target_type, proc_types, visited)
+        collect_proc_type(expression.source_type, proc_types, visited)
+        collect_proc_types_from_expression(expression.expression, proc_types, visited)
+      when IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
+        collect_proc_type(expression.target_type, proc_types, visited)
+      when IR::AddressOf, IR::Cast
+        collect_proc_types_from_expression(expression.expression, proc_types, visited)
+      when IR::AggregateLiteral
+        collect_proc_type(expression.type, proc_types, visited)
+        expression.fields.each { |field| collect_proc_types_from_expression(field.value, proc_types, visited) }
+      when IR::ArrayLiteral
+        expression.elements.each { |element| collect_proc_types_from_expression(element, proc_types, visited) }
+      end
+    end
+
+    def collect_proc_type(type, proc_types, visited)
+      return unless type
+      return if visited[type]
+
+      visited[type] = true
+
+      case type
+      when Types::Nullable
+        collect_proc_type(type.base, proc_types, visited)
+      when Types::Result
+        collect_proc_type(type.ok_type, proc_types, visited)
+        collect_proc_type(type.error_type, proc_types, visited)
+      when Types::Task
+        collect_proc_type(type.result_type, proc_types, visited)
+      when Types::Proc
+        proc_types << type
+        type.params.each do |param|
+          collect_proc_type(param.type, proc_types, visited)
+        end
+        collect_proc_type(type.return_type, proc_types, visited)
+      when Types::Span
+        collect_proc_type(type.element_type, proc_types, visited)
+      when Types::StructInstance
+        type.arguments.each do |argument|
+          collect_proc_type(argument, proc_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
+        end
+        type.fields.each_value do |field_type|
+          collect_proc_type(field_type, proc_types, visited)
+        end
+      when Types::GenericInstance
+        type.arguments.each do |argument|
+          collect_proc_type(argument, proc_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
+        end
+      when Types::Function
+        type.params.each do |param|
+          collect_proc_type(param.type, proc_types, visited)
+        end
+        collect_proc_type(type.return_type, proc_types, visited)
+      when Types::Struct, Types::Union
+        type.fields.each_value do |field_type|
+          collect_proc_type(field_type, proc_types, visited)
+        end
+      end
+    end
+
+    def collect_task_types_from_statements(statements, task_types, visited)
+      statements.each do |statement|
+        case statement
+        when IR::LocalDecl
+          collect_task_type(statement.type, task_types, visited)
+          collect_task_types_from_expression(statement.value, task_types, visited)
+        when IR::Assignment
+          collect_task_types_from_expression(statement.target, task_types, visited)
+          collect_task_types_from_expression(statement.value, task_types, visited)
+        when IR::BlockStmt
+          collect_task_types_from_statements(statement.body, task_types, visited)
+        when IR::WhileStmt
+          collect_task_types_from_expression(statement.condition, task_types, visited)
+          collect_task_types_from_statements(statement.body, task_types, visited)
+        when IR::ForStmt
+          collect_task_types_from_statements([statement.init], task_types, visited)
+          collect_task_types_from_expression(statement.condition, task_types, visited)
+          collect_task_types_from_statements(statement.body, task_types, visited)
+          collect_task_types_from_statements([statement.post], task_types, visited)
+        when IR::IfStmt
+          collect_task_types_from_expression(statement.condition, task_types, visited)
+          collect_task_types_from_statements(statement.then_body, task_types, visited)
+          collect_task_types_from_statements(statement.else_body, task_types, visited) if statement.else_body
+        when IR::SwitchStmt
+          collect_task_types_from_expression(statement.expression, task_types, visited)
+          statement.cases.each do |switch_case|
+            collect_task_types_from_statements(switch_case.body, task_types, visited)
+          end
+        when IR::StaticAssert
+          collect_task_types_from_expression(statement.condition, task_types, visited)
+          collect_task_types_from_expression(statement.message, task_types, visited)
+        when IR::ReturnStmt
+          collect_task_types_from_expression(statement.value, task_types, visited) if statement.value
+        when IR::ExpressionStmt
+          collect_task_types_from_expression(statement.expression, task_types, visited)
+        end
+      end
+    end
+
+    def collect_task_types_from_expression(expression, task_types, visited)
+      case expression
+      when IR::Member
+        collect_task_types_from_expression(expression.receiver, task_types, visited)
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+        collect_task_types_from_expression(expression.receiver, task_types, visited)
+        collect_task_types_from_expression(expression.index, task_types, visited)
+      when IR::Call
+        collect_task_type(expression.type, task_types, visited)
+        collect_task_types_from_expression(expression.callee, task_types, visited) unless expression.callee.is_a?(String)
+        expression.arguments.each { |argument| collect_task_types_from_expression(argument, task_types, visited) }
+      when IR::Unary
+        collect_task_types_from_expression(expression.operand, task_types, visited)
+      when IR::Binary
+        collect_task_types_from_expression(expression.left, task_types, visited)
+        collect_task_types_from_expression(expression.right, task_types, visited)
+      when IR::Conditional
+        collect_task_types_from_expression(expression.condition, task_types, visited)
+        collect_task_types_from_expression(expression.then_expression, task_types, visited)
+        collect_task_types_from_expression(expression.else_expression, task_types, visited)
+      when IR::ReinterpretExpr
+        collect_task_type(expression.target_type, task_types, visited)
+        collect_task_type(expression.source_type, task_types, visited)
+        collect_task_types_from_expression(expression.expression, task_types, visited)
+      when IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
+        collect_task_type(expression.target_type, task_types, visited)
+      when IR::AddressOf, IR::Cast
+        collect_task_types_from_expression(expression.expression, task_types, visited)
+      when IR::AggregateLiteral
+        collect_task_type(expression.type, task_types, visited)
+        expression.fields.each { |field| collect_task_types_from_expression(field.value, task_types, visited) }
+      when IR::ArrayLiteral
+        expression.elements.each { |element| collect_task_types_from_expression(element, task_types, visited) }
+      end
+    end
+
+    def collect_task_type(type, task_types, visited)
+      return unless type
+      return if visited[type]
+
+      visited[type] = true
+
+      case type
+      when Types::Nullable
+        collect_task_type(type.base, task_types, visited)
+      when Types::Result
+        collect_task_type(type.ok_type, task_types, visited)
+        collect_task_type(type.error_type, task_types, visited)
+      when Types::Task
+        task_types << type
+        collect_task_type(type.result_type, task_types, visited)
+      when Types::Span
+        collect_task_type(type.element_type, task_types, visited)
+      when Types::StructInstance
+        type.arguments.each do |argument|
+          collect_task_type(argument, task_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
+        end
+        type.fields.each_value do |field_type|
+          collect_task_type(field_type, task_types, visited)
+        end
+      when Types::GenericInstance
+        type.arguments.each do |argument|
+          collect_task_type(argument, task_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
+        end
+      when Types::Function
+        type.params.each do |param|
+          collect_task_type(param.type, task_types, visited)
+        end
+        collect_task_type(type.return_type, task_types, visited)
+      when Types::Struct, Types::Union
+        type.fields.each_value do |field_type|
+          collect_task_type(field_type, task_types, visited)
+        end
+      end
     end
 
     def collect_result_types_from_statements(statements, result_types, visited)
@@ -2359,6 +2899,8 @@ module MilkTea
         struct_type_dependencies(type.base)
       when Types::Result
         [result_type_name(type)]
+      when Types::Task
+        [task_type_name(type)] + struct_type_dependencies(type.result_type)
       when Types::GenericInstance
         if pointer_type?(type)
           []
@@ -2367,6 +2909,8 @@ module MilkTea
         else
           []
         end
+      when Types::Function
+        type.params.flat_map { |param| struct_type_dependencies(param.type) } + struct_type_dependencies(type.return_type)
       when Types::Struct, Types::Union
         [named_type_c_name(type)]
       else
@@ -2522,8 +3066,17 @@ module MilkTea
       "mt_result_#{sanitize_identifier(type.ok_type.to_s)}_#{sanitize_identifier(type.error_type.to_s)}"
     end
 
+    def task_type_name(type)
+      "mt_task_#{sanitize_identifier(type.result_type.to_s)}"
+    end
+
+    def proc_type_name(type)
+      "mt_proc_#{sanitize_identifier(type.to_s)}"
+    end
+
     def named_type_c_name(type)
       return result_type_name(type) if type.is_a?(Types::Result)
+      return task_type_name(type) if type.is_a?(Types::Task)
 
       base_name = type.module_name&.start_with?("std.c.") ? type.name : type.module_name ? "#{type.module_name.tr('.', '_')}_#{type.name}" : type.name
       return base_name unless type.is_a?(Types::StructInstance)

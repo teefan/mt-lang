@@ -22,7 +22,7 @@ module MilkTea
         )
       end
     end
-    FunctionBinding = Data.define(:name, :type, :body_params, :ast, :external, :type_params, :instances, :type_arguments, :owner, :type_substitutions)
+    FunctionBinding = Data.define(:name, :type, :body_params, :body_return_type, :ast, :external, :async, :type_params, :instances, :type_arguments, :owner, :type_substitutions)
     ModuleBinding = Data.define(:name, :types, :values, :functions, :methods, :private_types, :private_values, :private_functions, :private_methods) do
       def private_type?(name)
         private_types.key?(name)
@@ -67,6 +67,8 @@ module MilkTea
         @loop_depth = 0
         @unsafe_depth = 0
         @foreign_mapping_depth = 0
+        @async_function_depth = 0
+        @proc_expression_depth = 0
         @checked_function_bindings = {}
         @checking_function_bindings = {}
         @evaluating_const_values = []
@@ -215,6 +217,7 @@ module MilkTea
             field_type = resolve_type_ref(field.type, type_params:)
             validate_stored_ref_type!(field_type, "field #{decl.name}.#{field.name}")
             fields[field.name] = field_type
+              validate_stored_proc_type!(field_type, "field #{decl.name}.#{field.name}")
           end
 
           struct_type.define_fields(fields)
@@ -254,6 +257,7 @@ module MilkTea
             ensure_available_value_name!(decl.name)
             type = resolve_type_ref(decl.type)
             validate_stored_ref_type!(type, "constant #{decl.name}")
+            validate_stored_proc_type!(type, "constant #{decl.name}")
             @top_level_values[decl.name] = value_binding(
               name: decl.name,
               type: type,
@@ -266,6 +270,7 @@ module MilkTea
 
             type = resolve_type_ref(decl.type)
             validate_stored_ref_type!(type, "module variable #{decl.name}")
+            validate_stored_proc_type!(type, "module variable #{decl.name}")
             @top_level_values[decl.name] = value_binding(
               name: decl.name,
               type: type,
@@ -306,10 +311,17 @@ module MilkTea
 
       def declare_function_binding(decl, receiver_type: nil, external: false)
         foreign = decl.is_a?(AST::ForeignFunctionDecl)
+        async_function = decl.respond_to?(:async) ? decl.async : false
         type_param_names = decl.type_params.map(&:name)
         raise SemaError, "extern function #{decl.name} cannot be generic" if external && type_param_names.any?
         raise SemaError, "generic methods are not supported yet in #{decl.name}" if receiver_type && type_param_names.any?
         raise SemaError, "main cannot be generic" if decl.name == "main" && type_param_names.any?
+        raise SemaError, "extern function #{decl.name} cannot be async" if external && async_function
+        raise SemaError, "foreign function #{decl.name} cannot be async" if foreign && async_function
+        raise SemaError, "async methods are not supported yet in #{decl.name}" if receiver_type && async_function
+        if decl.name == "main" && async_function
+          raise SemaError, "async main requires importing std.async or std.libuv.async" unless async_runtime_import_available?
+        end
 
         method_kind = decl.is_a?(AST::MethodDef) ? decl.kind : nil
         instance_method = receiver_type && method_kind != :static
@@ -335,6 +347,7 @@ module MilkTea
         decl.params.each do |param|
           type = resolve_type_ref(param.type, type_params:)
           validate_parameter_ref_type!(type, function_name: decl.name, parameter_name: param.name, external:)
+          validate_parameter_proc_type!(type, function_name: decl.name, parameter_name: param.name, external:, foreign:)
 
           if external && array_type?(type)
             raise SemaError, "extern function #{decl.name} cannot take array parameters"
@@ -380,19 +393,28 @@ module MilkTea
           seen[param.name] = true
         end
 
-        return_type = decl.return_type ? resolve_type_ref(decl.return_type, type_params:) : @types.fetch("void")
-        validate_return_ref_type!(return_type, function_name: decl.name)
-        if foreign && public_params.any? { |param| param.passing_mode == :consuming } && return_type != @types.fetch("void")
+        body_return_type = decl.return_type ? resolve_type_ref(decl.return_type, type_params:) : @types.fetch("void")
+        validate_return_ref_type!(body_return_type, function_name: decl.name)
+        validate_return_proc_type!(body_return_type, function_name: decl.name)
+        if decl.name == "main" && async_function && body_return_type != @types.fetch("i32") && body_return_type != @types.fetch("void")
+          raise SemaError, "async main must return i32 or void"
+        end
+        if foreign && public_params.any? { |param| param.passing_mode == :consuming } && body_return_type != @types.fetch("void")
           raise SemaError, "foreign function #{decl.name} with consuming parameters must return void"
         end
-        if external && array_type?(return_type)
+        if external && array_type?(body_return_type)
           raise SemaError, "extern function #{decl.name} cannot return arrays"
         end
+        if async_function && call_params.any? { |param| proc_type?(param.type) }
+          raise SemaError, "async function #{decl.name} cannot take proc parameters yet"
+        end
+
+        function_return_type = async_function ? Types::Task.new(body_return_type) : body_return_type
 
         function_type = Types::Function.new(
           decl.name,
           params: foreign ? call_params : call_params.map { |param| Types::Parameter.new(param.name, param.type, mutable: param.mutable) },
-          return_type:,
+          return_type: function_return_type,
           receiver_type: function_receiver_type,
           receiver_mutable:,
           variadic: decl.respond_to?(:variadic) ? decl.variadic : false,
@@ -403,8 +425,10 @@ module MilkTea
           name: decl.name,
           type: function_type,
           body_params:,
+          body_return_type: body_return_type,
           ast: decl,
           external:,
+          async: async_function,
           type_params: type_param_names.freeze,
           instances: {},
           type_arguments: [].freeze,
@@ -680,7 +704,14 @@ module MilkTea
               raise SemaError, "foreign mapping #{binding.name} expects #{binding.type.return_type}, got #{actual_type}"
             end
           else
-            check_block(binding.ast.body, scopes:, return_type: binding.type.return_type)
+            validate_async_function_body!(binding.ast.body) if binding.async
+            if binding.async
+              with_async_function do
+                check_block(binding.ast.body, scopes:, return_type: binding.body_return_type)
+              end
+            else
+              check_block(binding.ast.body, scopes:, return_type: binding.type.return_type)
+            end
           end
         end
         @checked_function_bindings[binding.object_id] = true
@@ -781,7 +812,13 @@ module MilkTea
         declared_type = statement.type ? resolve_type_ref(statement.type) : nil
         if statement.value
           validate_consuming_foreign_expression!(statement.value, scopes:, root_allowed: false)
-          inferred_type = infer_expression(statement.value, scopes:, expected_type: declared_type)
+          inferred_type = if statement.value.is_a?(AST::ProcExpr)
+                            with_proc_expression do
+                              infer_expression(statement.value, scopes:, expected_type: declared_type)
+                            end
+                          else
+                            infer_expression(statement.value, scopes:, expected_type: declared_type)
+                          end
         else
           raise SemaError, "local #{statement.name} without initializer requires an explicit type" unless declared_type
 
@@ -796,6 +833,7 @@ module MilkTea
 
         if declared_type
           validate_local_ref_type!(declared_type, statement.name)
+          validate_local_proc_type!(declared_type, statement.name, initializer: statement.value)
           ensure_assignable!(
             inferred_type,
             declared_type,
@@ -812,6 +850,11 @@ module MilkTea
         end
 
         validate_local_ref_type!(final_type, statement.name)
+        validate_local_proc_type!(final_type, statement.name, initializer: statement.value)
+
+        if statement.kind == :var && proc_type?(final_type)
+          raise SemaError, "local #{statement.name} cannot be mutable because proc values are not assignable"
+        end
 
         current_scope[statement.name] = value_binding(
           name: statement.name,
@@ -826,6 +869,10 @@ module MilkTea
 
         validate_consuming_foreign_expression!(statement.value, scopes:, root_allowed: false)
         value_type = infer_expression(statement.value, scopes:, expected_type: target_type)
+
+        if proc_type?(target_type) || proc_type?(value_type)
+          raise SemaError, "proc values cannot be assigned; bind them once and borrow them by name"
+        end
 
         case statement.operator
         when "="
@@ -1059,7 +1106,7 @@ module MilkTea
         when AST::StringLiteral
           @types.fetch(expression.cstring ? "cstr" : "str")
         when AST::FormatString
-          raise SemaError, "formatted string literals are only valid in std.fmt.string(...)"
+          raise SemaError, "formatted string literals are only valid in std.fmt.string(...) or std.io print helpers"
         when AST::BooleanLiteral
           @types.fetch("bool")
         when AST::NullLiteral
@@ -1076,9 +1123,17 @@ module MilkTea
           infer_binary(expression, scopes:, expected_type:)
         when AST::IfExpr
           infer_if_expression(expression, scopes:, expected_type:)
+        when AST::ProcExpr
+          infer_proc_expression(expression, scopes:, expected_type:)
+        when AST::AwaitExpr
+          infer_await_expression(expression, scopes:)
         when AST::Call
           infer_call(expression, scopes:, expected_type:)
         when AST::Specialization
+          if (function_binding = resolve_specialized_function_binding(expression))
+            return function_binding.type
+          end
+
           raise SemaError, "specialized name #{describe_expression(expression)} must be called"
         else
           raise SemaError, "unsupported expression #{expression.class.name}"
@@ -1321,6 +1376,37 @@ module MilkTea
         return common_type if common_type
 
         raise SemaError, "if expression branches require compatible types, got #{then_type} and #{else_type}"
+      end
+
+      def infer_proc_expression(expression, scopes:, expected_type: nil)
+        raise SemaError, "proc expressions are only allowed in local initializers" unless proc_expression_allowed?
+        raise SemaError, "proc expressions are not supported inside async functions yet" if inside_async_function?
+
+        proc_type = resolve_type_ref(AST::ProcType.new(params: expression.params, return_type: expression.return_type))
+        if expected_type && !proc_type_compatible?(proc_type, expected_type)
+          raise SemaError, "proc expression expects #{proc_type}, got #{expected_type}"
+        end
+
+        proc_scopes = scopes.map { |scope| freeze_scope_bindings(scope) }
+        proc_scope = {}
+        expression.params.each do |param|
+          param_type = resolve_type_ref(param.type)
+          validate_parameter_ref_type!(param_type, function_name: "proc", parameter_name: param.name, external: false)
+          validate_parameter_proc_type!(param_type, function_name: "proc", parameter_name: param.name, external: false, foreign: false)
+          proc_scope[param.name] = value_binding(name: param.name, type: param_type, mutable: param.mutable, kind: :param)
+        end
+
+        check_block(expression.body, scopes: proc_scopes + [proc_scope], return_type: proc_type.return_type, allow_return: true)
+        proc_type
+      end
+
+      def infer_await_expression(expression, scopes:)
+        raise SemaError, "await is only allowed inside async functions" unless inside_async_function?
+
+        task_type = infer_expression(expression.expression, scopes:)
+        raise SemaError, "await expects Task[T], got #{task_type}" unless task_type.is_a?(Types::Task)
+
+        task_type.result_type
       end
 
       def harmonize_binary_float_literal_types(left_expression, right_expression, left_type, right_type, scopes:)
@@ -1594,7 +1680,7 @@ module MilkTea
         case callee
         when AST::Identifier
           if (binding = lookup_value(callee.name, scopes))
-            return [:callable_value, binding.type, nil] if binding.type.is_a?(Types::Function)
+            return [:callable_value, binding.type, nil] if callable_type?(binding.type)
 
             raise SemaError, "#{callee.name} is not callable"
           end
@@ -1610,7 +1696,7 @@ module MilkTea
           return [:raw, nil, nil] if callee.name == "raw"
 
           type = @types[callee.name]
-          return [:struct, type, nil] if type.is_a?(Types::Struct) || type.is_a?(Types::StringView)
+          return [:struct, type, nil] if type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type)
 
           raise SemaError, "unknown callable #{callee.name}"
         when AST::MemberAccess
@@ -1618,7 +1704,7 @@ module MilkTea
             imported_module = @imports.fetch(callee.receiver.name)
             return [:function, imported_module.functions.fetch(callee.member), nil] if imported_module.functions.key?(callee.member)
             imported_type = imported_module.types[callee.member]
-            if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView)
+            if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView) || task_type?(imported_type)
               return [:struct, imported_module.types.fetch(callee.member), nil]
             end
 
@@ -1648,7 +1734,7 @@ module MilkTea
             return [str_builder_method, receiver_type, callee.receiver]
           end
 
-          return [:callable_value, receiver_type.field(callee.member), nil] if aggregate_type?(receiver_type) && receiver_type.field(callee.member).is_a?(Types::Function)
+          return [:callable_value, receiver_type.field(callee.member), nil] if aggregate_type?(receiver_type) && callable_type?(receiver_type.field(callee.member))
 
           if (imported_module = imported_module_with_private_method(receiver_type, callee.member))
             raise SemaError, "#{receiver_type}.#{callee.member} is private to module #{imported_module.name}"
@@ -1707,13 +1793,13 @@ module MilkTea
 
           if (type_ref = type_ref_from_specialization(callee))
             specialized_type = resolve_type_ref(type_ref)
-            return [:struct, specialized_type, nil] if specialized_type.is_a?(Types::Struct)
+            return [:struct, specialized_type, nil] if specialized_type.is_a?(Types::Struct) || result_type?(specialized_type) || task_type?(specialized_type)
           end
 
           raise SemaError, "unsupported callable specialization #{describe_expression(callee)}"
         else
           callee_type = infer_expression(callee, scopes:)
-          return [:callable_value, callee_type, nil] if callee_type.is_a?(Types::Function)
+          return [:callable_value, callee_type, nil] if callable_type?(callee_type)
 
           raise SemaError, "unsupported callee #{describe_expression(callee)}"
         end
@@ -1737,13 +1823,10 @@ module MilkTea
               raise SemaError, "argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}"
             end
           else
-            ensure_argument_assignable!(
-              actual_type,
-              parameter.type,
-              external: binding.external,
-              message: "argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}",
-              expression: foreign_argument_expression(argument),
-            ) unless array_to_span_call_argument_compatible?(actual_type, parameter.type, expression: foreign_argument_expression(argument), scopes:)
+            unless array_to_span_call_argument_compatible?(actual_type, parameter.type, expression: foreign_argument_expression(argument), scopes:) ||
+                   call_argument_compatible?(actual_type, parameter.type, scopes:, external: binding.external, expression: foreign_argument_expression(argument))
+              raise SemaError, "argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}"
+            end
           end
         end
 
@@ -1753,11 +1836,20 @@ module MilkTea
       end
 
       def format_string_call?(binding, arguments)
-        return false unless binding.owner.module_name == "std.fmt"
-        return false unless binding.name == "string"
-        return false unless arguments.length == 1
+        !format_string_call_kind(binding, arguments).nil?
+      end
 
-        arguments.first.value.is_a?(AST::FormatString)
+      def format_string_call_kind(binding, arguments)
+        return nil unless arguments.length == 1
+        return nil unless arguments.first.value.is_a?(AST::FormatString)
+
+        return :fmt_string if binding.owner.module_name == "std.fmt" && binding.name == "string"
+        return :io_print if binding.owner.module_name == "std.io" && binding.name == "print"
+        return :io_println if binding.owner.module_name == "std.io" && binding.name == "println"
+        return :io_write_error if binding.owner.module_name == "std.io" && binding.name == "write_error"
+        return :io_write_error_line if binding.owner.module_name == "std.io" && binding.name == "write_error_line"
+
+        nil
       end
 
       def check_format_string_call(binding, arguments, scopes:)
@@ -1771,7 +1863,7 @@ module MilkTea
           value_type = infer_expression(part.expression, scopes:)
           next if format_string_interpolation_supported?(value_type)
 
-          raise SemaError, "formatted string interpolation supports str, cstr, bool, integer primitives, and integer-backed enums/flags, got #{value_type}"
+          raise SemaError, "formatted string interpolation supports str, cstr, bool, numeric primitives, and integer-backed enums/flags, got #{value_type}"
         end
 
         binding.type.return_type
@@ -1782,6 +1874,7 @@ module MilkTea
         return true if type == @types.fetch("cstr")
         return true if type == @types.fetch("bool")
         return true if type.is_a?(Types::Primitive) && type.integer?
+        return true if type.is_a?(Types::Primitive) && type.float?
         return true if type.is_a?(Types::EnumBase) && type.backing_type.is_a?(Types::Primitive) && type.backing_type.integer?
 
         false
@@ -1799,12 +1892,9 @@ module MilkTea
         function_type.params.each_with_index do |parameter, index|
           argument = arguments.fetch(index)
           actual_type = infer_expression(argument.value, scopes:, expected_type: parameter.type)
-          ensure_assignable!(
-            actual_type,
-            parameter.type,
-            "argument #{parameter.name || index} to #{describe_expression(callee_expression)} expects #{parameter.type}, got #{actual_type}",
-            expression: argument.value,
-          )
+          unless call_argument_compatible?(actual_type, parameter.type, scopes:, external: false, expression: argument.value)
+            raise SemaError, "argument #{parameter.name || index} to #{describe_expression(callee_expression)} expects #{parameter.type}, got #{actual_type}"
+          end
         end
 
         arguments.drop(function_type.params.length).each do |argument|
@@ -1813,13 +1903,13 @@ module MilkTea
       end
 
       def call_arity_matches?(function_type, actual_count)
-        return actual_count >= function_type.params.length if function_type.variadic
+        return actual_count >= function_type.params.length if function_type.is_a?(Types::Function) && function_type.variadic
 
         actual_count == function_type.params.length
       end
 
       def arity_error_message(function_type, name, actual_count)
-        if function_type.variadic
+        if function_type.is_a?(Types::Function) && function_type.variadic
           "function #{name} expects at least #{function_type.params.length} arguments, got #{actual_count}"
         else
           "function #{name} expects #{function_type.params.length} arguments, got #{actual_count}"
@@ -2139,7 +2229,7 @@ module MilkTea
 
       def resolve_type_ref(type_ref, type_params: current_type_params)
         base = resolve_non_nullable_type(type_ref, type_params:)
-        return base if type_ref.is_a?(AST::FunctionType)
+        return base if type_ref.is_a?(AST::FunctionType) || type_ref.is_a?(AST::ProcType)
 
         raise SemaError, "ref types are non-null and cannot be nullable" if type_ref.nullable && ref_type?(base)
 
@@ -2152,6 +2242,13 @@ module MilkTea
             Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:), mutable: param.mutable)
           end
           return Types::Function.new(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
+        end
+
+        if type_ref.is_a?(AST::ProcType)
+          params = type_ref.params.map do |param|
+            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:), mutable: param.mutable)
+          end
+          return Types::Proc.new(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
         end
 
         parts = type_ref.name.parts
@@ -2167,6 +2264,11 @@ module MilkTea
           if name == "Result"
             validate_generic_type!(name, arguments)
             return Types::Result.new(arguments[0], arguments[1])
+          end
+
+          if name == "Task"
+            validate_generic_type!(name, arguments)
+            return Types::Task.new(arguments[0])
           end
 
           if (generic_type = resolve_named_generic_type(parts))
@@ -2277,6 +2379,13 @@ module MilkTea
         raise SemaError, message unless argument_types_compatible?(actual_type, expected_type, external:, expression:)
       end
 
+      def call_argument_compatible?(actual_type, expected_type, scopes:, external:, expression: nil)
+        return true if argument_types_compatible?(actual_type, expected_type, external:, expression:)
+        return true if direct_function_to_proc_argument_compatible?(actual_type, expected_type, expression, scopes)
+
+        false
+      end
+
       def types_compatible?(actual_type, expected_type, expression: nil, external_numeric: false, contextual_int_to_float: false)
         return true if actual_type == expected_type
         return true if null_assignable_to?(actual_type, expected_type)
@@ -2307,6 +2416,48 @@ module MilkTea
         end
 
         false
+      end
+
+      def direct_function_to_proc_argument_compatible?(actual_type, expected_type, expression, scopes)
+        return false unless expression
+        return false unless actual_type.is_a?(Types::Function) && proc_type?(expected_type)
+        return false unless direct_function_identity_expression?(expression, scopes)
+
+        function_type_matches_proc_type?(actual_type, expected_type)
+      end
+
+      def function_type_matches_proc_type?(function_type, proc_type)
+        return false if function_type.receiver_type || function_type.variadic
+        return false unless function_type.params.length == proc_type.params.length
+        return false unless function_type.return_type == proc_type.return_type
+
+        function_type.params.zip(proc_type.params).all? do |function_param, proc_param|
+          function_param.type == proc_param.type && function_param.mutable == proc_param.mutable
+        end
+      end
+
+      def direct_function_identity_expression?(expression, scopes)
+        case expression
+        when AST::Identifier
+          return false if lookup_value(expression.name, scopes)
+          return false unless @top_level_functions.key?(expression.name)
+
+          binding = @top_level_functions.fetch(expression.name)
+          !binding.type_params.any? && !foreign_function_binding?(binding)
+        when AST::MemberAccess
+          return false unless expression.receiver.is_a?(AST::Identifier) && @imports.key?(expression.receiver.name)
+
+          imported_module = @imports.fetch(expression.receiver.name)
+          return false unless imported_module.functions.key?(expression.member)
+
+          binding = imported_module.functions.fetch(expression.member)
+          !binding.type_params.any? && !foreign_function_binding?(binding)
+        when AST::Specialization
+          binding = resolve_specialized_function_binding(expression)
+          binding && !foreign_function_binding?(binding)
+        else
+          false
+        end
       end
 
       def external_void_pointer_argument_compatibility?(actual_type, expected_type)
@@ -2532,6 +2683,13 @@ module MilkTea
         @foreign_mapping_depth -= 1
       end
 
+      def with_async_function
+        @async_function_depth += 1
+        yield
+      ensure
+        @async_function_depth -= 1
+      end
+
       def with_loop
         @loop_depth += 1
         yield
@@ -2551,12 +2709,146 @@ module MilkTea
         @unsafe_depth.positive?
       end
 
+      def inside_async_function?
+        @async_function_depth.positive?
+      end
+
       def inside_loop?
         @loop_depth.positive?
       end
 
       def foreign_mapping_context?
         @foreign_mapping_depth.positive?
+      end
+
+      def async_runtime_import_available?
+        @imports.each_value.any? { |binding| binding.name == "std.async" || binding.name == "std.libuv.async" }
+      end
+
+      def validate_async_function_body!(statements)
+        statements.each do |statement|
+          case statement
+          when AST::LocalDecl
+            next unless statement.value
+
+            validate_async_expression_support!(statement.value, context: "local initializer")
+          when AST::Assignment
+            if expression_contains_await?(statement.target)
+              raise SemaError, "await in async functions is not supported inside assignment targets yet"
+            end
+
+            validate_async_expression_support!(statement.value, context: "assignment")
+          when AST::ExpressionStmt
+            validate_async_expression_support!(statement.expression, context: "expression statement")
+          when AST::ReturnStmt
+            next unless statement.value
+
+            validate_async_expression_support!(statement.value, context: "return statement")
+          else
+            raise SemaError, "async functions currently only support straight-line local declarations, assignments, expression statements, and return statements"
+          end
+        end
+      end
+
+      def validate_async_expression_support!(expression, context:)
+        unsupported_context = unsupported_async_await_context(expression)
+        return unless unsupported_context
+
+        raise SemaError, "await in async functions is not supported inside #{unsupported_context} yet"
+      end
+
+      def unsupported_async_await_context(expression)
+        case expression
+        when AST::AwaitExpr
+          nil
+        when AST::Call, AST::Specialization
+          unsupported_async_await_context(expression.callee) || expression.arguments.filter_map { |argument| unsupported_async_await_context(argument.value) }.first
+        when AST::UnaryOp
+          unsupported_async_await_context(expression.operand)
+        when AST::BinaryOp
+          if %w[and or].include?(expression.operator) && (expression_contains_await?(expression.left) || expression_contains_await?(expression.right))
+            "short-circuit #{expression.operator} expressions"
+          else
+            unsupported_async_await_context(expression.left) || unsupported_async_await_context(expression.right)
+          end
+        when AST::IfExpr
+          return "if expressions" if expression_contains_await?(expression.condition) || expression_contains_await?(expression.then_expression) || expression_contains_await?(expression.else_expression)
+
+          nil
+        when AST::MemberAccess
+          unsupported_async_await_context(expression.receiver)
+        when AST::IndexAccess
+          unsupported_async_await_context(expression.receiver) || unsupported_async_await_context(expression.index)
+        when AST::FormatString
+          expression.parts.filter_map do |part|
+            next unless part.is_a?(AST::FormatExprPart)
+
+            unsupported_async_await_context(part.expression)
+          end.first
+        else
+          nil
+        end
+      end
+
+      def statement_contains_await?(statement)
+        case statement
+        when AST::LocalDecl
+          statement.value && expression_contains_await?(statement.value)
+        when AST::Assignment
+          expression_contains_await?(statement.target) || expression_contains_await?(statement.value)
+        when AST::IfStmt
+          statement.branches.any? { |branch| expression_contains_await?(branch.condition) || statements_contain_await?(branch.body) } ||
+            (statement.else_body && statements_contain_await?(statement.else_body))
+        when AST::MatchStmt
+          expression_contains_await?(statement.expression) || statement.arms.any? { |arm| expression_contains_await?(arm.pattern) || statements_contain_await?(arm.body) }
+        when AST::UnsafeStmt
+          statements_contain_await?(statement.body)
+        when AST::StaticAssert
+          expression_contains_await?(statement.condition) || expression_contains_await?(statement.message)
+        when AST::ForStmt
+          expression_contains_await?(statement.iterable) || statements_contain_await?(statement.body)
+        when AST::WhileStmt
+          expression_contains_await?(statement.condition) || statements_contain_await?(statement.body)
+        when AST::ReturnStmt
+          statement.value && expression_contains_await?(statement.value)
+        when AST::DeferStmt
+          (statement.expression && expression_contains_await?(statement.expression)) || (statement.body && statements_contain_await?(statement.body))
+        when AST::ExpressionStmt
+          expression_contains_await?(statement.expression)
+        else
+          false
+        end
+      end
+
+      def statements_contain_await?(statements)
+        statements.any? { |statement| statement_contains_await?(statement) }
+      end
+
+      def await_expression?(expression)
+        expression.is_a?(AST::AwaitExpr)
+      end
+
+      def expression_contains_await?(expression)
+        case expression
+        when AST::AwaitExpr
+          true
+        when AST::Call, AST::Specialization
+          expression_contains_await?(expression.callee) || expression.arguments.any? { |argument| expression_contains_await?(argument.value) }
+        when AST::UnaryOp
+          expression_contains_await?(expression.operand)
+        when AST::BinaryOp
+          expression_contains_await?(expression.left) || expression_contains_await?(expression.right)
+        when AST::IfExpr
+          expression_contains_await?(expression.condition) || expression_contains_await?(expression.then_expression) || expression_contains_await?(expression.else_expression)
+        when AST::MemberAccess
+          expression_contains_await?(expression.receiver)
+        when AST::IndexAccess
+          expression_contains_await?(expression.receiver) || expression_contains_await?(expression.index)
+        when AST::FormatString
+          expression.parts.any? { |part| part.is_a?(AST::FormatExprPart) && expression_contains_await?(part.expression) }
+        else
+          false
+        end
       end
 
       def pointer_arithmetic_result(operator, left_type, right_type)
@@ -2623,6 +2915,10 @@ module MilkTea
         type.is_a?(Types::Result)
       end
 
+      def task_type?(type)
+        type.is_a?(Types::Task)
+      end
+
       def infer_layout_query_type(type_ref, context:)
         type = resolve_type_ref(type_ref)
         return type if sized_layout_type?(type)
@@ -2644,7 +2940,7 @@ module MilkTea
 
       def sized_layout_type?(type)
         case type
-        when Types::Primitive, Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Span, Types::StringView, Types::Result
+        when Types::Primitive, Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Span, Types::StringView, Types::Result, Types::Task
           true
         when Types::Nullable
           true
@@ -2669,6 +2965,7 @@ module MilkTea
         return true if span_type?(type)
         return true if string_view_type?(type)
         return true if result_type?(type)
+        return true if task_type?(type)
         return true if type.is_a?(Types::Struct)
         return true if pointer_type?(type)
         return true if array_type?(type)
@@ -2686,7 +2983,7 @@ module MilkTea
       end
 
       def aggregate_type?(type)
-        type.is_a?(Types::Struct) || span_type?(type) || string_view_type?(type) || result_type?(type)
+        type.is_a?(Types::Struct) || span_type?(type) || string_view_type?(type) || result_type?(type) || task_type?(type)
       end
 
       def array_type?(type)
@@ -2759,8 +3056,12 @@ module MilkTea
           contains_ref_type?(type.element_type)
         when Types::Result
           contains_ref_type?(type.ok_type) || contains_ref_type?(type.error_type)
+        when Types::Task
+          contains_ref_type?(type.result_type)
         when Types::StructInstance
           type.arguments.any? { |argument| contains_ref_type?(argument) }
+        when Types::Proc
+          type.params.any? { |param| contains_ref_type?(param.type) } || contains_ref_type?(type.return_type)
         when Types::Function
           type.params.any? { |param| contains_ref_type?(param.type) } ||
             contains_ref_type?(type.return_type) ||
@@ -2831,6 +3132,9 @@ module MilkTea
           raise SemaError, "Result requires exactly two type arguments" unless arguments.length == 2
           raise SemaError, "Result ok type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
           raise SemaError, "Result error type must be a type" if arguments[1].is_a?(Types::LiteralTypeArg)
+        when "Task"
+          raise SemaError, "Task requires exactly one type argument" unless arguments.length == 1
+          raise SemaError, "Task result type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
         else
           raise SemaError, "unknown generic type #{name}"
         end
@@ -2985,8 +3289,10 @@ module MilkTea
           name: binding.name,
           type:,
           body_params:,
+          body_return_type: substitute_type(binding.body_return_type, substitutions),
           ast: binding.ast,
           external: binding.external,
+          async: binding.async,
           type_params: [].freeze,
           instances: {},
           type_arguments: key,
@@ -3005,7 +3311,8 @@ module MilkTea
         substitutions = {}
         expected_params.each_with_index do |parameter, index|
           argument = arguments.fetch(index)
-          actual_type = foreign_argument_actual_type(parameter, argument, scopes:, function_name: binding.name, expected_type: nil)
+          expected_argument_type = callable_type?(parameter.type) ? parameter.type : nil
+          actual_type = foreign_argument_actual_type(parameter, argument, scopes:, function_name: binding.name, expected_type: expected_argument_type)
           collect_type_substitutions(parameter.type, actual_type, substitutions, binding.name)
         end
 
@@ -3049,6 +3356,30 @@ module MilkTea
 
           collect_type_substitutions(pattern_type.ok_type, actual_type.ok_type, substitutions, function_name)
           collect_type_substitutions(pattern_type.error_type, actual_type.error_type, substitutions, function_name)
+        when Types::Task
+          return unless actual_type.is_a?(Types::Task)
+
+          collect_type_substitutions(pattern_type.result_type, actual_type.result_type, substitutions, function_name)
+        when Types::Proc
+          actual_params = case actual_type
+                          when Types::Proc
+                            return unless actual_type.params.length == pattern_type.params.length
+
+                            actual_type.params
+                          when Types::Function
+                            return if actual_type.receiver_type || actual_type.variadic
+                            return unless actual_type.params.length == pattern_type.params.length
+                            return unless actual_type.params.zip(pattern_type.params).all? { |actual_param, expected_param| actual_param.mutable == expected_param.mutable }
+
+                            actual_type.params
+                          else
+                            return
+                          end
+
+          pattern_type.params.zip(actual_params).each do |expected_param, actual_param|
+            collect_type_substitutions(expected_param.type, actual_param.type, substitutions, function_name)
+          end
+          collect_type_substitutions(pattern_type.return_type, actual_type.return_type, substitutions, function_name)
         when Types::StructInstance
           return unless actual_type.is_a?(Types::StructInstance)
           return unless actual_type.definition == pattern_type.definition && actual_type.arguments.length == pattern_type.arguments.length
@@ -3113,6 +3444,13 @@ module MilkTea
         when Types::Result
           validate_specialized_function_type!(type.ok_type, function_name:, context:)
           validate_specialized_function_type!(type.error_type, function_name:, context:)
+        when Types::Task
+          validate_specialized_function_type!(type.result_type, function_name:, context:)
+        when Types::Proc
+          type.params.each do |param|
+            validate_specialized_function_type!(param.type, function_name:, context: "#{context} parameter #{param.name}")
+          end
+          validate_specialized_function_type!(type.return_type, function_name:, context: "#{context} return type")
         when Types::StructInstance
           type.arguments.each do |argument|
             next if argument.is_a?(Types::LiteralTypeArg)
@@ -3144,6 +3482,21 @@ module MilkTea
           Types::Span.new(substitute_type(type.element_type, substitutions))
         when Types::Result
           Types::Result.new(substitute_type(type.ok_type, substitutions), substitute_type(type.error_type, substitutions))
+        when Types::Task
+          Types::Task.new(substitute_type(type.result_type, substitutions))
+        when Types::Proc
+          Types::Proc.new(
+            params: type.params.map do |param|
+              Types::Parameter.new(
+                param.name,
+                substitute_type(param.type, substitutions),
+                mutable: param.mutable,
+                passing_mode: param.passing_mode,
+                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
+              )
+            end,
+            return_type: substitute_type(type.return_type, substitutions),
+          )
         when Types::StructInstance
           type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
         when Types::Function
@@ -3173,8 +3526,78 @@ module MilkTea
         type.respond_to?(:bitwise?) && type.bitwise?
       end
 
+      def callable_type?(type)
+        type.is_a?(Types::Function) || type.is_a?(Types::Proc)
+      end
+
+      def proc_type?(type)
+        type.is_a?(Types::Proc)
+      end
+
+      def proc_type_compatible?(actual_type, expected_type)
+        return true unless expected_type
+        return actual_type == expected_type if proc_type?(expected_type)
+
+        false
+      end
+
+      def proc_expression_allowed?
+        @proc_expression_depth.positive?
+      end
+
+      def with_proc_expression
+        @proc_expression_depth += 1
+        yield
+      ensure
+        @proc_expression_depth -= 1
+      end
+
+      def freeze_scope_bindings(scope)
+        frozen_scope = scope.is_a?(FlowScope) ? FlowScope.new : {}
+        scope.each do |name, binding|
+          frozen_scope[name] = ValueBinding.new(
+            name: binding.name,
+            storage_type: binding.storage_type,
+            flow_type: binding.flow_type,
+            mutable: false,
+            kind: binding.kind,
+            const_value: binding.const_value,
+          )
+        end
+        frozen_scope
+      end
+
       def validate_stored_ref_type!(type, context)
         raise SemaError, "#{context} cannot store ref types" if contains_ref_type?(type)
+      end
+
+      def contains_proc_type?(type)
+        case type
+        when Types::Nullable
+          contains_proc_type?(type.base)
+        when Types::GenericInstance
+          type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_proc_type?(argument) }
+        when Types::Span
+          contains_proc_type?(type.element_type)
+        when Types::Result
+          contains_proc_type?(type.ok_type) || contains_proc_type?(type.error_type)
+        when Types::Task
+          contains_proc_type?(type.result_type)
+        when Types::StructInstance
+          type.arguments.any? { |argument| contains_proc_type?(argument) }
+        when Types::Proc
+          true
+        when Types::Function
+          type.params.any? { |param| contains_proc_type?(param.type) } ||
+            contains_proc_type?(type.return_type) ||
+            (type.receiver_type && contains_proc_type?(type.receiver_type))
+        else
+          false
+        end
+      end
+
+      def validate_stored_proc_type!(type, context)
+        raise SemaError, "#{context} cannot store proc values" if contains_proc_type?(type)
       end
 
       def validate_parameter_ref_type!(type, function_name:, parameter_name:, external:)
@@ -3187,14 +3610,38 @@ module MilkTea
         raise SemaError, "parameter #{parameter_name} of #{function_name} cannot nest ref types" if contains_ref_type?(type)
       end
 
+      def validate_parameter_proc_type!(type, function_name:, parameter_name:, external:, foreign:)
+        if proc_type?(type)
+          raise SemaError, "extern function #{function_name} cannot take proc parameters" if external
+          raise SemaError, "foreign function #{function_name} cannot take proc parameters" if foreign
+          return
+        end
+
+        raise SemaError, "parameter #{parameter_name} of #{function_name} cannot nest proc types" if contains_proc_type?(type)
+      end
+
       def validate_return_ref_type!(type, function_name:)
         raise SemaError, "function #{function_name} cannot return ref types" if contains_ref_type?(type)
+      end
+
+      def validate_return_proc_type!(type, function_name:)
+        raise SemaError, "function #{function_name} cannot return proc values" if contains_proc_type?(type)
       end
 
       def validate_local_ref_type!(type, local_name)
         return if ref_type?(type)
 
         raise SemaError, "local #{local_name} cannot store nested ref types" if contains_ref_type?(type)
+      end
+
+      def validate_local_proc_type!(type, local_name, initializer:)
+        if proc_type?(type)
+          raise SemaError, "local #{local_name} with proc type must be initialized from a proc expression" unless initializer.is_a?(AST::ProcExpr)
+
+          return
+        end
+
+        raise SemaError, "local #{local_name} cannot store nested proc types" if contains_proc_type?(type)
       end
 
       def validate_consuming_foreign_parameter!(type, function_name:, parameter_name:)

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "tmpdir"
 require_relative "test_helper"
 
 class MilkTeaRaylibIdiomaticExamplesTest < Minitest::Test
@@ -24,15 +25,45 @@ class MilkTeaRaylibIdiomaticExamplesTest < Minitest::Test
     end
   end
 
+  def test_async_asset_loading_example_builds
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-raylib-async-asset") do |dir|
+      output_path = File.join(dir, "async_asset_loading")
+      c_path = File.join(dir, "async_asset_loading.c")
+
+      result = MilkTea::Build.build(example_path("async_asset_loading"), output_path:, cc: compiler, keep_c_path: c_path)
+
+      assert_equal File.expand_path(output_path), result.output_path
+      assert_equal File.expand_path(c_path), result.c_path
+      assert_includes result.link_flags, "-lraylib"
+      assert_includes result.link_flags, "-luv"
+    end
+  end
+
   private
 
   def idiomatic_example_paths
     Dir[File.expand_path("../examples/idiomatic/raylib/*.mt", __dir__)].sort
   end
 
+  def example_path(name)
+    File.expand_path("../examples/idiomatic/raylib/#{name}.mt", __dir__)
+  end
+
   def module_name_for(path)
     relative_path = path.delete_prefix(File.expand_path("../examples/", __dir__) + "/")
     "examples.#{relative_path.delete_suffix(".mt").tr("/", ".")}"
+  end
+
+  def compiler_available?(compiler)
+    return File.executable?(compiler) if compiler.include?(File::SEPARATOR)
+
+    ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |entry|
+      candidate = File.join(entry, compiler)
+      File.file?(candidate) && File.executable?(candidate)
+    end
   end
 
 end
