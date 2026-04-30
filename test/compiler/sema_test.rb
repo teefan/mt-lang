@@ -708,60 +708,127 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_rejects_proc_storage_in_struct_fields
+  def test_type_checks_proc_storage_in_struct_fields
     source = <<~MT
-      module demo.bad_proc_field
+      module demo.proc_field
+
+      struct Holder:
+          callback: proc(value: i32) -> i32
+
+      def call(holder: Holder, value: i32) -> i32:
+          return holder.callback(value)
+
+      def main() -> i32:
+          let offset = 3
+          let callback = proc(value: i32) -> i32:
+              return value + offset
+          let holder = Holder(callback = callback)
+          return call(holder, 4)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("Holder")
+    assert_equal true, result.functions.key?("call")
+  end
+
+  def test_type_checks_proc_return_types
+    source = <<~MT
+      module demo.proc_return
+
+      def factory(offset: i32) -> proc(value: i32) -> i32:
+          return proc(value: i32) -> i32:
+              return value + offset
+
+      def main() -> i32:
+          let callback = factory(2)
+          return callback(40)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("factory")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_proc_assignment
+    source = <<~MT
+      module demo.proc_assign
 
       struct Holder:
           callback: proc(value: i32) -> i32
 
       def main() -> i32:
-          return 0
+          let ca = proc(value: i32) -> i32:
+              return value + 1
+          let cb = proc(value: i32) -> i32:
+              return value + 2
+          let a = Holder(callback = ca)
+          var b = Holder(callback = cb)
+          b = a
+          return b.callback(1)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_source(source)
-    end
+    result = check_source(source)
 
-    assert_match(/field Holder\.callback cannot store proc values/, error.message)
+    assert_equal true, result.functions.key?("main")
   end
 
-  def test_rejects_proc_return_types
+  def test_type_checks_proc_field_assignment
     source = <<~MT
-      module demo.bad_proc_return
+      module demo.proc_field_assign
 
-      def factory() -> proc(value: i32) -> i32:
-          let offset = 1
-          let callback = proc(value: i32) -> i32:
-              return value + offset
-          return callback
+      struct Holder:
+          callback: proc(value: i32) -> i32
+
+      def main() -> i32:
+          let ca = proc(value: i32) -> i32:
+              return value + 1
+          var h = Holder(callback = ca)
+          let cb = proc(value: i32) -> i32:
+              return value + 2
+          h.callback = cb
+          return h.callback(1)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_source(source)
-    end
+    result = check_source(source)
 
-    assert_match(/function factory cannot return proc values/, error.message)
+    assert_equal true, result.functions.key?("main")
   end
 
-  def test_rejects_async_functions_with_proc_parameters
+  def test_type_checks_proc_var_reassign
     source = <<~MT
-      module demo.bad_async_proc_param
+      module demo.proc_var_reassign
+
+      def main() -> i32:
+          var callback = proc(value: i32) -> i32:
+              return value + 1
+          callback = proc(value: i32) -> i32:
+              return value + 2
+          return callback(0)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_async_function_with_proc_parameter
+    source = <<~MT
+      module demo.async_proc_param
 
       async def run(callback: proc(value: i32) -> i32) -> i32:
           return callback(1)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_source(source)
-    end
+    result = check_source(source)
 
-    assert_match(/async function run cannot take proc parameters yet/, error.message)
+    assert_equal true, result.functions.key?("run")
   end
 
-  def test_rejects_proc_expressions_inside_async_functions
+  def test_type_checks_proc_expression_inside_async_function
     source = <<~MT
-      module demo.bad_async_proc_expr
+      module demo.async_proc_expr
 
       async def run() -> i32:
           let callback = proc(value: i32) -> i32:
@@ -769,11 +836,9 @@ class MilkTeaSemaTest < Minitest::Test
           return callback(1)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_source(source)
-    end
+    result = check_source(source)
 
-    assert_match(/proc expressions are not supported inside async functions yet/, error.message)
+    assert_equal true, result.functions.key?("run")
   end
 
   def test_type_checks_foreign_defs_with_boundary_mappings

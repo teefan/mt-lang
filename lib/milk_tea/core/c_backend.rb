@@ -2115,6 +2115,7 @@ module MilkTea
             IR::Field.new(name: "env", type: Types::GenericInstance.new("ptr", [Types::Primitive.new("void")])),
             IR::Field.new(name: "invoke", type: Types::Function.new(nil, params: [Types::Parameter.new("env", Types::GenericInstance.new("ptr", [Types::Primitive.new("void")]))] + type.params, return_type: type.return_type)),
             IR::Field.new(name: "release", type: Types::Function.new(nil, params: [Types::Parameter.new("env", Types::GenericInstance.new("ptr", [Types::Primitive.new("void")]))], return_type: Types::Primitive.new("void"))),
+            IR::Field.new(name: "retain", type: Types::Function.new(nil, params: [Types::Parameter.new("env", Types::GenericInstance.new("ptr", [Types::Primitive.new("void")]))], return_type: Types::Primitive.new("void"))),
           ],
           packed: false,
           alignment: nil,

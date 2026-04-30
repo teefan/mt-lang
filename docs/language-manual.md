@@ -521,15 +521,12 @@ Rules:
 Current async limitations:
 
 - `await` is supported inside `if` expressions, `if`/`elif`/`else` bodies and conditions, `while` bodies and conditions, `for` bodies and iterables, `match` discriminants and arms, `unsafe` blocks, short-circuit `and`/`or` expressions, and assignment targets
-- async functions cannot take proc parameters
-- proc expressions are rejected inside async functions
 
 ## 11. Current Unsupported Or Rejected Surfaces
 
 Current implementation rejects:
 
-- storing proc values in struct fields
-- returning proc values from functions
+- proc values in union fields
 - format literals outside the supported std formatting/IO entrypoints
 
 ## 12. Example

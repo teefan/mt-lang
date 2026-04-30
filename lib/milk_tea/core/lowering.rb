@@ -953,11 +953,17 @@ module MilkTea
           c_name = c_local_name(param_binding.name)
           input_c_name = array_type?(param_type) && !field_info[:pointer] ? "#{c_name}_input" : c_name
           params << IR::Param.new(name: param_binding.name, c_name: input_c_name, type: param_type, pointer: field_info[:pointer])
+          frame_field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_type)
           body << IR::Assignment.new(
-            target: async_frame_field_expression(frame_expr, field_info[:field_name], field_type),
+            target: frame_field_expr,
             operator: "=",
             value: IR::Name.new(name: input_c_name, type: param_type, pointer: field_info[:pointer]),
           )
+          # Retain proc-containing params: the frame outlives the constructor call stack,
+          # so we must increment the env refcount so the caller releasing their copy is safe.
+          if !field_info[:pointer] && contains_proc_storage_type?(param_type)
+            body.concat(lower_proc_contained_retain_statements(frame_field_expr, param_type))
+          end
         end
 
         body << IR::ExpressionStmt.new(
@@ -1113,21 +1119,42 @@ module MilkTea
         frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
         raw_frame_expr = IR::Name.new(name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)
 
+        body = [
+          async_frame_cast_declaration(frame_type, async_info),
+          IR::IfStmt.new(
+            condition: IR::Unary.new(operator: "not", operand: async_frame_field_expression(frame_expr, "ready", @types.fetch("bool")), type: @types.fetch("bool")),
+            then_body: [IR::ReturnStmt.new(value: nil)],
+            else_body: nil,
+          ),
+        ]
+
+        # Release proc-containing params (always initialized by constructor, but null-guard is safe).
+        async_info[:param_fields].each_value do |field_info|
+          next if field_info[:pointer]
+          next unless contains_proc_storage_type?(field_info[:type])
+
+          field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:type])
+          body.concat(lower_async_frame_proc_release_statements(field_expr, field_info[:type]))
+        end
+
+        # Release proc-containing locals (may not be initialized if function returned early via branch,
+        # so always null-guard via invoke pointer check on each proc).
+        async_info[:local_fields].each_value do |field_info|
+          next unless contains_proc_storage_type?(field_info[:type])
+
+          field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:type])
+          body.concat(lower_async_frame_proc_release_statements(field_expr, field_info[:type]))
+        end
+
+        body << IR::ExpressionStmt.new(expression: IR::Call.new(callee: "mt_async_free", arguments: [raw_frame_expr], type: @types.fetch("void")))
+        body << IR::ReturnStmt.new(value: nil)
+
         IR::Function.new(
           name: "#{release_c_name}_fn",
           c_name: release_c_name,
           params: [IR::Param.new(name: "frame", c_name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)],
           return_type: @types.fetch("void"),
-          body: [
-            async_frame_cast_declaration(frame_type, async_info),
-            IR::IfStmt.new(
-              condition: IR::Unary.new(operator: "not", operand: async_frame_field_expression(frame_expr, "ready", @types.fetch("bool")), type: @types.fetch("bool")),
-              then_body: [IR::ReturnStmt.new(value: nil)],
-              else_body: nil,
-            ),
-            IR::ExpressionStmt.new(expression: IR::Call.new(callee: "mt_async_free", arguments: [raw_frame_expr], type: @types.fetch("void"))),
-            IR::ReturnStmt.new(value: nil),
-          ],
+          body:,
           entry_point: false,
         )
       end
@@ -2133,7 +2160,16 @@ module MilkTea
                   lower_expression(statement.value, env:, expected_type: target.type)
                 end
         update_cstr_metadata_for_assignment!(statement, prepared_value, env)
-        lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
+        if statement.operator == "=" && contains_proc_storage_type?(target.type)
+          rhs_name = fresh_c_temp_name(env, "proc_assign")
+          lowered << IR::LocalDecl.new(name: rhs_name, c_name: rhs_name, type: target.type, value:)
+          rhs = IR::Name.new(name: rhs_name, type: target.type, pointer: false)
+          lowered.concat(lower_proc_selective_retain_statements(rhs, statement.value, target.type))
+          lowered.concat(lower_proc_contained_guarded_release_statements(target, target.type))
+          lowered << IR::Assignment.new(target:, operator: "=", value: rhs)
+        else
+          lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
+        end
         lowered
       end
 
@@ -2406,9 +2442,13 @@ module MilkTea
               cstr_list_backed: cstr_list_backed_storage_value?(type, prepared_value, local_env),
             )
             lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:) unless emitted_decl
-            if proc_type?(type)
-              proc_name = IR::Name.new(name: c_name, type:, pointer: false)
-              local_defers << [IR::ExpressionStmt.new(expression: lower_proc_release_expression(proc_name, type))]
+            if contains_proc_storage_type?(type)
+              local_value = IR::Name.new(name: c_name, type:, pointer: false)
+              # Use guarded release so zero-initialized var locals are safe (invoke == NULL guard).
+              local_defers << lower_proc_contained_guarded_release_statements(local_value, type)
+              if statement.value && !expression_contains_proc_expr?(statement.value)
+                lowered.concat(lower_proc_contained_retain_statements(local_value, type))
+              end
             end
           when AST::Assignment
             target = lower_assignment_target(statement.target, env: local_env)
@@ -2448,7 +2488,21 @@ module MilkTea
                       end
             end
             update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
-            lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
+            if statement.operator == "=" && contains_proc_storage_type?(target.type)
+              # Materialize the RHS to a C temp to avoid evaluating aggregate literals multiple times
+              # and to ensure retain/release operate on a stable struct value throughout the sequence.
+              rhs_name = fresh_c_temp_name(local_env, "proc_assign")
+              lowered << IR::LocalDecl.new(name: rhs_name, c_name: rhs_name, type: target.type, value:)
+              rhs = IR::Name.new(name: rhs_name, type: target.type, pointer: false)
+              # Retain proc fields in the incoming value that are NOT from fresh proc expressions
+              # (fresh proc exprs carry refcount=1 and transfer ownership; existing procs need +1).
+              lowered.concat(lower_proc_selective_retain_statements(rhs, statement.value, target.type))
+              # Release old proc fields in the target (guarded: target may be zero-initialized).
+              lowered.concat(lower_proc_contained_guarded_release_statements(target, target.type))
+              lowered << IR::Assignment.new(target:, operator: "=", value: rhs)
+            else
+              lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
+            end
           when AST::IfStmt
             false_refinements = {}
             branch_entries = []
@@ -2567,11 +2621,13 @@ module MilkTea
               contextual_int_to_float: contextual_int_to_float_target?(return_type),
             ) : nil
             cleanup = cleanup_statements(local_defers, active_defers)
-            if value && !cleanup.empty? && !cleanup_safe_return_expression?(prepared_value)
+            needs_proc_retain = value && contains_proc_storage_type?(return_type) && !local_defers.empty? && !expression_contains_proc_expr?(prepared_value)
+            if value && (!cleanup.empty? && !cleanup_safe_return_expression?(prepared_value) || needs_proc_retain)
               return_value_name = fresh_c_temp_name(local_env, "return_value")
               lowered << IR::LocalDecl.new(name: return_value_name, c_name: return_value_name, type: return_type, value:)
               value = IR::Name.new(name: return_value_name, type: return_type, pointer: false)
             end
+            lowered.concat(lower_proc_contained_retain_statements(value, return_type)) if needs_proc_retain
             lowered.concat(cleanup)
             lowered << IR::ReturnStmt.new(value:)
           when AST::ExpressionStmt
@@ -2619,6 +2675,7 @@ module MilkTea
         proc_id = fresh_proc_symbol
         invoke_c_name = "#{@module_prefix}__proc_#{proc_id}__invoke"
         release_c_name = "#{@module_prefix}__proc_#{proc_id}__release"
+        retain_c_name = "#{@module_prefix}__proc_#{proc_id}__retain"
         env_struct_type = nil
         setup = []
 
@@ -2626,12 +2683,12 @@ module MilkTea
                       IR::NullLiteral.new(type: proc_env_pointer_type)
                     else
                       env_struct_type = Types::Struct.new("#{@module_prefix}__proc_#{proc_id}__env").define_fields(
-                        captures.each_with_object({}) { |capture, fields| fields[capture[:field_name]] = capture[:type] },
+                        { "__mt_ref_count" => @types.fetch("usize") }.merge(captures.each_with_object({}) { |capture, fields| fields[capture[:field_name]] = capture[:type] }),
                       )
                       @synthetic_structs << IR::StructDecl.new(
                         name: env_struct_type.name,
                         c_name: env_struct_type.name,
-                        fields: captures.map { |capture| IR::Field.new(name: capture[:field_name], type: capture[:type]) },
+                        fields: [IR::Field.new(name: "__mt_ref_count", type: @types.fetch("usize")), *captures.map { |capture| IR::Field.new(name: capture[:field_name], type: capture[:type]) }],
                         packed: false,
                         alignment: nil,
                       )
@@ -2650,6 +2707,11 @@ module MilkTea
                         value: IR::Cast.new(target_type: env_pointer_type, expression: raw_allocation, type: env_pointer_type),
                       )
                       env_pointer = IR::Name.new(name: env_name, type: env_pointer_type, pointer: false)
+                      setup << IR::Assignment.new(
+                        target: IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @types.fetch("usize")),
+                        operator: "=",
+                        value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("usize")),
+                      )
                       captures.each do |capture|
                         setup << IR::Assignment.new(
                           target: IR::Member.new(receiver: env_pointer, member: capture[:field_name], type: capture[:type]),
@@ -2661,7 +2723,8 @@ module MilkTea
                     end
 
         @synthetic_functions << build_proc_invoke_function(expression, proc_type, captures, env_struct_type, invoke_c_name)
-        @synthetic_functions << build_proc_release_function(release_c_name)
+        @synthetic_functions << build_proc_release_function(release_c_name, env_struct_type)
+        @synthetic_functions << build_proc_retain_function(retain_c_name, env_struct_type)
 
         [
           setup,
@@ -2671,6 +2734,7 @@ module MilkTea
               IR::AggregateField.new(name: "env", value: env_value),
               IR::AggregateField.new(name: "invoke", value: IR::Name.new(name: invoke_c_name, type: proc_invoke_function_type(proc_type), pointer: false)),
               IR::AggregateField.new(name: "release", value: IR::Name.new(name: release_c_name, type: proc_release_function_type, pointer: false)),
+              IR::AggregateField.new(name: "retain", value: IR::Name.new(name: retain_c_name, type: proc_retain_function_type, pointer: false)),
             ],
           ),
         ]
@@ -2732,20 +2796,63 @@ module MilkTea
         IR::Function.new(name: invoke_c_name, c_name: invoke_c_name, params:, return_type: proc_type.return_type, body:, entry_point: false)
       end
 
-      def build_proc_release_function(release_c_name)
+      def build_proc_release_function(release_c_name, env_struct_type)
+        return build_proc_noop_release_function(release_c_name) unless env_struct_type
+
+        env_pointer_type = pointer_to(env_struct_type)
+        env_pointer = IR::Name.new(name: "__mt_proc_env_ptr", type: env_pointer_type, pointer: false)
+        ref_count = IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @types.fetch("usize"))
         IR::Function.new(
           name: release_c_name,
           c_name: release_c_name,
           params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
           return_type: @types.fetch("void"),
           body: [
-            IR::ExpressionStmt.new(
-              expression: IR::Call.new(
-                callee: "free",
-                arguments: [IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
-                type: @types.fetch("void"),
-              ),
+            IR::LocalDecl.new(
+              name: "__mt_proc_env_ptr",
+              c_name: "__mt_proc_env_ptr",
+              type: env_pointer_type,
+              value: IR::Cast.new(target_type: env_pointer_type, expression: IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false), type: env_pointer_type),
             ),
+            IR::Assignment.new(target: ref_count, operator: "-=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("usize"))),
+            IR::IfStmt.new(
+              condition: IR::Binary.new(operator: "==", left: ref_count, right: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize")), type: @types.fetch("bool")),
+              then_body: [
+                IR::ExpressionStmt.new(
+                  expression: IR::Call.new(
+                    callee: "free",
+                    arguments: [IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
+                    type: @types.fetch("void"),
+                  ),
+                ),
+              ],
+              else_body: nil,
+            ),
+            IR::ReturnStmt.new(value: nil),
+          ],
+          entry_point: false,
+        )
+      end
+
+      def build_proc_retain_function(retain_c_name, env_struct_type)
+        return build_proc_noop_retain_function(retain_c_name) unless env_struct_type
+
+        env_pointer_type = pointer_to(env_struct_type)
+        env_pointer = IR::Name.new(name: "__mt_proc_env_ptr", type: env_pointer_type, pointer: false)
+        ref_count = IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @types.fetch("usize"))
+        IR::Function.new(
+          name: retain_c_name,
+          c_name: retain_c_name,
+          params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
+          return_type: @types.fetch("void"),
+          body: [
+            IR::LocalDecl.new(
+              name: "__mt_proc_env_ptr",
+              c_name: "__mt_proc_env_ptr",
+              type: env_pointer_type,
+              value: IR::Cast.new(target_type: env_pointer_type, expression: IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false), type: env_pointer_type),
+            ),
+            IR::Assignment.new(target: ref_count, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("usize"))),
             IR::ReturnStmt.new(value: nil),
           ],
           entry_point: false,
@@ -2873,6 +2980,131 @@ module MilkTea
           arguments: [IR::Member.new(receiver: proc_expression, member: "env", type: proc_env_pointer_type)],
           type: @types.fetch("void"),
         )
+      end
+
+      def lower_proc_retain_expression(proc_expression, _proc_type)
+        IR::Call.new(
+          callee: IR::Member.new(receiver: proc_expression, member: "retain", type: proc_retain_function_type),
+          arguments: [IR::Member.new(receiver: proc_expression, member: "env", type: proc_env_pointer_type)],
+          type: @types.fetch("void"),
+        )
+      end
+
+      def lower_proc_contained_release_statements(value_expression, type)
+        lower_proc_contained_lifecycle_statements(value_expression, type, :release)
+      end
+
+      # Null-guarded release: safe when value may be zero-initialized (var locals, async frame fields).
+      # Wraps each proc release in `if (proc.invoke) { proc.release(proc.env); }`.
+      def lower_proc_contained_guarded_release_statements(value_expression, type)
+        lower_proc_contained_lifecycle_statements(value_expression, type, :release, guarded: true)
+      end
+
+      # Alias used for async frame fields (always guarded).
+      def lower_async_frame_proc_release_statements(value_expression, type)
+        lower_proc_contained_lifecycle_statements(value_expression, type, :release, guarded: true)
+      end
+
+      def lower_proc_contained_retain_statements(value_expression, type)
+        lower_proc_contained_lifecycle_statements(value_expression, type, :retain)
+      end
+
+      def lower_proc_contained_lifecycle_statements(value_expression, type, mode, guarded: false)
+        return [] unless contains_proc_storage_type?(type)
+
+        if proc_type?(type)
+          if mode == :release && guarded
+            invoke_member = IR::Member.new(receiver: value_expression, member: "invoke", type: proc_invoke_function_type(type))
+            release_stmt = IR::ExpressionStmt.new(expression: lower_proc_release_expression(value_expression, type))
+            return [IR::IfStmt.new(condition: invoke_member, then_body: [release_stmt], else_body: nil)]
+          end
+          expression = mode == :retain ? lower_proc_retain_expression(value_expression, type) : lower_proc_release_expression(value_expression, type)
+          return [IR::ExpressionStmt.new(expression:)]
+        end
+
+        case type
+        when Types::Struct, Types::StructInstance
+          statements = []
+          type.fields.each do |field_name, field_type|
+            next unless contains_proc_storage_type?(field_type)
+
+            member = IR::Member.new(receiver: value_expression, member: field_name, type: field_type)
+            statements.concat(lower_proc_contained_lifecycle_statements(member, field_type, mode, guarded:))
+          end
+          statements
+        when Types::Nullable
+          []
+        else
+          raise LoweringError, "unsupported proc lifecycle container #{type.class.name}"
+        end
+      end
+
+      # Retain only proc fields that did NOT originate from a fresh proc expression in `original_ast`.
+      # Fresh proc expressions already carry refcount=1; retaining them would over-count.
+      # For existing proc values (variables, member accesses, return values), we retain to share ownership.
+      # When `original_ast` is a struct aggregate literal (AST::Call), fields are matched by name.
+      def lower_proc_selective_retain_statements(ir_value, original_ast, type)
+        return [] unless contains_proc_storage_type?(type)
+
+        if proc_type?(type)
+          # If the direct expression is a fresh proc, ownership transfers — no retain needed.
+          return [] if expression_contains_proc_expr?(original_ast)
+
+          return [IR::ExpressionStmt.new(expression: lower_proc_retain_expression(ir_value, type))]
+        end
+
+        case type
+        when Types::Struct, Types::StructInstance
+          statements = []
+          type.fields.each do |field_name, field_type|
+            next unless contains_proc_storage_type?(field_type)
+
+            # Try to extract the AST sub-expression for this specific field when the source
+            # is a struct aggregate literal (struct-name(field = value, ...)).
+            ast_field_source = if original_ast.is_a?(AST::Call)
+                                 original_ast.arguments.find { |arg| arg.name == field_name }&.value
+                               end
+            # Fall back to the whole RHS expression (conservative — treats as existing proc → retains).
+            ast_field_source ||= original_ast
+
+            member = IR::Member.new(receiver: ir_value, member: field_name, type: field_type)
+            statements.concat(lower_proc_selective_retain_statements(member, ast_field_source, field_type))
+          end
+          statements
+        when Types::Nullable
+          []
+        else
+          []
+        end
+      end
+
+      def expression_contains_proc_expr?(expression)
+        return false unless expression
+
+        case expression
+        when AST::ProcExpr
+          true
+        when AST::MemberAccess
+          expression_contains_proc_expr?(expression.receiver)
+        when AST::IndexAccess
+          expression_contains_proc_expr?(expression.receiver) || expression_contains_proc_expr?(expression.index)
+        when AST::UnaryOp
+          expression_contains_proc_expr?(expression.operand)
+        when AST::BinaryOp
+          expression_contains_proc_expr?(expression.left) || expression_contains_proc_expr?(expression.right)
+        when AST::IfExpr
+          expression_contains_proc_expr?(expression.condition) ||
+            expression_contains_proc_expr?(expression.then_expression) ||
+            expression_contains_proc_expr?(expression.else_expression)
+        when AST::AwaitExpr
+          expression_contains_proc_expr?(expression.expression)
+        when AST::Call
+          expression_contains_proc_expr?(expression.callee) || expression.arguments.any? { |argument| expression_contains_proc_expr?(argument.value) }
+        when AST::Specialization
+          expression_contains_proc_expr?(expression.callee)
+        else
+          false
+        end
       end
 
       def lower_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
@@ -3121,6 +3353,10 @@ module MilkTea
           prepare_if_expression_for_inline_lowering(expression, env:, expected_type:)
         when AST::Call
           prepare_call_expression_for_inline_lowering(expression, env:, expected_type:, allow_root_statement_foreign:)
+        when AST::ProcExpr
+          proc_type = infer_expression_type(expression, env:, expected_type:)
+          setup, value = lower_proc_expression_for_local(expression, env:, local_name: fresh_c_temp_name(env, "proc_expr"), proc_type: proc_type)
+          materialize_prepared_expression(setup, value, env:, type: proc_type, prefix: "proc_expr")
         else
           [[], expression]
         end
@@ -4985,9 +5221,11 @@ module MilkTea
         proc_id = fresh_proc_symbol
         invoke_c_name = "#{@module_prefix}__proc_#{proc_id}__invoke"
         release_c_name = "#{@module_prefix}__proc_#{proc_id}__release"
+        retain_c_name = "#{@module_prefix}__proc_#{proc_id}__retain"
 
         @synthetic_functions << build_direct_function_proc_invoke_function(source_expression, source_function.name, source_function.type, expected_type, invoke_c_name)
         @synthetic_functions << build_proc_noop_release_function(release_c_name)
+        @synthetic_functions << build_proc_noop_retain_function(retain_c_name)
 
         IR::AggregateLiteral.new(
           type: expected_type,
@@ -4995,6 +5233,7 @@ module MilkTea
             IR::AggregateField.new(name: "env", value: IR::NullLiteral.new(type: proc_env_pointer_type)),
             IR::AggregateField.new(name: "invoke", value: IR::Name.new(name: invoke_c_name, type: proc_invoke_function_type(expected_type), pointer: false)),
             IR::AggregateField.new(name: "release", value: IR::Name.new(name: release_c_name, type: proc_release_function_type, pointer: false)),
+            IR::AggregateField.new(name: "retain", value: IR::Name.new(name: retain_c_name, type: proc_retain_function_type, pointer: false)),
           ],
         )
       end
@@ -5039,6 +5278,17 @@ module MilkTea
         IR::Function.new(
           name: release_c_name,
           c_name: release_c_name,
+          params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
+          return_type: @types.fetch("void"),
+          body: [IR::ReturnStmt.new(value: nil)],
+          entry_point: false,
+        )
+      end
+
+      def build_proc_noop_retain_function(retain_c_name)
+        IR::Function.new(
+          name: retain_c_name,
+          c_name: retain_c_name,
           params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
           return_type: @types.fetch("void"),
           body: [IR::ReturnStmt.new(value: nil)],
@@ -6836,6 +7086,19 @@ module MilkTea
         type.is_a?(Types::Proc)
       end
 
+      def contains_proc_storage_type?(type)
+        case type
+        when Types::Proc
+          true
+        when Types::Struct, Types::StructInstance
+          type.fields.each_value.any? { |field_type| contains_proc_storage_type?(field_type) }
+        when Types::Nullable
+          contains_proc_storage_type?(type.base)
+        else
+          false
+        end
+      end
+
       def proc_env_pointer_type
         @proc_env_pointer_type ||= pointer_to(@types.fetch("void"))
       end
@@ -6850,6 +7113,14 @@ module MilkTea
 
       def proc_release_function_type
         @proc_release_function_type ||= Types::Function.new(
+          nil,
+          params: [Types::Parameter.new("env", proc_env_pointer_type)],
+          return_type: @types.fetch("void"),
+        )
+      end
+
+      def proc_retain_function_type
+        @proc_retain_function_type ||= Types::Function.new(
           nil,
           params: [Types::Parameter.new("env", proc_env_pointer_type)],
           return_type: @types.fetch("void"),
