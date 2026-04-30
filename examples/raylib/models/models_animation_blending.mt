@@ -22,7 +22,7 @@ const window_title: cstr = c"raylib [models] example - animation blending"
 
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
-        return cast[cstr](text)
+        return cstr<-text
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
@@ -34,7 +34,7 @@ def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
 
 def text_join(text_list: ptr[cstr], count: i32, delimiter: cstr) -> cstr:
     unsafe:
-        return cast[cstr](rl.TextJoin(cast[ptr[ptr[char]]](text_list), count, delimiter))
+        return cstr<-rl.TextJoin(ptr[ptr[char]]<-text_list, count, delimiter)
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -114,11 +114,11 @@ def main() -> i32:
                 let anim1 = model_animation(anims, anim_index1)
 
                 anim_current_frame0 += anim_frame_speed0
-                if anim_current_frame0 >= cast[f32](anim0.keyframeCount):
+                if anim_current_frame0 >= f32<-anim0.keyframeCount:
                     anim_current_frame0 = 0.0
 
                 anim_current_frame1 += anim_frame_speed1
-                if anim_current_frame1 >= cast[f32](anim1.keyframeCount):
+                if anim_current_frame1 >= f32<-anim1.keyframeCount:
                     anim_current_frame1 = 0.0
 
                 anim_blend_factor = anim_blend_time_counter / anim_blend_time
@@ -144,13 +144,13 @@ def main() -> i32:
                 if current_anim_playing == 0:
                     let anim0 = model_animation(anims, anim_index0)
                     anim_current_frame0 += anim_frame_speed0
-                    if anim_current_frame0 >= cast[f32](anim0.keyframeCount):
+                    if anim_current_frame0 >= f32<-anim0.keyframeCount:
                         anim_current_frame0 = 0.0
                     rl.UpdateModelAnimation(model, anim0, anim_current_frame0)
                 elif current_anim_playing == 1:
                     let anim1 = model_animation(anims, anim_index1)
                     anim_current_frame1 += anim_frame_speed1
-                    if anim_current_frame1 >= cast[f32](anim1.keyframeCount):
+                    if anim_current_frame1 >= f32<-anim1.keyframeCount:
                         anim_current_frame1 = 0.0
                     rl.UpdateModelAnimation(model, anim1, anim_current_frame1)
 
@@ -193,7 +193,7 @@ def main() -> i32:
         )
         gui.GuiEnable()
 
-        gui.GuiSetStyle(gui.GuiControl.DROPDOWNBOX, cast[i32](gui.GuiDropdownBoxProperty.DROPDOWN_ITEMS_SPACING), 1)
+        gui.GuiSetStyle(gui.GuiControl.DROPDOWNBOX, i32<-gui.GuiDropdownBoxProperty.DROPDOWN_ITEMS_SPACING, 1)
         if gui.GuiDropdownBox(
             gui.Rectangle(x = 10.0, y = 10.0, width = 160.0, height = 24.0),
             text_join(raw(addr(anim_names[0])), anim_count, c";"),
@@ -203,9 +203,9 @@ def main() -> i32:
             dropdown_edit_mode0 = not dropdown_edit_mode0
 
         if next_anim_to_play == 1:
-            gui.GuiSetStyle(gui.GuiControl.PROGRESSBAR, cast[i32](gui.GuiProgressBarProperty.PROGRESS_SIDE), 0)
+            gui.GuiSetStyle(gui.GuiControl.PROGRESSBAR, i32<-gui.GuiProgressBarProperty.PROGRESS_SIDE, 0)
         else:
-            gui.GuiSetStyle(gui.GuiControl.PROGRESSBAR, cast[i32](gui.GuiProgressBarProperty.PROGRESS_SIDE), 1)
+            gui.GuiSetStyle(gui.GuiControl.PROGRESSBAR, i32<-gui.GuiProgressBarProperty.PROGRESS_SIDE, 1)
 
         gui.GuiProgressBar(
             gui.Rectangle(x = 180.0, y = 14.0, width = 440.0, height = 16.0),
@@ -215,7 +215,7 @@ def main() -> i32:
             0.0,
             1.0,
         )
-        gui.GuiSetStyle(gui.GuiControl.PROGRESSBAR, cast[i32](gui.GuiProgressBarProperty.PROGRESS_SIDE), 0)
+        gui.GuiSetStyle(gui.GuiControl.PROGRESSBAR, i32<-gui.GuiProgressBarProperty.PROGRESS_SIDE, 0)
 
         if gui.GuiDropdownBox(
             gui.Rectangle(x = rl.GetScreenWidth() - 170.0, y = 10.0, width = 160.0, height = 24.0),
@@ -232,10 +232,10 @@ def main() -> i32:
             rl.TextFormat(frame0_format, anim_frame_progress0, anim0.keyframeCount),
             raw(addr(anim_frame_progress0)),
             0.0,
-            cast[f32](anim0.keyframeCount),
+            f32<-anim0.keyframeCount,
         )
         for index in range(0, anim0.keyframeCount):
-            let timeline_x = 60 + cast[i32]((cast[f32](rl.GetScreenWidth() - 180) / cast[f32](anim0.keyframeCount)) * cast[f32](index))
+            let timeline_x = 60 + i32<-((f32<-(rl.GetScreenWidth() - 180) / f32<-anim0.keyframeCount) * f32<-index)
             rl.DrawRectangle(timeline_x, rl.GetScreenHeight() - 60, 1, 20, rl.BLUE)
 
         let anim1 = model_animation(anims, anim_index1)
@@ -245,10 +245,10 @@ def main() -> i32:
             rl.TextFormat(frame1_format, anim_frame_progress1, anim1.keyframeCount),
             raw(addr(anim_frame_progress1)),
             0.0,
-            cast[f32](anim1.keyframeCount),
+            f32<-anim1.keyframeCount,
         )
         for index in range(0, anim1.keyframeCount):
-            let timeline_x = 60 + cast[i32]((cast[f32](rl.GetScreenWidth() - 180) / cast[f32](anim1.keyframeCount)) * cast[f32](index))
+            let timeline_x = 60 + i32<-((f32<-(rl.GetScreenWidth() - 180) / f32<-anim1.keyframeCount) * f32<-index)
             rl.DrawRectangle(timeline_x, rl.GetScreenHeight() - 30, 1, 20, rl.BLUE)
 
     return 0

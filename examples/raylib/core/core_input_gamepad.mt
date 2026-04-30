@@ -21,7 +21,7 @@ const right_trigger_deadzone: f32 = -0.9
 def gamepad_name_matches(gamepad_name: cstr, alias_one: cstr, alias_two: cstr) -> bool:
     let lower_gamepad_name = rl.TextToLower(gamepad_name)
     unsafe:
-        let lower_gamepad_name_cstr = cast[cstr](lower_gamepad_name)
+        let lower_gamepad_name_cstr = cstr<-lower_gamepad_name
         return rl.TextFindIndex(lower_gamepad_name_cstr, alias_one) > -1 or rl.TextFindIndex(lower_gamepad_name_cstr, alias_two) > -1
 
 def draw_stick(center_x: i32, center_y: i32, outer_radius: f32, inner_radius: f32, stick_x: f32, stick_y: f32, pressed: bool) -> void:
@@ -31,12 +31,12 @@ def draw_stick(center_x: i32, center_y: i32, outer_radius: f32, inner_radius: f3
 
     rl.DrawCircle(center_x, center_y, outer_radius, rl.BLACK)
     rl.DrawCircle(center_x, center_y, inner_radius, rl.LIGHTGRAY)
-    rl.DrawCircle(center_x + cast[i32](stick_x * 20.0), center_y + cast[i32](stick_y * 20.0), 25.0, stick_color)
+    rl.DrawCircle(center_x + i32<-(stick_x * 20.0), center_y + i32<-(stick_y * 20.0), 25.0, stick_color)
     return
 
 def draw_trigger_bar(pos_x: i32, pos_y: i32, trigger_value: f32) -> void:
     rl.DrawRectangle(pos_x, pos_y, 15, 70, rl.GRAY)
-    rl.DrawRectangle(pos_x, pos_y, 15, cast[i32](((1.0 + trigger_value) / 2.0) * 70.0), rl.RED)
+    rl.DrawRectangle(pos_x, pos_y, 15, i32<-(((1.0 + trigger_value) / 2.0) * 70.0), rl.RED)
     return
 
 def draw_xbox_gamepad(gamepad: i32, texture: rl.Texture2D, left_stick_x: f32, left_stick_y: f32, right_stick_x: f32, right_stick_y: f32, left_trigger: f32, right_trigger: f32) -> void:
@@ -206,7 +206,7 @@ def main() -> i32:
 
         vibrate_button = rl.Rectangle(
             x = 10.0,
-            y = 90.0 + cast[f32](20 * axis_count),
+            y = 90.0 + f32<-(20 * axis_count),
             width = 75.0,
             height = 24.0,
         )
@@ -252,10 +252,10 @@ def main() -> i32:
             draw_axis_values(gamepad, axis_count)
 
             rl.DrawRectangleRec(vibrate_button, rl.SKYBLUE)
-            rl.DrawText(c"VIBRATE", cast[i32](vibrate_button.x + 14.0), cast[i32](vibrate_button.y + 1.0), 10, rl.DARKGRAY)
+            rl.DrawText(c"VIBRATE", i32<-(vibrate_button.x + 14.0), i32<-(vibrate_button.y + 1.0), 10, rl.DARKGRAY)
 
             let detected_button = rl.GetGamepadButtonPressed()
-            if detected_button != cast[i32](rl.GamepadButton.GAMEPAD_BUTTON_UNKNOWN):
+            if detected_button != i32<-rl.GamepadButton.GAMEPAD_BUTTON_UNKNOWN:
                 rl.DrawText(rl.TextFormat(c"DETECTED BUTTON: %i", detected_button), 10, 430, 10, rl.RED)
             else:
                 rl.DrawText(c"DETECTED BUTTON: NONE", 10, 430, 10, rl.GRAY)

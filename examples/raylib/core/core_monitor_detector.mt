@@ -29,10 +29,10 @@ def main() -> i32:
             let height = rl.GetMonitorHeight(index)
 
             if position.x < monitor_offset_x:
-                monitor_offset_x = -cast[i32](position.x)
+                monitor_offset_x = -i32<-position.x
 
-            let right_edge = cast[i32](position.x) + width
-            let bottom_edge = cast[i32](position.y) + height
+            let right_edge = i32<-position.x + width
+            let bottom_edge = i32<-position.y + height
             if max_width < right_edge:
                 max_width = right_edge
             if max_height < bottom_edge:
@@ -50,9 +50,9 @@ def main() -> i32:
 
         var monitor_scale: f32 = 0.6
         if max_height > max_width + monitor_offset_x:
-            monitor_scale *= cast[f32](screen_height) / max_height
+            monitor_scale *= f32<-screen_height / max_height
         else:
-            monitor_scale *= cast[f32](screen_width) / (max_width + monitor_offset_x)
+            monitor_scale *= f32<-screen_width / (max_width + monitor_offset_x)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

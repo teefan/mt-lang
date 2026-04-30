@@ -29,7 +29,7 @@ def draw_texture_poly(texture: rl.Texture, center: rl.Vector2, points: ptr[rl.Ve
             rlgl.rlVertex2f(deref(points + index + 1).x + center.x, deref(points + index + 1).y + center.y)
 
         rlgl.rlEnd()
-        rlgl.rlSetTexture(cast[u32](0))
+        rlgl.rlSetTexture(u32<-0)
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -79,7 +79,7 @@ def main() -> i32:
 
         draw_texture_poly(
             texture,
-            rl.Vector2(x = cast[f32](rl.GetScreenWidth()) / 2.0, y = cast[f32](rl.GetScreenHeight()) / 2.0),
+            rl.Vector2(x = f32<-rl.GetScreenWidth() / 2.0, y = f32<-rl.GetScreenHeight() / 2.0),
             raw(addr(positions[0])),
             raw(addr(texcoords[0])),
             max_points,

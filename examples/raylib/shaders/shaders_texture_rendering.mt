@@ -29,7 +29,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        time = cast[f32](rl.GetTime())
+        time = f32<-rl.GetTime()
         rl.SetShaderValue(shader, time_loc, raw(addr(time)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         rl.BeginDrawing()

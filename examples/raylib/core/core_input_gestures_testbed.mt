@@ -161,10 +161,10 @@ def main() -> i32:
 
         rl.ClearBackground(rl.RAYWHITE)
 
-        rl.DrawText(c"*", cast[i32](message_position.x) + 5, cast[i32](message_position.y) + 5, 10, rl.BLACK)
-        rl.DrawText(mobile_message, cast[i32](message_position.x) + 15, cast[i32](message_position.y) + 5, 10, rl.BLACK)
-        rl.DrawText(c"*", cast[i32](message_position.x) + 5, cast[i32](message_position.y) + 35, 10, rl.BLACK)
-        rl.DrawText(desktop_message, cast[i32](message_position.x) + 15, cast[i32](message_position.y) + 35, 10, rl.BLACK)
+        rl.DrawText(c"*", i32<-message_position.x + 5, i32<-message_position.y + 5, 10, rl.BLACK)
+        rl.DrawText(mobile_message, i32<-message_position.x + 15, i32<-message_position.y + 5, 10, rl.BLACK)
+        rl.DrawText(c"*", i32<-message_position.x + 5, i32<-message_position.y + 35, 10, rl.BLACK)
+        rl.DrawText(desktop_message, i32<-message_position.x + 15, i32<-message_position.y + 35, 10, rl.BLACK)
 
         var swipe_up_color = rl.LIGHTGRAY
         var swipe_left_color = rl.LIGHTGRAY
@@ -194,29 +194,29 @@ def main() -> i32:
         if last_gesture == rl.Gesture.GESTURE_PINCH_IN:
             pinch_in_color = rl.VIOLET
 
-        rl.DrawText(c"Last gesture", cast[i32](last_gesture_position.x) + 33, cast[i32](last_gesture_position.y) - 47, 20, rl.BLACK)
-        rl.DrawText(c"Swipe         Tap       Pinch  Touch", cast[i32](last_gesture_position.x) + 17, cast[i32](last_gesture_position.y) - 18, 10, rl.BLACK)
-        rl.DrawRectangle(cast[i32](last_gesture_position.x) + 20, cast[i32](last_gesture_position.y), 20, 20, swipe_up_color)
-        rl.DrawRectangle(cast[i32](last_gesture_position.x), cast[i32](last_gesture_position.y) + 20, 20, 20, swipe_left_color)
-        rl.DrawRectangle(cast[i32](last_gesture_position.x) + 40, cast[i32](last_gesture_position.y) + 20, 20, 20, swipe_right_color)
-        rl.DrawRectangle(cast[i32](last_gesture_position.x) + 20, cast[i32](last_gesture_position.y) + 40, 20, 20, swipe_down_color)
-        rl.DrawCircle(cast[i32](last_gesture_position.x) + 80, cast[i32](last_gesture_position.y) + 16, 10.0, tap_color)
+        rl.DrawText(c"Last gesture", i32<-last_gesture_position.x + 33, i32<-last_gesture_position.y - 47, 20, rl.BLACK)
+        rl.DrawText(c"Swipe         Tap       Pinch  Touch", i32<-last_gesture_position.x + 17, i32<-last_gesture_position.y - 18, 10, rl.BLACK)
+        rl.DrawRectangle(i32<-last_gesture_position.x + 20, i32<-last_gesture_position.y, 20, 20, swipe_up_color)
+        rl.DrawRectangle(i32<-last_gesture_position.x, i32<-last_gesture_position.y + 20, 20, 20, swipe_left_color)
+        rl.DrawRectangle(i32<-last_gesture_position.x + 40, i32<-last_gesture_position.y + 20, 20, 20, swipe_right_color)
+        rl.DrawRectangle(i32<-last_gesture_position.x + 20, i32<-last_gesture_position.y + 40, 20, 20, swipe_down_color)
+        rl.DrawCircle(i32<-last_gesture_position.x + 80, i32<-last_gesture_position.y + 16, 10.0, tap_color)
         rl.DrawRing(rl.Vector2(x = last_gesture_position.x + 103.0, y = last_gesture_position.y + 16.0), 6.0, 11.0, 0.0, 360.0, 0, drag_color)
-        rl.DrawCircle(cast[i32](last_gesture_position.x) + 80, cast[i32](last_gesture_position.y) + 43, 10.0, doubletap_color)
-        rl.DrawCircle(cast[i32](last_gesture_position.x) + 103, cast[i32](last_gesture_position.y) + 43, 10.0, doubletap_color)
+        rl.DrawCircle(i32<-last_gesture_position.x + 80, i32<-last_gesture_position.y + 43, 10.0, doubletap_color)
+        rl.DrawCircle(i32<-last_gesture_position.x + 103, i32<-last_gesture_position.y + 43, 10.0, doubletap_color)
         rl.DrawTriangle(rl.Vector2(x = last_gesture_position.x + 122.0, y = last_gesture_position.y + 16.0), rl.Vector2(x = last_gesture_position.x + 137.0, y = last_gesture_position.y + 26.0), rl.Vector2(x = last_gesture_position.x + 137.0, y = last_gesture_position.y + 6.0), pinch_out_color)
         rl.DrawTriangle(rl.Vector2(x = last_gesture_position.x + 147.0, y = last_gesture_position.y + 6.0), rl.Vector2(x = last_gesture_position.x + 147.0, y = last_gesture_position.y + 26.0), rl.Vector2(x = last_gesture_position.x + 162.0, y = last_gesture_position.y + 16.0), pinch_out_color)
         rl.DrawTriangle(rl.Vector2(x = last_gesture_position.x + 125.0, y = last_gesture_position.y + 33.0), rl.Vector2(x = last_gesture_position.x + 125.0, y = last_gesture_position.y + 53.0), rl.Vector2(x = last_gesture_position.x + 140.0, y = last_gesture_position.y + 43.0), pinch_in_color)
         rl.DrawTriangle(rl.Vector2(x = last_gesture_position.x + 144.0, y = last_gesture_position.y + 43.0), rl.Vector2(x = last_gesture_position.x + 159.0, y = last_gesture_position.y + 53.0), rl.Vector2(x = last_gesture_position.x + 159.0, y = last_gesture_position.y + 33.0), pinch_in_color)
 
         for touch_indicator in range(0, 4):
-            rl.DrawCircle(cast[i32](last_gesture_position.x) + 180, cast[i32](last_gesture_position.y) + 7 + touch_indicator * 15, 5.0, if touch_count <= touch_indicator then rl.LIGHTGRAY else current_gesture_color)
+            rl.DrawCircle(i32<-last_gesture_position.x + 180, i32<-last_gesture_position.y + 7 + touch_indicator * 15, 5.0, if touch_count <= touch_indicator then rl.LIGHTGRAY else current_gesture_color)
 
-        rl.DrawText(c"Log", cast[i32](gesture_log_position.x), cast[i32](gesture_log_position.y), 20, rl.BLACK)
+        rl.DrawText(c"Log", i32<-gesture_log_position.x, i32<-gesture_log_position.y, 20, rl.BLACK)
         var log_row = 0
         var log_index = gesture_log_index % gesture_log_size
         while log_row < gesture_log_size:
-            rl.DrawText(gesture_log[log_index], cast[i32](gesture_log_position.x), cast[i32](gesture_log_position.y) + 410 - log_row * 20, 20, if log_row == 0 then current_gesture_color else rl.LIGHTGRAY)
+            rl.DrawText(gesture_log[log_index], i32<-gesture_log_position.x, i32<-gesture_log_position.y + 410 - log_row * 20, 20, if log_row == 0 then current_gesture_color else rl.LIGHTGRAY)
             log_row += 1
             log_index = (log_index + 1) % gesture_log_size
 
@@ -231,30 +231,30 @@ def main() -> i32:
             log_button1_color = rl.MAROON
 
         rl.DrawRectangleRec(log_button1, log_button1_color)
-        rl.DrawText(c"Hide", cast[i32](log_button1.x) + 7, cast[i32](log_button1.y) + 3, 10, rl.WHITE)
-        rl.DrawText(c"Repeat", cast[i32](log_button1.x) + 7, cast[i32](log_button1.y) + 13, 10, rl.WHITE)
+        rl.DrawText(c"Hide", i32<-log_button1.x + 7, i32<-log_button1.y + 3, 10, rl.WHITE)
+        rl.DrawText(c"Repeat", i32<-log_button1.x + 7, i32<-log_button1.y + 13, 10, rl.WHITE)
         rl.DrawRectangleRec(log_button2, log_button2_color)
-        rl.DrawText(c"Hide", cast[i32](log_button1.x) + 62, cast[i32](log_button1.y) + 3, 10, rl.WHITE)
-        rl.DrawText(c"Hold", cast[i32](log_button1.x) + 62, cast[i32](log_button1.y) + 13, 10, rl.WHITE)
+        rl.DrawText(c"Hide", i32<-log_button1.x + 62, i32<-log_button1.y + 3, 10, rl.WHITE)
+        rl.DrawText(c"Hold", i32<-log_button1.x + 62, i32<-log_button1.y + 13, 10, rl.WHITE)
 
-        rl.DrawText(c"Angle", cast[i32](protractor_position.x) + 55, cast[i32](protractor_position.y) + 76, 10, rl.BLACK)
+        rl.DrawText(c"Angle", i32<-protractor_position.x + 55, i32<-protractor_position.y + 76, 10, rl.BLACK)
         let angle_string = rl.TextFormat(c"%f", current_angle_degrees)
         let angle_string_dot = rl.TextFindIndex(angle_string, c".")
         let angle_string_trim = rl.TextSubtext(angle_string, 0, angle_string_dot + 3)
-        rl.DrawText(angle_string_trim, cast[i32](protractor_position.x) + 55, cast[i32](protractor_position.y) + 92, 20, current_gesture_color)
+        rl.DrawText(angle_string_trim, i32<-protractor_position.x + 55, i32<-protractor_position.y + 92, 20, current_gesture_color)
         rl.DrawCircleV(protractor_position, 80.0, rl.WHITE)
         rl.DrawLineEx(rl.Vector2(x = protractor_position.x - 90.0, y = protractor_position.y), rl.Vector2(x = protractor_position.x + 90.0, y = protractor_position.y), 3.0, rl.LIGHTGRAY)
         rl.DrawLineEx(rl.Vector2(x = protractor_position.x, y = protractor_position.y - 90.0), rl.Vector2(x = protractor_position.x, y = protractor_position.y + 90.0), 3.0, rl.LIGHTGRAY)
         rl.DrawLineEx(rl.Vector2(x = protractor_position.x - 80.0, y = protractor_position.y - 45.0), rl.Vector2(x = protractor_position.x + 80.0, y = protractor_position.y + 45.0), 3.0, rl.GREEN)
         rl.DrawLineEx(rl.Vector2(x = protractor_position.x - 80.0, y = protractor_position.y + 45.0), rl.Vector2(x = protractor_position.x + 80.0, y = protractor_position.y - 45.0), 3.0, rl.GREEN)
-        rl.DrawText(c"0", cast[i32](protractor_position.x) + 96, cast[i32](protractor_position.y) - 9, 20, rl.BLACK)
-        rl.DrawText(c"30", cast[i32](protractor_position.x) + 74, cast[i32](protractor_position.y) - 68, 20, rl.BLACK)
-        rl.DrawText(c"90", cast[i32](protractor_position.x) - 11, cast[i32](protractor_position.y) - 110, 20, rl.BLACK)
-        rl.DrawText(c"150", cast[i32](protractor_position.x) - 100, cast[i32](protractor_position.y) - 68, 20, rl.BLACK)
-        rl.DrawText(c"180", cast[i32](protractor_position.x) - 124, cast[i32](protractor_position.y) - 9, 20, rl.BLACK)
-        rl.DrawText(c"210", cast[i32](protractor_position.x) - 100, cast[i32](protractor_position.y) + 50, 20, rl.BLACK)
-        rl.DrawText(c"270", cast[i32](protractor_position.x) - 18, cast[i32](protractor_position.y) + 92, 20, rl.BLACK)
-        rl.DrawText(c"330", cast[i32](protractor_position.x) + 72, cast[i32](protractor_position.y) + 50, 20, rl.BLACK)
+        rl.DrawText(c"0", i32<-protractor_position.x + 96, i32<-protractor_position.y - 9, 20, rl.BLACK)
+        rl.DrawText(c"30", i32<-protractor_position.x + 74, i32<-protractor_position.y - 68, 20, rl.BLACK)
+        rl.DrawText(c"90", i32<-protractor_position.x - 11, i32<-protractor_position.y - 110, 20, rl.BLACK)
+        rl.DrawText(c"150", i32<-protractor_position.x - 100, i32<-protractor_position.y - 68, 20, rl.BLACK)
+        rl.DrawText(c"180", i32<-protractor_position.x - 124, i32<-protractor_position.y - 9, 20, rl.BLACK)
+        rl.DrawText(c"210", i32<-protractor_position.x - 100, i32<-protractor_position.y + 50, 20, rl.BLACK)
+        rl.DrawText(c"270", i32<-protractor_position.x - 18, i32<-protractor_position.y + 92, 20, rl.BLACK)
+        rl.DrawText(c"330", i32<-protractor_position.x + 72, i32<-protractor_position.y + 50, 20, rl.BLACK)
         if current_angle_degrees != 0.0:
             rl.DrawLineEx(protractor_position, final_vector, 3.0, current_gesture_color)
 

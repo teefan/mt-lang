@@ -28,10 +28,10 @@ def main() -> i32:
         projection = rl.CameraProjection.CAMERA_PERSPECTIVE,
     )
 
-    var mesh = rl.GenMeshPlane(cast[f32](map_size), cast[f32](map_size), 1, 1)
+    var mesh = rl.GenMeshPlane(f32<-map_size, f32<-map_size, 1, 1)
 
     unsafe:
-        mesh.texcoords2 = cast[ptr[f32]](rl.MemAlloc(cast[u32](mesh.vertexCount * 2) * cast[u32](sizeof(f32))))
+        mesh.texcoords2 = ptr[f32]<-rl.MemAlloc(u32<-(mesh.vertexCount * 2) * u32<-sizeof(f32))
         mesh.texcoords2[0] = 0.0
         mesh.texcoords2[1] = 0.0
         mesh.texcoords2[2] = 1.0
@@ -41,7 +41,7 @@ def main() -> i32:
         mesh.texcoords2[6] = 1.0
         mesh.texcoords2[7] = 1.0
 
-        mesh.vboId[cast[i32](rl.ShaderLocationIndex.SHADER_LOC_VERTEX_TEXCOORD02)] = rlgl.rlLoadVertexBuffer(cast[ptr[void]](mesh.texcoords2), mesh.vertexCount * 2 * cast[i32](sizeof(f32)), false)
+        mesh.vboId[i32<-rl.ShaderLocationIndex.SHADER_LOC_VERTEX_TEXCOORD02] = rlgl.rlLoadVertexBuffer(ptr[void]<-mesh.texcoords2, mesh.vertexCount * 2 * i32<-sizeof(f32), false)
         rlgl.rlEnableVertexArray(mesh.vaoId)
         rlgl.rlSetVertexAttribute(5, 2, rlgl.RL_FLOAT, false, 0, 0)
         rlgl.rlEnableVertexAttribute(5)
@@ -67,33 +67,33 @@ def main() -> i32:
     var material = rl.LoadMaterialDefault()
     material.shader = shader
     unsafe:
-        material.maps[cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO)].texture = texture
-        material.maps[cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_METALNESS)].texture = lightmap.texture
+        material.maps[i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO].texture = texture
+        material.maps[i32<-rl.MaterialMapIndex.MATERIAL_MAP_METALNESS].texture = lightmap.texture
 
     rl.BeginTextureMode(lightmap)
     rl.ClearBackground(rl.BLACK)
     rl.BeginBlendMode(rl.BlendMode.BLEND_ADDITIVE)
     rl.DrawTexturePro(
         light,
-        rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](light.width), height = cast[f32](light.height)),
-        rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](2 * map_size), height = cast[f32](2 * map_size)),
-        rl.Vector2(x = cast[f32](map_size), y = cast[f32](map_size)),
+        rl.Rectangle(x = 0.0, y = 0.0, width = f32<-light.width, height = f32<-light.height),
+        rl.Rectangle(x = 0.0, y = 0.0, width = f32<-(2 * map_size), height = f32<-(2 * map_size)),
+        rl.Vector2(x = f32<-map_size, y = f32<-map_size),
         0.0,
         rl.RED,
     )
     rl.DrawTexturePro(
         light,
-        rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](light.width), height = cast[f32](light.height)),
-        rl.Rectangle(x = cast[f32](map_size) * 0.8, y = cast[f32](map_size) / 2.0, width = cast[f32](2 * map_size), height = cast[f32](2 * map_size)),
-        rl.Vector2(x = cast[f32](map_size), y = cast[f32](map_size)),
+        rl.Rectangle(x = 0.0, y = 0.0, width = f32<-light.width, height = f32<-light.height),
+        rl.Rectangle(x = f32<-map_size * 0.8, y = f32<-map_size / 2.0, width = f32<-(2 * map_size), height = f32<-(2 * map_size)),
+        rl.Vector2(x = f32<-map_size, y = f32<-map_size),
         0.0,
         rl.BLUE,
     )
     rl.DrawTexturePro(
         light,
-        rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](light.width), height = cast[f32](light.height)),
-        rl.Rectangle(x = cast[f32](map_size) * 0.8, y = cast[f32](map_size) * 0.8, width = cast[f32](map_size), height = cast[f32](map_size)),
-        rl.Vector2(x = cast[f32](map_size) / 2.0, y = cast[f32](map_size) / 2.0),
+        rl.Rectangle(x = 0.0, y = 0.0, width = f32<-light.width, height = f32<-light.height),
+        rl.Rectangle(x = f32<-map_size * 0.8, y = f32<-map_size * 0.8, width = f32<-map_size, height = f32<-map_size),
+        rl.Vector2(x = f32<-map_size / 2.0, y = f32<-map_size / 2.0),
         0.0,
         rl.GREEN,
     )
@@ -119,8 +119,8 @@ def main() -> i32:
 
         rl.DrawTexturePro(
             lightmap.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = -cast[f32](map_size), height = -cast[f32](map_size)),
-            rl.Rectangle(x = cast[f32](rl.GetRenderWidth() - map_size * 8 - 10), y = 10.0, width = cast[f32](map_size * 8), height = cast[f32](map_size * 8)),
+            rl.Rectangle(x = 0.0, y = 0.0, width = -f32<-map_size, height = -f32<-map_size),
+            rl.Rectangle(x = f32<-(rl.GetRenderWidth() - map_size * 8 - 10), y = 10.0, width = f32<-(map_size * 8), height = f32<-(map_size * 8)),
             rl.Vector2(x = 0.0, y = 0.0),
             0.0,
             rl.WHITE,

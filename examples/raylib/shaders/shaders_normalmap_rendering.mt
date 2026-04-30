@@ -70,8 +70,8 @@ def main() -> i32:
     let normal_map_loc = rl.GetShaderLocation(shader, normal_map_uniform_name)
     let view_loc = rl.GetShaderLocation(shader, view_pos_uniform_name)
     unsafe:
-        shader.locs[cast[i32](rl.ShaderLocationIndex.SHADER_LOC_MAP_NORMAL)] = normal_map_loc
-        shader.locs[cast[i32](rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW)] = view_loc
+        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_MAP_NORMAL] = normal_map_loc
+        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     let light_pos_loc = rl.GetShaderLocation(shader, light_pos_uniform_name)
 
@@ -88,8 +88,8 @@ def main() -> i32:
     rl.GenTextureMipmaps(raw(addr(normal_texture)))
     rl.SetTextureFilter(diffuse_texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
     rl.SetTextureFilter(normal_texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
-    rl.SetMaterialTexture(plane.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), diffuse_texture)
-    rl.SetMaterialTexture(plane.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_NORMAL), normal_texture)
+    rl.SetMaterialTexture(plane.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, diffuse_texture)
+    rl.SetMaterialTexture(plane.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_NORMAL, normal_texture)
 
     var light_position = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
     let light_speed: f32 = 3.0
@@ -125,7 +125,7 @@ def main() -> i32:
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_N):
             use_normal_map = 1 - use_normal_map
 
-        plane.transform = rotate_y(cast[f32](rl.GetTime()) * 0.5)
+        plane.transform = rotate_y(f32<-rl.GetTime() * 0.5)
 
         var light_pos = array[f32, 3](light_position.x, light_position.y, light_position.z)
         rl.SetShaderValue(shader, light_pos_loc, raw(addr(light_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)

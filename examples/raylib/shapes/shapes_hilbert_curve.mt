@@ -40,13 +40,13 @@ def compute_hilbert_step(order: i32, index_start: i32) -> rl.Vector2:
             vect.x = vect.y
             vect.y = temp
         elif hilbert_index == 1:
-            vect.y += cast[f32](len)
+            vect.y += f32<-len
         elif hilbert_index == 2:
-            vect.x += cast[f32](len)
-            vect.y += cast[f32](len)
+            vect.x += f32<-len
+            vect.y += f32<-len
         elif hilbert_index == 3:
-            temp = cast[f32](len - 1) - vect.x
-            vect.x = cast[f32](2 * len - 1) - vect.y
+            temp = f32<-(len - 1) - vect.x
+            vect.x = f32<-(2 * len - 1) - vect.y
             vect.y = temp
 
     return vect
@@ -56,27 +56,27 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var order = min_order
-    var size: f32 = cast[f32](rl.GetScreenHeight())
+    var size: f32 = f32<-rl.GetScreenHeight()
     var stroke_count = 0
     var hilbert_path = zero[array[rl.Vector2, 65536]]()
 
     var previous_order = order
-    var previous_size = cast[i32](size)
+    var previous_size = i32<-size
     var counter = 0
     var thick: f32 = 2.0
     var animate = true
 
-    let screen_height_value = cast[f32](rl.GetScreenHeight())
+    let screen_height_value = f32<-rl.GetScreenHeight()
     let panel_margin: f32 = 5.0
     let panel_position = rl.Vector2(
-        x = cast[f32](screen_width) - panel_margin - panel_width,
+        x = f32<-screen_width - panel_margin - panel_width,
         y = panel_margin,
     )
-    let size_max = screen_height_value * cast[f32](1.5)
+    let size_max = screen_height_value * f32<-1.5
 
     let path_count = 1 << order
     stroke_count = path_count * path_count
-    let path_len = size / cast[f32](path_count)
+    let path_len = size / f32<-path_count
     for index in range(0, stroke_count):
         hilbert_path[index] = compute_hilbert_step(order, index)
         hilbert_path[index].x = hilbert_path[index].x * path_len + path_len / 2.0
@@ -87,12 +87,12 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         var should_reload = previous_order != order
         if not should_reload:
-            should_reload = previous_size != cast[i32](size)
+            should_reload = previous_size != i32<-size
 
         if should_reload:
             let new_path_count = 1 << order
             stroke_count = new_path_count * new_path_count
-            let new_path_len = size / cast[f32](new_path_count)
+            let new_path_len = size / f32<-new_path_count
 
             for index in range(0, stroke_count):
                 hilbert_path[index] = compute_hilbert_step(order, index)
@@ -105,7 +105,7 @@ def main() -> i32:
                 counter = stroke_count
 
             previous_order = order
-            previous_size = cast[i32](size)
+            previous_size = i32<-size
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
@@ -114,13 +114,13 @@ def main() -> i32:
 
         if counter < stroke_count:
             for index in range(1, counter + 1):
-                let hue = cast[f32](index) / cast[f32](stroke_count) * 360.0
+                let hue = f32<-index / f32<-stroke_count * 360.0
                 rl.DrawLineEx(hilbert_path[index], hilbert_path[index - 1], thick, rl.ColorFromHSV(hue, 1.0, 1.0))
 
             counter += 1
         else:
             for index in range(1, stroke_count):
-                let hue = cast[f32](index) / cast[f32](stroke_count) * 360.0
+                let hue = f32<-index / f32<-stroke_count * 360.0
                 rl.DrawLineEx(hilbert_path[index], hilbert_path[index - 1], thick, rl.ColorFromHSV(hue, 1.0, 1.0))
 
         gui.GuiCheckBox(gui.Rectangle(x = 450.0, y = 50.0, width = 20.0, height = 20.0), animate_text, raw(addr(animate)))

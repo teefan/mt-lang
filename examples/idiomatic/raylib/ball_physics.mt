@@ -39,11 +39,11 @@ def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Ball Physics")
     defer rl.close_window()
 
-    let balls = heap.must_alloc_zeroed[Ball](cast[usize](max_balls))
+    let balls = heap.must_alloc_zeroed[Ball](usize<-max_balls)
     defer heap.release(balls)
 
     var ball_count = 1
-    var balls_view = span[Ball](data = balls, len = cast[usize](ball_count))
+    var balls_view = span[Ball](data = balls, len = usize<-ball_count)
     balls_view[0] = ball_at(
         rl.Vector2(x = rl.get_screen_width() / 2.0, y = rl.get_screen_height() / 2.0),
         rl.Vector2(x = 200.0, y = 200.0),
@@ -60,7 +60,7 @@ def main() -> i32:
     while not rl.window_should_close():
         let delta = rl.get_frame_time()
         let mouse_pos = rl.get_mouse_position()
-        balls_view = span[Ball](data = balls, len = cast[usize](ball_count))
+        balls_view = span[Ball](data = balls, len = usize<-ball_count)
 
         if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
             var index = ball_count
@@ -83,18 +83,18 @@ def main() -> i32:
             if ball_count < max_balls:
                 let new_index = ball_count
                 ball_count += 1
-                balls_view = span[Ball](data = balls, len = cast[usize](ball_count))
+                balls_view = span[Ball](data = balls, len = usize<-ball_count)
                 balls_view[new_index] = ball_at(
                     mouse_pos,
                     rl.Vector2(
-                        x = cast[f32](rl.get_random_value(-300, 300)),
-                        y = cast[f32](rl.get_random_value(-300, 300)),
+                        x = f32<-rl.get_random_value(-300, 300),
+                        y = f32<-rl.get_random_value(-300, 300),
                     ),
-                    20.0 + cast[f32](rl.get_random_value(0, 30)),
+                    20.0 + f32<-rl.get_random_value(0, 30),
                     rl.Color(
-                        r = cast[u8](rl.get_random_value(0, 255)),
-                        g = cast[u8](rl.get_random_value(0, 255)),
-                        b = cast[u8](rl.get_random_value(0, 255)),
+                        r = u8<-rl.get_random_value(0, 255),
+                        g = u8<-rl.get_random_value(0, 255),
+                        b = u8<-rl.get_random_value(0, 255),
                         a = 255,
                     ),
                 )
@@ -103,8 +103,8 @@ def main() -> i32:
             for index in range(0, ball_count):
                 if not balls_view[index].grabbed:
                     balls_view[index].speed = rl.Vector2(
-                        x = cast[f32](rl.get_random_value(-2000, 2000)),
-                        y = cast[f32](rl.get_random_value(-2000, 2000)),
+                        x = f32<-rl.get_random_value(-2000, 2000),
+                        y = f32<-rl.get_random_value(-2000, 2000),
                     )
 
         gravity += rl.get_mouse_wheel_move() * 5.0

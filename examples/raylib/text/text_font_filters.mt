@@ -28,8 +28,8 @@ def main() -> i32:
 
     rl.GenTextureMipmaps(raw(addr(font.texture)))
 
-    var font_size = cast[f32](font.baseSize)
-    var font_position = rl.Vector2(x = 40.0, y = cast[f32](screen_height) / 2.0 - 80.0)
+    var font_size = f32<-font.baseSize
+    var font_position = rl.Vector2(x = 40.0, y = f32<-screen_height / 2.0 - 80.0)
     var text_size = rl.Vector2(x = 0.0, y = 0.0)
 
     rl.SetTextureFilter(font.texture, rl.TextureFilter.TEXTURE_FILTER_POINT)
@@ -61,10 +61,10 @@ def main() -> i32:
             let dropped_files = rl.LoadDroppedFiles()
             if dropped_files.count > 0:
                 unsafe:
-                    let dropped_path = cast[cstr](deref(dropped_files.paths))
+                    let dropped_path = cstr<-deref(dropped_files.paths)
                     if rl.IsFileExtension(dropped_path, ttf_ext):
                         rl.UnloadFont(font)
-                        font = rl.LoadFontEx(dropped_path, cast[i32](font_size), null, 0)
+                        font = rl.LoadFontEx(dropped_path, i32<-font_size, null, 0)
             rl.UnloadDroppedFiles(dropped_files)
 
         rl.BeginDrawing()

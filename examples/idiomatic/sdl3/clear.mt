@@ -21,7 +21,7 @@ def pump_events() -> bool:
     return true
 
 def render_frame() -> void:
-    let seconds = cast[f32](sdl.get_ticks()) / 1000.0
+    let seconds = f32<-sdl.get_ticks() / 1000.0
     let red = (sdl.sinf(seconds) * 0.5) + 0.5
     let green = (sdl.sinf(seconds + (sdl.PI_F / 3.0)) * 0.5) + 0.5
     let blue = (sdl.sinf(seconds + ((sdl.PI_F * 2.0) / 3.0)) * 0.5) + 0.5

@@ -29,7 +29,7 @@ def generate_random_color() -> rl.Color:
     )
 
 def alloc_color_rects(rect_count: i32) -> ptr[ColorRect]:
-    return heap.must_alloc_zeroed[ColorRect](cast[usize](rect_count))
+    return heap.must_alloc_zeroed[ColorRect](usize<-rect_count)
 
 def release_color_rects(rectangles: ptr[ColorRect]) -> void:
     heap.release(rectangles)
@@ -38,14 +38,14 @@ def release_color_rects(rectangles: ptr[ColorRect]) -> void:
 def generate_random_color_rect_sequence(rect_count: i32, rect_width: f32, width: f32, height: f32) -> ptr[ColorRect]:
     let rectangles = alloc_color_rects(rect_count)
     let sequence = rl.LoadRandomSequence(rect_count, 0, rect_count - 1)
-    var rectangles_view = span[ColorRect](data = rectangles, len = cast[usize](rect_count))
-    let sequence_view = span[i32](data = sequence, len = cast[usize](rect_count))
+    var rectangles_view = span[ColorRect](data = rectangles, len = usize<-rect_count)
+    let sequence_view = span[i32](data = sequence, len = usize<-rect_count)
     let rect_sequence_width = rect_count * rect_width
     let start_x = (width - rect_sequence_width) * 0.5
 
     var index = 0
     while index < rect_count:
-        let rect_height = cast[i32](remap(cast[f32](sequence_view[index]), 0.0, cast[f32](rect_count - 1), 0.0, height))
+        let rect_height = i32<-remap(f32<-sequence_view[index], 0.0, f32<-(rect_count - 1), 0.0, height)
         rectangles_view[index].color = generate_random_color()
         rectangles_view[index].rect = rl.Rectangle(
             x = start_x + index * rect_width,
@@ -70,8 +70,8 @@ def swap_color_rect_values(left: ref[ColorRect], right: ref[ColorRect]) -> void:
 
 def shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: i32) -> void:
     let sequence = rl.LoadRandomSequence(rect_count, 0, rect_count - 1)
-    var rectangles_view = span[ColorRect](data = rectangles, len = cast[usize](rect_count))
-    let sequence_view = span[i32](data = sequence, len = cast[usize](rect_count))
+    var rectangles_view = span[ColorRect](data = rectangles, len = usize<-rect_count)
+    let sequence_view = span[i32](data = sequence, len = usize<-rect_count)
 
     var index = 0
     while index < rect_count:
@@ -131,12 +131,12 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var rect_count = initial_rect_count
-    var rect_size = cast[f32](screen_width) / cast[f32](rect_count)
+    var rect_size = f32<-screen_width / f32<-rect_count
     var rectangles = generate_random_color_rect_sequence(
         rect_count,
         rect_size,
-        cast[f32](screen_width),
-        sequence_height_factor * cast[f32](screen_height),
+        f32<-screen_width,
+        sequence_height_factor * f32<-screen_height,
     )
     defer release_color_rects(rectangles)
 
@@ -148,31 +148,31 @@ def main() -> i32:
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_UP):
             rect_count += 1
-            rect_size = cast[f32](screen_width) / cast[f32](rect_count)
+            rect_size = f32<-screen_width / f32<-rect_count
             release_color_rects(rectangles)
             rectangles = generate_random_color_rect_sequence(
                 rect_count,
                 rect_size,
-                cast[f32](screen_width),
-                sequence_height_factor * cast[f32](screen_height),
+                f32<-screen_width,
+                sequence_height_factor * f32<-screen_height,
             )
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_DOWN) and rect_count >= min_rect_count:
             rect_count -= 1
-            rect_size = cast[f32](screen_width) / cast[f32](rect_count)
+            rect_size = f32<-screen_width / f32<-rect_count
             release_color_rects(rectangles)
             rectangles = generate_random_color_rect_sequence(
                 rect_count,
                 rect_size,
-                cast[f32](screen_width),
-                sequence_height_factor * cast[f32](screen_height),
+                f32<-screen_width,
+                sequence_height_factor * f32<-screen_height,
             )
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
 
         rl.ClearBackground(rl.RAYWHITE)
-        let rectangles_view = span[ColorRect](data = rectangles, len = cast[usize](rect_count))
+        let rectangles_view = span[ColorRect](data = rectangles, len = usize<-rect_count)
 
         var index = 0
         while index < rect_count:

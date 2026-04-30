@@ -35,7 +35,7 @@ def main() -> i32:
     let texture = rl.LoadTexture(atlas_path)
     defer rl.UnloadTexture(texture)
 
-    rl.SetMaterialTexture(model.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
+    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let map_position = rl.Vector3(x = -16.0, y = 0.0, z = -8.0)
     var pause = false
@@ -59,7 +59,7 @@ def main() -> i32:
         rl.EndMode3D()
 
         let cubicmap_position = rl.Vector2(
-            x = cast[f32](screen_width) - cast[f32](cubicmap.width) * 4.0 - 20.0,
+            x = f32<-screen_width - f32<-cubicmap.width * 4.0 - 20.0,
             y = 20.0,
         )
         rl.DrawTextureEx(cubicmap, cubicmap_position, 0.0, 4.0, rl.WHITE)

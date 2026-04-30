@@ -31,7 +31,7 @@ def main() -> i32:
 
     let bill_position_static = rl.Vector3(x = 0.0, y = 2.0, z = 0.0)
     let bill_position_rotating = rl.Vector3(x = 1.0, y = 2.0, z = 1.0)
-    let source = rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](bill.width), height = cast[f32](bill.height))
+    let source = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-bill.width, height = f32<-bill.height)
     let bill_up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
     let size = rl.Vector2(x = source.width / source.height, y = 1.0)
     let origin = rl.Vector2(x = size.x * 0.5, y = size.y * 0.5)

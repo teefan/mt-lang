@@ -57,7 +57,7 @@ def render_frame() -> void:
 
     unsafe:
         c.SDL_snprintf(raw(addr(debug_text[0])), 1024, c"Tilt: %f %f", tilt_x, tilt_y)
-        c.SDL_RenderDebugText(renderer, 0.0, 8.0, cast[cstr](raw(addr(debug_text[0]))))
+        c.SDL_RenderDebugText(renderer, 0.0, 8.0, cstr<-raw(addr(debug_text[0])))
 
     c.SDL_RenderPresent(renderer)
 

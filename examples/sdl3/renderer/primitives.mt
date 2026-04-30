@@ -6,7 +6,7 @@ const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/renderer/primitives"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const point_count: i32 = 500
 
 var window: ptr[c.SDL_Window]
@@ -42,8 +42,8 @@ def render_frame() -> void:
     c.SDL_RenderRect(renderer, raw(addr(rect)))
 
     c.SDL_SetRenderDrawColor(renderer, 255, 255, 0, c.SDL_ALPHA_OPAQUE)
-    c.SDL_RenderLine(renderer, 0.0, 0.0, cast[f32](window_width), cast[f32](window_height))
-    c.SDL_RenderLine(renderer, 0.0, cast[f32](window_height), cast[f32](window_width), 0.0)
+    c.SDL_RenderLine(renderer, 0.0, 0.0, f32<-window_width, f32<-window_height)
+    c.SDL_RenderLine(renderer, 0.0, f32<-window_height, f32<-window_width, 0.0)
 
     c.SDL_RenderPresent(renderer)
 

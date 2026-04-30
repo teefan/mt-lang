@@ -102,8 +102,8 @@ def main() -> i32:
     for row in range(0, stack_rows):
         for column in range(0, stack_columns):
             let position = b2.Vec2(
-                x = 7.6 + cast[f32](column) * 0.96,
-                y = 11.3 - cast[f32](row) * 0.96,
+                x = 7.6 + f32<-column * 0.96,
+                y = 11.3 - f32<-row * 0.96,
             )
             boxes[box_count] = BoxSprite(
                 body_id = create_dynamic_box(world_id, position, box_half_width, box_half_height, 1.0),

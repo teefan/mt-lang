@@ -19,7 +19,7 @@ def main() -> i32:
 
     var colors_recs = zero[array[rl.Rectangle, 23]]()
     for index in range(0, max_colors_count):
-        colors_recs[index].x = 10.0 + 30.0 * cast[f32](index) + 2.0 * cast[f32](index)
+        colors_recs[index].x = 10.0 + 30.0 * f32<-index + 2.0 * f32<-index
         colors_recs[index].y = 10.0
         colors_recs[index].width = 30.0
         colors_recs[index].height = 30.0
@@ -81,7 +81,7 @@ def main() -> i32:
         if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT) or rl.get_gesture_detected() == rl.Gesture.GESTURE_DRAG:
             rl.begin_texture_mode(target)
             if mouse_pos.y > 50.0:
-                rl.draw_circle(cast[i32](mouse_pos.x), cast[i32](mouse_pos.y), brush_size, colors[color_selected])
+                rl.draw_circle(i32<-mouse_pos.x, i32<-mouse_pos.y, brush_size, colors[color_selected])
             rl.end_texture_mode()
 
         if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_RIGHT):
@@ -93,7 +93,7 @@ def main() -> i32:
 
             rl.begin_texture_mode(target)
             if mouse_pos.y > 50.0:
-                rl.draw_circle(cast[i32](mouse_pos.x), cast[i32](mouse_pos.y), brush_size, colors[0])
+                rl.draw_circle(i32<-mouse_pos.x, i32<-mouse_pos.y, brush_size, colors[0])
             rl.end_texture_mode()
         elif rl.is_mouse_button_released(rl.MouseButton.MOUSE_BUTTON_RIGHT) and mouse_was_pressed:
             color_selected = color_selected_prev
@@ -120,14 +120,14 @@ def main() -> i32:
         rl.clear_background(rl.RAYWHITE)
         rl.draw_texture_rec(
             target.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](target.texture.width), height = -cast[f32](target.texture.height)),
+            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-target.texture.width, height = -f32<-target.texture.height),
             rl.Vector2(x = 0.0, y = 0.0),
             rl.WHITE,
         )
 
         if mouse_pos.y > 50.0:
             if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_RIGHT):
-                rl.draw_circle_lines(cast[i32](mouse_pos.x), cast[i32](mouse_pos.y), brush_size, rl.GRAY)
+                rl.draw_circle_lines(i32<-mouse_pos.x, i32<-mouse_pos.y, brush_size, rl.GRAY)
             else:
                 rl.draw_circle(rl.get_mouse_x(), rl.get_mouse_y(), brush_size, colors[color_selected])
 

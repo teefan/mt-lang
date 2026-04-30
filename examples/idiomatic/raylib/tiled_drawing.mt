@@ -17,17 +17,17 @@ def draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rec
     if source.width == 0.0 or source.height == 0.0:
         return
 
-    let tile_width = cast[i32](source.width * scale)
-    let tile_height = cast[i32](source.height * scale)
+    let tile_width = i32<-(source.width * scale)
+    let tile_height = i32<-(source.height * scale)
 
-    if dest.width < cast[f32](tile_width) and dest.height < cast[f32](tile_height):
+    if dest.width < f32<-tile_width and dest.height < f32<-tile_height:
         rl.draw_texture_pro(
             texture,
             rl.Rectangle(
                 x = source.x,
                 y = source.y,
-                width = (dest.width / cast[f32](tile_width)) * source.width,
-                height = (dest.height / cast[f32](tile_height)) * source.height,
+                width = (dest.width / f32<-tile_width) * source.width,
+                height = (dest.height / f32<-tile_height) * source.height,
             ),
             rl.Rectangle(x = dest.x, y = dest.y, width = dest.width, height = dest.height),
             origin,
@@ -36,68 +36,68 @@ def draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rec
         )
         return
 
-    if dest.width <= cast[f32](tile_width):
+    if dest.width <= f32<-tile_width:
         var dy = 0
-        while dy + tile_height < cast[i32](dest.height):
+        while dy + tile_height < i32<-dest.height:
             rl.draw_texture_pro(
                 texture,
                 rl.Rectangle(
                     x = source.x,
                     y = source.y,
-                    width = (dest.width / cast[f32](tile_width)) * source.width,
+                    width = (dest.width / f32<-tile_width) * source.width,
                     height = source.height,
                 ),
-                rl.Rectangle(x = dest.x, y = dest.y + cast[f32](dy), width = dest.width, height = cast[f32](tile_height)),
+                rl.Rectangle(x = dest.x, y = dest.y + f32<-dy, width = dest.width, height = f32<-tile_height),
                 origin,
                 rotation,
                 tint,
             )
             dy += tile_height
 
-        if cast[f32](dy) < dest.height:
+        if f32<-dy < dest.height:
             rl.draw_texture_pro(
                 texture,
                 rl.Rectangle(
                     x = source.x,
                     y = source.y,
-                    width = (dest.width / cast[f32](tile_width)) * source.width,
-                    height = ((dest.height - cast[f32](dy)) / cast[f32](tile_height)) * source.height,
+                    width = (dest.width / f32<-tile_width) * source.width,
+                    height = ((dest.height - f32<-dy) / f32<-tile_height) * source.height,
                 ),
-                rl.Rectangle(x = dest.x, y = dest.y + cast[f32](dy), width = dest.width, height = dest.height - cast[f32](dy)),
+                rl.Rectangle(x = dest.x, y = dest.y + f32<-dy, width = dest.width, height = dest.height - f32<-dy),
                 origin,
                 rotation,
                 tint,
             )
         return
 
-    if dest.height <= cast[f32](tile_height):
+    if dest.height <= f32<-tile_height:
         var dx = 0
-        while dx + tile_width < cast[i32](dest.width):
+        while dx + tile_width < i32<-dest.width:
             rl.draw_texture_pro(
                 texture,
                 rl.Rectangle(
                     x = source.x,
                     y = source.y,
                     width = source.width,
-                    height = (dest.height / cast[f32](tile_height)) * source.height,
+                    height = (dest.height / f32<-tile_height) * source.height,
                 ),
-                rl.Rectangle(x = dest.x + cast[f32](dx), y = dest.y, width = cast[f32](tile_width), height = dest.height),
+                rl.Rectangle(x = dest.x + f32<-dx, y = dest.y, width = f32<-tile_width, height = dest.height),
                 origin,
                 rotation,
                 tint,
             )
             dx += tile_width
 
-        if cast[f32](dx) < dest.width:
+        if f32<-dx < dest.width:
             rl.draw_texture_pro(
                 texture,
                 rl.Rectangle(
                     x = source.x,
                     y = source.y,
-                    width = ((dest.width - cast[f32](dx)) / cast[f32](tile_width)) * source.width,
-                    height = (dest.height / cast[f32](tile_height)) * source.height,
+                    width = ((dest.width - f32<-dx) / f32<-tile_width) * source.width,
+                    height = (dest.height / f32<-tile_height) * source.height,
                 ),
-                rl.Rectangle(x = dest.x + cast[f32](dx), y = dest.y, width = dest.width - cast[f32](dx), height = dest.height),
+                rl.Rectangle(x = dest.x + f32<-dx, y = dest.y, width = dest.width - f32<-dx, height = dest.height),
                 origin,
                 rotation,
                 tint,
@@ -105,29 +105,29 @@ def draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rec
         return
 
     var dx = 0
-    while dx + tile_width < cast[i32](dest.width):
+    while dx + tile_width < i32<-dest.width:
         var dy = 0
-        while dy + tile_height < cast[i32](dest.height):
+        while dy + tile_height < i32<-dest.height:
             rl.draw_texture_pro(
                 texture,
                 source,
-                rl.Rectangle(x = dest.x + cast[f32](dx), y = dest.y + cast[f32](dy), width = cast[f32](tile_width), height = cast[f32](tile_height)),
+                rl.Rectangle(x = dest.x + f32<-dx, y = dest.y + f32<-dy, width = f32<-tile_width, height = f32<-tile_height),
                 origin,
                 rotation,
                 tint,
             )
             dy += tile_height
 
-        if cast[f32](dy) < dest.height:
+        if f32<-dy < dest.height:
             rl.draw_texture_pro(
                 texture,
                 rl.Rectangle(
                     x = source.x,
                     y = source.y,
                     width = source.width,
-                    height = ((dest.height - cast[f32](dy)) / cast[f32](tile_height)) * source.height,
+                    height = ((dest.height - f32<-dy) / f32<-tile_height) * source.height,
                 ),
-                rl.Rectangle(x = dest.x + cast[f32](dx), y = dest.y + cast[f32](dy), width = cast[f32](tile_width), height = dest.height - cast[f32](dy)),
+                rl.Rectangle(x = dest.x + f32<-dx, y = dest.y + f32<-dy, width = f32<-tile_width, height = dest.height - f32<-dy),
                 origin,
                 rotation,
                 tint,
@@ -135,34 +135,34 @@ def draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rec
 
         dx += tile_width
 
-    if cast[f32](dx) < dest.width:
+    if f32<-dx < dest.width:
         var dy = 0
-        while dy + tile_height < cast[i32](dest.height):
+        while dy + tile_height < i32<-dest.height:
             rl.draw_texture_pro(
                 texture,
                 rl.Rectangle(
                     x = source.x,
                     y = source.y,
-                    width = ((dest.width - cast[f32](dx)) / cast[f32](tile_width)) * source.width,
+                    width = ((dest.width - f32<-dx) / f32<-tile_width) * source.width,
                     height = source.height,
                 ),
-                rl.Rectangle(x = dest.x + cast[f32](dx), y = dest.y + cast[f32](dy), width = dest.width - cast[f32](dx), height = cast[f32](tile_height)),
+                rl.Rectangle(x = dest.x + f32<-dx, y = dest.y + f32<-dy, width = dest.width - f32<-dx, height = f32<-tile_height),
                 origin,
                 rotation,
                 tint,
             )
             dy += tile_height
 
-        if cast[f32](dy) < dest.height:
+        if f32<-dy < dest.height:
             rl.draw_texture_pro(
                 texture,
                 rl.Rectangle(
                     x = source.x,
                     y = source.y,
-                    width = ((dest.width - cast[f32](dx)) / cast[f32](tile_width)) * source.width,
-                    height = ((dest.height - cast[f32](dy)) / cast[f32](tile_height)) * source.height,
+                    width = ((dest.width - f32<-dx) / f32<-tile_width) * source.width,
+                    height = ((dest.height - f32<-dy) / f32<-tile_height) * source.height,
                 ),
-                rl.Rectangle(x = dest.x + cast[f32](dx), y = dest.y + cast[f32](dy), width = dest.width - cast[f32](dx), height = dest.height - cast[f32](dy)),
+                rl.Rectangle(x = dest.x + f32<-dx, y = dest.y + f32<-dy, width = dest.width - f32<-dx, height = dest.height - f32<-dy),
                 origin,
                 rotation,
                 tint,
@@ -193,16 +193,16 @@ def main() -> i32:
     var x: f32 = 0.0
     var y: f32 = 0.0
     for index in range(0, max_colors):
-        color_rec[index].x = 2.0 + cast[f32](margin_size) + x
-        color_rec[index].y = 22.0 + 256.0 + cast[f32](margin_size) + y
-        color_rec[index].width = cast[f32](color_size * 2)
-        color_rec[index].height = cast[f32](color_size)
+        color_rec[index].x = 2.0 + f32<-margin_size + x
+        color_rec[index].y = 22.0 + 256.0 + f32<-margin_size + y
+        color_rec[index].width = f32<-(color_size * 2)
+        color_rec[index].height = f32<-color_size
 
         if index == max_colors / 2 - 1:
             x = 0.0
-            y += cast[f32](color_size + margin_size)
+            y += f32<-(color_size + margin_size)
         else:
-            x += cast[f32](color_size * 2 + margin_size)
+            x += f32<-(color_size * 2 + margin_size)
 
     var active_pattern = 0
     var active_col = 0
@@ -219,8 +219,8 @@ def main() -> i32:
                 if rl.check_collision_point_rec(
                     mouse,
                     rl.Rectangle(
-                        x = 2.0 + cast[f32](margin_size) + rec_pattern[index].x,
-                        y = 40.0 + cast[f32](margin_size) + rec_pattern[index].y,
+                        x = 2.0 + f32<-margin_size + rec_pattern[index].x,
+                        y = 40.0 + f32<-margin_size + rec_pattern[index].y,
                         width = rec_pattern[index].width,
                         height = rec_pattern[index].height,
                     ),
@@ -261,10 +261,10 @@ def main() -> i32:
             tex_pattern,
             rec_pattern[active_pattern],
             rl.Rectangle(
-                x = cast[f32](opt_width + margin_size),
-                y = cast[f32](margin_size),
-                width = cast[f32](rl.get_screen_width() - opt_width - 2 * margin_size),
-                height = cast[f32](rl.get_screen_height() - 2 * margin_size),
+                x = f32<-(opt_width + margin_size),
+                y = f32<-margin_size,
+                width = f32<-(rl.get_screen_width() - opt_width - 2 * margin_size),
+                height = f32<-(rl.get_screen_height() - 2 * margin_size),
             ),
             rl.Vector2(x = 0.0, y = 0.0),
             rotation,
@@ -277,10 +277,10 @@ def main() -> i32:
         rl.draw_text("Select Pattern", 2 + margin_size, 30 + margin_size, 10, rl.BLACK)
         rl.draw_texture(tex_pattern, 2 + margin_size, 40 + margin_size, rl.BLACK)
         rl.draw_rectangle(
-            2 + margin_size + cast[i32](rec_pattern[active_pattern].x),
-            40 + margin_size + cast[i32](rec_pattern[active_pattern].y),
-            cast[i32](rec_pattern[active_pattern].width),
-            cast[i32](rec_pattern[active_pattern].height),
+            2 + margin_size + i32<-rec_pattern[active_pattern].x,
+            40 + margin_size + i32<-rec_pattern[active_pattern].y,
+            i32<-rec_pattern[active_pattern].width,
+            i32<-rec_pattern[active_pattern].height,
             rl.color_alpha(rl.DARKBLUE, 0.3),
         )
 

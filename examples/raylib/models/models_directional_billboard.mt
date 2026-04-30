@@ -59,7 +59,7 @@ def main() -> i32:
             camera,
             skillbot,
             rl.Rectangle(
-                x = cast[f32](anim) * 24.0,
+                x = f32<-anim * 24.0,
                 y = dir * 24.0,
                 width = 24.0,
                 height = 24.0,

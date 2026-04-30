@@ -24,7 +24,7 @@ def main() -> i32:
     var lines = zero[array[Line, 8192]]()
 
     var symmetry: i32 = 6
-    let angle = 360.0 / cast[f32](symmetry)
+    let angle = 360.0 / f32<-symmetry
     let thickness: f32 = 3.0
     let reset_button_rec = rl.Rectangle(x = screen_width - 55.0, y = 5.0, width = 50.0, height = 25.0)
     let back_button_rec = rl.Rectangle(x = screen_width - 55.0, y = screen_height - 30.0, width = 25.0, height = 25.0)

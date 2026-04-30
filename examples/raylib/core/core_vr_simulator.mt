@@ -30,14 +30,14 @@ def main() -> i32:
     defer rl.UnloadShader(distortion)
 
     unsafe:
-        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"leftLensCenter"), cast[ptr[void]](raw(addr(config.leftLensCenter[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"rightLensCenter"), cast[ptr[void]](raw(addr(config.rightLensCenter[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"leftScreenCenter"), cast[ptr[void]](raw(addr(config.leftScreenCenter[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"rightScreenCenter"), cast[ptr[void]](raw(addr(config.rightScreenCenter[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"scale"), cast[ptr[void]](raw(addr(config.scale[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"scaleIn"), cast[ptr[void]](raw(addr(config.scaleIn[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"deviceWarpParam"), cast[ptr[void]](raw(addr(device.lensDistortionValues[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
-        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"chromaAbParam"), cast[ptr[void]](raw(addr(device.chromaAbCorrection[0]))), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"leftLensCenter"), ptr[void]<-raw(addr(config.leftLensCenter[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"rightLensCenter"), ptr[void]<-raw(addr(config.rightLensCenter[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"leftScreenCenter"), ptr[void]<-raw(addr(config.leftScreenCenter[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"rightScreenCenter"), ptr[void]<-raw(addr(config.rightScreenCenter[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"scale"), ptr[void]<-raw(addr(config.scale[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"scaleIn"), ptr[void]<-raw(addr(config.scaleIn[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"deviceWarpParam"), ptr[void]<-raw(addr(device.lensDistortionValues[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+        rl.SetShaderValue(distortion, rl.GetShaderLocation(distortion, c"chromaAbParam"), ptr[void]<-raw(addr(device.chromaAbCorrection[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     let target = rl.LoadRenderTexture(device.hResolution, device.vResolution)
     defer rl.UnloadRenderTexture(target)

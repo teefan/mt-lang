@@ -46,11 +46,11 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let balls = heap.must_alloc_zeroed[Ball](cast[usize](max_balls))
+    let balls = heap.must_alloc_zeroed[Ball](usize<-max_balls)
     defer heap.release(balls)
 
     var ball_count = 1
-    var balls_view = span[Ball](data = balls, len = cast[usize](ball_count))
+    var balls_view = span[Ball](data = balls, len = usize<-ball_count)
     balls_view[0] = ball_at(
         rl.Vector2(x = rl.GetScreenWidth() / 2.0, y = rl.GetScreenHeight() / 2.0),
         rl.Vector2(x = 200.0, y = 200.0),
@@ -67,7 +67,7 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         let delta = rl.GetFrameTime()
         let mouse_pos = rl.GetMousePosition()
-        balls_view = span[Ball](data = balls, len = cast[usize](ball_count))
+        balls_view = span[Ball](data = balls, len = usize<-ball_count)
 
         if rl.IsMouseButtonPressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
             var index = ball_count
@@ -90,14 +90,14 @@ def main() -> i32:
             if ball_count < max_balls:
                 let new_index = ball_count
                 ball_count += 1
-                balls_view = span[Ball](data = balls, len = cast[usize](ball_count))
+                balls_view = span[Ball](data = balls, len = usize<-ball_count)
                 balls_view[new_index] = ball_at(
                     mouse_pos,
                     rl.Vector2(
-                        x = cast[f32](rl.GetRandomValue(-300, 300)),
-                        y = cast[f32](rl.GetRandomValue(-300, 300)),
+                        x = f32<-rl.GetRandomValue(-300, 300),
+                        y = f32<-rl.GetRandomValue(-300, 300),
                     ),
-                    20.0 + cast[f32](rl.GetRandomValue(0, 30)),
+                    20.0 + f32<-rl.GetRandomValue(0, 30),
                     rl.Color(
                         r = rl.GetRandomValue(0, 255),
                         g = rl.GetRandomValue(0, 255),
@@ -110,8 +110,8 @@ def main() -> i32:
             for index in range(0, ball_count):
                 if not balls_view[index].grabbed:
                     balls_view[index].speed = rl.Vector2(
-                        x = cast[f32](rl.GetRandomValue(-2000, 2000)),
-                        y = cast[f32](rl.GetRandomValue(-2000, 2000)),
+                        x = f32<-rl.GetRandomValue(-2000, 2000),
+                        y = f32<-rl.GetRandomValue(-2000, 2000),
                     )
 
         gravity += rl.GetMouseWheelMove() * 5.0

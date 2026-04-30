@@ -42,8 +42,8 @@ def render_frame() -> void:
     sdl.render_rect(renderer, ro_addr(rect))
 
     sdl.set_render_draw_color(renderer, 255, 255, 0, 255)
-    sdl.render_line(renderer, cast[f32](0.0), cast[f32](0.0), cast[f32](window_width), cast[f32](window_height))
-    sdl.render_line(renderer, cast[f32](0.0), cast[f32](window_height), cast[f32](window_width), cast[f32](0.0))
+    sdl.render_line(renderer, f32<-0.0, f32<-0.0, f32<-window_width, f32<-window_height)
+    sdl.render_line(renderer, f32<-0.0, f32<-window_height, f32<-window_width, f32<-0.0)
 
     sdl.render_present(renderer)
 

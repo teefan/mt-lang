@@ -47,16 +47,16 @@ def main() -> i32:
 
     let tex_diffuse = rl.LoadTexture(diffuse_texture_path)
     defer rl.UnloadTexture(tex_diffuse)
-    rl.SetMaterialTexture(model1.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), tex_diffuse)
-    rl.SetMaterialTexture(model2.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), tex_diffuse)
+    rl.SetMaterialTexture(model1.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, tex_diffuse)
+    rl.SetMaterialTexture(model2.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, tex_diffuse)
 
     let tex_mask = rl.LoadTexture(mask_texture_path)
     defer rl.UnloadTexture(tex_mask)
-    rl.SetMaterialTexture(model1.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_EMISSION), tex_mask)
-    rl.SetMaterialTexture(model2.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_EMISSION), tex_mask)
+    rl.SetMaterialTexture(model1.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_EMISSION, tex_mask)
+    rl.SetMaterialTexture(model2.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_EMISSION, tex_mask)
 
     unsafe:
-        shader.locs[cast[i32](rl.ShaderLocationIndex.SHADER_LOC_MAP_EMISSION)] = rl.GetShaderLocation(shader, mask_uniform_name)
+        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_MAP_EMISSION] = rl.GetShaderLocation(shader, mask_uniform_name)
 
     let shader_frame = rl.GetShaderLocation(shader, frame_uniform_name)
     set_model_shader(raw(addr(model1)), shader)

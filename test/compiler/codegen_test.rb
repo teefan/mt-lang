@@ -1314,6 +1314,23 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/if \(\(\(\(\(double\) 3\)\) < 3\.5\) && \(sum > 3\.0\)\)/, generated)
   end
 
+  def test_generate_c_for_prefix_cast_syntax
+    source = [
+      "module demo.prefix_cast_codegen",
+      "",
+      "def main(value: f32, a: i32, b: i32) -> i32:",
+      "    let left = i32<-value",
+      "    let right = u8<-(a - b)",
+      "    return left + cast[i32](right)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/int32_t left = \(\(int32_t\) value\);/, generated)
+    assert_match(/uint8_t right = \(\(uint8_t\) \(a - b\)\);/, generated)
+  end
+
   def test_generate_c_for_if_expressions
     source = [
       "module demo.if_expr_codegen",

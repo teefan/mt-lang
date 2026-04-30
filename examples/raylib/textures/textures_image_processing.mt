@@ -46,7 +46,7 @@ def main() -> i32:
 
     var toggle_rects = zero[array[rl.Rectangle, num_processes]]()
     for index in range(0, num_processes):
-        toggle_rects[index] = rl.Rectangle(x = 40.0, y = cast[f32](50 + 32 * index), width = 150.0, height = 30.0)
+        toggle_rects[index] = rl.Rectangle(x = 40.0, y = f32<-(50 + 32 * index), width = 150.0, height = 30.0)
 
     var current_process = process_none
     var texture_reload = false
@@ -116,16 +116,16 @@ def main() -> i32:
 
             rl.DrawRectangleRec(toggle_rects[index], fill_color)
             rl.DrawRectangleLines(
-                cast[i32](toggle_rects[index].x),
-                cast[i32](toggle_rects[index].y),
-                cast[i32](toggle_rects[index].width),
-                cast[i32](toggle_rects[index].height),
+                i32<-toggle_rects[index].x,
+                i32<-toggle_rects[index].y,
+                i32<-toggle_rects[index].width,
+                i32<-toggle_rects[index].height,
                 stroke_color,
             )
             rl.DrawText(
                 process_text[index],
-                cast[i32](toggle_rects[index].x + toggle_rects[index].width / 2.0 - cast[f32](rl.MeasureText(process_text[index], 10)) / 2.0),
-                cast[i32](toggle_rects[index].y) + 11,
+                i32<-(toggle_rects[index].x + toggle_rects[index].width / 2.0 - f32<-rl.MeasureText(process_text[index], 10) / 2.0),
+                i32<-toggle_rects[index].y + 11,
                 10,
                 text_color,
             )

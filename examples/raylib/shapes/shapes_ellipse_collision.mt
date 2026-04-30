@@ -81,22 +81,22 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
 
         rl.DrawEllipse(
-            cast[i32](ellipse_a_center.x),
-            cast[i32](ellipse_a_center.y),
+            i32<-ellipse_a_center.x,
+            i32<-ellipse_a_center.y,
             ellipse_a_radius_x,
             ellipse_a_radius_y,
             if ellipses_collide then rl.RED else rl.BLUE,
         )
         rl.DrawEllipse(
-            cast[i32](ellipse_b_center.x),
-            cast[i32](ellipse_b_center.y),
+            i32<-ellipse_b_center.x,
+            i32<-ellipse_b_center.y,
             ellipse_b_radius_x,
             ellipse_b_radius_y,
             if ellipses_collide then rl.RED else rl.GREEN,
         )
 
-        rl.DrawEllipseLines(cast[i32](ellipse_a_center.x), cast[i32](ellipse_a_center.y), ellipse_a_radius_x, ellipse_a_radius_y, rl.WHITE)
-        rl.DrawEllipseLines(cast[i32](ellipse_b_center.x), cast[i32](ellipse_b_center.y), ellipse_b_radius_x, ellipse_b_radius_y, rl.WHITE)
+        rl.DrawEllipseLines(i32<-ellipse_a_center.x, i32<-ellipse_a_center.y, ellipse_a_radius_x, ellipse_a_radius_y, rl.WHITE)
+        rl.DrawEllipseLines(i32<-ellipse_b_center.x, i32<-ellipse_b_center.y, ellipse_b_radius_x, ellipse_b_radius_y, rl.WHITE)
 
         rl.DrawCircleV(ellipse_a_center, 4.0, rl.WHITE)
         rl.DrawCircleV(ellipse_b_center, 4.0, rl.WHITE)

@@ -5,7 +5,7 @@ import std.c.sdl3 as c
 const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/misc/clipboard"
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
 const copy_button_text: cstr = c"Click here to copy!"
 const paste_button_text: cstr = c"Click here to paste!"
@@ -23,7 +23,7 @@ var current_time: array[char, 64] = zero[array[char, 64]]()
 var pasted_str: ptr[char]? = null
 
 def text_width(text: cstr) -> f32:
-    return cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) * cast[f32](c.SDL_strlen(text))
+    return f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(text)
 
 def min_usize(left: usize, right: usize) -> usize:
     if left < right:
@@ -36,7 +36,7 @@ def point_in_rect(point: c.SDL_FPoint, rect: c.SDL_FRect) -> bool:
 
 def current_time_text() -> cstr:
     unsafe:
-        return cast[cstr](raw(addr(current_time[0])))
+        return cstr<-raw(addr(current_time[0]))
 
 def calculate_current_time_string() -> void:
     let month_names = array[cstr, 12](
@@ -83,13 +83,13 @@ def pump_events() -> bool:
             return false
         else:
             if event.button.type == c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
-                if event.button.button == cast[c.Uint8](c.SDL_BUTTON_LEFT):
+                if event.button.button == c.Uint8<-c.SDL_BUTTON_LEFT:
                     let point = c.SDL_FPoint(x = event.button.x, y = event.button.y)
                     copy_pressed = point_in_rect(point, copy_button_rect)
                     paste_pressed = point_in_rect(point, paste_button_rect)
             else:
                 if event.button.type == c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_UP:
-                    if event.button.button == cast[c.Uint8](c.SDL_BUTTON_LEFT):
+                    if event.button.button == c.Uint8<-c.SDL_BUTTON_LEFT:
                         let point = c.SDL_FPoint(x = event.button.x, y = event.button.y)
 
                         if copy_pressed and point_in_rect(point, copy_button_rect):
@@ -98,7 +98,7 @@ def pump_events() -> bool:
                             if paste_pressed and point_in_rect(point, paste_button_rect):
                                 if pasted_str != null:
                                     unsafe:
-                                        c.SDL_free(cast[ptr[void]](pasted_str))
+                                        c.SDL_free(ptr[void]<-pasted_str)
 
                                 pasted_str = c.SDL_GetClipboardText()
 
@@ -109,11 +109,11 @@ def pump_events() -> bool:
 
 def render_truncated_line(text: ptr[char], x: f32, y: f32, max_chars_per_line: usize) -> void:
     unsafe:
-        let line_length = min_usize(c.SDL_strlen(cast[cstr](text)), max_chars_per_line)
-        let end_ptr = text + cast[i32](line_length)
+        let line_length = min_usize(c.SDL_strlen(cstr<-text), max_chars_per_line)
+        let end_ptr = text + i32<-line_length
         let saved_char = deref(end_ptr)
-        deref(end_ptr) = cast[char](0)
-        c.SDL_RenderDebugText(renderer, x, y, cast[cstr](text))
+        deref(end_ptr) = char<-0
+        c.SDL_RenderDebugText(renderer, x, y, cstr<-text)
         deref(end_ptr) = saved_char
 
 def render_pasted_text() -> void:
@@ -125,8 +125,8 @@ def render_pasted_text() -> void:
     var y = paste_text_rect.y + 5.0
     let w = paste_text_rect.w - 10.0
     let h = paste_text_rect.h
-    let line_height = cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + 2)
-    let max_chars_per_line = cast[usize](w / cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE))
+    let line_height = f32<-(c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + 2)
+    let max_chars_per_line = usize<-(w / f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
     var text_ptr: ptr[char]? = initial_text
 
     while true:
@@ -136,34 +136,34 @@ def render_pasted_text() -> void:
 
         var newline: ptr[char]? = null
         unsafe:
-            newline = c.SDL_strchr(cast[cstr](line), 10)
+            newline = c.SDL_strchr(cstr<-line, 10)
         if newline == null:
             break
 
         var ignore_cr = false
 
         unsafe:
-            if newline != line and deref(newline - 1) == cast[char](13):
+            if newline != line and deref(newline - 1) == char<-13:
                 ignore_cr = true
-                deref(newline - 1) = cast[char](0)
+                deref(newline - 1) = char<-0
 
-            deref(newline) = cast[char](0)
+            deref(newline) = char<-0
 
         render_truncated_line(line, x, y, max_chars_per_line)
 
         unsafe:
             if ignore_cr:
-                deref(newline - 1) = cast[char](13)
-            deref(newline) = cast[char](10)
+                deref(newline - 1) = char<-13
+            deref(newline) = char<-10
             text_ptr = newline + 1
 
         y += line_height
 
-        if (h - y) < cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE):
+        if (h - y) < f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE:
             return
 
     let final_line = text_ptr
-    if final_line != null and (h - y) >= cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE):
+    if final_line != null and (h - y) >= f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE:
         render_truncated_line(final_line, x, y, max_chars_per_line)
 
 def render_frame() -> void:
@@ -223,7 +223,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     defer:
         if pasted_str != null:
             unsafe:
-                c.SDL_free(cast[ptr[void]](pasted_str))
+                c.SDL_free(ptr[void]<-pasted_str)
 
     if not c.SDL_SetRenderLogicalPresentation(renderer, window_width, window_height, presentation_mode):
         return 1
@@ -233,7 +233,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     current_time_rect.x = 30.0
     current_time_rect.y = 10.0
     current_time_rect.w = 390.0
-    current_time_rect.h = cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + 10)
+    current_time_rect.h = f32<-(c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + 10)
 
     copy_button_rect.x = current_time_rect.x + current_time_rect.w + 30.0
     copy_button_rect.y = current_time_rect.y

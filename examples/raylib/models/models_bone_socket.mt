@@ -23,7 +23,7 @@ const window_title: cstr = c"raylib [models] example - bone socket"
 
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
-        return cast[cstr](text)
+        return cstr<-text
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
@@ -117,7 +117,7 @@ def main() -> i32:
 
         let anim = model_animation(model_animations, anim_index)
         anim_current_frame = (anim_current_frame + 1) % anim.keyframeCount
-        rl.UpdateModelAnimation(character_model, anim, cast[f32](anim_current_frame))
+        rl.UpdateModelAnimation(character_model, anim, f32<-anim_current_frame)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
@@ -125,9 +125,9 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
         rl.BeginMode3D(camera)
 
-        let character_rotate = rm.Quaternion.from_axis_angle(rl.Vector3(x = 0.0, y = 1.0, z = 0.0), cast[f32](angle) * rm.deg2rad)
+        let character_rotate = rm.Quaternion.from_axis_angle(rl.Vector3(x = 0.0, y = 1.0, z = 0.0), f32<-angle * rm.deg2rad)
         character_model.transform = character_rotate.to_matrix().multiply(rm.Matrix.translate(position.x, position.y, position.z))
-        rl.UpdateModelAnimation(character_model, anim, cast[f32](anim_current_frame))
+        rl.UpdateModelAnimation(character_model, anim, f32<-anim_current_frame)
 
         unsafe:
             rl.DrawMesh(character_model.meshes[0], character_model.materials[1], character_model.transform)

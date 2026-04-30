@@ -770,7 +770,9 @@ module MilkTea
     end
 
     def parse_unary
-      if match(:await)
+      if (cast_prefix = try_parse_prefix_cast_expression)
+        cast_prefix
+      elsif match(:await)
         AST::AwaitExpr.new(expression: parse_unary)
       elsif match(:not, :minus, :plus, :tilde, :out, :in, :inout)
         operator = previous.lexeme
@@ -779,6 +781,39 @@ module MilkTea
       else
         parse_postfix
       end
+    end
+
+    def try_parse_prefix_cast_expression
+      saved_current = @current
+      return nil unless check_name && known_type_like_name?(peek.lexeme)
+
+      expression = nil
+      target_type = parse_type_ref
+      type_tail = @tokens[@current - 1]
+      less_token = peek
+      return nil unless match(:less)
+      return nil unless adjacent_tokens?(type_tail, less_token)
+
+      minus_token = peek
+      return nil unless match(:minus)
+      return nil unless adjacent_tokens?(less_token, minus_token)
+
+      expression = parse_unary
+      AST::Call.new(
+        callee: AST::Specialization.new(
+          callee: AST::Identifier.new(name: "cast"),
+          arguments: [AST::TypeArgument.new(value: target_type)],
+        ),
+        arguments: [AST::Argument.new(name: nil, value: expression)],
+      )
+    rescue ParseError
+      nil
+    ensure
+      @current = saved_current if expression.nil?
+    end
+
+    def adjacent_tokens?(left, right)
+      left.line == right.line && right.column == (left.column + left.lexeme.length)
     end
 
     def parse_postfix

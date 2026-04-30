@@ -24,7 +24,7 @@ def formatted_mod_time(mod_time: ref[ctime.time_t], buffer: ref[array[char, 64]]
 
     unsafe:
         ctime.strftime(raw(addr(value(buffer)[0])), 64, modification_time_format, tm_info)
-        return cast[cstr](raw(addr(value(buffer)[0])))
+        return cstr<-raw(addr(value(buffer)[0]))
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -38,7 +38,7 @@ def main() -> i32:
     var mouse_location = rl.GetShaderLocation(shader, mouse_uniform_name)
     var time_location = rl.GetShaderLocation(shader, time_uniform_name)
 
-    var resolution = array[f32, 2](cast[f32](screen_width), cast[f32](screen_height))
+    var resolution = array[f32, 2](f32<-screen_width, f32<-screen_height)
     rl.SetShaderValue(shader, resolution_location, raw(addr(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     var total_time: f32 = 0.0
@@ -48,7 +48,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        total_time += cast[f32](rl.GetFrameTime())
+        total_time += f32<-rl.GetFrameTime()
 
         let mouse = rl.GetMousePosition()
         var mouse_position = array[f32, 2](mouse.x, mouse.y)

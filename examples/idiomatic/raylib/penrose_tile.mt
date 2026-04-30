@@ -73,16 +73,16 @@ def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32]) -> Turtl
 
 def draw_penrose_lsystem(production: string.String, draw_length: f32, steps: ref[i32], turtle_stack: ref[array[TurtleState, 50]], turtle_top: ref[i32]) -> void:
     let production_view = production.as_str()
-    let screen_center = rl.Vector2(x = cast[f32](rl.get_screen_width()) / 2.0, y = cast[f32](rl.get_screen_height()) / 2.0)
+    let screen_center = rl.Vector2(x = f32<-rl.get_screen_width() / 2.0, y = f32<-rl.get_screen_height() / 2.0)
     var turtle = TurtleState(origin = rl.Vector2(x = 0.0, y = 0.0), angle = -90.0)
     var repeats = 1
 
     value(steps) += 12
-    if value(steps) > cast[i32](production_view.len):
-        value(steps) = cast[i32](production_view.len)
+    if value(steps) > i32<-production_view.len:
+        value(steps) = i32<-production_view.len
 
     for index in range(0, value(steps)):
-        let step = text.byte_at(production_view, cast[usize](index))
+        let step = text.byte_at(production_view, usize<-index)
         if step == byte_f:
             for repeat_index in range(0, repeats):
                 let start_pos_world = turtle.origin
@@ -116,12 +116,12 @@ def draw_penrose_lsystem(production: string.String, draw_length: f32, steps: ref
         elif step == byte_right_bracket:
             turtle = pop_turtle_state(turtle_stack, turtle_top)
         elif step >= byte_zero and step <= byte_nine:
-            repeats = cast[i32](step - byte_zero)
+            repeats = i32<-(step - byte_zero)
 
     value(turtle_top) = -1
 
 def draw_length_for(generations: i32) -> f32:
-    return draw_length_base * cast[f32](generations) / cast[f32](max_generations)
+    return draw_length_base * f32<-generations / f32<-max_generations
 
 def main() -> i32:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

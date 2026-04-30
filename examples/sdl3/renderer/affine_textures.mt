@@ -7,7 +7,7 @@ const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/renderer/affine-textures"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
@@ -25,13 +25,13 @@ def pump_events() -> bool:
     return true
 
 def render_frame() -> void:
-    let x0 = 0.5 * cast[f32](window_width)
-    let y0 = 0.5 * cast[f32](window_height)
+    let x0 = 0.5 * f32<-window_width
+    let y0 = 0.5 * f32<-window_height
     let min_dimension = if window_width < window_height then window_width else window_height
-    let px = cast[f32](min_dimension) / c.SDL_sqrtf(3.0)
+    let px = f32<-min_dimension / c.SDL_sqrtf(3.0)
 
-    let now = cast[i32](c.SDL_GetTicks())
-    let rad = (cast[f32](now % 2000) / 2000.0) * c.SDL_PI_F * 2.0
+    let now = i32<-c.SDL_GetTicks()
+    let rad = (f32<-(now % 2000) / 2000.0) * c.SDL_PI_F * 2.0
     let cosine = c.SDL_cosf(rad)
     let sine = c.SDL_sinf(rad)
     let k = array[f32, 3](
@@ -54,9 +54,9 @@ def render_frame() -> void:
     var corners = zero[array[f32, 16]]()
 
     for index in range(0, 8):
-        let x = if (index & 1) != 0 then cast[f32](-0.5) else cast[f32](0.5)
-        let y = if (index & 2) != 0 then cast[f32](-0.5) else cast[f32](0.5)
-        let z = if (index & 4) != 0 then cast[f32](-0.5) else cast[f32](0.5)
+        let x = if (index & 1) != 0 then f32<-(-0.5) else f32<-0.5
+        let y = if (index & 2) != 0 then f32<-(-0.5) else f32<-0.5
+        let z = if (index & 4) != 0 then f32<-(-0.5) else f32<-0.5
         corners[0 + (2 * index)] = (mat[0] * x) + (mat[1] * y) + (mat[2] * z)
         corners[1 + (2 * index)] = (mat[3] * x) + (mat[4] * y) + (mat[5] * z)
 

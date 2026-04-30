@@ -31,10 +31,10 @@ def main() -> i32:
         rl.draw_text("Hold SPACE to use TTF generated font", 20, 20, 20, rl.LIGHTGRAY)
 
         if not use_ttf:
-            rl.draw_text_ex(font_bm, message, rl.Vector2(x = 20.0, y = 100.0), cast[f32](font_bm.baseSize), 2.0, rl.MAROON)
+            rl.draw_text_ex(font_bm, message, rl.Vector2(x = 20.0, y = 100.0), f32<-font_bm.baseSize, 2.0, rl.MAROON)
             rl.draw_text("Using BMFont imported", 20, rl.get_screen_height() - 30, 20, rl.GRAY)
         else:
-            rl.draw_text_ex(font_ttf, message, rl.Vector2(x = 20.0, y = 100.0), cast[f32](font_ttf.baseSize), 2.0, rl.LIME)
+            rl.draw_text_ex(font_ttf, message, rl.Vector2(x = 20.0, y = 100.0), f32<-font_ttf.baseSize, 2.0, rl.LIME)
             rl.draw_text("Using TTF font generated", 20, rl.get_screen_height() - 30, 20, rl.GRAY)
 
     return 0

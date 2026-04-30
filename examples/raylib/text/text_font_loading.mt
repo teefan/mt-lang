@@ -39,10 +39,10 @@ def main() -> i32:
         rl.DrawText(hold_space_text, 20, 20, 20, rl.LIGHTGRAY)
 
         if not use_ttf:
-            rl.DrawTextEx(font_bm, msg, rl.Vector2(x = 20.0, y = 100.0), cast[f32](font_bm.baseSize), 2.0, rl.MAROON)
+            rl.DrawTextEx(font_bm, msg, rl.Vector2(x = 20.0, y = 100.0), f32<-font_bm.baseSize, 2.0, rl.MAROON)
             rl.DrawText(bm_text, 20, rl.GetScreenHeight() - 30, 20, rl.GRAY)
         else:
-            rl.DrawTextEx(font_ttf, msg, rl.Vector2(x = 20.0, y = 100.0), cast[f32](font_ttf.baseSize), 2.0, rl.LIME)
+            rl.DrawTextEx(font_ttf, msg, rl.Vector2(x = 20.0, y = 100.0), f32<-font_ttf.baseSize, 2.0, rl.LIME)
             rl.DrawText(ttf_text, 20, rl.GetScreenHeight() - 30, 20, rl.GRAY)
 
     return 0

@@ -6,7 +6,7 @@ const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/renderer/clear"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
@@ -21,7 +21,7 @@ def pump_events() -> bool:
     return true
 
 def render_frame() -> void:
-    let seconds = cast[f32](c.SDL_GetTicks()) / 1000.0
+    let seconds = f32<-c.SDL_GetTicks() / 1000.0
     let red = (c.SDL_sinf(seconds) * 0.5) + 0.5
     let green = (c.SDL_sinf(seconds + (c.SDL_PI_F / 3.0)) * 0.5) + 0.5
     let blue = (c.SDL_sinf(seconds + ((c.SDL_PI_F * 2.0) / 3.0)) * 0.5) + 0.5

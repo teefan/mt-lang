@@ -67,20 +67,20 @@ def main() -> i32:
     )
 
     let observer_target = rl.LoadRenderTexture(split_width, screen_height)
-    let observer_source = rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](observer_target.texture.width), height = -cast[f32](observer_target.texture.height))
-    let observer_dest = rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](split_width), height = cast[f32](screen_height))
+    let observer_source = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-observer_target.texture.width, height = -f32<-observer_target.texture.height)
+    let observer_dest = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-split_width, height = f32<-screen_height)
 
     let subject_target = rl.LoadRenderTexture(split_width, screen_height)
-    let subject_source = rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](subject_target.texture.width), height = -cast[f32](subject_target.texture.height))
-    let subject_dest = rl.Rectangle(x = cast[f32](split_width), y = 0.0, width = cast[f32](split_width), height = cast[f32](screen_height))
-    let texture_aspect_ratio = cast[f32](subject_target.texture.width) / cast[f32](subject_target.texture.height)
+    let subject_source = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-subject_target.texture.width, height = -f32<-subject_target.texture.height)
+    let subject_dest = rl.Rectangle(x = f32<-split_width, y = 0.0, width = f32<-split_width, height = f32<-screen_height)
+    let texture_aspect_ratio = f32<-subject_target.texture.width / f32<-subject_target.texture.height
     let crop_source = rl.Rectangle(
-        x = (cast[f32](subject_target.texture.width) - capture_size) / 2.0,
-        y = (cast[f32](subject_target.texture.height) - capture_size) / 2.0,
+        x = (f32<-subject_target.texture.width - capture_size) / 2.0,
+        y = (f32<-subject_target.texture.height - capture_size) / 2.0,
         width = capture_size,
         height = -capture_size,
     )
-    let crop_dest = rl.Rectangle(x = cast[f32](split_width) + 20.0, y = 20.0, width = capture_size, height = capture_size)
+    let crop_dest = rl.Rectangle(x = f32<-split_width + 20.0, y = 20.0, width = capture_size, height = capture_size)
 
     defer:
         rl.UnloadRenderTexture(subject_target)
@@ -118,10 +118,10 @@ def main() -> i32:
         rl.DrawGrid(10, 1.0)
         rl.EndMode3D()
         rl.DrawRectangleLines(
-            cast[i32]((cast[f32](subject_target.texture.width) - capture_size) / 2.0),
-            cast[i32]((cast[f32](subject_target.texture.height) - capture_size) / 2.0),
-            cast[i32](capture_size),
-            cast[i32](capture_size),
+            i32<-((f32<-subject_target.texture.width - capture_size) / 2.0),
+            i32<-((f32<-subject_target.texture.height - capture_size) / 2.0),
+            i32<-capture_size,
+            i32<-capture_size,
             rl.GREEN,
         )
         rl.DrawText(subject_view_text, 10, subject_target.texture.height - 30, 20, rl.BLACK)

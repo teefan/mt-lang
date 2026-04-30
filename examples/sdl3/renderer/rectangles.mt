@@ -6,7 +6,7 @@ const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/renderer/rectangles"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const rect_count: i32 = 16
 
 var window: ptr[c.SDL_Window]
@@ -22,10 +22,10 @@ def pump_events() -> bool:
     return true
 
 def render_frame() -> void:
-    let now = cast[i32](c.SDL_GetTicks())
+    let now = i32<-c.SDL_GetTicks()
     let direction = if (now % 2000) >= 1000 then 1.0 else -1.0
-    let scale = (cast[f32]((now % 1000) - 500) / 500.0) * direction
-    let column_width = cast[f32](window_width) / cast[f32](rect_count)
+    let scale = (f32<-((now % 1000) - 500) / 500.0) * direction
+    let column_width = f32<-window_width / f32<-rect_count
 
     var rects = zero[array[c.SDL_FRect, 16]]()
 
@@ -40,11 +40,11 @@ def render_frame() -> void:
     c.SDL_RenderRect(renderer, raw(addr(rects[0])))
 
     for index in range(0, 3):
-        let size = cast[f32](index + 1) * 50.0
+        let size = f32<-(index + 1) * 50.0
         rects[index].w = size + (size * scale)
         rects[index].h = size + (size * scale)
-        rects[index].x = (cast[f32](window_width) - rects[index].w) / 2.0
-        rects[index].y = (cast[f32](window_height) - rects[index].h) / 2.0
+        rects[index].x = (f32<-window_width - rects[index].w) / 2.0
+        rects[index].y = (f32<-window_height - rects[index].h) / 2.0
 
     c.SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255)
     c.SDL_RenderRects(renderer, raw(addr(rects[0])), 3)
@@ -57,9 +57,9 @@ def render_frame() -> void:
     c.SDL_RenderFillRect(renderer, raw(addr(rects[0])))
 
     for index in range(0, rect_count):
-        let height = cast[f32](index) * 8.0
-        rects[index].x = cast[f32](index) * column_width
-        rects[index].y = cast[f32](window_height) - height
+        let height = f32<-index * 8.0
+        rects[index].x = f32<-index * column_width
+        rects[index].y = f32<-window_height - height
         rects[index].w = column_width
         rects[index].h = height
 

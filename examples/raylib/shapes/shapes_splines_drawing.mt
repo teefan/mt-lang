@@ -183,12 +183,12 @@ def main() -> i32:
                         if index < point_count - 1:
                             rl.DrawLineV(points[index], points[index + 1], rl.GRAY)
 
-                rl.DrawText(rl.TextFormat(point_format, points[index].x, points[index].y), cast[i32](points[index].x), cast[i32](points[index].y) + 10, 10, rl.BLACK)
+                rl.DrawText(rl.TextFormat(point_format, points[index].x, points[index].y), i32<-points[index].x, i32<-points[index].y + 10, 10, rl.BLACK)
 
         if spline_type_edit_mode or selected_point != -1 or selected_control_segment != -1:
             gui.GuiLock()
 
-        gui.GuiLabel(gui.Rectangle(x = 12.0, y = 62.0, width = 140.0, height = 24.0), rl.TextFormat(spline_thickness_format, cast[i32](spline_thickness)))
+        gui.GuiLabel(gui.Rectangle(x = 12.0, y = 62.0, width = 140.0, height = 24.0), rl.TextFormat(spline_thickness_format, i32<-spline_thickness))
         gui.GuiSliderBar(gui.Rectangle(x = 12.0, y = 84.0, width = 140.0, height = 16.0), empty_text, empty_text, raw(addr(spline_thickness)), 1.0, 40.0)
         gui.GuiCheckBox(gui.Rectangle(x = 12.0, y = 110.0, width = 20.0, height = 20.0), show_point_helpers_text, raw(addr(spline_helpers_active)))
 

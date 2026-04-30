@@ -54,7 +54,7 @@ def main() -> i32:
         defer rl.EndDrawing()
 
         rl.ClearBackground(rl.RAYWHITE)
-        rl.DrawLineDashed(line_start_position, line_end_position, cast[i32](dash_length), cast[i32](blank_length), line_colors[color_index])
+        rl.DrawLineDashed(line_start_position, line_end_position, i32<-dash_length, i32<-blank_length, line_colors[color_index])
 
         rl.DrawRectangle(5, 5, 265, 95, rl.Fade(rl.SKYBLUE, 0.5))
         rl.DrawRectangleLines(5, 5, 265, 95, rl.BLUE)

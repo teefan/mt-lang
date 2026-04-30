@@ -22,18 +22,18 @@ var low_pass_state: array[f32, 2]
 
 def void_ptr_to_f32(value: ptr[void]) -> ptr[f32]:
     unsafe:
-        return cast[ptr[f32]](value)
+        return ptr[f32]<-value
 
 def allocate_delay_buffer() -> void:
-    delay_buffer_size = cast[u32](48000 * 2)
+    delay_buffer_size = u32<-(48000 * 2)
     delay_read_index = 2
     delay_write_index = 0
 
     unsafe:
-        delay_buffer = cast[ptr[f32]?](rl.MemAlloc(delay_buffer_size * cast[u32](sizeof(f32))))
+        delay_buffer = ptr[f32]?<-rl.MemAlloc(delay_buffer_size * u32<-sizeof(f32))
         if delay_buffer != null:
-            let samples = cast[ptr[f32]](delay_buffer)
-            for index in range(0, cast[i32](delay_buffer_size)):
+            let samples = ptr[f32]<-delay_buffer
+            for index in range(0, i32<-delay_buffer_size):
                 deref(samples + index) = 0.0
 
 def free_delay_buffer() -> void:
@@ -41,11 +41,11 @@ def free_delay_buffer() -> void:
         return
 
     unsafe:
-        rl.MemFree(cast[ptr[f32]](delay_buffer))
+        rl.MemFree(ptr[f32]<-delay_buffer)
 
 def audio_process_effect_lpf(buffer: ptr[void], frames: u32) -> void:
     let buffer_data = void_ptr_to_f32(buffer)
-    let sample_count = cast[i32](frames) * 2
+    let sample_count = i32<-frames * 2
 
     unsafe:
         var index = 0
@@ -65,16 +65,16 @@ def audio_process_effect_delay(buffer: ptr[void], frames: u32) -> void:
         return
 
     let buffer_data = void_ptr_to_f32(buffer)
-    let sample_count = cast[i32](frames) * 2
+    let sample_count = i32<-frames * 2
 
     unsafe:
-        let delay_samples = cast[ptr[f32]](delay_buffer)
+        let delay_samples = ptr[f32]<-delay_buffer
         var index = 0
 
         while index < sample_count:
-            let left_delay = deref(delay_samples + cast[i32](delay_read_index))
+            let left_delay = deref(delay_samples + i32<-delay_read_index)
             delay_read_index += 1
-            let right_delay = deref(delay_samples + cast[i32](delay_read_index))
+            let right_delay = deref(delay_samples + i32<-delay_read_index)
             delay_read_index += 1
 
             if delay_read_index == delay_buffer_size:
@@ -86,9 +86,9 @@ def audio_process_effect_delay(buffer: ptr[void], frames: u32) -> void:
             deref(buffer_data + index) = left_value
             deref(buffer_data + index + 1) = right_value
 
-            deref(delay_samples + cast[i32](delay_write_index)) = left_value
+            deref(delay_samples + i32<-delay_write_index) = left_value
             delay_write_index += 1
-            deref(delay_samples + cast[i32](delay_write_index)) = right_value
+            deref(delay_samples + i32<-delay_write_index) = right_value
             delay_write_index += 1
 
             if delay_write_index == delay_buffer_size:
@@ -157,7 +157,7 @@ def main() -> i32:
 
         rl.DrawText(playing_text, 245, 150, 20, rl.LIGHTGRAY)
         rl.DrawRectangle(200, 180, 400, 12, rl.LIGHTGRAY)
-        rl.DrawRectangle(200, 180, cast[i32](time_played * 400.0), 12, rl.MAROON)
+        rl.DrawRectangle(200, 180, i32<-(time_played * 400.0), 12, rl.MAROON)
         rl.DrawRectangleLines(200, 180, 400, 12, rl.GRAY)
 
         rl.DrawText(restart_text, 215, 230, 20, rl.LIGHTGRAY)

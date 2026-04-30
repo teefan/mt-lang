@@ -41,7 +41,7 @@ def main() -> i32:
     var amp_y: f32 = 5.0
     var speed_x: f32 = 8.0
     var speed_y: f32 = 8.0
-    var screen_size = array[f32, 2](cast[f32](rl.GetScreenWidth()), cast[f32](rl.GetScreenHeight()))
+    var screen_size = array[f32, 2](f32<-rl.GetScreenWidth(), f32<-rl.GetScreenHeight())
     var seconds: f32 = 0.0
 
     rl.SetShaderValue(shader, rl.GetShaderLocation(shader, size_uniform_name), raw(addr(screen_size[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)

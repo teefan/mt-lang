@@ -7,7 +7,7 @@ const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/renderer/rotating-textures"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
@@ -25,14 +25,14 @@ def pump_events() -> bool:
     return true
 
 def render_frame() -> void:
-    let now = cast[i32](c.SDL_GetTicks())
-    let rotation = (cast[f32](now % 2000) / 2000.0) * 360.0
-    let texture_width_f = cast[f32](texture_width)
-    let texture_height_f = cast[f32](texture_height)
+    let now = i32<-c.SDL_GetTicks()
+    let rotation = (f32<-(now % 2000) / 2000.0) * 360.0
+    let texture_width_f = f32<-texture_width
+    let texture_height_f = f32<-texture_height
 
     var destination = c.SDL_FRect(
-        x = cast[f32](window_width - texture_width) / 2.0,
-        y = cast[f32](window_height - texture_height) / 2.0,
+        x = f32<-(window_width - texture_width) / 2.0,
+        y = f32<-(window_height - texture_height) / 2.0,
         w = texture_width_f,
         h = texture_height_f,
     )
@@ -43,7 +43,7 @@ def render_frame() -> void:
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
-    c.SDL_RenderTextureRotated(renderer, texture, null, raw(addr(destination)), cast[f64](rotation), raw(addr(center)), c.SDL_FlipMode.SDL_FLIP_NONE)
+    c.SDL_RenderTextureRotated(renderer, texture, null, raw(addr(destination)), f64<-rotation, raw(addr(center)), c.SDL_FlipMode.SDL_FLIP_NONE)
     c.SDL_RenderPresent(renderer)
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:

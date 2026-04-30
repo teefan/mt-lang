@@ -20,22 +20,22 @@ def main() -> i32:
     var file_paths = zero[array[ptr[char], 4096]]()
 
     for index in range(0, max_filepaths_recorded):
-        file_paths[index] = heap.must_alloc_zeroed[char](cast[usize](max_filepath_size))
+        file_paths[index] = heap.must_alloc_zeroed[char](usize<-max_filepath_size)
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
         if rl.IsFileDropped():
             let dropped_files = rl.LoadDroppedFiles()
-            let dropped_count = cast[i32](dropped_files.count)
+            let dropped_count = i32<-dropped_files.count
             let offset = file_path_counter
             var dropped_index = 0
 
             while dropped_index < dropped_count:
                 if file_path_counter < max_filepaths_recorded - 1:
                     unsafe:
-                        let dropped_path = deref(dropped_files.paths + cast[usize](dropped_index))
-                        rl.TextCopy(file_paths[offset + dropped_index], cast[cstr](dropped_path))
+                        let dropped_path = deref(dropped_files.paths + usize<-dropped_index)
+                        rl.TextCopy(file_paths[offset + dropped_index], cstr<-dropped_path)
                     file_path_counter += 1
                 dropped_index += 1
 
@@ -55,7 +55,7 @@ def main() -> i32:
             while index < file_path_counter:
                 rl.DrawRectangle(0, 85 + 40 * index, screen_width, 40, rl.Fade(rl.LIGHTGRAY, if index % 2 == 0 then 0.5 else 0.3))
                 unsafe:
-                    rl.DrawText(cast[cstr](file_paths[index]), 120, 100 + 40 * index, 10, rl.GRAY)
+                    rl.DrawText(cstr<-file_paths[index], 120, 100 + 40 * index, 10, rl.GRAY)
                 index += 1
 
             rl.DrawText(continue_prompt_text, 100, 110 + 40 * file_path_counter, 20, rl.DARKGRAY)

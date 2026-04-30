@@ -19,7 +19,7 @@ def main() -> i32:
     let font = rl.LoadFontEx(font_path, font_size, null, 0)
     defer rl.UnloadFont(font)
 
-    rl.ImageDrawTextEx(raw(addr(parrots)), font, title_text, rl.Vector2(x = 20.0, y = 20.0), cast[f32](font.baseSize), 0.0, rl.RED)
+    rl.ImageDrawTextEx(raw(addr(parrots)), font, title_text, rl.Vector2(x = 20.0, y = 20.0), f32<-font.baseSize, 0.0, rl.RED)
 
     let texture = rl.LoadTextureFromImage(parrots)
     rl.UnloadImage(parrots)
@@ -43,7 +43,7 @@ def main() -> i32:
 
         if not show_font:
             rl.DrawTextureV(texture, position, rl.WHITE)
-            rl.DrawTextEx(font, title_text, rl.Vector2(x = position.x + 20.0, y = position.y + 300.0), cast[f32](font.baseSize), 0.0, rl.WHITE)
+            rl.DrawTextEx(font, title_text, rl.Vector2(x = position.x + 20.0, y = position.y + 300.0), f32<-font.baseSize, 0.0, rl.WHITE)
         else:
             rl.DrawTexture(font.texture, screen_width / 2 - font.texture.width / 2, 50, rl.BLACK)
 

@@ -12,10 +12,10 @@ const font2_path: str = "../../raylib/resources/custom_alagard.png"
 const font3_path: str = "../../raylib/resources/custom_jupiter_crash.png"
 
 def centered_position(font: rl.Font, text: str, spacing: f32, y_offset: f32) -> rl.Vector2:
-    let size = rl.measure_text_ex(font, text, cast[f32](font.baseSize), spacing)
+    let size = rl.measure_text_ex(font, text, f32<-font.baseSize, spacing)
     return rl.Vector2(
-        x = cast[f32](screen_width) / 2.0 - size.x / 2.0,
-        y = cast[f32](screen_height) / 2.0 - cast[f32](font.baseSize) / 2.0 + y_offset,
+        x = f32<-screen_width / 2.0 - size.x / 2.0,
+        y = f32<-screen_height / 2.0 - f32<-font.baseSize / 2.0 + y_offset,
     )
 
 def main() -> i32:
@@ -42,8 +42,8 @@ def main() -> i32:
         defer rl.end_drawing()
 
         rl.clear_background(rl.RAYWHITE)
-        rl.draw_text_ex(font1, msg1, font_position1, cast[f32](font1.baseSize), -3.0, rl.WHITE)
-        rl.draw_text_ex(font2, msg2, font_position2, cast[f32](font2.baseSize), -2.0, rl.WHITE)
-        rl.draw_text_ex(font3, msg3, font_position3, cast[f32](font3.baseSize), 2.0, rl.WHITE)
+        rl.draw_text_ex(font1, msg1, font_position1, f32<-font1.baseSize, -3.0, rl.WHITE)
+        rl.draw_text_ex(font2, msg2, font_position2, f32<-font2.baseSize, -2.0, rl.WHITE)
+        rl.draw_text_ex(font3, msg3, font_position3, f32<-font3.baseSize, 2.0, rl.WHITE)
 
     return 0

@@ -15,7 +15,7 @@ def main() -> i32:
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        box_position_y -= cast[i32](rl.get_mouse_wheel_move() * scroll_speed)
+        box_position_y -= i32<-(rl.get_mouse_wheel_move() * scroll_speed)
 
         rl.begin_drawing()
         defer rl.end_drawing()

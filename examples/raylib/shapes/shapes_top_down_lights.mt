@@ -160,10 +160,10 @@ def setup_boxes(boxes: ref[array[rl.Rectangle, 20]], count: ref[i32]) -> void:
 
     for index in range(5, max_boxes):
         items[index] = rl.Rectangle(
-            x = cast[f32](rl.GetRandomValue(0, rl.GetScreenWidth())),
-            y = cast[f32](rl.GetRandomValue(0, rl.GetScreenHeight())),
-            width = cast[f32](rl.GetRandomValue(10, 100)),
-            height = cast[f32](rl.GetRandomValue(10, 100)),
+            x = f32<-rl.GetRandomValue(0, rl.GetScreenWidth()),
+            y = f32<-rl.GetRandomValue(0, rl.GetScreenHeight()),
+            width = f32<-rl.GetRandomValue(10, 100),
+            height = f32<-rl.GetRandomValue(10, 100),
         )
 
     value(boxes) = items
@@ -194,14 +194,14 @@ def main() -> i32:
     let screen_rect = rl.Rectangle(
         x = 0.0,
         y = 0.0,
-        width = cast[f32](rl.GetScreenWidth()),
-        height = cast[f32](rl.GetScreenHeight()),
+        width = f32<-rl.GetScreenWidth(),
+        height = f32<-rl.GetScreenHeight(),
     )
     let flipped_screen_rect = rl.Rectangle(
         x = 0.0,
         y = 0.0,
-        width = cast[f32](rl.GetScreenWidth()),
-        height = -cast[f32](rl.GetScreenHeight()),
+        width = f32<-rl.GetScreenWidth(),
+        height = -f32<-rl.GetScreenHeight(),
     )
     let origin = rl.Vector2(x = 0.0, y = 0.0)
 
@@ -257,7 +257,7 @@ def main() -> i32:
                 var light_color = rl.WHITE
                 if index == 0:
                     light_color = rl.YELLOW
-                rl.DrawCircle(cast[i32](lights[index].position.x), cast[i32](lights[index].position.y), 10.0, light_color)
+                rl.DrawCircle(i32<-lights[index].position.x, i32<-lights[index].position.y, 10.0, light_color)
 
         if show_lines:
             for index in range(0, lights[0].shadow_count):
@@ -269,10 +269,10 @@ def main() -> i32:
                     rl.DrawRectangleRec(boxes[index], rl.PURPLE)
 
                 rl.DrawRectangleLines(
-                    cast[i32](boxes[index].x),
-                    cast[i32](boxes[index].y),
-                    cast[i32](boxes[index].width),
-                    cast[i32](boxes[index].height),
+                    i32<-boxes[index].x,
+                    i32<-boxes[index].y,
+                    i32<-boxes[index].width,
+                    i32<-boxes[index].height,
                     rl.DARKBLUE,
                 )
 

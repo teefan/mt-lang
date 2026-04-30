@@ -7,7 +7,7 @@ const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/renderer/read-pixels"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
@@ -28,23 +28,23 @@ def pump_events() -> bool:
     return true
 
 def render_frame() -> bool:
-    let now = cast[i32](c.SDL_GetTicks())
-    let rotation = (cast[f32](now % 2000) / 2000.0) * 360.0
+    let now = i32<-c.SDL_GetTicks()
+    let rotation = (f32<-(now % 2000) / 2000.0) * 360.0
 
     var center = c.SDL_FPoint(
-        x = cast[f32](texture_width) / 2.0,
-        y = cast[f32](texture_height) / 2.0,
+        x = f32<-texture_width / 2.0,
+        y = f32<-texture_height / 2.0,
     )
     var destination = c.SDL_FRect(
-        x = cast[f32](window_width - texture_width) / 2.0,
-        y = cast[f32](window_height - texture_height) / 2.0,
-        w = cast[f32](texture_width),
-        h = cast[f32](texture_height),
+        x = f32<-(window_width - texture_width) / 2.0,
+        y = f32<-(window_height - texture_height) / 2.0,
+        w = f32<-texture_width,
+        h = f32<-texture_height,
     )
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
-    c.SDL_RenderTextureRotated(renderer, texture, null, raw(addr(destination)), cast[f64](rotation), raw(addr(center)), c.SDL_FlipMode.SDL_FLIP_NONE)
+    c.SDL_RenderTextureRotated(renderer, texture, null, raw(addr(destination)), f64<-rotation, raw(addr(center)), c.SDL_FlipMode.SDL_FLIP_NONE)
 
     var surface = c.SDL_RenderReadPixels(renderer, null)
     var processed_surface: ptr[c.SDL_Surface]? = surface
@@ -78,12 +78,12 @@ def render_frame() -> bool:
                     converted_texture_height = deref(processed_surface).h
 
                 for y in range(0, deref(processed_surface).h):
-                    let row_bytes = cast[ptr[c.Uint8]](deref(processed_surface).pixels) + (y * deref(processed_surface).pitch)
-                    let row_pixels = cast[ptr[c.Uint32]](row_bytes)
+                    let row_bytes = ptr[c.Uint8]<-deref(processed_surface).pixels + (y * deref(processed_surface).pitch)
+                    let row_pixels = ptr[c.Uint32]<-row_bytes
 
                     for x in range(0, deref(processed_surface).w):
-                        let pixel_bytes = cast[ptr[c.Uint8]](row_pixels + x)
-                        let average = (cast[u32](deref(pixel_bytes + 1)) + cast[u32](deref(pixel_bytes + 2)) + cast[u32](deref(pixel_bytes + 3))) / 3
+                        let pixel_bytes = ptr[c.Uint8]<-(row_pixels + x)
+                        let average = (u32<-deref(pixel_bytes + 1) + u32<-deref(pixel_bytes + 2) + u32<-deref(pixel_bytes + 3)) / 3
 
                         if average == 0:
                             deref(pixel_bytes + 0) = 0xFF
@@ -101,8 +101,8 @@ def render_frame() -> bool:
 
                     destination.x = 0.0
                     destination.y = 0.0
-                    destination.w = cast[f32](window_width) / 4.0
-                    destination.h = cast[f32](window_height) / 4.0
+                    destination.w = f32<-window_width / 4.0
+                    destination.h = f32<-window_height / 4.0
                     c.SDL_RenderTexture(renderer, converted_texture, null, raw(addr(destination)))
                 else:
                     c.SDL_DestroySurface(processed_surface)

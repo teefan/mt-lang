@@ -91,7 +91,7 @@ def main() -> i32:
         gui.label(rl.Rectangle(x = 632.0, y = 274.0, width = 240.0, height = 24.0), "No scratch arena, no explicit cstring list storage, no raw imports")
         gui.label(rl.Rectangle(x = 632.0, y = 310.0, width = 240.0, height = 24.0), "The imported raygui surface owns the ABI conversion work")
 
-        rl.draw_rectangle(632, 356, cast[i32](slider_value) * 2, 24, rl.SKYBLUE)
+        rl.draw_rectangle(632, 356, i32<-slider_value * 2, 24, rl.SKYBLUE)
         rl.draw_rectangle_lines(632, 356, 200, 24, rl.DARKGRAY)
         rl.draw_text("live intensity preview", 632, 390, 18, rl.DARKGRAY)
 

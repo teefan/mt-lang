@@ -6,7 +6,7 @@ const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/renderer/lines"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 var line_points: array[c.SDL_FPoint, 9] = array[c.SDL_FPoint, 9](
     c.SDL_FPoint(x = 100.0, y = 354.0),
     c.SDL_FPoint(x = 220.0, y = 230.0),
@@ -48,13 +48,13 @@ def render_frame() -> void:
         let size = 30.0
         let x = 320.0
         let y = 95.0 - (size / 2.0)
-        let radians = cast[f32](angle) * (c.SDL_PI_F / 180.0)
+        let radians = f32<-angle * (c.SDL_PI_F / 180.0)
 
         c.SDL_SetRenderDrawColor(
             renderer,
-            cast[u8](c.SDL_rand(256)),
-            cast[u8](c.SDL_rand(256)),
-            cast[u8](c.SDL_rand(256)),
+            u8<-c.SDL_rand(256),
+            u8<-c.SDL_rand(256),
+            u8<-c.SDL_rand(256),
             255,
         )
         c.SDL_RenderLine(renderer, x, y, x + (c.SDL_cosf(radians) * size), y + (c.SDL_sinf(radians) * size))

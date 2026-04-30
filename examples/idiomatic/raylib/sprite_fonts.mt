@@ -38,9 +38,9 @@ def main() -> i32:
 
     for index in range(0, max_fonts):
         fonts[index] = rl.load_font(font_paths[index])
-        let size = rl.measure_text_ex(fonts[index], messages[index], cast[f32](fonts[index].baseSize) * 2.0, cast[f32](spacings[index]))
-        positions[index].x = cast[f32](screen_width) / 2.0 - size.x / 2.0
-        positions[index].y = 60.0 + cast[f32](fonts[index].baseSize) + 45.0 * cast[f32](index)
+        let size = rl.measure_text_ex(fonts[index], messages[index], f32<-fonts[index].baseSize * 2.0, f32<-spacings[index])
+        positions[index].x = f32<-screen_width / 2.0 - size.x / 2.0
+        positions[index].y = 60.0 + f32<-fonts[index].baseSize + 45.0 * f32<-index
 
     positions[3].y += 8.0
     positions[4].y += 2.0
@@ -61,6 +61,6 @@ def main() -> i32:
         rl.draw_line(220, 50, 600, 50, rl.DARKGRAY)
 
         for index in range(0, max_fonts):
-            rl.draw_text_ex(fonts[index], messages[index], positions[index], cast[f32](fonts[index].baseSize) * 2.0, cast[f32](spacings[index]), colors[index])
+            rl.draw_text_ex(fonts[index], messages[index], positions[index], f32<-fonts[index].baseSize * 2.0, f32<-spacings[index], colors[index])
 
     return 0

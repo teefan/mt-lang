@@ -13,13 +13,13 @@ const time_format: cstr = c"%Y-%m-%d %H:%M:%S"
 foreign def vprintf_raylib_args(format: cstr, args: rl.va_list as stdio.va_list) -> i32 = stdio.vprintf
 
 def log_level_prefix(level: i32) -> cstr:
-    if level == cast[i32](rl.TraceLogLevel.LOG_INFO):
+    if level == i32<-rl.TraceLogLevel.LOG_INFO:
         return c"[INFO] : "
-    if level == cast[i32](rl.TraceLogLevel.LOG_ERROR):
+    if level == i32<-rl.TraceLogLevel.LOG_ERROR:
         return c"[ERROR]: "
-    if level == cast[i32](rl.TraceLogLevel.LOG_WARNING):
+    if level == i32<-rl.TraceLogLevel.LOG_WARNING:
         return c"[WARN] : "
-    if level == cast[i32](rl.TraceLogLevel.LOG_DEBUG):
+    if level == i32<-rl.TraceLogLevel.LOG_DEBUG:
         return c"[DEBUG]: "
     return c""
 
@@ -32,7 +32,7 @@ def custom_trace_log(level: i32, text: cstr, args: rl.va_list) -> void:
     stdio.printf(c"[")
     unsafe:
         ctime.strftime(raw(addr(time_str[0])), 64, time_format, tm_info)
-        stdio.printf(cast[cstr](raw(addr(time_str[0]))))
+        stdio.printf(cstr<-raw(addr(time_str[0])))
         stdio.printf(c"] ")
         stdio.printf(log_level_prefix(level))
         vprintf_raylib_args(text, args)

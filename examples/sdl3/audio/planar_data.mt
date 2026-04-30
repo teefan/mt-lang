@@ -5,9 +5,9 @@ import std.c.sdl3 as c
 const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/audio/planar-data"
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const default_playback_device: u32 = cast[u32](0xFFFFFFFF)
+const default_playback_device: u32 = u32<-0xFFFFFFFF
 const audio_sample_rate: i32 = 4000
 const audio_channel_count: i32 = 2
 const left_button_value: i32 = -1
@@ -36,8 +36,8 @@ def play_left_sound() -> void:
     var planes = array[const_ptr[void]?, 2](null, null)
     var channel_buffers: const_ptr[const_ptr[void]?]
     unsafe:
-        planes[0] = cast[const_ptr[void]?](raw(addr(left_channel_data[0])))
-        channel_buffers = cast[const_ptr[const_ptr[void]?]](raw(addr(planes[0])))
+        planes[0] = const_ptr[void]?<-raw(addr(left_channel_data[0]))
+        channel_buffers = const_ptr[const_ptr[void]?]<-raw(addr(planes[0]))
 
     if not c.SDL_PutAudioStreamPlanarData(active_stream, channel_buffers, -1, left_channel_sample_count):
         return
@@ -54,8 +54,8 @@ def play_right_sound() -> void:
     var planes = array[const_ptr[void]?, 2](null, null)
     var channel_buffers: const_ptr[const_ptr[void]?]
     unsafe:
-        planes[1] = cast[const_ptr[void]?](raw(addr(right_channel_data[0])))
-        channel_buffers = cast[const_ptr[const_ptr[void]?]](raw(addr(planes[0])))
+        planes[1] = const_ptr[void]?<-raw(addr(right_channel_data[0]))
+        channel_buffers = const_ptr[const_ptr[void]?]<-raw(addr(planes[0]))
 
     if not c.SDL_PutAudioStreamPlanarData(active_stream, channel_buffers, -1, right_channel_sample_count):
         return
@@ -73,7 +73,7 @@ def pump_events() -> bool:
         if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         elif event.button.type == c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
-            if event.button.button == cast[c.Uint8](c.SDL_BUTTON_LEFT) and playing_sound == 0:
+            if event.button.button == c.Uint8<-c.SDL_BUTTON_LEFT and playing_sound == 0:
                 let point = c.SDL_FPoint(x = event.button.x, y = event.button.y)
 
                 if point_in_rect(point, left_button_rect):
@@ -94,9 +94,9 @@ def render_button(rect: c.SDL_FRect, text: cstr, button_value: i32) -> void:
     c.SDL_RenderFillRect(renderer, raw(addr(draw_rect)))
     c.SDL_SetRenderDrawColor(renderer, 255, 255, 255, c.SDL_ALPHA_OPAQUE)
 
-    let text_width = cast[f32](c.SDL_strlen(text) * cast[usize](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE))
+    let text_width = f32<-(c.SDL_strlen(text) * usize<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
     let x = rect.x + ((rect.w - text_width) / 2.0)
-    let y = rect.y + ((rect.h - cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)) / 2.0)
+    let y = rect.y + ((rect.h - f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) / 2.0)
     c.SDL_RenderDebugText(renderer, x, y, text)
 
 def render_frame() -> void:

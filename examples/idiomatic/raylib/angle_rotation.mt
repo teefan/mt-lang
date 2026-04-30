@@ -23,7 +23,7 @@ def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Angle Rotation")
     defer rl.close_window()
 
-    let center = rl.Vector2(x = cast[f32](screen_width) / 2.0, y = cast[f32](screen_height) / 2.0)
+    let center = rl.Vector2(x = f32<-screen_width / 2.0, y = f32<-screen_height / 2.0)
     var angles = zero[array[i32, 4]]()
     angles[0] = 0
     angles[1] = 30
@@ -45,7 +45,7 @@ def main() -> i32:
         rl.draw_text("Fixed angles + rotating line", 10, 10, 20, rl.LIGHTGRAY)
 
         for index in range(0, angle_count):
-            let radians = cast[f32](angles[index]) * math.deg2rad
+            let radians = f32<-angles[index] * math.deg2rad
             let end_point = rl.Vector2(
                 x = center.x + math.cos(radians) * line_length,
                 y = center.y + math.sin(radians) * line_length,
@@ -57,7 +57,7 @@ def main() -> i32:
                 x = center.x + math.cos(radians) * (line_length + 20.0),
                 y = center.y + math.sin(radians) * (line_length + 20.0),
             )
-            rl.draw_text(rl.text_format_i32("%d deg", angles[index]), cast[i32](label_position.x), cast[i32](label_position.y), 20, color)
+            rl.draw_text(rl.text_format_i32("%d deg", angles[index]), i32<-label_position.x, i32<-label_position.y, 20, color)
 
         let animated_radians = total_angle * math.deg2rad
         let animated_end = rl.Vector2(

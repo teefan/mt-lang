@@ -35,8 +35,8 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        let width_scale: f32 = cast[f32](rl.GetScreenWidth()) / game_screen_width
-        let height_scale: f32 = cast[f32](rl.GetScreenHeight()) / game_screen_height
+        let width_scale: f32 = f32<-rl.GetScreenWidth() / game_screen_width
+        let height_scale: f32 = f32<-rl.GetScreenHeight() / game_screen_height
         var scale = width_scale
         if height_scale < scale:
             scale = height_scale
@@ -76,8 +76,8 @@ def main() -> i32:
             color_index += 1
 
         rl.DrawText(help_text, 10, 25, 20, rl.WHITE)
-        rl.DrawText(rl.TextFormat(c"Default Mouse: [%i , %i]", cast[i32](mouse.x), cast[i32](mouse.y)), 350, 25, 20, rl.GREEN)
-        rl.DrawText(rl.TextFormat(c"Virtual Mouse: [%i , %i]", cast[i32](virtual_mouse.x), cast[i32](virtual_mouse.y)), 350, 55, 20, rl.YELLOW)
+        rl.DrawText(rl.TextFormat(c"Default Mouse: [%i , %i]", i32<-mouse.x, i32<-mouse.y), 350, 25, 20, rl.GREEN)
+        rl.DrawText(rl.TextFormat(c"Virtual Mouse: [%i , %i]", i32<-virtual_mouse.x, i32<-virtual_mouse.y), 350, 55, 20, rl.YELLOW)
 
         rl.EndTextureMode()
 

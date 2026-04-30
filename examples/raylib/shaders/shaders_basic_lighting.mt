@@ -35,17 +35,17 @@ def main() -> i32:
 
     let view_loc = rl.GetShaderLocation(shader, view_pos_uniform_name)
     unsafe:
-        shader.locs[cast[i32](rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW)] = view_loc
+        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     let ambient_loc = rl.GetShaderLocation(shader, ambient_uniform_name)
     var ambient = array[f32, 4](0.1, 0.1, 0.1, 1.0)
     rl.SetShaderValue(shader, ambient_loc, raw(addr(ambient[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     var light_sources = zero[array[lights.Light, 4]]()
-    light_sources[0] = lights.CreateLight(cast[i32](lights.LightType.LIGHT_POINT), rl.Vector3(x = -2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.YELLOW, shader)
-    light_sources[1] = lights.CreateLight(cast[i32](lights.LightType.LIGHT_POINT), rl.Vector3(x = 2.0, y = 1.0, z = 2.0), rm.Vector3.zero(), rl.RED, shader)
-    light_sources[2] = lights.CreateLight(cast[i32](lights.LightType.LIGHT_POINT), rl.Vector3(x = -2.0, y = 1.0, z = 2.0), rm.Vector3.zero(), rl.GREEN, shader)
-    light_sources[3] = lights.CreateLight(cast[i32](lights.LightType.LIGHT_POINT), rl.Vector3(x = 2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.BLUE, shader)
+    light_sources[0] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.YELLOW, shader)
+    light_sources[1] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = 2.0), rm.Vector3.zero(), rl.RED, shader)
+    light_sources[2] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = 2.0), rm.Vector3.zero(), rl.GREEN, shader)
+    light_sources[3] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.BLUE, shader)
 
     rl.SetTargetFPS(60)
 

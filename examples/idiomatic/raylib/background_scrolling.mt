@@ -10,13 +10,13 @@ const foreground_path: str = "../../raylib/resources/cyberpunk_street_foreground
 const background_scale: f32 = 2.0
 
 def reset_scroll(scroll: f32, texture_width: i32) -> f32:
-    if scroll <= -cast[f32](texture_width * 2):
+    if scroll <= -f32<-(texture_width * 2):
         return 0.0
     return scroll
 
 def draw_layer(texture: rl.Texture2D, scroll: f32, y: f32) -> void:
     rl.draw_texture_ex(texture, rl.Vector2(x = scroll, y = y), 0.0, background_scale, rl.WHITE)
-    rl.draw_texture_ex(texture, rl.Vector2(x = cast[f32](texture.width * 2) + scroll, y = y), 0.0, background_scale, rl.WHITE)
+    rl.draw_texture_ex(texture, rl.Vector2(x = f32<-(texture.width * 2) + scroll, y = y), 0.0, background_scale, rl.WHITE)
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Background Scrolling")

@@ -41,8 +41,8 @@ def main() -> i32:
             if rectangle.height < handle_size:
                 rectangle.height = handle_size
 
-            let window_width = cast[f32](rl.get_screen_width())
-            let window_height = cast[f32](rl.get_screen_height())
+            let window_width = f32<-rl.get_screen_width()
+            let window_height = f32<-rl.get_screen_height()
             if rectangle.width > window_width - rectangle.x:
                 rectangle.width = window_width - rectangle.x
             if rectangle.height > window_height - rectangle.y:

@@ -59,8 +59,8 @@ def clamp_player(player: ref[PlayerState]) -> void:
 
 def draw_recorded_cell(state: PlayerState, grid_position: rl.Vector2, color: rl.Color) -> void:
     rl.DrawRectangle(
-        cast[i32](grid_position.x) + state.cell.x * grid_cell_size,
-        cast[i32](grid_position.y) + state.cell.y * grid_cell_size,
+        i32<-grid_position.x + state.cell.x * grid_cell_size,
+        i32<-grid_position.y + state.cell.y * grid_cell_size,
         grid_cell_size,
         grid_cell_size,
         color,
@@ -89,10 +89,10 @@ def draw_grid(grid_position: rl.Vector2) -> void:
     var y = 0
     while y <= max_grid_cells_y:
         rl.DrawLine(
-            cast[i32](grid_position.x),
-            cast[i32](grid_position.y) + y * grid_cell_size,
-            cast[i32](grid_position.x) + max_grid_cells_x * grid_cell_size,
-            cast[i32](grid_position.y) + y * grid_cell_size,
+            i32<-grid_position.x,
+            i32<-grid_position.y + y * grid_cell_size,
+            i32<-grid_position.x + max_grid_cells_x * grid_cell_size,
+            i32<-grid_position.y + y * grid_cell_size,
             rl.GRAY,
         )
         y += 1
@@ -100,10 +100,10 @@ def draw_grid(grid_position: rl.Vector2) -> void:
     var x = 0
     while x <= max_grid_cells_x:
         rl.DrawLine(
-            cast[i32](grid_position.x) + x * grid_cell_size,
-            cast[i32](grid_position.y),
-            cast[i32](grid_position.x) + x * grid_cell_size,
-            cast[i32](grid_position.y) + max_grid_cells_y * grid_cell_size,
+            i32<-grid_position.x + x * grid_cell_size,
+            i32<-grid_position.y,
+            i32<-grid_position.x + x * grid_cell_size,
+            i32<-grid_position.y + max_grid_cells_y * grid_cell_size,
             rl.GRAY,
         )
         x += 1
@@ -112,20 +112,20 @@ def draw_grid(grid_position: rl.Vector2) -> void:
 def draw_undo_slots_range(position: rl.Vector2, slot_size: i32, start_index: i32, end_index: i32, fill_color: rl.Color, line_color: rl.Color) -> void:
     var index = start_index
     while index < end_index:
-        rl.DrawRectangle(cast[i32](position.x) + slot_size * index, cast[i32](position.y), slot_size, slot_size, fill_color)
-        rl.DrawRectangleLines(cast[i32](position.x) + slot_size * index, cast[i32](position.y), slot_size, slot_size, line_color)
+        rl.DrawRectangle(i32<-position.x + slot_size * index, i32<-position.y, slot_size, slot_size, fill_color)
+        rl.DrawRectangleLines(i32<-position.x + slot_size * index, i32<-position.y, slot_size, slot_size, line_color)
         index += 1
     return
 
 def draw_undo_buffer(position: rl.Vector2, first_undo_index: i32, last_undo_index: i32, current_undo_index: i32, slot_size: i32) -> void:
-    rl.DrawRectangle(cast[i32](position.x) + 8 + slot_size * current_undo_index, cast[i32](position.y) - 10, 8, 8, rl.RED)
-    rl.DrawRectangleLines(cast[i32](position.x) + 2 + slot_size * first_undo_index, cast[i32](position.y) + 27, 8, 8, rl.BLACK)
-    rl.DrawRectangle(cast[i32](position.x) + 14 + slot_size * last_undo_index, cast[i32](position.y) + 27, 8, 8, rl.BLACK)
+    rl.DrawRectangle(i32<-position.x + 8 + slot_size * current_undo_index, i32<-position.y - 10, 8, 8, rl.RED)
+    rl.DrawRectangleLines(i32<-position.x + 2 + slot_size * first_undo_index, i32<-position.y + 27, 8, 8, rl.BLACK)
+    rl.DrawRectangle(i32<-position.x + 14 + slot_size * last_undo_index, i32<-position.y + 27, 8, 8, rl.BLACK)
 
     var index = 0
     while index < max_undo_states:
-        rl.DrawRectangle(cast[i32](position.x) + slot_size * index, cast[i32](position.y), slot_size, slot_size, rl.LIGHTGRAY)
-        rl.DrawRectangleLines(cast[i32](position.x) + slot_size * index, cast[i32](position.y), slot_size, slot_size, rl.GRAY)
+        rl.DrawRectangle(i32<-position.x + slot_size * index, i32<-position.y, slot_size, slot_size, rl.LIGHTGRAY)
+        rl.DrawRectangleLines(i32<-position.x + slot_size * index, i32<-position.y, slot_size, slot_size, rl.GRAY)
         index += 1
 
     if first_undo_index <= last_undo_index:
@@ -140,8 +140,8 @@ def draw_undo_buffer(position: rl.Vector2, first_undo_index: i32, last_undo_inde
         draw_undo_slots_range(position, slot_size, first_undo_index, max_undo_states, rl.GREEN, rl.LIME)
         draw_undo_slots_range(position, slot_size, 0, current_undo_index, rl.GREEN, rl.LIME)
 
-    rl.DrawRectangle(cast[i32](position.x) + slot_size * current_undo_index, cast[i32](position.y), slot_size, slot_size, rl.GOLD)
-    rl.DrawRectangleLines(cast[i32](position.x) + slot_size * current_undo_index, cast[i32](position.y), slot_size, slot_size, rl.ORANGE)
+    rl.DrawRectangle(i32<-position.x + slot_size * current_undo_index, i32<-position.y, slot_size, slot_size, rl.GOLD)
+    rl.DrawRectangleLines(i32<-position.x + slot_size * current_undo_index, i32<-position.y, slot_size, slot_size, rl.ORANGE)
     return
 
 def main() -> i32:
@@ -228,14 +228,14 @@ def main() -> i32:
         draw_grid(grid_position)
 
         rl.DrawRectangle(
-            cast[i32](grid_position.x) + player.cell.x * grid_cell_size,
-            cast[i32](grid_position.y) + player.cell.y * grid_cell_size,
+            i32<-grid_position.x + player.cell.x * grid_cell_size,
+            i32<-grid_position.y + player.cell.y * grid_cell_size,
             grid_cell_size + 1,
             grid_cell_size + 1,
             player.color,
         )
 
-        rl.DrawText(c"UNDO STATES:", cast[i32](undo_info_pos.x) - 85, cast[i32](undo_info_pos.y) + 9, 10, rl.DARKGRAY)
+        rl.DrawText(c"UNDO STATES:", i32<-undo_info_pos.x - 85, i32<-undo_info_pos.y + 9, 10, rl.DARKGRAY)
         draw_undo_buffer(undo_info_pos, first_undo_index, last_undo_index, current_undo_index, 24)
 
     return 0

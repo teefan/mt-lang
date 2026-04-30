@@ -41,10 +41,10 @@ const window_title: cstr = c"raylib [shaders] example - rounded rectangle"
 
 def normalized_color(color: rl.Color) -> array[f32, 4]:
     return array[f32, 4](
-        cast[f32](color.r) / 255.0,
-        cast[f32](color.g) / 255.0,
-        cast[f32](color.b) / 255.0,
-        cast[f32](color.a) / 255.0,
+        f32<-color.r / 255.0,
+        f32<-color.g / 255.0,
+        f32<-color.b / 255.0,
+        f32<-color.a / 255.0,
     )
 
 def rectangle_components(rectangle: rl.Rectangle) -> array[f32, 4]:
@@ -113,7 +113,7 @@ def create_rounded_rectangle(corner_radius: rl.Vector4, shadow_radius: f32, shad
 def flipped_rectangle(rectangle: rl.Rectangle) -> rl.Rectangle:
     return rl.Rectangle(
         x = rectangle.x,
-        y = cast[f32](screen_height) - rectangle.y - rectangle.height,
+        y = f32<-screen_height - rectangle.y - rectangle.height,
         width = rectangle.width,
         height = rectangle.height,
     )
@@ -161,23 +161,23 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
 
         let first_rectangle = rl.Rectangle(x = 50.0, y = 70.0, width = 110.0, height = 60.0)
-        rl.DrawRectangleLines(cast[i32](first_rectangle.x) - 20, cast[i32](first_rectangle.y) - 20, cast[i32](first_rectangle.width) + 40, cast[i32](first_rectangle.height) + 40, rl.DARKGRAY)
-        rl.DrawText(rounded_rectangle_text, cast[i32](first_rectangle.x) - 20, cast[i32](first_rectangle.y) - 35, 10, rl.DARKGRAY)
+        rl.DrawRectangleLines(i32<-first_rectangle.x - 20, i32<-first_rectangle.y - 20, i32<-first_rectangle.width + 40, i32<-first_rectangle.height + 40, rl.DARKGRAY)
+        rl.DrawText(rounded_rectangle_text, i32<-first_rectangle.x - 20, i32<-first_rectangle.y - 35, 10, rl.DARKGRAY)
         draw_shader_pass(shader, rounded_rectangle, first_rectangle, rectangle_color, transparent, transparent)
 
         let second_rectangle = rl.Rectangle(x = 50.0, y = 200.0, width = 110.0, height = 60.0)
-        rl.DrawRectangleLines(cast[i32](second_rectangle.x) - 20, cast[i32](second_rectangle.y) - 20, cast[i32](second_rectangle.width) + 40, cast[i32](second_rectangle.height) + 40, rl.DARKGRAY)
-        rl.DrawText(rounded_shadow_text, cast[i32](second_rectangle.x) - 20, cast[i32](second_rectangle.y) - 35, 10, rl.DARKGRAY)
+        rl.DrawRectangleLines(i32<-second_rectangle.x - 20, i32<-second_rectangle.y - 20, i32<-second_rectangle.width + 40, i32<-second_rectangle.height + 40, rl.DARKGRAY)
+        rl.DrawText(rounded_shadow_text, i32<-second_rectangle.x - 20, i32<-second_rectangle.y - 35, 10, rl.DARKGRAY)
         draw_shader_pass(shader, rounded_rectangle, second_rectangle, transparent, shadow_color, transparent)
 
         let third_rectangle = rl.Rectangle(x = 50.0, y = 330.0, width = 110.0, height = 60.0)
-        rl.DrawRectangleLines(cast[i32](third_rectangle.x) - 20, cast[i32](third_rectangle.y) - 20, cast[i32](third_rectangle.width) + 40, cast[i32](third_rectangle.height) + 40, rl.DARKGRAY)
-        rl.DrawText(rounded_border_text, cast[i32](third_rectangle.x) - 20, cast[i32](third_rectangle.y) - 35, 10, rl.DARKGRAY)
+        rl.DrawRectangleLines(i32<-third_rectangle.x - 20, i32<-third_rectangle.y - 20, i32<-third_rectangle.width + 40, i32<-third_rectangle.height + 40, rl.DARKGRAY)
+        rl.DrawText(rounded_border_text, i32<-third_rectangle.x - 20, i32<-third_rectangle.y - 35, 10, rl.DARKGRAY)
         draw_shader_pass(shader, rounded_rectangle, third_rectangle, transparent, transparent, border_color)
 
         let fourth_rectangle = rl.Rectangle(x = 240.0, y = 80.0, width = 500.0, height = 300.0)
-        rl.DrawRectangleLines(cast[i32](fourth_rectangle.x) - 30, cast[i32](fourth_rectangle.y) - 30, cast[i32](fourth_rectangle.width) + 60, cast[i32](fourth_rectangle.height) + 60, rl.DARKGRAY)
-        rl.DrawText(rounded_combined_text, cast[i32](fourth_rectangle.x) - 30, cast[i32](fourth_rectangle.y) - 45, 10, rl.DARKGRAY)
+        rl.DrawRectangleLines(i32<-fourth_rectangle.x - 30, i32<-fourth_rectangle.y - 30, i32<-fourth_rectangle.width + 60, i32<-fourth_rectangle.height + 60, rl.DARKGRAY)
+        rl.DrawText(rounded_combined_text, i32<-fourth_rectangle.x - 30, i32<-fourth_rectangle.y - 45, 10, rl.DARKGRAY)
         draw_shader_pass(shader, rounded_rectangle, fourth_rectangle, rectangle_color, shadow_color, border_color)
 
         rl.DrawText(credit_text, screen_width - 300, screen_height - 20, 10, rl.BLACK)

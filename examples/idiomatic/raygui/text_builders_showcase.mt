@@ -55,7 +55,7 @@ def main() -> i32:
             dialog_text.assign(editor_text.as_str())
             show_dialog = true
 
-        let swatch_width = 80 + cast[i32](value) * 2
+        let swatch_width = 80 + i32<-value * 2
         rl.draw_rectangle(40, 412, swatch_width, 28, rl.SKYBLUE)
         rl.draw_rectangle_lines(40, 412, 280, 28, rl.DARKGRAY)
         rl.draw_text("value preview", 40, 448, 18, rl.DARKGRAY)

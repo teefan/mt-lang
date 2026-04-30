@@ -45,7 +45,7 @@ def main() -> i32:
         defer rl.end_drawing()
 
         rl.clear_background(rl.RAYWHITE)
-        rl.draw_line_dashed(start_position, end_position, cast[i32](dash_length), cast[i32](blank_length), colors[color_index])
+        rl.draw_line_dashed(start_position, end_position, i32<-dash_length, i32<-blank_length, colors[color_index])
 
         rl.draw_rectangle(5, 5, 265, 95, rl.fade(rl.SKYBLUE, 0.5))
         rl.draw_rectangle_lines(5, 5, 265, 95, rl.BLUE)

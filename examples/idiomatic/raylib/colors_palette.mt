@@ -64,8 +64,8 @@ def main() -> i32:
         let column = index % grid_columns
         let row = index / grid_columns
         rectangles[index] = rl.Rectangle(
-            x = 20.0 + 110.0 * cast[f32](column),
-            y = 80.0 + 110.0 * cast[f32](row),
+            x = 20.0 + 110.0 * f32<-column,
+            y = 80.0 + 110.0 * f32<-row,
             width = 100.0,
             height = 100.0,
         )
@@ -91,9 +91,9 @@ def main() -> i32:
 
             if rl.is_key_down(rl.KeyboardKey.KEY_SPACE) or hovered[index]:
                 rl.draw_rectangle(
-                    cast[i32](rectangle.x),
-                    cast[i32](rectangle.y + rectangle.height - 26.0),
-                    cast[i32](rectangle.width),
+                    i32<-rectangle.x,
+                    i32<-(rectangle.y + rectangle.height - 26.0),
+                    i32<-rectangle.width,
                     20,
                     rl.BLACK,
                 )
@@ -101,8 +101,8 @@ def main() -> i32:
                 let label = color_names[index]
                 rl.draw_text(
                     label,
-                    cast[i32](rectangle.x + rectangle.width - cast[f32](rl.measure_text(label, 10)) - 12.0),
-                    cast[i32](rectangle.y + rectangle.height - 20.0),
+                    i32<-(rectangle.x + rectangle.width - f32<-rl.measure_text(label, 10) - 12.0),
+                    i32<-(rectangle.y + rectangle.height - 20.0),
                     10,
                     colors[index],
                 )

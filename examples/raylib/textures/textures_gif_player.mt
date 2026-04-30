@@ -29,7 +29,7 @@ def main() -> i32:
 
     var frame_pixels: ptr[u8]
     unsafe:
-        frame_pixels = cast[ptr[u8]](im_scarfy_anim.data)
+        frame_pixels = ptr[u8]<-im_scarfy_anim.data
 
     var next_frame_data_offset = 0
     var current_anim_frame = 0
@@ -48,7 +48,7 @@ def main() -> i32:
 
             next_frame_data_offset = im_scarfy_anim.width * im_scarfy_anim.height * 4 * current_anim_frame
             unsafe:
-                rl.UpdateTexture(tex_scarfy_anim, cast[ptr[void]](frame_pixels + next_frame_data_offset))
+                rl.UpdateTexture(tex_scarfy_anim, ptr[void]<-(frame_pixels + next_frame_data_offset))
 
             frame_counter = 0
 

@@ -21,10 +21,10 @@ def main() -> i32:
     let tex_bunny = rl.load_texture(bunny_path)
     defer rl.unload_texture(tex_bunny)
 
-    let bunnies = heap.must_alloc_zeroed[Bunny](cast[usize](max_bunnies))
+    let bunnies = heap.must_alloc_zeroed[Bunny](usize<-max_bunnies)
     defer heap.release(bunnies)
 
-    var bunnies_view = span[Bunny](data = bunnies, len = cast[usize](max_bunnies))
+    var bunnies_view = span[Bunny](data = bunnies, len = usize<-max_bunnies)
     var bunnies_count = 0
     var paused = false
 
@@ -34,12 +34,12 @@ def main() -> i32:
             while spawn_count < 100:
                 if bunnies_count < max_bunnies:
                     bunnies_view[bunnies_count].position = rl.get_mouse_position()
-                    bunnies_view[bunnies_count].speed.x = cast[f32](rl.get_random_value(-250, 250))
-                    bunnies_view[bunnies_count].speed.y = cast[f32](rl.get_random_value(-250, 250))
+                    bunnies_view[bunnies_count].speed.x = f32<-rl.get_random_value(-250, 250)
+                    bunnies_view[bunnies_count].speed.y = f32<-rl.get_random_value(-250, 250)
                     bunnies_view[bunnies_count].color = rl.Color(
-                        r = cast[u8](rl.get_random_value(50, 240)),
-                        g = cast[u8](rl.get_random_value(80, 240)),
-                        b = cast[u8](rl.get_random_value(100, 240)),
+                        r = u8<-rl.get_random_value(50, 240),
+                        g = u8<-rl.get_random_value(80, 240),
+                        b = u8<-rl.get_random_value(100, 240),
                         a = 255,
                     )
                     bunnies_count += 1
@@ -54,9 +54,9 @@ def main() -> i32:
                 bunnies_view[index].position.x += bunnies_view[index].speed.x * frame_time
                 bunnies_view[index].position.y += bunnies_view[index].speed.y * frame_time
 
-                if bunnies_view[index].position.x + cast[f32](tex_bunny.width) / 2.0 > cast[f32](rl.get_screen_width()) or bunnies_view[index].position.x + cast[f32](tex_bunny.width) / 2.0 < 0.0:
+                if bunnies_view[index].position.x + f32<-tex_bunny.width / 2.0 > f32<-rl.get_screen_width() or bunnies_view[index].position.x + f32<-tex_bunny.width / 2.0 < 0.0:
                     bunnies_view[index].speed.x *= -1.0
-                if bunnies_view[index].position.y + cast[f32](tex_bunny.height) / 2.0 > cast[f32](rl.get_screen_height()) or bunnies_view[index].position.y + cast[f32](tex_bunny.height) / 2.0 - 40.0 < 0.0:
+                if bunnies_view[index].position.y + f32<-tex_bunny.height / 2.0 > f32<-rl.get_screen_height() or bunnies_view[index].position.y + f32<-tex_bunny.height / 2.0 - 40.0 < 0.0:
                     bunnies_view[index].speed.y *= -1.0
 
         rl.begin_drawing()
@@ -65,7 +65,7 @@ def main() -> i32:
         rl.clear_background(rl.RAYWHITE)
 
         for index in range(0, bunnies_count):
-            rl.draw_texture(tex_bunny, cast[i32](bunnies_view[index].position.x), cast[i32](bunnies_view[index].position.y), bunnies_view[index].color)
+            rl.draw_texture(tex_bunny, i32<-bunnies_view[index].position.x, i32<-bunnies_view[index].position.y, bunnies_view[index].color)
 
         rl.draw_rectangle(0, 0, screen_width, 40, rl.BLACK)
         rl.draw_text(rl.text_format_i32("bunnies: %i", bunnies_count), 120, 10, 20, rl.GREEN)

@@ -16,14 +16,14 @@ def main() -> i32:
 
     var box_a = rl.Rectangle(
         x = 10.0,
-        y = cast[f32](rl.GetScreenHeight()) / 2.0 - 50.0,
+        y = f32<-rl.GetScreenHeight() / 2.0 - 50.0,
         width = 200.0,
         height = 100.0,
     )
     var box_a_speed_x: f32 = 4.0
     var box_b = rl.Rectangle(
-        x = cast[f32](rl.GetScreenWidth()) / 2.0 - 30.0,
-        y = cast[f32](rl.GetScreenHeight()) / 2.0 - 30.0,
+        x = f32<-rl.GetScreenWidth() / 2.0 - 30.0,
+        y = f32<-rl.GetScreenHeight() / 2.0 - 30.0,
         width = 60.0,
         height = 60.0,
     )
@@ -37,15 +37,15 @@ def main() -> i32:
         if not pause:
             box_a.x += box_a_speed_x
 
-        let screen_width_f = cast[f32](rl.GetScreenWidth())
-        let screen_height_f = cast[f32](rl.GetScreenHeight())
-        let screen_upper_limit_f = cast[f32](screen_upper_limit)
+        let screen_width_f = f32<-rl.GetScreenWidth()
+        let screen_height_f = f32<-rl.GetScreenHeight()
+        let screen_upper_limit_f = f32<-screen_upper_limit
 
         if box_a.x + box_a.width >= screen_width_f or box_a.x <= 0.0:
             box_a_speed_x *= -1.0
 
-        box_b.x = cast[f32](rl.GetMouseX()) - box_b.width / 2.0
-        box_b.y = cast[f32](rl.GetMouseY()) - box_b.height / 2.0
+        box_b.x = f32<-rl.GetMouseX() - box_b.width / 2.0
+        box_b.y = f32<-rl.GetMouseY() - box_b.height / 2.0
 
         if box_b.x + box_b.width >= screen_width_f:
             box_b.x = screen_width_f - box_b.width
@@ -81,7 +81,7 @@ def main() -> i32:
         if collision:
             rl.DrawRectangleRec(box_collision, rl.LIME)
             rl.DrawText(collision_text, rl.GetScreenWidth() / 2 - rl.MeasureText(collision_text, 20) / 2, screen_upper_limit / 2 - 10, 20, rl.BLACK)
-            let collision_area = cast[i32](box_collision.width) * cast[i32](box_collision.height)
+            let collision_area = i32<-box_collision.width * i32<-box_collision.height
             rl.DrawText(rl.TextFormat(collision_area_format, collision_area), rl.GetScreenWidth() / 2 - 100, screen_upper_limit + 10, 20, rl.BLACK)
 
         rl.DrawText(pause_text, 20, screen_height - 35, 20, rl.LIGHTGRAY)

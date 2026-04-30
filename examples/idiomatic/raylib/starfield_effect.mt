@@ -18,15 +18,15 @@ def main() -> i32:
     var screen_positions = zero[array[rl.Vector2, 420]]()
 
     for index in range(0, star_count):
-        stars[index].x = cast[f32](rl.get_random_value(-screen_width / 2, screen_width / 2))
-        stars[index].y = cast[f32](rl.get_random_value(-screen_height / 2, screen_height / 2))
+        stars[index].x = f32<-rl.get_random_value(-screen_width / 2, screen_width / 2)
+        stars[index].y = f32<-rl.get_random_value(-screen_height / 2, screen_height / 2)
         stars[index].z = 1.0
 
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
         let mouse_wheel = rl.get_mouse_wheel_move()
-        if cast[i32](mouse_wheel) != 0:
+        if i32<-mouse_wheel != 0:
             speed += 2.0 * mouse_wheel / 9.0
         speed = math.clamp(speed, 0.1, 2.0)
 
@@ -37,13 +37,13 @@ def main() -> i32:
         for index in range(0, star_count):
             stars[index].z -= dt * speed
             screen_positions[index] = rl.Vector2(
-                x = cast[f32](screen_width) * 0.5 + stars[index].x / stars[index].z,
-                y = cast[f32](screen_height) * 0.5 + stars[index].y / stars[index].z,
+                x = f32<-screen_width * 0.5 + stars[index].x / stars[index].z,
+                y = f32<-screen_height * 0.5 + stars[index].y / stars[index].z,
             )
 
-            if stars[index].z < 0.0 or screen_positions[index].x < 0.0 or screen_positions[index].y < 0.0 or screen_positions[index].x > cast[f32](screen_width) or screen_positions[index].y > cast[f32](screen_height):
-                stars[index].x = cast[f32](rl.get_random_value(-screen_width / 2, screen_width / 2))
-                stars[index].y = cast[f32](rl.get_random_value(-screen_height / 2, screen_height / 2))
+            if stars[index].z < 0.0 or screen_positions[index].x < 0.0 or screen_positions[index].y < 0.0 or screen_positions[index].x > f32<-screen_width or screen_positions[index].y > f32<-screen_height:
+                stars[index].x = f32<-rl.get_random_value(-screen_width / 2, screen_width / 2)
+                stars[index].y = f32<-rl.get_random_value(-screen_height / 2, screen_height / 2)
                 stars[index].z = 1.0
 
         rl.begin_drawing()
@@ -56,8 +56,8 @@ def main() -> i32:
                 let t = math.clamp(stars[index].z + 1.0 / 32.0, 0.0, 1.0)
                 if t - stars[index].z > 0.001:
                     let start_position = rl.Vector2(
-                        x = cast[f32](screen_width) * 0.5 + stars[index].x / t,
-                        y = cast[f32](screen_height) * 0.5 + stars[index].y / t,
+                        x = f32<-screen_width * 0.5 + stars[index].x / t,
+                        y = f32<-screen_height * 0.5 + stars[index].y / t,
                     )
                     rl.draw_line_v(start_position, screen_positions[index], rl.RAYWHITE)
             else:

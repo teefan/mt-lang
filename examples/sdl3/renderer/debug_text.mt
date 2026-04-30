@@ -6,7 +6,7 @@ const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/renderer/debug-text"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const hello_text: cstr = c"Hello world!"
 const body_text: cstr = c"This is some debug text."
 const color_text: cstr = c"You can do it in different colors."
@@ -27,7 +27,7 @@ def pump_events() -> bool:
     return true
 
 def render_frame() -> void:
-    let charsize = cast[i32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
+    let charsize = i32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
@@ -45,7 +45,7 @@ def render_frame() -> void:
     c.SDL_SetRenderScale(renderer, 1.0, 1.0)
     c.SDL_RenderDebugText(renderer, 64.0, 350.0, emoji_text)
 
-    c.SDL_RenderDebugTextFormat(renderer, cast[f32](window_width - (charsize * 46)) / 2.0, 400.0, timer_format, c.SDL_GetTicks() / 1000)
+    c.SDL_RenderDebugTextFormat(renderer, f32<-(window_width - (charsize * 46)) / 2.0, 400.0, timer_format, c.SDL_GetTicks() / 1000)
     c.SDL_RenderPresent(renderer)
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:

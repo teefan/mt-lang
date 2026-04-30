@@ -5,7 +5,7 @@ import std.c.sdl3 as c
 const window_width: i32 = 640
 const window_height: i32 = 480
 const window_title: cstr = c"examples/input/joystick-polling"
-const window_flags: u64 = cast[u64](c.SDL_WINDOW_RESIZABLE)
+const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 const color_count: i32 = 64
 const joystick_size: f32 = 30.0
 
@@ -49,12 +49,12 @@ def render_frame() -> void:
 
     if joystick != null:
         var total = c.SDL_GetNumJoystickAxes(joystick)
-        y = (cast[f32](winh) - (cast[f32](total) * joystick_size)) / 2.0
-        x = cast[f32](winw) / 2.0
+        y = (f32<-winh - (f32<-total * joystick_size)) / 2.0
+        x = f32<-winw / 2.0
 
         for index in range(0, total):
             let color_index = index % color_count
-            let value = cast[f32](c.SDL_GetJoystickAxis(joystick, index)) / 32767.0
+            let value = f32<-c.SDL_GetJoystickAxis(joystick, index) / 32767.0
             let dx = x + (value * x)
             var dst = c.SDL_FRect(x = dx, y = y, w = x - c.SDL_fabsf(dx), h = joystick_size)
             c.SDL_SetRenderDrawColor(renderer, colors[color_index].r, colors[color_index].g, colors[color_index].b, colors[color_index].a)
@@ -62,7 +62,7 @@ def render_frame() -> void:
             y += joystick_size
 
         total = c.SDL_GetNumJoystickButtons(joystick)
-        x = (cast[f32](winw) - (cast[f32](total) * joystick_size)) / 2.0
+        x = (f32<-winw - (f32<-total * joystick_size)) / 2.0
 
         for index in range(0, total):
             let color_index = index % color_count
@@ -79,13 +79,13 @@ def render_frame() -> void:
             x += joystick_size
 
         total = c.SDL_GetNumJoystickHats(joystick)
-        x = ((cast[f32](winw) - (cast[f32](total) * (joystick_size * 2.0))) / 2.0) + (joystick_size / 2.0)
-        y = cast[f32](winh) - joystick_size
+        x = ((f32<-winw - (f32<-total * (joystick_size * 2.0))) / 2.0) + (joystick_size / 2.0)
+        y = f32<-winh - joystick_size
 
         for index in range(0, total):
             let color_index = index % color_count
             let third_size = joystick_size / 3.0
-            let hat = cast[u32](c.SDL_GetJoystickHat(joystick, index))
+            let hat = u32<-c.SDL_GetJoystickHat(joystick, index)
             var cross = zero[array[c.SDL_FRect, 2]]()
 
             cross[0].x = x
@@ -119,9 +119,9 @@ def render_frame() -> void:
 
             x += joystick_size * 2.0
 
-    let text_width = cast[f32](c.SDL_strlen(text) * cast[usize](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE))
-    x = (cast[f32](winw) - text_width) / 2.0
-    y = (cast[f32](winh) - cast[f32](c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)) / 2.0
+    let text_width = f32<-(c.SDL_strlen(text) * usize<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
+    x = (f32<-winw - text_width) / 2.0
+    y = (f32<-winh - f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) / 2.0
     c.SDL_SetRenderDrawColor(renderer, 255, 255, 255, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderDebugText(renderer, x, y, text)
     c.SDL_RenderPresent(renderer)
@@ -139,9 +139,9 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     defer c.SDL_DestroyWindow(window)
 
     for index in range(0, color_count):
-        colors[index].r = cast[c.Uint8](c.SDL_rand(255))
-        colors[index].g = cast[c.Uint8](c.SDL_rand(255))
-        colors[index].b = cast[c.Uint8](c.SDL_rand(255))
+        colors[index].r = c.Uint8<-c.SDL_rand(255)
+        colors[index].g = c.Uint8<-c.SDL_rand(255)
+        colors[index].b = c.Uint8<-c.SDL_rand(255)
         colors[index].a = c.SDL_ALPHA_OPAQUE
 
     while pump_events():

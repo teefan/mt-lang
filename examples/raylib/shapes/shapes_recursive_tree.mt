@@ -19,7 +19,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let start_position = rl.Vector2(x = screen_width / 2.0 - 125.0, y = cast[f32](screen_height))
+    let start_position = rl.Vector2(x = screen_width / 2.0 - 125.0, y = f32<-screen_height)
     var angle: f32 = 40.0
     var thick: f32 = 1.0
     var tree_depth: f32 = 10.0
@@ -31,7 +31,7 @@ def main() -> i32:
 
     while not rl.WindowShouldClose():
         let theta = angle * mt_math.deg2rad
-        let max_branches = cast[i32](math.powf(2.0, math.floorf(tree_depth)))
+        let max_branches = i32<-math.powf(2.0, math.floorf(tree_depth))
         var branches = zero[array[Branch, 1030]]()
         var count = 0
 

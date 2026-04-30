@@ -38,13 +38,13 @@ def main() -> i32:
         rl.DrawRectangle(500, 0, rl.GetScreenWidth() - 500, rl.GetScreenHeight(), rl.Fade(rl.LIGHTGRAY, 0.3))
 
         if draw_ring:
-            rl.DrawRing(center, inner_radius, outer_radius, start_angle, end_angle, cast[i32](segments), rl.Fade(rl.MAROON, 0.3))
+            rl.DrawRing(center, inner_radius, outer_radius, start_angle, end_angle, i32<-segments, rl.Fade(rl.MAROON, 0.3))
 
         if draw_ring_lines:
-            rl.DrawRingLines(center, inner_radius, outer_radius, start_angle, end_angle, cast[i32](segments), rl.Fade(rl.BLACK, 0.4))
+            rl.DrawRingLines(center, inner_radius, outer_radius, start_angle, end_angle, i32<-segments, rl.Fade(rl.BLACK, 0.4))
 
         if draw_circle_lines:
-            rl.DrawCircleSectorLines(center, outer_radius, start_angle, end_angle, cast[i32](segments), rl.Fade(rl.BLACK, 0.4))
+            rl.DrawCircleSectorLines(center, outer_radius, start_angle, end_angle, i32<-segments, rl.Fade(rl.BLACK, 0.4))
 
         gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 40.0, width = 120.0, height = 20.0), c"StartAngle", rl.TextFormat(c"%.2f", start_angle), raw(addr(start_angle)), -450.0, 450.0)
         gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 70.0, width = 120.0, height = 20.0), c"EndAngle", rl.TextFormat(c"%.2f", end_angle), raw(addr(end_angle)), -450.0, 450.0)
@@ -56,9 +56,9 @@ def main() -> i32:
         gui.GuiCheckBox(gui.Rectangle(x = 600.0, y = 350.0, width = 20.0, height = 20.0), c"Draw RingLines", raw(addr(draw_ring_lines)))
         gui.GuiCheckBox(gui.Rectangle(x = 600.0, y = 380.0, width = 20.0, height = 20.0), c"Draw CircleLines", raw(addr(draw_circle_lines)))
 
-        let min_segments = cast[i32](math.ceilf((end_angle - start_angle) / 90.0))
-        let mode = if segments >= cast[f32](min_segments) then manual_mode else auto_mode
-        let mode_color = if segments >= cast[f32](min_segments) then rl.MAROON else rl.DARKGRAY
+        let min_segments = i32<-math.ceilf((end_angle - start_angle) / 90.0)
+        let mode = if segments >= f32<-min_segments then manual_mode else auto_mode
+        let mode_color = if segments >= f32<-min_segments then rl.MAROON else rl.DARKGRAY
         rl.DrawText(rl.TextFormat(mode_format, mode), 600, 270, 10, mode_color)
 
         rl.DrawFPS(10, 10)

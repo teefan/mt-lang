@@ -14,7 +14,7 @@ const window_title: cstr = c"raylib [models] example - animation gpu skinning"
 
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
-        return cast[cstr](text)
+        return cstr<-text
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
@@ -68,7 +68,7 @@ def main() -> i32:
 
         let anim = model_animation(anims, anim_index)
         anim_current_frame = (anim_current_frame + 1) % anim.keyframeCount
-        rl.UpdateModelAnimation(model, anim, cast[f32](anim_current_frame))
+        rl.UpdateModelAnimation(model, anim, f32<-anim_current_frame)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

@@ -29,14 +29,14 @@ def main() -> i32:
     for index in range(0, max_particles):
         mouse_tail[index].position = rl.Vector2(x = 0.0, y = 0.0)
         mouse_tail[index].color = rl.Color(
-            r = cast[u8](rl.get_random_value(0, 255)),
-            g = cast[u8](rl.get_random_value(0, 255)),
-            b = cast[u8](rl.get_random_value(0, 255)),
+            r = u8<-rl.get_random_value(0, 255),
+            g = u8<-rl.get_random_value(0, 255),
+            b = u8<-rl.get_random_value(0, 255),
             a = 255,
         )
         mouse_tail[index].alpha = 1.0
-        mouse_tail[index].size = cast[f32](rl.get_random_value(1, 30)) / 20.0
-        mouse_tail[index].rotation = cast[f32](rl.get_random_value(0, 360))
+        mouse_tail[index].size = f32<-rl.get_random_value(1, 30) / 20.0
+        mouse_tail[index].rotation = f32<-rl.get_random_value(0, 360)
         mouse_tail[index].active = false
 
     let smoke = rl.load_texture(smoke_path)
@@ -80,11 +80,11 @@ def main() -> i32:
         for index in range(0, max_particles):
             if mouse_tail[index].active:
                 let particle = mouse_tail[index]
-                let width = cast[f32](smoke.width) * particle.size
-                let height = cast[f32](smoke.height) * particle.size
+                let width = f32<-smoke.width * particle.size
+                let height = f32<-smoke.height * particle.size
                 rl.draw_texture_pro(
                     smoke,
-                    rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](smoke.width), height = cast[f32](smoke.height)),
+                    rl.Rectangle(x = 0.0, y = 0.0, width = f32<-smoke.width, height = f32<-smoke.height),
                     rl.Rectangle(x = particle.position.x, y = particle.position.y, width = width, height = height),
                     rl.Vector2(x = width / 2.0, y = height / 2.0),
                     particle.rotation,

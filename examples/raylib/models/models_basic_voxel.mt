@@ -14,7 +14,7 @@ def voxel_index(x: i32, y: i32, z: i32) -> i32:
     return x * world_size * world_size + y * world_size + z
 
 def voxel_position(x: i32, y: i32, z: i32) -> rl.Vector3:
-    return rl.Vector3(x = cast[f32](x), y = cast[f32](y), z = cast[f32](z))
+    return rl.Vector3(x = f32<-x, y = f32<-y, z = f32<-z)
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -43,7 +43,7 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         rl.UpdateCamera(raw(addr(camera)), rl.CameraMode.CAMERA_FIRST_PERSON)
 
-        if rl.IsMouseButtonPressed(cast[i32](rl.MouseButton.MOUSE_BUTTON_LEFT)):
+        if rl.IsMouseButtonPressed(i32<-rl.MouseButton.MOUSE_BUTTON_LEFT):
             let screen_center = rl.Vector2(x = rl.GetScreenWidth() / 2.0, y = rl.GetScreenHeight() / 2.0)
             let ray = rl.GetScreenToWorldRay(screen_center, camera)
 

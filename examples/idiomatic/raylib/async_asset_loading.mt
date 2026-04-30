@@ -35,7 +35,7 @@ def texture_from_png_bytes(data: bytes.Buffer) -> rl.Texture2D:
     defer scratch.release()
 
     let view = bytes.as_span(data)
-    let image = rl.load_image_from_memory(scratch.to_cstr(".png"), view.data, cast[i32](view.len))
+    let image = rl.load_image_from_memory(scratch.to_cstr(".png"), view.data, i32<-view.len)
     if not rl.is_image_valid(image):
         panic("raylib could not decode png bytes")
 
@@ -50,7 +50,7 @@ def sound_from_wav_bytes(data: bytes.Buffer) -> rl.Sound:
     defer scratch.release()
 
     let view = bytes.as_span(data)
-    let wave = rl.load_wave_from_memory(scratch.to_cstr(".wav"), view.data, cast[i32](view.len))
+    let wave = rl.load_wave_from_memory(scratch.to_cstr(".wav"), view.data, i32<-view.len)
     if not rl.is_wave_valid(wave):
         panic("raylib could not decode wav bytes")
 

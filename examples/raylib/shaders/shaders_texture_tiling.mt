@@ -34,13 +34,13 @@ def main() -> i32:
     let texture = rl.LoadTexture(texture_path)
     defer rl.UnloadTexture(texture)
 
-    rl.SetMaterialTexture(model.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
+    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     var tiling = array[f32, 2](3.0, 3.0)
     let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
-    rl.SetTextureWrap(texture, cast[i32](rl.TextureWrap.TEXTURE_WRAP_REPEAT))
+    rl.SetTextureWrap(texture, i32<-rl.TextureWrap.TEXTURE_WRAP_REPEAT)
     rl.SetShaderValue(shader, rl.GetShaderLocation(shader, tiling_uniform_name), raw(addr(tiling[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
     set_model_shader(raw(addr(model)), shader)
 

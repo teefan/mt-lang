@@ -84,10 +84,10 @@ def main() -> i32:
         rl.DrawText(pan_text, 320, 74, 10, rl.DARKBLUE)
         rl.DrawRectangle(300, 100, 200, 12, rl.LIGHTGRAY)
         rl.DrawRectangleLines(300, 100, 200, 12, rl.GRAY)
-        rl.DrawRectangle(cast[i32](300.0 + ((pan + 1.0) / 2.0) * 200.0 - 5.0), 92, 10, 28, rl.DARKGRAY)
+        rl.DrawRectangle(i32<-(300.0 + ((pan + 1.0) / 2.0) * 200.0 - 5.0), 92, 10, 28, rl.DARKGRAY)
 
         rl.DrawRectangle(200, 200, 400, 12, rl.LIGHTGRAY)
-        rl.DrawRectangle(200, 200, cast[i32](time_played * 400.0), 12, rl.MAROON)
+        rl.DrawRectangle(200, 200, i32<-(time_played * 400.0), 12, rl.MAROON)
         rl.DrawRectangleLines(200, 200, 400, 12, rl.GRAY)
 
         rl.DrawText(restart_text, 215, 250, 20, rl.LIGHTGRAY)
@@ -96,6 +96,6 @@ def main() -> i32:
         rl.DrawText(volume_text, 320, 334, 10, rl.DARKGREEN)
         rl.DrawRectangle(300, 360, 200, 12, rl.LIGHTGRAY)
         rl.DrawRectangleLines(300, 360, 200, 12, rl.GRAY)
-        rl.DrawRectangle(cast[i32](300.0 + volume * 200.0 - 5.0), 352, 10, 28, rl.DARKGRAY)
+        rl.DrawRectangle(i32<-(300.0 + volume * 200.0 - 5.0), 352, 10, 28, rl.DARKGRAY)
 
     return 0

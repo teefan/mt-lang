@@ -23,10 +23,10 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        let time = cast[f32](rl.GetTime())
+        let time = f32<-rl.GetTime()
         let scale = (2.0 + rm.sin(time)) * 0.7
         let camera_time = time * 0.3
-        let half_blocks = cast[f32](num_blocks) / 2.0
+        let half_blocks = f32<-num_blocks / 2.0
 
         camera.position.x = rm.cos(camera_time) * 40.0
         camera.position.z = rm.sin(camera_time) * 40.0
@@ -42,14 +42,14 @@ def main() -> i32:
         for x in range(0, num_blocks):
             for y in range(0, num_blocks):
                 for z in range(0, num_blocks):
-                    let block_scale = cast[f32](x + y + z) / 30.0
+                    let block_scale = f32<-(x + y + z) / 30.0
                     let scatter = rm.sin(block_scale * 20.0 + time * 4.0)
                     let cube_pos = rl.Vector3(
-                        x = (cast[f32](x) - half_blocks) * (scale * 3.0) + scatter,
-                        y = (cast[f32](y) - half_blocks) * (scale * 2.0) + scatter,
-                        z = (cast[f32](z) - half_blocks) * (scale * 3.0) + scatter,
+                        x = (f32<-x - half_blocks) * (scale * 3.0) + scatter,
+                        y = (f32<-y - half_blocks) * (scale * 2.0) + scatter,
+                        z = (f32<-z - half_blocks) * (scale * 3.0) + scatter,
                     )
-                    let cube_color = rl.ColorFromHSV(cast[f32](((x + y + z) * 18) % 360), 0.75, 0.9)
+                    let cube_color = rl.ColorFromHSV(f32<-(((x + y + z) * 18) % 360), 0.75, 0.9)
                     let cube_size = (2.4 - scale) * block_scale
                     rl.DrawCube(cube_pos, cube_size, cube_size, cube_size, cube_color)
 

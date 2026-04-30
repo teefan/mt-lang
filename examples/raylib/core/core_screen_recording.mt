@@ -14,7 +14,7 @@ def half_screen_height() -> f32:
     return 0.5 * screen_height
 
 def horizontal_step() -> f32:
-    return cast[f32](rl.GetScreenWidth()) / cast[f32](180)
+    return f32<-rl.GetScreenWidth() / f32<-180
 
 def sine_factor() -> f32:
     return (2.0 * rl.PI / 1.5)
@@ -32,8 +32,8 @@ def main() -> i32:
     var sine_points = zero[array[rl.Vector2, 256]]()
     var point_index = 0
     while point_index < max_sinewave_points:
-        sine_points[point_index].x = cast[f32](point_index) * horizontal_step()
-        sine_points[point_index].y = half_screen_height() + 150.0 * math.sinf(sine_factor() * (1.0 / 60.0) * cast[f32](point_index))
+        sine_points[point_index].x = f32<-point_index * horizontal_step()
+        sine_points[point_index].y = half_screen_height() + 150.0 * math.sinf(sine_factor() * (1.0 / 60.0) * f32<-point_index)
         point_index += 1
 
     rl.SetTargetFPS(60)
@@ -51,7 +51,7 @@ def main() -> i32:
             if gif_recording:
                 gif_recording = false
                 let result = gif.msf_gif_end(raw(addr(gif_state)))
-                rl.SaveFileData(rl.TextFormat(c"%s/screenrecording.gif", rl.GetApplicationDirectory()), result.data, cast[i32](result.dataSize))
+                rl.SaveFileData(rl.TextFormat(c"%s/screenrecording.gif", rl.GetApplicationDirectory()), result.data, i32<-result.dataSize)
                 gif.msf_gif_free(result)
                 rl.TraceLog(rl.TraceLogLevel.LOG_INFO, c"Finish animated GIF recording")
             else:
@@ -67,8 +67,8 @@ def main() -> i32:
                 unsafe:
                     gif.msf_gif_frame(
                         raw(addr(gif_state)),
-                        cast[ptr[u8]](image_screen.data),
-                        cast[i32]((1.0 / 60.0) * gif_record_framerate) / 10,
+                        ptr[u8]<-image_screen.data,
+                        i32<-((1.0 / 60.0) * gif_record_framerate) / 10,
                         16,
                         image_screen.width * 4,
                     )

@@ -56,7 +56,7 @@ def main() -> i32:
 
     let texture = rl.LoadTexture(texture_path)
     defer rl.UnloadTexture(texture)
-    rl.SetMaterialTexture(model.materials, cast[i32](rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO), texture)
+    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let shader_names = array[cstr, max_postpro_shaders](
         c"GRAYSCALE",
@@ -128,7 +128,7 @@ def main() -> i32:
         rl.BeginShaderMode(shaders[current_shader])
         rl.DrawTextureRec(
             target.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = cast[f32](target.texture.width), height = -cast[f32](target.texture.height)),
+            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-target.texture.width, height = -f32<-target.texture.height),
             rl.Vector2(x = 0.0, y = 0.0),
             rl.WHITE,
         )
