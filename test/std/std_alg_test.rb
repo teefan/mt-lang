@@ -37,7 +37,7 @@ class MilkTeaStdAlgTest < Minitest::Test
       "        return 3",
       "    if not alg.all[i32](items, positive):",
       "        return 4",
-      "    let total = cast[i32](found_index) + cast[i32](alg.count_if[i32](items, even))",
+      "    let total = i32<-found_index + i32<-alg.count_if[i32](items, even)",
       "    return total",
       "",
     ].join("\n")
@@ -77,7 +77,7 @@ class MilkTeaStdAlgTest < Minitest::Test
       "        return 1",
       "",
       "    alg.sort[i32](target, less_i32)",
-      "    let total = target[0] + target[1] * 2 + target[2] * 3 + target[3] * 4 + cast[i32](copied)",
+      "    let total = target[0] + target[1] * 2 + target[2] * 3 + target[3] * 4 + i32<-copied",
       "    return total",
       "",
     ].join("\n")

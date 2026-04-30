@@ -7,28 +7,28 @@ import std.option as option
 pub def cstr_len(text: cstr) -> usize:
     var count: usize = 0
     unsafe:
-        let data = cast[ptr[char]](text)
+        let data = ptr[char]<-text
         while deref(data + count) != zero[char]():
             count += 1
     return count
 
 pub def cstr_as_str(text: cstr) -> str:
     unsafe:
-        return str(data = cast[ptr[char]](text), len = cstr_len(text))
+        return str(data = ptr[char]<-text, len = cstr_len(text))
 
 pub def chars_as_str(text: ptr[char]) -> str:
     unsafe:
-        return str(data = text, len = cstr_len(cast[cstr](text)))
+        return str(data = text, len = cstr_len(cstr<-text))
 
 pub def utf8_continuation_byte(byte: u8) -> bool:
-    return (byte & cast[u8](0xC0)) == cast[u8](0x80)
+    return (byte & u8<-0xC0) == u8<-0x80
 
 def utf8_boundary(text: str, index: usize) -> bool:
     if index == 0 or index == text.len:
         return true
 
     unsafe:
-        let byte = cast[u8](deref(text.data + index))
+        let byte = u8<-deref(text.data + index)
         return not utf8_continuation_byte(byte)
 
 pub def byte_at(text: str, index: usize) -> u8:
@@ -36,7 +36,7 @@ pub def byte_at(text: str, index: usize) -> u8:
         panic(c"str.byte_at index out of bounds")
 
     unsafe:
-        return cast[u8](deref(text.data + index))
+        return u8<-deref(text.data + index)
 
 pub def equal(left: str, right: str) -> bool:
     if left.len != right.len:
@@ -96,50 +96,50 @@ pub def is_valid_utf8(text: str) -> bool:
     var index: usize = 0
     while index < text.len:
         let first = byte_at(text, index)
-        if first < cast[u8](0x80):
+        if first < u8<-0x80:
             index += 1
-        elif first >= cast[u8](0xC2) and first <= cast[u8](0xDF):
+        elif first >= u8<-0xC2 and first <= u8<-0xDF:
             if index + 1 >= text.len or not utf8_continuation_byte(byte_at(text, index + 1)):
                 return false
             index += 2
-        elif first == cast[u8](0xE0):
+        elif first == u8<-0xE0:
             if index + 2 >= text.len:
                 return false
             let second = byte_at(text, index + 1)
-            if second < cast[u8](0xA0) or second > cast[u8](0xBF) or not utf8_continuation_byte(byte_at(text, index + 2)):
+            if second < u8<-0xA0 or second > u8<-0xBF or not utf8_continuation_byte(byte_at(text, index + 2)):
                 return false
             index += 3
-        elif first >= cast[u8](0xE1) and first <= cast[u8](0xEC):
+        elif first >= u8<-0xE1 and first <= u8<-0xEC:
             if index + 2 >= text.len or not utf8_continuation_byte(byte_at(text, index + 1)) or not utf8_continuation_byte(byte_at(text, index + 2)):
                 return false
             index += 3
-        elif first == cast[u8](0xED):
+        elif first == u8<-0xED:
             if index + 2 >= text.len:
                 return false
             let second = byte_at(text, index + 1)
-            if second < cast[u8](0x80) or second > cast[u8](0x9F) or not utf8_continuation_byte(byte_at(text, index + 2)):
+            if second < u8<-0x80 or second > u8<-0x9F or not utf8_continuation_byte(byte_at(text, index + 2)):
                 return false
             index += 3
-        elif first >= cast[u8](0xEE) and first <= cast[u8](0xEF):
+        elif first >= u8<-0xEE and first <= u8<-0xEF:
             if index + 2 >= text.len or not utf8_continuation_byte(byte_at(text, index + 1)) or not utf8_continuation_byte(byte_at(text, index + 2)):
                 return false
             index += 3
-        elif first == cast[u8](0xF0):
+        elif first == u8<-0xF0:
             if index + 3 >= text.len:
                 return false
             let second = byte_at(text, index + 1)
-            if second < cast[u8](0x90) or second > cast[u8](0xBF) or not utf8_continuation_byte(byte_at(text, index + 2)) or not utf8_continuation_byte(byte_at(text, index + 3)):
+            if second < u8<-0x90 or second > u8<-0xBF or not utf8_continuation_byte(byte_at(text, index + 2)) or not utf8_continuation_byte(byte_at(text, index + 3)):
                 return false
             index += 4
-        elif first >= cast[u8](0xF1) and first <= cast[u8](0xF3):
+        elif first >= u8<-0xF1 and first <= u8<-0xF3:
             if index + 3 >= text.len or not utf8_continuation_byte(byte_at(text, index + 1)) or not utf8_continuation_byte(byte_at(text, index + 2)) or not utf8_continuation_byte(byte_at(text, index + 3)):
                 return false
             index += 4
-        elif first == cast[u8](0xF4):
+        elif first == u8<-0xF4:
             if index + 3 >= text.len:
                 return false
             let second = byte_at(text, index + 1)
-            if second < cast[u8](0x80) or second > cast[u8](0x8F) or not utf8_continuation_byte(byte_at(text, index + 2)) or not utf8_continuation_byte(byte_at(text, index + 3)):
+            if second < u8<-0x80 or second > u8<-0x8F or not utf8_continuation_byte(byte_at(text, index + 2)) or not utf8_continuation_byte(byte_at(text, index + 3)):
                 return false
             index += 4
         else:

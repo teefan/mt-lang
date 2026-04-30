@@ -315,7 +315,7 @@ def load_texture(path: str) -> Result[Texture, LoadError]:
 ```mt
 unsafe:
 	let p = pixels + offset
-	let pixel = deref(cast[ptr[u32]](p))
+	let pixel = deref(ptr[u32]<-p)
 ```
 
 The point is not to forbid sharp tools. The point is to mark them.
@@ -523,12 +523,12 @@ No user-defined operator overloading.
 
 ### Casts
 
-Conversions are explicit.
+Conversions are explicit. Prefer `T<-expr` in ordinary code; `cast[T](expr)` remains available when the call form is clearer or required.
 
 ```mt
-let count64 = cast[u64](count32)
-let value = cast[f32](raw)
-let newline = cast[char](10)
+let count64 = u64<-count32
+let value = f32<-raw
+let newline = char<-10
 ```
 
 For bit reinterpretation, use a separate form inside `unsafe`:
@@ -543,17 +543,17 @@ This is limited to `+ - * / % == != < <= > >=` and does not change assignment, r
 Non-extern call boundaries remain strict, but extern calls may pass enum or flags values to same-width fixed-width integer parameters without an explicit cast for C ABI interop.
 Mixed signed and unsigned integers still require an explicit cast.
 
-`char` stays outside the general numeric-promotion rules. If code wants arithmetic on a character value, cast it to an integer type first. If code wants to write bytes back into a `char` buffer, either use an explicit `cast[char](...)` or rely on the expected `char` boundary where a known `char` target is being initialized or assigned.
+`char` stays outside the general numeric-promotion rules. If code wants arithmetic on a character value, cast it to an integer type first. If code wants to write bytes back into a `char` buffer, either use `char<-...` explicitly or rely on the expected `char` boundary where a known `char` target is being initialized or assigned.
 
 Example:
 
 ```mt
-let newline = cast[char](10)
+let newline = char<-10
 
 unsafe:
 	buffer[0] = 65
 	buffer[1] = newline
-	let code = cast[i32](buffer[0])
+	let code = i32<-buffer[0]
 ```
 
 ### Literals
@@ -687,7 +687,7 @@ Rules for raw pointers:
 - pointer arithmetic and pointer indexing remain `unsafe`.
 - raw pointer offsets and indices may use ordinary integer expressions directly; code does not need a pre-emptive cast to `usize` just to write `ptr[i]` or `ptr + offset`.
 - pointer comparison is explicit and never treated as boolean truthiness.
-- `ptr[char]` is the ordinary representation for mutable C text and byte-oriented FFI buffers; writing control bytes such as NUL or newline uses `char` values, typically spelled with `cast[char](0)` and `cast[char](10)`.
+- `ptr[char]` is the ordinary representation for mutable C text and byte-oriented FFI buffers; writing control bytes such as NUL or newline uses `char` values, typically spelled with `char<-0` and `char<-10`.
 - imported foreign declarations may project ABI-identical pointer forms at the boundary. A raw `ptr[void]` parameter may surface as `ptr[T]?` or an opaque handle type when the imported declaration says so. Reinterpretation inside user code still requires explicit `cast` and, when dereferenced, `unsafe`.
 
 References are separate from methods:
@@ -930,11 +930,11 @@ pub foreign def get_frame_time() -> f32 = c.GetFrameTime
 
 pub foreign def load_texture(path: str as cstr) -> Texture = c.LoadTexture
 pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
-pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
+pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, i32<-data.len)
 pub foreign def set_shader_value[T](shader: Shader, loc_index: i32, in value: T as const_ptr[void], uniform_type: i32) -> void = c.SetShaderValue
 
-pub foreign def mem_alloc[T](count: usize) -> ptr[T]? = c.MemAlloc(count * cast[u32](sizeof(T)))
-pub foreign def mem_realloc[T](memory: ptr[T]?, count: usize) -> ptr[T]? = c.MemRealloc(memory, count * cast[u32](sizeof(T)))
+pub foreign def mem_alloc[T](count: usize) -> ptr[T]? = c.MemAlloc(count * u32<-sizeof(T))
+pub foreign def mem_realloc[T](memory: ptr[T]?, count: usize) -> ptr[T]? = c.MemRealloc(memory, count * u32<-sizeof(T))
 pub foreign def mem_free[T](memory: ptr[T]?) -> void = c.MemFree(memory)
 ```
 

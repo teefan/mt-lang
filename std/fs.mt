@@ -41,7 +41,7 @@ pub def read_bytes(path: str, scratch: ref[arena.Arena]) -> Result[bytes.Buffer,
         if ch == c.EOF:
             done = true
         else:
-            bytes.push(addr(result), cast[u8](ch))
+            bytes.push(addr(result), u8<-ch)
 
     if c.ferror(file) != 0:
         bytes.release(addr(result))
@@ -62,7 +62,7 @@ pub def read_text(path: str, scratch: ref[arena.Arena]) -> Result[string.String,
     var data = loaded.value
     let view = bytes.as_span(data)
     unsafe:
-        let borrowed = str(data = cast[ptr[char]](view.data), len = view.len)
+        let borrowed = str(data = ptr[char]<-view.data, len = view.len)
         if not text.is_valid_utf8(borrowed):
             bytes.release(addr(data))
             return err(Error.invalid_utf8)
@@ -84,7 +84,7 @@ pub def write_bytes(path: str, data: span[u8], scratch: ref[arena.Arena]) -> Res
     var index: usize = 0
     while index < data.len:
         unsafe:
-            if c.fputc(cast[i32](deref(data.data + index)), file) == c.EOF:
+            if c.fputc(i32<-deref(data.data + index), file) == c.EOF:
                 c.fclose(file)
                 return err(Error.write_failed)
         index += 1
@@ -96,5 +96,5 @@ pub def write_bytes(path: str, data: span[u8], scratch: ref[arena.Arena]) -> Res
 
 pub def write_text(path: str, data: str, scratch: ref[arena.Arena]) -> Result[bool, Error]:
     unsafe:
-        let bytes_view = span[u8](data = cast[ptr[u8]](data.data), len = data.len)
+        let bytes_view = span[u8](data = ptr[u8]<-data.data, len = data.len)
         return write_bytes(path, bytes_view, scratch)

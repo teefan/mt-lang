@@ -36,7 +36,7 @@ class MilkTeaStdStrCollectionsTest < Minitest::Test
       "        return 3",
       "    if str_set.contains(seen, \"module\"):",
       "        return 4",
-      "    let total = token + cast[i32](str_map.count[i32](symbols)) + cast[i32](str_set.count(seen))",
+      "    let total = token + i32<-str_map.count[i32](symbols) + i32<-str_set.count(seen)",
       "    return total",
       "",
     ].join("\n")

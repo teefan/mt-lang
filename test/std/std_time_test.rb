@@ -21,7 +21,7 @@ class MilkTeaStdTimeTest < Minitest::Test
       "    defer scratch.release()",
       "    let formatted = time.format_utc(0, \"%Y-%m-%d\", addr(scratch))",
       "    if not formatted.is_ok:",
-      "        return cast[i32](formatted.error)",
+      "        return i32<-formatted.error",
       "    var stamp = formatted.value",
       "    defer stamp.release()",
       "    let view = stamp.as_str()",
@@ -47,7 +47,7 @@ class MilkTeaStdTimeTest < Minitest::Test
       "        return 19",
       "    if time.hour_12(time.ClockTime(hour = 13, minute = 0, second = 0)) != 1:",
       "        return 20",
-      "    let total = cast[i32](view.len) + 7",
+      "    let total = i32<-view.len + 7",
       "    return total",
       "",
     ].join("\n")

@@ -80,7 +80,7 @@ def slice_token(kind: TokenKind, source: str, start: usize, stop: usize) -> Toke
 
 def byte_at(source: str, index: usize) -> u8:
     unsafe:
-        return cast[u8](deref(source.data + index))
+        return u8<-deref(source.data + index)
 
 def skip_space(lexer: ref[Lexer]) -> void:
     while value(lexer).index < value(lexer).source.len and ascii.is_space(byte_at(value(lexer).source, value(lexer).index)):
@@ -104,21 +104,21 @@ def read_string(lexer: ref[Lexer]) -> Result[Token, Error]:
     let start = value(lexer).index
     while value(lexer).index < value(lexer).source.len:
         let current = byte_at(value(lexer).source, value(lexer).index)
-        if current == cast[u8](34):
+        if current == u8<-34:
             let stop = value(lexer).index
             value(lexer).index += 1
             return ok(slice_token(TokenKind.string_value, value(lexer).source, start, stop))
-        elif current < cast[u8](32):
+        elif current < u8<-32:
             return err(Error.unexpected_char)
-        elif current == cast[u8](92):
+        elif current == u8<-92:
             value(lexer).index += 1
             if value(lexer).index >= value(lexer).source.len:
                 return err(Error.unexpected_end)
 
             let escaped = byte_at(value(lexer).source, value(lexer).index)
-            if escaped == cast[u8](34) or escaped == cast[u8](47) or escaped == cast[u8](92) or escaped == cast[u8](98) or escaped == cast[u8](102) or escaped == cast[u8](110) or escaped == cast[u8](114) or escaped == cast[u8](116):
+            if escaped == u8<-34 or escaped == u8<-47 or escaped == u8<-92 or escaped == u8<-98 or escaped == u8<-102 or escaped == u8<-110 or escaped == u8<-114 or escaped == u8<-116:
                 value(lexer).index += 1
-            elif escaped == cast[u8](117):
+            elif escaped == u8<-117:
                 value(lexer).index += 1
                 var digit_count: usize = 0
                 while digit_count < 4:
@@ -137,21 +137,21 @@ def read_string(lexer: ref[Lexer]) -> Result[Token, Error]:
 
 def read_number(lexer: ref[Lexer]) -> Result[Token, Error]:
     let start = value(lexer).index
-    if byte_at(value(lexer).source, value(lexer).index) == cast[u8](45):
+    if byte_at(value(lexer).source, value(lexer).index) == u8<-45:
         value(lexer).index += 1
         if value(lexer).index >= value(lexer).source.len:
             return err(Error.invalid_number)
 
     let first_digit = byte_at(value(lexer).source, value(lexer).index)
-    if first_digit == cast[u8](48):
+    if first_digit == u8<-48:
         value(lexer).index += 1
-    elif first_digit >= cast[u8](49) and first_digit <= cast[u8](57):
+    elif first_digit >= u8<-49 and first_digit <= u8<-57:
         while value(lexer).index < value(lexer).source.len and ascii.is_digit(byte_at(value(lexer).source, value(lexer).index)):
             value(lexer).index += 1
     else:
         return err(Error.invalid_number)
 
-    if value(lexer).index < value(lexer).source.len and byte_at(value(lexer).source, value(lexer).index) == cast[u8](46):
+    if value(lexer).index < value(lexer).source.len and byte_at(value(lexer).source, value(lexer).index) == u8<-46:
         value(lexer).index += 1
         if value(lexer).index >= value(lexer).source.len or not ascii.is_digit(byte_at(value(lexer).source, value(lexer).index)):
             return err(Error.invalid_number)
@@ -160,11 +160,11 @@ def read_number(lexer: ref[Lexer]) -> Result[Token, Error]:
 
     if value(lexer).index < value(lexer).source.len:
         let exponent = byte_at(value(lexer).source, value(lexer).index)
-        if exponent == cast[u8](101) or exponent == cast[u8](69):
+        if exponent == u8<-101 or exponent == u8<-69:
             value(lexer).index += 1
             if value(lexer).index < value(lexer).source.len:
                 let sign = byte_at(value(lexer).source, value(lexer).index)
-                if sign == cast[u8](43) or sign == cast[u8](45):
+                if sign == u8<-43 or sign == u8<-45:
                     value(lexer).index += 1
             if value(lexer).index >= value(lexer).source.len or not ascii.is_digit(byte_at(value(lexer).source, value(lexer).index)):
                 return err(Error.invalid_number)
@@ -179,28 +179,28 @@ pub def next(lexer: ref[Lexer]) -> Result[Token, Error]:
         return ok(token(TokenKind.eof))
 
     let current = byte_at(value(lexer).source, value(lexer).index)
-    if current == cast[u8](123):
+    if current == u8<-123:
         value(lexer).index += 1
         return ok(token(TokenKind.left_brace))
-    elif current == cast[u8](125):
+    elif current == u8<-125:
         value(lexer).index += 1
         return ok(token(TokenKind.right_brace))
-    elif current == cast[u8](91):
+    elif current == u8<-91:
         value(lexer).index += 1
         return ok(token(TokenKind.left_bracket))
-    elif current == cast[u8](93):
+    elif current == u8<-93:
         value(lexer).index += 1
         return ok(token(TokenKind.right_bracket))
-    elif current == cast[u8](58):
+    elif current == u8<-58:
         value(lexer).index += 1
         return ok(token(TokenKind.colon))
-    elif current == cast[u8](44):
+    elif current == u8<-44:
         value(lexer).index += 1
         return ok(token(TokenKind.comma))
-    elif current == cast[u8](34):
+    elif current == u8<-34:
         value(lexer).index += 1
         return read_string(lexer)
-    elif current == cast[u8](45) or ascii.is_digit(current):
+    elif current == u8<-45 or ascii.is_digit(current):
         return read_number(lexer)
     elif match_keyword(lexer, "true"):
         return ok(token(TokenKind.true_value))
@@ -228,10 +228,10 @@ pub def append_usize(output: ref[string.String], value: usize) -> void:
     return
 
 def append_hex_nibble(output: ref[string.String], nibble: u8) -> void:
-    if nibble < cast[u8](10):
-        value(output).push_byte(cast[u8](48) + nibble)
+    if nibble < u8<-10:
+        value(output).push_byte(u8<-48 + nibble)
     else:
-        value(output).push_byte(cast[u8](65) + (nibble - cast[u8](10)))
+        value(output).push_byte(u8<-65 + (nibble - u8<-10))
     return
 
 pub def append_string(output: ref[string.String], text_value: str) -> void:
@@ -239,24 +239,24 @@ pub def append_string(output: ref[string.String], text_value: str) -> void:
     var index: usize = 0
     while index < text_value.len:
         let byte = byte_at(text_value, index)
-        if byte == cast[u8](34):
+        if byte == u8<-34:
             value(output).append("\\\"")
-        elif byte == cast[u8](92):
+        elif byte == u8<-92:
             value(output).append("\\\\")
-        elif byte == cast[u8](8):
+        elif byte == u8<-8:
             value(output).append("\\b")
-        elif byte == cast[u8](12):
+        elif byte == u8<-12:
             value(output).append("\\f")
-        elif byte == cast[u8](10):
+        elif byte == u8<-10:
             value(output).append("\\n")
-        elif byte == cast[u8](13):
+        elif byte == u8<-13:
             value(output).append("\\r")
-        elif byte == cast[u8](9):
+        elif byte == u8<-9:
             value(output).append("\\t")
-        elif byte < cast[u8](32):
+        elif byte < u8<-32:
             value(output).append("\\u00")
             append_hex_nibble(output, byte >> 4)
-            append_hex_nibble(output, byte & cast[u8](15))
+            append_hex_nibble(output, byte & u8<-15)
         else:
             value(output).push_byte(byte)
         index += 1

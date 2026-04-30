@@ -313,7 +313,7 @@ class MilkTeaBuildTest < Minitest::Test
         "",
         "def main() -> i32:",
         "    let shader = zero[rl.Shader]()",
-        "    let light = lights.CreateLight(cast[i32](lights.LightType.LIGHT_POINT), rl.Vector3(x = 1.0, y = 2.0, z = 3.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.WHITE, shader)",
+        "    let light = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 1.0, y = 2.0, z = 3.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.WHITE, shader)",
         "    if light.enabled:",
         "        rl.DrawSphereEx(light.position, 0.2, 8, 8, light.color)",
         "    lights.UpdateLightValues(shader, light)",

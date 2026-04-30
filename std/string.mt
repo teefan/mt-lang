@@ -47,7 +47,7 @@ methods String:
         var index: usize = 0
         while index < suffix.len:
             unsafe:
-                this.push_byte(cast[u8](deref(suffix.data + index)))
+                this.push_byte(u8<-deref(suffix.data + index))
             index += 1
         return
 
@@ -59,7 +59,7 @@ methods String:
     pub def as_str() -> str:
         let data = bytes.data_ptr(this.buffer)
         unsafe:
-            return str(data = cast[ptr[char]](data), len = bytes.count(this.buffer))
+            return str(data = ptr[char]<-data, len = bytes.count(this.buffer))
 
     pub def to_cstr(space: ref[arena.Arena]) -> cstr:
         return value(space).to_cstr(this.as_str())

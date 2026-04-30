@@ -27,7 +27,7 @@ class MilkTeaStdBytesTest < Minitest::Test
       "    if bytes.capacity(buffer) < 3:",
       "        return 2",
       "",
-      "    let total = cast[i32](bytes.get(buffer, 0)) + cast[i32](bytes.get(buffer, 1)) + cast[i32](bytes.get(buffer, 2))",
+      "    let total = i32<-bytes.get(buffer, 0) + i32<-bytes.get(buffer, 1) + i32<-bytes.get(buffer, 2)",
       "    return total",
       "",
     ].join("\n")
@@ -54,7 +54,7 @@ class MilkTeaStdBytesTest < Minitest::Test
       "    var index: usize = 0",
       "    while index < values.len:",
       "        unsafe:",
-      "            total += cast[i32](deref(values.data + index))",
+      "            total += i32<-deref(values.data + index)",
       "        index += 1",
       "    return total",
       "",

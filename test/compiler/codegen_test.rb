@@ -117,7 +117,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "def main() -> i32:",
       "    let memory = allocate(16)",
       "    unsafe:",
-      "        let advanced = cast[ptr[byte]](memory) + 4",
+      "        let advanced = ptr[byte]<-memory + 4",
       "    release(memory)",
       "    return 0",
       "",
@@ -397,7 +397,7 @@ class MilkTeaCodegenTest < Minitest::Test
         import std.c.raylib as c
 
         pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
-        pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
+        pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, i32<-data.len)
       MT
     }
 
@@ -457,7 +457,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       def main(value: u8, delta: i16, ticks: u64, raw: cstr) -> i32:
           let text = fmt.string(f"value=\#{value} delta=\#{delta} ticks=\#{ticks} raw=\#{raw} ok=\#{true}")
-          return cast[i32](text.count())
+          return i32<-text.count()
     MT
 
     generated = generate_c_from_source(source)
@@ -645,7 +645,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.c.sample as c
 
-        pub foreign def use_names(names: span[str] as span[cstr], inout active: i32) -> i32 = c.UseNames(names.data, cast[i32](names.len), active)
+        pub foreign def use_names(names: span[str] as span[cstr], inout active: i32) -> i32 = c.UseNames(names.data, i32<-names.len, active)
       MT
     }
 
@@ -684,7 +684,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.c.sample as c
 
-        pub foreign def use_names(names: span[str] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, cast[i32](names.len), active)
+        pub foreign def use_names(names: span[str] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, i32<-names.len, active)
       MT
     }
 
@@ -723,7 +723,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.c.sample as c
 
-        pub foreign def use_names(names: span[str] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, cast[i32](names.len), active)
+        pub foreign def use_names(names: span[str] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, i32<-names.len, active)
       MT
     }
 
@@ -765,7 +765,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.c.sample as c
 
-        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, cast[i32](names.len))
+        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, i32<-names.len)
         pub foreign def pair_sum(value: i32) -> i32 = c.PairSum(value, value)
       MT
     }
@@ -834,7 +834,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.c.sample as c
 
-        pub foreign def use_names(names: span[cstr] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, cast[i32](names.len), active)
+        pub foreign def use_names(names: span[cstr] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, i32<-names.len, active)
       MT
     }
 
@@ -1321,7 +1321,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "def main(value: f32, a: i32, b: i32) -> i32:",
       "    let left = i32<-value",
       "    let right = u8<-(a - b)",
-      "    return left + cast[i32](right)",
+      "    return left + i32<-right",
       "",
     ].join("\n")
 
@@ -1499,7 +1499,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    let total = bytes_for[i32](4)",
-      "    return cast[i32](total)",
+      "    return i32<-total",
       "",
     ].join("\n")
 
@@ -1542,7 +1542,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var buffer: str_builder[32]",
-      "    return cast[i32](capacity_of(buffer) + capacity_of(buffer))",
+      "    return i32<-(capacity_of(buffer) + capacity_of(buffer))",
       "",
     ].join("\n")
 
@@ -1562,7 +1562,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var buffer: str_builder[32]",
-      "    return cast[i32](capacity_of[32](buffer))",
+      "    return i32<-capacity_of[32](buffer)",
       "",
     ].join("\n")
 
@@ -1585,7 +1585,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var buffer: str_builder[CAPACITY]",
-      "    return cast[i32](capacity_of[CAPACITY](buffer))",
+      "    return i32<-capacity_of[CAPACITY](buffer)",
       "",
     ].join("\n")
 
@@ -1931,8 +1931,8 @@ class MilkTeaCodegenTest < Minitest::Test
       "    let part = text.slice(6, 5)",
       "    let copied = part.to_cstr(addr(scratch))",
       "    panic(copied)",
-      "    if part.len == cast[usize](5):",
-      "        return cast[i32](part.len)",
+      "    if part.len == usize<-5:",
+      "        return i32<-part.len",
       "    return 0",
       "",
     ].join("\n")
@@ -2060,36 +2060,40 @@ class MilkTeaCodegenTest < Minitest::Test
       "    edit def add(delta: i32):",
       "        this.value += delta",
       "",
+      "    def read() -> i32:",
+      "        return this.value",
+      "",
       "def increment(counter: ref[Counter], amount: i32) -> void:",
-      "    value(counter).add(amount)",
-      "    value(counter).value += 1",
+      "    counter.add(amount)",
+      "    counter.value += 1",
       "",
       "def main() -> i32:",
       "    var counter = Counter(value = 3)",
       "    let handle = addr(counter)",
       "    increment(handle, 4)",
-      "    let value_ref = addr(value(handle).value)",
+      "    let value_ref = addr(handle.value)",
       "    value(value_ref) += 2",
       "    unsafe:",
       "        let raw_counter = raw(handle)",
       "        deref(raw_counter).value += 1",
-      "    return value(handle).value",
+      "    return handle.read()",
       "",
     ].join("\n")
 
     generated = generate_c_from_source(source)
 
     assert_match(/static void demo_ref_surface_Counter_add\(demo_ref_surface_Counter \*this, int32_t delta\)/, generated)
+    assert_match(/static int32_t demo_ref_surface_Counter_read\(demo_ref_surface_Counter this\)/, generated)
     assert_match(/static void demo_ref_surface_increment\(demo_ref_surface_Counter \*counter, int32_t amount\)/, generated)
     assert_match(/demo_ref_surface_Counter \*handle = &counter;/, generated)
     assert_match(/demo_ref_surface_increment\(handle, 4\);/, generated)
     assert_match(/demo_ref_surface_Counter_add\(counter, amount\);/, generated)
-    assert_match(/\(\*counter\)\.value \+= 1;/, generated)
-    assert_match(/int32_t \*value_ref = &\(\*handle\)\.value;/, generated)
+    assert_match(/counter->value \+= 1;/, generated)
+    assert_match(/int32_t \*value_ref = &handle->value;/, generated)
     assert_match(/\*value_ref \+= 2;/, generated)
     assert_match(/demo_ref_surface_Counter \*raw_counter = handle;/, generated)
     assert_match(/\(\*raw_counter\)\.value \+= 1;/, generated)
-    assert_match(/return \(\*handle\)\.value;/, generated)
+    assert_match(/return demo_ref_surface_Counter_read\(\*handle\);/, generated)
   end
 
   def test_generate_c_for_imported_associated_functions_on_type_aliases
@@ -2281,7 +2285,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    var origin = Point()",
       "    var point = Point(x = 5)",
       "    var palette = array[u32, 4](1, 2)",
-      "    return origin.x + point.x + cast[i32](palette[1])",
+      "    return origin.x + point.x + i32<-palette[1]",
       "",
     ].join("\n")
 
@@ -2383,9 +2387,9 @@ class MilkTeaCodegenTest < Minitest::Test
       "    var buffer = zero[array[char, 32]]()",
       "    unsafe:",
       "        let raw_buffer = raw(addr(buffer[0]))",
-      "        set_text(cast[cstr](raw_buffer))",
+      "        set_text(cstr<-raw_buffer)",
       "        let clipboard = get_text()",
-      "        let writable = cast[ptr[char]](clipboard)",
+      "        let writable = ptr[char]<-clipboard",
       "",
     ].join("\n")
 
@@ -2424,7 +2428,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "def main() -> i32:",
       "    var buffer = zero[array[char, 32]]()",
       "    buffer[0] = 65",
-      "    return cast[i32](view(buffer))",
+      "    return i32<-view(buffer)",
       "",
     ].join("\n")
 
@@ -2458,7 +2462,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    var buffer = zero[array[char, 16]]()",
       "    let view = buffer.as_str()",
       "    let label = buffer.as_cstr()",
-      "    return cast[i32](view.len)",
+      "    return i32<-view.len",
       "",
     ].join("\n")
 
@@ -2484,7 +2488,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    let label = buffer.as_cstr()",
       "    let raw = view(buffer)",
       "    buffer.clear()",
-      "    return cast[i32](buffer.capacity() + text.len + raw)",
+      "    return i32<-(buffer.capacity() + text.len + raw)",
       "",
     ].join("\n")
 
@@ -2533,7 +2537,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.c.ui as c
 
-        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.len))
+        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, i32<-text_public.len)
       MT
     }
 
@@ -2566,7 +2570,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.c.ui as c
 
-        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.capacity() + 1))
+        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, i32<-(text_public.capacity() + 1))
       MT
     }
 
@@ -2598,7 +2602,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.c.ui as c
 
-        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.capacity() + 1))
+        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, i32<-(text_public.capacity() + 1))
       MT
     }
 
@@ -2613,7 +2617,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.c.ui as c
 
-      pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.capacity() + 1))
+      pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, i32<-(text_public.capacity() + 1))
 
       def main() -> void:
           var buffer: str_builder[32]
@@ -2743,7 +2747,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.c.ui as c
 
-        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.len))
+        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, i32<-text_public.len)
       MT
     }
 
@@ -2761,7 +2765,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> void:",
       "    unsafe:",
-      "        set_text(cast[cstr](null[ptr[char]]))",
+      "        set_text(cstr<-null[ptr[char]])",
       "",
     ].join("\n")
 
@@ -2778,7 +2782,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    var ptr: ptr[char] = zero[ptr[char]]()",
       "    unsafe:",
       "        ptr[0] = 65",
-      "        ptr[1] = cast[char](66)",
+      "        ptr[1] = char<-66",
       "    return 0",
       "",
     ].join("\n")
@@ -2874,7 +2878,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    let callback: fn(value: f32) -> f32 = entry.callback",
       "    let left = callbacks[0](1)",
       "    let right = callback(1.0)",
-      "    return left + cast[i32](right)",
+      "    return left + i32<-right",
       "",
     ].join("\n")
 
@@ -3105,7 +3109,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    counter = callbacks[0](counter)",
-      "    return counter + cast[i32](scratch[0])",
+      "    return counter + i32<-scratch[0]",
       "",
     ].join("\n")
 

@@ -18,7 +18,7 @@ class MilkTeaStdLibuvTest < Minitest::Test
         "import std.libuv as uv",
         "",
         "def main(argc: i32, argv: ptr[cstr]) -> i32:",
-        "    if uv.version() == cast[u32](0):",
+        "    if uv.version() == u32<-0:",
         "        return 1",
         "    return 0",
         "",

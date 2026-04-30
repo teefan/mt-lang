@@ -693,7 +693,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
                 { name: "file_name", type: "str", boundary_type: "cstr" },
                 { name: "data", type: "span[u8]" },
               ],
-              mapping: "c.SaveData(file_name, data.data, cast[i32](data.len))",
+              mapping: "c.SaveData(file_name, data.data, i32<-data.len)",
             },
             {
               raw: "ReleaseData",
@@ -708,7 +708,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
                 { name: "count", type: "usize" },
               ],
               return_type: "ptr[T]?",
-              mapping: "c.MemAlloc(count * cast[u32](sizeof(T)))",
+              mapping: "c.MemAlloc(count * u32<-sizeof(T))",
             },
           ],
         },
@@ -737,9 +737,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         pub foreign def set_window_size(frame_width: i32, frame_height: i32) -> void = c.SetWindowSize
         pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
         pub foreign def load_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadData
-        pub foreign def save_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveData(file_name, data.data, cast[i32](data.len))
+        pub foreign def save_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveData(file_name, data.data, i32<-data.len)
         pub foreign def release_data(consuming data: ptr[u8]) -> void = c.ReleaseData
-        pub foreign def mem_alloc[T](count: usize) -> ptr[T]? = c.MemAlloc(count * cast[u32](sizeof(T)))
+        pub foreign def mem_alloc[T](count: usize) -> ptr[T]? = c.MemAlloc(count * u32<-sizeof(T))
       MT
 
       generated = binding.generate(module_roots: [dir])

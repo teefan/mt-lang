@@ -41,8 +41,8 @@ pub def create(slot_size_bytes: usize, slot_count: usize) -> Pool:
     )
 
 pub def slot_size_for[T]() -> usize:
-    let size = cast[usize](sizeof(T))
-    let alignment = cast[usize](alignof(T))
+    let size = usize<-sizeof(T)
+    let alignment = usize<-alignof(T)
     let mask = alignment - 1
     if size > heap.usize_max() - mask:
         panic(c"pool.slot_size_for overflow")
@@ -50,8 +50,8 @@ pub def slot_size_for[T]() -> usize:
     return (size + mask) & ~mask
 
 pub def create_for[T](slot_count: usize) -> Pool:
-    let size = cast[usize](sizeof(T))
-    let alignment = cast[usize](alignof(T))
+    let size = usize<-sizeof(T)
+    let alignment = usize<-alignof(T)
     let mask = alignment - 1
     if size > heap.usize_max() - mask:
         panic(c"pool.create_for slot size overflow")
@@ -73,11 +73,11 @@ methods Pool:
         var index: usize = 0
         while index < this.slot_count:
             unsafe:
-                let state_ptr = cast[ptr[bool]](occupancy) + index
+                let state_ptr = ptr[bool]<-occupancy + index
                 if deref(state_ptr) == false:
                     deref(state_ptr) = true
                     this.used_count = this.used_count + 1
-                    return cast[ptr[byte]](memory) + (index * this.slot_size)
+                    return ptr[byte]<-memory + (index * this.slot_size)
             index = index + 1
 
         return null
@@ -96,9 +96,9 @@ methods Pool:
         var index: usize = 0
         while index < this.slot_count:
             unsafe:
-                let candidate = cast[ptr[byte]](memory) + (index * this.slot_size)
-                if candidate == cast[ptr[byte]](slot):
-                    let state_ptr = cast[ptr[bool]](occupancy) + index
+                let candidate = ptr[byte]<-memory + (index * this.slot_size)
+                if candidate == ptr[byte]<-slot:
+                    let state_ptr = ptr[bool]<-occupancy + index
                     if deref(state_ptr) == false:
                         return false
 
@@ -120,8 +120,8 @@ methods Pool:
         return
 
 pub def alloc[T](space: ref[Pool]) -> ptr[T]?:
-    let size = cast[usize](sizeof(T))
-    let alignment = cast[usize](alignof(T))
+    let size = usize<-sizeof(T)
+    let alignment = usize<-alignof(T)
     let mask = alignment - 1
     if size > heap.usize_max() - mask:
         return null
@@ -135,11 +135,11 @@ pub def alloc[T](space: ref[Pool]) -> ptr[T]?:
         return null
 
     unsafe:
-        return cast[ptr[T]](memory)
+        return ptr[T]<-memory
 
 pub def release[T](space: ref[Pool], slot: ptr[T]?) -> bool:
     if slot == null:
         return false
 
     unsafe:
-        return value(space).release_bytes(cast[ptr[byte]](slot))
+        return value(space).release_bytes(ptr[byte]<-slot)

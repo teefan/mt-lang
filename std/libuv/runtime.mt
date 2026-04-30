@@ -36,12 +36,12 @@ pub def failed(status: i32) -> bool:
 def alloc_handle[T](kind: c.uv_handle_type) -> Handle[T]:
     let storage = heap.must_alloc_zeroed_bytes(1, uv.handle_size(kind))
     unsafe:
-        return Handle[T](raw = cast[ptr[T]](storage), storage = storage)
+        return Handle[T](raw = ptr[T]<-storage, storage = storage)
 
 def alloc_request[T](kind: c.uv_req_type) -> Request[T]:
     let storage = heap.must_alloc_zeroed_bytes(1, uv.req_size(kind))
     unsafe:
-        return Request[T](raw = cast[ptr[T]](storage), storage = storage)
+        return Request[T](raw = ptr[T]<-storage, storage = storage)
 
 def release_ipv4_address(address: ref[IPv4Address]) -> void:
     heap.release_bytes(value(address).storage)
@@ -51,7 +51,7 @@ def release_ipv4_address(address: ref[IPv4Address]) -> void:
 def create_ipv4_address(ip: str, port: i32, scratch: ref[arena.Arena]) -> Result[IPv4Address, i32]:
     let storage = heap.must_alloc_zeroed_bytes(1, helper.mt_libuv_sockaddr_in_size())
     unsafe:
-        let raw_addr = cast[ptr[sys.sockaddr_in]](storage)
+        let raw_addr = ptr[sys.sockaddr_in]<-storage
         let status = uv.ip_4_addr(value(scratch).to_cstr(ip), port, raw_addr)
         if failed(status):
             heap.release_bytes(storage)
@@ -60,20 +60,20 @@ def create_ipv4_address(ip: str, port: i32, scratch: ref[arena.Arena]) -> Result
 
 def ipv4_sockaddr(address: IPv4Address) -> ptr[sys.sockaddr]:
     unsafe:
-        return cast[ptr[sys.sockaddr]](address.raw)
+        return ptr[sys.sockaddr]<-address.raw
 
 def ipv4_const_sockaddr(address: IPv4Address) -> const_ptr[sys.sockaddr]:
     unsafe:
-        return cast[const_ptr[sys.sockaddr]](address.raw)
+        return const_ptr[sys.sockaddr]<-address.raw
 
 def byte_buffer(data: span[u8]) -> uv.uv_buf_t:
     unsafe:
-        return uv.buf_init(cast[ptr[char]](data.data), cast[u32](data.len))
+        return uv.buf_init(ptr[char]<-data.data, u32<-data.len)
 
 pub def create_loop() -> Result[Loop, i32]:
     let storage = heap.must_alloc_zeroed_bytes(1, uv.loop_size())
     unsafe:
-        let raw_loop = cast[ptr[uv.uv_loop_t]](storage)
+        let raw_loop = ptr[uv.uv_loop_t]<-storage
         let status = uv.loop_init(raw_loop)
         if failed(status):
             heap.release_bytes(storage)
@@ -118,12 +118,12 @@ pub def handle_release[T](handle: ref[Handle[T]]) -> void:
 
 pub def handle_close[T](handle: Handle[T], close_cb: fn(arg0: ptr[uv.uv_handle_t]) -> void) -> void:
     unsafe:
-        uv.close(cast[ptr[uv.uv_handle_t]](handle.raw), close_cb)
+        uv.close(ptr[uv.uv_handle_t]<-handle.raw, close_cb)
     return
 
 pub def close_raw_handle[T](handle: ptr[T], close_cb: fn(arg0: ptr[uv.uv_handle_t]) -> void) -> void:
     unsafe:
-        uv.close(cast[ptr[uv.uv_handle_t]](handle), close_cb)
+        uv.close(ptr[uv.uv_handle_t]<-handle, close_cb)
     return
 
 pub def handle_close_noop[T](handle: Handle[T]) -> void:
@@ -178,7 +178,7 @@ pub def create_connect_request() -> Request[uv.uv_connect_t]:
 
 pub def tcp_stream(tcp: Handle[uv.uv_tcp_t]) -> ptr[uv.uv_stream_t]:
     unsafe:
-        return cast[ptr[uv.uv_stream_t]](tcp.raw)
+        return ptr[uv.uv_stream_t]<-tcp.raw
 
 pub def tcp_listen(tcp: Handle[uv.uv_tcp_t], backlog: i32, callback: fn(arg0: ptr[uv.uv_stream_t], arg1: i32) -> void) -> i32:
     return uv.listen(tcp_stream(tcp), backlog, callback)
@@ -199,9 +199,9 @@ pub def tcp_bind_ipv4(tcp: Handle[uv.uv_tcp_t], ip: str, port: i32, flags: u32, 
 pub def tcp_local_port(tcp: Handle[uv.uv_tcp_t]) -> Result[i32, i32]:
     let storage = heap.must_alloc_zeroed_bytes(1, helper.mt_libuv_sockaddr_in_size())
     unsafe:
-        let raw_addr = cast[ptr[sys.sockaddr_in]](storage)
-        var name_len: i32 = cast[i32](helper.mt_libuv_sockaddr_in_size())
-        let status = uv.tcp_getsockname(tcp.raw, cast[ptr[sys.sockaddr]](raw_addr), raw(addr(name_len)))
+        let raw_addr = ptr[sys.sockaddr_in]<-storage
+        var name_len: i32 = i32<-helper.mt_libuv_sockaddr_in_size()
+        let status = uv.tcp_getsockname(tcp.raw, ptr[sys.sockaddr]<-raw_addr, raw(addr(name_len)))
         if failed(status):
             heap.release_bytes(storage)
             return err(status)

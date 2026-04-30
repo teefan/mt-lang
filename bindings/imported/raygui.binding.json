@@ -44,7 +44,7 @@
     "overrides": [
       {
         "raw": "GuiSetState",
-        "mapping": "c.GuiSetState(cast[i32](state))",
+        "mapping": "c.GuiSetState(i32<-state)",
         "params": [
           {
             "name": "state",
@@ -54,12 +54,12 @@
       },
       {
         "raw": "GuiGetState",
-        "mapping": "cast[State](c.GuiGetState())",
+        "mapping": "State<-c.GuiGetState()",
         "return_type": "State"
       },
       {
         "raw": "GuiSetStyle",
-        "mapping": "c.GuiSetStyle(cast[i32](control), property, value)",
+        "mapping": "c.GuiSetStyle(i32<-control, property, value)",
         "params": [
           {
             "name": "control",
@@ -77,7 +77,7 @@
       },
       {
         "raw": "GuiGetStyle",
-        "mapping": "c.GuiGetStyle(cast[i32](control), property)",
+        "mapping": "c.GuiGetStyle(i32<-control, property)",
         "params": [
           {
             "name": "control",
@@ -111,7 +111,7 @@
       },
       {
         "raw": "GuiIconText",
-        "mapping": "c.GuiIconText(cast[i32](icon_id), text)",
+        "mapping": "c.GuiIconText(i32<-icon_id, text)",
         "params": [
           {
             "name": "icon_id",
@@ -126,7 +126,7 @@
       },
       {
         "raw": "GuiDrawIcon",
-        "mapping": "c.GuiDrawIcon(cast[i32](icon_id), pos_x, pos_y, pixel_size, color)",
+        "mapping": "c.GuiDrawIcon(i32<-icon_id, pos_x, pos_y, pixel_size, color)",
         "params": [
           {
             "name": "icon_id",
@@ -239,7 +239,7 @@
             "mode": "inout"
           }
         ],
-        "mapping": "c.GuiTabBar(bounds, text.data, cast[i32](text.len), active)"
+        "mapping": "c.GuiTabBar(bounds, text.data, i32<-text.len, active)"
       },
       {
         "raw": "GuiScrollPanel",
@@ -543,7 +543,7 @@
             "type": "bool"
           }
         ],
-        "mapping": "c.GuiTextBox(bounds, text, cast[i32](text_public.capacity() + 1), edit_mode)"
+        "mapping": "c.GuiTextBox(bounds, text, i32<-(text_public.capacity() + 1), edit_mode)"
       },
       {
         "raw": "GuiTextInputBox",
@@ -581,7 +581,7 @@
             "mode": "inout"
           }
         ],
-        "mapping": "c.GuiTextInputBox(bounds, title, message, buttons, text, cast[i32](text_public.capacity() + 1), secret_view_active)"
+        "mapping": "c.GuiTextInputBox(bounds, title, message, buttons, text, i32<-(text_public.capacity() + 1), secret_view_active)"
       },
       {
         "raw": "GuiSlider",
@@ -786,7 +786,7 @@
             "mode": "inout"
           }
         ],
-        "mapping": "c.GuiListViewEx(bounds, text.data, cast[i32](text.len), scroll_index, active, focus)"
+        "mapping": "c.GuiListViewEx(bounds, text.data, i32<-text.len, scroll_index, active, focus)"
       },
       {
         "raw": "GuiMessageBox",

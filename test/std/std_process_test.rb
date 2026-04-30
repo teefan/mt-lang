@@ -35,7 +35,7 @@ class MilkTeaStdProcessTest < Minitest::Test
         "        return 3",
         "    if not text.equal(option.unwrap[str](env_value), \"present\"):",
         "        return 4",
-        "    return cast[i32](process.arg_count(argc)) + cast[i32](option.unwrap[str](first).len) + cast[i32](option.unwrap[str](second).len)",
+        "    return i32<-process.arg_count(argc) + i32<-option.unwrap[str](first).len + i32<-option.unwrap[str](second).len",
         "",
       ].join("\n"))
 
