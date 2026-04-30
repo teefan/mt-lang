@@ -11,7 +11,7 @@ task verify: [:test, *RAW_BINDINGS.check_task_names, *IMPORTED_BINDINGS.check_ta
 desc 'Run all tests'
 Rake::TestTask.new do |t|
   t.libs << 'test'
-  t.pattern = 'test/**/*_test.rb'
+  t.pattern = '{test/compiler,test/tooling,test/std,test/bindings}/**/*_test.rb'
 end
 
 namespace :test do

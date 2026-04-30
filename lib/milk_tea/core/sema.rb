@@ -216,8 +216,13 @@ module MilkTea
 
             field_type = resolve_type_ref(field.type, type_params:)
             validate_stored_ref_type!(field_type, "field #{decl.name}.#{field.name}")
+            if decl.is_a?(AST::UnionDecl) && contains_proc_type?(field_type)
+              raise SemaError, "field #{decl.name}.#{field.name} cannot store proc values in unions yet"
+            end
+            unless proc_storage_supported_type?(field_type)
+              raise SemaError, "field #{decl.name}.#{field.name} uses unsupported proc nesting"
+            end
             fields[field.name] = field_type
-              validate_stored_proc_type!(field_type, "field #{decl.name}.#{field.name}")
           end
 
           struct_type.define_fields(fields)
@@ -257,7 +262,7 @@ module MilkTea
             ensure_available_value_name!(decl.name)
             type = resolve_type_ref(decl.type)
             validate_stored_ref_type!(type, "constant #{decl.name}")
-            validate_stored_proc_type!(type, "constant #{decl.name}")
+            raise SemaError, "constant #{decl.name} cannot store proc values" if contains_proc_type?(type)
             @top_level_values[decl.name] = value_binding(
               name: decl.name,
               type: type,
@@ -270,7 +275,7 @@ module MilkTea
 
             type = resolve_type_ref(decl.type)
             validate_stored_ref_type!(type, "module variable #{decl.name}")
-            validate_stored_proc_type!(type, "module variable #{decl.name}")
+            raise SemaError, "module variable #{decl.name} cannot store proc values" if contains_proc_type?(type)
             @top_level_values[decl.name] = value_binding(
               name: decl.name,
               type: type,
@@ -403,10 +408,6 @@ module MilkTea
         if external && array_type?(body_return_type)
           raise SemaError, "extern function #{decl.name} cannot return arrays"
         end
-        if async_function && call_params.any? { |param| proc_type?(param.type) }
-          raise SemaError, "async function #{decl.name} cannot take proc parameters yet"
-        end
-
         function_return_type = async_function ? Types::Task.new(body_return_type) : body_return_type
 
         function_type = Types::Function.new(
@@ -850,10 +851,6 @@ module MilkTea
         validate_local_ref_type!(final_type, statement.name)
         validate_local_proc_type!(final_type, statement.name, initializer: statement.value)
 
-        if statement.kind == :var && proc_type?(final_type)
-          raise SemaError, "local #{statement.name} cannot be mutable because proc values are not assignable"
-        end
-
         current_scope[statement.name] = value_binding(
           name: statement.name,
           type: final_type,
@@ -867,10 +864,6 @@ module MilkTea
 
         validate_consuming_foreign_expression!(statement.value, scopes:, root_allowed: false)
         value_type = infer_expression(statement.value, scopes:, expected_type: target_type)
-
-        if proc_type?(target_type) || proc_type?(value_type)
-          raise SemaError, "proc values cannot be assigned; bind them once and borrow them by name"
-        end
 
         case statement.operator
         when "="
@@ -1419,9 +1412,6 @@ module MilkTea
       end
 
       def infer_proc_expression(expression, scopes:, expected_type: nil)
-        raise SemaError, "proc expressions are only allowed in local initializers" unless proc_expression_allowed?
-        raise SemaError, "proc expressions are not supported inside async functions yet" if inside_async_function?
-
         proc_type = resolve_type_ref(AST::ProcType.new(params: expression.params, return_type: expression.return_type))
         if expected_type && !proc_type_compatible?(proc_type, expected_type)
           raise SemaError, "proc expression expects #{proc_type}, got #{expected_type}"
@@ -3635,33 +3625,72 @@ module MilkTea
         raise SemaError, "#{context} cannot store ref types" if contains_ref_type?(type)
       end
 
-      def contains_proc_type?(type)
+      def contains_proc_type?(type, visited = {})
+        return false unless type
+
+        visit_key = "#{type.class.name}:#{type}"
+        return false if visited[visit_key]
+
+        visited[visit_key] = true
         case type
         when Types::Nullable
-          contains_proc_type?(type.base)
+          contains_proc_type?(type.base, visited)
         when Types::GenericInstance
-          type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_proc_type?(argument) }
+          if type.name == "array" && type.arguments.first && !type.arguments.first.is_a?(Types::LiteralTypeArg)
+            contains_proc_type?(type.arguments.first, visited)
+          else
+            false
+          end
         when Types::Span
-          contains_proc_type?(type.element_type)
+          contains_proc_type?(type.element_type, visited)
         when Types::Result
-          contains_proc_type?(type.ok_type) || contains_proc_type?(type.error_type)
+          contains_proc_type?(type.ok_type, visited) || contains_proc_type?(type.error_type, visited)
         when Types::Task
-          contains_proc_type?(type.result_type)
+          contains_proc_type?(type.result_type, visited)
         when Types::StructInstance
-          type.arguments.any? { |argument| contains_proc_type?(argument) }
+          type.arguments.any? { |argument| contains_proc_type?(argument, visited) }
+        when Types::Struct, Types::Union
+          type.fields.each_value.any? { |field_type| contains_proc_type?(field_type, visited) }
         when Types::Proc
           true
         when Types::Function
-          type.params.any? { |param| contains_proc_type?(param.type) } ||
-            contains_proc_type?(type.return_type) ||
-            (type.receiver_type && contains_proc_type?(type.receiver_type))
+          type.params.any? { |param| contains_proc_type?(param.type, visited) } ||
+            contains_proc_type?(type.return_type, visited) ||
+            (type.receiver_type && contains_proc_type?(type.receiver_type, visited))
         else
           false
         end
+      ensure
+        visited.delete(visit_key)
+      end
+
+      def proc_storage_supported_type?(type, visited = {})
+        return true unless contains_proc_type?(type)
+
+        visit_key = "#{type.class.name}:#{type}"
+        return true if visited[visit_key]
+
+        visited[visit_key] = true
+        case type
+        when Types::Proc
+          true
+        when Types::Struct
+          type.fields.each_value.all? { |field_type| proc_storage_supported_type?(field_type, visited) }
+        when Types::StructInstance
+          type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) || proc_storage_supported_type?(argument, visited) }
+        when Types::Nullable
+          proc_storage_supported_type?(type.base, visited)
+        else
+          false
+        end
+      ensure
+        visited.delete(visit_key)
       end
 
       def validate_stored_proc_type!(type, context)
-        raise SemaError, "#{context} cannot store proc values" if contains_proc_type?(type)
+        if contains_proc_type?(type)
+          raise SemaError, "#{context} cannot store proc values" unless proc_storage_supported_type?(type)
+        end
       end
 
       def validate_parameter_ref_type!(type, function_name:, parameter_name:, external:)
@@ -3675,13 +3704,11 @@ module MilkTea
       end
 
       def validate_parameter_proc_type!(type, function_name:, parameter_name:, external:, foreign:)
-        if proc_type?(type)
+        if contains_proc_type?(type)
           raise SemaError, "extern function #{function_name} cannot take proc parameters" if external
           raise SemaError, "foreign function #{function_name} cannot take proc parameters" if foreign
-          return
+          raise SemaError, "parameter #{parameter_name} of #{function_name} uses unsupported proc nesting" unless proc_storage_supported_type?(type)
         end
-
-        raise SemaError, "parameter #{parameter_name} of #{function_name} cannot nest proc types" if contains_proc_type?(type)
       end
 
       def validate_return_ref_type!(type, function_name:)
@@ -3689,7 +3716,9 @@ module MilkTea
       end
 
       def validate_return_proc_type!(type, function_name:)
-        raise SemaError, "function #{function_name} cannot return proc values" if contains_proc_type?(type)
+        if contains_proc_type?(type)
+          raise SemaError, "function #{function_name} uses unsupported proc nesting in return type" unless proc_storage_supported_type?(type)
+        end
       end
 
       def validate_local_ref_type!(type, local_name)
@@ -3699,13 +3728,9 @@ module MilkTea
       end
 
       def validate_local_proc_type!(type, local_name, initializer:)
-        if proc_type?(type)
-          raise SemaError, "local #{local_name} with proc type must be initialized from a proc expression" unless initializer.is_a?(AST::ProcExpr)
+        return unless contains_proc_type?(type)
 
-          return
-        end
-
-        raise SemaError, "local #{local_name} cannot store nested proc types" if contains_proc_type?(type)
+        raise SemaError, "local #{local_name} uses unsupported proc nesting" unless proc_storage_supported_type?(type)
       end
 
       def validate_consuming_foreign_parameter!(type, function_name:, parameter_name:)

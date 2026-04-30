@@ -2923,7 +2923,154 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/typedef struct demo_proc_codegen__proc_1__env/, generated)
     assert_match(/malloc\(sizeof\(demo_proc_codegen__proc_1__env\)\)/, generated)
     assert_match(/\.invoke = demo_proc_codegen__proc_1__invoke/, generated)
+    assert_match(/\.release = demo_proc_codegen__proc_1__release/, generated)
+    assert_match(/\.retain = demo_proc_codegen__proc_1__retain/, generated)
     assert_match(/callback\.invoke\(callback\.env, value\)/, generated)
+  end
+
+  def test_generate_c_for_proc_return_and_struct_field
+    source = [
+      "module demo.proc_surface",
+      "",
+      "struct Holder:",
+      "    callback: proc(value: i32) -> i32",
+      "",
+      "def factory(offset: i32) -> proc(value: i32) -> i32:",
+      "    return proc(value: i32) -> i32:",
+      "        return value + offset",
+      "",
+      "def call(holder: Holder, value: i32) -> i32:",
+      "    return holder.callback(value)",
+      "",
+      "def main() -> i32:",
+      "    let cb = factory(2)",
+      "    let holder = Holder(callback = cb)",
+      "    return call(holder, 40)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/typedef struct demo_proc_surface_Holder/, generated)
+    assert_match(/cb\.retain\(cb\.env\);/, generated)
+    assert_match(/holder\.callback\.invoke\(holder\.callback\.env, value\)/, generated)
+    assert_match(/holder\.callback\.release\(holder\.callback\.env\);/, generated)
+  end
+
+  def test_generate_c_for_async_proc_param_lifecycle
+    source = [
+      "module demo.async_proc_lifecycle",
+      "",
+      "async def run(callback: proc(value: i32) -> i32) -> i32:",
+      "    return callback(1)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    # Constructor must retain the proc param so the frame outlives the caller's copy.
+    assert_match(/param_callback\.retain\(__mt_frame->param_callback\.env\)/, generated)
+    # Release function must null-guard release the proc param field before freeing the frame.
+    assert_match(/if \(__mt_frame->param_callback\.invoke\)/, generated)
+    assert_match(/__mt_frame->param_callback\.release\(__mt_frame->param_callback\.env\)/, generated)
+  end
+
+  def test_generate_c_for_async_proc_local_lifecycle
+    source = [
+      "module demo.async_proc_local",
+      "",
+      "async def run(offset: i32) -> i32:",
+      "    let callback = proc(value: i32) -> i32:",
+      "        return value + offset",
+      "    return callback(1)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    # Local proc stored in frame; no extra retain (frame owns freshly-allocated env).
+    # Release function must null-guard release the local proc field before freeing the frame.
+    assert_match(/if \(__mt_frame->local_callback\.invoke\)/, generated)
+    assert_match(/__mt_frame->local_callback\.release\(__mt_frame->local_callback\.env\)/, generated)
+  end
+
+  def test_generate_c_for_proc_assignment_lifecycle
+    source = [
+      "module demo.proc_assign_lifecycle",
+      "",
+      "struct Holder:",
+      "    callback: proc(value: i32) -> i32",
+      "",
+      "def main() -> i32:",
+      "    let ca = proc(value: i32) -> i32:",
+      "        return value + 1",
+      "    let cb = proc(value: i32) -> i32:",
+      "        return value + 2",
+      "    let a = Holder(callback = ca)",
+      "    var b = Holder(callback = cb)",
+      "    b = a",
+      "    return b.callback(1)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    # Struct assignment retain: ca is an existing proc value (not a direct proc expr in the assignment RHS),
+    # so it gets retained for b's ownership.
+    assert_match(/__mt_proc_assign_\d+\.callback\.retain\(__mt_proc_assign_\d+\.callback\.env\)/, generated)
+    # Old b.callback released (guarded) before overwrite.
+    assert_match(/if \(b\.callback\.invoke\)/, generated)
+    assert_match(/b\.callback\.release\(b\.callback\.env\)/, generated)
+    # Deferred cleanup uses null-guarded release on all proc-containing locals.
+    assert_match(/if \(a\.callback\.invoke\)/, generated)
+    assert_match(/a\.callback\.release\(a\.callback\.env\)/, generated)
+  end
+
+  def test_generate_c_for_proc_field_assignment_lifecycle
+    source = [
+      "module demo.proc_field_assign",
+      "",
+      "struct Holder:",
+      "    callback: proc(value: i32) -> i32",
+      "",
+      "def main() -> i32:",
+      "    let ca = proc(value: i32) -> i32:",
+      "        return value + 1",
+      "    var h = Holder(callback = ca)",
+      "    let cb = proc(value: i32) -> i32:",
+      "        return value + 2",
+      "    h.callback = cb",
+      "    return h.callback(1)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    # h.callback = cb: cb is an existing proc (let cb = ..., not a direct proc expr in the field assignment).
+    # Retain is emitted, old field is released.
+    assert_match(/__mt_proc_assign_\d+\.retain\(__mt_proc_assign_\d+\.env\)/, generated)
+    assert_match(/if \(h\.callback\.invoke\)/, generated)
+    assert_match(/h\.callback\.release\(h\.callback\.env\)/, generated)
+  end
+
+  def test_generate_c_for_proc_var_reassign_lifecycle
+    source = [
+      "module demo.proc_var_reassign",
+      "",
+      "def main() -> i32:",
+      "    var callback = proc(value: i32) -> i32:",
+      "        return value + 1",
+      "    callback = proc(value: i32) -> i32:",
+      "        return value + 2",
+      "    return callback(0)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    # Reassignment with a fresh proc expr: no retain (transfer ownership), but old callback is released.
+    assert_match(/if \(callback\.invoke\)/, generated)
+    assert_match(/callback\.release\(callback\.env\)/, generated)
   end
 
   def test_generate_c_for_module_scope_mutable_vars
