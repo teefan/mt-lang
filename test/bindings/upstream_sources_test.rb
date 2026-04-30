@@ -8,6 +8,17 @@ require_relative "../test_helper"
 require_relative "../../lib/milk_tea/bindings"
 
 class MilkTeaUpstreamSourcesTest < Minitest::Test
+  def test_default_sources_include_pinned_cjson_checkout
+    sources = MilkTea::UpstreamSources.default_sources
+    cjson = sources.find { |source| source.name == "cjson" }
+
+    refute_nil cjson
+    assert_includes cjson.checkout_root.to_s, "/third_party/cjson-upstream"
+    assert_equal "https://github.com/DaveGamble/cJSON.git", cjson.repository_url
+    assert_equal "c859b25da02955fef659d658b8f324b5cde87be3", cjson.revision
+    assert_equal %w[cJSON.h cJSON.c], cjson.sentinel_paths
+  end
+
   def test_source_bootstrap_clones_missing_checkout_at_pinned_revision
     skip "git not available" unless executable_available?("git")
 

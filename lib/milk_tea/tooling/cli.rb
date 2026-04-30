@@ -36,8 +36,6 @@ module MilkTea
         deps_command
       when "bindgen"
         bindgen_command
-      when "raylib-manifest"
-        raylib_manifest_command
       else
         print_usage(@err)
         1
@@ -209,30 +207,6 @@ module MilkTea
       0
     end
 
-    def raylib_manifest_command
-      examples_root = @argv.shift
-      unless examples_root
-        @err.puts("missing raylib examples root path")
-        print_usage(@err)
-        return 1
-      end
-
-      options = parse_output_only_options("raylib-manifest")
-      return 1 unless options
-
-      manifest = RaylibExamplesManifest.generate_json(examples_root)
-      output_path = options.fetch(:output_path)
-
-      if output_path
-        FileUtils.mkdir_p(File.dirname(File.expand_path(output_path)))
-        File.write(output_path, manifest)
-        @out.puts("generated #{examples_root} -> #{output_path}")
-      else
-        @out.write(manifest)
-      end
-      0
-    end
-
     def parse_build_options
       options = {
         output_path: nil,
@@ -316,27 +290,6 @@ module MilkTea
       options
     end
 
-    def parse_output_only_options(command_name)
-      options = { output_path: nil }
-
-      until @argv.empty?
-        option = @argv.shift
-        case option
-        when "-o", "--output"
-          value = @argv.shift
-          return missing_option_value(option) unless value
-
-          options[:output_path] = value
-        else
-          @err.puts("unknown #{command_name} option #{option}")
-          print_usage(@err)
-          return nil
-        end
-      end
-
-      options
-    end
-
     def missing_option_value(option)
       @err.puts("missing value for #{option}")
       print_usage(@err)
@@ -348,7 +301,7 @@ module MilkTea
     end
 
     def handled_error_classes
-      classes = [LexError, ParseError, ModuleLoadError, SemaError, LoweringError, BuildError, RunError, RaylibExamplesError]
+      classes = [LexError, ParseError, ModuleLoadError, SemaError, LoweringError, BuildError, RunError]
       classes << BindgenError if MilkTea.const_defined?(:BindgenError, false)
       classes << UpstreamSources::Error if MilkTea.const_defined?(:UpstreamSources, false)
       classes
@@ -372,7 +325,6 @@ module MilkTea
       io.puts("       mtc run PATH [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH]")
       io.puts("       mtc deps bootstrap")
       io.puts("       mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
-      io.puts("       mtc raylib-manifest EXAMPLES_ROOT [-o OUTPUT]")
     end
   end
 end

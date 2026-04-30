@@ -4,6 +4,8 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaExamplesBuildTest < Minitest::Test
+  GLSL_VERSIONS = %w[100 120 330].freeze
+
   def test_raylib_examples_build_with_host_compiler
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
@@ -91,7 +93,7 @@ class MilkTeaExamplesBuildTest < Minitest::Test
   end
 
   def expand_raylib_resource_path(resource_relative_path)
-    return MilkTea::RaylibExamplesManifest::GLSL_VERSIONS.map do |version|
+    return GLSL_VERSIONS.map do |version|
       resource_relative_path.gsub("glsl%i", "glsl#{version}")
     end if resource_relative_path.include?("glsl%i")
 

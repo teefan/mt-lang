@@ -8,7 +8,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raygui rlights rlgl msf_gif libc sdl3 box2d libuv libuv_runtime], registry.map(&:name)
+    assert_equal %w[raylib raygui rlights rlgl msf_gif libc sdl3 box2d cjson libuv libuv_runtime], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -96,6 +96,15 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_includes registry.fetch("box2d").link_flags, "-L#{MilkTea::VendoredBox2D.archive_path.dirname}"
     assert_includes registry.fetch("box2d").link_flags, "-lm"
     assert_equal ["b2", "B2_"], registry.fetch("box2d").declaration_name_prefixes
+    assert_equal "std.c.cjson", registry.fetch("cjson").module_name
+    assert_equal ["cjson"], registry.fetch("cjson").link_libraries
+    assert_includes registry.fetch("cjson").header_candidates.first, "third_party/cjson-upstream/cJSON.h"
+    assert_includes registry.fetch("cjson").link_flags, "-L#{MilkTea::VendoredCJSON.archive_path.dirname}"
+    assert_includes registry.fetch("cjson").link_flags, "-lm"
+    assert_equal ["cJSON", "CJSON_"], registry.fetch("cjson").declaration_name_prefixes
+    assert_equal "ptr[cJSON]?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_Parse")
+    assert_equal "ptr[char]?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_Print")
+    assert_equal "cstr?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_GetErrorPtr")
     assert_equal "std.c.libuv", registry.fetch("libuv").module_name
     assert_equal ["uv"], registry.fetch("libuv").link_libraries
     assert_equal ["-D_GNU_SOURCE"], registry.fetch("libuv").compiler_flags

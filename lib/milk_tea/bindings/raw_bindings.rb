@@ -212,6 +212,7 @@ module MilkTea
       vendored_sdl3 = MilkTea::VendoredSDL3
       vendored_sdl3_library = vendored_sdl3.library
       vendored_box2d = MilkTea::VendoredBox2D
+      vendored_cjson = MilkTea::VendoredCJSON
 
       raylib_field_type_overrides = {
         "Mesh" => { "indices" => "ptr[u16]?" },
@@ -438,6 +439,48 @@ module MilkTea
           declaration_name_prefixes: ["b2", "B2_"],
           header_candidates: [
             vendored_box2d.header_root.join("box2d.h").to_s,
+          ],
+        ),
+        Binding.new(
+          name: "cjson",
+          module_name: "std.c.cjson",
+          binding_path: root.join("std/c/cjson.mt"),
+          include_directives: ["cJSON.h"],
+          link_libraries: ["cjson"],
+          vendored_library: vendored_cjson.library,
+          declaration_name_prefixes: ["cJSON", "CJSON_"],
+          function_return_type_overrides: {
+            "cJSON_Parse" => "ptr[cJSON]?",
+            "cJSON_ParseWithLength" => "ptr[cJSON]?",
+            "cJSON_ParseWithOpts" => "ptr[cJSON]?",
+            "cJSON_ParseWithLengthOpts" => "ptr[cJSON]?",
+            "cJSON_Print" => "ptr[char]?",
+            "cJSON_PrintUnformatted" => "ptr[char]?",
+            "cJSON_PrintBuffered" => "ptr[char]?",
+            "cJSON_GetErrorPtr" => "cstr?",
+            "cJSON_GetStringValue" => "cstr?",
+            "cJSON_GetArrayItem" => "ptr[cJSON]?",
+            "cJSON_GetObjectItem" => "ptr[cJSON]?",
+            "cJSON_GetObjectItemCaseSensitive" => "ptr[cJSON]?",
+            "cJSON_DetachItemViaPointer" => "ptr[cJSON]?",
+            "cJSON_DetachItemFromArray" => "ptr[cJSON]?",
+            "cJSON_DetachItemFromObject" => "ptr[cJSON]?",
+            "cJSON_DetachItemFromObjectCaseSensitive" => "ptr[cJSON]?",
+            "cJSON_CreateNull" => "ptr[cJSON]?",
+            "cJSON_CreateTrue" => "ptr[cJSON]?",
+            "cJSON_CreateFalse" => "ptr[cJSON]?",
+            "cJSON_CreateBool" => "ptr[cJSON]?",
+            "cJSON_CreateNumber" => "ptr[cJSON]?",
+            "cJSON_CreateString" => "ptr[cJSON]?",
+            "cJSON_CreateRaw" => "ptr[cJSON]?",
+            "cJSON_CreateArray" => "ptr[cJSON]?",
+            "cJSON_CreateObject" => "ptr[cJSON]?",
+            "cJSON_CreateStringReference" => "ptr[cJSON]?",
+            "cJSON_CreateObjectReference" => "ptr[cJSON]?",
+            "cJSON_CreateArrayReference" => "ptr[cJSON]?",
+          },
+          header_candidates: [
+            vendored_cjson.source_root.join("cJSON.h").to_s,
           ],
         ),
         Binding.new(

@@ -9,7 +9,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "box2d", "libuv"], registry.map(&:name)
+    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "libuv"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -34,6 +34,11 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_equal "std.c.box2d", registry.fetch("box2d").raw_module_name
     assert_includes registry.fetch("box2d").binding_path, "/std/box2d.mt"
     assert_includes registry.fetch("box2d").policy_path, "/bindings/imported/box2d.binding.json"
+
+    assert_equal "std.cjson", registry.fetch("cjson").module_name
+    assert_equal "std.c.cjson", registry.fetch("cjson").raw_module_name
+    assert_includes registry.fetch("cjson").binding_path, "/std/cjson.mt"
+    assert_includes registry.fetch("cjson").policy_path, "/bindings/imported/cjson.binding.json"
 
     assert_equal "std.libuv", registry.fetch("libuv").module_name
     assert_equal "std.c.libuv", registry.fetch("libuv").raw_module_name
@@ -127,6 +132,27 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub foreign def create_body\(world_id: WorldId, in body_def: BodyDef\) -> BodyId = c\.b2CreateBody$/, source)
     assert_match(/^pub foreign def create_polygon_shape\(body_id: BodyId, in shape_def: ShapeDef, in polygon: Polygon\) -> ShapeId = c\.b2CreatePolygonShape$/, source)
     assert_match(/^pub foreign def world_draw\(world_id: WorldId, inout draw: DebugDraw\) -> void = c\.b2World_Draw$/, source)
+  end
+
+  def test_checked_in_cjson_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("cjson")
+
+    assert_includes binding.check!, "/std/c/cjson.mt"
+
+    source = File.read(binding.binding_path)
+    assert_match(/^module std\.cjson$/, source)
+    assert_match(/^import std\.c\.cjson as c$/, source)
+    assert_match(/^pub type JSON = c\.cJSON$/, source)
+    assert_match(/^pub type Hooks = c\.cJSON_Hooks$/, source)
+    assert_match(/^pub type Bool = c\.cJSON_bool$/, source)
+    assert_match(/^pub const VERSION_MAJOR: i32 = c\.CJSON_VERSION_MAJOR$/, source)
+    assert_match(/^pub foreign def parse\(value: str as cstr\) -> ptr\[JSON\]\? = c\.cJSON_Parse$/, source)
+    assert_match(/^pub foreign def parse_with_length\(value: str as cstr, buffer_length: usize\) -> ptr\[JSON\]\? = c\.cJSON_ParseWithLength$/, source)
+    assert_match(/^pub foreign def get_object_item\(object: const_ptr\[JSON\], string: str as cstr\) -> ptr\[JSON\]\? = c\.cJSON_GetObjectItem$/, source)
+    assert_match(/^pub foreign def add_string_to_object\(object: ptr\[JSON\], name: str as cstr, string: str as cstr\) -> ptr\[JSON\] = c\.cJSON_AddStringToObject$/, source)
+    refute_match(/^pub foreign def cjson_parse\(/, source)
+    refute_match(/^pub foreign def malloc\(/, source)
+    refute_match(/^pub foreign def free\(/, source)
   end
 
   def test_generate_rejects_extra_source_policy_escape_hatch
@@ -308,7 +334,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
 
   def test_imported_bindings_outside_raylib_and_rlgl_do_not_expose_raw_ptr_void
     offending_bindings = MilkTea::ImportedBindings.default_registry.reject do |binding|
-      %w[raylib rlgl sdl3 box2d libuv].include?(binding.name)
+      %w[raylib rlgl sdl3 box2d cjson libuv].include?(binding.name)
     end.filter_map do |binding|
       binding.name if File.read(binding.binding_path).match?(/\bptr\[void\]\b/)
     end
