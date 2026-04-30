@@ -169,7 +169,7 @@ def resize_render_size(viewport_type: ViewportType, screen_width: ref[i32], scre
     let current_target = value(target)
     if current_target.id != 0:
         rl.UnloadRenderTexture(current_target)
-    value(target) = rl.LoadRenderTexture(i32<-value(source_rect).width, -i32<-value(source_rect).height)
+    value(target) = rl.LoadRenderTexture(i32<-source_rect.width, -i32<-source_rect.height)
     return
 
 def screen_to_render_texture_position(point: rl.Vector2, texture_rect: rl.Rectangle, scaled_rect: rl.Rectangle) -> rl.Vector2:

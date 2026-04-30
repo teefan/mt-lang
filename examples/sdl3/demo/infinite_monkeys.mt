@@ -39,9 +39,9 @@ def free_lines() -> void:
         for index in range(0, rows):
             unsafe:
                 let line = line_storage + usize<-index
-                heap.release(deref(line).text)
-                deref(line).text = null
-                deref(line).length = 0
+                heap.release(line.text)
+                line.text = null
+                line.length = 0
 
         heap.release(line_storage)
         lines = null
@@ -73,8 +73,8 @@ def on_window_size_changed() -> void:
     for index in range(0, rows):
         unsafe:
             let line = line_storage + usize<-index
-            deref(line).text = heap.must_alloc_zeroed[u32](usize<-cols)
-            deref(line).length = 0
+            line.text = heap.must_alloc_zeroed[u32](usize<-cols)
+            line.length = 0
 
     monkey_chars.text = heap.must_alloc_zeroed[u32](usize<-cols)
     monkey_chars.length = cols
@@ -100,8 +100,8 @@ def display_line(x: f32, y: f32, line: ptr[Line]) -> void:
     var line_text: ptr[u32]? = null
 
     unsafe:
-        line_length = deref(line).length
-        line_text = deref(line).text
+        line_length = line.length
+        line_text = line.text
 
     if line_length <= 0:
         return
@@ -146,7 +146,7 @@ def advance_row() -> void:
 
     unsafe:
         let line = line_storage + usize<-(row % rows)
-        deref(line).length = 0
+        line.length = 0
 
 def add_monkey_char(monkey: i32, ch: u32) -> void:
     let monkey_text = monkey_chars.text
@@ -161,13 +161,13 @@ def add_monkey_char(monkey: i32, ch: u32) -> void:
         else:
             unsafe:
                 let line = line_storage + usize<-(row % rows)
-                let line_text = deref(line).text
-                let line_length = deref(line).length
+                let line_text = line.text
+                let line_length = line.length
 
                 if line_text != null and line_length < cols:
                     deref(line_text + usize<-line_length) = ch
-                    deref(line).length = line_length + 1
-                    if deref(line).length == cols:
+                    line.length = line_length + 1
+                    if line.length == cols:
                         advance_row()
 
     step_progress()

@@ -13,7 +13,7 @@ const window_title: cstr = c"raylib [shaders] example - model shader"
 
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
-        deref(model).materials[0].shader = shader
+        model.materials[0].shader = shader
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

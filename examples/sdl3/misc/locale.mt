@@ -50,11 +50,11 @@ def render_frame() -> void:
                 if locale == null:
                     break
 
-                let country_ptr = ptr[char]?<-deref(locale).country
+                let country_ptr = ptr[char]?<-locale.country
                 let separator = if country_ptr != null then c"_" else c""
                 let country = if country_ptr != null then cstr<-country_ptr else c""
 
-                c.SDL_snprintf(raw(addr(msgbuf[0])), 128, c" - %s%s%s", deref(locale).language, separator, country)
+                c.SDL_snprintf(raw(addr(msgbuf[0])), 128, c" - %s%s%s", locale.language, separator, country)
 
                 let x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msg))) / 2.0)
                 let y = frame.y + (f32<-(c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2) * f32<-(index + 1))

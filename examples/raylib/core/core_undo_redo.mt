@@ -46,15 +46,15 @@ def initialize_states(states: ref[array[PlayerState, 26]], player: PlayerState) 
     return
 
 def clamp_player(player: ref[PlayerState]) -> void:
-    if value(player).cell.x < 0:
-        value(player).cell.x = 0
-    elif value(player).cell.x >= max_grid_cells_x:
-        value(player).cell.x = max_grid_cells_x - 1
+    if player.cell.x < 0:
+        player.cell.x = 0
+    elif player.cell.x >= max_grid_cells_x:
+        player.cell.x = max_grid_cells_x - 1
 
-    if value(player).cell.y < 0:
-        value(player).cell.y = 0
-    elif value(player).cell.y >= max_grid_cells_y:
-        value(player).cell.y = max_grid_cells_y - 1
+    if player.cell.y < 0:
+        player.cell.y = 0
+    elif player.cell.y >= max_grid_cells_y:
+        player.cell.y = max_grid_cells_y - 1
     return
 
 def draw_recorded_cell(state: PlayerState, grid_position: rl.Vector2, color: rl.Color) -> void:

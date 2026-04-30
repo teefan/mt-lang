@@ -69,8 +69,8 @@ def wrap_coordinate(value: i32, max_value: i32) -> i32:
 
 def set_rect_xy(rect: ptr[c.SDL_FRect], x: i32, y: i32) -> void:
     unsafe:
-        deref(rect).x = f32<-(x * snake_block_size_in_pixels)
-        deref(rect).y = f32<-(y * snake_block_size_in_pixels)
+        rect.x = f32<-(x * snake_block_size_in_pixels)
+        rect.y = f32<-(y * snake_block_size_in_pixels)
 
 def are_cells_full() -> bool:
     for index in range(0, snake_matrix_size):

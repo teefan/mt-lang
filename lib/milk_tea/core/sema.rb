@@ -1041,7 +1041,8 @@ module MilkTea
 
           binding.storage_type
         when AST::MemberAccess
-          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_ref_identifier: true)
+          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_ref_identifier: true, allow_pointer_identifier: true)
+          receiver_type = project_field_receiver_type(receiver_type, require_mutable_pointer: true)
           unless aggregate_type?(receiver_type)
             raise SemaError, "cannot assign to member #{expression.member} of #{receiver_type}"
           end
@@ -1051,7 +1052,9 @@ module MilkTea
 
           field_type
         when AST::IndexAccess
-          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:)
+          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_pointer_identifier: true)
+          raise SemaError, "cannot assign through read-only raw pointer #{receiver_type}" if const_pointer_type?(receiver_type)
+
           index_type = infer_expression(expression.index, scopes:)
           infer_index_result_type(receiver_type, index_type)
         when AST::Call
@@ -1071,19 +1074,25 @@ module MilkTea
         end
       end
 
-      def infer_lvalue_receiver(expression, scopes:, allow_ref_identifier: false)
+      def infer_lvalue_receiver(expression, scopes:, allow_ref_identifier: false, allow_pointer_identifier: false)
         case expression
         when AST::Identifier
           binding = lookup_value(expression.name, scopes)
           raise SemaError, "unknown name #{expression.name}" unless binding
 
           return referenced_type(binding.type) if allow_ref_identifier && ref_type?(binding.type)
+          if allow_pointer_identifier && pointer_type?(binding.type)
+            raise SemaError, "raw pointer dereference requires unsafe" unless unsafe_context?
+
+            return binding.type
+          end
 
           raise SemaError, "cannot assign through immutable #{expression.name}" unless binding.mutable
 
           binding.type
         when AST::MemberAccess
-          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_ref_identifier:)
+          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_ref_identifier:, allow_pointer_identifier:)
+          receiver_type = project_field_receiver_type(receiver_type)
           unless aggregate_type?(receiver_type)
             raise SemaError, "cannot access member #{expression.member} of #{receiver_type}"
           end
@@ -1093,7 +1102,7 @@ module MilkTea
 
           field_type
         when AST::IndexAccess
-          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_ref_identifier:)
+          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_ref_identifier:, allow_pointer_identifier:)
           index_type = infer_expression(expression.index, scopes:)
           infer_index_result_type(receiver_type, index_type)
         when AST::Call
@@ -1116,7 +1125,7 @@ module MilkTea
       def external_numeric_assignment_target?(expression, scopes:)
         case expression
         when AST::MemberAccess
-          receiver_type = infer_member_receiver_type(expression.receiver, scopes:)
+          receiver_type = infer_field_receiver_type(expression.receiver, scopes:, require_mutable_pointer: true)
           receiver_type.respond_to?(:external) && receiver_type.external
         else
           false
@@ -1248,30 +1257,31 @@ module MilkTea
           raise SemaError, "unknown member #{expression.receiver.name}.#{expression.member}"
         end
 
-        receiver_type = infer_member_receiver_type(expression.receiver, scopes:)
-        if char_array_removed_text_method?(receiver_type, expression.member)
-          raise SemaError, "#{receiver_type}.#{expression.member} is not available; array[char, N] is raw storage, use str_builder[N] or an explicit helper"
+        field_receiver_type = infer_field_receiver_type(expression.receiver, scopes:)
+        method_receiver_type = infer_method_receiver_type(expression.receiver, scopes:)
+        if char_array_removed_text_method?(method_receiver_type, expression.member)
+          raise SemaError, "#{method_receiver_type}.#{expression.member} is not available; array[char, N] is raw storage, use str_builder[N] or an explicit helper"
         end
-        if str_builder_type?(receiver_type) && str_builder_method_kind(receiver_type, expression.member)
-          raise SemaError, "method #{receiver_type}.#{expression.member} must be called"
-        end
-
-        unless aggregate_type?(receiver_type)
-          raise SemaError, "cannot access member #{expression.member} of #{receiver_type}"
+        if str_builder_type?(method_receiver_type) && str_builder_method_kind(method_receiver_type, expression.member)
+          raise SemaError, "method #{method_receiver_type}.#{expression.member} must be called"
         end
 
-        field_type = receiver_type.field(expression.member)
+        unless aggregate_type?(field_receiver_type)
+          raise SemaError, "cannot access member #{expression.member} of #{field_receiver_type}"
+        end
+
+        field_type = field_receiver_type.field(expression.member)
         return field_type if field_type
 
-        if lookup_method(receiver_type, expression.member)
-          raise SemaError, "method #{receiver_type.name}.#{expression.member} must be called"
+        if lookup_method(method_receiver_type, expression.member)
+          raise SemaError, "method #{method_receiver_type.name}.#{expression.member} must be called"
         end
 
-        if (imported_module = imported_module_with_private_method(receiver_type, expression.member))
-          raise SemaError, "#{receiver_type}.#{expression.member} is private to module #{imported_module.name}"
+        if (imported_module = imported_module_with_private_method(method_receiver_type, expression.member))
+          raise SemaError, "#{method_receiver_type}.#{expression.member} is private to module #{imported_module.name}"
         end
 
-        raise SemaError, "unknown field #{receiver_type}.#{expression.member}"
+        raise SemaError, "unknown field #{field_receiver_type}.#{expression.member}"
       end
 
       def infer_index_access(expression, scopes:)
@@ -1756,25 +1766,26 @@ module MilkTea
             raise SemaError, "unknown associated function #{type_expr}.#{callee.member}"
           end
 
-          receiver_type = infer_member_receiver_type(callee.receiver, scopes:)
-          method = lookup_method(receiver_type, callee.member)
+          method_receiver_type = infer_method_receiver_type(callee.receiver, scopes:)
+          method = lookup_method(method_receiver_type, callee.member)
           return [:method, method, callee.receiver] if method
 
-          if char_array_removed_text_method?(receiver_type, callee.member)
-            raise SemaError, "#{receiver_type}.#{callee.member} is not available; array[char, N] is raw storage, use str_builder[N] or an explicit helper"
+          if char_array_removed_text_method?(method_receiver_type, callee.member)
+            raise SemaError, "#{method_receiver_type}.#{callee.member} is not available; array[char, N] is raw storage, use str_builder[N] or an explicit helper"
           end
 
-          if (str_builder_method = str_builder_method_kind(receiver_type, callee.member))
-            return [str_builder_method, receiver_type, callee.receiver]
+          if (str_builder_method = str_builder_method_kind(method_receiver_type, callee.member))
+            return [str_builder_method, method_receiver_type, callee.receiver]
           end
 
-          return [:callable_value, receiver_type.field(callee.member), nil] if aggregate_type?(receiver_type) && callable_type?(receiver_type.field(callee.member))
+          field_receiver_type = infer_field_receiver_type(callee.receiver, scopes:)
+          return [:callable_value, field_receiver_type.field(callee.member), nil] if aggregate_type?(field_receiver_type) && callable_type?(field_receiver_type.field(callee.member))
 
-          if (imported_module = imported_module_with_private_method(receiver_type, callee.member))
-            raise SemaError, "#{receiver_type}.#{callee.member} is private to module #{imported_module.name}"
+          if (imported_module = imported_module_with_private_method(method_receiver_type, callee.member))
+            raise SemaError, "#{method_receiver_type}.#{callee.member} is private to module #{imported_module.name}"
           end
 
-          raise SemaError, "unknown method #{receiver_type}.#{callee.member}"
+          raise SemaError, "unknown method #{method_receiver_type}.#{callee.member}"
         when AST::Specialization
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "cast"
             raise SemaError, "cast requires exactly one type argument" unless callee.arguments.length == 1
@@ -3942,9 +3953,26 @@ module MilkTea
         raise SemaError, "value expects ref[...], got #{handle_type}"
       end
 
-      def infer_member_receiver_type(receiver_expression, scopes:)
+      def infer_method_receiver_type(receiver_expression, scopes:)
         receiver_type = infer_expression(receiver_expression, scopes:)
         ref_type?(receiver_type) ? referenced_type(receiver_type) : receiver_type
+      end
+
+      def infer_field_receiver_type(receiver_expression, scopes:, require_mutable_pointer: false)
+        receiver_type = infer_expression(receiver_expression, scopes:)
+        project_field_receiver_type(receiver_type, require_mutable_pointer:)
+      end
+
+      def project_field_receiver_type(receiver_type, require_mutable_pointer: false)
+        return referenced_type(receiver_type) if ref_type?(receiver_type)
+        return receiver_type unless pointer_type?(receiver_type)
+
+        raise SemaError, "raw pointer dereference requires unsafe" unless unsafe_context?
+        if require_mutable_pointer && const_pointer_type?(receiver_type)
+          raise SemaError, "cannot assign through read-only raw pointer #{receiver_type}"
+        end
+
+        pointee_type(receiver_type)
       end
 
       def infer_deref_target_type(handle_expression, scopes:)
@@ -3978,7 +4006,7 @@ module MilkTea
       end
 
       def assignable_receiver?(receiver_expression, scopes)
-        infer_lvalue_receiver(receiver_expression, scopes:, allow_ref_identifier: true)
+        infer_lvalue_receiver(receiver_expression, scopes:, allow_ref_identifier: true, allow_pointer_identifier: true)
         true
       rescue SemaError
         false

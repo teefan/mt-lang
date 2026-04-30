@@ -22,8 +22,8 @@ pub def locale_list(locales: ptr[ptr[sdl.Locale]], count: i32) -> span[ptr[sdl.L
 
 pub def locale_string(locale: ptr[sdl.Locale]) -> string.String:
     unsafe:
-        var result = string.String.from_str(text.cstr_as_str(deref(locale).language))
-        let country = ptr[char]?<-deref(locale).country
+        var result = string.String.from_str(text.cstr_as_str(locale.language))
+        let country = ptr[char]?<-locale.country
         if country != null:
             result.append("_")
             result.append(text.chars_as_str(ptr[char]<-country))

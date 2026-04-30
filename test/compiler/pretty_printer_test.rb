@@ -15,7 +15,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       "    var counter = Counter(value = 3)",
       "    let counter_ptr = raw(addr(counter))",
       "    unsafe:",
-      "        deref(counter_ptr).value = 7",
+      "        counter_ptr.value = 7",
       "    return counter.value",
       "",
     ].join("\n")
@@ -183,7 +183,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       "    var counter = Counter(value = 3)",
       "    let counter_ptr = raw(addr(counter))",
       "    unsafe:",
-      "        deref(counter_ptr).value = 7",
+      "        counter_ptr.value = 7",
       "    return counter.value",
       "",
     ].join("\n")
@@ -196,7 +196,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_includes output, "struct Counter as demo_pretty_Counter:"
     assert_includes output, "fn main() -> i32 [entry]:"
     assert_includes output, "let counter_ptr: ptr[demo.pretty.Counter] = cast[ptr[demo.pretty.Counter]](&counter)"
-    assert_includes output, "(*counter_ptr).value = 7"
+    assert_includes output, "counter_ptr->value = 7"
     assert_includes output, "return counter.value"
   end
 

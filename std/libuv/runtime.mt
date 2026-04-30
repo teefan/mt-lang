@@ -44,15 +44,15 @@ def alloc_request[T](kind: c.uv_req_type) -> Request[T]:
         return Request[T](raw = ptr[T]<-storage, storage = storage)
 
 def release_ipv4_address(address: ref[IPv4Address]) -> void:
-    heap.release_bytes(value(address).storage)
-    value(address).storage = null
+    heap.release_bytes(address.storage)
+    address.storage = null
     return
 
 def create_ipv4_address(ip: str, port: i32, scratch: ref[arena.Arena]) -> Result[IPv4Address, i32]:
     let storage = heap.must_alloc_zeroed_bytes(1, helper.mt_libuv_sockaddr_in_size())
     unsafe:
         let raw_addr = ptr[sys.sockaddr_in]<-storage
-        let status = uv.ip_4_addr(value(scratch).to_cstr(ip), port, raw_addr)
+        let status = uv.ip_4_addr(scratch.to_cstr(ip), port, raw_addr)
         if failed(status):
             heap.release_bytes(storage)
             return err(status)
@@ -100,20 +100,20 @@ pub def loop_stop(loop: Loop) -> void:
     return
 
 pub def loop_release(loop: ref[Loop]) -> i32:
-    let status = uv.loop_close(value(loop).raw)
+    let status = uv.loop_close(loop.raw)
     if failed(status):
         return status
 
-    heap.release_bytes(value(loop).storage)
-    value(loop).storage = null
+    heap.release_bytes(loop.storage)
+    loop.storage = null
     return status
 
 pub def handle_ptr[T](handle: Handle[T]) -> ptr[T]:
     return handle.raw
 
 pub def handle_release[T](handle: ref[Handle[T]]) -> void:
-    heap.release_bytes(value(handle).storage)
-    value(handle).storage = null
+    heap.release_bytes(handle.storage)
+    handle.storage = null
     return
 
 pub def handle_close[T](handle: Handle[T], close_cb: fn(arg0: ptr[uv.uv_handle_t]) -> void) -> void:
@@ -138,8 +138,8 @@ pub def request_ptr[T](request: Request[T]) -> ptr[T]:
     return request.raw
 
 pub def request_release[T](request: ref[Request[T]]) -> void:
-    heap.release_bytes(value(request).storage)
-    value(request).storage = null
+    heap.release_bytes(request.storage)
+    request.storage = null
     return
 
 pub def create_timer(loop: Loop) -> Result[Handle[uv.uv_timer_t], i32]:
@@ -234,10 +234,10 @@ pub def fs_path(request: Request[uv.uv_fs_t]) -> str:
     return text.cstr_as_str(uv.fs_get_path(request.raw))
 
 pub def fs_mkstemp(loop: Loop, request: Request[uv.uv_fs_t], tpl: str, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void, scratch: ref[arena.Arena]) -> i32:
-    return uv.fs_mkstemp(loop.raw, request.raw, value(scratch).to_cstr(tpl), callback)
+    return uv.fs_mkstemp(loop.raw, request.raw, scratch.to_cstr(tpl), callback)
 
 pub def fs_open(loop: Loop, request: Request[uv.uv_fs_t], path: str, flags: i32, mode: i32, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void, scratch: ref[arena.Arena]) -> i32:
-    return uv.fs_open(loop.raw, request.raw, value(scratch).to_cstr(path), flags, mode, callback)
+    return uv.fs_open(loop.raw, request.raw, scratch.to_cstr(path), flags, mode, callback)
 
 pub def fs_write(loop: Loop, request: Request[uv.uv_fs_t], file: i32, data: span[u8], offset: isize, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> i32:
     var buffer = byte_buffer(data)
@@ -251,4 +251,4 @@ pub def fs_close(loop: Loop, request: Request[uv.uv_fs_t], file: i32, callback: 
     return uv.fs_close(loop.raw, request.raw, file, callback)
 
 pub def fs_unlink(loop: Loop, request: Request[uv.uv_fs_t], path: str, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void, scratch: ref[arena.Arena]) -> i32:
-    return uv.fs_unlink(loop.raw, request.raw, value(scratch).to_cstr(path), callback)
+    return uv.fs_unlink(loop.raw, request.raw, scratch.to_cstr(path), callback)

@@ -68,37 +68,37 @@ def work_task[T](state: ptr[WorkState[T]]) -> Task[T]:
 
 def complete_sleep(state: ptr[SleepState], status: i32) -> void:
     unsafe:
-        deref(state).status = status
-        deref(state).ready = true
-        let waiter_frame = deref(state).waiter_frame
+        state.status = status
+        state.ready = true
+        let waiter_frame = state.waiter_frame
         if waiter_frame != null:
-            deref(state).waiter_frame = null
-            deref(state).waiter(waiter_frame)
+            state.waiter_frame = null
+            state.waiter(waiter_frame)
             return
     return
 
 def complete_work[T](state: ptr[WorkState[T]], status: i32) -> void:
     unsafe:
-        deref(state).status = status
-        deref(state).ready = true
-        let waiter_frame = deref(state).waiter_frame
+        state.status = status
+        state.ready = true
+        let waiter_frame = state.waiter_frame
         if waiter_frame != null:
-            deref(state).waiter_frame = null
-            deref(state).waiter(waiter_frame)
+            state.waiter_frame = null
+            state.waiter(waiter_frame)
             return
     return
 
 def on_sleep_closed(handle: ptr[uv.uv_handle_t]) -> void:
     unsafe:
         let state = ptr[SleepState]<-uv.handle_get_data(handle)
-        complete_sleep(state, deref(state).status)
+        complete_sleep(state, state.status)
     return
 
 def on_sleep_timer(timer: ptr[uv.uv_timer_t]) -> void:
     unsafe:
         let handle = ptr[uv.uv_handle_t]<-timer
         let state = ptr[SleepState]<-uv.handle_get_data(handle)
-        deref(state).status = 0
+        state.status = 0
         uv.close(handle, on_sleep_closed)
     return
 
@@ -106,7 +106,7 @@ def on_work_request[T](req: ptr[uv.uv_work_t]) -> void:
     unsafe:
         let request = ptr[uv.uv_req_t]<-req
         let state = ptr[WorkState[T]]<-uv.req_get_data(request)
-        deref(state).result = deref(state).work()
+        state.result = state.work()
     return
 
 def on_work_done[T](req: ptr[uv.uv_work_t], status: i32) -> void:
@@ -118,83 +118,83 @@ def on_work_done[T](req: ptr[uv.uv_work_t], status: i32) -> void:
 
 pub def sleep_ready(frame: ptr[void]) -> bool:
     unsafe:
-        return deref(sleep_state(frame)).ready
+        return sleep_state(frame).ready
 
 pub def sleep_set_waiter(frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
     let state = sleep_state(frame)
     unsafe:
-        if deref(state).ready:
+        if state.ready:
             waiter(waiter_frame)
             return
-        deref(state).waiter_frame = waiter_frame
-        deref(state).waiter = waiter
+        state.waiter_frame = waiter_frame
+        state.waiter = waiter
     return
 
 pub def sleep_release(frame: ptr[void]) -> void:
     let state = sleep_state(frame)
     unsafe:
-        if not deref(state).ready:
+        if not state.ready:
             return
-        if deref(state).timer.storage != null:
-            rt.handle_release(addr(deref(state).timer))
+        if state.timer.storage != null:
+            rt.handle_release(addr(state.timer))
     heap.release[SleepState](state)
     return
 
 pub def sleep_take_result(frame: ptr[void]) -> i32:
     unsafe:
-        return deref(sleep_state(frame)).status
+        return sleep_state(frame).status
 
 pub def work_ready[T](frame: ptr[void]) -> bool:
     unsafe:
-        return deref(work_state[T](frame)).ready
+        return work_state[T](frame).ready
 
 pub def work_set_waiter[T](frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
     let state = work_state[T](frame)
     unsafe:
-        if deref(state).ready:
+        if state.ready:
             waiter(waiter_frame)
             return
-        deref(state).waiter_frame = waiter_frame
-        deref(state).waiter = waiter
+        state.waiter_frame = waiter_frame
+        state.waiter = waiter
     return
 
 pub def work_release[T](frame: ptr[void]) -> void:
     let state = work_state[T](frame)
     unsafe:
-        if not deref(state).ready:
+        if not state.ready:
             return
-        if deref(state).request.storage != null:
-            rt.request_release(addr(deref(state).request))
+        if state.request.storage != null:
+            rt.request_release(addr(state.request))
     heap.release[WorkState[T]](state)
     return
 
 pub def work_take_result[T](frame: ptr[void]) -> T:
     let state = work_state[T](frame)
     unsafe:
-        if deref(state).status != 0:
+        if state.status != 0:
             panic(c"libuv.async.work failed")
-        return deref(state).result
+        return state.result
 
 pub def sleep_on(loop: rt.Loop, timeout: usize) -> Task[i32]:
     let state = heap.must_alloc_zeroed[SleepState](1)
     let timer_result = rt.create_timer(loop)
     if not timer_result.is_ok:
         unsafe:
-            deref(state).status = timer_result.error
-            deref(state).ready = true
+            state.status = timer_result.error
+            state.ready = true
         return sleep_task(state)
 
     unsafe:
-        deref(state).timer = timer_result.value
-        uv.handle_set_data(ptr[uv.uv_handle_t]<-rt.handle_ptr(deref(state).timer), ptr[void]<-state)
+        state.timer = timer_result.value
+        uv.handle_set_data(ptr[uv.uv_handle_t]<-rt.handle_ptr(state.timer), ptr[void]<-state)
 
     var status = 0
     unsafe:
-        status = rt.timer_start_once(deref(state).timer, timeout, on_sleep_timer)
+        status = rt.timer_start_once(state.timer, timeout, on_sleep_timer)
     if status != 0:
         unsafe:
-            deref(state).status = status
-            uv.close(ptr[uv.uv_handle_t]<-rt.handle_ptr(deref(state).timer), on_sleep_closed)
+            state.status = status
+            uv.close(ptr[uv.uv_handle_t]<-rt.handle_ptr(state.timer), on_sleep_closed)
     return sleep_task(state)
 
 pub def sleep(timeout: usize) -> Task[i32]:
@@ -203,16 +203,16 @@ pub def sleep(timeout: usize) -> Task[i32]:
 pub def work_on[T](loop: rt.Loop, run_work: fn() -> T) -> Task[T]:
     let state = heap.must_alloc_zeroed[WorkState[T]](1)
     unsafe:
-        deref(state).work = run_work
-        deref(state).request = rt.create_work_request()
-        uv.req_set_data(ptr[uv.uv_req_t]<-rt.request_ptr(deref(state).request), ptr[void]<-state)
+        state.work = run_work
+        state.request = rt.create_work_request()
+        uv.req_set_data(ptr[uv.uv_req_t]<-rt.request_ptr(state.request), ptr[void]<-state)
 
     var status = 0
     unsafe:
-        status = rt.queue_work(loop, deref(state).request, on_work_request[T], on_work_done[T])
+        status = rt.queue_work(loop, state.request, on_work_request[T], on_work_done[T])
     if status != 0:
         unsafe:
-            rt.request_release(addr(deref(state).request))
+            rt.request_release(addr(state.request))
         heap.release[WorkState[T]](state)
         panic(c"libuv.async.work queue_work failed")
     return work_task[T](state)

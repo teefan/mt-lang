@@ -2018,6 +2018,29 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return counter\.value;/, generated)
   end
 
+  def test_generate_c_for_raw_pointer_member_access
+    source = [
+      "module demo.pointer_surface_auto_member",
+      "",
+      "struct Counter:",
+      "    value: i32",
+      "",
+      "def main() -> i32:",
+      "    var counter = Counter(value = 3)",
+      "    let counter_ptr = raw(addr(counter))",
+      "    unsafe:",
+      "        counter_ptr.value = 7",
+      "        return counter_ptr.value",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/demo_pointer_surface_auto_member_Counter \*counter_ptr = &counter;/, generated)
+    assert_match(/counter_ptr->value = 7;/, generated)
+    assert_match(/return counter_ptr->value;/, generated)
+  end
+
   def test_generate_c_for_extended_compound_assignment_operators
     source = [
       "module demo.compound_assignments_surface",

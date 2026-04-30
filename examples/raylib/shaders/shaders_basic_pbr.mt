@@ -69,15 +69,15 @@ var light_count: i32 = 0
 
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
-        deref(model).materials[0].shader = shader
+        model.materials[0].shader = shader
 
 def set_material_map_color(materials: ptr[rl.Material], map_index: i32, color: rl.Color) -> void:
     unsafe:
-        deref(materials).maps[map_index].color = color
+        materials.maps[map_index].color = color
 
 def set_material_map_value(materials: ptr[rl.Material], map_index: i32, value: f32) -> void:
     unsafe:
-        deref(materials).maps[map_index].value = value
+        materials.maps[map_index].value = value
 
 def set_shader_int(shader: rl.Shader, location: i32, value: i32) -> void:
     var storage = value

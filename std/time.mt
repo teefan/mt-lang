@@ -59,10 +59,10 @@ pub def local_clock() -> Result[ClockTime, Error]:
     return clock_local(now_unix_seconds())
 
 def format_tm(time_info: ptr[c.tm], format: str, scratch: ref[arena.Arena]) -> Result[string.String, Error]:
-    let mark = value(scratch).mark()
-    defer value(scratch).reset(mark)
+    let mark = scratch.mark()
+    defer scratch.reset(mark)
 
-    let c_format = value(scratch).to_cstr(format)
+    let c_format = scratch.to_cstr(format)
     var buffer: array[char, 128]
     let written = c.strftime(raw(addr(buffer[0])), u64<-format_buffer_capacity, c_format, time_info)
     if written == 0:

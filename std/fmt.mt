@@ -7,7 +7,7 @@ import std.string as string
 const float_buffer_capacity: usize = 64
 
 pub def append(output: ref[string.String], text: str) -> void:
-    value(output).append(text)
+    output.append(text)
     return
 
 pub def string(text: str) -> string.String:
@@ -18,14 +18,14 @@ pub def append_str(output: ref[string.String], text: str) -> void:
     return
 
 pub def append_cstr(output: ref[string.String], c_text: cstr) -> void:
-    value(output).append(text_ops.cstr_as_str(c_text))
+    output.append(text_ops.cstr_as_str(c_text))
     return
 
 pub def append_bool(output: ref[string.String], bool_value: bool) -> void:
     if bool_value:
-        value(output).append("true")
+        output.append("true")
     else:
-        value(output).append("false")
+        output.append("false")
     return
 
 def append_formatted_float(output: ref[string.String], format: cstr, number: f64) -> void:
@@ -48,7 +48,7 @@ pub def append_f64(output: ref[string.String], number: f64) -> void:
 
 pub def append_usize(output: ref[string.String], number: usize) -> void:
     if number == 0:
-        value(output).push_byte(u8<-48)
+        output.push_byte(u8<-48)
         return
 
     var digits: array[u8, 32]
@@ -62,12 +62,12 @@ pub def append_usize(output: ref[string.String], number: usize) -> void:
 
     while count > 0:
         count -= 1
-        value(output).push_byte(digits[count])
+        output.push_byte(digits[count])
     return
 
 pub def append_u64(output: ref[string.String], number: u64) -> void:
     if number == 0:
-        value(output).push_byte(u8<-48)
+        output.push_byte(u8<-48)
         return
 
     var digits: array[u8, 32]
@@ -81,7 +81,7 @@ pub def append_u64(output: ref[string.String], number: u64) -> void:
 
     while count > 0:
         count -= 1
-        value(output).push_byte(digits[count])
+        output.push_byte(digits[count])
     return
 
 pub def append_u32(output: ref[string.String], number: u32) -> void:
@@ -90,7 +90,7 @@ pub def append_u32(output: ref[string.String], number: u32) -> void:
 
 pub def append_i64(output: ref[string.String], number: i64) -> void:
     if number < 0:
-        value(output).append("-")
+        output.append("-")
         append_u64(output, u64<-(-(number + 1)) + u64<-1)
         return
 
@@ -99,7 +99,7 @@ pub def append_i64(output: ref[string.String], number: i64) -> void:
 
 pub def append_i32(output: ref[string.String], number: i32) -> void:
     if number < 0:
-        value(output).append("-")
+        output.append("-")
         append_usize(output, usize<-(-i64<-number))
         return
 

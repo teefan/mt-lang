@@ -9,15 +9,15 @@ pub def create(seed: u64) -> Random:
     return generator
 
 pub def reseed(generator: ref[Random], seed: u64) -> void:
-    value(generator).state = seed
-    if value(generator).state == 0:
-        value(generator).state = u64<-0x9e3779b97f4a7c15
+    generator.state = seed
+    if generator.state == 0:
+        generator.state = u64<-0x9e3779b97f4a7c15
     return
 
 pub def next_u64(generator: ref[Random]) -> u64:
-    var state = value(generator).state
+    var state = generator.state
     state = state + u64<-0x9e3779b97f4a7c15
-    value(generator).state = state
+    generator.state = state
 
     var mixed = state
     mixed = (mixed ^ (mixed >> 30)) * u64<-0xbf58476d1ce4e5b9

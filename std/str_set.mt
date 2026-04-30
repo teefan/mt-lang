@@ -19,18 +19,18 @@ pub def count(items: StrSet) -> usize:
     return set.count[str](items.items)
 
 pub def release(items: ref[StrSet]) -> void:
-    set.release[str](addr(value(items).items))
+    set.release[str](addr(items.items))
     return
 
 pub def add(items: ref[StrSet], value_item: str) -> void:
-    set.add[str](addr(value(items).items), value_item)
+    set.add[str](addr(items.items), value_item)
     return
 
 pub def try_add(items: ref[StrSet], value_item: str) -> bool:
-    return set.try_add[str](addr(value(items).items), value_item)
+    return set.try_add[str](addr(items.items), value_item)
 
 pub def contains(items: StrSet, value_item: str) -> bool:
     return set.contains[str](items.items, value_item)
 
 pub def remove(items: ref[StrSet], value_item: str) -> bool:
-    return set.remove[str](addr(value(items).items), value_item)
+    return set.remove[str](addr(items.items), value_item)

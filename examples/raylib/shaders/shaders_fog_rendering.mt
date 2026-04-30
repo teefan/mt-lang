@@ -20,7 +20,7 @@ const window_title: cstr = c"raylib [shaders] example - fog rendering"
 
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
-        deref(model).materials[0].shader = shader
+        model.materials[0].shader = shader
 
 def rotate_x(angle: f32) -> rl.Matrix:
     let cosx = rm.cos(angle)

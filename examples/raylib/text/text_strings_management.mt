@@ -40,7 +40,7 @@ def chars_to_cstr(text: ptr[char]) -> cstr:
 
 def text_particle_text_ptr(tp: ptr[TextParticle]) -> ptr[char]:
     unsafe:
-        return raw(addr(deref(tp).text[0]))
+        return raw(addr(tp.text[0]))
 
 def text_particle_text(tp: ptr[TextParticle]) -> cstr:
     return chars_to_cstr(text_particle_text_ptr(tp))
@@ -109,8 +109,8 @@ def slice_text_particle(tp: ptr[TextParticle], particle_pos: i32, slice_length: 
                     particle_count,
                     create_text_particle(
                         piece_text,
-                        deref(tp).rect.x + f32<-index * deref(tp).rect.width / f32<-length,
-                        deref(tp).rect.y,
+                        tp.rect.x + f32<-index * tp.rect.width / f32<-length,
+                        tp.rect.y,
                         random_color(),
                     ),
                 )
@@ -133,8 +133,8 @@ def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps:
                         particle_count,
                         create_text_particle(
                             rl.TextFormat(char_format, i32<-char_to_slice),
-                            deref(tp).rect.x,
-                            deref(tp).rect.y,
+                            tp.rect.x,
+                            tp.rect.y,
                             random_color(),
                         ),
                     )
@@ -149,8 +149,8 @@ def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps:
                     particle_count,
                     create_text_particle(
                         rl.TextFormat(copy_format, token),
-                        deref(tp).rect.x + f32<-index * deref(tp).rect.width / f32<-token_length,
-                        deref(tp).rect.y,
+                        tp.rect.x + f32<-index * tp.rect.width / f32<-token_length,
+                        tp.rect.y,
                         random_color(),
                     ),
                 )
@@ -168,14 +168,14 @@ def glue_text_particles(grabbed_index: i32, target_index: i32, tps: ptr[TextPart
             let target = tps + target_index
             var merged = create_text_particle(
                 rl.TextFormat(concat_format, text_particle_text(grabbed), text_particle_text(target)),
-                deref(grabbed).rect.x,
-                deref(grabbed).rect.y,
+                grabbed.rect.x,
+                grabbed.rect.y,
                 rl.RAYWHITE,
             )
             merged.grabbed = true
 
             append_particle(tps, particle_count, merged)
-            deref(grabbed).grabbed = false
+            grabbed.grabbed = false
 
             if grabbed_index < target_index:
                 reallocate_text_particles(tps, target_index, particle_count)

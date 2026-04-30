@@ -127,10 +127,10 @@ pub def alloc[T](space: ref[Pool]) -> ptr[T]?:
         return null
 
     let slot_size = (size + mask) & ~mask
-    if value(space).slot_size < slot_size:
+    if space.slot_size < slot_size:
         return null
 
-    let memory = value(space).alloc_bytes()
+    let memory = space.alloc_bytes()
     if memory == null:
         return null
 
@@ -142,4 +142,4 @@ pub def release[T](space: ref[Pool], slot: ptr[T]?) -> bool:
         return false
 
     unsafe:
-        return value(space).release_bytes(ptr[byte]<-slot)
+        return space.release_bytes(ptr[byte]<-slot)

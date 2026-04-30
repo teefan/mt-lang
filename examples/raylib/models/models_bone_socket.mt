@@ -39,7 +39,7 @@ def pose_transform(pose: rl.ModelAnimPose, index: i32) -> rl.Transform:
 
 def skeleton_bone_name(skeleton: rl.ModelSkeleton, index: i32) -> cstr:
     unsafe:
-        return chars_to_cstr(raw(addr(deref(skeleton.bones + index).name[0])))
+        return chars_to_cstr(raw(addr((skeleton.bones + index).name[0])))
 
 def bind_pose_transform(skeleton: rl.ModelSkeleton, index: i32) -> rl.Transform:
     unsafe:

@@ -58,11 +58,11 @@ def append_message(jid: u32, text: ptr[char]?) -> void:
         return
 
     unsafe:
-        deref(message).str = ptr[char]<-message_text
-        deref(message).color = colors[color_index]
-        deref(message).start_ticks = c.SDL_GetTicks()
-        deref(message).next = null
-        deref(tail).next = message
+        message.str = ptr[char]<-message_text
+        message.color = colors[color_index]
+        message.start_ticks = c.SDL_GetTicks()
+        message.next = null
+        tail.next = message
 
     messages_tail = message
 
@@ -197,35 +197,35 @@ def render_frame() -> void:
             break
 
         unsafe:
-            let life_percent = f32<-(now - deref(message).start_ticks) / message_lifetime_ms
+            let life_percent = f32<-(now - message.start_ticks) / message_lifetime_ms
 
             if life_percent >= 1.0:
-                let next = deref(message).next
-                deref(previous_message).next = next
+                let next = message.next
+                previous_message.next = next
 
                 if messages_tail == message:
                     messages_tail = previous_message
 
-                c.SDL_free(ptr[void]<-deref(message).str)
+                c.SDL_free(ptr[void]<-message.str)
                 heap.release(message)
                 current = next
                 continue
 
-            let text_width = f32<-(c.SDL_strlen(cstr<-deref(message).str) * usize<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
+            let text_width = f32<-(c.SDL_strlen(cstr<-message.str) * usize<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
             let x = (f32<-winw - text_width) / 2.0
             let y = f32<-winh * life_percent
 
             if prev_y != 0.0 and (prev_y - y) < f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE:
-                deref(message).start_ticks = now
+                message.start_ticks = now
                 break
 
-            let alpha = c.Uint8<-(f32<-deref(message).color.a * (1.0 - life_percent))
-            c.SDL_SetRenderDrawColor(renderer, deref(message).color.r, deref(message).color.g, deref(message).color.b, alpha)
-            c.SDL_RenderDebugText(renderer, x, y, cstr<-deref(message).str)
+            let alpha = c.Uint8<-(f32<-message.color.a * (1.0 - life_percent))
+            c.SDL_SetRenderDrawColor(renderer, message.color.r, message.color.g, message.color.b, alpha)
+            c.SDL_RenderDebugText(renderer, x, y, cstr<-message.str)
 
             prev_y = y
             previous = message
-            current = deref(message).next
+            current = message.next
 
     c.SDL_RenderPresent(renderer)
 

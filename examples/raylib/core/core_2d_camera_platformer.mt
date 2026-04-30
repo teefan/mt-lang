@@ -63,15 +63,15 @@ def screen_half(value: i32) -> f32:
     return 0.5 * value
 
 def update_camera_center(camera: ref[rl.Camera2D], player: Player, width: i32, height: i32) -> void:
-    value(camera).offset = rl.Vector2(x = screen_half(width), y = screen_half(height))
-    value(camera).target = player.position
+    camera.offset = rl.Vector2(x = screen_half(width), y = screen_half(height))
+    camera.target = player.position
 
 def update_camera_center_inside_map(camera: ref[rl.Camera2D], player: Player, env_items: array[EnvItem, 5], width: i32, height: i32) -> void:
     let half_width = screen_half(width)
     let half_height = screen_half(height)
 
-    value(camera).target = player.position
-    value(camera).offset = rl.Vector2(x = half_width, y = half_height)
+    camera.target = player.position
+    camera.offset = rl.Vector2(x = half_width, y = half_height)
 
     var min_x: f32 = 1000.0
     var min_y: f32 = 1000.0
@@ -93,43 +93,43 @@ def update_camera_center_inside_map(camera: ref[rl.Camera2D], player: Player, en
     let min_screen = rl.GetWorldToScreen2D(rl.Vector2(x = min_x, y = min_y), value(camera))
 
     if max_screen.x < width:
-        value(camera).offset.x = width - (max_screen.x - half_width)
+        camera.offset.x = width - (max_screen.x - half_width)
     if max_screen.y < height:
-        value(camera).offset.y = height - (max_screen.y - half_height)
+        camera.offset.y = height - (max_screen.y - half_height)
     if min_screen.x > 0.0:
-        value(camera).offset.x = half_width - min_screen.x
+        camera.offset.x = half_width - min_screen.x
     if min_screen.y > 0.0:
-        value(camera).offset.y = half_height - min_screen.y
+        camera.offset.y = half_height - min_screen.y
 
 def update_camera_center_smooth_follow(camera: ref[rl.Camera2D], player: Player, delta: f32, width: i32, height: i32) -> void:
-    value(camera).offset = rl.Vector2(x = screen_half(width), y = screen_half(height))
-    let diff = player.position.subtract(value(camera).target)
+    camera.offset = rl.Vector2(x = screen_half(width), y = screen_half(height))
+    let diff = player.position.subtract(camera.target)
     let length = diff.length()
 
     if length > min_effect_length:
         var speed = fraction_speed * length
         if speed < min_speed:
             speed = min_speed
-        value(camera).target = value(camera).target.add(diff.scale(speed * delta / length))
+        camera.target = camera.target.add(diff.scale(speed * delta / length))
 
 def update_camera_even_out_on_landing(camera: ref[rl.Camera2D], player: Player, width: i32, height: i32, state: ref[CameraLandingState]) -> void:
-    value(camera).offset = rl.Vector2(x = screen_half(width), y = screen_half(height))
-    value(camera).target.x = player.position.x
+    camera.offset = rl.Vector2(x = screen_half(width), y = screen_half(height))
+    camera.target.x = player.position.x
 
-    if value(state).evening_out:
-        if value(state).even_out_target > value(camera).target.y:
-            value(camera).target.y += even_out_speed * rl.GetFrameTime()
-            if value(camera).target.y > value(state).even_out_target:
-                value(camera).target.y = value(state).even_out_target
-                value(state).evening_out = false
+    if state.evening_out:
+        if state.even_out_target > camera.target.y:
+            camera.target.y += even_out_speed * rl.GetFrameTime()
+            if camera.target.y > state.even_out_target:
+                camera.target.y = state.even_out_target
+                state.evening_out = false
         else:
-            value(camera).target.y -= even_out_speed * rl.GetFrameTime()
-            if value(camera).target.y < value(state).even_out_target:
-                value(camera).target.y = value(state).even_out_target
-                value(state).evening_out = false
-    elif player.can_jump and player.speed == 0.0 and player.position.y != value(camera).target.y:
-        value(state).evening_out = true
-        value(state).even_out_target = player.position.y
+            camera.target.y -= even_out_speed * rl.GetFrameTime()
+            if camera.target.y < state.even_out_target:
+                camera.target.y = state.even_out_target
+                state.evening_out = false
+    elif player.can_jump and player.speed == 0.0 and player.position.y != camera.target.y:
+        state.evening_out = true
+        state.even_out_target = player.position.y
 
 def update_camera_player_bounds_push(camera: ref[rl.Camera2D], player: Player, width: i32, height: i32) -> void:
     let bbox_world_min = rl.GetScreenToWorld2D(
@@ -146,19 +146,19 @@ def update_camera_player_bounds_push(camera: ref[rl.Camera2D], player: Player, w
         ),
         value(camera),
     )
-    value(camera).offset = rl.Vector2(
+    camera.offset = rl.Vector2(
         x = (1.0 - bbox_factor_x) * 0.5 * width,
         y = (1.0 - bbox_factor_y) * 0.5 * height,
     )
 
     if player.position.x < bbox_world_min.x:
-        value(camera).target.x = player.position.x
+        camera.target.x = player.position.x
     if player.position.y < bbox_world_min.y:
-        value(camera).target.y = player.position.y
+        camera.target.y = player.position.y
     if player.position.x > bbox_world_max.x:
-        value(camera).target.x = bbox_world_min.x + (player.position.x - bbox_world_max.x)
+        camera.target.x = bbox_world_min.x + (player.position.x - bbox_world_max.x)
     if player.position.y > bbox_world_max.y:
-        value(camera).target.y = bbox_world_min.y + (player.position.y - bbox_world_max.y)
+        camera.target.y = bbox_world_min.y + (player.position.y - bbox_world_max.y)
 
 def update_camera_for_mode(camera_option: i32, camera: ref[rl.Camera2D], player: Player, env_items: array[EnvItem, 5], delta: f32, width: i32, height: i32, landing_state: ref[CameraLandingState]) -> void:
     if camera_option == 0:

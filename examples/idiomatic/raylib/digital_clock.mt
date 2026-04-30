@@ -25,20 +25,20 @@ def clock_hand(angle: f32, length: i32, thickness: i32, color: rl.Color) -> Cloc
     return ClockHand(value = 0, angle = angle, length = length, thickness = thickness, color = color)
 
 def apply_clock_time(clock: ref[Clock], current: time.ClockTime) -> void:
-    value(clock).hour.value = current.hour
-    value(clock).minute.value = current.minute
-    value(clock).second.value = current.second
+    clock.hour.value = current.hour
+    clock.minute.value = current.minute
+    clock.second.value = current.second
 
-    value(clock).hour.angle = f32<-(value(clock).hour.value % 12) * 180.0 / 6.0
-    value(clock).hour.angle += f32<-(value(clock).minute.value % 60) * 30.0 / 60.0
-    value(clock).hour.angle -= 90.0
+    clock.hour.angle = f32<-(clock.hour.value % 12) * 180.0 / 6.0
+    clock.hour.angle += f32<-(clock.minute.value % 60) * 30.0 / 60.0
+    clock.hour.angle -= 90.0
 
-    value(clock).minute.angle = f32<-(value(clock).minute.value % 60) * 6.0
-    value(clock).minute.angle += f32<-(value(clock).second.value % 60) * 6.0 / 60.0
-    value(clock).minute.angle -= 90.0
+    clock.minute.angle = f32<-(clock.minute.value % 60) * 6.0
+    clock.minute.angle += f32<-(clock.second.value % 60) * 6.0 / 60.0
+    clock.minute.angle -= 90.0
 
-    value(clock).second.angle = f32<-(value(clock).second.value % 60) * 6.0
-    value(clock).second.angle -= 90.0
+    clock.second.angle = f32<-(clock.second.value % 60) * 6.0
+    clock.second.angle -= 90.0
 
 def update_clock(clock: ref[Clock]) -> void:
     let current = time.local_clock()

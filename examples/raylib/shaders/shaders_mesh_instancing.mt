@@ -29,7 +29,7 @@ def set_transform(transforms: ptr[rl.Matrix], index: i32, transform: rl.Matrix) 
 
 def set_material_color(material: ptr[rl.Material], map_index: i32, color: rl.Color) -> void:
     unsafe:
-        deref(material).maps[map_index].color = color
+        material.maps[map_index].color = color
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

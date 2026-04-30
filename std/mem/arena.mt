@@ -98,7 +98,7 @@ pub def alloc[T](space: ref[Arena], count: usize) -> ptr[T]?:
     if heap.mul_overflows(count, element_size):
         return null
 
-    let memory = value(space).alloc_bytes_aligned(count * element_size, usize<-alignof(T))
+    let memory = space.alloc_bytes_aligned(count * element_size, usize<-alignof(T))
     if memory == null:
         return null
 

@@ -315,7 +315,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         for red in range(0, 6):
             for green in range(0, 6):
                 for blue in range(0, 6):
-                    deref(created_palette).colors[color_index] = c.SDL_Color(
+                    created_palette.colors[color_index] = c.SDL_Color(
                         r = c.Uint8<-(red * 0x33),
                         g = c.Uint8<-(green * 0x33),
                         b = c.Uint8<-(blue * 0x33),
@@ -324,7 +324,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
                     color_index += 1
 
         for index in range(color_index, 256):
-            deref(created_palette).colors[index] = c.SDL_Color(r = 0, g = 0, b = 0, a = c.SDL_ALPHA_OPAQUE)
+            created_palette.colors[index] = c.SDL_Color(r = 0, g = 0, b = 0, a = c.SDL_ALPHA_OPAQUE)
 
     let created_texture = c.SDL_CreateTexture(renderer, c.SDL_PixelFormat.SDL_PIXELFORMAT_INDEX8, c.SDL_TextureAccess.SDL_TEXTUREACCESS_STREAMING, screen_width, screen_height)
     let created_render_target = c.SDL_CreateTexture(renderer, c.SDL_PixelFormat.SDL_PIXELFORMAT_UNKNOWN, c.SDL_TextureAccess.SDL_TEXTUREACCESS_TARGET, screen_width, screen_height)
