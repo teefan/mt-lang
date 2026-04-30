@@ -54,9 +54,8 @@ def compute_shadow_volume_for_edge(light: LightInfo, start_point: rl.Vector2, en
     return push_shadow(light, start_point, end_point, end_projection, start_projection)
 
 def draw_shadow(shadow: ShadowGeometry, color: rl.Color) -> void:
-    let vertices = shadow.vertices
-    rl.draw_triangle(vertices[0], vertices[1], vertices[2], color)
-    rl.draw_triangle(vertices[0], vertices[2], vertices[3], color)
+    rl.draw_triangle(shadow.vertices[0], shadow.vertices[1], shadow.vertices[2], color)
+    rl.draw_triangle(shadow.vertices[0], shadow.vertices[2], shadow.vertices[3], color)
 
 def draw_light_mask(light: LightInfo) -> void:
     rl.begin_texture_mode(light.mask)
@@ -82,13 +81,10 @@ def draw_light_mask(light: LightInfo) -> void:
     rl.end_texture_mode()
 
 def move_light_slot(lights: ref[array[LightInfo, 16]], slot: i32, x: f32, y: f32) -> void:
-    var lights_view = value(lights)
-    lights_view[slot] = move_light(lights_view[slot], x, y)
-    value(lights) = lights_view
+    value(lights)[slot] = move_light(value(lights)[slot], x, y)
 
 def setup_light(lights: ref[array[LightInfo, 16]], slot: i32, x: f32, y: f32, radius: f32) -> void:
-    var lights_view = value(lights)
-    var light = lights_view[slot]
+    var light = value(lights)[slot]
     light.active = true
     light.valid = false
     light.mask = rl.load_render_texture(rl.get_screen_width(), rl.get_screen_height())
@@ -96,13 +92,11 @@ def setup_light(lights: ref[array[LightInfo, 16]], slot: i32, x: f32, y: f32, ra
     light.bounds.width = radius * 2.0
     light.bounds.height = radius * 2.0
     light = move_light(light, x, y)
-    lights_view[slot] = light
-    value(lights) = lights_view
+    value(lights)[slot] = light
     draw_light_mask(light)
 
 def update_light(lights: ref[array[LightInfo, 16]], slot: i32, boxes: array[rl.Rectangle, 20], count: i32) -> bool:
-    var lights_view = value(lights)
-    var light = lights_view[slot]
+    var light = value(lights)[slot]
 
     if not light.active or not light.dirty:
         return false
@@ -115,8 +109,7 @@ def update_light(lights: ref[array[LightInfo, 16]], slot: i32, boxes: array[rl.R
         let box = boxes[index]
 
         if rl.check_collision_point_rec(light.position, box):
-            lights_view[slot] = light
-            value(lights) = lights_view
+            value(lights)[slot] = light
             return false
 
         if not rl.check_collision_recs(light.bounds, box):
@@ -142,28 +135,25 @@ def update_light(lights: ref[array[LightInfo, 16]], slot: i32, boxes: array[rl.R
         light = push_shadow(light, top_left, bottom_left, bottom_right, top_right)
 
     light.valid = true
-    lights_view[slot] = light
-    value(lights) = lights_view
+    value(lights)[slot] = light
     draw_light_mask(light)
     return true
 
 def setup_boxes(boxes: ref[array[rl.Rectangle, 20]], count: ref[i32]) -> void:
-    var items = value(boxes)
-    items[0] = rl.Rectangle(x = 150.0, y = 80.0, width = 40.0, height = 40.0)
-    items[1] = rl.Rectangle(x = 1200.0, y = 700.0, width = 40.0, height = 40.0)
-    items[2] = rl.Rectangle(x = 200.0, y = 600.0, width = 40.0, height = 40.0)
-    items[3] = rl.Rectangle(x = 1000.0, y = 50.0, width = 40.0, height = 40.0)
-    items[4] = rl.Rectangle(x = 500.0, y = 350.0, width = 40.0, height = 40.0)
+    value(boxes)[0] = rl.Rectangle(x = 150.0, y = 80.0, width = 40.0, height = 40.0)
+    value(boxes)[1] = rl.Rectangle(x = 1200.0, y = 700.0, width = 40.0, height = 40.0)
+    value(boxes)[2] = rl.Rectangle(x = 200.0, y = 600.0, width = 40.0, height = 40.0)
+    value(boxes)[3] = rl.Rectangle(x = 1000.0, y = 50.0, width = 40.0, height = 40.0)
+    value(boxes)[4] = rl.Rectangle(x = 500.0, y = 350.0, width = 40.0, height = 40.0)
 
     for index in range(5, max_boxes):
-        items[index] = rl.Rectangle(
+        value(boxes)[index] = rl.Rectangle(
             x = cast[f32](rl.get_random_value(0, rl.get_screen_width())),
             y = cast[f32](rl.get_random_value(0, rl.get_screen_height())),
             width = cast[f32](rl.get_random_value(10, 100)),
             height = cast[f32](rl.get_random_value(10, 100)),
         )
 
-    value(boxes) = items
     value(count) = max_boxes
 
 def main() -> i32:

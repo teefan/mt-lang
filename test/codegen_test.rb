@@ -345,6 +345,39 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/const int32_t\* copy = pointer;/, generated)
   end
 
+  def test_generate_c_escapes_local_names_that_match_c_keywords
+    source = <<~MT
+      module demo.main
+
+      def main() -> i32:
+          let double = 7
+          return double + 1
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/int32_t double_ = 7;/, generated)
+    assert_match(/return double_ \+ 1;/, generated)
+  end
+
+  def test_generate_c_for_deferred_literal_return_without_spill_temp
+    source = <<~MT
+      module demo.main
+
+      import std.raylib as rl
+
+      def main() -> i32:
+          rl.init_window(800, 450, "Demo")
+          defer rl.close_window()
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/CloseWindow\(\);\s+return 0;/m, generated)
+    refute_match(/__mt_return_value_\d+/, generated)
+  end
+
   def test_generate_c_for_foreign_defs_with_string_literal_without_using_scratch
     source = <<~MT
       module demo.main

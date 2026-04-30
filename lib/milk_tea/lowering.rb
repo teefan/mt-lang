@@ -1754,7 +1754,7 @@ module MilkTea
               contextual_int_to_float: contextual_int_to_float_target?(return_type),
             ) : nil
             cleanup = cleanup_statements(local_defers, active_defers)
-            if value && !cleanup.empty?
+            if value && !cleanup.empty? && !cleanup_safe_return_expression?(prepared_value)
               return_value_name = fresh_c_temp_name(local_env, "return_value")
               lowered << IR::LocalDecl.new(name: return_value_name, c_name: return_value_name, type: return_type, value:)
               value = IR::Name.new(name: return_value_name, type: return_type, pointer: false)
@@ -6444,12 +6444,34 @@ module MilkTea
       end
 
       def c_local_name(name)
-        name
+        identifier = sanitize_identifier(name)
+        return "#{identifier}_" if c_reserved_identifier?(identifier)
+
+        identifier
+      end
+
+      def c_reserved_identifier?(identifier)
+        %w[
+          auto break case char const continue default do double else enum extern
+          float for goto if inline int long register restrict return short signed
+          sizeof static struct switch typedef union unsigned void volatile while
+          _Alignas _Alignof _Atomic _Bool _Complex _Generic _Imaginary _Noreturn
+          _Static_assert _Thread_local
+        ].include?(identifier)
       end
 
       def fresh_c_temp_name(env, prefix)
         env[:counter][:value] += 1
         "__mt_#{prefix}_#{env[:counter][:value]}"
+      end
+
+      def cleanup_safe_return_expression?(expression)
+        case expression
+        when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral, AST::BooleanLiteral, AST::NullLiteral
+          true
+        else
+          false
+        end
       end
 
       def sanitize_identifier(text)

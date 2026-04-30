@@ -37,6 +37,18 @@ class MilkTeaStdIdiomaticExamplesTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_anonymous_functions_example_runs
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    result = MilkTea::Run.run(example_path("anonymous_functions"), cc: compiler)
+
+    assert_equal "anonymous functions and closures\ndouble(3) = 6\nadd_offset(3) = 8\n", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   def test_io_printing_example_generated_c_inlines_formatted_condition_calls
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

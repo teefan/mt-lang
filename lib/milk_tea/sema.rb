@@ -1243,7 +1243,7 @@ module MilkTea
         receiver_type = infer_expression(expression.receiver, scopes:)
         index_type = infer_expression(expression.index, scopes:)
 
-        if array_type?(receiver_type) && !unsafe_context? && !addressable_storage_expression?(expression.receiver)
+        if array_type?(receiver_type) && !unsafe_context? && !addressable_storage_expression?(expression.receiver, scopes:)
           raise SemaError, "safe array indexing requires an addressable array value; bind it to a local first"
         end
 
@@ -3179,12 +3179,16 @@ module MilkTea
         raise SemaError, "cannot index #{receiver_type}"
       end
 
-      def addressable_storage_expression?(expression)
+      def addressable_storage_expression?(expression, scopes:)
         case expression
         when AST::Identifier
           true
         when AST::MemberAccess, AST::IndexAccess
-          addressable_storage_expression?(expression.receiver)
+          addressable_storage_expression?(expression.receiver, scopes:)
+        when AST::Call
+          return false unless expression.arguments.length == 1 && expression.arguments.first.name.nil?
+
+          value_call?(expression) && ref_type?(infer_expression(expression.arguments.first.value, scopes:))
         else
           false
         end
