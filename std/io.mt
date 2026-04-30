@@ -12,8 +12,8 @@ def write_fd(fd: i32, text: str) -> bool:
         return true
 
     unsafe:
-        let written = unistd.write(fd, cast[ptr[void]](text.data), text.len)
-        return written == cast[i64](text.len)
+        let written = unistd.write(fd, ptr[void]<-text.data, text.len)
+        return written == i64<-text.len
 
 pub def write(text: str) -> bool:
     return write_fd(stdout_fd, text)

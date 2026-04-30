@@ -268,7 +268,7 @@ class MilkTeaParserTest < Minitest::Test
 
       def main(count: i32) -> i32:
           let text = fmt.string(f"count=\#{count} ok=\#{true}")
-          return cast[i32](text.count())
+          return i32<-text.count()
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -701,7 +701,7 @@ class MilkTeaParserTest < Minitest::Test
           let callback: fn(value: f32) -> f32 = entry.callback
           let left = callbacks[0](1)
           let right = callback(1.0)
-          return cast[i32](right) + left
+          return i32<-right + left
 
       def identity(value: i32) -> i32:
           return value
@@ -775,7 +775,7 @@ class MilkTeaParserTest < Minitest::Test
           return count
 
       def main() -> i32:
-          return cast[i32](bytes_for[i32](4))
+          return i32<-bytes_for[i32](4)
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -796,7 +796,7 @@ class MilkTeaParserTest < Minitest::Test
 
       def main() -> i32:
           var buffer: str_builder[32]
-          return cast[i32](capacity_of[32](buffer))
+          return i32<-capacity_of[32](buffer)
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -819,7 +819,7 @@ class MilkTeaParserTest < Minitest::Test
 
       def main() -> i32:
           var buffer: str_builder[CAPACITY]
-          return cast[i32](capacity_of[CAPACITY](buffer))
+          return i32<-capacity_of[CAPACITY](buffer)
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -1097,7 +1097,7 @@ class MilkTeaParserTest < Minitest::Test
 
       def main(memory: ptr[void]) -> i32:
           unsafe:
-              let advanced = cast[ptr[byte]](memory) + 4
+              let advanced = ptr[byte]<-memory + 4
           return 0
     MT
 
@@ -1126,9 +1126,9 @@ class MilkTeaParserTest < Minitest::Test
           unsafe:
               let counter_ptr = raw(handle)
               deref(counter_ptr).value = 7
-          let value_ref = addr(value(handle).value)
+          let value_ref = addr(handle.value)
           value(value_ref) += 2
-          return value(handle).value
+          return handle.value
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -1312,7 +1312,7 @@ class MilkTeaParserTest < Minitest::Test
       pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
       pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
       pub foreign def set_shader_value[T](shader: Shader, loc_index: i32, in value: T as const_ptr[void], uniform_type: i32) -> void = c.SetShaderValue
-      pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
+      pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, i32<-data.len)
       pub foreign def close_window(consuming window: Window) -> void = c.CloseWindow
 
       def main(path: str) -> ptr[u8]?:

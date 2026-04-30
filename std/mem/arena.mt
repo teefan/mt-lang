@@ -64,13 +64,13 @@ methods Arena:
             return null
 
         unsafe:
-            let buffer = cast[ptr[char]](memory)
+            let buffer = ptr[char]<-memory
             var index: usize = 0
             while index < text.len:
                 deref(buffer + index) = deref(text.data + index)
                 index += 1
             deref(buffer + text.len) = zero[char]()
-            return cast[cstr](buffer)
+            return cstr<-buffer
 
     pub edit def to_cstr(text: str) -> cstr:
         let memory = this.alloc_bytes(text.len + 1)
@@ -78,13 +78,13 @@ methods Arena:
             panic(c"Arena.to_cstr out of memory")
 
         unsafe:
-            let buffer = cast[ptr[char]](memory)
+            let buffer = ptr[char]<-memory
             var index: usize = 0
             while index < text.len:
                 deref(buffer + index) = deref(text.data + index)
                 index += 1
             deref(buffer + text.len) = zero[char]()
-            return cast[cstr](buffer)
+            return cstr<-buffer
 
     pub edit def release() -> void:
         heap.release(this.memory)
@@ -94,13 +94,13 @@ methods Arena:
         return
 
 pub def alloc[T](space: ref[Arena], count: usize) -> ptr[T]?:
-    let element_size = cast[usize](sizeof(T))
+    let element_size = usize<-sizeof(T)
     if heap.mul_overflows(count, element_size):
         return null
 
-    let memory = value(space).alloc_bytes_aligned(count * element_size, cast[usize](alignof(T)))
+    let memory = value(space).alloc_bytes_aligned(count * element_size, usize<-alignof(T))
     if memory == null:
         return null
 
     unsafe:
-        return cast[ptr[T]](memory)
+        return ptr[T]<-memory

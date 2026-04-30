@@ -25,11 +25,11 @@ struct WorkState[T]:
 
 def sleep_state(frame: ptr[void]) -> ptr[SleepState]:
     unsafe:
-        return cast[ptr[SleepState]](frame)
+        return ptr[SleepState]<-frame
 
 def work_state[T](frame: ptr[void]) -> ptr[WorkState[T]]:
     unsafe:
-        return cast[ptr[WorkState[T]]](frame)
+        return ptr[WorkState[T]]<-frame
 
 def require_current_loop() -> rt.Loop:
     if not current_loop_active:
@@ -49,7 +49,7 @@ def deactivate_current_loop() -> void:
 def sleep_task(state: ptr[SleepState]) -> Task[i32]:
     unsafe:
         return Task[i32](
-            frame = cast[ptr[void]](state),
+            frame = ptr[void]<-state,
             ready = sleep_ready,
             set_waiter = sleep_set_waiter,
             release = sleep_release,
@@ -59,7 +59,7 @@ def sleep_task(state: ptr[SleepState]) -> Task[i32]:
 def work_task[T](state: ptr[WorkState[T]]) -> Task[T]:
     unsafe:
         return Task[T](
-            frame = cast[ptr[void]](state),
+            frame = ptr[void]<-state,
             ready = work_ready[T],
             set_waiter = work_set_waiter[T],
             release = work_release[T],
@@ -90,29 +90,29 @@ def complete_work[T](state: ptr[WorkState[T]], status: i32) -> void:
 
 def on_sleep_closed(handle: ptr[uv.uv_handle_t]) -> void:
     unsafe:
-        let state = cast[ptr[SleepState]](uv.handle_get_data(handle))
+        let state = ptr[SleepState]<-uv.handle_get_data(handle)
         complete_sleep(state, deref(state).status)
     return
 
 def on_sleep_timer(timer: ptr[uv.uv_timer_t]) -> void:
     unsafe:
-        let handle = cast[ptr[uv.uv_handle_t]](timer)
-        let state = cast[ptr[SleepState]](uv.handle_get_data(handle))
+        let handle = ptr[uv.uv_handle_t]<-timer
+        let state = ptr[SleepState]<-uv.handle_get_data(handle)
         deref(state).status = 0
         uv.close(handle, on_sleep_closed)
     return
 
 def on_work_request[T](req: ptr[uv.uv_work_t]) -> void:
     unsafe:
-        let request = cast[ptr[uv.uv_req_t]](req)
-        let state = cast[ptr[WorkState[T]]](uv.req_get_data(request))
+        let request = ptr[uv.uv_req_t]<-req
+        let state = ptr[WorkState[T]]<-uv.req_get_data(request)
         deref(state).result = deref(state).work()
     return
 
 def on_work_done[T](req: ptr[uv.uv_work_t], status: i32) -> void:
     unsafe:
-        let request = cast[ptr[uv.uv_req_t]](req)
-        let state = cast[ptr[WorkState[T]]](uv.req_get_data(request))
+        let request = ptr[uv.uv_req_t]<-req
+        let state = ptr[WorkState[T]]<-uv.req_get_data(request)
         complete_work[T](state, status)
     return
 
@@ -186,7 +186,7 @@ pub def sleep_on(loop: rt.Loop, timeout: usize) -> Task[i32]:
 
     unsafe:
         deref(state).timer = timer_result.value
-        uv.handle_set_data(cast[ptr[uv.uv_handle_t]](rt.handle_ptr(deref(state).timer)), cast[ptr[void]](state))
+        uv.handle_set_data(ptr[uv.uv_handle_t]<-rt.handle_ptr(deref(state).timer), ptr[void]<-state)
 
     var status = 0
     unsafe:
@@ -194,7 +194,7 @@ pub def sleep_on(loop: rt.Loop, timeout: usize) -> Task[i32]:
     if status != 0:
         unsafe:
             deref(state).status = status
-            uv.close(cast[ptr[uv.uv_handle_t]](rt.handle_ptr(deref(state).timer)), on_sleep_closed)
+            uv.close(ptr[uv.uv_handle_t]<-rt.handle_ptr(deref(state).timer), on_sleep_closed)
     return sleep_task(state)
 
 pub def sleep(timeout: usize) -> Task[i32]:
@@ -205,7 +205,7 @@ pub def work_on[T](loop: rt.Loop, run_work: fn() -> T) -> Task[T]:
     unsafe:
         deref(state).work = run_work
         deref(state).request = rt.create_work_request()
-        uv.req_set_data(cast[ptr[uv.uv_req_t]](rt.request_ptr(deref(state).request)), cast[ptr[void]](state))
+        uv.req_set_data(ptr[uv.uv_req_t]<-rt.request_ptr(deref(state).request), ptr[void]<-state)
 
     var status = 0
     unsafe:

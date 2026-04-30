@@ -33,13 +33,13 @@ methods Stack:
         return
 
 pub def alloc[T](space: ref[Stack], count: usize) -> ptr[T]?:
-    let element_size = cast[usize](sizeof(T))
+    let element_size = usize<-sizeof(T)
     if heap.mul_overflows(count, element_size):
         return null
 
-    let memory = value(space).alloc_bytes_aligned(count * element_size, cast[usize](alignof(T)))
+    let memory = value(space).alloc_bytes_aligned(count * element_size, usize<-alignof(T))
     if memory == null:
         return null
 
     unsafe:
-        return cast[ptr[T]](memory)
+        return ptr[T]<-memory

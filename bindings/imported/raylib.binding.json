@@ -128,7 +128,7 @@
           { "name": "count", "type": "usize" }
         ],
         "return_type": "ptr[T]?",
-        "mapping": "c.MemAlloc(count * cast[u32](sizeof(T)))"
+        "mapping": "c.MemAlloc(count * u32<-sizeof(T))"
       },
       {
         "raw": "MemRealloc",
@@ -138,7 +138,7 @@
           { "name": "count", "type": "usize" }
         ],
         "return_type": "ptr[T]?",
-        "mapping": "c.MemRealloc(memory, count * cast[u32](sizeof(T)))"
+        "mapping": "c.MemRealloc(memory, count * u32<-sizeof(T))"
       },
       {
         "raw": "MemFree",
@@ -167,7 +167,7 @@
           { "name": "file_name", "type": "str", "boundary_type": "cstr" },
           { "name": "data", "type": "span[u8]" }
         ],
-        "mapping": "c.SaveFileData(file_name, data.data, cast[i32](data.len))"
+        "mapping": "c.SaveFileData(file_name, data.data, i32<-data.len)"
       },
       {
         "raw": "FileExists",

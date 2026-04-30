@@ -15,7 +15,7 @@ class MilkTeaStdStringTest < Minitest::Test
       "",
       "def byte_at(text: str, index: usize) -> i32:",
       "    unsafe:",
-      "        return cast[i32](cast[u8](deref(text.data + index)))",
+      "        return i32<-u8<-deref(text.data + index)",
       "",
       "def main() -> i32:",
       "    var name = string.String.from_str(\"Milk\")",
@@ -30,7 +30,7 @@ class MilkTeaStdStringTest < Minitest::Test
       "",
       "    name.assign(\"MT\")",
       "    let compact = name.as_str()",
-      "    let total = cast[i32](compact.len) + byte_at(compact, 0) + byte_at(compact, 1)",
+      "    let total = i32<-compact.len + byte_at(compact, 0) + byte_at(compact, 1)",
       "    return total",
       "",
     ].join("\n")
@@ -56,7 +56,7 @@ class MilkTeaStdStringTest < Minitest::Test
       "def cstr_len(text: cstr) -> i32:",
       "    var count = 0",
       "    unsafe:",
-      "        let data = cast[ptr[char]](text)",
+      "        let data = ptr[char]<-text",
       "        while deref(data + count) != zero[char]():",
       "            count += 1",
       "    return count",
@@ -102,8 +102,8 @@ class MilkTeaStdStringTest < Minitest::Test
       "        return 3",
       "    if not text.is_valid_utf8(trimmed):",
       "        return 4",
-      "    let found = text.find_byte(trimmed, cast[u8](32))",
-      "    return cast[i32](trimmed.len) + cast[i32](option.unwrap[usize](found))",
+      "    let found = text.find_byte(trimmed, u8<-32)",
+      "    return i32<-trimmed.len + i32<-option.unwrap[usize](found)",
       "",
     ].join("\n")
 
@@ -132,12 +132,12 @@ class MilkTeaStdStringTest < Minitest::Test
       "    let borrowed = text.cstr_as_str(raw)",
       "    var borrowed_chars: str = \"\"",
       "    unsafe:",
-      "        borrowed_chars = text.chars_as_str(cast[ptr[char]](raw))",
+      "        borrowed_chars = text.chars_as_str(ptr[char]<-raw)",
       "    if not text.equal(borrowed, \"Milk Tea\"):",
       "        return 1",
       "    if not text.equal(borrowed_chars, borrowed):",
       "        return 2",
-      "    return cast[i32](borrowed.len) + cast[i32](borrowed_chars.len)",
+      "    return i32<-borrowed.len + i32<-borrowed_chars.len",
       "",
     ].join("\n")
 

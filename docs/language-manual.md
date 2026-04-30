@@ -445,14 +445,16 @@ Special recognized callables:
 - `value(r)`
 - `deref(p)`
 - `raw(r)`
-- `cast[T](value)`
-- `T<-value` (shorthand for `cast[T](value)`)
+- `T<-value` (preferred shorthand for `cast[T](value)`)
+- `cast[T](value)` (equivalent explicit form)
 - `reinterpret[T](value)`
 - `zero[T]()`
 - `array[T, N](...)`
 - `span[T](data = ..., len = ...)`
 
 `range(start, stop)` is a reserved loop helper for `for` typing.
+
+`value(r)` still explicitly projects a `ref[T]` to its referent value, but ordinary member access and method calls auto-dereference `ref[T]` receivers. That means `handle.field`, `handle.edit_method()`, and `handle.read()` are accepted without writing `value(handle)` first.
 
 ## 8. Strings, C Strings, And Format Strings
 

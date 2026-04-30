@@ -30,7 +30,7 @@ pub def data_ptr[T](items: Vec[T]) -> ptr[T]?:
 pub def as_span[T](items: Vec[T]) -> span[T]:
     let data = items.data
     unsafe:
-        return span[T](data = cast[ptr[T]](data), len = items.len)
+        return span[T](data = ptr[T]<-data, len = items.len)
 
 pub def clear[T](items: ref[Vec[T]]) -> void:
     value(items).len = 0

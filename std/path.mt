@@ -10,7 +10,7 @@ struct Segment:
 
 def byte_at(path: str, index: usize) -> u8:
     unsafe:
-        return cast[u8](deref(path.data + index))
+        return u8<-deref(path.data + index)
 
 def segment_text(path: str, segment: Segment) -> str:
     unsafe:
@@ -22,7 +22,7 @@ def segment_equals(path: str, segment: Segment, value: str) -> bool:
 pub def is_absolute(path: str) -> bool:
     if path.len == 0:
         return false
-    return byte_at(path, 0) == cast[u8](47)
+    return byte_at(path, 0) == u8<-47
 
 pub def join(left: str, right: str) -> string.String:
     if left.len == 0:
@@ -31,7 +31,7 @@ pub def join(left: str, right: str) -> string.String:
         return string.String.from_str(left)
 
     unsafe:
-        if deref(right.data) == cast[char](47):
+        if deref(right.data) == char<-47:
             return string.String.from_str(right)
 
     var result = string.String.with_capacity(left.len + right.len + 1)
@@ -39,7 +39,7 @@ pub def join(left: str, right: str) -> string.String:
 
     unsafe:
         let last = deref(left.data + (left.len - 1))
-        if last != cast[char](47):
+        if last != char<-47:
             result.append("/")
 
     result.append(right)
@@ -50,9 +50,9 @@ pub def module_relative_path(module_name: str) -> string.String:
     var index: usize = 0
     while index < module_name.len:
         unsafe:
-            let byte = cast[u8](deref(module_name.data + index))
-            if byte == cast[u8](46):
-                result.push_byte(cast[u8](47))
+            let byte = u8<-deref(module_name.data + index)
+            if byte == u8<-46:
+                result.push_byte(u8<-47)
             else:
                 result.push_byte(byte)
         index += 1
@@ -66,11 +66,11 @@ pub def normalize(path: str) -> string.String:
 
     var index: usize = 0
     while index < path.len:
-        while index < path.len and byte_at(path, index) == cast[u8](47):
+        while index < path.len and byte_at(path, index) == u8<-47:
             index += 1
 
         let start = index
-        while index < path.len and byte_at(path, index) != cast[u8](47):
+        while index < path.len and byte_at(path, index) != u8<-47:
             index += 1
 
         let length = index - start
@@ -123,14 +123,14 @@ pub def basename(path: str) -> string.String:
         return string.String.from_str(".")
 
     var stop = path.len
-    while stop > 1 and byte_at(path, stop - 1) == cast[u8](47):
+    while stop > 1 and byte_at(path, stop - 1) == u8<-47:
         stop -= 1
 
-    if stop == 1 and byte_at(path, 0) == cast[u8](47):
+    if stop == 1 and byte_at(path, 0) == u8<-47:
         return string.String.from_str("/")
 
     var start = stop
-    while start > 0 and byte_at(path, start - 1) != cast[u8](47):
+    while start > 0 and byte_at(path, start - 1) != u8<-47:
         start -= 1
 
     unsafe:
@@ -141,17 +141,17 @@ pub def dirname(path: str) -> string.String:
         return string.String.from_str(".")
 
     var stop = path.len
-    while stop > 1 and byte_at(path, stop - 1) == cast[u8](47):
+    while stop > 1 and byte_at(path, stop - 1) == u8<-47:
         stop -= 1
 
     var slash = stop
-    while slash > 0 and byte_at(path, slash - 1) != cast[u8](47):
+    while slash > 0 and byte_at(path, slash - 1) != u8<-47:
         slash -= 1
 
     if slash == 0:
         return string.String.from_str(".")
 
-    while slash > 1 and byte_at(path, slash - 1) == cast[u8](47):
+    while slash > 1 and byte_at(path, slash - 1) == u8<-47:
         slash -= 1
 
     unsafe:

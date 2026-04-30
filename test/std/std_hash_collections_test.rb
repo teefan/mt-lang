@@ -41,7 +41,7 @@ class MilkTeaStdHashCollectionsTest < Minitest::Test
       "    if map.contains[u64, i32](scores, 1):",
       "        return 5",
       "",
-      "    let total = first + second + cast[i32](map.count[u64, i32](scores))",
+      "    let total = first + second + i32<-map.count[u64, i32](scores)",
       "    return total",
       "",
     ].join("\n")
@@ -99,7 +99,7 @@ class MilkTeaStdHashCollectionsTest < Minitest::Test
       "    if set.contains[i32](ids, 10):",
       "        return 4",
       "",
-      "    let total = tea + cast[i32](set.count[i32](ids))",
+      "    let total = tea + i32<-set.count[i32](ids)",
       "    return total",
       "",
     ].join("\n")

@@ -42,7 +42,7 @@ pub def release[K, V](items: ref[HashMap[K, V]]) -> void:
     return
 
 def index_for(hash: u64, capacity: usize) -> usize:
-    return cast[usize](hash % cast[u64](capacity))
+    return usize<-(hash % u64<-capacity)
 
 def should_grow(len: usize, capacity: usize) -> bool:
     if capacity == 0:

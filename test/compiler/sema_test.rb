@@ -473,7 +473,7 @@ class MilkTeaSemaTest < Minitest::Test
       def main(count: u8, delta: i16, ticks: u64) -> i32:
           var text = fmt.string(f"count=\#{count} delta=\#{delta} ticks=\#{ticks} ok=\#{true}")
           defer text.release()
-          return cast[i32](text.count())
+          return i32<-text.count()
     MT
 
     result = check_program_source(source)
@@ -629,7 +629,7 @@ class MilkTeaSemaTest < Minitest::Test
           let callback: fn(value: f32) -> f32 = entry.callback
           let left = callbacks[0](1)
           let right = callback(1.0)
-          return left + cast[i32](right)
+          return left + i32<-right
     MT
 
     result = check_source(source)
@@ -873,7 +873,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
         pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
-        pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
+        pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, i32<-data.len)
       MT
     }
 
@@ -906,7 +906,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import std.c.sample as c
 
-        pub foreign def use_names(names: span[str] as span[cstr], inout active: i32) -> i32 = c.UseNames(names.data, cast[i32](names.len), active)
+        pub foreign def use_names(names: span[str] as span[cstr], inout active: i32) -> i32 = c.UseNames(names.data, i32<-names.len, active)
       MT
     }
 
@@ -939,7 +939,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import std.c.sample as c
 
-        pub foreign def use_names(names: span[str] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, cast[i32](names.len), active)
+        pub foreign def use_names(names: span[str] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, i32<-names.len, active)
       MT
     }
 
@@ -971,7 +971,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import std.c.sample as c
 
-        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, cast[i32](names.len))
+        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, i32<-names.len)
       MT
     }
 
@@ -1006,7 +1006,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import std.c.sample as c
 
-        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, cast[i32](names.len))
+        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, i32<-names.len)
       MT
     }
 
@@ -1076,7 +1076,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import std.c.sample as c
 
-        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, cast[i32](names.len))
+        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, i32<-names.len)
         pub foreign def pair_sum(value: i32) -> i32 = c.PairSum(value, value)
       MT
     }
@@ -1141,7 +1141,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import std.c.sample as c
 
-        pub foreign def use_names(names: span[cstr] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, cast[i32](names.len), active)
+        pub foreign def use_names(names: span[cstr] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, i32<-names.len, active)
       MT
     }
 
@@ -1594,7 +1594,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           if before_limit():
-              return cast[i32](sum())
+              return i32<-sum()
           return 0
     MT
 
@@ -1763,7 +1763,7 @@ class MilkTeaSemaTest < Minitest::Test
           return count * sizeof(T)
 
       def main() -> i32:
-          return cast[i32](bytes_for[i32](4))
+          return i32<-bytes_for[i32](4)
     MT
 
     result = check_source(source)
@@ -1781,7 +1781,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var buffer: str_builder[32]
-          return cast[i32](capacity_of(buffer) + capacity_of(buffer))
+          return i32<-(capacity_of(buffer) + capacity_of(buffer))
     MT
 
     result = check_source(source)
@@ -1799,7 +1799,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var buffer: str_builder[32]
-          return cast[i32](capacity_of[32](buffer))
+          return i32<-capacity_of[32](buffer)
     MT
 
     result = check_source(source)
@@ -1853,7 +1853,7 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> i32:
           var buffer: str_builder[CAPACITY]
           var values = zero[array[i32, CAPACITY]]()
-          values[0] = cast[i32](capacity_of[CAPACITY](buffer))
+          values[0] = i32<-capacity_of[CAPACITY](buffer)
           return values[0]
     MT
 
@@ -1957,8 +1957,8 @@ class MilkTeaSemaTest < Minitest::Test
           let part = text.slice(6, 5)
           let copied = part.to_cstr(addr(scratch))
 
-          if text.len == cast[usize](11) and part.len == cast[usize](5):
-              return cast[i32](part.len)
+          if text.len == usize<-11 and part.len == usize<-5:
+              return i32<-part.len
           panic(copied)
           return 0
     MT
@@ -2230,7 +2230,7 @@ class MilkTeaSemaTest < Minitest::Test
           let values = array[u8, 4](1, 2, 3, 4)
           unsafe:
               let bits = reinterpret[u32](values)
-              return cast[i32](bits)
+              return i32<-bits
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -2251,9 +2251,9 @@ class MilkTeaSemaTest < Minitest::Test
           tap = 1
 
       def main() -> i32:
-          let state = cast[i32](State.idle)
-          let gesture = cast[u32](Gesture.tap)
-          return state + cast[i32](gesture)
+          let state = i32<-State.idle
+          let gesture = u32<-Gesture.tap
+          return state + i32<-gesture
     MT
 
     result = check_source(source)
@@ -2300,7 +2300,7 @@ class MilkTeaSemaTest < Minitest::Test
           let baseline: f32 = 0
           let point = Point(x = 0, y = 1)
           takes_f32(0)
-          return cast[i32](baseline + point.x)
+          return i32<-(baseline + point.x)
     MT
 
     result = check_source(source)
@@ -2322,7 +2322,7 @@ class MilkTeaSemaTest < Minitest::Test
           let value = 7
           takes_f32(value)
           let point = Point(x = value)
-          return cast[i32](point.x)
+          return i32<-point.x
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -2349,7 +2349,7 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> i32:
           let value = 4
           let baseline: f32 = value
-          return cast[i32](project(value) + baseline)
+          return i32<-(project(value) + baseline)
     MT
 
     result = check_source(source)
@@ -2570,7 +2570,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           let gesture: u32 = Gesture.tap
-          return cast[i32](gesture)
+          return i32<-gesture
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -2725,7 +2725,7 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> i32:
           let memory = allocate(16)
           unsafe:
-              let advanced = cast[ptr[byte]](memory) + 4
+              let advanced = ptr[byte]<-memory + 4
           return 0
     MT
 
@@ -2743,7 +2743,7 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> i32:
           let memory = allocate(16)
           unsafe:
-              let bytes = cast[ptr[byte]](memory)
+              let bytes = ptr[byte]<-memory
               let offset = 4
               let advanced = bytes + offset
               let first = advanced[offset - 4]
@@ -2936,7 +2936,7 @@ class MilkTeaSemaTest < Minitest::Test
           let point = Point(x = 5)
           let colors = array[u32, 4](1, 2)
           let holder = Holder(point = point)
-          return origin.x + point.x + cast[i32](colors[1]) + holder.point.x
+          return origin.x + point.x + i32<-colors[1] + holder.point.x
     MT
 
     result = check_source(source)
@@ -3167,7 +3167,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           let memory = allocate(16)
-          let bytes = cast[ptr[byte]](memory)
+          let bytes = ptr[byte]<-memory
           return 0
     MT
 
@@ -3186,7 +3186,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           let memory = allocate(16)
-          let advanced = cast[ptr[byte]](memory) + 4
+          let advanced = ptr[byte]<-memory + 4
           return 0
     MT
 
@@ -3208,9 +3208,9 @@ class MilkTeaSemaTest < Minitest::Test
           var buffer = zero[array[char, 32]]()
           unsafe:
               let raw_buffer = raw(addr(buffer[0]))
-              set_text(cast[cstr](raw_buffer))
+              set_text(cstr<-raw_buffer)
               let clipboard = get_text()
-              let writable = cast[ptr[char]](clipboard)
+              let writable = ptr[char]<-clipboard
     MT
 
     result = check_source(source)
@@ -3341,7 +3341,7 @@ class MilkTeaSemaTest < Minitest::Test
           var buffer = zero[array[char, 32]]()
           buffer[0] = 65
           let used = view(buffer)
-          return cast[i32](used)
+          return i32<-used
     MT
 
     result = check_source(source)
@@ -3387,7 +3387,7 @@ class MilkTeaSemaTest < Minitest::Test
           var buffer = zero[array[char, 16]]()
           let view = buffer.as_str()
           let label = buffer.as_cstr()
-          return cast[i32](view.len)
+          return i32<-view.len
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -3572,7 +3572,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import std.c.ui as c
 
-        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.len))
+        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, i32<-text_public.len)
       MT
     }
 
@@ -3598,7 +3598,7 @@ class MilkTeaSemaTest < Minitest::Test
           if text.len == 0:
               return 1
           buffer.clear()
-          return cast[i32](raw + buffer.capacity())
+          return i32<-(raw + buffer.capacity())
     MT
 
     result = check_source(source)
@@ -3629,7 +3629,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import std.c.ui as c
 
-        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.len))
+        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, i32<-text_public.len)
       MT
     }
 
@@ -3661,7 +3661,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import std.c.ui as c
 
-        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.capacity() + 1))
+        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, i32<-(text_public.capacity() + 1))
       MT
     }
 
@@ -3693,7 +3693,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import std.c.ui as c
 
-        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.capacity() + 1))
+        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, i32<-(text_public.capacity() + 1))
       MT
     }
 
@@ -3708,7 +3708,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.c.ui as c
 
-      pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, cast[i32](text_public.capacity() + 1))
+      pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, i32<-(text_public.capacity() + 1))
 
       def main() -> void:
           var buffer: str_builder[32]
@@ -3738,7 +3738,7 @@ class MilkTeaSemaTest < Minitest::Test
           var ptr: ptr[char] = zero[ptr[char]]()
           unsafe:
               ptr[0] = first
-              ptr[1] = cast[char](66)
+              ptr[1] = char<-66
           return 0
     MT
 
@@ -3815,7 +3815,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.bad_char_numeric
 
       def main() -> i32:
-          let value = cast[char](65)
+          let value = char<-65
           return value + 1
     MT
 
@@ -3835,7 +3835,7 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> void:
           let maybe_buffer: ptr[char]? = null[ptr[char]]
           unsafe:
-              set_text(cast[cstr](null[ptr[char]]))
+              set_text(cstr<-null[ptr[char]])
     MT
 
     result = check_source(source)
@@ -3884,20 +3884,23 @@ class MilkTeaSemaTest < Minitest::Test
           edit def add(delta: i32):
               this.value += delta
 
+          def read() -> i32:
+              return this.value
+
       def increment(counter: ref[Counter], amount: i32) -> void:
-          value(counter).add(amount)
-          value(counter).value += 1
+          counter.add(amount)
+          counter.value += 1
 
       def main() -> i32:
           var counter = Counter(value = 3)
           let handle = addr(counter)
           increment(handle, 4)
-          let value_ref = addr(value(handle).value)
+          let value_ref = addr(handle.value)
           value(value_ref) += 2
           unsafe:
               let raw_counter = raw(handle)
               deref(raw_counter).value += 1
-          return value(handle).value
+          return handle.read()
     MT
 
     result = check_source(source)
@@ -3995,7 +3998,7 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> i32:
           var value = 1
           let handle = addr(value)
-          let raw = cast[ptr[i32]](handle)
+          let raw = ptr[i32]<-handle
           return 0
     MT
 
@@ -4006,9 +4009,9 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/ref to pointer cast requires unsafe/, error.message)
   end
 
-  def test_rejects_ref_projection_without_value
+  def test_type_checks_ref_projection_without_value
     source = <<~MT
-      module demo.bad
+      module demo.good
 
       struct Counter:
           value: i32
@@ -4016,14 +4019,14 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> i32:
           var counter = Counter(value = 3)
           let handle = addr(counter)
+          let value_ref = addr(handle.value)
+          value(value_ref) += 2
           return handle.value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_source(source)
-    end
+    result = check_source(source)
 
-    assert_match(/cannot access member value of ref\[demo.bad.Counter\]/, error.message)
+    assert_equal true, result.functions.key?("main")
   end
 
   def test_rejects_non_integer_flags_backing_types
@@ -4170,7 +4173,7 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> i32:
           counter = callbacks[0](counter + 1)
           scratch[0] = 7
-          return counter + cast[i32](scratch[0])
+          return counter + i32<-scratch[0]
     MT
 
     result = check_source(source)

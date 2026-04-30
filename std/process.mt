@@ -8,7 +8,7 @@ import std.str as text_ops
 pub def arg_count(argc: i32) -> usize:
     if argc <= 0:
         return 0
-    return cast[usize](argc)
+    return usize<-argc
 
 pub def arg(argc: i32, argv: ptr[cstr], index: usize) -> option.Option[str]:
     if index >= arg_count(argc):
@@ -27,7 +27,7 @@ pub def env(name: str, scratch: ref[arena.Arena]) -> option.Option[str]:
         return option.none[str]()
 
     unsafe:
-        return option.some[str](text_ops.cstr_as_str(cast[cstr](value_ptr)))
+        return option.some[str](text_ops.cstr_as_str(cstr<-value_ptr))
 
 pub def env_exists(name: str, scratch: ref[arena.Arena]) -> bool:
     return option.is_some[str](env(name, scratch))
