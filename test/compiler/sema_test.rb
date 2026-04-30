@@ -4144,6 +4144,169 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/module variable initializer must be static-storage-safe/, error.message)
   end
 
+  def test_type_checks_integer_match_with_wildcard
+    source = <<~MT
+      module demo.int_match
+
+      def dispatch(key: i32) -> i32:
+          match key:
+              65:
+                  return 1
+              27:
+                  return 2
+              _:
+                  return 0
+
+      def main() -> i32:
+          return dispatch(65)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("dispatch")
+  end
+
+  def test_rejects_integer_match_missing_wildcard
+    source = <<~MT
+      module demo.int_match_bad
+
+      def dispatch(key: i32) -> i32:
+          match key:
+              65:
+                  return 1
+              27:
+                  return 2
+
+      def main() -> i32:
+          return dispatch(65)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/requires a wildcard arm/, error.message)
+  end
+
+  def test_rejects_non_literal_pattern_in_integer_match
+    source = <<~MT
+      module demo.int_match_bad_pattern
+
+      var x: i32 = 65
+
+      def dispatch(key: i32) -> i32:
+          match key:
+              x:
+                  return 1
+              _:
+                  return 0
+
+      def main() -> i32:
+          return dispatch(65)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/must be an integer literal or _/, error.message)
+  end
+
+  def test_rejects_duplicate_wildcard_in_match
+    source = <<~MT
+      module demo.dup_wild
+
+      def dispatch(key: i32) -> i32:
+          match key:
+              65:
+                  return 1
+              _:
+                  return 0
+              _:
+                  return 99
+
+      def main() -> i32:
+          return dispatch(65)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/duplicate wildcard arm/, error.message)
+  end
+
+  def test_type_checks_enum_match_with_wildcard_subset
+    source = <<~MT
+      module demo.enum_wild
+
+      enum EventKind: u8
+          quit = 1
+          resize = 2
+          key = 3
+
+      def dispatch(kind: EventKind) -> i32:
+          match kind:
+              EventKind.quit:
+                  return 0
+              _:
+                  return 1
+
+      def main() -> i32:
+          return dispatch(EventKind.quit)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("dispatch")
+  end
+
+  def test_rejects_duplicate_integer_match_arm_value
+    source = <<~MT
+      module demo.dup_int
+
+      def dispatch(key: i32) -> i32:
+          match key:
+              65:
+                  return 1
+              65:
+                  return 2
+              _:
+                  return 0
+
+      def main() -> i32:
+          return dispatch(65)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/duplicate match arm value/, error.message)
+  end
+
+  def test_type_checks_integer_match_u8_scrutinee
+    source = <<~MT
+      module demo.u8_match
+
+      def dispatch(code: u8) -> i32:
+          match code:
+              0:
+                  return 0
+              1:
+                  return 1
+              _:
+                  return 99
+
+      def main() -> i32:
+          return dispatch(1)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("dispatch")
+  end
+
   private
 
   def demo_path

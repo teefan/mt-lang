@@ -906,12 +906,25 @@ module MilkTea
       def check_match_stmt(statement, scopes:, return_type:, allow_return:)
         validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: false)
         scrutinee_type = infer_expression(statement.expression, scopes:)
-        unless scrutinee_type.is_a?(Types::Enum)
-          raise SemaError, "match requires an enum scrutinee, got #{scrutinee_type}"
+        if scrutinee_type.is_a?(Types::Enum)
+          check_enum_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+        elsif integer_type?(scrutinee_type)
+          check_integer_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+        else
+          raise SemaError, "match requires an enum or integer scrutinee, got #{scrutinee_type}"
         end
+      end
 
+      def check_enum_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
         covered_members = {}
+        wildcard_seen = false
         statement.arms.each do |arm|
+          if wildcard_pattern?(arm.pattern)
+            raise SemaError, "duplicate wildcard arm in match" if wildcard_seen
+            wildcard_seen = true
+            check_block(arm.body, scopes:, return_type:, allow_return:)
+            next
+          end
           validate_consuming_foreign_expression!(arm.pattern, scopes:, root_allowed: false)
           validate_hoistable_foreign_expression!(arm.pattern, scopes:, root_hoistable: false)
           pattern_type = infer_expression(arm.pattern, scopes:, expected_type: scrutinee_type)
@@ -925,10 +938,39 @@ module MilkTea
           check_block(arm.body, scopes:, return_type:, allow_return:)
         end
 
+        return if wildcard_seen
+
         missing_members = scrutinee_type.members - covered_members.keys
         return if missing_members.empty?
 
         raise SemaError, "match on #{scrutinee_type} is missing cases: #{missing_members.join(', ')}"
+      end
+
+      def check_integer_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+        has_wildcard = statement.arms.any? { |arm| wildcard_pattern?(arm.pattern) }
+        raise SemaError, "match on integer type #{scrutinee_type} requires a wildcard arm (_:)" unless has_wildcard
+
+        covered_values = {}
+        wildcard_seen = false
+        statement.arms.each do |arm|
+          if wildcard_pattern?(arm.pattern)
+            raise SemaError, "duplicate wildcard arm in match" if wildcard_seen
+            wildcard_seen = true
+            check_block(arm.body, scopes:, return_type:, allow_return:)
+            next
+          end
+          unless arm.pattern.is_a?(AST::IntegerLiteral)
+            raise SemaError, "match arm for integer scrutinee must be an integer literal or _, got #{arm.pattern.class.name}"
+          end
+          value = arm.pattern.value
+          raise SemaError, "duplicate match arm value #{value}" if covered_values.key?(value)
+          covered_values[value] = true
+          check_block(arm.body, scopes:, return_type:, allow_return:)
+        end
+      end
+
+      def wildcard_pattern?(expression)
+        expression.is_a?(AST::Identifier) && expression.name == "_"
       end
 
       def check_for_stmt(statement, scopes:, return_type:, allow_return:)

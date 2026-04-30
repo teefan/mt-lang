@@ -322,7 +322,7 @@ module MilkTea
         when IR::SwitchStmt
           collect_referenced_constant_names_from_expression(statement.expression, constants_by_name, referenced_names)
           statement.cases.each do |switch_case|
-            collect_referenced_constant_names_from_expression(switch_case.value, constants_by_name, referenced_names)
+            collect_referenced_constant_names_from_expression(switch_case.value, constants_by_name, referenced_names) if switch_case.is_a?(IR::SwitchCase)
             collect_referenced_constant_names_from_statements(switch_case.body, constants_by_name, referenced_names)
           end
         when IR::StaticAssert
@@ -933,7 +933,11 @@ module MilkTea
         when IR::SwitchStmt
           lines = ["#{indent}switch (#{emit_expression(statement.expression)}) {"]
           statement.cases.each do |switch_case|
-            lines << "#{indent}#{INDENT}case #{emit_expression(switch_case.value)}: {"
+            if switch_case.is_a?(IR::SwitchDefaultCase)
+              lines << "#{indent}#{INDENT}default: {"
+            else
+              lines << "#{indent}#{INDENT}case #{emit_expression(switch_case.value)}: {"
+            end
             lines.concat(emit_statement_sequence(switch_case.body, level + 2, function:, used_labels:))
             lines << "#{indent}#{INDENT}#{INDENT}break;" unless body_terminates?(switch_case.body)
             lines << "#{indent}#{INDENT}}"
@@ -1000,7 +1004,11 @@ module MilkTea
         IR::SwitchStmt.new(
           expression: statement.expression,
           cases: statement.cases.map do |switch_case|
-            IR::SwitchCase.new(value: switch_case.value, body: compact_generated_statement_sequence(switch_case.body))
+            if switch_case.is_a?(IR::SwitchDefaultCase)
+              IR::SwitchDefaultCase.new(body: compact_generated_statement_sequence(switch_case.body))
+            else
+              IR::SwitchCase.new(value: switch_case.value, body: compact_generated_statement_sequence(switch_case.body))
+            end
           end,
         )
       else
@@ -1078,7 +1086,7 @@ module MilkTea
           name_reference_count_in_statements(statement.else_body || [], name)
       when IR::SwitchStmt
         name_reference_count_in_expression(statement.expression, name) +
-          statement.cases.sum { |switch_case| name_reference_count_in_expression(switch_case.value, name) + name_reference_count_in_statements(switch_case.body, name) }
+          statement.cases.sum { |switch_case| (switch_case.is_a?(IR::SwitchCase) ? name_reference_count_in_expression(switch_case.value, name) : 0) + name_reference_count_in_statements(switch_case.body, name) }
       when IR::StaticAssert
         name_reference_count_in_expression(statement.condition, name) + name_reference_count_in_expression(statement.message, name)
       when IR::ReturnStmt

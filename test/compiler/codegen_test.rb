@@ -2953,6 +2953,66 @@ class MilkTeaCodegenTest < Minitest::Test
     refute_match(/static int32_t demo_global_state_counter = demo_global_state_BASE;/, generated)
   end
 
+  def test_generate_c_for_integer_match_with_default_case
+    source = [
+      "module demo.int_match",
+      "",
+      "def dispatch(key: i32) -> i32:",
+      "    match key:",
+      "        65:",
+      "            return 1",
+      "        27:",
+      "            return 2",
+      "        _:",
+      "            return 0",
+      "",
+      "def main() -> i32:",
+      "    return dispatch(65)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/switch \(key\) \{/, generated)
+    assert_match(/case 65: \{/, generated)
+    assert_match(/case 27: \{/, generated)
+    assert_match(/default: \{/, generated)
+    assert_match(/return 1;/, generated)
+    assert_match(/return 2;/, generated)
+    assert_match(/return 0;/, generated)
+    refute_match(/case 0:/, generated)
+  end
+
+  def test_generate_c_for_enum_match_with_wildcard
+    source = [
+      "module demo.enum_wild",
+      "",
+      "enum EventKind: u8",
+      "    quit = 1",
+      "    resize = 2",
+      "    key = 3",
+      "",
+      "def dispatch(kind: EventKind) -> i32:",
+      "    match kind:",
+      "        EventKind.quit:",
+      "            return 0",
+      "        _:",
+      "            return 1",
+      "",
+      "def main() -> i32:",
+      "    return dispatch(EventKind.quit)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/switch \(kind\) \{/, generated)
+    assert_match(/case demo_enum_wild_EventKind_quit: \{/, generated)
+    assert_match(/default: \{/, generated)
+    assert_match(/return 0;/, generated)
+    assert_match(/return 1;/, generated)
+  end
+
   private
 
   def demo_path

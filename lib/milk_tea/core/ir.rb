@@ -20,6 +20,7 @@ module MilkTea
     BlockStmt = Data.define(:body)
     IfStmt = Data.define(:condition, :then_body, :else_body)
     SwitchCase = Data.define(:value, :body)
+    SwitchDefaultCase = Data.define(:body)
     SwitchStmt = Data.define(:expression, :cases)
     WhileStmt = Data.define(:condition, :body)
     ForStmt = Data.define(:init, :condition, :post, :body)

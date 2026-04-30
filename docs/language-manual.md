@@ -278,9 +278,35 @@ Condition must be `bool`.
 
 ### 4.2 Match
 
-- Scrutinee must be an enum.
-- Arm patterns must be members of that enum.
-- Match must be exhaustive.
+Scrutinee types supported:
+
+- Enum: arm patterns must be members of that enum.
+- Integer (`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `isize`, `usize`): arm patterns must be integer literals.
+
+`_` is a wildcard arm that matches any value not covered by preceding arms. It maps to a C `default:` case.
+
+Rules:
+
+- For enum scrutinee: all members must be covered unless a `_` arm is present.
+- For integer scrutinee: a `_` arm is required (integers are unbounded).
+- Duplicate arm values (or duplicate `_`) are rejected.
+- Match must be exhaustive (enum without `_`) or include `_` (integer or partial enum).
+
+```mt
+match kind:
+    EventKind.quit:
+        return 0
+    _:
+        return 1
+
+match key_code:
+    65:
+        fire()
+    27:
+        quit()
+    _:
+        pass
+```
 
 ### 4.3 Loops
 

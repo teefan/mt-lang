@@ -1836,7 +1836,11 @@ module MilkTea
           else
             lower_async_non_await_statements(arm.body, env:, frame_expr:, raw_frame_expr:, async_info:, loop_flow:)
           end
-          IR::SwitchCase.new(value: lower_match_arm_value(arm.pattern, match_type), body: arm_body + [IR::BreakStmt.new])
+          if wildcard_arm_pattern?(arm.pattern)
+            IR::SwitchDefaultCase.new(body: arm_body + [IR::BreakStmt.new])
+          else
+            IR::SwitchCase.new(value: lower_expression(arm.pattern, env:, expected_type: match_type), body: arm_body + [IR::BreakStmt.new])
+          end
         end
 
         expr_setup + [IR::SwitchStmt.new(expression: match_expr, cases:)]
@@ -1897,11 +1901,15 @@ module MilkTea
             lowered.concat(expr_setup)
             expr = lower_expression(prepared_expr, env: local_env, expected_type: scrutinee_type)
             cases = statement.arms.map do |arm|
-              value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
               arm_body = lower_async_non_await_statements(
                 arm.body, env: local_env, frame_expr:, raw_frame_expr:, async_info:, loop_flow:
               )
-              IR::SwitchCase.new(value:, body: arm_body)
+              if wildcard_arm_pattern?(arm.pattern)
+                IR::SwitchDefaultCase.new(body: arm_body)
+              else
+                value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
+                IR::SwitchCase.new(value:, body: arm_body)
+              end
             end
             lowered << IR::SwitchStmt.new(expression: expr, cases:)
           when AST::WhileStmt
@@ -2500,7 +2508,6 @@ module MilkTea
             lowered.concat(expression_setup)
             expression = lower_expression(prepared_expression, env: local_env, expected_type: scrutinee_type)
             cases = statement.arms.map do |arm|
-              value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
               body = lower_block(
                 arm.body,
                 env: local_env,
@@ -2509,7 +2516,12 @@ module MilkTea
                 loop_flow: nested_loop_flow(loop_flow, local_defers),
                 allow_return:,
               )
-              IR::SwitchCase.new(value:, body:)
+              if wildcard_arm_pattern?(arm.pattern)
+                IR::SwitchDefaultCase.new(body:)
+              else
+                value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
+                IR::SwitchCase.new(value:, body:)
+              end
             end
             lowered << IR::SwitchStmt.new(expression:, cases:)
           when AST::StaticAssert
@@ -6290,6 +6302,10 @@ module MilkTea
 
       def range_call?(expression)
         expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "range"
+      end
+
+      def wildcard_arm_pattern?(expression)
+        expression.is_a?(AST::Identifier) && expression.name == "_"
       end
 
       def result_type?(type)
