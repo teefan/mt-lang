@@ -44,6 +44,7 @@ module MilkTea
     def check_program(path)
       root_path = File.expand_path(path)
       root_analysis = check_path(root_path)
+      ensure_format_string_support_loaded!
 
       analyses_by_module_name = @analysis_cache.each_value.each_with_object({}) do |analysis, modules|
         next unless analysis.module_name
@@ -174,6 +175,25 @@ module MilkTea
 
     def exported_method_receiver?(receiver_type, exported_types)
       receiver_type.is_a?(Types::StringView) || exported_types.value?(receiver_type)
+    end
+
+    def ensure_format_string_support_loaded!
+      return unless @ast_cache.each_value.any? { |ast| contains_format_string_node?(ast) }
+
+      check_path(resolve_module_path("std.fmt"))
+    end
+
+    def contains_format_string_node?(node)
+      case node
+      when AST::FormatString
+        true
+      when Array
+        node.any? { |entry| contains_format_string_node?(entry) }
+      else
+        return false unless node.respond_to?(:deconstruct_keys)
+
+        node.deconstruct_keys(nil).values.any? { |value| contains_format_string_node?(value) }
+      end
     end
   end
 end

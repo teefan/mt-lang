@@ -555,6 +555,6 @@ def main() -> i32:
     for i in range(0, 3):
         c.bump()
 
-    let text = fmt.string(f"count=#{c.read()}")
+    let text = f"count=#{c.read()}"
     return 0
 ```

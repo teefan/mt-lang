@@ -474,6 +474,45 @@ class MilkTeaCodegenTest < Minitest::Test
     refute_match(/std_fmt_append\(&text/, generated)
   end
 
+  def test_generate_c_for_general_format_string_expressions
+    source = <<~MT
+      module demo.format_expr_codegen
+
+      def sink(text: str) -> usize:
+          return text.len
+
+      def main(value: u8, delta: i16) -> i32:
+          let text = f"value=\#{value} delta=\#{delta}"
+          if sink(f"ok=\#{true}") == 0:
+              return 1
+          return i32<-text.len
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static std_string_String demo_format_expr_codegen__fmt_1\(/, generated)
+    assert_match(/std_string_String __mt_fmt_string_1 = demo_format_expr_codegen__fmt_1\(\(\(uint32_t\) value\), \(\(int32_t\) delta\)\);/, generated)
+    assert_match(/mt_str text = std_string_String_as_str\(__mt_fmt_string_1\);/, generated)
+    assert_match(/demo_format_expr_codegen_sink\(std_string_String_as_str\(__mt_fmt_string_2\)\)/, generated)
+    assert_match(/std_string_String_release\(&__mt_fmt_string_2\);/, generated)
+    assert_match(/std_string_String_release\(&__mt_fmt_string_1\);/, generated)
+  end
+
+  def test_rejects_returning_general_format_string_as_borrowed_text
+    source = <<~MT
+      module demo.format_expr_escape
+
+      def main(value: i32) -> str:
+          return f"value=\#{value}"
+    MT
+
+    error = assert_raises(MilkTea::LoweringError) do
+      generate_c_from_source(source)
+    end
+
+    assert_match(/formatted string temporaries cannot be returned as borrowed text/, error.message)
+  end
+
   def test_generate_c_for_cstr_backed_string_constants_without_foreign_temps
     source = <<~MT
       module demo.main

@@ -140,6 +140,37 @@ class MilkTeaStdFmtLogTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_general_format_string_expressions
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_fmt_general_expr",
+      "",
+      "import std.io as io",
+      "",
+      "def size(text: str) -> usize:",
+      "    return text.len",
+      "",
+      "def main() -> i32:",
+      "    let count = 7",
+      "    let text = f\"count=\#{count}\"",
+      "    if size(f\"ok=\#{true}\") == 0:",
+      "        return 1",
+      "    if not io.println(text):",
+      "        return 2",
+      "    return i32<-text.len",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "count=7\n", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 7, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   private
 
   def run_program(source, compiler:)
