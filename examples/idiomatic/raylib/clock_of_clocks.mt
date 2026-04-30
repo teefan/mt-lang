@@ -139,26 +139,20 @@ def angle_slot(digit: i32, cell: i32) -> i32:
 def refresh_digits(current_clock: time.ClockTime, hour_mode: i32, current_angles: array[rl.Vector2, 144], src_angles: ref[array[rl.Vector2, 144]], dst_angles: ref[array[rl.Vector2, 144]]) -> void:
     let display_digits = digits_for(current_clock, hour_mode)
     let blank_leading_hour = hour_mode == hour_mode_12 and time.hour_12(current_clock) < 10
-    var src_view = value(src_angles)
-    var dst_view = value(dst_angles)
 
     for digit in range(0, digit_count):
-        var digit_angles = blank_digit_angles()
-        if not (digit == 0 and blank_leading_hour):
-            digit_angles = digit_angles_for(display_digits[digit])
+        let digit_angles = if digit == 0 and blank_leading_hour then blank_digit_angles() else digit_angles_for(display_digits[digit])
 
         for cell in range(0, cells_per_digit):
             let slot = angle_slot(digit, cell)
-            src_view[slot] = current_angles[slot]
-            dst_view[slot] = digit_angles[cell]
+            let target_angle = digit_angles[cell]
+            value(src_angles)[slot] = current_angles[slot]
+            value(dst_angles)[slot] = target_angle
 
-            if src_view[slot].x > dst_view[slot].x:
-                src_view[slot].x -= 360.0
-            if src_view[slot].y > dst_view[slot].y:
-                src_view[slot].y -= 360.0
-
-    value(src_angles) = src_view
-    value(dst_angles) = dst_view
+            if value(src_angles)[slot].x > target_angle.x:
+                value(src_angles)[slot].x -= 360.0
+            if value(src_angles)[slot].y > target_angle.y:
+                value(src_angles)[slot].y -= 360.0
 
 def main() -> i32:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

@@ -2807,6 +2807,27 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/safe array indexing requires an addressable array value/, error.message)
   end
 
+  def test_type_checks_safe_indexing_of_value_ref_array_projection
+    source = <<~MT
+      module demo.good
+
+      struct Item:
+          value: i32
+
+      def read(items: ref[array[Item, 4]]) -> i32:
+          return value(items)[0].value
+
+      def write(items: ref[array[Item, 4]]) -> void:
+          value(items)[0].value = 7
+          return
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("read")
+    assert_equal true, result.functions.key?("write")
+  end
+
   def test_rejects_dereference_of_non_pointer
     source = <<~MT
       module demo.bad
