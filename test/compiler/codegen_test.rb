@@ -157,6 +157,217 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/mt_span_i32 items = \(mt_span_i32\)\{ \.data = &value, \.len = 1 \};/, generated)
   end
 
+  def test_generate_c_for_async_methods
+    source = <<~MT
+      module demo.async_methods_codegen
+
+      import std.async as async
+
+      struct Counter:
+          value: i32
+
+      methods Counter:
+          async def read() -> i32:
+              return this.value
+
+          async edit def bump() -> void:
+              this.value += 1
+
+      async def main() -> i32:
+          var counter = Counter(value = 1)
+          await counter.bump()
+          return await counter.read()
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/demo_async_methods_codegen_Counter_bump__frame/, generated)
+    assert_match(/demo_async_methods_codegen_Counter_read__frame/, generated)
+    assert_match(/demo_async_methods_codegen_Counter_bump\(&__mt_frame->local_counter\)/, generated)
+    assert_match(/demo_async_methods_codegen_Counter_read\(__mt_frame->local_counter\)/, generated)
+  end
+
+  def test_generate_c_for_generic_methods
+    source = <<~MT
+      module demo.generic_methods_codegen
+
+      struct Box:
+          value: i32
+
+      methods Box:
+          def echo[T](input: T) -> T:
+              return input
+
+          static def make[T](input: T) -> T:
+              return input
+
+      def main() -> i32:
+          let box = Box(value = 1)
+          let a = box.echo(3)
+          let b = Box.make(4)
+          return a + b
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/demo_generic_methods_codegen_Box_echo_i32/, generated)
+    assert_match(/demo_generic_methods_codegen_Box_make_i32/, generated)
+    assert_match(/demo_generic_methods_codegen_Box_echo_i32\(box, 3\)/, generated)
+    assert_match(/demo_generic_methods_codegen_Box_make_i32\(4\)/, generated)
+  end
+
+  def test_generate_c_for_async_with_control_flow
+    source = <<~MT
+      module demo.async_flow_codegen
+
+      import std.async as async
+
+      async def sum_range(limit: i32) -> i32:
+          var total: i32 = 0
+          for i in range(0, limit):
+              total += i
+          return total
+
+      async def clamp_sum(limit: i32) -> i32:
+          let total = await sum_range(limit)
+          if total > 100:
+              return 100
+          elif total < 0:
+              return 0
+          else:
+              return total
+
+      async def main() -> i32:
+          return await clamp_sum(20)
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/demo_async_flow_codegen_sum_range__frame/, generated)
+    assert_match(/demo_async_flow_codegen_clamp_sum__frame/, generated)
+    assert_match(/for\s*\(/, generated)
+    assert_match(/total\s*\+=/, generated)
+  end
+
+    def test_generate_c_for_await_in_if_body
+      source = <<~MT
+        module demo.await_in_if
+
+        import std.async as async
+
+        async def child() -> i32:
+            return 42
+
+        async def parent() -> i32:
+            if true:
+                return await child()
+            return 0
+      MT
+
+      generated = generate_c_from_program_source(source)
+
+      assert_match(/demo_await_in_if_parent__frame/, generated)
+      assert_match(/case 0/, generated)
+      assert_match(/case 1/, generated)
+      assert_match(/if\s*\(/, generated)
+      assert_match(/demo_await_in_if_parent__resume_state_1:/, generated)
+    end
+
+    def test_generate_c_for_await_in_while_body
+      source = <<~MT
+        module demo.await_in_while
+
+        import std.async as async
+
+        async def tick() -> i32:
+            return 1
+
+        async def accumulate(limit: i32) -> i32:
+            var total = 0
+            var i = 0
+            while i < limit:
+                total = total + await tick()
+                i = i + 1
+            return total
+      MT
+
+      generated = generate_c_from_program_source(source)
+
+      assert_match(/demo_await_in_while_accumulate__frame/, generated)
+      assert_match(/case 1/, generated)
+      assert_match(/while\s*\(/, generated)
+      assert_match(/demo_await_in_while_accumulate__resume_state_1:/, generated)
+    end
+
+    def test_generate_c_for_await_in_if_condition
+      source = <<~MT
+        module demo.await_in_if_condition
+
+        import std.async as async
+
+        async def ready() -> bool:
+            return true
+
+        async def parent() -> i32:
+            if await ready():
+                return 1
+            return 0
+      MT
+
+      generated = generate_c_from_program_source(source)
+
+      assert_match(/demo_await_in_if_condition_parent__frame/, generated)
+      assert_match(/case 1/, generated)
+      assert_match(/demo_await_in_if_condition_parent__resume_state_1:/, generated)
+    end
+
+    def test_generate_c_for_await_in_short_circuit
+      source = <<~MT
+        module demo.await_short_circuit
+
+        import std.async as async
+
+        async def t() -> bool:
+            return true
+
+        async def f() -> bool:
+            return false
+
+        async def parent() -> i32:
+            if await t() and await t():
+                return 1
+            if await f() or await t():
+                return 2
+            return 0
+      MT
+
+      generated = generate_c_from_program_source(source)
+
+      assert_match(/demo_await_short_circuit_parent__frame/, generated)
+      assert_match(/resume_state_1:/, generated)
+      assert_match(/resume_state_2:/, generated)
+    end
+
+    def test_generate_c_for_await_in_if_expression
+      source = <<~MT
+        module demo.await_if_expr
+
+        import std.async as async
+
+        async def child() -> i32:
+            return 7
+
+        async def parent(flag: bool) -> i32:
+            return if flag then await child() else 0
+      MT
+
+      generated = generate_c_from_program_source(source)
+
+      assert_match(/demo_await_if_expr_parent__frame/, generated)
+      assert_match(/resume_state_1:/, generated)
+      assert_match(/if\s*\(/, generated)
+    end
+
   def test_generate_c_for_foreign_defs_with_out_and_automatic_cstr_temps
     source = <<~MT
       module demo.main

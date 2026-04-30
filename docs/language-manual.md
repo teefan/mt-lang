@@ -1,0 +1,534 @@
+# Milk Tea Language Manual
+
+This manual documents the Milk Tea language as implemented today in the lexer, parser, semantic checker, and compiler tests.
+
+## 1. Source Files And Modules
+
+Milk Tea source files use the `.mt` extension.
+
+A file can be either:
+
+- an ordinary module (`module ...`)
+- an extern module (`extern module ...`)
+
+### 1.1 Ordinary module
+
+```mt
+module demo.main
+
+import std.io as io
+
+def main() -> i32:
+    return 0
+```
+
+### 1.2 Extern module
+
+```mt
+extern module std.c.raylib:
+    include "raylib.h"
+    link "raylib"
+
+    struct Color:
+        r: u8
+        g: u8
+        b: u8
+        a: u8
+
+    extern def InitWindow(width: i32, height: i32, title: cstr) -> void
+```
+
+Rules:
+
+- In ordinary modules, `import` statements are parsed only at the top after `module`.
+- In extern modules, leading `import` statements are allowed inside the extern-module body.
+- Module lookup resolves `a.b.c` to `a/b/c.mt`.
+
+## 2. Lexical Rules
+
+### 2.1 Indentation and newlines
+
+- Blocks are indentation-based.
+- `:` starts a block.
+- Indentation must be spaces only.
+- Tabs are rejected.
+- Indentation must be a multiple of 4 spaces.
+- Indentation can increase by only one level (4 spaces) at a time.
+- Newlines end statements, except while inside `()` or `[]`.
+
+### 2.2 Comments
+
+- `#` starts a line comment.
+
+### 2.3 Literals
+
+Supported literals:
+
+- integer: `42`, `0xff`, `0b1010`, with `_` separators
+- float: `3.14`, `1.2e-3`, `1.1920929E-7`
+- string: `"hello"` (`str`)
+- cstring: `c"hello"` (`cstr`)
+- format string: `f"count=#{count}"`
+- booleans: `true`, `false`
+- null: `null`, typed null `null[ptr[char]]`
+
+### 2.4 Operators and punctuation
+
+Symbols:
+
+- delimiters: `(` `)` `[` `]`
+- separators/access: `:` `,` `.`
+- type markers: `->` `?`
+- arithmetic: `+ - * / %`
+- bitwise: `~ & | ^ << >>`
+- comparison: `== != < <= > >=`
+- assignment: `= += -= *= /= %= &= |= ^= <<= >>=`
+- variadic marker: `...`
+
+Word operators:
+
+- `and`, `or`, `not`
+- `in`, `out`, `inout` (only valid in foreign-call argument positions)
+
+## 3. Declarations
+
+Top-level declarations:
+
+- `const`
+- `var`
+- `type`
+- `struct`
+- `union`
+- `enum`
+- `flags`
+- `opaque`
+- `methods`
+- `def`
+- `async def`
+- `extern def`
+- `foreign def`
+- `static_assert(...)`
+
+### 3.1 Visibility
+
+- `pub` is supported for exportable ordinary declarations.
+- `pub` is rejected on `methods` blocks.
+- `pub` is rejected on ordinary `extern` declarations and `static_assert`.
+- In extern modules, declarations are implicitly exported and `pub` is rejected.
+
+### 3.2 Constants and variables
+
+```mt
+const WIDTH: i32 = 1280
+var counter: i32 = 0
+var scratch: array[u8, 256]
+```
+
+Rules:
+
+- `const` requires explicit type and initializer.
+- Top-level `var` requires explicit type; initializer is optional.
+- Top-level `var` initializer must be static-storage-safe.
+- Local declarations:
+  - `let` is immutable
+  - `var` is mutable
+- A local declaration without initializer requires explicit type and must be zero-initializable.
+
+### 3.3 Type aliases
+
+```mt
+type Seconds = f32
+type Callback = fn(level: i32, message: cstr) -> void
+```
+
+### 3.4 Struct, union, enum, flags, opaque
+
+```mt
+struct Vec2:
+    x: f32
+    y: f32
+
+union Number:
+    i: i32
+    f: f32
+
+enum State: u8
+    idle = 0
+    running = 1
+
+flags Mask: u32
+    a = 1 << 0
+    b = 1 << 1
+
+opaque SDL_Window
+```
+
+Layout modifiers for structs:
+
+```mt
+packed struct Header:
+    tag: u8
+
+align(16) struct Mat4:
+    data: array[f32, 16]
+```
+
+`align(...)` must be a positive power of two.
+
+### 3.5 Methods
+
+```mt
+methods Counter:
+    def read() -> i32:
+        return this.value
+
+    edit def bump() -> void:
+        this.value += 1
+
+    static def zero() -> Counter:
+        return Counter(value = 0)
+```
+
+Kinds:
+
+- `def` (value receiver)
+- `edit def` (mutable receiver)
+- `static def` (no receiver)
+
+Method capabilities:
+
+- async methods are supported
+- generic methods are supported
+
+### 3.6 Functions
+
+```mt
+def add(a: i32, b: i32) -> i32:
+    return a + b
+```
+
+Rules:
+
+- Parameters must be typed.
+- Parameter mutability marker is supported: `mut x: T`.
+- Return type defaults to `void` if omitted.
+- Generic functions are supported.
+
+### 3.7 Extern functions
+
+```mt
+extern def printf(format: cstr, ...) -> i32
+```
+
+Rules:
+
+- no body
+- variadic `...` supported
+- cannot be generic
+- cannot be async
+- cannot take or return arrays
+
+### 3.8 Foreign functions
+
+```mt
+foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
+foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
+foreign def close_window(consuming window: Window) -> void = c.CloseWindow
+```
+
+Parameter modes:
+
+- plain
+- `in`
+- `out`
+- `inout`
+- `consuming`
+
+Boundary projections:
+
+- `name: PublicType as BoundaryType`
+
+Rules:
+
+- `as` is only allowed on plain and `in` params.
+- consuming foreign calls must appear as top-level expression statements.
+- foreign functions with consuming params must return `void`.
+
+## 4. Statements
+
+Supported statements:
+
+- local declaration (`let`, `var`)
+- assignment
+- `if` / `elif` / `else`
+- `match`
+- `unsafe`
+- `static_assert`
+- `for`
+- `while`
+- `break`
+- `continue`
+- `return`
+- `defer`
+- expression statement
+
+### 4.1 If
+
+Condition must be `bool`.
+
+### 4.2 Match
+
+- Scrutinee must be an enum.
+- Arm patterns must be members of that enum.
+- Match must be exhaustive.
+
+### 4.3 Loops
+
+`for` supports:
+
+- `range(start, stop)`
+- `array[T, N]`
+- `span[T]`
+
+`break` and `continue` must be inside loops.
+
+### 4.4 Defer
+
+Forms:
+
+```mt
+defer cleanup()
+
+# or
+
+defer:
+    release_a()
+    release_b()
+```
+
+`return` is not allowed inside defer blocks.
+
+### 4.5 Unsafe
+
+Unsafe context is required for raw-pointer-level operations such as:
+
+- pointer indexing
+- raw dereference
+- pointer arithmetic
+- pointer casts
+- `reinterpret[...]`
+
+## 5. Expressions
+
+### 5.1 Primary
+
+- identifier
+- literals
+- parenthesized expression
+- `sizeof(T)`
+- `alignof(T)`
+- `offsetof(T, field)`
+- `proc(...) -> T: ...`
+- `if cond then a else b`
+
+### 5.2 Postfix
+
+- member access: `a.b`
+- indexing: `a[i]`
+- call: `f(x)`
+- specialization: `name[T]`, `name[32]`, `mod.name[T]`
+
+### 5.3 Operator precedence (low to high)
+
+1. `or`
+2. `and`
+3. `|`
+4. `^`
+5. `&`
+6. `==`, `!=`
+7. `<`, `<=`, `>`, `>=`
+8. `<<`, `>>`
+9. `+`, `-`
+10. `*`, `/`, `%`
+
+### 5.4 Assignment operators
+
+- `=`
+- `+=` `-=` `*=` `/=`
+- `%=`
+- `&=` `|=` `^=`
+- `<<=` `>>=`
+
+## 6. Type System
+
+### 6.1 Primitive types
+
+- `bool`
+- `byte`
+- `char`
+- `i8` `i16` `i32` `i64`
+- `u8` `u16` `u32` `u64`
+- `isize` `usize`
+- `f32` `f64`
+- `void`
+- `str`
+- `cstr`
+
+### 6.2 Type constructors
+
+- `ptr[T]`
+- `const_ptr[T]`
+- `ref[T]`
+- `span[T]`
+- `array[T, N]`
+- `str_builder[N]`
+- `Result[T, E]`
+- `Task[T]`
+- `fn(params...) -> R`
+- `proc(params...) -> R`
+
+### 6.3 Nullability
+
+- nullable form: `T?` for pointer-like/null-capable types
+- `null` and typed `null[...]` supported
+- typed null target must be pointer-like
+- in nullable pointer-like contexts, use `null` instead of `zero[ptr[T]]()`
+
+### 6.4 Generics
+
+Supported:
+
+- generic structs
+- generic functions
+- generic foreign functions
+
+Type arguments can be:
+
+- types
+- integer literals
+- named integer constants
+
+## 7. Built-In Callable Surface
+
+Special recognized callables:
+
+- `ok(value)` / `err(value)`
+- `panic(message)`
+- `addr(x)`
+- `ro_addr(x)`
+- `value(r)`
+- `deref(p)`
+- `raw(r)`
+- `cast[T](value)`
+- `reinterpret[T](value)`
+- `zero[T]()`
+- `array[T, N](...)`
+- `span[T](data = ..., len = ...)`
+
+`range(start, stop)` is a reserved loop helper for `for` typing.
+
+## 8. Strings, C Strings, And Format Strings
+
+String categories:
+
+- `str` (string view)
+- `cstr` (C ABI string)
+- `str_builder[N]` (fixed-capacity mutable string buffer)
+
+`str_builder[N]` methods:
+
+- `clear()`
+- `assign(str)`
+- `append(str)`
+- `len()`
+- `capacity()`
+- `as_str()`
+- `as_cstr()`
+
+Format string syntax:
+
+```mt
+f"count=#{count} ok=#{ready}"
+```
+
+Current restriction:
+
+- format literals are only valid when passed as the sole argument to:
+  - `std.fmt.string`
+  - `std.io.print`
+  - `std.io.println`
+  - `std.io.write_error`
+  - `std.io.write_error_line`
+
+## 9. Safety And Conversion Rules
+
+- conditions must be `bool`
+- no truthy/falsy integer or pointer coercion
+- mixed signed/unsigned integer arithmetic requires explicit cast
+- `%` requires integer-compatible operands
+- bitwise operators require matching integer/flags types
+- shift operators require integer operands
+- safe array indexing requires an addressable array value
+- pointer indexing requires `unsafe`
+- `deref(...)` of raw pointer requires `unsafe`
+- pointer casts require `unsafe`
+- `reinterpret[...]` requires `unsafe` and non-array concrete sized types
+
+## 10. Async Semantics
+
+```mt
+async def child() -> i32:
+    return 41
+
+async def parent() -> i32:
+    let v = await child()
+    return v + 1
+```
+
+Rules:
+
+- async function return type is lifted to `Task[T]`
+- `await` is only allowed inside async functions
+- `async main` requires importing `std.async` or `std.libuv.async`
+- `async main` pre-lift return type must be `i32` or `void`
+
+Current async limitations:
+
+- `await` is supported inside `if` expressions, `if`/`elif`/`else` bodies and conditions, `while` bodies and conditions, `for` bodies and iterables, `match` discriminants and arms, `unsafe` blocks, short-circuit `and`/`or` expressions, and assignment targets
+- async functions cannot take proc parameters
+- proc expressions are rejected inside async functions
+
+## 11. Current Unsupported Or Rejected Surfaces
+
+Current implementation rejects:
+
+- storing proc values in struct fields
+- returning proc values from functions
+- format literals outside the supported std formatting/IO entrypoints
+
+## 12. Example
+
+```mt
+module demo.main
+
+import std.fmt as fmt
+
+struct Counter:
+    value: i32
+
+methods Counter:
+    edit def bump() -> void:
+        this.value += 1
+
+    def read() -> i32:
+        return this.value
+
+def main() -> i32:
+    var c = Counter(value = 0)
+
+    for i in range(0, 3):
+        c.bump()
+
+    let text = fmt.string(f"count=#{c.read()}")
+    return 0
+```

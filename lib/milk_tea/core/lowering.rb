@@ -429,12 +429,23 @@ module MilkTea
               receiver_type = resolve_methods_receiver_type(@analysis, decl.type_name)
               decl.methods.each do |method|
                 binding = @analysis.methods.fetch(receiver_type).fetch(method.name)
-                c_name = function_binding_c_name(binding, module_name: @module_name, receiver_type:)
-                next if lowered_function_c_names[c_name]
+                if binding.type_params.any?
+                  binding.instances.values.sort_by { |instance| instance.type_arguments.map(&:to_s).join(",") }.each do |instance|
+                    c_name = function_binding_c_name(instance, module_name: @module_name, receiver_type:)
+                    next if lowered_function_c_names[c_name]
 
-                lowered << lower_function_decl(binding, receiver_type:)
-                lowered_function_c_names[c_name] = true
-                changed = true
+                    lowered << lower_function_decl(instance, receiver_type:)
+                    lowered_function_c_names[c_name] = true
+                    changed = true
+                  end
+                else
+                  c_name = function_binding_c_name(binding, module_name: @module_name, receiver_type:)
+                  next if lowered_function_c_names[c_name]
+
+                  lowered << lower_function_decl(binding, receiver_type:)
+                  lowered_function_c_names[c_name] = true
+                  changed = true
+                end
               end
             end
           end
@@ -523,10 +534,8 @@ module MilkTea
       end
 
       def lower_async_function_decl(binding, receiver_type: nil)
-        raise LoweringError, "async methods are unsupported" if receiver_type || binding.type.receiver_type
-
         decl = binding.ast
-        normalized_statements = normalize_async_body(decl.body)
+        normalized_statements = normalize_async_body(binding, decl.body)
         constructor_c_name = function_binding_c_name(binding, module_name: @module_name, receiver_type:)
         frame_c_name = "#{constructor_c_name}__frame"
         resume_c_name = "#{constructor_c_name}__resume"
@@ -731,13 +740,21 @@ module MilkTea
         await_counter = 0
 
         binding.body_params.each do |param_binding|
+          pointer = binding.type.receiver_type && binding.type.receiver_mutable && param_binding.name == "this"
+          field_type = pointer ? pointer_to(param_binding.type) : param_binding.type
           field_name = "param_#{param_binding.name}"
-          param_fields[param_binding.name] = { field_name:, type: param_binding.type, mutable: param_binding.mutable }
+          param_fields[param_binding.name] = {
+            field_name:,
+            type: field_type,
+            param_type: param_binding.type,
+            mutable: param_binding.mutable,
+            pointer:,
+          }
           env[:scopes].last[param_binding.name] = local_binding(
             type: param_binding.type,
             c_name: field_name,
             mutable: param_binding.mutable,
-            pointer: false,
+            pointer:,
           )
         end
 
@@ -747,25 +764,49 @@ module MilkTea
             type = statement.type ? resolve_type_ref(statement.type) : infer_expression_type(statement.value, env:)
             local_fields[statement.name] = { field_name: "local_#{statement.name}", type:, mutable: statement.kind == :var }
             if statement.value.is_a?(AST::AwaitExpr)
-              await_fields[index] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
+              await_fields[statement.value.object_id] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
               await_counter += 1
             end
             env[:scopes].last[statement.name] = local_binding(type:, c_name: statement.name, mutable: statement.kind == :var, pointer: false)
           when AST::Assignment
             next unless statement.value.is_a?(AST::AwaitExpr)
 
-            await_fields[index] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
+            await_fields[statement.value.object_id] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
             await_counter += 1
           when AST::ExpressionStmt
             next unless statement.expression.is_a?(AST::AwaitExpr)
 
-            await_fields[index] = build_async_await_field_info(statement.expression, await_counter, env:, param_fields:, local_fields:)
+            await_fields[statement.expression.object_id] = build_async_await_field_info(statement.expression, await_counter, env:, param_fields:, local_fields:)
             await_counter += 1
           when AST::ReturnStmt
             next unless statement.value&.is_a?(AST::AwaitExpr)
 
-            await_fields[index] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
+            await_fields[statement.value.object_id] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
             await_counter += 1
+          when AST::IfStmt
+            statement.branches.each do |branch|
+              await_counter = analyze_async_statements!(branch.body, await_counter, env, param_fields, local_fields, await_fields)
+            end
+            await_counter = analyze_async_statements!(statement.else_body, await_counter, env, param_fields, local_fields, await_fields) if statement.else_body
+          when AST::WhileStmt
+            await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
+          when AST::ForStmt
+            # For loops with await need the loop variable in the frame so it survives across suspension
+            loop_type = range_call?(statement.iterable) ? infer_range_loop_type(statement.iterable, env:) : collection_loop_type(infer_expression_type(statement.iterable, env:))
+            local_fields[statement.name] ||= { field_name: "local_#{statement.name}", type: loop_type, mutable: true }
+              if range_call?(statement.iterable)
+                stop_field_name = "local_#{statement.name}_stop"
+                local_fields[stop_field_name] ||= { field_name: stop_field_name, type: loop_type, mutable: true }
+              end
+            await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
+          when AST::MatchStmt
+            statement.arms.each do |arm|
+              await_counter = analyze_async_statements!(arm.body, await_counter, env, param_fields, local_fields, await_fields)
+            end
+          when AST::UnsafeStmt
+            await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
+          when AST::BreakStmt, AST::ContinueStmt, AST::StaticAssert
+              nil
           else
             raise LoweringError, "unsupported async statement #{statement.class.name}"
           end
@@ -773,13 +814,69 @@ module MilkTea
 
         {
           task_type: binding.type.return_type,
-          result_type: binding.body_return_type,
+            result_type: binding.body_return_type,
           void_ptr:,
           wake_type:,
           param_fields:,
           local_fields:,
           await_fields:,
         }
+      end
+
+      # Recursively scan nested statement bodies for await slots, assigning state IDs.
+      # Returns the updated await_counter.
+      def analyze_async_statements!(statements, await_counter, env, param_fields, local_fields, await_fields)
+        statements.each do |statement|
+          case statement
+          when AST::LocalDecl
+            type = statement.type ? resolve_type_ref(statement.type) : infer_expression_type(statement.value, env:)
+            local_fields[statement.name] ||= { field_name: "local_#{statement.name}", type:, mutable: statement.kind == :var }
+            if statement.value.is_a?(AST::AwaitExpr)
+              await_fields[statement.value.object_id] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
+              await_counter += 1
+            end
+            env[:scopes].last[statement.name] = local_binding(type:, c_name: statement.name, mutable: statement.kind == :var, pointer: false)
+          when AST::Assignment
+            if statement.value.is_a?(AST::AwaitExpr)
+              await_fields[statement.value.object_id] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
+              await_counter += 1
+            end
+          when AST::ExpressionStmt
+            if statement.expression.is_a?(AST::AwaitExpr)
+              await_fields[statement.expression.object_id] = build_async_await_field_info(statement.expression, await_counter, env:, param_fields:, local_fields:)
+              await_counter += 1
+            end
+          when AST::ReturnStmt
+            if statement.value&.is_a?(AST::AwaitExpr)
+              await_fields[statement.value.object_id] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
+              await_counter += 1
+            end
+          when AST::IfStmt
+            statement.branches.each do |branch|
+              await_counter = analyze_async_statements!(branch.body, await_counter, env, param_fields, local_fields, await_fields)
+            end
+            await_counter = analyze_async_statements!(statement.else_body, await_counter, env, param_fields, local_fields, await_fields) if statement.else_body
+          when AST::WhileStmt
+            await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
+          when AST::ForStmt
+            loop_type = range_call?(statement.iterable) ? infer_range_loop_type(statement.iterable, env:) : collection_loop_type(infer_expression_type(statement.iterable, env:))
+            local_fields[statement.name] ||= { field_name: "local_#{statement.name}", type: loop_type, mutable: true }
+              if range_call?(statement.iterable)
+                stop_field_name = "local_#{statement.name}_stop"
+                local_fields[stop_field_name] ||= { field_name: stop_field_name, type: loop_type, mutable: true }
+              end
+            await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
+          when AST::MatchStmt
+            statement.arms.each do |arm|
+              await_counter = analyze_async_statements!(arm.body, await_counter, env, param_fields, local_fields, await_fields)
+            end
+          when AST::UnsafeStmt
+            await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
+          else
+            nil
+          end
+        end
+        await_counter
       end
 
       def build_async_await_field_info(await_expression, await_counter, env:, param_fields:, local_fields:)
@@ -851,14 +948,15 @@ module MilkTea
 
         binding.body_params.each do |param_binding|
           field_info = async_info[:param_fields].fetch(param_binding.name)
-          type = param_binding.type
+          field_type = field_info[:type]
+          param_type = field_info[:param_type]
           c_name = c_local_name(param_binding.name)
-          input_c_name = array_type?(type) ? "#{c_name}_input" : c_name
-          params << IR::Param.new(name: param_binding.name, c_name: input_c_name, type:, pointer: false)
+          input_c_name = array_type?(param_type) && !field_info[:pointer] ? "#{c_name}_input" : c_name
+          params << IR::Param.new(name: param_binding.name, c_name: input_c_name, type: param_type, pointer: field_info[:pointer])
           body << IR::Assignment.new(
-            target: async_frame_field_expression(frame_expr, field_info[:field_name], type),
+            target: async_frame_field_expression(frame_expr, field_info[:field_name], field_type),
             operator: "=",
-            value: IR::Name.new(name: input_c_name, type:, pointer: false),
+            value: IR::Name.new(name: input_c_name, type: param_type, pointer: field_info[:pointer]),
           )
         end
 
@@ -905,11 +1003,11 @@ module MilkTea
 
         env = async_resume_env_for(async_info)
 
-        statements.each_with_index do |statement, index|
-          await_info = async_info[:await_fields][index]
+        statements.each do |statement|
           case statement
           when AST::LocalDecl
             field_info = async_info[:local_fields].fetch(statement.name)
+            await_info = async_info[:await_fields][statement.value&.object_id]
             if await_info
               body.concat(lower_async_await_statement(statement, field_info:, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
             else
@@ -917,22 +1015,32 @@ module MilkTea
             end
             async_bind_local!(env, statement.name, field_info)
           when AST::Assignment
+            await_info = async_info[:await_fields][statement.value&.object_id]
             if await_info
               body.concat(lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
             else
               body.concat(lower_async_assignment_statement(statement, env:))
             end
           when AST::ExpressionStmt
+            await_info = async_info[:await_fields][statement.expression&.object_id]
             if await_info
               body.concat(lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
             else
               body.concat(lower_async_expression_statement(statement, env:))
             end
           when AST::ReturnStmt
+            await_info = async_info[:await_fields][statement.value&.object_id]
             if await_info
               body.concat(lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
             else
               body.concat(lower_async_return_statement(statement, env:, frame_expr:, raw_frame_expr:, async_info:))
+            end
+          when AST::IfStmt, AST::MatchStmt, AST::WhileStmt, AST::ForStmt,
+               AST::BreakStmt, AST::ContinueStmt, AST::UnsafeStmt, AST::StaticAssert
+            if statements_contain_await?(Array(statement), async_info)
+              body.concat(lower_async_cf_statements([statement], env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
+            else
+              body.concat(lower_async_non_await_statements([statement], env:, frame_expr:, raw_frame_expr:, async_info:))
             end
           else
             raise LoweringError, "unsupported async statement #{statement.class.name}"
@@ -1047,10 +1155,10 @@ module MilkTea
         env = empty_env
         async_info[:param_fields].each do |name, field_info|
           env[:scopes].last[name] = local_binding(
-            type: field_info[:type],
+            type: field_info[:pointer] ? pointee_type(field_info[:type]) : field_info[:type],
             c_name: async_frame_field_c_name(field_info[:field_name]),
             mutable: field_info[:mutable],
-            pointer: false,
+            pointer: field_info[:pointer],
           )
         end
         env
@@ -1157,41 +1265,150 @@ module MilkTea
         lowered
       end
 
-      def normalize_async_body(statements)
+      def normalize_async_body(binding, statements)
         counter = { value: 0 }
-        statements.flat_map { |statement| normalize_async_statement(statement, counter) }
+        env = empty_env
+        binding.body_params.each do |param_binding|
+          env[:scopes].last[param_binding.name] = local_binding(
+            type: param_binding.type,
+            c_name: param_binding.name,
+            mutable: param_binding.mutable,
+            pointer: false,
+          )
+        end
+        normalize_async_statements(statements, counter, env, return_type: binding.body_return_type)
       end
 
-      def normalize_async_statement(statement, counter)
+      def normalize_async_statements(statements, counter, env, return_type:)
+        statements.flat_map { |statement| normalize_async_statement(statement, counter, env, return_type:) }
+      end
+
+      def normalize_async_statement(statement, counter, env, return_type:)
         case statement
         when AST::LocalDecl
-          return [statement] unless statement.value
-          return [statement] if statement.value.is_a?(AST::AwaitExpr)
+          if statement.value
+            return [statement] if statement.value.is_a?(AST::AwaitExpr)
 
-          setup, value = normalize_async_expression(statement.value, counter)
-          setup + [AST::LocalDecl.new(kind: statement.kind, name: statement.name, type: statement.type, value: value)]
+            declared_type = statement.type ? resolve_type_ref(statement.type) : nil
+            original_value_type = statement.type ? nil : infer_expression_type(statement.value, env:)
+            setup, value = normalize_async_expression(statement.value, counter, env:, expected_type: declared_type)
+            normalized = AST::LocalDecl.new(kind: statement.kind, name: statement.name, type: statement.type, value: value)
+            local_type = statement.type ? resolve_type_ref(statement.type) : original_value_type
+            current_actual_scope(env[:scopes])[statement.name] = local_binding(type: local_type, c_name: statement.name, mutable: statement.kind == :var, pointer: false)
+            return setup + [normalized]
+          end
+
+          local_type = resolve_type_ref(statement.type)
+          current_actual_scope(env[:scopes])[statement.name] = local_binding(type: local_type, c_name: statement.name, mutable: statement.kind == :var, pointer: false)
+          [statement]
         when AST::Assignment
-          return [statement] if statement.value.is_a?(AST::AwaitExpr)
+          target_setup, target = normalize_async_assignment_target(statement.target, counter, env:)
+          return target_setup + [AST::Assignment.new(target:, operator: statement.operator, value: statement.value)] if statement.value.is_a?(AST::AwaitExpr)
 
-          setup, value = normalize_async_expression(statement.value, counter)
-          setup + [AST::Assignment.new(target: statement.target, operator: statement.operator, value: value)]
+          target_type = infer_expression_type(statement.target, env:)
+          setup, value = normalize_async_expression(statement.value, counter, env:, expected_type: target_type)
+          target_setup + setup + [AST::Assignment.new(target:, operator: statement.operator, value: value)]
         when AST::ExpressionStmt
           return [statement] if statement.expression.is_a?(AST::AwaitExpr)
 
-          setup, expression = normalize_async_expression(statement.expression, counter)
+          setup, expression = normalize_async_expression(statement.expression, counter, env:)
           setup + [AST::ExpressionStmt.new(expression: expression)]
         when AST::ReturnStmt
           return [statement] unless statement.value
           return [statement] if statement.value.is_a?(AST::AwaitExpr)
 
-          setup, value = normalize_async_expression(statement.value, counter)
+          setup, value = normalize_async_expression(statement.value, counter, env:, expected_type: return_type)
           setup + [AST::ReturnStmt.new(value: value)]
+        when AST::IfStmt
+          normalize_async_if_statement(statement, counter, env, return_type:)
+        when AST::MatchStmt
+          expr_setup, expression = normalize_async_expression(statement.expression, counter, env:)
+          arms = statement.arms.map do |arm|
+            arm_env = duplicate_env(env)
+            AST::MatchArm.new(pattern: arm.pattern, body: normalize_async_statements(arm.body, counter, arm_env, return_type:))
+          end
+          expr_setup + [AST::MatchStmt.new(expression:, arms:)]
+        when AST::WhileStmt
+          condition_setup, condition = normalize_async_expression(statement.condition, counter, env:, expected_type: @types.fetch("bool"))
+          body_env = duplicate_env(env)
+          body = normalize_async_statements(statement.body, counter, body_env, return_type:)
+          if condition_setup.empty?
+            [AST::WhileStmt.new(condition:, body:)]
+          else
+            cond_name = fresh_async_temp_name(counter)
+            condition_eval = condition_setup + [AST::LocalDecl.new(kind: :let, name: cond_name, type: ast_type_ref_for(@types.fetch("bool")), value: condition)]
+            [
+              AST::WhileStmt.new(
+                condition: AST::BooleanLiteral.new(value: true),
+                body: condition_eval + [
+                  AST::IfStmt.new(
+                    branches: [AST::IfBranch.new(condition: AST::UnaryOp.new(operator: "not", operand: AST::Identifier.new(name: cond_name)), body: [AST::BreakStmt.new])],
+                    else_body: nil,
+                  ),
+                  *body,
+                ],
+              ),
+            ]
+          end
+        when AST::ForStmt
+          original_iterable = statement.iterable
+          loop_type = if range_call?(original_iterable)
+                        infer_range_loop_type(original_iterable, env:)
+                      else
+                        iterable_type = infer_expression_type(original_iterable, env:)
+                        collection_loop_type(iterable_type)
+                      end
+          iterable_setup, iterable = normalize_async_expression(statement.iterable, counter, env:)
+          for_env = duplicate_env(env)
+          current_actual_scope(for_env[:scopes])[statement.name] = local_binding(type: loop_type, c_name: statement.name, mutable: false, pointer: false)
+          body = normalize_async_statements(statement.body, counter, for_env, return_type:)
+          iterable_setup + [AST::ForStmt.new(name: statement.name, iterable:, body:)]
+        when AST::UnsafeStmt
+          unsafe_env = duplicate_env(env)
+          [AST::UnsafeStmt.new(body: normalize_async_statements(statement.body, counter, unsafe_env, return_type:))]
+        when AST::BreakStmt, AST::ContinueStmt, AST::StaticAssert
+          [statement]
         else
           raise LoweringError, "unsupported async statement #{statement.class.name}"
         end
       end
 
-      def normalize_async_expression(expression, counter)
+      def normalize_async_if_statement(statement, counter, env, return_type:)
+        else_body = if statement.else_body
+                      else_env = duplicate_env(env)
+                      normalize_async_statements(statement.else_body, counter, else_env, return_type:)
+                    end
+        normalize_async_if_branches(statement.branches, else_body, counter, env, return_type:)
+      end
+
+      def normalize_async_if_branches(branches, else_body, counter, env, return_type:)
+        return else_body || [] if branches.empty?
+
+        branch = branches.first
+        condition_setup, condition = normalize_async_expression(branch.condition, counter, env:, expected_type: @types.fetch("bool"))
+        then_env = duplicate_env(env)
+        then_body = normalize_async_statements(branch.body, counter, then_env, return_type:)
+        chained_else = normalize_async_if_branches(branches.drop(1), else_body, counter, env, return_type:)
+        condition_setup + [AST::IfStmt.new(branches: [AST::IfBranch.new(condition:, body: then_body)], else_body: chained_else)]
+      end
+
+      def normalize_async_assignment_target(target, counter, env:)
+        case target
+        when AST::Identifier
+          [[], target]
+        when AST::MemberAccess
+          receiver_setup, receiver = normalize_async_expression(target.receiver, counter, env:)
+          [receiver_setup, AST::MemberAccess.new(receiver:, member: target.member)]
+        when AST::IndexAccess
+          receiver_setup, receiver = normalize_async_expression(target.receiver, counter, env:)
+          index_setup, index = normalize_async_expression(target.index, counter, env:)
+          [receiver_setup + index_setup, AST::IndexAccess.new(receiver:, index:)]
+        else
+          raise LoweringError, "unsupported assignment target #{target.class.name}"
+        end
+      end
+
+      def normalize_async_expression(expression, counter, env:, expected_type: nil)
         case expression
         when AST::AwaitExpr
           temp_name = fresh_async_temp_name(counter)
@@ -1201,49 +1418,81 @@ module MilkTea
           ]
         when AST::Call
           setup = []
-          callee_setup, callee = normalize_async_expression(expression.callee, counter)
+          callee_setup, callee = normalize_async_expression(expression.callee, counter, env:)
           setup.concat(callee_setup)
           arguments = expression.arguments.map do |argument|
-            argument_setup, value = normalize_async_expression(argument.value, counter)
+            argument_setup, value = normalize_async_expression(argument.value, counter, env:)
             setup.concat(argument_setup)
             AST::Argument.new(name: argument.name, value: value)
           end
           [setup, AST::Call.new(callee: callee, arguments: arguments)]
         when AST::Specialization
           setup = []
-          callee_setup, callee = normalize_async_expression(expression.callee, counter)
+          callee_setup, callee = normalize_async_expression(expression.callee, counter, env:)
           setup.concat(callee_setup)
           arguments = expression.arguments.map do |argument|
-            argument_setup, value = normalize_async_expression(argument.value, counter)
+            argument_setup, value = normalize_async_expression(argument.value, counter, env:)
             setup.concat(argument_setup)
             AST::TypeArgument.new(value: value)
           end
           [setup, AST::Specialization.new(callee: callee, arguments: arguments)]
         when AST::UnaryOp
-          setup, operand = normalize_async_expression(expression.operand, counter)
+          setup, operand = normalize_async_expression(expression.operand, counter, env:, expected_type: expected_type)
           [setup, AST::UnaryOp.new(operator: expression.operator, operand: operand)]
         when AST::BinaryOp
-          raise LoweringError, "await is not supported inside short-circuit #{expression.operator} expressions yet" if %w[and or].include?(expression.operator) && async_expression_contains_await?(expression)
+          if %w[and or].include?(expression.operator)
+            left_setup, left = normalize_async_expression(expression.left, counter, env:, expected_type: @types.fetch("bool"))
+            right_setup, right = normalize_async_expression(expression.right, counter, env:, expected_type: @types.fetch("bool"))
+            temp_name = fresh_async_temp_name(counter)
 
-          left_setup, left = normalize_async_expression(expression.left, counter)
-          right_setup, right = normalize_async_expression(expression.right, counter)
+            temp_init = expression.operator == "and" ? AST::BooleanLiteral.new(value: false) : AST::BooleanLiteral.new(value: true)
+            short_circuit_value = expression.operator == "and" ? AST::BooleanLiteral.new(value: false) : AST::BooleanLiteral.new(value: true)
+
+            branch_body = right_setup + [AST::Assignment.new(target: AST::Identifier.new(name: temp_name), operator: "=", value: right)]
+            else_body = [AST::Assignment.new(target: AST::Identifier.new(name: temp_name), operator: "=", value: short_circuit_value)]
+
+            if expression.operator == "or"
+              branch_body, else_body = else_body, branch_body
+            end
+
+            setup = [AST::LocalDecl.new(kind: :var, name: temp_name, type: nil, value: temp_init)]
+            setup.concat(left_setup)
+            setup << AST::IfStmt.new(branches: [AST::IfBranch.new(condition: left, body: branch_body)], else_body: else_body)
+            return [setup, AST::Identifier.new(name: temp_name)]
+          end
+
+          left_setup, left = normalize_async_expression(expression.left, counter, env:)
+          right_setup, right = normalize_async_expression(expression.right, counter, env:)
           [left_setup + right_setup, AST::BinaryOp.new(operator: expression.operator, left: left, right: right)]
         when AST::IfExpr
-          raise LoweringError, "await is not supported inside if expressions yet" if async_expression_contains_await?(expression)
+          condition_setup, condition = normalize_async_expression(expression.condition, counter, env:, expected_type: @types.fetch("bool"))
+          result_type = infer_expression_type(expression, env:, expected_type:)
+          then_setup, then_expression = normalize_async_expression(expression.then_expression, counter, env:, expected_type: result_type)
+          else_setup, else_expression = normalize_async_expression(expression.else_expression, counter, env:, expected_type: result_type)
 
-          [[], expression]
+          return [[], AST::IfExpr.new(condition:, then_expression:, else_expression:)] if condition_setup.empty? && then_setup.empty? && else_setup.empty?
+
+          temp_name = fresh_async_temp_name(counter)
+          setup = condition_setup + [
+            AST::LocalDecl.new(kind: :var, name: temp_name, type: ast_type_ref_for(result_type), value: nil),
+            AST::IfStmt.new(
+              branches: [AST::IfBranch.new(condition:, body: then_setup + [AST::Assignment.new(target: AST::Identifier.new(name: temp_name), operator: "=", value: then_expression)])],
+              else_body: else_setup + [AST::Assignment.new(target: AST::Identifier.new(name: temp_name), operator: "=", value: else_expression)],
+            ),
+          ]
+          [setup, AST::Identifier.new(name: temp_name)]
         when AST::MemberAccess
-          setup, receiver = normalize_async_expression(expression.receiver, counter)
+          setup, receiver = normalize_async_expression(expression.receiver, counter, env:)
           [setup, AST::MemberAccess.new(receiver: receiver, member: expression.member)]
         when AST::IndexAccess
-          receiver_setup, receiver = normalize_async_expression(expression.receiver, counter)
-          index_setup, index = normalize_async_expression(expression.index, counter)
+          receiver_setup, receiver = normalize_async_expression(expression.receiver, counter, env:)
+          index_setup, index = normalize_async_expression(expression.index, counter, env:)
           [receiver_setup + index_setup, AST::IndexAccess.new(receiver: receiver, index: index)]
         when AST::FormatString
           setup = []
           parts = expression.parts.map do |part|
             if part.is_a?(AST::FormatExprPart)
-              expression_setup, inner_expression = normalize_async_expression(part.expression, counter)
+              expression_setup, inner_expression = normalize_async_expression(part.expression, counter, env:)
               setup.concat(expression_setup)
               AST::FormatExprPart.new(expression: inner_expression)
             else
@@ -1253,6 +1502,70 @@ module MilkTea
           [setup, AST::FormatString.new(parts: parts)]
         else
           [[], expression]
+        end
+      end
+
+      def ast_type_ref_for(type)
+        case type
+        when Types::Primitive
+          AST::TypeRef.new(name: AST::QualifiedName.new(parts: [type.name]), arguments: [], nullable: false)
+        when Types::Nullable
+          inner = ast_type_ref_for(type.base)
+          raise LoweringError, "nullable annotation is only valid for named/generic types" unless inner.is_a?(AST::TypeRef)
+
+          AST::TypeRef.new(name: inner.name, arguments: inner.arguments, nullable: true)
+        when Types::GenericInstance
+          AST::TypeRef.new(
+            name: AST::QualifiedName.new(parts: type.name.split(".")),
+            arguments: type.arguments.map do |argument|
+              if argument.is_a?(Types::LiteralTypeArg)
+                AST::TypeArgument.new(value: AST::IntegerLiteral.new(lexeme: argument.value.to_s, value: argument.value))
+              else
+                AST::TypeArgument.new(value: ast_type_ref_for(argument))
+              end
+            end,
+            nullable: false,
+          )
+        when Types::Span
+          AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["span"]), arguments: [AST::TypeArgument.new(value: ast_type_ref_for(type.element_type))], nullable: false)
+        when Types::Result
+          AST::TypeRef.new(
+            name: AST::QualifiedName.new(parts: ["Result"]),
+            arguments: [AST::TypeArgument.new(value: ast_type_ref_for(type.ok_type)), AST::TypeArgument.new(value: ast_type_ref_for(type.error_type))],
+            nullable: false,
+          )
+        when Types::Task
+          AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["Task"]), arguments: [AST::TypeArgument.new(value: ast_type_ref_for(type.result_type))], nullable: false)
+        when Types::TypeVar
+          AST::TypeRef.new(name: AST::QualifiedName.new(parts: [type.name]), arguments: [], nullable: false)
+        when Types::StructInstance
+          base_parts = type.module_name ? type.module_name.split(".") + [type.name] : [type.name]
+          AST::TypeRef.new(
+            name: AST::QualifiedName.new(parts: base_parts),
+            arguments: type.arguments.map do |argument|
+              if argument.is_a?(Types::LiteralTypeArg)
+                AST::TypeArgument.new(value: AST::IntegerLiteral.new(lexeme: argument.value.to_s, value: argument.value))
+              else
+                AST::TypeArgument.new(value: ast_type_ref_for(argument))
+              end
+            end,
+            nullable: false,
+          )
+        when Types::Struct, Types::Union, Types::Opaque, Types::Enum, Types::Flags
+          parts = type.module_name ? type.module_name.split(".") + [type.name] : [type.name]
+          AST::TypeRef.new(name: AST::QualifiedName.new(parts: parts), arguments: [], nullable: false)
+        when Types::Function
+          AST::FunctionType.new(
+            params: type.params.each_with_index.map { |param, i| AST::Param.new(name: param.name || "p#{i}", type: ast_type_ref_for(param.type), mutable: param.mutable) },
+            return_type: ast_type_ref_for(type.return_type),
+          )
+        when Types::Proc
+          AST::ProcType.new(
+            params: type.params.each_with_index.map { |param, i| AST::Param.new(name: param.name || "p#{i}", type: ast_type_ref_for(param.type), mutable: param.mutable) },
+            return_type: ast_type_ref_for(type.return_type),
+          )
+        else
+          raise LoweringError, "unsupported type for AST normalization #{type.class.name}"
         end
       end
 
@@ -1282,6 +1595,494 @@ module MilkTea
       def fresh_async_temp_name(counter)
         counter[:value] += 1
         "__mt_async_tmp_#{counter[:value]}"
+      end
+
+      # Lowers a list of statements that contain no `await` anywhere, but live
+      # inside an async resume function. Return statements are lowered as async
+      # completions. All other control flow is lowered recursively.
+      def statements_contain_await?(statements, async_info)
+        statements.any? do |s|
+          case s
+          when AST::LocalDecl
+            async_info[:await_fields].key?(s.value&.object_id)
+          when AST::Assignment
+            async_info[:await_fields].key?(s.value&.object_id)
+          when AST::ExpressionStmt
+            async_info[:await_fields].key?(s.expression&.object_id)
+          when AST::ReturnStmt
+            async_info[:await_fields].key?(s.value&.object_id)
+          when AST::IfStmt
+            s.branches.any? { |b| statements_contain_await?(b.body, async_info) } ||
+              (s.else_body && statements_contain_await?(s.else_body, async_info))
+          when AST::WhileStmt
+            statements_contain_await?(s.body, async_info)
+          when AST::ForStmt
+            statements_contain_await?(s.body, async_info)
+          when AST::MatchStmt
+            s.arms.any? { |arm| statements_contain_await?(arm.body, async_info) }
+          when AST::UnsafeStmt
+            statements_contain_await?(s.body, async_info)
+          else
+            false
+          end
+        end
+      end
+
+      # Lower a list of statements that MAY contain await expressions inside nested control flow.
+      # CPS-via-goto: labels placed inside if/while/match bodies, reachable from top-level switch dispatch.
+      def lower_async_cf_statements(statements, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, loop_flow: nil)
+        lowered = []
+        statements.each do |statement|
+          case statement
+          when AST::LocalDecl
+            field_info = async_info[:local_fields].fetch(statement.name)
+            await_info = async_info[:await_fields][statement.value&.object_id]
+            if await_info
+              lowered.concat(lower_async_await_statement(statement, field_info:, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
+            else
+              lowered.concat(lower_async_local_decl_statement(statement, field_info:, env:, frame_expr:))
+            end
+            async_bind_local!(env, statement.name, field_info)
+          when AST::Assignment
+            await_info = async_info[:await_fields][statement.value&.object_id]
+            if await_info
+              lowered.concat(lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
+            else
+              lowered.concat(lower_async_assignment_statement(statement, env:))
+            end
+          when AST::ExpressionStmt
+            await_info = async_info[:await_fields][statement.expression&.object_id]
+            if await_info
+              lowered.concat(lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
+            else
+              lowered.concat(lower_async_expression_statement(statement, env:))
+            end
+          when AST::ReturnStmt
+            await_info = async_info[:await_fields][statement.value&.object_id]
+            if await_info
+              lowered.concat(lower_async_await_statement(statement, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
+            else
+              lowered.concat(lower_async_return_statement(statement, env:, frame_expr:, raw_frame_expr:, async_info:))
+            end
+          when AST::IfStmt
+            lowered.concat(lower_async_cf_if_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, loop_flow:))
+          when AST::WhileStmt
+            lowered.concat(lower_async_cf_while_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, loop_flow:))
+          when AST::ForStmt
+            lowered.concat(lower_async_cf_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:))
+          when AST::MatchStmt
+            lowered.concat(lower_async_cf_match_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, loop_flow:))
+          when AST::UnsafeStmt
+            lowered.concat(lower_async_cf_statements(statement.body, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, loop_flow:))
+          when AST::BreakStmt
+            lowered << IR::BreakStmt.new
+          when AST::ContinueStmt
+            lowered << IR::ContinueStmt.new
+          when AST::StaticAssert
+            lowered.concat(lower_static_assert(statement))
+          else
+            raise LoweringError, "unsupported async cf statement #{statement.class.name}"
+          end
+        end
+        lowered
+      end
+
+      def lower_async_cf_if_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, loop_flow:)
+        branch_entries = statement.branches.map do |branch|
+          condition_setup, prepared_cond = prepare_expression_for_inline_lowering(branch.condition, env:)
+          condition = lower_contextual_expression(prepared_cond, env:, expected_type: @types.fetch("bool"))
+          body = if statements_contain_await?(branch.body, async_info)
+            lower_async_cf_statements(branch.body, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, loop_flow:)
+          else
+            lower_async_non_await_statements(branch.body, env:, frame_expr:, raw_frame_expr:, async_info:, loop_flow:)
+          end
+          { condition_setup:, condition:, body: }
+        end
+
+        else_body = if statement.else_body
+          if statements_contain_await?(statement.else_body, async_info)
+            lower_async_cf_statements(statement.else_body, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, loop_flow:)
+          else
+            lower_async_non_await_statements(statement.else_body, env:, frame_expr:, raw_frame_expr:, async_info:, loop_flow:)
+          end
+        end
+
+        nested_else = else_body
+        branch_entries.reverse_each do |entry|
+          nested_else = [
+            *entry[:condition_setup],
+            IR::IfStmt.new(condition: entry[:condition], then_body: entry[:body], else_body: nested_else),
+          ]
+        end
+        nested_else || []
+      end
+
+      def lower_async_cf_while_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, loop_flow:)
+        condition_setup, prepared_cond = prepare_expression_for_inline_lowering(statement.condition, env:)
+        condition = lower_contextual_expression(prepared_cond, env:, expected_type: @types.fetch("bool"))
+        body = if statements_contain_await?(statement.body, async_info)
+          lower_async_cf_statements(statement.body, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, loop_flow:)
+        else
+          lower_async_non_await_statements(statement.body, env:, frame_expr:, raw_frame_expr:, async_info:, loop_flow:)
+        end
+        condition_setup + [IR::WhileStmt.new(condition:, body:)]
+      end
+
+      def lower_async_cf_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:)
+        if range_call?(statement.iterable)
+          lower_async_cf_range_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:)
+        else
+          lower_async_cf_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:)
+        end
+      end
+
+      def lower_async_cf_range_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:)
+        loop_var_name = statement.name
+        loop_var_type = infer_range_loop_type(statement.iterable, env:)
+        loop_var_field = async_info[:local_fields].fetch(loop_var_name)
+        loop_var_expr = async_frame_field_expression(frame_expr, loop_var_field[:field_name], loop_var_type)
+
+        start_expr, stop_expr, inclusive = lower_range_call(statement.iterable, env:)
+
+        # Store stop value in frame too so it survives suspension
+        stop_field_name = "#{loop_var_field[:field_name]}_stop"
+        async_info[:local_fields][stop_field_name] ||= { field_name: stop_field_name, type: loop_var_type, mutable: true }
+        stop_field_expr = async_frame_field_expression(frame_expr, stop_field_name, loop_var_type)
+
+        inner_env = duplicate_env(env)
+        inner_env[:scopes].last[loop_var_name] = local_binding(
+          type: loop_var_type,
+          c_name: async_frame_field_c_name(loop_var_field[:field_name]),
+          mutable: true, pointer: false
+        )
+
+        body = if statements_contain_await?(statement.body, async_info)
+          lower_async_cf_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:)
+        else
+          lower_async_non_await_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, async_info:)
+        end
+
+        cmp_op = inclusive ? "<=" : "<"
+        [
+          IR::Assignment.new(target: loop_var_expr, operator: "=", value: start_expr),
+          IR::Assignment.new(target: stop_field_expr, operator: "=", value: stop_expr),
+          IR::WhileStmt.new(
+            condition: IR::BinaryOp.new(operator: cmp_op, left: loop_var_expr, right: stop_field_expr, type: @types.fetch("bool")),
+            body: body + [IR::Assignment.new(target: loop_var_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: loop_var_type))],
+          ),
+        ]
+      end
+
+      def lower_async_cf_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:)
+        iterable_type = infer_expression_type(statement.iterable, env:)
+        element_type = collection_loop_type(iterable_type)
+        raise LoweringError, "for loop expects range(start, stop), array[T, N], or span[T], got #{iterable_type}" unless element_type
+
+        iterable_setup, prepared_iterable = prepare_expression_for_inline_lowering(statement.iterable, env:, expected_type: iterable_type)
+        iterable_c_name = fresh_c_temp_name(env, "for_items")
+        index_c_name = fresh_c_temp_name(env, "for_index")
+        iterable_ref = IR::Name.new(name: iterable_c_name, type: iterable_type, pointer: false)
+        index_ref = IR::Name.new(name: index_c_name, type: @types.fetch("usize"), pointer: false)
+
+        # Loop variable stored in frame so it survives suspension
+        loop_var_field = async_info[:local_fields].fetch(statement.name)
+        loop_var_expr = async_frame_field_expression(frame_expr, loop_var_field[:field_name], element_type)
+
+        item_value = if array_type?(iterable_type)
+                       IR::Index.new(receiver: iterable_ref, index: index_ref, type: element_type)
+                     else
+                       data_ref = IR::Member.new(receiver: iterable_ref, member: "data", type: pointer_to(element_type))
+                       IR::Index.new(receiver: data_ref, index: index_ref, type: element_type)
+                     end
+        stop_value = if array_type?(iterable_type)
+                       IR::IntegerLiteral.new(value: array_length(iterable_type), type: @types.fetch("usize"))
+                     else
+                       IR::Member.new(receiver: iterable_ref, member: "len", type: @types.fetch("usize"))
+                     end
+
+        inner_env = duplicate_env(env)
+        inner_env[:scopes].last[statement.name] = local_binding(
+          type: element_type, c_name: async_frame_field_c_name(loop_var_field[:field_name]), mutable: true, pointer: false
+        )
+
+        assign_item = IR::Assignment.new(target: loop_var_expr, operator: "=", value: item_value)
+        body_stmts = if statements_contain_await?(statement.body, async_info)
+          lower_async_cf_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:)
+        else
+          lower_async_non_await_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, async_info:)
+        end
+
+        stmts = [
+          *iterable_setup,
+          IR::LocalDecl.new(name: iterable_c_name, c_name: iterable_c_name, type: iterable_type, value: lower_expression(prepared_iterable, env:, expected_type: iterable_type)),
+          IR::ForStmt.new(
+            init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("usize"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize"))),
+            condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
+            post: IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("usize"))),
+            body: [assign_item] + body_stmts,
+          ),
+        ]
+        stmts
+      end
+
+      def lower_async_cf_match_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, loop_flow:)
+        expr_setup, prepared_expr = prepare_expression_for_inline_lowering(statement.expression, env:)
+        match_expr = lower_contextual_expression(prepared_expr, env:, expected_type: nil)
+        match_type = infer_expression_type(statement.expression, env:)
+
+        cases = statement.arms.map do |arm|
+          arm_body = if statements_contain_await?(arm.body, async_info)
+            lower_async_cf_statements(arm.body, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, loop_flow:)
+          else
+            lower_async_non_await_statements(arm.body, env:, frame_expr:, raw_frame_expr:, async_info:, loop_flow:)
+          end
+          IR::SwitchCase.new(value: lower_match_arm_value(arm.pattern, match_type), body: arm_body + [IR::BreakStmt.new])
+        end
+
+        expr_setup + [IR::SwitchStmt.new(expression: match_expr, cases:)]
+      end
+
+      def lower_async_non_await_statements(statements, env:, frame_expr:, raw_frame_expr:, async_info:, loop_flow: nil)
+        local_env = duplicate_env(env)
+        lowered = []
+
+        statements.each do |statement|
+          case statement
+          when AST::LocalDecl
+            type = statement.type ? resolve_type_ref(statement.type) : infer_expression_type(statement.value, env: local_env)
+            c_name = c_local_name(statement.name)
+            if statement.value
+              prepared_setup, prepared_value = prepare_expression_for_inline_lowering(
+                statement.value, env: local_env, expected_type: type, allow_root_statement_foreign: true
+              )
+              lowered.concat(prepared_setup)
+              value = lower_contextual_expression(
+                prepared_value, env: local_env, expected_type: type,
+                contextual_int_to_float: statement.type && contextual_int_to_float_target?(type)
+              )
+            else
+              value = IR::ZeroInit.new(type:)
+            end
+            lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:)
+            current_actual_scope(local_env[:scopes])[statement.name] = local_binding(type:, c_name:, mutable: statement.kind == :var, pointer: false)
+          when AST::Assignment
+            lowered.concat(lower_async_assignment_statement(statement, env: local_env))
+          when AST::ExpressionStmt
+            lowered.concat(lower_async_expression_statement(statement, env: local_env))
+          when AST::ReturnStmt
+            lowered.concat(lower_async_return_statement(statement, env: local_env, frame_expr:, raw_frame_expr:, async_info:))
+          when AST::IfStmt
+            branch_entries = statement.branches.map do |branch|
+              condition_setup, prepared_cond = prepare_expression_for_inline_lowering(
+                branch.condition, env: local_env, expected_type: @types.fetch("bool")
+              )
+              then_body = lower_async_non_await_statements(
+                branch.body, env: local_env, frame_expr:, raw_frame_expr:, async_info:, loop_flow:
+              )
+              [condition_setup, lower_expression(prepared_cond, env: local_env, expected_type: @types.fetch("bool")), then_body]
+            end
+            else_body = statement.else_body ? lower_async_non_await_statements(
+              statement.else_body, env: local_env, frame_expr:, raw_frame_expr:, async_info:, loop_flow:
+            ) : nil
+            nested = else_body || []
+            branch_entries.reverse_each do |cond_setup, cond, then_body|
+              nested = [*cond_setup, IR::IfStmt.new(condition: cond, then_body:, else_body: nested.empty? ? nil : nested)]
+            end
+            lowered.concat(nested)
+          when AST::MatchStmt
+            scrutinee_type = infer_expression_type(statement.expression, env: local_env)
+            expr_setup, prepared_expr = prepare_expression_for_inline_lowering(
+              statement.expression, env: local_env, expected_type: scrutinee_type
+            )
+            lowered.concat(expr_setup)
+            expr = lower_expression(prepared_expr, env: local_env, expected_type: scrutinee_type)
+            cases = statement.arms.map do |arm|
+              value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
+              arm_body = lower_async_non_await_statements(
+                arm.body, env: local_env, frame_expr:, raw_frame_expr:, async_info:, loop_flow:
+              )
+              IR::SwitchCase.new(value:, body: arm_body)
+            end
+            lowered << IR::SwitchStmt.new(expression: expr, cases:)
+          when AST::WhileStmt
+            lowered << lower_async_while_stmt(statement, env: local_env, frame_expr:, raw_frame_expr:, async_info:)
+          when AST::ForStmt
+            lowered << lower_async_for_stmt(statement, env: local_env, frame_expr:, raw_frame_expr:, async_info:)
+          when AST::BreakStmt
+            if loop_flow
+              lowered.concat(lower_loop_exit(loop_flow[:break_target], [], []))
+            else
+              lowered << IR::BreakStmt.new
+            end
+          when AST::ContinueStmt
+            if loop_flow
+              lowered.concat(lower_loop_exit(loop_flow[:continue_target], [], []))
+            else
+              lowered << IR::ContinueStmt.new
+            end
+          when AST::UnsafeStmt
+            lowered.concat(lower_async_non_await_statements(
+              statement.body, env: local_env, frame_expr:, raw_frame_expr:, async_info:, loop_flow:
+            ))
+          when AST::StaticAssert
+            lowered << IR::StaticAssert.new(
+              condition: lower_expression(statement.condition, env: local_env, expected_type: @types.fetch("bool")),
+              message: lower_expression(statement.message, env: local_env, expected_type: @types.fetch("str")),
+            )
+          else
+            raise LoweringError, "unsupported async non-await statement #{statement.class.name}"
+          end
+        end
+
+        lowered
+      end
+
+      def lower_async_while_stmt(statement, env:, frame_expr:, raw_frame_expr:, async_info:)
+        continue_label = fresh_c_temp_name(env, "loop_continue")
+        break_label = fresh_c_temp_name(env, "loop_break")
+        condition_setup, prepared_cond = prepare_expression_for_inline_lowering(
+          statement.condition, env:, expected_type: @types.fetch("bool")
+        )
+        body = lower_async_non_await_statements(
+          statement.body,
+          env: duplicate_env(env),
+          frame_expr:,
+          raw_frame_expr:,
+          async_info:,
+          loop_flow: loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label)),
+        )
+        body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
+        cond = lower_expression(prepared_cond, env:, expected_type: @types.fetch("bool"))
+
+        if condition_setup.empty?
+          stmts = [IR::WhileStmt.new(condition: cond, body:)]
+          stmts << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
+          return IR::BlockStmt.new(body: stmts)
+        end
+
+        loop_body = [
+          *condition_setup,
+          IR::IfStmt.new(
+            condition: IR::Unary.new(operator: "not", operand: cond, type: @types.fetch("bool")),
+            then_body: [loop_exit_statement(loop_exit_break(break_label), local_defers: [], outer_defers: [])],
+            else_body: nil,
+          ),
+          *body,
+        ]
+        stmts = [IR::WhileStmt.new(condition: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")), body: loop_body)]
+        stmts << IR::LabelStmt.new(name: break_label) if contains_label_target?(loop_body, break_label)
+        IR::BlockStmt.new(body: stmts)
+      end
+
+      def lower_async_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, async_info:)
+        return lower_async_range_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, async_info:) if range_call?(statement.iterable)
+
+        lower_async_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, async_info:)
+      end
+
+      def lower_async_range_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, async_info:)
+        loop_type = infer_range_loop_type(statement.iterable, env:)
+        start_expr = statement.iterable.arguments[0].value
+        stop_expr = statement.iterable.arguments[1].value
+        start_setup, prepared_start = prepare_expression_for_inline_lowering(start_expr, env:, expected_type: loop_type)
+        stop_setup, prepared_stop = prepare_expression_for_inline_lowering(stop_expr, env:, expected_type: loop_type)
+        index_c_name = c_local_name(statement.name)
+        stop_c_name = fresh_c_temp_name(env, "for_stop")
+        continue_label = fresh_c_temp_name(env, "loop_continue")
+        break_label = fresh_c_temp_name(env, "loop_break")
+        index_ref = IR::Name.new(name: index_c_name, type: loop_type, pointer: false)
+        inline_stop = stop_setup.empty? && compile_time_numeric_const_expression?(prepared_stop)
+        stop_value = if inline_stop
+                       lower_expression(prepared_stop, env:, expected_type: loop_type)
+                     else
+                       IR::Name.new(name: stop_c_name, type: loop_type, pointer: false)
+                     end
+
+        while_env = duplicate_env(env)
+        current_actual_scope(while_env[:scopes])[statement.name] = local_binding(
+          type: loop_type, c_name: index_c_name, mutable: false, pointer: false
+        )
+        body = lower_async_non_await_statements(
+          statement.body,
+          env: while_env,
+          frame_expr:,
+          raw_frame_expr:,
+          async_info:,
+          loop_flow: loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label)),
+        )
+        body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
+
+        for_statement = IR::ForStmt.new(
+          init: IR::LocalDecl.new(name: statement.name, c_name: index_c_name, type: loop_type, value: lower_expression(prepared_start, env:, expected_type: loop_type)),
+          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
+          post: IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: loop_type)),
+          body:,
+        )
+
+        stmts = [
+          *start_setup,
+          *stop_setup,
+          *(inline_stop ? [] : [IR::LocalDecl.new(name: stop_c_name, c_name: stop_c_name, type: loop_type, value: lower_expression(prepared_stop, env:, expected_type: loop_type))]),
+          for_statement,
+        ]
+        stmts << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
+        IR::BlockStmt.new(body: stmts)
+      end
+
+      def lower_async_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, async_info:)
+        iterable_type = infer_expression_type(statement.iterable, env:)
+        element_type = collection_loop_type(iterable_type)
+        raise LoweringError, "for loop expects range(start, stop), array[T, N], or span[T], got #{iterable_type}" unless element_type
+
+        iterable_setup, prepared_iterable = prepare_expression_for_inline_lowering(statement.iterable, env:, expected_type: iterable_type)
+        iterable_c_name = fresh_c_temp_name(env, "for_items")
+        index_c_name = fresh_c_temp_name(env, "for_index")
+        continue_label = fresh_c_temp_name(env, "loop_continue")
+        break_label = fresh_c_temp_name(env, "loop_break")
+        iterable_ref = IR::Name.new(name: iterable_c_name, type: iterable_type, pointer: false)
+        index_ref = IR::Name.new(name: index_c_name, type: @types.fetch("usize"), pointer: false)
+
+        item_value = if array_type?(iterable_type)
+                       IR::Index.new(receiver: iterable_ref, index: index_ref, type: element_type)
+                     else
+                       data_ref = IR::Member.new(receiver: iterable_ref, member: "data", type: pointer_to(element_type))
+                       IR::Index.new(receiver: data_ref, index: index_ref, type: element_type)
+                     end
+        stop_value = if array_type?(iterable_type)
+                       IR::IntegerLiteral.new(value: array_length(iterable_type), type: @types.fetch("usize"))
+                     else
+                       IR::Member.new(receiver: iterable_ref, member: "len", type: @types.fetch("usize"))
+                     end
+
+        while_env = duplicate_env(env)
+        current_actual_scope(while_env[:scopes])[statement.name] = local_binding(
+          type: element_type, c_name: c_local_name(statement.name), mutable: false, pointer: false
+        )
+        body = [IR::LocalDecl.new(name: statement.name, c_name: c_local_name(statement.name), type: element_type, value: item_value)]
+        body.concat(lower_async_non_await_statements(
+          statement.body,
+          env: while_env,
+          frame_expr:,
+          raw_frame_expr:,
+          async_info:,
+          loop_flow: loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label)),
+        ))
+        body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
+
+        for_statement = IR::ForStmt.new(
+          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("usize"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize"))),
+          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
+          post: IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("usize"))),
+          body:,
+        )
+
+        stmts = [
+          *iterable_setup,
+          IR::LocalDecl.new(name: iterable_c_name, c_name: iterable_c_name, type: iterable_type, value: lower_expression(prepared_iterable, env:, expected_type: iterable_type)),
+          for_statement,
+        ]
+        stmts << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
+        IR::BlockStmt.new(body: stmts)
       end
 
       def lower_async_assignment_statement(statement, env:)
@@ -4612,6 +5413,7 @@ module MilkTea
               method_analysis, method_ast = method_entry
               method_binding = method_analysis.methods.fetch(type_expr).fetch(method_ast.name)
               if method_binding.type.receiver_type.nil?
+                method_binding = specialize_function_binding(method_binding, arguments, env) if method_binding.type_params.any?
                 return [:associated_method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: type_expr), nil, method_binding.type]
               end
             end
@@ -4625,7 +5427,13 @@ module MilkTea
           if method_entry
             method_analysis, method_ast = method_entry
             method_binding = method_analysis.methods.fetch(resolved_receiver_type).fetch(method_ast.name)
-            return [:method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: resolved_receiver_type), callee.receiver, method_binding.type]
+            method_binding = specialize_function_binding(method_binding, arguments, env)
+            return [
+              :method,
+              function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: resolved_receiver_type),
+              callee.receiver,
+              method_binding.type,
+            ]
           end
 
           if (str_builder_method = str_builder_method_kind(resolved_receiver_type, callee.member))
@@ -6416,7 +7224,10 @@ module MilkTea
         if receiver_type.nil? && binding.name == "main" && binding.type_arguments.empty?
           return binding.async ? module_function_c_name(module_name, "__async_main") : "main"
         end
-        return "#{c_type_name(receiver_type)}_#{binding.name}" if receiver_type
+        if receiver_type
+          base = "#{c_type_name(receiver_type)}_#{binding.name}"
+          return binding.type_arguments.empty? ? base : "#{base}_#{sanitize_identifier(binding.type_arguments.join('_'))}"
+        end
 
         module_function_c_name(module_name, binding.name, type_arguments: binding.type_arguments)
       end
