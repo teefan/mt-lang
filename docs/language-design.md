@@ -1241,35 +1241,6 @@ static void game_Player_update(game_Player* this, float dt) {
 
 This is the standard to protect. If the generated C becomes harder to read than hand-written C, the language has drifted.
 
-## Feature set recommendation for v1
-
-The full vision should be staged. A shippable v1 needs the smallest feature set that still proves the language works for real game code.
-
-### Ship in v1
-
-- indentation-based parser
-- modules and imports
-- `let`, `var`, `const`
-- functions and method sugar via `methods`
-- structs, enums, flags, unions, opaque types, type aliases, variants
-- arrays, pointers, spans, function pointers
-- `if`, `while`, `for`, `match`, `defer`, `unsafe`
-- explicit casts
-- `extern module` declarations
-- clang-driven bindgen for `std.c.*`
-- readable C backend
-- `async def` / `await` / `Task[T]` with libuv runtime
-
-### Defer until later
-
-- generic constraints
-- interfaces
-- exceptions
-- metaprogramming
-- custom operators
-- package registry
-- hidden managed runtime features
-
 ## Summary
 
 Milk Tea should be a language where:
