@@ -15,6 +15,7 @@ module MilkTea
       def initialize
         @workspace = Workspace.new
         @handlers = {}
+        @diagnostic_report_cache = {}
         register_handlers
       end
 
@@ -60,6 +61,8 @@ module MilkTea
         @handlers['textDocument/completion']        = method(:handle_completion)
         @handlers['textDocument/codeLens']          = method(:handle_code_lens)
         @handlers['textDocument/codeAction']        = method(:handle_code_action)
+        @handlers['textDocument/inlayHint']         = method(:handle_inlay_hint)
+        @handlers['textDocument/diagnostic']        = method(:handle_document_diagnostic)
         @handlers['textDocument/signatureHelp']     = method(:handle_signature_help)
         @handlers['textDocument/prepareRename']     = method(:handle_prepare_rename)
         @handlers['textDocument/rename']            = method(:handle_rename)
@@ -140,6 +143,11 @@ module MilkTea
             },
             codeActionProvider: {
               codeActionKinds: ['source.fixAll']
+            },
+            inlayHintProvider: true,
+            diagnosticProvider: {
+              interFileDependencies: false,
+              workspaceDiagnostics: false
             },
             completionProvider: {
               triggerCharacters: ['.', '(', ' '],
@@ -465,6 +473,88 @@ module MilkTea
         []
       end
 
+      def handle_document_diagnostic(params)
+        uri = params.dig('textDocument', 'uri')
+        return { kind: 'full', items: [] } unless uri
+
+        content = @workspace.get_content(uri)
+        diagnostics = Diagnostics.collect(uri, content)
+        fingerprint = diagnostics_fingerprint(content, diagnostics)
+        previous_result_id = params['previousResultId']
+        cached = @diagnostic_report_cache[uri]
+
+        if cached && cached[:result_id] == previous_result_id && cached[:fingerprint] == fingerprint
+          return {
+            kind: 'unchanged',
+            resultId: cached[:result_id]
+          }
+        end
+
+        result_id = next_diagnostic_result_id(uri, fingerprint)
+        @diagnostic_report_cache[uri] = {
+          result_id: result_id,
+          fingerprint: fingerprint
+        }
+
+        {
+          kind: 'full',
+          resultId: result_id,
+          items: diagnostics
+        }
+      rescue StandardError => e
+        warn "Error in documentDiagnostic handler: #{e.message}"
+        { kind: 'full', items: [] }
+      end
+
+      def handle_inlay_hint(params)
+        uri = params.dig('textDocument', 'uri')
+        range = params['range'] || {}
+        start_line = range.dig('start', 'line') || 0
+        start_char = range.dig('start', 'character') || 0
+        end_line = range.dig('end', 'line') || 0
+        end_char = range.dig('end', 'character') || 0
+
+        analysis = @workspace.get_analysis(uri)
+        tokens = @workspace.get_tokens(uri)
+        return [] unless analysis && tokens
+
+        hints = []
+        i = 0
+        while i < tokens.length - 1
+          callee = tokens[i]
+          lparen = tokens[i + 1]
+
+          if callee.type == :identifier && lparen.type == :lparen
+            binding = analysis.functions[callee.lexeme]
+            if binding
+              arg_starts, closing_index = collect_call_argument_starts(tokens, i + 1)
+              params_list = binding.type.params
+
+              arg_starts.each_with_index do |arg_tok, index|
+                break if index >= params_list.length
+                next unless position_in_range?(arg_tok.line - 1, arg_tok.column - 1, start_line, start_char, end_line, end_char)
+
+                hints << {
+                  position: { line: arg_tok.line - 1, character: arg_tok.column - 1 },
+                  label: "#{params_list[index].name}: ",
+                  kind: 2,
+                  paddingRight: true
+                }
+              end
+
+              i = closing_index if closing_index
+            end
+          end
+
+          i += 1
+        end
+
+        hints
+      rescue StandardError => e
+        warn "Error in inlayHint handler: #{e.message}"
+        []
+      end
+
       # ── Enhancement 6: Completion ────────────────────────────────────────────
 
       def handle_completion(params)
@@ -476,6 +566,27 @@ module MilkTea
         return { isIncomplete: false, items: [] } unless analysis
 
         prefix = current_word_prefix(uri, lsp_line, lsp_char)
+
+        # When user is typing after '.', return method completions only.
+        dot_recv = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
+        if dot_recv
+          method_items = []
+          analysis.methods.each do |_recv_type, methods|
+            methods.each do |mname, binding|
+              next unless prefix.empty? || mname.start_with?(prefix)
+
+              params_str = format_params(binding.type.params)
+              method_items << {
+                label:      mname,
+                kind:       2,  # Method
+                detail:     "#{mname}(#{params_str}) -> #{binding.type.return_type}",
+                insertText: mname,
+                sortText:   "0_#{mname}"
+              }
+            end
+          end
+          return { isIncomplete: false, items: method_items }
+        end
 
         items = []
 
@@ -624,6 +735,15 @@ module MilkTea
           "type #{name} = #{type}"
         elsif (binding = analysis.values[name])
           "#{name}: #{binding.type}"
+        else
+          # Fallback: check if it is a method defined on any type
+          analysis.methods.each do |_recv_type, methods|
+            if (mb = methods[name])
+              params_str = format_params(mb.type.params)
+              return "def #{name}(#{params_str}) -> #{mb.type.return_type}"
+            end
+          end
+          nil
         end
       end
 
@@ -699,6 +819,58 @@ module MilkTea
           start: { line: token.line - 1, character: token.column - 1 },
           end:   { line: token.line - 1, character: token.column - 1 + token.lexeme.length }
         }
+      end
+
+      def diagnostics_fingerprint(content, diagnostics)
+        [content, diagnostics].hash.to_s(16)
+      end
+
+      def next_diagnostic_result_id(uri, fingerprint)
+        "#{uri}:#{fingerprint}"
+      end
+
+      def collect_call_argument_starts(tokens, lparen_index)
+        starts = []
+        depth = 1
+        j = lparen_index + 1
+
+        first = next_non_trivia_token(tokens, j)
+        starts << first if first && first.type != :rparen
+
+        while j < tokens.length
+          tok = tokens[j]
+          case tok.type
+          when :lparen
+            depth += 1
+          when :rparen
+            depth -= 1
+            return [starts, j] if depth.zero?
+          when :comma
+            if depth == 1
+              next_tok = next_non_trivia_token(tokens, j + 1)
+              starts << next_tok if next_tok && next_tok.type != :rparen
+            end
+          end
+          j += 1
+        end
+
+        [starts, nil]
+      end
+
+      def next_non_trivia_token(tokens, index)
+        i = index
+        while i < tokens.length
+          tok = tokens[i]
+          return tok unless [:newline, :indent, :dedent].include?(tok.type)
+          i += 1
+        end
+        nil
+      end
+
+      def position_in_range?(line, char, start_line, start_char, end_line, end_char)
+        after_start = (line > start_line) || (line == start_line && char >= start_char)
+        before_end = (line < end_line) || (line == end_line && char <= end_char)
+        after_start && before_end
       end
     end
   end

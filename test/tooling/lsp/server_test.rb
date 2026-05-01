@@ -83,6 +83,20 @@ class LSPServerTest < Minitest::Test
         return add(1, 2)
   MT
 
+  # Source with a struct + methods block so method completion/hover can be tested.
+  SOURCE_WITH_METHODS = <<~MT
+    struct Point:
+        x: i32
+        y: i32
+
+    methods Point:
+        def zero() -> i32:
+            return 0
+
+    def get_val() -> i32:
+        return 1
+  MT
+
   def test_initialize_advertises_expected_capabilities
     with_server do |client|
       response = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -97,6 +111,8 @@ class LSPServerTest < Minitest::Test
       assert_equal true, capabilities["documentHighlightProvider"]
       assert_equal true, capabilities["documentRangeFormattingProvider"]
       assert_kind_of Hash, capabilities["codeActionProvider"]
+      assert_equal true, capabilities["inlayHintProvider"]
+      assert_kind_of Hash, capabilities["diagnosticProvider"]
       assert_kind_of Hash, capabilities["renameProvider"]
       assert_kind_of Hash, capabilities["signatureHelpProvider"]
       assert_kind_of Hash, capabilities["completionProvider"]
@@ -327,6 +343,171 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_inlay_hint_returns_parameter_name_hints_for_call_arguments
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_inlay_hint_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_CALL }
+      })
+
+      response = client.send_request("textDocument/inlayHint", {
+        "textDocument" => { "uri" => uri },
+        "range" => {
+          "start" => { "line" => 4, "character" => 0 },
+          "end" => { "line" => 4, "character" => 30 }
+        }
+      })
+
+      hints = response.fetch("result")
+      labels = hints.map { |h| h["label"] }
+      assert_includes labels, "a: "
+      assert_includes labels, "b: "
+
+      positions = hints.map { |h| [h.dig("position", "line"), h.dig("position", "character")] }
+      assert_includes positions, [4, 15]
+      assert_includes positions, [4, 18]
+    end
+  end
+
+  def test_inlay_hint_respects_requested_range
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_inlay_hint_range_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_CALL }
+      })
+
+      response = client.send_request("textDocument/inlayHint", {
+        "textDocument" => { "uri" => uri },
+        "range" => {
+          "start" => { "line" => 4, "character" => 0 },
+          "end" => { "line" => 4, "character" => 16 }
+        }
+      })
+
+      hints = response.fetch("result")
+      labels = hints.map { |h| h["label"] }
+      assert_includes labels, "a: "
+      refute_includes labels, "b: "
+    end
+  end
+
+  def test_document_diagnostic_returns_full_report
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_doc_diag_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => "def add(a: i32, b: i32) -> i32:\n    return a + b\n"
+        }
+      })
+
+      response = client.send_request("textDocument/diagnostic", {
+        "textDocument" => { "uri" => uri }
+      })
+
+      result = response.fetch("result")
+      assert_equal "full", result["kind"]
+      assert_kind_of Array, result["items"]
+      assert_equal [], result["items"]
+    end
+  end
+
+  def test_document_diagnostic_reports_syntax_errors
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_doc_diag_err_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => "def bad(\n"
+        }
+      })
+
+      response = client.send_request("textDocument/diagnostic", {
+        "textDocument" => { "uri" => uri }
+      })
+
+      result = response.fetch("result")
+      assert_equal "full", result["kind"]
+      assert result["items"].length >= 1
+      assert_match(/expected|unterminated|unclosed|error/i, result["items"][0]["message"])
+    end
+  end
+
+  def test_document_diagnostic_returns_unchanged_when_previous_result_matches
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_doc_diag_unchanged_test.mt"
+      source = "def add(a: i32, b: i32) -> i32:\n    return a + b\n"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source
+        }
+      })
+
+      first = client.send_request("textDocument/diagnostic", {
+        "textDocument" => { "uri" => uri }
+      })
+      first_result = first.fetch("result")
+      assert_equal "full", first_result["kind"]
+      refute_nil first_result["resultId"]
+
+      second = client.send_request("textDocument/diagnostic", {
+        "textDocument" => { "uri" => uri },
+        "previousResultId" => first_result["resultId"]
+      })
+      second_result = second.fetch("result")
+      assert_equal "unchanged", second_result["kind"]
+      assert_equal first_result["resultId"], second_result["resultId"]
+    end
+  end
+
+  def test_document_diagnostic_returns_full_after_content_changes
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_doc_diag_change_test.mt"
+      source = "def add(a: i32, b: i32) -> i32:\n    return a + b\n"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source
+        }
+      })
+
+      first = client.send_request("textDocument/diagnostic", {
+        "textDocument" => { "uri" => uri }
+      })
+      first_result = first.fetch("result")
+      assert_equal "full", first_result["kind"]
+
+      changed = "def add(a: i32, b: i32) -> i32:\n    return a - b\n"
+      client.send_notification("textDocument/didChange", {
+        "textDocument" => { "uri" => uri, "version" => 2 },
+        "contentChanges" => [{ "text" => changed }]
+      })
+
+      second = client.send_request("textDocument/diagnostic", {
+        "textDocument" => { "uri" => uri },
+        "previousResultId" => first_result["resultId"]
+      })
+      second_result = second.fetch("result")
+      assert_equal "full", second_result["kind"]
+      refute_equal first_result["resultId"], second_result["resultId"]
+    end
+  end
+
   def test_declaration_and_type_definition_delegate_to_definition_location
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -427,6 +608,143 @@ class LSPServerTest < Minitest::Test
         new_names = new_symbols.fetch("result").map { |s| s["name"] }
         assert_includes new_names, "new_name"
       end
+    end
+  end
+
+  def test_completion_returns_function_names
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_completion_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_CALL }
+      })
+
+      response = client.send_request("textDocument/completion", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => 4, "character" => 11 }
+      })
+      result = response.fetch("result")
+      labels = result["items"].map { |i| i["label"] }
+      assert_includes labels, "add"
+      assert_includes labels, "main"
+      result["items"].each { |item| assert_equal 3, item["kind"] }
+    end
+  end
+
+  def test_completion_returns_method_names_after_dot
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_method_completion_test.mt"
+      # Open valid source so analysis succeeds and is cached as last-good.
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_METHODS }
+      })
+      # Simulate user editing to a mid-state with "p." on the last line (breaks sema,
+      # but last-good analysis is retained so method completions still work).
+      partial_source = SOURCE_WITH_METHODS.sub("    return 1\n", "    return p.\n")
+      client.send_notification("textDocument/didChange", {
+        "textDocument" => { "uri" => uri, "version" => 2 },
+        "contentChanges" => [{ "text" => partial_source }]
+      })
+      # Cursor is right after 'p.' on the last non-empty line.
+      dot_line = partial_source.lines.count - 1  # "    return p." is the last line
+      dot_char = partial_source.lines[dot_line].chomp.length
+
+      response = client.send_request("textDocument/completion", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => dot_line, "character" => dot_char }
+      })
+      result = response.fetch("result")
+      labels = result["items"].map { |i| i["label"] }
+      assert_includes labels, "zero"
+      result["items"].each { |item| assert_equal 2, item["kind"] }  # kind 2 = Method
+    end
+  end
+
+  def test_hover_returns_method_info_for_method_name
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_method_hover_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_METHODS }
+      })
+      # Line 5 (0-based) is "    def zero() -> i32:", 'zero' starts at character 8.
+      response = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => 5, "character" => 8 }
+      })
+      hover_value = response.dig("result", "contents", "value")
+      assert_includes hover_value, "zero"
+      assert_includes hover_value, "-> i32"
+    end
+  end
+
+  def test_code_lens_returns_function_signatures
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_codelens_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_CALL }
+      })
+      response = client.send_request("textDocument/codeLens", {
+        "textDocument" => { "uri" => uri }
+      })
+      lenses = response.fetch("result")
+      assert_kind_of Array, lenses
+      assert lenses.length >= 2, "expected at least 2 code lenses (add + main), got #{lenses.length}"
+      titles = lenses.map { |l| l.dig("command", "title") }
+      assert titles.any? { |t| t.include?("add") && t.include?("-> i32") }
+      assert titles.any? { |t| t.include?("main") }
+    end
+  end
+
+  def test_document_diagnostic_collects_errors_from_multiple_functions
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_multi_err_test.mt"
+      source = <<~MT
+        def foo() -> i32:
+            return "not an int"
+
+        def bar() -> bool:
+            return 42
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/diagnostic", { "textDocument" => { "uri" => uri } })
+      result = response.fetch("result")
+      assert_equal "full", result["kind"]
+      assert result["items"].length >= 2,
+             "expected errors from both foo and bar, got #{result['items'].length}: #{result['items'].map { |i| i['message'] }.inspect}"
+    end
+  end
+
+  def test_document_diagnostic_sema_errors_have_accurate_line_numbers
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_err_line_test.mt"
+      source = <<~MT
+        def ok(a: i32, b: i32) -> i32:
+            return a + b
+
+        def broken() -> i32:
+            return "wrong type"
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/diagnostic", { "textDocument" => { "uri" => uri } })
+      result = response.fetch("result")
+      assert_equal "full", result["kind"]
+      assert result["items"].length >= 1
+
+      # "return 'wrong type'" is on source line 5 (1-based), LSP 0-based = 4.
+      error_lines = result["items"].map { |i| i.dig("range", "start", "line") }
+      assert_includes error_lines, 4,
+                      "expected sema error on line 4 (0-based), got lines: #{error_lines.inspect}"
     end
   end
 
