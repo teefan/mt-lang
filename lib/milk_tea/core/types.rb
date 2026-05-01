@@ -517,6 +517,8 @@ module MilkTea
           )
         when StructInstance
           type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
+        when VariantInstance
+          type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
         else
           type
         end
@@ -620,6 +622,127 @@ module MilkTea
 
       def to_s
         module_name ? "#{module_name}.#{name}" : name
+      end
+    end
+
+    class GenericVariantDefinition < Base
+      attr_reader :name, :type_params, :module_name
+
+      def initialize(name, type_params, module_name: nil)
+        @name = name
+        @type_params = type_params.freeze
+        @module_name = module_name
+        @arms = {}
+        @instances = {}
+      end
+
+      def define_arms(arms_hash)
+        @arms = arms_hash.freeze
+        self
+      end
+
+      def arms
+        @arms
+      end
+
+      def instantiate(arguments)
+        raise ArgumentError, "#{name} expects #{type_params.length} type arguments, got #{arguments.length}" unless arguments.length == type_params.length
+
+        key = arguments.dup.freeze
+        return @instances[key] if @instances.key?(key)
+
+        substitutions = type_params.zip(arguments).to_h
+        instance = VariantInstance.new(self, arguments)
+        @instances[key] = instance
+        instance.define_arms(
+          @arms.transform_values do |fields|
+            fields.transform_values { |type| substitute_type(type, substitutions) }
+          end,
+        )
+      end
+
+      def to_s
+        module_name ? "#{module_name}.#{name}" : name
+      end
+
+      private
+
+      def substitute_type(type, substitutions)
+        case type
+        when TypeVar
+          substitutions.fetch(type.name, type)
+        when Nullable
+          Nullable.new(substitute_type(type.base, substitutions))
+        when GenericInstance
+          GenericInstance.new(type.name, type.arguments.map { |argument| argument.is_a?(LiteralTypeArg) ? argument : substitute_type(argument, substitutions) })
+        when Span
+          Span.new(substitute_type(type.element_type, substitutions))
+        when Result
+          Result.new(substitute_type(type.ok_type, substitutions), substitute_type(type.error_type, substitutions))
+        when Task
+          Task.new(substitute_type(type.result_type, substitutions))
+        when Proc
+          Proc.new(
+            params: type.params.map do |param|
+              Parameter.new(
+                param.name,
+                substitute_type(param.type, substitutions),
+                mutable: param.mutable,
+                passing_mode: param.passing_mode,
+                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
+              )
+            end,
+            return_type: substitute_type(type.return_type, substitutions),
+          )
+        when Function
+          Function.new(
+            type.name,
+            params: type.params.map do |param|
+              Parameter.new(
+                param.name,
+                substitute_type(param.type, substitutions),
+                mutable: param.mutable,
+                passing_mode: param.passing_mode,
+                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
+              )
+            end,
+            return_type: substitute_type(type.return_type, substitutions),
+            receiver_type: type.receiver_type ? substitute_type(type.receiver_type, substitutions) : nil,
+            receiver_mutable: type.receiver_mutable,
+            external: type.external,
+          )
+        when StructInstance
+          type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
+        when VariantInstance
+          type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
+        else
+          type
+        end
+      end
+    end
+
+    class VariantInstance < Variant
+      attr_reader :definition, :arguments
+
+      def initialize(definition, arguments)
+        super(definition.name, module_name: definition.module_name)
+        @definition = definition
+        @arguments = arguments.freeze
+      end
+
+      def eql?(other)
+        other.is_a?(VariantInstance) && other.definition == definition && other.arguments == arguments
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, definition, arguments].hash
+      end
+
+      def to_s
+        base = module_name ? "#{module_name}.#{name}" : name
+        "#{base}[#{arguments.join(', ')}]"
       end
     end
 

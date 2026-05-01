@@ -4646,16 +4646,47 @@ class MilkTeaSemaTest < Minitest::Test
     assert_raises(MilkTea::SemaError) { check_source(source) }
   end
 
-  def test_rejects_generic_variant
+  def test_type_checks_generic_variant_declaration_and_use
     source = <<~MT
       module demo.variant_generic
 
       variant Box[T]:
-          some
+          some(value: T)
           none
+
+      def unwrap_or_zero(value: Box[i32]) -> i32:
+          match value:
+              Box.some as payload:
+                  return payload.value
+              Box.none:
+                  return 0
+
+      def main() -> i32:
+          let value: Box[i32] = Box[i32].some(value= 42)
+          return unwrap_or_zero(value)
     MT
 
-    assert_raises(MilkTea::SemaError) { check_source(source) }
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("Box")
+    assert_equal true, result.functions.key?("unwrap_or_zero")
+  end
+
+  def test_type_checks_proc_fields_in_union
+    source = <<~MT
+      module demo.union_proc
+
+      union CallbackOrValue:
+          callback: proc() -> i32
+          value: i32
+
+      def main() -> i32:
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("CallbackOrValue")
   end
 
   private

@@ -90,6 +90,11 @@ module MilkTea
         lines << ""
       end
 
+      collect_generic_variant_decls.each do |variant_decl|
+        lines.concat(emit_variant(variant_decl))
+        lines << ""
+      end
+
       array_return_types = collect_array_return_types
       array_return_types.each do |type|
         lines.concat(emit_array_return_wrapper(type))
@@ -1914,7 +1919,7 @@ module MilkTea
       when Types::GenericInstance
         base = generic_c_type(type)
         pointer ? "#{base}*" : base
-      when Types::Struct, Types::Union, Types::Enum, Types::Flags, Types::Variant, Types::VariantArmPayload
+      when Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Variant, Types::VariantInstance, Types::VariantArmPayload
         base = named_type_c_name(type)
         pointer ? "#{base}*" : base
       when Types::Opaque
@@ -2128,6 +2133,10 @@ module MilkTea
         end
       end
 
+      each_variant_arm_field_type do |field_type|
+        collect_span_type(field_type, span_types, visited)
+      end
+
       emitted_functions.each do |function|
         collect_span_type(function.return_type, span_types, visited)
         function.params.each do |param|
@@ -2213,6 +2222,21 @@ module MilkTea
       end
     end
 
+    def collect_generic_variant_decls
+      collect_generic_variant_types.map do |type|
+        outer_c = named_type_c_name(type)
+        arms = type.arm_names.map do |arm_name|
+          fields = type.arm(arm_name)
+          IR::VariantArm.new(
+            name: arm_name,
+            c_name: "#{outer_c}_#{arm_name}",
+            fields: fields.map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) },
+          )
+        end
+        IR::VariantDecl.new(name: type.to_s, c_name: outer_c, arms:)
+      end
+    end
+
     def collect_result_types
       result_types = []
       visited = {}
@@ -2231,6 +2255,10 @@ module MilkTea
         union_decl.fields.each do |field|
           collect_result_type(field.type, result_types, visited)
         end
+      end
+
+      each_variant_arm_field_type do |field_type|
+        collect_result_type(field_type, result_types, visited)
       end
 
       emitted_functions.each do |function|
@@ -2269,6 +2297,10 @@ module MilkTea
         end
       end
 
+      each_variant_arm_field_type do |field_type|
+        collect_task_type(field_type, task_types, visited)
+      end
+
       emitted_functions.each do |function|
         collect_task_type(function.return_type, task_types, visited)
         function.params.each do |param|
@@ -2303,6 +2335,10 @@ module MilkTea
         union_decl.fields.each do |field|
           collect_proc_type(field.type, proc_types, visited)
         end
+      end
+
+      each_variant_arm_field_type do |field_type|
+        collect_proc_type(field_type, proc_types, visited)
       end
 
       emitted_functions.each do |function|
@@ -2438,6 +2474,12 @@ module MilkTea
         type.fields.each_value do |field_type|
           collect_proc_type(field_type, proc_types, visited)
         end
+      when Types::Variant
+        type.arm_names.each do |arm_name|
+          type.arm(arm_name).each_value do |field_type|
+            collect_proc_type(field_type, proc_types, visited)
+          end
+        end
       end
     end
 
@@ -2553,6 +2595,12 @@ module MilkTea
         type.fields.each_value do |field_type|
           collect_task_type(field_type, task_types, visited)
         end
+      when Types::Variant
+        type.arm_names.each do |arm_name|
+          type.arm(arm_name).each_value do |field_type|
+            collect_task_type(field_type, task_types, visited)
+          end
+        end
       end
     end
 
@@ -2656,6 +2704,182 @@ module MilkTea
         type.fields.each_value do |field_type|
           collect_result_type(field_type, result_types, visited)
         end
+      when Types::Variant
+        type.arm_names.each do |arm_name|
+          type.arm(arm_name).each_value do |field_type|
+            collect_result_type(field_type, result_types, visited)
+          end
+        end
+      end
+    end
+
+    def collect_generic_variant_types
+      generic_variant_types = []
+      visited = {}
+
+      all_emitted_top_level_values.each do |value|
+        collect_generic_variant_type(value.type, generic_variant_types, visited)
+      end
+
+      @program.structs.each do |struct_decl|
+        struct_decl.fields.each do |field|
+          collect_generic_variant_type(field.type, generic_variant_types, visited)
+        end
+      end
+
+      @program.unions.each do |union_decl|
+        union_decl.fields.each do |field|
+          collect_generic_variant_type(field.type, generic_variant_types, visited)
+        end
+      end
+
+      each_variant_arm_field_type do |field_type|
+        collect_generic_variant_type(field_type, generic_variant_types, visited)
+      end
+
+      emitted_functions.each do |function|
+        collect_generic_variant_type(function.return_type, generic_variant_types, visited)
+        function.params.each do |param|
+          collect_generic_variant_type(param.type, generic_variant_types, visited)
+        end
+        collect_generic_variant_types_from_statements(function.body, generic_variant_types, visited)
+      end
+
+      @program.static_asserts.each do |statement|
+        collect_generic_variant_types_from_expression(statement.condition, generic_variant_types, visited)
+        collect_generic_variant_types_from_expression(statement.message, generic_variant_types, visited)
+      end
+
+      generic_variant_types
+    end
+
+    def collect_generic_variant_types_from_statements(statements, generic_variant_types, visited)
+      statements.each do |statement|
+        case statement
+        when IR::LocalDecl
+          collect_generic_variant_type(statement.type, generic_variant_types, visited)
+          collect_generic_variant_types_from_expression(statement.value, generic_variant_types, visited)
+        when IR::Assignment
+          collect_generic_variant_types_from_expression(statement.target, generic_variant_types, visited)
+          collect_generic_variant_types_from_expression(statement.value, generic_variant_types, visited)
+        when IR::BlockStmt
+          collect_generic_variant_types_from_statements(statement.body, generic_variant_types, visited)
+        when IR::WhileStmt
+          collect_generic_variant_types_from_expression(statement.condition, generic_variant_types, visited)
+          collect_generic_variant_types_from_statements(statement.body, generic_variant_types, visited)
+        when IR::ForStmt
+          collect_generic_variant_types_from_statements([statement.init], generic_variant_types, visited)
+          collect_generic_variant_types_from_expression(statement.condition, generic_variant_types, visited)
+          collect_generic_variant_types_from_statements(statement.body, generic_variant_types, visited)
+          collect_generic_variant_types_from_statements([statement.post], generic_variant_types, visited)
+        when IR::IfStmt
+          collect_generic_variant_types_from_expression(statement.condition, generic_variant_types, visited)
+          collect_generic_variant_types_from_statements(statement.then_body, generic_variant_types, visited)
+          collect_generic_variant_types_from_statements(statement.else_body, generic_variant_types, visited) if statement.else_body
+        when IR::SwitchStmt
+          collect_generic_variant_types_from_expression(statement.expression, generic_variant_types, visited)
+          statement.cases.each do |switch_case|
+            collect_generic_variant_types_from_statements(switch_case.body, generic_variant_types, visited)
+          end
+        when IR::StaticAssert
+          collect_generic_variant_types_from_expression(statement.condition, generic_variant_types, visited)
+          collect_generic_variant_types_from_expression(statement.message, generic_variant_types, visited)
+        when IR::ReturnStmt
+          collect_generic_variant_types_from_expression(statement.value, generic_variant_types, visited) if statement.value
+        when IR::ExpressionStmt
+          collect_generic_variant_types_from_expression(statement.expression, generic_variant_types, visited)
+        end
+      end
+    end
+
+    def collect_generic_variant_types_from_expression(expression, generic_variant_types, visited)
+      case expression
+      when IR::Member
+        collect_generic_variant_types_from_expression(expression.receiver, generic_variant_types, visited)
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+        collect_generic_variant_types_from_expression(expression.receiver, generic_variant_types, visited)
+        collect_generic_variant_types_from_expression(expression.index, generic_variant_types, visited)
+      when IR::Call
+        collect_generic_variant_type(expression.type, generic_variant_types, visited)
+        collect_generic_variant_types_from_expression(expression.callee, generic_variant_types, visited) unless expression.callee.is_a?(String)
+        expression.arguments.each { |argument| collect_generic_variant_types_from_expression(argument, generic_variant_types, visited) }
+      when IR::Unary
+        collect_generic_variant_types_from_expression(expression.operand, generic_variant_types, visited)
+      when IR::Binary
+        collect_generic_variant_types_from_expression(expression.left, generic_variant_types, visited)
+        collect_generic_variant_types_from_expression(expression.right, generic_variant_types, visited)
+      when IR::Conditional
+        collect_generic_variant_types_from_expression(expression.condition, generic_variant_types, visited)
+        collect_generic_variant_types_from_expression(expression.then_expression, generic_variant_types, visited)
+        collect_generic_variant_types_from_expression(expression.else_expression, generic_variant_types, visited)
+      when IR::ReinterpretExpr
+        collect_generic_variant_type(expression.target_type, generic_variant_types, visited)
+        collect_generic_variant_type(expression.source_type, generic_variant_types, visited)
+        collect_generic_variant_types_from_expression(expression.expression, generic_variant_types, visited)
+      when IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
+        collect_generic_variant_type(expression.target_type, generic_variant_types, visited)
+      when IR::AddressOf, IR::Cast
+        collect_generic_variant_types_from_expression(expression.expression, generic_variant_types, visited)
+      when IR::AggregateLiteral
+        collect_generic_variant_type(expression.type, generic_variant_types, visited)
+        expression.fields.each { |field| collect_generic_variant_types_from_expression(field.value, generic_variant_types, visited) }
+      when IR::ArrayLiteral
+        expression.elements.each { |element| collect_generic_variant_types_from_expression(element, generic_variant_types, visited) }
+      end
+    end
+
+    def collect_generic_variant_type(type, generic_variant_types, visited)
+      return unless type
+      return if visited[type]
+
+      visited[type] = true
+
+      case type
+      when Types::Nullable
+        collect_generic_variant_type(type.base, generic_variant_types, visited)
+      when Types::Result
+        collect_generic_variant_type(type.ok_type, generic_variant_types, visited)
+        collect_generic_variant_type(type.error_type, generic_variant_types, visited)
+      when Types::Task
+        collect_generic_variant_type(type.result_type, generic_variant_types, visited)
+      when Types::Span
+        collect_generic_variant_type(type.element_type, generic_variant_types, visited)
+      when Types::VariantInstance
+        generic_variant_types << type
+        type.arguments.each do |argument|
+          collect_generic_variant_type(argument, generic_variant_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
+        end
+        type.arm_names.each do |arm_name|
+          type.arm(arm_name).each_value do |field_type|
+            collect_generic_variant_type(field_type, generic_variant_types, visited)
+          end
+        end
+      when Types::StructInstance
+        type.arguments.each do |argument|
+          collect_generic_variant_type(argument, generic_variant_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
+        end
+        type.fields.each_value do |field_type|
+          collect_generic_variant_type(field_type, generic_variant_types, visited)
+        end
+      when Types::GenericInstance
+        type.arguments.each do |argument|
+          collect_generic_variant_type(argument, generic_variant_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
+        end
+      when Types::Function, Types::Proc
+        type.params.each do |param|
+          collect_generic_variant_type(param.type, generic_variant_types, visited)
+        end
+        collect_generic_variant_type(type.return_type, generic_variant_types, visited)
+      when Types::Struct, Types::Union
+        type.fields.each_value do |field_type|
+          collect_generic_variant_type(field_type, generic_variant_types, visited)
+        end
+      when Types::Variant
+        type.arm_names.each do |arm_name|
+          type.arm(arm_name).each_value do |field_type|
+            collect_generic_variant_type(field_type, generic_variant_types, visited)
+          end
+        end
       end
     end
 
@@ -2677,6 +2901,10 @@ module MilkTea
         union_decl.fields.each do |field|
           collect_generic_struct_type(field.type, generic_struct_types, visited)
         end
+      end
+
+      each_variant_arm_field_type do |field_type|
+        collect_generic_struct_type(field_type, generic_struct_types, visited)
       end
 
       emitted_functions.each do |function|
@@ -2713,6 +2941,10 @@ module MilkTea
         union_decl.fields.each do |field|
           collect_str_builder_type(field.type, str_builder_types, visited)
         end
+      end
+
+      each_variant_arm_field_type do |field_type|
+        collect_str_builder_type(field_type, str_builder_types, visited)
       end
 
       emitted_functions.each do |function|
@@ -2838,6 +3070,12 @@ module MilkTea
         type.fields.each_value do |field_type|
           collect_str_builder_type(field_type, str_builder_types, visited)
         end
+      when Types::Variant
+        type.arm_names.each do |arm_name|
+          type.arm(arm_name).each_value do |field_type|
+            collect_str_builder_type(field_type, str_builder_types, visited)
+          end
+        end
       end
     end
 
@@ -2940,6 +3178,22 @@ module MilkTea
       when Types::Struct, Types::Union
         type.fields.each_value do |field_type|
           collect_generic_struct_type(field_type, generic_struct_types, visited)
+        end
+      when Types::Variant
+        type.arm_names.each do |arm_name|
+          type.arm(arm_name).each_value do |field_type|
+            collect_generic_struct_type(field_type, generic_struct_types, visited)
+          end
+        end
+      end
+    end
+
+    def each_variant_arm_field_type
+      @program.variants.each do |variant_decl|
+        variant_decl.arms.each do |arm|
+          arm.fields.each do |field|
+            yield field.type
+          end
         end
       end
     end
@@ -3106,6 +3360,12 @@ module MilkTea
         type.fields.each_value do |field_type|
           collect_span_type(field_type, span_types, visited)
         end
+      when Types::Variant
+        type.arm_names.each do |arm_name|
+          type.arm(arm_name).each_value do |field_type|
+            collect_span_type(field_type, span_types, visited)
+          end
+        end
       end
     end
 
@@ -3162,7 +3422,7 @@ module MilkTea
       return task_type_name(type) if type.is_a?(Types::Task)
 
       base_name = type.module_name&.start_with?("std.c.") ? type.name : type.module_name ? "#{type.module_name.tr('.', '_')}_#{type.name}" : type.name
-      return base_name unless type.is_a?(Types::StructInstance)
+      return base_name unless type.is_a?(Types::StructInstance) || type.is_a?(Types::VariantInstance)
 
       "#{base_name}_#{sanitize_identifier(type.arguments.join('_'))}"
     end

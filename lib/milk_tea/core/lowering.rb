@@ -406,6 +406,8 @@ module MilkTea
           next unless decl.is_a?(AST::VariantDecl)
 
           variant_type = @types.fetch(decl.name)
+          next if variant_type.is_a?(Types::GenericVariantDefinition)
+
           outer_c = c_type_name(variant_type)
           arms = decl.arms.map do |arm|
             arm_c = "#{outer_c}_#{arm.name}"
@@ -6354,6 +6356,11 @@ module MilkTea
           return nil unless @imports.key?(expression.receiver.name)
 
           @imports.fetch(expression.receiver.name).types[expression.member]
+        when AST::Specialization
+          type_ref = type_ref_from_specialization(expression)
+          return nil unless type_ref
+
+          resolve_type_ref(type_ref)
         end
       end
 
@@ -7163,7 +7170,7 @@ module MilkTea
                elsif parts.length == 1
                  type = @types[parts.first]
                  raise LoweringError, "unknown type #{parts.first}" unless type
-                 raise LoweringError, "generic type #{parts.first} requires type arguments" if type.is_a?(Types::GenericStructDefinition)
+                 raise LoweringError, "generic type #{parts.first} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
 
                  type
                elsif parts.length == 2 && @imports.key?(parts.first)
@@ -7174,7 +7181,7 @@ module MilkTea
 
                  type = imported_module.types[parts.last]
                  raise LoweringError, "unknown type #{type_ref.name}" unless type
-                 raise LoweringError, "generic type #{type_ref.name} requires type arguments" if type.is_a?(Types::GenericStructDefinition)
+                 raise LoweringError, "generic type #{type_ref.name} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
 
                  type
                else
@@ -7609,7 +7616,10 @@ module MilkTea
         return type.name if type.module_name&.start_with?("std.c.")
         return type.name if type.module_name.nil?
 
-        "#{type.module_name.tr('.', '_')}_#{type.name}"
+        base = "#{type.module_name.tr('.', '_')}_#{type.name}"
+        return base unless type.is_a?(Types::StructInstance) || type.is_a?(Types::VariantInstance)
+
+        "#{base}_#{sanitize_identifier(type.arguments.join('_'))}"
       end
 
       def opaque_c_type_name(type)
@@ -7629,10 +7639,10 @@ module MilkTea
       def resolve_named_generic_type(parts)
         if parts.length == 1
           type = @types[parts.first]
-          return type if type.is_a?(Types::GenericStructDefinition)
+          return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
         elsif parts.length == 2 && @imports.key?(parts.first)
           type = @imports.fetch(parts.first).types[parts.last]
-          return type if type.is_a?(Types::GenericStructDefinition)
+          return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
         end
 
         nil
