@@ -9,7 +9,7 @@ module MilkTea
     # Supports incremental document edits and workspace-wide indexing.
     class Workspace
       # Token types that introduce a named definition, in order of precedence
-      DEFINITION_KEYWORDS = %i[def struct union enum flags variant type const var].freeze
+      DEFINITION_KEYWORDS = %i[def struct union enum flags variant type const var methods opaque].freeze
 
       def initialize
         @open_documents = {}   # uri -> content String from didOpen/didChange
@@ -97,6 +97,83 @@ module MilkTea
 
       def all_documents
         (@indexed_documents.keys + @open_documents.keys).uniq
+      end
+
+      # Return all identifier token locations matching +name+ across all known documents.
+      # Each result is { uri:, range: { start: { line:, character: }, end: ... } }.
+      def find_all_references(name)
+        results = []
+        all_documents.each do |doc_uri|
+          toks = get_tokens(doc_uri)
+          next unless toks
+
+          toks.each do |tok|
+            next unless tok.type == :identifier && tok.lexeme == name
+
+            results << {
+              uri:   doc_uri,
+              range: {
+                start: { line: tok.line - 1, character: tok.column - 1 },
+                end:   { line: tok.line - 1, character: tok.column - 1 + name.length }
+              }
+            }
+          end
+        end
+        results
+      end
+
+      # Scan text up to the cursor to find the innermost open function call context.
+      # Returns { name:, active_parameter: } or nil if not inside a call.
+      def find_call_context(uri, lsp_line, lsp_char)
+        content = get_content(uri)
+        return nil if content.empty?
+
+        lines = content.split("\n", -1)
+        cursor_line = lines[lsp_line] || ''
+        prefix = lsp_line.positive? ? lines[0...lsp_line].join("\n") + "\n" : ''
+        text = prefix + cursor_line[0...lsp_char]
+
+        depth = 0
+        active_param = 0
+        i = text.length - 1
+        paren_pos = nil
+
+        while i >= 0
+          ch = text[i]
+          case ch
+          when ')', ']'
+            depth += 1
+          when '['
+            return nil if depth.zero?
+            depth -= 1
+          when '('
+            if depth.zero?
+              paren_pos = i
+              break
+            end
+            depth -= 1
+          when ','
+            active_param += 1 if depth.zero?
+          end
+          i -= 1
+        end
+
+        return nil unless paren_pos
+
+        # Find identifier immediately before the '('
+        j = paren_pos - 1
+        j -= 1 while j >= 0 && (text[j] == ' ' || text[j] == "\t")
+        return nil if j < 0 || text[j] !~ /[A-Za-z0-9_]/
+
+        end_j = j
+        j -= 1 while j > 0 && text[j - 1] =~ /[A-Za-z0-9_]/
+        name = text[j..end_j]
+        return nil if name.empty?
+
+        { name: name, active_parameter: active_param }
+      rescue StandardError => e
+        warn "LSP call context error #{uri}: #{e.message}"
+        nil
       end
 
       # ── Position helpers ────────────────────────────────────────────────────
@@ -200,6 +277,8 @@ module MilkTea
                  when :type    then 'type_alias'
                  when :const   then 'constant'
                  when :var     then 'variable'
+                 when :methods then 'struct'
+                 when :opaque  then 'struct'
                  end
 
           symbols << {

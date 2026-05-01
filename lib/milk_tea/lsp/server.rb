@@ -45,14 +45,20 @@ module MilkTea
         @handlers['textDocument/didOpen']   = method(:handle_did_open)
         @handlers['textDocument/didChange'] = method(:handle_did_change)
         @handlers['textDocument/didClose']  = method(:handle_did_close)
+        @handlers['textDocument/didSave']   = method(:handle_did_save)
 
         # IDE features
-        @handlers['textDocument/hover']          = method(:handle_hover)
-        @handlers['textDocument/definition']      = method(:handle_definition)
-        @handlers['textDocument/documentSymbol']  = method(:handle_document_symbols)
-        @handlers['textDocument/formatting']      = method(:handle_formatting)
-        @handlers['textDocument/completion']      = method(:handle_completion)
-        @handlers['textDocument/codeLens']        = method(:handle_code_lens)
+        @handlers['textDocument/hover']             = method(:handle_hover)
+        @handlers['textDocument/definition']        = method(:handle_definition)
+        @handlers['textDocument/references']        = method(:handle_references)
+        @handlers['textDocument/documentHighlight'] = method(:handle_document_highlight)
+        @handlers['textDocument/documentSymbol']    = method(:handle_document_symbols)
+        @handlers['textDocument/formatting']        = method(:handle_formatting)
+        @handlers['textDocument/completion']        = method(:handle_completion)
+        @handlers['textDocument/codeLens']          = method(:handle_code_lens)
+        @handlers['textDocument/signatureHelp']     = method(:handle_signature_help)
+        @handlers['textDocument/prepareRename']     = method(:handle_prepare_rename)
+        @handlers['textDocument/rename']            = method(:handle_rename)
 
         # Workspace
         @handlers['workspace/symbol'] = method(:handle_workspace_symbol)
@@ -109,25 +115,29 @@ module MilkTea
         @root_uri = params['rootUri']
         {
           capabilities: {
-            # Enhancement 3: incremental sync
             textDocumentSync: {
               openClose: true,
-              change: 2  # Incremental
+              change: 2,
+              save: { includeText: false }
             },
             hoverProvider: true,
             definitionProvider: true,
+            referencesProvider: true,
+            documentHighlightProvider: true,
             documentSymbolProvider: true,
             documentFormattingProvider: true,
-            # Enhancement 6: completion
+            signatureHelpProvider: {
+              triggerCharacters: ['(', ','],
+              retriggerCharacters: [',']
+            },
             completionProvider: {
               triggerCharacters: ['.', '(', ' '],
               resolveProvider: false
             },
-            # Enhancement 5: code lens
+            renameProvider: { prepareProvider: true },
             codeLensProvider: {
               resolveProvider: false
             },
-            # Enhancement 4: workspace symbol (multi-file)
             workspaceSymbolProvider: true
           }
         }
@@ -181,6 +191,16 @@ module MilkTea
         nil
       end
 
+      def handle_did_save(params)
+        uri = params.dig('textDocument', 'uri')
+        return nil unless uri
+
+        text = params['text']
+        @workspace.update_document(uri, text) if text
+        publish_diagnostics(uri)
+        nil
+      end
+
       # ── Enhancement 1: Hover — real type signatures ──────────────────────────
 
       def handle_hover(params)
@@ -212,13 +232,125 @@ module MilkTea
 
         {
           uri: uri,
-          range: {
-            start: { line: def_tok.line - 1, character: def_tok.column - 1 },
-            end:   { line: def_tok.line - 1, character: def_tok.column - 1 + token.lexeme.length }
-          }
+          range: token_to_range(def_tok)
         }
       rescue StandardError => e
         warn "Error in definition handler: #{e.message}"
+        nil
+      end
+
+      # ── References ──────────────────────────────────────────────────────────
+
+      def handle_references(params)
+        uri      = params['textDocument']['uri']
+        lsp_line = params['position']['line']
+        lsp_char = params['position']['character']
+
+        token = @workspace.find_token_at(uri, lsp_line, lsp_char)
+        return [] unless token&.type == :identifier
+
+        refs = @workspace.find_all_references(token.lexeme)
+
+        unless params.dig('context', 'includeDeclaration') == false
+          return refs
+        end
+
+        def_tok = @workspace.find_definition_token(uri, token.lexeme)
+        return refs unless def_tok
+
+        def_line = def_tok.line - 1
+        def_char = def_tok.column - 1
+        refs.reject { |r| r[:uri] == uri && r[:range][:start][:line] == def_line && r[:range][:start][:character] == def_char }
+      rescue StandardError => e
+        warn "Error in references handler: #{e.message}"
+        []
+      end
+
+      # ── Document Highlight ───────────────────────────────────────────────────
+
+      def handle_document_highlight(params)
+        uri      = params['textDocument']['uri']
+        lsp_line = params['position']['line']
+        lsp_char = params['position']['character']
+
+        token = @workspace.find_token_at(uri, lsp_line, lsp_char)
+        return [] unless token&.type == :identifier
+
+        toks = @workspace.get_tokens(uri) || []
+        toks.select { |t| t.type == :identifier && t.lexeme == token.lexeme }
+            .map    { |t| { range: token_to_range(t), kind: 1 } }
+      rescue StandardError => e
+        warn "Error in documentHighlight handler: #{e.message}"
+        []
+      end
+
+      # ── Signature Help ───────────────────────────────────────────────────────
+
+      def handle_signature_help(params)
+        uri      = params['textDocument']['uri']
+        lsp_line = params['position']['line']
+        lsp_char = params['position']['character']
+
+        ctx = @workspace.find_call_context(uri, lsp_line, lsp_char)
+        return nil unless ctx
+
+        analysis = @workspace.get_analysis(uri)
+        return nil unless analysis
+
+        binding = analysis.functions[ctx[:name]]
+        return nil unless binding
+
+        params_list = binding.type.params
+        params_str  = format_params(params_list)
+        label       = "#{ctx[:name]}(#{params_str}) -> #{binding.type.return_type}"
+        parameters  = params_list.map { |p| { label: "#{p.name}: #{p.type}" } }
+
+        {
+          signatures:      [{ label: label, parameters: parameters }],
+          activeSignature: 0,
+          activeParameter: ctx[:active_parameter]
+        }
+      rescue StandardError => e
+        warn "Error in signatureHelp handler: #{e.message}"
+        nil
+      end
+
+      # ── Prepare Rename / Rename ──────────────────────────────────────────────
+
+      def handle_prepare_rename(params)
+        uri      = params['textDocument']['uri']
+        lsp_line = params['position']['line']
+        lsp_char = params['position']['character']
+
+        token = @workspace.find_token_at(uri, lsp_line, lsp_char)
+        return nil unless token&.type == :identifier
+
+        { range: token_to_range(token), placeholder: token.lexeme }
+      rescue StandardError => e
+        warn "Error in prepareRename handler: #{e.message}"
+        nil
+      end
+
+      def handle_rename(params)
+        uri      = params['textDocument']['uri']
+        lsp_line = params['position']['line']
+        lsp_char = params['position']['character']
+        new_name = params['newName'].to_s
+
+        token = @workspace.find_token_at(uri, lsp_line, lsp_char)
+        return nil unless token&.type == :identifier
+
+        refs = @workspace.find_all_references(token.lexeme)
+        changes = {}
+        refs.each do |ref|
+          ref_uri = ref[:uri]
+          changes[ref_uri] ||= []
+          changes[ref_uri] << { range: ref[:range], newText: new_name }
+        end
+
+        { changes: changes }
+      rescue StandardError => e
+        warn "Error in rename handler: #{e.message}"
         nil
       end
 
@@ -454,6 +586,13 @@ module MilkTea
         start = char_idx
         start -= 1 while start >= 0 && line[start] =~ /[A-Za-z0-9_]/
         line[(start + 1)..char_idx] || ''
+      end
+
+      def token_to_range(token)
+        {
+          start: { line: token.line - 1, character: token.column - 1 },
+          end:   { line: token.line - 1, character: token.column - 1 + token.lexeme.length }
+        }
       end
     end
   end
