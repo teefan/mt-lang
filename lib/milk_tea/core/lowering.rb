@@ -12,6 +12,7 @@ module MilkTea
       def initialize(program)
         @program = program
         @analysis = nil
+        @current_analysis_path = nil
         @module_name = nil
         @module_prefix = nil
         @imports = {}
@@ -45,10 +46,10 @@ module MilkTea
         static_asserts = []
         functions = []
 
-        lowered_analyses.each do |analysis|
+        @program.analyses_by_path.each_pair do |path, analysis|
           next if analysis.module_kind == :extern_module
 
-          prepare_analysis(analysis)
+          prepare_analysis(analysis, source_path: path)
           collect_structs
 
           constants.concat(lower_constants)
@@ -277,12 +278,9 @@ module MilkTea
         end
       end
 
-      def lowered_analyses
-        @program.analyses_by_path.values
-      end
-
-      def prepare_analysis(analysis)
+      def prepare_analysis(analysis, source_path: nil)
         @analysis = analysis
+        @current_analysis_path = source_path
         @module_name = analysis.module_name
         @module_prefix = @module_name.tr(".", "_")
         @imports = analysis.imports
@@ -2219,7 +2217,7 @@ module MilkTea
           )
           lowered.concat(setup)
         else
-          lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env:), line: statement.line)
+          lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env:), line: statement.line, source_path: @current_analysis_path)
         end
 
         lowered
@@ -2444,7 +2442,7 @@ module MilkTea
               raise LoweringError, "foreign call used to initialize #{statement.name} must return a value" if call_type == @types.fetch("void")
               raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
 
-              lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:, line: statement.line)
+              lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:, line: statement.line, source_path: @current_analysis_path)
               lowered.concat(cleanup_statements)
               local_defers.concat(prepared_cleanups)
               emitted_decl = true
@@ -2469,7 +2467,7 @@ module MilkTea
               cstr_backed: cstr_backed_storage_value?(type, prepared_value, local_env),
               cstr_list_backed: cstr_list_backed_storage_value?(type, prepared_value, local_env),
             )
-            lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:, line: statement.line) unless emitted_decl
+            lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:, line: statement.line, source_path: @current_analysis_path) unless emitted_decl
             local_defers.concat(prepared_cleanups)
             if contains_proc_storage_type?(type)
               local_value = IR::Name.new(name: c_name, type:, pointer: false)
@@ -2714,7 +2712,7 @@ module MilkTea
             end
             lowered.concat(lower_proc_contained_retain_statements(value, return_type)) if needs_proc_retain
             lowered.concat(cleanup)
-            lowered << IR::ReturnStmt.new(value:, line: statement.line)
+            lowered << IR::ReturnStmt.new(value:, line: statement.line, source_path: @current_analysis_path)
           when AST::ExpressionStmt
             prepared_setup, prepared_expression, prepared_cleanups = prepare_expression_with_cleanups(
               statement.expression,
@@ -2735,7 +2733,7 @@ module MilkTea
               lowered.concat(prepared_cleanups.flat_map(&:itself))
               local_env[:scopes] = scopes_with_refinements(local_env[:scopes], consuming_foreign_call_refinements(foreign_call, local_env))
             else
-              lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env: local_env), line: statement.line)
+              lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env: local_env), line: statement.line, source_path: @current_analysis_path)
               lowered.concat(prepared_cleanups.flat_map(&:itself))
             end
           else

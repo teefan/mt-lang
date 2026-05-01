@@ -17,8 +17,8 @@ module MilkTea
     Function = Data.define(:name, :c_name, :params, :return_type, :body, :entry_point)
     Param = Data.define(:name, :c_name, :type, :pointer)
 
-    LocalDecl = Data.define(:name, :c_name, :type, :value, :line) do
-      def initialize(name:, c_name:, type:, value:, line: nil) = super
+    LocalDecl = Data.define(:name, :c_name, :type, :value, :line, :source_path) do
+      def initialize(name:, c_name:, type:, value:, line: nil, source_path: nil) = super
     end
     Assignment = Data.define(:target, :operator, :value)
     BlockStmt = Data.define(:body)
@@ -33,11 +33,11 @@ module MilkTea
     GotoStmt = Data.define(:label)
     LabelStmt = Data.define(:name)
     StaticAssert = Data.define(:condition, :message)
-    ReturnStmt = Data.define(:value, :line) do
-      def initialize(value:, line: nil) = super
+    ReturnStmt = Data.define(:value, :line, :source_path) do
+      def initialize(value:, line: nil, source_path: nil) = super
     end
-    ExpressionStmt = Data.define(:expression, :line) do
-      def initialize(expression:, line: nil) = super
+    ExpressionStmt = Data.define(:expression, :line, :source_path) do
+      def initialize(expression:, line: nil, source_path: nil) = super
     end
 
     Name = Data.define(:name, :type, :pointer)
