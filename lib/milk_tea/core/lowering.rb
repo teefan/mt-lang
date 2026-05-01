@@ -25,6 +25,7 @@ module MilkTea
         @synthetic_functions = []
         @synthetic_proc_counter = 0
         @synthetic_format_counter = 0
+        @format_builder_cache = {}
         @method_definitions = build_method_definitions
       end
 
@@ -3605,9 +3606,28 @@ module MilkTea
           }
         end
 
-        helper_c_name = "#{@module_prefix}__fmt_#{fresh_format_symbol}"
-        @synthetic_functions << build_format_string_builder_function(helper_c_name, helper_params, helper_parts)
+        signature = format_string_builder_signature(helper_parts)
+        helper_c_name = @format_builder_cache[signature]
+        unless helper_c_name
+          helper_c_name = "#{@module_prefix}__fmt_#{fresh_format_symbol}"
+          @synthetic_functions << build_format_string_builder_function(helper_c_name, helper_params, helper_parts)
+          @format_builder_cache[signature] = helper_c_name
+        end
+
         [setup, helper_c_name, helper_arguments]
+      end
+
+      def format_string_builder_signature(helper_parts)
+        [
+          @module_prefix,
+          helper_parts.map do |part|
+            if part[:kind] == :text
+              [:text, part[:value]]
+            else
+              [:expression, part[:append_function_name], part[:parameter_type].to_s]
+            end
+          end,
+        ]
       end
 
       def build_format_string_builder_function(helper_c_name, helper_params, helper_parts)
