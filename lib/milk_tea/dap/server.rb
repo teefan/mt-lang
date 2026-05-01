@@ -15,6 +15,10 @@ module MilkTea
         @backend_factory = backend_factory
         @handlers = {}
         @write_mutex = Mutex.new
+        @client_request_mutex = Mutex.new
+        @pending_client_responses = {}
+        @incoming_messages = Queue.new
+        @reader_thread = nil
         @runtime_mutex = Mutex.new
         @runtime_pid = nil
         @runtime_thread = nil
@@ -25,16 +29,45 @@ module MilkTea
       end
 
       def run
+        start_client_reader
+
         loop do
-          message = @protocol.read_message
+          message = @incoming_messages.pop
           break if message.nil?
 
           process_message(message)
           break if @session.should_exit?
         end
+      ensure
+        @reader_thread&.join(0.2)
       end
 
       private
+
+      def start_client_reader
+        return if @reader_thread&.alive?
+
+        @reader_thread = Thread.new do
+          loop do
+            message = @protocol.read_message
+            break if message.nil?
+
+            if message["type"] == "response"
+              queue = @client_request_mutex.synchronize do
+                @pending_client_responses[message["request_seq"]]
+              end
+              if queue
+                queue.push(message)
+                next
+              end
+            end
+
+            @incoming_messages.push(message)
+          end
+        ensure
+          @incoming_messages.push(nil)
+        end
+      end
 
       def register_handlers
         @handlers["initialize"] = method(:handle_initialize)
@@ -61,22 +94,33 @@ module MilkTea
       end
 
       def process_message(message)
+        if message["type"] == "response"
+          handle_client_response(message)
+          return
+        end
+
         return unless message["type"] == "request"
 
         command = message["command"]
         handler = @handlers[command]
-
-        if handler.nil?
-          write_error_response(message, "Unsupported command: #{command}")
-          return
-        end
 
         unless command == "initialize" || @session.initialized?
           write_error_response(message, "initialize request must be sent first")
           return
         end
 
-        handler.call(message)
+        if handler
+          handler.call(message)
+          return
+        end
+
+        if using_lldb_backend?
+          backend_response = backend_request(command, message["arguments"] || {})
+          write_backend_response(message, backend_response)
+          return
+        end
+
+        write_error_response(message, "Unsupported command: #{command}")
       rescue StandardError => e
         write_error_response(message, "Internal error: #{e.message}")
       end
@@ -245,6 +289,14 @@ module MilkTea
 
         terminate_runtime_if_running
         write_response(message, {})
+        return if @session.runtime_started?
+
+        @session.mark_runtime_exited!(0)
+        @session.terminate!
+        write_event("terminated")
+        write_event("exited", { exitCode: 0 })
+        cleanup_tmp_dirs
+        @session.request_exit!
       end
 
       def handle_disconnect(message)
@@ -403,11 +455,12 @@ module MilkTea
                           end
 
         @lldb_backend = if @backend_factory
-                          @backend_factory.call(adapter_command, method(:handle_backend_event))
+                          build_backend_via_factory(adapter_command)
                         else
                           Backends::LLDBDAP.new(
                             adapter_command: adapter_command,
-                            on_event: method(:handle_backend_event)
+                            on_event: method(:handle_backend_event),
+                            on_request: method(:handle_backend_request)
                           )
                         end
         @lldb_backend.start!
@@ -438,6 +491,15 @@ module MilkTea
         end
       end
 
+      def build_backend_via_factory(adapter_command)
+        arity = @backend_factory.arity
+        if arity < 0 || arity >= 3
+          @backend_factory.call(adapter_command, method(:handle_backend_event), method(:handle_backend_request))
+        else
+          @backend_factory.call(adapter_command, method(:handle_backend_event))
+        end
+      end
+
       def handle_backend_event(message)
         event = message["event"].to_s
         body = message["body"]
@@ -450,6 +512,57 @@ module MilkTea
           @session.mark_runtime_exited!(body && body["exitCode"] || 0)
         end
         @session.terminate!
+      end
+
+      def handle_backend_request(message)
+        client_seq = @session.next_seq
+        queue = Queue.new
+        @client_request_mutex.synchronize do
+          @pending_client_responses[client_seq] = queue
+        end
+
+        write_message({
+          seq: client_seq,
+          type: "request",
+          command: message["command"],
+          arguments: message["arguments"] || {}
+        })
+
+        client_response = Timeout.timeout(5) { queue.pop }
+        build_backend_request_response(message, client_response)
+      rescue Timeout::Error
+        {
+          "seq" => @session.next_seq,
+          "type" => "response",
+          "request_seq" => message["seq"],
+          "success" => false,
+          "command" => message["command"],
+          "message" => "client request timed out: #{message['command']}"
+        }
+      ensure
+        @client_request_mutex.synchronize do
+          @pending_client_responses.delete(client_seq) if defined?(client_seq)
+        end
+      end
+
+      def handle_client_response(message)
+        queue = @client_request_mutex.synchronize do
+          @pending_client_responses[message["request_seq"]]
+        end
+        queue&.push(message)
+      end
+
+      def build_backend_request_response(request, client_response)
+        response = {
+          "seq" => @session.next_seq,
+          "type" => "response",
+          "request_seq" => request["seq"],
+          "success" => !!client_response["success"],
+          "command" => request["command"]
+        }
+        response["body"] = client_response["body"] if client_response.key?("body")
+        response["message"] = client_response["message"] if client_response["message"]
+        response
       end
 
       def sync_breakpoints_to_backend

@@ -9,9 +9,10 @@ module MilkTea
     module Backends
       # Thin bridge to an lldb-dap compatible adapter process.
       class LLDBDAP
-        def initialize(adapter_command: ["lldb-dap"], on_event: nil)
+        def initialize(adapter_command: ["lldb-dap"], on_event: nil, on_request: nil)
           @adapter_command = adapter_command
           @on_event = on_event
+          @on_request = on_request
           @protocol = nil
           @stdin = nil
           @stdout = nil
@@ -108,6 +109,8 @@ module MilkTea
               queue&.push(message)
             elsif message["type"] == "event"
               @on_event&.call(message)
+            elsif message["type"] == "request"
+              handle_adapter_request(message)
             end
           end
         rescue StandardError
@@ -133,6 +136,21 @@ module MilkTea
           end
         rescue StandardError
           nil
+        end
+
+        def handle_adapter_request(message)
+          response = @on_request&.call(message)
+          response ||= {
+            "type" => "response",
+            "request_seq" => message["seq"],
+            "success" => false,
+            "command" => message["command"],
+            "message" => "unsupported reverse request: #{message['command']}"
+          }
+
+          @write_mutex.synchronize do
+            @protocol.write_message(response)
+          end
         end
       end
     end
