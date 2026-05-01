@@ -46,6 +46,16 @@ pub def append_f64(output: ref[string.String], number: f64) -> void:
     append_formatted_float(output, c"%g", number)
     return
 
+pub def append_f64_precision(output: ref[string.String], number: f64, precision: i32) -> void:
+    var buffer = zero[array[char, 64]]()
+    let written = c.snprintf(ptr_of(ref_of(buffer[0])), float_buffer_capacity, c"%.*f", precision, number)
+    if written < 0 or usize<-written >= float_buffer_capacity:
+        panic("fmt could not format float with precision")
+
+    unsafe:
+        append_cstr(output, cstr<-ptr_of(ref_of(buffer[0])))
+    return
+
 pub def append_usize(output: ref[string.String], number: usize) -> void:
     if number == 0:
         output.push_byte(u8<-48)

@@ -3589,21 +3589,38 @@ module MilkTea
           expression_setup, prepared_expression = prepare_expression_for_inline_lowering(part.expression, env:)
           setup.concat(expression_setup)
           value_type = infer_expression_type(prepared_expression, env:)
-          append_function_name, append_argument_type = format_string_append_plan(value_type)
           parameter_name = "part_#{helper_params.length + 1}"
           parameter_c_name = "__mt_fmt_#{parameter_name}"
 
-          helper_params << IR::Param.new(name: parameter_name, c_name: parameter_c_name, type: append_argument_type, pointer: false)
-          helper_arguments << cast_expression(
-            lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
-            append_argument_type,
-          )
-          helper_parts << {
-            kind: :expression,
-            append_function_name: append_function_name,
-            parameter_c_name: parameter_c_name,
-            parameter_type: append_argument_type,
-          }
+          if part.format_spec && part.format_spec[:kind] == :precision
+            precision = part.format_spec[:value]
+            append_argument_type = @types.fetch("f64")
+            helper_params << IR::Param.new(name: parameter_name, c_name: parameter_c_name, type: append_argument_type, pointer: false)
+            helper_arguments << cast_expression(
+              lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
+              append_argument_type,
+            )
+            helper_parts << {
+              kind: :precision_expression,
+              append_function_name: "append_f64_precision",
+              parameter_c_name: parameter_c_name,
+              parameter_type: append_argument_type,
+              precision: precision,
+            }
+          else
+            append_function_name, append_argument_type = format_string_append_plan(value_type)
+            helper_params << IR::Param.new(name: parameter_name, c_name: parameter_c_name, type: append_argument_type, pointer: false)
+            helper_arguments << cast_expression(
+              lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
+              append_argument_type,
+            )
+            helper_parts << {
+              kind: :expression,
+              append_function_name: append_function_name,
+              parameter_c_name: parameter_c_name,
+              parameter_type: append_argument_type,
+            }
+          end
         end
 
         signature = format_string_builder_signature(helper_parts)
@@ -3621,8 +3638,11 @@ module MilkTea
         [
           @module_prefix,
           helper_parts.map do |part|
-            if part[:kind] == :text
+            case part[:kind]
+            when :text
               [:text, part[:value]]
+            when :precision_expression
+              [:precision_expression, part[:precision], part[:parameter_type].to_s]
             else
               [:expression, part[:append_function_name], part[:parameter_type].to_s]
             end
@@ -3657,6 +3677,21 @@ module MilkTea
               expression: IR::Call.new(
                 callee: std_fmt_function_c_name("append"),
                 arguments: [result_ref, IR::StringLiteral.new(value: part[:value], type: @types.fetch("str"), cstring: false)],
+                type: @types.fetch("void"),
+              ),
+            )
+            next
+          end
+
+          if part[:kind] == :precision_expression
+            body << IR::ExpressionStmt.new(
+              expression: IR::Call.new(
+                callee: std_fmt_function_c_name(part[:append_function_name]),
+                arguments: [
+                  result_ref,
+                  IR::Name.new(name: part[:parameter_c_name], type: part[:parameter_type], pointer: false),
+                  IR::IntegerLiteral.new(value: part[:precision], type: @types.fetch("i32")),
+                ],
                 type: @types.fetch("void"),
               ),
             )

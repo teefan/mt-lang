@@ -1402,6 +1402,47 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "out", return_stmt.value.arguments[1].value.operator
   end
 
+  def test_parses_format_string_precision_spec
+    source = <<~MT
+      module demo.fmt_spec
+
+      import std.io as io
+
+      def main() -> i32:
+          let pi: f64 = 3.14159
+          io.println(f"pi=\#{pi:.2}")
+          io.println(f"\#{pi:.0}")
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.last
+    println1 = main_fn.body[1].expression
+    println2 = main_fn.body[2].expression
+
+    # f"pi=#{pi:.2}" -> text part "pi=" + expr part with precision 2
+    format1 = println1.arguments.first.value
+    assert_instance_of MilkTea::AST::FormatString, format1
+    assert_equal 2, format1.parts.length
+
+    text_part = format1.parts[0]
+    assert_instance_of MilkTea::AST::FormatTextPart, text_part
+    assert_equal "pi=", text_part.value
+
+    expr_part1 = format1.parts[1]
+    assert_instance_of MilkTea::AST::FormatExprPart, expr_part1
+    assert_equal({ kind: :precision, value: 2 }, expr_part1.format_spec)
+
+    # f"#{pi:.0}" -> single expr part with precision 0
+    format2 = println2.arguments.first.value
+    assert_instance_of MilkTea::AST::FormatString, format2
+    assert_equal 1, format2.parts.length
+
+    expr_part2 = format2.parts[0]
+    assert_instance_of MilkTea::AST::FormatExprPart, expr_part2
+    assert_equal({ kind: :precision, value: 0 }, expr_part2.format_spec)
+  end
+
   private
 
   def demo_path

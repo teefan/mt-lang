@@ -286,12 +286,13 @@ module MilkTea
           text = +""
           expr_start = index + 2
           expr_end = scan_format_interpolation_end(line, expr_start, line_number, start + 1)
-          source = line[expr_start...expr_end]
-          if source.strip.empty?
+          raw_source = line[expr_start...expr_end]
+          if raw_source.strip.empty?
             raise LexError.new("empty format interpolation", line: line_number, column: index + 1, path: @path)
           end
 
-          parts << { kind: :expr, source:, line: line_number, column: expr_start + 1 }
+          source, format_spec = split_format_interpolation_source(raw_source)
+          parts << { kind: :expr, source:, format_spec:, line: line_number, column: expr_start + 1 }
           index = expr_end + 1
           next
         end
@@ -361,6 +362,24 @@ module MilkTea
       end
 
       raise LexError.new("unterminated string literal", line: line_number, column: index + 1, path: @path)
+    end
+
+    # Splits a format interpolation source string into [expression_source, format_spec_string].
+    # A colon at paren/bracket depth 0 separates the expression from the format spec.
+    # Returns [source, nil] when no spec is present.
+    def split_format_interpolation_source(source)
+      depth = 0
+      source.each_char.with_index do |char, i|
+        case char
+        when "(", "[", "{"
+          depth += 1
+        when ")", "]", "}"
+          depth -= 1
+        when ":"
+          return [source[0...i], source[(i + 1)..]] if depth == 0
+        end
+      end
+      [source, nil]
     end
 
     def lex_symbol(line, index, line_number)

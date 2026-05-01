@@ -3388,6 +3388,25 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return 0\.0/, generated)
   end
 
+  def test_generate_c_format_precision_spec_calls_append_f64_precision
+    source = <<~MT
+      module demo.fmt_spec
+
+      import std.io as io
+
+      def main(pi: f64, small: f32) -> i32:
+          io.println(f"pi=\#{pi:.2}")
+          io.println(f"small=\#{small:.5}")
+          return 0
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/std_fmt_append_f64_precision\(/, generated)
+    assert_match(/,\s*2\s*\)/, generated)
+    assert_match(/,\s*5\s*\)/, generated)
+  end
+
   private
 
   def demo_path

@@ -2036,9 +2036,15 @@ module MilkTea
           next unless part.is_a?(AST::FormatExprPart)
 
           value_type = infer_expression(part.expression, scopes:)
-          next if format_string_interpolation_supported?(value_type)
 
-          raise SemaError, "formatted string interpolation supports str, cstr, bool, numeric primitives, and integer-backed enums/flags, got #{value_type}"
+          if part.format_spec
+            unless value_type.is_a?(Types::Primitive) && value_type.float?
+              raise SemaError, "format spec ':.N' is only valid for f32 and f64, got #{value_type}"
+            end
+          else
+            next if format_string_interpolation_supported?(value_type)
+            raise SemaError, "formatted string interpolation supports str, cstr, bool, numeric primitives, and integer-backed enums/flags, got #{value_type}"
+          end
         end
 
         binding.type.return_type
