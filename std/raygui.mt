@@ -3,7 +3,6 @@ module std.raygui
 
 import std.c.raygui as c
 import std.raylib as raylib
-import std.span as sp
 
 pub type Vector2 = raylib.Vector2
 pub type Vector3 = raylib.Vector3
@@ -56,7 +55,7 @@ pub foreign def disable_tooltip() -> void = c.GuiDisableTooltip
 pub foreign def set_tooltip(tooltip: str as cstr) -> void = c.GuiSetTooltip
 pub foreign def icon_text(icon_id: IconName, text: str as cstr) -> cstr = c.GuiIconText(i32<-icon_id, text)
 pub foreign def set_icon_scale(scale: i32) -> void = c.GuiSetIconScale
-pub foreign def get_icons() -> span[u32] = sp.from_ptr[u32](c.GuiGetIcons(), 2048)
+pub foreign def get_icons() -> span[u32] = span[u32](data = c.GuiGetIcons(), len = 2048)
 pub foreign def draw_icon(icon_id: IconName, pos_x: i32, pos_y: i32, pixel_size: i32, color: Color) -> void = c.GuiDrawIcon(i32<-icon_id, pos_x, pos_y, pixel_size, color)
 pub foreign def get_text_width(text: str as cstr) -> i32 = c.GuiGetTextWidth
 pub foreign def window_box(bounds: Rectangle, title: str as cstr) -> i32 = c.GuiWindowBox

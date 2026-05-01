@@ -161,7 +161,19 @@ flags Mask: u32
     b = 1 << 1
 
 opaque SDL_Window
+
+variant Token:
+    ident(text: str)
+    number(value: i32)
+    eof
 ```
+
+`variant` is a tagged union. Each arm may optionally carry named payload fields. Generic variants are not yet supported.
+
+Arm constructors:
+
+- Payload arm: `Token.ident(text = "hello")` — field names with `=`.
+- No-payload arm: `Token.eof` — accessed as a bare member expression.
 
 Layout modifiers for structs:
 
@@ -282,6 +294,7 @@ Condition must be `bool`.
 Scrutinee types supported:
 
 - Enum: arm patterns must be members of that enum.
+- Variant: arm patterns must be arms of that variant; a payload arm may bind its fields with `as name`.
 - Integer (`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `isize`, `usize`): arm patterns must be integer literals.
 
 `_` is a wildcard arm that matches any value not covered by preceding arms. It maps to a C `default:` case.
@@ -289,9 +302,10 @@ Scrutinee types supported:
 Rules:
 
 - For enum scrutinee: all members must be covered unless a `_` arm is present.
+- For variant scrutinee: all arms must be covered unless a `_` arm is present; `as name` binds the payload struct for arms that have fields.
 - For integer scrutinee: a `_` arm is required (integers are unbounded).
 - Duplicate arm values (or duplicate `_`) are rejected.
-- Match must be exhaustive (enum without `_`) or include `_` (integer or partial enum).
+- Match must be exhaustive (enum/variant without `_`) or include `_` (integer or partial enum/variant).
 
 ```mt
 match kind:
@@ -306,7 +320,15 @@ match key_code:
     27:
         quit()
     _:
-        pass
+        return
+
+match token:
+    Token.ident as t:
+        use_name(t.text)
+    Token.number as n:
+        use_value(n.value)
+    Token.eof:
+        return
 ```
 
 ### 4.3 Loops
@@ -483,14 +505,13 @@ Format string syntax:
 f"count=#{count} ok=#{ready}"
 ```
 
-Current restriction:
+Format strings have type `str` and are valid anywhere a `str` value is accepted. Interpolated expressions must be one of: `str`, `cstr`, `bool`, a numeric primitive, or an integer-backed enum or flags type. A precision specifier `:.N` is allowed on `f32` and `f64` interpolations.
 
-- format literals are only valid when passed as the sole argument to:
-  - `std.fmt.string`
-  - `std.io.print`
-  - `std.io.println`
-  - `std.io.write_error`
-  - `std.io.write_error_line`
+The following standard library functions receive special lowering for format strings — they build the formatted output directly without an intermediate allocation:
+
+- `std.fmt.string` — returns `string.String`
+- `std.io.print` / `std.io.println`
+- `std.io.write_error` / `std.io.write_error_line`
 
 ## 9. Safety And Conversion Rules
 
@@ -533,7 +554,7 @@ Current async limitations:
 Current implementation rejects:
 
 - proc values in union fields
-- format literals outside the supported std formatting/IO entrypoints
+- generic variants (`variant Box[T]:`)
 
 ## 12. Example
 

@@ -454,6 +454,19 @@ union Value:
 
 Reading a union field other than the last written field requires `unsafe`.
 
+#### Variants
+
+Variants are tagged unions. Each arm optionally carries named payload fields.
+
+```mt
+variant Token:
+	ident(text: str)
+	number(value: i32)
+	eof
+```
+
+Arm constructors follow the same field-assignment form as struct literals. No-payload arms are bare member expressions. Match on a variant uses `as name` to bind a payload arm's fields. Generic variants are not yet supported.
+
 #### Opaque types
 
 Opaque types are essential for C handles.
@@ -563,7 +576,6 @@ unsafe:
 0xff
 0b1010
 3.14159
-'a'
 "hello"
 c"hello"
 ```
