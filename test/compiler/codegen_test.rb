@@ -3416,6 +3416,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/demo_generic_variant_codegen_Option_i32_kind kind;/, generated)
     assert_match(/case demo_generic_variant_codegen_Option_i32_kind_some:/, generated)
     assert_match(/case demo_generic_variant_codegen_Option_i32_kind_none:/, generated)
+    assert_match(/demo_generic_variant_codegen_Option_i32_some payload = .*\.data\.some;/, generated)
   end
 
   def test_generate_c_for_union_with_proc_field

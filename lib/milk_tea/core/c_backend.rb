@@ -3420,6 +3420,9 @@ module MilkTea
     def named_type_c_name(type)
       return result_type_name(type) if type.is_a?(Types::Result)
       return task_type_name(type) if type.is_a?(Types::Task)
+      if type.is_a?(Types::VariantArmPayload)
+        return "#{named_type_c_name(type.variant_type)}_#{type.arm_name}"
+      end
 
       base_name = type.module_name&.start_with?("std.c.") ? type.name : type.module_name ? "#{type.module_name.tr('.', '_')}_#{type.name}" : type.name
       return base_name unless type.is_a?(Types::StructInstance) || type.is_a?(Types::VariantInstance)
