@@ -3388,6 +3388,55 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return 0\.0/, generated)
   end
 
+  def test_generate_c_for_generic_variant_instances
+    source = <<~MT
+      module demo.generic_variant_codegen
+
+      variant Option[T]:
+          some(value: T)
+          none
+
+      def unwrap_or_zero(value: Option[i32]) -> i32:
+          match value:
+              Option.some as payload:
+                  return payload.value
+              Option.none:
+                  return 0
+
+      def main() -> i32:
+          let value: Option[i32] = Option[i32].some(value= 7)
+          return unwrap_or_zero(value)
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/typedef int32_t demo_generic_variant_codegen_Option_i32_kind;/, generated)
+    assert_match(/struct demo_generic_variant_codegen_Option_i32_some \{/, generated)
+    assert_match(/struct demo_generic_variant_codegen_Option_i32 \{/, generated)
+    assert_match(/demo_generic_variant_codegen_Option_i32_kind kind;/, generated)
+    assert_match(/case demo_generic_variant_codegen_Option_i32_kind_some:/, generated)
+    assert_match(/case demo_generic_variant_codegen_Option_i32_kind_none:/, generated)
+  end
+
+  def test_generate_c_for_union_with_proc_field
+    source = <<~MT
+      module demo.union_proc_codegen
+
+      union CallbackOrValue:
+          callback: proc() -> i32
+          value: i32
+
+      def main() -> i32:
+          return 0
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/typedef struct mt_proc_/, generated)
+    assert_match(/typedef union demo_union_proc_codegen_CallbackOrValue/, generated)
+    assert_match(/mt_proc_.* callback;/, generated)
+  end
+
   def test_generate_c_format_precision_spec_calls_append_f64_precision
     source = <<~MT
       module demo.fmt_spec

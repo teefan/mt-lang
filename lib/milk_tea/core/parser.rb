@@ -1163,6 +1163,7 @@ module MilkTea
     end
 
     def specialization_value_target?(expression, arguments)
+      return true if aggregate_specialization_target?(expression) && arguments.all? { |argument| definite_type_argument?(argument.value) }
       return true if generic_callable_specialization_target?(expression) && arguments.all? { |argument| explicit_specialization_argument?(argument.value) }
       return true if imported_member_specialization_target?(expression) && arguments.all? { |argument| explicit_specialization_argument?(argument.value) }
 

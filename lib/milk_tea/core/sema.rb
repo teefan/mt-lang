@@ -158,9 +158,15 @@ module MilkTea
             @types[decl.name] = Types::Union.new(decl.name, module_name: @module_name, external: external_module?)
           when AST::VariantDecl
             ensure_available_type_name!(decl.name)
-            raise SemaError, "generic variants are not yet supported (#{decl.name})" unless decl.type_params.empty?
-
-            @types[decl.name] = Types::Variant.new(decl.name, module_name: @module_name)
+            @types[decl.name] = if decl.type_params.empty?
+                                  Types::Variant.new(decl.name, module_name: @module_name)
+                                else
+                                  Types::GenericVariantDefinition.new(
+                                    decl.name,
+                                    decl.type_params.map(&:name),
+                                    module_name: @module_name,
+                                  )
+                                end
           when AST::EnumDecl
             ensure_available_type_name!(decl.name)
             @types[decl.name] = Types::Enum.new(decl.name, module_name: @module_name, external: external_module?)
@@ -222,9 +228,6 @@ module MilkTea
 
             field_type = resolve_type_ref(field.type, type_params:)
             validate_stored_ref_type!(field_type, "field #{decl.name}.#{field.name}")
-            if decl.is_a?(AST::UnionDecl) && contains_proc_type?(field_type)
-              raise SemaError, "field #{decl.name}.#{field.name} cannot store proc values in unions yet"
-            end
             unless proc_storage_supported_type?(field_type)
               raise SemaError, "field #{decl.name}.#{field.name} uses unsupported proc nesting"
             end
@@ -266,6 +269,17 @@ module MilkTea
           next unless decl.is_a?(AST::VariantDecl)
 
           variant_type = @types.fetch(decl.name)
+          type_params = if variant_type.is_a?(Types::GenericVariantDefinition)
+                          seen = {}
+                          variant_type.type_params.each_with_object({}) do |name, params|
+                            raise SemaError, "duplicate type parameter #{decl.name}[#{name}]" if seen.key?(name)
+
+                            seen[name] = true
+                            params[name] = Types::TypeVar.new(name)
+                          end
+                        else
+                          {}
+                        end
           seen_arms = []
           arms_hash = {}
           decl.arms.each do |arm|
@@ -278,7 +292,7 @@ module MilkTea
               raise SemaError, "duplicate field #{arm.name}.#{field.name}" if seen_fields.include?(field.name)
 
               seen_fields << field.name
-              field_types[field.name] = resolve_type_ref(field.type)
+              field_types[field.name] = resolve_type_ref(field.type, type_params:)
             end
             arms_hash[arm.name] = field_types
           end
@@ -1048,7 +1062,14 @@ module MilkTea
 
         # Verify the receiver resolves to the scrutinee variant type
         receiver_type = resolve_type_expression(pattern.receiver)
-        return nil unless receiver_type == scrutinee_type
+        return member if receiver_type == scrutinee_type
+
+        if scrutinee_type.is_a?(Types::VariantInstance) && receiver_type.is_a?(Types::GenericVariantDefinition)
+          return member if receiver_type == scrutinee_type.definition
+        end
+
+        return nil unless scrutinee_type.is_a?(Types::VariantInstance) && receiver_type.is_a?(Types::Variant)
+        return nil unless receiver_type.name == scrutinee_type.name && receiver_type.module_name == scrutinee_type.module_name
 
         member
       end
@@ -2494,7 +2515,7 @@ module MilkTea
 
           type = @types[parts.first]
           raise SemaError, "unknown type #{parts.first}" unless type
-          raise SemaError, "generic type #{parts.first} requires type arguments" if type.is_a?(Types::GenericStructDefinition)
+          raise SemaError, "generic type #{parts.first} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
 
           return type
         end
@@ -2506,7 +2527,7 @@ module MilkTea
             raise SemaError, "#{parts.first}.#{parts.last} is private to module #{imported_module.name}"
           end
           raise SemaError, "unknown type #{type_ref.name}" unless type
-          raise SemaError, "generic type #{type_ref.name} requires type arguments" if type.is_a?(Types::GenericStructDefinition)
+          raise SemaError, "generic type #{type_ref.name} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
 
           return type
         end
@@ -3283,6 +3304,8 @@ module MilkTea
           contains_ref_type?(type.result_type)
         when Types::StructInstance
           type.arguments.any? { |argument| contains_ref_type?(argument) }
+        when Types::VariantInstance
+          type.arguments.any? { |argument| contains_ref_type?(argument) }
         when Types::Proc
           type.params.any? { |param| contains_ref_type?(param.type) } || contains_ref_type?(type.return_type)
         when Types::Function
@@ -3297,10 +3320,10 @@ module MilkTea
       def resolve_named_generic_type(parts)
         if parts.length == 1
           type = @types[parts.first]
-          return type if type.is_a?(Types::GenericStructDefinition)
+          return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
         elsif parts.length == 2 && @imports.key?(parts.first)
           type = @imports.fetch(parts.first).types[parts.last]
-          return type if type.is_a?(Types::GenericStructDefinition)
+          return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
         end
 
         nil
@@ -3441,6 +3464,11 @@ module MilkTea
           end
 
           imported_module.types[expression.member]
+        when AST::Specialization
+          type_ref = type_ref_from_specialization(expression)
+          return nil unless type_ref
+
+          resolve_type_ref(type_ref)
         end
       end
 
@@ -3731,6 +3759,8 @@ module MilkTea
           )
         when Types::StructInstance
           type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
+        when Types::VariantInstance
+          type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
         when Types::Function
           Types::Function.new(
             type.name,
@@ -3858,6 +3888,8 @@ module MilkTea
           type.fields.each_value.all? { |field_type| proc_storage_supported_type?(field_type, visited) }
         when Types::StructInstance
           type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) || proc_storage_supported_type?(argument, visited) }
+        when Types::Variant
+          type.arm_names.all? { |arm_name| type.arm(arm_name).each_value.all? { |field_type| proc_storage_supported_type?(field_type, visited) } }
         when Types::Nullable
           proc_storage_supported_type?(type.base, visited)
         else
