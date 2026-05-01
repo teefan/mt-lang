@@ -3,6 +3,7 @@ module examples.raylib.models.models_decals
 import std.c.libm as libm
 import std.c.raylib as rl
 import std.raylib.math as rm
+import std.span as sp
 
 struct MeshBuilder:
     vertexCount: i32
@@ -100,8 +101,8 @@ def add_triangle_to_mesh_builder(mb: ref[MeshBuilder], vertices: array[rl.Vector
         let new_vertices = alloc_vector3(new_vertex_capacity)
 
         if mb.vertexCapacity > 0:
-            let old_vertices = span[rl.Vector3](data = mb.vertices, len = usize<-mb.vertexCount)
-            var new_vertex_view = span[rl.Vector3](data = new_vertices, len = usize<-mb.vertexCount)
+            let old_vertices = sp.from_ptr[rl.Vector3](mb.vertices, usize<-mb.vertexCount)
+            var new_vertex_view = sp.from_ptr[rl.Vector3](new_vertices, usize<-mb.vertexCount)
             for index in range(0, mb.vertexCount):
                 new_vertex_view[index] = old_vertices[index]
 
@@ -113,7 +114,7 @@ def add_triangle_to_mesh_builder(mb: ref[MeshBuilder], vertices: array[rl.Vector
     let start = mb.vertexCount
     mb.vertexCount += 3
 
-    var vertex_view = span[rl.Vector3](data = mb.vertices, len = usize<-mb.vertexCount)
+    var vertex_view = sp.from_ptr[rl.Vector3](mb.vertices, usize<-mb.vertexCount)
     for index in range(0, 3):
         vertex_view[start + index] = vertices[index]
 
@@ -133,8 +134,8 @@ def build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:
     if mb.hasUvs:
         out_mesh.texcoords = alloc_f32(out_mesh.vertexCount * 2)
 
-    let vertices = span[rl.Vector3](data = mb.vertices, len = usize<-mb.vertexCount)
-    let uvs = if mb.hasUvs then span[rl.Vector2](data = mb.uvs, len = usize<-mb.vertexCount) else zero[span[rl.Vector2]]()
+    let vertices = sp.from_ptr[rl.Vector3](mb.vertices, usize<-mb.vertexCount)
+    let uvs = if mb.hasUvs then sp.from_ptr[rl.Vector2](mb.uvs, usize<-mb.vertexCount) else sp.empty[rl.Vector2]()
 
     unsafe:
         for index in range(0, mb.vertexCount):
@@ -201,7 +202,7 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
         out_mesh.vertexCount = 0
 
         let clip_distance = 0.5 * decal_size
-        let in_vertices = span[rl.Vector3](data = in_mesh.vertices, len = usize<-in_mesh.vertexCount)
+        let in_vertices = sp.from_ptr[rl.Vector3](in_mesh.vertices, usize<-in_mesh.vertexCount)
 
         var vertex_index = 0
         while vertex_index < in_mesh.vertexCount:
@@ -272,8 +273,8 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
         final_mesh.uvs = alloc_vector2(final_mesh.vertexCount)
         final_mesh.hasUvs = true
 
-        var vertices = span[rl.Vector3](data = final_mesh.vertices, len = usize<-final_mesh.vertexCount)
-        var uvs = span[rl.Vector2](data = final_mesh.uvs, len = usize<-final_mesh.vertexCount)
+        var vertices = sp.from_ptr[rl.Vector3](final_mesh.vertices, usize<-final_mesh.vertexCount)
+        var uvs = sp.from_ptr[rl.Vector2](final_mesh.uvs, usize<-final_mesh.vertexCount)
 
         for index in range(0, final_mesh.vertexCount):
             uvs[index].x = vertices[index].x / decal_size + 0.5

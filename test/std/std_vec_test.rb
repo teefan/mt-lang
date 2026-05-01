@@ -87,6 +87,7 @@ class MilkTeaStdVecTest < Minitest::Test
       "module demo.std_vec_span",
       "",
       "import std.vec as vec",
+      "import std.span as sp",
       "",
       "def sum(values: span[i32]) -> i32:",
       "    var total = 0",
@@ -103,7 +104,7 @@ class MilkTeaStdVecTest < Minitest::Test
       "    vec.push[i32](ref_of(items), 10)",
       "    vec.push[i32](ref_of(items), 20)",
       "    vec.push[i32](ref_of(items), 30)",
-      "    let total = sum(vec.as_span[i32](items))",
+      "    let total = sum(sp.from_nullable_ptr[i32](vec.data_ptr[i32](items), vec.count[i32](items)))",
       "    return total",
       "",
     ].join("\n")

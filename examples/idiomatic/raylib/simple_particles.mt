@@ -3,6 +3,7 @@ module examples.idiomatic.raylib.simple_particles
 import std.mem.heap as heap
 import std.raylib as rl
 import std.raylib.math as math
+import std.span as sp
 
 enum ParticleType: i32
     WATER = 0
@@ -44,7 +45,7 @@ def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_p
     if particle_index < 0:
         return
 
-    var particles_view = span[Particle](data = particles, len = usize<-max_particles)
+    var particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
     particles_view[particle_index].position = emitter_position
     particles_view[particle_index].alive = true
     particles_view[particle_index].life_time = 0.0
@@ -70,7 +71,7 @@ def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_p
     return
 
 def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32, height: i32) -> void:
-    var particles_view = span[Particle](data = particles, len = usize<-max_particles)
+    var particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
     var index = tail
     while index != head:
         particles_view[index].life_time += 1.0 / 60.0
@@ -112,13 +113,13 @@ def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32,
     return
 
 def update_circular_buffer(particles: ptr[Particle], head: i32, tail: ref[i32]) -> void:
-    let particles_view = span[Particle](data = particles, len = usize<-max_particles)
+    let particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
     while read(tail) != head and not particles_view[read(tail)].alive:
         read(tail) = next_buffer_index(read(tail))
     return
 
 def draw_particles(particles: ptr[Particle], head: i32, tail: i32) -> void:
-    let particles_view = span[Particle](data = particles, len = usize<-max_particles)
+    let particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
     var index = tail
     while index != head:
         if particles_view[index].alive:

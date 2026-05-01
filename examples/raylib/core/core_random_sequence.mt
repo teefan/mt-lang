@@ -2,6 +2,7 @@ module examples.raylib.core.core_random_sequence
 
 import std.c.raylib as rl
 import std.mem.heap as heap
+import std.span as sp
 
 struct ColorRect:
     color: rl.Color
@@ -38,8 +39,8 @@ def release_color_rects(rectangles: ptr[ColorRect]) -> void:
 def generate_random_color_rect_sequence(rect_count: i32, rect_width: f32, width: f32, height: f32) -> ptr[ColorRect]:
     let rectangles = alloc_color_rects(rect_count)
     let sequence = rl.LoadRandomSequence(rect_count, 0, rect_count - 1)
-    var rectangles_view = span[ColorRect](data = rectangles, len = usize<-rect_count)
-    let sequence_view = span[i32](data = sequence, len = usize<-rect_count)
+    var rectangles_view = sp.from_ptr[ColorRect](rectangles, usize<-rect_count)
+    let sequence_view = sp.from_ptr[i32](sequence, usize<-rect_count)
     let rect_sequence_width = rect_count * rect_width
     let start_x = (width - rect_sequence_width) * 0.5
 
@@ -70,8 +71,8 @@ def swap_color_rect_values(left: ref[ColorRect], right: ref[ColorRect]) -> void:
 
 def shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: i32) -> void:
     let sequence = rl.LoadRandomSequence(rect_count, 0, rect_count - 1)
-    var rectangles_view = span[ColorRect](data = rectangles, len = usize<-rect_count)
-    let sequence_view = span[i32](data = sequence, len = usize<-rect_count)
+    var rectangles_view = sp.from_ptr[ColorRect](rectangles, usize<-rect_count)
+    let sequence_view = sp.from_ptr[i32](sequence, usize<-rect_count)
 
     var index = 0
     while index < rect_count:
@@ -172,7 +173,7 @@ def main() -> i32:
         defer rl.EndDrawing()
 
         rl.ClearBackground(rl.RAYWHITE)
-        let rectangles_view = span[ColorRect](data = rectangles, len = usize<-rect_count)
+        let rectangles_view = sp.from_ptr[ColorRect](rectangles, usize<-rect_count)
 
         var index = 0
         while index < rect_count:

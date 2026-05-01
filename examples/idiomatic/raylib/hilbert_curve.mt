@@ -3,6 +3,7 @@ module examples.idiomatic.raylib.hilbert_curve
 import std.raygui as gui
 import std.raylib as rl
 import std.mem.heap as heap
+import std.span as sp
 
 const screen_width: i32 = 800
 const screen_height: i32 = 450
@@ -67,7 +68,7 @@ def main() -> i32:
     var stroke_count = 0
     let hilbert_storage = heap.must_alloc_zeroed[rl.Vector2](usize<-max_stroke_count)
     defer heap.release(hilbert_storage)
-    var path_view = span[rl.Vector2](data = hilbert_storage, len = usize<-max_stroke_count)
+    var path_view = sp.from_ptr[rl.Vector2](hilbert_storage, usize<-max_stroke_count)
 
     var previous_order = order
     var previous_size = i32<-size
