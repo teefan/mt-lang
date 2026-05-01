@@ -12,9 +12,11 @@ module MilkTea
       @argv = argv.dup
       @out = out
       @err = err
+      @module_roots = [MilkTea.root]
     end
 
     def start
+      extract_include_paths!
       command = @argv.shift
 
       case command
@@ -70,7 +72,7 @@ module MilkTea
         return 1
       end
 
-      ast = ModuleLoader.load_file(path)
+      ast = make_module_loader.load_file(path)
       @out.write(PrettyPrinter.format_ast(ast))
       0
     end
@@ -83,7 +85,7 @@ module MilkTea
         return 1
       end
 
-      result = ModuleLoader.check_file(path)
+      result = make_module_loader.check_file(path)
       module_name = result.module_name || "(anonymous)"
       @out.puts("checked #{path} as #{module_name}")
       0
@@ -97,7 +99,7 @@ module MilkTea
         return 1
       end
 
-      program = ModuleLoader.check_program(path)
+      program = make_module_loader.check_program(path)
       @out.write(PrettyPrinter.format_ir(Lowering.lower(program)))
       0
     end
@@ -110,7 +112,7 @@ module MilkTea
         return 1
       end
 
-      program = ModuleLoader.check_program(path)
+      program = make_module_loader.check_program(path)
       @out.write(Codegen.generate_c(program))
       0
     end
@@ -126,7 +128,7 @@ module MilkTea
       options = parse_build_options
       return 1 unless options
 
-      result = Build.build(path, **options)
+      result = Build.build(path, module_roots: @module_roots, **options)
       @out.puts("built #{path} -> #{result.output_path}")
       @out.puts("saved C to #{result.c_path}") if result.c_path
       0
@@ -143,7 +145,7 @@ module MilkTea
       options = parse_build_options
       return 1 unless options
 
-      result = Run.run(path, **options)
+      result = Run.run(path, module_roots: @module_roots, **options)
       @out.write(result.stdout)
       @err.write(result.stderr)
       result.exit_status
@@ -315,14 +317,39 @@ module MilkTea
       raise ModuleLoadError.new("expected a source file, got a directory", path: path)
     end
 
+    def make_module_loader
+      ModuleLoader.new(module_roots: @module_roots)
+    end
+
+    def extract_include_paths!
+      remaining = []
+      i = 0
+      while i < @argv.length
+        if @argv[i] == "-I" || @argv[i] == "--include-path"
+          value = @argv[i + 1]
+          if value && !value.start_with?("-")
+            @module_roots << File.expand_path(value)
+            i += 2
+          else
+            @err.puts("missing value for #{@argv[i]}")
+            i += 1
+          end
+        else
+          remaining << @argv[i]
+          i += 1
+        end
+      end
+      @argv = remaining
+    end
+
     def print_usage(io)
       io.puts("Usage: mtc lex PATH")
       io.puts("       mtc parse PATH")
       io.puts("       mtc check PATH")
       io.puts("       mtc lower PATH")
       io.puts("       mtc emit-c PATH")
-      io.puts("       mtc build PATH [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH]")
-      io.puts("       mtc run PATH [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH]")
+      io.puts("       mtc build PATH [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [-I PATH]")
+      io.puts("       mtc run PATH [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [-I PATH]")
       io.puts("       mtc deps bootstrap")
       io.puts("       mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
     end

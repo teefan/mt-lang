@@ -4044,7 +4044,7 @@ module MilkTea
             return IR::VariantLiteral.new(type: type_expr, arm_name: expression.member, fields: [])
           end
 
-          member_name = if local_named_type?(type_expr) && (type_expr.is_a?(Types::Enum) || type_expr.is_a?(Types::Flags))
+          member_name = if (type_expr.is_a?(Types::Enum) || type_expr.is_a?(Types::Flags)) && !type_expr.external
                           enum_member_c_name(type_expr, expression.member)
                         else
                           expression.member
