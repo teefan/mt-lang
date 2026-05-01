@@ -1251,19 +1251,19 @@ The full vision should be staged. A shippable v1 needs the smallest feature set 
 - modules and imports
 - `let`, `var`, `const`
 - functions and method sugar via `methods`
-- structs, enums, flags, unions, opaque types, type aliases
+- structs, enums, flags, unions, opaque types, type aliases, variants
 - arrays, pointers, spans, function pointers
 - `if`, `while`, `for`, `match`, `defer`, `unsafe`
 - explicit casts
 - `extern module` declarations
 - clang-driven bindgen for `std.c.*`
 - readable C backend
+- `async def` / `await` / `Task[T]` with libuv runtime
 
 ### Defer until later
 
 - generic constraints
 - interfaces
-- async
 - exceptions
 - metaprogramming
 - custom operators
