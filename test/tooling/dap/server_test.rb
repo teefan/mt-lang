@@ -59,6 +59,20 @@ class DAPServerTest < Minitest::Test
       [response, events]
     end
 
+    def send_response(request_seq, command, body = {}, success: true, message: nil)
+      response = {
+        seq: @next_seq,
+        type: "response",
+        request_seq: request_seq,
+        command: command,
+        success: success
+      }
+      response[:body] = body if success
+      response[:message] = message if message
+      @next_seq += 1
+      write_message(response)
+    end
+
     def read_message
       headers = {}
       loop do
@@ -112,8 +126,138 @@ class DAPServerTest < Minitest::Test
   class FakeBridgeBackend
     attr_reader :requests
 
-    def initialize(on_event)
+    def initialize(on_event, on_request = nil)
       @on_event = on_event
+      @on_request = on_request
+      @requests = []
+    end
+
+    def start!
+      true
+    end
+
+    def stop!
+      true
+    end
+
+    def request(command, arguments, timeout: 5)
+      _timeout = timeout
+      @requests << [command, arguments]
+
+      case command
+      when "initialize"
+        {
+          "success" => true,
+          "body" => {
+            "supportsConfigurationDoneRequest" => true,
+            "supportsCompletionsRequest" => true,
+            "supportsExceptionInfoRequest" => true,
+            "supportsModulesRequest" => true,
+            "supportsReadMemoryRequest" => true,
+            "supportsDisassembleRequest" => true,
+            "supportsSetExpression" => true,
+            "supportsBreakpointLocationsRequest" => true,
+            "supportsCancelRequest" => true
+          }
+        }
+      when "launch"
+        { "success" => true, "body" => {} }
+      when "setBreakpoints"
+        { "success" => true, "body" => { "breakpoints" => [{ "id" => 42, "verified" => true, "line" => 4 }] } }
+      when "configurationDone"
+        @on_event.call({ "type" => "event", "event" => "stopped", "body" => { "reason" => "entry", "threadId" => 77, "allThreadsStopped" => true } })
+        { "success" => true, "body" => {} }
+      when "threads"
+        { "success" => true, "body" => { "threads" => [{ "id" => 77, "name" => "bridge-main" }] } }
+      when "stackTrace"
+        { "success" => true, "body" => { "stackFrames" => [{ "id" => 1, "name" => "bridge_main", "line" => 4, "column" => 0, "source" => { "path" => "/tmp/demo.mt" } }], "totalFrames" => 1 } }
+      when "scopes"
+        { "success" => true, "body" => { "scopes" => [{ "name" => "Locals", "variablesReference" => 99, "expensive" => false }] } }
+      when "variables"
+        { "success" => true, "body" => { "variables" => [{ "name" => "x", "value" => "42", "type" => "i32", "variablesReference" => 0 }] } }
+      when "setExceptionBreakpoints"
+        { "success" => true, "body" => {} }
+      when "evaluate"
+        { "success" => true, "body" => { "result" => "42", "variablesReference" => 0 } }
+      when "completions"
+        { "success" => true, "body" => { "targets" => [{ "label" => "demo_symbol", "text" => "demo_symbol" }] } }
+      when "exceptionInfo"
+        {
+          "success" => true,
+          "body" => {
+            "exceptionId" => "demo.exception",
+            "description" => "bridge exception",
+            "breakMode" => "always"
+          }
+        }
+      when "modules"
+        {
+          "success" => true,
+          "body" => {
+            "modules" => [{ "id" => "main", "name" => "main.mt" }],
+            "totalModules" => 1
+          }
+        }
+      when "readMemory"
+        {
+          "success" => true,
+          "body" => {
+            "address" => arguments["memoryReference"],
+            "data" => "AQIDBA==",
+            "unreadableBytes" => 0
+          }
+        }
+      when "disassemble"
+        {
+          "success" => true,
+          "body" => {
+            "instructions" => [
+              { "address" => "0x1000", "instruction" => "mov x0, x0" }
+            ]
+          }
+        }
+      when "setExpression"
+        {
+          "success" => true,
+          "body" => {
+            "value" => arguments["value"],
+            "type" => "i32",
+            "variablesReference" => 0
+          }
+        }
+      when "breakpointLocations"
+        {
+          "success" => true,
+          "body" => {
+            "breakpoints" => [
+              { "line" => arguments["line"], "column" => 1 }
+            ]
+          }
+        }
+      when "cancel"
+        { "success" => true, "body" => {} }
+      when "source"
+        { "success" => true, "body" => { "content" => "# source not available" } }
+      when "loadedSources"
+        { "success" => true, "body" => { "sources" => [] } }
+      when "terminate"
+        { "success" => true, "body" => {} }
+      when "disconnect"
+        @on_event.call({ "type" => "event", "event" => "terminated" })
+        @on_event.call({ "type" => "event", "event" => "exited", "body" => { "exitCode" => 0 } })
+        { "success" => true, "body" => {} }
+      else
+        { "success" => false, "message" => "unsupported command" }
+      end
+    end
+  end
+
+  class ReverseRequestBackend
+    attr_reader :requests
+
+    def initialize(on_event, on_request)
+      @on_event = on_event
+      @on_request = on_request
       @requests = []
     end
 
@@ -134,35 +278,28 @@ class DAPServerTest < Minitest::Test
         { "success" => true, "body" => { "supportsConfigurationDoneRequest" => true } }
       when "launch"
         { "success" => true, "body" => {} }
-      when "setBreakpoints"
-        { "success" => true, "body" => { "breakpoints" => [{ "id" => 42, "verified" => true, "line" => 4 }] } }
       when "configurationDone"
+        reverse_response = @on_request.call({
+          "seq" => 700,
+          "type" => "request",
+          "command" => "runInTerminal",
+          "arguments" => {
+            "kind" => "integrated",
+            "title" => "Milk Tea Debuggee",
+            "cwd" => "/tmp",
+            "args" => ["/usr/bin/true"]
+          }
+        })
+        return { "success" => false, "message" => reverse_response["message"] } unless reverse_response["success"]
+
         @on_event.call({ "type" => "event", "event" => "stopped", "body" => { "reason" => "entry", "threadId" => 77, "allThreadsStopped" => true } })
-        { "success" => true, "body" => {} }
-      when "threads"
-        { "success" => true, "body" => { "threads" => [{ "id" => 77, "name" => "bridge-main" }] } }
-      when "stackTrace"
-        { "success" => true, "body" => { "stackFrames" => [{ "id" => 1, "name" => "bridge_main", "line" => 4, "column" => 0, "source" => { "path" => "/tmp/demo.mt" } }], "totalFrames" => 1 } }
-      when "scopes"
-        { "success" => true, "body" => { "scopes" => [{ "name" => "Locals", "variablesReference" => 99, "expensive" => false }] } }
-      when "variables"
-        { "success" => true, "body" => { "variables" => [{ "name" => "x", "value" => "42", "type" => "i32", "variablesReference" => 0 }] } }
-      when "setExceptionBreakpoints"
-        { "success" => true, "body" => {} }
-      when "evaluate"
-        { "success" => true, "body" => { "result" => "42", "variablesReference" => 0 } }
-      when "source"
-        { "success" => true, "body" => { "content" => "# source not available" } }
-      when "loadedSources"
-        { "success" => true, "body" => { "sources" => [] } }
-      when "terminate"
-        { "success" => true, "body" => {} }
+        { "success" => true, "body" => { "terminalProcessId" => reverse_response.dig("body", "processId") } }
       when "disconnect"
         @on_event.call({ "type" => "event", "event" => "terminated" })
         @on_event.call({ "type" => "event", "event" => "exited", "body" => { "exitCode" => 0 } })
         { "success" => true, "body" => {} }
       else
-        { "success" => false, "message" => "unsupported command" }
+        { "success" => true, "body" => {} }
       end
     end
   end
@@ -288,6 +425,20 @@ class DAPServerTest < Minitest::Test
     end
   end
 
+  def test_terminate_from_stop_on_entry_emits_terminated_and_exited
+    with_server do |client|
+      _init_response, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
+      _launch_response, _launch_events = client.send_request("launch", { "program" => "/usr/bin/true", "stopOnEntry" => true })
+      _conf_response, conf_events = client.send_request("configurationDone", {})
+      assert_equal ["stopped"], conf_events.map { |e| e["event"] }
+
+      terminate_response, terminate_events = client.send_request("terminate", {})
+      assert_equal true, terminate_response["success"]
+      assert_equal ["terminated", "exited"], terminate_events.map { |e| e["event"] }
+      assert_equal 0, terminate_events.last.dig("body", "exitCode")
+    end
+  end
+
   def test_lldb_backend_bridge_is_deterministic_with_injected_backend
     incoming = [
       { "seq" => 1, "type" => "request", "command" => "initialize", "arguments" => { "adapterID" => "milk-tea" } },
@@ -300,8 +451,9 @@ class DAPServerTest < Minitest::Test
       { "seq" => 8, "type" => "request", "command" => "variables", "arguments" => { "variablesReference" => 99 } },
       { "seq" => 9, "type" => "request", "command" => "setExceptionBreakpoints", "arguments" => { "filters" => [] } },
       { "seq" => 10, "type" => "request", "command" => "evaluate", "arguments" => { "expression" => "x", "frameId" => 1, "context" => "watch" } },
-      { "seq" => 11, "type" => "request", "command" => "terminate", "arguments" => {} },
-      { "seq" => 12, "type" => "request", "command" => "disconnect", "arguments" => {} }
+      { "seq" => 11, "type" => "request", "command" => "completions", "arguments" => { "text" => "de", "column" => 2, "line" => 1, "frameId" => 1 } },
+      { "seq" => 12, "type" => "request", "command" => "terminate", "arguments" => {} },
+      { "seq" => 13, "type" => "request", "command" => "disconnect", "arguments" => {} }
     ]
     protocol = InMemoryProtocol.new(incoming)
     backend = nil
@@ -358,10 +510,16 @@ class DAPServerTest < Minitest::Test
     evaluate_body = evaluate_response["body"] || evaluate_response[:body]
     assert_equal "42", evaluate_body["result"] || evaluate_body[:result]
 
-    terminate_response = find_response(protocol.written, 11)
+    completions_response = find_response(protocol.written, 11)
+    assert_equal true, completions_response["success"] || completions_response[:success]
+    completions_body = completions_response["body"] || completions_response[:body]
+    first_target = completions_body["targets"]&.first || completions_body[:targets]&.first
+    assert_equal "demo_symbol", first_target["label"] || first_target[:label]
+
+    terminate_response = find_response(protocol.written, 12)
     assert_equal true, terminate_response["success"] || terminate_response[:success]
 
-    disconnect_response = find_response(protocol.written, 12)
+    disconnect_response = find_response(protocol.written, 13)
     assert_equal true, disconnect_response["success"] || disconnect_response[:success]
 
     caps_events = find_events(protocol.written, "capabilities")
@@ -369,6 +527,7 @@ class DAPServerTest < Minitest::Test
     caps_body = caps_events.first[:body] || caps_events.first["body"]
     assert_equal [], caps_body[:exceptionBreakpointFilters] || caps_body["exceptionBreakpointFilters"],
                  "capabilities event body must include exceptionBreakpointFilters"
+    assert_equal true, caps_body[:supportsCompletionsRequest] || caps_body["supportsCompletionsRequest"]
 
     backend_commands = backend.requests.map(&:first)
     assert_includes backend_commands, "initialize"
@@ -378,8 +537,93 @@ class DAPServerTest < Minitest::Test
     assert_includes backend_commands, "variables"
     assert_includes backend_commands, "setExceptionBreakpoints"
     assert_includes backend_commands, "evaluate"
+    assert_includes backend_commands, "completions"
     assert_includes backend_commands, "terminate"
     assert_includes backend_commands, "disconnect"
+  end
+
+  def test_lldb_backend_passthroughs_modern_dap_requests
+    incoming = [
+      { "seq" => 1, "type" => "request", "command" => "initialize", "arguments" => { "adapterID" => "milk-tea" } },
+      { "seq" => 2, "type" => "request", "command" => "launch", "arguments" => { "backend" => "lldb-dap", "program" => "/usr/bin/true", "stopOnEntry" => true } },
+      { "seq" => 3, "type" => "request", "command" => "configurationDone", "arguments" => {} },
+      { "seq" => 4, "type" => "request", "command" => "exceptionInfo", "arguments" => { "threadId" => 77 } },
+      { "seq" => 5, "type" => "request", "command" => "modules", "arguments" => { "startModule" => 0, "moduleCount" => 20 } },
+      { "seq" => 6, "type" => "request", "command" => "readMemory", "arguments" => { "memoryReference" => "0x1000", "count" => 4 } },
+      { "seq" => 7, "type" => "request", "command" => "disassemble", "arguments" => { "memoryReference" => "0x1000", "instructionCount" => 1 } },
+      { "seq" => 8, "type" => "request", "command" => "setExpression", "arguments" => { "expression" => "x", "value" => "7", "frameId" => 1 } },
+      { "seq" => 9, "type" => "request", "command" => "breakpointLocations", "arguments" => { "source" => { "path" => "/tmp/demo.mt" }, "line" => 4, "endLine" => 4 } },
+      { "seq" => 10, "type" => "request", "command" => "cancel", "arguments" => { "requestId" => 99 } },
+      { "seq" => 11, "type" => "request", "command" => "disconnect", "arguments" => {} }
+    ]
+
+    protocol = InMemoryProtocol.new(incoming)
+    backend = nil
+
+    server = MilkTea::DAP::Server.new(
+      protocol: protocol,
+      backend_factory: lambda do |_adapter_command, on_event|
+        backend = FakeBridgeBackend.new(on_event)
+        backend
+      end
+    )
+
+    server.run
+
+    caps_events = find_events(protocol.written, "capabilities")
+    caps_body = caps_events.first[:body] || caps_events.first["body"]
+    assert_equal true, caps_body[:supportsExceptionInfoRequest] || caps_body["supportsExceptionInfoRequest"]
+    assert_equal true, caps_body[:supportsModulesRequest] || caps_body["supportsModulesRequest"]
+    assert_equal true, caps_body[:supportsReadMemoryRequest] || caps_body["supportsReadMemoryRequest"]
+    assert_equal true, caps_body[:supportsDisassembleRequest] || caps_body["supportsDisassembleRequest"]
+    assert_equal true, caps_body[:supportsSetExpression] || caps_body["supportsSetExpression"]
+    assert_equal true, caps_body[:supportsBreakpointLocationsRequest] || caps_body["supportsBreakpointLocationsRequest"]
+    assert_equal true, caps_body[:supportsCancelRequest] || caps_body["supportsCancelRequest"]
+
+    exception_response = find_response(protocol.written, 4)
+    assert_equal true, exception_response["success"] || exception_response[:success]
+    exception_body = exception_response["body"] || exception_response[:body]
+    assert_equal "demo.exception", exception_body["exceptionId"] || exception_body[:exceptionId]
+
+    modules_response = find_response(protocol.written, 5)
+    assert_equal true, modules_response["success"] || modules_response[:success]
+    modules_body = modules_response["body"] || modules_response[:body]
+    first_module = modules_body["modules"]&.first || modules_body[:modules]&.first
+    assert_equal "main.mt", first_module["name"] || first_module[:name]
+
+    memory_response = find_response(protocol.written, 6)
+    assert_equal true, memory_response["success"] || memory_response[:success]
+    memory_body = memory_response["body"] || memory_response[:body]
+    assert_equal "AQIDBA==", memory_body["data"] || memory_body[:data]
+
+    disassemble_response = find_response(protocol.written, 7)
+    assert_equal true, disassemble_response["success"] || disassemble_response[:success]
+    disassemble_body = disassemble_response["body"] || disassemble_response[:body]
+    first_instruction = disassemble_body["instructions"]&.first || disassemble_body[:instructions]&.first
+    assert_equal "mov x0, x0", first_instruction["instruction"] || first_instruction[:instruction]
+
+    set_expression_response = find_response(protocol.written, 8)
+    assert_equal true, set_expression_response["success"] || set_expression_response[:success]
+    set_expression_body = set_expression_response["body"] || set_expression_response[:body]
+    assert_equal "7", set_expression_body["value"] || set_expression_body[:value]
+
+    bp_locations_response = find_response(protocol.written, 9)
+    assert_equal true, bp_locations_response["success"] || bp_locations_response[:success]
+    bp_locations_body = bp_locations_response["body"] || bp_locations_response[:body]
+    first_location = bp_locations_body["breakpoints"]&.first || bp_locations_body[:breakpoints]&.first
+    assert_equal 4, first_location["line"] || first_location[:line]
+
+    cancel_response = find_response(protocol.written, 10)
+    assert_equal true, cancel_response["success"] || cancel_response[:success]
+
+    backend_commands = backend.requests.map(&:first)
+    assert_includes backend_commands, "exceptionInfo"
+    assert_includes backend_commands, "modules"
+    assert_includes backend_commands, "readMemory"
+    assert_includes backend_commands, "disassemble"
+    assert_includes backend_commands, "setExpression"
+    assert_includes backend_commands, "breakpointLocations"
+    assert_includes backend_commands, "cancel"
   end
 
   def test_set_exception_breakpoints_returns_success_in_process_backend
@@ -502,6 +746,82 @@ class DAPServerTest < Minitest::Test
     changed_bp = bp_body[:breakpoint] || bp_body["breakpoint"]
     assert_equal 5, changed_bp[:line] || changed_bp["line"]
     assert_equal true, changed_bp[:verified] || changed_bp["verified"]
+  end
+
+  def test_lldb_backend_reverse_run_in_terminal_request_is_forwarded_to_client
+    stdin_read, stdin_write = IO.pipe
+    stdout_read, stdout_write = IO.pipe
+
+    server = MilkTea::DAP::Server.new(
+      protocol: MilkTea::DAP::Protocol.new(input: stdin_read, output: stdout_write),
+      backend_factory: lambda do |_adapter_command, on_event, on_request|
+        ReverseRequestBackend.new(on_event, on_request)
+      end
+    )
+
+    thread = Thread.new { server.run }
+    client = DAPClient.new(stdin_write, stdout_read)
+
+    init_response, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea", "supportsRunInTerminalRequest" => true })
+    assert_equal true, init_response["success"]
+
+    launch_response, _launch_events = client.send_request("launch", {
+      "backend" => "lldb-dap",
+      "program" => "/usr/bin/true",
+      "stopOnEntry" => true
+    })
+    assert_equal true, launch_response["success"]
+
+    conf_request = {
+      seq: client.instance_variable_get(:@next_seq),
+      type: "request",
+      command: "configurationDone",
+      arguments: {}
+    }
+    client.instance_variable_set(:@next_seq, conf_request[:seq] + 1)
+    client.send(:write_message, conf_request)
+
+    reverse_request = nil
+    conf_response = nil
+    events = []
+
+    Timeout.timeout(5) do
+      loop do
+        message = client.send(:read_message)
+        next if message.nil?
+
+        if message["type"] == "request" && message["command"] == "runInTerminal"
+          reverse_request = message
+          client.send(:send_response, message["seq"], "runInTerminal", { "processId" => 1234, "shellProcessId" => 5678 })
+          next
+        end
+
+        if message["type"] == "event"
+          events << message
+          next
+        end
+
+        next unless message["type"] == "response"
+        next unless message["request_seq"] == conf_request[:seq]
+
+        conf_response = message
+        break
+      end
+    end
+
+    assert_equal "runInTerminal", reverse_request["command"]
+    assert_equal ["/usr/bin/true"], reverse_request.dig("arguments", "args")
+    assert_equal true, conf_response["success"]
+    assert_equal 1234, conf_response.dig("body", "terminalProcessId")
+    assert_includes events.map { |e| e["event"] }, "stopped"
+
+    disconnect_response, disconnect_events = client.send_request("disconnect", {})
+    assert_equal true, disconnect_response["success"]
+    assert_includes disconnect_events.map { |e| e["event"] }, "terminated"
+  ensure
+    stdin_write&.close
+    stdout_read&.close
+    thread&.join(1)
   end
 
   def test_lldb_backend_bridges_requests_and_events
