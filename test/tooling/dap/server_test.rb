@@ -147,6 +147,10 @@ class DAPServerTest < Minitest::Test
         { "success" => true, "body" => { "scopes" => [{ "name" => "Locals", "variablesReference" => 99, "expensive" => false }] } }
       when "variables"
         { "success" => true, "body" => { "variables" => [{ "name" => "x", "value" => "42", "type" => "i32", "variablesReference" => 0 }] } }
+      when "setExceptionBreakpoints"
+        { "success" => true, "body" => {} }
+      when "evaluate"
+        { "success" => true, "body" => { "result" => "42", "variablesReference" => 0 } }
       when "terminate"
         { "success" => true, "body" => {} }
       when "disconnect"
@@ -289,8 +293,10 @@ class DAPServerTest < Minitest::Test
       { "seq" => 6, "type" => "request", "command" => "stackTrace", "arguments" => { "threadId" => 77 } },
       { "seq" => 7, "type" => "request", "command" => "scopes", "arguments" => { "frameId" => 1 } },
       { "seq" => 8, "type" => "request", "command" => "variables", "arguments" => { "variablesReference" => 99 } },
-      { "seq" => 9, "type" => "request", "command" => "terminate", "arguments" => {} },
-      { "seq" => 10, "type" => "request", "command" => "disconnect", "arguments" => {} }
+      { "seq" => 9, "type" => "request", "command" => "setExceptionBreakpoints", "arguments" => { "filters" => [] } },
+      { "seq" => 10, "type" => "request", "command" => "evaluate", "arguments" => { "expression" => "x", "frameId" => 1, "context" => "watch" } },
+      { "seq" => 11, "type" => "request", "command" => "terminate", "arguments" => {} },
+      { "seq" => 12, "type" => "request", "command" => "disconnect", "arguments" => {} }
     ]
     protocol = InMemoryProtocol.new(incoming)
     backend = nil
@@ -339,11 +345,22 @@ class DAPServerTest < Minitest::Test
     assert_equal "x", first_var["name"] || first_var[:name]
     assert_equal "42", first_var["value"] || first_var[:value]
 
-    terminate_response = find_response(protocol.written, 9)
+    exception_bp_response = find_response(protocol.written, 9)
+    assert_equal true, exception_bp_response["success"] || exception_bp_response[:success]
+
+    evaluate_response = find_response(protocol.written, 10)
+    assert_equal true, evaluate_response["success"] || evaluate_response[:success]
+    evaluate_body = evaluate_response["body"] || evaluate_response[:body]
+    assert_equal "42", evaluate_body["result"] || evaluate_body[:result]
+
+    terminate_response = find_response(protocol.written, 11)
     assert_equal true, terminate_response["success"] || terminate_response[:success]
 
-    disconnect_response = find_response(protocol.written, 10)
+    disconnect_response = find_response(protocol.written, 12)
     assert_equal true, disconnect_response["success"] || disconnect_response[:success]
+
+    caps_events = find_events(protocol.written, "capabilities")
+    assert_equal true, caps_events.any?, "expected capabilities event after lldb-dap backend init"
 
     backend_commands = backend.requests.map(&:first)
     assert_includes backend_commands, "initialize"
@@ -351,8 +368,28 @@ class DAPServerTest < Minitest::Test
     assert_includes backend_commands, "stackTrace"
     assert_includes backend_commands, "scopes"
     assert_includes backend_commands, "variables"
+    assert_includes backend_commands, "setExceptionBreakpoints"
+    assert_includes backend_commands, "evaluate"
     assert_includes backend_commands, "terminate"
     assert_includes backend_commands, "disconnect"
+  end
+
+  def test_set_exception_breakpoints_returns_success_in_process_backend
+    with_server do |client|
+      _init, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
+      response, _events = client.send_request("setExceptionBreakpoints", { "filters" => [] })
+      assert_equal true, response["success"]
+    end
+  end
+
+  def test_evaluate_returns_error_in_process_backend
+    with_server do |client|
+      _init, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
+      _launch, _launch_events = client.send_request("launch", { "program" => "/usr/bin/true" })
+      response, _events = client.send_request("evaluate", { "expression" => "x", "context" => "watch" })
+      assert_equal false, response["success"]
+      assert_match(/not supported/, response["message"])
+    end
   end
 
   def test_lldb_backend_bridges_requests_and_events
@@ -514,6 +551,10 @@ class DAPServerTest < Minitest::Test
             write_response.call(request, { scopes: [{ name: "Locals", variablesReference: 11, expensive: false }] })
           when "variables"
             write_response.call(request, { variables: [{ name: "a", value: "1", type: "i32", variablesReference: 0 }] })
+          when "setExceptionBreakpoints"
+            write_response.call(request, {})
+          when "evaluate"
+            write_response.call(request, { result: "not_impl", variablesReference: 0 })
           when "continue"
             write_response.call(request, { allThreadsContinued: true })
             write_event.call("continued", { threadId: 99, allThreadsContinued: true })

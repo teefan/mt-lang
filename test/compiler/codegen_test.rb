@@ -157,6 +157,20 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/mt_span_i32 items = \(mt_span_i32\)\{ \.data = &value, \.len = 1 \};/, generated)
   end
 
+  def test_generate_c_emits_line_directives_for_user_statements
+    source = <<~MT
+      module demo.line_directives
+
+      def main() -> i32:
+          let x: i32 = 1
+          return x
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/#line \d+ ".*\.mt"/, generated)
+  end
+
   def test_generate_c_for_async_methods
     source = <<~MT
       module demo.async_methods_codegen

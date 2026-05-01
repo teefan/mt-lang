@@ -53,6 +53,8 @@ module MilkTea
         @handlers["pause"] = method(:handle_pause)
         @handlers["terminate"] = method(:handle_terminate)
         @handlers["disconnect"] = method(:handle_disconnect)
+        @handlers["setExceptionBreakpoints"] = method(:handle_set_exception_breakpoints)
+        @handlers["evaluate"] = method(:handle_evaluate)
       end
 
       def process_message(message)
@@ -82,7 +84,8 @@ module MilkTea
         supportsConditionalBreakpoints: false,
         supportsEvaluateForHovers: false,
         supportsSetVariable: false,
-        supportsTerminateRequest: true
+        supportsTerminateRequest: true,
+        exceptionBreakpointFilters: []
       }.freeze
 
       def handle_initialize(message)
@@ -254,6 +257,18 @@ module MilkTea
         end
         cleanup_tmp_dirs
         @session.request_exit!
+      end
+
+      def handle_set_exception_breakpoints(message)
+        return write_backend_response(message, backend_request("setExceptionBreakpoints", message["arguments"] || {})) if using_lldb_backend?
+
+        write_response(message, {})
+      end
+
+      def handle_evaluate(message)
+        return write_backend_response(message, backend_request("evaluate", message["arguments"] || {})) if using_lldb_backend?
+
+        write_error_response(message, "evaluate is not supported by the process backend")
       end
 
       def request_start(message)
