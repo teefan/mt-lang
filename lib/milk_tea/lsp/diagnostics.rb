@@ -53,8 +53,10 @@ module MilkTea
 
       def self.extract_line(error)
         case error
-        when MilkTea::LexError, MilkTea::ParseError
+        when MilkTea::LexError
           error.line || 1
+        when MilkTea::ParseError
+          error.token&.line || 1
         else
           1
         end
@@ -62,8 +64,10 @@ module MilkTea
 
       def self.extract_column(error)
         case error
-        when MilkTea::LexError, MilkTea::ParseError
+        when MilkTea::LexError
           error.column || 1
+        when MilkTea::ParseError
+          error.token&.column || 1
         else
           1
         end
