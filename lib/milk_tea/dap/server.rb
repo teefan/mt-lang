@@ -76,6 +76,15 @@ module MilkTea
         write_error_response(message, "Internal error: #{e.message}")
       end
 
+      ADAPTER_CAPABILITIES = {
+        supportsConfigurationDoneRequest: true,
+        supportsFunctionBreakpoints: false,
+        supportsConditionalBreakpoints: false,
+        supportsEvaluateForHovers: false,
+        supportsSetVariable: false,
+        supportsTerminateRequest: true
+      }.freeze
+
       def handle_initialize(message)
         if @session.initialized?
           write_error_response(message, "initialize can only be called once")
@@ -84,14 +93,7 @@ module MilkTea
 
         @session.initialize!
 
-        write_response(message, {
-          supportsConfigurationDoneRequest: true,
-          supportsFunctionBreakpoints: false,
-          supportsConditionalBreakpoints: false,
-          supportsEvaluateForHovers: false,
-          supportsSetVariable: false,
-          supportsTerminateRequest: true
-        })
+        write_response(message, ADAPTER_CAPABILITIES)
 
         write_event("initialized")
       end
@@ -300,6 +302,13 @@ module MilkTea
             "pathFormat" => "path"
           })
           return write_backend_response(message, init_response) unless init_response["success"]
+
+          # Merge backend capabilities with adapter capabilities and notify the client.
+          backend_caps = init_response["body"] || {}
+          merged_caps = ADAPTER_CAPABILITIES.merge(
+            backend_caps.transform_keys { |k| k.to_sym }
+          )
+          write_event("capabilities", merged_caps)
 
           launch_arguments = args.merge("program" => resolved[:runnable_path])
           backend_response = backend_request(message["command"], launch_arguments)

@@ -34,7 +34,9 @@ module MilkTea
     ForeignFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :mapping, :visibility)
     Param = Data.define(:name, :type)
     ForeignParam = Data.define(:name, :type, :mode, :boundary_type)
-    LocalDecl = Data.define(:kind, :name, :type, :value)
+    LocalDecl = Data.define(:kind, :name, :type, :value, :line) do
+      def initialize(kind:, name:, type:, value:, line: nil) = super
+    end
     Assignment = Data.define(:target, :operator, :value)
     IfBranch = Data.define(:condition, :body)
     IfStmt = Data.define(:branches, :else_body)
@@ -48,9 +50,13 @@ module MilkTea
     WhileStmt = Data.define(:condition, :body)
     BreakStmt = Data.define()
     ContinueStmt = Data.define()
-    ReturnStmt = Data.define(:value)
+    ReturnStmt = Data.define(:value, :line) do
+      def initialize(value:, line: nil) = super
+    end
     DeferStmt = Data.define(:expression, :body)
-    ExpressionStmt = Data.define(:expression)
+    ExpressionStmt = Data.define(:expression, :line) do
+      def initialize(expression:, line: nil) = super
+    end
 
     Identifier = Data.define(:name)
     MemberAccess = Data.define(:receiver, :member)

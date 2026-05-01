@@ -2,7 +2,9 @@
 
 module MilkTea
   module IR
-    Program = Data.define(:module_name, :includes, :constants, :globals, :opaques, :structs, :unions, :enums, :variants, :static_asserts, :functions)
+    Program = Data.define(:module_name, :includes, :constants, :globals, :opaques, :structs, :unions, :enums, :variants, :static_asserts, :functions, :source_path) do
+      def initialize(module_name:, includes:, constants:, globals:, opaques:, structs:, unions:, enums:, variants:, static_asserts:, functions:, source_path: nil) = super
+    end
     Include = Data.define(:header)
     Constant = Data.define(:name, :c_name, :type, :value)
     Global = Data.define(:name, :c_name, :type, :value)
@@ -15,7 +17,9 @@ module MilkTea
     Function = Data.define(:name, :c_name, :params, :return_type, :body, :entry_point)
     Param = Data.define(:name, :c_name, :type, :pointer)
 
-    LocalDecl = Data.define(:name, :c_name, :type, :value)
+    LocalDecl = Data.define(:name, :c_name, :type, :value, :line) do
+      def initialize(name:, c_name:, type:, value:, line: nil) = super
+    end
     Assignment = Data.define(:target, :operator, :value)
     BlockStmt = Data.define(:body)
     IfStmt = Data.define(:condition, :then_body, :else_body)
@@ -29,8 +33,12 @@ module MilkTea
     GotoStmt = Data.define(:label)
     LabelStmt = Data.define(:name)
     StaticAssert = Data.define(:condition, :message)
-    ReturnStmt = Data.define(:value)
-    ExpressionStmt = Data.define(:expression)
+    ReturnStmt = Data.define(:value, :line) do
+      def initialize(value:, line: nil) = super
+    end
+    ExpressionStmt = Data.define(:expression, :line) do
+      def initialize(expression:, line: nil) = super
+    end
 
     Name = Data.define(:name, :type, :pointer)
     Member = Data.define(:receiver, :member, :type)
