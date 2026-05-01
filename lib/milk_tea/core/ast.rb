@@ -71,7 +71,7 @@ module MilkTea
     StringLiteral = Data.define(:lexeme, :value, :cstring)
     FormatString = Data.define(:parts)
     FormatTextPart = Data.define(:value)
-    FormatExprPart = Data.define(:expression)
+    FormatExprPart = Data.define(:expression, :format_spec)
     BooleanLiteral = Data.define(:value)
     NullLiteral = Data.define(:type)
   end

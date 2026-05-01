@@ -500,6 +500,41 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("main")
   end
 
+  def test_type_checks_format_precision_spec_on_float
+    source = <<~MT
+      module demo.fmt_spec
+
+      import std.io as io
+
+      def main(pi: f64, small: f32) -> i32:
+          io.println(f"pi=\#{pi:.2}")
+          io.println(f"small=\#{small:.4}")
+          return 0
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_rejects_precision_spec_on_non_float
+    source = <<~MT
+      module demo.fmt_spec
+
+      import std.io as io
+
+      def main(count: i32) -> i32:
+          io.println(f"count=\#{count:.2}")
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/precision.*f32.*f64|f32.*f64.*precision|format spec.*f32.*f64/i, error.message)
+  end
+
   def test_rejects_wrong_return_type
     source = <<~MT
       module demo.bad

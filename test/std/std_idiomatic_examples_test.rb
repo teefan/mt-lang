@@ -49,6 +49,42 @@ class MilkTeaStdIdiomaticExamplesTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_variants_example_runs
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    result = MilkTea::Run.run(example_path("variants"), cc: compiler)
+
+    assert_equal "variant showcase\nvariant checks passed\n", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+  def test_string_interpolation_example_runs
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    result = MilkTea::Run.run(example_path("string_interpolation"), cc: compiler)
+
+    assert_equal "direct -> user=milk-tea count=3 ratio=0.625 ok=true\ndeclared-str -> user=milk-tea count=3\nowned -> user=milk-tea next=4 triple=9\nexpr -> state=busy math=9\n", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+  def test_format_specifiers_example_runs
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    result = MilkTea::Run.run(example_path("format_specifiers"), cc: compiler)
+
+    assert_equal "pi:.0 -> 3\npi:.2 -> 3.14\npi:.5 -> 3.14159\nratio:.4 -> 0.3333\nsmall:.6 -> 0.001230\nmixed -> euler=2.718\n", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   def test_io_printing_example_generated_c_inlines_formatted_condition_calls
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

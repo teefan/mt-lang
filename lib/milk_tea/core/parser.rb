@@ -1031,9 +1031,23 @@ module MilkTea
       when :text
         AST::FormatTextPart.new(value: part.fetch(:value))
       when :expr
-        AST::FormatExprPart.new(expression: parse_embedded_expression(part.fetch(:source), line: part.fetch(:line), column: part.fetch(:column)))
+        format_spec = parse_format_spec(part.fetch(:format_spec))
+        AST::FormatExprPart.new(
+          expression: parse_embedded_expression(part.fetch(:source), line: part.fetch(:line), column: part.fetch(:column)),
+          format_spec:,
+        )
       else
         raise error(peek, "unsupported format string part #{part.inspect}")
+      end
+    end
+
+    def parse_format_spec(spec_str)
+      return nil if spec_str.nil? || spec_str.empty?
+
+      if (m = spec_str.strip.match(/\A\.(\d+)\z/))
+        { kind: :precision, value: m[1].to_i }
+      else
+        raise error(peek, "unsupported format spec '#{spec_str.strip}': expected .N for float precision (e.g. :.2)")
       end
     end
 

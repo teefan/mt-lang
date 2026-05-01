@@ -443,7 +443,10 @@ module MilkTea
         when AST::FormatTextPart
           part.value.gsub("\\", "\\\\").gsub('"', '\\"')
         when AST::FormatExprPart
-          "\#{#{render_expression(part.expression)}}"
+          spec = case part.format_spec&.fetch(:kind)
+                 when :precision then ":.#{part.format_spec[:value]}"
+                 end
+          "\#{#{render_expression(part.expression)}#{spec}}"
         else
           raise ArgumentError, "unsupported format string part #{part.class.name}"
         end
