@@ -833,6 +833,7 @@ module MilkTea
     end
 
     def emit_function(function)
+      @checked_index_alias_id = 0
       body = compact_generated_statement_sequence(function.body)
       lines = ["#{function_signature(function)} {"]
       used_labels = collect_used_labels(body)

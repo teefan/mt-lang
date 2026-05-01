@@ -243,7 +243,7 @@ pub def fs_write(loop: Loop, request: Request[uv.uv_fs_t], file: i32, data: span
     var buffer = byte_buffer(data)
     return uv.fs_write(loop.raw, request.raw, file, ptr_of(ref_of(buffer)), 1, offset, callback)
 
-pub def fs_read(loop: Loop, request: Request[uv.uv_fs_t], file: i32, mut data: span[u8], offset: isize, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> i32:
+pub def fs_read(loop: Loop, request: Request[uv.uv_fs_t], file: i32, data: span[u8], offset: isize, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> i32:
     var buffer = byte_buffer(data)
     return uv.fs_read(loop.raw, request.raw, file, ptr_of(ref_of(buffer)), 1, offset, callback)
 

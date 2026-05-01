@@ -46,7 +46,7 @@ def compute_hilbert_step(order: i32, index_start: i32) -> rl.Vector2:
 
     return vect
 
-def rebuild_path(mut hilbert_path: span[rl.Vector2], order: i32, size: f32) -> i32:
+def rebuild_path(hilbert_path: span[rl.Vector2], order: i32, size: f32) -> i32:
     let path_count = 1 << order
     let stroke_count = path_count * path_count
     let path_len = size / f32<-path_count

@@ -34,7 +34,6 @@ module MilkTea
       "match" => :match,
       "methods" => :methods,
       "module" => :module,
-      "mut" => :mut,
       "not" => :not,
       "null" => :null,
       "offsetof" => :offsetof,

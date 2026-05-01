@@ -32,7 +32,7 @@ module MilkTea
     MethodDef = Data.define(:name, :type_params, :params, :return_type, :body, :kind, :visibility, :async)
     ExternFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :variadic)
     ForeignFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :mapping, :visibility)
-    Param = Data.define(:name, :type, :mutable)
+    Param = Data.define(:name, :type)
     ForeignParam = Data.define(:name, :type, :mode, :boundary_type)
     LocalDecl = Data.define(:kind, :name, :type, :value)
     Assignment = Data.define(:target, :operator, :value)

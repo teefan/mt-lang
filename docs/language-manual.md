@@ -210,7 +210,8 @@ def add(a: i32, b: i32) -> i32:
 Rules:
 
 - Parameters must be typed.
-- Parameter mutability marker is supported: `mut x: T`.
+- Parameters are non-rebindable; copy into a local `var` to mutate by-value data.
+- Mutation through referent surfaces (for example span element writes, `read(ref_value) = ...`, and pointer writes in `unsafe`) is allowed.
 - Return type defaults to `void` if omitted.
 - Generic functions are supported.
 

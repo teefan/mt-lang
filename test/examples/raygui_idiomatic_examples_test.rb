@@ -14,8 +14,8 @@ class MilkTeaRayguiIdiomaticExamplesTest < Minitest::Test
       refute_match(/^import std\.c\.raylib as /, source)
       refute_match(/^import std\.c\.raygui as /, source)
       refute_match(/^\s*unsafe:/, source)
-      refute_match(/using addr\(/, source)
-      refute_match(/\braw\(/, source)
+      refute_match(/using ref_of\(/, source)
+      refute_match(/\bptr_of\(/, source)
       refute_match(/c"/, source)
     end
   end
