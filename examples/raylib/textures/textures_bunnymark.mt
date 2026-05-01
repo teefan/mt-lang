@@ -2,6 +2,7 @@ module examples.raylib.textures.textures_bunnymark
 
 import std.c.raylib as rl
 import std.mem.heap as heap
+import std.span as sp
 
 struct Bunny:
     position: rl.Vector2
@@ -27,7 +28,7 @@ def main() -> i32:
     let bunnies = heap.must_alloc_zeroed[Bunny](usize<-max_bunnies)
     defer heap.release(bunnies)
 
-    var bunnies_view = span[Bunny](data = bunnies, len = usize<-max_bunnies)
+    var bunnies_view = sp.from_ptr[Bunny](bunnies, usize<-max_bunnies)
     var bunnies_count = 0
     var paused = false
 

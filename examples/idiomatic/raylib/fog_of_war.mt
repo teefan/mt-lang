@@ -2,6 +2,7 @@ module examples.idiomatic.raylib.fog_of_war
 
 import std.mem.heap as heap
 import std.raylib as rl
+import std.span as sp
 
 const map_tile_size: i32 = 32
 const player_size: i32 = 16
@@ -22,8 +23,8 @@ def main() -> i32:
         heap.release(tile_fog_ptr)
         heap.release(tile_ids_ptr)
 
-    var tile_ids = span[u8](data = tile_ids_ptr, len = usize<-tile_count)
-    var tile_fog = span[u8](data = tile_fog_ptr, len = usize<-tile_count)
+    var tile_ids = sp.from_ptr[u8](tile_ids_ptr, usize<-tile_count)
+    var tile_fog = sp.from_ptr[u8](tile_fog_ptr, usize<-tile_count)
 
     var player_position = rl.Vector2(x = 180.0, y = 130.0)
     var player_tile_x = 0

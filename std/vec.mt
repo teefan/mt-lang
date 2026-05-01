@@ -1,6 +1,7 @@
 module std.vec
 
 import std.mem.heap as heap
+import std.span as sp
 
 pub struct Vec[T]:
     data: ptr[T]?
@@ -28,9 +29,7 @@ pub def data_ptr[T](items: Vec[T]) -> ptr[T]?:
     return items.data
 
 pub def as_span[T](items: Vec[T]) -> span[T]:
-    let data = items.data
-    unsafe:
-        return span[T](data = ptr[T]<-data, len = items.len)
+    return sp.from_nullable_ptr[T](items.data, items.len)
 
 pub def clear[T](items: ref[Vec[T]]) -> void:
     items.len = 0

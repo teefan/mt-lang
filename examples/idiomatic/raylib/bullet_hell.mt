@@ -3,6 +3,7 @@ module examples.idiomatic.raylib.bullet_hell
 import std.mem.heap as heap
 import std.raylib as rl
 import std.raylib.math as math
+import std.span as sp
 
 struct Bullet:
     position: rl.Vector2
@@ -20,7 +21,7 @@ def main() -> i32:
 
     let bullets = heap.must_alloc_zeroed[Bullet](usize<-max_bullets)
     defer heap.release(bullets)
-    var bullets_view = span[Bullet](data = bullets, len = usize<-max_bullets)
+    var bullets_view = sp.from_ptr[Bullet](bullets, usize<-max_bullets)
 
     var bullet_count = 0
     var bullet_disabled_count = 0

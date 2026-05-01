@@ -453,6 +453,8 @@ Special recognized callables:
 - `array[T, N](...)`
 - `span[T](data = ..., len = ...)`
 
+For repeated pointer-plus-length span construction, prefer `std.span` helpers like `sp.from_ptr[T](ptr, len)` and `sp.from_nullable_ptr[T](ptr_or_null, len)`.
+
 `range(start, stop)` is a reserved loop helper for `for` typing.
 
 `read(r)` still explicitly projects a `ref[T]` to its referent value, but ordinary member access and method calls auto-dereference `ref[T]` receivers. That means `handle.field`, `handle.edit_method()`, and `handle.read()` are accepted without writing `read(handle)` first.

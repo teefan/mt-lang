@@ -718,6 +718,8 @@ span[T] is conceptually:
 
 `span[T]` is the many-element view. `ref[T]` is the safe writable single-object alias, while `const_ptr[T]` is the raw read-only single-object pointer form.
 
+For frequent pointer-plus-length construction in game code, use `std.span` helpers such as `sp.from_ptr[T](ptr, len)` instead of repeating `span[T](data = ..., len = ...)` literals.
+
 ### Standard library foundation
 
 The standard library follows the same rule as the language: no hidden allocation, no implicit ownership transfer, and no runtime machinery the source did not ask for.

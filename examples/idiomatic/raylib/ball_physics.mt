@@ -3,6 +3,7 @@ module examples.idiomatic.raylib.ball_physics
 import std.mem.heap as heap
 import std.raylib as rl
 import std.raylib.math as math
+import std.span as sp
 
 struct Ball:
     position: rl.Vector2
@@ -43,7 +44,7 @@ def main() -> i32:
     defer heap.release(balls)
 
     var ball_count = 1
-    var balls_view = span[Ball](data = balls, len = usize<-ball_count)
+    var balls_view = sp.from_ptr[Ball](balls, usize<-ball_count)
     balls_view[0] = ball_at(
         rl.Vector2(x = rl.get_screen_width() / 2.0, y = rl.get_screen_height() / 2.0),
         rl.Vector2(x = 200.0, y = 200.0),
@@ -60,7 +61,7 @@ def main() -> i32:
     while not rl.window_should_close():
         let delta = rl.get_frame_time()
         let mouse_pos = rl.get_mouse_position()
-        balls_view = span[Ball](data = balls, len = usize<-ball_count)
+        balls_view = sp.from_ptr[Ball](balls, usize<-ball_count)
 
         if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
             var index = ball_count
@@ -83,7 +84,7 @@ def main() -> i32:
             if ball_count < max_balls:
                 let new_index = ball_count
                 ball_count += 1
-                balls_view = span[Ball](data = balls, len = usize<-ball_count)
+                balls_view = sp.from_ptr[Ball](balls, usize<-ball_count)
                 balls_view[new_index] = ball_at(
                     mouse_pos,
                     rl.Vector2(

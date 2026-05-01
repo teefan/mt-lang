@@ -4,6 +4,7 @@ import std.c.libm as math
 import std.c.raylib as rl
 import std.math as mt_math
 import std.mem.heap as heap
+import std.span as sp
 
 struct Bullet:
     position: rl.Vector2
@@ -32,7 +33,7 @@ def main() -> i32:
 
     let bullets = heap.must_alloc_zeroed[Bullet](usize<-max_bullets)
     defer heap.release(bullets)
-    var bullets_view = span[Bullet](data = bullets, len = usize<-max_bullets)
+    var bullets_view = sp.from_ptr[Bullet](bullets, usize<-max_bullets)
 
     var bullet_count = 0
     var bullet_disabled_count = 0

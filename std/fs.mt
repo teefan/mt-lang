@@ -3,6 +3,7 @@ module std.fs
 import std.bytes as bytes
 import std.c.stdio as c
 import std.mem.arena as arena
+import std.span as sp
 import std.str as text
 import std.string as string
 
@@ -96,5 +97,5 @@ pub def write_bytes(path: str, data: span[u8], scratch: ref[arena.Arena]) -> Res
 
 pub def write_text(path: str, data: str, scratch: ref[arena.Arena]) -> Result[bool, Error]:
     unsafe:
-        let bytes_view = span[u8](data = ptr[u8]<-data.data, len = data.len)
+        let bytes_view = sp.from_ptr[u8](ptr[u8]<-data.data, data.len)
         return write_bytes(path, bytes_view, scratch)
