@@ -498,6 +498,26 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/std_string_String_release\(&__mt_fmt_string_1\);/, generated)
   end
 
+  def test_generate_c_reuses_identical_format_string_helpers
+    source = <<~MT
+      module demo.format_dedup_codegen
+
+      def first(value: u8) -> usize:
+          let text = f"value=\#{value} ok=\#{true}"
+          return text.len
+
+      def second(value: u8) -> usize:
+          let text = f"value=\#{value} ok=\#{true}"
+          return text.len
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static std_string_String demo_format_dedup_codegen__fmt_1\(/, generated)
+    refute_match(/demo_format_dedup_codegen__fmt_2\(/, generated)
+    assert_match(/std_string_String __mt_fmt_string_1 = demo_format_dedup_codegen__fmt_1\(/, generated)
+  end
+
   def test_rejects_returning_general_format_string_as_borrowed_text
     source = <<~MT
       module demo.format_expr_escape
