@@ -734,7 +734,7 @@ class MilkTeaParserTest < Minitest::Test
           return value
 
       def main() -> i32:
-          let callbacks = array[fn(value: i32) -> i32, 1](cast[fn(value: i32) -> i32](identity))
+          let callbacks = array[fn(value: i32) -> i32, 1](identity)
           let entry = Entry(callback = ease)
           let callback: fn(value: f32) -> f32 = entry.callback
           let left = callbacks[0](1)
@@ -764,6 +764,36 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::Call, right_decl.value
     assert_instance_of MilkTea::AST::Identifier, right_decl.value.callee
     assert_equal "callback", right_decl.value.callee.name
+  end
+
+  def test_rejects_explicit_cast_call_form
+    source = <<~MT
+      module demo.cast_form
+
+      def main(value: i32) -> i64:
+          return cast[i64](value)
+    MT
+
+    error = assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(source)
+    end
+
+    assert_match(/cast\[T\]\(value\) is no longer supported; use T<-value/, error.message)
+  end
+
+  def test_reports_hint_for_spaced_prefix_cast_tokens
+    source = <<~MT
+      module demo.cast_hint
+
+      def main(value: i32) -> i64:
+          return i64 < -value
+    MT
+
+    error = assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(source)
+    end
+
+    assert_match(/did you mean T<-expr\?/, error.message)
   end
 
   def test_parses_proc_type_refs_in_function_parameters
