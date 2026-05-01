@@ -966,7 +966,7 @@ module MilkTea
           return "#{expected_type}(#{values.join(', ')})"
         end
 
-        "cast[#{expected_type}](0)"
+        "#{expected_type}<-0"
       end
 
       def parse_array_type(type)

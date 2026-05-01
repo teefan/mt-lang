@@ -819,12 +819,17 @@ module MilkTea
       target_type = parse_type_ref
       type_tail = @tokens[@current - 1]
       less_token = peek
-      return nil unless match(:less)
-      return nil unless adjacent_tokens?(type_tail, less_token)
+      return nil unless less_token.type == :less
 
-      minus_token = peek
-      return nil unless match(:minus)
-      return nil unless adjacent_tokens?(less_token, minus_token)
+      minus_token = @tokens[@current + 1]
+      return nil unless minus_token&.type == :minus
+
+      unless adjacent_tokens?(type_tail, less_token) && adjacent_tokens?(less_token, minus_token)
+        raise error(less_token, "did you mean T<-expr?")
+      end
+
+      advance
+      advance
 
       expression = parse_unary
       AST::Call.new(
@@ -834,7 +839,9 @@ module MilkTea
         ),
         arguments: [AST::Argument.new(name: nil, value: expression)],
       )
-    rescue ParseError
+    rescue ParseError => e
+      raise e if parse_diagnostic_hint?(e)
+
       nil
     ensure
       @current = saved_current if expression.nil?
@@ -884,6 +891,10 @@ module MilkTea
       end
       consume(:rbracket, "expected ']' after specialization arguments")
 
+      if removed_cast_call_form?(expression)
+        raise error(previous, "cast[T](value) is no longer supported; use T<-value")
+      end
+
       if match(:lparen)
         call_arguments = parse_call_arguments
         unless specialization_call_target?(expression, arguments, call_arguments)
@@ -900,7 +911,9 @@ module MilkTea
       end
 
       AST::Specialization.new(callee: expression, arguments:)
-    rescue ParseError
+    rescue ParseError => e
+      raise e if parse_diagnostic_hint?(e)
+
       @current = saved_current
       nil
     end
@@ -1139,7 +1152,15 @@ module MilkTea
     end
 
     def builtin_specialization_target?(expression)
-      expression.is_a?(AST::Identifier) && %w[array cast reinterpret span zero].include?(expression.name)
+      expression.is_a?(AST::Identifier) && %w[array reinterpret span zero].include?(expression.name)
+    end
+
+    def removed_cast_call_form?(expression)
+      expression.is_a?(AST::Identifier) && expression.name == "cast"
+    end
+
+    def parse_diagnostic_hint?(error)
+      error.message.include?("did you mean T<-expr?") || error.message.include?("cast[T](value) is no longer supported")
     end
 
     def aggregate_specialization_target?(expression)

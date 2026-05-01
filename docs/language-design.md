@@ -537,7 +537,7 @@ No user-defined operator overloading.
 
 ### Casts
 
-Conversions are explicit. Prefer `T<-expr` in ordinary code; `cast[T](expr)` remains available when the call form is clearer or required.
+Conversions are explicit. Use `T<-expr` for ordinary conversions.
 
 ```mt
 let count64 = u64<-count32
@@ -1036,7 +1036,7 @@ Declarative RHS mapping rules:
 - the RHS must be a raw call expression whose callee is an imported raw extern function
 - raw call arity must match the raw target signature, respecting raw varargs rules
 - the checker analyzes each raw argument expression in an environment containing the public parameters
-- allowed RHS expression forms are: parameter identifiers, member access, index access, literals, `null`, `sizeof`, `alignof`, `offsetof`, `cast[...]`, and simple arithmetic or comparisons built from those forms
+- allowed RHS expression forms are: parameter identifiers, member access, index access, literals, `null`, `sizeof`, `alignof`, `offsetof`, explicit `T<-expr` casts, and simple arithmetic or comparisons built from those forms
 - disallowed RHS forms are: control flow, local declarations, assignment, `unsafe`, `defer`, heap allocation, and arbitrary non-builtin function calls
 - every public parameter must be consumed by the RHS according to its mode
 

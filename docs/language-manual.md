@@ -469,8 +469,7 @@ Special recognized callables:
 - `read(r)`
 - `read(p)`
 - `ptr_of(r)`
-- `T<-value` (preferred shorthand for `cast[T](value)`)
-- `cast[T](value)` (equivalent explicit form)
+- `T<-value`
 - `reinterpret[T](value)`
 - `zero[T]()`
 - `array[T, N](...)`

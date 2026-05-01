@@ -115,7 +115,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
       pub foreign def close_window(consuming window: Window) -> void = c.CloseWindow
 
-      pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, cast[i32](data.len))
+      pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, i32<-data.len)
 
       def main(path: str) -> ptr[u8]?:
           var data_size = 0
@@ -195,7 +195,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_includes output, "program demo.pretty"
     assert_includes output, "struct Counter as demo_pretty_Counter:"
     assert_includes output, "fn main() -> i32 [entry]:"
-    assert_includes output, "let counter_ptr: ptr[demo.pretty.Counter] = cast[ptr[demo.pretty.Counter]](&counter)"
+    assert_includes output, "let counter_ptr: ptr[demo.pretty.Counter] = ptr[demo.pretty.Counter]<-&counter"
     assert_includes output, "counter_ptr->value = 7"
     assert_includes output, "return counter.value"
   end
