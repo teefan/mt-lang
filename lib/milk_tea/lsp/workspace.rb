@@ -48,7 +48,9 @@ module MilkTea
           end_pos   = change['range']['end']
           start_off = line_char_to_offset(content, start_pos['line'], start_pos['character'])
           end_off   = line_char_to_offset(content, end_pos['line'],   end_pos['character'])
-          new_content = content[0...start_off] + change['text'].to_s + content[end_off..]
+          prefix = content.byteslice(0, start_off).to_s
+          suffix = content.byteslice(end_off..).to_s
+          new_content = prefix + change['text'].to_s + suffix
         else
           # Full-document fallback within an incremental-sync session
           new_content = change['text'].to_s
@@ -93,6 +95,11 @@ module MilkTea
 
       def get_symbols(uri)
         @symbols_cache[uri] ||= extract_symbols_from_tokens(uri)
+      end
+
+      def position_to_offset(uri, line, char)
+        content = get_content(uri)
+        line_char_to_offset(content, line, char)
       end
 
       def all_documents
@@ -332,6 +339,7 @@ module MilkTea
       # ── Offset utilities ────────────────────────────────────────────────────
 
       # Convert a 0-based LSP (line, character) pair into a byte offset.
+      # LSP positions use UTF-16 code units for +character+.
       def line_char_to_offset(content, line, char)
         lines = content.split("\n", -1)
         clamped_line = [[line.to_i, 0].max, lines.length - 1].min
@@ -343,9 +351,20 @@ module MilkTea
                     end
 
         line_text = lines[clamped_line] || ''
-        chars = line_text.each_char.to_a
-        clamped_char = [[char.to_i, 0].max, chars.length].min
-        within_line = chars[0...clamped_char].join
+        target_units = [char.to_i, 0].max
+
+        utf16_units_seen = 0
+        byte_index = 0
+        line_text.each_char do |ch|
+          codepoint = ch.ord
+          units = codepoint > 0xFFFF ? 2 : 1
+          break if utf16_units_seen + units > target_units
+
+          utf16_units_seen += units
+          byte_index += ch.bytesize
+        end
+
+        within_line = line_text.byteslice(0, byte_index).to_s
 
         (preceding + within_line).bytesize
       end
