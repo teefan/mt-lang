@@ -10,9 +10,9 @@ module MilkTea
   class Build
     Result = Data.define(:output_path, :c_path, :compiler, :link_flags)
 
-    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil)
+    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil)
       raw_bindings ||= default_raw_bindings
-      new(path, output_path:, cc:, keep_c_path:, raw_bindings:).build
+      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:).build
     end
 
     def self.default_raw_bindings(root: MilkTea.root)
@@ -22,17 +22,18 @@ module MilkTea
     end
     private_class_method :default_raw_bindings
 
-    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:)
+    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil)
       @source_path = File.expand_path(path)
       @output_path = File.expand_path(output_path || default_output_path(@source_path))
       @cc = cc
       @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
       @raw_bindings = raw_bindings
+      @module_roots = module_roots || [MilkTea.root]
     end
 
     def build
       ensure_compiler_available!
-      program = ModuleLoader.check_program(@source_path)
+      program = ModuleLoader.new(module_roots: @module_roots).check_program(@source_path)
       prepare_bindings(program)
       generated_c = Codegen.generate_c(program)
       compiler_flags = collect_compiler_flags(program)

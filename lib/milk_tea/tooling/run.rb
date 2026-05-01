@@ -9,15 +9,16 @@ module MilkTea
   class Run
     Result = Data.define(:stdout, :stderr, :exit_status, :output_path, :c_path, :compiler, :link_flags)
 
-    def self.run(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil)
-      new(path, output_path:, cc:, keep_c_path:).run
+    def self.run(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, module_roots: nil)
+      new(path, output_path:, cc:, keep_c_path:, module_roots:).run
     end
 
-    def initialize(path, output_path:, cc:, keep_c_path:)
+    def initialize(path, output_path:, cc:, keep_c_path:, module_roots: nil)
       @source_path = File.expand_path(path)
       @output_path = output_path ? File.expand_path(output_path) : nil
       @cc = cc
       @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
+      @module_roots = module_roots
     end
 
     def run
@@ -34,7 +35,7 @@ module MilkTea
     private
 
     def run_binary(binary_path)
-      build_result = Build.build(@source_path, output_path: binary_path, cc: @cc, keep_c_path: @keep_c_path)
+      build_result = Build.build(@source_path, output_path: binary_path, cc: @cc, keep_c_path: @keep_c_path, module_roots: @module_roots)
       stdout, stderr, status = Open3.capture3(build_result.output_path, chdir: File.dirname(@source_path))
 
       Result.new(
