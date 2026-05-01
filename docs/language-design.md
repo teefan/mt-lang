@@ -465,7 +465,7 @@ variant Token:
 	eof
 ```
 
-Arm constructors follow the same field-assignment form as struct literals. No-payload arms are bare member expressions. Match on a variant uses `as name` to bind a payload arm's fields. Generic variants are not yet supported.
+Arm constructors follow the same field-assignment form as struct literals. No-payload arms are bare member expressions. Match on a variant uses `as name` to bind a payload arm's fields. Generic variants are supported through specializations like `Box[i32].some(value = 1)`.
 
 #### Opaque types
 
@@ -490,6 +490,7 @@ Generics are useful, but they must stay boring.
 Allowed in v1:
 
 - generic structs
+- generic variants
 - generic functions
 - explicit specialization calls
 - monomorphized code generation

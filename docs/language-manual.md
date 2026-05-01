@@ -99,6 +99,7 @@ Top-level declarations:
 - `type`
 - `struct`
 - `union`
+- `variant`
 - `enum`
 - `flags`
 - `opaque`
@@ -168,7 +169,7 @@ variant Token:
     eof
 ```
 
-`variant` is a tagged union. Each arm may optionally carry named payload fields. Generic variants are not yet supported.
+`variant` is a tagged union. Each arm may optionally carry named payload fields. Generic variants are supported via type arguments, for example `Box[i32]`.
 
 Arm constructors:
 
@@ -553,8 +554,8 @@ Current async limitations:
 
 Current implementation rejects:
 
-- proc values in union fields
-- generic variants (`variant Box[T]:`)
+- generic constraints on type parameters
+- interface declarations and interface constraints
 
 ## 12. Example
 
