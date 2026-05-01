@@ -1,0 +1,9 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative '../lib/milk_tea'
+
+# Start the LSP server
+# This process reads JSON-RPC messages from stdin and writes responses to stdout
+server = MilkTea::LSP::Server.new
+server.run
