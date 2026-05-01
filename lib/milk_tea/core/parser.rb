@@ -638,6 +638,7 @@ module MilkTea
     end
 
     def parse_local_decl(kind)
+      line = previous.line
       name = consume_name("expected local variable name").lexeme
       var_type = match(:colon) ? parse_type_ref : nil
       value = if match(:equal)
@@ -648,7 +649,7 @@ module MilkTea
                 nil
               end
       consume_end_of_statement unless block_expression?(value)
-      AST::LocalDecl.new(kind:, name:, type: var_type, value:)
+      AST::LocalDecl.new(kind:, name:, type: var_type, value:, line:)
     end
 
     def parse_if_stmt
@@ -713,9 +714,10 @@ module MilkTea
     end
 
     def parse_return_stmt
+      line = previous.line
       value = check(:newline) ? nil : parse_expression
       consume_end_of_statement unless block_expression?(value)
-      AST::ReturnStmt.new(value:)
+      AST::ReturnStmt.new(value:, line:)
     end
 
     def parse_defer_stmt
@@ -730,6 +732,7 @@ module MilkTea
     end
 
     def parse_assignment_or_expression_stmt
+      line = peek.line
       expression = parse_expression
       if match(*Token::ASSIGNMENT_TYPES)
         operator = previous.lexeme
@@ -738,7 +741,7 @@ module MilkTea
         AST::Assignment.new(target: expression, operator:, value:)
       else
         consume_end_of_statement unless block_expression?(expression)
-        AST::ExpressionStmt.new(expression:)
+        AST::ExpressionStmt.new(expression:, line:)
       end
     end
 

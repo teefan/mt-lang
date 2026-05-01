@@ -141,6 +141,12 @@ class DAPServerTest < Minitest::Test
         { "success" => true, "body" => {} }
       when "threads"
         { "success" => true, "body" => { "threads" => [{ "id" => 77, "name" => "bridge-main" }] } }
+      when "stackTrace"
+        { "success" => true, "body" => { "stackFrames" => [{ "id" => 1, "name" => "bridge_main", "line" => 4, "column" => 0, "source" => { "path" => "/tmp/demo.mt" } }], "totalFrames" => 1 } }
+      when "scopes"
+        { "success" => true, "body" => { "scopes" => [{ "name" => "Locals", "variablesReference" => 99, "expensive" => false }] } }
+      when "variables"
+        { "success" => true, "body" => { "variables" => [{ "name" => "x", "value" => "42", "type" => "i32", "variablesReference" => 0 }] } }
       when "terminate"
         { "success" => true, "body" => {} }
       when "disconnect"
@@ -280,8 +286,11 @@ class DAPServerTest < Minitest::Test
       { "seq" => 3, "type" => "request", "command" => "setBreakpoints", "arguments" => { "source" => { "path" => "/tmp/demo.mt" }, "breakpoints" => [{ "line" => 4 }] } },
       { "seq" => 4, "type" => "request", "command" => "configurationDone", "arguments" => {} },
       { "seq" => 5, "type" => "request", "command" => "threads", "arguments" => {} },
-      { "seq" => 6, "type" => "request", "command" => "terminate", "arguments" => {} },
-      { "seq" => 7, "type" => "request", "command" => "disconnect", "arguments" => {} }
+      { "seq" => 6, "type" => "request", "command" => "stackTrace", "arguments" => { "threadId" => 77 } },
+      { "seq" => 7, "type" => "request", "command" => "scopes", "arguments" => { "frameId" => 1 } },
+      { "seq" => 8, "type" => "request", "command" => "variables", "arguments" => { "variablesReference" => 99 } },
+      { "seq" => 9, "type" => "request", "command" => "terminate", "arguments" => {} },
+      { "seq" => 10, "type" => "request", "command" => "disconnect", "arguments" => {} }
     ]
     protocol = InMemoryProtocol.new(incoming)
     backend = nil
@@ -312,15 +321,36 @@ class DAPServerTest < Minitest::Test
     first_thread = threads_body["threads"]&.first || threads_body[:threads]&.first
     assert_equal 77, first_thread["id"] || first_thread[:id]
 
-    terminate_response = find_response(protocol.written, 6)
+    stack_response = find_response(protocol.written, 6)
+    stack_body = stack_response["body"] || stack_response[:body]
+    first_frame = stack_body["stackFrames"]&.first || stack_body[:stackFrames]&.first
+    assert_equal "bridge_main", first_frame["name"] || first_frame[:name]
+    assert_equal 4, first_frame["line"] || first_frame[:line]
+
+    scopes_response = find_response(protocol.written, 7)
+    scopes_body = scopes_response["body"] || scopes_response[:body]
+    first_scope = scopes_body["scopes"]&.first || scopes_body[:scopes]&.first
+    assert_equal "Locals", first_scope["name"] || first_scope[:name]
+    assert_equal 99, first_scope["variablesReference"] || first_scope[:variablesReference]
+
+    variables_response = find_response(protocol.written, 8)
+    variables_body = variables_response["body"] || variables_response[:body]
+    first_var = variables_body["variables"]&.first || variables_body[:variables]&.first
+    assert_equal "x", first_var["name"] || first_var[:name]
+    assert_equal "42", first_var["value"] || first_var[:value]
+
+    terminate_response = find_response(protocol.written, 9)
     assert_equal true, terminate_response["success"] || terminate_response[:success]
 
-    disconnect_response = find_response(protocol.written, 7)
+    disconnect_response = find_response(protocol.written, 10)
     assert_equal true, disconnect_response["success"] || disconnect_response[:success]
 
     backend_commands = backend.requests.map(&:first)
     assert_includes backend_commands, "initialize"
     assert_includes backend_commands, "launch"
+    assert_includes backend_commands, "stackTrace"
+    assert_includes backend_commands, "scopes"
+    assert_includes backend_commands, "variables"
     assert_includes backend_commands, "terminate"
     assert_includes backend_commands, "disconnect"
   end

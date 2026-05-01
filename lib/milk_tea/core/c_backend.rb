@@ -10,6 +10,7 @@ module MilkTea
 
     def initialize(program)
       @program = program
+      @source_path = program.source_path
       @checked_index_alias_stack = []
       @checked_index_alias_id = 0
     end
@@ -914,6 +915,11 @@ module MilkTea
       indent = INDENT * level
       aliases = checked_index_aliases_for_statement(statement)
       alias_lines = emit_checked_index_alias_declarations(aliases, indent)
+      line_directive = if @source_path && statement.respond_to?(:line) && statement.line
+                         ["#line #{statement.line} #{@source_path.inspect}"]
+                       else
+                         []
+                       end
       statement_lines = with_checked_index_aliases(aliases) do
         case statement
         when IR::LocalDecl
@@ -1010,7 +1016,7 @@ module MilkTea
         end
       end
 
-      alias_lines + statement_lines
+      alias_lines + line_directive + statement_lines
     end
 
     def compact_generated_statement_sequence(statements)

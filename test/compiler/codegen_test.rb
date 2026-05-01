@@ -644,7 +644,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/CloseWindow\(\);\s+return 0;/m, generated)
+    assert_match(/CloseWindow\(\);\s+(?:#[^\n]*\n\s+)?return 0;/m, generated)
     refute_match(/__mt_return_value_\d+/, generated)
   end
 
@@ -1856,7 +1856,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/int32_t main\(void\) \{\n  int32_t i = 0;\n  while \(i < 3\) \{/, generated)
+    assert_match(/int32_t main\(void\) \{\s+(?:#[^\n]*\n\s+)?int32_t i = 0;\s+(?:#[^\n]*\n\s+)?while \(i < 3\) \{/m, generated)
     assert_match(/while \(i < 3\) \{/, generated)
     refute_match(/\n  \{\n    while \(i < 3\) \{/, generated)
     refute_match(/__mt_loop_continue_\d+:;/, generated)

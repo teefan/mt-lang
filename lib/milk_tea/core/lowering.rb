@@ -77,6 +77,7 @@ module MilkTea
           variants: lower_variants,
           static_asserts:,
           functions:,
+          source_path: @program.root_path,
         )
       end
 
@@ -1344,7 +1345,7 @@ module MilkTea
             declared_type = statement.type ? resolve_type_ref(statement.type) : nil
             original_value_type = statement.type ? nil : infer_expression_type(statement.value, env:)
             setup, value = normalize_async_expression(statement.value, counter, env:, expected_type: declared_type)
-            normalized = AST::LocalDecl.new(kind: statement.kind, name: statement.name, type: statement.type, value: value)
+            normalized = AST::LocalDecl.new(kind: statement.kind, name: statement.name, type: statement.type, value: value, line: statement.line)
             local_type = statement.type ? resolve_type_ref(statement.type) : original_value_type
             current_actual_scope(env[:scopes])[statement.name] = local_binding(type: local_type, c_name: statement.name, mutable: statement.kind == :var, pointer: false)
             return setup + [normalized]
@@ -1364,13 +1365,13 @@ module MilkTea
           return [statement] if statement.expression.is_a?(AST::AwaitExpr)
 
           setup, expression = normalize_async_expression(statement.expression, counter, env:)
-          setup + [AST::ExpressionStmt.new(expression: expression)]
+          setup + [AST::ExpressionStmt.new(expression: expression, line: statement.line)]
         when AST::ReturnStmt
           return [statement] unless statement.value
           return [statement] if statement.value.is_a?(AST::AwaitExpr)
 
           setup, value = normalize_async_expression(statement.value, counter, env:, expected_type: return_type)
-          setup + [AST::ReturnStmt.new(value: value)]
+          setup + [AST::ReturnStmt.new(value: value, line: statement.line)]
         when AST::IfStmt
           normalize_async_if_statement(statement, counter, env, return_type:)
         when AST::MatchStmt
@@ -2218,7 +2219,7 @@ module MilkTea
           )
           lowered.concat(setup)
         else
-          lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env:))
+          lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env:), line: statement.line)
         end
 
         lowered
@@ -2443,7 +2444,7 @@ module MilkTea
               raise LoweringError, "foreign call used to initialize #{statement.name} must return a value" if call_type == @types.fetch("void")
               raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
 
-              lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:)
+              lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:, line: statement.line)
               lowered.concat(cleanup_statements)
               local_defers.concat(prepared_cleanups)
               emitted_decl = true
@@ -2468,7 +2469,7 @@ module MilkTea
               cstr_backed: cstr_backed_storage_value?(type, prepared_value, local_env),
               cstr_list_backed: cstr_list_backed_storage_value?(type, prepared_value, local_env),
             )
-            lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:) unless emitted_decl
+            lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:, line: statement.line) unless emitted_decl
             local_defers.concat(prepared_cleanups)
             if contains_proc_storage_type?(type)
               local_value = IR::Name.new(name: c_name, type:, pointer: false)
@@ -2713,7 +2714,7 @@ module MilkTea
             end
             lowered.concat(lower_proc_contained_retain_statements(value, return_type)) if needs_proc_retain
             lowered.concat(cleanup)
-            lowered << IR::ReturnStmt.new(value:)
+            lowered << IR::ReturnStmt.new(value:, line: statement.line)
           when AST::ExpressionStmt
             prepared_setup, prepared_expression, prepared_cleanups = prepare_expression_with_cleanups(
               statement.expression,
@@ -2734,7 +2735,7 @@ module MilkTea
               lowered.concat(prepared_cleanups.flat_map(&:itself))
               local_env[:scopes] = scopes_with_refinements(local_env[:scopes], consuming_foreign_call_refinements(foreign_call, local_env))
             else
-              lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env: local_env))
+              lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env: local_env), line: statement.line)
               lowered.concat(prepared_cleanups.flat_map(&:itself))
             end
           else
