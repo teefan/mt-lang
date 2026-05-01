@@ -1,7 +1,15 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class SemaError < StandardError; end
+  class SemaError < StandardError
+    attr_reader :line, :column
+
+    def initialize(msg = nil, line: nil, column: nil)
+      super(msg)
+      @line = line
+      @column = column
+    end
+  end
 
   class Sema
     Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :values, :functions, :methods)
@@ -47,6 +55,17 @@ module MilkTea
 
     def self.check(ast, imported_modules: {})
       Checker.new(ast, imported_modules:).check
+    end
+
+    # LSP-oriented entry point: runs all sema phases and collects errors from
+    # each function/method individually instead of stopping at the first one.
+    # Returns { analysis: Analysis|nil, errors: [SemaError] }.
+    # Structural errors (bad imports, unknown types) still abort early with a
+    # single error; only function-body errors are collected in bulk.
+    def self.check_collecting_errors(ast, imported_modules: {})
+      Checker.new(ast, imported_modules:).check_collecting_errors
+    rescue SemaError => e
+      { analysis: nil, errors: [e] }
     end
 
     class Checker
@@ -101,6 +120,58 @@ module MilkTea
           functions: @top_level_functions,
           methods: snapshot_methods,
         )
+      end
+
+      # Like check, but collects per-function errors instead of raising at first.
+      # Structural phases (imports, type resolution, declaration) still raise; only
+      # the value-checking and function-body phases collect errors individually.
+      # Returns { analysis: Analysis, errors: [SemaError] }.
+      def check_collecting_errors
+        install_builtin_types
+        install_imports
+        declare_named_types
+        resolve_type_aliases
+        resolve_aggregate_fields
+        resolve_enum_members
+        resolve_variant_arms
+        declare_top_level_values
+        declare_functions
+
+        errors = []
+
+        begin
+          check_top_level_values
+        rescue SemaError => e
+          errors << e
+        end
+
+        begin
+          finalize_top_level_const_values
+        rescue SemaError => e
+          errors << e
+        end
+
+        begin
+          check_top_level_static_asserts
+        rescue SemaError => e
+          errors << e
+        end
+
+        check_functions_collecting(errors)
+
+        analysis = Analysis.new(
+          ast: @ast,
+          module_name: @module_name,
+          module_kind: @module_kind,
+          directives: @ast.directives,
+          imports: @imports,
+          types: @types,
+          values: @top_level_values,
+          functions: @top_level_functions,
+          methods: snapshot_methods,
+        )
+
+        { analysis: analysis, errors: errors.uniq { |e| [e.message, e.line] } }
       end
 
       private
@@ -730,6 +801,32 @@ module MilkTea
         end
       end
 
+      # Per-function error collection used by check_collecting_errors.
+      # Continues past individual function failures, accumulating SemaErrors.
+      def check_functions_collecting(errors)
+        @top_level_functions.each_value do |binding|
+          next if @checked_function_bindings[binding.object_id]
+
+          begin
+            check_function(binding)
+          rescue SemaError => e
+            errors << e
+          end
+        end
+
+        @methods.each_value do |method_map|
+          method_map.each_value do |binding|
+            next if @checked_function_bindings[binding.object_id]
+
+            begin
+              check_function(binding)
+            rescue SemaError => e
+              errors << e
+            end
+          end
+        end
+      end
+
       def check_function(binding)
         previous_type_substitutions = @current_type_substitutions
         return if binding.external || binding.type_params.any?
@@ -767,8 +864,20 @@ module MilkTea
       def check_block(statements, scopes:, return_type:, allow_return: true)
         with_nested_scope(scopes) do |nested_scopes|
           statements.each do |statement|
-            refinements = check_statement(statement, scopes: nested_scopes, return_type:, allow_return:)
-            apply_continuation_refinements!(nested_scopes, refinements)
+            begin
+              refinements = check_statement(statement, scopes: nested_scopes, return_type:, allow_return:)
+              apply_continuation_refinements!(nested_scopes, refinements)
+            rescue SemaError => e
+              # Propagate as-is if position is already attached (set by an inner
+              # check_block call on a nested statement) or if this statement type
+              # carries no line information.
+              raise e unless e.line.nil?
+
+              stmt_line = statement.respond_to?(:line) ? statement.line : nil
+              raise e if stmt_line.nil?
+
+              raise SemaError.new(e.message, line: stmt_line)
+            end
           end
         end
       end

@@ -11,11 +11,12 @@ module MilkTea
         begin
           ast = Parser.parse(content, path: uri)
 
-          # Semantic analysis (check will raise on errors)
+          # Semantic analysis — collect errors from all functions, not just first.
           begin
-            Sema.check(ast)
-          rescue SemaError => e
-            diagnostics << format_error(e)
+            result = Sema.check_collecting_errors(ast)
+            result[:errors].each { |e| diagnostics << format_error(e) }
+          rescue StandardError => e
+            warn "Error collecting diagnostics: #{e.message}"
           end
         rescue MilkTea::LexError => e
           diagnostics << format_error(e)
@@ -57,6 +58,8 @@ module MilkTea
           error.line || 1
         when MilkTea::ParseError
           error.token&.line || 1
+        when MilkTea::SemaError
+          error.line || 1
         else
           1
         end
@@ -68,6 +71,8 @@ module MilkTea
           error.column || 1
         when MilkTea::ParseError
           error.token&.column || 1
+        when MilkTea::SemaError
+          error.column || 1
         else
           1
         end

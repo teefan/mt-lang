@@ -18,6 +18,7 @@ module MilkTea
         @ast_cache = {}      # uri -> AST::SourceFile (nil on parse failure)
         @analysis_cache = {} # uri -> Sema::Analysis (nil on analysis failure)
         @symbols_cache = {}  # uri -> [{name, kind, line, column}]
+        @last_good_analysis_cache = {} # uri -> last Sema::Analysis that succeeded
       end
 
       # ── Document lifecycle ──────────────────────────────────────────────────
@@ -25,17 +26,23 @@ module MilkTea
       def open_document(uri, content)
         @open_documents[uri] = content
         invalidate_cache(uri)
+        # Eagerly warm analysis cache so the last-good snapshot is available for
+        # subsequent incomplete edits (e.g., user typing "p." mid-expression).
+        get_analysis(uri)
       end
 
       def close_document(uri)
         # Keep indexed snapshot available for workspace-level features.
         @open_documents.delete(uri)
+        @last_good_analysis_cache.delete(uri)
         invalidate_cache(uri)
       end
 
       def update_document(uri, content)
         @open_documents[uri] = content
         invalidate_cache(uri)
+        # Re-warm last-good analysis whenever content changes (e.g. after save).
+        get_analysis(uri)
       end
 
       # Apply one incremental change (LSP textDocumentSync == 2).
@@ -242,6 +249,29 @@ module MilkTea
         end
       end
 
+      # Returns the receiver name before '.' if the cursor is in a dot-access
+      # context, e.g. for "vec.len|" returns "vec". Returns nil otherwise.
+      # lsp_char is the 0-based cursor character position (LSP convention).
+      def find_dot_receiver(uri, lsp_line, lsp_char)
+        content = get_content(uri)
+        lines = content.split("\n", -1)
+        line_str = lines[lsp_line] || ''
+
+        # Walk back over any partially-typed identifier after the dot.
+        idx = [lsp_char - 1, line_str.length - 1].min
+        idx -= 1 while idx >= 0 && line_str[idx] =~ /[A-Za-z0-9_]/
+        return nil if idx < 0 || line_str[idx] != '.'
+
+        dot_idx = idx
+        j = dot_idx - 1
+        return nil if j < 0 || line_str[j] !~ /[A-Za-z0-9_]/
+
+        j -= 1 while j > 0 && line_str[j - 1] =~ /[A-Za-z0-9_]/
+        line_str[j...dot_idx]
+      rescue StandardError
+        nil
+      end
+
       # Find the name identifier token immediately after a definition keyword
       # (def, struct, union, enum, flags, variant, type, const, var) for the given name.
       # Returns the identifier Token, or nil if not found.
@@ -293,12 +323,16 @@ module MilkTea
 
       def analyze_document(uri)
         ast = get_ast(uri)
-        return nil if ast.nil?
+        # Fall back to the last successful analysis so completions/hover still
+        # work when the user is mid-edit and the file does not parse/check.
+        return @last_good_analysis_cache[uri] if ast.nil?
 
-        MilkTea::Sema.check(ast)
+        result = MilkTea::Sema.check(ast)
+        @last_good_analysis_cache[uri] = result
+        result
       rescue StandardError => e
         warn "LSP sema error #{uri}: #{e.message}"
-        nil
+        @last_good_analysis_cache[uri]
       end
 
       # ── Symbol extraction (token-based, no AST position requirement) ────────
