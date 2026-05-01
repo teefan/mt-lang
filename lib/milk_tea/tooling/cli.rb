@@ -36,6 +36,8 @@ module MilkTea
         build_command
       when "run"
         run_command
+      when "dap"
+        dap_command
       when "deps"
         deps_command
       when "bindgen"
@@ -221,6 +223,11 @@ module MilkTea
         print_usage(@err)
         1
       end
+    end
+
+    def dap_command
+      DAP::Server.new.run
+      0
     end
 
     def bindgen_command
@@ -427,6 +434,7 @@ module MilkTea
       io.puts("       mtc emit-c PATH")
       io.puts("       mtc build PATH [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [-I PATH]")
       io.puts("       mtc run PATH [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [-I PATH]")
+      io.puts("       mtc dap")
       io.puts("       mtc deps bootstrap")
       io.puts("       mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
     end

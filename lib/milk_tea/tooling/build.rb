@@ -10,9 +10,9 @@ module MilkTea
   class Build
     Result = Data.define(:output_path, :c_path, :compiler, :link_flags)
 
-    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil)
+    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, debug: false)
       raw_bindings ||= default_raw_bindings
-      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:).build
+      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, debug:).build
     end
 
     def self.default_raw_bindings(root: MilkTea.root)
@@ -22,13 +22,14 @@ module MilkTea
     end
     private_class_method :default_raw_bindings
 
-    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil)
+    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, debug: false)
       @source_path = File.expand_path(path)
       @output_path = File.expand_path(output_path || default_output_path(@source_path))
       @cc = cc
       @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
       @raw_bindings = raw_bindings
       @module_roots = module_roots || [MilkTea.root]
+      @debug = debug
     end
 
     def build
@@ -131,7 +132,8 @@ module MilkTea
     end
 
     def compile(c_path, compiler_flags, link_flags)
-      command = [@cc, "-std=c11", *compiler_flags, c_path, "-o", @output_path, *link_flags]
+      debug_flags = @debug ? ["-g", "-O0"] : []
+      command = [@cc, "-std=c11", *debug_flags, *compiler_flags, c_path, "-o", @output_path, *link_flags]
       stdout, stderr, status = Open3.capture3(*command)
       return if status.success?
 
