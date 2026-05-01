@@ -4498,6 +4498,131 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("dispatch")
   end
 
+  def test_type_checks_exhaustive_variant_match
+    source = <<~MT
+      module demo.variant_match
+
+      variant Shape:
+          circle(radius: f64)
+          rect(w: f64, h: f64)
+          point
+
+      def area(s: Shape) -> f64:
+          var result = 0.0
+          match s:
+              Shape.circle as c:
+                  result = c.radius * c.radius
+              Shape.rect as r:
+                  result = r.w * r.h
+              Shape.point:
+                  result = 0.0
+          return result
+
+      def main() -> i32:
+          let c: Shape = Shape.circle(radius= 1.0)
+          let p: Shape = Shape.point
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("Shape")
+    assert_equal true, result.functions.key?("area")
+  end
+
+  def test_type_checks_variant_match_with_wildcard
+    source = <<~MT
+      module demo.variant_wildcard
+
+      variant Token:
+          ident(text: str)
+          number(value: i32)
+          eof
+
+      def is_done(t: Token) -> bool:
+          match t:
+              Token.eof:
+                  return true
+              _:
+                  return false
+
+      def main() -> i32:
+          let tok: Token = Token.ident(text= "hello")
+          if is_done(tok):
+              return 1
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("Token")
+    assert_equal true, result.functions.key?("is_done")
+  end
+
+  def test_rejects_non_exhaustive_variant_match
+    source = <<~MT
+      module demo.variant_non_exhaustive
+
+      variant Shape:
+          circle(radius: f64)
+          rect(w: f64, h: f64)
+          point
+
+      def area(s: Shape) -> f64:
+          match s:
+              Shape.circle as c:
+                  return c.radius
+              Shape.rect as r:
+                  return r.w
+    MT
+
+    assert_raises(MilkTea::SemaError) { check_source(source) }
+  end
+
+  def test_rejects_variant_construction_with_missing_fields
+    source = <<~MT
+      module demo.variant_fields
+
+      variant Shape:
+          circle(radius: f64)
+
+      def main() -> i32:
+          let c: Shape = Shape.circle()
+          return 0
+    MT
+
+    assert_raises(MilkTea::SemaError) { check_source(source) }
+  end
+
+  def test_rejects_as_binding_on_no_payload_arm
+    source = <<~MT
+      module demo.variant_no_payload
+
+      variant Shape:
+          point
+
+      def main() -> i32:
+          let s: Shape = Shape.point
+          match s:
+              Shape.point as p:
+                  return 0
+    MT
+
+    assert_raises(MilkTea::SemaError) { check_source(source) }
+  end
+
+  def test_rejects_generic_variant
+    source = <<~MT
+      module demo.variant_generic
+
+      variant Box[T]:
+          some
+          none
+    MT
+
+    assert_raises(MilkTea::SemaError) { check_source(source) }
+  end
+
   private
 
   def demo_path

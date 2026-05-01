@@ -20,6 +20,7 @@ module MilkTea
         @functions = {}
         @struct_types = {}
         @union_types = {}
+        @variant_types = {}
         @synthetic_structs = []
         @synthetic_functions = []
         @synthetic_proc_counter = 0
@@ -72,6 +73,7 @@ module MilkTea
           structs:,
           unions:,
           enums:,
+          variants: lower_variants,
           static_asserts:,
           functions:,
         )
@@ -88,6 +90,8 @@ module MilkTea
             @struct_types[decl.name] = @types.fetch(decl.name)
           when AST::UnionDecl
             @union_types[decl.name] = @types.fetch(decl.name)
+          when AST::VariantDecl
+            @variant_types[decl.name] = @types.fetch(decl.name)
           end
         end
       end
@@ -393,6 +397,24 @@ module MilkTea
               flags: decl.is_a?(AST::FlagsDecl),
             )
           end
+        end
+      end
+
+      def lower_variants
+        @analysis.ast.declarations.filter_map do |decl|
+          next unless decl.is_a?(AST::VariantDecl)
+
+          variant_type = @types.fetch(decl.name)
+          outer_c = c_type_name(variant_type)
+          arms = decl.arms.map do |arm|
+            arm_c = "#{outer_c}_#{arm.name}"
+            fields = arm.fields.map do |field|
+              field_type = variant_type.arm(arm.name).fetch(field.name)
+              IR::Field.new(name: field.name, type: field_type)
+            end
+            IR::VariantArm.new(name: arm.name, c_name: arm_c, fields:)
+          end
+          IR::VariantDecl.new(name: decl.name, c_name: outer_c, arms:)
         end
       end
 
@@ -1352,7 +1374,7 @@ module MilkTea
           expr_setup, expression = normalize_async_expression(statement.expression, counter, env:)
           arms = statement.arms.map do |arm|
             arm_env = duplicate_env(env)
-            AST::MatchArm.new(pattern: arm.pattern, body: normalize_async_statements(arm.body, counter, arm_env, return_type:))
+            AST::MatchArm.new(pattern: arm.pattern, binding_name: arm.binding_name, body: normalize_async_statements(arm.body, counter, arm_env, return_type:))
           end
           expr_setup + [AST::MatchStmt.new(expression:, arms:)]
         when AST::WhileStmt
@@ -2576,23 +2598,61 @@ module MilkTea
             )
             lowered.concat(expression_setup)
             expression = lower_expression(prepared_expression, env: local_env, expected_type: scrutinee_type)
-            cases = statement.arms.map do |arm|
-              body = lower_block(
-                arm.body,
-                env: local_env,
-                active_defers: active_defers + local_defers,
-                return_type:,
-                loop_flow: nested_loop_flow(loop_flow, local_defers),
-                allow_return:,
-              )
-              if wildcard_arm_pattern?(arm.pattern)
-                IR::SwitchDefaultCase.new(body:)
-              else
-                value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
-                IR::SwitchCase.new(value:, body:)
+
+            if scrutinee_type.is_a?(Types::Variant)
+              outer_c = c_type_name(scrutinee_type)
+              kind_type = @types.fetch("i32")
+              kind_expr = IR::Member.new(receiver: expression, member: "kind", type: kind_type)
+              cases = statement.arms.map do |arm|
+                arm_local_env = duplicate_env(local_env)
+                binding_decl = if arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
+                                 arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+                                 if arm_name && scrutinee_type.has_payload?(arm_name)
+                                   fields = scrutinee_type.arm(arm_name)
+                                   payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
+                                   data_expr = IR::Member.new(receiver: expression, member: "data", type: nil)
+                                   arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
+                                   binding_c = c_local_name(arm.binding_name)
+                                   arm_local_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: binding_c, mutable: false, pointer: false)
+                                   IR::LocalDecl.new(name: arm.binding_name, c_name: binding_c, type: payload_type, value: arm_expr)
+                                 end
+                               end
+                body = lower_block(
+                  arm.body,
+                  env: arm_local_env,
+                  active_defers: active_defers + local_defers,
+                  return_type:,
+                  loop_flow: nested_loop_flow(loop_flow, local_defers),
+                  allow_return:,
+                )
+                body = [binding_decl, *body].compact if binding_decl
+                if wildcard_arm_pattern?(arm.pattern)
+                  IR::SwitchDefaultCase.new(body:)
+                else
+                  arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+                  IR::SwitchCase.new(value: IR::Name.new(name: "#{outer_c}_kind_#{arm_name}", type: kind_type, pointer: false), body:)
+                end
               end
+              lowered << IR::SwitchStmt.new(expression: kind_expr, cases:)
+            else
+              cases = statement.arms.map do |arm|
+                body = lower_block(
+                  arm.body,
+                  env: local_env,
+                  active_defers: active_defers + local_defers,
+                  return_type:,
+                  loop_flow: nested_loop_flow(loop_flow, local_defers),
+                  allow_return:,
+                )
+                if wildcard_arm_pattern?(arm.pattern)
+                  IR::SwitchDefaultCase.new(body:)
+                else
+                  value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
+                  IR::SwitchCase.new(value:, body:)
+                end
+              end
+              lowered << IR::SwitchStmt.new(expression:, cases:)
             end
-            lowered << IR::SwitchStmt.new(expression:, cases:)
             lowered.concat(expression_cleanups.flat_map(&:itself))
           when AST::StaticAssert
             lowered << IR::StaticAssert.new(
@@ -3417,7 +3477,7 @@ module MilkTea
           return lower_io_format_string_call_to_temp(expression.arguments.first.value, env:, helper_name: "write_error_line_formatted")
         end
 
-        if binding && foreign_function_binding?(binding) && !allow_root_statement_foreign && foreign_call_requires_statement_lowering?(expression, binding, env:)
+        if binding && kind != :variant_arm_ctor && foreign_function_binding?(binding) && !allow_root_statement_foreign && foreign_call_requires_statement_lowering?(expression, binding, env:)
           type = infer_expression_type(expression, env:, expected_type:)
           setup, value = lower_foreign_call_statement({ call: expression, binding: binding }, env:, expected_type: type, statement_position: false)
           return materialize_prepared_expression(setup, value, env:, type:, prefix: "foreign_expr")
@@ -3925,6 +3985,10 @@ module MilkTea
 
       def lower_member_access(expression, env:, type:)
         if (type_expr = resolve_type_expression(expression.receiver))
+          if type_expr.is_a?(Types::Variant)
+            return IR::VariantLiteral.new(type: type_expr, arm_name: expression.member, fields: [])
+          end
+
           member_name = if local_named_type?(type_expr) && (type_expr.is_a?(Types::Enum) || type_expr.is_a?(Types::Flags))
                           enum_member_c_name(type_expr, expression.member)
                         else
@@ -4088,6 +4152,14 @@ module MilkTea
             )
           end
           IR::AggregateLiteral.new(type:, fields:)
+        when :variant_arm_ctor
+          _, _, _, variant_type, (_, arm_name) = resolve_callee(expression.callee, env, arguments: expression.arguments)
+          arm_fields = variant_type.arm(arm_name)
+          payload_fields = expression.arguments.map do |argument|
+            field_type = arm_fields.fetch(argument.name)
+            IR::AggregateField.new(name: argument.name, value: lower_contextual_expression(argument.value, env:, expected_type: field_type))
+          end
+          IR::VariantLiteral.new(type: variant_type, arm_name:, fields: payload_fields)
         when :array
           element_type = array_element_type(type)
           elements = expression.arguments.map do |argument|
@@ -5715,9 +5787,19 @@ module MilkTea
             if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView) || task_type?(imported_type)
               return [:struct_literal, nil, nil, imported_module.types.fetch(callee.member)]
             end
+
+            if imported_type.is_a?(Types::Variant) && imported_type.arm_names.include?(callee.member)
+              arm_name = callee.member
+              return [:variant_arm_ctor, nil, nil, imported_type, [imported_type, arm_name]]
+            end
           end
 
           if (type_expr = resolve_type_expression(callee.receiver))
+            if type_expr.is_a?(Types::Variant) && type_expr.arm_names.include?(callee.member)
+              arm_name = callee.member
+              return [:variant_arm_ctor, nil, nil, type_expr, [type_expr, arm_name]]
+            end
+
             method_entry = @method_definitions[[type_expr, callee.member]]
             if method_entry
               method_analysis, method_ast = method_entry
@@ -5930,6 +6012,9 @@ module MilkTea
             raise LoweringError, "cannot infer result type for #{kind == :result_ok ? 'ok' : 'err'} without an expected Result[T, E]" unless result_type?(expected_type)
 
             expected_type
+          when :variant_arm_ctor
+            _, _, _, variant_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
+            variant_type
           when :panic
             @types.fetch("void")
           else
@@ -6221,6 +6306,8 @@ module MilkTea
         case type
         when Types::Enum, Types::Flags
           type.member(name)
+        when Types::Variant
+          type if type.arm_names.include?(name)
         end
       end
 
@@ -6602,6 +6689,11 @@ module MilkTea
 
       def wildcard_arm_pattern?(expression)
         expression.is_a?(AST::Identifier) && expression.name == "_"
+      end
+
+      def variant_match_arm_name_from_pattern(pattern)
+        # pattern is TypeName.arm_name or module.TypeName.arm_name
+        pattern.is_a?(AST::MemberAccess) ? pattern.member : nil
       end
 
       def result_type?(type)

@@ -55,6 +55,7 @@ module MilkTea
       "then" => :then,
       "union" => :union,
       "var" => :var,
+      "variant" => :variant,
       "while" => :while,
     }.freeze
 
