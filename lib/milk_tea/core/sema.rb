@@ -374,7 +374,7 @@ module MilkTea
             end
             public_params << Types::Parameter.new(param.name, type, passing_mode: param.mode, boundary_type: boundary_type)
           else
-            body_params << value_binding(name: param.name, type:, mutable: param.mutable, kind: :param)
+            body_params << value_binding(name: param.name, type:, mutable: false, kind: :param)
           end
         end
 
@@ -412,7 +412,7 @@ module MilkTea
 
         function_type = Types::Function.new(
           decl.name,
-          params: foreign ? call_params : call_params.map { |param| Types::Parameter.new(param.name, param.type, mutable: param.mutable) },
+          params: foreign ? call_params : call_params.map { |param| Types::Parameter.new(param.name, param.type) },
           return_type: function_return_type,
           receiver_type: function_receiver_type,
           receiver_mutable:,
@@ -1041,7 +1041,7 @@ module MilkTea
 
           binding.storage_type
         when AST::MemberAccess
-          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_ref_identifier: true, allow_pointer_identifier: true)
+          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_ref_identifier: true, allow_pointer_identifier: true, allow_span_param_identifier: true)
           receiver_type = project_field_receiver_type(receiver_type, require_mutable_pointer: true)
           unless aggregate_type?(receiver_type)
             raise SemaError, "cannot assign to member #{expression.member} of #{receiver_type}"
@@ -1052,7 +1052,13 @@ module MilkTea
 
           field_type
         when AST::IndexAccess
-          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_pointer_identifier: true, require_mutable_pointer: true)
+          receiver_type = infer_lvalue_receiver(
+            expression.receiver,
+            scopes:,
+            allow_pointer_identifier: true,
+            require_mutable_pointer: true,
+            allow_span_param_identifier: true,
+          )
 
           index_type = infer_expression(expression.index, scopes:)
           infer_index_result_type(receiver_type, index_type)
@@ -1063,12 +1069,14 @@ module MilkTea
           end
 
           raise SemaError, "invalid assignment target"
+        when AST::BinaryOp
+          raise SemaError, "invalid assignment target"
         else
           raise SemaError, "invalid assignment target"
         end
       end
 
-      def infer_lvalue_receiver(expression, scopes:, allow_ref_identifier: false, allow_pointer_identifier: false, require_mutable_pointer: false)
+      def infer_lvalue_receiver(expression, scopes:, allow_ref_identifier: false, allow_pointer_identifier: false, require_mutable_pointer: false, allow_span_param_identifier: false)
         case expression
         when AST::Identifier
           binding = lookup_value(expression.name, scopes)
@@ -1081,12 +1089,22 @@ module MilkTea
 
             return binding.type
           end
+          if allow_span_param_identifier && binding.kind == :param && span_type?(binding.type)
+            return binding.type
+          end
 
           raise SemaError, "cannot assign through immutable #{expression.name}" unless binding.mutable
 
           binding.type
         when AST::MemberAccess
-          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_ref_identifier:, allow_pointer_identifier:, require_mutable_pointer:)
+          receiver_type = infer_lvalue_receiver(
+            expression.receiver,
+            scopes:,
+            allow_ref_identifier:,
+            allow_pointer_identifier:,
+            require_mutable_pointer:,
+            allow_span_param_identifier:,
+          )
           receiver_type = project_field_receiver_type(receiver_type, require_mutable_pointer:)
           unless aggregate_type?(receiver_type)
             raise SemaError, "cannot access member #{expression.member} of #{receiver_type}"
@@ -1097,7 +1115,14 @@ module MilkTea
 
           field_type
         when AST::IndexAccess
-          receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_ref_identifier:, allow_pointer_identifier:, require_mutable_pointer:)
+          receiver_type = infer_lvalue_receiver(
+            expression.receiver,
+            scopes:,
+            allow_ref_identifier:,
+            allow_pointer_identifier:,
+            require_mutable_pointer:,
+            allow_span_param_identifier:,
+          )
           index_type = infer_expression(expression.index, scopes:)
           infer_index_result_type(receiver_type, index_type)
         when AST::Call
@@ -1107,6 +1132,13 @@ module MilkTea
           end
 
           raise SemaError, "invalid assignment target"
+        when AST::BinaryOp
+          raise SemaError, "raw pointer arithmetic as lvalue receiver requires unsafe" unless unsafe_context?
+          type = infer_expression(expression, scopes:)
+          raise SemaError, "binary op lvalue receiver must be a pointer" unless pointer_type?(type)
+          raise SemaError, "cannot assign through read-only raw pointer #{type}" if require_mutable_pointer && const_pointer_type?(type)
+
+          type
         else
           raise SemaError, "invalid assignment target"
         end
@@ -1425,7 +1457,7 @@ module MilkTea
           param_type = resolve_type_ref(param.type)
           validate_parameter_ref_type!(param_type, function_name: "proc", parameter_name: param.name, external: false)
           validate_parameter_proc_type!(param_type, function_name: "proc", parameter_name: param.name, external: false, foreign: false)
-          proc_scope[param.name] = value_binding(name: param.name, type: param_type, mutable: param.mutable, kind: :param)
+          proc_scope[param.name] = value_binding(name: param.name, type: param_type, mutable: false, kind: :param)
         end
 
         check_block(expression.body, scopes: proc_scopes + [proc_scope], return_type: proc_type.return_type, allow_return: true)
@@ -2265,14 +2297,14 @@ module MilkTea
       def resolve_non_nullable_type(type_ref, type_params: {})
         if type_ref.is_a?(AST::FunctionType)
           params = type_ref.params.map do |param|
-            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:), mutable: param.mutable)
+            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:))
           end
           return Types::Function.new(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
         end
 
         if type_ref.is_a?(AST::ProcType)
           params = type_ref.params.map do |param|
-            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:), mutable: param.mutable)
+            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:))
           end
           return Types::Proc.new(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
         end
@@ -3417,7 +3449,6 @@ module MilkTea
                           when Types::Function
                             return if actual_type.receiver_type || actual_type.variadic
                             return unless actual_type.params.length == pattern_type.params.length
-                            return unless actual_type.params.zip(pattern_type.params).all? { |actual_param, expected_param| actual_param.mutable == expected_param.mutable }
 
                             actual_type.params
                           else
@@ -3884,6 +3915,8 @@ module MilkTea
           true
         when AST::MemberAccess, AST::IndexAccess
           safe_reference_source_expression?(expression.receiver, scopes:)
+        when AST::BinaryOp
+          unsafe_context?
         when AST::Call
           return false unless expression.arguments.length == 1 && expression.arguments.first.name.nil?
 
@@ -3899,19 +3932,19 @@ module MilkTea
       end
 
       def infer_ro_addr_source_type(expression, scopes:)
-        raise SemaError, "ro_addr requires a safe lvalue source" unless safe_reference_source_expression?(expression, scopes:)
+        raise SemaError, "const_ptr_of requires a safe lvalue source" unless safe_reference_source_expression?(expression, scopes:)
 
         source_type = infer_expression(expression, scopes:)
-        raise SemaError, "ro_addr cannot target ref values" if contains_ref_type?(source_type)
+        raise SemaError, "const_ptr_of cannot target ref values" if contains_ref_type?(source_type)
 
         source_type
       end
 
       def infer_addr_source_type(expression, scopes:)
-        raise SemaError, "addr requires a mutable safe lvalue source" unless safe_reference_source_expression?(expression, scopes:)
+        raise SemaError, "ref_of requires a mutable safe lvalue source" unless safe_reference_source_expression?(expression, scopes:)
 
         source_type = infer_lvalue(expression, scopes:)
-        raise SemaError, "addr cannot target ref values" if contains_ref_type?(source_type)
+        raise SemaError, "ref_of cannot target ref values" if contains_ref_type?(source_type)
 
         source_type
       end

@@ -43,7 +43,8 @@ def wave_text_config_value(config: ptr[WaveTextConfig]) -> WaveTextConfig:
     unsafe:
         return read(config)
 
-def wrap_hue(mut hue: f32) -> f32:
+def wrap_hue(hue_value: f32) -> f32:
+    var hue = hue_value
     while hue >= 360.0:
         hue -= 360.0
     while hue < 0.0:

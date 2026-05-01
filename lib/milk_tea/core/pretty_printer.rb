@@ -358,10 +358,9 @@ module MilkTea
           return text
         end
 
-        prefix = param.mutable ? "mut " : ""
-        return "#{prefix}#{param.name}" unless param.type
+        return param.name unless param.type
 
-        "#{prefix}#{param.name}: #{render_type(param.type)}"
+        "#{param.name}: #{render_type(param.type)}"
       end
 
       def render_type(type)

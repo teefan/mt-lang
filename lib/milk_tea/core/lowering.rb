@@ -504,7 +504,7 @@ module MilkTea
           if array_type?(type)
             input_c_name = "#{c_name}_input"
             params << IR::Param.new(name: param_binding.name, c_name: input_c_name, type:, pointer: false)
-            env[:scopes].last[param_binding.name] = local_binding(type:, c_name:, mutable: param.mutable, pointer: false)
+            env[:scopes].last[param_binding.name] = local_binding(type:, c_name:, mutable: false, pointer: false)
             parameter_setup << IR::LocalDecl.new(
               name: param_binding.name,
               c_name:,
@@ -512,7 +512,7 @@ module MilkTea
               value: IR::Name.new(name: input_c_name, type:, pointer: false),
             )
           else
-            env[:scopes].last[param_binding.name] = local_binding(type:, c_name:, mutable: param.mutable, pointer: false)
+            env[:scopes].last[param_binding.name] = local_binding(type:, c_name:, mutable: false, pointer: false)
             params << IR::Param.new(name: param_binding.name, c_name:, type:, pointer: false)
           end
         end
@@ -1583,12 +1583,12 @@ module MilkTea
           AST::TypeRef.new(name: AST::QualifiedName.new(parts: parts), arguments: [], nullable: false)
         when Types::Function
           AST::FunctionType.new(
-            params: type.params.each_with_index.map { |param, i| AST::Param.new(name: param.name || "p#{i}", type: ast_type_ref_for(param.type), mutable: param.mutable) },
+            params: type.params.each_with_index.map { |param, i| AST::Param.new(name: param.name || "p#{i}", type: ast_type_ref_for(param.type)) },
             return_type: ast_type_ref_for(type.return_type),
           )
         when Types::Proc
           AST::ProcType.new(
-            params: type.params.each_with_index.map { |param, i| AST::Param.new(name: param.name || "p#{i}", type: ast_type_ref_for(param.type), mutable: param.mutable) },
+            params: type.params.each_with_index.map { |param, i| AST::Param.new(name: param.name || "p#{i}", type: ast_type_ref_for(param.type)) },
             return_type: ast_type_ref_for(type.return_type),
           )
         else
@@ -2802,7 +2802,7 @@ module MilkTea
           if array_type?(type)
             input_c_name = "#{c_name}_input"
             params << IR::Param.new(name: param.name, c_name: input_c_name, type:, pointer: false)
-            env[:scopes].last[param.name] = local_binding(type:, c_name:, mutable: param.mutable, pointer: false)
+            env[:scopes].last[param.name] = local_binding(type:, c_name:, mutable: false, pointer: false)
             parameter_setup << IR::LocalDecl.new(
               name: param.name,
               c_name:,
@@ -2810,7 +2810,7 @@ module MilkTea
               value: IR::Name.new(name: input_c_name, type:, pointer: false),
             )
           else
-            env[:scopes].last[param.name] = local_binding(type:, c_name:, mutable: param.mutable, pointer: false)
+            env[:scopes].last[param.name] = local_binding(type:, c_name:, mutable: false, pointer: false)
             params << IR::Param.new(name: param.name, c_name:, type:, pointer: false)
           end
         end
@@ -6978,14 +6978,14 @@ module MilkTea
       def resolve_type_ref(type_ref, type_params: current_type_params)
         if type_ref.is_a?(AST::FunctionType)
           params = type_ref.params.map do |param|
-            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:), mutable: param.mutable)
+            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:))
           end
           return Types::Function.new(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
         end
 
         if type_ref.is_a?(AST::ProcType)
           params = type_ref.params.map do |param|
-            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:), mutable: param.mutable)
+            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:))
           end
           return Types::Proc.new(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
         end

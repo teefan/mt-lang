@@ -1314,7 +1314,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.span_index_surface",
       "",
-      "def bump(mut items: span[i32]) -> i32:",
+      "def bump(items: span[i32]) -> i32:",
       "    let first = items[0]",
       "    items[0] = first + 2",
       "    return items[0]",
@@ -2295,7 +2295,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "def use(a: i32, b: i32, c: i32, d: i32) -> void:",
       "    return",
       "",
-      "def next(mut cursor: ptr[i32]) -> i32:",
+      "def next(cursor: ptr[i32]) -> i32:",
       "    unsafe:",
       "        let value = read(cursor)",
       "        read(cursor) += 1",
@@ -2394,10 +2394,11 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.array_copy_surface",
       "",
-      "def mutate(mut values: array[i32, 4]) -> i32:",
+      "def mutate(values: array[i32, 4]) -> i32:",
+      "    var local = values",
       "    unsafe:",
-      "        values[1] = 9",
-      "        return values[1]",
+      "        local[1] = 9",
+      "        return local[1]",
       "",
       "def main() -> i32:",
       "    var lhs = array[i32, 4](1, 2, 3, 4)",
@@ -2416,8 +2417,9 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/int32_t values_input\[4\]/, generated)
     assert_match(/static inline int32_t \*mt_checked_index_array_i32_4\(int32_t \(\*array\)\[4\], uintptr_t index\)/, generated)
     assert_match(/int32_t values\[4\];\n  memcpy\(values, values_input, sizeof\(values\)\);/, generated)
+    assert_match(/int32_t local\[4\];\n  memcpy\(local, values, sizeof\(local\)\);/, generated)
     assert_match(/memcpy\(lhs, rhs, sizeof\(lhs\)\);/, generated)
-    assert_match(/return \(\*mt_checked_index_array_i32_4\(\&\(values\), 1\)\);/, generated)
+    assert_match(/return \(\*mt_checked_index_array_i32_4\(\&\(local\), 1\)\);/, generated)
     assert_match(/if \(\(\(\*mt_checked_index_array_i32_4\(\&\(lhs\), 1\)\)\) != 6\)/, generated)
   end
 

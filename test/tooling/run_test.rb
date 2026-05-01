@@ -400,7 +400,7 @@ class MilkTeaRunTest < Minitest::Test
       File.write(source_path, [
         "module demo.span_index_runtime",
         "",
-        "def bump(mut items: span[i32]) -> i32:",
+        "def bump(items: span[i32]) -> i32:",
         "    let first = items[0]",
         "    items[0] = first + 2",
         "    return items[0]",
@@ -1175,7 +1175,7 @@ class MilkTeaRunTest < Minitest::Test
       File.write(source_path, [
         "module demo.str_builder_runtime",
         "",
-        "def write_raw(mut items: span[char]) -> void:",
+        "def write_raw(items: span[char]) -> void:",
         "    unsafe:",
         "        items.data[0] = char<-65",
         "        items.data[1] = 0",
@@ -1226,7 +1226,7 @@ class MilkTeaRunTest < Minitest::Test
       File.write(source_path, [
         "module demo.str_builder_bad_str_runtime",
         "",
-        "def corrupt(mut items: span[char]) -> void:",
+        "def corrupt(items: span[char]) -> void:",
         "    unsafe:",
         "        items.data[0] = char<-0x80",
         "        items.data[1] = 0",
@@ -1562,10 +1562,11 @@ class MilkTeaRunTest < Minitest::Test
       File.write(source_path, [
         "module demo.array_copy",
         "",
-        "def mutate(mut values: array[i32, 4]) -> i32:",
+        "def mutate(values: array[i32, 4]) -> i32:",
+        "    var local = values",
         "    unsafe:",
-        "        values[1] = 9",
-        "        return values[1]",
+        "        local[1] = 9",
+        "        return local[1]",
         "",
         "def main() -> i32:",
         "    var lhs = array[i32, 4](1, 2, 3, 4)",

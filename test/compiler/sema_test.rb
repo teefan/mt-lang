@@ -1679,7 +1679,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.spans
 
-      def bump(mut items: span[i32]) -> i32:
+      def bump(items: span[i32]) -> i32:
           let first = items[0]
           items[0] = first + 2
           return items[0]
@@ -2909,10 +2909,11 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.arrays
 
-      def mutate(mut values: array[i32, 4]) -> i32:
+      def mutate(values: array[i32, 4]) -> i32:
+          var local = values
           unsafe:
-              values[1] = 9
-              return values[1]
+              local[1] = 9
+              return local[1]
 
       def main() -> i32:
           var lhs = array[i32, 4](1, 2, 3, 4)

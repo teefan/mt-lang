@@ -429,13 +429,12 @@ module MilkTea
     end
 
     def parse_param
-      mutable = match(:mut)
       name_token = consume_name("expected parameter name")
       raise error(name_token, "expected ':' and parameter type") unless match(:colon)
 
       param_type = parse_type_ref
 
-      AST::Param.new(name: name_token.lexeme, type: param_type, mutable:)
+      AST::Param.new(name: name_token.lexeme, type: param_type)
     end
 
     def parse_foreign_param
@@ -514,11 +513,10 @@ module MilkTea
     end
 
     def parse_function_type_param
-      mutable = match(:mut)
       name = consume_name("expected function type parameter name").lexeme
       consume(:colon, "expected ':' after function type parameter name")
       type = parse_type_ref
-      AST::Param.new(name:, type:, mutable:)
+      AST::Param.new(name:, type:)
     end
 
     def parse_type_argument

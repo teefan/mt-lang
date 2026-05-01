@@ -58,14 +58,14 @@ pub def count_if[T](items: span[T], predicate: fn(value: T) -> bool) -> usize:
         index += 1
     return total
 
-pub def fill[T](mut items: span[T], value_item: T) -> void:
+pub def fill[T](items: span[T], value_item: T) -> void:
     var index: usize = 0
     while index < items.len:
         items[index] = value_item
         index += 1
     return
 
-pub def copy[T](mut target: span[T], source: span[T]) -> usize:
+pub def copy[T](target: span[T], source: span[T]) -> usize:
     let count = min_usize(target.len, source.len)
     var index: usize = 0
     while index < count:
@@ -73,7 +73,7 @@ pub def copy[T](mut target: span[T], source: span[T]) -> usize:
         index += 1
     return count
 
-pub def sort[T](mut items: span[T], less: fn(left: T, right: T) -> bool) -> void:
+pub def sort[T](items: span[T], less: fn(left: T, right: T) -> bool) -> void:
     var index: usize = 1
     while index < items.len:
         let item = items[index]
