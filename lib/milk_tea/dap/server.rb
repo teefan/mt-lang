@@ -55,6 +55,8 @@ module MilkTea
         @handlers["disconnect"] = method(:handle_disconnect)
         @handlers["setExceptionBreakpoints"] = method(:handle_set_exception_breakpoints)
         @handlers["evaluate"] = method(:handle_evaluate)
+        @handlers["source"] = method(:handle_source)
+        @handlers["loadedSources"] = method(:handle_loaded_sources)
       end
 
       def process_message(message)
@@ -271,6 +273,18 @@ module MilkTea
         write_error_response(message, "evaluate is not supported by the process backend")
       end
 
+      def handle_source(message)
+        return write_backend_response(message, backend_request("source", message["arguments"] || {})) if using_lldb_backend?
+
+        write_error_response(message, "source retrieval is not supported")
+      end
+
+      def handle_loaded_sources(message)
+        return write_backend_response(message, backend_request("loadedSources", message["arguments"] || {})) if using_lldb_backend?
+
+        write_response(message, { sources: [] })
+      end
+
       def request_start(message)
         if @session.launched?
           write_error_response(message, "Program already launched")
@@ -429,10 +443,33 @@ module MilkTea
         return if @breakpoints_synced_to_backend
 
         @session.each_breakpoint_source do |source_path, breakpoints|
-          backend_request("setBreakpoints", {
+          response = backend_request("setBreakpoints", {
             "source" => { "path" => source_path },
             "breakpoints" => breakpoints.map { |bp| { "line" => bp[:line] || bp["line"] } }
           })
+          next unless response["success"]
+
+          backend_bps = response.dig("body", "breakpoints") || []
+          breakpoints.each_with_index do |local_bp, i|
+            backend_bp = backend_bps[i]
+            next unless backend_bp
+
+            local_line = local_bp[:line] || local_bp["line"]
+            local_verified = local_bp[:verified]
+            backend_line = backend_bp["line"] || backend_bp[:line]
+            backend_verified = backend_bp["verified"] || backend_bp[:verified]
+            next if local_line == backend_line && local_verified == backend_verified
+
+            write_event("breakpoint", {
+              reason: "changed",
+              breakpoint: {
+                id: local_bp[:id] || local_bp["id"],
+                verified: backend_verified,
+                line: backend_line,
+                source: { path: source_path }
+              }
+            })
+          end
         end
         @breakpoints_synced_to_backend = true
       end
