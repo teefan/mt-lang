@@ -129,4 +129,42 @@ class MilkTeaLexerTest < Minitest::Test
     assert_equal " ok=", format_token.literal[2].fetch(:value)
     assert_equal "true", format_token.literal[3].fetch(:source)
   end
+
+  def test_lex_with_trivia_captures_comments_and_blank_lines
+    source = <<~MT
+      # module banner
+
+      def main() -> i32: # inline doc
+          return 0
+    MT
+
+    result = MilkTea::Lexer.lex_with_trivia(source)
+
+    comment_kinds = result.trivia.select { |token| token.kind == :comment }
+    blank_line_kinds = result.trivia.select { |token| token.kind == :blank_line }
+
+    assert_equal 2, comment_kinds.length
+    assert_equal 1, blank_line_kinds.length
+
+    main_token = result.tokens.find { |token| token.lexeme == "def" }
+    refute_nil main_token
+    assert_equal true, main_token.leading_trivia.any? { |token| token.kind == :comment }
+
+    colon_token = result.tokens.find { |token| token.type == :colon }
+    refute_nil colon_token
+    assert_equal true, colon_token.trailing_trivia.any? { |token| token.kind == :comment }
+  end
+
+  def test_lexed_tokens_include_source_offsets
+    tokens = MilkTea::Lexer.lex("let answer = 42\n")
+    let_token = tokens.find { |token| token.lexeme == "let" }
+    int_token = tokens.find { |token| token.lexeme == "42" }
+
+    refute_nil let_token
+    refute_nil int_token
+    assert_equal 0, let_token.start_offset
+    assert_equal 3, let_token.end_offset
+    assert_equal 13, int_token.start_offset
+    assert_equal 15, int_token.end_offset
+  end
 end

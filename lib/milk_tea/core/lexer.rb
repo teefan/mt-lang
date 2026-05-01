@@ -15,6 +15,8 @@ module MilkTea
   end
 
   class Lexer
+    LexResult = Data.define(:tokens, :trivia)
+
     THREE_CHAR_TOKENS = {
       "..." => :ellipsis,
       "<<=" => :shift_left_equal,
@@ -62,92 +64,206 @@ module MilkTea
       "~" => :tilde,
     }.freeze
 
-    def self.lex(source, path: nil)
-      new(source, path: path).lex
+    def self.lex(source, path: nil, mode: :syntax_only)
+      result = new(source, path: path, mode:).lex
+      mode == :with_trivia ? result.tokens : result
     end
 
-    def initialize(source, path: nil)
+    def self.lex_with_trivia(source, path: nil)
+      new(source, path: path, mode: :with_trivia).lex
+    end
+
+    def initialize(source, path: nil, mode: :syntax_only)
       @source = source.gsub(/\r\n?/, "\n")
       @path = path
+      @mode = mode
       @tokens = []
+      @trivia = []
+      @pending_leading_trivia = []
       @indent_stack = [0]
       @grouping_depth = 0
       @line_count = @source.empty? ? 1 : @source.lines.count
     end
 
     def lex
+      line_offset = 0
       @source.each_line.with_index(1) do |raw_line, line_number|
-        lex_line(raw_line.delete_suffix("\n"), line_number)
+        has_newline = raw_line.end_with?("\n")
+        line = raw_line.delete_suffix("\n")
+        lex_line(line, line_number, line_offset, has_newline:)
+        line_offset += raw_line.bytesize
       end
 
       raise LexError.new("unclosed grouping delimiter", line: @line_count, column: 1, path: @path) unless @grouping_depth.zero?
 
       while @indent_stack.length > 1
         @indent_stack.pop
-        @tokens << token(:dedent, "", nil, @line_count, 1)
+        @tokens << token(:dedent, "", nil, @line_count, 1, start_offset: @source.bytesize, end_offset: @source.bytesize)
       end
 
-      @tokens << token(:eof, "", nil, @line_count + 1, 1)
+      @tokens << token(:eof, "", nil, @line_count + 1, 1, start_offset: @source.bytesize, end_offset: @source.bytesize)
+      return LexResult.new(tokens: @tokens, trivia: @trivia) if with_trivia?
+
       @tokens
     end
 
     private
 
-    def lex_line(line, line_number)
+    def with_trivia?
+      @mode == :with_trivia
+    end
+
+    def lex_line(line, line_number, line_offset, has_newline:)
       tab_index = line.index("\t")
       if tab_index
         raise LexError.new("tabs are not allowed; use 4 spaces for indentation", line: line_number, column: tab_index + 1, path: @path)
       end
 
-      return if line.strip.empty? || line.lstrip.start_with?("#")
+      if line.strip.empty?
+        register_detached_line_trivia(:blank_line, line, line_number, line_offset, has_newline:)
+        return
+      end
+
+      if line.lstrip.start_with?("#")
+        register_detached_line_trivia(:comment, line, line_number, line_offset, has_newline:)
+        return
+      end
 
       index = leading_space_count(line)
+      if with_trivia? && index.positive?
+        push_pending_leading_trivia(
+          TriviaToken.new(
+            kind: :space,
+            text: line[0...index],
+            line: line_number,
+            column: 1,
+            start_offset: line_offset,
+            end_offset: line_offset + index,
+          ),
+        )
+      end
+
       if @grouping_depth.zero?
-        emit_indentation(index, line_number)
+        emit_indentation(index, line_number, line_offset)
       end
 
       while index < line.length
         char = line[index]
 
         if char == " "
+          if with_trivia?
+            span_start = index
+            index += 1 while index < line.length && line[index] == " "
+            push_pending_leading_trivia(
+              TriviaToken.new(
+                kind: :space,
+                text: line[span_start...index],
+                line: line_number,
+                column: span_start + 1,
+                start_offset: line_offset + span_start,
+                end_offset: line_offset + index,
+              ),
+            )
+            next
+          end
+
           index += 1
           next
         end
 
-        break if char == "#"
+        if char == "#"
+          if with_trivia?
+            comment_end = line.length
+            comment_text = line[index...comment_end]
+            append_trailing_or_pending(
+              TriviaToken.new(
+                kind: :comment,
+                text: comment_text,
+                line: line_number,
+                column: index + 1,
+                start_offset: line_offset + index,
+                end_offset: line_offset + comment_end,
+              ),
+            )
+          end
+          break
+        end
 
         if char == "c" && line[index + 1] == '"'
-          index = lex_string(line, index, line_number, cstring: true)
+          index = lex_string(line, index, line_number, line_offset:, cstring: true)
           next
         end
 
         if char == "f" && line[index + 1] == '"'
-          index = lex_format_string(line, index, line_number)
+          index = lex_format_string(line, index, line_number, line_offset:)
           next
         end
 
         if char == '"'
-          index = lex_string(line, index, line_number)
+          index = lex_string(line, index, line_number, line_offset:)
           next
         end
 
         if identifier_start?(char)
-          index = lex_identifier(line, index, line_number)
+          index = lex_identifier(line, index, line_number, line_offset:)
           next
         end
 
         if digit?(char)
-          index = lex_number(line, index, line_number)
+          index = lex_number(line, index, line_number, line_offset:)
           next
         end
 
-        index = lex_symbol(line, index, line_number)
+        index = lex_symbol(line, index, line_number, line_offset:)
       end
 
-      @tokens << token(:newline, "\n", nil, line_number, line.length + 1) if @grouping_depth.zero?
+      if @grouping_depth.zero?
+        newline_start = line_offset + line.length
+        newline_end = has_newline ? (newline_start + 1) : newline_start
+        @tokens << token(:newline, "\n", nil, line_number, line.length + 1, start_offset: newline_start, end_offset: newline_end)
+      end
     end
 
-    def emit_indentation(indent, line_number)
+    def register_detached_line_trivia(kind, line, line_number, line_offset, has_newline:)
+      return unless with_trivia?
+
+      text = has_newline ? (line + "\n") : line
+      trivia = TriviaToken.new(
+        kind:,
+        text:,
+        line: line_number,
+        column: 1,
+        start_offset: line_offset,
+        end_offset: line_offset + text.bytesize,
+      )
+      @trivia << trivia
+      push_pending_leading_trivia(trivia)
+    end
+
+    def push_pending_leading_trivia(trivia)
+      return unless with_trivia?
+
+      @trivia << trivia unless @trivia.include?(trivia)
+      @pending_leading_trivia << trivia
+    end
+
+    def append_trailing_or_pending(trivia)
+      return unless with_trivia?
+
+      @trivia << trivia
+      if @tokens.empty?
+        @pending_leading_trivia << trivia
+      else
+        trailing = @pending_leading_trivia
+        @pending_leading_trivia = []
+        token = @tokens[-1]
+        trailing.each { |entry| token = token.with_appended_trailing_trivia(entry) }
+        token = token.with_appended_trailing_trivia(trivia)
+        @tokens[-1] = token
+      end
+    end
+
+    def emit_indentation(indent, line_number, line_offset)
       if (indent % 4) != 0
         raise LexError.new("indentation must use multiples of 4 spaces", line: line_number, column: indent + 1, path: @path)
       end
@@ -163,13 +279,13 @@ module MilkTea
         end
 
         @indent_stack << indent
-        @tokens << token(:indent, "", nil, line_number, 1)
+        @tokens << token(:indent, "", nil, line_number, 1, start_offset: line_offset, end_offset: line_offset)
         return
       end
 
       while @indent_stack.last > indent
         @indent_stack.pop
-        @tokens << token(:dedent, "", nil, line_number, 1)
+        @tokens << token(:dedent, "", nil, line_number, 1, start_offset: line_offset, end_offset: line_offset)
       end
 
       return if @indent_stack.last == indent
@@ -177,7 +293,7 @@ module MilkTea
       raise LexError.new("indentation does not match any open block", line: line_number, column: 1, path: @path)
     end
 
-    def lex_identifier(line, index, line_number)
+    def lex_identifier(line, index, line_number, line_offset:)
       start = index
       index += 1
       while index < line.length && identifier_part?(line[index])
@@ -193,11 +309,11 @@ module MilkTea
                 else nil
                 end
 
-      @tokens << token(type, lexeme, literal, line_number, start + 1)
+      @tokens << token(type, lexeme, literal, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
       index
     end
 
-    def lex_number(line, index, line_number)
+    def lex_number(line, index, line_number, line_offset:)
       start = index
       type = :integer
 
@@ -233,11 +349,11 @@ module MilkTea
 
       lexeme = line[start...index]
       literal = type == :integer ? parse_integer(lexeme) : lexeme.delete("_").to_f
-      @tokens << token(type, lexeme, literal, line_number, start + 1)
+      @tokens << token(type, lexeme, literal, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
       index
     end
 
-    def lex_string(line, index, line_number, cstring: false)
+    def lex_string(line, index, line_number, line_offset:, cstring: false)
       start = index
       index += cstring ? 2 : 1
       value = +""
@@ -246,7 +362,7 @@ module MilkTea
         char = line[index]
         if char == '"'
           lexeme = line[start..index]
-          @tokens << token(cstring ? :cstring : :string, lexeme, value, line_number, start + 1)
+          @tokens << token(cstring ? :cstring : :string, lexeme, value, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index + 1)
           return index + 1
         end
 
@@ -266,7 +382,7 @@ module MilkTea
       raise LexError.new("unterminated string literal", line: line_number, column: start + 1, path: @path)
     end
 
-    def lex_format_string(line, index, line_number)
+    def lex_format_string(line, index, line_number, line_offset:)
       start = index
       index += 2
       text = +""
@@ -277,7 +393,7 @@ module MilkTea
         if char == '"'
           parts << { kind: :text, value: text } unless text.empty?
           lexeme = line[start..index]
-          @tokens << token(:fstring, lexeme, parts, line_number, start + 1)
+          @tokens << token(:fstring, lexeme, parts, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index + 1)
           return index + 1
         end
 
@@ -382,19 +498,19 @@ module MilkTea
       [source, nil]
     end
 
-    def lex_symbol(line, index, line_number)
+    def lex_symbol(line, index, line_number, line_offset:)
       start = index
       lexeme = line[index, 3]
       if lexeme && THREE_CHAR_TOKENS.key?(lexeme)
         type = THREE_CHAR_TOKENS.fetch(lexeme)
-        @tokens << token(type, lexeme, nil, line_number, start + 1)
+        @tokens << token(type, lexeme, nil, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index + 3)
         return index + 3
       end
 
       lexeme = line[index, 2]
       if lexeme && TWO_CHAR_TOKENS.key?(lexeme)
         type = TWO_CHAR_TOKENS.fetch(lexeme)
-        @tokens << token(type, lexeme, nil, line_number, start + 1)
+        @tokens << token(type, lexeme, nil, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index + 2)
         adjust_grouping_depth(type, line_number, start + 1)
         return index + 2
       end
@@ -405,7 +521,7 @@ module MilkTea
         raise LexError.new("unexpected character #{lexeme.inspect}", line: line_number, column: start + 1, path: @path)
       end
 
-      @tokens << token(type, lexeme, nil, line_number, start + 1)
+      @tokens << token(type, lexeme, nil, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index + 1)
       adjust_grouping_depth(type, line_number, start + 1)
       index + 1
     end
@@ -473,8 +589,26 @@ module MilkTea
       digit?(line[exponent_index])
     end
 
-    def token(type, lexeme, literal, line, column)
-      Token.new(type:, lexeme:, literal:, line:, column:)
+    def token(type, lexeme, literal, line, column, start_offset:, end_offset:)
+      Token.new(
+        type:,
+        lexeme:,
+        literal:,
+        line:,
+        column:,
+        start_offset:,
+        end_offset:,
+        leading_trivia: consume_pending_leading_trivia,
+        trailing_trivia: [],
+      )
+    end
+
+    def consume_pending_leading_trivia
+      return [] unless with_trivia?
+
+      trivia = @pending_leading_trivia
+      @pending_leading_trivia = []
+      trivia
     end
   end
 end

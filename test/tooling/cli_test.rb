@@ -30,6 +30,96 @@ class MilkTeaCliTest < Minitest::Test
     assert_includes out.string, "def main() -> i32:"
   end
 
+  def test_fmt_command_prints_formatted_source
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["fmt", demo_path], out:, err:)
+
+    assert_equal 0, status
+    assert_equal "", err.string
+    assert_includes out.string, "module demo.bouncing_ball"
+    assert_includes out.string, "def main() -> i32:"
+  end
+
+  def test_fmt_command_check_mode_reports_changes
+    Dir.mktmpdir("milk-tea-cli-fmt-check") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, "module demo.fmt\n\ndef main()->i32:\n    return 0\n")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["fmt", path, "--check"], out:, err:)
+
+      assert_equal 1, status
+      assert_equal "", err.string
+      assert_match(/needs formatting/, out.string)
+    end
+  end
+
+  def test_fmt_command_write_mode_rewrites_file
+    Dir.mktmpdir("milk-tea-cli-fmt-write") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, "module demo.fmt\n\ndef main()->i32:\n    return 0\n")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["fmt", path, "--write"], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/formatted/, out.string)
+      assert_equal "module demo.fmt\n\ndef main() -> i32:\n    return 0\n", File.read(path)
+    end
+  end
+
+  def test_fmt_command_preserve_mode_keeps_comments
+    Dir.mktmpdir("milk-tea-cli-fmt-preserve") do |dir|
+      path = File.join(dir, "sample.mt")
+      source = "# header\nmodule demo.fmt\n"
+      File.write(path, source)
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["fmt", path, "--preserve"], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_equal source, out.string
+    end
+  end
+
+  def test_fmt_command_canonical_rejects_comment_loss
+    Dir.mktmpdir("milk-tea-cli-fmt-canonical") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, "# header\nmodule demo.fmt\n")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["fmt", path, "--canonical"], out:, err:)
+
+      assert_equal 1, status
+      assert_equal "", out.string
+      assert_match(/does not preserve comments/, err.string)
+    end
+  end
+
+  def test_fmt_command_safe_default_keeps_comments
+    Dir.mktmpdir("milk-tea-cli-fmt-safe") do |dir|
+      path = File.join(dir, "sample.mt")
+      source = "# head\nmodule demo.safe\n"
+      File.write(path, source)
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["fmt", path], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_equal source, out.string
+    end
+  end
+
   def test_check_command_reports_success
     out = StringIO.new
     err = StringIO.new
@@ -205,6 +295,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_match(/missing source file path/, err.string)
     assert_match(/Usage: mtc lex PATH/, err.string)
     assert_match(/mtc parse PATH/, err.string)
+    assert_match(/mtc fmt PATH \[--check\|--write\] \[--safe\|--canonical\|--preserve\]/, err.string)
   end
 
   def test_invalid_commands_print_usage
@@ -217,6 +308,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal "", out.string
     assert_match(/Usage: mtc lex PATH/, err.string)
     assert_match(/mtc parse PATH/, err.string)
+    assert_match(/mtc fmt PATH \[--check\|--write\] \[--safe\|--canonical\|--preserve\]/, err.string)
     assert_match(/mtc check PATH/, err.string)
     assert_match(/mtc lower PATH/, err.string)
     assert_match(/mtc emit-c PATH/, err.string)
