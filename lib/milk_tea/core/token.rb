@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 module MilkTea
-  class Token < Data.define(:type, :lexeme, :literal, :line, :column)
+  TriviaToken = Data.define(:kind, :text, :line, :column, :start_offset, :end_offset)
+
+  class Token < Data.define(:type, :lexeme, :literal, :line, :column, :start_offset, :end_offset, :leading_trivia, :trailing_trivia)
     KEYWORDS = {
       "align" => :align,
       "and" => :and,
@@ -70,6 +72,10 @@ module MilkTea
 
     def eof?
       type == :eof
+    end
+
+    def with_appended_trailing_trivia(trivia)
+      with(trailing_trivia: trailing_trivia + [trivia])
     end
   end
 end

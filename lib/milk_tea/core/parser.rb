@@ -25,7 +25,7 @@ module MilkTea
     end
 
     def initialize(tokens, path: nil)
-      @tokens = tokens
+      @tokens = tokens.is_a?(SyntaxTokenStream) ? tokens : SyntaxTokenStream.new(tokens)
       @path = path
       @current = 0
       @known_type_names = {}
@@ -1072,6 +1072,10 @@ module MilkTea
           literal: token.literal,
           line: token.line + line - 1,
           column: token.column + column - 1,
+          start_offset: token.start_offset,
+          end_offset: token.end_offset,
+          leading_trivia: token.leading_trivia,
+          trailing_trivia: token.trailing_trivia,
         )
       end
 

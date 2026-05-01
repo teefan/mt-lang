@@ -24,6 +24,8 @@ module MilkTea
         lex_command
       when "parse"
         parse_command
+      when "fmt"
+        fmt_command
       when "check"
         check_command
       when "lower"
@@ -74,6 +76,44 @@ module MilkTea
 
       ast = make_module_loader.load_file(path)
       @out.write(PrettyPrinter.format_ast(ast))
+      0
+    end
+
+    def fmt_command
+      path = @argv.shift
+      unless path
+        @err.puts("missing source file path")
+        print_usage(@err)
+        return 1
+      end
+
+      options = parse_fmt_options
+      return 1 unless options
+
+      source = read_source_file(path)
+      result = Formatter.check_source(source, path: path, mode: options[:mode])
+
+      if options[:check]
+        if result.changed
+          @out.puts("needs formatting #{path}")
+          return 1
+        end
+
+        @out.puts("already formatted #{path}")
+        return 0
+      end
+
+      if options[:write]
+        if result.changed
+          File.write(path, result.formatted_source)
+          @out.puts("formatted #{path}")
+        else
+          @out.puts("already formatted #{path}")
+        end
+        return 0
+      end
+
+      @out.write(result.formatted_source)
       0
     end
 
@@ -244,6 +284,42 @@ module MilkTea
       options
     end
 
+    def parse_fmt_options
+      options = {
+        check: false,
+        write: false,
+        mode: :safe,
+      }
+
+      until @argv.empty?
+        option = @argv.shift
+        case option
+        when "--check"
+          options[:check] = true
+        when "--write", "-w"
+          options[:write] = true
+        when "--preserve"
+          options[:mode] = :preserve
+        when "--canonical"
+          options[:mode] = :canonical
+        when "--safe"
+          options[:mode] = :safe
+        else
+          @err.puts("unknown fmt option #{option}")
+          print_usage(@err)
+          return nil
+        end
+      end
+
+      if options[:check] && options[:write]
+        @err.puts("fmt options --check and --write cannot be combined")
+        print_usage(@err)
+        return nil
+      end
+
+      options
+    end
+
     def parse_bindgen_options
       options = {
         output_path: nil,
@@ -303,7 +379,7 @@ module MilkTea
     end
 
     def handled_error_classes
-      classes = [LexError, ParseError, ModuleLoadError, SemaError, LoweringError, BuildError, RunError]
+      classes = [LexError, ParseError, ModuleLoadError, SemaError, LoweringError, BuildError, RunError, FormatterError]
       classes << BindgenError if MilkTea.const_defined?(:BindgenError, false)
       classes << UpstreamSources::Error if MilkTea.const_defined?(:UpstreamSources, false)
       classes
@@ -345,6 +421,7 @@ module MilkTea
     def print_usage(io)
       io.puts("Usage: mtc lex PATH")
       io.puts("       mtc parse PATH")
+      io.puts("       mtc fmt PATH [--check|--write] [--safe|--canonical|--preserve]")
       io.puts("       mtc check PATH")
       io.puts("       mtc lower PATH")
       io.puts("       mtc emit-c PATH")

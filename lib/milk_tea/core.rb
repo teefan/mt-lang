@@ -3,7 +3,10 @@
 require_relative "base"
 
 require_relative "core/token"
+require_relative "core/token_stream"
 require_relative "core/lexer"
+require_relative "core/cst"
+require_relative "core/cst_builder"
 require_relative "core/ast"
 require_relative "core/parser"
 require_relative "core/module_loader"
