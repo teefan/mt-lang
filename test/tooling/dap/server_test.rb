@@ -151,6 +151,10 @@ class DAPServerTest < Minitest::Test
         { "success" => true, "body" => {} }
       when "evaluate"
         { "success" => true, "body" => { "result" => "42", "variablesReference" => 0 } }
+      when "source"
+        { "success" => true, "body" => { "content" => "# source not available" } }
+      when "loadedSources"
+        { "success" => true, "body" => { "sources" => [] } }
       when "terminate"
         { "success" => true, "body" => {} }
       when "disconnect"
@@ -169,6 +173,7 @@ class DAPServerTest < Minitest::Test
       assert_equal true, init_response["success"]
       assert_equal "initialize", init_response["command"]
       assert_equal true, init_response.dig("body", "supportsConfigurationDoneRequest")
+      assert_equal [], init_response.dig("body", "exceptionBreakpointFilters")
       assert_equal ["initialized"], init_events.map { |e| e["event"] }
 
       launch_response, launch_events = client.send_request("launch", { "program" => "/usr/bin/true", "stopOnEntry" => true })
@@ -361,6 +366,9 @@ class DAPServerTest < Minitest::Test
 
     caps_events = find_events(protocol.written, "capabilities")
     assert_equal true, caps_events.any?, "expected capabilities event after lldb-dap backend init"
+    caps_body = caps_events.first[:body] || caps_events.first["body"]
+    assert_equal [], caps_body[:exceptionBreakpointFilters] || caps_body["exceptionBreakpointFilters"],
+                 "capabilities event body must include exceptionBreakpointFilters"
 
     backend_commands = backend.requests.map(&:first)
     assert_includes backend_commands, "initialize"
@@ -390,6 +398,91 @@ class DAPServerTest < Minitest::Test
       assert_equal false, response["success"]
       assert_match(/not supported/, response["message"])
     end
+  end
+
+  def test_source_returns_error_in_process_backend
+    with_server do |client|
+      _init, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
+      response, _events = client.send_request("source", { "sourceReference" => 1 })
+      assert_equal false, response["success"]
+      assert_match(/not supported/, response["message"])
+    end
+  end
+
+  def test_loaded_sources_returns_empty_in_process_backend
+    with_server do |client|
+      _init, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
+      response, _events = client.send_request("loadedSources", {})
+      assert_equal true, response["success"]
+      assert_equal [], response.dig("body", "sources")
+    end
+  end
+
+  def test_lldb_backend_emits_breakpoint_event_when_sync_adjusts_line
+    # setBreakpoints BEFORE launch -> stored in session; on configurationDone, sync sends
+    # them to backend which returns adjusted line 5 (from requested line 4); a breakpoint
+    # "changed" event must be emitted.
+    incoming = [
+      { "seq" => 1, "type" => "request", "command" => "initialize", "arguments" => { "adapterID" => "milk-tea" } },
+      { "seq" => 2, "type" => "request", "command" => "setBreakpoints", "arguments" => { "source" => { "path" => "/tmp/demo.mt" }, "breakpoints" => [{ "line" => 4 }] } },
+      { "seq" => 3, "type" => "request", "command" => "launch", "arguments" => { "backend" => "lldb-dap", "program" => "/usr/bin/true", "stopOnEntry" => true } },
+      { "seq" => 4, "type" => "request", "command" => "configurationDone", "arguments" => {} },
+      { "seq" => 5, "type" => "request", "command" => "disconnect", "arguments" => {} }
+    ]
+
+    protocol = InMemoryProtocol.new(incoming)
+    adjusted_line_backend = Class.new do
+      attr_reader :requests
+
+      def initialize(on_event)
+        @on_event = on_event
+        @requests = []
+      end
+
+      def start! = true
+      def stop! = true
+
+      def request(command, arguments, timeout: 5)
+        @requests << [command, arguments]
+        case command
+        when "initialize"
+          { "success" => true, "body" => {} }
+        when "launch"
+          { "success" => true, "body" => {} }
+        when "setBreakpoints"
+          # Return adjusted line 5 (was 4) to trigger a breakpoint changed event
+          { "success" => true, "body" => { "breakpoints" => [{ "id" => 99, "verified" => true, "line" => 5 }] } }
+        when "configurationDone"
+          @on_event.call({ "type" => "event", "event" => "stopped", "body" => { "reason" => "entry", "threadId" => 1 } })
+          { "success" => true, "body" => {} }
+        when "disconnect"
+          @on_event.call({ "type" => "event", "event" => "terminated" })
+          @on_event.call({ "type" => "event", "event" => "exited", "body" => { "exitCode" => 0 } })
+          { "success" => true, "body" => {} }
+        else
+          { "success" => false, "message" => "unsupported" }
+        end
+      end
+    end.new(nil)
+
+    server = MilkTea::DAP::Server.new(
+      protocol: protocol,
+      backend_factory: lambda do |_adapter_command, on_event|
+        adjusted_line_backend.instance_variable_set(:@on_event, on_event)
+        adjusted_line_backend
+      end
+    )
+
+    server.run
+
+    bp_events = find_events(protocol.written, "breakpoint")
+    assert_equal true, bp_events.any?, "expected breakpoint changed event after sync adjusted line"
+
+    bp_event = bp_events.first
+    bp_body = bp_event[:body] || bp_event["body"]
+    changed_bp = bp_body[:breakpoint] || bp_body["breakpoint"]
+    assert_equal 5, changed_bp[:line] || changed_bp["line"]
+    assert_equal true, changed_bp[:verified] || changed_bp["verified"]
   end
 
   def test_lldb_backend_bridges_requests_and_events
@@ -555,6 +648,10 @@ class DAPServerTest < Minitest::Test
             write_response.call(request, {})
           when "evaluate"
             write_response.call(request, { result: "not_impl", variablesReference: 0 })
+          when "source"
+            write_response.call(request, { content: "# not available" })
+          when "loadedSources"
+            write_response.call(request, { sources: [] })
           when "continue"
             write_response.call(request, { allThreadsContinued: true })
             write_event.call("continued", { threadId: 99, allThreadsContinued: true })
