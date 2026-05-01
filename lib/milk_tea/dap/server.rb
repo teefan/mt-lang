@@ -57,6 +57,7 @@ module MilkTea
         @handlers["evaluate"] = method(:handle_evaluate)
         @handlers["source"] = method(:handle_source)
         @handlers["loadedSources"] = method(:handle_loaded_sources)
+        @handlers["restart"] = method(:handle_restart)
       end
 
       def process_message(message)
@@ -139,6 +140,12 @@ module MilkTea
       end
 
       def handle_attach(message)
+        args = message["arguments"] || {}
+        unless args["backend"].to_s == "lldb-dap"
+          write_error_response(message, "attach requires the lldb-dap backend")
+          return
+        end
+
         request_start(message)
       end
 
@@ -283,6 +290,12 @@ module MilkTea
         return write_backend_response(message, backend_request("loadedSources", message["arguments"] || {})) if using_lldb_backend?
 
         write_response(message, { sources: [] })
+      end
+
+      def handle_restart(message)
+        return write_backend_response(message, backend_request("restart", message["arguments"] || {})) if using_lldb_backend?
+
+        write_error_response(message, "restart is not supported by the process backend")
       end
 
       def request_start(message)

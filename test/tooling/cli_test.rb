@@ -316,6 +316,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_match(/mtc run PATH/, err.string)
     assert_match(/mtc deps bootstrap/, err.string)
     assert_match(/mtc bindgen MODULE HEADER/, err.string)
+    assert_match(/mtc dap/, err.string)
   end
 
   def test_parse_command_reports_loader_errors

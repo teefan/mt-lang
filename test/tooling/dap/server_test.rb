@@ -418,6 +418,25 @@ class DAPServerTest < Minitest::Test
     end
   end
 
+  def test_attach_requires_lldb_dap_backend
+    with_server do |client|
+      _init, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
+      response, _events = client.send_request("attach", { "program" => "/usr/bin/true" })
+      assert_equal false, response["success"]
+      assert_match(/lldb-dap/, response["message"])
+    end
+  end
+
+  def test_restart_returns_error_in_process_backend
+    with_server do |client|
+      _init, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
+      _launch, _launch_events = client.send_request("launch", { "program" => "/usr/bin/true" })
+      response, _events = client.send_request("restart", {})
+      assert_equal false, response["success"]
+      assert_match(/not supported/, response["message"])
+    end
+  end
+
   def test_lldb_backend_emits_breakpoint_event_when_sync_adjusts_line
     # setBreakpoints BEFORE launch -> stored in session; on configurationDone, sync sends
     # them to backend which returns adjusted line 5 (from requested line 4); a breakpoint
