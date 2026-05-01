@@ -304,6 +304,56 @@ class DAPServerTest < Minitest::Test
     end
   end
 
+  class StartDebuggingBackend
+    attr_reader :requests
+
+    def initialize(on_event, on_request)
+      @on_event = on_event
+      @on_request = on_request
+      @requests = []
+    end
+
+    def start! = true
+    def stop! = true
+
+    def request(command, arguments, timeout: 5)
+      _timeout = timeout
+      @requests << [command, arguments]
+
+      case command
+      when "initialize"
+        { "success" => true, "body" => { "supportsConfigurationDoneRequest" => true } }
+      when "launch"
+        { "success" => true, "body" => {} }
+      when "configurationDone"
+        reverse_response = @on_request.call({
+          "seq" => 800,
+          "type" => "request",
+          "command" => "startDebugging",
+          "arguments" => {
+            "configuration" => {
+              "name" => "Child Session",
+              "type" => "milk-tea",
+              "request" => "launch",
+              "program" => "/tmp/child.mt"
+            },
+            "request" => "launch"
+          }
+        })
+        return { "success" => false, "message" => reverse_response["message"] } unless reverse_response["success"]
+
+        @on_event.call({ "type" => "event", "event" => "stopped", "body" => { "reason" => "entry", "threadId" => 77, "allThreadsStopped" => true } })
+        { "success" => true, "body" => {} }
+      when "disconnect"
+        @on_event.call({ "type" => "event", "event" => "terminated" })
+        @on_event.call({ "type" => "event", "event" => "exited", "body" => { "exitCode" => 0 } })
+        { "success" => true, "body" => {} }
+      else
+        { "success" => true, "body" => {} }
+      end
+    end
+  end
+
   def test_initialize_then_launch_sequence_emits_initialized_and_entry_stopped
     with_server do |client|
       init_response, init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
@@ -315,7 +365,11 @@ class DAPServerTest < Minitest::Test
 
       launch_response, launch_events = client.send_request("launch", { "program" => "/usr/bin/true", "stopOnEntry" => true })
       assert_equal true, launch_response["success"]
-      assert_equal [], launch_events
+      assert_equal ["process"], launch_events.map { |e| e["event"] }
+      process_body = launch_events.first["body"]
+      assert_equal "true", process_body["name"]
+      assert_equal "launch", process_body["startMethod"]
+      assert_equal true, process_body["isLocalProcess"]
 
       conf_response, conf_events = client.send_request("configurationDone", {})
       assert_equal true, conf_response["success"]
@@ -437,6 +491,104 @@ class DAPServerTest < Minitest::Test
       assert_equal ["terminated", "exited"], terminate_events.map { |e| e["event"] }
       assert_equal 0, terminate_events.last.dig("body", "exitCode")
     end
+  end
+
+  def test_process_backend_emits_process_event_after_launch
+    with_server do |client|
+      _init_response, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
+      launch_response, launch_events = client.send_request("launch", { "program" => "/usr/bin/true", "stopOnEntry" => true })
+      assert_equal true, launch_response["success"]
+      process_events = launch_events.select { |e| e["event"] == "process" }
+      assert_equal 1, process_events.length
+      process_body = process_events.first["body"]
+      assert_equal "true", process_body["name"]
+      assert_equal "launch", process_body["startMethod"]
+      assert_equal true, process_body["isLocalProcess"]
+    end
+  end
+
+  def test_process_backend_initialize_response_advertises_loaded_sources
+    with_server do |client|
+      init_response, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
+      assert_equal true, init_response["success"]
+      assert_equal true, init_response.dig("body", "supportsLoadedSourcesRequest")
+    end
+  end
+
+  def test_lldb_backend_reverse_start_debugging_request_is_forwarded_to_client
+    stdin_read, stdin_write = IO.pipe
+    stdout_read, stdout_write = IO.pipe
+
+    server = MilkTea::DAP::Server.new(
+      protocol: MilkTea::DAP::Protocol.new(input: stdin_read, output: stdout_write),
+      backend_factory: lambda do |_adapter_command, on_event, on_request|
+        StartDebuggingBackend.new(on_event, on_request)
+      end
+    )
+
+    thread = Thread.new { server.run }
+    client = DAPClient.new(stdin_write, stdout_read)
+
+    init_response, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea", "supportsStartDebuggingRequest" => true })
+    assert_equal true, init_response["success"]
+
+    launch_response, _launch_events = client.send_request("launch", {
+      "backend" => "lldb-dap",
+      "program" => "/usr/bin/true",
+      "stopOnEntry" => true
+    })
+    assert_equal true, launch_response["success"]
+
+    conf_request = {
+      seq: client.instance_variable_get(:@next_seq),
+      type: "request",
+      command: "configurationDone",
+      arguments: {}
+    }
+    client.instance_variable_set(:@next_seq, conf_request[:seq] + 1)
+    client.send(:write_message, conf_request)
+
+    reverse_request = nil
+    conf_response = nil
+    events = []
+
+    Timeout.timeout(5) do
+      loop do
+        message = client.send(:read_message)
+        next if message.nil?
+
+        if message["type"] == "request" && message["command"] == "startDebugging"
+          reverse_request = message
+          client.send(:send_response, message["seq"], "startDebugging", {})
+          next
+        end
+
+        if message["type"] == "event"
+          events << message
+          next
+        end
+
+        next unless message["type"] == "response"
+        next unless message["request_seq"] == conf_request[:seq]
+
+        conf_response = message
+        break
+      end
+    end
+
+    assert_equal "startDebugging", reverse_request["command"]
+    assert_equal "Child Session", reverse_request.dig("arguments", "configuration", "name")
+    assert_equal "launch", reverse_request.dig("arguments", "request")
+    assert_equal true, conf_response["success"]
+    assert_includes events.map { |e| e["event"] }, "stopped"
+
+    disconnect_response, disconnect_events = client.send_request("disconnect", {})
+    assert_equal true, disconnect_response["success"]
+    assert_includes disconnect_events.map { |e| e["event"] }, "terminated"
+  ensure
+    stdin_write&.close
+    stdout_read&.close
+    thread&.join(1)
   end
 
   def test_lldb_backend_bridge_is_deterministic_with_injected_backend

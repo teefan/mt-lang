@@ -132,6 +132,7 @@ module MilkTea
         supportsEvaluateForHovers: false,
         supportsSetVariable: false,
         supportsTerminateRequest: true,
+        supportsLoadedSourcesRequest: true,
         exceptionBreakpointFilters: []
       }.freeze
 
@@ -411,6 +412,11 @@ module MilkTea
         end
 
         write_response(message, {})
+        write_event("process", {
+          name: File.basename(@session.program_path.to_s),
+          startMethod: "launch",
+          isLocalProcess: true
+        })
         maybe_start_or_stop_on_entry
       end
 
