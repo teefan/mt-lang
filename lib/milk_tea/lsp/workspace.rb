@@ -122,6 +122,44 @@ module MilkTea
         results
       end
 
+      # Find a definition token across the whole workspace, preferring +preferred_uri+.
+      # Returns { uri:, token: } or nil.
+      def find_definition_token_global(name, preferred_uri: nil)
+        if preferred_uri
+          token = find_definition_token(preferred_uri, name)
+          return { uri: preferred_uri, token: token } if token
+        end
+
+        all_documents.each do |doc_uri|
+          next if doc_uri == preferred_uri
+
+          token = find_definition_token(doc_uri, name)
+          return { uri: doc_uri, token: token } if token
+        end
+
+        nil
+      end
+
+      # Apply a workspace/didChangeWatchedFiles change to the indexed snapshot.
+      # Open documents are source-of-truth and are left untouched.
+      def apply_watched_file_change(uri, change_type)
+        return if @open_documents.key?(uri)
+
+        if change_type.to_i == 3 # Deleted
+          @indexed_documents.delete(uri)
+          invalidate_cache(uri)
+          return
+        end
+
+        path = uri_to_path(uri)
+        return unless path && File.file?(path)
+
+        @indexed_documents[uri] = File.read(path)
+        invalidate_cache(uri)
+      rescue StandardError => e
+        warn "LSP watched-file update error #{uri}: #{e.message}"
+      end
+
       # Scan text up to the cursor to find the innermost open function call context.
       # Returns { name:, active_parameter: } or nil if not inside a call.
       def find_call_context(uri, lsp_line, lsp_char)

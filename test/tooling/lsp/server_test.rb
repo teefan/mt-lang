@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "json"
+require "cgi"
+require "tmpdir"
 require "timeout"
 require_relative "../../test_helper"
 
@@ -89,6 +91,8 @@ class LSPServerTest < Minitest::Test
       assert_equal 2, capabilities.dig("textDocumentSync", "change")
       assert_equal true, capabilities["hoverProvider"]
       assert_equal true, capabilities["definitionProvider"]
+      assert_equal true, capabilities["declarationProvider"]
+      assert_equal true, capabilities["typeDefinitionProvider"]
       assert_equal true, capabilities["referencesProvider"]
       assert_equal true, capabilities["documentHighlightProvider"]
       assert_kind_of Hash, capabilities["renameProvider"]
@@ -269,7 +273,115 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_declaration_and_type_definition_delegate_to_definition_location
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_decl_type_def_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_CALL }
+      })
+
+      declaration = client.send_request("textDocument/declaration", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => 4, "character" => 11 }
+      })
+      type_definition = client.send_request("textDocument/typeDefinition", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => 4, "character" => 11 }
+      })
+
+      assert_equal uri, declaration.dig("result", "uri")
+      assert_equal 0, declaration.dig("result", "range", "start", "line")
+      assert_equal 4, declaration.dig("result", "range", "start", "character")
+
+      assert_equal uri, type_definition.dig("result", "uri")
+      assert_equal 0, type_definition.dig("result", "range", "start", "line")
+      assert_equal 4, type_definition.dig("result", "range", "start", "character")
+    end
+  end
+
+  def test_definition_falls_back_to_other_workspace_file
+    Dir.mktmpdir("milk-tea-lsp-def") do |dir|
+      shared_path = File.join(dir, "shared.mt")
+      main_path = File.join(dir, "main.mt")
+      File.write(shared_path, <<~MT)
+        def shared(a: i32, b: i32) -> i32:
+            return a + b
+      MT
+      File.write(main_path, <<~MT)
+        def main() -> i32:
+            return shared(1, 2)
+      MT
+
+      root_uri = path_to_uri(dir)
+      shared_uri = path_to_uri(shared_path)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => File.read(main_path)
+          }
+        })
+
+        definition = client.send_request("textDocument/definition", {
+          "textDocument" => { "uri" => main_uri },
+          "position"     => { "line" => 1, "character" => 11 }
+        })
+
+        assert_equal shared_uri, definition.dig("result", "uri")
+        assert_equal 0, definition.dig("result", "range", "start", "line")
+        assert_equal 4, definition.dig("result", "range", "start", "character")
+      end
+    end
+  end
+
+  def test_did_change_watched_files_refreshes_workspace_index
+    Dir.mktmpdir("milk-tea-lsp-watch") do |dir|
+      watched_path = File.join(dir, "watched.mt")
+      File.write(watched_path, <<~MT)
+        def old_name() -> i32:
+            return 0
+      MT
+
+      root_uri = path_to_uri(dir)
+      watched_uri = path_to_uri(watched_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        old_symbols = client.send_request("workspace/symbol", { "query" => "old_name" })
+        old_names = old_symbols.fetch("result").map { |s| s["name"] }
+        assert_includes old_names, "old_name"
+
+        File.write(watched_path, <<~MT)
+          def new_name() -> i32:
+              return 0
+        MT
+
+        client.send_notification("workspace/didChangeWatchedFiles", {
+          "changes" => [{ "uri" => watched_uri, "type" => 2 }]
+        })
+
+        new_symbols = client.send_request("workspace/symbol", { "query" => "new_name" })
+        new_names = new_symbols.fetch("result").map { |s| s["name"] }
+        assert_includes new_names, "new_name"
+      end
+    end
+  end
+
   private
+
+  def path_to_uri(path)
+    escaped_path = path.split("/").map { |segment| CGI.escape(segment).gsub("+", "%20") }.join("/")
+    "file://#{escaped_path}"
+  end
 
   def with_server
     stdin_read, stdin_write = IO.pipe

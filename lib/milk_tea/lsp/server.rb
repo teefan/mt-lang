@@ -50,6 +50,8 @@ module MilkTea
         # IDE features
         @handlers['textDocument/hover']             = method(:handle_hover)
         @handlers['textDocument/definition']        = method(:handle_definition)
+        @handlers['textDocument/declaration']       = method(:handle_declaration)
+        @handlers['textDocument/typeDefinition']    = method(:handle_type_definition)
         @handlers['textDocument/references']        = method(:handle_references)
         @handlers['textDocument/documentHighlight'] = method(:handle_document_highlight)
         @handlers['textDocument/documentSymbol']    = method(:handle_document_symbols)
@@ -62,6 +64,7 @@ module MilkTea
 
         # Workspace
         @handlers['workspace/symbol'] = method(:handle_workspace_symbol)
+        @handlers['workspace/didChangeWatchedFiles'] = method(:handle_did_change_watched_files)
       end
 
       # ── Message dispatch ─────────────────────────────────────────────────────
@@ -122,6 +125,8 @@ module MilkTea
             },
             hoverProvider: true,
             definitionProvider: true,
+            declarationProvider: true,
+            typeDefinitionProvider: true,
             referencesProvider: true,
             documentHighlightProvider: true,
             documentSymbolProvider: true,
@@ -220,22 +225,26 @@ module MilkTea
       # Enhancement 2: Goto Definition ──────────────────────────────────────────
 
       def handle_definition(params)
-        uri      = params['textDocument']['uri']
-        lsp_line = params['position']['line']
-        lsp_char = params['position']['character']
-
-        token = @workspace.find_token_at(uri, lsp_line, lsp_char)
-        return nil unless token&.type == :identifier
-
-        def_tok = @workspace.find_definition_token(uri, token.lexeme)
-        return nil unless def_tok
-
-        {
-          uri: uri,
-          range: token_to_range(def_tok)
-        }
+        location = resolve_definition_location(params)
+        location
       rescue StandardError => e
         warn "Error in definition handler: #{e.message}"
+        nil
+      end
+
+      def handle_declaration(params)
+        location = resolve_definition_location(params)
+        location
+      rescue StandardError => e
+        warn "Error in declaration handler: #{e.message}"
+        nil
+      end
+
+      def handle_type_definition(params)
+        location = resolve_definition_location(params)
+        location
+      rescue StandardError => e
+        warn "Error in typeDefinition handler: #{e.message}"
         nil
       end
 
@@ -250,17 +259,19 @@ module MilkTea
         return [] unless token&.type == :identifier
 
         refs = @workspace.find_all_references(token.lexeme)
+        return refs unless params.dig('context', 'includeDeclaration') == false
 
-        unless params.dig('context', 'includeDeclaration') == false
-          return refs
+        found = @workspace.find_definition_token_global(token.lexeme, preferred_uri: uri)
+        return refs unless found
+
+        def_uri = found[:uri]
+        def_line = found[:token].line - 1
+        def_char = found[:token].column - 1
+        refs.reject do |r|
+          r[:uri] == def_uri &&
+            r[:range][:start][:line] == def_line &&
+            r[:range][:start][:character] == def_char
         end
-
-        def_tok = @workspace.find_definition_token(uri, token.lexeme)
-        return refs unless def_tok
-
-        def_line = def_tok.line - 1
-        def_char = def_tok.column - 1
-        refs.reject { |r| r[:uri] == uri && r[:range][:start][:line] == def_line && r[:range][:start][:character] == def_char }
       rescue StandardError => e
         warn "Error in references handler: #{e.message}"
         []
@@ -504,6 +515,18 @@ module MilkTea
         []
       end
 
+      def handle_did_change_watched_files(params)
+        changes = params['changes'] || []
+        changes.each do |change|
+          uri = change['uri']
+          type = change['type']
+          next unless uri
+
+          @workspace.apply_watched_file_change(uri, type)
+        end
+        nil
+      end
+
       # ── Diagnostics ──────────────────────────────────────────────────────────
 
       def publish_diagnostics(uri)
@@ -536,6 +559,23 @@ module MilkTea
         elsif (binding = analysis.values[name])
           "#{name}: #{binding.type}"
         end
+      end
+
+      def resolve_definition_location(params)
+        uri      = params['textDocument']['uri']
+        lsp_line = params['position']['line']
+        lsp_char = params['position']['character']
+
+        token = @workspace.find_token_at(uri, lsp_line, lsp_char)
+        return nil unless token&.type == :identifier
+
+        found = @workspace.find_definition_token_global(token.lexeme, preferred_uri: uri)
+        return nil unless found
+
+        {
+          uri: found[:uri],
+          range: token_to_range(found[:token])
+        }
       end
 
       # ── Formatting helpers ───────────────────────────────────────────────────
