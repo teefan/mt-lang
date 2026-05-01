@@ -56,8 +56,10 @@ module MilkTea
         @handlers['textDocument/documentHighlight'] = method(:handle_document_highlight)
         @handlers['textDocument/documentSymbol']    = method(:handle_document_symbols)
         @handlers['textDocument/formatting']        = method(:handle_formatting)
+        @handlers['textDocument/rangeFormatting']   = method(:handle_range_formatting)
         @handlers['textDocument/completion']        = method(:handle_completion)
         @handlers['textDocument/codeLens']          = method(:handle_code_lens)
+        @handlers['textDocument/codeAction']        = method(:handle_code_action)
         @handlers['textDocument/signatureHelp']     = method(:handle_signature_help)
         @handlers['textDocument/prepareRename']     = method(:handle_prepare_rename)
         @handlers['textDocument/rename']            = method(:handle_rename)
@@ -131,9 +133,13 @@ module MilkTea
             documentHighlightProvider: true,
             documentSymbolProvider: true,
             documentFormattingProvider: true,
+            documentRangeFormattingProvider: true,
             signatureHelpProvider: {
               triggerCharacters: ['(', ','],
               retriggerCharacters: [',']
+            },
+            codeActionProvider: {
+              codeActionKinds: ['source.fixAll']
             },
             completionProvider: {
               triggerCharacters: ['.', '(', ' '],
@@ -396,6 +402,66 @@ module MilkTea
         ]
       rescue StandardError => e
         warn "Error in formatting handler: #{e.message}"
+        []
+      end
+
+      def handle_range_formatting(params)
+        uri = params['textDocument']['uri']
+        content = @workspace.get_content(uri)
+        range = params['range'] || {}
+        start_pos = range['start'] || { 'line' => 0, 'character' => 0 }
+        end_pos = range['end'] || { 'line' => 0, 'character' => 0 }
+
+        start_off = @workspace.position_to_offset(uri, start_pos['line'], start_pos['character'])
+        end_off = @workspace.position_to_offset(uri, end_pos['line'], end_pos['character'])
+        return [] if end_off < start_off
+
+        segment = content.byteslice(start_off...end_off).to_s
+        formatted_segment = Formatter.format_source(segment, mode: :safe)
+
+        [
+          {
+            range: {
+              start: { line: start_pos['line'], character: start_pos['character'] },
+              end: { line: end_pos['line'], character: end_pos['character'] }
+            },
+            newText: formatted_segment
+          }
+        ]
+      rescue StandardError => e
+        warn "Error in rangeFormatting handler: #{e.message}"
+        []
+      end
+
+      def handle_code_action(params)
+        uri = params.dig('textDocument', 'uri')
+        return [] unless uri
+
+        content = @workspace.get_content(uri)
+        formatted = Formatter.format_source(content, mode: :safe)
+        line_count = content.count("\n")
+
+        [
+          {
+            title: 'Format document',
+            kind: 'source.fixAll',
+            edit: {
+              changes: {
+                uri => [
+                  {
+                    range: {
+                      start: { line: 0, character: 0 },
+                      end: { line: line_count + 1, character: 0 }
+                    },
+                    newText: formatted
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      rescue StandardError => e
+        warn "Error in codeAction handler: #{e.message}"
         []
       end
 

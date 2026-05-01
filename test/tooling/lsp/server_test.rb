@@ -95,6 +95,8 @@ class LSPServerTest < Minitest::Test
       assert_equal true, capabilities["typeDefinitionProvider"]
       assert_equal true, capabilities["referencesProvider"]
       assert_equal true, capabilities["documentHighlightProvider"]
+      assert_equal true, capabilities["documentRangeFormattingProvider"]
+      assert_kind_of Hash, capabilities["codeActionProvider"]
       assert_kind_of Hash, capabilities["renameProvider"]
       assert_kind_of Hash, capabilities["signatureHelpProvider"]
       assert_kind_of Hash, capabilities["completionProvider"]
@@ -270,6 +272,58 @@ class LSPServerTest < Minitest::Test
       response = client.send_request("textDocument/documentSymbol", { "textDocument" => { "uri" => uri } })
       names = response.fetch("result").map { |s| s["name"] }
       assert_includes names, "SDL_Window"
+    end
+  end
+
+  def test_range_formatting_returns_text_edits
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_range_fmt_test.mt"
+      source = "def add(a:i32,b:i32)->i32:\n    return a+b\n"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/rangeFormatting", {
+        "textDocument" => { "uri" => uri },
+        "range" => {
+          "start" => { "line" => 0, "character" => 0 },
+          "end" => { "line" => 1, "character" => 14 }
+        },
+        "options" => { "tabSize" => 4, "insertSpaces" => true }
+      })
+
+      edits = response.fetch("result")
+      assert_kind_of Array, edits
+      assert_equal 1, edits.length
+      assert_match(/def\s+add\(a:\s*i32,\s*b:\s*i32\)\s*->\s*i32:/, edits[0]["newText"])
+    end
+  end
+
+  def test_code_action_returns_source_fixall_action
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_code_action_test.mt"
+      source = "def add(a:i32,b:i32)->i32:\n    return a+b\n"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => {
+          "start" => { "line" => 0, "character" => 0 },
+          "end" => { "line" => 1, "character" => 14 }
+        },
+        "context" => { "diagnostics" => [] }
+      })
+
+      actions = response.fetch("result")
+      assert_kind_of Array, actions
+      assert_equal "source.fixAll", actions[0]["kind"]
+      assert_equal "Format document", actions[0]["title"]
+      assert_kind_of Hash, actions[0].dig("edit", "changes")
+      assert_kind_of Array, actions[0].dig("edit", "changes", uri)
     end
   end
 
