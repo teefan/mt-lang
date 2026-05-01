@@ -404,6 +404,44 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::ExpressionStmt, defer_stmt.body[1]
   end
 
+  def test_parses_variant_declarations_and_as_binding_in_match
+    source = <<~MT
+      module demo.variant_parse
+
+      variant Shape:
+          circle(radius: f64)
+          rect(w: f64, h: f64)
+          point
+
+      def area(s: Shape) -> f64:
+          match s:
+              Shape.circle as c:
+                  return 3.14 * c.radius * c.radius
+              Shape.rect as r:
+                  return r.w * r.h
+              Shape.point:
+                  return 0.0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal 2, ast.declarations.length
+    variant_decl = ast.declarations[0]
+    assert_instance_of MilkTea::AST::VariantDecl, variant_decl
+    assert_equal "Shape", variant_decl.name
+    assert_equal %w[circle rect point], variant_decl.arms.map(&:name)
+    assert_equal %w[radius], variant_decl.arms[0].fields.map(&:name)
+    assert_equal %w[w h], variant_decl.arms[1].fields.map(&:name)
+    assert_equal [], variant_decl.arms[2].fields
+
+    fn = ast.declarations[1]
+    match_stmt = fn.body.first
+    assert_instance_of MilkTea::AST::MatchStmt, match_stmt
+    assert_equal "c", match_stmt.arms[0].binding_name
+    assert_equal "r", match_stmt.arms[1].binding_name
+    assert_nil match_stmt.arms[2].binding_name
+  end
+
   def test_parses_break_and_continue_inside_match_arms
     source = <<~MT
       module demo.flow

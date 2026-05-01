@@ -105,6 +105,8 @@ module MilkTea
         parse_enum_decl(AST::EnumDecl, visibility:)
       elsif match(:flags)
         parse_enum_decl(AST::FlagsDecl, visibility:)
+      elsif match(:variant)
+        parse_variant_decl(visibility:)
       elsif match(:opaque)
         parse_opaque_decl(visibility:)
       elsif match(:methods)
@@ -302,6 +304,33 @@ module MilkTea
 
       consume(:dedent, "expected end of declaration body")
       node_class.new(name:, backing_type:, members:, visibility:)
+    end
+
+    def parse_variant_decl(visibility: :private)
+      name = consume_name("expected variant name").lexeme
+      type_params = parse_declaration_type_params
+      arms = parse_named_block do
+        arm_name = consume_name("expected variant arm name").lexeme
+        fields = if match(:lparen)
+                   parsed = []
+                   unless check(:rparen)
+                     loop do
+                       field_name = consume_name("expected field name").lexeme
+                       consume(:colon, "expected ':' after field name")
+                       field_type = parse_type_ref
+                       parsed << AST::Field.new(name: field_name, type: field_type)
+                       break unless match(:comma)
+                     end
+                   end
+                   consume(:rparen, "expected ')' after variant arm fields")
+                   parsed
+                 else
+                   []
+                 end
+        consume_end_of_statement
+        AST::VariantArm.new(name: arm_name, fields:)
+      end
+      AST::VariantDecl.new(name:, type_params:, arms:, visibility:)
     end
 
     def parse_opaque_decl(visibility: :private)
@@ -638,8 +667,9 @@ module MilkTea
       expression = parse_expression
       arms = parse_named_block do
         pattern = parse_expression
+        binding_name = match(:as) ? consume_name("expected binding name after 'as'").lexeme : nil
         body = parse_block
-        AST::MatchArm.new(pattern:, body:)
+        AST::MatchArm.new(pattern:, binding_name:, body:)
       end
       AST::MatchStmt.new(expression:, arms:)
     end
@@ -1197,7 +1227,7 @@ module MilkTea
               @known_generic_callable_names[name_token.lexeme] = true
             end
           end
-        when :struct, :union, :enum, :flags, :opaque, :type
+        when :struct, :union, :enum, :flags, :opaque, :type, :variant
           if depth.zero?
             name_token = @tokens[index + 1]
             @known_type_names[name_token.lexeme] = true if type_name_token?(name_token)

@@ -82,6 +82,7 @@ module MilkTea
         resolve_type_aliases
         resolve_aggregate_fields
         resolve_enum_members
+        resolve_variant_arms
         declare_top_level_values
         declare_functions
         check_top_level_values
@@ -155,6 +156,11 @@ module MilkTea
           when AST::UnionDecl
             ensure_available_type_name!(decl.name)
             @types[decl.name] = Types::Union.new(decl.name, module_name: @module_name, external: external_module?)
+          when AST::VariantDecl
+            ensure_available_type_name!(decl.name)
+            raise SemaError, "generic variants are not yet supported (#{decl.name})" unless decl.type_params.empty?
+
+            @types[decl.name] = Types::Variant.new(decl.name, module_name: @module_name)
           when AST::EnumDecl
             ensure_available_type_name!(decl.name)
             @types[decl.name] = Types::Enum.new(decl.name, module_name: @module_name, external: external_module?)
@@ -252,6 +258,31 @@ module MilkTea
             actual_type = infer_expression(member.value, scopes: [], expected_type: backing_type)
             ensure_assignable!(actual_type, backing_type, "member #{decl.name}.#{member.name} expects #{backing_type}, got #{actual_type}")
           end
+        end
+      end
+
+      def resolve_variant_arms
+        @ast.declarations.each do |decl|
+          next unless decl.is_a?(AST::VariantDecl)
+
+          variant_type = @types.fetch(decl.name)
+          seen_arms = []
+          arms_hash = {}
+          decl.arms.each do |arm|
+            raise SemaError, "duplicate arm #{decl.name}.#{arm.name}" if seen_arms.include?(arm.name)
+
+            seen_arms << arm.name
+            field_types = {}
+            seen_fields = []
+            arm.fields.each do |field|
+              raise SemaError, "duplicate field #{arm.name}.#{field.name}" if seen_fields.include?(field.name)
+
+              seen_fields << field.name
+              field_types[field.name] = resolve_type_ref(field.type)
+            end
+            arms_hash[arm.name] = field_types
+          end
+          variant_type.define_arms(arms_hash)
         end
       end
 
@@ -901,10 +932,12 @@ module MilkTea
         scrutinee_type = infer_expression(statement.expression, scopes:)
         if scrutinee_type.is_a?(Types::Enum)
           check_enum_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+        elsif scrutinee_type.is_a?(Types::Variant)
+          check_variant_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
         elsif integer_type?(scrutinee_type)
           check_integer_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
         else
-          raise SemaError, "match requires an enum or integer scrutinee, got #{scrutinee_type}"
+          raise SemaError, "match requires an enum, variant, or integer scrutinee, got #{scrutinee_type}"
         end
       end
 
@@ -964,6 +997,60 @@ module MilkTea
 
       def wildcard_pattern?(expression)
         expression.is_a?(AST::Identifier) && expression.name == "_"
+      end
+
+      def check_variant_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+        covered_arms = {}
+        wildcard_seen = false
+        statement.arms.each do |arm|
+          if wildcard_pattern?(arm.pattern)
+            raise SemaError, "duplicate wildcard arm in match" if wildcard_seen
+            wildcard_seen = true
+            check_block(arm.body, scopes:, return_type:, allow_return:)
+            next
+          end
+          validate_consuming_foreign_expression!(arm.pattern, scopes:, root_allowed: false)
+          validate_hoistable_foreign_expression!(arm.pattern, scopes:, root_hoistable: false)
+
+          arm_name = variant_match_arm_name(arm.pattern, scrutinee_type)
+          raise SemaError, "match arm must be a variant arm of #{scrutinee_type}" unless arm_name
+          raise SemaError, "duplicate match arm #{scrutinee_type}.#{arm_name}" if covered_arms.key?(arm_name)
+
+          covered_arms[arm_name] = true
+
+          arm_scopes = scopes.dup
+          if arm.binding_name
+            fields = scrutinee_type.arm(arm_name)
+            if fields.nil? || fields.empty?
+              raise SemaError, "variant arm #{scrutinee_type}.#{arm_name} has no payload; 'as' binding is not allowed"
+            end
+
+            payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
+            arm_scopes = [{ arm.binding_name => value_binding(name: arm.binding_name, type: payload_type, mutable: false, kind: :local) }] + arm_scopes
+          end
+          check_block(arm.body, scopes: arm_scopes, return_type:, allow_return:)
+        end
+
+        return if wildcard_seen
+
+        missing_arms = scrutinee_type.arm_names - covered_arms.keys
+        return if missing_arms.empty?
+
+        raise SemaError, "match on #{scrutinee_type} is missing cases: #{missing_arms.join(', ')}"
+      end
+
+      def variant_match_arm_name(pattern, scrutinee_type)
+        # Pattern must be `TypeName.arm_name` or `module.TypeName.arm_name`
+        return nil unless pattern.is_a?(AST::MemberAccess)
+
+        member = pattern.member
+        return nil unless scrutinee_type.arm_names.include?(member)
+
+        # Verify the receiver resolves to the scrutinee variant type
+        receiver_type = resolve_type_expression(pattern.receiver)
+        return nil unless receiver_type == scrutinee_type
+
+        member
       end
 
       def check_for_stmt(statement, scopes:, return_type:, allow_return:)
@@ -1247,6 +1334,10 @@ module MilkTea
           member_type = resolve_type_member(type, expression.member)
           return member_type if member_type
 
+          if type.is_a?(Types::Variant) && type.arm_names.include?(expression.member)
+            raise SemaError, "variant arm #{type}.#{expression.member} has payload; construct it with #{type}.#{expression.member}(field: value, ...)"
+          end
+
           if (method = lookup_method(type, expression.member))
             raise SemaError, "associated function #{type}.#{expression.member} must be called" unless method.type.receiver_type.nil?
             raise SemaError, "method #{type}.#{expression.member} must be called"
@@ -1527,6 +1618,8 @@ module MilkTea
           check_str_builder_method_call(callable_kind, receiver, expression.arguments, scopes:)
         when :struct
           check_aggregate_construction(callable, expression.arguments, scopes:)
+        when :variant_arm_ctor
+          check_variant_arm_construction(callable, expression.arguments, scopes:)
         when :array
           check_array_construction(callable, expression.arguments, scopes:)
         when :cast
@@ -1771,6 +1864,15 @@ module MilkTea
               return [:struct, imported_module.types.fetch(callee.member), nil]
             end
 
+            if imported_type.is_a?(Types::Variant)
+              arm_name = callee.member
+              unless imported_type.arm_names.include?(arm_name)
+                raise SemaError, "unknown arm #{arm_name} for variant #{imported_type}"
+              end
+
+              return [:variant_arm_ctor, [imported_type, arm_name], nil]
+            end
+
             if imported_module.private_function?(callee.member) || imported_module.private_type?(callee.member) || imported_module.private_value?(callee.member)
               raise SemaError, "#{callee.receiver.name}.#{callee.member} is private to module #{imported_module.name}"
             end
@@ -1779,6 +1881,15 @@ module MilkTea
           end
 
           if (type_expr = resolve_type_expression(callee.receiver))
+            if type_expr.is_a?(Types::Variant)
+              arm_name = callee.member
+              unless type_expr.arm_names.include?(arm_name)
+                raise SemaError, "unknown arm #{arm_name} for variant #{type_expr}"
+              end
+
+              return [:variant_arm_ctor, [type_expr, arm_name], nil]
+            end
+
             method = lookup_method(type_expr, callee.member)
             return [:function, method, nil] if method && method.type.receiver_type.nil?
 
@@ -2066,6 +2177,35 @@ module MilkTea
         end
 
         struct_type
+      end
+
+      def check_variant_arm_construction(callable, arguments, scopes:)
+        variant_type, arm_name = callable
+        fields = variant_type.arm(arm_name)
+
+        if fields.nil? || fields.empty?
+          raise SemaError, "variant arm #{variant_type}.#{arm_name} has no payload; construct it without arguments" unless arguments.empty?
+
+          return variant_type
+        end
+
+        raise SemaError, "variant arm construction requires named arguments" unless arguments.all?(&:name)
+
+        provided = {}
+        arguments.each do |argument|
+          field_type = fields[argument.name]
+          raise SemaError, "unknown field #{variant_type}.#{arm_name}.#{argument.name}" unless field_type
+          raise SemaError, "duplicate field #{variant_type}.#{arm_name}.#{argument.name}" if provided.key?(argument.name)
+
+          actual_type = infer_expression(argument.value, scopes:, expected_type: field_type)
+          ensure_assignable!(actual_type, field_type, "field #{variant_type}.#{arm_name}.#{argument.name} expects #{field_type}, got #{actual_type}", expression: argument.value)
+          provided[argument.name] = true
+        end
+
+        missing = fields.keys - provided.keys
+        raise SemaError, "variant arm #{variant_type}.#{arm_name} is missing fields: #{missing.join(', ')}" unless missing.empty?
+
+        variant_type
       end
 
       def check_array_construction(array_type, arguments, scopes:)
@@ -3016,7 +3156,7 @@ module MilkTea
 
       def sized_layout_type?(type)
         case type
-        when Types::Primitive, Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Span, Types::StringView, Types::Result, Types::Task
+        when Types::Primitive, Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Variant, Types::Span, Types::StringView, Types::Result, Types::Task
           true
         when Types::Nullable
           true
@@ -3043,6 +3183,7 @@ module MilkTea
         return true if result_type?(type)
         return true if task_type?(type)
         return true if type.is_a?(Types::Struct)
+        return true if type.is_a?(Types::Variant)
         return true if pointer_type?(type)
         return true if array_type?(type)
         return true if str_builder_type?(type)
@@ -3309,6 +3450,12 @@ module MilkTea
         case type
         when Types::Enum, Types::Flags
           type.member(name)
+        when Types::Variant
+          # No-payload arms: return the variant type so they can be used as expressions
+          # Payload arms: return nil here — callers use resolve_callable(:variant_arm_ctor) instead
+          return type if type.arm_names.include?(name) && !type.has_payload?(name)
+
+          nil
         end
       end
 
@@ -3676,6 +3823,8 @@ module MilkTea
           type.arguments.any? { |argument| contains_proc_type?(argument, visited) }
         when Types::Struct, Types::Union
           type.fields.each_value.any? { |field_type| contains_proc_type?(field_type, visited) }
+        when Types::Variant
+          type.arm_names.any? { |arm_name| type.arm(arm_name).each_value.any? { |field_type| contains_proc_type?(field_type, visited) } }
         when Types::Proc
           true
         when Types::Function

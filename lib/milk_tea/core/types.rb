@@ -587,6 +587,59 @@ module MilkTea
     class Union < Struct
     end
 
+    # A user-defined tagged union (discriminated union). Each arm may carry zero
+    # or more named payload fields. Arms with no fields carry only the discriminant.
+    class Variant < Base
+      attr_reader :name, :module_name
+
+      def initialize(name, module_name: nil)
+        @name = name
+        @module_name = module_name
+        @arms = {}       # arm_name => { field_name => type }
+        @arm_names = []
+      end
+
+      def define_arms(arms_hash)
+        @arms = arms_hash.freeze
+        @arm_names = arms_hash.keys.freeze
+        self
+      end
+
+      def arm(name)
+        @arms[name]
+      end
+
+      def arm_names
+        @arm_names
+      end
+
+      def has_payload?(arm_name)
+        fields = @arms[arm_name]
+        fields && !fields.empty?
+      end
+
+      def to_s
+        module_name ? "#{module_name}.#{name}" : name
+      end
+    end
+
+    # Synthetic struct-like type used only as the binding type for `as name` in
+    # variant match arms.  Never declared as a named type; lives only in scopes.
+    class VariantArmPayload < Struct
+      attr_reader :variant_type, :arm_name
+
+      def initialize(variant_type, arm_name, fields)
+        super("#{variant_type.name}_#{arm_name}", module_name: variant_type.module_name)
+        @variant_type = variant_type
+        @arm_name = arm_name
+        define_fields(fields)
+      end
+
+      def to_s
+        "#{variant_type}.#{arm_name} payload"
+      end
+    end
+
     class Opaque < Base
       attr_reader :name, :module_name, :external, :c_name
 

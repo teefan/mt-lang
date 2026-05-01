@@ -2,7 +2,7 @@
 
 module MilkTea
   module IR
-    Program = Data.define(:module_name, :includes, :constants, :globals, :opaques, :structs, :unions, :enums, :static_asserts, :functions)
+    Program = Data.define(:module_name, :includes, :constants, :globals, :opaques, :structs, :unions, :enums, :variants, :static_asserts, :functions)
     Include = Data.define(:header)
     Constant = Data.define(:name, :c_name, :type, :value)
     Global = Data.define(:name, :c_name, :type, :value)
@@ -56,5 +56,8 @@ module MilkTea
     AggregateLiteral = Data.define(:type, :fields)
     AggregateField = Data.define(:name, :value)
     ArrayLiteral = Data.define(:type, :elements)
+    VariantDecl = Data.define(:name, :c_name, :arms)
+    VariantArm = Data.define(:name, :c_name, :fields)
+    VariantLiteral = Data.define(:type, :arm_name, :fields)
   end
 end

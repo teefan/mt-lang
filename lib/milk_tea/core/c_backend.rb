@@ -85,6 +85,11 @@ module MilkTea
         lines << ""
       end
 
+      @program.variants.each do |variant_decl|
+        lines.concat(emit_variant(variant_decl))
+        lines << ""
+      end
+
       array_return_types = collect_array_return_types
       array_return_types.each do |type|
         lines.concat(emit_array_return_wrapper(type))
@@ -294,6 +299,10 @@ module MilkTea
         expression.elements.each do |element|
           collect_called_function_names_from_expression(element, functions_by_name, reachable_names, worklist)
         end
+      when IR::VariantLiteral
+        expression.fields.each do |field|
+          collect_called_function_names_from_expression(field.value, functions_by_name, reachable_names, worklist)
+        end
       end
     end
 
@@ -368,6 +377,8 @@ module MilkTea
         expression.fields.each { |field| collect_referenced_constant_names_from_expression(field.value, constants_by_name, referenced_names) }
       when IR::ArrayLiteral
         expression.elements.each { |element| collect_referenced_constant_names_from_expression(element, constants_by_name, referenced_names) }
+      when IR::VariantLiteral
+        expression.fields.each { |field| collect_referenced_constant_names_from_expression(field.value, constants_by_name, referenced_names) }
       end
     end
 
@@ -802,6 +813,50 @@ module MilkTea
       lines
     end
 
+    def emit_variant(variant_decl)
+      lines = []
+      outer_c = variant_decl.c_name
+      payload_arms = variant_decl.arms.select { |a| a.fields.any? }
+
+      # Per-arm payload structs
+      payload_arms.each do |arm|
+        lines << "struct #{arm.c_name} {"
+        arm.fields.each do |field|
+          lines << "#{INDENT}#{c_declaration(field.type, field.name)};"
+        end
+        lines << "};"
+        lines << "typedef struct #{arm.c_name} #{arm.c_name};"
+      end
+
+      # Kind enum
+      lines << "typedef int32_t #{outer_c}_kind;"
+      unless variant_decl.arms.empty?
+        lines << "enum {"
+        variant_decl.arms.each_with_index do |arm, index|
+          suffix = index == variant_decl.arms.length - 1 ? "" : ","
+          lines << "#{INDENT}#{outer_c}_kind_#{arm.name} = #{index}#{suffix}"
+        end
+        lines << "};"
+      end
+
+      # Data union (only if at least one arm has payload)
+      if payload_arms.any?
+        lines << "union #{outer_c}__data {"
+        payload_arms.each do |arm|
+          lines << "#{INDENT}struct #{arm.c_name} #{arm.name};"
+        end
+        lines << "};"
+      end
+
+      # Outer struct
+      lines << "struct #{outer_c} {"
+      lines << "#{INDENT}#{outer_c}_kind kind;"
+      lines << "#{INDENT}union #{outer_c}__data data;" if payload_arms.any?
+      lines << "};"
+      lines << "typedef struct #{outer_c} #{outer_c};"
+      lines
+    end
+
     def emit_enum(enum_decl)
       lines = ["typedef #{c_type(enum_decl.backing_type)} #{enum_decl.c_name};"]
       return lines if enum_decl.members.empty?
@@ -1126,6 +1181,8 @@ module MilkTea
         expression.fields.sum { |field| name_reference_count_in_expression(field.value, name) }
       when IR::ArrayLiteral
         expression.elements.sum { |element| name_reference_count_in_expression(element, name) }
+      when IR::VariantLiteral
+        expression.fields.sum { |field| name_reference_count_in_expression(field.value, name) }
       else
         0
       end
@@ -1197,6 +1254,8 @@ module MilkTea
         expression.fields.each { |field| collect_checked_index_alias_candidates(field.value, counts, order) }
       when IR::ArrayLiteral
         expression.elements.each { |element| collect_checked_index_alias_candidates(element, counts, order) }
+      when IR::VariantLiteral
+        expression.fields.each { |field| collect_checked_index_alias_candidates(field.value, counts, order) }
       end
     end
 
@@ -1485,6 +1544,8 @@ module MilkTea
         emit_aggregate_literal(expression)
       when IR::ArrayLiteral
         emit_array_compound_literal(expression)
+      when IR::VariantLiteral
+        emit_variant_literal(expression)
       else
         raise LoweringError, "unsupported IR expression #{expression.class.name}"
       end
@@ -1508,6 +1569,18 @@ module MilkTea
         ".#{field.name} = #{emit_initializer(field.value)}"
       end.join(", ")
       "(#{c_type(expression.type)}){ #{fields} }"
+    end
+
+    def emit_variant_literal(expression)
+      outer_c = named_type_c_name(expression.type)
+      kind_constant = "#{outer_c}_kind_#{expression.arm_name}"
+      if expression.fields.empty?
+        "(#{outer_c}){ .kind = #{kind_constant} }"
+      else
+        arm_c = "#{outer_c}_#{expression.arm_name}"
+        payload_fields = expression.fields.map { |f| ".#{f.name} = #{emit_initializer(f.value)}" }.join(", ")
+        "(#{outer_c}){ .kind = #{kind_constant}, .data.#{expression.arm_name} = (struct #{arm_c}){ #{payload_fields} } }"
+      end
     end
 
     def emit_array_initializer(expression)
@@ -1841,7 +1914,7 @@ module MilkTea
       when Types::GenericInstance
         base = generic_c_type(type)
         pointer ? "#{base}*" : base
-      when Types::Struct, Types::Union, Types::Enum, Types::Flags
+      when Types::Struct, Types::Union, Types::Enum, Types::Flags, Types::Variant, Types::VariantArmPayload
         base = named_type_c_name(type)
         pointer ? "#{base}*" : base
       when Types::Opaque

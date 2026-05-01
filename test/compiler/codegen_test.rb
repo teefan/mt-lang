@@ -3277,6 +3277,97 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return 1;/, generated)
   end
 
+  def test_generate_c_for_variant_tagged_union_structs
+    source = <<~MT
+      module demo.variant_codegen
+
+      variant Token:
+          ident(text: str)
+          number(value: i32)
+          eof
+
+      def kind_of(tok: Token) -> i32:
+          match tok:
+              Token.ident:
+                  return 0
+              Token.number:
+                  return 1
+              Token.eof:
+                  return 2
+    MT
+
+    generated = generate_c_from_source(source)
+
+    # Kind typedef and constants
+    assert_match(/typedef int32_t demo_variant_codegen_Token_kind;/, generated)
+    assert_match(/demo_variant_codegen_Token_kind_ident = 0/, generated)
+    assert_match(/demo_variant_codegen_Token_kind_number = 1/, generated)
+    assert_match(/demo_variant_codegen_Token_kind_eof = 2/, generated)
+    # Per-arm payload structs emitted
+    assert_match(/struct demo_variant_codegen_Token_ident \{/, generated)
+    assert_match(/struct demo_variant_codegen_Token_number \{/, generated)
+    # Data union (ident and number have payloads)
+    assert_match(/union demo_variant_codegen_Token__data \{/, generated)
+    # Outer struct with kind and data fields
+    assert_match(/struct demo_variant_codegen_Token \{/, generated)
+    assert_match(/demo_variant_codegen_Token_kind kind;/, generated)
+    # Typedef
+    assert_match(/typedef struct demo_variant_codegen_Token demo_variant_codegen_Token;/, generated)
+    # Match on .kind
+    assert_match(/switch \(.*\.kind\)/, generated)
+    assert_match(/case demo_variant_codegen_Token_kind_ident:/, generated)
+    assert_match(/case demo_variant_codegen_Token_kind_number:/, generated)
+    assert_match(/case demo_variant_codegen_Token_kind_eof:/, generated)
+  end
+
+  def test_generate_c_for_variant_construction
+    source = <<~MT
+      module demo.variant_ctor_codegen
+
+      variant Event:
+          click(x: i32, y: i32)
+          quit
+
+      def make_quit() -> Event:
+          return Event.quit
+
+      def make_click(x: i32, y: i32) -> Event:
+          return Event.click(x= x, y= y)
+    MT
+
+    generated = generate_c_from_source(source)
+
+    # No-payload arm literal
+    assert_match(/demo_variant_ctor_codegen_Event_kind_quit/, generated)
+    # Payload arm literal references kind constant and struct
+    assert_match(/demo_variant_ctor_codegen_Event_kind_click/, generated)
+    assert_match(/\.kind = demo_variant_ctor_codegen_Event_kind_click/, generated)
+  end
+
+  def test_generate_c_for_variant_as_binding_field_access
+    source = <<~MT
+      module demo.variant_as_binding
+
+      variant Shape:
+          circle(radius: f64)
+          point
+
+      def area(s: Shape) -> f64:
+          match s:
+              Shape.circle as c:
+                  return c.radius * c.radius
+              Shape.point:
+                  return 0.0
+    MT
+
+    generated = generate_c_from_source(source)
+
+    # as-binding declared with struct type and initialized from .data
+    assert_match(/demo_variant_as_binding_Shape_circle/, generated)
+    assert_match(/\.radius/, generated)
+    assert_match(/return 0\.0/, generated)
+  end
+
   private
 
   def demo_path
