@@ -61,6 +61,18 @@ class MilkTeaStdIdiomaticExamplesTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_generic_variants_example_runs
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    result = MilkTea::Run.run(example_path("generic_variants"), cc: compiler)
+
+    assert_equal "generic variant showcase\ngeneric variant checks passed\n", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   def test_string_interpolation_example_runs
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
