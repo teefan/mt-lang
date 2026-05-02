@@ -1,11 +1,14 @@
 # frozen_string_literal: true
 
 require 'json'
+require 'thread'
 
 module MilkTea
   module LSP
     # Handles JSON-RPC 2.0 protocol encoding/decoding over stdin/stdout
     class Protocol
+      @write_mutex = Mutex.new
+
       def self.read_message
         headers = {}
         loop do
@@ -33,9 +36,11 @@ module MilkTea
         json = JSON.dump(message)
         length = json.bytesize
         header = "Content-Length: #{length}\r\n\r\n"
-        $stdout.write(header)
-        $stdout.write(json)
-        $stdout.flush
+        @write_mutex.synchronize do
+          $stdout.write(header)
+          $stdout.write(json)
+          $stdout.flush
+        end
       rescue StandardError => e
         warn "Protocol error writing message: #{e.message}"
       end

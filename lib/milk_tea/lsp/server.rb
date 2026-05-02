@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
 require 'cgi/escape'
+require 'digest'
 require 'pathname'
 require 'set'
+require 'thread'
 require 'uri'
 
 module MilkTea
@@ -37,12 +39,21 @@ module MilkTea
         amp_equal pipe_equal caret_equal shift_left_equal shift_right_equal
         equal_equal bang_equal less_equal greater_equal ellipsis
       ].to_set.freeze
+      DIAGNOSTICS_WORKER_COUNT = Integer(ENV.fetch('MILK_TEA_LSP_DIAGNOSTICS_WORKERS', '2')).clamp(1, 8)
 
       def initialize
         @workspace = Workspace.new
         @handlers = {}
         @diagnostic_report_cache = {}
+        @diagnostics_mutex = Mutex.new
+        @diagnostics_pending = {}
+        @diagnostics_enqueued = Set.new
+        @diagnostics_generation = Hash.new(0)
+        @diagnostics_last_scheduled_hash = {}
+        @diagnostics_queue = Queue.new
+        @diagnostics_workers = []
         register_handlers
+        start_diagnostics_workers
       end
 
       def run
@@ -325,10 +336,14 @@ module MilkTea
       end
 
       def handle_shutdown(_params)
+        stop_diagnostics_workers
+        @workspace.shutdown
         nil
       end
 
       def handle_exit(_params)
+        stop_diagnostics_workers
+        @workspace.shutdown
         exit(0)
       end
 
@@ -338,7 +353,7 @@ module MilkTea
         uri     = params['textDocument']['uri']
         content = params['textDocument']['text']
         @workspace.open_document(uri, content)
-        publish_diagnostics(uri)
+        schedule_diagnostics(uri)
         nil
       end
 
@@ -356,13 +371,18 @@ module MilkTea
           end
         end
 
-        publish_diagnostics(uri)
+        schedule_diagnostics(uri)
         nil
       end
 
       def handle_did_close(params)
         uri = params['textDocument']['uri']
+        cancel_diagnostics(uri)
         @workspace.close_document(uri)
+        Protocol.write_notification('textDocument/publishDiagnostics', {
+          uri: uri,
+          diagnostics: []
+        })
         nil
       end
 
@@ -372,7 +392,7 @@ module MilkTea
 
         text = params['text']
         @workspace.update_document(uri, text) if text
-        publish_diagnostics(uri)
+        schedule_diagnostics(uri)
         nil
       end
 
@@ -383,7 +403,8 @@ module MilkTea
         return { data: [] } unless uri
 
         tokens = @workspace.get_tokens(uri) || []
-        semantic_entries = build_semantic_token_entries(tokens)
+        analysis = @workspace.get_analysis(uri)
+        semantic_entries = build_semantic_token_entries(tokens, analysis)
         { data: encode_semantic_tokens(semantic_entries) }
       rescue StandardError => e
         warn "Error in semanticTokens/full handler: #{e.message}"
@@ -1106,13 +1127,109 @@ module MilkTea
 
       # ── Diagnostics ──────────────────────────────────────────────────────────
 
-      def publish_diagnostics(uri)
-        diagnostics = @workspace.collect_diagnostics(uri)
+      def schedule_diagnostics(uri)
+        content = @workspace.get_content(uri)
+        content_digest = Digest::SHA256.hexdigest(content)
+        enqueue = false
 
-        Protocol.write_notification('textDocument/publishDiagnostics', {
-          uri:         uri,
-          diagnostics: diagnostics
-        })
+        @diagnostics_mutex.synchronize do
+          return if @diagnostics_last_scheduled_hash[uri] == content_digest
+
+          @diagnostics_generation[uri] += 1
+          @diagnostics_last_scheduled_hash[uri] = content_digest
+          @diagnostics_pending[uri] = {
+            generation: @diagnostics_generation[uri],
+            content: content,
+          }
+
+          unless @diagnostics_enqueued.include?(uri)
+            @diagnostics_enqueued << uri
+            enqueue = true
+          end
+        end
+
+        @diagnostics_queue << uri if enqueue
+      end
+
+      def cancel_diagnostics(uri)
+        @diagnostics_mutex.synchronize do
+          @diagnostics_generation[uri] += 1
+          @diagnostics_pending.delete(uri)
+          @diagnostics_last_scheduled_hash.delete(uri)
+        end
+      end
+
+      def start_diagnostics_workers
+        return if @diagnostics_workers.any?(&:alive?)
+
+        DIAGNOSTICS_WORKER_COUNT.times do |index|
+          @diagnostics_workers << Thread.new do
+            if Thread.current.respond_to?(:name=)
+              Thread.current.name = "mt-lsp-diagnostics-#{index + 1}"
+            end
+
+            loop do
+              uri = @diagnostics_queue.pop
+              break if uri == :__stop__
+
+              process_diagnostics_for_uri(uri)
+            end
+          rescue StandardError => e
+            warn "LSP diagnostics worker error: #{e.message}"
+          end
+        end
+      end
+
+      def stop_diagnostics_workers
+        workers = @diagnostics_workers
+        return if workers.empty?
+
+        workers.length.times { @diagnostics_queue << :__stop__ }
+        workers.each { |worker| worker.join(0.25) }
+        @diagnostics_workers = []
+      rescue StandardError => e
+        warn "LSP diagnostics worker shutdown error: #{e.message}"
+      end
+
+      def process_diagnostics_for_uri(uri)
+        loop do
+          snapshot = nil
+          @diagnostics_mutex.synchronize do
+            snapshot = @diagnostics_pending.delete(uri)
+          end
+          break unless snapshot
+
+          diagnostics = collect_diagnostics_for_content(uri, snapshot[:content])
+          publish = false
+          @diagnostics_mutex.synchronize do
+            publish = snapshot[:generation] == @diagnostics_generation[uri]
+          end
+
+          if publish
+            Protocol.write_notification('textDocument/publishDiagnostics', {
+              uri: uri,
+              diagnostics: diagnostics
+            })
+          end
+        end
+      ensure
+        requeue = false
+        @diagnostics_mutex.synchronize do
+          @diagnostics_enqueued.delete(uri)
+          if @diagnostics_pending.key?(uri)
+            @diagnostics_enqueued << uri
+            requeue = true
+          end
+        end
+
+        @diagnostics_queue << uri if requeue
+      end
+
+      def collect_diagnostics_for_content(uri, content)
+        Diagnostics.collect(uri, content)
+      rescue StandardError => e
+        warn "LSP diagnostics error #{uri}: #{e.message}"
+        []
       end
 
       # ── Enhancement 1 helpers: hover type resolution ─────────────────────────
@@ -1120,6 +1237,18 @@ module MilkTea
       def resolve_hover_info(uri, lsp_line, lsp_char)
         token = @workspace.find_token_at(uri, lsp_line, lsp_char)
         return nil unless token&.type == :identifier
+
+        tokens = @workspace.get_tokens(uri) || []
+        token_index = tokens.index(token)
+        if token_index
+          module_info = module_declaration_info_at(tokens, token_index)
+          return "module #{module_info[:module_name]}" if module_info
+        end
+
+        if token_index
+          import_info = import_path_info_at(tokens, token_index)
+          return "module #{import_info[:module_name]}" if import_info
+        end
 
         analysis = @workspace.get_analysis(uri)
         return nil unless analysis
@@ -1177,6 +1306,14 @@ module MilkTea
         token = @workspace.find_token_at(uri, lsp_line, lsp_char)
         return nil unless token&.type == :identifier
 
+        tokens = @workspace.get_tokens(uri) || []
+        token_index = tokens.index(token)
+        return nil if token_index && module_declaration_info_at(tokens, token_index)
+
+        if token_index && (import_info = import_path_info_at(tokens, token_index))
+          return module_definition_location(uri, import_info[:module_name])
+        end
+
         analysis = @workspace.get_analysis(uri)
         if analysis
           dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
@@ -1203,13 +1340,18 @@ module MilkTea
         }
       end
 
-      def build_semantic_token_entries(tokens)
+      def build_semantic_token_entries(tokens, analysis = nil)
         entries = []
 
         tokens.each_with_index do |tok, index|
           next if [:newline, :indent, :dedent, :eof].include?(tok.type)
 
-          semantic_type, modifiers = classify_semantic_token(tokens, index)
+          if tok.type == :fstring
+            fstring_interpolation_entries(tok, analysis).each { |e| entries << e }
+            next
+          end
+
+          semantic_type, modifiers = classify_semantic_token(tokens, index, analysis)
           next unless semantic_type
 
           entries << {
@@ -1224,16 +1366,125 @@ module MilkTea
         entries.sort_by { |entry| [entry[:line], entry[:start_char]] }
       end
 
-      def classify_semantic_token(tokens, index)
+      # Decomposes an fstring token into non-overlapping semantic token entries.
+      # Text segments are emitted as :string.
+      # Interpolation content (including optional format spec suffixes like `:.2`)
+      # is classified semantically; interpolation delimiters are left to TextMate
+      # so theme punctuation colors are preserved.
+      def fstring_interpolation_entries(fstring_tok, analysis)
+        parts = fstring_tok.literal
+        return [{ line: fstring_tok.line - 1, start_char: fstring_tok.column - 1, length: fstring_tok.lexeme.length, type: :string, modifiers: [] }] unless parts.is_a?(Array)
+
+        result = []
+        fstr_line = fstring_tok.line - 1   # 0-indexed
+        fstr_col0 = fstring_tok.column - 1 # 0-indexed start of `f`
+        cursor = fstr_col0
+
+        parts.each do |part|
+          next unless part[:kind] == :expr
+
+          # part[:column] is 1-indexed column of the first char of the expression source
+          # (i.e. the char right after `#{`).
+          expr_col0  = part[:column] - 1          # 0-indexed
+          hash_col0  = expr_col0 - 2              # 0-indexed position of `#`
+
+          raw_len       = part[:source].length + (part[:format_spec] ? 1 + part[:format_spec].length : 0)
+          rbrace_col0   = expr_col0 + raw_len     # 0-indexed position of `}`
+
+          # :string for everything from cursor up to (but not including) `#`
+          text_len = hash_col0 - cursor
+          result << { line: fstr_line, start_char: cursor, length: text_len, type: :string, modifiers: [] } if text_len > 0
+
+          # Keep `#{` punctuation styled by TextMate grammar to preserve theme intent.
+
+          # classified entries for the expression source only (not format spec).
+          source = part[:source]
+          unless source.nil? || source.strip.empty?
+            begin
+              sub_tokens = MilkTea::Lexer.new(source).lex
+                                        .reject { |t| [:newline, :indent, :dedent, :eof].include?(t.type) }
+              sub_tokens.each_with_index do |sub_tok, i|
+                sem_type, modifiers = classify_semantic_token(sub_tokens, i, analysis)
+                next unless sem_type
+                result << {
+                  line: fstr_line,
+                  start_char: expr_col0 + (sub_tok.column - 1),
+                  length: sub_tok.lexeme.length,
+                  type: sem_type,
+                  modifiers: modifiers
+                }
+              end
+            rescue MilkTea::LexError
+              # Fall back to string coloring for malformed expression.
+              result << {
+                line: fstr_line,
+                start_char: expr_col0,
+                length: source.length,
+                type: :string,
+                modifiers: [],
+              }
+            end
+          end
+
+          # classified entries for format spec (if present): `:` + numeric/operator parts.
+          if part[:format_spec]
+            spec_col0 = expr_col0 + source.length
+            # Colon operator
+            result << { line: fstr_line, start_char: spec_col0, length: 1, type: :operator, modifiers: [] }
+            # Format spec content (e.g., ".0", "3", ".5f") as individual token-like entries.
+            # Treat it as lexable content or just string for simplicity.
+            spec = part[:format_spec]
+            unless spec.empty?
+              begin
+                spec_tokens = MilkTea::Lexer.new(spec).lex
+                                           .reject { |t| [:newline, :indent, :dedent, :eof].include?(t.type) }
+                spec_tokens.each_with_index do |spec_tok, i|
+                  spec_sem_type, spec_modifiers = classify_semantic_token(spec_tokens, i, analysis)
+                  next unless spec_sem_type
+                  result << {
+                    line: fstr_line,
+                    start_char: spec_col0 + 1 + (spec_tok.column - 1),
+                    length: spec_tok.lexeme.length,
+                    type: spec_sem_type,
+                    modifiers: spec_modifiers
+                  }
+                end
+              rescue MilkTea::LexError
+                # Fall back: treat spec as a number/string token.
+                result << {
+                  line: fstr_line,
+                  start_char: spec_col0 + 1,
+                  length: spec.length,
+                  type: :number,
+                  modifiers: []
+                }
+              end
+            end
+          end
+
+          # Keep `}` punctuation styled by TextMate grammar to preserve theme intent.
+
+          cursor = rbrace_col0 + 1
+        end
+
+        # :string for tail text + closing `"`
+        fstr_end_col0 = fstr_col0 + fstring_tok.lexeme.length - 1
+        tail_len = fstr_end_col0 - cursor + 1
+        result << { line: fstr_line, start_char: cursor, length: tail_len, type: :string, modifiers: [] } if tail_len > 0
+
+        result
+      end
+
+      def classify_semantic_token(tokens, index, analysis = nil)
         tok = tokens[index]
         prev_tok = previous_non_trivia_token(tokens, index)
         next_tok = next_non_trivia_token(tokens, index + 1)
 
         if tok.type == :identifier
-          return classify_identifier_semantic(tokens, index)
+          return classify_identifier_semantic(tokens, index, analysis)
         end
 
-        if [:string, :cstring, :fstring].include?(tok.type)
+        if [:string, :cstring].include?(tok.type)
           return [:string, []]
         end
 
@@ -1257,10 +1508,18 @@ module MilkTea
         [nil, []]
       end
 
-      def classify_identifier_semantic(tokens, index)
+      def classify_identifier_semantic(tokens, index, analysis = nil)
         tok = tokens[index]
         prev_tok = previous_non_trivia_token(tokens, index)
         next_tok = next_non_trivia_token(tokens, index + 1)
+
+        if (import_info = import_path_info_at(tokens, index))
+          modifiers = []
+          modifiers << 'declaration' if import_info[:role] == :alias
+          return [:namespace, modifiers]
+        end
+
+        return [:namespace, []] if module_declaration_path_token?(tokens, index)
 
         if enum_member_name?(tok.lexeme) && next_tok&.type == :equal
           return [:enumMember, ['declaration']]
@@ -1274,6 +1533,10 @@ module MilkTea
           return [:type, ['declaration']]
         end
 
+        if next_tok&.type == :dot && import_alias_identifier?(tokens, index, analysis)
+          return [:namespace, []]
+        end
+
         if prev_tok&.type == :const
           return [:variable, ['declaration', 'readonly']]
         end
@@ -1283,6 +1546,21 @@ module MilkTea
         end
 
         if prev_tok&.type == :dot
+          if analysis
+            module_binding = imported_module_binding_for_member(tokens, index, analysis)
+            if module_binding
+              return [:function, []] if module_binding.functions.key?(tok.lexeme) && next_tok&.type == :lparen
+              return [:type, []] if module_binding.types.key?(tok.lexeme)
+              return [:namespace, []] if analysis.imports.key?(tok.lexeme)
+            end
+          end
+
+          # Keep colors stable before/after semantic analysis availability by
+          # recognizing import-alias member calls directly from syntax.
+          if next_tok&.type == :lparen && import_alias_member_access?(tokens, index, analysis)
+            return [:function, []]
+          end
+
           return [:enumMember, []] if enum_member_name?(tok.lexeme)
           return [:type, []] if dotted_type_name?(tok.lexeme)
 
@@ -1316,11 +1594,125 @@ module MilkTea
         name.match?(/\A[A-Z][A-Za-z0-9_]*\z/)
       end
 
+      def imported_module_binding_for_member(tokens, index, analysis)
+        dot_index = previous_non_trivia_token_index(tokens, index)
+        return nil unless dot_index && tokens[dot_index].type == :dot
+
+        receiver_index = previous_non_trivia_token_index(tokens, dot_index)
+        return nil unless receiver_index
+
+        receiver = tokens[receiver_index]
+        return nil unless receiver.type == :identifier
+
+        analysis.imports[receiver.lexeme]
+      end
+
+      def import_alias_identifier?(tokens, index, analysis)
+        tok = tokens[index]
+        return false unless tok&.type == :identifier
+
+        return true if analysis&.imports&.key?(tok.lexeme)
+
+        import_alias_declared?(tokens, tok.lexeme)
+      end
+
+      def import_alias_member_access?(tokens, index, analysis)
+        dot_index = previous_non_trivia_token_index(tokens, index)
+        return false unless dot_index && tokens[dot_index].type == :dot
+
+        receiver_index = previous_non_trivia_token_index(tokens, dot_index)
+        return false unless receiver_index
+
+        receiver = tokens[receiver_index]
+        return false unless receiver&.type == :identifier
+
+        import_alias_identifier?(tokens, receiver_index, analysis)
+      end
+
+      def import_alias_declared?(tokens, alias_name)
+        return false if alias_name.nil? || alias_name.empty?
+
+        i = 0
+        while i < tokens.length
+          tok = tokens[i]
+          if tok.type == :import
+            line = tok.line
+            j = i + 1
+            as_token_seen = false
+            while j < tokens.length && tokens[j].line == line
+              as_token_seen = true if tokens[j].type == :as
+              if as_token_seen && tokens[j].type == :identifier
+                return true if tokens[j].lexeme == alias_name
+                break
+              end
+              j += 1
+            end
+            i = j
+            next
+          end
+          i += 1
+        end
+        false
+      end
+
+      def import_path_info_at(tokens, index)
+        tok = tokens[index]
+        return nil unless tok&.type == :identifier
+
+        line_tokens = non_trivia_tokens_on_line(tokens, tok.line)
+        return nil if line_tokens.empty? || line_tokens.first.type != :import
+
+        as_index = line_tokens.index { |line_tok| line_tok.type == :as }
+        module_tokens = line_tokens[1...(as_index || line_tokens.length)] || []
+        alias_token = as_index ? line_tokens[as_index + 1] : nil
+
+        module_identifiers = module_tokens.select { |line_tok| line_tok.type == :identifier }
+        return nil if module_identifiers.empty?
+
+        module_name = module_identifiers.map(&:lexeme).join('.')
+        return { module_name: module_name, role: :module_path } if module_identifiers.include?(tok)
+        return { module_name: module_name, role: :alias } if alias_token == tok
+
+        nil
+      end
+
+      def non_trivia_tokens_on_line(tokens, line)
+        tokens.select do |tok|
+          tok.line == line && ![:newline, :indent, :dedent, :eof].include?(tok.type)
+        end
+      end
+
+      def module_declaration_path_token?(tokens, index)
+        !module_declaration_info_at(tokens, index).nil?
+      end
+
+      def module_declaration_info_at(tokens, index)
+        tok = tokens[index]
+        return nil unless tok&.type == :identifier
+
+        line_tokens = non_trivia_tokens_on_line(tokens, tok.line)
+        return nil if line_tokens.empty? || line_tokens.first.type != :module
+
+        path_tokens = line_tokens[1..].to_a.select { |line_tok| line_tok.type == :identifier }
+        return nil unless path_tokens.any? { |line_tok| line_tok.equal?(tok) }
+
+        {
+          module_name: path_tokens.map(&:lexeme).join('.'),
+        }
+      end
+
       def previous_non_trivia_token(tokens, index)
+        prev_index = previous_non_trivia_token_index(tokens, index)
+        return nil unless prev_index
+
+        tokens[prev_index]
+      end
+
+      def previous_non_trivia_token_index(tokens, index)
         i = index - 1
         while i >= 0
           tok = tokens[i]
-          return tok unless [:newline, :indent, :dedent].include?(tok.type)
+          return i unless [:newline, :indent, :dedent].include?(tok.type)
           i -= 1
         end
         nil
