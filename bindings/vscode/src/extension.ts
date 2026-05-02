@@ -93,8 +93,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   if (cfg.dap.enabled) {
     const dapFactory = new MilkTeaDebugAdapterFactory(dapLogger);
+    const dapConfigProvider: vscode.DebugConfigurationProvider = {
+      provideDebugConfigurations(_folder) {
+        return [
+          {
+            type: 'milk-tea',
+            request: 'launch',
+            name: 'Debug Milk Tea Program',
+            program: '${file}',
+            args: [],
+            stopOnEntry: false,
+          },
+        ];
+      },
+
+      resolveDebugConfiguration(_folder, config) {
+        // Allow F5 to work without a launch.json by supplying sane defaults.
+        if (!config.type && !config.request && !config.name) {
+          return {
+            type: 'milk-tea',
+            request: 'launch',
+            name: 'Debug Milk Tea Program',
+            program: '${file}',
+            args: [],
+            stopOnEntry: false,
+          };
+        }
+
+        if (config.type === 'milk-tea' && config.request === 'launch' && !config.program) {
+          return {
+            ...config,
+            program: '${file}',
+          };
+        }
+
+        return config;
+      },
+    };
+
     context.subscriptions.push(
       vscode.debug.registerDebugAdapterDescriptorFactory('milk-tea', dapFactory),
+      vscode.debug.registerDebugConfigurationProvider('milk-tea', dapConfigProvider),
     );
     dapLogger.info('DAP factory registered for type "milk-tea".');
   } else {

@@ -246,7 +246,7 @@
               "type": "milk-tea",
               "request": "launch",
               "name": "${1:Debug Milk Tea Program}",
-              "program": "^\"\\${file}\"",
+              "program": "${file}",
               "args": [],
               "stopOnEntry": false
             }
@@ -256,12 +256,11 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
     "compile": "tsc -p .",
     "watch": "tsc -p . --watch",
     "lint": "eslint src --ext ts",
     "snapshot:tm": "node ./scripts/snapshot-textmate.js",
-    "package": "vsce package --allow-missing-repository --skip-license",
+    "package": "npm run compile && vsce package --allow-missing-repository --skip-license",
     "vsix:build": "npm run package",
     "vscode:install": "code --install-extension \"${npm_package_name}-${npm_package_version}.vsix\" --force",
     "vscode:uninstall": "code --uninstall-extension milk-tea-lang.milk-tea-lang",

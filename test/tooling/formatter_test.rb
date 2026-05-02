@@ -134,4 +134,16 @@ class MilkTeaFormatterTest < Minitest::Test
     # Inline comment should appear on the same line as the let statement
     assert_match(/let x = 42\s+# the answer/, formatted)
   end
+
+  def test_canonical_formats_top_level_var_declaration
+    source = <<~MT
+      module demo.var
+
+      pub var  counter  :  i32   =  1
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
+
+    assert_equal "module demo.var\n\npub var counter: i32 = 1\n", formatted
+  end
 end

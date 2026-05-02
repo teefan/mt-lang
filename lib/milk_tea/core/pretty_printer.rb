@@ -94,21 +94,32 @@ module MilkTea
 
       # Maps source_line → [comment_text, ...] for standalone comment lines.
       # These are emitted before the first statement whose .line >= comment_line.
+      # Also populates @blank_line_set with line numbers that are blank.
       def build_comment_map(trivia)
+        @blank_line_set = {}
         map = {}
-        trivia.select { |t| t.kind == :comment }.each do |t|
-          (map[t.line] ||= []) << t.text.strip
+        trivia.each do |t|
+          case t.kind
+          when :comment
+            (map[t.line] ||= []) << t.text.strip
+          when :blank_line
+            @blank_line_set[t.line] = true
+          end
         end
         map
       end
 
-      # Emit pending leading comments whose source line < stmt_line.
+      # Emit pending leading comments and blank lines whose source line < stmt_line.
       def flush_leading_comments_before(stmt_line)
         return unless stmt_line
 
-        sorted = @comment_map.keys.select { |l| l < stmt_line }.sort
-        sorted.each do |l|
-          @comment_map.delete(l)&.each { |text| line(text) }
+        all_lines = (@comment_map.keys + @blank_line_set.keys).select { |l| l < stmt_line }.sort.uniq
+        all_lines.each do |l|
+          if @comment_map.key?(l)
+            @comment_map.delete(l)&.each { |text| line(text) }
+          elsif @blank_line_set.delete(l)
+            blank_line
+          end
         end
       end
 
@@ -159,7 +170,10 @@ module MilkTea
         blank_line if wrote_section
         source_file.declarations.each_with_index do |declaration, index|
           emit_declaration(declaration)
-          blank_line if index < (source_file.declarations.length - 1)
+          next_decl = source_file.declarations[index + 1]
+          if next_decl && (block_declaration?(declaration) || block_declaration?(next_decl))
+            blank_line
+          end
         end
 
         # Flush any trailing comments that come after the last declaration
@@ -174,6 +188,15 @@ module MilkTea
         end
       end
 
+      BLOCK_DECLARATION_TYPES = [
+        AST::FunctionDef, AST::ForeignFunctionDecl, AST::MethodsBlock,
+        AST::StructDecl, AST::UnionDecl, AST::EnumDecl, AST::FlagsDecl, AST::VariantDecl,
+      ].freeze
+
+      def block_declaration?(declaration)
+        BLOCK_DECLARATION_TYPES.any? { |t| declaration.is_a?(t) }
+      end
+
       def emit_declaration(declaration)
         # Flush any standalone comments that precede this declaration
         decl_line = declaration.respond_to?(:line) ? declaration.line : nil
@@ -185,6 +208,14 @@ module MilkTea
           header = "#{visibility_prefix(declaration)}const #{declaration.name}"
           header += ": #{render_type(declaration.type)}" if declaration.type
           line("#{header} = #{render_expression(declaration.value)}")
+        when AST::VarDecl
+          header = "#{visibility_prefix(declaration)}var #{declaration.name}"
+          header += ": #{render_type(declaration.type)}" if declaration.type
+          if declaration.value
+            line("#{header} = #{render_expression(declaration.value)}")
+          else
+            line(header)
+          end
         when AST::TypeAliasDecl
           line("#{visibility_prefix(declaration)}type #{declaration.name} = #{render_type(declaration.target)}")
         when AST::StructDecl
