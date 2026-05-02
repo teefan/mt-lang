@@ -34,28 +34,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const lspClient = new MilkTeaLspClient(lspLogger, traceChannel);
   context.subscriptions.push({ dispose: () => void lspClient.stop() });
 
-  if (cfg.lsp.enabled) {
-    await lspClient.start().catch((err: unknown) => {
-      void vscode.window.showErrorMessage(
-        `Milk Tea: failed to start LSP server — ${err}. ` +
-        `Check milkTea.lsp.serverPath and try "Milk Tea: Restart LSP".`,
-      );
-    });
-  }
-
   // ── DAP factory + session tracker ──────────────────────────────────────
   const dapTracker = new MilkTeaDapSessionTracker(dapLogger);
   dapTracker.register(context);
-
-  if (cfg.dap.enabled) {
-    const dapFactory = new MilkTeaDebugAdapterFactory(dapLogger);
-    context.subscriptions.push(
-      vscode.debug.registerDebugAdapterDescriptorFactory('milk-tea', dapFactory),
-    );
-    dapLogger.info('DAP factory registered for type "milk-tea".');
-  } else {
-    dapLogger.info('DAP is disabled in settings (milkTea.dap.enabled = false).');
-  }
 
   // ── Commands ───────────────────────────────────────────────────────────
   context.subscriptions.push(
@@ -82,6 +63,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   );
 
+  if (cfg.lsp.enabled) {
+    void lspClient.startWithRetry({
+      onRetrying: (attempt, maxAttempts, delaySeconds, err) => {
+        void vscode.window.showWarningMessage(
+          `Milk Tea: LSP start failed. Retrying ${attempt}/${maxAttempts} in ${delaySeconds}s...`,
+        );
+        lspLogger?.warn(
+          `LSP startup retry scheduled (${attempt}/${maxAttempts}) in ${delaySeconds}s: ${err}`,
+        );
+      },
+      onExhausted: (maxAttempts, err) => {
+        lspLogger?.error(`LSP startup failed after ${maxAttempts} attempts: ${err}`);
+      },
+    }).catch((err: unknown) => {
+      void vscode.window.showErrorMessage(
+        `Milk Tea: failed to start LSP server after retries — ${err}. ` +
+        `Check milkTea.lsp.serverPath and try "Milk Tea: Restart LSP".`,
+      );
+    });
+  }
+
+  if (cfg.dap.enabled) {
+    const dapFactory = new MilkTeaDebugAdapterFactory(dapLogger);
+    context.subscriptions.push(
+      vscode.debug.registerDebugAdapterDescriptorFactory('milk-tea', dapFactory),
+    );
+    dapLogger.info('DAP factory registered for type "milk-tea".');
+  } else {
+    dapLogger.info('DAP is disabled in settings (milkTea.dap.enabled = false).');
+  }
+
   // ── Watch for config changes ────────────────────────────────────────────
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(async (event) => {
@@ -101,7 +113,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (
         event.affectsConfiguration('milkTea.lsp.serverPath') ||
         event.affectsConfiguration('milkTea.lsp.enabled')    ||
-        event.affectsConfiguration('milkTea.lsp.extraArgs')
+        event.affectsConfiguration('milkTea.lsp.extraArgs')  ||
+        event.affectsConfiguration('milkTea.lsp.retry.enabled') ||
+        event.affectsConfiguration('milkTea.lsp.retry.maxAttempts') ||
+        event.affectsConfiguration('milkTea.lsp.retry.delaySeconds')
       ) {
         const action = await vscode.window.showInformationMessage(
           'Milk Tea: LSP configuration changed. Restart the language server?',
@@ -113,6 +128,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             void vscode.window.showErrorMessage(`Milk Tea: LSP restart failed — ${err}`);
           });
         }
+      }
+
+      if (
+        event.affectsConfiguration('milkTea.dap.retry.enabled') ||
+        event.affectsConfiguration('milkTea.dap.retry.maxAttempts') ||
+        event.affectsConfiguration('milkTea.dap.retry.delaySeconds')
+      ) {
+        void vscode.window.showInformationMessage(
+          'Milk Tea: DAP retry configuration changed. New values apply to future debug sessions.',
+        );
       }
     }),
   );

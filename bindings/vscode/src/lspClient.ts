@@ -10,6 +10,15 @@ import {
 import { getConfig } from './config';
 import type { Logger } from './log';
 
+interface RetryEvents {
+  onRetrying?: (attempt: number, maxAttempts: number, delaySeconds: number, error: unknown) => void;
+  onExhausted?: (maxAttempts: number, error: unknown) => void;
+}
+
+function delayMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class MilkTeaLspClient {
   private client: LanguageClient | undefined;
   private readonly log: Logger;
@@ -37,7 +46,7 @@ export class MilkTeaLspClient {
       return;
     }
 
-    const args = ['lsp', ...cfg.extraArgs];
+    const args = [...cfg.extraArgs];
     this.log.info(`Starting LSP server: ${cfg.serverPath} ${args.join(' ')}`);
 
     const serverOptions: ServerOptions = {
@@ -93,6 +102,41 @@ export class MilkTeaLspClient {
     this.startPromise = undefined;
   }
 
+  async startWithRetry(events?: RetryEvents): Promise<void> {
+    const cfg = getConfig().lsp;
+    if (!cfg.enabled) {
+      this.log.info('LSP is disabled in settings (milkTea.lsp.enabled = false).');
+      return;
+    }
+
+    const maxAttempts = Math.max(1, cfg.retry.maxAttempts);
+    const delaySeconds = Math.max(1, cfg.retry.delaySeconds);
+    const retriesEnabled = cfg.retry.enabled;
+
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        await this.start();
+        return;
+      } catch (error) {
+        lastError = error;
+        const hasNextAttempt = retriesEnabled && attempt < maxAttempts;
+        if (!hasNextAttempt) {
+          break;
+        }
+
+        events?.onRetrying?.(attempt + 1, maxAttempts, delaySeconds, error);
+        await delayMs(delaySeconds * 1000);
+      }
+    }
+
+    if (lastError !== undefined) {
+      events?.onExhausted?.(maxAttempts, lastError);
+      throw lastError;
+    }
+  }
+
   async stop(): Promise<void> {
     if (!this.client) { return; }
     this.log.info('Stopping LSP server…');
@@ -109,7 +153,7 @@ export class MilkTeaLspClient {
   async restart(): Promise<void> {
     this.log.info('Restarting LSP server…');
     await this.stop();
-    await this.start();
+    await this.startWithRetry();
   }
 
   // Called when workspace config changes so trace level stays in sync.
