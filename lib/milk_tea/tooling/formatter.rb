@@ -11,10 +11,7 @@ module MilkTea
       validate_mode!(mode)
 
       case mode
-      when :safe
-        contains_comment_trivia?(source, path:) ? preserve_format(source, path:) : canonical_format(source, path:)
-      when :canonical
-        ensure_canonical_safe!(source, path:)
+      when :safe, :canonical
         canonical_format(source, path:)
       when :preserve
         preserve_format(source, path:)
@@ -31,8 +28,9 @@ module MilkTea
     end
 
     def self.canonical_format(source, path:)
+      lexed = Lexer.lex_with_trivia(source, path:)
       ast = Parser.parse(source, path:)
-      PrettyPrinter.format_ast(ast)
+      PrettyPrinter.format_ast(ast, trivia: lexed.trivia)
     end
 
     def self.preserve_format(source, path:)
@@ -44,17 +42,6 @@ module MilkTea
       return if MODES.include?(mode)
 
       raise FormatterError, "unknown formatter mode #{mode.inspect}"
-    end
-
-    def self.ensure_canonical_safe!(source, path:)
-      return unless contains_comment_trivia?(source, path:)
-
-      raise FormatterError, "canonical formatting does not preserve comments; use --preserve"
-    end
-
-    def self.contains_comment_trivia?(source, path:)
-      lexed = Lexer.lex_with_trivia(source, path:)
-      lexed.trivia.any? { |entry| entry.kind == :comment }
     end
   end
 end
