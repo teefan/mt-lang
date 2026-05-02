@@ -626,6 +626,8 @@ module MilkTea
           code = diag['code']
           message = diag['message'].to_s
           diag_line = diag.dig('range', 'start', 'line').to_i + 1  # 1-based
+          diag_start_char = diag.dig('range', 'start', 'character').to_i
+          diag_end_char = diag.dig('range', 'end', 'character').to_i
           lines = content.lines
           source_line = lines[diag_line - 1].to_s
 
@@ -633,11 +635,13 @@ module MilkTea
             expected_type = message[/\bexpected\s+(.+)\z/, 1]&.strip
             equal_index = source_line.index('=')
             if expected_type && !expected_type.empty? && equal_index
-              rhs = source_line[(equal_index + 1)..]&.rstrip
+              rhs = source_line[(equal_index + 1)..]&.strip
               if rhs && !rhs.empty? && !rhs.start_with?("#{expected_type}<-")
                 indent = source_line[/\A\s*/] || ''
-                lhs = source_line[0..equal_index]
-                new_line = "#{indent}#{lhs.strip} #{expected_type}<-(#{rhs})\n"
+                lhs = source_line[0..equal_index].rstrip
+                simple_value = rhs.match?(/\A(?:[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*|[0-9][0-9_]*(?:\.[0-9][0-9_]*)?|0x[0-9A-Fa-f_]+|0b[01_]+|0o[0-7_]+)\z/)
+                casted_rhs = simple_value ? "#{expected_type}<-#{rhs}" : "#{expected_type}<-(#{rhs})"
+                new_line = "#{indent}#{lhs} #{casted_rhs}\n"
                 actions << {
                   title: "Cast expression to #{expected_type}",
                   kind: 'quickFix',
@@ -684,15 +688,23 @@ module MilkTea
 
           when 'redundant-else'
             # Remove the `else:` line above and dedent the body.
-            # diag_line is the first body statement (1-based).
+            # Supports diagnostics anchored either on `else:` or the first body line.
             lines = content.lines
-            first_body_idx = diag_line - 1
-            next if first_body_idx < 1
+            diag_idx = diag_line - 1
+            next if diag_idx.negative?
 
-            else_idx = (0...first_body_idx).to_a.reverse.find do |i|
-              lines[i]&.match?(/\A\s*else:\s*\z/)
+            if lines[diag_idx]&.match?(/\A\s*else:\s*\z/)
+              else_idx = diag_idx
+              first_body_idx = else_idx + 1
+            else
+              first_body_idx = diag_idx
+              next if first_body_idx < 1
+              else_idx = (0...first_body_idx).to_a.reverse.find do |i|
+                lines[i]&.match?(/\A\s*else:\s*\z/)
+              end
             end
             next unless else_idx
+            next if first_body_idx >= lines.length
 
             else_indent  = lines[else_idx].match(/\A(\s*)/)[1]
             body_indent  = else_indent + '    '
@@ -733,6 +745,54 @@ module MilkTea
               title: "Add '_' prefix to suppress shadow warning",
               kind: 'quickFix',
               diagnostics: [diag]
+            }
+
+          when 'unused-param'
+            next if source_line.empty?
+
+            token = source_line[diag_start_char...diag_end_char].to_s
+            token = token.strip
+            next if token.empty?
+            next if token.start_with?('_')
+
+            replacement = "_#{token.gsub(/\A_+/, '')}"
+            actions << {
+              title: "Rename parameter '#{token}' to '#{replacement}'",
+              kind: 'quickFix',
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  uri => [{
+                    range: {
+                      start: { line: diag_line - 1, character: diag_start_char },
+                      end:   { line: diag_line - 1, character: diag_end_char }
+                    },
+                    newText: replacement
+                  }]
+                }
+              }
+            }
+
+          when 'dead-assignment'
+            next if source_line.empty?
+
+            # Linter guarantees this write is overwritten before any read,
+            # so dropping the statement is semantics-preserving.
+            actions << {
+              title: 'Remove dead assignment',
+              kind: 'quickFix',
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  uri => [{
+                    range: {
+                      start: { line: diag_line - 1, character: 0 },
+                      end:   { line: diag_line,     character: 0 }
+                    },
+                    newText: ''
+                  }]
+                }
+              }
             }
 
           else
@@ -1096,6 +1156,15 @@ module MilkTea
               return "def #{name}(#{params_str}) -> #{mb.type.return_type}"
             end
           end
+
+          local_def = @workspace.find_definition_token(
+            uri,
+            name,
+            before_line: lsp_line + 1,
+            before_char: lsp_char + 1,
+          )
+          return "local #{name}" if local_def
+
           nil
         end
       end
@@ -1120,7 +1189,12 @@ module MilkTea
           end
         end
 
-        found = @workspace.find_definition_token_global(token.lexeme, preferred_uri: uri)
+        found = @workspace.find_definition_token_global(
+          token.lexeme,
+          preferred_uri: uri,
+          before_line: lsp_line + 1,
+          before_char: lsp_char + 1,
+        )
         return nil unless found
 
         {
