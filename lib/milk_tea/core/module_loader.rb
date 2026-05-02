@@ -25,11 +25,17 @@ module MilkTea
       new.check_program(path)
     end
 
-    def initialize(module_roots: [MilkTea.root])
+    # +shared_cache+ is an optional Hash owned by the caller (e.g. the LSP Workspace)
+    # that persists across multiple ModuleLoader invocations.  Entries are keyed by
+    # absolute path and hold { mtime: Float, analysis: Sema::Analysis }.  When an
+    # entry's mtime matches the file's current mtime the cached analysis is reused,
+    # avoiding full re-parse + re-sema of large stdlib files on every LSP request.
+    def initialize(module_roots: [MilkTea.root], shared_cache: nil)
       @module_roots = module_roots.map { |root| File.expand_path(root.to_s) }
       @ast_cache = {}
       @analysis_cache = {}
       @checking_paths = []
+      @shared_cache = shared_cache # Hash or nil; mutated in-place to persist across calls
     end
 
     def load_file(path)
@@ -71,7 +77,21 @@ module MilkTea
     private
 
     def check_path(path)
+      # 1. Instance-local cache (within a single check_program call, prevents re-entrant work)
       return @analysis_cache[path] if @analysis_cache.key?(path)
+
+      # 2. Shared cross-request cache (owned by the LSP Workspace): reuse if the
+      #    file has not changed on disk since it was last analyzed.
+      if @shared_cache
+        entry = @shared_cache[path]
+        if entry
+          current_mtime = File.mtime(path).to_f rescue nil
+          if current_mtime && entry[:mtime] == current_mtime
+            @analysis_cache[path] = entry[:analysis]
+            return entry[:analysis]
+          end
+        end
+      end
 
       if @checking_paths.include?(path)
         raise ModuleLoadError.new("cyclic import detected", path: path)
@@ -87,6 +107,14 @@ module MilkTea
 
       analysis = Sema.check(ast, imported_modules:)
       @analysis_cache[path] = analysis
+
+      # Populate shared cache with current mtime so subsequent requests skip re-analysis.
+      if @shared_cache
+        mtime = File.mtime(path).to_f rescue nil
+        @shared_cache[path] = { mtime: mtime, analysis: analysis } if mtime
+      end
+
+      analysis
     ensure
       @checking_paths.pop if @checking_paths.last == path
     end

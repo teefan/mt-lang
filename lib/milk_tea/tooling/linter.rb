@@ -5,8 +5,8 @@ require "set"
 module MilkTea
   class Linter
     # severity: :error | :warning | :hint
-    Warning = Data.define(:path, :line, :code, :message, :severity) do
-      def initialize(path:, line:, code:, message:, severity: :warning) = super
+    Warning = Data.define(:path, :line, :column, :length, :code, :message, :severity, :symbol_name) do
+      def initialize(path:, line:, column: nil, length: nil, code:, message:, severity: :warning, symbol_name: nil) = super
     end
     # binding_kind: :local | :param
     # allow_prefer_let: true only for `var` locals — flag prefer-let if never mutated
@@ -15,8 +15,8 @@ module MilkTea
     # reads_after_write: how many times binding was read since last write
     # pending_dead_assignments: Array<Warning> — intermediate dead writes, emitted at scope exit only if used==true
     Binding = Struct.new(
-      :name, :line, :used, :binding_kind, :allow_prefer_let, :mutated,
-      :last_write_line, :reads_after_write, :pending_dead_assignments,
+      :name, :line, :column, :used, :binding_kind, :allow_prefer_let, :mutated,
+      :last_write_line, :last_write_column, :reads_after_write, :pending_dead_assignments,
       keyword_init: true
     )
 
@@ -223,8 +223,13 @@ module MilkTea
         next if used.include?(local_name)
 
         @warnings << Warning.new(
-          path: @path, line: import.line, code: "unused-import",
-          message: "unused import '#{local_name}'"
+          path: @path,
+          line: import.line,
+          column: import.column,
+          length: import.length,
+          code: "unused-import",
+          message: "unused import '#{local_name}'",
+          symbol_name: local_name
         )
       end
     end
@@ -345,7 +350,13 @@ module MilkTea
 
     def visit_function(function)
       with_scope do
-        function.params.each { |param| declare_param(param.name) }
+        function.params.each do |param|
+          declare_param(
+            param.name,
+            line: param_line(param, fallback: function.line),
+            column: param_column(param)
+          )
+        end
         visit_statement_list(function.body)
       end
       check_missing_return(function)
@@ -354,16 +365,32 @@ module MilkTea
     # ── missing-return ───────────────────────────────────────────────────
 
     def check_missing_return(function)
-      return unless function.return_type           # void function — no check
+      return unless function.return_type           # implicit void — no check
+      return if void_return_type?(function.return_type)
       return if always_returns?(function.body)
 
       @warnings << Warning.new(
         path: @path,
         line: function.line,
+        column: function.respond_to?(:column) ? function.column : nil,
+        length: function.name.length,
         code: "missing-return",
         message: "function '#{function.name}' does not always return a value",
-        severity: :error
+        severity: :error,
+        symbol_name: function.name
       )
+    end
+
+    def void_return_type?(return_type)
+      case return_type
+      when AST::TypeRef
+        name = return_type.name
+        name.is_a?(AST::QualifiedName) && name.parts == ["void"]
+      when Types::Primitive
+        return_type.name == "void"
+      else
+        false
+      end
     end
 
     # Returns true if every execution path through `stmts` ends with a
@@ -400,7 +427,9 @@ module MilkTea
       else_line = stmt.else_body.first.respond_to?(:line) ? stmt.else_body.first.line : stmt.line
       @warnings << Warning.new(
         path: @path,
-        line: else_line,
+        line: stmt.else_line || else_line,
+        column: stmt.else_column,
+        length: 4,
         code: "redundant-else",
         message: "else block is redundant because all preceding branches return"
       )
@@ -452,13 +481,19 @@ module MilkTea
       case statement
       when AST::LocalDecl
         visit_expression(statement.value) if statement.value
-        declare_local(statement.name, statement.line, var: statement.kind == :var, has_value: !statement.value.nil?)
+        declare_local(
+          statement.name,
+          statement.line,
+          column: statement.column,
+          var: statement.kind == :var,
+          has_value: !statement.value.nil?
+        )
       when AST::Assignment
         visit_expression(statement.value)          # visit RHS first — reads in RHS count against dead-assignment
         mark_assignment_target_reads(statement.target, statement.operator) # compound: marks target as read
         visit_assignment_target(statement.target)  # non-identifier sub-expressions in target
         if statement.target.is_a?(AST::Identifier)
-          mark_write(statement.target.name, statement.line)
+          mark_write(statement.target.name, statement.line, column: statement.target.column)
         end
         mark_mutated(statement.target)
       when AST::IfStmt
@@ -472,7 +507,9 @@ module MilkTea
         visit_expression(statement.expression)
         statement.arms.each do |arm|
           with_scope do
-            declare_local(arm.binding_name, nil, var: false) if arm.binding_name
+            binding_line = arm.binding_line || statement.line
+            binding_column = arm.binding_column
+            declare_local(arm.binding_name, binding_line, column: binding_column, var: false) if arm.binding_name
             visit_statement_list(arm.body)
           end
         end
@@ -481,7 +518,7 @@ module MilkTea
       when AST::ForStmt
         visit_expression(statement.iterable)
         with_scope do
-          declare_local(statement.name, nil, var: false) if statement.name
+          declare_local(statement.name, statement.line, column: statement.column, var: false) if statement.name
           visit_statement_list(statement.body)
         end
       when AST::WhileStmt
@@ -532,7 +569,14 @@ module MilkTea
         visit_expression(expression.else_expression)
       when AST::ProcExpr
         with_scope do
-          expression.params.each { |param| declare_param(param.name) }
+          fallback_line = expression.respond_to?(:line) ? expression.line : nil
+          expression.params.each do |param|
+            declare_param(
+              param.name,
+              line: param_line(param, fallback: fallback_line),
+              column: param_column(param)
+            )
+          end
           visit_statement_list(expression.body)
         end
       when AST::AwaitExpr
@@ -594,7 +638,7 @@ module MilkTea
       emit_scope_warnings(@scopes.pop)
     end
 
-    def declare_local(name, line, var: false, has_value: false)
+    def declare_local(name, line, column: nil, var: false, has_value: false)
       return if ignored_binding_name?(name)
 
       # shadow: check whether any outer scope already has a binding for this name
@@ -602,8 +646,9 @@ module MilkTea
         @scopes[0..-2].each do |outer_scope|
           if outer_scope.key?(name)
             @warnings << Warning.new(
-              path: @path, line:, code: "shadow",
-              message: "local '#{name}' shadows a binding from an outer scope"
+              path: @path, line:, column:, length: name.length, code: "shadow",
+              message: "local '#{name}' shadows a binding from an outer scope",
+              symbol_name: name
             )
             break
           end
@@ -611,28 +656,39 @@ module MilkTea
       end
 
       @scopes.last[name] = Binding.new(
-        name:, line:, used: false,
+        name:, line:, column:, used: false,
         binding_kind: :local,
         allow_prefer_let: var,
         mutated: false,
         last_write_line: has_value ? line : nil,
+        last_write_column: has_value ? column : nil,
         reads_after_write: 0,
         pending_dead_assignments: nil
       )
     end
 
-    def declare_param(name)
+    def declare_param(name, line: nil, column: nil)
       return if ignored_binding_name?(name)
 
       @scopes.last[name] = Binding.new(
-        name:, line: nil, used: false,
+        name:, line:, column:, used: false,
         binding_kind: :param,
         allow_prefer_let: false,
         mutated: false,
         last_write_line: nil,
+        last_write_column: nil,
         reads_after_write: 0,
         pending_dead_assignments: nil
       )
+    end
+
+    def param_line(param, fallback: nil)
+      line = param.respond_to?(:line) ? param.line : nil
+      line || fallback
+    end
+
+    def param_column(param)
+      param.respond_to?(:column) ? param.column : nil
     end
 
     def mark_used(name)
@@ -650,7 +706,7 @@ module MilkTea
     # read (reads_after_write == 0), save a pending dead-assignment warning that
     # will be emitted at scope exit — but only when binding.used is true (to
     # avoid duplicate noise alongside unused-local).
-    def mark_write(name, line)
+    def mark_write(name, line, column: nil)
       @scopes.reverse_each do |scope|
         binding = scope[name]
         next unless binding
@@ -659,12 +715,16 @@ module MilkTea
           w = Warning.new(
             path: @path,
             line: binding.last_write_line,
+            column: binding.last_write_column,
+            length: name.length,
             code: "dead-assignment",
-            message: "value assigned to '#{name}' is never read before being overwritten"
+            message: "value assigned to '#{name}' is never read before being overwritten",
+            symbol_name: name
           )
           (binding.pending_dead_assignments ||= []) << w
         end
         binding.last_write_line = line
+        binding.last_write_column = column
         binding.reads_after_write = 0
         return
       end
@@ -675,7 +735,15 @@ module MilkTea
         if !binding.used
           code = binding.binding_kind == :param ? "unused-param" : "unused-local"
           kind_label = binding.binding_kind == :param ? "parameter" : "local"
-          @warnings << Warning.new(path: @path, line: binding.line, code:, message: "unused #{kind_label} '#{binding.name}'")
+          @warnings << Warning.new(
+            path: @path,
+            line: binding.line,
+            column: binding.column,
+            length: binding.name.length,
+            code: code,
+            message: "unused #{kind_label} '#{binding.name}'",
+            symbol_name: binding.name,
+          )
         else
           # dead-assignment: emit confirmed intermediate overwrites
           @warnings.concat(binding.pending_dead_assignments) if binding.pending_dead_assignments
@@ -684,17 +752,23 @@ module MilkTea
             @warnings << Warning.new(
               path: @path,
               line: binding.last_write_line,
+              column: binding.last_write_column,
+              length: binding.name.length,
               code: "dead-assignment",
-              message: "value assigned to '#{binding.name}' is never read"
+              message: "value assigned to '#{binding.name}' is never read",
+              symbol_name: binding.name
             )
           end
           if binding.allow_prefer_let && !binding.mutated
             @warnings << Warning.new(
               path: @path,
               line: binding.line,
+              column: binding.column,
+              length: binding.name.length,
               code: "prefer-let",
               message: "variable '#{binding.name}' is never reassigned, prefer 'let'",
-              severity: :hint
+              severity: :hint,
+              symbol_name: binding.name
             )
           end
         end

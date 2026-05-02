@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require 'cgi/escape'
+require 'pathname'
+require 'uri'
 
 module MilkTea
   module LSP
@@ -22,6 +24,11 @@ module MilkTea
       end
 
       def run
+        if perf_logging?
+          mode = perf_verbose? ? 'verbose' : 'threshold'
+          warn "[LSP perf] enabled mode=#{mode} threshold_ms=#{PERF_LOG_THRESHOLD_MS}"
+        end
+
         loop do
           message = Protocol.read_message
           break if message.nil?
@@ -99,7 +106,13 @@ module MilkTea
         end
 
         begin
+          t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           result = handler.call(params)
+          elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round(1)
+          if perf_logging? && (perf_verbose? || elapsed_ms > PERF_LOG_THRESHOLD_MS)
+            detail = perf_verbose? ? " #{summarize_lsp_params(method_name, params)}" : ""
+            warn "[LSP perf] req #{method_name} #{elapsed_ms}ms id=#{id}#{detail}"
+          end
           Protocol.write_response(id, result)
         rescue StandardError => e
           warn "Error in handler for #{method_name}: #{e.message}"
@@ -113,10 +126,124 @@ module MilkTea
         return unless handler
 
         begin
+          t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           handler.call(params)
+          elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round(1)
+          if perf_logging? && (perf_verbose? || elapsed_ms > PERF_LOG_THRESHOLD_MS)
+            detail = perf_verbose? ? " #{summarize_lsp_params(method_name, params)}" : ""
+            warn "[LSP perf] ntf #{method_name} #{elapsed_ms}ms#{detail}"
+          end
         rescue StandardError => e
           warn "Error in notification handler for #{method_name}: #{e.message}"
         end
+      end
+
+      # Log every request regardless of threshold when MILK_TEA_LSP_PERF=verbose.
+      # Log only requests exceeding PERF_LOG_THRESHOLD_MS when MILK_TEA_LSP_PERF=1.
+      PERF_LOG_THRESHOLD_MS = 20
+
+      def perf_logging?
+        @perf_logging ||= !ENV.fetch('MILK_TEA_LSP_PERF', nil).to_s.empty?
+      end
+
+      def perf_verbose?
+        @perf_verbose ||= ENV.fetch('MILK_TEA_LSP_PERF', nil).to_s == 'verbose'
+      end
+
+      def summarize_lsp_params(method_name, params)
+        return "" unless params.is_a?(Hash)
+
+        text_document = hget(params, 'textDocument')
+        uri = text_document.is_a?(Hash) ? hget(text_document, 'uri') : nil
+        file_path = uri_to_path(uri)
+        short_uri = shorten_uri(uri)
+        position = hget(params, 'position')
+        line = position.is_a?(Hash) ? hget(position, 'line') : nil
+        char = position.is_a?(Hash) ? hget(position, 'character') : nil
+        pos = "#{line}:#{char}" if line && char
+        query = hget(params, 'query')
+
+        bits = []
+        bits << "uri=#{short_uri || uri}" if uri
+        bits << "pos=#{pos}" if pos
+        if file_path && line.is_a?(Integer) && char.is_a?(Integer)
+          bits << "loc=#{file_path}:#{line + 1}:#{char + 1}"
+        end
+        bits << "query=#{query.inspect}" if query
+        bits << "keys=#{params.keys.map(&:to_s).sort.join(',')}" unless params.empty?
+
+        if method_name == 'textDocument/didChange'
+          changes = hget(params, 'contentChanges')
+          bits << "changes=#{changes.length}" if changes.respond_to?(:length)
+        end
+
+        bits.join(' ')
+      rescue StandardError
+        ""
+      end
+
+      def hget(hash, key)
+        return nil unless hash.is_a?(Hash)
+
+        hash[key] || hash[key.to_sym]
+      end
+
+      def shorten_uri(uri)
+        return nil unless uri
+        return uri unless uri.is_a?(String) && uri.start_with?('file://')
+
+        file_path = uri_to_path(uri)
+        return uri unless file_path
+
+        root_path = uri_to_path(@root_uri)
+        return uri unless root_path
+
+        begin
+          relative = Pathname.new(file_path).relative_path_from(Pathname.new(root_path)).to_s
+          return relative unless relative.start_with?('..')
+        rescue StandardError
+          # Keep the original URI if path normalization fails.
+        end
+
+        uri
+      end
+
+      def uri_to_path(uri)
+        parsed = URI.parse(uri)
+        return nil unless parsed.scheme == 'file'
+
+        CGI.unescape(parsed.path)
+      rescue URI::InvalidURIError
+        nil
+      end
+
+      # Returns true when +uri+ refers to a file outside the workspace root.
+      def library_uri?(uri)
+        return false unless @root_uri
+
+        file_path = uri_to_path(uri)
+        root_path = uri_to_path(@root_uri)
+        return false unless file_path && root_path
+
+        !file_path.start_with?(root_path)
+      rescue StandardError
+        false
+      end
+
+      # Skip source.fixAll generation for files where full-file format+lint is
+      # too expensive to run on each codeAction request.
+      def skip_expensive_source_fix_all?(uri, content)
+        file_path = uri_to_path(uri)
+        return true if library_uri?(uri)
+        return true if file_path&.include?('/std/')
+
+        # Heuristic thresholds to avoid expensive full-file formatter/linter runs.
+        return true if content.bytesize > 200_000
+        return true if content.count("\n") > 1200
+
+        false
+      rescue StandardError
+        false
       end
 
       # ── Lifecycle handlers ───────────────────────────────────────────────────
@@ -539,35 +666,39 @@ module MilkTea
         end
 
         # ── source.fixAll: apply all auto-fixes at once ────────────────────
-        begin
-          formatted = begin
-            Formatter.format_source(content, mode: :safe)
-          rescue StandardError
-            content
-          end
-          fixed = begin
-            Linter.fix_source(formatted, path: uri)
-          rescue StandardError
-            formatted
-          end
-          line_count = content.count("\n")
-          actions << {
-            title: 'Apply all auto-fixes',
-            kind: 'source.fixAll',
-            edit: {
-              changes: {
-                uri => [{
-                  range: {
-                    start: { line: 0, character: 0 },
-                    end:   { line: line_count + 1, character: 0 }
-                  },
-                  newText: fixed
-                }]
+        # Skip for files outside the workspace root (library/std files) since
+        # formatting and linting a large stdlib file costs seconds per call.
+        unless library_uri?(uri)
+          begin
+            formatted = begin
+              Formatter.format_source(content, mode: :safe)
+            rescue StandardError
+              content
+            end
+            fixed = begin
+              Linter.fix_source(formatted, path: uri)
+            rescue StandardError
+              formatted
+            end
+            line_count = content.count("\n")
+            actions << {
+              title: 'Apply all auto-fixes',
+              kind: 'source.fixAll',
+              edit: {
+                changes: {
+                  uri => [{
+                    range: {
+                      start: { line: 0, character: 0 },
+                      end:   { line: line_count + 1, character: 0 }
+                    },
+                    newText: fixed
+                  }]
+                }
               }
             }
-          }
-        rescue StandardError => e
-          warn "Error building source.fixAll action: #{e.message}"
+          rescue StandardError => e
+            warn "Error building source.fixAll action: #{e.message}"
+          end
         end
 
         actions
@@ -581,7 +712,7 @@ module MilkTea
         return { kind: 'full', items: [] } unless uri
 
         content = @workspace.get_content(uri)
-        diagnostics = Diagnostics.collect(uri, content)
+        diagnostics = @workspace.collect_diagnostics(uri)
         fingerprint = diagnostics_fingerprint(content, diagnostics)
         previous_result_id = params['previousResultId']
         cached = @diagnostic_report_cache[uri]
@@ -745,6 +876,9 @@ module MilkTea
 
       def handle_code_lens(params)
         uri      = params['textDocument']['uri']
+        content  = @workspace.get_content(uri)
+        return [] if skip_expensive_source_fix_all?(uri, content)
+
         analysis = @workspace.get_analysis(uri)
         return [] unless analysis
 
@@ -811,8 +945,7 @@ module MilkTea
       # ── Diagnostics ──────────────────────────────────────────────────────────
 
       def publish_diagnostics(uri)
-        content     = @workspace.get_content(uri)
-        diagnostics = Diagnostics.collect(uri, content)
+        diagnostics = @workspace.collect_diagnostics(uri)
 
         Protocol.write_notification('textDocument/publishDiagnostics', {
           uri:         uri,

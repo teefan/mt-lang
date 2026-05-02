@@ -3,6 +3,15 @@
 
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 
+# --perf          log LSP requests that exceed the slow threshold
+# --perf=verbose  log every LSP request
+ARGV.delete_if do |arg|
+  case arg
+  when '--perf'          then ENV['MILK_TEA_LSP_PERF'] ||= '1';       true
+  when '--perf=verbose'  then ENV['MILK_TEA_LSP_PERF'] = 'verbose';   true
+  end
+end
+
 require "milk_tea"
 
 # Start the LSP server
