@@ -2,8 +2,8 @@
 
 module MilkTea
   module PrettyPrinter
-    def self.format_ast(node)
-      ASTFormatter.new.format(node)
+    def self.format_ast(node, trivia: [])
+      ASTFormatter.new.format(node, trivia:)
     end
 
     def self.format_ir(node)
@@ -83,18 +83,47 @@ module MilkTea
       POSTFIX_PRECEDENCE = 90
       UNARY_PRECEDENCE = 80
 
-      def format(node)
+      def format(node, trivia: [])
+        @comment_map = build_comment_map(trivia)
+        @trailing_comment_map = {}
         emit_source_file(node)
         finish
       end
 
       private
 
+      # Maps source_line → [comment_text, ...] for standalone comment lines.
+      # These are emitted before the first statement whose .line >= comment_line.
+      def build_comment_map(trivia)
+        map = {}
+        trivia.select { |t| t.kind == :comment }.each do |t|
+          (map[t.line] ||= []) << t.text.strip
+        end
+        map
+      end
+
+      # Emit pending leading comments whose source line < stmt_line.
+      def flush_leading_comments_before(stmt_line)
+        return unless stmt_line
+
+        sorted = @comment_map.keys.select { |l| l < stmt_line }.sort
+        sorted.each do |l|
+          @comment_map.delete(l)&.each { |text| line(text) }
+        end
+      end
+
       def emit_source_file(source_file)
         @current_module_kind = source_file.module_kind
+        # Flush any comments that appear before the module header line
+        flush_leading_comments_before(source_file.line) if source_file.line
         module_name = source_file.module_name ? source_file.module_name.to_s : "(anonymous)"
         header = source_file.module_kind == :extern_module ? "extern module #{module_name}:" : "module #{module_name}"
         line(header)
+        # Inline trailing comment on the module header line itself
+        if source_file.line && @comment_map.key?(source_file.line)
+          comments = @comment_map.delete(source_file.line)
+          @lines[-1] = "#{@lines[-1]}  #{comments.first}" unless comments.empty? || @lines.empty?
+        end
 
         if source_file.module_kind == :extern_module
           with_indent { emit_module_body(source_file) }
@@ -108,7 +137,14 @@ module MilkTea
         wrote_section = false
 
         unless source_file.imports.empty?
-          source_file.imports.each { |import| line(render_import(import)) }
+          source_file.imports.each do |import|
+            flush_leading_comments_before(import.line)
+            line(render_import(import))
+            if import.line && @comment_map.key?(import.line)
+              comments = @comment_map.delete(import.line)
+              @lines[-1] = "#{@lines[-1]}  #{comments.first}" unless comments.empty? || @lines.empty?
+            end
+          end
           wrote_section = true
         end
 
@@ -125,9 +161,25 @@ module MilkTea
           emit_declaration(declaration)
           blank_line if index < (source_file.declarations.length - 1)
         end
+
+        # Flush any trailing comments that come after the last declaration
+        flush_remaining_comments
+      end
+
+      # Flush any remaining comments that were never claimed by a statement/declaration
+      def flush_remaining_comments
+        sorted = @comment_map.keys.sort
+        sorted.each do |l|
+          @comment_map.delete(l)&.each { |text| line(text) }
+        end
       end
 
       def emit_declaration(declaration)
+        # Flush any standalone comments that precede this declaration
+        decl_line = declaration.respond_to?(:line) ? declaration.line : nil
+        flush_leading_comments_before(decl_line)
+        header_idx = @lines.length
+
         case declaration
         when AST::ConstDecl
           header = "#{visibility_prefix(declaration)}const #{declaration.name}"
@@ -180,6 +232,12 @@ module MilkTea
           line("#{render_function_signature(declaration)} = #{render_expression(declaration.mapping)}")
         else
           raise ArgumentError, "unsupported AST declaration #{declaration.class.name}"
+        end
+
+        # Attach inline trailing comment to the first (header) line of the declaration
+        if decl_line && @comment_map.key?(decl_line) && header_idx < @lines.length
+          comments = @comment_map.delete(decl_line)
+          @lines[header_idx] = "#{@lines[header_idx]}  #{comments.first}" unless comments.empty?
         end
       end
 
@@ -267,6 +325,10 @@ module MilkTea
       end
 
       def emit_statement(statement)
+        stmt_line = statement.respond_to?(:line) ? statement.line : nil
+        flush_leading_comments_before(stmt_line)
+        header_idx = @lines.length
+
         case statement
         when AST::LocalDecl
           text = "#{statement.kind} #{statement.name}"
@@ -323,6 +385,12 @@ module MilkTea
           line(render_expression(statement.expression))
         else
           raise ArgumentError, "unsupported AST statement #{statement.class.name}"
+        end
+
+        # Attach inline trailing comment to the header line of the statement
+        if stmt_line && @comment_map.key?(stmt_line) && header_idx < @lines.length
+          comments = @comment_map.delete(stmt_line)
+          @lines[header_idx] = "#{@lines[header_idx]}  #{comments.first}" unless comments.empty?
         end
       end
 

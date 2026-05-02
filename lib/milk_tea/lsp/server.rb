@@ -142,7 +142,7 @@ module MilkTea
               retriggerCharacters: [',']
             },
             codeActionProvider: {
-              codeActionKinds: ['source.fixAll']
+              codeActionKinds: ['quickFix', 'source.fixAll']
             },
             inlayHintProvider: true,
             diagnosticProvider: {
@@ -442,32 +442,133 @@ module MilkTea
       end
 
       def handle_code_action(params)
-        uri = params.dig('textDocument', 'uri')
+        uri    = params.dig('textDocument', 'uri')
         return [] unless uri
 
         content = @workspace.get_content(uri)
-        formatted = Formatter.format_source(content, mode: :safe)
-        line_count = content.count("\n")
+        return [] unless content
 
-        [
-          {
-            title: 'Format document',
+        actions = []
+
+        # ── Per-diagnostic quickfix actions ──────────────────────────────────
+        requested_diagnostics = params.dig('context', 'diagnostics') || []
+        requested_diagnostics.each do |diag|
+          code = diag['code']
+          diag_line = diag.dig('range', 'start', 'line').to_i + 1  # 1-based
+
+          case code
+          when 'prefer-let'
+            # Replace `var` with `let` on the declaration line
+            lines = content.lines
+            source_line = lines[diag_line - 1].to_s
+            next unless source_line.match?(/\bvar\b/)
+
+            new_line = source_line.sub(/\bvar\b/, 'let')
+            actions << {
+              title: "Replace 'var' with 'let'",
+              kind: 'quickFix',
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  uri => [{
+                    range: {
+                      start: { line: diag_line - 1, character: 0 },
+                      end:   { line: diag_line,     character: 0 }
+                    },
+                    newText: new_line
+                  }]
+                }
+              }
+            }
+
+          when 'redundant-else'
+            # Remove the `else:` line above and dedent the body.
+            # diag_line is the first body statement (1-based).
+            lines = content.lines
+            first_body_idx = diag_line - 1
+            next if first_body_idx < 1
+
+            else_idx = (0...first_body_idx).to_a.reverse.find do |i|
+              lines[i]&.match?(/\A\s*else:\s*\z/)
+            end
+            next unless else_idx
+
+            else_indent  = lines[else_idx].match(/\A(\s*)/)[1]
+            body_indent  = else_indent + '    '
+
+            body_end_idx = first_body_idx
+            (first_body_idx...lines.length).each do |i|
+              l = lines[i]
+              if l.chomp.empty? || l.start_with?(body_indent)
+                body_end_idx = i
+              else
+                break
+              end
+            end
+
+            # Build the replacement: dedented body lines replacing `else:\nbody`
+            new_body = lines[first_body_idx..body_end_idx].map { |l| l.sub(/\A    /, '') }.join
+            actions << {
+              title: "Remove redundant else",
+              kind: 'quickFix',
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  uri => [{
+                    range: {
+                      start: { line: else_idx,        character: 0 },
+                      end:   { line: body_end_idx + 1, character: 0 }
+                    },
+                    newText: new_body
+                  }]
+                }
+              }
+            }
+
+          when 'shadow'
+            # Offer to rename to _ prefix; editor will invoke textDocument/rename.
+            # This action just annotates — the actual rename is a client-side refactor.
+            actions << {
+              title: "Add '_' prefix to suppress shadow warning",
+              kind: 'quickFix',
+              diagnostics: [diag]
+            }
+          end
+        end
+
+        # ── source.fixAll: apply all auto-fixes at once ────────────────────
+        begin
+          formatted = begin
+            Formatter.format_source(content, mode: :safe)
+          rescue StandardError
+            content
+          end
+          fixed = begin
+            Linter.fix_source(formatted, path: uri)
+          rescue StandardError
+            formatted
+          end
+          line_count = content.count("\n")
+          actions << {
+            title: 'Apply all auto-fixes',
             kind: 'source.fixAll',
             edit: {
               changes: {
-                uri => [
-                  {
-                    range: {
-                      start: { line: 0, character: 0 },
-                      end: { line: line_count + 1, character: 0 }
-                    },
-                    newText: formatted
-                  }
-                ]
+                uri => [{
+                  range: {
+                    start: { line: 0, character: 0 },
+                    end:   { line: line_count + 1, character: 0 }
+                  },
+                  newText: fixed
+                }]
               }
             }
           }
-        ]
+        rescue StandardError => e
+          warn "Error building source.fixAll action: #{e.message}"
+        end
+
+        actions
       rescue StandardError => e
         warn "Error in codeAction handler: #{e.message}"
         []

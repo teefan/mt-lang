@@ -26,6 +26,8 @@ module MilkTea
         parse_command
       when "fmt"
         fmt_command
+      when "lint"
+        lint_command
       when "check"
         check_command
       when "lower"
@@ -92,6 +94,10 @@ module MilkTea
       options = parse_fmt_options
       return 1 unless options
 
+      if File.directory?(path)
+        return fmt_directory(path, options)
+      end
+
       source = read_source_file(path)
       result = Formatter.check_source(source, path: path, mode: options[:mode])
 
@@ -117,6 +123,149 @@ module MilkTea
 
       @out.write(result.formatted_source)
       0
+    end
+
+    def fmt_directory(dir, options)
+      paths = Dir.glob(File.join(dir, "**/*.mt")).sort
+      if paths.empty?
+        @out.puts("no .mt files found in #{dir}")
+        return 0
+      end
+
+      unless options[:check] || options[:write]
+        @err.puts("fmt on a directory requires --check or --write")
+        print_usage(@err)
+        return 1
+      end
+
+      if options[:check]
+        needs_fmt = []
+        paths.each do |p|
+          result = Formatter.check_source(read_source_file(p), path: p, mode: options[:mode])
+          needs_fmt << p if result.changed
+        end
+        if needs_fmt.empty?
+          @out.puts("all #{paths.size} file(s) already formatted")
+          return 0
+        end
+        needs_fmt.each { |p| @out.puts("needs formatting #{p}") }
+        @out.puts("#{needs_fmt.size} file(s) need formatting")
+        return 1
+      end
+
+      # --write
+      changed = 0
+      paths.each do |p|
+        result = Formatter.check_source(read_source_file(p), path: p, mode: options[:mode])
+        if result.changed
+          File.write(p, result.formatted_source)
+          @out.puts("formatted #{p}")
+          changed += 1
+        end
+      end
+      @out.puts("formatted #{changed} of #{paths.size} file(s)")
+      0
+    end
+
+    def lint_command
+      path = @argv.shift
+      unless path
+        @err.puts("missing source file path")
+        print_usage(@err)
+        return 1
+      end
+
+      select = nil
+      ignore = nil
+      fix = false
+      output_format = :text
+      while @argv.first&.start_with?("--")
+        flag = @argv.shift
+        case flag
+        when "--select"
+          arg = @argv.shift
+          unless arg
+            @err.puts("--select requires a comma-separated list of rule codes")
+            return 1
+          end
+          select = arg.split(",").map(&:strip).to_set
+        when "--ignore"
+          arg = @argv.shift
+          unless arg
+            @err.puts("--ignore requires a comma-separated list of rule codes")
+            return 1
+          end
+          ignore = arg.split(",").map(&:strip).to_set
+        when "--fix"
+          fix = true
+        when "--output-format"
+          fmt_arg = @argv.shift
+          unless fmt_arg
+            @err.puts("--output-format requires an argument (text, json)")
+            return 1
+          end
+          case fmt_arg
+          when "text" then output_format = :text
+          when "json" then output_format = :json
+          else
+            @err.puts("unknown output format: #{fmt_arg} (use text or json)")
+            return 1
+          end
+        else
+          @err.puts("unknown lint flag: #{flag}")
+          return 1
+        end
+      end
+
+      paths = if File.directory?(path)
+                Dir.glob(File.join(path, "**/*.mt")).sort
+              else
+                [path]
+              end
+
+      if paths.empty?
+        @out.puts("no .mt files found in #{path}")
+        return 0
+      end
+
+      if fix
+        paths.each do |p|
+          source = read_source_file(p)
+          fixed = Linter.fix_source(source, path: p)
+          if fixed != source
+            File.write(p, fixed)
+            @out.puts("fixed #{p}")
+          end
+        end
+        return 0
+      end
+
+      all_warnings = paths.flat_map do |p|
+        Linter.lint_source(read_source_file(p), path: p, select:, ignore:)
+      end
+
+      if output_format == :json
+        require "json"
+        @out.puts(JSON.dump(all_warnings.map do |w|
+          { path: w.path, line: w.line, code: w.code, message: w.message, severity: w.severity }
+        end))
+        return all_warnings.empty? ? 0 : 1
+      end
+
+      if all_warnings.empty?
+        @out.puts("clean #{path}")
+        return 0
+      end
+
+      all_warnings.each do |warning|
+        @out.puts("#{warning.path}:#{warning.line}: #{warning.code}: #{warning.message}")
+      end
+
+      file_count = all_warnings.map(&:path).uniq.size
+      noun = all_warnings.size == 1 ? "warning" : "warnings"
+      files_str = file_count == 1 ? "1 file" : "#{file_count} files"
+      @out.puts("Found #{all_warnings.size} #{noun} in #{files_str}.")
+      1
     end
 
     def check_command
@@ -428,7 +577,8 @@ module MilkTea
     def print_usage(io)
       io.puts("Usage: mtc lex PATH")
       io.puts("       mtc parse PATH")
-      io.puts("       mtc fmt PATH [--check|--write] [--safe|--canonical|--preserve]")
+      io.puts("       mtc fmt PATH|DIR [--check|--write] [--safe|--canonical|--preserve]")
+      io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json]")
       io.puts("       mtc check PATH")
       io.puts("       mtc lower PATH")
       io.puts("       mtc emit-c PATH")

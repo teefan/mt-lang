@@ -45,6 +45,7 @@ module MilkTea
 
       if match(:module)
         module_kind = :module
+        module_line = previous.line
         module_name = parse_module_name
 
         skip_newlines
@@ -53,6 +54,7 @@ module MilkTea
           skip_newlines
         end
       elsif match(:extern)
+        module_line = previous.line
         consume(:module, "expected module after extern")
         module_kind = :extern_module
         module_name = parse_qualified_name
@@ -60,7 +62,7 @@ module MilkTea
         skip_newlines
         raise error(peek, "expected end of file after extern module") unless eof?
 
-        return AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:)
+        return AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:, line: module_line)
       end
 
       until eof?
@@ -68,7 +70,7 @@ module MilkTea
         skip_newlines
       end
 
-      AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:)
+      AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:, line: module_line)
     end
 
     private
@@ -80,10 +82,11 @@ module MilkTea
     end
 
     def parse_import
+      line = previous.line
       path = parse_qualified_name
       alias_name = match(:as) ? consume_name("expected import alias").lexeme : nil
       consume_end_of_statement
-      AST::Import.new(path:, alias_name:)
+      AST::Import.new(path:, alias_name:, line:)
     end
 
     def parse_declaration
@@ -204,16 +207,18 @@ module MilkTea
     end
 
     def parse_const_decl(visibility: :private)
+      line = previous.line
       name = consume_name("expected constant name").lexeme
       consume(:colon, "expected ':' after constant name")
       type = parse_type_ref
       consume(:equal, "expected '=' after constant type")
       value = parse_expression
       consume_end_of_statement
-      AST::ConstDecl.new(name:, type:, value:, visibility:)
+      AST::ConstDecl.new(name:, type:, value:, visibility:, line:)
     end
 
     def parse_var_decl(visibility: :private)
+      line = previous.line
       name = consume_name("expected variable name").lexeme
       var_type = match(:colon) ? parse_type_ref : nil
       value = if match(:equal)
@@ -224,18 +229,20 @@ module MilkTea
                 nil
               end
       consume_end_of_statement
-      AST::VarDecl.new(name:, type: var_type, value:, visibility:)
+      AST::VarDecl.new(name:, type: var_type, value:, visibility:, line:)
     end
 
     def parse_type_alias_decl(visibility: :private)
+      line = previous.line
       name = consume_name("expected type alias name").lexeme
       consume(:equal, "expected '=' after type alias name")
       target = parse_type_ref
       consume_end_of_statement
-      AST::TypeAliasDecl.new(name:, target:, visibility:)
+      AST::TypeAliasDecl.new(name:, target:, visibility:, line:)
     end
 
     def parse_struct_decl(packed: false, alignment: nil, visibility: :private)
+      line = previous.line
       name = consume_name("expected struct name").lexeme
       type_params = parse_declaration_type_params
       fields = parse_named_block do
@@ -245,7 +252,7 @@ module MilkTea
         consume_end_of_statement
         AST::Field.new(name: field_name, type: field_type)
       end
-      AST::StructDecl.new(name:, type_params:, fields:, packed:, alignment:, visibility:)
+      AST::StructDecl.new(name:, type_params:, fields:, packed:, alignment:, visibility:, line:)
     end
 
     def parse_struct_decl_with_layout(visibility: :private)
@@ -273,6 +280,7 @@ module MilkTea
     end
 
     def parse_union_decl(visibility: :private)
+      line = previous.line
       name = consume_name("expected union name").lexeme
       fields = parse_named_block do
         field_name = consume_name("expected field name").lexeme
@@ -281,10 +289,11 @@ module MilkTea
         consume_end_of_statement
         AST::Field.new(name: field_name, type: field_type)
       end
-      AST::UnionDecl.new(name:, fields:, visibility:)
+      AST::UnionDecl.new(name:, fields:, visibility:, line:)
     end
 
     def parse_enum_decl(node_class, visibility: :private)
+      line = previous.line
       name = consume_name("expected declaration name").lexeme
       consume(:colon, "expected ':' after declaration name")
       backing_type = parse_type_ref
@@ -303,10 +312,11 @@ module MilkTea
       end
 
       consume(:dedent, "expected end of declaration body")
-      node_class.new(name:, backing_type:, members:, visibility:)
+      node_class.new(name:, backing_type:, members:, visibility:, line:)
     end
 
     def parse_variant_decl(visibility: :private)
+      line = previous.line
       name = consume_name("expected variant name").lexeme
       type_params = parse_declaration_type_params
       arms = parse_named_block do
@@ -330,34 +340,37 @@ module MilkTea
         consume_end_of_statement
         AST::VariantArm.new(name: arm_name, fields:)
       end
-      AST::VariantDecl.new(name:, type_params:, arms:, visibility:)
+      AST::VariantDecl.new(name:, type_params:, arms:, visibility:, line:)
     end
 
     def parse_opaque_decl(visibility: :private)
+      line = previous.line
       name = consume_name("expected opaque type name").lexeme
       c_name = nil
       if match(:equal)
         c_name = consume(:cstring, "expected C string literal after '='").literal
       end
       consume_end_of_statement
-      AST::OpaqueDecl.new(name:, c_name:, visibility:)
+      AST::OpaqueDecl.new(name:, c_name:, visibility:, line:)
     end
 
     def parse_methods_block
+      line = previous.line
       type_name = parse_qualified_name
       methods = parse_named_block do
         parse_method_def
       end
-      AST::MethodsBlock.new(type_name:, methods:)
+      AST::MethodsBlock.new(type_name:, methods:, line:)
     end
 
     def parse_function_def(visibility: :private, async: false)
+      line = previous.line
       name = consume_name("expected function name").lexeme
       type_params = parse_declaration_type_params
       params = parse_params
       return_type = match(:arrow) ? parse_type_ref : nil
       body = parse_block
-      AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:, visibility:, async:)
+      AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:, visibility:, async:, line:)
     end
 
     def parse_method_def
@@ -372,13 +385,14 @@ module MilkTea
                :plain
              end
       consume(:def, "expected method declaration")
+      line = previous.line
 
       name = consume_name("expected function name").lexeme
       type_params = parse_declaration_type_params
       params = parse_params
       return_type = match(:arrow) ? parse_type_ref : nil
       body = parse_block
-      AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:)
+      AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, line:)
     end
 
     def parse_visibility
@@ -398,16 +412,18 @@ module MilkTea
     end
 
     def parse_extern_function_decl
+      line = previous.line
       name = consume_name("expected function name").lexeme
       type_params = parse_declaration_type_params
       params, variadic = parse_params(allow_variadic: true)
       consume(:arrow, "expected '->' before extern function return type")
       return_type = parse_type_ref
       consume_end_of_statement
-      AST::ExternFunctionDecl.new(name:, type_params:, params:, return_type:, variadic:)
+      AST::ExternFunctionDecl.new(name:, type_params:, params:, return_type:, variadic:, line:)
     end
 
     def parse_foreign_function_decl(visibility: :private)
+      line = previous.line
       name = consume_name("expected function name").lexeme
       type_params = parse_declaration_type_params
       params = parse_foreign_params
@@ -416,7 +432,7 @@ module MilkTea
       consume(:equal, "expected '=' before foreign function mapping")
       mapping = parse_expression
       consume_end_of_statement
-      AST::ForeignFunctionDecl.new(name:, type_params:, params:, return_type:, mapping:, visibility:)
+      AST::ForeignFunctionDecl.new(name:, type_params:, params:, return_type:, mapping:, visibility:, line:)
     end
 
     def parse_params(allow_variadic: false)
@@ -653,6 +669,7 @@ module MilkTea
     end
 
     def parse_if_stmt
+      line = previous.line
       branches = []
       branches << AST::IfBranch.new(condition: parse_expression, body: parse_block)
 
@@ -661,10 +678,11 @@ module MilkTea
       end
 
       else_body = match(:else) ? parse_block : nil
-      AST::IfStmt.new(branches:, else_body:)
+      AST::IfStmt.new(branches:, else_body:, line:)
     end
 
     def parse_match_stmt
+      line = previous.line
       expression = parse_expression
       arms = parse_named_block do
         pattern = parse_expression
@@ -672,45 +690,50 @@ module MilkTea
         body = parse_block
         AST::MatchArm.new(pattern:, binding_name:, body:)
       end
-      AST::MatchStmt.new(expression:, arms:)
+      AST::MatchStmt.new(expression:, arms:, line:)
     end
 
     def parse_unsafe_stmt
-      AST::UnsafeStmt.new(body: parse_block)
+      AST::UnsafeStmt.new(body: parse_block, line: previous.line)
     end
 
     def parse_static_assert
+      line = previous.line
       consume(:lparen, "expected '(' after static_assert")
       condition = parse_expression
       consume(:comma, "expected ',' after static_assert condition")
       message = parse_expression
       consume(:rparen, "expected ')' after static_assert message")
       consume_end_of_statement
-      AST::StaticAssert.new(condition:, message:)
+      AST::StaticAssert.new(condition:, message:, line:)
     end
 
     def parse_for_stmt
+      line = previous.line
       name = consume_name("expected loop variable name").lexeme
       consume(:in, "expected 'in' in for loop")
       iterable = parse_expression
       body = parse_block
-      AST::ForStmt.new(name:, iterable:, body:)
+      AST::ForStmt.new(name:, iterable:, body:, line:)
     end
 
     def parse_while_stmt
+      line = previous.line
       condition = parse_expression
       body = parse_block
-      AST::WhileStmt.new(condition:, body:)
+      AST::WhileStmt.new(condition:, body:, line:)
     end
 
     def parse_break_stmt
+      line = previous.line
       consume_end_of_statement
-      AST::BreakStmt.new
+      AST::BreakStmt.new(line:)
     end
 
     def parse_continue_stmt
+      line = previous.line
       consume_end_of_statement
-      AST::ContinueStmt.new
+      AST::ContinueStmt.new(line:)
     end
 
     def parse_return_stmt
@@ -721,13 +744,14 @@ module MilkTea
     end
 
     def parse_defer_stmt
+      line = previous.line
       if check(:colon)
         body = parse_block
-        AST::DeferStmt.new(expression: nil, body:)
+        AST::DeferStmt.new(expression: nil, body:, line:)
       else
         expression = parse_expression
         consume_end_of_statement unless block_expression?(expression)
-        AST::DeferStmt.new(expression:, body: nil)
+        AST::DeferStmt.new(expression:, body: nil, line:)
       end
     end
 
@@ -738,7 +762,7 @@ module MilkTea
         operator = previous.lexeme
         value = parse_expression
         consume_end_of_statement unless block_expression?(value)
-        AST::Assignment.new(target: expression, operator:, value:)
+        AST::Assignment.new(target: expression, operator:, value:, line:)
       else
         consume_end_of_statement unless block_expression?(expression)
         AST::ExpressionStmt.new(expression:, line:)

@@ -336,10 +336,11 @@ class LSPServerTest < Minitest::Test
 
       actions = response.fetch("result")
       assert_kind_of Array, actions
-      assert_equal "source.fixAll", actions[0]["kind"]
-      assert_equal "Format document", actions[0]["title"]
-      assert_kind_of Hash, actions[0].dig("edit", "changes")
-      assert_kind_of Array, actions[0].dig("edit", "changes", uri)
+      fixall = actions.find { |a| a["kind"] == "source.fixAll" }
+      assert fixall, "expected a source.fixAll action"
+      assert_equal "Apply all auto-fixes", fixall["title"]
+      assert_kind_of Hash, fixall.dig("edit", "changes")
+      assert_kind_of Array, fixall.dig("edit", "changes", uri)
     end
   end
 
@@ -749,6 +750,95 @@ class LSPServerTest < Minitest::Test
   end
 
   private
+
+  def test_code_action_quickfix_prefer_let
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_quickfix_prefer_let.mt"
+      source = <<~MT
+        module demo.lint
+
+        def main() -> i32:
+            var x = 1
+            return x
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      prefer_let_diag = {
+        "source" => "milk-tea",
+        "code"   => "prefer-let",
+        "range"  => { "start" => { "line" => 3, "character" => 4 }, "end" => { "line" => 3, "character" => 13 } },
+        "message" => "var 'x' is never reassigned; prefer 'let'"
+      }
+
+      response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => { "start" => { "line" => 3, "character" => 0 }, "end" => { "line" => 3, "character" => 0 } },
+        "context" => { "diagnostics" => [prefer_let_diag] }
+      })
+
+      actions = response.fetch("result")
+      quickfix = actions.find { |a| a["code"] == "prefer-let" || a.dig("diagnostics", 0, "code") == "prefer-let" }
+      assert quickfix, "expected a quickFix action for prefer-let"
+      assert_equal "quickFix", quickfix["kind"]
+      edit_text = quickfix.dig("edit", "changes", uri, 0, "newText")
+      assert_match(/\blet\b/, edit_text)
+      refute_match(/\bvar\b/, edit_text)
+    end
+  end
+
+  def test_code_action_quickfix_redundant_else
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_quickfix_redundant_else.mt"
+      source = <<~MT
+        module demo.lint
+
+        def sign(n: i32) -> i32:
+            if n > 0:
+                return 1
+            else:
+                return -1
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      # The redundant-else warning fires on line 7 (1-based), which is `return -1`
+      redundant_diag = {
+        "source" => "milk-tea",
+        "code"   => "redundant-else",
+        "range"  => { "start" => { "line" => 6, "character" => 8 }, "end" => { "line" => 6, "character" => 17 } },
+        "message" => "else block is redundant because all preceding branches return"
+      }
+
+      response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => { "start" => { "line" => 6, "character" => 0 }, "end" => { "line" => 6, "character" => 0 } },
+        "context" => { "diagnostics" => [redundant_diag] }
+      })
+
+      actions = response.fetch("result")
+      quickfix = actions.find { |a| a["kind"] == "quickFix" && a["title"] == "Remove redundant else" }
+      assert quickfix, "expected a quickFix action for redundant-else"
+      edit_changes = quickfix.dig("edit", "changes", uri)
+      assert_kind_of Array, edit_changes
+      new_text = edit_changes.first["newText"]
+      refute_match(/else:/, new_text)
+      assert_match(/return -1/, new_text)
+    end
+  end
+
+  def test_initialize_advertises_quickfix_code_action_kind
+    with_server do |client|
+      response = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      kinds = response.dig("result", "capabilities", "codeActionProvider", "codeActionKinds")
+      assert_includes kinds, "quickFix"
+      assert_includes kinds, "source.fixAll"
+    end
+  end
 
   def path_to_uri(path)
     escaped_path = path.split("/").map { |segment| CGI.escape(segment).gsub("+", "%20") }.join("/")

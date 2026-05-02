@@ -89,7 +89,7 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
-  def test_fmt_command_canonical_rejects_comment_loss
+  def test_fmt_command_canonical_preserves_comments
     Dir.mktmpdir("milk-tea-cli-fmt-canonical") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(path, "# header\nmodule demo.fmt\n")
@@ -98,13 +98,13 @@ class MilkTeaCliTest < Minitest::Test
 
       status = MilkTea::CLI.start(["fmt", path, "--canonical"], out:, err:)
 
-      assert_equal 1, status
-      assert_equal "", out.string
-      assert_match(/does not preserve comments/, err.string)
+      assert_equal 0, status
+      assert_includes out.string, "# header"
+      assert_includes out.string, "module demo.fmt"
     end
   end
 
-  def test_fmt_command_safe_default_keeps_comments
+  def test_fmt_command_safe_default_formats_with_comments
     Dir.mktmpdir("milk-tea-cli-fmt-safe") do |dir|
       path = File.join(dir, "sample.mt")
       source = "# head\nmodule demo.safe\n"
@@ -116,7 +116,50 @@ class MilkTeaCliTest < Minitest::Test
 
       assert_equal 0, status
       assert_equal "", err.string
-      assert_equal source, out.string
+      assert_includes out.string, "# head"
+      assert_includes out.string, "module demo.safe"
+    end
+  end
+
+  def test_lint_command_reports_unused_local
+    Dir.mktmpdir("milk-tea-cli-lint-unused") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, <<~MT)
+        module demo.lint
+
+        def main() -> i32:
+            let unused = 1
+            return 0
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", path], out:, err:)
+
+      assert_equal 1, status
+      assert_equal "", err.string
+      assert_match(/sample\.mt:4: unused-local: unused local 'unused'/, out.string)
+    end
+  end
+
+  def test_lint_command_reports_clean_source
+    Dir.mktmpdir("milk-tea-cli-lint-clean") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, <<~MT)
+        module demo.lint
+
+        def main() -> i32:
+            let used = 1
+            return used
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", path], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/clean .*sample\.mt/, out.string)
     end
   end
 
@@ -295,7 +338,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_match(/missing source file path/, err.string)
     assert_match(/Usage: mtc lex PATH/, err.string)
     assert_match(/mtc parse PATH/, err.string)
-    assert_match(/mtc fmt PATH \[--check\|--write\] \[--safe\|--canonical\|--preserve\]/, err.string)
+    assert_match(/mtc fmt PATH\|DIR \[--check\|--write\] \[--safe\|--canonical\|--preserve\]/, err.string)
   end
 
   def test_invalid_commands_print_usage
@@ -308,7 +351,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal "", out.string
     assert_match(/Usage: mtc lex PATH/, err.string)
     assert_match(/mtc parse PATH/, err.string)
-    assert_match(/mtc fmt PATH \[--check\|--write\] \[--safe\|--canonical\|--preserve\]/, err.string)
+    assert_match(/mtc fmt PATH\|DIR \[--check\|--write\] \[--safe\|--canonical\|--preserve\]/, err.string)
     assert_match(/mtc check PATH/, err.string)
     assert_match(/mtc lower PATH/, err.string)
     assert_match(/mtc emit-c PATH/, err.string)
@@ -328,6 +371,247 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal 1, status
     assert_equal "", out.string
     assert_match(/expected a source file, got a directory/, err.string)
+  end
+
+  def test_lint_command_select_flag_limits_rules
+    Dir.mktmpdir("milk-tea-cli-lint-select") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, <<~MT)
+        module demo.lint
+
+        def compute(x: i32) -> i32:
+            let unused = 1
+            return 0
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", path, "--select", "unused-local"], out:, err:)
+
+      # unused-param (for x) would fire without --select, only unused-local expected
+      assert_equal 1, status
+      assert_match(/unused-local/, out.string)
+      refute_match(/unused-param/, out.string)
+    end
+  end
+
+  def test_lint_command_ignore_flag_excludes_rules
+    Dir.mktmpdir("milk-tea-cli-lint-ignore") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, <<~MT)
+        module demo.lint
+
+        def compute(x: i32) -> i32:
+            let unused = 1
+            return 0
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", path, "--ignore", "unused-param"], out:, err:)
+
+      assert_equal 1, status
+      refute_match(/unused-param/, out.string)
+      assert_match(/unused-local/, out.string)
+    end
+  end
+
+  def test_lint_command_missing_return_reported
+    Dir.mktmpdir("milk-tea-cli-lint-missing-return") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, <<~MT)
+        module demo.lint
+
+        def compute() -> i32:
+            let _x = 1
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", path], out:, err:)
+
+      assert_equal 1, status
+      assert_match(/missing-return/, out.string)
+    end
+  end
+
+  def test_lint_command_directory_lints_all_mt_files
+    Dir.mktmpdir("milk-tea-cli-lint-dir") do |dir|
+      File.write(File.join(dir, "a.mt"), <<~MT)
+        module demo.a
+
+        def main() -> i32:
+            let unused_a = 1
+            return 0
+      MT
+      File.write(File.join(dir, "b.mt"), <<~MT)
+        module demo.b
+
+        def main() -> i32:
+            let unused_b = 1
+            return 0
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", dir], out:, err:)
+
+      assert_equal 1, status
+      assert_match(/unused_a/, out.string)
+      assert_match(/unused_b/, out.string)
+    end
+  end
+
+  def test_lint_command_directory_clean_exits_zero
+    Dir.mktmpdir("milk-tea-cli-lint-dir-clean") do |dir|
+      File.write(File.join(dir, "clean.mt"), <<~MT)
+        module demo.clean
+
+        def main() -> i32:
+            return 0
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", dir], out:, err:)
+
+      assert_equal 0, status
+      assert_match(/clean/, out.string)
+    end
+  end
+
+  def test_lint_command_fix_applies_prefer_let
+    Dir.mktmpdir("milk-tea-cli-lint-fix") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, <<~MT)
+        module demo.lint
+
+        def main() -> i32:
+            var x = 1
+            return x
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", path, "--fix"], out:, err:)
+
+      assert_equal 0, status
+      assert_match(/fixed/, out.string)
+      assert_includes File.read(path), "let x = 1"
+    end
+  end
+
+  def test_lint_command_output_format_json
+    Dir.mktmpdir("milk-tea-cli-lint-json") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, <<~MT)
+        module demo.lint
+
+        def main() -> i32:
+            let unused = 1
+            return 0
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", path, "--output-format", "json"], out:, err:)
+
+      assert_equal 1, status
+      parsed = JSON.parse(out.string)
+      assert_kind_of Array, parsed
+      assert_equal 1, parsed.size
+      assert_equal "unused-local", parsed.first["code"]
+      assert_equal "warning",      parsed.first["severity"].to_s
+    end
+  end
+
+  def test_lint_command_output_format_json_clean_returns_empty_array
+    Dir.mktmpdir("milk-tea-cli-lint-json-clean") do |dir|
+      path = File.join(dir, "clean.mt")
+      File.write(path, <<~MT)
+        module demo.lint
+
+        def main() -> i32:
+            return 0
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", path, "--output-format", "json"], out:, err:)
+
+      assert_equal 0, status
+      parsed = JSON.parse(out.string)
+      assert_equal [], parsed
+    end
+  end
+
+  def test_lint_command_summary_line_shown_on_warnings
+    Dir.mktmpdir("milk-tea-cli-lint-summary") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, <<~MT)
+        module demo.lint
+
+        def main() -> i32:
+            let a = 1
+            let b = 2
+            return 0
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      MilkTea::CLI.start(["lint", path], out:, err:)
+
+      assert_match(/Found 2 warnings in 1 file\./, out.string)
+    end
+  end
+
+  def test_fmt_command_directory_check_mode
+    Dir.mktmpdir("milk-tea-cli-fmt-dir") do |dir|
+      unformatted = File.join(dir, "a.mt")
+      already_ok  = File.join(dir, "b.mt")
+
+      # Unformatted: missing module header, but valid enough for formatter
+      File.write(unformatted, "module demo.fmt\ndef  main()->i32:\n    return 0\n")
+      File.write(already_ok,  "module demo.fmt\n")
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["fmt", dir, "--check"], out:, err:)
+
+      # At least one file needs formatting → exit 1
+      assert_equal 1, status
+      assert_match(/needs formatting/, out.string)
+    end
+  end
+
+  def test_fmt_command_directory_write_mode
+    Dir.mktmpdir("milk-tea-cli-fmt-dir-write") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, "module demo.fmt\ndef  main()->i32:\n    return 0\n")
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["fmt", dir, "--write"], out:, err:)
+
+      assert_equal 0, status
+      assert_match(/formatted \d+ of \d+ file/, out.string)
+    end
+  end
+
+  def test_fmt_command_directory_no_flag_errors
+    Dir.mktmpdir("milk-tea-cli-fmt-dir-noflag") do |dir|
+      File.write(File.join(dir, "a.mt"), "module demo.fmt\n")
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["fmt", dir], out:, err:)
+
+      assert_equal 1, status
+      assert_match(/--check or --write/, err.string)
+    end
   end
 
   private

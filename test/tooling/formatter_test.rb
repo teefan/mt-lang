@@ -42,7 +42,7 @@ class MilkTeaFormatterTest < Minitest::Test
     assert_equal source, formatted
   end
 
-  def test_safe_mode_keeps_comment_sources_exactly
+  def test_safe_mode_preserves_comments_in_canonical_output
     source = <<~MT
       # banner
       module demo.safe
@@ -50,20 +50,20 @@ class MilkTeaFormatterTest < Minitest::Test
 
     formatted = MilkTea::Formatter.format_source(source, path: "demo.mt")
 
-    assert_equal source, formatted
+    assert_includes formatted, "# banner"
+    assert_includes formatted, "module demo.safe"
   end
 
-  def test_canonical_mode_rejects_comment_sources
+  def test_canonical_mode_preserves_comments
     source = <<~MT
       # banner
       module demo.fmt
     MT
 
-    error = assert_raises(MilkTea::FormatterError) do
-      MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
-    end
-
-    assert_match(/does not preserve comments/, error.message)
+    # canonical mode now preserves comments — no error raised
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
+    assert_includes formatted, "# banner"
+    assert_includes formatted, "module demo.fmt"
   end
 
   def test_reconstruct_handles_comment_only_tail_without_newline
@@ -72,5 +72,66 @@ class MilkTeaFormatterTest < Minitest::Test
     cst = MilkTea::Formatter.build_cst(source, path: "demo.mt")
 
     assert_equal source, cst.reconstruct
+  end
+
+  # ── comment preservation ─────────────────────────────────────────────
+
+  def test_canonical_preserves_leading_standalone_comment
+    source = <<~MT
+      # top-level comment
+      module demo.comments
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
+
+    assert_equal "# top-level comment\nmodule demo.comments\n", formatted
+  end
+
+  def test_canonical_preserves_comment_before_function
+    source = <<~MT
+      module demo.comments
+
+      # computes sum
+      def add(a: i32, b: i32) -> i32:
+          return a + b
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
+
+    assert_includes formatted, "# computes sum"
+    idx_comment = formatted.index("# computes sum")
+    idx_def     = formatted.index("def add(")
+    assert idx_comment < idx_def, "comment should precede function def"
+  end
+
+  def test_canonical_preserves_comment_before_statement
+    source = <<~MT
+      module demo.comments
+
+      def main() -> i32:
+          # initialize counter
+          let x = 0
+          return x
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
+
+    assert_includes formatted, "# initialize counter"
+    assert formatted.index("# initialize counter") < formatted.index("let x = 0")
+  end
+
+  def test_canonical_preserves_inline_trailing_comment
+    source = <<~MT
+      module demo.comments
+
+      def main() -> i32:
+          let x = 42  # the answer
+          return x
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
+
+    # Inline comment should appear on the same line as the let statement
+    assert_match(/let x = 42\s+# the answer/, formatted)
   end
 end
