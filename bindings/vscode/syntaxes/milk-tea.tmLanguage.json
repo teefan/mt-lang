@@ -1,0 +1,251 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Milk Tea",
+  "scopeName": "source.milk-tea",
+  "fileTypes": ["mt"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#format-string" },
+    { "include": "#string" },
+    { "include": "#number" },
+    { "include": "#keyword-control" },
+    { "include": "#keyword-declaration" },
+    { "include": "#keyword-operator" },
+    { "include": "#keyword-modifier" },
+    { "include": "#keyword-builtin" },
+    { "include": "#type-primitive" },
+    { "include": "#constant-language" },
+    { "include": "#function-definition" },
+    { "include": "#function-call" },
+    { "include": "#type-name" },
+    { "include": "#identifier" },
+    { "include": "#operator" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.number-sign.milk-tea",
+      "match": "#.*$"
+    },
+
+    "string": {
+      "name": "string.quoted.double.milk-tea",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.milk-tea",
+          "match": "\\\\[nrt\\\\\"0]"
+        },
+        {
+          "name": "invalid.illegal.escape.milk-tea",
+          "match": "\\\\."
+        }
+      ]
+    },
+
+    "format-string": {
+      "name": "string.quoted.double.format.milk-tea",
+      "begin": "f\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "meta.embedded.expression.milk-tea",
+          "begin": "\\{",
+          "end": "\\}",
+          "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.milk-tea" } },
+          "endCaptures":   { "0": { "name": "punctuation.section.embedded.end.milk-tea" } },
+          "patterns": [
+            { "include": "#comment" },
+            { "include": "#number" },
+            { "include": "#keyword-operator" },
+            { "include": "#type-primitive" },
+            { "include": "#constant-language" },
+            { "include": "#function-call" },
+            { "include": "#identifier" },
+            { "include": "#operator" }
+          ]
+        },
+        {
+          "name": "constant.character.escape.milk-tea",
+          "match": "\\\\[nrt\\\\\"0{]"
+        }
+      ]
+    },
+
+    "number": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.milk-tea",
+          "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*(?:[eE][+-]?[0-9]+)?\\b"
+        },
+        {
+          "name": "constant.numeric.hex.milk-tea",
+          "match": "\\b0x[0-9a-fA-F][0-9a-fA-F_]*\\b"
+        },
+        {
+          "name": "constant.numeric.octal.milk-tea",
+          "match": "\\b0o[0-7][0-7_]*\\b"
+        },
+        {
+          "name": "constant.numeric.binary.milk-tea",
+          "match": "\\b0b[01][01_]*\\b"
+        },
+        {
+          "name": "constant.numeric.integer.milk-tea",
+          "match": "\\b[0-9][0-9_]*\\b"
+        }
+      ]
+    },
+
+    "keyword-control": {
+      "name": "keyword.control.milk-tea",
+      "match": "\\b(if|elif|else|for|in|while|break|continue|return|match|defer|unsafe|await|then)\\b"
+    },
+
+    "keyword-declaration": {
+      "name": "keyword.declaration.milk-tea",
+      "match": "\\b(module|import|def|fn|proc|struct|union|enum|flags|variant|opaque|methods|type|const|let|var|extern|foreign|static|static_assert|edit|include|link|align)\\b"
+    },
+
+    "keyword-operator": {
+      "name": "keyword.operator.word.milk-tea",
+      "match": "\\b(and|or|not|as|in|sizeof|alignof|offsetof|consuming|inout|out)\\b"
+    },
+
+    "keyword-modifier": {
+      "name": "storage.modifier.milk-tea",
+      "match": "\\b(pub|packed|async)\\b"
+    },
+
+    "keyword-builtin": {
+      "name": "support.function.builtin.milk-tea",
+      "match": "\\b(ref_of|const_ptr_of|ptr_of|read)\\b"
+    },
+
+    "type-primitive": {
+      "name": "support.type.primitive.milk-tea",
+      "match": "\\b(bool|byte|char|i8|i16|i32|i64|u8|u16|u32|u64|isize|usize|f32|f64|void|str|cstr)\\b"
+    },
+
+    "constant-language": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.milk-tea",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.null.milk-tea",
+          "match": "\\bnull\\b"
+        },
+        {
+          "name": "variable.language.self.milk-tea",
+          "match": "\\bthis\\b"
+        }
+      ]
+    },
+
+    "function-definition": {
+      "comment": "Highlight the name in `def myFunction(...)` and `fn myFunction(...)`",
+      "match": "\\b(def|fn|proc)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b",
+      "captures": {
+        "1": { "name": "keyword.declaration.milk-tea" },
+        "2": { "name": "entity.name.function.milk-tea" }
+      }
+    },
+
+    "function-call": {
+      "comment": "Highlight calls: identifier immediately followed by `(`",
+      "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)(?=\\s*\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.milk-tea" }
+      }
+    },
+
+    "type-name": {
+      "comment": "Types after `:` in param/let/var positions and after `->` return position; also capitalised names",
+      "patterns": [
+        {
+          "comment": "Return type arrow",
+          "match": "(->)\\s*([a-zA-Z_][a-zA-Z0-9_.]*(?:\\[[^\\]]*\\])?)",
+          "captures": {
+            "1": { "name": "keyword.operator.arrow.milk-tea" },
+            "2": { "name": "entity.name.type.milk-tea" }
+          }
+        },
+        {
+          "comment": "Type annotation after colon — param or let/var",
+          "match": "(?<=:)\\s*([a-zA-Z_][a-zA-Z0-9_.]*(?:\\[[^\\]]*\\])?(?:\\*|\\?)?)",
+          "captures": {
+            "1": { "name": "entity.name.type.milk-tea" }
+          }
+        },
+        {
+          "comment": "UpperCamelCase names are likely types",
+          "match": "\\b([A-Z][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": { "name": "entity.name.type.milk-tea" }
+          }
+        }
+      ]
+    },
+
+    "identifier": {
+      "name": "variable.other.milk-tea",
+      "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+    },
+
+    "operator": {
+      "patterns": [
+        {
+          "name": "keyword.operator.comparison.milk-tea",
+          "match": "(==|!=|<=|>=|<|>)"
+        },
+        {
+          "name": "keyword.operator.assignment.milk-tea",
+          "match": "(\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<=|>>=|=)(?!=)"
+        },
+        {
+          "name": "keyword.operator.arithmetic.milk-tea",
+          "match": "(\\+|-|\\*|/|%)"
+        },
+        {
+          "name": "keyword.operator.bitwise.milk-tea",
+          "match": "(&|\\||\\^|~|<<|>>)"
+        },
+        {
+          "name": "keyword.operator.arrow.milk-tea",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.dot.milk-tea",
+          "match": "\\."
+        },
+        {
+          "name": "keyword.operator.range.milk-tea",
+          "match": "\\.\\."
+        },
+        {
+          "name": "keyword.operator.optional.milk-tea",
+          "match": "\\?"
+        },
+        {
+          "name": "keyword.operator.deref.milk-tea",
+          "match": "\\*(?=[a-zA-Z_(])"
+        }
+      ]
+    },
+
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.separator.comma.milk-tea",     "match": "," },
+        { "name": "punctuation.separator.colon.milk-tea",     "match": ":" },
+        { "name": "punctuation.separator.semicolon.milk-tea", "match": ";" },
+        { "name": "punctuation.section.parens.begin.milk-tea","match": "\\(" },
+        { "name": "punctuation.section.parens.end.milk-tea",  "match": "\\)" },
+        { "name": "punctuation.section.bracket.begin.milk-tea","match": "\\[" },
+        { "name": "punctuation.section.bracket.end.milk-tea", "match": "\\]" }
+      ]
+    }
+  }
+}

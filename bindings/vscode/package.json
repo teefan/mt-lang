@@ -1,0 +1,200 @@
+{
+  "name": "milk-tea-lang",
+  "displayName": "Milk Tea",
+  "description": "Language support, LSP, and DAP integration for the Milk Tea programming language (.mt files)",
+  "version": "0.1.0",
+  "publisher": "milk-tea-lang",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "categories": ["Programming Languages", "Debuggers", "Linters", "Formatters"],
+  "keywords": ["milk-tea", "milktea", "mt"],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "milk-tea",
+        "aliases": ["Milk Tea", "milktea"],
+        "extensions": [".mt"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/milk-tea-light.svg",
+          "dark": "./icons/milk-tea-dark.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "milk-tea",
+        "scopeName": "source.milk-tea",
+        "path": "./syntaxes/milk-tea.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Milk Tea",
+      "properties": {
+        "milkTea.lsp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the Milk Tea language server (LSP). Restart VS Code or run 'Milk Tea: Restart LSP' after changing."
+        },
+        "milkTea.lsp.serverPath": {
+          "type": "string",
+          "default": "mtc",
+          "description": "Path to the mtc compiler binary used as the LSP server. Accepts an absolute path or a name on $PATH."
+        },
+        "milkTea.lsp.extraArgs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Extra command-line arguments passed to 'mtc lsp'."
+        },
+        "milkTea.lsp.logLevel": {
+          "type": "string",
+          "enum": ["off", "error", "warn", "info", "debug", "trace"],
+          "enumDescriptions": [
+            "No logging.",
+            "Only errors.",
+            "Errors and warnings.",
+            "Errors, warnings, and informational messages.",
+            "Verbose debug output.",
+            "Full protocol trace (very noisy)."
+          ],
+          "default": "info",
+          "description": "Controls how much Milk Tea LSP output is written to the 'Milk Tea LSP' output channel."
+        },
+        "milkTea.lsp.traceServer": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Traces the raw JSON-RPC communication between VS Code and the Milk Tea language server."
+        },
+        "milkTea.dap.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the Milk Tea debug adapter (DAP)."
+        },
+        "milkTea.dap.serverPath": {
+          "type": "string",
+          "default": "mtc",
+          "description": "Path to the mtc compiler binary used as the DAP server."
+        },
+        "milkTea.dap.extraArgs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Extra command-line arguments passed to 'mtc dap'."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "milkTea.restartLsp",
+        "title": "Restart LSP",
+        "category": "Milk Tea"
+      },
+      {
+        "command": "milkTea.viewLspLogs",
+        "title": "View LSP Logs",
+        "category": "Milk Tea"
+      },
+      {
+        "command": "milkTea.viewDapLogs",
+        "title": "View DAP Logs",
+        "category": "Milk Tea"
+      },
+      {
+        "command": "milkTea.restartDap",
+        "title": "Restart DAP (Stop Active Sessions)",
+        "category": "Milk Tea"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "milk-tea",
+        "label": "Milk Tea",
+        "languages": ["milk-tea"],
+        "configurationAttributes": {
+          "launch": {
+            "required": ["program"],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Absolute path to the Milk Tea source file (.mt) to compile and debug.",
+                "default": "${file}"
+              },
+              "args": {
+                "type": "array",
+                "items": { "type": "string" },
+                "default": [],
+                "description": "Command-line arguments passed to the debugged program."
+              },
+              "cwd": {
+                "type": "string",
+                "default": "${workspaceFolder}",
+                "description": "Working directory for the debugged program."
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "default": false,
+                "description": "Automatically stop at the program entry point."
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": { "type": "string" },
+                "default": {},
+                "description": "Environment variables set for the debugged program."
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "milk-tea",
+            "request": "launch",
+            "name": "Debug Milk Tea Program",
+            "program": "${file}",
+            "args": [],
+            "stopOnEntry": false
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Milk Tea: Launch",
+            "description": "Launch and debug a Milk Tea program.",
+            "body": {
+              "type": "milk-tea",
+              "request": "launch",
+              "name": "${1:Debug Milk Tea Program}",
+              "program": "^\"\\${file}\"",
+              "args": [],
+              "stopOnEntry": false
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p .",
+    "watch": "tsc -p . --watch",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package --allow-missing-repository --skip-license",
+    "vsix:build": "npm run package",
+    "vscode:install": "code --install-extension \"${npm_package_name}-${npm_package_version}.vsix\" --force",
+    "vscode:uninstall": "code --uninstall-extension milk-tea-lang.milk-tea-lang",
+    "vscode:reinstall": "npm run vscode:uninstall && npm run vsix:build && npm run vscode:install"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.82.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.24.0"
+  }
+}
