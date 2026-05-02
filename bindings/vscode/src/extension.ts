@@ -40,6 +40,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // ── Commands ───────────────────────────────────────────────────────────
   context.subscriptions.push(
+    vscode.commands.registerCommand('milk-tea.showSignature', (signature?: unknown) => {
+      const text = typeof signature === 'string' && signature.trim().length > 0
+        ? signature
+        : 'Function signature';
+      void vscode.window.showInformationMessage(text);
+    }),
+
     vscode.commands.registerCommand('milkTea.restartLsp', async () => {
       await lspClient.restart().catch((err: unknown) => {
         void vscode.window.showErrorMessage(`Milk Tea: LSP restart failed — ${err}`);

@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require 'cgi/escape'
+require 'uri'
+
 module MilkTea
   module LSP
     # Collects parse and semantic errors and formats them as LSP Diagnostics
@@ -10,10 +13,11 @@ module MilkTea
         # Parse
         begin
           ast = Parser.parse(content, path: uri)
+          imported_modules = resolve_imported_modules(uri, ast, diagnostics)
 
           # Semantic analysis — collect errors from all functions, not just first.
           begin
-            result = Sema.check_collecting_errors(ast)
+            result = Sema.check_collecting_errors(ast, imported_modules: imported_modules)
             result[:errors].each { |e| diagnostics << format_error(e) }
           rescue StandardError => e
             warn "Error collecting diagnostics: #{e.message}"
@@ -37,6 +41,26 @@ module MilkTea
       end
 
       private
+
+      def self.resolve_imported_modules(uri, ast, diagnostics)
+        path = uri_to_path(uri)
+        return {} unless path && File.file?(path)
+
+        loader = ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(path))
+        loader.imported_modules_for_ast(ast)
+      rescue ModuleLoadError => e
+        diagnostics << format_error(SemaError.new(e.message))
+        {}
+      end
+
+      def self.uri_to_path(uri)
+        parsed = URI.parse(uri)
+        return nil unless parsed.scheme == "file"
+
+        CGI.unescape(parsed.path)
+      rescue URI::InvalidURIError
+        nil
+      end
 
       def self.format_warning(warning)
         line = warning.line.to_i

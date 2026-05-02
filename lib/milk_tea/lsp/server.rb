@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'cgi/escape'
+
 module MilkTea
   module LSP
     # Main LSP server — JSON-RPC 2.0 message loop with full MVP feature set.
@@ -762,7 +764,8 @@ module MilkTea
             },
             command: {
               title:   signature,
-              command: 'milk-tea.showSignature'
+              command: 'milk-tea.showSignature',
+              arguments: [signature]
             }
           }
         end
@@ -836,7 +839,21 @@ module MilkTea
           "type #{name} = #{type}"
         elsif (binding = analysis.values[name])
           "#{name}: #{binding.type}"
+        elsif (import_binding = analysis.imports[name])
+          "module #{import_binding.name}"
         else
+          dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
+          if dot_receiver && (module_binding = analysis.imports[dot_receiver])
+            if (fn = module_binding.functions[name])
+              params_str = format_params(fn.type.params)
+              return "def #{name}(#{params_str}) -> #{fn.type.return_type}"
+            elsif (val = module_binding.values[name])
+              return "#{name}: #{val.type}"
+            elsif module_binding.types.key?(name)
+              return "type #{name}"
+            end
+          end
+
           # Fallback: check if it is a method defined on any type
           analysis.methods.each do |_recv_type, methods|
             if (mb = methods[name])
@@ -856,12 +873,42 @@ module MilkTea
         token = @workspace.find_token_at(uri, lsp_line, lsp_char)
         return nil unless token&.type == :identifier
 
+        analysis = @workspace.get_analysis(uri)
+        if analysis
+          dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
+          if dot_receiver && analysis.imports.key?(dot_receiver)
+            module_name = analysis.imports.fetch(dot_receiver).name
+            return module_definition_location(uri, module_name)
+          elsif analysis.imports.key?(token.lexeme)
+            module_name = analysis.imports.fetch(token.lexeme).name
+            return module_definition_location(uri, module_name)
+          end
+        end
+
         found = @workspace.find_definition_token_global(token.lexeme, preferred_uri: uri)
         return nil unless found
 
         {
           uri: found[:uri],
           range: token_to_range(found[:token])
+        }
+      end
+
+      def module_definition_location(current_uri, module_name)
+        current_path = uri_to_path(current_uri)
+        return nil unless current_path
+
+        module_roots = MilkTea::ModuleRoots.roots_for_path(current_path)
+        relative_path = File.join(*module_name.split('.')) + '.mt'
+        path = module_roots.lazy.map { |root| File.join(root, relative_path) }.find { |candidate| File.file?(candidate) }
+        return nil unless path
+
+        {
+          uri: path_to_uri(File.expand_path(path)),
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 0 }
+          }
         }
       end
 
@@ -928,6 +975,20 @@ module MilkTea
 
       def next_diagnostic_result_id(uri, fingerprint)
         "#{uri}:#{fingerprint}"
+      end
+
+      def uri_to_path(uri)
+        parsed = URI.parse(uri)
+        return nil unless parsed.scheme == 'file'
+
+        CGI.unescape(parsed.path)
+      rescue URI::InvalidURIError
+        nil
+      end
+
+      def path_to_uri(path)
+        escaped_path = path.split('/').map { |seg| CGI.escape(seg).gsub('+', '%20') }.join('/')
+        "file://#{escaped_path}"
       end
 
       def collect_call_argument_starts(tokens, lparen_index)

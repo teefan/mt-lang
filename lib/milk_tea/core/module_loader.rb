@@ -60,6 +60,14 @@ module MilkTea
       )
     end
 
+    def imported_modules_for_ast(ast)
+      ast.imports.each_with_object({}) do |import, modules|
+        import_path = resolve_module_path(import.path.to_s)
+        import_analysis = check_path(import_path)
+        modules[import.path.to_s] = module_binding(import_analysis)
+      end
+    end
+
     private
 
     def check_path(path)
