@@ -21,6 +21,7 @@ module MilkTea
         @reader_thread = nil
         @runtime_mutex = Mutex.new
         @runtime_pid = nil
+        @runtime_paused = false
         @runtime_thread = nil
         @tmp_dirs = []
         @lldb_backend = nil
@@ -162,6 +163,7 @@ module MilkTea
         supportsConfigurationDoneRequest: true,
         supportsFunctionBreakpoints: false,
         supportsConditionalBreakpoints: false,
+        supportsPauseRequest: true,
         supportsEvaluateForHovers: false,
         supportsSetVariable: false,
         supportsTerminateRequest: true,
@@ -283,6 +285,7 @@ module MilkTea
         return write_backend_response(message, backend_request("continue", message["arguments"] || {})) if using_lldb_backend?
 
         start_runtime_if_needed
+        continue_runtime_if_paused
         write_response(message, { allThreadsContinued: true })
         write_event("continued", {
           threadId: @session.thread_id,
@@ -311,7 +314,16 @@ module MilkTea
       def handle_pause(message)
         return write_backend_response(message, backend_request("pause", message["arguments"] || {})) if using_lldb_backend?
 
-        write_error_response(message, "pause is not supported by the process backend")
+        unless pause_runtime_if_running
+          return write_error_response(message, "pause failed: process is not running")
+        end
+
+        write_response(message, {})
+        write_event("stopped", {
+          reason: "pause",
+          threadId: @session.thread_id,
+          allThreadsStopped: true
+        })
       end
 
       def handle_terminate(message)
@@ -755,8 +767,33 @@ module MilkTea
           write_event("exited", { exitCode: 1 })
           @session.request_exit!
         ensure
-          @runtime_mutex.synchronize { @runtime_pid = nil }
+          @runtime_mutex.synchronize do
+            @runtime_pid = nil
+            @runtime_paused = false
+          end
         end
+      end
+
+      def pause_runtime_if_running
+        pid = @runtime_mutex.synchronize { @runtime_pid }
+        return false if pid.nil?
+
+        Process.kill("STOP", pid)
+        @runtime_mutex.synchronize { @runtime_paused = true }
+        true
+      rescue StandardError
+        false
+      end
+
+      def continue_runtime_if_paused
+        pid, paused = @runtime_mutex.synchronize { [@runtime_pid, @runtime_paused] }
+        return unless paused
+        return if pid.nil?
+
+        Process.kill("CONT", pid)
+        @runtime_mutex.synchronize { @runtime_paused = false }
+      rescue StandardError
+        nil
       end
 
       def terminate_runtime_if_running
@@ -764,6 +801,7 @@ module MilkTea
         return if pid.nil?
 
         Process.kill("TERM", pid)
+        @runtime_mutex.synchronize { @runtime_paused = false }
       rescue StandardError
         nil
       end

@@ -39,6 +39,8 @@ export class MilkTeaDebugAdapterFactory
 export class MilkTeaDapSessionTracker {
   private readonly sessions = new Set<vscode.DebugSession>();
   private readonly sessionStarts = new Map<string, number>();
+  private readonly sessionExited = new Set<string>();
+  private readonly sessionExitCodes = new Map<string, number | undefined>();
   private readonly retryAttemptsByKey = new Map<string, number>();
   private readonly explicitStops = new Set<string>();
   private readonly log: Logger;
@@ -49,10 +51,30 @@ export class MilkTeaDapSessionTracker {
 
   register(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
+      vscode.debug.registerDebugAdapterTrackerFactory('milk-tea', {
+        createDebugAdapterTracker: (session) => ({
+          onDidSendMessage: (message: unknown) => {
+            const msg = message as { type?: string; event?: string; body?: { exitCode?: unknown } };
+            if (msg?.type !== 'event') {
+              return;
+            }
+
+            if (msg.event === 'exited') {
+              this.sessionExited.add(session.id);
+              const rawCode = msg.body?.exitCode;
+              const exitCode = typeof rawCode === 'number' ? rawCode : undefined;
+              this.sessionExitCodes.set(session.id, exitCode);
+            }
+          },
+        }),
+      }),
+
       vscode.debug.onDidStartDebugSession((session) => {
         if (session.type === 'milk-tea') {
           this.sessions.add(session);
           this.sessionStarts.set(session.id, Date.now());
+          this.sessionExited.delete(session.id);
+          this.sessionExitCodes.delete(session.id);
           this.log.info(`DAP session started: '${session.name}' (id=${session.id})`);
         }
       }),
@@ -60,9 +82,28 @@ export class MilkTeaDapSessionTracker {
         if (this.sessions.delete(session)) {
           const startMs = this.sessionStarts.get(session.id) ?? Date.now();
           this.sessionStarts.delete(session.id);
+          const sawExitedEvent = this.sessionExited.delete(session.id);
+          const exitCode = this.sessionExitCodes.get(session.id);
+          this.sessionExitCodes.delete(session.id);
           this.log.info(`DAP session ended: '${session.name}' (id=${session.id})`);
 
           if (this.explicitStops.delete(session.id)) {
+            return;
+          }
+
+          // If the debug adapter reported a normal process exit, do not retry.
+          // This covers user-initiated window closes and successful short runs.
+          if (sawExitedEvent) {
+            this.retryAttemptsByKey.delete(this.retryKey(session));
+            if (typeof exitCode === 'number') {
+              this.log.info(
+                `DAP session '${session.name}' exited with code ${exitCode}; skipping auto-retry.`,
+              );
+            } else {
+              this.log.info(
+                `DAP session '${session.name}' exited normally; skipping auto-retry.`,
+              );
+            }
             return;
           }
 
