@@ -91,7 +91,7 @@ class MilkTeaLinterTest < Minitest::Test
     w = warnings.first
     assert_equal "unused-param", w.code
     assert_match(/unused parameter 'b'/, w.message)
-    assert_nil w.line
+    assert_equal 3, w.line
   end
 
   def test_does_not_report_used_param

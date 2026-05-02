@@ -105,7 +105,7 @@ module MilkTea
         @handlers['textDocument/codeAction']        = method(:handle_code_action)
         @handlers['textDocument/inlayHint']         = method(:handle_inlay_hint)
         @handlers['textDocument/semanticTokens/full'] = method(:handle_semantic_tokens_full)
-        # textDocument/diagnostic (pull model) removed — push-only via publishDiagnostics
+        @handlers['textDocument/diagnostic']         = method(:handle_document_diagnostic)
         @handlers['textDocument/signatureHelp']     = method(:handle_signature_help)
         @handlers['textDocument/prepareRename']     = method(:handle_prepare_rename)
         @handlers['textDocument/rename']            = method(:handle_rename)
@@ -324,7 +324,11 @@ module MilkTea
             codeLensProvider: {
               resolveProvider: false
             },
-            workspaceSymbolProvider: true
+            workspaceSymbolProvider: true,
+            diagnosticProvider: {
+              interFileDependencies: false,
+              workspaceDiagnostics: false
+            }
           }
         }
       end
