@@ -12,7 +12,9 @@ module MilkTea
   end
 
   class Sema
-    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :values, :functions, :methods)
+    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :values, :functions, :methods, :local_completion_frames)
+    LocalCompletionFrame = Data.define(:start_line, :end_line, :function_name, :receiver_type, :snapshots)
+    LocalCompletionSnapshot = Data.define(:line, :column, :bindings)
     FlowScope = Class.new(Hash)
     ValueBinding = Data.define(:name, :storage_type, :flow_type, :mutable, :kind, :const_value) do
       def type
@@ -93,6 +95,8 @@ module MilkTea
         @evaluating_const_values = []
         @evaluated_const_values = {}
         @error_node_stack = []
+        @local_completion_frames = []
+        @active_local_completion = nil
       end
 
       def check
@@ -120,6 +124,7 @@ module MilkTea
           values: @top_level_values,
           functions: @top_level_functions,
           methods: snapshot_methods,
+          local_completion_frames: @local_completion_frames.dup.freeze,
         )
       end
 
@@ -170,6 +175,7 @@ module MilkTea
           values: @top_level_values,
           functions: @top_level_functions,
           methods: snapshot_methods,
+          local_completion_frames: @local_completion_frames.dup.freeze,
         )
 
         { analysis: analysis, errors: errors.uniq { |e| [e.message, e.line] } }
@@ -848,6 +854,8 @@ module MilkTea
       end
 
       def check_function(binding)
+        @local_completion_frames = @local_completion_frames.dup if @local_completion_frames.frozen?
+
         previous_type_substitutions = @current_type_substitutions
         return if binding.external || binding.type_params.any?
         return if @checked_function_bindings[binding.object_id]
@@ -856,6 +864,7 @@ module MilkTea
         @checking_function_bindings[binding.object_id] = true
         @current_type_substitutions = binding.type_substitutions
         with_scope(binding.body_params) do |scopes|
+          start_local_completion_frame(binding, scopes)
           if binding.ast.is_a?(AST::ForeignFunctionDecl)
             expression = foreign_mapping_expression(binding.ast)
             actual_type = with_foreign_mapping_context do
@@ -877,6 +886,7 @@ module MilkTea
         end
         @checked_function_bindings[binding.object_id] = true
       ensure
+        finish_local_completion_frame(binding)
         @current_type_substitutions = previous_type_substitutions
         @checking_function_bindings.delete(binding.object_id)
       end
@@ -885,8 +895,14 @@ module MilkTea
         with_nested_scope(scopes) do |nested_scopes|
           statements.each do |statement|
             begin
+              record_local_completion_snapshot(
+                statement.respond_to?(:line) ? statement.line : nil,
+                statement.respond_to?(:column) ? statement.column : 0,
+                nested_scopes,
+              )
               refinements = check_statement(statement, scopes: nested_scopes, return_type:, allow_return:)
               apply_continuation_refinements!(nested_scopes, refinements)
+              record_local_completion_snapshot(statement_end_line(statement), 1_000_000, nested_scopes)
             rescue SemaError => e
               # Propagate as-is if position is already attached (set by an inner
               # check_block call on a nested statement) or if this statement type
@@ -4506,6 +4522,97 @@ module MilkTea
         end
 
         {}
+      end
+
+      def start_local_completion_frame(binding, scopes)
+        @active_local_completion = {
+          function_name: binding.name,
+          receiver_type: binding.type.receiver_type,
+          snapshots: [],
+        }
+        record_local_completion_snapshot(binding.ast.respond_to?(:line) ? binding.ast.line : nil, 0, scopes)
+      end
+
+      def finish_local_completion_frame(binding)
+        return unless @active_local_completion
+
+        snapshots = @active_local_completion[:snapshots]
+        if snapshots.empty?
+          @active_local_completion = nil
+          return
+        end
+
+        start_line = [binding.ast.respond_to?(:line) ? binding.ast.line : nil, snapshots.first.line].compact.min
+        end_line = snapshots.last.line
+
+        @local_completion_frames << LocalCompletionFrame.new(
+          start_line:,
+          end_line:,
+          function_name: @active_local_completion[:function_name],
+          receiver_type: @active_local_completion[:receiver_type],
+          snapshots: snapshots.freeze,
+        )
+        @active_local_completion = nil
+      end
+
+      def record_local_completion_snapshot(line, column, scopes)
+        return unless @active_local_completion
+        return if line.nil?
+
+        snapshot = LocalCompletionSnapshot.new(
+          line:,
+          column: (column || 0),
+          bindings: merged_scope_bindings(scopes).freeze,
+        )
+
+        snapshots = @active_local_completion[:snapshots]
+        prev = snapshots.last
+        if prev && prev.line == snapshot.line && prev.column == snapshot.column
+          snapshots[-1] = snapshot
+        else
+          snapshots << snapshot
+        end
+      end
+
+      def merged_scope_bindings(scopes)
+        scopes.each_with_object({}) do |scope, bindings|
+          scope.each do |name, binding|
+            bindings[name] = binding
+          end
+        end
+      end
+
+      def statement_end_line(statement)
+        return nil unless statement
+
+        lines = [statement.respond_to?(:line) ? statement.line : nil]
+
+        case statement
+        when AST::IfStmt
+          statement.branches.each do |branch|
+            lines.concat(statement_list_lines(branch.body))
+          end
+          lines.concat(statement_list_lines(statement.else_body)) if statement.else_body
+        when AST::UnsafeStmt, AST::ForStmt, AST::WhileStmt
+          lines.concat(statement_list_lines(statement.body))
+        when AST::MatchStmt
+          statement.arms.each do |arm|
+            lines.concat(statement_list_lines(arm.body))
+          end
+        when AST::DeferStmt
+          lines.concat(statement_list_lines(statement.body)) if statement.body
+        end
+
+        lines.compact.max
+      end
+
+      def statement_list_lines(statements)
+        return [] unless statements
+
+        statements.each_with_object([]) do |stmt, lines|
+          end_line = statement_end_line(stmt)
+          lines << end_line if end_line
+        end
       end
 
       def null_test_refinements(expression, truthy:, scopes:)

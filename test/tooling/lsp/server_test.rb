@@ -97,6 +97,84 @@ class LSPServerTest < Minitest::Test
         return 1
   MT
 
+  SOURCE_WITH_LOCAL_VALUE_COMPLETION = <<~MT
+    struct Point:
+        x: i32
+        y: i32
+
+    methods Point:
+        def length() -> i32:
+            return this.x + this.y
+
+    def main() -> i32:
+        let p = Point(x = 1, y = 2)
+        return p.x
+  MT
+
+  SOURCE_WITH_SHADOWED_VALUE_COMPLETION = <<~MT
+    struct Point:
+        x: i32
+
+    struct Size:
+        w: i32
+
+    def main() -> i32:
+        let v = Point(x = 1)
+        if true:
+            let v = Size(w = 2)
+            let _inner = v.w
+        return v.x
+  MT
+
+  SOURCE_WITH_NULLABLE_FLOW_COMPLETION = <<~MT
+    struct Point:
+        x: i32
+
+    def main() -> i32:
+        var p: Point? = null
+        if p != null:
+            return p.x
+        return 0
+  MT
+
+  SOURCE_WITH_REF_RECEIVER_COMPLETION = <<~MT
+    struct Point:
+        x: i32
+        y: i32
+
+    def main() -> i32:
+        var p = Point(x = 1, y = 2)
+        let rp = ref_of(p)
+        return rp.x
+  MT
+
+  SOURCE_WITH_POINTER_RECEIVER_COMPLETION = <<~MT
+    struct Point:
+        x: i32
+        y: i32
+
+    def main() -> i32:
+        var p = Point(x = 1, y = 2)
+        let pp = ptr_of(ref_of(p))
+        unsafe:
+            return pp.x
+  MT
+
+  SOURCE_WITH_TOP_LEVEL_VALUE_RECEIVER_COMPLETION = <<~MT
+    struct Point:
+        x: i32
+        y: i32
+
+    methods Point:
+        def area() -> i32:
+            return this.x * this.y
+
+    var origin: Point = Point(x = 3, y = 4)
+
+    def main() -> i32:
+        return origin.x
+  MT
+
   def test_initialize_advertises_expected_capabilities
     with_server do |client|
       response = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -659,6 +737,180 @@ class LSPServerTest < Minitest::Test
       labels = result["items"].map { |i| i["label"] }
       assert_includes labels, "zero"
       result["items"].each { |item| assert_equal 2, item["kind"] }  # kind 2 = Method
+    end
+  end
+
+  def test_completion_returns_fields_and_methods_for_local_value_receiver
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_local_value_completion_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_LOCAL_VALUE_COMPLETION }
+      })
+
+      partial_source = SOURCE_WITH_LOCAL_VALUE_COMPLETION.sub("return p.x", "return p.")
+      client.send_notification("textDocument/didChange", {
+        "textDocument" => { "uri" => uri, "version" => 2 },
+        "contentChanges" => [{ "text" => partial_source }]
+      })
+
+      dot_line = partial_source.lines.index { |line| line.include?("return p.") }
+      dot_char = partial_source.lines[dot_line].chomp.length
+
+      response = client.send_request("textDocument/completion", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => dot_line, "character" => dot_char }
+      })
+
+      items = response.fetch("result").fetch("items")
+      labels = items.map { |i| i["label"] }
+      kinds_by_label = items.to_h { |i| [i["label"], i["kind"]] }
+
+      assert_includes labels, "x"
+      assert_includes labels, "y"
+      assert_includes labels, "length"
+      assert_equal 10, kinds_by_label["x"]
+      assert_equal 2, kinds_by_label["length"]
+    end
+  end
+
+  def test_completion_uses_lexical_scope_for_shadowed_value_receiver
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_shadow_value_completion_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_SHADOWED_VALUE_COMPLETION }
+      })
+
+      partial_source = SOURCE_WITH_SHADOWED_VALUE_COMPLETION.sub("return v.x", "return v.")
+      client.send_notification("textDocument/didChange", {
+        "textDocument" => { "uri" => uri, "version" => 2 },
+        "contentChanges" => [{ "text" => partial_source }]
+      })
+
+      dot_line = partial_source.lines.index { |line| line.include?("return v.") }
+      dot_char = partial_source.lines[dot_line].chomp.length
+
+      response = client.send_request("textDocument/completion", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => dot_line, "character" => dot_char }
+      })
+
+      labels = response.fetch("result").fetch("items").map { |i| i["label"] }
+      assert_includes labels, "x"
+      refute_includes labels, "w"
+    end
+  end
+
+  def test_completion_uses_flow_refined_type_for_nullable_receiver
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_nullable_flow_completion_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_NULLABLE_FLOW_COMPLETION }
+      })
+
+      partial_source = SOURCE_WITH_NULLABLE_FLOW_COMPLETION.sub("return p.x", "return p.")
+      client.send_notification("textDocument/didChange", {
+        "textDocument" => { "uri" => uri, "version" => 2 },
+        "contentChanges" => [{ "text" => partial_source }]
+      })
+
+      dot_line = partial_source.lines.index { |line| line.include?("return p.") }
+      dot_char = partial_source.lines[dot_line].chomp.length
+
+      response = client.send_request("textDocument/completion", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => dot_line, "character" => dot_char }
+      })
+
+      labels = response.fetch("result").fetch("items").map { |i| i["label"] }
+      assert_includes labels, "x"
+    end
+  end
+
+  def test_completion_uses_ref_receiver_type_for_fields
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_ref_receiver_completion_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_REF_RECEIVER_COMPLETION }
+      })
+
+      partial_source = SOURCE_WITH_REF_RECEIVER_COMPLETION.sub("return rp.x", "return rp.")
+      client.send_notification("textDocument/didChange", {
+        "textDocument" => { "uri" => uri, "version" => 2 },
+        "contentChanges" => [{ "text" => partial_source }]
+      })
+
+      dot_line = partial_source.lines.index { |line| line.include?("return rp.") }
+      dot_char = partial_source.lines[dot_line].chomp.length
+
+      response = client.send_request("textDocument/completion", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => dot_line, "character" => dot_char }
+      })
+
+      labels = response.fetch("result").fetch("items").map { |i| i["label"] }
+      assert_includes labels, "x"
+      assert_includes labels, "y"
+    end
+  end
+
+  def test_completion_uses_pointer_receiver_type_for_fields
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_ptr_receiver_completion_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_POINTER_RECEIVER_COMPLETION }
+      })
+
+      partial_source = SOURCE_WITH_POINTER_RECEIVER_COMPLETION.sub("return pp.x", "return pp.")
+      client.send_notification("textDocument/didChange", {
+        "textDocument" => { "uri" => uri, "version" => 2 },
+        "contentChanges" => [{ "text" => partial_source }]
+      })
+
+      dot_line = partial_source.lines.index { |line| line.include?("return pp.") }
+      dot_char = partial_source.lines[dot_line].chomp.length
+
+      response = client.send_request("textDocument/completion", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => dot_line, "character" => dot_char }
+      })
+
+      labels = response.fetch("result").fetch("items").map { |i| i["label"] }
+      assert_includes labels, "x"
+      assert_includes labels, "y"
+    end
+  end
+
+  def test_completion_uses_top_level_value_receiver_type
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_top_level_value_receiver_completion_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_TOP_LEVEL_VALUE_RECEIVER_COMPLETION }
+      })
+
+      partial_source = SOURCE_WITH_TOP_LEVEL_VALUE_RECEIVER_COMPLETION.sub("return origin.x", "return origin.")
+      client.send_notification("textDocument/didChange", {
+        "textDocument" => { "uri" => uri, "version" => 2 },
+        "contentChanges" => [{ "text" => partial_source }]
+      })
+
+      dot_line = partial_source.lines.index { |line| line.include?("return origin.") }
+      dot_char = partial_source.lines[dot_line].chomp.length
+
+      response = client.send_request("textDocument/completion", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => dot_line, "character" => dot_char }
+      })
+
+      labels = response.fetch("result").fetch("items").map { |i| i["label"] }
+      assert_includes labels, "x"
+      assert_includes labels, "y"
+      assert_includes labels, "area"
     end
   end
 

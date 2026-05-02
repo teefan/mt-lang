@@ -1058,6 +1058,11 @@ module MilkTea
             return { isIncomplete: false, items: items }
           end
 
+          if (receiver_type = resolve_dot_receiver_value_type(analysis, dot_recv, lsp_line + 1, lsp_char + 1))
+            items = completion_items_for_value_receiver(analysis, receiver_type, prefix)
+            return { isIncomplete: false, items: items } unless items.empty?
+          end
+
           # Method completions on a non-module receiver.
           method_items = []
           analysis.methods.each do |_recv_type, methods|
@@ -1867,6 +1872,102 @@ module MilkTea
 
       def format_params(params)
         params.map { |p| "#{p.name}: #{p.type}" }.join(', ')
+      end
+
+      def resolve_dot_receiver_value_type(analysis, receiver_name, line, char)
+        frame = enclosing_completion_frame(analysis, line)
+        if frame
+          snapshot = latest_completion_snapshot(frame, line, char)
+          if snapshot && (binding = snapshot.bindings[receiver_name])
+            return binding.type
+          end
+        end
+
+        analysis.values[receiver_name]&.type
+      end
+
+      def enclosing_completion_frame(analysis, line)
+        frames = Array(analysis.local_completion_frames)
+        containing = frames.select { |frame| frame.start_line && frame.end_line && frame.start_line <= line && line <= frame.end_line }
+        containing.min_by { |frame| frame.end_line - frame.start_line }
+      end
+
+      def latest_completion_snapshot(frame, line, char)
+        snapshots = Array(frame.snapshots)
+        snapshots.reverse_each do |snapshot|
+          next if snapshot.line > line
+          next if snapshot.line == line && snapshot.column > char
+
+          return snapshot
+        end
+        nil
+      end
+
+      def completion_items_for_value_receiver(analysis, receiver_type, prefix)
+        items = []
+
+        field_receiver_type = project_field_receiver_type_for_completion(receiver_type)
+        if field_receiver_type.respond_to?(:fields)
+          field_receiver_type.fields.each do |fname, ftype|
+            next unless prefix.empty? || fname.start_with?(prefix)
+
+            items << {
+              label:      fname,
+              kind:       10, # Property
+              detail:     "#{fname}: #{ftype}",
+              insertText: fname,
+              sortText:   "0_#{fname}"
+            }
+          end
+        end
+
+        method_receiver_type = project_method_receiver_type_for_completion(receiver_type)
+        methods = methods_for_receiver_type(analysis, method_receiver_type)
+        methods.each do |mname, binding|
+          next unless prefix.empty? || mname.start_with?(prefix)
+
+          params_str = format_params(binding.type.params)
+          items << {
+            label:      mname,
+            kind:       2,  # Method
+            detail:     "#{mname}(#{params_str}) -> #{binding.type.return_type}",
+            insertText: mname,
+            sortText:   "1_#{mname}"
+          }
+        end
+
+        items
+      end
+
+      def methods_for_receiver_type(analysis, receiver_type)
+        methods = {}
+        methods.merge!(analysis.methods.fetch(receiver_type, {})) if receiver_type
+        analysis.imports.each_value do |module_binding|
+          methods.merge!(module_binding.methods.fetch(receiver_type, {})) if module_binding.methods.key?(receiver_type)
+        end
+        methods
+      end
+
+      def project_field_receiver_type_for_completion(type)
+        return type.arguments.first if ref_type_name?(type)
+        return type.arguments.first if pointer_type_name?(type)
+
+        type
+      end
+
+      def project_method_receiver_type_for_completion(type)
+        return type.arguments.first if ref_type_name?(type)
+        return type.arguments.first if pointer_type_name?(type)
+
+        type
+      end
+
+      def ref_type_name?(type)
+        type.is_a?(Types::GenericInstance) && type.name == 'ref' && type.arguments.length == 1
+      end
+
+      def pointer_type_name?(type)
+        type.is_a?(Types::GenericInstance) && %w[ptr const_ptr].include?(type.name) && type.arguments.length == 1
       end
 
       def format_symbol(sym, uri)
