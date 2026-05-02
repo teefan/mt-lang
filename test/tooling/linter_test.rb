@@ -327,6 +327,20 @@ class MilkTeaLinterTest < Minitest::Test
     refute_includes codes, "dead-assignment"
   end
 
+  def test_no_dead_assignment_for_while_counter_backedge_read
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main() -> i32:
+          var index: i32 = 0
+          while index < 3:
+              index += 1
+          return index
+    MT
+
+    refute warnings.any? { |w| w.code == "dead-assignment" }
+  end
+
   # ── fix_source ─────────────────────────────────────────────────────────
 
   def test_fix_source_converts_prefer_let
