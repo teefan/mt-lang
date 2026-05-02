@@ -96,20 +96,15 @@ module MilkTea
       # Process in reverse line order to keep indices stable.
       redundant_else_fixes = warnings.select { |w| w.code == "redundant-else" && w.line }
       redundant_else_fixes.sort_by(&:line).reverse_each do |w|
-        first_body_idx = w.line - 1   # 0-based index of first statement in else body
-        next if first_body_idx < 1
+        else_idx = w.line - 1   # 0-based index of the `else:` line
+        next unless lines[else_idx]&.match?(/\A\s*else:\s*\z/)
 
-        # Find the `else:` line by scanning backwards from first_body_idx
-        else_idx = (0...first_body_idx).to_a.reverse.find do |i|
-          lines[i]&.match?(/\A\s*else:\s*\z/)
-        end
-        next unless else_idx
-
-        else_indent = lines[else_idx].match(/\A(\s*)/)[1]
+        else_indent  = lines[else_idx].match(/\A(\s*)/)[1]
         body_indent  = else_indent + "    "   # one additional 4-space indent level
+        first_body_idx = else_idx + 1
 
         # Find extent of the else body: all consecutive lines that are blank or indented >= body_indent
-        body_end_idx = first_body_idx
+        body_end_idx = first_body_idx - 1
         (first_body_idx...lines.length).each do |i|
           l = lines[i]
           if l.chomp.empty? || l.start_with?(body_indent)
