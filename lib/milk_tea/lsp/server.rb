@@ -624,12 +624,43 @@ module MilkTea
         requested_diagnostics = params.dig('context', 'diagnostics') || []
         requested_diagnostics.each do |diag|
           code = diag['code']
+          message = diag['message'].to_s
           diag_line = diag.dig('range', 'start', 'line').to_i + 1  # 1-based
+          lines = content.lines
+          source_line = lines[diag_line - 1].to_s
+
+          if message.start_with?('cannot assign ') && !source_line.empty?
+            expected_type = message[/\bexpected\s+(.+)\z/, 1]&.strip
+            equal_index = source_line.index('=')
+            if expected_type && !expected_type.empty? && equal_index
+              rhs = source_line[(equal_index + 1)..]&.rstrip
+              if rhs && !rhs.empty? && !rhs.start_with?("#{expected_type}<-")
+                indent = source_line[/\A\s*/] || ''
+                lhs = source_line[0..equal_index]
+                new_line = "#{indent}#{lhs.strip} #{expected_type}<-(#{rhs})\n"
+                actions << {
+                  title: "Cast expression to #{expected_type}",
+                  kind: 'quickFix',
+                  diagnostics: [diag],
+                  edit: {
+                    changes: {
+                      uri => [{
+                        range: {
+                          start: { line: diag_line - 1, character: 0 },
+                          end:   { line: diag_line,     character: 0 }
+                        },
+                        newText: new_line
+                      }]
+                    }
+                  }
+                }
+              end
+            end
+          end
 
           case code
           when 'prefer-let'
             # Replace `var` with `let` on the declaration line
-            lines = content.lines
             source_line = lines[diag_line - 1].to_s
             next unless source_line.match?(/\bvar\b/)
 
@@ -703,6 +734,36 @@ module MilkTea
               kind: 'quickFix',
               diagnostics: [diag]
             }
+
+          else
+            next if source_line.empty?
+
+            # Wrap unsafe-required pointer casts into a local unsafe block.
+            if message == 'pointer cast requires unsafe' || message == 'ref to pointer cast requires unsafe'
+              next if source_line.match?(/\A\s*unsafe:\s*\z/)
+
+              indent = source_line[/\A\s*/] || ''
+              body = source_line.sub(/\A\s*/, '').rstrip
+              next if body.empty?
+
+              wrapped = "#{indent}unsafe:\n#{indent}    #{body}\n"
+              actions << {
+                title: 'Wrap statement in unsafe block',
+                kind: 'quickFix',
+                diagnostics: [diag],
+                edit: {
+                  changes: {
+                    uri => [{
+                      range: {
+                        start: { line: diag_line - 1, character: 0 },
+                        end:   { line: diag_line,     character: 0 }
+                      },
+                      newText: wrapped
+                    }]
+                  }
+                }
+              }
+            end
           end
         end
 

@@ -565,6 +565,7 @@ module MilkTea
               binding.type,
               "cannot assign #{actual_type} to constant #{decl.name}: expected #{binding.type}",
               expression: decl.value,
+              line: decl.line,
             )
           when AST::VarDecl
             binding = @top_level_values.fetch(decl.name)
@@ -577,6 +578,7 @@ module MilkTea
                 binding.type,
                 "cannot assign #{actual_type} to module variable #{decl.name}: expected #{binding.type}",
                 expression: decl.value,
+                line: decl.line,
               )
               validate_static_storage_initializer!(decl.value, scopes: [])
             else
@@ -936,6 +938,7 @@ module MilkTea
             "return type mismatch: expected #{return_type}, got #{value_type}",
             expression: statement.value,
             contextual_int_to_float: contextual_int_to_float_target?(return_type),
+            line: statement.line,
           )
         when AST::DeferStmt
           if statement.body
@@ -993,6 +996,8 @@ module MilkTea
             "cannot assign #{inferred_type} to #{statement.name}: expected #{declared_type}",
             expression: statement.value,
             contextual_int_to_float: contextual_int_to_float_target?(declared_type),
+            line: statement.line,
+            column: statement.column,
           )
           final_type = declared_type
         else
@@ -1028,6 +1033,7 @@ module MilkTea
             expression: statement.value,
             external_numeric: external_numeric_assignment_target?(statement.target, scopes:),
             contextual_int_to_float: contextual_int_to_float_target?(target_type),
+            line: statement.line,
           )
         when "+=", "-=", "*=", "/="
           unless target_type.numeric? && value_type.numeric? && target_type == value_type
@@ -2374,13 +2380,19 @@ module MilkTea
         end
 
         if pointer_cast?(source_type, target_type)
-          raise SemaError, "pointer cast requires unsafe" unless unsafe_context?
+          unless unsafe_context?
+            expression = arguments.first.value
+            raise SemaError.new("pointer cast requires unsafe", line: source_line(expression), column: source_column(expression))
+          end
 
           return target_type
         end
 
         if ref_to_pointer_cast?(source_type, target_type)
-          raise SemaError, "ref to pointer cast requires unsafe" unless unsafe_context?
+          unless unsafe_context?
+            expression = arguments.first.value
+            raise SemaError.new("ref to pointer cast requires unsafe", line: source_line(expression), column: source_column(expression))
+          end
 
           return target_type
         end
@@ -2705,12 +2717,55 @@ module MilkTea
         binding.const_value
       end
 
-      def ensure_assignable!(actual_type, expected_type, message, expression: nil, external_numeric: false, contextual_int_to_float: false)
-        raise SemaError, message unless types_compatible?(actual_type, expected_type, expression:, external_numeric:, contextual_int_to_float:)
+      def ensure_assignable!(actual_type, expected_type, message, expression: nil, external_numeric: false, contextual_int_to_float: false, line: nil, column: nil)
+        line ||= source_line(expression)
+        column ||= source_column(expression)
+
+        raise SemaError.new(message, line:, column:) unless types_compatible?(actual_type, expected_type, expression:, external_numeric:, contextual_int_to_float:)
       end
 
       def ensure_argument_assignable!(actual_type, expected_type, external:, message:, expression: nil)
-        raise SemaError, message unless argument_types_compatible?(actual_type, expected_type, external:, expression:)
+        line = source_line(expression)
+        column = source_column(expression)
+        raise SemaError.new(message, line:, column:) unless argument_types_compatible?(actual_type, expected_type, external:, expression:)
+      end
+
+      def source_line(node)
+        return nil unless node
+        return node.line if node.respond_to?(:line) && node.line
+
+        case node
+        when AST::MemberAccess then source_line(node.receiver)
+        when AST::IndexAccess then source_line(node.receiver) || source_line(node.index)
+        when AST::Specialization then source_line(node.callee)
+        when AST::Call then source_line(node.callee) || node.arguments.filter_map { |argument| source_line(argument.value) }.first
+        when AST::Argument then source_line(node.value)
+        when AST::UnaryOp then source_line(node.operand)
+        when AST::BinaryOp then source_line(node.left) || source_line(node.right)
+        when AST::IfExpr then source_line(node.condition) || source_line(node.then_expression) || source_line(node.else_expression)
+        when AST::AwaitExpr then source_line(node.expression)
+        when AST::FormatExprPart then source_line(node.expression)
+        else nil
+        end
+      end
+
+      def source_column(node)
+        return nil unless node
+        return node.column if node.respond_to?(:column) && node.column
+
+        case node
+        when AST::MemberAccess then source_column(node.receiver)
+        when AST::IndexAccess then source_column(node.receiver) || source_column(node.index)
+        when AST::Specialization then source_column(node.callee)
+        when AST::Call then source_column(node.callee) || node.arguments.filter_map { |argument| source_column(argument.value) }.first
+        when AST::Argument then source_column(node.value)
+        when AST::UnaryOp then source_column(node.operand)
+        when AST::BinaryOp then source_column(node.left) || source_column(node.right)
+        when AST::IfExpr then source_column(node.condition) || source_column(node.then_expression) || source_column(node.else_expression)
+        when AST::AwaitExpr then source_column(node.expression)
+        when AST::FormatExprPart then source_column(node.expression)
+        else nil
+        end
       end
 
       def call_argument_compatible?(actual_type, expected_type, scopes:, external:, expression: nil)
