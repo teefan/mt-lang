@@ -71,7 +71,7 @@ module MilkTea
         @handlers['textDocument/codeLens']          = method(:handle_code_lens)
         @handlers['textDocument/codeAction']        = method(:handle_code_action)
         @handlers['textDocument/inlayHint']         = method(:handle_inlay_hint)
-        @handlers['textDocument/diagnostic']        = method(:handle_document_diagnostic)
+        # textDocument/diagnostic (pull model) removed — push-only via publishDiagnostics
         @handlers['textDocument/signatureHelp']     = method(:handle_signature_help)
         @handlers['textDocument/prepareRename']     = method(:handle_prepare_rename)
         @handlers['textDocument/rename']            = method(:handle_rename)
@@ -274,10 +274,6 @@ module MilkTea
               codeActionKinds: ['quickFix', 'source.fixAll']
             },
             inlayHintProvider: true,
-            diagnosticProvider: {
-              interFileDependencies: false,
-              workspaceDiagnostics: false
-            },
             completionProvider: {
               triggerCharacters: ['.', '(', ' '],
               resolveProvider: false
