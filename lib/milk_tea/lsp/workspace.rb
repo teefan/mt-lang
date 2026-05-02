@@ -10,7 +10,7 @@ module MilkTea
     # Supports incremental document edits and workspace-wide indexing.
     class Workspace
       # Token types that introduce a named definition, in order of precedence
-      DEFINITION_KEYWORDS = %i[def struct union enum flags variant type const var methods opaque].freeze
+      DEFINITION_KEYWORDS = %i[def struct union enum flags variant type const var let methods opaque].freeze
 
       def initialize
         @open_documents = {}   # uri -> content String from didOpen/didChange
@@ -167,10 +167,10 @@ module MilkTea
       # Find a definition token across the whole workspace, preferring +preferred_uri+.
       # Returns { uri:, token: } or nil.
       # Uses a lazily-built name index to avoid O(all-tokens) linear scan.
-      def find_definition_token_global(name, preferred_uri: nil)
+      def find_definition_token_global(name, preferred_uri: nil, before_line: nil, before_char: nil)
         # Check preferred_uri first without going through the index.
         if preferred_uri
-          token = find_definition_token(preferred_uri, name)
+          token = find_definition_token(preferred_uri, name, before_line:, before_char:)
           return { uri: preferred_uri, token: token } if token
         end
 
@@ -310,9 +310,26 @@ module MilkTea
       # Find the name identifier token immediately after a definition keyword
       # (def, struct, union, enum, flags, variant, type, const, var) for the given name.
       # Returns the identifier Token, or nil if not found.
-      def find_definition_token(uri, name)
+      def find_definition_token(uri, name, before_line: nil, before_char: nil)
         tokens = get_tokens(uri)
         return nil if tokens.nil?
+
+        nearest = nil
+        tokens.each_cons(2) do |kw_tok, id_tok|
+          next unless DEFINITION_KEYWORDS.include?(kw_tok.type)
+          next unless id_tok.type == :identifier && id_tok.lexeme == name
+
+          if before_line
+            next if id_tok.line > before_line
+            next if id_tok.line == before_line && before_char && id_tok.column >= before_char
+          end
+
+          if nearest.nil? || id_tok.line > nearest.line || (id_tok.line == nearest.line && id_tok.column > nearest.column)
+            nearest = id_tok
+          end
+        end
+
+        return nearest if nearest
 
         tokens.each_cons(2) do |kw_tok, id_tok|
           next unless DEFINITION_KEYWORDS.include?(kw_tok.type)

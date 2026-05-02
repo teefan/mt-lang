@@ -92,6 +92,7 @@ module MilkTea
         @checking_function_bindings = {}
         @evaluating_const_values = []
         @evaluated_const_values = {}
+        @error_node_stack = []
       end
 
       def check
@@ -190,72 +191,76 @@ module MilkTea
 
       def install_imports
         @ast.imports.each do |import|
-          alias_name = import.alias_name || import.path.parts.last
-          raise SemaError, "duplicate import alias #{alias_name}" if @imports.key?(alias_name)
+          with_error_node(import) do
+            alias_name = import.alias_name || import.path.parts.last
+            raise_sema_error("duplicate import alias #{alias_name}") if @imports.key?(alias_name)
 
-          module_binding = @imported_modules[import.path.to_s]
-          raise SemaError, "unknown import #{import.path}" unless module_binding
+            module_binding = @imported_modules[import.path.to_s]
+            raise_sema_error("unknown import #{import.path}") unless module_binding
 
-          @imports[alias_name] = module_binding
+            @imports[alias_name] = module_binding
+          end
         end
       end
 
       def declare_named_types
         @ast.declarations.each do |decl|
-          case decl
-          when AST::StructDecl
-            validate_struct_layout!(decl)
-            ensure_available_type_name!(decl.name)
-            @types[decl.name] = if decl.type_params.empty?
-                                  Types::Struct.new(
-                                    decl.name,
-                                    module_name: @module_name,
-                                    external: external_module?,
-                                    packed: decl.packed,
-                                    alignment: decl.alignment,
-                                  )
-                                else
-                                  Types::GenericStructDefinition.new(
-                                    decl.name,
-                                    decl.type_params.map(&:name),
-                                    module_name: @module_name,
-                                    external: external_module?,
-                                    packed: decl.packed,
-                                    alignment: decl.alignment,
-                                  )
-                                end
-          when AST::UnionDecl
-            ensure_available_type_name!(decl.name)
-            @types[decl.name] = Types::Union.new(decl.name, module_name: @module_name, external: external_module?)
-          when AST::VariantDecl
-            ensure_available_type_name!(decl.name)
-            @types[decl.name] = if decl.type_params.empty?
-                                  Types::Variant.new(decl.name, module_name: @module_name)
-                                else
-                                  Types::GenericVariantDefinition.new(
-                                    decl.name,
-                                    decl.type_params.map(&:name),
-                                    module_name: @module_name,
-                                  )
-                                end
-          when AST::EnumDecl
-            ensure_available_type_name!(decl.name)
-            @types[decl.name] = Types::Enum.new(decl.name, module_name: @module_name, external: external_module?)
-          when AST::FlagsDecl
-            ensure_available_type_name!(decl.name)
-            @types[decl.name] = Types::Flags.new(decl.name, module_name: @module_name, external: external_module?)
-          when AST::OpaqueDecl
-            ensure_available_type_name!(decl.name)
-            if decl.c_name && !external_module?
-              raise SemaError, "opaque #{decl.name} may only specify a foreign C name in an extern module"
-            end
+          with_error_node(decl) do
+            case decl
+            when AST::StructDecl
+              validate_struct_layout!(decl)
+              ensure_available_type_name!(decl.name)
+              @types[decl.name] = if decl.type_params.empty?
+                                    Types::Struct.new(
+                                      decl.name,
+                                      module_name: @module_name,
+                                      external: external_module?,
+                                      packed: decl.packed,
+                                      alignment: decl.alignment,
+                                    )
+                                  else
+                                    Types::GenericStructDefinition.new(
+                                      decl.name,
+                                      decl.type_params.map(&:name),
+                                      module_name: @module_name,
+                                      external: external_module?,
+                                      packed: decl.packed,
+                                      alignment: decl.alignment,
+                                    )
+                                  end
+            when AST::UnionDecl
+              ensure_available_type_name!(decl.name)
+              @types[decl.name] = Types::Union.new(decl.name, module_name: @module_name, external: external_module?)
+            when AST::VariantDecl
+              ensure_available_type_name!(decl.name)
+              @types[decl.name] = if decl.type_params.empty?
+                                    Types::Variant.new(decl.name, module_name: @module_name)
+                                  else
+                                    Types::GenericVariantDefinition.new(
+                                      decl.name,
+                                      decl.type_params.map(&:name),
+                                      module_name: @module_name,
+                                    )
+                                  end
+            when AST::EnumDecl
+              ensure_available_type_name!(decl.name)
+              @types[decl.name] = Types::Enum.new(decl.name, module_name: @module_name, external: external_module?)
+            when AST::FlagsDecl
+              ensure_available_type_name!(decl.name)
+              @types[decl.name] = Types::Flags.new(decl.name, module_name: @module_name, external: external_module?)
+            when AST::OpaqueDecl
+              ensure_available_type_name!(decl.name)
+              if decl.c_name && !external_module?
+                raise_sema_error("opaque #{decl.name} may only specify a foreign C name in an extern module")
+              end
 
-            @types[decl.name] = Types::Opaque.new(
-              decl.name,
-              module_name: @module_name,
-              external: external_module?,
-              c_name: decl.c_name,
-            )
+              @types[decl.name] = Types::Opaque.new(
+                decl.name,
+                module_name: @module_name,
+                external: external_module?,
+                c_name: decl.c_name,
+              )
+            end
           end
         end
       end
@@ -270,161 +275,172 @@ module MilkTea
       def validate_struct_layout!(decl)
         return unless decl.alignment
 
-        raise SemaError, "align(...) requires a positive alignment" unless decl.alignment.positive?
+        raise_sema_error("align(...) requires a positive alignment") unless decl.alignment.positive?
         return if power_of_two?(decl.alignment)
 
-        raise SemaError, "align(...) requires a power-of-two alignment, got #{decl.alignment}"
+        raise_sema_error("align(...) requires a power-of-two alignment, got #{decl.alignment}")
       end
 
       def resolve_aggregate_fields
         @ast.declarations.each do |decl|
-          next unless decl.is_a?(AST::StructDecl) || decl.is_a?(AST::UnionDecl)
+          with_error_node(decl) do
+            next unless decl.is_a?(AST::StructDecl) || decl.is_a?(AST::UnionDecl)
 
-          struct_type = @types.fetch(decl.name)
-          type_params = if struct_type.is_a?(Types::GenericStructDefinition)
-                          seen = {}
-                          struct_type.type_params.each_with_object({}) do |name, params|
-                            raise SemaError, "duplicate type parameter #{decl.name}[#{name}]" if seen.key?(name)
+            struct_type = @types.fetch(decl.name)
+            type_params = if struct_type.is_a?(Types::GenericStructDefinition)
+                            seen = {}
+                            struct_type.type_params.each_with_object({}) do |name, params|
+                              raise_sema_error("duplicate type parameter #{decl.name}[#{name}]") if seen.key?(name)
 
-                            seen[name] = true
-                            params[name] = Types::TypeVar.new(name)
+                              seen[name] = true
+                              params[name] = Types::TypeVar.new(name)
+                            end
+                          else
+                            {}
                           end
-                        else
-                          {}
-                        end
-          fields = {}
+            fields = {}
 
-          decl.fields.each do |field|
-            raise SemaError, "duplicate field #{decl.name}.#{field.name}" if fields.key?(field.name)
+            decl.fields.each do |field|
+              raise_sema_error("duplicate field #{decl.name}.#{field.name}") if fields.key?(field.name)
 
-            field_type = resolve_type_ref(field.type, type_params:)
-            validate_stored_ref_type!(field_type, "field #{decl.name}.#{field.name}")
-            unless proc_storage_supported_type?(field_type)
-              raise SemaError, "field #{decl.name}.#{field.name} uses unsupported proc nesting"
+              field_type = resolve_type_ref(field.type, type_params:)
+              validate_stored_ref_type!(field_type, "field #{decl.name}.#{field.name}")
+              unless proc_storage_supported_type?(field_type)
+                raise_sema_error("field #{decl.name}.#{field.name} uses unsupported proc nesting")
+              end
+              fields[field.name] = field_type
             end
-            fields[field.name] = field_type
-          end
 
-          struct_type.define_fields(fields)
+            struct_type.define_fields(fields)
+          end
         end
       end
 
       def resolve_enum_members
         @ast.declarations.each do |decl|
-          next unless decl.is_a?(AST::EnumDecl) || decl.is_a?(AST::FlagsDecl)
+          with_error_node(decl) do
+            next unless decl.is_a?(AST::EnumDecl) || decl.is_a?(AST::FlagsDecl)
 
-          enum_type = @types.fetch(decl.name)
-          backing_type = resolve_type_ref(decl.backing_type)
-          unless backing_type.is_a?(Types::Primitive) && backing_type.integer?
-            raise SemaError, "#{decl.name} backing type must be an integer primitive, got #{backing_type}"
-          end
+            enum_type = @types.fetch(decl.name)
+            backing_type = resolve_type_ref(decl.backing_type)
+            unless backing_type.is_a?(Types::Primitive) && backing_type.integer?
+              raise_sema_error("#{decl.name} backing type must be an integer primitive, got #{backing_type}")
+            end
 
-          member_names = []
-          decl.members.each do |member|
-            raise SemaError, "duplicate member #{decl.name}.#{member.name}" if member_names.include?(member.name)
+            member_names = []
+            decl.members.each do |member|
+              raise_sema_error("duplicate member #{decl.name}.#{member.name}") if member_names.include?(member.name)
 
-            member_names << member.name
-          end
+              member_names << member.name
+            end
 
-          enum_type.define_members(backing_type, member_names)
+            enum_type.define_members(backing_type, member_names)
 
-          decl.members.each do |member|
-            actual_type = infer_expression(member.value, scopes: [], expected_type: backing_type)
-            ensure_assignable!(actual_type, backing_type, "member #{decl.name}.#{member.name} expects #{backing_type}, got #{actual_type}")
+            decl.members.each do |member|
+              actual_type = infer_expression(member.value, scopes: [], expected_type: backing_type)
+              ensure_assignable!(actual_type, backing_type, "member #{decl.name}.#{member.name} expects #{backing_type}, got #{actual_type}")
+            end
           end
         end
       end
 
       def resolve_variant_arms
         @ast.declarations.each do |decl|
-          next unless decl.is_a?(AST::VariantDecl)
+          with_error_node(decl) do
+            next unless decl.is_a?(AST::VariantDecl)
 
-          variant_type = @types.fetch(decl.name)
-          type_params = if variant_type.is_a?(Types::GenericVariantDefinition)
-                          seen = {}
-                          variant_type.type_params.each_with_object({}) do |name, params|
-                            raise SemaError, "duplicate type parameter #{decl.name}[#{name}]" if seen.key?(name)
+            variant_type = @types.fetch(decl.name)
+            type_params = if variant_type.is_a?(Types::GenericVariantDefinition)
+                            seen = {}
+                            variant_type.type_params.each_with_object({}) do |name, params|
+                              raise_sema_error("duplicate type parameter #{decl.name}[#{name}]") if seen.key?(name)
 
-                            seen[name] = true
-                            params[name] = Types::TypeVar.new(name)
+                              seen[name] = true
+                              params[name] = Types::TypeVar.new(name)
+                            end
+                          else
+                            {}
                           end
-                        else
-                          {}
-                        end
-          seen_arms = []
-          arms_hash = {}
-          decl.arms.each do |arm|
-            raise SemaError, "duplicate arm #{decl.name}.#{arm.name}" if seen_arms.include?(arm.name)
+            seen_arms = []
+            arms_hash = {}
+            decl.arms.each do |arm|
+              raise_sema_error("duplicate arm #{decl.name}.#{arm.name}") if seen_arms.include?(arm.name)
 
-            seen_arms << arm.name
-            field_types = {}
-            seen_fields = []
-            arm.fields.each do |field|
-              raise SemaError, "duplicate field #{arm.name}.#{field.name}" if seen_fields.include?(field.name)
+              seen_arms << arm.name
+              field_types = {}
+              seen_fields = []
+              arm.fields.each do |field|
+                raise_sema_error("duplicate field #{arm.name}.#{field.name}") if seen_fields.include?(field.name)
 
-              seen_fields << field.name
-              field_types[field.name] = resolve_type_ref(field.type, type_params:)
+                seen_fields << field.name
+                field_types[field.name] = resolve_type_ref(field.type, type_params:)
+              end
+              arms_hash[arm.name] = field_types
             end
-            arms_hash[arm.name] = field_types
+
+            variant_type.define_arms(arms_hash)
           end
-          variant_type.define_arms(arms_hash)
         end
       end
 
       def declare_top_level_values
         @ast.declarations.each do |decl|
-          case decl
-          when AST::ConstDecl
-            ensure_available_value_name!(decl.name)
-            type = resolve_type_ref(decl.type)
-            validate_stored_ref_type!(type, "constant #{decl.name}")
-            raise SemaError, "constant #{decl.name} cannot store proc values" if contains_proc_type?(type)
-            @top_level_values[decl.name] = value_binding(
-              name: decl.name,
-              type: type,
-              mutable: false,
-              kind: :const,
-            )
-          when AST::VarDecl
-            ensure_available_value_name!(decl.name)
-            raise SemaError, "module variable #{decl.name} requires an explicit type" unless decl.type
+          with_error_node(decl) do
+            case decl
+            when AST::ConstDecl
+              ensure_available_value_name!(decl.name)
+              type = resolve_type_ref(decl.type)
+              validate_stored_ref_type!(type, "constant #{decl.name}")
+              raise_sema_error("constant #{decl.name} cannot store proc values") if contains_proc_type?(type)
+              @top_level_values[decl.name] = value_binding(
+                name: decl.name,
+                type: type,
+                mutable: false,
+                kind: :const,
+              )
+            when AST::VarDecl
+              ensure_available_value_name!(decl.name)
+              raise_sema_error("module variable #{decl.name} requires an explicit type") unless decl.type
 
-            type = resolve_type_ref(decl.type)
-            validate_stored_ref_type!(type, "module variable #{decl.name}")
-            raise SemaError, "module variable #{decl.name} cannot store proc values" if contains_proc_type?(type)
-            @top_level_values[decl.name] = value_binding(
-              name: decl.name,
-              type: type,
-              mutable: true,
-              kind: :var,
-            )
+              type = resolve_type_ref(decl.type)
+              validate_stored_ref_type!(type, "module variable #{decl.name}")
+              raise_sema_error("module variable #{decl.name} cannot store proc values") if contains_proc_type?(type)
+              @top_level_values[decl.name] = value_binding(
+                name: decl.name,
+                type: type,
+                mutable: true,
+                kind: :var,
+              )
+            end
           end
         end
       end
 
       def declare_functions
         @ast.declarations.each do |decl|
-          case decl
-          when AST::FunctionDef
-            ensure_available_value_name!(decl.name)
-            @top_level_functions[decl.name] = declare_function_binding(decl)
-          when AST::ExternFunctionDecl
-            ensure_available_value_name!(decl.name)
-            @top_level_functions[decl.name] = declare_function_binding(decl, external: true)
-          when AST::ForeignFunctionDecl
-            ensure_available_value_name!(decl.name)
-            @top_level_functions[decl.name] = declare_function_binding(decl)
-          when AST::MethodsBlock
-            receiver_type = resolve_type_ref(AST::TypeRef.new(name: decl.type_name, arguments: [], nullable: false))
-            unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StringView)
-              raise SemaError, "methods target #{decl.type_name} must be a struct or str"
-            end
+          with_error_node(decl) do
+            case decl
+            when AST::FunctionDef
+              ensure_available_value_name!(decl.name)
+              @top_level_functions[decl.name] = declare_function_binding(decl)
+            when AST::ExternFunctionDecl
+              ensure_available_value_name!(decl.name)
+              @top_level_functions[decl.name] = declare_function_binding(decl, external: true)
+            when AST::ForeignFunctionDecl
+              ensure_available_value_name!(decl.name)
+              @top_level_functions[decl.name] = declare_function_binding(decl)
+            when AST::MethodsBlock
+              receiver_type = resolve_type_ref(AST::TypeRef.new(name: decl.type_name, arguments: [], nullable: false))
+              unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StringView)
+                raise_sema_error("methods target #{decl.type_name} must be a struct or str")
+              end
 
-            decl.methods.each do |method|
-              binding = declare_function_binding(method, receiver_type:)
-              raise SemaError, "duplicate method #{receiver_type.name}.#{binding.name}" if @methods[receiver_type].key?(binding.name)
+              decl.methods.each do |method|
+                binding = declare_function_binding(method, receiver_type:)
+                raise_sema_error("duplicate method #{receiver_type.name}.#{binding.name}") if @methods[receiver_type].key?(binding.name)
 
-              @methods[receiver_type][binding.name] = binding
+                @methods[receiver_type][binding.name] = binding
+              end
             end
           end
         end
@@ -434,12 +450,12 @@ module MilkTea
         foreign = decl.is_a?(AST::ForeignFunctionDecl)
         async_function = decl.respond_to?(:async) ? decl.async : false
         type_param_names = decl.type_params.map(&:name)
-        raise SemaError, "extern function #{decl.name} cannot be generic" if external && type_param_names.any?
-        raise SemaError, "main cannot be generic" if decl.name == "main" && type_param_names.any?
-        raise SemaError, "extern function #{decl.name} cannot be async" if external && async_function
-        raise SemaError, "foreign function #{decl.name} cannot be async" if foreign && async_function
+        raise_sema_error("extern function #{decl.name} cannot be generic") if external && type_param_names.any?
+        raise_sema_error("main cannot be generic") if decl.name == "main" && type_param_names.any?
+        raise_sema_error("extern function #{decl.name} cannot be async") if external && async_function
+        raise_sema_error("foreign function #{decl.name} cannot be async") if foreign && async_function
         if decl.name == "main" && async_function
-          raise SemaError, "async main requires importing std.async or std.libuv.async" unless async_runtime_import_available?
+          raise_sema_error("async main requires importing std.async or std.libuv.async") unless async_runtime_import_available?
         end
 
         method_kind = decl.is_a?(AST::MethodDef) ? decl.kind : nil
@@ -447,7 +463,7 @@ module MilkTea
 
         type_params = {}
         type_param_names.each do |name|
-          raise SemaError, "duplicate type parameter #{decl.name}[#{name}]" if type_params.key?(name)
+          raise_sema_error("duplicate type parameter #{decl.name}[#{name}]") if type_params.key?(name)
 
           type_params[name] = Types::TypeVar.new(name)
         end
@@ -469,11 +485,11 @@ module MilkTea
           validate_parameter_proc_type!(type, function_name: decl.name, parameter_name: param.name, external:, foreign:)
 
           if external && array_type?(type)
-            raise SemaError, "extern function #{decl.name} cannot take array parameters"
+            raise_sema_error("extern function #{decl.name} cannot take array parameters")
           end
 
           if foreign
-            raise SemaError, "foreign parameter #{param.name} cannot use `as` with #{param.mode}" if ![:plain, :in].include?(param.mode) && param.boundary_type
+            raise_sema_error("foreign parameter #{param.name} cannot use `as` with #{param.mode}") if ![:plain, :in].include?(param.mode) && param.boundary_type
             validate_consuming_foreign_parameter!(type, function_name: decl.name, parameter_name: param.name) if param.mode == :consuming
 
             boundary_type = foreign_parameter_boundary_type(param, type, type_params:)
@@ -507,7 +523,7 @@ module MilkTea
 
         seen = {}
         body_params.each do |param|
-          raise SemaError, "duplicate parameter #{param.name} in #{decl.name}" if seen.key?(param.name)
+          raise_sema_error("duplicate parameter #{param.name} in #{decl.name}") if seen.key?(param.name)
 
           seen[param.name] = true
         end
@@ -516,13 +532,13 @@ module MilkTea
         validate_return_ref_type!(body_return_type, function_name: decl.name)
         validate_return_proc_type!(body_return_type, function_name: decl.name)
         if decl.name == "main" && async_function && body_return_type != @types.fetch("i32") && body_return_type != @types.fetch("void")
-          raise SemaError, "async main must return i32 or void"
+          raise_sema_error("async main must return i32 or void")
         end
         if foreign && public_params.any? { |param| param.passing_mode == :consuming } && body_return_type != @types.fetch("void")
-          raise SemaError, "foreign function #{decl.name} with consuming parameters must return void"
+          raise_sema_error("foreign function #{decl.name} with consuming parameters must return void")
         end
         if external && array_type?(body_return_type)
-          raise SemaError, "extern function #{decl.name} cannot return arrays"
+          raise_sema_error("extern function #{decl.name} cannot return arrays")
         end
         function_return_type = async_function ? Types::Task.new(body_return_type) : body_return_type
 
@@ -554,35 +570,37 @@ module MilkTea
 
       def check_top_level_values
         @ast.declarations.each do |decl|
-          case decl
-          when AST::ConstDecl
-            binding = @top_level_values.fetch(decl.name)
-            validate_consuming_foreign_expression!(decl.value, scopes: [], root_allowed: false)
-            validate_hoistable_foreign_expression!(decl.value, scopes: [], root_hoistable: false)
-            actual_type = infer_expression(decl.value, scopes: [], expected_type: binding.type)
-            ensure_assignable!(
-              actual_type,
-              binding.type,
-              "cannot assign #{actual_type} to constant #{decl.name}: expected #{binding.type}",
-              expression: decl.value,
-              line: decl.line,
-            )
-          when AST::VarDecl
-            binding = @top_level_values.fetch(decl.name)
-            if decl.value
+          with_error_node(decl) do
+            case decl
+            when AST::ConstDecl
+              binding = @top_level_values.fetch(decl.name)
               validate_consuming_foreign_expression!(decl.value, scopes: [], root_allowed: false)
               validate_hoistable_foreign_expression!(decl.value, scopes: [], root_hoistable: false)
               actual_type = infer_expression(decl.value, scopes: [], expected_type: binding.type)
               ensure_assignable!(
                 actual_type,
                 binding.type,
-                "cannot assign #{actual_type} to module variable #{decl.name}: expected #{binding.type}",
+                "cannot assign #{actual_type} to constant #{decl.name}: expected #{binding.type}",
                 expression: decl.value,
                 line: decl.line,
               )
-              validate_static_storage_initializer!(decl.value, scopes: [])
-            else
-              zero_initializable_type?(binding.type)
+            when AST::VarDecl
+              binding = @top_level_values.fetch(decl.name)
+              if decl.value
+                validate_consuming_foreign_expression!(decl.value, scopes: [], root_allowed: false)
+                validate_hoistable_foreign_expression!(decl.value, scopes: [], root_hoistable: false)
+                actual_type = infer_expression(decl.value, scopes: [], expected_type: binding.type)
+                ensure_assignable!(
+                  actual_type,
+                  binding.type,
+                  "cannot assign #{actual_type} to module variable #{decl.name}: expected #{binding.type}",
+                  expression: decl.value,
+                  line: decl.line,
+                )
+                validate_static_storage_initializer!(decl.value, scopes: [])
+              else
+                zero_initializable_type?(binding.type)
+              end
             end
           end
         end
@@ -597,17 +615,17 @@ module MilkTea
           if (binding = lookup_value(expression.name, scopes))
             return if binding.kind == :const
 
-            raise SemaError, "module variable initializer cannot reference mutable value #{expression.name}"
+            raise_sema_error("module variable initializer cannot reference mutable value #{expression.name}")
           end
 
           function = @top_level_functions[expression.name]
           return if function && static_storage_function_value?(function)
 
-          raise SemaError, "module variable initializer must be static-storage-safe"
+          raise_sema_error("module variable initializer must be static-storage-safe")
         when AST::MemberAccess
           return if static_storage_member_initializer?(expression, scopes:)
 
-          raise SemaError, "module variable initializer must be static-storage-safe"
+          raise_sema_error("module variable initializer must be static-storage-safe")
         when AST::UnaryOp
           validate_static_storage_initializer!(expression.operand, scopes:)
         when AST::BinaryOp
@@ -620,7 +638,7 @@ module MilkTea
         when AST::Call
           validate_static_storage_call_initializer!(expression, scopes:)
         else
-          raise SemaError, "module variable initializer must be static-storage-safe"
+          raise_sema_error("module variable initializer must be static-storage-safe")
         end
       end
 
@@ -634,13 +652,13 @@ module MilkTea
 
         imported_module = @imports.fetch(expression.receiver.name)
         if imported_module.private_value?(expression.member) || imported_module.private_function?(expression.member) || imported_module.private_type?(expression.member)
-          raise SemaError, "#{expression.receiver.name}.#{expression.member} is private to module #{imported_module.name}"
+          raise_sema_error("#{expression.receiver.name}.#{expression.member} is private to module #{imported_module.name}")
         end
 
         if (binding = imported_module.values[expression.member])
           return true if binding.kind == :const
 
-          raise SemaError, "module variable initializer cannot reference mutable value #{expression.receiver.name}.#{expression.member}"
+          raise_sema_error("module variable initializer cannot reference mutable value #{expression.receiver.name}.#{expression.member}")
         end
 
         function = imported_module.functions[expression.member]
@@ -681,7 +699,7 @@ module MilkTea
           end
         end
 
-        raise SemaError, "module variable initializer must be static-storage-safe"
+        raise_sema_error("module variable initializer must be static-storage-safe")
       end
 
       def static_storage_function_value?(binding)
@@ -695,7 +713,7 @@ module MilkTea
       def evaluate_top_level_const_value(name)
         return @top_level_values.fetch(name).const_value if @evaluated_const_values.key?(name)
 
-        raise SemaError, "cyclic constant value dependency involving #{name}" if @evaluating_const_values.include?(name)
+        raise_sema_error("cyclic constant value dependency involving #{name}") if @evaluating_const_values.include?(name)
 
         decl = @const_declarations.fetch(name)
         @evaluating_const_values << name
@@ -844,7 +862,7 @@ module MilkTea
               infer_expression(expression, scopes:, expected_type: binding.type.return_type)
             end
             unless types_compatible?(actual_type, binding.type.return_type, expression:) || foreign_identity_projection_compatible?(actual_type, binding.type.return_type)
-              raise SemaError, "foreign mapping #{binding.name} expects #{binding.type.return_type}, got #{actual_type}"
+              raise_sema_error("foreign mapping #{binding.name} expects #{binding.type.return_type}, got #{actual_type}")
             end
           else
             validate_async_function_body!(binding.ast.body) if binding.async
@@ -885,85 +903,87 @@ module MilkTea
       end
 
       def check_statement(statement, scopes:, return_type:, allow_return: true)
-        case statement
-        when AST::LocalDecl
-          check_local_decl(statement, scopes:)
-        when AST::Assignment
-          check_assignment(statement, scopes:)
-        when AST::IfStmt
-          false_refinements = {}
-          branch_bodies_terminate = []
-          statement.branches.each do |branch|
-            branch_scopes = scopes_with_refinements(scopes, false_refinements)
-            validate_consuming_foreign_expression!(branch.condition, scopes: branch_scopes, root_allowed: false)
-            condition_type = infer_expression(branch.condition, scopes: branch_scopes, expected_type: @types.fetch("bool"))
-            ensure_assignable!(condition_type, @types.fetch("bool"), "if condition must be bool, got #{condition_type}")
-            true_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: true, scopes: branch_scopes))
-            check_block(branch.body, scopes: scopes_with_refinements(scopes, true_refinements), return_type:, allow_return:)
-            branch_bodies_terminate << block_always_terminates?(branch.body)
-            false_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: false, scopes: branch_scopes))
-          end
-          check_block(statement.else_body, scopes: scopes_with_refinements(scopes, false_refinements), return_type:, allow_return:) if statement.else_body
-          return false_refinements if statement.else_body.nil? && branch_bodies_terminate.all?
-        when AST::MatchStmt
-          check_match_stmt(statement, scopes:, return_type:, allow_return:)
-        when AST::UnsafeStmt
-          with_unsafe do
-            check_block(statement.body, scopes:, return_type:, allow_return:)
-          end
-        when AST::StaticAssert
-          check_static_assert(statement, scopes:)
-        when AST::ForStmt
-          check_for_stmt(statement, scopes:, return_type:, allow_return:)
-        when AST::WhileStmt
-          validate_consuming_foreign_expression!(statement.condition, scopes:, root_allowed: false)
-          condition_type = infer_expression(statement.condition, scopes:, expected_type: @types.fetch("bool"))
-          ensure_assignable!(condition_type, @types.fetch("bool"), "while condition must be bool, got #{condition_type}")
-          with_loop do
-            body_scopes = scopes_with_refinements(scopes, flow_refinements(statement.condition, truthy: true, scopes:))
-            check_block(statement.body, scopes: body_scopes, return_type:, allow_return:)
-          end
-        when AST::BreakStmt
-          raise SemaError, "break must be inside a loop" unless inside_loop?
-        when AST::ContinueStmt
-          raise SemaError, "continue must be inside a loop" unless inside_loop?
-        when AST::ReturnStmt
-          raise SemaError, "return is not allowed inside defer blocks" unless allow_return
-
-          validate_consuming_foreign_expression!(statement.value, scopes:, root_allowed: false) if statement.value
-          value_type = statement.value ? infer_expression(statement.value, scopes:, expected_type: return_type) : @types.fetch("void")
-          ensure_assignable!(
-            value_type,
-            return_type,
-            "return type mismatch: expected #{return_type}, got #{value_type}",
-            expression: statement.value,
-            contextual_int_to_float: contextual_int_to_float_target?(return_type),
-            line: statement.line,
-          )
-        when AST::DeferStmt
-          if statement.body
-            with_loop_barrier do
-              check_block(statement.body, scopes:, return_type:, allow_return: false)
+        with_error_node(statement) do
+          case statement
+          when AST::LocalDecl
+            check_local_decl(statement, scopes:)
+          when AST::Assignment
+            check_assignment(statement, scopes:)
+          when AST::IfStmt
+            false_refinements = {}
+            branch_bodies_terminate = []
+            statement.branches.each do |branch|
+              branch_scopes = scopes_with_refinements(scopes, false_refinements)
+              validate_consuming_foreign_expression!(branch.condition, scopes: branch_scopes, root_allowed: false)
+              condition_type = infer_expression(branch.condition, scopes: branch_scopes, expected_type: @types.fetch("bool"))
+              ensure_assignable!(condition_type, @types.fetch("bool"), "if condition must be bool, got #{condition_type}")
+              true_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: true, scopes: branch_scopes))
+              check_block(branch.body, scopes: scopes_with_refinements(scopes, true_refinements), return_type:, allow_return:)
+              branch_bodies_terminate << block_always_terminates?(branch.body)
+              false_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: false, scopes: branch_scopes))
             end
-          else
-            validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: false)
-            validate_hoistable_foreign_expression!(statement.expression, scopes:, root_hoistable: false)
-            infer_expression(statement.expression, scopes:)
-          end
-        when AST::ExpressionStmt
-          validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: true)
-          infer_expression(statement.expression, scopes:)
-          return consuming_foreign_call_refinements(statement.expression, scopes:)
-        else
-          raise SemaError, "unsupported statement #{statement.class.name}"
-        end
+            check_block(statement.else_body, scopes: scopes_with_refinements(scopes, false_refinements), return_type:, allow_return:) if statement.else_body
+            return false_refinements if statement.else_body.nil? && branch_bodies_terminate.all?
+          when AST::MatchStmt
+            check_match_stmt(statement, scopes:, return_type:, allow_return:)
+          when AST::UnsafeStmt
+            with_unsafe do
+              check_block(statement.body, scopes:, return_type:, allow_return:)
+            end
+          when AST::StaticAssert
+            check_static_assert(statement, scopes:)
+          when AST::ForStmt
+            check_for_stmt(statement, scopes:, return_type:, allow_return:)
+          when AST::WhileStmt
+            validate_consuming_foreign_expression!(statement.condition, scopes:, root_allowed: false)
+            condition_type = infer_expression(statement.condition, scopes:, expected_type: @types.fetch("bool"))
+            ensure_assignable!(condition_type, @types.fetch("bool"), "while condition must be bool, got #{condition_type}")
+            with_loop do
+              body_scopes = scopes_with_refinements(scopes, flow_refinements(statement.condition, truthy: true, scopes:))
+              check_block(statement.body, scopes: body_scopes, return_type:, allow_return:)
+            end
+          when AST::BreakStmt
+            raise_sema_error("break must be inside a loop") unless inside_loop?
+          when AST::ContinueStmt
+            raise_sema_error("continue must be inside a loop") unless inside_loop?
+          when AST::ReturnStmt
+            raise_sema_error("return is not allowed inside defer blocks") unless allow_return
 
-        nil
+            validate_consuming_foreign_expression!(statement.value, scopes:, root_allowed: false) if statement.value
+            value_type = statement.value ? infer_expression(statement.value, scopes:, expected_type: return_type) : @types.fetch("void")
+            ensure_assignable!(
+              value_type,
+              return_type,
+              "return type mismatch: expected #{return_type}, got #{value_type}",
+              expression: statement.value,
+              contextual_int_to_float: contextual_int_to_float_target?(return_type),
+              line: statement.line,
+            )
+          when AST::DeferStmt
+            if statement.body
+              with_loop_barrier do
+                check_block(statement.body, scopes:, return_type:, allow_return: false)
+              end
+            else
+              validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: false)
+              validate_hoistable_foreign_expression!(statement.expression, scopes:, root_hoistable: false)
+              infer_expression(statement.expression, scopes:)
+            end
+          when AST::ExpressionStmt
+            validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: true)
+            infer_expression(statement.expression, scopes:)
+            return consuming_foreign_call_refinements(statement.expression, scopes:)
+          else
+            raise_sema_error("unsupported statement #{statement.class.name}")
+          end
+
+          nil
+        end
       end
 
       def check_local_decl(statement, scopes:)
         current_scope = current_actual_scope(scopes)
-        raise SemaError, "duplicate local #{statement.name}" if current_scope.key?(statement.name)
+        raise_sema_error("duplicate local #{statement.name}") if current_scope.key?(statement.name)
 
         declared_type = statement.type ? resolve_type_ref(statement.type) : nil
         if statement.value
@@ -976,12 +996,12 @@ module MilkTea
                             infer_expression(statement.value, scopes:, expected_type: declared_type)
                           end
         else
-          raise SemaError, "local #{statement.name} without initializer requires an explicit type" unless declared_type
+          raise_sema_error("local #{statement.name} without initializer requires an explicit type") unless declared_type
 
           begin
             zero_initializable_type?(declared_type)
           rescue SemaError
-            raise SemaError, "local #{statement.name} without initializer requires a zero-initializable type, got #{declared_type}"
+            raise_sema_error("local #{statement.name} without initializer requires a zero-initializable type, got #{declared_type}")
           end
 
           inferred_type = declared_type
@@ -1001,8 +1021,8 @@ module MilkTea
           )
           final_type = declared_type
         else
-          raise SemaError, "cannot infer type for #{statement.name} from null" if inferred_type.is_a?(Types::Null)
-          raise SemaError, "cannot bind void result to #{statement.name}" if inferred_type.void?
+          raise_sema_error("cannot infer type for #{statement.name} from null") if inferred_type.is_a?(Types::Null)
+          raise_sema_error("cannot bind void result to #{statement.name}") if inferred_type.void?
 
           final_type = inferred_type
         end
@@ -1037,22 +1057,22 @@ module MilkTea
           )
         when "+=", "-=", "*=", "/="
           unless target_type.numeric? && value_type.numeric? && target_type == value_type
-            raise SemaError, "operator #{statement.operator} requires matching numeric types, got #{target_type} and #{value_type}"
+            raise_sema_error("operator #{statement.operator} requires matching numeric types, got #{target_type} and #{value_type}")
           end
         when "%="
           unless common_integer_type(target_type, value_type) == target_type
-            raise SemaError, "operator #{statement.operator} requires compatible integer types, got #{target_type} and #{value_type}"
+            raise_sema_error("operator #{statement.operator} requires compatible integer types, got #{target_type} and #{value_type}")
           end
         when "&=", "|=", "^="
           unless target_type == value_type && bitwise_type?(target_type)
-            raise SemaError, "operator #{statement.operator} requires matching integer or flags types, got #{target_type} and #{value_type}"
+            raise_sema_error("operator #{statement.operator} requires matching integer or flags types, got #{target_type} and #{value_type}")
           end
         when "<<=", ">>="
           unless target_type.is_a?(Types::Primitive) && target_type.integer? && value_type.is_a?(Types::Primitive) && value_type.integer?
-            raise SemaError, "operator #{statement.operator} requires integer operands, got #{target_type} and #{value_type}"
+            raise_sema_error("operator #{statement.operator} requires integer operands, got #{target_type} and #{value_type}")
           end
         else
-          raise SemaError, "unsupported assignment operator #{statement.operator}"
+          raise_sema_error("unsupported assignment operator #{statement.operator}")
         end
       end
 
@@ -1066,7 +1086,7 @@ module MilkTea
         elsif integer_type?(scrutinee_type)
           check_integer_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
         else
-          raise SemaError, "match requires an enum, variant, or integer scrutinee, got #{scrutinee_type}"
+          raise_sema_error("match requires an enum, variant, or integer scrutinee, got #{scrutinee_type}")
         end
       end
 
@@ -1075,7 +1095,7 @@ module MilkTea
         wildcard_seen = false
         statement.arms.each do |arm|
           if wildcard_pattern?(arm.pattern)
-            raise SemaError, "duplicate wildcard arm in match" if wildcard_seen
+            raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
             wildcard_seen = true
             check_block(arm.body, scopes:, return_type:, allow_return:)
             next
@@ -1086,8 +1106,8 @@ module MilkTea
           ensure_assignable!(pattern_type, scrutinee_type, "match arm expects #{scrutinee_type}, got #{pattern_type}")
 
           member_name = match_member_name(arm.pattern, scrutinee_type)
-          raise SemaError, "match arm must be an enum member of #{scrutinee_type}" unless member_name
-          raise SemaError, "duplicate match arm #{scrutinee_type}.#{member_name}" if covered_members.key?(member_name)
+          raise_sema_error("match arm must be an enum member of #{scrutinee_type}") unless member_name
+          raise_sema_error("duplicate match arm #{scrutinee_type}.#{member_name}") if covered_members.key?(member_name)
 
           covered_members[member_name] = true
           check_block(arm.body, scopes:, return_type:, allow_return:)
@@ -1098,27 +1118,27 @@ module MilkTea
         missing_members = scrutinee_type.members - covered_members.keys
         return if missing_members.empty?
 
-        raise SemaError, "match on #{scrutinee_type} is missing cases: #{missing_members.join(', ')}"
+        raise_sema_error("match on #{scrutinee_type} is missing cases: #{missing_members.join(', ')}")
       end
 
       def check_integer_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
         has_wildcard = statement.arms.any? { |arm| wildcard_pattern?(arm.pattern) }
-        raise SemaError, "match on integer type #{scrutinee_type} requires a wildcard arm (_:)" unless has_wildcard
+        raise_sema_error("match on integer type #{scrutinee_type} requires a wildcard arm (_:)") unless has_wildcard
 
         covered_values = {}
         wildcard_seen = false
         statement.arms.each do |arm|
           if wildcard_pattern?(arm.pattern)
-            raise SemaError, "duplicate wildcard arm in match" if wildcard_seen
+            raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
             wildcard_seen = true
             check_block(arm.body, scopes:, return_type:, allow_return:)
             next
           end
           unless arm.pattern.is_a?(AST::IntegerLiteral)
-            raise SemaError, "match arm for integer scrutinee must be an integer literal or _, got #{arm.pattern.class.name}"
+            raise_sema_error("match arm for integer scrutinee must be an integer literal or _, got #{arm.pattern.class.name}")
           end
           value = arm.pattern.value
-          raise SemaError, "duplicate match arm value #{value}" if covered_values.key?(value)
+          raise_sema_error("duplicate match arm value #{value}") if covered_values.key?(value)
           covered_values[value] = true
           check_block(arm.body, scopes:, return_type:, allow_return:)
         end
@@ -1133,7 +1153,7 @@ module MilkTea
         wildcard_seen = false
         statement.arms.each do |arm|
           if wildcard_pattern?(arm.pattern)
-            raise SemaError, "duplicate wildcard arm in match" if wildcard_seen
+            raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
             wildcard_seen = true
             check_block(arm.body, scopes:, return_type:, allow_return:)
             next
@@ -1142,8 +1162,8 @@ module MilkTea
           validate_hoistable_foreign_expression!(arm.pattern, scopes:, root_hoistable: false)
 
           arm_name = variant_match_arm_name(arm.pattern, scrutinee_type)
-          raise SemaError, "match arm must be a variant arm of #{scrutinee_type}" unless arm_name
-          raise SemaError, "duplicate match arm #{scrutinee_type}.#{arm_name}" if covered_arms.key?(arm_name)
+          raise_sema_error("match arm must be a variant arm of #{scrutinee_type}") unless arm_name
+          raise_sema_error("duplicate match arm #{scrutinee_type}.#{arm_name}") if covered_arms.key?(arm_name)
 
           covered_arms[arm_name] = true
 
@@ -1151,7 +1171,7 @@ module MilkTea
           if arm.binding_name
             fields = scrutinee_type.arm(arm_name)
             if fields.nil? || fields.empty?
-              raise SemaError, "variant arm #{scrutinee_type}.#{arm_name} has no payload; 'as' binding is not allowed"
+              raise_sema_error("variant arm #{scrutinee_type}.#{arm_name} has no payload; 'as' binding is not allowed")
             end
 
             payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
@@ -1165,7 +1185,7 @@ module MilkTea
         missing_arms = scrutinee_type.arm_names - covered_arms.keys
         return if missing_arms.empty?
 
-        raise SemaError, "match on #{scrutinee_type} is missing cases: #{missing_arms.join(', ')}"
+        raise_sema_error("match on #{scrutinee_type} is missing cases: #{missing_arms.join(', ')}")
       end
 
       def variant_match_arm_name(pattern, scrutinee_type)
@@ -1198,7 +1218,7 @@ module MilkTea
                       collection_loop_type(iterable_type)
                     end
 
-        raise SemaError, "for loop expects range(start, stop), array[T, N], or span[T], got #{infer_expression(statement.iterable, scopes:)}" unless loop_type
+        raise_sema_error("for loop expects range(start, stop), array[T, N], or span[T], got #{infer_expression(statement.iterable, scopes:)}") unless loop_type
 
         with_nested_scope(scopes) do |loop_scopes|
           current_actual_scope(loop_scopes)[statement.name] = value_binding(
@@ -1220,17 +1240,17 @@ module MilkTea
         validate_hoistable_foreign_expression!(statement.message, scopes:, root_hoistable: false)
         condition_type = infer_expression(statement.condition, scopes:, expected_type: @types.fetch("bool"))
         ensure_assignable!(condition_type, @types.fetch("bool"), "static_assert condition must be bool, got #{condition_type}")
-        raise SemaError, "static_assert message must be a string literal" unless statement.message.is_a?(AST::StringLiteral)
+        raise_sema_error("static_assert message must be a string literal") unless statement.message.is_a?(AST::StringLiteral)
 
         message_type = infer_expression(statement.message, scopes:, expected_type: @types.fetch("str"))
         return if string_like_type?(message_type)
 
-        raise SemaError, "static_assert message must be str or cstr, got #{message_type}"
+        raise_sema_error("static_assert message must be str or cstr, got #{message_type}")
       end
 
       def check_range_loop(expression, scopes:)
-        raise SemaError, "range does not support named arguments" if expression.arguments.any?(&:name)
-        raise SemaError, "range expects 2 arguments, got #{expression.arguments.length}" unless expression.arguments.length == 2
+        raise_sema_error("range does not support named arguments") if expression.arguments.any?(&:name)
+        raise_sema_error("range expects 2 arguments, got #{expression.arguments.length}") unless expression.arguments.length == 2
 
         start_expr = expression.arguments[0].value
         stop_expr = expression.arguments[1].value
@@ -1239,7 +1259,7 @@ module MilkTea
         stop_type = infer_expression(stop_expr, scopes:)
 
         unless integer_type?(start_type) && integer_type?(stop_type)
-          raise SemaError, "range bounds must be integer types, got #{start_type} and #{stop_type}"
+          raise_sema_error("range bounds must be integer types, got #{start_type} and #{stop_type}")
         end
 
         if start_type != stop_type
@@ -1250,7 +1270,7 @@ module MilkTea
           end
         end
 
-        raise SemaError, "range bounds must use matching integer types, got #{start_type} and #{stop_type}" unless start_type == stop_type
+        raise_sema_error("range bounds must use matching integer types, got #{start_type} and #{stop_type}") unless start_type == stop_type
 
         start_type
       end
@@ -1259,19 +1279,19 @@ module MilkTea
         case expression
         when AST::Identifier
           binding = lookup_value(expression.name, scopes)
-          raise SemaError, "unknown name #{expression.name}" unless binding
-          raise SemaError, "cannot assign to immutable #{expression.name}" unless binding.mutable
+          raise_sema_error("unknown name #{expression.name}") unless binding
+          raise_sema_error("cannot assign to immutable #{expression.name}") unless binding.mutable
 
           binding.storage_type
         when AST::MemberAccess
           receiver_type = infer_lvalue_receiver(expression.receiver, scopes:, allow_ref_identifier: true, allow_pointer_identifier: true, allow_span_param_identifier: true)
           receiver_type = project_field_receiver_type(receiver_type, require_mutable_pointer: true)
           unless aggregate_type?(receiver_type)
-            raise SemaError, "cannot assign to member #{expression.member} of #{receiver_type}"
+            raise_sema_error("cannot assign to member #{expression.member} of #{receiver_type}")
           end
 
           field_type = receiver_type.field(expression.member)
-          raise SemaError, "unknown field #{receiver_type}.#{expression.member}" unless field_type
+          raise_sema_error("unknown field #{receiver_type}.#{expression.member}") unless field_type
 
           field_type
         when AST::IndexAccess
@@ -1291,11 +1311,11 @@ module MilkTea
             return infer_reference_value_type(expression.arguments.first.value, scopes:)
           end
 
-          raise SemaError, "invalid assignment target"
+          raise_sema_error("invalid assignment target")
         when AST::BinaryOp
-          raise SemaError, "invalid assignment target"
+          raise_sema_error("invalid assignment target")
         else
-          raise SemaError, "invalid assignment target"
+          raise_sema_error("invalid assignment target")
         end
       end
 
@@ -1303,12 +1323,12 @@ module MilkTea
         case expression
         when AST::Identifier
           binding = lookup_value(expression.name, scopes)
-          raise SemaError, "unknown name #{expression.name}" unless binding
+          raise_sema_error("unknown name #{expression.name}") unless binding
 
           return referenced_type(binding.type) if allow_ref_identifier && ref_type?(binding.type)
           if allow_pointer_identifier && pointer_type?(binding.type)
-            raise SemaError, "raw pointer dereference requires unsafe" unless unsafe_context?
-            raise SemaError, "cannot assign through read-only raw pointer #{binding.type}" if require_mutable_pointer && const_pointer_type?(binding.type)
+            raise_sema_error("raw pointer dereference requires unsafe") unless unsafe_context?
+            raise_sema_error("cannot assign through read-only raw pointer #{binding.type}") if require_mutable_pointer && const_pointer_type?(binding.type)
 
             return binding.type
           end
@@ -1316,7 +1336,7 @@ module MilkTea
             return binding.type
           end
 
-          raise SemaError, "cannot assign through immutable #{expression.name}" unless binding.mutable
+          raise_sema_error("cannot assign through immutable #{expression.name}") unless binding.mutable
 
           binding.type
         when AST::MemberAccess
@@ -1330,11 +1350,11 @@ module MilkTea
           )
           receiver_type = project_field_receiver_type(receiver_type, require_mutable_pointer:)
           unless aggregate_type?(receiver_type)
-            raise SemaError, "cannot access member #{expression.member} of #{receiver_type}"
+            raise_sema_error("cannot access member #{expression.member} of #{receiver_type}")
           end
 
           field_type = receiver_type.field(expression.member)
-          raise SemaError, "unknown field #{receiver_type}.#{expression.member}" unless field_type
+          raise_sema_error("unknown field #{receiver_type}.#{expression.member}") unless field_type
 
           field_type
         when AST::IndexAccess
@@ -1354,16 +1374,16 @@ module MilkTea
             return infer_reference_value_type(expression.arguments.first.value, scopes:)
           end
 
-          raise SemaError, "invalid assignment target"
+          raise_sema_error("invalid assignment target")
         when AST::BinaryOp
-          raise SemaError, "raw pointer arithmetic as lvalue receiver requires unsafe" unless unsafe_context?
+          raise_sema_error("raw pointer arithmetic as lvalue receiver requires unsafe") unless unsafe_context?
           type = infer_expression(expression, scopes:)
-          raise SemaError, "binary op lvalue receiver must be a pointer" unless pointer_type?(type)
-          raise SemaError, "cannot assign through read-only raw pointer #{type}" if require_mutable_pointer && const_pointer_type?(type)
+          raise_sema_error("binary op lvalue receiver must be a pointer") unless pointer_type?(type)
+          raise_sema_error("cannot assign through read-only raw pointer #{type}") if require_mutable_pointer && const_pointer_type?(type)
 
           type
         else
-          raise SemaError, "invalid assignment target"
+          raise_sema_error("invalid assignment target")
         end
       end
 
@@ -1378,54 +1398,56 @@ module MilkTea
       end
 
       def infer_expression(expression, scopes:, expected_type: nil)
-        case expression
-        when AST::IntegerLiteral
-          infer_integer_literal(expected_type)
-        when AST::FloatLiteral
-          infer_float_literal(expected_type)
-        when AST::SizeofExpr
-          infer_layout_query_type(expression.type, context: "sizeof")
-          @types.fetch("usize")
-        when AST::AlignofExpr
-          infer_layout_query_type(expression.type, context: "alignof")
-          @types.fetch("usize")
-        when AST::OffsetofExpr
-          infer_offsetof_type(expression.type, expression.field)
-          @types.fetch("usize")
-        when AST::StringLiteral
-          @types.fetch(expression.cstring ? "cstr" : "str")
-        when AST::FormatString
-          @types.fetch("str")
-        when AST::BooleanLiteral
-          @types.fetch("bool")
-        when AST::NullLiteral
-          infer_null_literal(expression)
-        when AST::Identifier
-          infer_identifier(expression, scopes:, expected_type:)
-        when AST::MemberAccess
-          infer_member_access(expression, scopes:, expected_type:)
-        when AST::IndexAccess
-          infer_index_access(expression, scopes:)
-        when AST::UnaryOp
-          infer_unary(expression, scopes:, expected_type:)
-        when AST::BinaryOp
-          infer_binary(expression, scopes:, expected_type:)
-        when AST::IfExpr
-          infer_if_expression(expression, scopes:, expected_type:)
-        when AST::ProcExpr
-          infer_proc_expression(expression, scopes:, expected_type:)
-        when AST::AwaitExpr
-          infer_await_expression(expression, scopes:)
-        when AST::Call
-          infer_call(expression, scopes:, expected_type:)
-        when AST::Specialization
-          if (function_binding = resolve_specialized_function_binding(expression))
-            return function_binding.type
-          end
+        with_error_node(expression) do
+          case expression
+          when AST::IntegerLiteral
+            infer_integer_literal(expected_type)
+          when AST::FloatLiteral
+            infer_float_literal(expected_type)
+          when AST::SizeofExpr
+            infer_layout_query_type(expression.type, context: "sizeof")
+            @types.fetch("usize")
+          when AST::AlignofExpr
+            infer_layout_query_type(expression.type, context: "alignof")
+            @types.fetch("usize")
+          when AST::OffsetofExpr
+            infer_offsetof_type(expression.type, expression.field)
+            @types.fetch("usize")
+          when AST::StringLiteral
+            @types.fetch(expression.cstring ? "cstr" : "str")
+          when AST::FormatString
+            @types.fetch("str")
+          when AST::BooleanLiteral
+            @types.fetch("bool")
+          when AST::NullLiteral
+            infer_null_literal(expression)
+          when AST::Identifier
+            infer_identifier(expression, scopes:, expected_type:)
+          when AST::MemberAccess
+            infer_member_access(expression, scopes:, expected_type:)
+          when AST::IndexAccess
+            infer_index_access(expression, scopes:)
+          when AST::UnaryOp
+            infer_unary(expression, scopes:, expected_type:)
+          when AST::BinaryOp
+            infer_binary(expression, scopes:, expected_type:)
+          when AST::IfExpr
+            infer_if_expression(expression, scopes:, expected_type:)
+          when AST::ProcExpr
+            infer_proc_expression(expression, scopes:, expected_type:)
+          when AST::AwaitExpr
+            infer_await_expression(expression, scopes:)
+          when AST::Call
+            infer_call(expression, scopes:, expected_type:)
+          when AST::Specialization
+            if (function_binding = resolve_specialized_function_binding(expression))
+              return function_binding.type
+            end
 
-          raise SemaError, "specialized name #{describe_expression(expression)} must be called"
-        else
-          raise SemaError, "unsupported expression #{expression.class.name}"
+            raise_sema_error("specialized name #{describe_expression(expression)} must be called")
+          else
+            raise_sema_error("unsupported expression #{expression.class.name}")
+          end
         end
       end
 
@@ -1450,18 +1472,18 @@ module MilkTea
         return binding.type if binding
 
         if @top_level_functions.key?(expression.name)
-          raise SemaError, "generic function #{expression.name} must be called" if @top_level_functions.fetch(expression.name).type_params.any?
+          raise_sema_error("generic function #{expression.name} must be called") if @top_level_functions.fetch(expression.name).type_params.any?
 
           function_type = function_type_for_name(expression.name)
           return function_type if expected_type
 
-          raise SemaError, "function #{expression.name} must be called"
+          raise_sema_error("function #{expression.name} must be called")
         end
 
-        raise SemaError, "module #{expression.name} cannot be used as a value" if @imports.key?(expression.name)
-        raise SemaError, "type #{expression.name} cannot be used as a value" if @types.key?(expression.name)
+        raise_sema_error("module #{expression.name} cannot be used as a value") if @imports.key?(expression.name)
+        raise_sema_error("type #{expression.name} cannot be used as a value") if @types.key?(expression.name)
 
-        raise SemaError, "unknown name #{expression.name}"
+        raise_sema_error("unknown name #{expression.name}")
       end
 
       def infer_member_access(expression, scopes:, expected_type: nil)
@@ -1471,15 +1493,15 @@ module MilkTea
           return member_type if member_type
 
           if type.is_a?(Types::Variant) && type.arm_names.include?(expression.member)
-            raise SemaError, "variant arm #{type}.#{expression.member} has payload; construct it with #{type}.#{expression.member}(field: value, ...)"
+            raise_sema_error("variant arm #{type}.#{expression.member} has payload; construct it with #{type}.#{expression.member}(field: value, ...)")
           end
 
           if (method = lookup_method(type, expression.member))
-            raise SemaError, "associated function #{type}.#{expression.member} must be called" unless method.type.receiver_type.nil?
-            raise SemaError, "method #{type}.#{expression.member} must be called"
+            raise_sema_error("associated function #{type}.#{expression.member} must be called") unless method.type.receiver_type.nil?
+            raise_sema_error("method #{type}.#{expression.member} must be called")
           end
 
-          raise SemaError, "unknown member #{type}.#{expression.member}"
+          raise_sema_error("unknown member #{type}.#{expression.member}")
         end
 
         if expression.receiver.is_a?(AST::Identifier) && @imports.key?(expression.receiver.name)
@@ -1489,48 +1511,48 @@ module MilkTea
 
           if imported_module.functions.key?(expression.member)
             function = imported_module.functions.fetch(expression.member)
-            raise SemaError, "generic function #{expression.receiver.name}.#{expression.member} must be called" if function.type_params.any?
+            raise_sema_error("generic function #{expression.receiver.name}.#{expression.member} must be called") if function.type_params.any?
             return function.type if expected_type
 
-            raise SemaError, "function #{expression.receiver.name}.#{expression.member} must be called"
+            raise_sema_error("function #{expression.receiver.name}.#{expression.member} must be called")
           end
 
           if imported_module.types.key?(expression.member)
-            raise SemaError, "type #{expression.receiver.name}.#{expression.member} cannot be used as a value"
+            raise_sema_error("type #{expression.receiver.name}.#{expression.member} cannot be used as a value")
           end
 
           if imported_module.private_value?(expression.member) || imported_module.private_function?(expression.member) || imported_module.private_type?(expression.member)
-            raise SemaError, "#{expression.receiver.name}.#{expression.member} is private to module #{imported_module.name}"
+            raise_sema_error("#{expression.receiver.name}.#{expression.member} is private to module #{imported_module.name}")
           end
 
-          raise SemaError, "unknown member #{expression.receiver.name}.#{expression.member}"
+          raise_sema_error("unknown member #{expression.receiver.name}.#{expression.member}")
         end
 
         field_receiver_type = infer_field_receiver_type(expression.receiver, scopes:)
         method_receiver_type = infer_method_receiver_type(expression.receiver, scopes:)
         if char_array_removed_text_method?(method_receiver_type, expression.member)
-          raise SemaError, "#{method_receiver_type}.#{expression.member} is not available; array[char, N] is raw storage, use str_builder[N] or an explicit helper"
+          raise_sema_error("#{method_receiver_type}.#{expression.member} is not available; array[char, N] is raw storage, use str_builder[N] or an explicit helper")
         end
         if str_builder_type?(method_receiver_type) && str_builder_method_kind(method_receiver_type, expression.member)
-          raise SemaError, "method #{method_receiver_type}.#{expression.member} must be called"
+          raise_sema_error("method #{method_receiver_type}.#{expression.member} must be called")
         end
 
         unless aggregate_type?(field_receiver_type)
-          raise SemaError, "cannot access member #{expression.member} of #{field_receiver_type}"
+          raise_sema_error("cannot access member #{expression.member} of #{field_receiver_type}")
         end
 
         field_type = field_receiver_type.field(expression.member)
         return field_type if field_type
 
         if lookup_method(method_receiver_type, expression.member)
-          raise SemaError, "method #{method_receiver_type.name}.#{expression.member} must be called"
+          raise_sema_error("method #{method_receiver_type.name}.#{expression.member} must be called")
         end
 
         if (imported_module = imported_module_with_private_method(method_receiver_type, expression.member))
-          raise SemaError, "#{method_receiver_type}.#{expression.member} is private to module #{imported_module.name}"
+          raise_sema_error("#{method_receiver_type}.#{expression.member} is private to module #{imported_module.name}")
         end
 
-        raise SemaError, "unknown field #{field_receiver_type}.#{expression.member}"
+        raise_sema_error("unknown field #{field_receiver_type}.#{expression.member}")
       end
 
       def infer_index_access(expression, scopes:)
@@ -1538,7 +1560,7 @@ module MilkTea
         index_type = infer_expression(expression.index, scopes:)
 
         if array_type?(receiver_type) && !unsafe_context? && !addressable_storage_expression?(expression.receiver, scopes:)
-          raise SemaError, "safe array indexing requires an addressable array value; bind it to a local first"
+          raise_sema_error("safe array indexing requires an addressable array value; bind it to a local first")
         end
 
         infer_index_result_type(receiver_type, index_type)
@@ -1552,17 +1574,17 @@ module MilkTea
           ensure_assignable!(operand_type, @types.fetch("bool"), "operator not requires bool, got #{operand_type}")
           @types.fetch("bool")
         when "+", "-"
-          raise SemaError, "operator #{expression.operator} requires a numeric operand, got #{operand_type}" unless operand_type.numeric?
+          raise_sema_error("operator #{expression.operator} requires a numeric operand, got #{operand_type}") unless operand_type.numeric?
 
           operand_type
         when "~"
-          raise SemaError, "operator ~ requires an integer or flags operand, got #{operand_type}" unless bitwise_type?(operand_type)
+          raise_sema_error("operator ~ requires an integer or flags operand, got #{operand_type}") unless bitwise_type?(operand_type)
 
           operand_type
         when "out", "in", "inout"
-          raise SemaError, "#{expression.operator} is only allowed for foreign call arguments"
+          raise_sema_error("#{expression.operator} is only allowed for foreign call arguments")
         else
-          raise SemaError, "unsupported unary operator #{expression.operator}"
+          raise_sema_error("unsupported unary operator #{expression.operator}")
         end
       end
 
@@ -1604,7 +1626,7 @@ module MilkTea
           @types.fetch("bool")
         when "|", "&", "^"
           unless left_type == right_type && bitwise_type?(left_type)
-            raise SemaError, "operator #{expression.operator} requires matching integer or flags types, got #{left_type} and #{right_type}"
+            raise_sema_error("operator #{expression.operator} requires matching integer or flags types, got #{left_type} and #{right_type}")
           end
 
           left_type
@@ -1614,37 +1636,37 @@ module MilkTea
 
           result_type = common_numeric_type(left_type, right_type)
           unless result_type
-            raise SemaError, "operator #{expression.operator} requires compatible numeric types, got #{left_type} and #{right_type}"
+            raise_sema_error("operator #{expression.operator} requires compatible numeric types, got #{left_type} and #{right_type}")
           end
 
           result_type
         when "%"
           result_type = common_integer_type(left_type, right_type)
           unless result_type
-            raise SemaError, "operator % requires compatible integer types, got #{left_type} and #{right_type}"
+            raise_sema_error("operator % requires compatible integer types, got #{left_type} and #{right_type}")
           end
 
           result_type
         when "<<", ">>"
           unless left_type.is_a?(Types::Primitive) && left_type.integer? && right_type.is_a?(Types::Primitive) && right_type.integer?
-            raise SemaError, "operator #{expression.operator} requires integer operands, got #{left_type} and #{right_type}"
+            raise_sema_error("operator #{expression.operator} requires integer operands, got #{left_type} and #{right_type}")
           end
 
           left_type
         when "<", "<=", ">", ">="
           unless common_numeric_type(left_type, right_type)
-            raise SemaError, "operator #{expression.operator} requires compatible numeric types, got #{left_type} and #{right_type}"
+            raise_sema_error("operator #{expression.operator} requires compatible numeric types, got #{left_type} and #{right_type}")
           end
 
           @types.fetch("bool")
         when "==", "!="
           unless common_numeric_type(left_type, right_type) || types_compatible?(left_type, right_type) || types_compatible?(right_type, left_type)
-            raise SemaError, "operator #{expression.operator} requires comparable types, got #{left_type} and #{right_type}"
+            raise_sema_error("operator #{expression.operator} requires comparable types, got #{left_type} and #{right_type}")
           end
 
           @types.fetch("bool")
         else
-          raise SemaError, "unsupported binary operator #{expression.operator}"
+          raise_sema_error("unsupported binary operator #{expression.operator}")
         end
       end
 
@@ -1669,13 +1691,13 @@ module MilkTea
         )
         return common_type if common_type
 
-        raise SemaError, "if expression branches require compatible types, got #{then_type} and #{else_type}"
+        raise_sema_error("if expression branches require compatible types, got #{then_type} and #{else_type}")
       end
 
       def infer_proc_expression(expression, scopes:, expected_type: nil)
         proc_type = resolve_type_ref(AST::ProcType.new(params: expression.params, return_type: expression.return_type))
         if expected_type && !proc_type_compatible?(proc_type, expected_type)
-          raise SemaError, "proc expression expects #{proc_type}, got #{expected_type}"
+          raise_sema_error("proc expression expects #{proc_type}, got #{expected_type}")
         end
 
         proc_scopes = scopes.map { |scope| freeze_scope_bindings(scope) }
@@ -1692,10 +1714,10 @@ module MilkTea
       end
 
       def infer_await_expression(expression, scopes:)
-        raise SemaError, "await is only allowed inside async functions" unless inside_async_function?
+        raise_sema_error("await is only allowed inside async functions") unless inside_async_function?
 
         task_type = infer_expression(expression.expression, scopes:)
-        raise SemaError, "await expects Task[T], got #{task_type}" unless task_type.is_a?(Types::Task)
+        raise_sema_error("await expects Task[T], got #{task_type}") unless task_type.is_a?(Types::Task)
 
         task_type.result_type
       end
@@ -1742,7 +1764,7 @@ module MilkTea
           callable.type.return_type
         when :method
           callable = specialize_function_binding(callable, expression.arguments, scopes:) if callable.type_params.any?
-          raise SemaError, "cannot call mut method #{callable.name} on an immutable receiver" if callable.type.receiver_mutable && !assignable_receiver?(receiver, scopes)
+          raise_sema_error("cannot call mut method #{callable.name} on an immutable receiver") if callable.type.receiver_mutable && !assignable_receiver?(receiver, scopes)
 
           check_function_call(callable, expression.arguments, scopes:)
           callable.owner.send(:check_function, callable) unless callable.type_arguments.empty?
@@ -1777,7 +1799,7 @@ module MilkTea
         when :ptr_of
           check_ptr_of_call(expression.arguments, scopes:)
         else
-          raise SemaError, "#{describe_expression(expression.callee)} is not callable"
+          raise_sema_error("#{describe_expression(expression.callee)} is not callable")
         end
       end
 
@@ -1785,7 +1807,7 @@ module MilkTea
         return unless expression
 
         if (foreign_call = resolve_foreign_call_expression(expression, scopes:)) && foreign_call_consumes_binding?(foreign_call[:binding])
-          raise SemaError, "consuming foreign calls must be top-level expression statements" unless root_allowed
+          raise_sema_error("consuming foreign calls must be top-level expression statements") unless root_allowed
         end
 
         case expression
@@ -1821,7 +1843,7 @@ module MilkTea
         return unless expression
 
         if (foreign_call = resolve_foreign_call_expression(expression, scopes:)) && (message = inline_foreign_call_requires_hoisting_message(foreign_call, scopes:))
-          raise SemaError, message unless root_hoistable
+          raise_sema_error(message) unless root_hoistable
         end
 
         case expression
@@ -1975,7 +1997,7 @@ module MilkTea
           if (binding = lookup_value(callee.name, scopes))
             return [:callable_value, binding.type, nil] if callable_type?(binding.type)
 
-            raise SemaError, "#{callee.name} is not callable"
+            raise_sema_error("#{callee.name} is not callable")
           end
 
           return [:function, @top_level_functions.fetch(callee.name), nil] if @top_level_functions.key?(callee.name)
@@ -1990,7 +2012,7 @@ module MilkTea
           type = @types[callee.name]
           return [:struct, type, nil] if type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type)
 
-          raise SemaError, "unknown callable #{callee.name}"
+          raise_sema_error("unknown callable #{callee.name}")
         when AST::MemberAccess
           if callee.receiver.is_a?(AST::Identifier) && @imports.key?(callee.receiver.name)
             imported_module = @imports.fetch(callee.receiver.name)
@@ -2003,24 +2025,24 @@ module MilkTea
             if imported_type.is_a?(Types::Variant)
               arm_name = callee.member
               unless imported_type.arm_names.include?(arm_name)
-                raise SemaError, "unknown arm #{arm_name} for variant #{imported_type}"
+                raise_sema_error("unknown arm #{arm_name} for variant #{imported_type}")
               end
 
               return [:variant_arm_ctor, [imported_type, arm_name], nil]
             end
 
             if imported_module.private_function?(callee.member) || imported_module.private_type?(callee.member) || imported_module.private_value?(callee.member)
-              raise SemaError, "#{callee.receiver.name}.#{callee.member} is private to module #{imported_module.name}"
+              raise_sema_error("#{callee.receiver.name}.#{callee.member} is private to module #{imported_module.name}")
             end
 
-            raise SemaError, "unknown callable #{callee.receiver.name}.#{callee.member}"
+            raise_sema_error("unknown callable #{callee.receiver.name}.#{callee.member}")
           end
 
           if (type_expr = resolve_type_expression(callee.receiver))
             if type_expr.is_a?(Types::Variant)
               arm_name = callee.member
               unless type_expr.arm_names.include?(arm_name)
-                raise SemaError, "unknown arm #{arm_name} for variant #{type_expr}"
+                raise_sema_error("unknown arm #{arm_name} for variant #{type_expr}")
               end
 
               return [:variant_arm_ctor, [type_expr, arm_name], nil]
@@ -2029,7 +2051,7 @@ module MilkTea
             method = lookup_method(type_expr, callee.member)
             return [:function, method, nil] if method && method.type.receiver_type.nil?
 
-            raise SemaError, "unknown associated function #{type_expr}.#{callee.member}"
+            raise_sema_error("unknown associated function #{type_expr}.#{callee.member}")
           end
 
           method_receiver_type = infer_method_receiver_type(callee.receiver, scopes:)
@@ -2037,7 +2059,7 @@ module MilkTea
           return [:method, method, callee.receiver] if method
 
           if char_array_removed_text_method?(method_receiver_type, callee.member)
-            raise SemaError, "#{method_receiver_type}.#{callee.member} is not available; array[char, N] is raw storage, use str_builder[N] or an explicit helper"
+            raise_sema_error("#{method_receiver_type}.#{callee.member} is not available; array[char, N] is raw storage, use str_builder[N] or an explicit helper")
           end
 
           if (str_builder_method = str_builder_method_kind(method_receiver_type, callee.member))
@@ -2048,52 +2070,52 @@ module MilkTea
           return [:callable_value, field_receiver_type.field(callee.member), nil] if aggregate_type?(field_receiver_type) && callable_type?(field_receiver_type.field(callee.member))
 
           if (imported_module = imported_module_with_private_method(method_receiver_type, callee.member))
-            raise SemaError, "#{method_receiver_type}.#{callee.member} is private to module #{imported_module.name}"
+            raise_sema_error("#{method_receiver_type}.#{callee.member} is private to module #{imported_module.name}")
           end
 
-          raise SemaError, "unknown method #{method_receiver_type}.#{callee.member}"
+          raise_sema_error("unknown method #{method_receiver_type}.#{callee.member}")
         when AST::Specialization
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "cast"
-            raise SemaError, "cast requires exactly one type argument" unless callee.arguments.length == 1
+            raise_sema_error("cast requires exactly one type argument") unless callee.arguments.length == 1
 
             type_arg = callee.arguments.first.value
-            raise SemaError, "cast type argument must be a type" unless type_arg.is_a?(AST::TypeRef)
+            raise_sema_error("cast type argument must be a type") unless type_arg.is_a?(AST::TypeRef)
 
             return [:cast, resolve_type_ref(type_arg), nil]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "reinterpret"
-            raise SemaError, "reinterpret requires exactly one type argument" unless callee.arguments.length == 1
+            raise_sema_error("reinterpret requires exactly one type argument") unless callee.arguments.length == 1
 
             type_arg = callee.arguments.first.value
-            raise SemaError, "reinterpret type argument must be a type" unless type_arg.is_a?(AST::TypeRef)
+            raise_sema_error("reinterpret type argument must be a type") unless type_arg.is_a?(AST::TypeRef)
 
             return [:reinterpret, resolve_type_ref(type_arg), nil]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "array"
-            raise SemaError, "array requires exactly two type arguments" unless callee.arguments.length == 2
+            raise_sema_error("array requires exactly two type arguments") unless callee.arguments.length == 2
 
             array_type = resolve_type_ref(AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["array"]), arguments: callee.arguments, nullable: false))
-            raise SemaError, "array specialization must be array[T, N]" unless array_type?(array_type)
+            raise_sema_error("array specialization must be array[T, N]") unless array_type?(array_type)
 
             return [:array, array_type, nil]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "span"
-            raise SemaError, "span requires exactly one type argument" unless callee.arguments.length == 1
+            raise_sema_error("span requires exactly one type argument") unless callee.arguments.length == 1
 
             span_type = resolve_type_ref(AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["span"]), arguments: callee.arguments, nullable: false))
-            raise SemaError, "span specialization must be span[T]" unless span_type?(span_type)
+            raise_sema_error("span specialization must be span[T]") unless span_type?(span_type)
 
             return [:struct, span_type, nil]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "zero"
-            raise SemaError, "zero requires exactly one type argument" unless callee.arguments.length == 1
+            raise_sema_error("zero requires exactly one type argument") unless callee.arguments.length == 1
 
             type_arg = callee.arguments.first.value
-            raise SemaError, "zero type argument must be a type" unless type_arg.is_a?(AST::TypeRef)
+            raise_sema_error("zero type argument must be a type") unless type_arg.is_a?(AST::TypeRef)
 
             return [:zero, resolve_type_ref(type_arg), nil]
           end
@@ -2107,23 +2129,23 @@ module MilkTea
             return [:struct, specialized_type, nil] if specialized_type.is_a?(Types::Struct) || result_type?(specialized_type) || task_type?(specialized_type)
           end
 
-          raise SemaError, "unsupported callable specialization #{describe_expression(callee)}"
+          raise_sema_error("unsupported callable specialization #{describe_expression(callee)}")
         else
           callee_type = infer_expression(callee, scopes:)
           return [:callable_value, callee_type, nil] if callable_type?(callee_type)
 
-          raise SemaError, "unsupported callee #{describe_expression(callee)}"
+          raise_sema_error("unsupported callee #{describe_expression(callee)}")
         end
       end
 
       def check_function_call(binding, arguments, scopes:)
         if arguments.any?(&:name)
-          raise SemaError, "function #{binding.name} does not support named arguments"
+          raise_sema_error("function #{binding.name} does not support named arguments")
         end
 
         expected_params = binding.type.params
         unless call_arity_matches?(binding.type, arguments.length)
-          raise SemaError, arity_error_message(binding.type, binding.name, arguments.length)
+          raise_sema_error(arity_error_message(binding.type, binding.name, arguments.length))
         end
 
         expected_params.each_with_index do |parameter, index|
@@ -2131,12 +2153,12 @@ module MilkTea
           actual_type = foreign_argument_actual_type(parameter, argument, scopes:, function_name: binding.name)
           if foreign_cstr_boundary_parameter?(parameter)
             unless foreign_cstr_argument_compatible?(actual_type, parameter, expression: foreign_argument_expression(argument))
-              raise SemaError, "argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}"
+              raise_sema_error("argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}")
             end
           else
             unless array_to_span_call_argument_compatible?(actual_type, parameter.type, expression: foreign_argument_expression(argument), scopes:) ||
                    call_argument_compatible?(actual_type, parameter.type, scopes:, external: binding.external, expression: foreign_argument_expression(argument))
-              raise SemaError, "argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}"
+              raise_sema_error("argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}")
             end
           end
         end
@@ -2164,8 +2186,8 @@ module MilkTea
       end
 
       def check_format_string_call(binding, arguments, scopes:)
-        raise SemaError, "function #{binding.name} does not support named arguments" if arguments.any?(&:name)
-        raise SemaError, "function #{binding.name} expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+        raise_sema_error("function #{binding.name} does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("function #{binding.name} expects 1 argument, got #{arguments.length}") unless arguments.length == 1
 
         format_string = arguments.first.value
         format_string.parts.each do |part|
@@ -2175,11 +2197,11 @@ module MilkTea
 
           if part.format_spec
             unless value_type.is_a?(Types::Primitive) && value_type.float?
-              raise SemaError, "format spec ':.N' is only valid for f32 and f64, got #{value_type}"
+              raise_sema_error("format spec ':.N' is only valid for f32 and f64, got #{value_type}")
             end
           else
             next if format_string_interpolation_supported?(value_type)
-            raise SemaError, "formatted string interpolation supports str, cstr, bool, numeric primitives, and integer-backed enums/flags, got #{value_type}"
+            raise_sema_error("formatted string interpolation supports str, cstr, bool, numeric primitives, and integer-backed enums/flags, got #{value_type}")
           end
         end
 
@@ -2199,18 +2221,18 @@ module MilkTea
 
       def check_callable_value_call(function_type, arguments, scopes:, callee_expression:)
         if arguments.any?(&:name)
-          raise SemaError, "#{describe_expression(callee_expression)} does not support named arguments"
+          raise_sema_error("#{describe_expression(callee_expression)} does not support named arguments")
         end
 
         unless call_arity_matches?(function_type, arguments.length)
-          raise SemaError, arity_error_message(function_type, describe_expression(callee_expression), arguments.length)
+          raise_sema_error(arity_error_message(function_type, describe_expression(callee_expression), arguments.length))
         end
 
         function_type.params.each_with_index do |parameter, index|
           argument = arguments.fetch(index)
           actual_type = infer_expression(argument.value, scopes:, expected_type: parameter.type)
           unless call_argument_compatible?(actual_type, parameter.type, scopes:, external: false, expression: argument.value)
-            raise SemaError, "argument #{parameter.name || index} to #{describe_expression(callee_expression)} expects #{parameter.type}, got #{actual_type}"
+            raise_sema_error("argument #{parameter.name || index} to #{describe_expression(callee_expression)} expects #{parameter.type}, got #{actual_type}")
           end
         end
 
@@ -2235,9 +2257,9 @@ module MilkTea
 
       def check_result_construction(kind, arguments, scopes:, expected_type:)
         name = kind == :result_ok ? "ok" : "err"
-        raise SemaError, "#{name} does not support named arguments" if arguments.any?(&:name)
-        raise SemaError, "#{name} expects 1 argument, got #{arguments.length}" unless arguments.length == 1
-        raise SemaError, "cannot infer result type for #{name} without an expected Result[T, E]" unless result_type?(expected_type)
+        raise_sema_error("#{name} does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("#{name} expects 1 argument, got #{arguments.length}") unless arguments.length == 1
+        raise_sema_error("cannot infer result type for #{name} without an expected Result[T, E]") unless result_type?(expected_type)
 
         field_type = kind == :result_ok ? expected_type.ok_type : expected_type.error_type
         actual_type = infer_expression(arguments.first.value, scopes:, expected_type: field_type)
@@ -2251,26 +2273,26 @@ module MilkTea
       end
 
       def check_panic_call(arguments, scopes:)
-        raise SemaError, "panic does not support named arguments" if arguments.any?(&:name)
-        raise SemaError, "panic expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+        raise_sema_error("panic does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("panic expects 1 argument, got #{arguments.length}") unless arguments.length == 1
 
         message_type = infer_expression(arguments.first.value, scopes:, expected_type: @types.fetch("str"))
         return @types.fetch("void") if string_like_type?(message_type)
 
-        raise SemaError, "panic expects str or cstr, got #{message_type}"
+        raise_sema_error("panic expects str or cstr, got #{message_type}")
       end
 
       def check_ref_of_call(arguments, scopes:)
-        raise SemaError, "ref_of does not support named arguments" if arguments.any?(&:name)
-        raise SemaError, "ref_of expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+        raise_sema_error("ref_of does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("ref_of expects 1 argument, got #{arguments.length}") unless arguments.length == 1
 
         source_type = infer_addr_source_type(arguments.first.value, scopes:)
         Types::GenericInstance.new("ref", [source_type])
       end
 
       def check_const_ptr_of_call(arguments, scopes:)
-        raise SemaError, "const_ptr_of does not support named arguments" if arguments.any?(&:name)
-        raise SemaError, "const_ptr_of expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+        raise_sema_error("const_ptr_of does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("const_ptr_of expects 1 argument, got #{arguments.length}") unless arguments.length == 1
 
         source_type = infer_ro_addr_source_type(arguments.first.value, scopes:)
         const_pointer_to(source_type)
@@ -2283,11 +2305,11 @@ module MilkTea
       end
 
       def check_ptr_of_call(arguments, scopes:)
-        raise SemaError, "ptr_of does not support named arguments" if arguments.any?(&:name)
-        raise SemaError, "ptr_of expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+        raise_sema_error("ptr_of does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("ptr_of expects 1 argument, got #{arguments.length}") unless arguments.length == 1
 
         source_type = infer_expression(arguments.first.value, scopes:)
-        raise SemaError, "ptr_of expects ref[...] argument, got #{source_type}" unless ref_type?(source_type)
+        raise_sema_error("ptr_of expects ref[...] argument, got #{source_type}") unless ref_type?(source_type)
 
         pointer_to(referenced_type(source_type))
       end
@@ -2296,16 +2318,16 @@ module MilkTea
         display_name = aggregate_display_name(struct_type)
 
         if struct_type.is_a?(Types::StringView)
-          raise SemaError, "str construction requires unsafe" unless unsafe_context?
+          raise_sema_error("str construction requires unsafe") unless unsafe_context?
         end
 
-        raise SemaError, "aggregate construction for #{display_name} requires named arguments" unless arguments.all?(&:name)
+        raise_sema_error("aggregate construction for #{display_name} requires named arguments") unless arguments.all?(&:name)
 
         provided = {}
         arguments.each do |argument|
           field_type = struct_type.field(argument.name)
-          raise SemaError, "unknown field #{display_name}.#{argument.name}" unless field_type
-          raise SemaError, "duplicate field #{display_name}.#{argument.name}" if provided.key?(argument.name)
+          raise_sema_error("unknown field #{display_name}.#{argument.name}") unless field_type
+          raise_sema_error("duplicate field #{display_name}.#{argument.name}") if provided.key?(argument.name)
 
           actual_type = infer_expression(argument.value, scopes:, expected_type: field_type)
           ensure_assignable!(
@@ -2326,18 +2348,18 @@ module MilkTea
         fields = variant_type.arm(arm_name)
 
         if fields.nil? || fields.empty?
-          raise SemaError, "variant arm #{variant_type}.#{arm_name} has no payload; construct it without arguments" unless arguments.empty?
+          raise_sema_error("variant arm #{variant_type}.#{arm_name} has no payload; construct it without arguments") unless arguments.empty?
 
           return variant_type
         end
 
-        raise SemaError, "variant arm construction requires named arguments" unless arguments.all?(&:name)
+        raise_sema_error("variant arm construction requires named arguments") unless arguments.all?(&:name)
 
         provided = {}
         arguments.each do |argument|
           field_type = fields[argument.name]
-          raise SemaError, "unknown field #{variant_type}.#{arm_name}.#{argument.name}" unless field_type
-          raise SemaError, "duplicate field #{variant_type}.#{arm_name}.#{argument.name}" if provided.key?(argument.name)
+          raise_sema_error("unknown field #{variant_type}.#{arm_name}.#{argument.name}") unless field_type
+          raise_sema_error("duplicate field #{variant_type}.#{arm_name}.#{argument.name}") if provided.key?(argument.name)
 
           actual_type = infer_expression(argument.value, scopes:, expected_type: field_type)
           ensure_assignable!(actual_type, field_type, "field #{variant_type}.#{arm_name}.#{argument.name} expects #{field_type}, got #{actual_type}", expression: argument.value)
@@ -2345,17 +2367,17 @@ module MilkTea
         end
 
         missing = fields.keys - provided.keys
-        raise SemaError, "variant arm #{variant_type}.#{arm_name} is missing fields: #{missing.join(', ')}" unless missing.empty?
+        raise_sema_error("variant arm #{variant_type}.#{arm_name} is missing fields: #{missing.join(', ')}") unless missing.empty?
 
         variant_type
       end
 
       def check_array_construction(array_type, arguments, scopes:)
-        raise SemaError, "array construction does not support named arguments" if arguments.any?(&:name)
+        raise_sema_error("array construction does not support named arguments") if arguments.any?(&:name)
 
         element_type = array_element_type(array_type)
         length = array_length(array_type)
-        raise SemaError, "array expects at most #{length} elements, got #{arguments.length}" if arguments.length > length
+        raise_sema_error("array expects at most #{length} elements, got #{arguments.length}") if arguments.length > length
 
         arguments.each do |argument|
           actual_type = infer_expression(argument.value, scopes:, expected_type: element_type)
@@ -2371,8 +2393,8 @@ module MilkTea
       end
 
       def check_cast_call(target_type, arguments, scopes:)
-        raise SemaError, "cast requires exactly one argument" unless arguments.length == 1
-        raise SemaError, "cast does not support named arguments" if arguments.first.name
+        raise_sema_error("cast requires exactly one argument") unless arguments.length == 1
+        raise_sema_error("cast does not support named arguments") if arguments.first.name
 
         source_type = infer_expression(arguments.first.value, scopes:)
         if source_type == target_type
@@ -2401,7 +2423,7 @@ module MilkTea
         target_numeric_type = cast_numeric_type(target_type)
 
         unless source_numeric_type && target_numeric_type
-          raise SemaError, "cast currently only supports numeric primitive types, got #{source_type} -> #{target_type}"
+          raise_sema_error("cast currently only supports numeric primitive types, got #{source_type} -> #{target_type}")
         end
 
         target_type
@@ -2421,31 +2443,31 @@ module MilkTea
 
         target_type = resolve_type_ref(expression.type)
         unless typed_null_target_type?(target_type)
-          raise SemaError, "typed null requires pointer-like type, got #{target_type}"
+          raise_sema_error("typed null requires pointer-like type, got #{target_type}")
         end
 
         Types::Null.new(target_type)
       end
 
       def check_reinterpret_call(target_type, arguments, scopes:)
-        raise SemaError, "reinterpret requires exactly one argument" unless arguments.length == 1
-        raise SemaError, "reinterpret does not support named arguments" if arguments.first.name
-        raise SemaError, "reinterpret requires unsafe" unless unsafe_context?
+        raise_sema_error("reinterpret requires exactly one argument") unless arguments.length == 1
+        raise_sema_error("reinterpret does not support named arguments") if arguments.first.name
+        raise_sema_error("reinterpret requires unsafe") unless unsafe_context?
 
         source_type = infer_expression(arguments.first.value, scopes:)
         unless reinterpretable_type?(source_type) && reinterpretable_type?(target_type)
-          raise SemaError, "reinterpret requires non-array concrete sized types, got #{source_type} -> #{target_type}"
+          raise_sema_error("reinterpret requires non-array concrete sized types, got #{source_type} -> #{target_type}")
         end
 
         target_type
       end
 
       def check_zero_call(target_type, arguments, expected_type: nil)
-        raise SemaError, "zero expects 0 arguments, got #{arguments.length}" unless arguments.empty?
+        raise_sema_error("zero expects 0 arguments, got #{arguments.length}") unless arguments.empty?
 
         zero_initializable_type?(target_type)
         if expected_type.is_a?(Types::Nullable) && typed_null_target_type?(expected_type.base) && types_compatible?(target_type, expected_type.base)
-          raise SemaError, "use null instead of zero[#{target_type}]() in nullable pointer-like context #{expected_type}"
+          raise_sema_error("use null instead of zero[#{target_type}]() in nullable pointer-like context #{expected_type}")
         end
 
         target_type
@@ -2454,26 +2476,26 @@ module MilkTea
       def check_str_builder_method_call(kind, receiver, arguments, scopes:)
         method_name = str_builder_method_name(kind)
         receiver_type = infer_expression(receiver, scopes:)
-        raise SemaError, "unknown method #{receiver_type}.#{method_name}" unless str_builder_type?(receiver_type)
+        raise_sema_error("unknown method #{receiver_type}.#{method_name}") unless str_builder_type?(receiver_type)
 
         case kind
         when :str_builder_clear, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr
-          raise SemaError, "#{method_name} does not support named arguments" if arguments.any?(&:name)
-          raise SemaError, "#{method_name} expects 0 arguments, got #{arguments.length}" unless arguments.empty?
+          raise_sema_error("#{method_name} does not support named arguments") if arguments.any?(&:name)
+          raise_sema_error("#{method_name} expects 0 arguments, got #{arguments.length}") unless arguments.empty?
         when :str_builder_assign, :str_builder_append
-          raise SemaError, "#{method_name} does not support named arguments" if arguments.any?(&:name)
-          raise SemaError, "#{method_name} expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+          raise_sema_error("#{method_name} does not support named arguments") if arguments.any?(&:name)
+          raise_sema_error("#{method_name} expects 1 argument, got #{arguments.length}") unless arguments.length == 1
         else
-          raise SemaError, "unsupported str_builder method #{kind}"
+          raise_sema_error("unsupported str_builder method #{kind}")
         end
 
         case kind
         when :str_builder_clear
-          raise SemaError, "cannot call mut method #{receiver_type}.clear on an immutable receiver" unless assignable_receiver?(receiver, scopes)
+          raise_sema_error("cannot call mut method #{receiver_type}.clear on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
           @types.fetch("void")
         when :str_builder_assign, :str_builder_append
-          raise SemaError, "cannot call mut method #{receiver_type}.#{method_name} on an immutable receiver" unless assignable_receiver?(receiver, scopes)
+          raise_sema_error("cannot call mut method #{receiver_type}.#{method_name} on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
           actual_type = infer_expression(arguments.first.value, scopes:, expected_type: @types.fetch("str"))
           ensure_argument_assignable!(
@@ -2488,15 +2510,15 @@ module MilkTea
         when :str_builder_len, :str_builder_capacity
           @types.fetch("usize")
         when :str_builder_as_str
-          raise SemaError, "#{receiver_type}.as_str requires a safe stored receiver" unless safe_reference_source_expression?(receiver, scopes:)
+          raise_sema_error("#{receiver_type}.as_str requires a safe stored receiver") unless safe_reference_source_expression?(receiver, scopes:)
 
           @types.fetch("str")
         when :str_builder_as_cstr
-          raise SemaError, "#{receiver_type}.as_cstr requires a safe stored receiver" unless safe_reference_source_expression?(receiver, scopes:)
+          raise_sema_error("#{receiver_type}.as_cstr requires a safe stored receiver") unless safe_reference_source_expression?(receiver, scopes:)
 
           @types.fetch("cstr")
         else
-          raise SemaError, "unsupported str_builder method #{kind}"
+          raise_sema_error("unsupported str_builder method #{kind}")
         end
       end
 
@@ -2562,11 +2584,11 @@ module MilkTea
       end
 
       def ensure_available_type_name!(name)
-        raise SemaError, "duplicate type #{name}" if @types.key?(name)
+        raise_sema_error("duplicate type #{name}") if @types.key?(name)
       end
 
       def ensure_available_value_name!(name)
-        raise SemaError, "duplicate value #{name}" if @top_level_values.key?(name) || @top_level_functions.key?(name)
+        raise_sema_error("duplicate value #{name}") if @top_level_values.key?(name) || @top_level_functions.key?(name)
       end
 
       def current_type_params
@@ -2577,7 +2599,7 @@ module MilkTea
         base = resolve_non_nullable_type(type_ref, type_params:)
         return base if type_ref.is_a?(AST::FunctionType) || type_ref.is_a?(AST::ProcType)
 
-        raise SemaError, "ref types are non-null and cannot be nullable" if type_ref.nullable && ref_type?(base)
+        raise_sema_error("ref types are non-null and cannot be nullable") if type_ref.nullable && ref_type?(base)
 
         type_ref.nullable ? Types::Nullable.new(base) : base
       end
@@ -2604,7 +2626,7 @@ module MilkTea
           arguments = type_ref.arguments.map { |argument| resolve_type_argument(argument.value, type_params:) }
 
           if name != "ref" && arguments.any? { |argument| contains_ref_type?(argument) }
-            raise SemaError, "ref types cannot be nested inside #{name}"
+            raise_sema_error("ref types cannot be nested inside #{name}")
           end
 
           if name == "Result"
@@ -2621,7 +2643,7 @@ module MilkTea
             begin
               return generic_type.instantiate(arguments)
             rescue ArgumentError => error
-              raise SemaError, error.message
+              raise_sema_error(error.message)
             end
           end
 
@@ -2635,8 +2657,8 @@ module MilkTea
           return type_params.fetch(parts.first) if type_params.key?(parts.first)
 
           type = @types[parts.first]
-          raise SemaError, "unknown type #{parts.first}" unless type
-          raise SemaError, "generic type #{parts.first} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+          raise_sema_error("unknown type #{parts.first}") unless type
+          raise_sema_error("generic type #{parts.first} requires type arguments") if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
 
           return type
         end
@@ -2645,15 +2667,15 @@ module MilkTea
           imported_module = @imports.fetch(parts.first)
           type = imported_module.types[parts.last]
           if imported_module.private_type?(parts.last)
-            raise SemaError, "#{parts.first}.#{parts.last} is private to module #{imported_module.name}"
+            raise_sema_error("#{parts.first}.#{parts.last} is private to module #{imported_module.name}")
           end
-          raise SemaError, "unknown type #{type_ref.name}" unless type
-          raise SemaError, "generic type #{type_ref.name} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+          raise_sema_error("unknown type #{type_ref.name}") unless type
+          raise_sema_error("generic type #{type_ref.name} requires type arguments") if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
 
           return type
         end
 
-        raise SemaError, "unknown type #{type_ref.name}"
+        raise_sema_error("unknown type #{type_ref.name}")
       end
 
       def resolve_type_argument(argument, type_params: current_type_params)
@@ -2665,7 +2687,7 @@ module MilkTea
         when AST::IntegerLiteral, AST::FloatLiteral
           Types::LiteralTypeArg.new(argument.value)
         else
-          raise SemaError, "unsupported type argument #{argument.class.name}"
+          raise_sema_error("unsupported type argument #{argument.class.name}")
         end
       end
 
@@ -2708,7 +2730,7 @@ module MilkTea
         imported_module = @imports[import_name]
         return unless imported_module
         if imported_module.private_value?(value_name)
-          raise SemaError, "#{import_name}.#{value_name} is private to module #{imported_module.name}"
+          raise_sema_error("#{import_name}.#{value_name} is private to module #{imported_module.name}")
         end
 
         binding = imported_module.values[value_name]
@@ -2728,6 +2750,24 @@ module MilkTea
         line = source_line(expression)
         column = source_column(expression)
         raise SemaError.new(message, line:, column:) unless argument_types_compatible?(actual_type, expected_type, external:, expression:)
+      end
+
+      def with_error_node(node)
+        @error_node_stack << node
+        yield
+      ensure
+        @error_node_stack.pop
+      end
+
+      def current_error_node
+        @error_node_stack.reverse_each.find { |node| !node.nil? }
+      end
+
+      def raise_sema_error(message, node = nil, line: nil, column: nil)
+        target = node || current_error_node
+        line ||= source_line(target)
+        column ||= source_column(target)
+        raise SemaError.new(message, line:, column:)
       end
 
       def source_line(node)
@@ -3157,7 +3197,7 @@ module MilkTea
         when AST::BreakStmt, AST::ContinueStmt, AST::StaticAssert
           nil
         else
-          raise SemaError, "async functions currently only support straight-line local declarations, assignments, expression statements, and return statements"
+          raise_sema_error("async functions currently only support straight-line local declarations, assignments, expression statements, and return statements")
         end
       end
 
@@ -3165,7 +3205,7 @@ module MilkTea
         unsupported_context = unsupported_async_await_context(expression)
         return unless unsupported_context
 
-        raise SemaError, "await in async functions is not supported inside #{unsupported_context} yet"
+        raise_sema_error("await in async functions is not supported inside #{unsupported_context} yet")
       end
 
       def unsupported_async_await_context(expression)
@@ -3260,13 +3300,13 @@ module MilkTea
 
       def pointer_arithmetic_result(operator, left_type, right_type)
         if pointer_type?(left_type) && integer_type?(right_type)
-          raise SemaError, "pointer arithmetic requires unsafe" unless unsafe_context?
+          raise_sema_error("pointer arithmetic requires unsafe") unless unsafe_context?
 
           return left_type if operator == "+" || operator == "-"
         end
 
         if operator == "+" && integer_type?(left_type) && pointer_type?(right_type)
-          raise SemaError, "pointer arithmetic requires unsafe" unless unsafe_context?
+          raise_sema_error("pointer arithmetic requires unsafe") unless unsafe_context?
 
           return right_type
         end
@@ -3330,17 +3370,17 @@ module MilkTea
         type = resolve_type_ref(type_ref)
         return type if sized_layout_type?(type)
 
-        raise SemaError, "#{context} requires a concrete sized type, got #{type}"
+        raise_sema_error("#{context} requires a concrete sized type, got #{type}")
       end
 
       def infer_offsetof_type(type_ref, field_name)
         type = resolve_type_ref(type_ref)
         unless layout_aggregate_type?(type)
-          raise SemaError, "offsetof requires a struct, union, span, Result, or str type, got #{type}"
+          raise_sema_error("offsetof requires a struct, union, span, Result, or str type, got #{type}")
         end
 
         field_type = type.field(field_name)
-        raise SemaError, "unknown field #{type}.#{field_name}" unless field_type
+        raise_sema_error("unknown field #{type}.#{field_name}") unless field_type
 
         type
       end
@@ -3379,7 +3419,7 @@ module MilkTea
         return true if array_type?(type)
         return true if str_builder_type?(type)
 
-        raise SemaError, "zero does not support type #{type}"
+        raise_sema_error("zero does not support type #{type}")
       end
 
       def layout_aggregate_type?(type)
@@ -3515,38 +3555,38 @@ module MilkTea
       def validate_generic_type!(name, arguments)
         case name
         when "ptr"
-          raise SemaError, "ptr requires exactly one type argument" unless arguments.length == 1
-          raise SemaError, "ptr type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
+          raise_sema_error("ptr requires exactly one type argument") unless arguments.length == 1
+          raise_sema_error("ptr type argument must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
         when "const_ptr"
-          raise SemaError, "const_ptr requires exactly one type argument" unless arguments.length == 1
-          raise SemaError, "const_ptr type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise SemaError, "const_ptr cannot target ref types" if contains_ref_type?(arguments.first)
+          raise_sema_error("const_ptr requires exactly one type argument") unless arguments.length == 1
+          raise_sema_error("const_ptr type argument must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
+          raise_sema_error("const_ptr cannot target ref types") if contains_ref_type?(arguments.first)
         when "ref"
-          raise SemaError, "ref requires exactly one type argument" unless arguments.length == 1
-          raise SemaError, "ref type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise SemaError, "ref cannot target void" if arguments.first.is_a?(Types::Primitive) && arguments.first.void?
-          raise SemaError, "ref cannot target another ref type" if contains_ref_type?(arguments.first)
+          raise_sema_error("ref requires exactly one type argument") unless arguments.length == 1
+          raise_sema_error("ref type argument must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
+          raise_sema_error("ref cannot target void") if arguments.first.is_a?(Types::Primitive) && arguments.first.void?
+          raise_sema_error("ref cannot target another ref type") if contains_ref_type?(arguments.first)
         when "span"
-          raise SemaError, "span requires exactly one type argument" unless arguments.length == 1
-          raise SemaError, "span element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
+          raise_sema_error("span requires exactly one type argument") unless arguments.length == 1
+          raise_sema_error("span element type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
         when "array"
-          raise SemaError, "array requires exactly two type arguments" unless arguments.length == 2
-          raise SemaError, "array element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise SemaError, "array length must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments[1])
-          raise SemaError, "array length must be positive" if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
+          raise_sema_error("array requires exactly two type arguments") unless arguments.length == 2
+          raise_sema_error("array element type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
+          raise_sema_error("array length must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments[1])
+          raise_sema_error("array length must be positive") if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
         when "str_builder"
-          raise SemaError, "str_builder requires exactly one type argument" unless arguments.length == 1
-          raise SemaError, "str_builder capacity must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments.first)
-          raise SemaError, "str_builder capacity must be positive" if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
+          raise_sema_error("str_builder requires exactly one type argument") unless arguments.length == 1
+          raise_sema_error("str_builder capacity must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments.first)
+          raise_sema_error("str_builder capacity must be positive") if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
         when "Result"
-          raise SemaError, "Result requires exactly two type arguments" unless arguments.length == 2
-          raise SemaError, "Result ok type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise SemaError, "Result error type must be a type" if arguments[1].is_a?(Types::LiteralTypeArg)
+          raise_sema_error("Result requires exactly two type arguments") unless arguments.length == 2
+          raise_sema_error("Result ok type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
+          raise_sema_error("Result error type must be a type") if arguments[1].is_a?(Types::LiteralTypeArg)
         when "Task"
-          raise SemaError, "Task requires exactly one type argument" unless arguments.length == 1
-          raise SemaError, "Task result type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
+          raise_sema_error("Task requires exactly one type argument") unless arguments.length == 1
+          raise_sema_error("Task result type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
         else
-          raise SemaError, "unknown generic type #{name}"
+          raise_sema_error("unknown generic type #{name}")
         end
       end
 
@@ -3570,7 +3610,7 @@ module MilkTea
       end
 
       def infer_index_result_type(receiver_type, index_type)
-        raise SemaError, "index must be an integer type, got #{index_type}" unless integer_type?(index_type)
+        raise_sema_error("index must be an integer type, got #{index_type}") unless integer_type?(index_type)
 
         if array_type?(receiver_type)
           return array_element_type(receiver_type)
@@ -3581,12 +3621,12 @@ module MilkTea
         end
 
         if pointer_type?(receiver_type)
-          raise SemaError, "pointer indexing requires unsafe" unless unsafe_context?
+          raise_sema_error("pointer indexing requires unsafe") unless unsafe_context?
 
           return pointee_type(receiver_type)
         end
 
-        raise SemaError, "cannot index #{receiver_type}"
+        raise_sema_error("cannot index #{receiver_type}")
       end
 
       def addressable_storage_expression?(expression, scopes:)
@@ -3624,7 +3664,7 @@ module MilkTea
 
           imported_module = @imports.fetch(expression.receiver.name)
           if imported_module.private_type?(expression.member)
-            raise SemaError, "#{expression.receiver.name}.#{expression.member} is private to module #{imported_module.name}"
+            raise_sema_error("#{expression.receiver.name}.#{expression.member} is private to module #{imported_module.name}")
           end
 
           imported_module.types[expression.member]
@@ -3691,15 +3731,15 @@ module MilkTea
 
       def instantiate_function_binding(binding, type_arguments)
         if binding.type_params.empty?
-          raise SemaError, "function #{binding.name} is not generic and cannot be specialized"
+          raise_sema_error("function #{binding.name} is not generic and cannot be specialized")
         end
 
         unless binding.type_params.length == type_arguments.length
-          raise SemaError, "function #{binding.name} expects #{binding.type_params.length} type arguments, got #{type_arguments.length}"
+          raise_sema_error("function #{binding.name} expects #{binding.type_params.length} type arguments, got #{type_arguments.length}")
         end
 
         if type_arguments.any? { |type_argument| contains_ref_type?(type_argument) }
-          raise SemaError, "generic function #{binding.name} cannot be instantiated with ref types"
+          raise_sema_error("generic function #{binding.name} cannot be instantiated with ref types")
         end
 
         key = type_arguments.freeze
@@ -3730,7 +3770,7 @@ module MilkTea
       def infer_function_type_arguments(binding, arguments, scopes:)
         expected_params = binding.type.params
         unless call_arity_matches?(binding.type, arguments.length)
-          raise SemaError, arity_error_message(binding.type, binding.name, arguments.length)
+          raise_sema_error(arity_error_message(binding.type, binding.name, arguments.length))
         end
 
         substitutions = {}
@@ -3743,9 +3783,9 @@ module MilkTea
 
         binding.type_params.map do |name|
           inferred = substitutions[name]
-          raise SemaError, "cannot infer type argument #{name} for function #{binding.name}" unless inferred
+          raise_sema_error("cannot infer type argument #{name} for function #{binding.name}") unless inferred
 
-          raise SemaError, "generic function #{binding.name} cannot be instantiated with ref types" if contains_ref_type?(inferred)
+          raise_sema_error("generic function #{binding.name} cannot be instantiated with ref types") if contains_ref_type?(inferred)
 
           inferred
         end
@@ -3756,7 +3796,7 @@ module MilkTea
         when Types::TypeVar
           existing = substitutions[pattern_type.name]
           if existing && existing != actual_type
-            raise SemaError, "conflicting type argument #{pattern_type.name} for function #{function_name}: got #{existing} and #{actual_type}"
+            raise_sema_error("conflicting type argument #{pattern_type.name} for function #{function_name}: got #{existing} and #{actual_type}")
           end
 
           substitutions[pattern_type.name] ||= actual_type
@@ -3851,9 +3891,9 @@ module MilkTea
         when nil, Types::Primitive, Types::Enum, Types::Flags, Types::Opaque, Types::Struct
           nil
         when Types::LiteralTypeArg
-          raise SemaError, "#{context} of function #{function_name} must be a type, got #{type}"
+          raise_sema_error("#{context} of function #{function_name} must be a type, got #{type}")
         when Types::TypeVar
-          raise SemaError, "cannot infer type argument #{type.name} for function #{function_name}"
+          raise_sema_error("cannot infer type argument #{type.name} for function #{function_name}")
         when Types::Nullable
           validate_specialized_function_type!(type.base, function_name:, context:)
         when Types::GenericInstance
@@ -3994,7 +4034,7 @@ module MilkTea
       end
 
       def validate_stored_ref_type!(type, context)
-        raise SemaError, "#{context} cannot store ref types" if contains_ref_type?(type)
+        raise_sema_error("#{context} cannot store ref types") if contains_ref_type?(type)
       end
 
       def contains_proc_type?(type, visited = {})
@@ -4065,53 +4105,53 @@ module MilkTea
 
       def validate_stored_proc_type!(type, context)
         if contains_proc_type?(type)
-          raise SemaError, "#{context} cannot store proc values" unless proc_storage_supported_type?(type)
+          raise_sema_error("#{context} cannot store proc values") unless proc_storage_supported_type?(type)
         end
       end
 
       def validate_parameter_ref_type!(type, function_name:, parameter_name:, external:)
         if ref_type?(type)
-          raise SemaError, "extern function #{function_name} cannot take ref parameters" if external
+          raise_sema_error("extern function #{function_name} cannot take ref parameters") if external
 
           return
         end
 
-        raise SemaError, "parameter #{parameter_name} of #{function_name} cannot nest ref types" if contains_ref_type?(type)
+        raise_sema_error("parameter #{parameter_name} of #{function_name} cannot nest ref types") if contains_ref_type?(type)
       end
 
       def validate_parameter_proc_type!(type, function_name:, parameter_name:, external:, foreign:)
         if contains_proc_type?(type)
-          raise SemaError, "extern function #{function_name} cannot take proc parameters" if external
-          raise SemaError, "foreign function #{function_name} cannot take proc parameters" if foreign
-          raise SemaError, "parameter #{parameter_name} of #{function_name} uses unsupported proc nesting" unless proc_storage_supported_type?(type)
+          raise_sema_error("extern function #{function_name} cannot take proc parameters") if external
+          raise_sema_error("foreign function #{function_name} cannot take proc parameters") if foreign
+          raise_sema_error("parameter #{parameter_name} of #{function_name} uses unsupported proc nesting") unless proc_storage_supported_type?(type)
         end
       end
 
       def validate_return_ref_type!(type, function_name:)
-        raise SemaError, "function #{function_name} cannot return ref types" if contains_ref_type?(type)
+        raise_sema_error("function #{function_name} cannot return ref types") if contains_ref_type?(type)
       end
 
       def validate_return_proc_type!(type, function_name:)
         if contains_proc_type?(type)
-          raise SemaError, "function #{function_name} uses unsupported proc nesting in return type" unless proc_storage_supported_type?(type)
+          raise_sema_error("function #{function_name} uses unsupported proc nesting in return type") unless proc_storage_supported_type?(type)
         end
       end
 
       def validate_local_ref_type!(type, local_name)
         return if ref_type?(type)
 
-        raise SemaError, "local #{local_name} cannot store nested ref types" if contains_ref_type?(type)
+        raise_sema_error("local #{local_name} cannot store nested ref types") if contains_ref_type?(type)
       end
 
       def validate_local_proc_type!(type, local_name, initializer:)
         return unless contains_proc_type?(type)
 
-        raise SemaError, "local #{local_name} uses unsupported proc nesting" unless proc_storage_supported_type?(type)
+        raise_sema_error("local #{local_name} uses unsupported proc nesting") unless proc_storage_supported_type?(type)
       end
 
       def validate_consuming_foreign_parameter!(type, function_name:, parameter_name:)
         if type.is_a?(Types::Nullable) || !(opaque_type?(type) || pointer_type?(type))
-          raise SemaError, "consuming parameter #{parameter_name} of #{function_name} must use a non-null opaque or ptr[...] type"
+          raise_sema_error("consuming parameter #{parameter_name} of #{function_name} must use a non-null opaque or ptr[...] type")
         end
       end
 
@@ -4165,7 +4205,7 @@ module MilkTea
 
       def validate_in_foreign_parameter!(public_type, boundary_type, function_name:, parameter_name:)
         unless const_pointer_type?(boundary_type)
-          raise SemaError, "in parameter #{parameter_name} of #{function_name} must lower to const_ptr[...], got #{boundary_type || public_type}"
+          raise_sema_error("in parameter #{parameter_name} of #{function_name} must lower to const_ptr[...], got #{boundary_type || public_type}")
         end
 
         expected_public_type = pointee_type(boundary_type)
@@ -4173,7 +4213,7 @@ module MilkTea
         return if expected_public_type == @types.fetch("void")
         return if foreign_identity_projection_compatible?(public_type, expected_public_type)
 
-        raise SemaError, "in parameter #{parameter_name} of #{function_name} cannot map #{public_type} as #{boundary_type}"
+        raise_sema_error("in parameter #{parameter_name} of #{function_name} cannot map #{public_type} as #{boundary_type}")
       end
 
       def foreign_mapping_public_alias_name(name)
@@ -4187,7 +4227,7 @@ module MilkTea
         return if foreign_char_pointer_buffer_boundary_compatible?(public_type, boundary_type)
         return if foreign_identity_projection_compatible?(public_type, boundary_type)
 
-        raise SemaError, "foreign parameter #{parameter_name} of #{function_name} cannot map #{public_type} as #{boundary_type}"
+        raise_sema_error("foreign parameter #{parameter_name} of #{function_name} cannot map #{public_type} as #{boundary_type}")
       end
 
       def foreign_span_boundary_compatible?(public_type, boundary_type)
@@ -4234,7 +4274,7 @@ module MilkTea
           parameter.type
         when :in, :out, :inout
           unless argument.value.is_a?(AST::UnaryOp) && argument.value.operator == parameter.passing_mode.to_s
-            raise SemaError, "argument #{parameter.name} to #{function_name} must use #{parameter.passing_mode}"
+            raise_sema_error("argument #{parameter.name} to #{function_name} must use #{parameter.passing_mode}")
           end
 
           if parameter.passing_mode == :in
@@ -4243,18 +4283,18 @@ module MilkTea
             infer_lvalue(argument.value.operand, scopes:)
           end
         else
-          raise SemaError, "unsupported foreign passing mode #{parameter.passing_mode}"
+          raise_sema_error("unsupported foreign passing mode #{parameter.passing_mode}")
         end
       end
 
       def foreign_consuming_argument_binding(parameter, argument, scopes:, function_name:)
         unless argument.value.is_a?(AST::Identifier)
-          raise SemaError, "consuming argument #{parameter.name} to #{function_name} must be a bare nullable local or parameter binding"
+          raise_sema_error("consuming argument #{parameter.name} to #{function_name} must be a bare nullable local or parameter binding")
         end
 
         binding = lookup_value(argument.value.name, scopes)
         unless binding && %i[let var param].include?(binding.kind) && binding.storage_type.is_a?(Types::Nullable) && binding.storage_type.base == parameter.type
-          raise SemaError, "consuming argument #{parameter.name} to #{function_name} must be a bare nullable local or parameter binding"
+          raise_sema_error("consuming argument #{parameter.name} to #{function_name} must be a bare nullable local or parameter binding")
         end
 
         binding
@@ -4283,26 +4323,26 @@ module MilkTea
       end
 
       def infer_ro_addr_source_type(expression, scopes:)
-        raise SemaError, "const_ptr_of requires a safe lvalue source" unless safe_reference_source_expression?(expression, scopes:)
+        raise_sema_error("const_ptr_of requires a safe lvalue source") unless safe_reference_source_expression?(expression, scopes:)
 
         source_type = infer_expression(expression, scopes:)
-        raise SemaError, "const_ptr_of cannot target ref values" if contains_ref_type?(source_type)
+        raise_sema_error("const_ptr_of cannot target ref values") if contains_ref_type?(source_type)
 
         source_type
       end
 
       def infer_addr_source_type(expression, scopes:)
-        raise SemaError, "ref_of requires a mutable safe lvalue source" unless safe_reference_source_expression?(expression, scopes:)
+        raise_sema_error("ref_of requires a mutable safe lvalue source") unless safe_reference_source_expression?(expression, scopes:)
 
         source_type = infer_lvalue(expression, scopes:)
-        raise SemaError, "ref_of cannot target ref values" if contains_ref_type?(source_type)
+        raise_sema_error("ref_of cannot target ref values") if contains_ref_type?(source_type)
 
         source_type
       end
 
       def validate_read_call_arguments!(arguments)
-        raise SemaError, "read does not support named arguments" if arguments.any?(&:name)
-        raise SemaError, "read expects 1 argument, got #{arguments.length}" unless arguments.length == 1
+        raise_sema_error("read does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("read expects 1 argument, got #{arguments.length}") unless arguments.length == 1
       end
 
       def infer_reference_value_type(handle_expression, scopes:)
@@ -4311,12 +4351,12 @@ module MilkTea
 
         pointee = pointee_type(handle_type)
         if pointee
-          raise SemaError, "raw pointer dereference requires unsafe" unless unsafe_context?
+          raise_sema_error("raw pointer dereference requires unsafe") unless unsafe_context?
 
           return pointee
         end
 
-        raise SemaError, "read expects ref[...] or ptr[...], got #{handle_type}"
+        raise_sema_error("read expects ref[...] or ptr[...], got #{handle_type}")
       end
 
       def infer_method_receiver_type(receiver_expression, scopes:)
@@ -4333,9 +4373,9 @@ module MilkTea
         return referenced_type(receiver_type) if ref_type?(receiver_type)
         return receiver_type unless pointer_type?(receiver_type)
 
-        raise SemaError, "raw pointer dereference requires unsafe" unless unsafe_context?
+        raise_sema_error("raw pointer dereference requires unsafe") unless unsafe_context?
         if require_mutable_pointer && const_pointer_type?(receiver_type)
-          raise SemaError, "cannot assign through read-only raw pointer #{receiver_type}"
+          raise_sema_error("cannot assign through read-only raw pointer #{receiver_type}")
         end
 
         pointee_type(receiver_type)
@@ -4345,7 +4385,7 @@ module MilkTea
         return referenced_type(receiver_type) if ref_type?(receiver_type)
         return receiver_type unless pointer_type?(receiver_type)
 
-        raise SemaError, "raw pointer dereference requires unsafe" unless unsafe_context?
+        raise_sema_error("raw pointer dereference requires unsafe") unless unsafe_context?
 
         pointee_type(receiver_type)
       end
@@ -4376,7 +4416,7 @@ module MilkTea
       def with_scope(bindings)
         scope = {}
         bindings.each do |binding|
-          raise SemaError, "duplicate local #{binding.name}" if scope.key?(binding.name)
+          raise_sema_error("duplicate local #{binding.name}") if scope.key?(binding.name)
 
           scope[binding.name] = binding
         end
@@ -4398,7 +4438,7 @@ module MilkTea
           return scope unless scope.is_a?(FlowScope)
         end
 
-        raise SemaError, "missing lexical scope"
+        raise_sema_error("missing lexical scope")
       end
 
       def apply_continuation_refinements!(scopes, refinements)
