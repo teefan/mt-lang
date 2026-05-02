@@ -1367,10 +1367,8 @@ module MilkTea
       end
 
       # Decomposes an fstring token into non-overlapping semantic token entries.
-      # Text segments are emitted as :string.
-      # Interpolation content (including optional format spec suffixes like `:.2`)
-      # is classified semantically; interpolation delimiters are left to TextMate
-      # so theme punctuation colors are preserved.
+      # Text segments are emitted as :string and interpolation segments are emitted
+      # semantically, including interpolation delimiters.
       def fstring_interpolation_entries(fstring_tok, analysis)
         parts = fstring_tok.literal
         return [{ line: fstring_tok.line - 1, start_char: fstring_tok.column - 1, length: fstring_tok.lexeme.length, type: :string, modifiers: [] }] unless parts.is_a?(Array)
@@ -1395,7 +1393,8 @@ module MilkTea
           text_len = hash_col0 - cursor
           result << { line: fstr_line, start_char: cursor, length: text_len, type: :string, modifiers: [] } if text_len > 0
 
-          # Keep `#{` punctuation styled by TextMate grammar to preserve theme intent.
+          # Interpolation opener `#{`.
+          result << { line: fstr_line, start_char: hash_col0, length: 2, type: :operator, modifiers: [] }
 
           # classified entries for the expression source only (not format spec).
           source = part[:source]
@@ -1462,7 +1461,8 @@ module MilkTea
             end
           end
 
-          # Keep `}` punctuation styled by TextMate grammar to preserve theme intent.
+          # Interpolation closer `}`.
+          result << { line: fstr_line, start_char: rbrace_col0, length: 1, type: :operator, modifiers: [] }
 
           cursor = rbrace_col0 + 1
         end
@@ -1493,11 +1493,6 @@ module MilkTea
         end
 
         if KEYWORD_TOKEN_TYPES.include?(tok.type)
-          # Keywords like `type` can legally appear as member names in interop
-          # surfaces (e.g. `event.key.type`) and should not be painted as keywords.
-          return [:property, []] if prev_tok&.type == :dot
-          return [:property, []] if tok.type == :type && next_tok&.type == :equal
-
           return [:keyword, []]
         end
 
