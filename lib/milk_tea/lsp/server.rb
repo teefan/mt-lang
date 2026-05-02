@@ -324,11 +324,7 @@ module MilkTea
             codeLensProvider: {
               resolveProvider: false
             },
-            workspaceSymbolProvider: true,
-            diagnosticProvider: {
-              interFileDependencies: false,
-              workspaceDiagnostics: false
-            }
+            workspaceSymbolProvider: true
           }
         }
       end

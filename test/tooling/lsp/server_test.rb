@@ -190,7 +190,6 @@ class LSPServerTest < Minitest::Test
       assert_equal true, capabilities["documentRangeFormattingProvider"]
       assert_kind_of Hash, capabilities["codeActionProvider"]
       assert_equal true, capabilities["inlayHintProvider"]
-      assert_kind_of Hash, capabilities["diagnosticProvider"]
       assert_kind_of Hash, capabilities["renameProvider"]
       assert_kind_of Hash, capabilities["signatureHelpProvider"]
       assert_kind_of Hash, capabilities["completionProvider"]
