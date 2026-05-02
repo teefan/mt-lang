@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
+const { parse: parseJsonc } = require('jsonc-parser');
 
 const oniguruma = require('vscode-oniguruma');
 const { Registry, parseRawGrammar, INITIAL } = require('vscode-textmate');
@@ -15,7 +16,7 @@ const TOKEN_TYPE_MAP = {
   3: 'regex'
 };
 
-const DEFAULT_SEMANTIC_TOKEN_SCOPE_MAP = [
+const FALLBACK_SEMANTIC_TOKEN_SCOPE_MAP = [
   { selector: 'namespace', scopes: ['entity.name.namespace'] },
   { selector: 'type', scopes: ['entity.name.type', 'support.type'] },
   { selector: 'class', scopes: ['entity.name.type.class', 'entity.name.type'] },
@@ -160,6 +161,346 @@ function ensureAbs(p) {
 
 function loadJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function loadJsoncFile(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+
+  const raw = fs.readFileSync(filePath, 'utf8');
+  const errors = [];
+  const parsed = parseJsonc(raw, errors, {
+    allowTrailingComma: true,
+    disallowComments: false
+  });
+
+  if (errors.length > 0 || !parsed || typeof parsed !== 'object') {
+    return null;
+  }
+
+  return parsed;
+}
+
+function getNestedSetting(obj, dottedKey) {
+  if (!obj || typeof obj !== 'object') {
+    return undefined;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(obj, dottedKey)) {
+    return obj[dottedKey];
+  }
+
+  const parts = dottedKey.split('.');
+  let cur = obj;
+  for (const part of parts) {
+    if (!cur || typeof cur !== 'object' || !Object.prototype.hasOwnProperty.call(cur, part)) {
+      return undefined;
+    }
+    cur = cur[part];
+  }
+  return cur;
+}
+
+function candidateSettingsPaths(inputPath) {
+  const home = os.homedir();
+  const paths = [
+    path.join(home, '.config', 'Code', 'User', 'settings.json'),
+    path.join(home, '.config', 'Code - OSS', 'User', 'settings.json'),
+    path.join(home, '.vscode', 'settings.json'),
+    path.join(home, '.vscode-oss', 'settings.json')
+  ];
+
+  let cur = path.dirname(path.resolve(inputPath));
+  while (true) {
+    const candidate = path.join(cur, '.vscode', 'settings.json');
+    paths.push(candidate);
+
+    const parent = path.dirname(cur);
+    if (parent === cur) {
+      break;
+    }
+    cur = parent;
+  }
+
+  return Array.from(new Set(paths));
+}
+
+function normalizeThemeNames(themeInfo, resolvedTheme, requestedThemeName) {
+  return new Set(
+    [
+      requestedThemeName,
+      resolvedTheme && resolvedTheme.name,
+      themeInfo && themeInfo.label,
+      themeInfo && themeInfo.id,
+    ]
+      .filter((name) => typeof name === 'string' && name.trim().length > 0)
+      .map((name) => name.trim().toLowerCase())
+  );
+}
+
+function appendSemanticRules(ruleList, valueMap, startOrder) {
+  if (!valueMap || typeof valueMap !== 'object') {
+    return startOrder;
+  }
+
+  let order = startOrder;
+  for (const [selector, value] of Object.entries(valueMap)) {
+    if (typeof selector !== 'string' || selector.trim().length === 0) {
+      continue;
+    }
+    ruleList.push({ selector: selector.trim(), value, order });
+    order += 1;
+  }
+  return order;
+}
+
+function collectSettingsSemanticRules(settingsObj, themeNames, startOrder) {
+  const result = {
+    rules: [],
+    order: startOrder,
+    enabled: undefined
+  };
+
+  const customizations = getNestedSetting(settingsObj, 'editor.semanticTokenColorCustomizations');
+  if (!customizations || typeof customizations !== 'object') {
+    return result;
+  }
+
+  if (typeof customizations.enabled === 'boolean') {
+    result.enabled = customizations.enabled;
+  }
+
+  result.order = appendSemanticRules(result.rules, customizations.rules, result.order);
+
+  for (const [rawKey, value] of Object.entries(customizations)) {
+    const match = /^\[(.+)\]$/.exec(rawKey);
+    if (!match || !value || typeof value !== 'object') {
+      continue;
+    }
+
+    const themeKey = match[1].trim().toLowerCase();
+    if (!themeNames.has(themeKey)) {
+      continue;
+    }
+
+    if (typeof value.enabled === 'boolean') {
+      result.enabled = value.enabled;
+    }
+    result.order = appendSemanticRules(result.rules, value.rules, result.order);
+  }
+
+  return result;
+}
+
+function loadMergedSemanticSettingRules(inputPath, themeInfo, resolvedTheme, requestedThemeName) {
+  const themeNames = normalizeThemeNames(themeInfo, resolvedTheme, requestedThemeName);
+  const sources = [];
+  const merged = [];
+  let order = 0;
+  let enabled = undefined;
+
+  const settingsPaths = candidateSettingsPaths(inputPath);
+  for (const settingsPath of settingsPaths) {
+    const parsed = loadJsoncFile(settingsPath);
+    if (!parsed) {
+      continue;
+    }
+
+    const next = collectSettingsSemanticRules(parsed, themeNames, order);
+    if (next.rules.length > 0 || typeof next.enabled === 'boolean') {
+      sources.push(settingsPath);
+    }
+    if (typeof next.enabled === 'boolean') {
+      enabled = next.enabled;
+    }
+    order = next.order;
+    merged.push(...next.rules);
+  }
+
+  return {
+    rules: merged,
+    enabled,
+    sources
+  };
+}
+
+function mergeSemanticRuleSets(baseRules, overrideRules) {
+  const bySelector = new Map();
+
+  (Array.isArray(baseRules) ? baseRules : []).forEach((rule) => {
+    if (rule && typeof rule.selector === 'string') {
+      bySelector.set(rule.selector, rule);
+    }
+  });
+
+  (Array.isArray(overrideRules) ? overrideRules : []).forEach((rule) => {
+    if (!rule || typeof rule.selector !== 'string') {
+      return;
+    }
+    if (bySelector.has(rule.selector)) {
+      bySelector.delete(rule.selector);
+    }
+    bySelector.set(rule.selector, rule);
+  });
+
+  let order = 0;
+  return Array.from(bySelector.values()).map((rule) => {
+    const next = { ...rule, order };
+    order += 1;
+    return next;
+  });
+}
+
+function candidateVsCodeRuntimeFiles() {
+  return [
+    '/opt/visual-studio-code/resources/app/out/vs/workbench/workbench.desktop.main.js',
+    '/usr/share/code/resources/app/out/vs/workbench/workbench.desktop.main.js',
+    '/usr/lib/code/resources/app/out/vs/workbench/workbench.desktop.main.js',
+    '/opt/visual-studio-code/resources/app/out/vs/workbench/workbench.web.main.js',
+    '/usr/share/code/resources/app/out/vs/workbench/workbench.web.main.js',
+    '/usr/lib/code/resources/app/out/vs/workbench/workbench.web.main.js'
+  ];
+}
+
+function readBracketedArrayLiteral(source, startIndex) {
+  if (startIndex < 0 || source[startIndex] !== '[') {
+    return null;
+  }
+
+  let i = startIndex;
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  while (i < source.length) {
+    const ch = source[i];
+
+    if (inString) {
+      if (escapeNext) {
+        escapeNext = false;
+      } else if (ch === '\\') {
+        escapeNext = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      i += 1;
+      continue;
+    }
+
+    if (ch === '[') {
+      depth += 1;
+      i += 1;
+      continue;
+    }
+
+    if (ch === ']') {
+      depth -= 1;
+      i += 1;
+      if (depth === 0) {
+        return {
+          text: source.slice(startIndex, i),
+          endIndex: i
+        };
+      }
+      continue;
+    }
+
+    i += 1;
+  }
+
+  return null;
+}
+
+function extractScopesFromMatrixLiteral(matrixText) {
+  const scopes = [];
+  const re = /"([^"\\]*(?:\\.[^"\\]*)*)"/g;
+  let match;
+  while ((match = re.exec(matrixText))) {
+    const raw = match[1];
+    const unescaped = raw.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    if (!scopes.includes(unescaped)) {
+      scopes.push(unescaped);
+    }
+  }
+  return scopes;
+}
+
+function extractSemanticScopeMapFromRuntimeJs(sourceText) {
+  const entries = [];
+  const seen = new Set();
+  const callRe = /\b([ie])\("([A-Za-z][A-Za-z0-9_.]*)"/g;
+  let match;
+
+  while ((match = callRe.exec(sourceText))) {
+    const selector = match[2];
+    const callIndex = match.index;
+    const matrixStart = sourceText.indexOf('[[', callRe.lastIndex);
+    if (matrixStart < 0 || matrixStart - callIndex > 400) {
+      continue;
+    }
+
+    const matrix = readBracketedArrayLiteral(sourceText, matrixStart);
+    if (!matrix) {
+      continue;
+    }
+
+    const scopes = extractScopesFromMatrixLiteral(matrix.text).filter((scope) => scope.includes('.'));
+    if (scopes.length === 0) {
+      continue;
+    }
+
+    const key = `${selector}@@${scopes.join('|')}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    entries.push({ selector, scopes });
+  }
+
+  return entries;
+}
+
+function loadBuiltinSemanticScopeMap() {
+  let best = [];
+  let sourcePath = null;
+
+  for (const filePath of candidateVsCodeRuntimeFiles()) {
+    if (!fs.existsSync(filePath)) {
+      continue;
+    }
+
+    let text;
+    try {
+      text = fs.readFileSync(filePath, 'utf8');
+    } catch (_err) {
+      continue;
+    }
+
+    const extracted = extractSemanticScopeMapFromRuntimeJs(text);
+    if (extracted.length > best.length) {
+      best = extracted;
+      sourcePath = filePath;
+    }
+  }
+
+  if (best.length > 0) {
+    return {
+      source: sourcePath,
+      entries: best
+    };
+  }
+
+  return {
+    source: 'fallback-static',
+    entries: FALLBACK_SEMANTIC_TOKEN_SCOPE_MAP
+  };
 }
 
 function loadNlsForPackage(packageJsonPath) {
@@ -472,10 +813,13 @@ function getBestSemanticRule(semanticRules, semanticToken, documentLanguage) {
   return best;
 }
 
-function getSemanticFallbackScopes(semanticToken, documentLanguage) {
+function getSemanticFallbackScopes(semanticToken, documentLanguage, semanticScopeMap) {
+  const scopeMap = Array.isArray(semanticScopeMap) && semanticScopeMap.length > 0
+    ? semanticScopeMap
+    : FALLBACK_SEMANTIC_TOKEN_SCOPE_MAP;
   let best = null;
 
-  DEFAULT_SEMANTIC_TOKEN_SCOPE_MAP.forEach((entry, idx) => {
+  scopeMap.forEach((entry, idx) => {
     const parsedSelector = parseSemanticSelector(entry.selector);
     const score = semanticSelectorMatchScore(parsedSelector, semanticToken, documentLanguage);
     if (score === null) {
@@ -687,7 +1031,7 @@ function cloneTokenSegment(base, startIndex, endIndex) {
   };
 }
 
-function overlaySemanticOnLineTokens(lineTokens, semanticEntries, ruleIndex, semanticRuleIndex, documentLanguage) {
+function overlaySemanticOnLineTokens(lineTokens, semanticEntries, ruleIndex, semanticRuleIndex, documentLanguage, semanticScopeMap) {
   let working = lineTokens.map((token) => ({ ...token }));
 
   for (const semantic of semanticEntries) {
@@ -705,7 +1049,7 @@ function overlaySemanticOnLineTokens(lineTokens, semanticEntries, ruleIndex, sem
       const midStart = Math.max(token.startIndex, semantic.startChar);
       const midEnd = Math.min(token.endIndex, semantic.endChar);
       const middle = cloneTokenSegment(token, midStart, midEnd);
-      const semanticScopes = getSemanticFallbackScopes(semantic, documentLanguage);
+      const semanticScopes = getSemanticFallbackScopes(semantic, documentLanguage, semanticScopeMap);
 
       let semanticStyle = middle.style;
       semanticScopes.forEach((scope) => {
@@ -1017,10 +1361,13 @@ async function main() {
   }
 
   const resolvedTheme = resolveThemeFileWithIncludes(themeInfo.path);
+  const builtinSemanticScopeMap = loadBuiltinSemanticScopeMap();
+  const settingsSemantic = loadMergedSemanticSettingRules(inputPath, themeInfo, resolvedTheme, args.themeName);
   const rawTheme = toRawTextMateTheme(resolvedTheme);
-  const semanticRuleIndex = Array.isArray(resolvedTheme.semanticTokenColorRules)
+  const themeSemanticRules = Array.isArray(resolvedTheme.semanticTokenColorRules)
     ? resolvedTheme.semanticTokenColorRules
     : [];
+  const semanticRuleIndex = mergeSemanticRuleSets(themeSemanticRules, settingsSemantic.rules);
   const tokenColorRuleIndex = buildTokenColorRuleIndex(rawTheme);
   const grammarRaw = fs.readFileSync(grammarPath, 'utf8');
   const grammarJson = loadJson(grammarPath);
@@ -1117,20 +1464,31 @@ async function main() {
           overlays,
           tokenColorRuleIndex,
           semanticRuleIndex,
-          'milk-tea'
+          'milk-tea',
+          builtinSemanticScopeMap.entries
         );
       });
 
       semanticOverlay = {
         mode: 'lsp',
         legend: semanticPayload.legend,
-        tokenCount: entries.length
+        tokenCount: entries.length,
+        settingsRulesApplied: settingsSemantic.rules.length,
+        settingsSources: settingsSemantic.sources,
+        settingsEnabled: settingsSemantic.enabled,
+        semanticScopeMapSource: builtinSemanticScopeMap.source,
+        semanticScopeMapEntries: builtinSemanticScopeMap.entries.length
       };
     } else {
       semanticOverlay = {
         mode: 'lsp',
         legend: null,
         tokenCount: 0,
+        settingsRulesApplied: settingsSemantic.rules.length,
+        settingsSources: settingsSemantic.sources,
+        settingsEnabled: settingsSemantic.enabled,
+        semanticScopeMapSource: builtinSemanticScopeMap.source,
+        semanticScopeMapEntries: builtinSemanticScopeMap.entries.length,
         warning: 'LSP semanticTokensProvider not available; overlay skipped.'
       };
     }
@@ -1155,6 +1513,15 @@ async function main() {
       }
     },
     colorMap,
+    semanticRules: {
+      themeRuleCount: themeSemanticRules.length,
+      settingsRuleCount: settingsSemantic.rules.length,
+      mergedRuleCount: semanticRuleIndex.length,
+      settingsSources: settingsSemantic.sources,
+      settingsEnabled: settingsSemantic.enabled,
+      scopeMapSource: builtinSemanticScopeMap.source,
+      scopeMapEntries: builtinSemanticScopeMap.entries.length
+    },
     semanticOverlay,
     lines: snapshotLines
   };
