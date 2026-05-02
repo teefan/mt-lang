@@ -1091,6 +1091,8 @@ module MilkTea
 
       def classify_semantic_token(tokens, index)
         tok = tokens[index]
+        prev_tok = previous_non_trivia_token(tokens, index)
+        next_tok = next_non_trivia_token(tokens, index + 1)
 
         if tok.type == :identifier
           return classify_identifier_semantic(tokens, index)
@@ -1105,6 +1107,11 @@ module MilkTea
         end
 
         if KEYWORD_TOKEN_TYPES.include?(tok.type)
+          # Keywords like `type` can legally appear as member names in interop
+          # surfaces (e.g. `event.key.type`) and should not be painted as keywords.
+          return [:property, []] if prev_tok&.type == :dot
+          return [:property, []] if tok.type == :type && next_tok&.type == :equal
+
           return [:keyword, []]
         end
 
@@ -1119,6 +1126,10 @@ module MilkTea
         tok = tokens[index]
         prev_tok = previous_non_trivia_token(tokens, index)
         next_tok = next_non_trivia_token(tokens, index + 1)
+
+        if enum_member_name?(tok.lexeme) && next_tok&.type == :equal
+          return [:enumMember, ['declaration']]
+        end
 
         if prev_tok && [:def, :fn, :proc].include?(prev_tok.type)
           return [:function, ['declaration']]
@@ -1137,6 +1148,9 @@ module MilkTea
         end
 
         if prev_tok&.type == :dot
+          return [:enumMember, []] if enum_member_name?(tok.lexeme)
+          return [:type, []] if dotted_type_name?(tok.lexeme)
+
           return [:property, []]
         end
 
@@ -1155,6 +1169,16 @@ module MilkTea
         end
 
         [:variable, []]
+      end
+
+      def enum_member_name?(name)
+        name.match?(/\A[A-Z][A-Z0-9_]*\z/)
+      end
+
+      def dotted_type_name?(name)
+        # Interop/imported type symbols are often dotted and PascalCase-ish,
+        # e.g. `c.SDL_Window` or `pkg.TypeName`.
+        name.match?(/\A[A-Z][A-Za-z0-9_]*\z/)
       end
 
       def previous_non_trivia_token(tokens, index)
