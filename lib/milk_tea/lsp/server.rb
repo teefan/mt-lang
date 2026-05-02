@@ -2,6 +2,7 @@
 
 require 'cgi/escape'
 require 'pathname'
+require 'set'
 require 'uri'
 
 module MilkTea
@@ -16,6 +17,27 @@ module MilkTea
     #   5. Code Lens     — function signature annotations above def sites
     #   6. Completion    — function/type/value completions from analysis
     class Server
+      SEMANTIC_TOKEN_TYPES = %w[
+        namespace type class enum interface struct typeParameter parameter variable property enumMember event
+        function method macro keyword modifier comment string number regexp operator decorator
+      ].freeze
+      SEMANTIC_TOKEN_MODIFIERS = %w[
+        declaration definition readonly static deprecated abstract async modification documentation defaultLibrary
+      ].freeze
+
+      KEYWORD_TOKEN_TYPES = Token::KEYWORDS.values.to_set.freeze
+      PRIMITIVE_TYPE_NAMES = %w[
+        bool byte char i8 i16 i32 i64 u8 u16 u32 u64 isize usize f32 f64 void str cstr
+      ].to_set.freeze
+      BUILTIN_FUNCTION_NAMES = %w[ref_of const_ptr_of ptr_of read].to_set.freeze
+      OPERATOR_TOKEN_TYPES = %i[
+        amp colon comma caret dot lparen rparen pipe lbracket rbracket question
+        equal plus minus star slash percent less greater tilde
+        arrow shift_left shift_right plus_equal minus_equal star_equal slash_equal percent_equal
+        amp_equal pipe_equal caret_equal shift_left_equal shift_right_equal
+        equal_equal bang_equal less_equal greater_equal ellipsis
+      ].to_set.freeze
+
       def initialize
         @workspace = Workspace.new
         @handlers = {}
@@ -71,6 +93,7 @@ module MilkTea
         @handlers['textDocument/codeLens']          = method(:handle_code_lens)
         @handlers['textDocument/codeAction']        = method(:handle_code_action)
         @handlers['textDocument/inlayHint']         = method(:handle_inlay_hint)
+        @handlers['textDocument/semanticTokens/full'] = method(:handle_semantic_tokens_full)
         # textDocument/diagnostic (pull model) removed — push-only via publishDiagnostics
         @handlers['textDocument/signatureHelp']     = method(:handle_signature_help)
         @handlers['textDocument/prepareRename']     = method(:handle_prepare_rename)
@@ -274,6 +297,14 @@ module MilkTea
               codeActionKinds: ['quickFix', 'source.fixAll']
             },
             inlayHintProvider: true,
+            semanticTokensProvider: {
+              legend: {
+                tokenTypes: SEMANTIC_TOKEN_TYPES,
+                tokenModifiers: SEMANTIC_TOKEN_MODIFIERS
+              },
+              full: true,
+              range: false
+            },
             completionProvider: {
               triggerCharacters: ['.', '(', ' '],
               resolveProvider: false
@@ -343,6 +374,20 @@ module MilkTea
         @workspace.update_document(uri, text) if text
         publish_diagnostics(uri)
         nil
+      end
+
+      # ── Semantic Tokens ─────────────────────────────────────────────────────
+
+      def handle_semantic_tokens_full(params)
+        uri = params.dig('textDocument', 'uri')
+        return { data: [] } unless uri
+
+        tokens = @workspace.get_tokens(uri) || []
+        semantic_entries = build_semantic_token_entries(tokens)
+        { data: encode_semantic_tokens(semantic_entries) }
+      rescue StandardError => e
+        warn "Error in semanticTokens/full handler: #{e.message}"
+        { data: [] }
       end
 
       # ── Enhancement 1: Hover — real type signatures ──────────────────────────
@@ -1021,6 +1066,140 @@ module MilkTea
           uri: found[:uri],
           range: token_to_range(found[:token])
         }
+      end
+
+      def build_semantic_token_entries(tokens)
+        entries = []
+
+        tokens.each_with_index do |tok, index|
+          next if [:newline, :indent, :dedent, :eof].include?(tok.type)
+
+          semantic_type, modifiers = classify_semantic_token(tokens, index)
+          next unless semantic_type
+
+          entries << {
+            line: tok.line - 1,
+            start_char: tok.column - 1,
+            length: tok.lexeme.length,
+            type: semantic_type,
+            modifiers: modifiers
+          }
+        end
+
+        entries.sort_by { |entry| [entry[:line], entry[:start_char]] }
+      end
+
+      def classify_semantic_token(tokens, index)
+        tok = tokens[index]
+
+        if tok.type == :identifier
+          return classify_identifier_semantic(tokens, index)
+        end
+
+        if [:string, :cstring, :fstring].include?(tok.type)
+          return [:string, []]
+        end
+
+        if [:integer, :float].include?(tok.type)
+          return [:number, []]
+        end
+
+        if KEYWORD_TOKEN_TYPES.include?(tok.type)
+          return [:keyword, []]
+        end
+
+        if OPERATOR_TOKEN_TYPES.include?(tok.type)
+          return [:operator, []]
+        end
+
+        [nil, []]
+      end
+
+      def classify_identifier_semantic(tokens, index)
+        tok = tokens[index]
+        prev_tok = previous_non_trivia_token(tokens, index)
+        next_tok = next_non_trivia_token(tokens, index + 1)
+
+        if prev_tok && [:def, :fn, :proc].include?(prev_tok.type)
+          return [:function, ['declaration']]
+        end
+
+        if prev_tok && [:struct, :union, :enum, :flags, :variant, :type, :opaque].include?(prev_tok.type)
+          return [:type, ['declaration']]
+        end
+
+        if prev_tok&.type == :const
+          return [:variable, ['declaration', 'readonly']]
+        end
+
+        if prev_tok && [:let, :var].include?(prev_tok.type)
+          return [:variable, ['declaration']]
+        end
+
+        if prev_tok&.type == :dot
+          return [:property, []]
+        end
+
+        if next_tok&.type == :lparen
+          modifiers = []
+          modifiers << 'defaultLibrary' if BUILTIN_FUNCTION_NAMES.include?(tok.lexeme)
+          return [:function, modifiers]
+        end
+
+        if PRIMITIVE_TYPE_NAMES.include?(tok.lexeme)
+          return [:type, ['defaultLibrary']]
+        end
+
+        if tok.lexeme.match?(/\A[A-Z]/)
+          return [:type, []]
+        end
+
+        [:variable, []]
+      end
+
+      def previous_non_trivia_token(tokens, index)
+        i = index - 1
+        while i >= 0
+          tok = tokens[i]
+          return tok unless [:newline, :indent, :dedent].include?(tok.type)
+          i -= 1
+        end
+        nil
+      end
+
+      def encode_semantic_tokens(entries)
+        data = []
+        prev_line = 0
+        prev_char = 0
+
+        entries.each_with_index do |entry, idx|
+          delta_line = entry[:line] - prev_line
+          delta_start = delta_line.zero? ? entry[:start_char] - prev_char : entry[:start_char]
+          type_index = SEMANTIC_TOKEN_TYPES.index(entry[:type].to_s) || 0
+          modifiers_bitset = semantic_modifiers_bitset(entry[:modifiers])
+
+          data << delta_line
+          data << delta_start
+          data << entry[:length]
+          data << type_index
+          data << modifiers_bitset
+
+          prev_line = entry[:line]
+          prev_char = entry[:start_char]
+        end
+
+        data
+      end
+
+      def semantic_modifiers_bitset(modifiers)
+        bits = 0
+        Array(modifiers).each do |modifier|
+          idx = SEMANTIC_TOKEN_MODIFIERS.index(modifier.to_s)
+          next unless idx
+
+          bits |= (1 << idx)
+        end
+        bits
       end
 
       def module_definition_location(current_uri, module_name)
