@@ -1,7 +1,9 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require_relative '../lib/milk_tea'
+$LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
+
+require "milk_tea"
 
 # Start the LSP server
 # This process reads JSON-RPC messages from stdin and writes responses to stdout

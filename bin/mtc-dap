@@ -5,4 +5,5 @@ $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 
 require "milk_tea"
 
-MilkTea::DAP::Server.new.run
+server = MilkTea::DAP::Server.new
+server.run

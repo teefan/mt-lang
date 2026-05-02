@@ -10,7 +10,14 @@
   },
   "categories": ["Programming Languages", "Debuggers", "Linters", "Formatters"],
   "keywords": ["milk-tea", "milktea", "mt"],
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:milk-tea",
+    "onDebug:milk-tea",
+    "onCommand:milkTea.restartLsp",
+    "onCommand:milkTea.viewLspLogs",
+    "onCommand:milkTea.viewDapLogs",
+    "onCommand:milkTea.restartDap"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "languages": [
@@ -42,8 +49,8 @@
         },
         "milkTea.lsp.serverPath": {
           "type": "string",
-          "default": "mtc",
-          "description": "Path to the mtc compiler binary used as the LSP server. Accepts an absolute path or a name on $PATH."
+          "default": "mtc-lsp",
+          "description": "Path to the mtc-lsp binary. Accepts an absolute path or a name on $PATH."
         },
         "milkTea.lsp.extraArgs": {
           "type": "array",
@@ -71,6 +78,23 @@
           "default": "off",
           "description": "Traces the raw JSON-RPC communication between VS Code and the Milk Tea language server."
         },
+        "milkTea.lsp.retry.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Retry LSP startup when the language server cannot be started or connected."
+        },
+        "milkTea.lsp.retry.maxAttempts": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "description": "Maximum number of LSP startup attempts (including the first attempt)."
+        },
+        "milkTea.lsp.retry.delaySeconds": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "description": "Delay in seconds between LSP retry attempts."
+        },
         "milkTea.dap.enabled": {
           "type": "boolean",
           "default": true,
@@ -78,14 +102,31 @@
         },
         "milkTea.dap.serverPath": {
           "type": "string",
-          "default": "mtc",
-          "description": "Path to the mtc compiler binary used as the DAP server."
+          "default": "mtc-dap",
+          "description": "Path to the mtc-dap binary. Accepts an absolute path or a name on $PATH."
         },
         "milkTea.dap.extraArgs": {
           "type": "array",
           "items": { "type": "string" },
           "default": [],
           "description": "Extra command-line arguments passed to 'mtc dap'."
+        },
+        "milkTea.dap.retry.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Retry DAP session launch when the debug adapter fails to connect."
+        },
+        "milkTea.dap.retry.maxAttempts": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "description": "Maximum number of DAP launch attempts per debug session."
+        },
+        "milkTea.dap.retry.delaySeconds": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "description": "Delay in seconds between DAP retry attempts."
         }
       }
     },
