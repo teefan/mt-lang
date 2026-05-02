@@ -29,9 +29,9 @@ module MilkTea
 
       KEYWORD_TOKEN_TYPES = Token::KEYWORDS.values.to_set.freeze
       PRIMITIVE_TYPE_NAMES = %w[
-        bool byte char i8 i16 i32 i64 u8 u16 u32 u64 isize usize f32 f64 void str cstr
+        bool byte char i8 i16 i32 i64 u8 u16 u32 u64 isize usize f32 f64 void str cstr ptr ref
       ].to_set.freeze
-      BUILTIN_FUNCTION_NAMES = %w[ref_of const_ptr_of ptr_of read].to_set.freeze
+      BUILTIN_FUNCTION_NAMES = %w[ref_of const_ptr_of ptr_of read panic ok err cast reinterpret array span zero range].to_set.freeze
       OPERATOR_TOKEN_TYPES = %i[
         amp colon comma caret dot lparen rparen pipe lbracket rbracket question
         equal plus minus star slash percent less greater tilde
@@ -1571,6 +1571,11 @@ module MilkTea
           modifiers = []
           modifiers << 'defaultLibrary' if BUILTIN_FUNCTION_NAMES.include?(tok.lexeme)
           return [:function, modifiers]
+        end
+
+        # Specialization syntax: `cast[T](x)`, `array[T](n)`, etc.
+        if next_tok&.type == :lbracket && BUILTIN_FUNCTION_NAMES.include?(tok.lexeme)
+          return [:function, ['defaultLibrary']]
         end
 
         if PRIMITIVE_TYPE_NAMES.include?(tok.lexeme)
