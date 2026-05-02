@@ -675,8 +675,8 @@ class LSPServerTest < Minitest::Test
         "position"     => { "line" => 5, "character" => 8 }
       })
       hover_value = response.dig("result", "contents", "value")
-      assert_includes hover_value, "zero"
-      assert_includes hover_value, "-> i32"
+      assert_includes hover_value, "local zero"
+      refute_includes hover_value, "-> i32"
     end
   end
 

@@ -1282,14 +1282,6 @@ module MilkTea
             end
           end
 
-          # Fallback: check if it is a method defined on any type
-          analysis.methods.each do |_recv_type, methods|
-            if (mb = methods[name])
-              params_str = format_params(mb.type.params)
-              return "def #{name}(#{params_str}) -> #{mb.type.return_type}"
-            end
-          end
-
           local_def = @workspace.find_definition_token(
             uri,
             name,
@@ -1520,20 +1512,12 @@ module MilkTea
 
         return [:namespace, []] if module_declaration_path_token?(tokens, index)
 
-        if enum_member_name?(tok.lexeme) && next_tok&.type == :equal
-          return [:enumMember, ['declaration']]
-        end
-
         if prev_tok && [:def, :fn, :proc].include?(prev_tok.type)
           return [:function, ['declaration']]
         end
 
         if prev_tok && [:struct, :union, :enum, :flags, :variant, :type, :opaque].include?(prev_tok.type)
           return [:type, ['declaration']]
-        end
-
-        if next_tok&.type == :dot && import_alias_identifier?(tokens, index, analysis)
-          return [:namespace, []]
         end
 
         if prev_tok&.type == :const
@@ -1550,18 +1534,14 @@ module MilkTea
             if module_binding
               return [:function, []] if module_binding.functions.key?(tok.lexeme) && next_tok&.type == :lparen
               return [:type, []] if module_binding.types.key?(tok.lexeme)
+              if (value_binding = module_binding.values[tok.lexeme])
+                modifiers = []
+                modifiers << 'readonly' if value_binding.respond_to?(:mutable) && value_binding.mutable == false
+                return [:variable, modifiers]
+              end
               return [:namespace, []] if analysis.imports.key?(tok.lexeme)
             end
           end
-
-          # Keep colors stable before/after semantic analysis availability by
-          # recognizing import-alias member calls directly from syntax.
-          if next_tok&.type == :lparen && import_alias_member_access?(tokens, index, analysis)
-            return [:function, []]
-          end
-
-          return [:enumMember, []] if enum_member_name?(tok.lexeme)
-          return [:type, []] if dotted_type_name?(tok.lexeme)
 
           return [:property, []]
         end
@@ -1581,21 +1561,7 @@ module MilkTea
           return [:type, ['defaultLibrary']]
         end
 
-        if tok.lexeme.match?(/\A[A-Z]/)
-          return [:type, []]
-        end
-
         [:variable, []]
-      end
-
-      def enum_member_name?(name)
-        name.match?(/\A[A-Z][A-Z0-9_]*\z/)
-      end
-
-      def dotted_type_name?(name)
-        # Interop/imported type symbols are often dotted and PascalCase-ish,
-        # e.g. `c.SDL_Window` or `pkg.TypeName`.
-        name.match?(/\A[A-Z][A-Za-z0-9_]*\z/)
       end
 
       def imported_module_binding_for_member(tokens, index, analysis)
@@ -1609,54 +1575,6 @@ module MilkTea
         return nil unless receiver.type == :identifier
 
         analysis.imports[receiver.lexeme]
-      end
-
-      def import_alias_identifier?(tokens, index, analysis)
-        tok = tokens[index]
-        return false unless tok&.type == :identifier
-
-        return true if analysis&.imports&.key?(tok.lexeme)
-
-        import_alias_declared?(tokens, tok.lexeme)
-      end
-
-      def import_alias_member_access?(tokens, index, analysis)
-        dot_index = previous_non_trivia_token_index(tokens, index)
-        return false unless dot_index && tokens[dot_index].type == :dot
-
-        receiver_index = previous_non_trivia_token_index(tokens, dot_index)
-        return false unless receiver_index
-
-        receiver = tokens[receiver_index]
-        return false unless receiver&.type == :identifier
-
-        import_alias_identifier?(tokens, receiver_index, analysis)
-      end
-
-      def import_alias_declared?(tokens, alias_name)
-        return false if alias_name.nil? || alias_name.empty?
-
-        i = 0
-        while i < tokens.length
-          tok = tokens[i]
-          if tok.type == :import
-            line = tok.line
-            j = i + 1
-            as_token_seen = false
-            while j < tokens.length && tokens[j].line == line
-              as_token_seen = true if tokens[j].type == :as
-              if as_token_seen && tokens[j].type == :identifier
-                return true if tokens[j].lexeme == alias_name
-                break
-              end
-              j += 1
-            end
-            i = j
-            next
-          end
-          i += 1
-        end
-        false
       end
 
       def import_path_info_at(tokens, index)
