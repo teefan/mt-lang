@@ -2,6 +2,7 @@
 
 require 'cgi/escape'
 require 'set'
+require 'thread'
 require 'uri'
 
 module MilkTea
@@ -11,6 +12,8 @@ module MilkTea
     class Workspace
       # Token types that introduce a named definition, in order of precedence
       DEFINITION_KEYWORDS = %i[def struct union enum flags variant type const var let methods opaque].freeze
+      DEFINITION_LINE_PREFIX = /^(?:\s)*(?:(?:pub|foreign)\s+)*(?:def|struct|union|enum|flags|variant|type|const|var|let|methods|opaque)\s+/m
+      DEFINITION_NAME_REGEX = /^\s*(?:(?:pub|foreign)\s+)*(?:def|struct|union|enum|flags|variant|type|const|var|let|methods|opaque)\s+([A-Za-z_][A-Za-z0-9_]*)\b/
 
       def initialize
         @open_documents = {}   # uri -> content String from didOpen/didChange
@@ -25,9 +28,16 @@ module MilkTea
         # Avoids re-running Sema.check_collecting_errors when content is unchanged.
         @diagnostics_cache = {}
         # Definition index: name -> { uri:, token: } — built lazily from symbols cache.
-        # Avoids O(all-tokens) linear scan on every go-to-definition request.
+        # Caches known matching definitions without forcing a full-workspace index
+        # build on the first global lookup.
         @definition_index = {} # name -> [{ uri:, token: Token }]
-        @definition_index_uris = Set.new # uris already indexed
+        @definition_miss_cache = Set.new
+        @definition_candidate_uris = Hash.new { |hash, key| hash[key] = Set.new }
+        @definition_names_by_uri = {}
+        @definition_cache_mutex = Mutex.new
+        @definition_warmup_queue = Queue.new
+        @definition_warmup_enqueued = Set.new
+        @definition_warmup_thread = nil
       end
 
       def shared_module_cache
@@ -54,6 +64,7 @@ module MilkTea
       def open_document(uri, content)
         @open_documents[uri] = content
         invalidate_cache(uri)
+        enqueue_definition_warmup(uri)
         # Eagerly warm analysis cache so the last-good snapshot is available for
         # subsequent incomplete edits (e.g., user typing "p." mid-expression).
         get_analysis(uri) unless large_document_content?(content)
@@ -69,6 +80,7 @@ module MilkTea
       def update_document(uri, content)
         @open_documents[uri] = content
         invalidate_cache(uri)
+        enqueue_definition_warmup(uri)
         # Re-warm last-good analysis whenever content changes (e.g. after save).
         get_analysis(uri) unless large_document_content?(content)
       end
@@ -93,6 +105,7 @@ module MilkTea
 
         @open_documents[uri] = new_content
         invalidate_cache(uri)
+        enqueue_definition_warmup(uri)
       end
 
       # Index all .mt files under root_uri so they are available for workspace-wide queries.
@@ -107,7 +120,14 @@ module MilkTea
           rescue StandardError
             nil
           end
+          enqueue_definition_warmup(file_uri)
         end
+
+        start_definition_warmup
+      end
+
+      def shutdown
+        stop_definition_warmup
       end
 
       # ── Accessors ───────────────────────────────────────────────────────────
@@ -166,7 +186,7 @@ module MilkTea
 
       # Find a definition token across the whole workspace, preferring +preferred_uri+.
       # Returns { uri:, token: } or nil.
-      # Uses a lazily-built name index to avoid O(all-tokens) linear scan.
+      # Uses demand-driven name lookup to avoid cold full-workspace indexing.
       def find_definition_token_global(name, preferred_uri: nil, before_line: nil, before_char: nil)
         # Check preferred_uri first without going through the index.
         if preferred_uri
@@ -174,18 +194,34 @@ module MilkTea
           return { uri: preferred_uri, token: token } if token
         end
 
-        # Ensure the index is up to date for all known documents.
-        ensure_definition_index_built!
+        entries = nil
+        miss = false
+        @definition_cache_mutex.synchronize do
+          entries = @definition_index[name]&.dup
+          miss = @definition_miss_cache.include?(name)
+        end
+        if entries
+          entries.each do |entry|
+            next if entry[:uri] == preferred_uri
 
-        entries = @definition_index[name]
-        return nil unless entries
+            return entry
+          end
+        end
 
-        entries.each do |entry|
-          next if entry[:uri] == preferred_uri
+        return nil if miss
 
+        candidate_definition_uris(name, exclude_uri: preferred_uri).each do |doc_uri|
+          token = find_definition_token(doc_uri, name)
+          next unless token
+
+          entry = { uri: doc_uri, token: token }
+          cache_definition_entry(name, entry)
           return entry
         end
 
+        @definition_cache_mutex.synchronize do
+          @definition_miss_cache << name
+        end
         nil
       end
 
@@ -205,6 +241,7 @@ module MilkTea
 
         @indexed_documents[uri] = File.read(path)
         invalidate_cache(uri)
+        enqueue_definition_warmup(uri)
       rescue StandardError => e
         warn "LSP watched-file update error #{uri}: #{e.message}"
       end
@@ -350,30 +387,11 @@ module MilkTea
         @analysis_cache.delete(uri)
         @symbols_cache.delete(uri)
         @diagnostics_cache.delete(uri)
-        # Remove stale definition index entries for this uri.
-        if @definition_index_uris.delete?(uri)
+        @definition_cache_mutex.synchronize do
           @definition_index.each_value { |entries| entries.delete_if { |e| e[:uri] == uri } }
           @definition_index.delete_if { |_k, v| v.empty? }
-        end
-      end
-
-      # Ensure every known document has its definitions indexed at least once.
-      # New documents are indexed incrementally; invalidated docs were removed above.
-      def ensure_definition_index_built!
-        all_documents.each do |doc_uri|
-          next if @definition_index_uris.include?(doc_uri)
-
-          tokens = get_tokens(doc_uri)
-          next unless tokens
-
-          tokens.each_cons(2) do |kw_tok, id_tok|
-            next unless DEFINITION_KEYWORDS.include?(kw_tok.type)
-            next unless id_tok.type == :identifier
-
-            (@definition_index[id_tok.lexeme] ||= []) << { uri: doc_uri, token: id_tok }
-          end
-
-          @definition_index_uris << doc_uri
+          remove_definition_name_candidates_for_uri(uri)
+          @definition_miss_cache.clear
         end
       end
 
@@ -510,6 +528,133 @@ module MilkTea
       def path_to_uri(path)
         escaped_path = path.split('/').map { |seg| CGI.escape(seg).gsub('+', '%20') }.join('/')
         "file://#{escaped_path}"
+      end
+
+      def candidate_definition_uris(name, exclude_uri: nil)
+        matcher = definition_line_matcher(name)
+        open_uris = @open_documents.keys
+        indexed_uris = @indexed_documents.keys
+
+        ordered_uris = (open_uris + indexed_uris).uniq
+        warmed_candidates = nil
+        warmed_uris = nil
+        @definition_cache_mutex.synchronize do
+          warmed_candidates = @definition_candidate_uris[name].dup
+          warmed_uris = @definition_names_by_uri.keys.to_set
+        end
+
+        matches = warmed_candidates.to_a.filter_map do |doc_uri|
+          next if doc_uri == exclude_uri
+
+          doc_uri
+        end
+
+        ordered_uris.each do |doc_uri|
+          next if doc_uri == exclude_uri
+          next if warmed_uris.include?(doc_uri)
+
+          content = get_content(doc_uri)
+          next if content.empty?
+          next unless content.match?(matcher)
+
+          warm_definition_candidates_for_uri(doc_uri, content)
+          matches << doc_uri
+        end
+
+        matches.uniq
+      end
+
+      def definition_line_matcher(name)
+        /#{DEFINITION_LINE_PREFIX}#{Regexp.escape(name)}\b/
+      end
+
+      def cache_definition_entry(name, entry)
+        @definition_cache_mutex.synchronize do
+          entries = (@definition_index[name] ||= [])
+          return if entries.any? { |existing| existing[:uri] == entry[:uri] && existing[:token].line == entry[:token].line && existing[:token].column == entry[:token].column }
+
+          entries << entry
+        end
+      end
+
+      def start_definition_warmup
+        return if @definition_warmup_thread&.alive?
+
+        @definition_warmup_thread = Thread.new do
+          Thread.current.name = 'mt-lsp-def-warmup' if Thread.current.respond_to?(:name=)
+
+          loop do
+            uri = @definition_warmup_queue.pop
+            break if uri == :__stop__
+
+            content = get_content(uri)
+            warm_definition_candidates_for_uri(uri, content)
+          end
+        rescue StandardError => e
+          warn "LSP definition warmup error: #{e.message}"
+        end
+      end
+
+      def stop_definition_warmup
+        worker = @definition_warmup_thread
+        return unless worker
+
+        @definition_warmup_queue << :__stop__
+        worker.join(0.25)
+        @definition_warmup_thread = nil
+      rescue StandardError => e
+        warn "LSP definition warmup shutdown error: #{e.message}"
+      end
+
+      def enqueue_definition_warmup(uri)
+        return if uri.nil?
+
+        start_definition_warmup unless @definition_warmup_thread&.alive?
+
+        should_enqueue = false
+        @definition_cache_mutex.synchronize do
+          unless @definition_warmup_enqueued.include?(uri)
+            @definition_warmup_enqueued << uri
+            should_enqueue = true
+          end
+        end
+
+        @definition_warmup_queue << uri if should_enqueue
+      end
+
+      def warm_definition_candidates_for_uri(uri, content)
+        names = extract_definition_names(content)
+
+        @definition_cache_mutex.synchronize do
+          remove_definition_name_candidates_for_uri(uri)
+          @definition_names_by_uri[uri] = names
+          names.each { |name| @definition_candidate_uris[name] << uri }
+          @definition_warmup_enqueued.delete(uri)
+          @definition_miss_cache.clear unless names.empty?
+        end
+      end
+
+      def remove_definition_name_candidates_for_uri(uri)
+        names = @definition_names_by_uri.delete(uri)
+        return unless names
+
+        names.each do |name|
+          next unless @definition_candidate_uris.key?(name)
+
+          @definition_candidate_uris[name].delete(uri)
+          @definition_candidate_uris.delete(name) if @definition_candidate_uris[name].empty?
+        end
+      end
+
+      def extract_definition_names(content)
+        return Set.new if content.empty?
+
+        names = Set.new
+        content.each_line do |line|
+          match = line.match(DEFINITION_NAME_REGEX)
+          names << match[1] if match
+        end
+        names
       end
     end
   end

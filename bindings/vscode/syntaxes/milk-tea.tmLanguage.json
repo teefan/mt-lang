@@ -51,7 +51,7 @@
       "patterns": [
         {
           "name": "meta.embedded.expression.milk-tea",
-          "begin": "\\{",
+          "begin": "#\\{",
           "end": "\\}",
           "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.milk-tea" } },
           "endCaptures":   { "0": { "name": "punctuation.section.embedded.end.milk-tea" } },
