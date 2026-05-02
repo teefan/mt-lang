@@ -1528,11 +1528,22 @@ module MilkTea
           return [:variable, ['declaration']]
         end
 
+        if next_tok&.type == :dot && analysis
+          return [:type, []] if analysis.types.key?(tok.lexeme)
+          return [:namespace, []] if analysis.imports.key?(tok.lexeme)
+        end
+
+        if analysis && analysis.types.key?(tok.lexeme) && identifier_in_type_argument_position?(tokens, index)
+          return [:type, []]
+        end
+
         if prev_tok&.type == :dot
           if analysis
             module_binding = imported_module_binding_for_member(tokens, index, analysis)
             if module_binding
-              return [:function, []] if module_binding.functions.key?(tok.lexeme) && next_tok&.type == :lparen
+              if module_binding.functions.key?(tok.lexeme)
+                return [:function, []] if next_tok&.type == :lparen || specialized_call_with_type_args?(tokens, index)
+              end
               return [:type, []] if module_binding.types.key?(tok.lexeme)
               if (value_binding = module_binding.values[tok.lexeme])
                 modifiers = []
@@ -1575,6 +1586,47 @@ module MilkTea
         return nil unless receiver.type == :identifier
 
         analysis.imports[receiver.lexeme]
+      end
+
+      def specialized_call_with_type_args?(tokens, index)
+        next_index = next_non_trivia_token_index(tokens, index + 1)
+        return false unless next_index && tokens[next_index].type == :lbracket
+
+        rbracket_index = matching_closer_index(tokens, next_index, :lbracket, :rbracket)
+        return false unless rbracket_index
+
+        after_bracket_index = next_non_trivia_token_index(tokens, rbracket_index + 1)
+        after_bracket_index && tokens[after_bracket_index].type == :lparen
+      end
+
+      def identifier_in_type_argument_position?(tokens, index)
+        lbracket_index = previous_non_trivia_token_index(tokens, index)
+        return false unless lbracket_index && tokens[lbracket_index].type == :lbracket
+
+        rbracket_index = matching_closer_index(tokens, lbracket_index, :lbracket, :rbracket)
+        return false unless rbracket_index
+
+        next_index = next_non_trivia_token_index(tokens, index + 1)
+        return false unless next_index
+
+        # Type argument entries should stay inside the current [] pair.
+        next_index <= rbracket_index
+      end
+
+      def matching_closer_index(tokens, opener_index, opener_type, closer_type)
+        depth = 0
+        i = opener_index
+        while i < tokens.length
+          tok = tokens[i]
+          if tok.type == opener_type
+            depth += 1
+          elsif tok.type == closer_type
+            depth -= 1
+            return i if depth.zero?
+          end
+          i += 1
+        end
+        nil
       end
 
       def import_path_info_at(tokens, index)
@@ -1636,6 +1688,16 @@ module MilkTea
           tok = tokens[i]
           return i unless [:newline, :indent, :dedent].include?(tok.type)
           i -= 1
+        end
+        nil
+      end
+
+      def next_non_trivia_token_index(tokens, index)
+        i = index
+        while i < tokens.length
+          tok = tokens[i]
+          return i unless [:newline, :indent, :dedent].include?(tok.type)
+          i += 1
         end
         nil
       end
