@@ -988,9 +988,77 @@ module MilkTea
 
         prefix = current_word_prefix(uri, lsp_line, lsp_char)
 
-        # When user is typing after '.', return method completions only.
+        # When user is typing after '.', return module members or method completions.
         dot_recv = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
         if dot_recv
+          # Module member access: rl.init_window, rl.RAYWHITE, etc.
+          if (module_binding = analysis.imports[dot_recv])
+            items = []
+            module_binding.functions.each do |fname, binding|
+              next unless prefix.empty? || fname.start_with?(prefix)
+              params_str = format_params(binding.type.params)
+              items << {
+                label:      fname,
+                kind:       3,  # Function
+                detail:     "def #{fname}(#{params_str}) -> #{binding.type.return_type}",
+                insertText: fname,
+                sortText:   "0_#{fname}"
+              }
+            end
+            module_binding.values.each do |vname, binding|
+              next unless prefix.empty? || vname.start_with?(prefix)
+              items << {
+                label:      vname,
+                kind:       6,  # Variable
+                detail:     "#{vname}: #{binding.type}",
+                insertText: vname,
+                sortText:   "1_#{vname}"
+              }
+            end
+            module_binding.types.each do |tname, _type|
+              next unless prefix.empty? || tname.start_with?(prefix)
+              items << {
+                label:      tname,
+                kind:       7,  # Class
+                detail:     "type #{tname}",
+                insertText: tname,
+                sortText:   "2_#{tname}"
+              }
+            end
+            return { isIncomplete: false, items: items }
+          end
+
+          # Enum/Flags member access: Color.RED, KeyboardKey.A, etc.
+          if (type = analysis.types[dot_recv]).is_a?(Types::EnumBase)
+            items = type.members.filter_map do |mname|
+              next if !prefix.empty? && !mname.start_with?(prefix)
+              {
+                label:      mname,
+                kind:       20, # EnumMember
+                detail:     "#{dot_recv}.#{mname}",
+                insertText: mname,
+                sortText:   "0_#{mname}"
+              }
+            end
+            return { isIncomplete: false, items: items }
+          end
+
+          # Variant arm access: Option.None, Result.Ok, etc.
+          if (type = analysis.types[dot_recv]).is_a?(Types::Variant)
+            items = type.arm_names.filter_map do |aname|
+              next if !prefix.empty? && !aname.start_with?(prefix)
+              {
+                label:      aname,
+                kind:       20, # EnumMember
+                detail:     "#{dot_recv}.#{aname}",
+                insertText: aname,
+                sortText:   "0_#{aname}"
+              }
+            end
+            return { isIncomplete: false, items: items }
+          end
+
+          # Method completions on a non-module receiver.
           method_items = []
           analysis.methods.each do |_recv_type, methods|
             methods.each do |mname, binding|
