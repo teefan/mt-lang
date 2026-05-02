@@ -1477,7 +1477,12 @@ module MilkTea
         next_tok = next_non_trivia_token(tokens, index + 1)
 
         if tok.type == :identifier
-          return classify_identifier_semantic(tokens, index, analysis)
+          return classify_name_semantic(tok.lexeme, tokens, index, analysis)
+        end
+
+        if tok.type == :type
+          return [:property, ['declaration']] if contextual_type_keyword_field_name?(tokens, index)
+          return classify_name_semantic(tok.lexeme, tokens, index, analysis) unless contextual_type_keyword_declaration?(tokens, index)
         end
 
         if [:string, :cstring].include?(tok.type)
@@ -1486,6 +1491,10 @@ module MilkTea
 
         if [:integer, :float].include?(tok.type)
           return [:number, []]
+        end
+
+        if contextual_type_keyword_field_name?(tokens, index)
+          return [:property, ['declaration']]
         end
 
         if KEYWORD_TOKEN_TYPES.include?(tok.type)
@@ -1499,12 +1508,11 @@ module MilkTea
         [nil, []]
       end
 
-      def classify_identifier_semantic(tokens, index, analysis = nil)
-        tok = tokens[index]
+      def classify_name_semantic(name, tokens, index, analysis = nil)
         prev_tok = previous_non_trivia_token(tokens, index)
         next_tok = next_non_trivia_token(tokens, index + 1)
 
-        if (import_info = import_path_info_at(tokens, index))
+        if (import_info = import_path_info_at(tokens, index, allow_keywords: true))
           modifiers = []
           modifiers << 'declaration' if import_info[:role] == :alias
           return [:namespace, modifiers]
@@ -1529,11 +1537,11 @@ module MilkTea
         end
 
         if next_tok&.type == :dot && analysis
-          return [:type, []] if analysis.types.key?(tok.lexeme)
-          return [:namespace, []] if analysis.imports.key?(tok.lexeme)
+          return [:type, []] if analysis.types.key?(name)
+          return [:namespace, []] if analysis.imports.key?(name)
         end
 
-        if analysis && analysis.types.key?(tok.lexeme) && identifier_in_type_argument_position?(tokens, index)
+        if analysis && analysis.types.key?(name) && identifier_in_type_argument_position?(tokens, index)
           return [:type, []]
         end
 
@@ -1541,16 +1549,16 @@ module MilkTea
           if analysis
             module_binding = imported_module_binding_for_member(tokens, index, analysis)
             if module_binding
-              if module_binding.functions.key?(tok.lexeme)
+              if module_binding.functions.key?(name)
                 return [:function, []] if next_tok&.type == :lparen || specialized_call_with_type_args?(tokens, index)
               end
-              return [:type, []] if module_binding.types.key?(tok.lexeme)
-              if (value_binding = module_binding.values[tok.lexeme])
+              return [:type, []] if module_binding.types.key?(name)
+              if (value_binding = module_binding.values[name])
                 modifiers = []
                 modifiers << 'readonly' if value_binding.respond_to?(:mutable) && value_binding.mutable == false
                 return [:variable, modifiers]
               end
-              return [:namespace, []] if analysis.imports.key?(tok.lexeme)
+              return [:namespace, []] if analysis.imports.key?(name)
             end
           end
 
@@ -1559,17 +1567,22 @@ module MilkTea
 
         if next_tok&.type == :lparen
           modifiers = []
-          modifiers << 'defaultLibrary' if BUILTIN_FUNCTION_NAMES.include?(tok.lexeme)
+          modifiers << 'defaultLibrary' if BUILTIN_FUNCTION_NAMES.include?(name)
           return [:function, modifiers]
         end
 
         # Specialization syntax: `cast[T](x)`, `array[T](n)`, etc.
-        if next_tok&.type == :lbracket && BUILTIN_FUNCTION_NAMES.include?(tok.lexeme)
+        if next_tok&.type == :lbracket && BUILTIN_FUNCTION_NAMES.include?(name)
           return [:function, ['defaultLibrary']]
         end
 
-        if PRIMITIVE_TYPE_NAMES.include?(tok.lexeme)
+        if PRIMITIVE_TYPE_NAMES.include?(name)
           return [:type, ['defaultLibrary']]
+        end
+
+        if analysis
+          return [:type, []] if analysis.types.key?(name)
+          return [:namespace, []] if analysis.imports.key?(name)
         end
 
         [:variable, []]
@@ -1629,9 +1642,10 @@ module MilkTea
         nil
       end
 
-      def import_path_info_at(tokens, index)
+      def import_path_info_at(tokens, index, allow_keywords: false)
         tok = tokens[index]
-        return nil unless tok&.type == :identifier
+        return nil unless tok
+        return nil unless tok.type == :identifier || (allow_keywords && Token::KEYWORDS.value?(tok.type))
 
         line_tokens = non_trivia_tokens_on_line(tokens, tok.line)
         return nil if line_tokens.empty? || line_tokens.first.type != :import
@@ -1648,6 +1662,32 @@ module MilkTea
         return { module_name: module_name, role: :alias } if alias_token == tok
 
         nil
+      end
+
+      def contextual_type_keyword_declaration?(tokens, index)
+        tok = tokens[index]
+        return false unless tok&.type == :type
+
+        line_tokens = non_trivia_tokens_on_line(tokens, tok.line)
+        pos = line_tokens.index(tok)
+        return false unless pos
+
+        next_token = line_tokens[pos + 1]
+        return false unless next_token&.type == :identifier
+
+        # `type Name = ...` and `pub type Name = ...` declaration forms.
+        line_tokens.any? { |line_tok| line_tok.type == :equal }
+      end
+
+      def contextual_type_keyword_field_name?(tokens, index)
+        tok = tokens[index]
+        return false unless tok&.type == :type
+
+        line_tokens = non_trivia_tokens_on_line(tokens, tok.line)
+        return false if line_tokens.empty? || !line_tokens.first.equal?(tok)
+
+        next_tok = next_non_trivia_token(tokens, index + 1)
+        next_tok&.type == :colon
       end
 
       def non_trivia_tokens_on_line(tokens, line)
