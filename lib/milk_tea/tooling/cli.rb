@@ -12,7 +12,7 @@ module MilkTea
       @argv = argv.dup
       @out = out
       @err = err
-      @module_roots = [MilkTea.root]
+      @module_roots = MilkTea::ModuleRoots.roots_for_path(Dir.pwd)
     end
 
     def start

@@ -331,7 +331,7 @@ module MilkTea
         result = if path && File.file?(path)
                    # Use the full module loader for file-backed documents so
                    # imports resolve consistently with CLI `mtc check`.
-                   loader = MilkTea::ModuleLoader.new(module_roots: module_roots_for_path(path))
+                   loader = MilkTea::ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(path))
                    loader.check_file(path)
                  else
                    MilkTea::Sema.check(ast)
@@ -409,27 +409,6 @@ module MilkTea
         within_line = line_text.byteslice(0, byte_index).to_s
 
         (preceding + within_line).bytesize
-      end
-
-      def module_roots_for_path(path)
-        roots = []
-        project_root = find_project_root(path)
-        roots << project_root if project_root
-        roots << MilkTea.root.to_s
-        roots.uniq
-      end
-
-      def find_project_root(path)
-        current = File.expand_path(File.dirname(path))
-        loop do
-          std_dir = File.join(current, 'std')
-          return current if File.directory?(std_dir)
-
-          parent = File.dirname(current)
-          return nil if parent == current
-
-          current = parent
-        end
       end
 
       def uri_to_path(uri)
