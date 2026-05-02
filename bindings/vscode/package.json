@@ -8,8 +8,17 @@
   "engines": {
     "vscode": "^1.82.0"
   },
-  "categories": ["Programming Languages", "Debuggers", "Linters", "Formatters"],
-  "keywords": ["milk-tea", "milktea", "mt"],
+  "categories": [
+    "Programming Languages",
+    "Debuggers",
+    "Linters",
+    "Formatters"
+  ],
+  "keywords": [
+    "milk-tea",
+    "milktea",
+    "mt"
+  ],
   "activationEvents": [
     "onLanguage:milk-tea",
     "onDebug:milk-tea",
@@ -23,8 +32,13 @@
     "languages": [
       {
         "id": "milk-tea",
-        "aliases": ["Milk Tea", "milktea"],
-        "extensions": [".mt"],
+        "aliases": [
+          "Milk Tea",
+          "milktea"
+        ],
+        "extensions": [
+          ".mt"
+        ],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/milk-tea-light.svg",
@@ -54,13 +68,22 @@
         },
         "milkTea.lsp.extraArgs": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Extra command-line arguments passed to 'mtc lsp'."
         },
         "milkTea.lsp.logLevel": {
           "type": "string",
-          "enum": ["off", "error", "warn", "info", "debug", "trace"],
+          "enum": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
           "enumDescriptions": [
             "No logging.",
             "Only errors.",
@@ -74,7 +97,11 @@
         },
         "milkTea.lsp.traceServer": {
           "type": "string",
-          "enum": ["off", "messages", "verbose"],
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
           "default": "off",
           "description": "Traces the raw JSON-RPC communication between VS Code and the Milk Tea language server."
         },
@@ -107,7 +134,9 @@
         },
         "milkTea.dap.extraArgs": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Extra command-line arguments passed to 'mtc dap'."
         },
@@ -156,10 +185,14 @@
       {
         "type": "milk-tea",
         "label": "Milk Tea",
-        "languages": ["milk-tea"],
+        "languages": [
+          "milk-tea"
+        ],
         "configurationAttributes": {
           "launch": {
-            "required": ["program"],
+            "required": [
+              "program"
+            ],
             "properties": {
               "program": {
                 "type": "string",
@@ -168,7 +201,9 @@
               },
               "args": {
                 "type": "array",
-                "items": { "type": "string" },
+                "items": {
+                  "type": "string"
+                },
                 "default": [],
                 "description": "Command-line arguments passed to the debugged program."
               },
@@ -184,7 +219,9 @@
               },
               "env": {
                 "type": "object",
-                "additionalProperties": { "type": "string" },
+                "additionalProperties": {
+                  "type": "string"
+                },
                 "default": {},
                 "description": "Environment variables set for the debugged program."
               }
@@ -223,6 +260,7 @@
     "compile": "tsc -p .",
     "watch": "tsc -p . --watch",
     "lint": "eslint src --ext ts",
+    "snapshot:tm": "node ./scripts/snapshot-textmate.js",
     "package": "vsce package --allow-missing-repository --skip-license",
     "vsix:build": "npm run package",
     "vscode:install": "code --install-extension \"${npm_package_name}-${npm_package_version}.vsix\" --force",
@@ -235,7 +273,9 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.82.0",
+    "@vscode/vsce": "^2.24.0",
     "typescript": "^5.3.0",
-    "@vscode/vsce": "^2.24.0"
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
   }
 }
