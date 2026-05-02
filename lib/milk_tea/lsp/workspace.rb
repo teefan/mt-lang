@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'cgi/escape'
+require 'set'
 require 'uri'
 
 module MilkTea
@@ -19,6 +20,33 @@ module MilkTea
         @analysis_cache = {} # uri -> Sema::Analysis (nil on analysis failure)
         @symbols_cache = {}  # uri -> [{name, kind, line, column}]
         @last_good_analysis_cache = {} # uri -> last Sema::Analysis that succeeded
+        @shared_module_cache = {}
+        # Diagnostics cache: uri -> { content_hash: Integer, diagnostics: Array }
+        # Avoids re-running Sema.check_collecting_errors when content is unchanged.
+        @diagnostics_cache = {}
+        # Definition index: name -> { uri:, token: } — built lazily from symbols cache.
+        # Avoids O(all-tokens) linear scan on every go-to-definition request.
+        @definition_index = {} # name -> [{ uri:, token: Token }]
+        @definition_index_uris = Set.new # uris already indexed
+      end
+
+      def shared_module_cache
+        @shared_module_cache
+      end
+
+      # Return cached diagnostics for +uri+, re-collecting only when content changes.
+      def collect_diagnostics(uri)
+        content = get_content(uri)
+        hash = content.hash
+        entry = @diagnostics_cache[uri]
+        return entry[:diagnostics] if entry && entry[:content_hash] == hash
+
+        diagnostics = Diagnostics.collect(uri, content, shared_module_cache: @shared_module_cache)
+        @diagnostics_cache[uri] = { content_hash: hash, diagnostics: diagnostics }
+        diagnostics
+      rescue StandardError => e
+        warn "LSP diagnostics error #{uri}: #{e.message}"
+        []
       end
 
       # ── Document lifecycle ──────────────────────────────────────────────────
@@ -28,7 +56,7 @@ module MilkTea
         invalidate_cache(uri)
         # Eagerly warm analysis cache so the last-good snapshot is available for
         # subsequent incomplete edits (e.g., user typing "p." mid-expression).
-        get_analysis(uri)
+        get_analysis(uri) unless large_document_content?(content)
       end
 
       def close_document(uri)
@@ -42,7 +70,7 @@ module MilkTea
         @open_documents[uri] = content
         invalidate_cache(uri)
         # Re-warm last-good analysis whenever content changes (e.g. after save).
-        get_analysis(uri)
+        get_analysis(uri) unless large_document_content?(content)
       end
 
       # Apply one incremental change (LSP textDocumentSync == 2).
@@ -138,17 +166,24 @@ module MilkTea
 
       # Find a definition token across the whole workspace, preferring +preferred_uri+.
       # Returns { uri:, token: } or nil.
+      # Uses a lazily-built name index to avoid O(all-tokens) linear scan.
       def find_definition_token_global(name, preferred_uri: nil)
+        # Check preferred_uri first without going through the index.
         if preferred_uri
           token = find_definition_token(preferred_uri, name)
           return { uri: preferred_uri, token: token } if token
         end
 
-        all_documents.each do |doc_uri|
-          next if doc_uri == preferred_uri
+        # Ensure the index is up to date for all known documents.
+        ensure_definition_index_built!
 
-          token = find_definition_token(doc_uri, name)
-          return { uri: doc_uri, token: token } if token
+        entries = @definition_index[name]
+        return nil unless entries
+
+        entries.each do |entry|
+          next if entry[:uri] == preferred_uri
+
+          return entry
         end
 
         nil
@@ -297,6 +332,32 @@ module MilkTea
         @ast_cache.delete(uri)
         @analysis_cache.delete(uri)
         @symbols_cache.delete(uri)
+        @diagnostics_cache.delete(uri)
+        # Remove stale definition index entries for this uri.
+        if @definition_index_uris.delete?(uri)
+          @definition_index.each_value { |entries| entries.delete_if { |e| e[:uri] == uri } }
+          @definition_index.delete_if { |_k, v| v.empty? }
+        end
+      end
+
+      # Ensure every known document has its definitions indexed at least once.
+      # New documents are indexed incrementally; invalidated docs were removed above.
+      def ensure_definition_index_built!
+        all_documents.each do |doc_uri|
+          next if @definition_index_uris.include?(doc_uri)
+
+          tokens = get_tokens(doc_uri)
+          next unless tokens
+
+          tokens.each_cons(2) do |kw_tok, id_tok|
+            next unless DEFINITION_KEYWORDS.include?(kw_tok.type)
+            next unless id_tok.type == :identifier
+
+            (@definition_index[id_tok.lexeme] ||= []) << { uri: doc_uri, token: id_tok }
+          end
+
+          @definition_index_uris << doc_uri
+        end
       end
 
       # ── Compilation helpers ─────────────────────────────────────────────────
@@ -321,6 +382,12 @@ module MilkTea
         nil
       end
 
+      def large_document_content?(content)
+        return false unless content
+
+        content.bytesize > 200_000 || content.count("\n") > 1200
+      end
+
       def analyze_document(uri)
         ast = get_ast(uri)
         # Fall back to the last successful analysis so completions/hover still
@@ -331,7 +398,10 @@ module MilkTea
         result = if path && File.file?(path)
                    # Use the full module loader for file-backed documents so
                    # imports resolve consistently with CLI `mtc check`.
-                   loader = MilkTea::ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(path))
+                   loader = MilkTea::ModuleLoader.new(
+                     module_roots: MilkTea::ModuleRoots.roots_for_path(path),
+                     shared_cache: @shared_module_cache,
+                   )
                    loader.check_file(path)
                  else
                    MilkTea::Sema.check(ast)

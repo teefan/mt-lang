@@ -16,8 +16,8 @@ module MilkTea
     SourceFile = Data.define(:module_name, :module_kind, :imports, :directives, :declarations, :line) do
       def initialize(module_name:, module_kind:, imports:, directives:, declarations:, line: nil) = super
     end
-    Import = Data.define(:path, :alias_name, :line) do
-      def initialize(path:, alias_name:, line: nil) = super
+    Import = Data.define(:path, :alias_name, :line, :column, :length) do
+      def initialize(path:, alias_name:, line: nil, column: nil, length: nil) = super
     end
     LinkDirective = Data.define(:value)
     IncludeDirective = Data.define(:value)
@@ -50,11 +50,11 @@ module MilkTea
     MethodsBlock = Data.define(:type_name, :methods, :line) do
       def initialize(type_name:, methods:, line: nil) = super
     end
-    FunctionDef = Data.define(:name, :type_params, :params, :return_type, :body, :visibility, :async, :line) do
-      def initialize(name:, type_params:, params:, return_type:, body:, visibility:, async:, line: nil) = super
+    FunctionDef = Data.define(:name, :type_params, :params, :return_type, :body, :visibility, :async, :line, :column) do
+      def initialize(name:, type_params:, params:, return_type:, body:, visibility:, async:, line: nil, column: nil) = super
     end
-    MethodDef = Data.define(:name, :type_params, :params, :return_type, :body, :kind, :visibility, :async, :line) do
-      def initialize(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, line: nil) = super
+    MethodDef = Data.define(:name, :type_params, :params, :return_type, :body, :kind, :visibility, :async, :line, :column) do
+      def initialize(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, line: nil, column: nil) = super
     end
     ExternFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :variadic, :line) do
       def initialize(name:, type_params:, params:, return_type:, variadic:, line: nil) = super
@@ -62,23 +62,27 @@ module MilkTea
     ForeignFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :mapping, :visibility, :line) do
       def initialize(name:, type_params:, params:, return_type:, mapping:, visibility:, line: nil) = super
     end
-    Param = Data.define(:name, :type)
+    Param = Data.define(:name, :type, :line, :column) do
+      def initialize(name:, type:, line: nil, column: nil) = super
+    end
     ForeignParam = Data.define(:name, :type, :mode, :boundary_type)
-    LocalDecl = Data.define(:kind, :name, :type, :value, :line) do
-      def initialize(kind:, name:, type:, value:, line: nil) = super
+    LocalDecl = Data.define(:kind, :name, :type, :value, :line, :column) do
+      def initialize(kind:, name:, type:, value:, line: nil, column: nil) = super
     end
     Assignment = Data.define(:target, :operator, :value, :line) do
       def initialize(target:, operator:, value:, line: nil) = super
     end
     IfBranch = Data.define(:condition, :body)
-    IfStmt = Data.define(:branches, :else_body, :line) do
-      def initialize(branches:, else_body:, line: nil) = super
+    IfStmt = Data.define(:branches, :else_body, :line, :else_line, :else_column) do
+      def initialize(branches:, else_body:, line: nil, else_line: nil, else_column: nil) = super
     end
     VariantDecl = Data.define(:name, :type_params, :arms, :visibility, :line) do
       def initialize(name:, type_params:, arms:, visibility:, line: nil) = super
     end
     VariantArm = Data.define(:name, :fields)
-    MatchArm = Data.define(:pattern, :binding_name, :body)
+    MatchArm = Data.define(:pattern, :binding_name, :binding_line, :binding_column, :body) do
+      def initialize(pattern:, binding_name:, body:, binding_line: nil, binding_column: nil) = super
+    end
     MatchStmt = Data.define(:expression, :arms, :line) do
       def initialize(expression:, arms:, line: nil) = super
     end
@@ -88,8 +92,8 @@ module MilkTea
     StaticAssert = Data.define(:condition, :message, :line) do
       def initialize(condition:, message:, line: nil) = super
     end
-    ForStmt = Data.define(:name, :iterable, :body, :line) do
-      def initialize(name:, iterable:, body:, line: nil) = super
+    ForStmt = Data.define(:name, :iterable, :body, :line, :column) do
+      def initialize(name:, iterable:, body:, line: nil, column: nil) = super
     end
     WhileStmt = Data.define(:condition, :body, :line) do
       def initialize(condition:, body:, line: nil) = super
@@ -110,7 +114,9 @@ module MilkTea
       def initialize(expression:, line: nil) = super
     end
 
-    Identifier = Data.define(:name)
+    Identifier = Data.define(:name, :line, :column) do
+      def initialize(name:, line: nil, column: nil) = super
+    end
     MemberAccess = Data.define(:receiver, :member)
     IndexAccess = Data.define(:receiver, :index)
     Specialization = Data.define(:callee, :arguments)

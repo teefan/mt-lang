@@ -84,9 +84,16 @@ module MilkTea
     def parse_import
       line = previous.line
       path = parse_qualified_name
-      alias_name = match(:as) ? consume_name("expected import alias").lexeme : nil
+      local_name = path.parts.last
+      local_column = previous.column
+      alias_name = if match(:as)
+                     alias_token = consume_name("expected import alias")
+                     local_name = alias_token.lexeme
+                     local_column = alias_token.column
+                     alias_token.lexeme
+                   end
       consume_end_of_statement
-      AST::Import.new(path:, alias_name:, line:)
+      AST::Import.new(path:, alias_name:, line:, column: local_column, length: local_name.length)
     end
 
     def parse_declaration
@@ -365,12 +372,13 @@ module MilkTea
 
     def parse_function_def(visibility: :private, async: false)
       line = previous.line
-      name = consume_name("expected function name").lexeme
+      name_token = consume_name("expected function name")
+      name = name_token.lexeme
       type_params = parse_declaration_type_params
       params = parse_params
       return_type = match(:arrow) ? parse_type_ref : nil
       body = parse_block
-      AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:, visibility:, async:, line:)
+      AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:, visibility:, async:, line:, column: name_token.column)
     end
 
     def parse_method_def
@@ -387,12 +395,13 @@ module MilkTea
       consume(:def, "expected method declaration")
       line = previous.line
 
-      name = consume_name("expected function name").lexeme
+      name_token = consume_name("expected function name")
+      name = name_token.lexeme
       type_params = parse_declaration_type_params
       params = parse_params
       return_type = match(:arrow) ? parse_type_ref : nil
       body = parse_block
-      AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, line:)
+      AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, line:, column: name_token.column)
     end
 
     def parse_visibility
@@ -479,7 +488,7 @@ module MilkTea
 
       param_type = parse_type_ref
 
-      AST::Param.new(name: name_token.lexeme, type: param_type)
+      AST::Param.new(name: name_token.lexeme, type: param_type, line: name_token.line, column: name_token.column)
     end
 
     def parse_foreign_param
@@ -558,10 +567,11 @@ module MilkTea
     end
 
     def parse_function_type_param
-      name = consume_name("expected function type parameter name").lexeme
+      name_token = consume_name("expected function type parameter name")
+      name = name_token.lexeme
       consume(:colon, "expected ':' after function type parameter name")
       type = parse_type_ref
-      AST::Param.new(name:, type:)
+      AST::Param.new(name:, type:, line: name_token.line, column: name_token.column)
     end
 
     def parse_type_argument
@@ -655,7 +665,8 @@ module MilkTea
 
     def parse_local_decl(kind)
       line = previous.line
-      name = consume_name("expected local variable name").lexeme
+      name_token = consume_name("expected local variable name")
+      name = name_token.lexeme
       var_type = match(:colon) ? parse_type_ref : nil
       value = if match(:equal)
                 parse_expression
@@ -665,7 +676,7 @@ module MilkTea
                 nil
               end
       consume_end_of_statement unless block_expression?(value)
-      AST::LocalDecl.new(kind:, name:, type: var_type, value:, line:)
+                  AST::LocalDecl.new(kind:, name:, type: var_type, value:, line:, column: name_token.column)
     end
 
     def parse_if_stmt
@@ -677,8 +688,14 @@ module MilkTea
         branches << AST::IfBranch.new(condition: parse_expression, body: parse_block)
       end
 
-      else_body = match(:else) ? parse_block : nil
-      AST::IfStmt.new(branches:, else_body:, line:)
+      else_line = nil
+      else_column = nil
+      else_body = if match(:else)
+                    else_line = previous.line
+                    else_column = previous.column
+                    parse_block
+                  end
+      AST::IfStmt.new(branches:, else_body:, line:, else_line:, else_column:)
     end
 
     def parse_match_stmt
@@ -686,9 +703,19 @@ module MilkTea
       expression = parse_expression
       arms = parse_named_block do
         pattern = parse_expression
-        binding_name = match(:as) ? consume_name("expected binding name after 'as'").lexeme : nil
+        binding_token = nil
+        binding_name = if match(:as)
+                         binding_token = consume_name("expected binding name after 'as'")
+                         binding_token.lexeme
+                       end
         body = parse_block
-        AST::MatchArm.new(pattern:, binding_name:, body:)
+        AST::MatchArm.new(
+          pattern:,
+          binding_name:,
+          binding_line: binding_token&.line,
+          binding_column: binding_token&.column,
+          body:,
+        )
       end
       AST::MatchStmt.new(expression:, arms:, line:)
     end
@@ -710,11 +737,12 @@ module MilkTea
 
     def parse_for_stmt
       line = previous.line
-      name = consume_name("expected loop variable name").lexeme
+      name_token = consume_name("expected loop variable name")
+      name = name_token.lexeme
       consume(:in, "expected 'in' in for loop")
       iterable = parse_expression
       body = parse_block
-      AST::ForStmt.new(name:, iterable:, body:, line:)
+      AST::ForStmt.new(name:, iterable:, body:, line:, column: name_token.column)
     end
 
     def parse_while_stmt
@@ -978,7 +1006,7 @@ module MilkTea
       elsif match(:proc)
         parse_proc_expr
       elsif match_name
-        AST::Identifier.new(name: previous.lexeme)
+        AST::Identifier.new(name: previous.lexeme, line: previous.line, column: previous.column)
       elsif match(:integer)
         AST::IntegerLiteral.new(lexeme: previous.lexeme, value: previous.literal)
       elsif match(:float)

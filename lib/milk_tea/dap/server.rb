@@ -93,6 +93,9 @@ module MilkTea
         @handlers["restart"] = method(:handle_restart)
       end
 
+      # Log threshold for --perf mode (milliseconds)
+      PERF_LOG_THRESHOLD_MS = 20
+
       def process_message(message)
         if message["type"] == "response"
           handle_client_response(message)
@@ -109,20 +112,50 @@ module MilkTea
           return
         end
 
+        t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
         if handler
           handler.call(message)
-          return
-        end
-
-        if using_lldb_backend?
+        elsif using_lldb_backend?
           backend_response = backend_request(command, message["arguments"] || {})
           write_backend_response(message, backend_response)
-          return
+        else
+          write_error_response(message, "Unsupported command: #{command}")
         end
 
-        write_error_response(message, "Unsupported command: #{command}")
+        elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round(1)
+        if dap_perf_logging? && (dap_perf_verbose? || elapsed_ms > PERF_LOG_THRESHOLD_MS)
+          detail = dap_perf_verbose? ? " #{summarize_dap_arguments(message['arguments'])}" : ""
+          warn "[DAP perf] #{command} #{elapsed_ms}ms#{detail}"
+        end
       rescue StandardError => e
         write_error_response(message, "Internal error: #{e.message}")
+      end
+
+      def dap_perf_logging?
+        @dap_perf_logging ||= !ENV.fetch('MILK_TEA_DAP_PERF', nil).to_s.empty?
+      end
+
+      def dap_perf_verbose?
+        @dap_perf_verbose ||= ENV.fetch('MILK_TEA_DAP_PERF', nil).to_s == 'verbose'
+      end
+
+      def summarize_dap_arguments(arguments)
+        return "" unless arguments.is_a?(Hash)
+
+        keys = arguments.keys.map(&:to_s).sort
+        source_path = arguments.dig('source', 'path')
+        frame_id = arguments['frameId']
+        expression = arguments['expression']
+
+        bits = []
+        bits << "keys=#{keys.join(',')}" unless keys.empty?
+        bits << "source=#{source_path}" if source_path
+        bits << "frameId=#{frame_id}" if frame_id
+        bits << "expr=#{expression.inspect}" if expression
+        bits.join(' ')
+      rescue StandardError
+        ""
       end
 
       ADAPTER_CAPABILITIES = {
