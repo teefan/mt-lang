@@ -1562,6 +1562,8 @@ module MilkTea
               signature: "module #{module_info[:module_name]}",
               docs: nil,
               source: hover_source_label_from_location(location),
+              source_uri: hover_source_uri_from_location(location),
+              source_line: hover_source_line_from_location(location),
             }
           end
         end
@@ -1574,6 +1576,8 @@ module MilkTea
               signature: "module #{import_info[:module_name]}",
               docs: nil,
               source: hover_source_label_from_location(location),
+              source_uri: hover_source_uri_from_location(location),
+              source_line: hover_source_line_from_location(location),
             }
           end
         end
@@ -1638,10 +1642,15 @@ module MilkTea
                              )
                            end
 
+        source_uri = hover_source_uri_for_definition(definition_entry) || hover_source_uri_from_location(source_location)
+        source_line = hover_source_line_for_definition(definition_entry) || hover_source_line_from_location(source_location)
+
         {
           signature: signature,
           docs: hover_doc_comment_for_definition(definition_entry),
           source: hover_source_label_for_definition(definition_entry) || hover_source_label_from_location(source_location),
+          source_uri: source_uri,
+          source_line: source_line,
         }
       end
 
@@ -1657,10 +1666,17 @@ module MilkTea
           lines << docs
         end
 
-        source = info[:source].to_s.strip
-        unless source.empty?
+        source_uri = info[:source_uri]
+        source_line = info[:source_line]
+        source_label = info[:source].to_s.strip
+        unless source_label.empty?
           lines << ""
-          lines << "Defined at #{source}"
+          if source_uri && source_line
+            link_uri = "#{source_uri}#L#{source_line}"
+            lines << "Defined at: [#{source_label}](#{link_uri})"
+          else
+            lines << "Defined at: #{source_label}"
+          end
         end
 
         lines.join("\n")
@@ -1669,27 +1685,7 @@ module MilkTea
       def hover_doc_comment_for_definition(definition_entry)
         return nil unless definition_entry
 
-        content = @workspace.get_content(definition_entry[:uri]).to_s
-        return nil if content.empty?
-
-        lines = content.split("\n", -1)
-        index = definition_entry[:token].line - 2
-        return nil if index.negative?
-
-        docs = []
-        while index >= 0
-          text = lines[index].to_s
-          stripped = text.strip
-          break if stripped.empty?
-          break unless stripped.start_with?('#')
-
-          docs << stripped.sub(/\A#\s?/, '')
-          index -= 1
-        end
-
-        return nil if docs.empty?
-
-        docs.reverse.join("\n")
+        @workspace.doc_comment_for_definition(definition_entry[:uri], definition_entry[:token])
       end
 
       def hover_source_label_for_definition(definition_entry)
@@ -1698,11 +1694,36 @@ module MilkTea
         hover_source_label(definition_entry[:uri], definition_entry[:token].line)
       end
 
+      def hover_source_uri_for_definition(definition_entry)
+        return nil unless definition_entry
+
+        definition_entry[:uri]
+      end
+
+      def hover_source_line_for_definition(definition_entry)
+        return nil unless definition_entry
+
+        definition_entry[:token].line
+      end
+
       def hover_source_label_from_location(location)
         return nil unless location
 
         line = location.dig(:range, :start, :line)
         hover_source_label(location[:uri], (line || 0) + 1)
+      end
+
+      def hover_source_uri_from_location(location)
+        return nil unless location
+
+        location[:uri]
+      end
+
+      def hover_source_line_from_location(location)
+        return nil unless location
+
+        line = location.dig(:range, :start, :line)
+        (line || 0) + 1
       end
 
       def hover_source_label(uri, line)

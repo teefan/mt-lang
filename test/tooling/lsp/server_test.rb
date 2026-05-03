@@ -101,8 +101,27 @@ class LSPServerTest < Minitest::Test
   MT
 
   SOURCE_WITH_HOVER_DOCS = <<~MT
-    # Adds two values.
-    # Used by main.
+    ## Adds two values.
+    ## Used by main.
+    def add(a: i32, b: i32) -> i32:
+        return a + b
+
+    def main() -> i32:
+        return add(1, 2)
+  MT
+
+  SOURCE_WITH_HOVER_PLAIN_COMMENT = <<~MT
+    # Not documentation.
+    def add(a: i32, b: i32) -> i32:
+        return a + b
+
+    def main() -> i32:
+        return add(1, 2)
+  MT
+
+  SOURCE_WITH_HOVER_DOC_GAP = <<~MT
+    ## Detached doc.
+
     def add(a: i32, b: i32) -> i32:
         return a + b
 
@@ -297,7 +316,7 @@ class LSPServerTest < Minitest::Test
         assert_includes hover_value, "def add(a: i32, b: i32) -> i32"
         assert_includes hover_value, "Adds two values."
         assert_includes hover_value, "Used by main."
-        assert_includes hover_value, "Defined at main.mt:3"
+        assert_includes hover_value, "Defined at: [main.mt:3](#{uri}#L3)"
 
         assert_equal 6, hover_range.dig("start", "line")
         assert_equal 11, hover_range.dig("start", "character")
@@ -332,6 +351,91 @@ class LSPServerTest < Minitest::Test
       assert response.fetch("result"), "expected non-nil hover result"
       assert_operator elapsed_ms, :<, HOVER_LATENCY_BUDGET_MS,
                       "hover took #{format("%.2f", elapsed_ms)}ms (budget #{HOVER_LATENCY_BUDGET_MS}ms)"
+    end
+  end
+
+  def test_hover_ignores_plain_hash_comments_for_docs
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      uri = "file:///tmp/lsp_hover_plain_comment_test.mt"
+      source = SOURCE_WITH_HOVER_PLAIN_COMMENT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source
+        }
+      })
+
+      hover_response = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 5, "character" => 11 }
+      })
+
+      hover_value = hover_response.dig("result", "contents", "value")
+      refute_includes hover_value, "Not documentation."
+    end
+  end
+
+  def test_hover_doc_block_requires_no_blank_line_before_definition
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      uri = "file:///tmp/lsp_hover_doc_gap_test.mt"
+      source = SOURCE_WITH_HOVER_DOC_GAP
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source
+        }
+      })
+
+      hover_response = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 6, "character" => 11 }
+      })
+
+      hover_value = hover_response.dig("result", "contents", "value")
+      refute_includes hover_value, "Detached doc."
+    end
+  end
+
+  def test_hover_defined_at_is_markdown_link
+    Dir.mktmpdir("milk-tea-lsp-hover-link") do |dir|
+      source_path = File.join(dir, "main.mt")
+      source = SOURCE_WITH_HOVER_DOCS
+      File.write(source_path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(source_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source
+          }
+        })
+
+        hover_response = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => 6, "character" => 11 }
+        })
+
+        hover_value = hover_response.dig("result", "contents", "value")
+
+        # Verify only the source path segment is linked
+        assert_includes hover_value, "Defined at: [main.mt:3](#{uri}#L3)"
+      end
     end
   end
 
