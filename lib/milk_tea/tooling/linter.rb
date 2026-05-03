@@ -356,6 +356,9 @@ module MilkTea
         emit_dead_assignment_warnings(function.body)
         emit_unreachable_warnings(function.body)
         emit_borrow_warnings(function.body)
+        emit_constant_condition_warnings(function.body)
+        emit_redundant_null_check_warnings(function.body)
+        emit_loop_single_iteration_warnings(function.body)
       end
       check_missing_return(function)
     end
@@ -489,6 +492,7 @@ module MilkTea
         mark_assignment_target_reads(statement.target, statement.operator) # compound: marks target as read
         visit_assignment_target(statement.target)  # non-identifier sub-expressions in target
         mark_mutated(statement.target)
+        check_self_assignment(statement)
       when AST::IfStmt
         statement.branches.each do |branch|
           visit_expression(branch.condition)
@@ -556,6 +560,7 @@ module MilkTea
       when AST::BinaryOp
         visit_expression(expression.left)
         visit_expression(expression.right)
+        check_self_comparison(expression)
       when AST::IfExpr
         visit_expression(expression.condition)
         visit_expression(expression.then_expression)
@@ -574,6 +579,9 @@ module MilkTea
           emit_dead_assignment_warnings(expression.body)
           emit_unreachable_warnings(expression.body)
           emit_borrow_warnings(expression.body)
+          emit_constant_condition_warnings(expression.body)
+          emit_redundant_null_check_warnings(expression.body)
+          emit_loop_single_iteration_warnings(expression.body)
         end
       when AST::AwaitExpr
         visit_expression(expression.expression)
@@ -797,6 +805,180 @@ module MilkTea
 
     def ignored_binding_name?(name)
       name == "_" || name.start_with?("_")
+    end
+
+    # ── self-assignment ────────────────────────────────────────────────────
+
+    def check_self_assignment(stmt)
+      return unless stmt.operator == "="
+      return unless stmt.target.is_a?(AST::Identifier) && stmt.value.is_a?(AST::Identifier)
+      return unless stmt.target.name == stmt.value.name
+
+      @warnings << Warning.new(
+        path: @path,
+        line: stmt.line,
+        code: "self-assignment",
+        message: "'#{stmt.target.name}' is assigned to itself",
+        severity: :warning,
+        symbol_name: stmt.target.name
+      )
+    end
+
+    # ── self-comparison ────────────────────────────────────────────────────
+
+    def check_self_comparison(expr)
+      return unless %w[== !=].include?(expr.operator)
+      return unless expr.left.is_a?(AST::Identifier) && expr.right.is_a?(AST::Identifier)
+      return unless expr.left.name == expr.right.name
+
+      line = expr.left.respond_to?(:line) ? expr.left.line : nil
+      always = expr.operator == "==" ? "always true" : "always false"
+      @warnings << Warning.new(
+        path: @path,
+        line:,
+        code: "self-comparison",
+        message: "'#{expr.left.name}' is compared to itself — #{always}",
+        severity: :warning,
+        symbol_name: expr.left.name
+      )
+    end
+
+    # ── constant-condition ─────────────────────────────────────────────────
+    # Uses ConstantPropagation to detect conditions that are always true/false.
+    # Skips `while true` — it is an idiomatic infinite loop.
+
+    def emit_constant_condition_warnings(stmts)
+      return if stmts.nil? || stmts.empty?
+
+      graph = CFG::Builder.new(ignore_name: method(:ignored_binding_name?)).build(stmts)
+      cp    = CFG::ConstantPropagation.solve(graph)
+
+      graph.each_node do |node|
+        cond_expr, line, skip_node =
+          case node.kind
+          when :if_condition
+            branch = node.statement
+            [branch&.condition, node.line, false]
+          when :while_condition
+            wstmt = node.statement
+            # `while true` is an idiomatic infinite loop — do not warn
+            skip = wstmt&.condition.is_a?(AST::BooleanLiteral) && wstmt.condition.value == true
+            [wstmt&.condition, node.line, skip]
+          else
+            next
+          end
+
+        next if skip_node || cond_expr.nil?
+
+        in_state  = cp.in_states[node.id] || {}
+        const_val = CFG::ConstantPropagation.constant_value_of(cond_expr, in_state)
+        next unless const_val == true || const_val == false
+
+        ctx = node.kind == :while_condition ? "loop condition" : "branch condition"
+        @warnings << Warning.new(
+          path: @path,
+          line:,
+          code: "constant-condition",
+          message: "#{ctx} is always #{const_val}",
+          severity: :warning
+        )
+      end
+    end
+
+    # ── redundant-null-check ───────────────────────────────────────────────
+    # After a variable has been narrowed to non-null by a prior check,
+    # a subsequent `x != nil` guard is always true.
+
+    def emit_redundant_null_check_warnings(stmts)
+      return if stmts.nil? || stmts.empty?
+
+      graph = CFG::Builder.new(ignore_name: method(:ignored_binding_name?)).build(stmts)
+      nf    = CFG::NullabilityFlow.solve(graph)
+
+      graph.each_node do |node|
+        next unless node.kind == :if_condition
+
+        branch = node.statement
+        next unless branch.is_a?(AST::IfBranch)
+
+        identifier = null_check_identifier(branch.condition)
+        next unless identifier
+        next if ignored_binding_name?(identifier.name)
+
+        nonnull = nf.nonnull_before(branch)
+        next unless nonnull.include?(identifier.name)
+
+        @warnings << Warning.new(
+          path: @path,
+          line: node.line,
+          code: "redundant-null-check",
+          message: "'#{identifier.name}' is already known to be non-null here — this nil check is redundant",
+          severity: :hint,
+          symbol_name: identifier.name
+        )
+      end
+    end
+
+    # Returns the Identifier being nil-tested if `cond` is `x != nil` or
+    # `nil != x`, otherwise nil.
+    def null_check_identifier(cond)
+      return nil unless cond.is_a?(AST::BinaryOp) && cond.operator == "!="
+
+      if cond.left.is_a?(AST::Identifier) && cond.right.is_a?(AST::NullLiteral)
+        cond.left
+      elsif cond.left.is_a?(AST::NullLiteral) && cond.right.is_a?(AST::Identifier)
+        cond.right
+      end
+    end
+
+    # ── loop-single-iteration ──────────────────────────────────────────────
+    # A loop whose body unconditionally exits (return/break) before the
+    # back-edge is taken will execute at most once.
+
+    def emit_loop_single_iteration_warnings(stmts)
+      return if stmts.nil? || stmts.empty?
+
+      walk_stmts_for_loop_check(stmts)
+    end
+
+    def walk_stmts_for_loop_check(stmts)
+      stmts.each do |stmt|
+        case stmt
+        when AST::WhileStmt
+          body = stmt.body || []
+          if !body.empty? && CFG::Termination.loop_body_always_exits?(body)
+            @warnings << Warning.new(
+              path: @path,
+              line: stmt.line,
+              code: "loop-single-iteration",
+              message: "loop body always exits on the first iteration — consider replacing with an 'if' block",
+              severity: :warning
+            )
+          end
+          walk_stmts_for_loop_check(body)
+        when AST::ForStmt
+          body = stmt.body || []
+          if !body.empty? && CFG::Termination.loop_body_always_exits?(body)
+            @warnings << Warning.new(
+              path: @path,
+              line: stmt.line,
+              code: "loop-single-iteration",
+              message: "loop body always exits on the first iteration — consider iterating directly without a loop",
+              severity: :warning
+            )
+          end
+          walk_stmts_for_loop_check(body)
+        when AST::IfStmt
+          stmt.branches.each { |b| walk_stmts_for_loop_check(b.body) }
+          walk_stmts_for_loop_check(stmt.else_body) if stmt.else_body
+        when AST::MatchStmt
+          stmt.arms.each { |arm| walk_stmts_for_loop_check(arm.body) }
+        when AST::UnsafeStmt
+          walk_stmts_for_loop_check(stmt.body) if stmt.body
+        when AST::DeferStmt
+          walk_stmts_for_loop_check(stmt.body) if stmt.body
+        end
+      end
     end
 
     # ── borrow analysis helpers ───────────────────────────────────────────────

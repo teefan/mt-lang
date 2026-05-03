@@ -114,6 +114,7 @@ module MilkTea
         @binding_name_by_id = {}
         @identifier_binding_ids = {}
         @declaration_binding_ids = {}
+        @preassigned_local_binding_ids = {}
         @nullability_flow_result = nil
       end
 
@@ -900,7 +901,8 @@ module MilkTea
             end
           else
             validate_async_function_body!(binding.ast.body) if binding.async
-            run_nullability_pre_pass(binding)
+            preassign_local_binding_ids(binding.ast.body)
+            run_nullability_pre_pass(binding, scopes)
             if binding.async
               with_async_function do
                 check_block(binding.ast.body, scopes:, return_type: binding.body_return_type)
@@ -914,6 +916,7 @@ module MilkTea
         @checked_function_bindings[binding.object_id] = true
       ensure
         finish_local_completion_frame(binding)
+        @preassigned_local_binding_ids = {}
         @nullability_flow_result = nil
         @current_type_substitutions = previous_type_substitutions
         @checking_function_bindings.delete(binding.object_id)
@@ -988,17 +991,22 @@ module MilkTea
         raise SemaError.new("read of '#{name}' before definite assignment", line: first_issue.line)
       end
 
-      # Build a name-based CFG for the function body and run NullabilityFlow so
-      # that cross-branch non-null facts can be applied inside check_block.
-      # Uses string names (not sema binding IDs) so it runs before type-checking.
-      def run_nullability_pre_pass(binding)
+      # Runs a strict binding-ID nullability pass before statement checks.
+      # Resolution is computed with a lexical pre-check walk so shadowed names
+      # are disambiguated without relying on name fallback.
+      def run_nullability_pre_pass(binding, scopes)
         return unless binding.ast.respond_to?(:body)
 
         @nullability_flow_result = nil
-        graph = CFG::Builder.new.build(binding.ast.body)
+        resolution = precheck_binding_resolution(binding.ast.body, scopes)
+        graph = CFG::Builder.new(
+          binding_resolution: CFG::BindingResolution.new(
+            identifier_binding_ids: resolution.identifier_binding_ids,
+            declaration_binding_ids: resolution.declaration_binding_ids,
+          ),
+          strict_binding_ids: true,
+        ).build(binding.ast.body)
         @nullability_flow_result = CFG::NullabilityFlow.solve(graph)
-      rescue StandardError
-        @nullability_flow_result = nil
       end
 
       # After processing a statement, apply CFG-derived non-null refinements to
@@ -1006,19 +1014,203 @@ module MilkTea
       def apply_nullability_continuation_refinements!(scopes, next_stmt)
         return unless @nullability_flow_result
 
-        nonnull_names = @nullability_flow_result.nonnull_before(next_stmt)
-        return if nonnull_names.empty?
+        nonnull_binding_ids = @nullability_flow_result.nonnull_before(next_stmt)
+        return if nonnull_binding_ids.empty?
 
         refinements = {}
-        nonnull_names.each do |name|
-          next unless name.is_a?(String)
+        nonnull_binding_ids.each do |binding_id|
+          next unless binding_id.is_a?(Integer)
+
+          name = @binding_name_by_id[binding_id]
+          next unless name
 
           binding = lookup_value(name, scopes)
+          next unless binding&.id == binding_id
           next unless binding&.storage_type.is_a?(Types::Nullable)
 
           refinements[name] = binding.storage_type.base
         end
         apply_continuation_refinements!(scopes, refinements) unless refinements.empty?
+      end
+
+      def preassign_local_binding_ids(statements)
+        @preassigned_local_binding_ids = {}
+        preassign_local_binding_ids_in_statements(statements || [])
+      end
+
+      def preassign_local_binding_ids_in_statements(statements)
+        statements.each do |statement|
+          case statement
+          when AST::LocalDecl
+            @preassigned_local_binding_ids[statement.object_id] ||= allocate_binding_id
+          when AST::IfStmt
+            statement.branches.each { |branch| preassign_local_binding_ids_in_statements(branch.body || []) }
+            preassign_local_binding_ids_in_statements(statement.else_body || [])
+          when AST::MatchStmt
+            statement.arms.each do |arm|
+              @preassigned_local_binding_ids[arm.object_id] ||= allocate_binding_id if arm.binding_name
+              preassign_local_binding_ids_in_statements(arm.body || [])
+            end
+          when AST::UnsafeStmt, AST::WhileStmt
+            preassign_local_binding_ids_in_statements(statement.body || [])
+          when AST::ForStmt
+            @preassigned_local_binding_ids[statement.object_id] ||= allocate_binding_id
+            preassign_local_binding_ids_in_statements(statement.body || [])
+          when AST::DeferStmt
+            preassign_local_binding_ids_in_statements(statement.body || []) if statement.body
+          end
+        end
+      end
+
+      def precheck_binding_resolution(statements, scopes)
+        declaration_binding_ids = {}
+        identifier_binding_ids = {}
+
+        initial_scope = {}
+        scopes.each do |scope|
+          scope.each do |name, binding|
+            initial_scope[name] = binding.id if binding.respond_to?(:id) && binding.id
+          end
+        end
+
+        walk_statements_for_precheck_resolution(
+          statements || [],
+          [initial_scope],
+          declaration_binding_ids,
+          identifier_binding_ids,
+        )
+
+        BindingResolution.new(
+          identifier_binding_ids: identifier_binding_ids,
+          declaration_binding_ids: declaration_binding_ids,
+        )
+      end
+
+      def walk_statements_for_precheck_resolution(statements, scopes, declaration_ids, identifier_ids)
+        block_scopes = scopes + [{}]
+        statements.each do |statement|
+          case statement
+          when AST::LocalDecl
+            walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids) if statement.value
+            binding_id = @preassigned_local_binding_ids.fetch(statement.object_id)
+            block_scopes.last[statement.name] = binding_id
+            declaration_ids[statement.object_id] = binding_id
+          when AST::Assignment
+            walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids)
+            walk_assignment_target_reads_for_precheck_resolution(statement.target, statement.operator, block_scopes, identifier_ids)
+            if statement.target.is_a?(AST::Identifier)
+              if (binding_id = resolve_name_in_precheck_scopes(statement.target.name, block_scopes))
+                identifier_ids[statement.target.object_id] = binding_id
+              end
+            end
+          when AST::IfStmt
+            statement.branches.each do |branch|
+              walk_expression_for_precheck_resolution(branch.condition, block_scopes, identifier_ids)
+              walk_statements_for_precheck_resolution(branch.body || [], block_scopes, declaration_ids, identifier_ids)
+            end
+            walk_statements_for_precheck_resolution(statement.else_body || [], block_scopes, declaration_ids, identifier_ids)
+          when AST::MatchStmt
+            walk_expression_for_precheck_resolution(statement.expression, block_scopes, identifier_ids)
+            statement.arms.each do |arm|
+              arm_scopes = block_scopes + [{}]
+              if arm.binding_name
+                binding_id = @preassigned_local_binding_ids.fetch(arm.object_id)
+                arm_scopes.last[arm.binding_name] = binding_id
+                declaration_ids[arm.object_id] = binding_id
+              end
+              walk_statements_for_precheck_resolution(arm.body || [], arm_scopes, declaration_ids, identifier_ids)
+            end
+          when AST::UnsafeStmt, AST::WhileStmt
+            walk_expression_for_precheck_resolution(statement.condition, block_scopes, identifier_ids) if statement.is_a?(AST::WhileStmt)
+            walk_statements_for_precheck_resolution(statement.body || [], block_scopes, declaration_ids, identifier_ids)
+          when AST::ForStmt
+            walk_expression_for_precheck_resolution(statement.iterable, block_scopes, identifier_ids)
+            for_scopes = block_scopes + [{}]
+            binding_id = @preassigned_local_binding_ids.fetch(statement.object_id)
+            for_scopes.last[statement.name] = binding_id
+            declaration_ids[statement.object_id] = binding_id
+            walk_statements_for_precheck_resolution(statement.body || [], for_scopes, declaration_ids, identifier_ids)
+          when AST::DeferStmt
+            walk_expression_for_precheck_resolution(statement.expression, block_scopes, identifier_ids) if statement.expression
+            walk_statements_for_precheck_resolution(statement.body || [], block_scopes, declaration_ids, identifier_ids) if statement.body
+          when AST::ExpressionStmt
+            walk_expression_for_precheck_resolution(statement.expression, block_scopes, identifier_ids)
+          when AST::ReturnStmt
+            walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids) if statement.value
+          when AST::StaticAssert
+            walk_expression_for_precheck_resolution(statement.condition, block_scopes, identifier_ids)
+          end
+        end
+      end
+
+      def walk_expression_for_precheck_resolution(expression, scopes, identifier_ids)
+        case expression
+        when nil
+          nil
+        when AST::Identifier
+          if (binding_id = resolve_name_in_precheck_scopes(expression.name, scopes))
+            identifier_ids[expression.object_id] = binding_id
+          end
+        when AST::MemberAccess
+          walk_expression_for_precheck_resolution(expression.receiver, scopes, identifier_ids)
+        when AST::IndexAccess
+          walk_expression_for_precheck_resolution(expression.receiver, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(expression.index, scopes, identifier_ids)
+        when AST::Specialization
+          walk_expression_for_precheck_resolution(expression.callee, scopes, identifier_ids)
+        when AST::Call
+          walk_expression_for_precheck_resolution(expression.callee, scopes, identifier_ids)
+          expression.arguments.each { |argument| walk_expression_for_precheck_resolution(argument.value, scopes, identifier_ids) }
+        when AST::UnaryOp
+          walk_expression_for_precheck_resolution(expression.operand, scopes, identifier_ids)
+        when AST::BinaryOp
+          walk_expression_for_precheck_resolution(expression.left, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(expression.right, scopes, identifier_ids)
+        when AST::IfExpr
+          walk_expression_for_precheck_resolution(expression.condition, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(expression.then_expression, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(expression.else_expression, scopes, identifier_ids)
+        when AST::AwaitExpr
+          walk_expression_for_precheck_resolution(expression.expression, scopes, identifier_ids)
+        when AST::FormatString
+          expression.parts.each do |part|
+            next unless part.is_a?(AST::FormatExprPart)
+
+            walk_expression_for_precheck_resolution(part.expression, scopes, identifier_ids)
+          end
+        end
+      end
+
+      def walk_assignment_target_reads_for_precheck_resolution(target, operator, scopes, identifier_ids)
+        if operator != "=" && target.is_a?(AST::Identifier)
+          if (binding_id = resolve_name_in_precheck_scopes(target.name, scopes))
+            identifier_ids[target.object_id] = binding_id
+          end
+        end
+
+        case target
+        when AST::Identifier
+          nil
+        when AST::MemberAccess
+          walk_expression_for_precheck_resolution(target.receiver, scopes, identifier_ids)
+        when AST::IndexAccess
+          walk_expression_for_precheck_resolution(target.receiver, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(target.index, scopes, identifier_ids)
+        else
+          walk_expression_for_precheck_resolution(target, scopes, identifier_ids)
+        end
+      end
+
+      def resolve_name_in_precheck_scopes(name, scopes)
+        scopes.reverse_each do |scope|
+          return scope[name] if scope.key?(name)
+        end
+
+        nil
+      end
+
+      def cfg_block_always_terminates?(statements)
+        CFG::Termination.block_always_terminates?(statements, ignore_name: ->(_name) { false })
       end
 
       def check_statement(statement, scopes:, return_type:, allow_return: true)
@@ -1038,7 +1230,7 @@ module MilkTea
               ensure_assignable!(condition_type, @types.fetch("bool"), "if condition must be bool, got #{condition_type}")
               true_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: true, scopes: branch_scopes))
               check_block(branch.body, scopes: scopes_with_refinements(scopes, true_refinements), return_type:, allow_return:)
-              branch_bodies_terminate << block_always_terminates?(branch.body)
+              branch_bodies_terminate << cfg_block_always_terminates?(branch.body)
               false_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: false, scopes: branch_scopes))
             end
             check_block(statement.else_body, scopes: scopes_with_refinements(scopes, false_refinements), return_type:, allow_return:) if statement.else_body
@@ -1154,6 +1346,7 @@ module MilkTea
           type: final_type,
           mutable: statement.kind == :var,
           kind: statement.kind,
+          id: @preassigned_local_binding_ids[statement.object_id],
         )
         record_declaration_binding(statement, current_scope[statement.name])
       end
@@ -1295,7 +1488,15 @@ module MilkTea
             end
 
             payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
-            arm_scopes = [{ arm.binding_name => value_binding(name: arm.binding_name, type: payload_type, mutable: false, kind: :local) }] + arm_scopes
+            arm_scopes = [{
+              arm.binding_name => value_binding(
+                name: arm.binding_name,
+                type: payload_type,
+                mutable: false,
+                kind: :local,
+                id: @preassigned_local_binding_ids[arm.object_id],
+              )
+            }] + arm_scopes
             record_declaration_binding(arm, arm_scopes.first[arm.binding_name])
           end
           check_block(arm.body, scopes: arm_scopes, return_type:, allow_return:)
@@ -1347,6 +1548,7 @@ module MilkTea
             type: loop_type,
             mutable: false,
             kind: :let,
+            id: @preassigned_local_binding_ids[statement.object_id],
           )
           record_declaration_binding(statement, current_actual_scope(loop_scopes)[statement.name])
           with_loop do
@@ -4558,8 +4760,8 @@ module MilkTea
         yield(nested_scopes)
       end
 
-      def value_binding(name:, type:, mutable:, kind:, flow_type: nil)
-        id = allocate_binding_id
+      def value_binding(name:, type:, mutable:, kind:, flow_type: nil, id: nil)
+        id ||= allocate_binding_id
         @binding_name_by_id[id] = name
         ValueBinding.new(id:, name:, storage_type: type, flow_type: flow_type == type ? nil : flow_type, mutable:, kind:, const_value: nil)
       end
@@ -4773,25 +4975,6 @@ module MilkTea
         null_result = expression.operator == "==" ? truthy : !truthy
         refined_type = null_result ? @null_type : binding.storage_type.base
         { identifier_expression.name => refined_type }
-      end
-
-      def block_always_terminates?(statements)
-        statements.any? { |statement| statement_always_terminates?(statement) }
-      end
-
-      def statement_always_terminates?(statement)
-        case statement
-        when AST::ReturnStmt, AST::BreakStmt, AST::ContinueStmt
-          true
-        when AST::IfStmt
-          statement.else_body && statement.branches.all? { |branch| block_always_terminates?(branch.body) } && block_always_terminates?(statement.else_body)
-        when AST::MatchStmt
-          statement.arms.all? { |arm| block_always_terminates?(arm.body) }
-        when AST::UnsafeStmt
-          block_always_terminates?(statement.body)
-        else
-          false
-        end
       end
 
       def conditional_common_type(then_type, else_type, then_expression:, else_expression:)

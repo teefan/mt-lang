@@ -602,6 +602,43 @@ module MilkTea
       end
     end
 
+    class Builder
+      # Build a CFG for `stmts` as if they are a loop body: break targets a
+      # dedicated non-exit node, so the main exit represents only the fall-through
+      # back-edge.  Used by Termination.loop_body_always_exits?.
+      def build_loop_body(stmts)
+        @graph = Graph.new
+        @graph.exit_id  = @graph.add_node(kind: :exit)         # fall-through (back-edge)
+        break_exit_id   = @graph.add_node(kind: :break_exit)   # break target
+        @graph.entry_id = build_block(stmts || [], @graph.exit_id, break_target: break_exit_id, continue_target: @graph.exit_id)
+        @graph
+      ensure
+        @graph = nil
+      end
+    end
+
+    class Termination
+      # Returns true when every path from block entry terminates before the
+      # continuation (i.e., the synthetic CFG exit is unreachable).
+      def self.block_always_terminates?(statements, **builder_options)
+        return false if statements.nil? || statements.empty?
+
+        graph = Builder.new(**builder_options).build(statements)
+        reachability = Reachability.solve(graph)
+        !reachability.reachable_ids.include?(graph.exit_id)
+      end
+
+      # Returns true when every path through `statements` (treated as a loop body)
+      # exits via return or break — never falling through to the back-edge.
+      def self.loop_body_always_exits?(statements, **builder_options)
+        return false if statements.nil? || statements.empty?
+
+        graph = Builder.new(**builder_options).build_loop_body(statements)
+        reachability = Reachability.solve(graph)
+        !reachability.reachable_ids.include?(graph.exit_id)
+      end
+    end
+
     # ── NullabilityFlow ──────────────────────────────────────────────────────
     # Forward must-analysis that tracks which binding keys are *definitely
     # non-null* at each program point.
@@ -681,7 +718,7 @@ module MilkTea
         end
       end
 
-      def self.solve(graph)
+      def self.solve(graph, binding_resolution: nil, strict_binding_ids: false)
         result = Dataflow.solve(
           graph,
           direction: :forward,
@@ -702,7 +739,7 @@ module MilkTea
             out = in_state.dup
             node.writes_info.each do |write|
               key = write[:binding_key]
-              val = eval_const(node.statement, write, in_state)
+              val = eval_const(node.statement, write, in_state, binding_resolution:, strict_binding_ids:)
               out[key] = val
             end
             out
@@ -724,27 +761,30 @@ module MilkTea
 
       # Attempt to evaluate the assigned value as a compile-time constant.
       # Handles LocalDecl and Assignment with simple RHS literals/arithmetic.
-      def self.eval_const(statement, _write, in_state)
+      def self.eval_const(statement, _write, in_state, binding_resolution:, strict_binding_ids:)
         rhs =
           case statement
           when AST::LocalDecl  then statement.value
           when AST::Assignment then statement.value
           end
-        eval_expr_const(rhs, in_state)
+        eval_expr_const(rhs, in_state, binding_resolution:, strict_binding_ids:)
       end
       private_class_method :eval_const
 
-      def self.eval_expr_const(expr, state)
+      def self.eval_expr_const(expr, state, binding_resolution:, strict_binding_ids:)
         case expr
         when nil                 then NAC
         when AST::IntegerLiteral then ConstVal.new(expr.value.to_i)
         when AST::FloatLiteral   then ConstVal.new(expr.value.to_f)
         when AST::BooleanLiteral then ConstVal.new(expr.value)
         when AST::Identifier
-          v = state[expr.name]
+          key = identifier_key(expr, binding_resolution:, strict_binding_ids:)
+          return NAC unless key
+
+          v = state[key]
           v.is_a?(ConstVal) ? v : NAC
         when AST::UnaryOp
-          operand = eval_expr_const(expr.operand, state)
+          operand = eval_expr_const(expr.operand, state, binding_resolution:, strict_binding_ids:)
           return NAC unless operand.is_a?(ConstVal)
 
           case expr.operator
@@ -753,8 +793,8 @@ module MilkTea
           else NAC
           end
         when AST::BinaryOp
-          left  = eval_expr_const(expr.left,  state)
-          right = eval_expr_const(expr.right, state)
+          left  = eval_expr_const(expr.left,  state, binding_resolution:, strict_binding_ids:)
+          right = eval_expr_const(expr.right, state, binding_resolution:, strict_binding_ids:)
           return NAC unless left.is_a?(ConstVal) && right.is_a?(ConstVal)
 
           begin
@@ -783,6 +823,24 @@ module MilkTea
         end
       end
       private_class_method :eval_expr_const
+
+      # Public API: evaluate `expr` against `in_state` and return the constant
+      # Ruby value, or nil if the expression is not a compile-time constant.
+      def self.constant_value_of(expr, in_state, binding_resolution: nil, strict_binding_ids: false)
+        result = send(:eval_expr_const, expr, in_state, binding_resolution:, strict_binding_ids:)
+        result.is_a?(ConstVal) ? result.value : nil
+      end
+
+      def self.identifier_key(identifier_expression, binding_resolution:, strict_binding_ids:)
+        if binding_resolution && (id = binding_resolution.identifier_binding_ids[identifier_expression.object_id])
+          return id
+        end
+
+        return nil if strict_binding_ids
+
+        identifier_expression.name
+      end
+      private_class_method :identifier_key
     end
   end
 end
