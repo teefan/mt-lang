@@ -15,7 +15,7 @@ const visible_sample_count: i32 = sample_rate / 100
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 const frequency_format: cstr = c"frequency: %i"
-const wave_type_format: cstr = c"wave type: %s"
+const wave_type_format: cstr = c"wave kind: %s"
 const frequency_text: cstr = c"Up/down to change frequency"
 const wave_type_text: cstr = c"Left/right to change wave type"
 const window_title: cstr = c"raylib [audio] example - stream callback"
@@ -63,7 +63,7 @@ def square_callback(frames_out: ptr[void], frame_count: u32) -> void:
 
     unsafe:
         for index in range(0, count):
-            read(samples + index) = if wave_index < half_wavelength then 1.0 else -1.0
+            read(samples + index) = if wave_index < half_wavelength: 1.0 else: -1.0
             advance_wave_state(wavelength)
 
     save_wave_samples(samples, count)

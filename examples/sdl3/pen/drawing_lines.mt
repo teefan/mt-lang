@@ -16,13 +16,13 @@ var tilt_x: f32 = 0.0
 var tilt_y: f32 = 0.0
 
 def pump_events() -> bool:
-    var event = c.SDL_Event(type = 0)
+    var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
-        if event.pmotion.type == c.SDL_EventType.SDL_EVENT_PEN_MOTION:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_PEN_MOTION:
             if pressure > 0.0:
                 if previous_touch_x >= 0.0:
                     c.SDL_SetRenderTarget(renderer, render_target)
@@ -35,7 +35,7 @@ def pump_events() -> bool:
                 previous_touch_x = -1.0
                 previous_touch_y = -1.0
         else:
-            if event.paxis.type == c.SDL_EventType.SDL_EVENT_PEN_AXIS:
+            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_PEN_AXIS:
                 if event.paxis.axis == c.SDL_PenAxis.SDL_PEN_AXIS_PRESSURE:
                     pressure = event.paxis.value
                 else:

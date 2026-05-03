@@ -19,10 +19,10 @@ var converted_texture_width: i32 = 0
 var converted_texture_height: i32 = 0
 
 def pump_events() -> bool:
-    var event = c.SDL_Event(type = 0)
+    var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
@@ -91,9 +91,9 @@ def render_frame() -> bool:
                             read(pixel_bytes + 2) = 0
                             read(pixel_bytes + 3) = 0xFF
                         else:
-                            read(pixel_bytes + 1) = if average > 50 then 0xFF else 0
-                            read(pixel_bytes + 2) = if average > 50 then 0xFF else 0
-                            read(pixel_bytes + 3) = if average > 50 then 0xFF else 0
+                            read(pixel_bytes + 1) = if average > 50: 0xFF else: 0
+                            read(pixel_bytes + 2) = if average > 50: 0xFF else: 0
+                            read(pixel_bytes + 3) = if average > 50: 0xFF else: 0
 
                 if converted_texture != null:
                     c.SDL_UpdateTexture(converted_texture, null, processed_surface.pixels, processed_surface.pitch)

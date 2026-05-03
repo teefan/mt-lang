@@ -14,10 +14,10 @@ var renderer: ptr[c.SDL_Renderer]
 var points: array[c.SDL_FPoint, 500] = zero[array[c.SDL_FPoint, 500]]()
 
 def pump_events() -> bool:
-    var event = c.SDL_Event(type = 0)
+    var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true

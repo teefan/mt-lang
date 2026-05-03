@@ -90,7 +90,7 @@ def main() -> i32:
         for y in range(0, tiles_y):
             for x in range(0, tiles_x):
                 let tile_index = y * tiles_x + x
-                let tile_color = if tile_ids[tile_index] == 0 then rl.BLUE else rl.fade(rl.BLUE, 0.9)
+                let tile_color = if tile_ids[tile_index] == 0: rl.BLUE else: rl.fade(rl.BLUE, 0.9)
                 rl.draw_rectangle(x * map_tile_size, y * map_tile_size, map_tile_size, map_tile_size, tile_color)
                 rl.draw_rectangle_lines(x * map_tile_size, y * map_tile_size, map_tile_size, map_tile_size, rl.fade(rl.DARKBLUE, 0.5))
 

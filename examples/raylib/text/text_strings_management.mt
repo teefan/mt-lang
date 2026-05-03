@@ -103,7 +103,7 @@ def slice_text_particle(tp: ptr[TextParticle], particle_pos: i32, slice_length: 
         if slice_length > 0 and length > 1 and (read(particle_count) + length) < max_text_particles:
             var index = 0
             while index < length:
-                let piece_text = if slice_length == 1 then rl.TextFormat(char_format, i32<-read(text_particle_text_ptr(tp) + index)) else rl.TextSubtext(text_particle_text(tp), index, slice_length)
+                let piece_text = if slice_length == 1: rl.TextFormat(char_format, i32<-read(text_particle_text_ptr(tp) + index)) else: rl.TextSubtext(text_particle_text(tp), index, slice_length)
                 append_particle(
                     tps,
                     particle_count,

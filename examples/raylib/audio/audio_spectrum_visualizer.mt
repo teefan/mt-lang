@@ -107,7 +107,7 @@ def capture_frame(audio_samples: ptr[f32]) -> void:
         let smoothed_magnitude = smoothing_time_constant * prev_magnitudes[bin] + (1.0 - smoothing_time_constant) * linear_magnitude
         prev_magnitudes[bin] = smoothed_magnitude
 
-        let db_source = if smoothed_magnitude > 0.0000000000000000000000000000000000000001 then smoothed_magnitude else 0.0000000000000000000000000000000000000001
+        let db_source = if smoothed_magnitude > 0.0000000000000000000000000000000000000001: smoothed_magnitude else: 0.0000000000000000000000000000000000000001
         let db = libm.logf(db_source) * db_to_linear_scale
         let normalized = (db - min_decibels) * inverse_decibel_range
         smoothed_spectrum[bin] = rm.clamp(normalized, 0.0, 1.0)

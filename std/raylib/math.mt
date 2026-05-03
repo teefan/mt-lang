@@ -403,7 +403,7 @@ methods rl.Matrix:
         let left = -right
         let rl_width = right - left
         let tb = top - bottom
-        let fn = far_plane - near_plane
+        let far_n = far_plane - near_plane
         return rl.Matrix(
             m0 = near_plane * 2.0 / rl_width,
             m4 = 0.0,
@@ -415,8 +415,8 @@ methods rl.Matrix:
             m13 = 0.0,
             m2 = 0.0,
             m6 = 0.0,
-            m10 = -(far_plane + near_plane) / fn,
-            m14 = -(far_plane * near_plane * 2.0) / fn,
+            m10 = -(far_plane + near_plane) / far_n,
+            m14 = -(far_plane * near_plane * 2.0) / far_n,
             m3 = 0.0,
             m7 = 0.0,
             m11 = -1.0,
@@ -426,7 +426,7 @@ methods rl.Matrix:
     pub static def ortho(left: f32, right: f32, bottom: f32, top: f32, near_plane: f32, far_plane: f32) -> Matrix:
         let rl_width = right - left
         let tb = top - bottom
-        let fn = far_plane - near_plane
+        let far_n = far_plane - near_plane
         return rl.Matrix(
             m0 = 2.0 / rl_width,
             m4 = 0.0,
@@ -438,8 +438,8 @@ methods rl.Matrix:
             m13 = -(top + bottom) / tb,
             m2 = 0.0,
             m6 = 0.0,
-            m10 = -2.0 / fn,
-            m14 = -(far_plane + near_plane) / fn,
+            m10 = -2.0 / far_n,
+            m14 = -(far_plane + near_plane) / far_n,
             m3 = 0.0,
             m7 = 0.0,
             m11 = 0.0,

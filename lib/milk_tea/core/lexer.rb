@@ -17,6 +17,15 @@ module MilkTea
   class Lexer
     LexResult = Data.define(:tokens, :trivia)
 
+    LINE_CONTINUATION_OPERATORS = %i[
+      plus minus star slash percent
+      pipe amp caret
+      or and
+      equal_equal bang_equal
+      less less_equal greater greater_equal
+      shift_left shift_right
+    ].freeze
+
     THREE_CHAR_TOKENS = {
       "..." => :ellipsis,
       "<<=" => :shift_left_equal,
@@ -83,6 +92,7 @@ module MilkTea
       @indent_stack = [0]
       @grouping_depth = 0
       @line_count = @source.empty? ? 1 : @source.lines.count
+      @continuation_pending = false
     end
 
     def lex
@@ -144,8 +154,9 @@ module MilkTea
       end
 
       if @grouping_depth.zero?
-        emit_indentation(index, line_number, line_offset)
+        emit_indentation(index, line_number, line_offset) unless @continuation_pending
       end
+      @continuation_pending = false
 
       while index < line.length
         char = line[index]
@@ -220,7 +231,11 @@ module MilkTea
       newline_start = line_offset + line.length
       newline_end = has_newline ? (newline_start + 1) : newline_start
       if @grouping_depth.zero?
-        @tokens << token(:newline, "\n", nil, line_number, line.length + 1, start_offset: newline_start, end_offset: newline_end)
+        if LINE_CONTINUATION_OPERATORS.include?(@tokens.last&.type)
+          @continuation_pending = true
+        else
+          @tokens << token(:newline, "\n", nil, line_number, line.length + 1, start_offset: newline_start, end_offset: newline_end)
+        end
       elsif with_trivia? && has_newline
         append_trailing_or_pending(
           TriviaToken.new(
@@ -359,7 +374,16 @@ module MilkTea
       end
 
       lexeme = line[start...index]
-      literal = type == :integer ? parse_integer(lexeme) : lexeme.delete("_").to_f
+      if line[index, 3] == "f32" && !identifier_part?(line[index + 3].to_s)
+        type = :float
+        index += 3
+      elsif line[index, 3] == "f64" && !identifier_part?(line[index + 3].to_s)
+        type = :float
+        index += 3
+      end
+
+      lexeme = line[start...index]
+      literal = type == :integer ? parse_integer(lexeme) : lexeme.delete("_").delete_suffix("f32").delete_suffix("f64").to_f
       @tokens << token(type, lexeme, literal, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
       index
     end

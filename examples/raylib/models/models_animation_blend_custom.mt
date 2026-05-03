@@ -237,7 +237,7 @@ def main() -> i32:
     if anim_index0 >= anim_count:
         anim_index0 = 0
     if anim_index1 >= anim_count:
-        anim_index1 = if anim_count > 1 then 1 else 0
+        anim_index1 = if anim_count > 1: 1 else: 0
 
     var upper_body_blend = true
 
@@ -255,7 +255,7 @@ def main() -> i32:
         anim_current_frame0 = (anim_current_frame0 + 1) % anim0.keyframeCount
         anim_current_frame1 = (anim_current_frame1 + 1) % anim1.keyframeCount
 
-        let blend_factor = if upper_body_blend then f32<-1.0 else f32<-0.5
+        let blend_factor = if upper_body_blend: f32<-1.0 else: f32<-0.5
         update_model_animation_bones(ptr_of(ref_of(model)), anim0, anim_current_frame0, anim1, anim_current_frame1, blend_factor, upper_body_blend)
 
         rl.BeginDrawing()
@@ -269,6 +269,6 @@ def main() -> i32:
 
         rl.DrawText(rl.TextFormat(anim0_format, model_animation_name(anims, anim_index0)), 10, 10, 20, rl.GRAY)
         rl.DrawText(rl.TextFormat(anim1_format, model_animation_name(anims, anim_index1)), 10, 40, 20, rl.GRAY)
-        rl.DrawText(rl.TextFormat(mode_format, if upper_body_blend then upper_body_mode_text else uniform_mode_text), 10, rl.GetScreenHeight() - 30, 20, rl.DARKGRAY)
+        rl.DrawText(rl.TextFormat(mode_format, if upper_body_blend: upper_body_mode_text else: uniform_mode_text), 10, rl.GetScreenHeight() - 30, 20, rl.DARKGRAY)
 
     return 0

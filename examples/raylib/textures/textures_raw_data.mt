@@ -33,7 +33,7 @@ def main() -> i32:
         for pos_y in range(0, checked_height):
             for pos_x in range(0, checked_width):
                 let pixel_index = pos_y * checked_width + pos_x
-                let color = if ((pos_x / check_size) + (pos_y / check_size)) % 2 == 0 then rl.ORANGE else rl.GOLD
+                let color = if ((pos_x / check_size) + (pos_y / check_size)) % 2 == 0: rl.ORANGE else: rl.GOLD
                 read(pixels + pixel_index) = color
 
         let checked_image = rl.Image(

@@ -87,7 +87,7 @@ def main() -> i32:
 
         for index in range(0, color_count):
             let rectangle = rectangles[index]
-            rl.draw_rectangle_rec(rectangle, rl.fade(colors[index], if hovered[index] then 0.6 else 1.0))
+            rl.draw_rectangle_rec(rectangle, rl.fade(colors[index], if hovered[index]: 0.6 else: 1.0))
 
             if rl.is_key_down(rl.KeyboardKey.KEY_SPACE) or hovered[index]:
                 rl.draw_rectangle(

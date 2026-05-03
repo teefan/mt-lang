@@ -29,7 +29,7 @@ def main() -> i32:
         second_vector = rl.get_mouse_position()
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE):
-            angle_mode = if angle_mode == 0 then 1 else 0
+            angle_mode = if angle_mode == 0: 1 else: 0
 
         if angle_mode == 0 and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_RIGHT):
             first_vector = rl.get_mouse_position()

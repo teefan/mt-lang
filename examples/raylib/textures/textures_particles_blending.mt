@@ -93,7 +93,7 @@ def main() -> i32:
         rl.EndBlendMode()
 
         rl.DrawText(help_text, 180, 20, 20, rl.BLACK)
-        rl.DrawText(blend_label(blending), if blending == rl.BlendMode.BLEND_ALPHA then 290 else 280, screen_height - 40, 20, if blending == rl.BlendMode.BLEND_ALPHA then rl.BLACK else rl.RAYWHITE)
+        rl.DrawText(blend_label(blending), if blending == rl.BlendMode.BLEND_ALPHA: 290 else: 280, screen_height - 40, 20, if blending == rl.BlendMode.BLEND_ALPHA: rl.BLACK else: rl.RAYWHITE)
 
         rl.EndDrawing()
 

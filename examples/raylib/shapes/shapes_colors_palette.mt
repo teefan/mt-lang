@@ -96,7 +96,7 @@ def main() -> i32:
         rl.DrawText(help_text, rl.GetScreenWidth() - 180, rl.GetScreenHeight() - 40, 10, rl.GRAY)
 
         for index in range(0, max_colors_count):
-            rl.DrawRectangleRec(color_rects[index], rl.Fade(colors[index], if color_state[index] != 0 then 0.6 else 1.0))
+            rl.DrawRectangleRec(color_rects[index], rl.Fade(colors[index], if color_state[index] != 0: 0.6 else: 1.0))
 
             if rl.IsKeyDown(rl.KeyboardKey.KEY_SPACE) or color_state[index] != 0:
                 rl.DrawRectangle(

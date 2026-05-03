@@ -97,7 +97,7 @@ def main() -> i32:
             for y in range(0, map.tiles_y):
                 for x in range(0, map.tiles_x):
                     let tile_index = y * map.tiles_x + x
-                    let tile_color = if read(map.tile_ids + tile_index) == 0 then rl.BLUE else rl.Fade(rl.BLUE, 0.9)
+                    let tile_color = if read(map.tile_ids + tile_index) == 0: rl.BLUE else: rl.Fade(rl.BLUE, 0.9)
                     rl.DrawRectangle(x * map_tile_size, y * map_tile_size, map_tile_size, map_tile_size, tile_color)
                     rl.DrawRectangleLines(x * map_tile_size, y * map_tile_size, map_tile_size, map_tile_size, rl.Fade(rl.DARKBLUE, 0.5))
 

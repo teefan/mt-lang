@@ -153,7 +153,7 @@ def add_hat_message(which: u32, hat: c.Uint8, value: c.Uint8) -> void:
 
 def add_button_message(which: u32, button: c.Uint8, down: bool) -> void:
     var message: ptr[char]? = null
-    let state_text = if down then c"PRESSED" else c"RELEASED"
+    let state_text = if down: c"PRESSED" else: c"RELEASED"
 
     unsafe:
         c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(ref_of(message)), c"Joystick #%u button %d -> %s", which, i32<-button, state_text)
@@ -169,43 +169,43 @@ def add_battery_message(which: u32, state: c.SDL_PowerState, percent: i32) -> vo
     append_message(which, message)
 
 def pump_events() -> bool:
-    var event = c.SDL_Event(type = 0)
+    var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
-            if event.jdevice.type == c.SDL_EventType.SDL_EVENT_JOYSTICK_ADDED:
+            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_ADDED:
                 let which = event.jdevice.which
                 let joystick = c.SDL_OpenJoystick(which)
                 add_added_message(which, joystick)
             else:
-                if event.jdevice.type == c.SDL_EventType.SDL_EVENT_JOYSTICK_REMOVED:
+                if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_REMOVED:
                     let which = event.jdevice.which
                     let joystick = c.SDL_GetJoystickFromID(which)
                     if joystick != null:
                         c.SDL_CloseJoystick(joystick)
                     add_removed_message(which)
                 else:
-                    if event.jaxis.type == c.SDL_EventType.SDL_EVENT_JOYSTICK_AXIS_MOTION:
+                    if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_AXIS_MOTION:
                         let now = c.SDL_GetTicks()
                         if now >= axis_motion_cooldown_time:
                             axis_motion_cooldown_time = now + motion_event_cooldown
                             add_axis_message(event.jaxis.which, event.jaxis.axis, event.jaxis.value)
                     else:
-                        if event.jball.type == c.SDL_EventType.SDL_EVENT_JOYSTICK_BALL_MOTION:
+                        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_BALL_MOTION:
                             let now = c.SDL_GetTicks()
                             if now >= ball_motion_cooldown_time:
                                 ball_motion_cooldown_time = now + motion_event_cooldown
                                 add_ball_message(event.jball.which, event.jball.ball, event.jball.xrel, event.jball.yrel)
                         else:
-                            if event.jhat.type == c.SDL_EventType.SDL_EVENT_JOYSTICK_HAT_MOTION:
+                            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_HAT_MOTION:
                                 add_hat_message(event.jhat.which, event.jhat.hat, event.jhat.value)
                             else:
-                                if event.jbutton.type == c.SDL_EventType.SDL_EVENT_JOYSTICK_BUTTON_UP or event.jbutton.type == c.SDL_EventType.SDL_EVENT_JOYSTICK_BUTTON_DOWN:
+                                if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_BUTTON_UP or c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_BUTTON_DOWN:
                                     add_button_message(event.jbutton.which, event.jbutton.button, event.jbutton.down)
                                 else:
-                                    if event.jbattery.type == c.SDL_EventType.SDL_EVENT_JOYSTICK_BATTERY_UPDATED:
+                                    if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_BATTERY_UPDATED:
                                         add_battery_message(event.jbattery.which, event.jbattery.state, event.jbattery.percent)
 
     return true
@@ -223,13 +223,12 @@ def render_frame() -> void:
     c.SDL_GetWindowSize(window, ptr_of(ref_of(winw)), ptr_of(ref_of(winh)))
 
     while true:
-        let message = current
-        let previous_message = previous
-
-        if message == null or previous_message == null:
+        if current == null or previous == null:
             break
 
         unsafe:
+            let message = ptr[EventMessage]<-current
+            let previous_message = ptr[EventMessage]<-previous
             let life_percent = f32<-(now - message.start_ticks) / message_lifetime_ms
 
             if life_percent >= 1.0:

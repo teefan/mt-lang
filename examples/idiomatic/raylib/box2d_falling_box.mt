@@ -20,6 +20,7 @@ def create_static_box(world_id: b2.WorldId, position: b2.Vec2, half_width: f32, 
     var body_def = b2.default_body_def()
     body_def.position = position
     let body_id = b2.create_body(world_id, in body_def)
+    b2.body_set_type(body_id, b2.BodyType.b2_dynamicBody)
     let shape_def = b2.default_shape_def()
     let polygon = b2.make_box(half_width, half_height)
     b2.create_polygon_shape(body_id, in shape_def, in polygon)
@@ -27,9 +28,9 @@ def create_static_box(world_id: b2.WorldId, position: b2.Vec2, half_width: f32, 
 
 def create_dynamic_box(world_id: b2.WorldId, position: b2.Vec2, half_width: f32, half_height: f32, density: f32) -> b2.BodyId:
     var body_def = b2.default_body_def()
-    body_def.type = b2.BodyType.b2_dynamicBody
     body_def.position = position
     let body_id = b2.create_body(world_id, in body_def)
+    b2.body_set_type(body_id, b2.BodyType.b2_dynamicBody)
 
     var shape_def = b2.default_shape_def()
     shape_def.density = density

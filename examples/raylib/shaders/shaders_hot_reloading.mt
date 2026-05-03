@@ -77,8 +77,8 @@ def main() -> i32:
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_A):
             shader_auto_reloading = not shader_auto_reloading
 
-        let reload_mode_text = if shader_auto_reloading then auto_text else manual_text
-        let reload_mode_color = if shader_auto_reloading then rl.RED else rl.BLACK
+        let reload_mode_text = if shader_auto_reloading: auto_text else: manual_text
+        let reload_mode_color = if shader_auto_reloading: rl.RED else: rl.BLACK
         let modification_time_text = formatted_mod_time(ref_of(frag_shader_mod_time), ref_of(mod_time_buffer))
 
         rl.BeginDrawing()

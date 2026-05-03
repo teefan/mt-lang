@@ -103,10 +103,10 @@ def main() -> i32:
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_SPACE):
             use_draw_model_points = not use_draw_model_points
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_UP):
-            num_points = if num_points * 10 > max_points then max_points else num_points * 10
+            num_points = if num_points * 10 > max_points: max_points else: num_points * 10
             num_points_changed = true
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_DOWN):
-            num_points = if num_points / 10 < min_points then min_points else num_points / 10
+            num_points = if num_points / 10 < min_points: min_points else: num_points / 10
             num_points_changed = true
 
         if num_points_changed:

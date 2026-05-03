@@ -37,10 +37,10 @@ def main() -> i32:
             if rl.is_mouse_button_released(rl.MouseButton.MOUSE_BUTTON_LEFT):
                 moving_end = false
 
-        var start_radius: f32 = if start_hovered then 14.0 else 8.0
-        var end_radius: f32 = if end_hovered then 14.0 else 8.0
-        var start_color = if moving_start then rl.RED else rl.BLUE
-        var end_color = if moving_end then rl.RED else rl.BLUE
+        var start_radius: f32 = if start_hovered: 14.0 else: 8.0
+        var end_radius: f32 = if end_hovered: 14.0 else: 8.0
+        var start_color = if moving_start: rl.RED else: rl.BLUE
+        var end_color = if moving_end: rl.RED else: rl.BLUE
 
         rl.begin_drawing()
         defer rl.end_drawing()

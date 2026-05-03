@@ -49,9 +49,9 @@ def main() -> i32:
         gui.group_box(rl.Rectangle(x = 320.0, y = 96.0, width = 600.0, height = 420.0), "Dynamic preview")
 
         var current_tabs = array[str, 3](
-            if compact_labels then "Live" else "Live Queue",
-            if compact_labels then "Inspect" else "Inspect State",
-            if compact_labels then "Focus" else "Focus Notes",
+            if compact_labels: "Live" else: "Live Queue",
+            if compact_labels: "Inspect" else: "Inspect State",
+            if compact_labels: "Focus" else: "Focus Notes",
         )
         gui.tab_bar(
             rl.Rectangle(x = 344.0, y = 132.0, width = 540.0, height = 32.0),
@@ -66,11 +66,11 @@ def main() -> i32:
             current_tab_label = "Tab: inspect"
 
         var current_items = array[str, 5](
-            if slider_value < 50.0 then "Intensity: calm" else "Intensity: bright",
-            if compact_labels then "Wording: compact" else "Wording: verbose",
+            if slider_value < 50.0: "Intensity: calm" else: "Intensity: bright",
+            if compact_labels: "Wording: compact" else: "Wording: verbose",
             current_tab_label,
-            if list_active >= 2 then "Selection: later" else "Selection: early",
-            if emphasize_focus and list_focus >= 0 then "Focus: highlighted" else "Focus: open",
+            if list_active >= 2: "Selection: later" else: "Selection: early",
+            if emphasize_focus and list_focus >= 0: "Focus: highlighted" else: "Focus: open",
         )
         gui.list_view_ex(
             rl.Rectangle(x = 344.0, y = 196.0, width = 260.0, height = 188.0),

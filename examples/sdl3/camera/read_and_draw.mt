@@ -15,16 +15,16 @@ var texture: ptr[c.SDL_Texture]? = null
 var exit_status: i32 = 0
 
 def pump_events() -> bool:
-    var event = c.SDL_Event(type = 0)
+    var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
-            if event.cdevice.type == c.SDL_EventType.SDL_EVENT_CAMERA_DEVICE_APPROVED:
+            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_CAMERA_DEVICE_APPROVED:
                 c.SDL_Log(c"Camera use approved by user!")
             else:
-                if event.cdevice.type == c.SDL_EventType.SDL_EVENT_CAMERA_DEVICE_DENIED:
+                if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_CAMERA_DEVICE_DENIED:
                     c.SDL_Log(c"Camera use denied by user!")
                     exit_status = 1
                     return false

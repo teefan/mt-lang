@@ -57,8 +57,8 @@ def main() -> i32:
         gui.GuiCheckBox(gui.Rectangle(x = 600.0, y = 380.0, width = 20.0, height = 20.0), c"Draw CircleLines", ptr_of(ref_of(draw_circle_lines)))
 
         let min_segments = i32<-math.ceilf((end_angle - start_angle) / 90.0)
-        let mode = if segments >= f32<-min_segments then manual_mode else auto_mode
-        let mode_color = if segments >= f32<-min_segments then rl.MAROON else rl.DARKGRAY
+        let mode = if segments >= f32<-min_segments: manual_mode else: auto_mode
+        let mode_color = if segments >= f32<-min_segments: rl.MAROON else: rl.DARKGRAY
         rl.DrawText(rl.TextFormat(mode_format, mode), 600, 270, 10, mode_color)
 
         rl.DrawFPS(10, 10)

@@ -122,7 +122,7 @@ def add_axis_message(which: u32, axis: c.Uint8, value: c.Sint16) -> void:
 
 def add_button_message(which: u32, button: c.Uint8, down: bool) -> void:
     var message: ptr[char]? = null
-    let state_text = if down then c"PRESSED" else c"RELEASED"
+    let state_text = if down: c"PRESSED" else: c"RELEASED"
 
     unsafe:
         c.SDL_asprintf(
@@ -144,34 +144,34 @@ def add_battery_message(which: u32, state: c.SDL_PowerState, percent: i32) -> vo
     append_message(which, message)
 
 def pump_events() -> bool:
-    var event = c.SDL_Event(type = 0)
+    var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
-            if event.gdevice.type == c.SDL_EventType.SDL_EVENT_GAMEPAD_ADDED:
+            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_GAMEPAD_ADDED:
                 let which = event.gdevice.which
                 let gamepad = c.SDL_OpenGamepad(which)
                 add_added_message(which, gamepad)
             else:
-                if event.gdevice.type == c.SDL_EventType.SDL_EVENT_GAMEPAD_REMOVED:
+                if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_GAMEPAD_REMOVED:
                     let which = event.gdevice.which
                     let gamepad = c.SDL_GetGamepadFromID(which)
                     if gamepad != null:
                         c.SDL_CloseGamepad(gamepad)
                     add_removed_message(which)
                 else:
-                    if event.gaxis.type == c.SDL_EventType.SDL_EVENT_GAMEPAD_AXIS_MOTION:
+                    if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_GAMEPAD_AXIS_MOTION:
                         let now = c.SDL_GetTicks()
                         if now >= axis_motion_cooldown_time:
                             axis_motion_cooldown_time = now + motion_event_cooldown
                             add_axis_message(event.gaxis.which, event.gaxis.axis, event.gaxis.value)
                     else:
-                        if event.gbutton.type == c.SDL_EventType.SDL_EVENT_GAMEPAD_BUTTON_UP or event.gbutton.type == c.SDL_EventType.SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+                        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_GAMEPAD_BUTTON_UP or c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_GAMEPAD_BUTTON_DOWN:
                             add_button_message(event.gbutton.which, event.gbutton.button, event.gbutton.down)
                         else:
-                            if event.jbattery.type == c.SDL_EventType.SDL_EVENT_JOYSTICK_BATTERY_UPDATED:
+                            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_BATTERY_UPDATED:
                                 if c.SDL_IsGamepad(event.jbattery.which):
                                     add_battery_message(event.jbattery.which, event.jbattery.state, event.jbattery.percent)
 
@@ -190,13 +190,12 @@ def render_frame() -> void:
     c.SDL_GetWindowSize(window, ptr_of(ref_of(winw)), ptr_of(ref_of(winh)))
 
     while true:
-        let message = current
-        let previous_message = previous
-
-        if message == null or previous_message == null:
+        if current == null or previous == null:
             break
 
         unsafe:
+            let message = ptr[EventMessage]<-current
+            let previous_message = ptr[EventMessage]<-previous
             let life_percent = f32<-(now - message.start_ticks) / message_lifetime_ms
 
             if life_percent >= 1.0:

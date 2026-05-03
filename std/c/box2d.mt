@@ -533,7 +533,7 @@ extern module std.c.box2d:
         angularZ: bool
 
     struct b2BodyDef:
-        type: b2BodyType
+        kind: b2BodyType
         position: b2Vec2
         rotation: b2Rot
         linearVelocity: b2Vec2
@@ -1039,7 +1039,7 @@ extern module std.c.box2d:
 
     extern def b2DefaultDebugDraw() -> b2DebugDraw
 
-    extern def b2CreateWorld(def: const_ptr[b2WorldDef]) -> b2WorldId
+    extern def b2CreateWorld(definition: const_ptr[b2WorldDef]) -> b2WorldId
 
     extern def b2DestroyWorld(worldId: b2WorldId) -> void
 
@@ -1135,7 +1135,7 @@ extern module std.c.box2d:
 
     extern def b2World_EnableSpeculative(worldId: b2WorldId, flag: bool) -> void
 
-    extern def b2CreateBody(worldId: b2WorldId, def: const_ptr[b2BodyDef]) -> b2BodyId
+    extern def b2CreateBody(worldId: b2WorldId, definition: const_ptr[b2BodyDef]) -> b2BodyId
 
     extern def b2DestroyBody(bodyId: b2BodyId) -> void
 
@@ -1143,7 +1143,7 @@ extern module std.c.box2d:
 
     extern def b2Body_GetType(bodyId: b2BodyId) -> b2BodyType
 
-    extern def b2Body_SetType(bodyId: b2BodyId, type: b2BodyType) -> void
+    extern def b2Body_SetType(bodyId: b2BodyId, kind: b2BodyType) -> void
 
     extern def b2Body_SetName(bodyId: b2BodyId, name: cstr) -> void
 
@@ -1271,13 +1271,13 @@ extern module std.c.box2d:
 
     extern def b2Body_ComputeAABB(bodyId: b2BodyId) -> b2AABB
 
-    extern def b2CreateCircleShape(bodyId: b2BodyId, def: const_ptr[b2ShapeDef], circle: const_ptr[b2Circle]) -> b2ShapeId
+    extern def b2CreateCircleShape(bodyId: b2BodyId, definition: const_ptr[b2ShapeDef], circle: const_ptr[b2Circle]) -> b2ShapeId
 
-    extern def b2CreateSegmentShape(bodyId: b2BodyId, def: const_ptr[b2ShapeDef], segment: const_ptr[b2Segment]) -> b2ShapeId
+    extern def b2CreateSegmentShape(bodyId: b2BodyId, definition: const_ptr[b2ShapeDef], segment: const_ptr[b2Segment]) -> b2ShapeId
 
-    extern def b2CreateCapsuleShape(bodyId: b2BodyId, def: const_ptr[b2ShapeDef], capsule: const_ptr[b2Capsule]) -> b2ShapeId
+    extern def b2CreateCapsuleShape(bodyId: b2BodyId, definition: const_ptr[b2ShapeDef], capsule: const_ptr[b2Capsule]) -> b2ShapeId
 
-    extern def b2CreatePolygonShape(bodyId: b2BodyId, def: const_ptr[b2ShapeDef], polygon: const_ptr[b2Polygon]) -> b2ShapeId
+    extern def b2CreatePolygonShape(bodyId: b2BodyId, definition: const_ptr[b2ShapeDef], polygon: const_ptr[b2Polygon]) -> b2ShapeId
 
     extern def b2DestroyShape(shapeId: b2ShapeId, updateBodyMass: bool) -> void
 
@@ -1375,7 +1375,7 @@ extern module std.c.box2d:
 
     extern def b2Shape_ApplyWind(shapeId: b2ShapeId, wind: b2Vec2, drag: f32, lift: f32, wake: bool) -> void
 
-    extern def b2CreateChain(bodyId: b2BodyId, def: const_ptr[b2ChainDef]) -> b2ChainId
+    extern def b2CreateChain(bodyId: b2BodyId, definition: const_ptr[b2ChainDef]) -> b2ChainId
 
     extern def b2DestroyChain(chainId: b2ChainId) -> void
 
@@ -1443,7 +1443,7 @@ extern module std.c.box2d:
 
     extern def b2Joint_GetTorqueThreshold(jointId: b2JointId) -> f32
 
-    extern def b2CreateDistanceJoint(worldId: b2WorldId, def: const_ptr[b2DistanceJointDef]) -> b2JointId
+    extern def b2CreateDistanceJoint(worldId: b2WorldId, definition: const_ptr[b2DistanceJointDef]) -> b2JointId
 
     extern def b2DistanceJoint_SetLength(jointId: b2JointId, length: f32) -> void
 
@@ -1491,7 +1491,7 @@ extern module std.c.box2d:
 
     extern def b2DistanceJoint_GetMotorForce(jointId: b2JointId) -> f32
 
-    extern def b2CreateMotorJoint(worldId: b2WorldId, def: const_ptr[b2MotorJointDef]) -> b2JointId
+    extern def b2CreateMotorJoint(worldId: b2WorldId, definition: const_ptr[b2MotorJointDef]) -> b2JointId
 
     extern def b2MotorJoint_SetLinearVelocity(jointId: b2JointId, velocity: b2Vec2) -> void
 
@@ -1533,9 +1533,9 @@ extern module std.c.box2d:
 
     extern def b2MotorJoint_GetMaxSpringTorque(jointId: b2JointId) -> f32
 
-    extern def b2CreateFilterJoint(worldId: b2WorldId, def: const_ptr[b2FilterJointDef]) -> b2JointId
+    extern def b2CreateFilterJoint(worldId: b2WorldId, definition: const_ptr[b2FilterJointDef]) -> b2JointId
 
-    extern def b2CreatePrismaticJoint(worldId: b2WorldId, def: const_ptr[b2PrismaticJointDef]) -> b2JointId
+    extern def b2CreatePrismaticJoint(worldId: b2WorldId, definition: const_ptr[b2PrismaticJointDef]) -> b2JointId
 
     extern def b2PrismaticJoint_EnableSpring(jointId: b2JointId, enableSpring: bool) -> void
 
@@ -1581,7 +1581,7 @@ extern module std.c.box2d:
 
     extern def b2PrismaticJoint_GetSpeed(jointId: b2JointId) -> f32
 
-    extern def b2CreateRevoluteJoint(worldId: b2WorldId, def: const_ptr[b2RevoluteJointDef]) -> b2JointId
+    extern def b2CreateRevoluteJoint(worldId: b2WorldId, definition: const_ptr[b2RevoluteJointDef]) -> b2JointId
 
     extern def b2RevoluteJoint_EnableSpring(jointId: b2JointId, enableSpring: bool) -> void
 
@@ -1625,7 +1625,7 @@ extern module std.c.box2d:
 
     extern def b2RevoluteJoint_GetMaxMotorTorque(jointId: b2JointId) -> f32
 
-    extern def b2CreateWeldJoint(worldId: b2WorldId, def: const_ptr[b2WeldJointDef]) -> b2JointId
+    extern def b2CreateWeldJoint(worldId: b2WorldId, definition: const_ptr[b2WeldJointDef]) -> b2JointId
 
     extern def b2WeldJoint_SetLinearHertz(jointId: b2JointId, hertz: f32) -> void
 
@@ -1643,7 +1643,7 @@ extern module std.c.box2d:
 
     extern def b2WeldJoint_GetAngularDampingRatio(jointId: b2JointId) -> f32
 
-    extern def b2CreateWheelJoint(worldId: b2WorldId, def: const_ptr[b2WheelJointDef]) -> b2JointId
+    extern def b2CreateWheelJoint(worldId: b2WorldId, definition: const_ptr[b2WheelJointDef]) -> b2JointId
 
     extern def b2WheelJoint_EnableSpring(jointId: b2JointId, enableSpring: bool) -> void
 

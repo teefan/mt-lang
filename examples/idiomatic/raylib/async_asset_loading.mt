@@ -1,7 +1,7 @@
 module examples.idiomatic.raylib.async_asset_loading
 
 import std.bytes as bytes
-import std.async as async
+import std.async as aio
 import std.fs as fs
 import std.libuv.runtime as rt
 import std.mem.arena as arena
@@ -72,8 +72,8 @@ def main() -> i32:
         return 1
     var loop = loop_result.value
 
-    let logo_task = async.work_on(loop, load_logo_bytes)
-    let sound_task = async.work_on(loop, load_sound_bytes)
+    let logo_task = aio.work_on(loop, load_logo_bytes)
+    let sound_task = aio.work_on(loop, load_sound_bytes)
 
     var logo = zero[rl.Texture2D]()
     var ping = zero[rl.Sound]()
@@ -92,16 +92,16 @@ def main() -> i32:
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        async.pump(loop)
+        aio.pump(loop)
 
-        if not logo_loaded and async.ready(logo_task):
-            var logo_bytes = async.finish(logo_task)
+        if not logo_loaded and aio.ready(logo_task):
+            var logo_bytes = aio.finish(logo_task)
             logo = texture_from_png_bytes(logo_bytes)
             logo_loaded = true
             bytes.release(ref_of(logo_bytes))
 
-        if not sound_loaded and async.ready(sound_task):
-            var sound_bytes = async.finish(sound_task)
+        if not sound_loaded and aio.ready(sound_task):
+            var sound_bytes = aio.finish(sound_task)
             ping = sound_from_wav_bytes(sound_bytes)
             sound_loaded = true
             bytes.release(ref_of(sound_bytes))
@@ -120,13 +120,13 @@ def main() -> i32:
         rl.draw_text("ASYNC ASSET LOADING", 40, 36, 34, rl.BLACK)
         rl.draw_text("libuv workers read bytes off-thread while raylib uploads texture and audio on the main thread", 40, 76, 20, rl.DARKGRAY)
 
-        rl.draw_rectangle(40, 122, 380, 28, if logo_loaded then rl.GREEN else rl.LIGHTGRAY)
+        rl.draw_rectangle(40, 122, 380, 28, if logo_loaded: rl.GREEN else: rl.LIGHTGRAY)
         rl.draw_rectangle_lines(40, 122, 380, 28, rl.DARKGRAY)
-        rl.draw_text(if logo_loaded then "texture ready" else "texture bytes loading on worker", 52, 128, 14, rl.BLACK)
+        rl.draw_text(if logo_loaded: "texture ready" else: "texture bytes loading on worker", 52, 128, 14, rl.BLACK)
 
-        rl.draw_rectangle(40, 164, 380, 28, if sound_loaded then rl.SKYBLUE else rl.LIGHTGRAY)
+        rl.draw_rectangle(40, 164, 380, 28, if sound_loaded: rl.SKYBLUE else: rl.LIGHTGRAY)
         rl.draw_rectangle_lines(40, 164, 380, 28, rl.DARKGRAY)
-        rl.draw_text(if sound_loaded then "sound ready" else "sound bytes loading on worker", 52, 170, 14, rl.BLACK)
+        rl.draw_text(if sound_loaded: "sound ready" else: "sound bytes loading on worker", 52, 170, 14, rl.BLACK)
 
         if logo_loaded:
             rl.draw_texture(logo, screen_width / 2 - logo.width / 2, 220, rl.WHITE)

@@ -102,7 +102,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.if_expr
 
       def main(ready: bool) -> i32:
-          return if ready then 1 else 0
+          return if ready: 1 else: 0
     MT
 
     result = check_program_source(source)
@@ -132,10 +132,10 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_main
 
-      import std.async as async
+      import std.async as aio
 
       async def main() -> i32:
-          let waited = await async.sleep(1)
+          let waited = await aio.sleep(1)
           return waited + 42
     MT
 
@@ -163,7 +163,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_main
 
-      import std.async as async
+      import std.async as aio
 
       async def main() -> bool:
           return true
@@ -198,13 +198,13 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_flow
 
-      import std.async as async
+      import std.async as aio
 
       async def child() -> i32:
           return 41
 
       async def main() -> i32:
-          return await child() + await async.sleep(1) + 1
+          return await child() + await aio.sleep(1) + 1
     MT
 
     result = check_program_source(source)
@@ -216,7 +216,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_methods
 
-      import std.async as async
+      import std.async as aio
 
       struct Counter:
           value: i32
@@ -272,7 +272,7 @@ class MilkTeaSemaTest < Minitest::Test
           return 41
 
       async def parent(flag: bool) -> i32:
-          return if flag then await child() else 0
+          return if flag: await child() else: 0
     MT
 
     result = check_program_source(source)
@@ -283,7 +283,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_flow
 
-      import std.async as async
+      import std.async as aio
 
       async def parent(flag: bool) -> i32:
           if flag:
@@ -300,7 +300,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_await_in_if
 
-      import std.async as async
+      import std.async as aio
 
       async def child() -> i32:
           return 1
@@ -319,7 +319,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_await_in_if_cond
 
-      import std.async as async
+      import std.async as aio
 
       async def child() -> bool:
           return true
@@ -338,7 +338,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_await_in_while_cond
 
-      import std.async as async
+      import std.async as aio
 
       async def ready() -> bool:
           return false
@@ -357,7 +357,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_await_in_match
 
-      import std.async as async
+      import std.async as aio
 
       enum Mode: i32
           a = 0
@@ -382,7 +382,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_await_in_for_iterable
 
-      import std.async as async
+      import std.async as aio
 
       async def upper() -> i32:
           return 3
@@ -402,7 +402,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_short_circuit
 
-      import std.async as async
+      import std.async as aio
 
       async def t() -> bool:
           return true
@@ -426,7 +426,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_assign_target
 
-      import std.async as async
+      import std.async as aio
 
       async def idx() -> i32:
           return 0
@@ -445,7 +445,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_await_in_while
 
-      import std.async as async
+      import std.async as aio
 
       async def child() -> i32:
           return 1
@@ -1097,7 +1097,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var labels = array[str, 3]("12", "34", "56")
-          let total = if true then sample.count_names(labels) else 0
+          let total = if true: sample.count_names(labels) else: 0
           if false and sample.pair_sum(1 + 2) > 0:
               return 1
           return total
@@ -2736,16 +2736,16 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/argument callback to set_callback expects/, error.message)
   end
 
-  def test_type_checks_keyword_field_names
+  def test_type_checks_non_keyword_field_names
     source = <<~MT
       module demo.keywords
 
       struct Event:
-          type: i32
+          kind: i32
 
       def main(event: Event) -> i32:
-          let copy = Event(type = event.type)
-          return copy.type
+          let copy = Event(kind = event.kind)
+          return copy.kind
     MT
 
     result = check_source(source)

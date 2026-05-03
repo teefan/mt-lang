@@ -65,14 +65,14 @@ def play_right_sound() -> void:
     playing_sound = right_button_value
 
 def pump_events() -> bool:
-    var event = c.SDL_Event(type = 0)
+    var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
         c.SDL_ConvertEventToRenderCoordinates(renderer, ptr_of(ref_of(event)))
 
-        if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
-        elif event.button.type == c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
+        elif c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
             if event.button.button == c.Uint8<-c.SDL_BUTTON_LEFT and playing_sound == 0:
                 let point = c.SDL_FPoint(x = event.button.x, y = event.button.y)
 

@@ -135,7 +135,7 @@ def build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:
         out_mesh.texcoords = alloc_f32(out_mesh.vertexCount * 2)
 
     let vertices = sp.from_ptr[rl.Vector3](mb.vertices, usize<-mb.vertexCount)
-    let uvs = if mb.hasUvs then sp.from_ptr[rl.Vector2](mb.uvs, usize<-mb.vertexCount) else sp.empty[rl.Vector2]()
+    let uvs = if mb.hasUvs: sp.from_ptr[rl.Vector2](mb.uvs, usize<-mb.vertexCount) else: sp.empty[rl.Vector2]()
 
     unsafe:
         for index in range(0, mb.vertexCount):
@@ -215,9 +215,9 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
             let d2 = in_vertices[vertex_index + 1].dot(planes[face]) - clip_distance
             let d3 = in_vertices[vertex_index + 2].dot(planes[face]) - clip_distance
 
-            let v1_out = if d1 > 0.0 then 1 else 0
-            let v2_out = if d2 > 0.0 then 1 else 0
-            let v3_out = if d3 > 0.0 then 1 else 0
+            let v1_out = if d1 > 0.0: 1 else: 0
+            let v2_out = if d2 > 0.0: 1 else: 0
+            let v3_out = if d3 > 0.0: 1 else: 0
             let total = v1_out + v2_out + v3_out
 
             if total == 0:
@@ -468,7 +468,7 @@ def main() -> i32:
         rl.DrawText(hold_camera_text, 10, 430, 10, rl.GRAY)
         rl.DrawText(credit_text, screen_width - 260, screen_height - 20, 10, rl.GRAY)
 
-        if gui_button(rl.Rectangle(x = 10.0, y = screen_height - 100.0, width = 100.0, height = 60.0), if show_model then hide_model_text else show_model_text):
+        if gui_button(rl.Rectangle(x = 10.0, y = screen_height - 100.0, width = 100.0, height = 60.0), if show_model: hide_model_text else: show_model_text):
             show_model = not show_model
 
         if gui_button(rl.Rectangle(x = 120.0, y = screen_height - 100.0, width = 100.0, height = 60.0), clear_decals_text):

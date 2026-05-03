@@ -12,10 +12,10 @@ var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 
 def pump_events() -> bool:
-    var event = c.SDL_Event(type = 0)
+    var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
@@ -50,11 +50,12 @@ def render_frame() -> void:
                 if locale == null:
                     break
 
-                let country_ptr = ptr[char]?<-locale.country
-                let separator = if country_ptr != null then c"_" else c""
-                let country = if country_ptr != null then cstr<-country_ptr else c""
+                let locale_ptr = ptr[c.SDL_Locale]<-locale
+                let country_ptr = ptr[char]?<-locale_ptr.country
+                let separator = if country_ptr != null: c"_" else: c""
+                let country = if country_ptr != null: cstr<-country_ptr else: c""
 
-                c.SDL_snprintf(ptr_of(ref_of(msgbuf[0])), 128, c" - %s%s%s", locale.language, separator, country)
+                c.SDL_snprintf(ptr_of(ref_of(msgbuf[0])), 128, c" - %s%s%s", locale_ptr.language, separator, country)
 
                 let x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msg))) / 2.0)
                 let y = frame.y + (f32<-(c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2) * f32<-(index + 1))

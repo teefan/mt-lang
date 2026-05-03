@@ -88,7 +88,7 @@ def main() -> i32:
 
                 var current_angle: f32 = 0.0
                 for index in range(0, slice_count):
-                    let sweep: f32 = if total_value > 0.0 then values[index] / total_value * f32<-360.0 else f32<-0.0
+                    let sweep: f32 = if total_value > 0.0: values[index] / total_value * f32<-360.0 else: f32<-0.0
                     if angle >= current_angle and angle < current_angle + sweep:
                         hovered_slice = index
                         break
@@ -102,7 +102,7 @@ def main() -> i32:
 
         var start_angle: f32 = 0.0
         for index in range(0, slice_count):
-            let sweep_angle: f32 = if total_value > 0.0 then values[index] / total_value * f32<-360.0 else f32<-0.0
+            let sweep_angle: f32 = if total_value > 0.0: values[index] / total_value * f32<-360.0 else: f32<-0.0
             let mid_angle = start_angle + sweep_angle / 2.0
             let color = rl.color_from_hsv(f32<-index / f32<-slice_count * 360.0, 0.75, 0.9)
             var current_radius = radius

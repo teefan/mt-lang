@@ -208,10 +208,10 @@ def main() -> i32:
                 if mouse_y >= size_in_world_y:
                     mouse_y = size_in_world_y - 1
                 if first_color == -1:
-                    first_color = if rl.GetImageColor(image_to_draw, mouse_x, mouse_y).r < 5 then 0 else 1
-                let previous_color = if rl.GetImageColor(image_to_draw, mouse_x, mouse_y).r < 5 then 0 else 1
+                    first_color = if rl.GetImageColor(image_to_draw, mouse_x, mouse_y).r < 5: 0 else: 1
+                let previous_color = if rl.GetImageColor(image_to_draw, mouse_x, mouse_y).r < 5: 0 else: 1
 
-                rl.ImageDrawPixel(ptr_of(ref_of(image_to_draw)), mouse_x, mouse_y, if first_color != 0 then rl.BLACK else rl.RAYWHITE)
+                rl.ImageDrawPixel(ptr_of(ref_of(image_to_draw)), mouse_x, mouse_y, if first_color != 0: rl.BLACK else: rl.RAYWHITE)
 
                 if previous_color != first_color:
                     rl.UpdateTextureRec(
@@ -316,7 +316,7 @@ def main() -> i32:
         button_zoom_in = gui.GuiButton(gui_rect(710.0, 328.0, 80.0, 16.0), c"Zoom in") != 0
         button_zoom_out = gui.GuiButton(gui_rect(710.0, 346.0, 80.0, 16.0), c"Zoom out") != 0
 
-        rl.DrawText(rl.TextFormat(speed_format, frames_per_step, if frames_per_step > 1 then c"s" else c""), 710, 370, 8, rl.GRAY)
+        rl.DrawText(rl.TextFormat(speed_format, frames_per_step, if frames_per_step > 1: c"s" else: c""), 710, 370, 8, rl.GRAY)
         button_faster = gui.GuiButton(gui_rect(710.0, 382.0, 80.0, 16.0), c"Faster") != 0
         button_slower = gui.GuiButton(gui_rect(710.0, 400.0, 80.0, 16.0), c"Slower") != 0
 

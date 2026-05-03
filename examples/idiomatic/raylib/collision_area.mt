@@ -63,7 +63,7 @@ def main() -> i32:
         defer rl.end_drawing()
 
         rl.clear_background(rl.RAYWHITE)
-        rl.draw_rectangle(0, 0, screen_width, screen_upper_limit, if colliding then rl.RED else rl.BLACK)
+        rl.draw_rectangle(0, 0, screen_width, screen_upper_limit, if colliding: rl.RED else: rl.BLACK)
         rl.draw_rectangle_rec(moving_box, rl.GOLD)
         rl.draw_rectangle_rec(mouse_box, rl.BLUE)
 

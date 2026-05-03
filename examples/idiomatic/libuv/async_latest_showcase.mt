@@ -1,13 +1,13 @@
 module examples.idiomatic.libuv.async_latest_showcase
 
-import std.async as async
+import std.async as aio
 
 enum Mode: i32
     a = 0
     b = 1
 
 async def choose_mode(flag: bool) -> Mode:
-    return if flag then Mode.a else Mode.b
+    return if flag: Mode.a else: Mode.b
 
 async def limit() -> i32:
     return 3
@@ -52,7 +52,7 @@ async def showcase() -> i32:
     if await falsy() or await truthy():
         total += 1
 
-    let branch = if await truthy() then await score_a() else await score_b()
+    let branch = if await truthy(): await score_a() else: await score_b()
     total += branch
 
     match await choose_mode(true):
@@ -64,6 +64,6 @@ async def showcase() -> i32:
     return total
 
 async def main() -> i32:
-    let delay = async.sleep(1)
+    let delay = aio.sleep(1)
     let value = showcase()
     return await delay + await value

@@ -247,7 +247,7 @@ extern module std.c.raygui:
 
     struct AutomationEvent:
         frame: u32
-        type: u32
+        kind: u32
         params: array[i32, 4]
 
     struct AutomationEventList:
@@ -629,9 +629,9 @@ extern module std.c.raygui:
 
     extern def IsWindowState(flag: u32) -> bool
 
-    extern def SetWindowState(flags: u32) -> void
+    extern def SetWindowState(flag_bits: u32) -> void
 
-    extern def ClearWindowState(flags: u32) -> void
+    extern def ClearWindowState(flag_bits: u32) -> void
 
     extern def ToggleFullscreen() -> void
 
@@ -815,7 +815,7 @@ extern module std.c.raygui:
 
     extern def TakeScreenshot(fileName: cstr) -> void
 
-    extern def SetConfigFlags(flags: u32) -> void
+    extern def SetConfigFlags(flag_bits: u32) -> void
 
     extern def OpenURL(url: cstr) -> void
 
@@ -1003,7 +1003,7 @@ extern module std.c.raygui:
 
     extern def GetTouchPointCount() -> i32
 
-    extern def SetGesturesEnabled(flags: u32) -> void
+    extern def SetGesturesEnabled(flag_bits: u32) -> void
 
     extern def IsGestureDetected(gesture: u32) -> bool
 
@@ -1397,7 +1397,7 @@ extern module std.c.raygui:
 
     extern def IsFontValid(font: Font) -> bool
 
-    extern def LoadFontData(fileData: const_ptr[u8], dataSize: i32, fontSize: i32, codepoints: ptr[i32]?, codepointCount: i32, type: i32) -> ptr[GlyphInfo]
+    extern def LoadFontData(fileData: const_ptr[u8], dataSize: i32, fontSize: i32, codepoints: ptr[i32]?, codepointCount: i32, kind: i32) -> ptr[GlyphInfo]
 
     extern def GenImageFontAtlas(glyphs: const_ptr[GlyphInfo], glyphRecs: ptr[ptr[Rectangle]], glyphCount: i32, fontSize: i32, padding: i32, packMethod: i32) -> Image
 
