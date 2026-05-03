@@ -1402,7 +1402,7 @@ module MilkTea
         target = statement.target
         range = target.index
 
-        raise_sema_error("range index assignment requires a tuple literal on the right-hand side") unless statement.value.is_a?(AST::TupleLiteral)
+        raise_sema_error("range index assignment requires an expression list on the right-hand side") unless statement.value.is_a?(AST::ExpressionList)
         raise_sema_error("range index assignment requires integer literal bounds") unless range.start_expr.is_a?(AST::IntegerLiteral) && range.end_expr.is_a?(AST::IntegerLiteral)
 
         start_val = range.start_expr.value
@@ -1843,8 +1843,8 @@ module MilkTea
             raise_sema_error("specialized name #{describe_expression(expression)} must be called")
           when AST::RangeExpr
             raise_sema_error("range expression can only be used as a for-loop iterable or range index target")
-          when AST::TupleLiteral
-            raise_sema_error("tuple literal can only be used as the right-hand side of a range index assignment")
+          when AST::ExpressionList
+            raise_sema_error("expression list can only be used as the right-hand side of a range index assignment")
           else
             raise_sema_error("unsupported expression #{expression.class.name}")
           end

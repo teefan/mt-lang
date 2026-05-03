@@ -517,7 +517,7 @@ module MilkTea
           left = render_expression(expression.start_expr)
           right = render_expression(expression.end_expr)
           "#{left}..#{right}"
-        when AST::TupleLiteral
+        when AST::ExpressionList
           "(#{expression.elements.map { |e| render_expression(e) }.join(', ')})"
         when AST::IfExpr
           condition = render_expression(expression.condition, IF_EXPRESSION_PRECEDENCE)

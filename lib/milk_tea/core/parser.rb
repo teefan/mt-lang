@@ -1071,7 +1071,7 @@ module MilkTea
             break unless match(:comma)
           end
           consume(:rparen, "expected ')' after tuple elements")
-          AST::TupleLiteral.new(elements:, line:, column:)
+          AST::ExpressionList.new(elements:, line:, column:)
         else
           consume(:rparen, "expected ')' after expression")
           first
