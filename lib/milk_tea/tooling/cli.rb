@@ -22,6 +22,8 @@ module MilkTea
       case command
       when "lex"
         lex_command
+      when "semantic-tokens"
+        semantic_tokens_command
       when "parse"
         parse_command
       when "fmt"
@@ -67,6 +69,21 @@ module MilkTea
 
       tokens = Lexer.lex(read_source_file(path), path: path)
       @out.write(PP.pp(tokens, +""))
+      0
+    end
+
+    def semantic_tokens_command
+      path = @argv.shift
+      unless path
+        @err.puts("missing source file path")
+        print_usage(@err)
+        return 1
+      end
+
+      require "json"
+
+      payload = MilkTea::LSP::Server.semantic_tokens_for_path(path, module_roots: @module_roots)
+      @out.puts(JSON.pretty_generate(payload))
       0
     end
 
@@ -576,6 +593,7 @@ module MilkTea
 
     def print_usage(io)
       io.puts("Usage: mtc lex PATH")
+      io.puts("       mtc semantic-tokens PATH")
       io.puts("       mtc parse PATH")
       io.puts("       mtc fmt PATH|DIR [--check|--write] [--safe|--canonical|--preserve]")
       io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json]")

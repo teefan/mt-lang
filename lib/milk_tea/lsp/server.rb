@@ -41,6 +41,37 @@ module MilkTea
       ].to_set.freeze
       DIAGNOSTICS_WORKER_COUNT = Integer(ENV.fetch('MILK_TEA_LSP_DIAGNOSTICS_WORKERS', '2')).clamp(1, 8)
 
+      def self.semantic_tokens_for_path(path, module_roots: nil)
+        expanded_path = File.expand_path(path)
+        roots = module_roots || MilkTea::ModuleRoots.roots_for_path(expanded_path)
+        source = File.read(expanded_path)
+        tokens = MilkTea::Lexer.lex(source, path: expanded_path)
+        analysis = MilkTea::ModuleLoader.new(module_roots: roots).check_file(expanded_path)
+
+        helper = allocate
+        entries = helper.send(:build_semantic_token_entries, tokens, analysis)
+        data = helper.send(:encode_semantic_tokens, entries)
+
+        {
+          path: expanded_path,
+          moduleName: analysis.module_name,
+          legend: {
+            tokenTypes: SEMANTIC_TOKEN_TYPES,
+            tokenModifiers: SEMANTIC_TOKEN_MODIFIERS,
+          },
+          data: data,
+          entries: entries.map do |entry|
+            {
+              line: entry[:line],
+              startChar: entry[:start_char],
+              length: entry[:length],
+              tokenType: entry[:type].to_s,
+              modifiers: entry[:modifiers].map(&:to_s),
+            }
+          end,
+        }
+      end
+
       def initialize
         @workspace = Workspace.new
         @handlers = {}
@@ -1788,9 +1819,7 @@ module MilkTea
           if analysis
             module_binding = imported_module_binding_for_member(tokens, index, analysis)
             if module_binding
-              if module_binding.functions.key?(name)
-                return [:function, []] if next_tok&.type == :lparen || specialized_call_with_type_args?(tokens, index)
-              end
+              return [:function, []] if module_binding.functions.key?(name)
               return [:type, []] if module_binding.types.key?(name)
               if (value_binding = module_binding.values[name])
                 modifiers = []
