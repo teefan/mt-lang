@@ -42,6 +42,23 @@ class MilkTeaFormatterTest < Minitest::Test
     assert_equal source, formatted
   end
 
+  def test_preserve_mode_keeps_multiline_call_arguments
+    source = <<~MT
+      module demo.fmt
+
+      def main() -> i32:
+          log(
+              "a",
+              "b",
+          )
+          return 0
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :preserve)
+
+    assert_equal source, formatted
+  end
+
   def test_safe_mode_preserves_comments_in_canonical_output
     source = <<~MT
       # banner

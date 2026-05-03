@@ -217,10 +217,21 @@ module MilkTea
         index = lex_symbol(line, index, line_number, line_offset:)
       end
 
+      newline_start = line_offset + line.length
+      newline_end = has_newline ? (newline_start + 1) : newline_start
       if @grouping_depth.zero?
-        newline_start = line_offset + line.length
-        newline_end = has_newline ? (newline_start + 1) : newline_start
         @tokens << token(:newline, "\n", nil, line_number, line.length + 1, start_offset: newline_start, end_offset: newline_end)
+      elsif with_trivia? && has_newline
+        append_trailing_or_pending(
+          TriviaToken.new(
+            kind: :newline,
+            text: "\n",
+            line: line_number,
+            column: line.length + 1,
+            start_offset: newline_start,
+            end_offset: newline_end,
+          ),
+        )
       end
     end
 

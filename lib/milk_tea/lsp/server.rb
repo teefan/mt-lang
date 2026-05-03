@@ -702,7 +702,7 @@ module MilkTea
         uri     = params['textDocument']['uri']
         content = @workspace.get_content(uri)
 
-        formatted = Formatter.format_source(content, mode: :safe)
+        formatted = Formatter.format_source(content, mode: :preserve)
         line_count = content.count("\n")
 
         [
@@ -731,7 +731,7 @@ module MilkTea
         return [] if end_off < start_off
 
         segment = content.byteslice(start_off...end_off).to_s
-        formatted_segment = Formatter.format_source(segment, mode: :safe)
+        formatted_segment = Formatter.format_source(segment, mode: :preserve)
 
         [
           {
