@@ -1009,7 +1009,14 @@ module MilkTea
       end
 
       def semantic_tokens_analysis_skip_reason(uri, content)
-        skip_expensive_work_reason(uri, content)
+        # Only skip analysis for URIs outside the workspace (e.g. vscode-internal
+        # or gem paths). std files and large files are fine — analysis is 0ms warm
+        # via the shared module cache, and sema resolves imports correctly.
+        return 'library-uri' if library_uri?(uri)
+
+        nil
+      rescue StandardError
+        nil
       end
 
       def handle_document_diagnostic(params)
