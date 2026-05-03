@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { spawn } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 const { parse: parseJsonc } = require('jsonc-parser');
 
 const oniguruma = require('vscode-oniguruma');
@@ -66,7 +66,7 @@ function usage() {
       '  --theme-name <name>     Theme label/id (default: "Dark 2026")',
       '  --theme-file <path>     Exact theme json path (overrides --theme-name)',
       '  --grammar <path>        tmLanguage json path',
-      '  --semantic-overlay <m>  none|lsp (default: none)',
+      '  --semantic-overlay <m>  none|compiler (default: none)',
       '  --json-out <path>       Output json snapshot path',
       '  --html-out <path>       Output html snapshot path',
       '  --help                  Show this help',
@@ -1079,166 +1079,39 @@ function overlaySemanticOnLineTokens(lineTokens, semanticEntries, ruleIndex, sem
   return working;
 }
 
-function pathToFileUri(p) {
-  const abs = path.resolve(p);
-  const normalized = abs.split(path.sep).map(encodeURIComponent).join('/');
-  return `file://${normalized.startsWith('/') ? normalized : `/${normalized}`}`;
-}
-
-class JsonRpcStdioClient {
-  constructor(command, args, cwd) {
-    this.command = command;
-    this.args = args;
-    this.cwd = cwd;
-    this.nextId = 1;
-    this.pending = new Map();
-    this.buffer = Buffer.alloc(0);
-    this.process = null;
-  }
-
-  start() {
-    this.process = spawn(this.command, this.args, {
-      cwd: this.cwd,
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    this.process.stdout.on('data', (chunk) => {
-      this.buffer = Buffer.concat([this.buffer, chunk]);
-      this.consumeBuffer();
-    });
-
-    this.process.on('exit', (code) => {
-      if (code === 0) {
-        return;
-      }
-      for (const [, waiter] of this.pending) {
-        waiter.reject(new Error(`LSP process exited with code ${code}`));
-      }
-      this.pending.clear();
-    });
-  }
-
-  consumeBuffer() {
-    while (true) {
-      const headerEnd = this.buffer.indexOf('\r\n\r\n');
-      if (headerEnd < 0) {
-        return;
-      }
-      const headerText = this.buffer.slice(0, headerEnd).toString('utf8');
-      const lengthMatch = /Content-Length:\s*(\d+)/i.exec(headerText);
-      if (!lengthMatch) {
-        throw new Error(`Invalid LSP header: ${headerText}`);
-      }
-      const bodyLength = Number(lengthMatch[1]);
-      const payloadStart = headerEnd + 4;
-      const payloadEnd = payloadStart + bodyLength;
-      if (this.buffer.length < payloadEnd) {
-        return;
-      }
-      const body = this.buffer.slice(payloadStart, payloadEnd).toString('utf8');
-      this.buffer = this.buffer.slice(payloadEnd);
-      const msg = JSON.parse(body);
-      this.dispatchMessage(msg);
-    }
-  }
-
-  dispatchMessage(msg) {
-    if (Object.prototype.hasOwnProperty.call(msg, 'id') && this.pending.has(msg.id)) {
-      const waiter = this.pending.get(msg.id);
-      this.pending.delete(msg.id);
-      if (msg.error) {
-        waiter.reject(new Error(msg.error.message || JSON.stringify(msg.error)));
-      } else {
-        waiter.resolve(msg.result);
-      }
-    }
-  }
-
-  send(payload) {
-    const json = JSON.stringify(payload);
-    const bytes = Buffer.byteLength(json, 'utf8');
-    this.process.stdin.write(`Content-Length: ${bytes}\r\n\r\n${json}`);
-  }
-
-  request(method, params) {
-    const id = this.nextId;
-    this.nextId += 1;
-    const promise = new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-    });
-    this.send({ jsonrpc: '2.0', id, method, params });
-    return promise;
-  }
-
-  notify(method, params) {
-    this.send({ jsonrpc: '2.0', method, params });
-  }
-
-  stop() {
-    if (this.process && !this.process.killed) {
-      this.process.kill();
-    }
-  }
-}
-
-async function fetchSemanticTokensFromLsp(inputPath, source) {
-  const repoRoot = path.resolve(__dirname, '..', '..', '..');
-  const uri = pathToFileUri(inputPath);
-  const rootUri = pathToFileUri(repoRoot);
-
-  const client = new JsonRpcStdioClient('bundle', ['exec', 'ruby', '-Ilib', 'bin/mtc-lsp'], repoRoot);
-  client.start();
-
-  try {
-    const initResult = await client.request('initialize', {
-      processId: process.pid,
-      rootUri,
-      capabilities: {
-        textDocument: {
-          semanticTokens: {
-            dynamicRegistration: false,
-            requests: { full: true, range: false },
-            tokenTypes: [],
-            tokenModifiers: [],
-            formats: ['relative']
-          }
-        }
-      }
-    });
-
-    const legend = initResult &&
-      initResult.capabilities &&
-      initResult.capabilities.semanticTokensProvider &&
-      initResult.capabilities.semanticTokensProvider.legend;
-
-    if (!legend) {
-      return null;
-    }
-
-    client.notify('initialized', {});
-    client.notify('textDocument/didOpen', {
-      textDocument: {
-        uri,
-        languageId: 'milk-tea',
-        version: 1,
-        text: source
-      }
-    });
-
-    const semantic = await client.request('textDocument/semanticTokens/full', {
-      textDocument: { uri }
-    });
-
-    await client.request('shutdown', {});
-    client.notify('exit', {});
-
+function normalizeSemanticTokenEntries(entries, documentLanguage) {
+  return (Array.isArray(entries) ? entries : []).map((entry) => {
+    const modifiers = Array.isArray(entry.modifiers) ? entry.modifiers : [];
     return {
-      legend,
-      data: Array.isArray(semantic && semantic.data) ? semantic.data : []
+      line: entry.line,
+      startChar: entry.startChar,
+      endChar: entry.startChar + entry.length,
+      length: entry.length,
+      tokenType: entry.tokenType,
+      modifiers,
+      modifierSet: new Set(modifiers),
+      language: documentLanguage
     };
-  } finally {
-    client.stop();
+  });
+}
+
+function fetchSemanticTokensFromCompiler(inputPath) {
+  const repoRoot = path.resolve(__dirname, '..', '..', '..');
+  const result = spawnSync('ruby', ['bin/mtc', 'semantic-tokens', inputPath], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024
+  });
+
+  if (result.error) {
+    throw result.error;
   }
+
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || `mtc semantic-tokens failed with status ${result.status}`).trim());
+  }
+
+  return JSON.parse(result.stdout);
 }
 
 function escapeHtml(text) {
@@ -1440,13 +1313,15 @@ async function main() {
 
   let semanticOverlay = null;
   if (args.semanticOverlay && args.semanticOverlay !== 'none') {
-    if (args.semanticOverlay !== 'lsp') {
+    if (args.semanticOverlay !== 'compiler') {
       throw new Error(`Unsupported --semantic-overlay mode: ${args.semanticOverlay}`);
     }
 
-    const semanticPayload = await fetchSemanticTokensFromLsp(inputPath, source);
+    const semanticPayload = fetchSemanticTokensFromCompiler(inputPath);
     if (semanticPayload && semanticPayload.legend) {
-      const entries = decodeSemanticTokensData(semanticPayload.data, semanticPayload.legend, 'milk-tea');
+      const entries = semanticPayload.entries
+        ? normalizeSemanticTokenEntries(semanticPayload.entries, 'milk-tea')
+        : decodeSemanticTokensData(semanticPayload.data, semanticPayload.legend, 'milk-tea');
       const lineGroups = new Map();
       entries.forEach((entry) => {
         const list = lineGroups.get(entry.line) || [];
@@ -1470,7 +1345,7 @@ async function main() {
       });
 
       semanticOverlay = {
-        mode: 'lsp',
+        mode: 'compiler',
         legend: semanticPayload.legend,
         tokenCount: entries.length,
         settingsRulesApplied: settingsSemantic.rules.length,
@@ -1481,7 +1356,7 @@ async function main() {
       };
     } else {
       semanticOverlay = {
-        mode: 'lsp',
+        mode: 'compiler',
         legend: null,
         tokenCount: 0,
         settingsRulesApplied: settingsSemantic.rules.length,
@@ -1489,7 +1364,7 @@ async function main() {
         settingsEnabled: settingsSemantic.enabled,
         semanticScopeMapSource: builtinSemanticScopeMap.source,
         semanticScopeMapEntries: builtinSemanticScopeMap.entries.length,
-        warning: 'LSP semanticTokensProvider not available; overlay skipped.'
+        warning: 'Compiler semantic token payload not available; overlay skipped.'
       };
     }
   }

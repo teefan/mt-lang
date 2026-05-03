@@ -1090,6 +1090,50 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_semantic_tokens_classify_imported_module_function_reference_as_function
+    Dir.mktmpdir("mt_lsp_semantic_tokens") do |dir|
+      c_dir = File.join(dir, "std", "c")
+      FileUtils.mkdir_p(c_dir)
+
+      File.write(File.join(c_dir, "sdl3.mt"), <<~MT)
+        extern module std.c.sdl3:
+            extern def SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
+      MT
+
+      source_path = File.join(dir, "std", "sdl3.mt")
+      FileUtils.mkdir_p(File.dirname(source_path))
+      source = <<~MT
+        module std.sdl3
+
+        import std.c.sdl3 as c
+
+        pub foreign def set_window_fill_document(window: ptr[void], fill: bool) -> bool = c.SDL_SetWindowFillDocument
+      MT
+      File.write(source_path, source)
+
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        uri = path_to_uri(source_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        alias_entry = semantic_entry_for_lexeme(source, entries, "c")
+        member_entry = semantic_entry_for_lexeme(source, entries, "SDL_SetWindowFillDocument")
+
+        assert_equal "namespace", alias_entry.fetch("tokenType")
+        assert_equal "function", member_entry.fetch("tokenType")
+      end
+    end
+  end
+
   private
 
   def test_code_action_quickfix_prefer_let
@@ -1184,6 +1228,32 @@ class LSPServerTest < Minitest::Test
   def path_to_uri(path)
     escaped_path = path.split("/").map { |segment| CGI.escape(segment).gsub("+", "%20") }.join("/")
     "file://#{escaped_path}"
+  end
+
+  def decode_semantic_token_entries(data, legend)
+    line = 0
+    char = 0
+
+    data.each_slice(5).map do |delta_line, delta_start, length, token_type_idx, modifier_bits|
+      line += delta_line
+      char = delta_line.zero? ? char + delta_start : delta_start
+
+      {
+        "line" => line,
+        "startChar" => char,
+        "endChar" => char + length,
+        "tokenType" => legend.fetch("tokenTypes").fetch(token_type_idx),
+        "modifierBits" => modifier_bits
+      }
+    end
+  end
+
+  def semantic_entry_for_lexeme(source, entries, lexeme)
+    lines = source.lines
+    entries.find do |entry|
+      line_text = lines.fetch(entry.fetch("line"))
+      line_text[entry.fetch("startChar"), lexeme.length] == lexeme
+    end or flunk("expected semantic token entry for #{lexeme.inspect}")
   end
 
   def with_server

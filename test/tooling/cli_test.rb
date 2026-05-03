@@ -17,6 +17,44 @@ class MilkTeaCliTest < Minitest::Test
     assert_match(/type=:module/, out.string)
   end
 
+  def test_semantic_tokens_command_reports_imported_module_function_reference_as_function
+    Dir.mktmpdir("milk-tea-cli-semantic-tokens") do |dir|
+      c_dir = File.join(dir, "std", "c")
+      FileUtils.mkdir_p(c_dir)
+
+      File.write(File.join(c_dir, "sdl3.mt"), <<~MT)
+        extern module std.c.sdl3:
+            extern def SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
+      MT
+
+      source_path = File.join(dir, "std", "sdl3.mt")
+      FileUtils.mkdir_p(File.dirname(source_path))
+      source = <<~MT
+        module std.sdl3
+
+        import std.c.sdl3 as c
+
+        pub foreign def set_window_fill_document(window: ptr[void], fill: bool) -> bool = c.SDL_SetWindowFillDocument
+      MT
+      File.write(source_path, source)
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["-I", dir, "semantic-tokens", source_path], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+
+      payload = JSON.parse(out.string)
+      alias_entry = semantic_entry_for_lexeme(source, payload.fetch("entries"), "c")
+      member_entry = semantic_entry_for_lexeme(source, payload.fetch("entries"), "SDL_SetWindowFillDocument")
+
+      assert_equal "namespace", alias_entry.fetch("tokenType")
+      assert_equal "function", member_entry.fetch("tokenType")
+    end
+  end
+
   def test_parse_command_reports_ast
     out = StringIO.new
     err = StringIO.new
@@ -615,6 +653,14 @@ class MilkTeaCliTest < Minitest::Test
   end
 
   private
+
+  def semantic_entry_for_lexeme(source, entries, lexeme)
+    lines = source.lines
+    entries.find do |entry|
+      line_text = lines.fetch(entry.fetch("line"))
+      line_text[entry.fetch("startChar"), lexeme.length] == lexeme
+    end or flunk("expected semantic token entry for #{lexeme.inspect}")
+  end
 
   def demo_path
     File.expand_path("../../examples/milk-tea-demo.mt", __dir__)
