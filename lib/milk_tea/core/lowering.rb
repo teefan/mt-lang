@@ -6672,6 +6672,7 @@ module MilkTea
 
       def substitute_value_binding(binding, substitutions)
         Sema::ValueBinding.new(
+          id: binding.id,
           name: binding.name,
           storage_type: substitute_type(binding.storage_type, substitutions),
           flow_type: binding.flow_type ? substitute_type(binding.flow_type, substitutions) : nil,
