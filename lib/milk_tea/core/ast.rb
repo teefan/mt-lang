@@ -36,7 +36,9 @@ module MilkTea
     UnionDecl = Data.define(:name, :fields, :visibility, :line) do
       def initialize(name:, fields:, visibility:, line: nil) = super
     end
-    Field = Data.define(:name, :type)
+    Field = Data.define(:name, :type) do
+      def initialize(name:, type:) = super
+    end
     EnumDecl = Data.define(:name, :backing_type, :members, :visibility, :line) do
       def initialize(name:, backing_type:, members:, visibility:, line: nil) = super
     end
@@ -126,6 +128,8 @@ module MilkTea
     Argument = Data.define(:name, :value)
     UnaryOp = Data.define(:operator, :operand)
     BinaryOp = Data.define(:operator, :left, :right)
+    RangeExpr = Data.define(:start_expr, :end_expr, :line, :column)
+    TupleLiteral = Data.define(:elements, :line, :column)
     IfExpr = Data.define(:condition, :then_expression, :else_expression)
     ProcExpr = Data.define(:params, :return_type, :body)
     AwaitExpr = Data.define(:expression)

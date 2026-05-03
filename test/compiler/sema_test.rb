@@ -2673,7 +2673,112 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/for loop expects range\(start, stop\), array\[T, N\], or span\[T\], got i32/, error.message)
+    assert_match(/for loop expects range\(start, stop\), start\.\.stop, array\[T, N\], or span\[T\]/, error.message)
+  end
+
+  def test_type_checks_dot_dot_range_in_for_loop
+    source = <<~MT
+      module demo.for_loops
+
+      def sum(count: i32) -> i32:
+          var total = 0
+          for i in 0..count:
+              total += i
+          return total
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("sum")
+  end
+
+  def test_type_checks_dot_dot_range_with_usize_bounds
+    source = <<~MT
+      module demo.for_loops
+
+      def sum_n(n: usize) -> usize:
+          var total: usize = 0
+          for i in 0..n:
+              total += i
+          return total
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("sum_n")
+  end
+
+  def test_rejects_dot_dot_range_with_non_integer_bounds
+    source = <<~MT
+      module demo.for_loops
+
+      def main() -> void:
+          for i in 0.0..1.0:
+              let x = i
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/range bounds must be integer types/, error.message)
+  end
+
+  def test_rejects_dot_dot_range_with_mismatched_bound_types
+    source = <<~MT
+      module demo.for_loops
+
+      def main(n: usize) -> void:
+          for i in 0..n:
+              let x: usize = i
+    MT
+
+    # This should succeed: literal 0 adapts to usize
+    result = check_source(source)
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_range_index_assignment
+    source = <<~MT
+      module demo.range_assign
+
+      def fill(buf: ptr[f32]) -> void:
+          unsafe:
+              buf[0..3] = (1.0, 2.0, 3.0)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("fill")
+  end
+
+  def test_rejects_range_index_assignment_with_non_literal_bounds
+    source = <<~MT
+      module demo.range_assign
+
+      def fill(buf: ptr[f32], n: usize) -> void:
+          unsafe:
+              buf[0..n] = (1.0, 2.0, 3.0)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/requires integer literal bounds/, error.message)
+  end
+
+  def test_rejects_range_index_assignment_with_mismatched_count
+    source = <<~MT
+      module demo.range_assign
+
+      def fill(buf: ptr[f32]) -> void:
+          unsafe:
+              buf[0..3] = (1.0, 2.0)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/spans 3 elements but tuple has 2/, error.message)
   end
 
   def test_rejects_non_exhaustive_match_statement_over_enum

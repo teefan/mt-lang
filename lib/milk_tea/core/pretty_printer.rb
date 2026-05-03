@@ -513,6 +513,12 @@ module MilkTea
           left = render_expression(expression.left, current_precedence)
           right = render_expression(expression.right, current_precedence + 1)
           wrap("#{left} #{expression.operator} #{right}", parent_precedence, current_precedence)
+        when AST::RangeExpr
+          left = render_expression(expression.start_expr)
+          right = render_expression(expression.end_expr)
+          "#{left}..#{right}"
+        when AST::TupleLiteral
+          "(#{expression.elements.map { |e| render_expression(e) }.join(', ')})"
         when AST::IfExpr
           condition = render_expression(expression.condition, IF_EXPRESSION_PRECEDENCE)
           then_expression = render_expression(expression.then_expression, IF_EXPRESSION_PRECEDENCE)

@@ -1166,6 +1166,9 @@ module MilkTea
         when AST::BinaryOp
           walk_expression_for_precheck_resolution(expression.left, scopes, identifier_ids)
           walk_expression_for_precheck_resolution(expression.right, scopes, identifier_ids)
+        when AST::RangeExpr
+          walk_expression_for_precheck_resolution(expression.start_expr, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(expression.end_expr, scopes, identifier_ids)
         when AST::IfExpr
           walk_expression_for_precheck_resolution(expression.condition, scopes, identifier_ids)
           walk_expression_for_precheck_resolution(expression.then_expression, scopes, identifier_ids)
@@ -1352,6 +1355,12 @@ module MilkTea
       end
 
       def check_assignment(statement, scopes:)
+        if statement.operator == "=" &&
+           statement.target.is_a?(AST::IndexAccess) &&
+           statement.target.index.is_a?(AST::RangeExpr)
+          return check_range_index_assignment(statement, scopes:)
+        end
+
         target_type = infer_lvalue(statement.target, scopes:)
 
         validate_consuming_foreign_expression!(statement.value, scopes:, root_allowed: false)
@@ -1386,6 +1395,43 @@ module MilkTea
           end
         else
           raise_sema_error("unsupported assignment operator #{statement.operator}")
+        end
+      end
+
+      def check_range_index_assignment(statement, scopes:)
+        target = statement.target
+        range = target.index
+
+        raise_sema_error("range index assignment requires a tuple literal on the right-hand side") unless statement.value.is_a?(AST::TupleLiteral)
+        raise_sema_error("range index assignment requires integer literal bounds") unless range.start_expr.is_a?(AST::IntegerLiteral) && range.end_expr.is_a?(AST::IntegerLiteral)
+
+        start_val = range.start_expr.value
+        end_val = range.end_expr.value
+        raise_sema_error("range start must be less than end in range index assignment") unless start_val < end_val
+
+        count = end_val - start_val
+        raise_sema_error("range index assignment: range [#{start_val}..#{end_val}) spans #{count} elements but tuple has #{statement.value.elements.length}") unless statement.value.elements.length == count
+
+        receiver_type = infer_lvalue_receiver(
+          target.receiver,
+          scopes:,
+          allow_pointer_identifier: true,
+          require_mutable_pointer: true,
+          allow_span_param_identifier: true,
+        )
+        element_type = infer_index_result_type(receiver_type, @types.fetch("usize"))
+
+        statement.value.elements.each_with_index do |elem, i|
+          validate_consuming_foreign_expression!(elem, scopes:, root_allowed: false)
+          elem_type = infer_expression(elem, scopes:, expected_type: element_type)
+          ensure_assignable!(
+            elem_type,
+            element_type,
+            "range index assignment element #{i}: cannot assign #{elem_type} to #{element_type}",
+            expression: elem,
+            contextual_int_to_float: contextual_int_to_float_target?(element_type),
+            line: statement.line,
+          )
         end
       end
 
@@ -1535,12 +1581,14 @@ module MilkTea
         validate_consuming_foreign_expression!(statement.iterable, scopes:, root_allowed: false)
         loop_type = if range_call?(statement.iterable)
                       check_range_loop(statement.iterable, scopes:)
+                    elsif range_expr?(statement.iterable)
+                      check_range_expr_loop(statement.iterable, scopes:)
                     else
                       iterable_type = infer_expression(statement.iterable, scopes:)
                       collection_loop_type(iterable_type)
                     end
 
-        raise_sema_error("for loop expects range(start, stop), array[T, N], or span[T], got #{infer_expression(statement.iterable, scopes:)}") unless loop_type
+        raise_sema_error("for loop expects range(start, stop), start..stop, array[T, N], or span[T]") unless loop_type
 
         with_nested_scope(scopes) do |loop_scopes|
           current_actual_scope(loop_scopes)[statement.name] = value_binding(
@@ -1556,6 +1604,7 @@ module MilkTea
           end
         end
       end
+
 
       def check_static_assert(statement, scopes:)
         validate_consuming_foreign_expression!(statement.condition, scopes:, root_allowed: false)
@@ -1591,6 +1640,27 @@ module MilkTea
             start_type = infer_expression(start_expr, scopes:, expected_type: stop_type)
           elsif stop_expr.is_a?(AST::IntegerLiteral)
             stop_type = infer_expression(stop_expr, scopes:, expected_type: start_type)
+          end
+        end
+
+        raise_sema_error("range bounds must use matching integer types, got #{start_type} and #{stop_type}") unless start_type == stop_type
+
+        start_type
+      end
+
+      def check_range_expr_loop(expression, scopes:)
+        start_type = infer_expression(expression.start_expr, scopes:)
+        stop_type = infer_expression(expression.end_expr, scopes:)
+
+        unless integer_type?(start_type) && integer_type?(stop_type)
+          raise_sema_error("range bounds must be integer types, got #{start_type} and #{stop_type}")
+        end
+
+        if start_type != stop_type
+          if expression.start_expr.is_a?(AST::IntegerLiteral)
+            start_type = infer_expression(expression.start_expr, scopes:, expected_type: stop_type)
+          elsif expression.end_expr.is_a?(AST::IntegerLiteral)
+            stop_type = infer_expression(expression.end_expr, scopes:, expected_type: start_type)
           end
         end
 
@@ -1771,6 +1841,10 @@ module MilkTea
             end
 
             raise_sema_error("specialized name #{describe_expression(expression)} must be called")
+          when AST::RangeExpr
+            raise_sema_error("range expression can only be used as a for-loop iterable or range index target")
+          when AST::TupleLiteral
+            raise_sema_error("tuple literal can only be used as the right-hand side of a range index assignment")
           else
             raise_sema_error("unsupported expression #{expression.class.name}")
           end
@@ -2169,6 +2243,9 @@ module MilkTea
         when AST::IndexAccess
           validate_consuming_foreign_expression!(expression.receiver, scopes:, root_allowed: false)
           validate_consuming_foreign_expression!(expression.index, scopes:, root_allowed: false)
+        when AST::RangeExpr
+          validate_consuming_foreign_expression!(expression.start_expr, scopes:, root_allowed: false)
+          validate_consuming_foreign_expression!(expression.end_expr, scopes:, root_allowed: false)
         end
       end
 
@@ -2205,6 +2282,9 @@ module MilkTea
         when AST::IndexAccess
           validate_hoistable_foreign_expression!(expression.receiver, scopes:, root_hoistable: false)
           validate_hoistable_foreign_expression!(expression.index, scopes:, root_hoistable: false)
+        when AST::RangeExpr
+          validate_hoistable_foreign_expression!(expression.start_expr, scopes:, root_hoistable: false)
+          validate_hoistable_foreign_expression!(expression.end_expr, scopes:, root_hoistable: false)
         end
       end
 
@@ -3929,6 +4009,14 @@ module MilkTea
 
       def range_call?(expression)
         expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "range"
+      end
+
+      def range_expr?(expression)
+        expression.is_a?(AST::RangeExpr)
+      end
+
+      def range_iterable?(expression)
+        range_call?(expression) || range_expr?(expression)
       end
 
       def collection_loop_type(type)

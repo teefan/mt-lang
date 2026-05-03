@@ -406,6 +406,25 @@ class MilkTeaLinterTest < Minitest::Test
     refute warnings.any? { |w| w.code == "dead-assignment" }
   end
 
+  def test_no_dead_assignment_for_loop_init_placeholder
+    # `var x = false` before a while loop that overwrites x as its first action
+    # is an idiomatic placeholder pattern. The initial value is technically dead
+    # (the loop might not run), but warning about it is noise.
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main() -> bool:
+          var use_ttf = false
+          var counter: i32 = 0
+          while counter < 10:
+              use_ttf = counter > 5
+              counter += 1
+          return use_ttf
+    MT
+
+    refute warnings.any? { |w| w.code == "dead-assignment" }
+  end
+
   def test_dead_assignment_when_overwritten_on_all_paths
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
@@ -1322,6 +1341,36 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
 
     refute warnings.any? { |w| w.code == "constant-condition" }
     refute warnings.any? { |w| w.code == "prefer-let" && w.symbol_name == "device_count" }
+  end
+
+  def test_no_warn_on_while_counter_decrement
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local", "prefer-let"])
+      module demo.lint
+
+      def main() -> i32:
+          var index = 3
+          while index > 0:
+              index -= 1
+          return index
+    MT
+
+    refute warnings.any? { |w| w.code == "constant-condition" }
+  end
+
+  def test_constant_condition_while_reports_while_span
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main() -> i32:
+          while false:
+              return 1
+          return 0
+    MT
+
+    w = warnings.find { |warning| warning.code == "constant-condition" }
+    assert w, "expected constant-condition warning"
+    assert_equal 4, w.line
+    assert_equal "false", w.symbol_name
   end
 end
 

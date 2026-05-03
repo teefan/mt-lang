@@ -30,6 +30,10 @@ module MilkTea
       def nullable?
         false
       end
+
+      def field_c_name(name)
+        name
+      end
     end
 
     class Primitive < Base
@@ -453,6 +457,10 @@ module MilkTea
         @fields[name]
       end
 
+      def field_c_name(name)
+        name.delete_suffix("_")
+      end
+
       def instantiate(arguments)
         raise ArgumentError, "#{name} expects #{type_params.length} type arguments, got #{arguments.length}" unless arguments.length == type_params.length
 
@@ -462,7 +470,9 @@ module MilkTea
         substitutions = type_params.zip(arguments).to_h
         instance = StructInstance.new(self, arguments)
         @instances[key] = instance
-        instance.define_fields(@fields.transform_values { |type| substitute_type(type, substitutions) })
+        instance.define_fields(
+          @fields.transform_values { |type| substitute_type(type, substitutions) },
+        )
       end
 
       def to_s
@@ -548,6 +558,10 @@ module MilkTea
 
       def field(name)
         @fields[name]
+      end
+
+      def field_c_name(name)
+        name.delete_suffix("_")
       end
 
       def to_s

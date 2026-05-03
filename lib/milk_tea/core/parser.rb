@@ -810,7 +810,17 @@ module MilkTea
     def parse_expression
       return parse_if_expression if match(:if)
 
-      parse_or
+      parse_range
+    end
+
+    def parse_range
+      expr = parse_or
+      return expr unless match(:dot_dot)
+
+      line = previous.line
+      column = expr.respond_to?(:column) ? expr.column : 0
+      end_expr = parse_or
+      AST::RangeExpr.new(start_expr: expr, end_expr:, line:, column:)
     end
 
     def parse_if_expression
@@ -1051,9 +1061,21 @@ module MilkTea
         end
         AST::NullLiteral.new(type:)
       elsif match(:lparen)
-        expression = parse_expression
-        consume(:rparen, "expected ')' after expression")
-        expression
+        line = previous.line
+        column = previous.column
+        first = parse_expression
+        if match(:comma)
+          elements = [first]
+          loop do
+            elements << parse_expression
+            break unless match(:comma)
+          end
+          consume(:rparen, "expected ')' after tuple elements")
+          AST::TupleLiteral.new(elements:, line:, column:)
+        else
+          consume(:rparen, "expected ')' after expression")
+          first
+        end
       else
         raise error(peek, "expected expression")
       end

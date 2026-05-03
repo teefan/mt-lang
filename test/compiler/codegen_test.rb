@@ -107,6 +107,32 @@ class MilkTeaCodegenTest < Minitest::Test
     end
   end
 
+  def test_generate_c_uses_trailing_underscore_field_name
+    source = <<~MT
+      module demo.extern_field_alias
+
+      import std.c.sample as c
+
+      def is_quit(event: c.Event) -> bool:
+          return event.type_ == u32<-(i32<-c.EventType.QUIT)
+    MT
+
+    imported = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            enum EventType: i32
+                QUIT = 256
+            union Event:
+                type_: u32
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported)
+
+    assert_match(/event\.type/, generated)
+    refute_match(/event\.type_/, generated)
+  end
+
   def test_generate_c_for_unsafe_pointer_cast_and_arithmetic
     source = [
       "module demo.pointer_surface",
@@ -1797,6 +1823,64 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/for \(int32_t i = 0; i < 4; i \+= 1\)/, generated)
     refute_match(/int32_t i = __mt_for_index_\d+;/, generated)
     refute_match(/int32_t __mt_for_stop_\d+ = 4;/, generated)
+  end
+
+  def test_generate_c_for_dot_dot_range_syntax
+    source = [
+      "module demo.dot_dot_range",
+      "",
+      "def sum(n: i32) -> i32:",
+      "    var total = 0",
+      "    for i in 0..n:",
+      "        total += i",
+      "    return total",
+      "",
+      "def main() -> i32:",
+      "    return sum(4)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    # start..end with non-constant bound should hoist stop just like range(start, end)
+    assert_match(/int32_t __mt_for_stop_\d+ = n;/, generated)
+    assert_match(/for \(int32_t i = 0; i < __mt_for_stop_\d+; i \+= 1\)/, generated)
+  end
+
+  def test_generate_c_for_dot_dot_range_with_constant_end
+    source = [
+      "module demo.dot_dot_range_const",
+      "",
+      "def sum_to_ten() -> i32:",
+      "    var total = 0",
+      "    for i in 0..10:",
+      "        total += i",
+      "    return total",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    # constant stop should be inlined, not hoisted
+    assert_match(/for \(int32_t i = 0; i < 10; i \+= 1\)/, generated)
+    refute_match(/int32_t __mt_for_stop_\d+ = 10;/, generated)
+  end
+
+  def test_generate_c_range_index_assignment
+    source = [
+      "module demo.range_index_assign",
+      "",
+      "def fill3(buf: ptr[f32]) -> void:",
+      "    unsafe:",
+      "        buf[0..3] = (1.0, 2.0, 3.0)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/buf\[0\] = 1\.0/, generated)
+    assert_match(/buf\[1\] = 2\.0/, generated)
+    assert_match(/buf\[2\] = 3\.0/, generated)
   end
 
   def test_generate_c_preserves_hoisted_stop_for_non_constant_range_bound
