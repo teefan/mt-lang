@@ -627,14 +627,22 @@ module MilkTea
     end
 
     def mark_mutated(target)
-      return unless target.is_a?(AST::Identifier)
+      return unless target.is_a?(AST::Identifier) || target.is_a?(AST::IndexAccess)
 
-      @scopes.reverse_each do |scope|
-        binding = scope[target.name]
-        next unless binding
+      # For direct identifier assignment (e.g., x = value), mark x as mutated.
+      if target.is_a?(AST::Identifier)
+        @scopes.reverse_each do |scope|
+          binding = scope[target.name]
+          next unless binding
 
-        binding.mutated = true
-        return
+          binding.mutated = true
+          return
+        end
+      end
+
+      # For index assignment (e.g., array[0] = value), mark the array as mutated.
+      if target.is_a?(AST::IndexAccess)
+        mark_mutated(target.receiver)
       end
     end
 
@@ -869,6 +877,7 @@ module MilkTea
     # ── constant-condition ─────────────────────────────────────────────────
     # Uses ConstantPropagation to detect conditions that are always true/false.
     # Skips `while true` — it is an idiomatic infinite loop.
+    # Skips if conditions inside loops, since variables can change across iterations.
 
     def emit_constant_condition_warnings(stmts)
       return if stmts.nil? || stmts.empty?
@@ -876,12 +885,17 @@ module MilkTea
       graph = CFG::Builder.new(ignore_name: method(:ignored_binding_name?)).build(stmts)
       cp    = CFG::ConstantPropagation.solve(graph)
 
+      # Precompute which nodes are inside loops by finding back-edges (a node reachable from its successors).
+      loop_bodies = compute_loop_body_nodes(graph)
+
       graph.each_node do |node|
         cond_expr, line, column, length, skip_node =
           case node.kind
           when :if_condition
             branch = node.statement
-            [branch&.condition, branch&.line || node.line, branch&.column, branch&.length, false]
+            # Skip if conditions inside loops; variables can change across iterations.
+            skip = loop_bodies.include?(node.id)
+            [branch&.condition, branch&.line || node.line, branch&.column, branch&.length, skip]
           when :while_condition
             wstmt = node.statement
             # `while true` is an idiomatic infinite loop — do not warn
@@ -907,6 +921,60 @@ module MilkTea
           message: "#{ctx} is always #{const_val}",
           severity: :warning
         )
+      end
+    end
+
+    # Returns the set of node IDs that are inside loops (reachable from a back-edge).
+    # A back-edge exists when a node is reachable from its own successors.
+    private def compute_loop_body_nodes(graph)
+      loop_nodes = Set.new
+
+      # Find all back-edges: detect cycles by checking if any successor of a node
+      # can reach back to that node.
+      graph.each_node do |node|
+        node.succs.each do |succ_id|
+          # Check if succ can reach back to node (indicating a loop/cycle).
+          if reachable_from?(graph, succ_id, node.id)
+            # Mark all nodes reachable from succ (the loop body) as inside a loop.
+            mark_reachable_nodes(graph, succ_id, loop_nodes)
+          end
+        end
+      end
+
+      loop_nodes
+    end
+
+    # Returns true if target_id is reachable from start_id via forward edges.
+    private def reachable_from?(graph, start_id, target_id)
+      visited = Set.new
+      queue = [start_id]
+
+      while queue.any?
+        node_id = queue.shift
+        return true if node_id == target_id
+        next if visited.include?(node_id)
+
+        visited.add(node_id)
+        node = graph.nodes[node_id]
+        node.succs.each { |succ| queue.push(succ) }
+      end
+
+      false
+    end
+
+    # Mark all nodes reachable from start_id as being inside a loop.
+    private def mark_reachable_nodes(graph, start_id, loop_nodes)
+      visited = Set.new
+      queue = [start_id]
+
+      while queue.any?
+        node_id = queue.shift
+        loop_nodes.add(node_id)
+        next if visited.include?(node_id)
+
+        visited.add(node_id)
+        node = graph.nodes[node_id]
+        node.succs.each { |succ| queue.push(succ) unless visited.include?(succ) }
       end
     end
 
