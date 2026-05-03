@@ -60,6 +60,24 @@ Rules:
 
 - `#` starts a line comment.
 
+Documentation comments use `##` and attach to the nearest next declaration
+without a blank line in between.
+
+```mt
+## Draws a colorful triangle strip.
+## Values are normalized to screen center.
+def draw_strip() -> void:
+    return
+```
+
+Rules for documentation comments:
+
+- Only lines that start with `##` are documentation.
+- Contiguous `##` lines form one markdown block.
+- A blank line breaks attachment.
+- Plain `#` comments are ignored by hover documentation.
+- Documentation attaches only to declarations (`def`, `struct`, `union`, `enum`, `flags`, `variant`, `type`, `const`, `var`, `let`, `methods`, `opaque`).
+
 ### 2.3 Literals
 
 Supported literals:

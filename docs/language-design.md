@@ -87,6 +87,7 @@ If a new feature introduces a second ordinary way to express the same concept, t
 - Tabs are illegal in source files; indentation is 4 spaces.
 - Trailing commas are allowed in multiline call arguments and aggregate literals.
 - Comments use `#`.
+- Documentation comments use `##` and are markdown blocks attached to the next declaration when no blank line intervenes.
 - Names are `snake_case` for modules, variables, and functions.
 - Types use `PascalCase`.
 - Generated binding modules preserve C names exactly at the ABI layer.

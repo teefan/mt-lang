@@ -12,6 +12,7 @@ module MilkTea
     class Workspace
       # Token types that introduce a named definition, in order of precedence
       DEFINITION_KEYWORDS = %i[def struct union enum flags variant type const var let methods opaque].freeze
+      DOC_COMMENT_PREFIX = '##'
       DEFINITION_LINE_PREFIX = /^(?:\s)*(?:(?:pub|foreign)\s+)*(?:def|struct|union|enum|flags|variant|type|const|var|let|methods|opaque)\s+/m
       DEFINITION_NAME_REGEX = /^\s*(?:(?:pub|foreign)\s+)*(?:def|struct|union|enum|flags|variant|type|const|var|let|methods|opaque)\s+([A-Za-z_][A-Za-z0-9_]*)\b/
 
@@ -22,6 +23,7 @@ module MilkTea
         @ast_cache = {}      # uri -> AST::SourceFile (nil on parse failure)
         @analysis_cache = {} # uri -> Sema::Analysis (nil on analysis failure)
         @symbols_cache = {}  # uri -> [{name, kind, line, column}]
+        @doc_comments_cache = {} # uri -> {"line:column" => markdown_doc}
         @last_good_analysis_cache = {} # uri -> last Sema::Analysis that succeeded
         @shared_module_cache = {}
         # Diagnostics cache: uri -> { content_hash: Integer, diagnostics: Array }
@@ -150,6 +152,13 @@ module MilkTea
 
       def get_symbols(uri)
         @symbols_cache[uri] ||= extract_symbols_from_tokens(uri)
+      end
+
+      def doc_comment_for_definition(uri, token)
+        return nil unless token
+
+        docs_by_location = @doc_comments_cache[uri] ||= extract_doc_comments_for_definitions(uri)
+        docs_by_location[doc_comment_key(token.line, token.column)]
       end
 
       def position_to_offset(uri, line, char)
@@ -386,6 +395,7 @@ module MilkTea
         @ast_cache.delete(uri)
         @analysis_cache.delete(uri)
         @symbols_cache.delete(uri)
+        @doc_comments_cache.delete(uri)
         @diagnostics_cache.delete(uri)
         @definition_cache_mutex.synchronize do
           @definition_index.each_value { |entries| entries.delete_if { |e| e[:uri] == uri } }
@@ -481,6 +491,52 @@ module MilkTea
           }
         end
         symbols
+      end
+
+      def extract_doc_comments_for_definitions(uri)
+        content = get_content(uri)
+        return {} if content.empty?
+
+        tokens = get_tokens(uri)
+        return {} if tokens.nil?
+
+        lines = content.split("\n", -1)
+        docs_by_location = {}
+
+        tokens.each_cons(2) do |kw_tok, id_tok|
+          next unless DEFINITION_KEYWORDS.include?(kw_tok.type)
+          next unless id_tok.type == :identifier
+
+          docs = extract_doc_comment_for_line(lines, id_tok.line - 1)
+          next unless docs
+
+          docs_by_location[doc_comment_key(id_tok.line, id_tok.column)] = docs
+        end
+
+        docs_by_location
+      end
+
+      def extract_doc_comment_for_line(lines, declaration_line)
+        index = declaration_line - 1
+        return nil if index.negative?
+
+        docs = []
+        while index >= 0
+          stripped = lines[index].to_s.strip
+          break if stripped.empty?
+          break unless stripped.start_with?(DOC_COMMENT_PREFIX)
+
+          docs << stripped.sub(/\A##\s?/, '')
+          index -= 1
+        end
+
+        return nil if docs.empty?
+
+        docs.reverse.join("\n")
+      end
+
+      def doc_comment_key(line, column)
+        "#{line}:#{column}"
       end
 
       # ── Offset utilities ────────────────────────────────────────────────────
