@@ -147,7 +147,6 @@ module MilkTea
         @handlers['textDocument/formatting']        = method(:handle_formatting)
         @handlers['textDocument/rangeFormatting']   = method(:handle_range_formatting)
         @handlers['textDocument/completion']        = method(:handle_completion)
-        @handlers['textDocument/codeLens']          = method(:handle_code_lens)
         @handlers['textDocument/codeAction']        = method(:handle_code_action)
         @handlers['textDocument/inlayHint']         = method(:handle_inlay_hint)
         @handlers['textDocument/semanticTokens/full'] = method(:handle_semantic_tokens_full)
@@ -401,9 +400,6 @@ module MilkTea
               resolveProvider: false
             },
             renameProvider: { prepareProvider: true },
-            codeLensProvider: {
-              resolveProvider: false
-            },
             workspaceSymbolProvider: true
           }
         }
@@ -1349,42 +1345,6 @@ module MilkTea
       end
 
       # ── Enhancement 5: Code Lens ─────────────────────────────────────────────
-
-      def handle_code_lens(params)
-        uri      = params['textDocument']['uri']
-        content  = @workspace.get_content(uri)
-        return [] if skip_expensive_source_fix_all?(uri, content)
-
-        analysis = @workspace.get_analysis(uri)
-        return [] unless analysis
-
-        lenses = []
-
-        analysis.functions.each do |name, binding|
-          def_tok = @workspace.find_definition_token(uri, name)
-          next unless def_tok
-
-          params_str = format_params(binding.type.params)
-          signature  = "#{name}(#{params_str}) -> #{binding.type.return_type}"
-
-          lenses << {
-            range: {
-              start: { line: def_tok.line - 1, character: 0 },
-              end:   { line: def_tok.line - 1, character: def_tok.column - 1 + name.length }
-            },
-            command: {
-              title:   signature,
-              command: 'milk-tea.showSignature',
-              arguments: [signature]
-            }
-          }
-        end
-
-        lenses
-      rescue StandardError => e
-        warn "Error in codeLens handler: #{e.message}"
-        []
-      end
 
       # ── Enhancement 4: Workspace Symbol ─────────────────────────────────────
 
