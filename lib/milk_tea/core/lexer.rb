@@ -34,6 +34,7 @@ module MilkTea
 
     TWO_CHAR_TOKENS = {
       "->" => :arrow,
+      ".." => :dot_dot,
       "<<" => :shift_left,
       ">>" => :shift_right,
       "+=" => :plus_equal,
@@ -99,7 +100,8 @@ module MilkTea
       line_offset = 0
       @source.each_line.with_index(1) do |raw_line, line_number|
         has_newline = raw_line.end_with?("\n")
-        line = raw_line.delete_suffix("\n")
+        # Use byte-indexed scanning so token offsets remain consistent for UTF-8 content.
+        line = raw_line.delete_suffix("\n").b
         lex_line(line, line_number, line_offset, has_newline:)
         line_offset += raw_line.bytesize
       end

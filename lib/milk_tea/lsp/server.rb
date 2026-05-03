@@ -147,6 +147,7 @@ module MilkTea
         @handlers['textDocument/formatting']        = method(:handle_formatting)
         @handlers['textDocument/rangeFormatting']   = method(:handle_range_formatting)
         @handlers['textDocument/completion']        = method(:handle_completion)
+        @handlers['textDocument/codeLens']          = method(:handle_code_lens)
         @handlers['textDocument/codeAction']        = method(:handle_code_action)
         @handlers['textDocument/inlayHint']         = method(:handle_inlay_hint)
         @handlers['textDocument/semanticTokens/full'] = method(:handle_semantic_tokens_full)
@@ -382,6 +383,9 @@ module MilkTea
             signatureHelpProvider: {
               triggerCharacters: ['(', ','],
               retriggerCharacters: [',']
+            },
+            codeLensProvider: {
+              resolveProvider: false
             },
             codeActionProvider: {
               codeActionKinds: ['quickFix', 'source.fixAll']
@@ -1085,6 +1089,42 @@ module MilkTea
         []
       end
 
+      def handle_code_lens(params)
+        uri = params.dig('textDocument', 'uri')
+        return [] unless uri
+
+        symbols = @workspace.get_symbols(uri)
+        analysis = @workspace.get_analysis(uri)
+        return [] unless symbols && analysis
+
+        symbols.filter_map do |sym|
+          next unless sym[:kind] == 'function'
+
+          name = sym[:name]
+          binding = analysis.functions[name]
+          next unless binding && binding.type
+
+          params_str = binding.type.params.map { |p| "#{p.name}: #{p.type}" }.join(', ')
+          title = "#{name}(#{params_str}) -> #{binding.type.return_type}"
+          line = sym[:line].to_i - 1
+          col = sym[:column].to_i - 1
+
+          {
+            range: {
+              start: { line:, character: col },
+              end: { line:, character: col + name.length }
+            },
+            command: {
+              title:,
+              command: ''
+            }
+          }
+        end
+      rescue StandardError => e
+        warn "Error in codeLens handler: #{e.message}"
+        []
+      end
+
       def semantic_tokens_use_analysis?(uri, content)
         return false if semantic_tokens_analysis_skip_reason(uri, content)
 
@@ -1157,7 +1197,11 @@ module MilkTea
           callee = tokens[i]
           lparen = tokens[i + 1]
 
-          if callee.type == :identifier && lparen.type == :lparen
+          # Skip function definitions — `def foo(` has the same identifier+lparen
+          # shape as a call site but must not get parameter-name inlay hints.
+          prev_tok = i > 0 ? tokens[i - 1] : nil
+
+          if callee.type == :identifier && lparen.type == :lparen && prev_tok&.type != :def
             binding = analysis.functions[callee.lexeme]
             if binding
               arg_starts, closing_index = collect_call_argument_starts(tokens, i + 1)
@@ -1166,6 +1210,10 @@ module MilkTea
               arg_starts.each_with_index do |arg_tok, index|
                 break if index >= params_list.length
                 next unless position_in_range?(arg_tok.line - 1, arg_tok.column - 1, start_line, start_char, end_line, end_char)
+                # Suppress hint when the argument is a bare identifier whose name
+                # already matches the parameter — `foo(x: x)` hints are just noise.
+                param_name = params_list[index].name
+                next if arg_tok.type == :identifier && arg_tok.lexeme == param_name
 
                 hints << {
                   position: { line: arg_tok.line - 1, character: arg_tok.column - 1 },

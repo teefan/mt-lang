@@ -71,6 +71,8 @@ module MilkTea
                 else
                   1 # Separate declaration-style defs from preceding non-def content.
                 end
+              elsif previous_content_line && methods_block_header_line?(previous_content_line)
+                0 # First method in a methods block should not have leading blank lines.
               else
                 2 # exactly 2 blank lines before function definitions
               end
@@ -136,6 +138,13 @@ module MilkTea
       return false if i < 0
 
       bytes[i] != 58 # ':'
+    end
+
+    def self.methods_block_header_line?(line)
+      stripped = line.strip
+      return false unless stripped.end_with?(":")
+
+      stripped.start_with?("methods ")
     end
 
     def self.validate_mode!(mode)

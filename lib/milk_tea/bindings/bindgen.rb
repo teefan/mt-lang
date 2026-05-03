@@ -3,6 +3,7 @@
 require "json"
 require "open3"
 require "tempfile"
+require_relative "../core/token"
 
 module MilkTea
   module Bindgen
@@ -738,9 +739,16 @@ module MilkTea
         fields = Array(node["inner"]).select { |child| child["kind"] == "FieldDecl" }
         fields.each do |field|
           field_type = aggregate_field_type(field, owner_name: name, aggregate_node: node)
-          lines << "        #{field["name"]}: #{field_type}"
+          mt_name, = bindgen_field_name(field["name"])
+          lines << "        #{mt_name}: #{field_type}"
         end
         lines
+      end
+
+      def bindgen_field_name(name)
+        return [name, nil] unless Token::KEYWORDS.key?(name)
+
+        ["#{name}_", nil]
       end
 
       def discover_synthetic_aggregate_dependencies(declarations)

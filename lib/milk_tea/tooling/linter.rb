@@ -317,6 +317,11 @@ module MilkTea
       when AST::BinaryOp
         collect_names_from_expr(expr.left, used)
         collect_names_from_expr(expr.right, used)
+      when AST::RangeExpr
+        collect_names_from_expr(expr.start_expr, used)
+        collect_names_from_expr(expr.end_expr, used)
+      when AST::TupleLiteral
+        expr.elements.each { |e| collect_names_from_expr(e, used) }
       when AST::IfExpr
         collect_names_from_expr(expr.condition, used)
         collect_names_from_expr(expr.then_expression, used)
@@ -564,6 +569,11 @@ module MilkTea
         visit_expression(expression.left)
         visit_expression(expression.right)
         check_self_comparison(expression)
+      when AST::RangeExpr
+        visit_expression(expression.start_expr)
+        visit_expression(expression.end_expr)
+      when AST::TupleLiteral
+        expression.elements.each { |e| visit_expression(e) }
       when AST::IfExpr
         visit_expression(expression.condition)
         visit_expression(expression.then_expression)
@@ -719,6 +729,71 @@ module MilkTea
       param.respond_to?(:column) ? param.column : nil
     end
 
+    def expression_column(expr)
+      return nil unless expr
+
+      if expr.respond_to?(:column) && expr.column
+        return expr.column
+      end
+
+      case expr
+      when AST::BinaryOp
+        expression_column(expr.left) || expression_column(expr.right)
+      when AST::UnaryOp
+        expression_column(expr.operand)
+      when AST::Call
+        expression_column(expr.callee)
+      when AST::IndexAccess
+        expression_column(expr.receiver)
+      when AST::MemberAccess
+        expression_column(expr.receiver)
+      when AST::RangeExpr
+        expression_column(expr.start_expr) || expression_column(expr.end_expr)
+      else
+        nil
+      end
+    end
+
+    def expression_length(expr)
+      return nil unless expr
+
+      case expr
+      when AST::Identifier
+        expr.name.length
+      when AST::BooleanLiteral
+        expr.value ? 4 : 5
+      when AST::IntegerLiteral
+        expr.value.to_s.length
+      when AST::FloatLiteral
+        expr.value.to_s.length
+      else
+        1
+      end
+    end
+
+    def condition_symbol_name(expr)
+      case expr
+      when AST::Identifier
+        expr.name
+      when AST::BooleanLiteral
+        expr.value ? "true" : "false"
+      when AST::BinaryOp
+        condition_symbol_name(expr.left) || condition_symbol_name(expr.right)
+      when AST::UnaryOp
+        condition_symbol_name(expr.operand)
+      when AST::Call
+        condition_symbol_name(expr.callee)
+      when AST::IndexAccess
+        condition_symbol_name(expr.receiver)
+      when AST::MemberAccess
+        condition_symbol_name(expr.receiver)
+      when AST::RangeExpr
+        condition_symbol_name(expr.start_expr) || condition_symbol_name(expr.end_expr)
+      else
+        nil
+      end
+    end
+
     def mark_used(name)
       @scopes.reverse_each do |scope|
         binding = scope[name]
@@ -755,6 +830,18 @@ module MilkTea
         end
       end
 
+      # For the common pattern `var x = default; while cond: x = compute(); use(x)`,
+      # the initial value of x is technically dead (loop might not run), but this is
+      # idiomatic and warning about it is noise. Suppress declaration-dead warnings
+      # when the binding's overwriting assignment lives inside a loop body.
+      loop_initialized = Set.new
+      graph.each_node do |node|
+        node.writes_info.each do |w|
+          next unless w[:origin] == :assignment
+          loop_initialized << w[:binding_key] if assignment_inside_loop?(graph, node.id)
+        end
+      end
+
       graph.each_node do |node|
         node.writes_info.each do |write|
           next if write[:origin] == :call_argument
@@ -764,6 +851,7 @@ module MilkTea
           next unless readable_bindings.include?(binding_key)
           next unless locally_declared.include?(binding_key)
           next if liveness.live_out[node.id].include?(binding_key)
+          next if write[:origin] == :declaration && loop_initialized.include?(binding_key)
 
           @warnings << Warning.new(
             path: @path,
@@ -778,8 +866,26 @@ module MilkTea
       end
     end
 
+    # Returns true if node_id is inside a while/for loop body — i.e., walking
+    # predecessor edges backward from it eventually reaches a :while_condition
+    # or :for_header node before the function entry. This is used to suppress
+    # dead-declaration warnings for the "var x = default; while ...: x = ..."
+    # pattern where the initial value is a required placeholder, not a bug.
+    def assignment_inside_loop?(graph, node_id)
+      visited = Set.new
+      stack = graph.nodes[node_id].preds.dup
+      until stack.empty?
+        id = stack.pop
+        next if visited.include?(id)
+        visited << id
+        node = graph.nodes[id]
+        return true if %i[while_condition for_header].include?(node.kind)
+        node.preds.each { |p| stack << p }
+      end
+      false
+    end
+
     def emit_unreachable_warnings(stmts)
-      return if stmts.nil? || stmts.empty?
 
       graph      = CFG::Builder.new(ignore_name: method(:ignored_binding_name?)).build(stmts)
       reachable  = CFG::Reachability.solve(graph)
@@ -914,7 +1020,8 @@ module MilkTea
             wstmt = node.statement
             # `while true` is an idiomatic infinite loop — do not warn
             skip = wstmt&.condition.is_a?(AST::BooleanLiteral) && wstmt.condition.value == true
-            [wstmt&.condition, node.line, nil, nil, skip]
+            condition = wstmt&.condition
+            [condition, node.line, expression_column(condition), expression_length(condition), skip]
           else
             next
           end
@@ -933,7 +1040,8 @@ module MilkTea
           length:,
           code: "constant-condition",
           message: "#{ctx} is always #{const_val}",
-          severity: :warning
+          severity: :warning,
+          symbol_name: condition_symbol_name(cond_expr)
         )
       end
     end

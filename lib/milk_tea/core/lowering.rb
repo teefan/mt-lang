@@ -238,6 +238,8 @@ module MilkTea
           expression_uses_panic?(expression.callee) || expression.arguments.any? { |argument| expression_uses_panic?(argument.value) }
         when AST::BinaryOp
           expression_uses_panic?(expression.left) || expression_uses_panic?(expression.right)
+        when AST::RangeExpr
+          expression_uses_panic?(expression.start_expr) || expression_uses_panic?(expression.end_expr)
         when AST::IfExpr
           expression_uses_panic?(expression.condition) || expression_uses_panic?(expression.then_expression) || expression_uses_panic?(expression.else_expression)
         when AST::UnaryOp
@@ -271,6 +273,8 @@ module MilkTea
           expression_uses_offsetof?(expression.receiver)
         when AST::IndexAccess
           expression_uses_offsetof?(expression.receiver) || expression_uses_offsetof?(expression.index)
+        when AST::RangeExpr
+          expression_uses_offsetof?(expression.start_expr) || expression_uses_offsetof?(expression.end_expr)
         when AST::Specialization
           expression_uses_offsetof?(expression.callee) || expression.arguments.any? { |argument| expression_uses_offsetof?(argument.value) }
         else
@@ -816,9 +820,9 @@ module MilkTea
             await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
           when AST::ForStmt
             # For loops with await need the loop variable in the frame so it survives across suspension
-            loop_type = range_call?(statement.iterable) ? infer_range_loop_type(statement.iterable, env:) : collection_loop_type(infer_expression_type(statement.iterable, env:))
+            loop_type = range_iterable?(statement.iterable) ? infer_range_loop_type(statement.iterable, env:) : collection_loop_type(infer_expression_type(statement.iterable, env:))
             local_fields[statement.name] ||= { field_name: "local_#{statement.name}", type: loop_type, mutable: true }
-              if range_call?(statement.iterable)
+              if range_iterable?(statement.iterable)
                 stop_field_name = "local_#{statement.name}_stop"
                 local_fields[stop_field_name] ||= { field_name: stop_field_name, type: loop_type, mutable: true }
               end
@@ -883,9 +887,9 @@ module MilkTea
           when AST::WhileStmt
             await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
           when AST::ForStmt
-            loop_type = range_call?(statement.iterable) ? infer_range_loop_type(statement.iterable, env:) : collection_loop_type(infer_expression_type(statement.iterable, env:))
+            loop_type = range_iterable?(statement.iterable) ? infer_range_loop_type(statement.iterable, env:) : collection_loop_type(infer_expression_type(statement.iterable, env:))
             local_fields[statement.name] ||= { field_name: "local_#{statement.name}", type: loop_type, mutable: true }
-              if range_call?(statement.iterable)
+              if range_iterable?(statement.iterable)
                 stop_field_name = "local_#{statement.name}_stop"
                 local_fields[stop_field_name] ||= { field_name: stop_field_name, type: loop_type, mutable: true }
               end
@@ -1403,7 +1407,7 @@ module MilkTea
           end
         when AST::ForStmt
           original_iterable = statement.iterable
-          loop_type = if range_call?(original_iterable)
+          loop_type = if range_iterable?(original_iterable)
                         infer_range_loop_type(original_iterable, env:)
                       else
                         iterable_type = infer_expression_type(original_iterable, env:)
@@ -1539,6 +1543,10 @@ module MilkTea
           receiver_setup, receiver = normalize_async_expression(expression.receiver, counter, env:)
           index_setup, index = normalize_async_expression(expression.index, counter, env:)
           [receiver_setup + index_setup, AST::IndexAccess.new(receiver: receiver, index: index)]
+        when AST::RangeExpr
+          start_setup, start_expr = normalize_async_expression(expression.start_expr, counter, env:)
+          end_setup, end_expr = normalize_async_expression(expression.end_expr, counter, env:)
+          [start_setup + end_setup, AST::RangeExpr.new(start_expr:, end_expr:, line: expression.line, column: expression.column)]
         when AST::FormatString
           setup = []
           parts = expression.parts.map do |part|
@@ -1780,11 +1788,20 @@ module MilkTea
       end
 
       def lower_async_cf_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:)
-        if range_call?(statement.iterable)
+        if range_iterable?(statement.iterable)
           lower_async_cf_range_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:)
         else
           lower_async_cf_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:)
         end
+      end
+
+      def lower_range_call(iterable, env:)
+        loop_type = infer_range_loop_type(iterable, env:)
+        start_expr_ast = range_start_of(iterable)
+        stop_expr_ast = range_end_of(iterable)
+        start_ir = lower_expression(start_expr_ast, env:, expected_type: loop_type)
+        stop_ir = lower_expression(stop_expr_ast, env:, expected_type: loop_type)
+        [start_ir, stop_ir, false]
       end
 
       def lower_async_cf_range_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:)
@@ -2034,15 +2051,15 @@ module MilkTea
       end
 
       def lower_async_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, async_info:)
-        return lower_async_range_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, async_info:) if range_call?(statement.iterable)
+        return lower_async_range_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, async_info:) if range_iterable?(statement.iterable)
 
         lower_async_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, async_info:)
       end
 
       def lower_async_range_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, async_info:)
         loop_type = infer_range_loop_type(statement.iterable, env:)
-        start_expr = statement.iterable.arguments[0].value
-        stop_expr = statement.iterable.arguments[1].value
+        start_expr = range_start_of(statement.iterable)
+        stop_expr = range_end_of(statement.iterable)
         start_setup, prepared_start = prepare_expression_for_inline_lowering(start_expr, env:, expected_type: loop_type)
         stop_setup, prepared_stop = prepare_expression_for_inline_lowering(stop_expr, env:, expected_type: loop_type)
         index_c_name = c_local_name(statement.name)
@@ -2478,6 +2495,13 @@ module MilkTea
               end
             end
           when AST::Assignment
+            if statement.operator == "=" &&
+               statement.target.is_a?(AST::IndexAccess) &&
+               statement.target.index.is_a?(AST::RangeExpr) &&
+               statement.value.is_a?(AST::TupleLiteral)
+              lowered.concat(lower_range_index_assignment(statement, env: local_env))
+              next
+            end
             target = lower_assignment_target(statement.target, env: local_env)
             prepared_cleanups = []
             prepared_setup, prepared_value, prepared_cleanups = prepare_expression_with_cleanups(
@@ -3193,7 +3217,7 @@ module MilkTea
       end
 
       def lower_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
-        return lower_range_for_stmt(statement, env:, active_defers:, return_type:, allow_return:) if range_call?(statement.iterable)
+        return lower_range_for_stmt(statement, env:, active_defers:, return_type:, allow_return:) if range_iterable?(statement.iterable)
 
         lower_collection_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
       end
@@ -3253,8 +3277,8 @@ module MilkTea
 
       def lower_range_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
         loop_type = infer_range_loop_type(statement.iterable, env:)
-        start_expr = statement.iterable.arguments[0].value
-        stop_expr = statement.iterable.arguments[1].value
+        start_expr = range_start_of(statement.iterable)
+        stop_expr = range_end_of(statement.iterable)
         start_setup, prepared_start = prepare_expression_for_inline_lowering(start_expr, env:, expected_type: loop_type)
         stop_setup, prepared_stop = prepare_expression_for_inline_lowering(stop_expr, env:, expected_type: loop_type)
         index_c_name = c_local_name(statement.name)
@@ -3375,6 +3399,35 @@ module MilkTea
         statements << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
 
         IR::BlockStmt.new(body: statements)
+      end
+
+      def lower_range_index_assignment(statement, env:)
+        range = statement.target.index
+        start_val = range.start_expr.value
+        end_val = range.end_expr.value
+        receiver_type = infer_expression_type(statement.target.receiver, env:)
+        element_type = infer_index_result_type(receiver_type, @types.fetch("usize"))
+
+        receiver_setup, prepared_receiver = prepare_expression_for_inline_lowering(statement.target.receiver, env:, expected_type: receiver_type)
+        statements = receiver_setup.dup
+
+        statement.value.elements.each_with_index do |elem, i|
+          index_ir = IR::IntegerLiteral.new(value: start_val + i, type: @types.fetch("usize"))
+          target_ir = IR::Index.new(
+            receiver: lower_expression(prepared_receiver, env:, expected_type: receiver_type),
+            index: index_ir,
+            type: element_type,
+          )
+          value_ir = lower_contextual_expression(
+            elem,
+            env:,
+            expected_type: element_type,
+            contextual_int_to_float: contextual_int_to_float_target?(element_type),
+          )
+          statements << IR::Assignment.new(target: target_ir, operator: "=", value: value_ir)
+        end
+
+        statements
       end
 
       def lower_assignment_target(expression, env:)
@@ -4066,8 +4119,29 @@ module MilkTea
           return IR::Name.new(name: imported_value_c_name(imported_module, expression.member), type:, pointer: false)
         end
 
+        receiver_type = infer_expression_type(expression.receiver, env:)
         receiver = lower_expression(expression.receiver, env:)
-        IR::Member.new(receiver:, member: expression.member, type:)
+        IR::Member.new(receiver:, member: member_c_name(receiver_type, expression.member), type:)
+      end
+
+      def member_c_name(receiver_type, member)
+        owner_type = receiver_type
+        loop do
+          case owner_type
+          when Types::Nullable
+            owner_type = owner_type.base
+          when Types::GenericInstance
+            if %w[ptr const_ptr ref].include?(owner_type.name) && owner_type.arguments.length == 1
+              owner_type = owner_type.arguments.first
+            else
+              break
+            end
+          else
+            break
+          end
+        end
+
+        owner_type.field_c_name(member)
       end
 
       def lower_call(expression, env:, type:)
@@ -6084,6 +6158,8 @@ module MilkTea
           else
             raise LoweringError, "unsupported specialization"
           end
+        when AST::RangeExpr
+          raise LoweringError, "range expression is not valid in this context; use it as a for-loop iterable"
         else
           raise LoweringError, "unsupported expression type #{expression.class.name}"
         end
@@ -6749,6 +6825,22 @@ module MilkTea
         expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "range"
       end
 
+      def range_expr?(expression)
+        expression.is_a?(AST::RangeExpr)
+      end
+
+      def range_iterable?(expression)
+        range_call?(expression) || range_expr?(expression)
+      end
+
+      def range_start_of(iterable)
+        iterable.is_a?(AST::RangeExpr) ? iterable.start_expr : iterable.arguments[0].value
+      end
+
+      def range_end_of(iterable)
+        iterable.is_a?(AST::RangeExpr) ? iterable.end_expr : iterable.arguments[1].value
+      end
+
       def wildcard_arm_pattern?(expression)
         expression.is_a?(AST::Identifier) && expression.name == "_"
       end
@@ -6978,8 +7070,8 @@ module MilkTea
       end
 
       def infer_range_loop_type(expression, env:)
-        start_expr = expression.arguments[0].value
-        stop_expr = expression.arguments[1].value
+        start_expr = range_start_of(expression)
+        stop_expr = range_end_of(expression)
         start_type = infer_expression_type(start_expr, env:)
         stop_type = infer_expression_type(stop_expr, env:)
 

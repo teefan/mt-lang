@@ -163,4 +163,38 @@ class MilkTeaFormatterTest < Minitest::Test
 
     assert_equal "module demo.var\n\npub var counter: i32 = 1\n", formatted
   end
+
+  def test_tidy_mode_does_not_insert_blank_lines_before_first_method
+    source = <<~MT
+      module demo.methods
+
+      struct Ball:
+          x: i32
+
+      methods Ball:
+
+
+          def draw() -> void:
+              return
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
+
+    assert_includes formatted, "methods Ball:\n    def draw() -> void:"
+    refute_includes formatted, "methods Ball:\n\n    def draw() -> void:"
+  end
+
+  def test_tidy_mode_preserves_utf8_string_literals
+    source = <<~MT
+      module demo.utf8
+
+      const text: cstr = c"いろはにほへと　ちりぬるを\\nわかよたれそ"
+      const path: cstr = c"../resources/DotGothic16-Regular.ttf"
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
+
+    assert_includes formatted, "const text: cstr = c\"いろはにほへと　ちりぬるを\\nわかよたれそ\""
+    assert_includes formatted, "\nconst path: cstr = c\"../resources/DotGothic16-Regular.ttf\""
+  end
 end

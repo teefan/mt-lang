@@ -322,6 +322,9 @@ module MilkTea
         when AST::BinaryOp
           read_identifiers(expression.left, names)
           read_identifiers(expression.right, names)
+        when AST::RangeExpr
+          read_identifiers(expression.start_expr, names)
+          read_identifiers(expression.end_expr, names)
         when AST::IfExpr
           read_identifiers(expression.condition, names)
           read_identifiers(expression.then_expression, names)
@@ -850,16 +853,50 @@ module MilkTea
       private_class_method :join_lattice
 
       # Attempt to evaluate the assigned value as a compile-time constant.
-      # Handles LocalDecl and Assignment with simple RHS literals/arithmetic.
+      # Handles LocalDecl and Assignment, including compound assignments.
       def self.eval_const(statement, _write, in_state, binding_resolution:, strict_binding_ids:)
-        rhs =
-          case statement
-          when AST::LocalDecl  then statement.value
-          when AST::Assignment then statement.value
-          end
-        eval_expr_const(rhs, in_state, binding_resolution:, strict_binding_ids:)
+        case statement
+        when AST::LocalDecl
+          eval_expr_const(statement.value, in_state, binding_resolution:, strict_binding_ids:)
+        when AST::Assignment
+          eval_assignment_const(statement, in_state, binding_resolution:, strict_binding_ids:)
+        else
+          NAC
+        end
       end
       private_class_method :eval_const
+
+      def self.eval_assignment_const(statement, in_state, binding_resolution:, strict_binding_ids:)
+        return NAC unless statement.target.is_a?(AST::Identifier)
+
+        rhs = eval_expr_const(statement.value, in_state, binding_resolution:, strict_binding_ids:)
+        return NAC unless rhs.is_a?(ConstVal)
+
+        return rhs if statement.operator == "="
+
+        lhs = eval_expr_const(statement.target, in_state, binding_resolution:, strict_binding_ids:)
+        return NAC unless lhs.is_a?(ConstVal)
+
+        begin
+          v = case statement.operator
+              when "+="  then lhs.value + rhs.value
+              when "-="  then lhs.value - rhs.value
+              when "*="  then lhs.value * rhs.value
+              when "/="  then rhs.value.zero? ? (return NAC) : lhs.value / rhs.value
+              when "%="  then rhs.value.zero? ? (return NAC) : lhs.value % rhs.value
+              when "&="  then lhs.value & rhs.value
+              when "|="  then lhs.value | rhs.value
+              when "^="  then lhs.value ^ rhs.value
+              when "<<=" then lhs.value << rhs.value
+              when ">>=" then lhs.value >> rhs.value
+              else return NAC
+              end
+          ConstVal.new(v)
+        rescue StandardError
+          NAC
+        end
+      end
+      private_class_method :eval_assignment_const
 
       def self.eval_expr_const(expr, state, binding_resolution:, strict_binding_ids:)
         case expr
