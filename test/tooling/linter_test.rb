@@ -33,7 +33,7 @@ class MilkTeaLinterTest < Minitest::Test
   end
 
   def test_reports_only_shadowed_unused_binding
-    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["constant-condition"])
       module demo.lint
 
       def main() -> i32:
@@ -1098,5 +1098,276 @@ class MilkTeaLinterFixUnusedImportDeadAssignmentTest < Minitest::Test
 
     # let declarations are never touched by dead-assignment fixer
     assert_includes fixed, "let result = n + 1"
+  end
+end
+
+# ── self-assignment ────────────────────────────────────────────────────────
+
+class MilkTeaLinterSelfAssignmentTest < Minitest::Test
+  def test_warns_on_self_assignment
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main() -> i32:
+          var x: i32 = 1
+          x = x
+          return x
+    MT
+
+    w = warnings.find { |w| w.code == "self-assignment" }
+    assert w, "expected self-assignment warning"
+    assert_equal 5, w.line
+    assert_match(/'x'/, w.message)
+  end
+
+  def test_no_warn_on_normal_assignment
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main() -> i32:
+          var x: i32 = 1
+          var y: i32 = 2
+          x = y
+          return x
+    MT
+
+    refute warnings.any? { |w| w.code == "self-assignment" }
+  end
+
+  def test_no_warn_on_compound_self_assignment
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main() -> i32:
+          var x: i32 = 1
+          x += x
+          return x
+    MT
+
+    refute warnings.any? { |w| w.code == "self-assignment" }
+  end
+end
+
+# ── self-comparison ────────────────────────────────────────────────────────
+
+class MilkTeaLinterSelfComparisonTest < Minitest::Test
+  def test_warns_on_self_equal_comparison
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main(x: i32) -> i32:
+          if x == x:
+              return 1
+          return 0
+    MT
+
+    w = warnings.find { |w| w.code == "self-comparison" }
+    assert w, "expected self-comparison warning"
+    assert_match(/'x'/, w.message)
+    assert_match(/always true/, w.message)
+  end
+
+  def test_warns_on_self_not_equal_comparison
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main(x: i32) -> i32:
+          if x != x:
+              return 1
+          return 0
+    MT
+
+    w = warnings.find { |w| w.code == "self-comparison" }
+    assert w, "expected self-comparison warning"
+    assert_match(/always false/, w.message)
+  end
+
+  def test_no_warn_on_different_operands
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main(x: i32, y: i32) -> i32:
+          if x == y:
+              return 1
+          return 0
+    MT
+
+    refute warnings.any? { |w| w.code == "self-comparison" }
+  end
+end
+
+# ── constant-condition ─────────────────────────────────────────────────────
+
+class MilkTeaLinterConstantConditionTest < Minitest::Test
+  def test_warns_on_literal_true_in_if
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["redundant-else"])
+      module demo.lint
+
+      def main() -> i32:
+          if true:
+              return 1
+          else:
+              return 0
+    MT
+
+    w = warnings.find { |w| w.code == "constant-condition" }
+    assert w, "expected constant-condition warning"
+    assert_match(/always true/, w.message)
+    assert_equal 4, w.line
+  end
+
+  def test_warns_on_literal_false_in_if
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main() -> i32:
+          if false:
+              return 1
+          return 0
+    MT
+
+    w = warnings.find { |w| w.code == "constant-condition" }
+    assert w, "expected constant-condition warning"
+    assert_match(/always false/, w.message)
+  end
+
+  def test_warns_on_literal_false_in_while
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main() -> i32:
+          while false:
+              let _x = 1
+          return 0
+    MT
+
+    w = warnings.find { |w| w.code == "constant-condition" }
+    assert w, "expected constant-condition warning"
+    assert_match(/always false/, w.message)
+  end
+
+  def test_no_warn_on_while_true
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main() -> i32:
+          while true:
+              return 42
+    MT
+
+    refute warnings.any? { |w| w.code == "constant-condition" }
+  end
+
+  def test_warns_on_cp_constant_variable_in_if
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local", "prefer-let"])
+      module demo.lint
+
+      def main() -> i32:
+          var flag: bool = true
+          if flag:
+              return 1
+          return 0
+    MT
+
+    w = warnings.find { |w| w.code == "constant-condition" }
+    assert w, "expected constant-condition warning via CP"
+    assert_match(/always true/, w.message)
+  end
+
+  def test_no_warn_on_runtime_variable
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main(flag: bool) -> i32:
+          if flag:
+              return 1
+          return 0
+    MT
+
+    refute warnings.any? { |w| w.code == "constant-condition" }
+  end
+end
+
+# ── redundant-null-check ───────────────────────────────────────────────────
+
+class MilkTeaLinterRedundantNullCheckTest < Minitest::Test
+  def test_warns_on_redundant_null_check_inside_non_null_branch
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local"])
+      module demo.lint
+
+      def process(x: i32?) -> i32:
+          if x != null:
+              if x != null:
+                  let _v = 1
+              return 1
+          return 0
+    MT
+
+    w = warnings.find { |w| w.code == "redundant-null-check" }
+    assert w, "expected redundant-null-check warning"
+    assert_match(/'x'/, w.message)
+    assert_equal :hint, w.severity
+  end
+
+  def test_no_warn_on_first_null_check
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local"])
+      module demo.lint
+
+      def process(x: i32?) -> i32:
+          if x != null:
+              let _v = 1
+              return 1
+          return 0
+    MT
+
+    refute warnings.any? { |w| w.code == "redundant-null-check" }
+  end
+end
+
+# ── loop-single-iteration ──────────────────────────────────────────────────
+
+class MilkTeaLinterLoopSingleIterationTest < Minitest::Test
+  def test_warns_on_while_loop_that_always_breaks
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["constant-condition"])
+      module demo.lint
+
+      def main() -> i32:
+          var result: i32 = 0
+          while true:
+              result = 1
+              break
+          return result
+    MT
+
+    w = warnings.find { |w| w.code == "loop-single-iteration" }
+    assert w, "expected loop-single-iteration warning"
+    assert_equal 5, w.line
+  end
+
+  def test_warns_on_while_loop_that_always_returns
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["missing-return", "constant-condition"])
+      module demo.lint
+
+      def find() -> i32:
+          while true:
+              return 42
+    MT
+
+    w = warnings.find { |w| w.code == "loop-single-iteration" }
+    assert w, "expected loop-single-iteration warning"
+  end
+
+  def test_no_warn_on_normal_loop
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main() -> i32:
+          var i: i32 = 0
+          while i < 10:
+              i = i + 1
+          return i
+    MT
+
+    refute warnings.any? { |w| w.code == "loop-single-iteration" }
   end
 end

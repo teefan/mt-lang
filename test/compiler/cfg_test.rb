@@ -262,6 +262,42 @@ class MilkTeaCFGTest < Minitest::Test
     assert_nil result.constant_at(ret_node.id, "y")  # not a constant
   end
 
+  def test_constant_propagation_with_binding_ids_handles_shadowing
+    context = sema_function_context(<<~MT)
+      module demo.cfg
+
+      def main(flag: bool) -> i32:
+          let x: i32 = 10
+          if flag:
+              let x: i32 = 20
+              return x
+          return x
+    MT
+
+    resolution = context[:analysis].binding_resolution
+    graph = MilkTea::CFG::Builder.new(
+      binding_resolution: resolution,
+      strict_binding_ids: true,
+    ).build(context[:function].body)
+
+    result = MilkTea::CFG::ConstantPropagation.solve(
+      graph,
+      binding_resolution: resolution,
+      strict_binding_ids: true,
+    )
+
+    return_nodes = graph.each_node.select { |node| node.kind == :return }
+    assert_equal 2, return_nodes.length
+
+    return_constants = return_nodes.map do |node|
+      id_reads = node.reads.select { |k| k.is_a?(Integer) }
+      assert_equal 1, id_reads.length
+      result.constant_at(node.id, id_reads.first)
+    end
+
+    assert_equal [10, 20], return_constants.sort
+  end
+
   private
 
   def function_body(source)

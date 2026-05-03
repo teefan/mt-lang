@@ -1077,7 +1077,7 @@ module MilkTea
           end
         end
 
-        if async_info[:result_type] == @types.fetch("void") && !block_always_terminates?(statements)
+        if async_info[:result_type] == @types.fetch("void") && !cfg_block_always_terminates?(statements)
           body.concat(async_complete_statements(frame_expr:, raw_frame_expr:, async_info:, value: nil, result_already_stored: true))
         end
 
@@ -2588,7 +2588,7 @@ module MilkTea
 
             merge_cstr_metadata_after_if_statement!(statement, local_env)
 
-            if statement.else_body.nil? && statement.branches.all? { |branch| block_always_terminates?(branch.body) }
+            if statement.else_body.nil? && statement.branches.all? { |branch| cfg_block_always_terminates?(branch.body) }
               local_env[:scopes] = scopes_with_refinements(local_env[:scopes], false_refinements)
             end
           when AST::MatchStmt
@@ -7435,23 +7435,8 @@ module MilkTea
         { identifier_expression.name => refined_type }
       end
 
-      def block_always_terminates?(statements)
-        statements.any? { |statement| statement_always_terminates?(statement) }
-      end
-
-      def statement_always_terminates?(statement)
-        case statement
-        when AST::ReturnStmt, AST::BreakStmt, AST::ContinueStmt
-          true
-        when AST::IfStmt
-          statement.else_body && statement.branches.all? { |branch| block_always_terminates?(branch.body) } && block_always_terminates?(statement.else_body)
-        when AST::MatchStmt
-          statement.arms.all? { |arm| block_always_terminates?(arm.body) }
-        when AST::UnsafeStmt
-          block_always_terminates?(statement.body)
-        else
-          false
-        end
+      def cfg_block_always_terminates?(statements)
+        CFG::Termination.block_always_terminates?(statements, ignore_name: ->(_name) { false })
       end
 
       def conditional_common_type(then_type, else_type)
