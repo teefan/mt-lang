@@ -12,8 +12,6 @@ struct Ball:
     color: rl.Color
 
 methods Ball:
-
-
     edit def update(dt: f32):
         this.position.x += this.velocity.x * dt
         this.position.y += this.velocity.y * dt

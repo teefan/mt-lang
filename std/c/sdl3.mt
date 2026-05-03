@@ -2564,7 +2564,7 @@ extern module std.c.sdl3:
         data2: ptr[void]
 
     union SDL_Event:
-        kind: u32
+        type_: u32
         common: SDL_CommonEvent
         display: SDL_DisplayEvent
         window: SDL_WindowEvent

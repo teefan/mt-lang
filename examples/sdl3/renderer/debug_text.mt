@@ -17,14 +17,16 @@ const timer_format: cstr = c"(This program has been running for %zu seconds.)"
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 
+
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
+
 
 def render_frame() -> void:
     let charsize = i32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE
@@ -48,6 +50,7 @@ def render_frame() -> void:
     c.SDL_RenderDebugTextFormat(renderer, f32<-(window_width - (charsize * 46)) / 2.0, 400.0, timer_format, c.SDL_GetTicks() / 1000)
     c.SDL_RenderPresent(renderer)
 
+
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     c.SDL_SetAppMetadata(c"Example Renderer Debug Texture", c"1.0", c"com.example.renderer-debug-text")
 
@@ -67,6 +70,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

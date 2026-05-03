@@ -33,8 +33,6 @@ struct CameraLandingState:
     even_out_target: f32
 
 methods Player:
-
-
     edit def update(env_items: array[EnvItem, 5], delta: f32) -> void:
         if rl.IsKeyDown(rl.KeyboardKey.KEY_LEFT):
             this.position.x -= player_hor_speed * delta

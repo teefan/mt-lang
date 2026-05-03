@@ -10,7 +10,6 @@ const window_title: cstr = c"raylib [core] example - custom logging"
 const prompt_text: cstr = c"Check out the console output to see the custom logger in action!"
 const time_format: cstr = c"%Y-%m-%d %H:%M:%S"
 
-
 foreign def vprintf_raylib_args(format: cstr, args: rl.va_list as stdio.va_list) -> i32 = stdio.vprintf
 
 

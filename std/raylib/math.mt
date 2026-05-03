@@ -68,14 +68,10 @@ pub def acos(value: f32) -> f32:
     return libm.acosf(value)
 
 methods rl.Color:
-
-
     pub static def from_hsv(hue: f32, saturation: f32, value: f32) -> Color:
         return rl.ColorFromHSV(hue, saturation, value)
 
 methods rl.Vector2:
-
-
     pub static def zero() -> Vector2:
         return rl.Vector2(x = 0.0, y = 0.0)
 
@@ -140,8 +136,6 @@ methods rl.Vector2:
         )
 
 methods rl.Vector3:
-
-
     pub static def zero() -> Vector3:
         return rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 
@@ -240,8 +234,6 @@ methods rl.Vector3:
         )
 
 methods rl.Matrix:
-
-
     pub static def identity() -> Matrix:
         return rl.Matrix(
             m0 = 1.0,
@@ -525,8 +517,6 @@ methods rl.Matrix:
         )
 
 methods rl.Quaternion:
-
-
     pub static def identity() -> Quaternion:
         return rl.Vector4(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
 

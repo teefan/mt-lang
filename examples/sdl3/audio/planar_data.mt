@@ -74,9 +74,9 @@ def pump_events() -> bool:
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
         c.SDL_ConvertEventToRenderCoordinates(renderer, ptr_of(ref_of(event)))
 
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
-        elif c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
+        elif event.type_ == u32<-c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
             if event.button.button == c.Uint8<-c.SDL_BUTTON_LEFT and playing_sound == 0:
                 let point = c.SDL_FPoint(x = event.button.x, y = event.button.y)
 

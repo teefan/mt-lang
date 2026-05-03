@@ -7,8 +7,6 @@ pub struct String:
     buffer: bytes.Buffer
 
 methods String:
-
-
     pub static def create() -> String:
         return String(buffer = bytes.create())
 

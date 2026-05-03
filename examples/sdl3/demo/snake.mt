@@ -239,23 +239,23 @@ def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
-            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_ADDED:
+            if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_ADDED:
                 if joystick == null:
                     joystick = c.SDL_OpenJoystick(event.jdevice.which)
             else:
-                if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_REMOVED:
+                if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_REMOVED:
                     if joystick != null:
                         if c.SDL_GetJoystickID(joystick) == event.jdevice.which:
                             c.SDL_CloseJoystick(joystick)
                             joystick = null
                 else:
-                    if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_HAT_MOTION:
+                    if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_HAT_MOTION:
                         handle_hat_event(event.jhat.value)
                     else:
-                        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_KEY_DOWN:
+                        if event.type_ == u32<-  c.SDL_EventType.SDL_EVENT_KEY_DOWN:
                             if not handle_key_event(event.key.scancode):
                                 return false
 

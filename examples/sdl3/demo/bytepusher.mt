@@ -181,11 +181,11 @@ def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
-        elif c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_DROP_FILE:
+        elif event.type_ == u32<-c.SDL_EventType.SDL_EVENT_DROP_FILE:
             load_file(event.drop.data)
-        elif c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_KEY_DOWN:
+        elif event.type_ == u32<-c.SDL_EventType.SDL_EVENT_KEY_DOWN:
             if event.key.scancode == c.SDL_Scancode.SDL_SCANCODE_ESCAPE:
                 return false
 
@@ -201,7 +201,7 @@ def pump_events() -> bool:
                 keystate |= scancode_mask(event.key.scancode)
             else:
                 keystate |= keycode_mask(event.key.key)
-        elif c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_KEY_UP:
+        elif event.type_ == u32<-c.SDL_EventType.SDL_EVENT_KEY_UP:
             if positional_input:
                 let mask = scancode_mask(event.key.scancode)
                 keystate &= c.Uint16<-~mask

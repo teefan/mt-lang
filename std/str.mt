@@ -160,8 +160,6 @@ pub def is_valid_utf8(text: str) -> bool:
     return true
 
 methods str:
-
-
     pub def slice(start: usize, len: usize) -> str:
         if start > this.len:
             panic(c"str slice start out of bounds")

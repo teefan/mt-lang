@@ -12,6 +12,7 @@ const hold_space_text: cstr = c"Hold SPACE to use TTF generated font"
 const bm_text: cstr = c"Using BMFont (Angelcode) imported"
 const ttf_text: cstr = c"Using TTF font generated"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
