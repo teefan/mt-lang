@@ -162,7 +162,7 @@ def main() -> i32:
 
         rl.DrawText(restart_text, 215, 230, 20, rl.LIGHTGRAY)
         rl.DrawText(pause_text, 208, 260, 20, rl.LIGHTGRAY)
-        rl.DrawText(rl.TextFormat(lpf_format, if enable_effect_lpf then c"ON" else c"OFF"), 200, 320, 20, rl.GRAY)
-        rl.DrawText(rl.TextFormat(delay_format, if enable_effect_delay then c"ON" else c"OFF"), 180, 350, 20, rl.GRAY)
+        rl.DrawText(rl.TextFormat(lpf_format, if enable_effect_lpf: c"ON" else: c"OFF"), 200, 320, 20, rl.GRAY)
+        rl.DrawText(rl.TextFormat(delay_format, if enable_effect_delay: c"ON" else: c"OFF"), 180, 350, 20, rl.GRAY)
 
     return 0

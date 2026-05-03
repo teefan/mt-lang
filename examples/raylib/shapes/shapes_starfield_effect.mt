@@ -75,7 +75,7 @@ def main() -> i32:
                 rl.DrawCircleV(stars_screen_pos[index], radius, rl.RAYWHITE)
 
         rl.DrawText(rl.TextFormat(speed_format, 9.0 * speed / 2.0), 10, 40, 20, rl.RAYWHITE)
-        rl.DrawText(rl.TextFormat(mode_format, if draw_lines then lines_text else circles_text), 10, 70, 20, rl.RAYWHITE)
+        rl.DrawText(rl.TextFormat(mode_format, if draw_lines: lines_text else: circles_text), 10, 70, 20, rl.RAYWHITE)
         rl.DrawFPS(10, 10)
 
     return 0

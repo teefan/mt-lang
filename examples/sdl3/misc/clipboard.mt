@@ -74,21 +74,21 @@ def calculate_current_time_string() -> void:
         )
 
 def pump_events() -> bool:
-    var event = c.SDL_Event(type = 0)
+    var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
         c.SDL_ConvertEventToRenderCoordinates(renderer, ptr_of(ref_of(event)))
 
-        if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
-            if event.button.type == c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
+            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
                 if event.button.button == c.Uint8<-c.SDL_BUTTON_LEFT:
                     let point = c.SDL_FPoint(x = event.button.x, y = event.button.y)
                     copy_pressed = point_in_rect(point, copy_button_rect)
                     paste_pressed = point_in_rect(point, paste_button_rect)
             else:
-                if event.button.type == c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_UP:
+                if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_UP:
                     if event.button.button == c.Uint8<-c.SDL_BUTTON_LEFT:
                         let point = c.SDL_FPoint(x = event.button.x, y = event.button.y)
 
@@ -110,7 +110,7 @@ def pump_events() -> bool:
 def render_truncated_line(text: ptr[char], x: f32, y: f32, max_chars_per_line: usize) -> void:
     unsafe:
         let line_length = min_usize(c.SDL_strlen(cstr<-text), max_chars_per_line)
-        let end_ptr = text + i32<-line_length
+        let end_ptr = ptr[char]<-(text + i32<-line_length)
         let saved_char = read(end_ptr)
         read(end_ptr) = char<-0
         c.SDL_RenderDebugText(renderer, x, y, cstr<-text)
@@ -143,19 +143,23 @@ def render_pasted_text() -> void:
         var ignore_cr = false
 
         unsafe:
-            if newline != line and read(newline - 1) == char<-13:
-                ignore_cr = true
-                read(newline - 1) = char<-0
+            let line_end = ptr[char]<-newline
 
-            read(newline) = char<-0
+            if line_end != line and read(line_end - 1) == char<-13:
+                ignore_cr = true
+                read(line_end - 1) = char<-0
+
+            read(line_end) = char<-0
 
         render_truncated_line(line, x, y, max_chars_per_line)
 
         unsafe:
+            let line_end = ptr[char]<-newline
+
             if ignore_cr:
-                read(newline - 1) = char<-13
-            read(newline) = char<-10
-            text_ptr = newline + 1
+                read(line_end - 1) = char<-13
+            read(line_end) = char<-10
+            text_ptr = line_end + 1
 
         y += line_height
 

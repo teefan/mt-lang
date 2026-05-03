@@ -212,7 +212,7 @@ pub foreign def update_vertex_buffer[T](buffer_id: u32, data: ptr[T] as const_pt
 pub foreign def update_vertex_buffer_elements[T](id: u32, data: ptr[T] as const_ptr[void], data_size: i32, offset: i32) -> void = c.rlUpdateVertexBufferElements
 pub foreign def unload_vertex_array(vao_id: u32) -> void = c.rlUnloadVertexArray
 pub foreign def unload_vertex_buffer(vbo_id: u32) -> void = c.rlUnloadVertexBuffer
-pub foreign def set_vertex_attribute(index: u32, comp_size: i32, type: i32, normalized: bool, stride: i32, offset: i32) -> void = c.rlSetVertexAttribute
+pub foreign def set_vertex_attribute(index: u32, comp_size: i32, kind: i32, normalized: bool, stride: i32, offset: i32) -> void = c.rlSetVertexAttribute
 pub foreign def set_vertex_attribute_divisor(index: u32, divisor: i32) -> void = c.rlSetVertexAttributeDivisor
 pub foreign def set_vertex_attribute_default[T](loc_index: i32, value: ptr[T] as const_ptr[void], attrib_type: i32, count: i32) -> void = c.rlSetVertexAttributeDefault
 pub foreign def draw_vertex_array(offset: i32, count: i32) -> void = c.rlDrawVertexArray
@@ -235,7 +235,7 @@ pub foreign def framebuffer_complete(id: u32) -> bool = c.rlFramebufferComplete
 pub foreign def unload_framebuffer(id: u32) -> void = c.rlUnloadFramebuffer
 pub foreign def copy_framebuffer(x: i32, y: i32, width: i32, height: i32, format: i32, pixels: ptr[void]) -> void = c.rlCopyFramebuffer
 pub foreign def resize_framebuffer(width: i32, height: i32) -> void = c.rlResizeFramebuffer
-pub foreign def load_shader(code: cstr, type: i32) -> u32 = c.rlLoadShader
+pub foreign def load_shader(code: cstr, kind: i32) -> u32 = c.rlLoadShader
 pub foreign def load_shader_program(vs_code: cstr, fs_code: cstr) -> u32 = c.rlLoadShaderProgram
 pub foreign def load_shader_program_ex(vs_id: u32, fs_id: u32) -> u32 = c.rlLoadShaderProgramEx
 pub foreign def load_shader_program_compute(cs_id: u32) -> u32 = c.rlLoadShaderProgramCompute

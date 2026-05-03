@@ -1989,21 +1989,12 @@ module MilkTea
           return classify_name_semantic(tok.lexeme, tokens, index, analysis)
         end
 
-        if tok.type == :type
-          return [:property, ['declaration']] if contextual_type_keyword_field_name?(tokens, index)
-          return classify_name_semantic(tok.lexeme, tokens, index, analysis) unless contextual_type_keyword_declaration?(tokens, index)
-        end
-
         if [:string, :cstring].include?(tok.type)
           return [:string, []]
         end
 
         if [:integer, :float].include?(tok.type)
           return [:number, []]
-        end
-
-        if contextual_type_keyword_field_name?(tokens, index)
-          return [:property, ['declaration']]
         end
 
         if KEYWORD_TOKEN_TYPES.include?(tok.type)
@@ -2254,32 +2245,6 @@ module MilkTea
           i -= 1
         end
         nil
-      end
-
-      def contextual_type_keyword_declaration?(tokens, index)
-        tok = tokens[index]
-        return false unless tok&.type == :type
-
-        line_tokens = non_trivia_tokens_on_line(tokens, tok.line)
-        pos = line_tokens.index(tok)
-        return false unless pos
-
-        next_token = line_tokens[pos + 1]
-        return false unless next_token&.type == :identifier
-
-        # `type Name = ...` and `pub type Name = ...` declaration forms.
-        line_tokens.any? { |line_tok| line_tok.type == :equal }
-      end
-
-      def contextual_type_keyword_field_name?(tokens, index)
-        tok = tokens[index]
-        return false unless tok&.type == :type
-
-        line_tokens = non_trivia_tokens_on_line(tokens, tok.line)
-        return false if line_tokens.empty? || !line_tokens.first.equal?(tok)
-
-        next_tok = next_non_trivia_token(tokens, index + 1)
-        next_tok&.type == :colon
       end
 
       def non_trivia_tokens_on_line(tokens, line)

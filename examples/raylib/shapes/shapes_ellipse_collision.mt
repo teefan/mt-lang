@@ -85,14 +85,14 @@ def main() -> i32:
             i32<-ellipse_a_center.y,
             ellipse_a_radius_x,
             ellipse_a_radius_y,
-            if ellipses_collide then rl.RED else rl.BLUE,
+            if ellipses_collide: rl.RED else: rl.BLUE,
         )
         rl.DrawEllipse(
             i32<-ellipse_b_center.x,
             i32<-ellipse_b_center.y,
             ellipse_b_radius_x,
             ellipse_b_radius_y,
-            if ellipses_collide then rl.RED else rl.GREEN,
+            if ellipses_collide: rl.RED else: rl.GREEN,
         )
 
         rl.DrawEllipseLines(i32<-ellipse_a_center.x, i32<-ellipse_a_center.y, ellipse_a_radius_x, ellipse_a_radius_y, rl.WHITE)
@@ -106,7 +106,7 @@ def main() -> i32:
         else:
             rl.DrawText(no_collision_text, screen_width / 2 - 80, 40, 28, rl.DARKGRAY)
 
-        rl.DrawText(if controlled == 0 then controlling_a_text else controlling_b_text, 20, screen_height - 40, 20, rl.YELLOW)
+        rl.DrawText(if controlled == 0: controlling_a_text else: controlling_b_text, 20, screen_height - 40, 20, rl.YELLOW)
 
         if mouse_in_a and controlled != 0:
             rl.DrawText(mouse_inside_a_text, 20, screen_height - 70, 20, rl.BLUE)

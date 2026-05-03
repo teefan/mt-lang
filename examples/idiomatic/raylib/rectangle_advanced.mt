@@ -32,7 +32,7 @@ def draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: f32, ro
     if right_roundness >= 1.0:
         right_roundness = 1.0
 
-    let rec_size = if rec.width > rec.height then rec.height else rec.width
+    let rec_size = if rec.width > rec.height: rec.height else: rec.width
     var radius_left = rec_size * left_roundness / 2.0
     var radius_right = rec_size * right_roundness / 2.0
 

@@ -39,7 +39,7 @@ const use_tex_emissive_uniform_name: cstr = c"useTexEmissive"
 const help_text: cstr = c"Toggle lights: [1][2][3][4]"
 const credit_text: cstr = c"(c) Old Rusty Car model by Renafox (https://skfb.ly/LxRy)"
 const light_enabled_format: cstr = c"lights[%i].enabled"
-const light_type_format: cstr = c"lights[%i].type"
+const light_type_format: cstr = c"lights[%i].kind"
 const light_position_format: cstr = c"lights[%i].position"
 const light_target_format: cstr = c"lights[%i].target"
 const light_color_format: cstr = c"lights[%i].color"
@@ -52,7 +52,7 @@ enum LightType: i32
     LIGHT_SPOT = 2
 
 struct Light:
-    type: i32
+    kind: i32
     enabled: i32
     position: rl.Vector3
     target: rl.Vector3
@@ -85,7 +85,7 @@ def set_shader_int(shader: rl.Shader, location: i32, value: i32) -> void:
 
 def update_light(shader: rl.Shader, light: Light) -> void:
     var enabled = light.enabled
-    var type_value = light.type
+    var type_value = light.kind
     var position = array[f32, 3](light.position.x, light.position.y, light.position.z)
     var target = array[f32, 3](light.target.x, light.target.y, light.target.z)
     var color = array[f32, 4](light.color[0], light.color[1], light.color[2], light.color[3])
@@ -98,9 +98,9 @@ def update_light(shader: rl.Shader, light: Light) -> void:
     rl.SetShaderValue(shader, light.color_loc, ptr_of(ref_of(color[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
     rl.SetShaderValue(shader, light.intensity_loc, ptr_of(ref_of(intensity)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
-def create_light(type: i32, position: rl.Vector3, target: rl.Vector3, color: rl.Color, intensity: f32, shader: rl.Shader) -> Light:
+def create_light(kind: i32, position: rl.Vector3, target: rl.Vector3, color: rl.Color, intensity: f32, shader: rl.Shader) -> Light:
     var light = Light(
-        type = 0,
+        kind = 0,
         enabled = 0,
         position = rm.Vector3.zero(),
         target = rm.Vector3.zero(),
@@ -116,7 +116,7 @@ def create_light(type: i32, position: rl.Vector3, target: rl.Vector3, color: rl.
 
     if light_count < max_lights:
         light.enabled = 1
-        light.type = type
+        light.kind = kind
         light.position = position
         light.target = target
         light.color[0] = f32<-color.r / 255.0

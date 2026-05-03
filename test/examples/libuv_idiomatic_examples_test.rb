@@ -8,7 +8,7 @@ class MilkTeaLibuvIdiomaticExamplesTest < Minitest::Test
       source = File.read(path)
 
       assert_match(/^module examples\.idiomatic\.libuv\./, source)
-      assert_match(/^import std\.async as async$/, source)
+      assert_match(/^import std\.async as aio$/, source)
       refute_match(/^import std\.c\.libuv as /, source)
       refute_match(/^\s*unsafe:/, source)
       refute_match(/\braw\(/, source)

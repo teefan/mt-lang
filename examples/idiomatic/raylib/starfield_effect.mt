@@ -64,7 +64,7 @@ def main() -> i32:
                 rl.draw_circle_v(screen_positions[index], math.lerp(stars[index].z, 1.0, 5.0), rl.RAYWHITE)
 
         rl.draw_text(rl.text_format_f32("[MOUSE WHEEL] Current Speed: %.0f", 9.0 * speed / 2.0), 10, 40, 20, rl.RAYWHITE)
-        rl.draw_text(rl.text_format_cstr("[SPACE] Current draw mode: %s", if draw_lines then "Lines" else "Circles"), 10, 70, 20, rl.RAYWHITE)
+        rl.draw_text(rl.text_format_cstr("[SPACE] Current draw mode: %s", if draw_lines: "Lines" else: "Circles"), 10, 70, 20, rl.RAYWHITE)
         rl.draw_fps(10, 10)
 
     return 0

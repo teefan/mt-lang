@@ -16,17 +16,17 @@ var texture_width: i32 = 0
 var texture_height: i32 = 0
 
 def pump_events() -> bool:
-    var event = c.SDL_Event(type = 0)
+    var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
 
 def render_frame() -> void:
     let now = i32<-c.SDL_GetTicks()
-    let direction = if (now % 2000) >= 1000 then 1.0 else -1.0
+    let direction = if (now % 2000) >= 1000: 1.0 else: -1.0
     let scale = (f32<-((now % 1000) - 500) / 500.0) * direction
     let size = 200.0 + (200.0 * scale)
 

@@ -28,47 +28,79 @@
       {
         "raw": "InitWindow",
         "params": [
-          { "name": "width", "type": "i32" },
-          { "name": "height", "type": "i32" },
-          { "name": "title", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "width",
+            "type": "i32"
+          },
+          {
+            "name": "height",
+            "type": "i32"
+          },
+          {
+            "name": "title",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "IsWindowState",
         "params": [
-          { "name": "flag", "type": "ConfigFlags" }
+          {
+            "name": "flag",
+            "type": "ConfigFlags"
+          }
         ]
       },
       {
         "raw": "SetWindowState",
         "params": [
-          { "name": "flags", "type": "ConfigFlags" }
+          {
+            "name": "flag_bits",
+            "type": "ConfigFlags"
+          }
         ]
       },
       {
         "raw": "ClearWindowState",
         "params": [
-          { "name": "flags", "type": "ConfigFlags" }
+          {
+            "name": "flag_bits",
+            "type": "ConfigFlags"
+          }
         ]
       },
       {
         "raw": "BeginTextureMode",
         "params": [
-          { "name": "target", "type": "RenderTexture2D" }
+          {
+            "name": "target",
+            "type": "RenderTexture2D"
+          }
         ]
       },
       {
         "raw": "LoadShader",
         "params": [
-          { "name": "vs_file_name", "type": "cstr?" },
-          { "name": "fs_file_name", "type": "cstr?" }
+          {
+            "name": "vs_file_name",
+            "type": "cstr?"
+          },
+          {
+            "name": "fs_file_name",
+            "type": "cstr?"
+          }
         ]
       },
       {
         "raw": "LoadShader",
         "name": "load_vertex_shader",
         "params": [
-          { "name": "vs_file_name", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "vs_file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ],
         "return_type": "Shader",
         "mapping": "c.LoadShader(vs_file_name, null)"
@@ -77,7 +109,11 @@
         "raw": "LoadShader",
         "name": "load_fragment_shader",
         "params": [
-          { "name": "fs_file_name", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "fs_file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ],
         "return_type": "Shader",
         "mapping": "c.LoadShader(null, fs_file_name)"
@@ -85,213 +121,375 @@
       {
         "raw": "TakeScreenshot",
         "params": [
-          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "SetConfigFlags",
         "params": [
-          { "name": "flags", "type": "ConfigFlags" }
+          {
+            "name": "flag_bits",
+            "type": "ConfigFlags"
+          }
         ]
       },
       {
         "raw": "OpenURL",
         "params": [
-          { "name": "url", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "url",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "SetShaderValue",
-        "type_params": ["T"],
+        "type_params": [
+          "T"
+        ],
         "params": [
-          { "name": "shader", "type": "Shader" },
-          { "name": "loc_index", "type": "i32" },
-          { "name": "value", "type": "T", "mode": "in", "boundary_type": "const_ptr[void]" },
-          { "name": "uniform_type", "type": "i32" }
+          {
+            "name": "shader",
+            "type": "Shader"
+          },
+          {
+            "name": "loc_index",
+            "type": "i32"
+          },
+          {
+            "name": "value",
+            "type": "T",
+            "mode": "in",
+            "boundary_type": "const_ptr[void]"
+          },
+          {
+            "name": "uniform_type",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "SetShaderValueV",
-        "type_params": ["T"],
+        "type_params": [
+          "T"
+        ],
         "params": [
-          { "name": "shader", "type": "Shader" },
-          { "name": "loc_index", "type": "i32" },
-          { "name": "value", "type": "ptr[T]", "boundary_type": "const_ptr[void]" },
-          { "name": "uniform_type", "type": "i32" },
-          { "name": "count", "type": "i32" }
+          {
+            "name": "shader",
+            "type": "Shader"
+          },
+          {
+            "name": "loc_index",
+            "type": "i32"
+          },
+          {
+            "name": "value",
+            "type": "ptr[T]",
+            "boundary_type": "const_ptr[void]"
+          },
+          {
+            "name": "uniform_type",
+            "type": "i32"
+          },
+          {
+            "name": "count",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "MemAlloc",
-        "type_params": ["T"],
+        "type_params": [
+          "T"
+        ],
         "params": [
-          { "name": "count", "type": "usize" }
+          {
+            "name": "count",
+            "type": "usize"
+          }
         ],
         "return_type": "ptr[T]?",
         "mapping": "c.MemAlloc(count * u32<-sizeof(T))"
       },
       {
         "raw": "MemRealloc",
-        "type_params": ["T"],
+        "type_params": [
+          "T"
+        ],
         "params": [
-          { "name": "memory", "type": "ptr[T]" },
-          { "name": "count", "type": "usize" }
+          {
+            "name": "memory",
+            "type": "ptr[T]"
+          },
+          {
+            "name": "count",
+            "type": "usize"
+          }
         ],
         "return_type": "ptr[T]?",
         "mapping": "c.MemRealloc(memory, count * u32<-sizeof(T))"
       },
       {
         "raw": "MemFree",
-        "type_params": ["T"],
+        "type_params": [
+          "T"
+        ],
         "params": [
-          { "name": "memory", "type": "ptr[T]" }
+          {
+            "name": "memory",
+            "type": "ptr[T]"
+          }
         ]
       },
       {
         "raw": "LoadFileData",
         "params": [
-          { "name": "file_name", "type": "str", "boundary_type": "cstr" },
-          { "name": "data_size", "type": "i32", "mode": "out" }
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "data_size",
+            "type": "i32",
+            "mode": "out"
+          }
         ],
         "return_type": "ptr[u8]?"
       },
       {
         "raw": "UnloadFileData",
         "params": [
-          { "name": "data", "type": "ptr[u8]", "mode": "consuming" }
+          {
+            "name": "data",
+            "type": "ptr[u8]",
+            "mode": "consuming"
+          }
         ]
       },
       {
         "raw": "SaveFileData",
         "params": [
-          { "name": "file_name", "type": "str", "boundary_type": "cstr" },
-          { "name": "data", "type": "span[u8]" }
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "data",
+            "type": "span[u8]"
+          }
         ],
         "mapping": "c.SaveFileData(file_name, data.data, i32<-data.len)"
       },
       {
         "raw": "FileExists",
         "params": [
-          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "DirectoryExists",
         "params": [
-          { "name": "dir_path", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "dir_path",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "IsFileExtension",
         "params": [
-          { "name": "file_name", "type": "str", "boundary_type": "cstr" },
-          { "name": "ext", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "ext",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "IsKeyPressed",
         "params": [
-          { "name": "key", "type": "KeyboardKey" }
+          {
+            "name": "key",
+            "type": "KeyboardKey"
+          }
         ]
       },
       {
         "raw": "IsKeyPressedRepeat",
         "params": [
-          { "name": "key", "type": "KeyboardKey" }
+          {
+            "name": "key",
+            "type": "KeyboardKey"
+          }
         ]
       },
       {
         "raw": "IsKeyDown",
         "params": [
-          { "name": "key", "type": "KeyboardKey" }
+          {
+            "name": "key",
+            "type": "KeyboardKey"
+          }
         ]
       },
       {
         "raw": "IsKeyReleased",
         "params": [
-          { "name": "key", "type": "KeyboardKey" }
+          {
+            "name": "key",
+            "type": "KeyboardKey"
+          }
         ]
       },
       {
         "raw": "IsKeyUp",
         "params": [
-          { "name": "key", "type": "KeyboardKey" }
+          {
+            "name": "key",
+            "type": "KeyboardKey"
+          }
         ]
       },
       {
         "raw": "SetExitKey",
         "params": [
-          { "name": "key", "type": "KeyboardKey" }
+          {
+            "name": "key",
+            "type": "KeyboardKey"
+          }
         ]
       },
       {
         "raw": "IsGamepadButtonPressed",
         "params": [
-          { "name": "gamepad", "type": "i32" },
-          { "name": "button", "type": "GamepadButton" }
+          {
+            "name": "gamepad",
+            "type": "i32"
+          },
+          {
+            "name": "button",
+            "type": "GamepadButton"
+          }
         ]
       },
       {
         "raw": "IsGamepadButtonDown",
         "params": [
-          { "name": "gamepad", "type": "i32" },
-          { "name": "button", "type": "GamepadButton" }
+          {
+            "name": "gamepad",
+            "type": "i32"
+          },
+          {
+            "name": "button",
+            "type": "GamepadButton"
+          }
         ]
       },
       {
         "raw": "IsGamepadButtonReleased",
         "params": [
-          { "name": "gamepad", "type": "i32" },
-          { "name": "button", "type": "GamepadButton" }
+          {
+            "name": "gamepad",
+            "type": "i32"
+          },
+          {
+            "name": "button",
+            "type": "GamepadButton"
+          }
         ]
       },
       {
         "raw": "IsMouseButtonPressed",
         "params": [
-          { "name": "button", "type": "MouseButton" }
+          {
+            "name": "button",
+            "type": "MouseButton"
+          }
         ]
       },
       {
         "raw": "IsMouseButtonDown",
         "params": [
-          { "name": "button", "type": "MouseButton" }
+          {
+            "name": "button",
+            "type": "MouseButton"
+          }
         ]
       },
       {
         "raw": "IsMouseButtonReleased",
         "params": [
-          { "name": "button", "type": "MouseButton" }
+          {
+            "name": "button",
+            "type": "MouseButton"
+          }
         ]
       },
       {
         "raw": "IsMouseButtonUp",
         "params": [
-          { "name": "button", "type": "MouseButton" }
+          {
+            "name": "button",
+            "type": "MouseButton"
+          }
         ]
       },
       {
         "raw": "SetMouseCursor",
         "params": [
-          { "name": "cursor", "type": "MouseCursor" }
+          {
+            "name": "cursor",
+            "type": "MouseCursor"
+          }
         ]
       },
       {
         "raw": "SetGesturesEnabled",
         "params": [
-          { "name": "flags", "type": "Gesture" }
+          {
+            "name": "flag_bits",
+            "type": "Gesture"
+          }
         ]
       },
       {
         "raw": "IsGestureDetected",
         "params": [
-          { "name": "gesture", "type": "Gesture" }
+          {
+            "name": "gesture",
+            "type": "Gesture"
+          }
         ]
       },
       {
         "raw": "UpdateCamera",
         "params": [
-          { "name": "camera", "type": "Camera", "mode": "inout" },
-          { "name": "mode", "type": "CameraMode" }
+          {
+            "name": "camera",
+            "type": "Camera",
+            "mode": "inout"
+          },
+          {
+            "name": "mode",
+            "type": "CameraMode"
+          }
         ]
       },
       {
@@ -333,88 +531,189 @@
       {
         "raw": "DrawText",
         "params": [
-          { "name": "text", "type": "str", "boundary_type": "cstr" },
-          { "name": "pos_x", "type": "i32" },
-          { "name": "pos_y", "type": "i32" },
-          { "name": "font_size", "type": "i32" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "pos_x",
+            "type": "i32"
+          },
+          {
+            "name": "pos_y",
+            "type": "i32"
+          },
+          {
+            "name": "font_size",
+            "type": "i32"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "DrawTextEx",
         "params": [
-          { "name": "font", "type": "Font" },
-          { "name": "text", "type": "str", "boundary_type": "cstr" },
-          { "name": "position", "type": "Vector2" },
-          { "name": "font_size", "type": "f32" },
-          { "name": "spacing", "type": "f32" },
-          { "name": "tint", "type": "Color" }
+          {
+            "name": "font",
+            "type": "Font"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "position",
+            "type": "Vector2"
+          },
+          {
+            "name": "font_size",
+            "type": "f32"
+          },
+          {
+            "name": "spacing",
+            "type": "f32"
+          },
+          {
+            "name": "tint",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "MeasureText",
         "params": [
-          { "name": "text", "type": "str", "boundary_type": "cstr" },
-          { "name": "font_size", "type": "i32" }
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "font_size",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "MeasureTextEx",
         "params": [
-          { "name": "font", "type": "Font" },
-          { "name": "text", "type": "str", "boundary_type": "cstr" },
-          { "name": "font_size", "type": "f32" },
-          { "name": "spacing", "type": "f32" }
+          {
+            "name": "font",
+            "type": "Font"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "font_size",
+            "type": "f32"
+          },
+          {
+            "name": "spacing",
+            "type": "f32"
+          }
         ]
       },
       {
         "raw": "LoadCodepoints",
         "name": "load_codepoints_ptr",
         "params": [
-          { "name": "text", "type": "str", "boundary_type": "cstr" },
-          { "name": "count", "type": "i32", "mode": "out" }
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "count",
+            "type": "i32",
+            "mode": "out"
+          }
         ],
         "return_type": "ptr[i32]"
       },
       {
         "raw": "GetCodepointCount",
         "params": [
-          { "name": "text", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "GetCodepoint",
         "params": [
-          { "name": "text", "type": "str", "boundary_type": "cstr" },
-          { "name": "codepoint_size", "type": "i32", "mode": "out" }
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "codepoint_size",
+            "type": "i32",
+            "mode": "out"
+          }
         ]
       },
       {
         "raw": "GetCodepointNext",
         "params": [
-          { "name": "text", "type": "str", "boundary_type": "cstr" },
-          { "name": "codepoint_size", "type": "i32", "mode": "out" }
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "codepoint_size",
+            "type": "i32",
+            "mode": "out"
+          }
         ]
       },
       {
         "raw": "CodepointToUTF8",
         "params": [
-          { "name": "codepoint", "type": "i32" },
-          { "name": "utf_8_size", "type": "i32", "mode": "out" }
+          {
+            "name": "codepoint",
+            "type": "i32"
+          },
+          {
+            "name": "utf_8_size",
+            "type": "i32",
+            "mode": "out"
+          }
         ]
       },
       {
         "raw": "TextLength",
         "params": [
-          { "name": "text", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "TextFormat",
         "name": "text_format_i32",
         "params": [
-          { "name": "format", "type": "str", "boundary_type": "cstr" },
-          { "name": "value", "type": "i32" }
+          {
+            "name": "format",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "value",
+            "type": "i32"
+          }
         ],
         "return_type": "cstr",
         "mapping": "c.TextFormat(format, value)"
@@ -423,9 +722,19 @@
         "raw": "TextFormat",
         "name": "text_format_i32_i32",
         "params": [
-          { "name": "format", "type": "str", "boundary_type": "cstr" },
-          { "name": "first", "type": "i32" },
-          { "name": "second", "type": "i32" }
+          {
+            "name": "format",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "first",
+            "type": "i32"
+          },
+          {
+            "name": "second",
+            "type": "i32"
+          }
         ],
         "return_type": "cstr",
         "mapping": "c.TextFormat(format, first, second)"
@@ -434,10 +743,23 @@
         "raw": "TextFormat",
         "name": "text_format_i32_i32_i32",
         "params": [
-          { "name": "format", "type": "str", "boundary_type": "cstr" },
-          { "name": "first", "type": "i32" },
-          { "name": "second", "type": "i32" },
-          { "name": "third", "type": "i32" }
+          {
+            "name": "format",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "first",
+            "type": "i32"
+          },
+          {
+            "name": "second",
+            "type": "i32"
+          },
+          {
+            "name": "third",
+            "type": "i32"
+          }
         ],
         "return_type": "cstr",
         "mapping": "c.TextFormat(format, first, second, third)"
@@ -446,11 +768,27 @@
         "raw": "TextFormat",
         "name": "text_format_i32_i32_i32_i32",
         "params": [
-          { "name": "format", "type": "str", "boundary_type": "cstr" },
-          { "name": "first", "type": "i32" },
-          { "name": "second", "type": "i32" },
-          { "name": "third", "type": "i32" },
-          { "name": "fourth", "type": "i32" }
+          {
+            "name": "format",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "first",
+            "type": "i32"
+          },
+          {
+            "name": "second",
+            "type": "i32"
+          },
+          {
+            "name": "third",
+            "type": "i32"
+          },
+          {
+            "name": "fourth",
+            "type": "i32"
+          }
         ],
         "return_type": "cstr",
         "mapping": "c.TextFormat(format, first, second, third, fourth)"
@@ -459,9 +797,20 @@
         "raw": "TextFormat",
         "name": "text_format_i32_cstr",
         "params": [
-          { "name": "format", "type": "str", "boundary_type": "cstr" },
-          { "name": "value", "type": "i32" },
-          { "name": "label", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "format",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "value",
+            "type": "i32"
+          },
+          {
+            "name": "label",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ],
         "return_type": "cstr",
         "mapping": "c.TextFormat(format, value, label)"
@@ -470,8 +819,16 @@
         "raw": "TextFormat",
         "name": "text_format_cstr",
         "params": [
-          { "name": "format", "type": "str", "boundary_type": "cstr" },
-          { "name": "value", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "format",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "value",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ],
         "return_type": "cstr",
         "mapping": "c.TextFormat(format, value)"
@@ -480,9 +837,21 @@
         "raw": "TextFormat",
         "name": "text_format_cstr_cstr",
         "params": [
-          { "name": "format", "type": "str", "boundary_type": "cstr" },
-          { "name": "first", "type": "str", "boundary_type": "cstr" },
-          { "name": "second", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "format",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "first",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "second",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ],
         "return_type": "cstr",
         "mapping": "c.TextFormat(format, first, second)"
@@ -491,10 +860,24 @@
         "raw": "TextFormat",
         "name": "text_format_cstr_i32_i32",
         "params": [
-          { "name": "format", "type": "str", "boundary_type": "cstr" },
-          { "name": "label", "type": "str", "boundary_type": "cstr" },
-          { "name": "first", "type": "i32" },
-          { "name": "second", "type": "i32" }
+          {
+            "name": "format",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "label",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "first",
+            "type": "i32"
+          },
+          {
+            "name": "second",
+            "type": "i32"
+          }
         ],
         "return_type": "cstr",
         "mapping": "c.TextFormat(format, label, first, second)"
@@ -503,10 +886,23 @@
         "raw": "TextFormat",
         "name": "text_format_i32_i32_f32",
         "params": [
-          { "name": "format", "type": "str", "boundary_type": "cstr" },
-          { "name": "first", "type": "i32" },
-          { "name": "second", "type": "i32" },
-          { "name": "third", "type": "f32" }
+          {
+            "name": "format",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "first",
+            "type": "i32"
+          },
+          {
+            "name": "second",
+            "type": "i32"
+          },
+          {
+            "name": "third",
+            "type": "f32"
+          }
         ],
         "return_type": "cstr",
         "mapping": "c.TextFormat(format, first, second, third)"
@@ -515,10 +911,24 @@
         "raw": "TextFormat",
         "name": "text_format_cstr_f32_f32",
         "params": [
-          { "name": "format", "type": "str", "boundary_type": "cstr" },
-          { "name": "label", "type": "str", "boundary_type": "cstr" },
-          { "name": "first", "type": "f32" },
-          { "name": "second", "type": "f32" }
+          {
+            "name": "format",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "label",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "first",
+            "type": "f32"
+          },
+          {
+            "name": "second",
+            "type": "f32"
+          }
         ],
         "return_type": "cstr",
         "mapping": "c.TextFormat(format, label, first, second)"
@@ -527,8 +937,15 @@
         "raw": "TextFormat",
         "name": "text_format_f32",
         "params": [
-          { "name": "format", "type": "str", "boundary_type": "cstr" },
-          { "name": "value", "type": "f32" }
+          {
+            "name": "format",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "value",
+            "type": "f32"
+          }
         ],
         "return_type": "cstr",
         "mapping": "c.TextFormat(format, value)"
@@ -537,9 +954,19 @@
         "raw": "TextFormat",
         "name": "text_format_f32_f32",
         "params": [
-          { "name": "format", "type": "str", "boundary_type": "cstr" },
-          { "name": "first", "type": "f32" },
-          { "name": "second", "type": "f32" }
+          {
+            "name": "format",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "first",
+            "type": "f32"
+          },
+          {
+            "name": "second",
+            "type": "f32"
+          }
         ],
         "return_type": "cstr",
         "mapping": "c.TextFormat(format, first, second)"
@@ -547,9 +974,19 @@
       {
         "raw": "TextSubtext",
         "params": [
-          { "name": "text", "type": "str", "boundary_type": "cstr" },
-          { "name": "position", "type": "i32" },
-          { "name": "length", "type": "i32" }
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "position",
+            "type": "i32"
+          },
+          {
+            "name": "length",
+            "type": "i32"
+          }
         ],
         "return_type": "cstr"
       },
@@ -557,9 +994,20 @@
         "raw": "TextSplit",
         "name": "text_split_ptr",
         "params": [
-          { "name": "text", "type": "str", "boundary_type": "cstr" },
-          { "name": "delimiter", "type": "char" },
-          { "name": "count", "type": "i32", "mode": "out" }
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "delimiter",
+            "type": "char"
+          },
+          {
+            "name": "count",
+            "type": "i32",
+            "mode": "out"
+          }
         ],
         "return_type": "ptr[ptr[char]]"
       },
@@ -567,620 +1015,1396 @@
         "raw": "TextToUpper",
         "name": "text_to_upper_ptr",
         "params": [
-          { "name": "text", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "TextToLower",
         "name": "text_to_lower_ptr",
         "params": [
-          { "name": "text", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "TextToPascal",
         "name": "text_to_pascal_ptr",
         "params": [
-          { "name": "text", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "TextToSnake",
         "name": "text_to_snake_ptr",
         "params": [
-          { "name": "text", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "TextToCamel",
         "name": "text_to_camel_ptr",
         "params": [
-          { "name": "text", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "LoadImage",
         "params": [
-          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "LoadImageRaw",
         "params": [
-          { "name": "file_name", "type": "str", "boundary_type": "cstr" },
-          { "name": "width", "type": "i32" },
-          { "name": "height", "type": "i32" },
-          { "name": "format", "type": "i32" },
-          { "name": "header_size", "type": "i32" }
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "width",
+            "type": "i32"
+          },
+          {
+            "name": "height",
+            "type": "i32"
+          },
+          {
+            "name": "format",
+            "type": "i32"
+          },
+          {
+            "name": "header_size",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "LoadImageAnim",
         "params": [
-          { "name": "file_name", "type": "str", "boundary_type": "cstr" },
-          { "name": "frames", "type": "i32", "mode": "out" }
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "frames",
+            "type": "i32",
+            "mode": "out"
+          }
         ]
       },
       {
         "raw": "ExportImage",
         "params": [
-          { "name": "image", "type": "Image" },
-          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "image",
+            "type": "Image"
+          },
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "ExportImageAsCode",
         "params": [
-          { "name": "image", "type": "Image" },
-          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "image",
+            "type": "Image"
+          },
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "GenImageText",
         "params": [
-          { "name": "width", "type": "i32" },
-          { "name": "height", "type": "i32" },
-          { "name": "text", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "width",
+            "type": "i32"
+          },
+          {
+            "name": "height",
+            "type": "i32"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "ImageText",
         "params": [
-          { "name": "text", "type": "str", "boundary_type": "cstr" },
-          { "name": "font_size", "type": "i32" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "font_size",
+            "type": "i32"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageTextEx",
         "params": [
-          { "name": "font", "type": "Font" },
-          { "name": "text", "type": "str", "boundary_type": "cstr" },
-          { "name": "font_size", "type": "f32" },
-          { "name": "spacing", "type": "f32" },
-          { "name": "tint", "type": "Color" }
+          {
+            "name": "font",
+            "type": "Font"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "font_size",
+            "type": "f32"
+          },
+          {
+            "name": "spacing",
+            "type": "f32"
+          },
+          {
+            "name": "tint",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageFormat",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "new_format", "type": "i32" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "new_format",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "ImageToPOT",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "fill", "type": "Color" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "fill",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageCrop",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "crop", "type": "Rectangle" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "crop",
+            "type": "Rectangle"
+          }
         ]
       },
       {
         "raw": "ImageAlphaCrop",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "threshold", "type": "f32" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "threshold",
+            "type": "f32"
+          }
         ]
       },
       {
         "raw": "ImageAlphaClear",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "color", "type": "Color" },
-          { "name": "threshold", "type": "f32" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          },
+          {
+            "name": "threshold",
+            "type": "f32"
+          }
         ]
       },
       {
         "raw": "ImageAlphaMask",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "alpha_mask", "type": "Image" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "alpha_mask",
+            "type": "Image"
+          }
         ]
       },
       {
         "raw": "ImageAlphaPremultiply",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          }
         ]
       },
       {
         "raw": "ImageBlurGaussian",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "blur_size", "type": "i32" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "blur_size",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "ImageKernelConvolution",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "kernel", "type": "const_ptr[f32]" },
-          { "name": "kernel_size", "type": "i32" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "kernel",
+            "type": "const_ptr[f32]"
+          },
+          {
+            "name": "kernel_size",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "ImageResize",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "new_width", "type": "i32" },
-          { "name": "new_height", "type": "i32" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "new_width",
+            "type": "i32"
+          },
+          {
+            "name": "new_height",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "ImageResizeNN",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "new_width", "type": "i32" },
-          { "name": "new_height", "type": "i32" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "new_width",
+            "type": "i32"
+          },
+          {
+            "name": "new_height",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "ImageResizeCanvas",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "new_width", "type": "i32" },
-          { "name": "new_height", "type": "i32" },
-          { "name": "offset_x", "type": "i32" },
-          { "name": "offset_y", "type": "i32" },
-          { "name": "fill", "type": "Color" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "new_width",
+            "type": "i32"
+          },
+          {
+            "name": "new_height",
+            "type": "i32"
+          },
+          {
+            "name": "offset_x",
+            "type": "i32"
+          },
+          {
+            "name": "offset_y",
+            "type": "i32"
+          },
+          {
+            "name": "fill",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageMipmaps",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          }
         ]
       },
       {
         "raw": "ImageDither",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "r_bpp", "type": "i32" },
-          { "name": "g_bpp", "type": "i32" },
-          { "name": "b_bpp", "type": "i32" },
-          { "name": "a_bpp", "type": "i32" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "r_bpp",
+            "type": "i32"
+          },
+          {
+            "name": "g_bpp",
+            "type": "i32"
+          },
+          {
+            "name": "b_bpp",
+            "type": "i32"
+          },
+          {
+            "name": "a_bpp",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "ImageFlipVertical",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          }
         ]
       },
       {
         "raw": "ImageFlipHorizontal",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          }
         ]
       },
       {
         "raw": "ImageRotate",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "degrees", "type": "i32" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "degrees",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "ImageRotateCW",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          }
         ]
       },
       {
         "raw": "ImageRotateCCW",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          }
         ]
       },
       {
         "raw": "ImageColorTint",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageColorInvert",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          }
         ]
       },
       {
         "raw": "ImageColorGrayscale",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          }
         ]
       },
       {
         "raw": "ImageColorContrast",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "contrast", "type": "f32" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "contrast",
+            "type": "f32"
+          }
         ]
       },
       {
         "raw": "ImageColorBrightness",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "brightness", "type": "i32" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "brightness",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "ImageColorReplace",
         "params": [
-          { "name": "image", "type": "Image", "mode": "inout" },
-          { "name": "color", "type": "Color" },
-          { "name": "replace", "type": "Color" }
+          {
+            "name": "image",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          },
+          {
+            "name": "replace",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageClearBackground",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawPixel",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "pos_x", "type": "i32" },
-          { "name": "pos_y", "type": "i32" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "pos_x",
+            "type": "i32"
+          },
+          {
+            "name": "pos_y",
+            "type": "i32"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawPixelV",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "position", "type": "Vector2" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "position",
+            "type": "Vector2"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawLine",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "start_pos_x", "type": "i32" },
-          { "name": "start_pos_y", "type": "i32" },
-          { "name": "end_pos_x", "type": "i32" },
-          { "name": "end_pos_y", "type": "i32" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "start_pos_x",
+            "type": "i32"
+          },
+          {
+            "name": "start_pos_y",
+            "type": "i32"
+          },
+          {
+            "name": "end_pos_x",
+            "type": "i32"
+          },
+          {
+            "name": "end_pos_y",
+            "type": "i32"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawLineV",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "start", "type": "Vector2" },
-          { "name": "end", "type": "Vector2" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "start",
+            "type": "Vector2"
+          },
+          {
+            "name": "end",
+            "type": "Vector2"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawLineEx",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "start", "type": "Vector2" },
-          { "name": "end", "type": "Vector2" },
-          { "name": "thick", "type": "i32" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "start",
+            "type": "Vector2"
+          },
+          {
+            "name": "end",
+            "type": "Vector2"
+          },
+          {
+            "name": "thick",
+            "type": "i32"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawCircle",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "center_x", "type": "i32" },
-          { "name": "center_y", "type": "i32" },
-          { "name": "radius", "type": "i32" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "center_x",
+            "type": "i32"
+          },
+          {
+            "name": "center_y",
+            "type": "i32"
+          },
+          {
+            "name": "radius",
+            "type": "i32"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawCircleV",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "center", "type": "Vector2" },
-          { "name": "radius", "type": "i32" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "center",
+            "type": "Vector2"
+          },
+          {
+            "name": "radius",
+            "type": "i32"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawCircleLines",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "center_x", "type": "i32" },
-          { "name": "center_y", "type": "i32" },
-          { "name": "radius", "type": "i32" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "center_x",
+            "type": "i32"
+          },
+          {
+            "name": "center_y",
+            "type": "i32"
+          },
+          {
+            "name": "radius",
+            "type": "i32"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawCircleLinesV",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "center", "type": "Vector2" },
-          { "name": "radius", "type": "i32" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "center",
+            "type": "Vector2"
+          },
+          {
+            "name": "radius",
+            "type": "i32"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawRectangle",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "pos_x", "type": "i32" },
-          { "name": "pos_y", "type": "i32" },
-          { "name": "width", "type": "i32" },
-          { "name": "height", "type": "i32" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "pos_x",
+            "type": "i32"
+          },
+          {
+            "name": "pos_y",
+            "type": "i32"
+          },
+          {
+            "name": "width",
+            "type": "i32"
+          },
+          {
+            "name": "height",
+            "type": "i32"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawRectangleV",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "position", "type": "Vector2" },
-          { "name": "size", "type": "Vector2" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "position",
+            "type": "Vector2"
+          },
+          {
+            "name": "size",
+            "type": "Vector2"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawRectangleRec",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "rec", "type": "Rectangle" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "rec",
+            "type": "Rectangle"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawRectangleLines",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "rec", "type": "Rectangle" },
-          { "name": "thick", "type": "i32" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "rec",
+            "type": "Rectangle"
+          },
+          {
+            "name": "thick",
+            "type": "i32"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawTriangle",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "v_1", "type": "Vector2" },
-          { "name": "v_2", "type": "Vector2" },
-          { "name": "v_3", "type": "Vector2" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "v_1",
+            "type": "Vector2"
+          },
+          {
+            "name": "v_2",
+            "type": "Vector2"
+          },
+          {
+            "name": "v_3",
+            "type": "Vector2"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawTriangleEx",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "v_1", "type": "Vector2" },
-          { "name": "v_2", "type": "Vector2" },
-          { "name": "v_3", "type": "Vector2" },
-          { "name": "c_1", "type": "Color" },
-          { "name": "c_2", "type": "Color" },
-          { "name": "c_3", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "v_1",
+            "type": "Vector2"
+          },
+          {
+            "name": "v_2",
+            "type": "Vector2"
+          },
+          {
+            "name": "v_3",
+            "type": "Vector2"
+          },
+          {
+            "name": "c_1",
+            "type": "Color"
+          },
+          {
+            "name": "c_2",
+            "type": "Color"
+          },
+          {
+            "name": "c_3",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawTriangleLines",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "v_1", "type": "Vector2" },
-          { "name": "v_2", "type": "Vector2" },
-          { "name": "v_3", "type": "Vector2" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "v_1",
+            "type": "Vector2"
+          },
+          {
+            "name": "v_2",
+            "type": "Vector2"
+          },
+          {
+            "name": "v_3",
+            "type": "Vector2"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawTriangleFan",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "points", "type": "const_ptr[Vector2]" },
-          { "name": "point_count", "type": "i32" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "points",
+            "type": "const_ptr[Vector2]"
+          },
+          {
+            "name": "point_count",
+            "type": "i32"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawTriangleStrip",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "points", "type": "const_ptr[Vector2]" },
-          { "name": "point_count", "type": "i32" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "points",
+            "type": "const_ptr[Vector2]"
+          },
+          {
+            "name": "point_count",
+            "type": "i32"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDraw",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "src", "type": "Image" },
-          { "name": "src_rec", "type": "Rectangle" },
-          { "name": "dst_rec", "type": "Rectangle" },
-          { "name": "tint", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "src",
+            "type": "Image"
+          },
+          {
+            "name": "src_rec",
+            "type": "Rectangle"
+          },
+          {
+            "name": "dst_rec",
+            "type": "Rectangle"
+          },
+          {
+            "name": "tint",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawText",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "text", "type": "str", "boundary_type": "cstr" },
-          { "name": "pos_x", "type": "i32" },
-          { "name": "pos_y", "type": "i32" },
-          { "name": "font_size", "type": "i32" },
-          { "name": "color", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "pos_x",
+            "type": "i32"
+          },
+          {
+            "name": "pos_y",
+            "type": "i32"
+          },
+          {
+            "name": "font_size",
+            "type": "i32"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "ImageDrawTextEx",
         "params": [
-          { "name": "dst", "type": "Image", "mode": "inout" },
-          { "name": "font", "type": "Font" },
-          { "name": "text", "type": "str", "boundary_type": "cstr" },
-          { "name": "position", "type": "Vector2" },
-          { "name": "font_size", "type": "f32" },
-          { "name": "spacing", "type": "f32" },
-          { "name": "tint", "type": "Color" }
+          {
+            "name": "dst",
+            "type": "Image",
+            "mode": "inout"
+          },
+          {
+            "name": "font",
+            "type": "Font"
+          },
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "position",
+            "type": "Vector2"
+          },
+          {
+            "name": "font_size",
+            "type": "f32"
+          },
+          {
+            "name": "spacing",
+            "type": "f32"
+          },
+          {
+            "name": "tint",
+            "type": "Color"
+          }
         ]
       },
       {
         "raw": "LoadTexture",
         "params": [
-          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "UpdateTexture",
-        "type_params": ["T"],
+        "type_params": [
+          "T"
+        ],
         "params": [
-          { "name": "texture", "type": "Texture" },
-          { "name": "pixels", "type": "ptr[T]", "boundary_type": "const_ptr[void]" }
+          {
+            "name": "texture",
+            "type": "Texture"
+          },
+          {
+            "name": "pixels",
+            "type": "ptr[T]",
+            "boundary_type": "const_ptr[void]"
+          }
         ]
       },
       {
         "raw": "UpdateTextureRec",
-        "type_params": ["T"],
+        "type_params": [
+          "T"
+        ],
         "params": [
-          { "name": "texture", "type": "Texture" },
-          { "name": "rec", "type": "Rectangle" },
-          { "name": "pixels", "type": "ptr[T]", "boundary_type": "const_ptr[void]" }
+          {
+            "name": "texture",
+            "type": "Texture"
+          },
+          {
+            "name": "rec",
+            "type": "Rectangle"
+          },
+          {
+            "name": "pixels",
+            "type": "ptr[T]",
+            "boundary_type": "const_ptr[void]"
+          }
         ]
       },
       {
         "raw": "GenTextureMipmaps",
         "params": [
-          { "name": "texture", "type": "Texture2D", "mode": "inout" }
+          {
+            "name": "texture",
+            "type": "Texture2D",
+            "mode": "inout"
+          }
         ]
       },
       {
         "raw": "LoadFont",
         "params": [
-          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "LoadFontEx",
         "params": [
-          { "name": "file_name", "type": "str", "boundary_type": "cstr" },
-          { "name": "font_size", "type": "i32" },
-          { "name": "codepoints", "type": "ptr[i32]?" },
-          { "name": "codepoint_count", "type": "i32" }
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "font_size",
+            "type": "i32"
+          },
+          {
+            "name": "codepoints",
+            "type": "ptr[i32]?"
+          },
+          {
+            "name": "codepoint_count",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "LoadFontData",
         "params": [
-          { "name": "file_data", "type": "const_ptr[u8]" },
-          { "name": "data_size", "type": "i32" },
-          { "name": "font_size", "type": "i32" },
-          { "name": "codepoints", "type": "ptr[i32]?" },
-          { "name": "codepoint_count", "type": "i32" },
-          { "name": "type", "type": "FontType" },
-          { "name": "glyph_count", "type": "i32", "mode": "out" }
+          {
+            "name": "file_data",
+            "type": "const_ptr[u8]"
+          },
+          {
+            "name": "data_size",
+            "type": "i32"
+          },
+          {
+            "name": "font_size",
+            "type": "i32"
+          },
+          {
+            "name": "codepoints",
+            "type": "ptr[i32]?"
+          },
+          {
+            "name": "codepoint_count",
+            "type": "i32"
+          },
+          {
+            "name": "kind",
+            "type": "FontType"
+          },
+          {
+            "name": "glyph_count",
+            "type": "i32",
+            "mode": "out"
+          }
         ]
       },
       {
         "raw": "GenImageFontAtlas",
         "params": [
-          { "name": "glyphs", "type": "const_ptr[GlyphInfo]" },
-          { "name": "glyph_recs", "type": "ptr[Rectangle]", "mode": "out" },
-          { "name": "glyph_count", "type": "i32" },
-          { "name": "font_size", "type": "i32" },
-          { "name": "padding", "type": "i32" },
-          { "name": "pack_method", "type": "i32" }
+          {
+            "name": "glyphs",
+            "type": "const_ptr[GlyphInfo]"
+          },
+          {
+            "name": "glyph_recs",
+            "type": "ptr[Rectangle]",
+            "mode": "out"
+          },
+          {
+            "name": "glyph_count",
+            "type": "i32"
+          },
+          {
+            "name": "font_size",
+            "type": "i32"
+          },
+          {
+            "name": "padding",
+            "type": "i32"
+          },
+          {
+            "name": "pack_method",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "LoadWave",
         "params": [
-          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "LoadSound",
         "params": [
-          { "name": "file_name", "type": "str", "boundary_type": "cstr" }
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
         ]
       },
       {
         "raw": "GetPixelColor",
-        "type_params": ["T"],
+        "type_params": [
+          "T"
+        ],
         "params": [
-          { "name": "src_ptr", "type": "ptr[T]", "boundary_type": "ptr[void]" },
-          { "name": "format", "type": "i32" }
+          {
+            "name": "src_ptr",
+            "type": "ptr[T]",
+            "boundary_type": "ptr[void]"
+          },
+          {
+            "name": "format",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "SetPixelColor",
-        "type_params": ["T"],
+        "type_params": [
+          "T"
+        ],
         "params": [
-          { "name": "dst_ptr", "type": "ptr[T]", "boundary_type": "ptr[void]" },
-          { "name": "color", "type": "Color" },
-          { "name": "format", "type": "i32" }
+          {
+            "name": "dst_ptr",
+            "type": "ptr[T]",
+            "boundary_type": "ptr[void]"
+          },
+          {
+            "name": "color",
+            "type": "Color"
+          },
+          {
+            "name": "format",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "UpdateMeshBuffer",
-        "type_params": ["T"],
+        "type_params": [
+          "T"
+        ],
         "params": [
-          { "name": "mesh", "type": "Mesh" },
-          { "name": "index", "type": "i32" },
-          { "name": "data", "type": "ptr[T]", "boundary_type": "const_ptr[void]" },
-          { "name": "data_size", "type": "i32" },
-          { "name": "offset", "type": "i32" }
+          {
+            "name": "mesh",
+            "type": "Mesh"
+          },
+          {
+            "name": "index",
+            "type": "i32"
+          },
+          {
+            "name": "data",
+            "type": "ptr[T]",
+            "boundary_type": "const_ptr[void]"
+          },
+          {
+            "name": "data_size",
+            "type": "i32"
+          },
+          {
+            "name": "offset",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "UpdateSound",
-        "type_params": ["T"],
+        "type_params": [
+          "T"
+        ],
         "params": [
-          { "name": "sound", "type": "Sound" },
-          { "name": "data", "type": "ptr[T]", "boundary_type": "const_ptr[void]" },
-          { "name": "sample_count", "type": "i32" }
+          {
+            "name": "sound",
+            "type": "Sound"
+          },
+          {
+            "name": "data",
+            "type": "ptr[T]",
+            "boundary_type": "const_ptr[void]"
+          },
+          {
+            "name": "sample_count",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "UpdateAudioStream",
-        "type_params": ["T"],
+        "type_params": [
+          "T"
+        ],
         "params": [
-          { "name": "stream", "type": "AudioStream" },
-          { "name": "data", "type": "ptr[T]", "boundary_type": "const_ptr[void]" },
-          { "name": "frame_count", "type": "i32" }
+          {
+            "name": "stream",
+            "type": "AudioStream"
+          },
+          {
+            "name": "data",
+            "type": "ptr[T]",
+            "boundary_type": "const_ptr[void]"
+          },
+          {
+            "name": "frame_count",
+            "type": "i32"
+          }
         ]
       },
       {
         "raw": "UnloadRenderTexture",
         "params": [
-          { "name": "target", "type": "RenderTexture2D" }
+          {
+            "name": "target",
+            "type": "RenderTexture2D"
+          }
         ]
       }
     ]

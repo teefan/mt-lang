@@ -66,8 +66,8 @@ def main() -> i32:
         defer rl.end_drawing()
 
         rl.clear_background(rl.RAYWHITE)
-        rl.draw_ellipse(i32<-ellipse_a_center.x, i32<-ellipse_a_center.y, ellipse_a_radius_x, ellipse_a_radius_y, if ellipses_collide then rl.RED else rl.BLUE)
-        rl.draw_ellipse(i32<-ellipse_b_center.x, i32<-ellipse_b_center.y, ellipse_b_radius_x, ellipse_b_radius_y, if ellipses_collide then rl.RED else rl.GREEN)
+        rl.draw_ellipse(i32<-ellipse_a_center.x, i32<-ellipse_a_center.y, ellipse_a_radius_x, ellipse_a_radius_y, if ellipses_collide: rl.RED else: rl.BLUE)
+        rl.draw_ellipse(i32<-ellipse_b_center.x, i32<-ellipse_b_center.y, ellipse_b_radius_x, ellipse_b_radius_y, if ellipses_collide: rl.RED else: rl.GREEN)
         rl.draw_ellipse_lines(i32<-ellipse_a_center.x, i32<-ellipse_a_center.y, ellipse_a_radius_x, ellipse_a_radius_y, rl.WHITE)
         rl.draw_ellipse_lines(i32<-ellipse_b_center.x, i32<-ellipse_b_center.y, ellipse_b_radius_x, ellipse_b_radius_y, rl.WHITE)
         rl.draw_circle_v(ellipse_a_center, 4.0, rl.WHITE)
@@ -78,7 +78,7 @@ def main() -> i32:
         else:
             rl.draw_text("NO COLLISION", screen_width / 2 - 80, 40, 28, rl.DARKGRAY)
 
-        rl.draw_text(if controlled == 0 then "Controlling: A" else "Controlling: B", 20, screen_height - 40, 20, rl.YELLOW)
+        rl.draw_text(if controlled == 0: "Controlling: A" else: "Controlling: B", 20, screen_height - 40, 20, rl.YELLOW)
         if mouse_in_a and controlled != 0:
             rl.draw_text("Mouse inside ellipse A", 20, screen_height - 70, 20, rl.BLUE)
         if mouse_in_b and controlled != 1:

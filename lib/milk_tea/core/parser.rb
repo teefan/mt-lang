@@ -458,6 +458,7 @@ module MilkTea
 
           params << parse_param
           break unless match(:comma)
+          raise error(peek, "unexpected trailing ',' in parameter list") if check(:rparen)
         end
       end
 
@@ -475,6 +476,7 @@ module MilkTea
         loop do
           params << parse_foreign_param
           break unless match(:comma)
+          raise error(peek, "unexpected trailing ',' in parameter list") if check(:rparen)
         end
       end
 
@@ -492,14 +494,8 @@ module MilkTea
     end
 
     def parse_foreign_param
-      mode = if match(:out)
-               :out
-             elsif match(:in)
-               :in
-             elsif match(:consuming)
-               :consuming
-             elsif match(:inout)
-               :inout
+      mode = if foreign_param_qualifier_mode?
+               advance.type
              else
                :plain
              end
@@ -819,9 +815,10 @@ module MilkTea
 
     def parse_if_expression
       condition = parse_or
-      consume(:then, "expected 'then' in if expression")
+      consume(:colon, "expected ':' after condition in if expression")
       then_expression = parse_expression
       consume(:else, "expected 'else' in if expression")
+      consume(:colon, "expected ':' after 'else' in if expression")
       else_expression = parse_expression
       AST::IfExpr.new(condition:, then_expression:, else_expression:)
     end
@@ -829,6 +826,17 @@ module MilkTea
     def parse_or
       parse_left_associative(:parse_and, :or)
     end
+
+    def foreign_param_qualifier_mode?
+      return false unless %i[out in inout consuming].include?(peek.type)
+
+      @tokens[@current + 1]&.type == :identifier
+    end
+
+    def check_name_token?(tok)
+      tok.type == :identifier
+    end
+
 
     def parse_and
       parse_left_associative(:parse_bitwise_or, :and)
@@ -1097,11 +1105,19 @@ module MilkTea
     end
 
     def parse_qualified_name
-      parts = [consume_name("expected identifier").lexeme]
+      parts = [consume_path_component("expected identifier").lexeme]
       while match(:dot)
-        parts << consume_name("expected identifier after '.'").lexeme
+        parts << consume_path_component("expected identifier after '.'").lexeme
       end
       AST::QualifiedName.new(parts:)
+    end
+
+    def consume_path_component(message)
+      # Module path components accept any word token (identifier or keyword),
+      # since they reference declared module paths, not introduce new name bindings.
+      return advance if !eof? && (peek.type == :identifier || Token::KEYWORDS.value?(peek.type))
+
+      raise error(peek, message)
     end
 
     def parse_format_string_literal(parts)
@@ -1192,9 +1208,7 @@ module MilkTea
     end
 
     def consume_name(message)
-      return advance if check_name
-
-      raise error(peek, message)
+      consume(:identifier, message)
     end
 
     def check(type)
@@ -1204,10 +1218,7 @@ module MilkTea
     end
 
     def check_name
-      return false if eof?
-
-      type = peek.type
-      type == :identifier || (Token::KEYWORDS.value?(type) && !%i[true false null].include?(type))
+      !eof? && peek.type == :identifier
     end
 
     def check_next(type)
@@ -1368,9 +1379,7 @@ module MilkTea
     end
 
     def type_name_token?(token)
-      return false unless token
-
-      token.type == :identifier || (Token::KEYWORDS.value?(token.type) && !%i[true false null].include?(token.type))
+      token&.type == :identifier
     end
 
     def matching_rbracket_index(start_index)

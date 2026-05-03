@@ -194,7 +194,7 @@ class MilkTeaParserTest < Minitest::Test
       module demo.expr
 
       def main(ready: bool) -> i32:
-          return if ready then 1 else 0
+          return if ready: 1 else: 0
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -1267,27 +1267,33 @@ class MilkTeaParserTest < Minitest::Test
     end
   end
 
-  def test_parses_keyword_names_in_struct_fields_and_member_access
+  def test_rejects_keyword_names_in_struct_fields
+    source = <<~MT
+      module demo.keywords
+
+      struct Event:
+          kind: i32
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    event_decl = ast.declarations[0]
+
+    assert_equal "kind", event_decl.fields.first.name
+  end
+
+  def test_rejects_reserved_keyword_as_struct_field_name
     source = <<~MT
       module demo.keywords
 
       struct Event:
           type: i32
-
-      def main(event: Event) -> i32:
-          let copy = Event(type = event.type)
-          return copy.type
     MT
 
-    ast = MilkTea::Parser.parse(source)
-    event_decl = ast.declarations[0]
-    main_fn = ast.declarations[1]
-    local_decl = main_fn.body[0]
+    error = assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(source)
+    end
 
-    assert_equal "type", event_decl.fields.first.name
-    assert_equal "type", local_decl.value.arguments.first.name
-    assert_equal "type", local_decl.value.arguments.first.value.member
-    assert_equal "type", main_fn.body[1].value.member
+    assert_match(/expected field name/, error.message)
   end
 
   def test_rejects_untyped_non_self_parameters

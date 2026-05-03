@@ -66,11 +66,11 @@ def main() -> i32:
             100.0,
         )
         var list_entries = array[str, 5](
-            if toggle_enabled then "Toggle: enabled" else "Toggle: disabled",
-            if checked then "Check: on" else "Check: off",
-            if combo_active < 2 then "Theme: cool" else "Theme: bold",
-            if tab_active == 0 then "Tab: layout" else "Tab: focus",
-            if list_focus >= 0 then "Focus: active" else "Focus: none",
+            if toggle_enabled: "Toggle: enabled" else: "Toggle: disabled",
+            if checked: "Check: on" else: "Check: off",
+            if combo_active < 2: "Theme: cool" else: "Theme: bold",
+            if tab_active == 0: "Tab: layout" else: "Tab: focus",
+            if list_focus >= 0: "Focus: active" else: "Focus: none",
         )
         gui.list_view_ex(
             rl.Rectangle(x = 40.0, y = 424.0, width = 240.0, height = 84.0),

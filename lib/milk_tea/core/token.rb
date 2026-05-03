@@ -54,7 +54,6 @@ module MilkTea
       "type" => :type,
       "unsafe" => :unsafe,
       "true" => :true,
-      "then" => :then,
       "union" => :union,
       "var" => :var,
       "variant" => :variant,

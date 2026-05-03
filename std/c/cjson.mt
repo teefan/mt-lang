@@ -7,7 +7,7 @@ extern module std.c.cjson:
         next: ptr[cJSON]
         prev: ptr[cJSON]
         child: ptr[cJSON]
-        type: i32
+        kind: i32
         valuestring: ptr[char]
         valueint: i32
         valuedouble: f64

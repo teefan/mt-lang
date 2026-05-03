@@ -49,11 +49,11 @@ def main() -> i32:
 
         let min_segments = math.ceil((end_angle - start_angle) / 90.0)
         rl.draw_text(
-            rl.text_format_cstr("MODE: %s", if segments >= min_segments then "MANUAL" else "AUTO"),
+            rl.text_format_cstr("MODE: %s", if segments >= min_segments: "MANUAL" else: "AUTO"),
             600,
             270,
             10,
-            if segments >= min_segments then rl.MAROON else rl.DARKGRAY,
+            if segments >= min_segments: rl.MAROON else: rl.DARKGRAY,
         )
         rl.draw_fps(10, 10)
 

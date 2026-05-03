@@ -112,8 +112,8 @@ def respawn_player(index: i32) -> void:
     players[index].pos[2] = f64<-(map_box_scale * (c.SDL_rand(256) - 128)) / 256.0
 
 def initialize_player(index: i32) -> void:
-    let x_sign = if (index & 1) != 0 then -1.0 else 1.0
-    let z_sign = if (index & 2) != 0 then -1.0 else 1.0
+    let x_sign = if (index & 1) != 0: -1.0 else: 1.0
+    let z_sign = if (index & 2) != 0: -1.0 else: 1.0
 
     players[index].pos[0] = 8.0 * x_sign
     players[index].pos[1] = 0.0
@@ -139,19 +139,19 @@ def init_edges() -> void:
 
     for index in range(0, 12):
         for axis in range(0, 3):
-            edges[index][axis] = if (box_edge_map[index * 2] & (1 << axis)) != 0 then bound else -bound
-            edges[index][axis + 3] = if (box_edge_map[index * 2 + 1] & (1 << axis)) != 0 then bound else -bound
+            edges[index][axis] = if (box_edge_map[index * 2] & (1 << axis)) != 0: bound else: -bound
+            edges[index][axis + 3] = if (box_edge_map[index * 2 + 1] & (1 << axis)) != 0: bound else: -bound
 
     for index in range(0, map_box_scale):
         let distance = f32<-(index * 2) - bound
 
         for endpoint in range(0, 2):
-            edges[index + 12][endpoint * 3] = if endpoint != 0 then bound else -bound
+            edges[index + 12][endpoint * 3] = if endpoint != 0: bound else: -bound
             edges[index + 12][endpoint * 3 + 1] = -bound
             edges[index + 12][endpoint * 3 + 2] = distance
             edges[index + 12 + map_box_scale][endpoint * 3] = distance
             edges[index + 12 + map_box_scale][endpoint * 3 + 1] = -bound
-            edges[index + 12 + map_box_scale][endpoint * 3 + 2] = if endpoint != 0 then bound else -bound
+            edges[index + 12 + map_box_scale][endpoint * 3 + 2] = if endpoint != 0: bound else: -bound
 
 def shoot(shooter: i32) -> void:
     let x0 = players[shooter].pos[0]
@@ -177,7 +177,7 @@ def shoot(shooter: i32) -> void:
             let radius = f64<-players[index].radius
             let height = f64<-players[index].height
             let dx = players[index].pos[0] - x0
-            let y_offset = if circle_index == 0 then 0.0 else radius - height
+            let y_offset = if circle_index == 0: 0.0 else: radius - height
             let dy = players[index].pos[1] - y0 + y_offset
             let dz = players[index].pos[2] - z0
             let vd = (vx * dx) + (vy * dy) + (vz * dz)
@@ -201,11 +201,11 @@ def update_players(dt_ns: c.Uint64) -> void:
         let cosine = c.SDL_cos(yaw_rad)
         let sine = c.SDL_sin(yaw_rad)
         let wasd = players[index].wasd
-        let dir_x = (if (wasd & 8) != 0 then 1.0 else 0.0) - (if (wasd & 2) != 0 then 1.0 else 0.0)
-        let dir_z = (if (wasd & 4) != 0 then 1.0 else 0.0) - (if (wasd & 1) != 0 then 1.0 else 0.0)
+        let dir_x = (if (wasd & 8) != 0: 1.0 else: 0.0) - (if (wasd & 2) != 0: 1.0 else: 0.0)
+        let dir_z = (if (wasd & 4) != 0: 1.0 else: 0.0) - (if (wasd & 1) != 0: 1.0 else: 0.0)
         let norm = (dir_x * dir_x) + (dir_z * dir_z)
-        let acc_x = if norm == 0.0 then 0.0 else 60.0 * ((cosine * dir_x + sine * dir_z) / c.SDL_sqrt(norm))
-        let acc_z = if norm == 0.0 then 0.0 else 60.0 * ((-sine * dir_x + cosine * dir_z) / c.SDL_sqrt(norm))
+        let acc_x = if norm == 0.0: 0.0 else: 60.0 * ((cosine * dir_x + sine * dir_z) / c.SDL_sqrt(norm))
+        let acc_z = if norm == 0.0: 0.0 else: 60.0 * ((-sine * dir_x + cosine * dir_z) / c.SDL_sqrt(norm))
         let vel_x = players[index].vel[0]
         let vel_y = players[index].vel[1]
         let vel_z = players[index].vel[2]
@@ -224,7 +224,7 @@ def update_players(dt_ns: c.Uint64) -> void:
         if new_pos_x != clamped_x:
             players[index].vel[0] = 0.0
         if new_pos_y != clamped_y:
-            players[index].vel[1] = if (wasd & 16) != 0 then 8.4375 else 0.0
+            players[index].vel[1] = if (wasd & 16) != 0: 8.4375 else: 0.0
         if new_pos_z != clamped_z:
             players[index].vel[2] = 0.0
 
@@ -285,8 +285,8 @@ def render_frame() -> void:
     c.SDL_RenderClear(renderer)
 
     if player_count > 0:
-        let part_hor = if player_count > 2 then 2 else 1
-        let part_ver = if player_count > 1 then 2 else 1
+        let part_hor = if player_count > 2: 2 else: 1
+        let part_ver = if player_count > 1: 2 else: 1
         let size_hor = f32<-output_width / f32<-part_hor
         let size_ver = f32<-output_height / f32<-part_ver
 
@@ -388,25 +388,25 @@ def set_wasd_bit(player_index: i32, scancode: c.SDL_Scancode, pressed: bool) -> 
         players[player_index].wasd &= u8<-~mask
 
 def pump_events() -> bool:
-    var event = c.SDL_Event(type = 0)
+    var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
-        if event.mdevice.type == c.SDL_EventType.SDL_EVENT_MOUSE_REMOVED:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_MOUSE_REMOVED:
             for index in range(0, player_count):
                 if players[index].mouse == event.mdevice.which:
                     players[index].mouse = 0
             continue
 
-        if event.kdevice.type == c.SDL_EventType.SDL_EVENT_KEYBOARD_REMOVED:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_KEYBOARD_REMOVED:
             for index in range(0, player_count):
                 if players[index].keyboard == event.kdevice.which:
                     players[index].keyboard = 0
             continue
 
-        if event.motion.type == c.SDL_EventType.SDL_EVENT_MOUSE_MOTION:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_MOUSE_MOTION:
             let mouse_id = event.motion.which
             let player_index = whose_mouse(mouse_id)
 
@@ -423,13 +423,13 @@ def pump_events() -> bool:
                             break
             continue
 
-        if event.button.type == c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
             let player_index = whose_mouse(event.button.which)
             if player_index >= 0:
                 shoot(player_index)
             continue
 
-        if event.key.type == c.SDL_EventType.SDL_EVENT_KEY_DOWN:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_KEY_DOWN:
             let player_index = whose_keyboard(event.key.which)
 
             if player_index >= 0:
@@ -444,7 +444,7 @@ def pump_events() -> bool:
                             break
             continue
 
-        if event.key.type == c.SDL_EventType.SDL_EVENT_KEY_UP:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_KEY_UP:
             if event.key.scancode == c.SDL_Scancode.SDL_SCANCODE_ESCAPE:
                 return false
 
@@ -459,7 +459,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.url", c"https://examples.libsdl.org/SDL3/demo/02-woodeneye-008/")
     c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.creator", c"SDL team")
     c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.copyright", c"Placed in the public domain")
-    c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.type", c"game")
+    c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.kind", c"game")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
         return 1

@@ -131,7 +131,7 @@ def main() -> i32:
         rl.draw_text(rl.text_format_cstr("Easing x: %s", easings[easing_x].name), 20, font_size, font_size, rl.LIGHTGRAY)
         rl.draw_text(rl.text_format_cstr("Easing y: %s", easings[easing_y].name), 20, font_size * 2, font_size, rl.LIGHTGRAY)
         rl.draw_text(
-            rl.text_format_cstr_f32_f32("t (%s) = %.2f d = %.2f", if bounded_t then "b" else "u", t, duration),
+            rl.text_format_cstr_f32_f32("t (%s) = %.2f d = %.2f", if bounded_t: "b" else: "u", t, duration),
             20,
             font_size * 3,
             font_size,

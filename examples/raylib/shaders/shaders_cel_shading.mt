@@ -137,8 +137,8 @@ def main() -> i32:
         rl.EndMode3D()
 
         rl.DrawFPS(10, 10)
-        rl.DrawText(rl.TextFormat(cel_status_format, if cel_enabled then c"ON" else c"OFF"), 10, 65, 20, if cel_enabled then rl.DARKGREEN else rl.DARKGRAY)
-        rl.DrawText(rl.TextFormat(outline_status_format, if outline_enabled then c"ON" else c"OFF"), 10, 90, 20, if outline_enabled then rl.DARKGREEN else rl.DARKGRAY)
+        rl.DrawText(rl.TextFormat(cel_status_format, if cel_enabled: c"ON" else: c"OFF"), 10, 65, 20, if cel_enabled: rl.DARKGREEN else: rl.DARKGRAY)
+        rl.DrawText(rl.TextFormat(outline_status_format, if outline_enabled: c"ON" else: c"OFF"), 10, 90, 20, if outline_enabled: rl.DARKGREEN else: rl.DARKGRAY)
         rl.DrawText(rl.TextFormat(bands_status_format, num_bands), 10, 115, 20, rl.DARKGRAY)
 
     return 0

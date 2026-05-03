@@ -43,8 +43,8 @@ def main() -> i32:
 
         min_segments = math.truncf(math.ceilf((end_angle - start_angle) / 90.0))
 
-        let mode = if segments >= min_segments then manual_mode else auto_mode
-        let mode_color = if segments >= min_segments then rl.MAROON else rl.DARKGRAY
+        let mode = if segments >= min_segments: manual_mode else: auto_mode
+        let mode_color = if segments >= min_segments: rl.MAROON else: rl.DARKGRAY
         rl.DrawText(rl.TextFormat(mode_format, mode), 600, 200, 10, mode_color)
 
         rl.DrawFPS(10, 10)

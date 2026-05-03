@@ -11,7 +11,7 @@ enum ParticleType: i32
     FIRE = 2
 
 struct Particle:
-    type: i32
+    kind: i32
     position: rl.Vector2
     velocity: rl.Vector2
     radius: f32
@@ -49,7 +49,7 @@ def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_p
     particles_view[particle_index].position = emitter_position
     particles_view[particle_index].alive = true
     particles_view[particle_index].life_time = 0.0
-    particles_view[particle_index].type = particle_type
+    particles_view[particle_index].kind = particle_type
 
     var speed = f32<-rl.get_random_value(0, 9) / 5.0
     if particle_type == ParticleType.WATER:
@@ -76,11 +76,11 @@ def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32,
     while index != head:
         particles_view[index].life_time += 1.0 / 60.0
 
-        if particles_view[index].type == ParticleType.WATER:
+        if particles_view[index].kind == ParticleType.WATER:
             particles_view[index].position.x += particles_view[index].velocity.x
             particles_view[index].velocity.y += 0.2
             particles_view[index].position.y += particles_view[index].velocity.y
-        elif particles_view[index].type == ParticleType.SMOKE:
+        elif particles_view[index].kind == ParticleType.SMOKE:
             particles_view[index].position.x += particles_view[index].velocity.x
             particles_view[index].velocity.y -= 0.05
             particles_view[index].position.y += particles_view[index].velocity.y

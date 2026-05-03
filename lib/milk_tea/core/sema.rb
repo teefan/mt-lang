@@ -1729,7 +1729,7 @@ module MilkTea
           when AST::IntegerLiteral
             infer_integer_literal(expected_type)
           when AST::FloatLiteral
-            infer_float_literal(expected_type)
+            infer_float_literal(expression, expected_type)
           when AST::SizeofExpr
             infer_layout_query_type(expression.type, context: "sizeof")
             @types.fetch("usize")
@@ -1785,8 +1785,12 @@ module MilkTea
         end
       end
 
-      def infer_float_literal(expected_type)
-        if expected_type.is_a?(Types::Primitive) && expected_type.float?
+      def infer_float_literal(expression, expected_type)
+        if expression.lexeme.end_with?("f32")
+          @types.fetch("f32")
+        elsif expression.lexeme.end_with?("f64")
+          @types.fetch("f64")
+        elsif expected_type.is_a?(Types::Primitive) && expected_type.float?
           expected_type
         else
           @types.fetch("f64")

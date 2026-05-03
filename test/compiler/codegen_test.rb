@@ -175,7 +175,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = <<~MT
       module demo.async_methods_codegen
 
-      import std.async as async
+      import std.async as aio
 
       struct Counter:
           value: i32
@@ -234,7 +234,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = <<~MT
       module demo.async_flow_codegen
 
-      import std.async as async
+      import std.async as aio
 
       async def sum_range(limit: i32) -> i32:
           var total: i32 = 0
@@ -267,7 +267,7 @@ class MilkTeaCodegenTest < Minitest::Test
       source = <<~MT
         module demo.await_in_if
 
-        import std.async as async
+        import std.async as aio
 
         async def child() -> i32:
             return 42
@@ -291,7 +291,7 @@ class MilkTeaCodegenTest < Minitest::Test
       source = <<~MT
         module demo.await_in_while
 
-        import std.async as async
+        import std.async as aio
 
         async def tick() -> i32:
             return 1
@@ -317,7 +317,7 @@ class MilkTeaCodegenTest < Minitest::Test
       source = <<~MT
         module demo.await_in_if_condition
 
-        import std.async as async
+        import std.async as aio
 
         async def ready() -> bool:
             return true
@@ -339,7 +339,7 @@ class MilkTeaCodegenTest < Minitest::Test
       source = <<~MT
         module demo.await_short_circuit
 
-        import std.async as async
+        import std.async as aio
 
         async def t() -> bool:
             return true
@@ -366,13 +366,13 @@ class MilkTeaCodegenTest < Minitest::Test
       source = <<~MT
         module demo.await_if_expr
 
-        import std.async as async
+        import std.async as aio
 
         async def child() -> i32:
             return 7
 
         async def parent(flag: bool) -> i32:
-            return if flag then await child() else 0
+            return if flag: await child() else: 0
       MT
 
       generated = generate_c_from_program_source(source)
@@ -1409,8 +1409,8 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.if_expr_codegen",
       "",
       "def main(ready: bool) -> i32:",
-      "    let score = if ready then 1 else 0",
-      "    return if ready then score else score + 1",
+      "    let score = if ready: 1 else: 0",
+      "    return if ready: score else: score + 1",
       "",
     ].join("\n")
 
@@ -1587,10 +1587,10 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.async_clean",
       "",
-      "import std.async as async",
+      "import std.async as aio",
       "",
       "async def child() -> i32:",
-      "    let task = async.sleep(1)",
+      "    let task = aio.sleep(1)",
       "    return await task + 1",
       "",
     ].join("\n")

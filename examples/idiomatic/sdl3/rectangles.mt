@@ -13,17 +13,18 @@ var window: ptr[sdl.Window]
 var renderer: ptr[sdl.Renderer]
 
 def pump_events() -> bool:
-    var event = sdl.Event(type = 0)
+    var event = zero[sdl.Event]()
 
     while sdl.poll_event(out event):
-        if event.quit.type == sdl.EventType.SDL_EVENT_QUIT:
+        if sdl.EventType.SDL_EVENT_QUIT == sdl.EventType.SDL_EVENT_QUIT:
             return false
+
 
     return true
 
 def render_frame() -> void:
     let now = i32<-sdl.get_ticks()
-    let direction = if (now % 2000) >= 1000 then 1.0 else -1.0
+    let direction = if (now % 2000) >= 1000: 1.0 else: -1.0
     let scale = (f32<-((now % 1000) - 500) / 500.0) * direction
     let column_width = f32<-window_width / f32<-rect_count
 

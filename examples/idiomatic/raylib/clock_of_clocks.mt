@@ -124,7 +124,7 @@ def digit_angles_for(digit: i32) -> array[rl.Vector2, 24]:
 
 def digits_for(clock: time.ClockTime, hour_mode: i32) -> array[i32, 6]:
     var result = zero[array[i32, 6]]()
-    let hour_value = if hour_mode == hour_mode_24 then clock.hour else time.hour_12(clock)
+    let hour_value = if hour_mode == hour_mode_24: clock.hour else: time.hour_12(clock)
     result[0] = hour_value / 10
     result[1] = hour_value % 10
     result[2] = clock.minute / 10
@@ -141,7 +141,7 @@ def refresh_digits(current_clock: time.ClockTime, hour_mode: i32, current_angles
     let blank_leading_hour = hour_mode == hour_mode_12 and time.hour_12(current_clock) < 10
 
     for digit in range(0, digit_count):
-        let digit_angles = if digit == 0 and blank_leading_hour then blank_digit_angles() else digit_angles_for(display_digits[digit])
+        let digit_angles = if digit == 0 and blank_leading_hour: blank_digit_angles() else: digit_angles_for(display_digits[digit])
 
         for cell in range(0, cells_per_digit):
             let slot = angle_slot(digit, cell)

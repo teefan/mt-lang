@@ -16,10 +16,10 @@ var texture_width: i32 = 0
 var texture_height: i32 = 0
 
 def pump_events() -> bool:
-    var event = c.SDL_Event(type = 0)
+    var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
@@ -27,7 +27,7 @@ def pump_events() -> bool:
 def render_frame() -> void:
     let x0 = 0.5 * f32<-window_width
     let y0 = 0.5 * f32<-window_height
-    let min_dimension = if window_width < window_height then window_width else window_height
+    let min_dimension = if window_width < window_height: window_width else: window_height
     let px = f32<-min_dimension / c.SDL_sqrtf(3.0)
 
     let now = i32<-c.SDL_GetTicks()
@@ -54,9 +54,9 @@ def render_frame() -> void:
     var corners = zero[array[f32, 16]]()
 
     for index in range(0, 8):
-        let x = if (index & 1) != 0 then f32<-(-0.5) else f32<-0.5
-        let y = if (index & 2) != 0 then f32<-(-0.5) else f32<-0.5
-        let z = if (index & 4) != 0 then f32<-(-0.5) else f32<-0.5
+        let x = if (index & 1) != 0: f32<-(-0.5) else: f32<-0.5
+        let y = if (index & 2) != 0: f32<-(-0.5) else: f32<-0.5
+        let z = if (index & 4) != 0: f32<-(-0.5) else: f32<-0.5
         corners[0 + (2 * index)] = (mat[0] * x) + (mat[1] * y) + (mat[2] * z)
         corners[1 + (2 * index)] = (mat[3] * x) + (mat[4] * y) + (mat[5] * z)
 
@@ -64,14 +64,14 @@ def render_frame() -> void:
     c.SDL_RenderClear(renderer)
 
     for index in range(1, 7):
-        let dir = if (index & 4) != 0 then 7 - index else index
+        let dir = if (index & 4) != 0: 7 - index else: index
         let odd = (
-            (if (index & 1) != 0 then 1 else 0) +
-            (if (index & 2) != 0 then 1 else 0) +
-            (if (index & 4) != 0 then 1 else 0)
+            (if (index & 1) != 0: 1 else: 0) +
+            (if (index & 2) != 0: 1 else: 0) +
+            (if (index & 4) != 0: 1 else: 0)
         ) % 2
 
-        if 0.0 < ((if odd == 1 then 1.0 else -1.0) * mat[5 + dir]):
+        if 0.0 < ((if odd == 1: 1.0 else: -1.0) * mat[5 + dir]):
             continue
 
         var origin_index = bit_masks[(dir - 1) % 3]

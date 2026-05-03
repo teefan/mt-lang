@@ -90,7 +90,7 @@ def draw_text_codepoint_3d(font: rl.Font, codepoint: i32, position: rl.Vector3, 
                 rl.VIOLET,
             )
 
-        rlgl.rlCheckRenderBatchLimit(4 + (if backface then 4 else 0))
+        rlgl.rlCheckRenderBatchLimit(4 + (if backface: 4 else: 0))
         rlgl.rlSetTexture(font.texture.id)
 
         rlgl.rlPushMatrix()
@@ -501,14 +501,14 @@ def main() -> i32:
         draw_text_3d(rl.GetFontDefault(), line_opt, position, 0.8, 0.1, 0.0, false, rl.BLUE, false)
         position.z += 0.5 + measure.y
 
-        let lbox_opt = rl.TextFormat(c"< LBOX: %3s >", (if saved_letter_boundary then c"ON" else c"OFF"))
+        let lbox_opt = rl.TextFormat(c"< LBOX: %3s >", (if saved_letter_boundary: c"ON" else: c"OFF"))
         quads += i32<-rl.TextLength(lbox_opt)
         measure = rl.MeasureTextEx(rl.GetFontDefault(), lbox_opt, 0.8, 0.1)
         position.x = -measure.x / 2.0
         draw_text_3d(rl.GetFontDefault(), lbox_opt, position, 0.8, 0.1, 0.0, false, rl.RED, false)
         position.z += 0.5 + measure.y
 
-        let tbox_opt = rl.TextFormat(c"< TBOX: %3s >", (if show_text_boundary then c"ON" else c"OFF"))
+        let tbox_opt = rl.TextFormat(c"< TBOX: %3s >", (if show_text_boundary: c"ON" else: c"OFF"))
         quads += i32<-rl.TextLength(tbox_opt)
         measure = rl.MeasureTextEx(rl.GetFontDefault(), tbox_opt, 0.8, 0.1)
         position.x = -measure.x / 2.0
@@ -572,7 +572,7 @@ def main() -> i32:
         rl.DrawText(c"Drag & drop a font file to change the font!\nType something, see what happens!\n\nPress [F3] to toggle the camera", 10, 35, 10, rl.BLACK)
 
         quads += i32<-rl.TextLength(text_buffer_cstr(ref_of(text))) * 2 * layers
-        let stats = rl.TextFormat(c"%2i layer(s) | %s camera | %4i quads (%4i verts)", layers, (if spin then c"ORBITAL" else c"FREE"), quads, quads * 4)
+        let stats = rl.TextFormat(c"%2i layer(s) | %s camera | %4i quads (%4i verts)", layers, (if spin: c"ORBITAL" else: c"FREE"), quads, quads * 4)
         var width = rl.MeasureText(stats, 10)
         rl.DrawText(stats, screen_width - 20 - width, 10, 10, rl.DARKGREEN)
 

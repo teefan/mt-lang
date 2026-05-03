@@ -39,7 +39,7 @@ def keep_aspect_centered_integer(screen_width: i32, screen_height: i32, game_wid
 
     let ratio_x = screen_width / game_width
     let ratio_y = screen_height / game_height
-    let resize_ratio = if ratio_x < ratio_y then ratio_x else ratio_y
+    let resize_ratio = if ratio_x < ratio_y: ratio_x else: ratio_y
 
     var dest = read(dest_rect)
     dest.x = f32<-(i32<-((screen_width - game_width * resize_ratio) * 0.5))
@@ -99,7 +99,7 @@ def keep_aspect_centered(screen_width: i32, screen_height: i32, game_width: i32,
 
     let ratio_x: f32 = f32<-screen_width / game_width
     let ratio_y: f32 = f32<-screen_height / game_height
-    let resize_ratio = if ratio_x < ratio_y then ratio_x else ratio_y
+    let resize_ratio = if ratio_x < ratio_y: ratio_x else: ratio_y
 
     var dest = read(dest_rect)
     dest.x = f32<-(i32<-((screen_width - game_width * resize_ratio) * 0.5))

@@ -333,7 +333,7 @@ class MilkTeaLinterTest < Minitest::Test
   end
 
   def test_dead_assignment_write_only_tail
-    # x is read once, then overwritten and the last write is never read
+    # x is read once,: overwritten and the last write is never read
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
@@ -350,7 +350,7 @@ class MilkTeaLinterTest < Minitest::Test
   end
 
   def test_no_dead_assignment_when_never_assigned_initial_value
-    # Declaration without value then immediate use
+    # Declaration without value: immediate use
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 

@@ -152,8 +152,8 @@ def main() -> i32:
             rl.BLACK,
         )
 
-        rl.draw_rectangle_lines_ex(btn_save_rec, 2.0, if btn_save_mouse_hover then rl.RED else rl.BLACK)
-        rl.draw_text("SAVE!", 755, 20, 10, if btn_save_mouse_hover then rl.RED else rl.BLACK)
+        rl.draw_rectangle_lines_ex(btn_save_rec, 2.0, if btn_save_mouse_hover: rl.RED else: rl.BLACK)
+        rl.draw_text("SAVE!", 755, 20, 10, if btn_save_mouse_hover: rl.RED else: rl.BLACK)
 
         if show_save_message:
             rl.draw_rectangle(0, 0, rl.get_screen_width(), rl.get_screen_height(), rl.fade(rl.RAYWHITE, 0.8))

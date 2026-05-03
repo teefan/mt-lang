@@ -517,7 +517,7 @@ module MilkTea
           condition = render_expression(expression.condition, IF_EXPRESSION_PRECEDENCE)
           then_expression = render_expression(expression.then_expression, IF_EXPRESSION_PRECEDENCE)
           else_expression = render_expression(expression.else_expression, IF_EXPRESSION_PRECEDENCE)
-          wrap("if #{condition} then #{then_expression} else #{else_expression}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
+          wrap("if #{condition}: #{then_expression} else: #{else_expression}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
         when AST::SizeofExpr
           "sizeof(#{render_type(expression.type)})"
         when AST::AlignofExpr
@@ -764,7 +764,7 @@ module MilkTea
           condition = render_expression(expression.condition, IF_EXPRESSION_PRECEDENCE)
           then_expression = render_expression(expression.then_expression, IF_EXPRESSION_PRECEDENCE)
           else_expression = render_expression(expression.else_expression, IF_EXPRESSION_PRECEDENCE)
-          wrap("if #{condition} then #{then_expression} else #{else_expression}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
+          wrap("if #{condition}: #{then_expression} else: #{else_expression}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
         when IR::ReinterpretExpr
           "reinterpret[#{expression.target_type} <- #{expression.source_type}](#{render_expression(expression.expression)})"
         when IR::SizeofExpr

@@ -109,7 +109,7 @@ def main() -> i32:
         defer rl.end_drawing()
 
         rl.clear_background(rl.GRAY)
-        rl.draw_rectangle_v(position, size, if release_action then rl.BLUE else rl.RED)
+        rl.draw_rectangle_v(position, size, if release_action: rl.BLUE else: rl.RED)
         if cursor_set:
             rl.draw_text("Current input set: Arrow keys", 10, 10, 20, rl.WHITE)
         else:

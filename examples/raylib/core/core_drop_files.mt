@@ -53,7 +53,7 @@ def main() -> i32:
 
             var index = 0
             while index < file_path_counter:
-                rl.DrawRectangle(0, 85 + 40 * index, screen_width, 40, rl.Fade(rl.LIGHTGRAY, if index % 2 == 0 then 0.5 else 0.3))
+                rl.DrawRectangle(0, 85 + 40 * index, screen_width, 40, rl.Fade(rl.LIGHTGRAY, if index % 2 == 0: 0.5 else: 0.3))
                 unsafe:
                     rl.DrawText(cstr<-file_paths[index], 120, 100 + 40 * index, 10, rl.GRAY)
                 index += 1

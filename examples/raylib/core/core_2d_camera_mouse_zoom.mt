@@ -94,6 +94,6 @@ def main() -> i32:
         )
 
         rl.DrawText(mode_select_text, 20, 20, 20, rl.DARKGRAY)
-        rl.DrawText(if zoom_mode == 0 then wheel_zoom_text else move_zoom_text, 20, 50, 20, rl.DARKGRAY)
+        rl.DrawText(if zoom_mode == 0: wheel_zoom_text else: move_zoom_text, 20, 50, 20, rl.DARKGRAY)
 
     return 0

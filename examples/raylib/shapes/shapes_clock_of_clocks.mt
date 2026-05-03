@@ -133,7 +133,7 @@ def load_time_digits(time_buffer: ref[array[char, 7]], hour_mode: i32) -> void:
     var now: ctime.time_t = 0
     now = ctime.time(ptr_of(ref_of(now)))
     let tm_info = ctime.localtime(ptr_of(ref_of(now)))
-    let format = if hour_mode == hour_mode_24 then time_format_24 else time_format_12
+    let format = if hour_mode == hour_mode_24: time_format_24 else: time_format_12
 
     unsafe:
         ctime.strftime(ptr_of(ref_of(read(time_buffer)[0])), 7, format, tm_info)

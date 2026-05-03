@@ -53,11 +53,11 @@ def main() -> i32:
         gui.check_box(rl.Rectangle(x = 640.0, y = 380.0, width = 20.0, height = 20.0), "DrawRect", inout draw_rect)
 
         rl.draw_text(
-            rl.text_format_cstr("MODE: %s", if segments >= 4.0 then "MANUAL" else "AUTO"),
+            rl.text_format_cstr("MODE: %s", if segments >= 4.0: "MANUAL" else: "AUTO"),
             640,
             280,
             10,
-            if segments >= 4.0 then rl.MAROON else rl.DARKGRAY,
+            if segments >= 4.0: rl.MAROON else: rl.DARKGRAY,
         )
         rl.draw_fps(10, 10)
 

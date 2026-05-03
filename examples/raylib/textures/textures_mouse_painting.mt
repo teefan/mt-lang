@@ -155,8 +155,8 @@ def main() -> i32:
             rl.BLACK,
         )
 
-        rl.DrawRectangleLinesEx(btn_save_rec, 2.0, if btn_save_mouse_hover then rl.RED else rl.BLACK)
-        rl.DrawText(save_text, 755, 20, 10, if btn_save_mouse_hover then rl.RED else rl.BLACK)
+        rl.DrawRectangleLinesEx(btn_save_rec, 2.0, if btn_save_mouse_hover: rl.RED else: rl.BLACK)
+        rl.DrawText(save_text, 755, 20, 10, if btn_save_mouse_hover: rl.RED else: rl.BLACK)
 
         if show_save_message:
             rl.DrawRectangle(0, 0, rl.GetScreenWidth(), rl.GetScreenHeight(), rl.Fade(rl.RAYWHITE, 0.8))

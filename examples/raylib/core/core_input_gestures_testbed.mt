@@ -210,13 +210,13 @@ def main() -> i32:
         rl.DrawTriangle(rl.Vector2(x = last_gesture_position.x + 144.0, y = last_gesture_position.y + 43.0), rl.Vector2(x = last_gesture_position.x + 159.0, y = last_gesture_position.y + 53.0), rl.Vector2(x = last_gesture_position.x + 159.0, y = last_gesture_position.y + 33.0), pinch_in_color)
 
         for touch_indicator in range(0, 4):
-            rl.DrawCircle(i32<-last_gesture_position.x + 180, i32<-last_gesture_position.y + 7 + touch_indicator * 15, 5.0, if touch_count <= touch_indicator then rl.LIGHTGRAY else current_gesture_color)
+            rl.DrawCircle(i32<-last_gesture_position.x + 180, i32<-last_gesture_position.y + 7 + touch_indicator * 15, 5.0, if touch_count <= touch_indicator: rl.LIGHTGRAY else: current_gesture_color)
 
         rl.DrawText(c"Log", i32<-gesture_log_position.x, i32<-gesture_log_position.y, 20, rl.BLACK)
         var log_row = 0
         var log_index = gesture_log_index % gesture_log_size
         while log_row < gesture_log_size:
-            rl.DrawText(gesture_log[log_index], i32<-gesture_log_position.x, i32<-gesture_log_position.y + 410 - log_row * 20, 20, if log_row == 0 then current_gesture_color else rl.LIGHTGRAY)
+            rl.DrawText(gesture_log[log_index], i32<-gesture_log_position.x, i32<-gesture_log_position.y + 410 - log_row * 20, 20, if log_row == 0: current_gesture_color else: rl.LIGHTGRAY)
             log_row += 1
             log_index = (log_index + 1) % gesture_log_size
 
@@ -267,7 +267,7 @@ def main() -> i32:
                     touch_index += 1
 
                 if touch_count == 2:
-                    rl.DrawLineEx(touch_positions[0], touch_positions[1], if current_gesture == rl.Gesture.GESTURE_PINCH_OUT then 8.0 else 12.0, current_gesture_color)
+                    rl.DrawLineEx(touch_positions[0], touch_positions[1], if current_gesture == rl.Gesture.GESTURE_PINCH_OUT: 8.0 else: 12.0, current_gesture_color)
             else:
                 rl.DrawCircleV(mouse_position, 35.0, rl.Fade(current_gesture_color, 0.5))
                 rl.DrawCircleV(mouse_position, 5.0, current_gesture_color)

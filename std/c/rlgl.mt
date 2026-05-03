@@ -397,7 +397,7 @@ extern module std.c.rlgl:
 
     extern def rlUnloadVertexBuffer(vboId: u32) -> void
 
-    extern def rlSetVertexAttribute(index: u32, compSize: i32, type: i32, normalized: bool, stride: i32, offset: i32) -> void
+    extern def rlSetVertexAttribute(index: u32, compSize: i32, kind: i32, normalized: bool, stride: i32, offset: i32) -> void
 
     extern def rlSetVertexAttributeDivisor(index: u32, divisor: i32) -> void
 
@@ -443,7 +443,7 @@ extern module std.c.rlgl:
 
     extern def rlResizeFramebuffer(width: i32, height: i32) -> void
 
-    extern def rlLoadShader(code: cstr, type: i32) -> u32
+    extern def rlLoadShader(code: cstr, kind: i32) -> u32
 
     extern def rlLoadShaderProgram(vsCode: cstr, fsCode: cstr) -> u32
 

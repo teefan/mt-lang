@@ -165,14 +165,14 @@ def scancode_mask(scancode: c.SDL_Scancode) -> c.Uint16:
     return 0
 
 def pump_events() -> bool:
-    var event = c.SDL_Event(type = 0)
+    var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
-        elif event.quit.type == c.SDL_EventType.SDL_EVENT_DROP_FILE:
+        elif c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_DROP_FILE:
             load_file(event.drop.data)
-        elif event.quit.type == c.SDL_EventType.SDL_EVENT_KEY_DOWN:
+        elif c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_KEY_DOWN:
             if event.key.scancode == c.SDL_Scancode.SDL_SCANCODE_ESCAPE:
                 return false
 
@@ -188,7 +188,7 @@ def pump_events() -> bool:
                 keystate |= scancode_mask(event.key.scancode)
             else:
                 keystate |= keycode_mask(event.key.key)
-        elif event.quit.type == c.SDL_EventType.SDL_EVENT_KEY_UP:
+        elif c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_KEY_UP:
             if positional_input:
                 let mask = scancode_mask(event.key.scancode)
                 keystate &= c.Uint16<-~mask
@@ -267,7 +267,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     if not c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.copyright", c"Placed in the public domain"):
         return 1
-    if not c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.type", c"game"):
+    if not c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.kind", c"game"):
         return 1
 
     if not c.SDL_Init(c.SDL_INIT_AUDIO | c.SDL_INIT_VIDEO):

@@ -43,7 +43,7 @@ def main() -> i32:
             for x in range(2, flame_width):
                 var flame = i32<-read(flame_root_buffer + x)
                 flame += rl.GetRandomValue(0, 2)
-                read(flame_root_buffer + x) = if flame > 255 then u8<-255 else u8<-flame
+                read(flame_root_buffer + x) = if flame > 255: u8<-255 else: u8<-flame
 
             for x in range(0, flame_width):
                 let index = x + (image_height - 1) * image_width
@@ -66,7 +66,7 @@ def main() -> i32:
                         if new_x > 0 and new_x < image_width:
                             let index_above = index - image_width + move_x
                             let decay = rl.GetRandomValue(0, 3)
-                            let next_color_index = color_index - (if decay < color_index then decay else color_index)
+                            let next_color_index = color_index - (if decay < color_index: decay else: color_index)
                             read(index_buffer + index_above) = u8<-next_color_index
 
             for y in range(1, image_height):

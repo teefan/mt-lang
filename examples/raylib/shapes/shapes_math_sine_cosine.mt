@@ -62,7 +62,7 @@ def main() -> i32:
         let explementary = 360.0 - angle
 
         let tangent = rm.clamp(math.tanf(angle_rad), -10.0, 10.0)
-        let cotangent = if math.fabsf(tangent) > 0.001 then rm.clamp(1.0 / tangent, -radius, radius) else 0.0
+        let cotangent = if math.fabsf(tangent) > 0.001: rm.clamp(1.0 / tangent, -radius, radius) else: 0.0
         let tangent_point = rl.Vector2(x = center.x + radius, y = center.y - tangent * radius)
         let cotangent_point = rl.Vector2(x = center.x + cotangent * radius, y = center.y - radius)
 

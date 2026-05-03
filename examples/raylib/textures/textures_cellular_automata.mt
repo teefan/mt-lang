@@ -21,14 +21,14 @@ const window_title: cstr = c"raylib [textures] example - cellular automata"
 def compute_line(image: ref[rl.Image], line: i32, rule: i32) -> void:
     for index in range(1, image_width - 1):
         let prev_value = (
-            if rl.GetImageColor(read(image), index - 1, line - 1).r < 5 then 4 else 0
+            if rl.GetImageColor(read(image), index - 1, line - 1).r < 5: 4 else: 0
         ) + (
-            if rl.GetImageColor(read(image), index, line - 1).r < 5 then 2 else 0
+            if rl.GetImageColor(read(image), index, line - 1).r < 5: 2 else: 0
         ) + (
-            if rl.GetImageColor(read(image), index + 1, line - 1).r < 5 then 1 else 0
+            if rl.GetImageColor(read(image), index + 1, line - 1).r < 5: 1 else: 0
         )
         let curr_value = (rule & (1 << prev_value)) != 0
-        rl.ImageDrawPixel(ptr_of(image), index, line, if curr_value then rl.BLACK else rl.RAYWHITE)
+        rl.ImageDrawPixel(ptr_of(image), index, line, if curr_value: rl.BLACK else: rl.RAYWHITE)
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

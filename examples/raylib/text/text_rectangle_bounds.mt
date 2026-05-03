@@ -25,7 +25,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
     var text_offset_x: f32 = 0.0
     let scale_factor = font_size / f32<-font.baseSize
 
-    var state = if word_wrap then measure_state else draw_state
+    var state = if word_wrap: measure_state else: draw_state
     var start_line = -1
     var end_line = -1
     var last_k = -1
@@ -61,7 +61,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
                     end_line = i
 
                 if (text_offset_x + glyph_width) > rec.width:
-                    end_line = if end_line < 1 then i else end_line
+                    end_line = if end_line < 1: i else: end_line
                     if i == end_line:
                         end_line -= codepoint_byte_count
                     if (start_line + codepoint_byte_count) == end_line:
@@ -114,7 +114,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
                             codepoint,
                             rl.Vector2(x = rec.x + text_offset_x, y = rec.y + text_offset_y),
                             font_size,
-                            if is_glyph_selected then select_tint else tint,
+                            if is_glyph_selected: select_tint else: tint,
                         )
 
                 if word_wrap and i == end_line:

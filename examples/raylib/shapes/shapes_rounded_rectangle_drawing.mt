@@ -61,8 +61,8 @@ def main() -> i32:
         gui.GuiCheckBox(gui.Rectangle(x = 640.0, y = 350.0, width = 20.0, height = 20.0), c"DrawRoundedLines", ptr_of(ref_of(draw_rounded_lines)))
         gui.GuiCheckBox(gui.Rectangle(x = 640.0, y = 380.0, width = 20.0, height = 20.0), c"DrawRect", ptr_of(ref_of(draw_rect)))
 
-        let mode = if segments >= 4.0 then manual_mode else auto_mode
-        let mode_color = if segments >= 4.0 then rl.MAROON else rl.DARKGRAY
+        let mode = if segments >= 4.0: manual_mode else: auto_mode
+        let mode_color = if segments >= 4.0: rl.MAROON else: rl.DARKGRAY
         rl.DrawText(rl.TextFormat(mode_format, mode), 640, 280, 10, mode_color)
 
         rl.DrawFPS(10, 10)

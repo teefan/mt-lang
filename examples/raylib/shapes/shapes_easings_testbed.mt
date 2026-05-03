@@ -328,7 +328,7 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
         rl.DrawText(rl.TextFormat(c"Easing x: %s", easings[easing_x].name), 20, font_size, font_size, rl.LIGHTGRAY)
         rl.DrawText(rl.TextFormat(c"Easing y: %s", easings[easing_y].name), 20, font_size * 2, font_size, rl.LIGHTGRAY)
-        rl.DrawText(rl.TextFormat(c"t (%s) = %.2f d = %.2f", if bounded_t then c"b" else c"u", t, d), 20, font_size * 3, font_size, rl.LIGHTGRAY)
+        rl.DrawText(rl.TextFormat(c"t (%s) = %.2f d = %.2f", if bounded_t: c"b" else: c"u", t, d), 20, font_size * 3, font_size, rl.LIGHTGRAY)
 
         rl.DrawText(c"Use ENTER to play or pause movement, use SPACE to restart", 20, rl.GetScreenHeight() - font_size * 2, font_size, rl.LIGHTGRAY)
         rl.DrawText(c"Use Q and W or A and S keys to change duration", 20, rl.GetScreenHeight() - font_size * 3, font_size, rl.LIGHTGRAY)

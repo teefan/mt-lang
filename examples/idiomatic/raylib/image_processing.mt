@@ -121,9 +121,9 @@ def main() -> i32:
 
         for index in range(0, num_processes):
             let active = index == current_process or index == mouse_hover_rect
-            let fill_color = if active then rl.SKYBLUE else rl.LIGHTGRAY
-            let stroke_color = if active then rl.BLUE else rl.GRAY
-            let text_color = if active then rl.DARKBLUE else rl.DARKGRAY
+            let fill_color = if active: rl.SKYBLUE else: rl.LIGHTGRAY
+            let stroke_color = if active: rl.BLUE else: rl.GRAY
+            let text_color = if active: rl.DARKBLUE else: rl.DARKGRAY
             let label = process_label(index)
 
             rl.draw_rectangle_rec(toggle_rects[index], fill_color)

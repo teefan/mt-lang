@@ -51,7 +51,7 @@ def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
 
     for index in range(0, 60):
         let tick_angle = 6.0 * f32<-index - 90.0
-        let inner_offset = if index % 5 != 0 then 10.0 else 6.0
+        let inner_offset = if index % 5 != 0: 10.0 else: 6.0
         rl.draw_line_ex(
             rl.Vector2(
                 x = position.x + (f32<-clock.second.length + inner_offset) * math.cos(math.deg2rad * tick_angle),
@@ -61,7 +61,7 @@ def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
                 x = position.x + (f32<-clock.second.length + 20.0) * math.cos(math.deg2rad * tick_angle),
                 y = position.y + (f32<-clock.second.length + 20.0) * math.sin(math.deg2rad * tick_angle),
             ),
-            if index % 5 != 0 then 1.0 else 3.0,
+            if index % 5 != 0: 1.0 else: 3.0,
             rl.DARKGRAY,
         )
 
@@ -122,49 +122,49 @@ def draw_7s_display(position: rl.Vector2, segments: i32, color_on: rl.Color, col
         segment_len,
         segment_thick,
         false,
-        if (segments & 1) != 0 then color_on else color_off,
+        if (segments & 1) != 0: color_on else: color_off,
     )
     draw_display_segment(
         rl.Vector2(x = position.x + f32<-segment_thick + f32<-segment_len + f32<-segment_thick / 2.0, y = position.y + 2.0 * f32<-segment_thick + f32<-segment_len / 2.0 - offset_y_adjust),
         segment_len,
         segment_thick,
         true,
-        if (segments & 2) != 0 then color_on else color_off,
+        if (segments & 2) != 0: color_on else: color_off,
     )
     draw_display_segment(
         rl.Vector2(x = position.x + f32<-segment_thick + f32<-segment_len + f32<-segment_thick / 2.0, y = position.y + 4.0 * f32<-segment_thick + f32<-segment_len + f32<-segment_len / 2.0 - 3.0 * offset_y_adjust),
         segment_len,
         segment_thick,
         true,
-        if (segments & 4) != 0 then color_on else color_off,
+        if (segments & 4) != 0: color_on else: color_off,
     )
     draw_display_segment(
         rl.Vector2(x = position.x + f32<-segment_thick + f32<-segment_len / 2.0, y = position.y + 5.0 * f32<-segment_thick + 2.0 * f32<-segment_len - 4.0 * offset_y_adjust),
         segment_len,
         segment_thick,
         false,
-        if (segments & 8) != 0 then color_on else color_off,
+        if (segments & 8) != 0: color_on else: color_off,
     )
     draw_display_segment(
         rl.Vector2(x = position.x + f32<-segment_thick / 2.0, y = position.y + 4.0 * f32<-segment_thick + f32<-segment_len + f32<-segment_len / 2.0 - 3.0 * offset_y_adjust),
         segment_len,
         segment_thick,
         true,
-        if (segments & 16) != 0 then color_on else color_off,
+        if (segments & 16) != 0: color_on else: color_off,
     )
     draw_display_segment(
         rl.Vector2(x = position.x + f32<-segment_thick / 2.0, y = position.y + 2.0 * f32<-segment_thick + f32<-segment_len / 2.0 - offset_y_adjust),
         segment_len,
         segment_thick,
         true,
-        if (segments & 32) != 0 then color_on else color_off,
+        if (segments & 32) != 0: color_on else: color_off,
     )
     draw_display_segment(
         rl.Vector2(x = position.x + f32<-segment_thick + f32<-segment_len / 2.0, y = position.y + 3.0 * f32<-segment_thick + f32<-segment_len - 2.0 * offset_y_adjust),
         segment_len,
         segment_thick,
         false,
-        if (segments & 64) != 0 then color_on else color_off,
+        if (segments & 64) != 0: color_on else: color_off,
     )
 
 def draw_display_value(position: rl.Vector2, value: i32, color_on: rl.Color, color_off: rl.Color) -> void:
@@ -195,14 +195,14 @@ def draw_clock_digital(clock: Clock, position: rl.Vector2) -> void:
     draw_display_value(position, clock.hour.value / 10, rl.RED, color_off)
     draw_display_value(rl.Vector2(x = position.x + 120.0, y = position.y), clock.hour.value % 10, rl.RED, color_off)
 
-    rl.draw_circle(i32<-position.x + 240, i32<-position.y + 70, 12.0, if clock.second.value % 2 != 0 then rl.RED else color_off)
-    rl.draw_circle(i32<-position.x + 240, i32<-position.y + 150, 12.0, if clock.second.value % 2 != 0 then rl.RED else color_off)
+    rl.draw_circle(i32<-position.x + 240, i32<-position.y + 70, 12.0, if clock.second.value % 2 != 0: rl.RED else: color_off)
+    rl.draw_circle(i32<-position.x + 240, i32<-position.y + 150, 12.0, if clock.second.value % 2 != 0: rl.RED else: color_off)
 
     draw_display_value(rl.Vector2(x = position.x + 260.0, y = position.y), clock.minute.value / 10, rl.RED, color_off)
     draw_display_value(rl.Vector2(x = position.x + 380.0, y = position.y), clock.minute.value % 10, rl.RED, color_off)
 
-    rl.draw_circle(i32<-position.x + 500, i32<-position.y + 70, 12.0, if clock.second.value % 2 != 0 then rl.RED else color_off)
-    rl.draw_circle(i32<-position.x + 500, i32<-position.y + 150, 12.0, if clock.second.value % 2 != 0 then rl.RED else color_off)
+    rl.draw_circle(i32<-position.x + 500, i32<-position.y + 70, 12.0, if clock.second.value % 2 != 0: rl.RED else: color_off)
+    rl.draw_circle(i32<-position.x + 500, i32<-position.y + 150, 12.0, if clock.second.value % 2 != 0: rl.RED else: color_off)
 
     draw_display_value(rl.Vector2(x = position.x + 520.0, y = position.y), clock.second.value / 10, rl.RED, color_off)
     draw_display_value(rl.Vector2(x = position.x + 640.0, y = position.y), clock.second.value % 10, rl.RED, color_off)
@@ -243,7 +243,7 @@ def main() -> i32:
             rl.draw_text(clock_time, rl.get_screen_width() / 2 - rl.measure_text(clock_time, 150) / 2, 300, 150, rl.BLACK)
 
         rl.draw_text(
-            rl.text_format_cstr("Press [SPACE] to switch clock mode: %s", if clock_mode == clock_digital then "DIGITAL CLOCK" else "ANALOGUE CLOCK"),
+            rl.text_format_cstr("Press [SPACE] to switch clock mode: %s", if clock_mode == clock_digital: "DIGITAL CLOCK" else: "ANALOGUE CLOCK"),
             10,
             10,
             20,

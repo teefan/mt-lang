@@ -148,8 +148,8 @@ def main() -> i32:
         rl.DrawSphereWires(light_position, 0.2, 8, 8, rl.ORANGE)
         rl.EndMode3D()
 
-        let toggle_color = if use_normal_map != 0 then rl.DARKGREEN else rl.RED
-        let toggle_text = if use_normal_map != 0 then c"On" else c"Off"
+        let toggle_color = if use_normal_map != 0: rl.DARKGREEN else: rl.RED
+        let toggle_text = if use_normal_map != 0: c"On" else: c"Off"
         rl.DrawText(rl.TextFormat(normal_map_toggle_format, toggle_text), 10, 10, 10, toggle_color)
         rl.DrawText(light_move_text, 10, 10 + text_y_offset, 10, rl.BLACK)
         rl.DrawText(specular_change_text, 10, 10 + text_y_offset * 2, 10, rl.BLACK)

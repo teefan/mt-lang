@@ -186,14 +186,14 @@ pub def tcp_listen(tcp: Handle[uv.uv_tcp_t], backlog: i32, callback: fn(arg0: pt
 pub def tcp_accept(server: Handle[uv.uv_tcp_t], client: Handle[uv.uv_tcp_t]) -> i32:
     return uv.accept(tcp_stream(server), tcp_stream(client))
 
-pub def tcp_bind_ipv4(tcp: Handle[uv.uv_tcp_t], ip: str, port: i32, flags: u32, scratch: ref[arena.Arena]) -> i32:
+pub def tcp_bind_ipv4(tcp: Handle[uv.uv_tcp_t], ip: str, port: i32, flag_bits: u32, scratch: ref[arena.Arena]) -> i32:
     let address = create_ipv4_address(ip, port, scratch)
     if not address.is_ok:
         return address.error
 
     var ipv4 = address.value
     defer release_ipv4_address(ref_of(ipv4))
-    let status = uv.tcp_bind(tcp.raw, ipv4_const_sockaddr(ipv4), flags)
+    let status = uv.tcp_bind(tcp.raw, ipv4_const_sockaddr(ipv4), flag_bits)
     return status
 
 pub def tcp_local_port(tcp: Handle[uv.uv_tcp_t]) -> Result[i32, i32]:
@@ -236,8 +236,8 @@ pub def fs_path(request: Request[uv.uv_fs_t]) -> str:
 pub def fs_mkstemp(loop: Loop, request: Request[uv.uv_fs_t], tpl: str, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void, scratch: ref[arena.Arena]) -> i32:
     return uv.fs_mkstemp(loop.raw, request.raw, scratch.to_cstr(tpl), callback)
 
-pub def fs_open(loop: Loop, request: Request[uv.uv_fs_t], path: str, flags: i32, mode: i32, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void, scratch: ref[arena.Arena]) -> i32:
-    return uv.fs_open(loop.raw, request.raw, scratch.to_cstr(path), flags, mode, callback)
+pub def fs_open(loop: Loop, request: Request[uv.uv_fs_t], path: str, flag_bits: i32, mode: i32, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void, scratch: ref[arena.Arena]) -> i32:
+    return uv.fs_open(loop.raw, request.raw, scratch.to_cstr(path), flag_bits, mode, callback)
 
 pub def fs_write(loop: Loop, request: Request[uv.uv_fs_t], file: i32, data: span[u8], offset: isize, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> i32:
     var buffer = byte_buffer(data)

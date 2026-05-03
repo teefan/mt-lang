@@ -202,8 +202,8 @@ def main() -> i32:
     set_skybox_shader(ptr_of(ref_of(skybox)), skybox_shader)
 
     set_shader_int(skybox_shader, environment_map_text, i32<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP)
-    set_shader_int(skybox_shader, do_gamma_text, if use_hdr then 1 else 0)
-    set_shader_int(skybox_shader, vflipped_text, if use_hdr then 1 else 0)
+    set_shader_int(skybox_shader, do_gamma_text, if use_hdr: 1 else: 0)
+    set_shader_int(skybox_shader, vflipped_text, if use_hdr: 1 else: 0)
 
     let cubemap_shader = rl.LoadShader(
         rl.TextFormat(cubemap_shader_vertex_path_format, glsl_version),
@@ -213,7 +213,7 @@ def main() -> i32:
     set_shader_int(cubemap_shader, equirectangular_map_text, 0)
 
     var skybox_file_name = zero[array[char, 256]]()
-    load_skybox_texture(ptr_of(ref_of(skybox)), cubemap_shader, use_hdr, ref_of(skybox_file_name), if use_hdr then skybox_hdr_path else skybox_texture_path)
+    load_skybox_texture(ptr_of(ref_of(skybox)), cubemap_shader, use_hdr, ref_of(skybox_file_name), if use_hdr: skybox_hdr_path else: skybox_texture_path)
 
     rl.DisableCursor()
     rl.SetTargetFPS(60)

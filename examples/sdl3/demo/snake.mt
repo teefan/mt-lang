@@ -221,26 +221,26 @@ def handle_hat_event(hat: u8) -> void:
                     snake_redir(SnakeDirection.SNAKE_DIR_DOWN)
 
 def pump_events() -> bool:
-    var event = c.SDL_Event(type = 0)
+    var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
-            if event.jdevice.type == c.SDL_EventType.SDL_EVENT_JOYSTICK_ADDED:
+            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_ADDED:
                 if joystick == null:
                     joystick = c.SDL_OpenJoystick(event.jdevice.which)
             else:
-                if event.jdevice.type == c.SDL_EventType.SDL_EVENT_JOYSTICK_REMOVED:
+                if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_REMOVED:
                     if joystick != null:
                         if c.SDL_GetJoystickID(joystick) == event.jdevice.which:
                             c.SDL_CloseJoystick(joystick)
                             joystick = null
                 else:
-                    if event.jhat.type == c.SDL_EventType.SDL_EVENT_JOYSTICK_HAT_MOTION:
+                    if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_HAT_MOTION:
                         handle_hat_event(event.jhat.value)
                     else:
-                        if event.key.type == c.SDL_EventType.SDL_EVENT_KEY_DOWN:
+                        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_KEY_DOWN:
                             if not handle_key_event(event.key.scancode):
                                 return false
 
@@ -288,7 +288,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     if not c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.copyright", c"Placed in the public domain"):
         return 1
-    if not c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.type", c"game"):
+    if not c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.kind", c"game"):
         return 1
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_JOYSTICK):

@@ -191,17 +191,17 @@ def get_next_char() -> u32:
 def monkey_play() -> u32:
     let count = max_monkey_scancode - min_monkey_scancode + 1
     let scancode = c.SDL_Scancode<-(min_monkey_scancode + c.SDL_rand(count))
-    let modstate = if c.SDL_rand(2) != 0 then monkey_shift_mod else u16<-0
+    let modstate = if c.SDL_rand(2) != 0: monkey_shift_mod else: u16<-0
     return c.SDL_GetKeyFromScancode(scancode, modstate, false)
 
 def pump_events() -> bool:
-    var event = c.SDL_Event(type = 0)
+    var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if event.window.type == c.SDL_EventType.SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
             on_window_size_changed()
         else:
-            if event.quit.type == c.SDL_EventType.SDL_EVENT_QUIT:
+            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
                 return false
 
     return true
@@ -320,7 +320,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
                     monkeys = c.SDL_atoi(maybe_count)
                     arg += 1
                 else:
-                    let program_name = if argc > 0 then cstr<-read(argv) else c"infinite-monkeys"
+                    let program_name = if argc > 0: cstr<-read(argv) else: c"infinite-monkeys"
                     c.SDL_Log(c"Usage: %s [--monkeys N] [file.txt]", program_name)
                     return 1
 

@@ -12,11 +12,12 @@ var window: ptr[sdl.Window]
 var renderer: ptr[sdl.Renderer]
 
 def pump_events() -> bool:
-    var event = sdl.Event(type = 0)
+    var event = zero[sdl.Event]()
 
     while sdl.poll_event(out event):
-        if event.quit.type == sdl.EventType.SDL_EVENT_QUIT:
+        if sdl.EventType.SDL_EVENT_QUIT == sdl.EventType.SDL_EVENT_QUIT:
             return false
+
 
     return true
 

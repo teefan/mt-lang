@@ -29,7 +29,7 @@ def main() -> i32:
     if not io.println(message.as_str()):
         return 4
 
-    let state = if count >= 3 then "busy" else "idle"
+    let state = if count >= 3: "busy" else: "idle"
     if not io.println(f"expr -> state=#{state} math=#{count * count}"):
         return 5
 
