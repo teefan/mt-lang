@@ -1381,10 +1381,19 @@ module MilkTea
 
         analysis = @workspace.get_analysis(uri)
         if analysis
+          if token_index && (member_access = module_member_access_info(tokens, token_index))
+            if (import_binding = analysis.imports[member_access[:receiver]])
+              module_name = import_binding.name
+              member_location = module_member_definition_location(uri, module_name, token.lexeme)
+              return member_location if member_location
+              return module_definition_location(uri, module_name)
+            end
+          end
+
           dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
           if dot_receiver && analysis.imports.key?(dot_receiver)
             module_name = analysis.imports.fetch(dot_receiver).name
-            return module_definition_location(uri, module_name)
+            return module_member_definition_location(uri, module_name, token.lexeme) || module_definition_location(uri, module_name)
           elsif analysis.imports.key?(token.lexeme)
             module_name = analysis.imports.fetch(token.lexeme).name
             return module_definition_location(uri, module_name)
@@ -1847,12 +1856,7 @@ module MilkTea
       end
 
       def module_definition_location(current_uri, module_name)
-        current_path = uri_to_path(current_uri)
-        return nil unless current_path
-
-        module_roots = MilkTea::ModuleRoots.roots_for_path(current_path)
-        relative_path = File.join(*module_name.split('.')) + '.mt'
-        path = module_roots.lazy.map { |root| File.join(root, relative_path) }.find { |candidate| File.file?(candidate) }
+        path = module_path_for_name(current_uri, module_name)
         return nil unless path
 
         {
@@ -1862,6 +1866,56 @@ module MilkTea
             end: { line: 0, character: 0 }
           }
         }
+      end
+
+      def module_member_definition_location(current_uri, module_name, member_name)
+        path = module_path_for_name(current_uri, module_name)
+        return nil unless path
+
+        token = find_definition_token_in_file(path, member_name)
+        return nil unless token
+
+        {
+          uri: path_to_uri(File.expand_path(path)),
+          range: token_to_range(token)
+        }
+      end
+
+      def module_path_for_name(current_uri, module_name)
+        current_path = uri_to_path(current_uri)
+        return nil unless current_path
+
+        module_roots = MilkTea::ModuleRoots.roots_for_path(current_path)
+        relative_path = File.join(*module_name.split('.')) + '.mt'
+        module_roots.lazy.map { |root| File.join(root, relative_path) }.find { |candidate| File.file?(candidate) }
+      end
+
+      def find_definition_token_in_file(path, name)
+        tokens = MilkTea::Lexer.lex(File.read(path), path: path_to_uri(path))
+
+        tokens.each_cons(2) do |kw_tok, id_tok|
+          next unless MilkTea::LSP::Workspace::DEFINITION_KEYWORDS.include?(kw_tok.type)
+          next unless id_tok.type == :identifier && id_tok.lexeme == name
+
+          return id_tok
+        end
+
+        nil
+      rescue StandardError
+        nil
+      end
+
+      def module_member_access_info(tokens, index)
+        dot_index = previous_non_trivia_token_index(tokens, index)
+        return nil unless dot_index && tokens[dot_index].type == :dot
+
+        receiver_index = previous_non_trivia_token_index(tokens, dot_index)
+        return nil unless receiver_index
+
+        receiver = tokens[receiver_index]
+        return nil unless receiver.type == :identifier
+
+        { receiver: receiver.lexeme }
       end
 
       # ── Formatting helpers ───────────────────────────────────────────────────
