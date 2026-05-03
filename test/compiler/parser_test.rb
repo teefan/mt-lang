@@ -72,6 +72,12 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::IfStmt, if_stmt
     assert_equal 2, if_stmt.branches.length
     assert_equal 1, if_stmt.else_body.length
+    assert_equal 4, if_stmt.branches[0].line
+    assert_equal 5, if_stmt.branches[0].column
+    assert_equal 2, if_stmt.branches[0].length
+    assert_equal 6, if_stmt.branches[1].line
+    assert_equal 5, if_stmt.branches[1].column
+    assert_equal 4, if_stmt.branches[1].length
   end
 
   def test_parses_public_declarations_and_methods

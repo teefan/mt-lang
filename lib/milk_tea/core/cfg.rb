@@ -153,7 +153,7 @@ module MilkTea
             cond_id = @graph.add_node(
               kind: :if_condition,
               statement: branch,
-              line: branch.condition.respond_to?(:line) ? branch.condition.line : stmt.line,
+              line: branch.respond_to?(:line) ? branch.line : stmt.line,
               reads: read_identifiers(branch.condition)
             )
             @graph.add_edge(cond_id, then_entry, label: :true_branch)
@@ -258,7 +258,9 @@ module MilkTea
             reads: read_identifiers(stmt.value)
           )
         when AST::ExpressionStmt
-          add_linear_node(:expression, stmt, next_id, reads: read_identifiers(stmt.expression))
+          reads = read_identifiers(stmt.expression)
+          writes, writes_info = write_targets_from_expression(stmt.expression, line: stmt.line)
+          add_linear_node(:expression, stmt, next_id, reads:, writes:, writes_info:)
         when AST::StaticAssert
           add_linear_node(:static_assert, stmt, next_id, reads: read_identifiers(stmt.condition))
         when AST::BreakStmt
@@ -336,6 +338,66 @@ module MilkTea
           nil
         end
         names
+      end
+
+      def write_targets_from_expression(expression, line: nil, writes: Set.new, writes_info: [])
+        case expression
+        when nil
+          nil
+        when AST::MemberAccess
+          write_targets_from_expression(expression.receiver, line:, writes:, writes_info:)
+        when AST::IndexAccess
+          write_targets_from_expression(expression.receiver, line:, writes:, writes_info:)
+          write_targets_from_expression(expression.index, line:, writes:, writes_info:)
+        when AST::Specialization
+          write_targets_from_expression(expression.callee, line:, writes:, writes_info:)
+        when AST::Call
+          write_targets_from_expression(expression.callee, line:, writes:, writes_info:)
+          expression.arguments.each do |argument|
+            value = argument.value
+            if value.is_a?(AST::UnaryOp) && %w[out inout].include?(value.operator) && value.operand.is_a?(AST::Identifier)
+              key = identifier_binding_key(value.operand)
+              if key
+                writes << key
+                writes_info << {
+                  name: value.operand.name,
+                  binding_key: key,
+                  line: line,
+                  column: nil,
+                  origin: :call_argument,
+                }
+              end
+            end
+            write_targets_from_expression(value, line:, writes:, writes_info:)
+          end
+        when AST::UnaryOp
+          write_targets_from_expression(expression.operand, line:, writes:, writes_info:)
+        when AST::BinaryOp
+          write_targets_from_expression(expression.left, line:, writes:, writes_info:)
+          write_targets_from_expression(expression.right, line:, writes:, writes_info:)
+        when AST::IfExpr
+          write_targets_from_expression(expression.condition, line:, writes:, writes_info:)
+          write_targets_from_expression(expression.then_expression, line:, writes:, writes_info:)
+          write_targets_from_expression(expression.else_expression, line:, writes:, writes_info:)
+        when AST::AwaitExpr
+          write_targets_from_expression(expression.expression, line:, writes:, writes_info:)
+        when AST::ProcExpr,
+             AST::Identifier,
+             AST::IntegerLiteral,
+             AST::FloatLiteral,
+             AST::StringLiteral,
+             AST::FormatString,
+             AST::BooleanLiteral,
+             AST::NullLiteral,
+             AST::SizeofExpr,
+             AST::AlignofExpr,
+             AST::OffsetofExpr
+          nil
+        else
+          nil
+        end
+
+        [writes, writes_info]
       end
 
       def identifier_binding_key(identifier_expression)

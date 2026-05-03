@@ -72,7 +72,9 @@ module MilkTea
     Assignment = Data.define(:target, :operator, :value, :line) do
       def initialize(target:, operator:, value:, line: nil) = super
     end
-    IfBranch = Data.define(:condition, :body)
+    IfBranch = Data.define(:condition, :body, :line, :column, :length) do
+      def initialize(condition:, body:, line: nil, column: nil, length: nil) = super
+    end
     IfStmt = Data.define(:branches, :else_body, :line, :else_line, :else_column) do
       def initialize(branches:, else_body:, line: nil, else_line: nil, else_column: nil) = super
     end

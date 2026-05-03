@@ -155,6 +155,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await lspClient.syncTrace();
       }
 
+      // Sync format mode live — no restart needed.
+      if (event.affectsConfiguration('milkTea.format.mode') && lspClient.isRunning) {
+        await lspClient.syncFormatMode();
+      }
+
       // If the server path or enabled flag changed, offer a restart.
       if (
         event.affectsConfiguration('milkTea.lsp.serverPath') ||

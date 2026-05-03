@@ -74,6 +74,7 @@ module MilkTea
 
       def initialize
         @workspace = Workspace.new
+        @format_mode = :tidy
         @handlers = {}
         @diagnostic_report_cache = {}
         @semantic_tokens_cache = {}
@@ -156,6 +157,7 @@ module MilkTea
 
         # Workspace
         @handlers['workspace/symbol'] = method(:handle_workspace_symbol)
+        @handlers['workspace/didChangeConfiguration'] = method(:handle_did_change_configuration)
         @handlers['workspace/didChangeWatchedFiles'] = method(:handle_did_change_watched_files)
       end
 
@@ -356,6 +358,8 @@ module MilkTea
 
       def handle_initialize(params)
         @root_uri = params['rootUri']
+        apply_configuration_settings(params['initializationOptions'])
+        apply_configuration_settings(params['settings'])
         {
           capabilities: {
             textDocumentSync: {
@@ -404,6 +408,11 @@ module MilkTea
       def handle_initialized(_params)
         # Enhancement 4: index all .mt files in the workspace root
         @workspace.index_workspace(@root_uri) if @root_uri
+        nil
+      end
+
+      def handle_did_change_configuration(params)
+        apply_configuration_settings(params['settings'])
         nil
       end
 
@@ -702,7 +711,7 @@ module MilkTea
         uri     = params['textDocument']['uri']
         content = @workspace.get_content(uri)
 
-        formatted = Formatter.format_source(content, mode: :preserve)
+        formatted = Formatter.format_source(content, mode: @format_mode)
         line_count = content.count("\n")
 
         [
@@ -731,7 +740,7 @@ module MilkTea
         return [] if end_off < start_off
 
         segment = content.byteslice(start_off...end_off).to_s
-        formatted_segment = Formatter.format_source(segment, mode: :preserve)
+        formatted_segment = Formatter.format_source(segment, mode: @format_mode)
 
         [
           {
@@ -745,6 +754,26 @@ module MilkTea
       rescue StandardError => e
         warn "Error in rangeFormatting handler: #{e.message}"
         []
+      end
+
+      def apply_configuration_settings(settings)
+        mode = formatter_mode_from_settings(settings)
+        @format_mode = mode if mode
+      end
+
+      def formatter_mode_from_settings(settings)
+        return nil unless settings.is_a?(Hash)
+
+        mode =
+          settings.dig('milkTea', 'format', 'mode') ||
+          settings.dig('milk_tea', 'format', 'mode') ||
+          settings.dig('format', 'mode')
+        return nil unless mode
+
+        normalized = mode.to_s.strip.downcase.to_sym
+        return normalized if Formatter::MODES.include?(normalized)
+
+        nil
       end
 
       def handle_code_action(params)

@@ -1286,6 +1286,24 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
 
     refute warnings.any? { |w| w.code == "constant-condition" }
   end
+
+  def test_no_constant_condition_or_prefer_let_after_inout_call
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local"])
+      module demo.lint
+
+      def main() -> i32:
+          var tab_active: i32 = 0
+          gui.tab_bar(inout tab_active)
+          if tab_active == 0:
+              return 1
+          elif tab_active == 1:
+              return 2
+          return 3
+    MT
+
+    refute warnings.any? { |w| w.code == "constant-condition" }
+    refute warnings.any? { |w| w.code == "prefer-let" && w.symbol_name == "tab_active" }
+  end
 end
 
 # ── redundant-null-check ───────────────────────────────────────────────────

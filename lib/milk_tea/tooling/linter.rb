@@ -554,7 +554,10 @@ module MilkTea
         expression.arguments.each { |argument| visit_type_argument(argument) }
       when AST::Call
         visit_expression(expression.callee)
-        expression.arguments.each { |argument| visit_expression(argument.value) }
+        expression.arguments.each do |argument|
+          visit_expression(argument.value)
+          mark_call_argument_mutated(argument.value)
+        end
       when AST::UnaryOp
         visit_expression(expression.operand)
       when AST::BinaryOp
@@ -633,6 +636,13 @@ module MilkTea
         binding.mutated = true
         return
       end
+    end
+
+    def mark_call_argument_mutated(expression)
+      return unless expression.is_a?(AST::UnaryOp)
+      return unless %w[out inout].include?(expression.operator)
+
+      mark_mutated(expression.operand)
     end
 
     def with_scope
@@ -715,6 +725,8 @@ module MilkTea
 
       graph.each_node do |node|
         node.writes_info.each do |write|
+          next if write[:origin] == :call_argument
+
           binding_key = write[:binding_key]
           name = write[:name]
           next unless readable_bindings.include?(binding_key)
@@ -854,16 +866,16 @@ module MilkTea
       cp    = CFG::ConstantPropagation.solve(graph)
 
       graph.each_node do |node|
-        cond_expr, line, skip_node =
+        cond_expr, line, column, length, skip_node =
           case node.kind
           when :if_condition
             branch = node.statement
-            [branch&.condition, node.line, false]
+            [branch&.condition, branch&.line || node.line, branch&.column, branch&.length, false]
           when :while_condition
             wstmt = node.statement
             # `while true` is an idiomatic infinite loop — do not warn
             skip = wstmt&.condition.is_a?(AST::BooleanLiteral) && wstmt.condition.value == true
-            [wstmt&.condition, node.line, skip]
+            [wstmt&.condition, node.line, nil, nil, skip]
           else
             next
           end
@@ -878,6 +890,8 @@ module MilkTea
         @warnings << Warning.new(
           path: @path,
           line:,
+          column:,
+          length:,
           code: "constant-condition",
           message: "#{ctx} is always #{const_val}",
           severity: :warning
