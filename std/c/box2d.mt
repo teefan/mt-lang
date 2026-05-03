@@ -14,11 +14,8 @@ extern module std.c.box2d:
     type b2LogFcn = fn(arg0: cstr) -> void
 
     extern def b2SetAllocator(allocFcn: ptr[b2AllocFcn], freeFcn: ptr[b2FreeFcn]) -> void
-
     extern def b2GetByteCount() -> i32
-
     extern def b2SetAssertFcn(assertFcn: ptr[b2AssertFcn]) -> void
-
     extern def b2SetLogFcn(logFcn: ptr[b2LogFcn]) -> void
 
     struct b2Version:
@@ -27,17 +24,11 @@ extern module std.c.box2d:
         revision: i32
 
     extern def b2GetVersion() -> b2Version
-
     extern def b2InternalAssert(condition: cstr, fileName: cstr, lineNumber: i32) -> i32
-
     extern def b2GetTicks() -> u64
-
     extern def b2GetMilliseconds(ticks: usize) -> f32
-
     extern def b2GetMillisecondsAndReset(ticks: ptr[u64]) -> f32
-
     extern def b2Yield() -> void
-
     extern def b2Hash(hash: u32, data: const_ptr[u8], count: i32) -> u32
 
     struct b2Vec2:
@@ -77,25 +68,15 @@ extern module std.c.box2d:
     const b2Mat22_zero: b2Mat22 = b2Mat22(cx = b2Vec2(x = 0.0, y = 0.0), cy = b2Vec2(x = 0.0, y = 0.0))
 
     extern def b2IsValidFloat(a: f32) -> bool
-
     extern def b2IsValidVec2(v: b2Vec2) -> bool
-
     extern def b2IsValidRotation(q: b2Rot) -> bool
-
     extern def b2IsValidTransform(t: b2Transform) -> bool
-
     extern def b2IsValidAABB(aabb: b2AABB) -> bool
-
     extern def b2IsValidPlane(a: b2Plane) -> bool
-
     extern def b2Atan2(y: f32, x: f32) -> f32
-
     extern def b2ComputeCosSin(radians: f32) -> b2CosSin
-
     extern def b2ComputeRotationBetweenUnitVectors(v1: b2Vec2, v2: b2Vec2) -> b2Rot
-
     extern def b2SetLengthUnitsPerMeter(lengthUnits: f32) -> void
-
     extern def b2GetLengthUnitsPerMeter() -> f32
 
     struct b2RayCastInput:
@@ -153,59 +134,32 @@ extern module std.c.box2d:
         chainId: i32
 
     extern def b2IsValidRay(input: const_ptr[b2RayCastInput]) -> bool
-
     extern def b2MakePolygon(hull: const_ptr[b2Hull], radius: f32) -> b2Polygon
-
     extern def b2MakeOffsetPolygon(hull: const_ptr[b2Hull], position: b2Vec2, rotation: b2Rot) -> b2Polygon
-
     extern def b2MakeOffsetRoundedPolygon(hull: const_ptr[b2Hull], position: b2Vec2, rotation: b2Rot, radius: f32) -> b2Polygon
-
     extern def b2MakeSquare(halfWidth: f32) -> b2Polygon
-
     extern def b2MakeBox(halfWidth: f32, halfHeight: f32) -> b2Polygon
-
     extern def b2MakeRoundedBox(halfWidth: f32, halfHeight: f32, radius: f32) -> b2Polygon
-
     extern def b2MakeOffsetBox(halfWidth: f32, halfHeight: f32, center: b2Vec2, rotation: b2Rot) -> b2Polygon
-
     extern def b2MakeOffsetRoundedBox(halfWidth: f32, halfHeight: f32, center: b2Vec2, rotation: b2Rot, radius: f32) -> b2Polygon
-
     extern def b2TransformPolygon(transform: b2Transform, polygon: const_ptr[b2Polygon]) -> b2Polygon
-
     extern def b2ComputeCircleMass(shape: const_ptr[b2Circle], density: f32) -> b2MassData
-
     extern def b2ComputeCapsuleMass(shape: const_ptr[b2Capsule], density: f32) -> b2MassData
-
     extern def b2ComputePolygonMass(shape: const_ptr[b2Polygon], density: f32) -> b2MassData
-
     extern def b2ComputeCircleAABB(shape: const_ptr[b2Circle], transform: b2Transform) -> b2AABB
-
     extern def b2ComputeCapsuleAABB(shape: const_ptr[b2Capsule], transform: b2Transform) -> b2AABB
-
     extern def b2ComputePolygonAABB(shape: const_ptr[b2Polygon], transform: b2Transform) -> b2AABB
-
     extern def b2ComputeSegmentAABB(shape: const_ptr[b2Segment], transform: b2Transform) -> b2AABB
-
     extern def b2PointInCircle(shape: const_ptr[b2Circle], point: b2Vec2) -> bool
-
     extern def b2PointInCapsule(shape: const_ptr[b2Capsule], point: b2Vec2) -> bool
-
     extern def b2PointInPolygon(shape: const_ptr[b2Polygon], point: b2Vec2) -> bool
-
     extern def b2RayCastCircle(shape: const_ptr[b2Circle], input: const_ptr[b2RayCastInput]) -> b2CastOutput
-
     extern def b2RayCastCapsule(shape: const_ptr[b2Capsule], input: const_ptr[b2RayCastInput]) -> b2CastOutput
-
     extern def b2RayCastSegment(shape: const_ptr[b2Segment], input: const_ptr[b2RayCastInput], oneSided: bool) -> b2CastOutput
-
     extern def b2RayCastPolygon(shape: const_ptr[b2Polygon], input: const_ptr[b2RayCastInput]) -> b2CastOutput
-
     extern def b2ShapeCastCircle(shape: const_ptr[b2Circle], input: const_ptr[b2ShapeCastInput]) -> b2CastOutput
-
     extern def b2ShapeCastCapsule(shape: const_ptr[b2Capsule], input: const_ptr[b2ShapeCastInput]) -> b2CastOutput
-
     extern def b2ShapeCastSegment(shape: const_ptr[b2Segment], input: const_ptr[b2ShapeCastInput]) -> b2CastOutput
-
     extern def b2ShapeCastPolygon(shape: const_ptr[b2Polygon], input: const_ptr[b2ShapeCastInput]) -> b2CastOutput
 
     struct b2Hull:
@@ -213,7 +167,6 @@ extern module std.c.box2d:
         count: i32
 
     extern def b2ComputeHull(points: const_ptr[b2Vec2], count: i32) -> b2Hull
-
     extern def b2ValidateHull(hull: const_ptr[b2Hull]) -> bool
 
     struct b2SegmentDistanceResult:
@@ -273,9 +226,7 @@ extern module std.c.box2d:
         canEncroach: bool
 
     extern def b2ShapeCast(input: const_ptr[b2ShapeCastPairInput]) -> b2CastOutput
-
     extern def b2MakeProxy(points: const_ptr[b2Vec2], count: i32, radius: f32) -> b2ShapeProxy
-
     extern def b2MakeOffsetProxy(points: const_ptr[b2Vec2], count: i32, radius: f32, position: b2Vec2, rotation: b2Rot) -> b2ShapeProxy
 
     struct b2Sweep:
@@ -329,27 +280,16 @@ extern module std.c.box2d:
         pointCount: i32
 
     extern def b2CollideCircles(circleA: const_ptr[b2Circle], xfA: b2Transform, circleB: const_ptr[b2Circle], xfB: b2Transform) -> b2Manifold
-
     extern def b2CollideCapsuleAndCircle(capsuleA: const_ptr[b2Capsule], xfA: b2Transform, circleB: const_ptr[b2Circle], xfB: b2Transform) -> b2Manifold
-
     extern def b2CollideSegmentAndCircle(segmentA: const_ptr[b2Segment], xfA: b2Transform, circleB: const_ptr[b2Circle], xfB: b2Transform) -> b2Manifold
-
     extern def b2CollidePolygonAndCircle(polygonA: const_ptr[b2Polygon], xfA: b2Transform, circleB: const_ptr[b2Circle], xfB: b2Transform) -> b2Manifold
-
     extern def b2CollideCapsules(capsuleA: const_ptr[b2Capsule], xfA: b2Transform, capsuleB: const_ptr[b2Capsule], xfB: b2Transform) -> b2Manifold
-
     extern def b2CollideSegmentAndCapsule(segmentA: const_ptr[b2Segment], xfA: b2Transform, capsuleB: const_ptr[b2Capsule], xfB: b2Transform) -> b2Manifold
-
     extern def b2CollidePolygonAndCapsule(polygonA: const_ptr[b2Polygon], xfA: b2Transform, capsuleB: const_ptr[b2Capsule], xfB: b2Transform) -> b2Manifold
-
     extern def b2CollidePolygons(polygonA: const_ptr[b2Polygon], xfA: b2Transform, polygonB: const_ptr[b2Polygon], xfB: b2Transform) -> b2Manifold
-
     extern def b2CollideSegmentAndPolygon(segmentA: const_ptr[b2Segment], xfA: b2Transform, polygonB: const_ptr[b2Polygon], xfB: b2Transform) -> b2Manifold
-
     extern def b2CollideChainSegmentAndCircle(segmentA: const_ptr[b2ChainSegment], xfA: b2Transform, circleB: const_ptr[b2Circle], xfB: b2Transform) -> b2Manifold
-
     extern def b2CollideChainSegmentAndCapsule(segmentA: const_ptr[b2ChainSegment], xfA: b2Transform, capsuleB: const_ptr[b2Capsule], xfB: b2Transform, cache: ptr[b2SimplexCache]) -> b2Manifold
-
     extern def b2CollideChainSegmentAndPolygon(segmentA: const_ptr[b2ChainSegment], xfA: b2Transform, polygonB: const_ptr[b2Polygon], xfB: b2Transform, cache: ptr[b2SimplexCache]) -> b2Manifold
 
     struct b2DynamicTree:
@@ -370,25 +310,17 @@ extern module std.c.box2d:
         leafVisits: i32
 
     extern def b2DynamicTree_Create() -> b2DynamicTree
-
     extern def b2DynamicTree_Destroy(tree: ptr[b2DynamicTree]) -> void
-
     extern def b2DynamicTree_CreateProxy(tree: ptr[b2DynamicTree], aabb: b2AABB, categoryBits: usize, userData: usize) -> i32
-
     extern def b2DynamicTree_DestroyProxy(tree: ptr[b2DynamicTree], proxyId: i32) -> void
-
     extern def b2DynamicTree_MoveProxy(tree: ptr[b2DynamicTree], proxyId: i32, aabb: b2AABB) -> void
-
     extern def b2DynamicTree_EnlargeProxy(tree: ptr[b2DynamicTree], proxyId: i32, aabb: b2AABB) -> void
-
     extern def b2DynamicTree_SetCategoryBits(tree: ptr[b2DynamicTree], proxyId: i32, categoryBits: usize) -> void
-
     extern def b2DynamicTree_GetCategoryBits(tree: ptr[b2DynamicTree], proxyId: i32) -> u64
 
     type b2TreeQueryCallbackFcn = fn(arg0: i32, arg1: u64, arg2: ptr[void]) -> bool
 
     extern def b2DynamicTree_Query(tree: const_ptr[b2DynamicTree], aabb: b2AABB, maskBits: usize, callback: ptr[b2TreeQueryCallbackFcn], context: ptr[void]) -> b2TreeStats
-
     extern def b2DynamicTree_QueryAll(tree: const_ptr[b2DynamicTree], aabb: b2AABB, callback: ptr[b2TreeQueryCallbackFcn], context: ptr[void]) -> b2TreeStats
 
     type b2TreeRayCastCallbackFcn = fn(arg0: b2RayCastInput, arg1: i32, arg2: u64, arg3: ptr[void]) -> f32
@@ -398,25 +330,15 @@ extern module std.c.box2d:
     type b2TreeShapeCastCallbackFcn = fn(arg0: b2ShapeCastInput, arg1: i32, arg2: u64, arg3: ptr[void]) -> f32
 
     extern def b2DynamicTree_ShapeCast(tree: const_ptr[b2DynamicTree], input: const_ptr[b2ShapeCastInput], maskBits: usize, callback: ptr[b2TreeShapeCastCallbackFcn], context: ptr[void]) -> b2TreeStats
-
     extern def b2DynamicTree_GetHeight(tree: const_ptr[b2DynamicTree]) -> i32
-
     extern def b2DynamicTree_GetAreaRatio(tree: const_ptr[b2DynamicTree]) -> f32
-
     extern def b2DynamicTree_GetRootBounds(tree: const_ptr[b2DynamicTree]) -> b2AABB
-
     extern def b2DynamicTree_GetProxyCount(tree: const_ptr[b2DynamicTree]) -> i32
-
     extern def b2DynamicTree_Rebuild(tree: ptr[b2DynamicTree], fullBuild: bool) -> i32
-
     extern def b2DynamicTree_GetByteCount(tree: const_ptr[b2DynamicTree]) -> i32
-
     extern def b2DynamicTree_GetUserData(tree: const_ptr[b2DynamicTree], proxyId: i32) -> u64
-
     extern def b2DynamicTree_GetAABB(tree: const_ptr[b2DynamicTree], proxyId: i32) -> b2AABB
-
     extern def b2DynamicTree_Validate(tree: const_ptr[b2DynamicTree]) -> void
-
     extern def b2DynamicTree_ValidateNoEnlarged(tree: const_ptr[b2DynamicTree]) -> void
 
     struct b2PlaneResult:
@@ -435,7 +357,6 @@ extern module std.c.box2d:
         iterationCount: i32
 
     extern def b2SolvePlanes(targetDelta: b2Vec2, planes: ptr[b2CollisionPlane], count: i32) -> b2PlaneSolverResult
-
     extern def b2ClipVector(vector: b2Vec2, planes: const_ptr[b2CollisionPlane], count: i32) -> b2Vec2
 
     struct b2WorldId:
@@ -1038,651 +959,328 @@ extern module std.c.box2d:
         context: ptr[void]
 
     extern def b2DefaultDebugDraw() -> b2DebugDraw
-
     extern def b2CreateWorld(definition: const_ptr[b2WorldDef]) -> b2WorldId
-
     extern def b2DestroyWorld(worldId: b2WorldId) -> void
-
     extern def b2World_IsValid(id: b2WorldId) -> bool
-
     extern def b2World_Step(worldId: b2WorldId, timeStep: f32, subStepCount: i32) -> void
-
     extern def b2World_Draw(worldId: b2WorldId, draw: ptr[b2DebugDraw]) -> void
-
     extern def b2World_GetBodyEvents(worldId: b2WorldId) -> b2BodyEvents
-
     extern def b2World_GetSensorEvents(worldId: b2WorldId) -> b2SensorEvents
-
     extern def b2World_GetContactEvents(worldId: b2WorldId) -> b2ContactEvents
-
     extern def b2World_GetJointEvents(worldId: b2WorldId) -> b2JointEvents
-
     extern def b2World_OverlapAABB(worldId: b2WorldId, aabb: b2AABB, filter: b2QueryFilter, fcn: ptr[b2OverlapResultFcn], context: ptr[void]) -> b2TreeStats
-
     extern def b2World_OverlapShape(worldId: b2WorldId, proxy: const_ptr[b2ShapeProxy], filter: b2QueryFilter, fcn: ptr[b2OverlapResultFcn], context: ptr[void]) -> b2TreeStats
-
     extern def b2World_CastRay(worldId: b2WorldId, origin: b2Vec2, translation: b2Vec2, filter: b2QueryFilter, fcn: ptr[b2CastResultFcn], context: ptr[void]) -> b2TreeStats
-
     extern def b2World_CastRayClosest(worldId: b2WorldId, origin: b2Vec2, translation: b2Vec2, filter: b2QueryFilter) -> b2RayResult
-
     extern def b2World_CastShape(worldId: b2WorldId, proxy: const_ptr[b2ShapeProxy], translation: b2Vec2, filter: b2QueryFilter, fcn: ptr[b2CastResultFcn], context: ptr[void]) -> b2TreeStats
-
     extern def b2World_CastMover(worldId: b2WorldId, mover: const_ptr[b2Capsule], translation: b2Vec2, filter: b2QueryFilter) -> f32
-
     extern def b2World_CollideMover(worldId: b2WorldId, mover: const_ptr[b2Capsule], filter: b2QueryFilter, fcn: ptr[b2PlaneResultFcn], context: ptr[void]) -> void
-
     extern def b2World_EnableSleeping(worldId: b2WorldId, flag: bool) -> void
-
     extern def b2World_IsSleepingEnabled(worldId: b2WorldId) -> bool
-
     extern def b2World_EnableContinuous(worldId: b2WorldId, flag: bool) -> void
-
     extern def b2World_IsContinuousEnabled(worldId: b2WorldId) -> bool
-
     extern def b2World_SetRestitutionThreshold(worldId: b2WorldId, value: f32) -> void
-
     extern def b2World_GetRestitutionThreshold(worldId: b2WorldId) -> f32
-
     extern def b2World_SetHitEventThreshold(worldId: b2WorldId, value: f32) -> void
-
     extern def b2World_GetHitEventThreshold(worldId: b2WorldId) -> f32
-
     extern def b2World_SetCustomFilterCallback(worldId: b2WorldId, fcn: ptr[b2CustomFilterFcn], context: ptr[void]) -> void
-
     extern def b2World_SetPreSolveCallback(worldId: b2WorldId, fcn: ptr[b2PreSolveFcn], context: ptr[void]) -> void
-
     extern def b2World_SetGravity(worldId: b2WorldId, gravity: b2Vec2) -> void
-
     extern def b2World_GetGravity(worldId: b2WorldId) -> b2Vec2
-
     extern def b2World_Explode(worldId: b2WorldId, explosionDef: const_ptr[b2ExplosionDef]) -> void
-
     extern def b2World_SetContactTuning(worldId: b2WorldId, hertz: f32, dampingRatio: f32, pushSpeed: f32) -> void
-
     extern def b2World_SetContactRecycleDistance(worldId: b2WorldId, recycleDistance: f32) -> void
-
     extern def b2World_GetContactRecycleDistance(worldId: b2WorldId) -> f32
-
     extern def b2World_SetMaximumLinearSpeed(worldId: b2WorldId, maximumLinearSpeed: f32) -> void
-
     extern def b2World_GetMaximumLinearSpeed(worldId: b2WorldId) -> f32
-
     extern def b2World_EnableWarmStarting(worldId: b2WorldId, flag: bool) -> void
-
     extern def b2World_IsWarmStartingEnabled(worldId: b2WorldId) -> bool
-
     extern def b2World_GetAwakeBodyCount(worldId: b2WorldId) -> i32
-
     extern def b2World_GetProfile(worldId: b2WorldId) -> b2Profile
-
     extern def b2World_GetCounters(worldId: b2WorldId) -> b2Counters
-
     extern def b2World_SetUserData(worldId: b2WorldId, userData: ptr[void]) -> void
-
     extern def b2World_GetUserData(worldId: b2WorldId) -> ptr[void]
-
     extern def b2World_SetFrictionCallback(worldId: b2WorldId, callback: ptr[b2FrictionCallback]) -> void
-
     extern def b2World_SetRestitutionCallback(worldId: b2WorldId, callback: ptr[b2RestitutionCallback]) -> void
-
     extern def b2World_SetWorkerCount(worldId: b2WorldId, count: i32) -> void
-
     extern def b2World_GetWorkerCount(worldId: b2WorldId) -> i32
-
     extern def b2World_DumpMemoryStats(worldId: b2WorldId) -> void
-
     extern def b2World_RebuildStaticTree(worldId: b2WorldId) -> void
-
     extern def b2World_EnableSpeculative(worldId: b2WorldId, flag: bool) -> void
-
     extern def b2CreateBody(worldId: b2WorldId, definition: const_ptr[b2BodyDef]) -> b2BodyId
-
     extern def b2DestroyBody(bodyId: b2BodyId) -> void
-
     extern def b2Body_IsValid(id: b2BodyId) -> bool
-
     extern def b2Body_GetType(bodyId: b2BodyId) -> b2BodyType
-
     extern def b2Body_SetType(bodyId: b2BodyId, kind: b2BodyType) -> void
-
     extern def b2Body_SetName(bodyId: b2BodyId, name: cstr) -> void
-
     extern def b2Body_GetName(bodyId: b2BodyId) -> cstr
-
     extern def b2Body_SetUserData(bodyId: b2BodyId, userData: ptr[void]) -> void
-
     extern def b2Body_GetUserData(bodyId: b2BodyId) -> ptr[void]
-
     extern def b2Body_GetPosition(bodyId: b2BodyId) -> b2Vec2
-
     extern def b2Body_GetRotation(bodyId: b2BodyId) -> b2Rot
-
     extern def b2Body_GetTransform(bodyId: b2BodyId) -> b2Transform
-
     extern def b2Body_SetTransform(bodyId: b2BodyId, position: b2Vec2, rotation: b2Rot) -> void
-
     extern def b2Body_GetLocalPoint(bodyId: b2BodyId, worldPoint: b2Vec2) -> b2Vec2
-
     extern def b2Body_GetWorldPoint(bodyId: b2BodyId, localPoint: b2Vec2) -> b2Vec2
-
     extern def b2Body_GetLocalVector(bodyId: b2BodyId, worldVector: b2Vec2) -> b2Vec2
-
     extern def b2Body_GetWorldVector(bodyId: b2BodyId, localVector: b2Vec2) -> b2Vec2
-
     extern def b2Body_GetLinearVelocity(bodyId: b2BodyId) -> b2Vec2
-
     extern def b2Body_GetAngularVelocity(bodyId: b2BodyId) -> f32
-
     extern def b2Body_SetLinearVelocity(bodyId: b2BodyId, linearVelocity: b2Vec2) -> void
-
     extern def b2Body_SetAngularVelocity(bodyId: b2BodyId, angularVelocity: f32) -> void
-
     extern def b2Body_SetTargetTransform(bodyId: b2BodyId, target: b2Transform, timeStep: f32, wake: bool) -> void
-
     extern def b2Body_GetLocalPointVelocity(bodyId: b2BodyId, localPoint: b2Vec2) -> b2Vec2
-
     extern def b2Body_GetWorldPointVelocity(bodyId: b2BodyId, worldPoint: b2Vec2) -> b2Vec2
-
     extern def b2Body_ApplyForce(bodyId: b2BodyId, force: b2Vec2, point: b2Vec2, wake: bool) -> void
-
     extern def b2Body_ApplyForceToCenter(bodyId: b2BodyId, force: b2Vec2, wake: bool) -> void
-
     extern def b2Body_ApplyTorque(bodyId: b2BodyId, torque: f32, wake: bool) -> void
-
     extern def b2Body_ClearForces(bodyId: b2BodyId) -> void
-
     extern def b2Body_ApplyLinearImpulse(bodyId: b2BodyId, impulse: b2Vec2, point: b2Vec2, wake: bool) -> void
-
     extern def b2Body_ApplyLinearImpulseToCenter(bodyId: b2BodyId, impulse: b2Vec2, wake: bool) -> void
-
     extern def b2Body_ApplyAngularImpulse(bodyId: b2BodyId, impulse: f32, wake: bool) -> void
-
     extern def b2Body_GetMass(bodyId: b2BodyId) -> f32
-
     extern def b2Body_GetRotationalInertia(bodyId: b2BodyId) -> f32
-
     extern def b2Body_GetLocalCenterOfMass(bodyId: b2BodyId) -> b2Vec2
-
     extern def b2Body_GetWorldCenterOfMass(bodyId: b2BodyId) -> b2Vec2
-
     extern def b2Body_SetMassData(bodyId: b2BodyId, massData: b2MassData) -> void
-
     extern def b2Body_GetMassData(bodyId: b2BodyId) -> b2MassData
-
     extern def b2Body_ApplyMassFromShapes(bodyId: b2BodyId) -> void
-
     extern def b2Body_SetLinearDamping(bodyId: b2BodyId, linearDamping: f32) -> void
-
     extern def b2Body_GetLinearDamping(bodyId: b2BodyId) -> f32
-
     extern def b2Body_SetAngularDamping(bodyId: b2BodyId, angularDamping: f32) -> void
-
     extern def b2Body_GetAngularDamping(bodyId: b2BodyId) -> f32
-
     extern def b2Body_SetGravityScale(bodyId: b2BodyId, gravityScale: f32) -> void
-
     extern def b2Body_GetGravityScale(bodyId: b2BodyId) -> f32
-
     extern def b2Body_IsAwake(bodyId: b2BodyId) -> bool
-
     extern def b2Body_SetAwake(bodyId: b2BodyId, awake: bool) -> void
-
     extern def b2Body_WakeTouching(bodyId: b2BodyId) -> void
-
     extern def b2Body_EnableSleep(bodyId: b2BodyId, enableSleep: bool) -> void
-
     extern def b2Body_IsSleepEnabled(bodyId: b2BodyId) -> bool
-
     extern def b2Body_SetSleepThreshold(bodyId: b2BodyId, sleepThreshold: f32) -> void
-
     extern def b2Body_GetSleepThreshold(bodyId: b2BodyId) -> f32
-
     extern def b2Body_IsEnabled(bodyId: b2BodyId) -> bool
-
     extern def b2Body_Disable(bodyId: b2BodyId) -> void
-
     extern def b2Body_Enable(bodyId: b2BodyId) -> void
-
     extern def b2Body_SetMotionLocks(bodyId: b2BodyId, locks: b2MotionLocks) -> void
-
     extern def b2Body_GetMotionLocks(bodyId: b2BodyId) -> b2MotionLocks
-
     extern def b2Body_SetBullet(bodyId: b2BodyId, flag: bool) -> void
-
     extern def b2Body_IsBullet(bodyId: b2BodyId) -> bool
-
     extern def b2Body_EnableContactEvents(bodyId: b2BodyId, flag: bool) -> void
-
     extern def b2Body_EnableHitEvents(bodyId: b2BodyId, flag: bool) -> void
-
     extern def b2Body_GetWorld(bodyId: b2BodyId) -> b2WorldId
-
     extern def b2Body_GetShapeCount(bodyId: b2BodyId) -> i32
-
     extern def b2Body_GetShapes(bodyId: b2BodyId, shapeArray: ptr[b2ShapeId], capacity: i32) -> i32
-
     extern def b2Body_GetJointCount(bodyId: b2BodyId) -> i32
-
     extern def b2Body_GetJoints(bodyId: b2BodyId, jointArray: ptr[b2JointId], capacity: i32) -> i32
-
     extern def b2Body_GetContactCapacity(bodyId: b2BodyId) -> i32
-
     extern def b2Body_GetContactData(bodyId: b2BodyId, contactData: ptr[b2ContactData], capacity: i32) -> i32
-
     extern def b2Body_ComputeAABB(bodyId: b2BodyId) -> b2AABB
-
     extern def b2CreateCircleShape(bodyId: b2BodyId, definition: const_ptr[b2ShapeDef], circle: const_ptr[b2Circle]) -> b2ShapeId
-
     extern def b2CreateSegmentShape(bodyId: b2BodyId, definition: const_ptr[b2ShapeDef], segment: const_ptr[b2Segment]) -> b2ShapeId
-
     extern def b2CreateCapsuleShape(bodyId: b2BodyId, definition: const_ptr[b2ShapeDef], capsule: const_ptr[b2Capsule]) -> b2ShapeId
-
     extern def b2CreatePolygonShape(bodyId: b2BodyId, definition: const_ptr[b2ShapeDef], polygon: const_ptr[b2Polygon]) -> b2ShapeId
-
     extern def b2DestroyShape(shapeId: b2ShapeId, updateBodyMass: bool) -> void
-
     extern def b2Shape_IsValid(id: b2ShapeId) -> bool
-
     extern def b2Shape_GetType(shapeId: b2ShapeId) -> b2ShapeType
-
     extern def b2Shape_GetBody(shapeId: b2ShapeId) -> b2BodyId
-
     extern def b2Shape_GetWorld(shapeId: b2ShapeId) -> b2WorldId
-
     extern def b2Shape_IsSensor(shapeId: b2ShapeId) -> bool
-
     extern def b2Shape_SetUserData(shapeId: b2ShapeId, userData: ptr[void]) -> void
-
     extern def b2Shape_GetUserData(shapeId: b2ShapeId) -> ptr[void]
-
     extern def b2Shape_SetDensity(shapeId: b2ShapeId, density: f32, updateBodyMass: bool) -> void
-
     extern def b2Shape_GetDensity(shapeId: b2ShapeId) -> f32
-
     extern def b2Shape_SetFriction(shapeId: b2ShapeId, friction: f32) -> void
-
     extern def b2Shape_GetFriction(shapeId: b2ShapeId) -> f32
-
     extern def b2Shape_SetRestitution(shapeId: b2ShapeId, restitution: f32) -> void
-
     extern def b2Shape_GetRestitution(shapeId: b2ShapeId) -> f32
-
     extern def b2Shape_SetUserMaterial(shapeId: b2ShapeId, material: usize) -> void
-
     extern def b2Shape_GetUserMaterial(shapeId: b2ShapeId) -> u64
-
     extern def b2Shape_SetSurfaceMaterial(shapeId: b2ShapeId, surfaceMaterial: const_ptr[b2SurfaceMaterial]) -> void
-
     extern def b2Shape_GetSurfaceMaterial(shapeId: b2ShapeId) -> b2SurfaceMaterial
-
     extern def b2Shape_GetFilter(shapeId: b2ShapeId) -> b2Filter
-
     extern def b2Shape_SetFilter(shapeId: b2ShapeId, filter: b2Filter) -> void
-
     extern def b2Shape_EnableSensorEvents(shapeId: b2ShapeId, flag: bool) -> void
-
     extern def b2Shape_AreSensorEventsEnabled(shapeId: b2ShapeId) -> bool
-
     extern def b2Shape_EnableContactEvents(shapeId: b2ShapeId, flag: bool) -> void
-
     extern def b2Shape_AreContactEventsEnabled(shapeId: b2ShapeId) -> bool
-
     extern def b2Shape_EnablePreSolveEvents(shapeId: b2ShapeId, flag: bool) -> void
-
     extern def b2Shape_ArePreSolveEventsEnabled(shapeId: b2ShapeId) -> bool
-
     extern def b2Shape_EnableHitEvents(shapeId: b2ShapeId, flag: bool) -> void
-
     extern def b2Shape_AreHitEventsEnabled(shapeId: b2ShapeId) -> bool
-
     extern def b2Shape_TestPoint(shapeId: b2ShapeId, point: b2Vec2) -> bool
-
     extern def b2Shape_RayCast(shapeId: b2ShapeId, input: const_ptr[b2RayCastInput]) -> b2CastOutput
-
     extern def b2Shape_GetCircle(shapeId: b2ShapeId) -> b2Circle
-
     extern def b2Shape_GetSegment(shapeId: b2ShapeId) -> b2Segment
-
     extern def b2Shape_GetChainSegment(shapeId: b2ShapeId) -> b2ChainSegment
-
     extern def b2Shape_GetCapsule(shapeId: b2ShapeId) -> b2Capsule
-
     extern def b2Shape_GetPolygon(shapeId: b2ShapeId) -> b2Polygon
-
     extern def b2Shape_SetCircle(shapeId: b2ShapeId, circle: const_ptr[b2Circle]) -> void
-
     extern def b2Shape_SetCapsule(shapeId: b2ShapeId, capsule: const_ptr[b2Capsule]) -> void
-
     extern def b2Shape_SetSegment(shapeId: b2ShapeId, segment: const_ptr[b2Segment]) -> void
-
     extern def b2Shape_SetPolygon(shapeId: b2ShapeId, polygon: const_ptr[b2Polygon]) -> void
-
     extern def b2Shape_GetParentChain(shapeId: b2ShapeId) -> b2ChainId
-
     extern def b2Shape_GetContactCapacity(shapeId: b2ShapeId) -> i32
-
     extern def b2Shape_GetContactData(shapeId: b2ShapeId, contactData: ptr[b2ContactData], capacity: i32) -> i32
-
     extern def b2Shape_GetSensorCapacity(shapeId: b2ShapeId) -> i32
-
     extern def b2Shape_GetSensorData(shapeId: b2ShapeId, visitorIds: ptr[b2ShapeId], capacity: i32) -> i32
-
     extern def b2Shape_GetAABB(shapeId: b2ShapeId) -> b2AABB
-
     extern def b2Shape_ComputeMassData(shapeId: b2ShapeId) -> b2MassData
-
     extern def b2Shape_GetClosestPoint(shapeId: b2ShapeId, target: b2Vec2) -> b2Vec2
-
     extern def b2Shape_ApplyWind(shapeId: b2ShapeId, wind: b2Vec2, drag: f32, lift: f32, wake: bool) -> void
-
     extern def b2CreateChain(bodyId: b2BodyId, definition: const_ptr[b2ChainDef]) -> b2ChainId
-
     extern def b2DestroyChain(chainId: b2ChainId) -> void
-
     extern def b2Chain_GetWorld(chainId: b2ChainId) -> b2WorldId
-
     extern def b2Chain_GetSegmentCount(chainId: b2ChainId) -> i32
-
     extern def b2Chain_GetSegments(chainId: b2ChainId, segmentArray: ptr[b2ShapeId], capacity: i32) -> i32
-
     extern def b2Chain_GetSurfaceMaterialCount(chainId: b2ChainId) -> i32
-
     extern def b2Chain_SetSurfaceMaterial(chainId: b2ChainId, material: const_ptr[b2SurfaceMaterial], materialIndex: i32) -> void
-
     extern def b2Chain_GetSurfaceMaterial(chainId: b2ChainId, materialIndex: i32) -> b2SurfaceMaterial
-
     extern def b2Chain_IsValid(id: b2ChainId) -> bool
-
     extern def b2DestroyJoint(jointId: b2JointId, wakeAttached: bool) -> void
-
     extern def b2Joint_IsValid(id: b2JointId) -> bool
-
     extern def b2Joint_GetType(jointId: b2JointId) -> b2JointType
-
     extern def b2Joint_GetBodyA(jointId: b2JointId) -> b2BodyId
-
     extern def b2Joint_GetBodyB(jointId: b2JointId) -> b2BodyId
-
     extern def b2Joint_GetWorld(jointId: b2JointId) -> b2WorldId
-
     extern def b2Joint_SetLocalFrameA(jointId: b2JointId, localFrame: b2Transform) -> void
-
     extern def b2Joint_GetLocalFrameA(jointId: b2JointId) -> b2Transform
-
     extern def b2Joint_SetLocalFrameB(jointId: b2JointId, localFrame: b2Transform) -> void
-
     extern def b2Joint_GetLocalFrameB(jointId: b2JointId) -> b2Transform
-
     extern def b2Joint_SetCollideConnected(jointId: b2JointId, shouldCollide: bool) -> void
-
     extern def b2Joint_GetCollideConnected(jointId: b2JointId) -> bool
-
     extern def b2Joint_SetUserData(jointId: b2JointId, userData: ptr[void]) -> void
-
     extern def b2Joint_GetUserData(jointId: b2JointId) -> ptr[void]
-
     extern def b2Joint_WakeBodies(jointId: b2JointId) -> void
-
     extern def b2Joint_GetConstraintForce(jointId: b2JointId) -> b2Vec2
-
     extern def b2Joint_GetConstraintTorque(jointId: b2JointId) -> f32
-
     extern def b2Joint_GetLinearSeparation(jointId: b2JointId) -> f32
-
     extern def b2Joint_GetAngularSeparation(jointId: b2JointId) -> f32
-
     extern def b2Joint_SetConstraintTuning(jointId: b2JointId, hertz: f32, dampingRatio: f32) -> void
-
     extern def b2Joint_GetConstraintTuning(jointId: b2JointId, hertz: ptr[f32], dampingRatio: ptr[f32]) -> void
-
     extern def b2Joint_SetForceThreshold(jointId: b2JointId, threshold: f32) -> void
-
     extern def b2Joint_GetForceThreshold(jointId: b2JointId) -> f32
-
     extern def b2Joint_SetTorqueThreshold(jointId: b2JointId, threshold: f32) -> void
-
     extern def b2Joint_GetTorqueThreshold(jointId: b2JointId) -> f32
-
     extern def b2CreateDistanceJoint(worldId: b2WorldId, definition: const_ptr[b2DistanceJointDef]) -> b2JointId
-
     extern def b2DistanceJoint_SetLength(jointId: b2JointId, length: f32) -> void
-
     extern def b2DistanceJoint_GetLength(jointId: b2JointId) -> f32
-
     extern def b2DistanceJoint_EnableSpring(jointId: b2JointId, enableSpring: bool) -> void
-
     extern def b2DistanceJoint_IsSpringEnabled(jointId: b2JointId) -> bool
-
     extern def b2DistanceJoint_SetSpringForceRange(jointId: b2JointId, lowerForce: f32, upperForce: f32) -> void
-
     extern def b2DistanceJoint_GetSpringForceRange(jointId: b2JointId, lowerForce: ptr[f32], upperForce: ptr[f32]) -> void
-
     extern def b2DistanceJoint_SetSpringHertz(jointId: b2JointId, hertz: f32) -> void
-
     extern def b2DistanceJoint_SetSpringDampingRatio(jointId: b2JointId, dampingRatio: f32) -> void
-
     extern def b2DistanceJoint_GetSpringHertz(jointId: b2JointId) -> f32
-
     extern def b2DistanceJoint_GetSpringDampingRatio(jointId: b2JointId) -> f32
-
     extern def b2DistanceJoint_EnableLimit(jointId: b2JointId, enableLimit: bool) -> void
-
     extern def b2DistanceJoint_IsLimitEnabled(jointId: b2JointId) -> bool
-
     extern def b2DistanceJoint_SetLengthRange(jointId: b2JointId, minLength: f32, maxLength: f32) -> void
-
     extern def b2DistanceJoint_GetMinLength(jointId: b2JointId) -> f32
-
     extern def b2DistanceJoint_GetMaxLength(jointId: b2JointId) -> f32
-
     extern def b2DistanceJoint_GetCurrentLength(jointId: b2JointId) -> f32
-
     extern def b2DistanceJoint_EnableMotor(jointId: b2JointId, enableMotor: bool) -> void
-
     extern def b2DistanceJoint_IsMotorEnabled(jointId: b2JointId) -> bool
-
     extern def b2DistanceJoint_SetMotorSpeed(jointId: b2JointId, motorSpeed: f32) -> void
-
     extern def b2DistanceJoint_GetMotorSpeed(jointId: b2JointId) -> f32
-
     extern def b2DistanceJoint_SetMaxMotorForce(jointId: b2JointId, force: f32) -> void
-
     extern def b2DistanceJoint_GetMaxMotorForce(jointId: b2JointId) -> f32
-
     extern def b2DistanceJoint_GetMotorForce(jointId: b2JointId) -> f32
-
     extern def b2CreateMotorJoint(worldId: b2WorldId, definition: const_ptr[b2MotorJointDef]) -> b2JointId
-
     extern def b2MotorJoint_SetLinearVelocity(jointId: b2JointId, velocity: b2Vec2) -> void
-
     extern def b2MotorJoint_GetLinearVelocity(jointId: b2JointId) -> b2Vec2
-
     extern def b2MotorJoint_SetAngularVelocity(jointId: b2JointId, velocity: f32) -> void
-
     extern def b2MotorJoint_GetAngularVelocity(jointId: b2JointId) -> f32
-
     extern def b2MotorJoint_SetMaxVelocityForce(jointId: b2JointId, maxForce: f32) -> void
-
     extern def b2MotorJoint_GetMaxVelocityForce(jointId: b2JointId) -> f32
-
     extern def b2MotorJoint_SetMaxVelocityTorque(jointId: b2JointId, maxTorque: f32) -> void
-
     extern def b2MotorJoint_GetMaxVelocityTorque(jointId: b2JointId) -> f32
-
     extern def b2MotorJoint_SetLinearHertz(jointId: b2JointId, hertz: f32) -> void
-
     extern def b2MotorJoint_GetLinearHertz(jointId: b2JointId) -> f32
-
     extern def b2MotorJoint_SetLinearDampingRatio(jointId: b2JointId, damping: f32) -> void
-
     extern def b2MotorJoint_GetLinearDampingRatio(jointId: b2JointId) -> f32
-
     extern def b2MotorJoint_SetAngularHertz(jointId: b2JointId, hertz: f32) -> void
-
     extern def b2MotorJoint_GetAngularHertz(jointId: b2JointId) -> f32
-
     extern def b2MotorJoint_SetAngularDampingRatio(jointId: b2JointId, damping: f32) -> void
-
     extern def b2MotorJoint_GetAngularDampingRatio(jointId: b2JointId) -> f32
-
     extern def b2MotorJoint_SetMaxSpringForce(jointId: b2JointId, maxForce: f32) -> void
-
     extern def b2MotorJoint_GetMaxSpringForce(jointId: b2JointId) -> f32
-
     extern def b2MotorJoint_SetMaxSpringTorque(jointId: b2JointId, maxTorque: f32) -> void
-
     extern def b2MotorJoint_GetMaxSpringTorque(jointId: b2JointId) -> f32
-
     extern def b2CreateFilterJoint(worldId: b2WorldId, definition: const_ptr[b2FilterJointDef]) -> b2JointId
-
     extern def b2CreatePrismaticJoint(worldId: b2WorldId, definition: const_ptr[b2PrismaticJointDef]) -> b2JointId
-
     extern def b2PrismaticJoint_EnableSpring(jointId: b2JointId, enableSpring: bool) -> void
-
     extern def b2PrismaticJoint_IsSpringEnabled(jointId: b2JointId) -> bool
-
     extern def b2PrismaticJoint_SetSpringHertz(jointId: b2JointId, hertz: f32) -> void
-
     extern def b2PrismaticJoint_GetSpringHertz(jointId: b2JointId) -> f32
-
     extern def b2PrismaticJoint_SetSpringDampingRatio(jointId: b2JointId, dampingRatio: f32) -> void
-
     extern def b2PrismaticJoint_GetSpringDampingRatio(jointId: b2JointId) -> f32
-
     extern def b2PrismaticJoint_SetTargetTranslation(jointId: b2JointId, translation: f32) -> void
-
     extern def b2PrismaticJoint_GetTargetTranslation(jointId: b2JointId) -> f32
-
     extern def b2PrismaticJoint_EnableLimit(jointId: b2JointId, enableLimit: bool) -> void
-
     extern def b2PrismaticJoint_IsLimitEnabled(jointId: b2JointId) -> bool
-
     extern def b2PrismaticJoint_GetLowerLimit(jointId: b2JointId) -> f32
-
     extern def b2PrismaticJoint_GetUpperLimit(jointId: b2JointId) -> f32
-
     extern def b2PrismaticJoint_SetLimits(jointId: b2JointId, lower: f32, upper: f32) -> void
-
     extern def b2PrismaticJoint_EnableMotor(jointId: b2JointId, enableMotor: bool) -> void
-
     extern def b2PrismaticJoint_IsMotorEnabled(jointId: b2JointId) -> bool
-
     extern def b2PrismaticJoint_SetMotorSpeed(jointId: b2JointId, motorSpeed: f32) -> void
-
     extern def b2PrismaticJoint_GetMotorSpeed(jointId: b2JointId) -> f32
-
     extern def b2PrismaticJoint_SetMaxMotorForce(jointId: b2JointId, force: f32) -> void
-
     extern def b2PrismaticJoint_GetMaxMotorForce(jointId: b2JointId) -> f32
-
     extern def b2PrismaticJoint_GetMotorForce(jointId: b2JointId) -> f32
-
     extern def b2PrismaticJoint_GetTranslation(jointId: b2JointId) -> f32
-
     extern def b2PrismaticJoint_GetSpeed(jointId: b2JointId) -> f32
-
     extern def b2CreateRevoluteJoint(worldId: b2WorldId, definition: const_ptr[b2RevoluteJointDef]) -> b2JointId
-
     extern def b2RevoluteJoint_EnableSpring(jointId: b2JointId, enableSpring: bool) -> void
-
     extern def b2RevoluteJoint_IsSpringEnabled(jointId: b2JointId) -> bool
-
     extern def b2RevoluteJoint_SetSpringHertz(jointId: b2JointId, hertz: f32) -> void
-
     extern def b2RevoluteJoint_GetSpringHertz(jointId: b2JointId) -> f32
-
     extern def b2RevoluteJoint_SetSpringDampingRatio(jointId: b2JointId, dampingRatio: f32) -> void
-
     extern def b2RevoluteJoint_GetSpringDampingRatio(jointId: b2JointId) -> f32
-
     extern def b2RevoluteJoint_SetTargetAngle(jointId: b2JointId, angle: f32) -> void
-
     extern def b2RevoluteJoint_GetTargetAngle(jointId: b2JointId) -> f32
-
     extern def b2RevoluteJoint_GetAngle(jointId: b2JointId) -> f32
-
     extern def b2RevoluteJoint_EnableLimit(jointId: b2JointId, enableLimit: bool) -> void
-
     extern def b2RevoluteJoint_IsLimitEnabled(jointId: b2JointId) -> bool
-
     extern def b2RevoluteJoint_GetLowerLimit(jointId: b2JointId) -> f32
-
     extern def b2RevoluteJoint_GetUpperLimit(jointId: b2JointId) -> f32
-
     extern def b2RevoluteJoint_SetLimits(jointId: b2JointId, lower: f32, upper: f32) -> void
-
     extern def b2RevoluteJoint_EnableMotor(jointId: b2JointId, enableMotor: bool) -> void
-
     extern def b2RevoluteJoint_IsMotorEnabled(jointId: b2JointId) -> bool
-
     extern def b2RevoluteJoint_SetMotorSpeed(jointId: b2JointId, motorSpeed: f32) -> void
-
     extern def b2RevoluteJoint_GetMotorSpeed(jointId: b2JointId) -> f32
-
     extern def b2RevoluteJoint_GetMotorTorque(jointId: b2JointId) -> f32
-
     extern def b2RevoluteJoint_SetMaxMotorTorque(jointId: b2JointId, torque: f32) -> void
-
     extern def b2RevoluteJoint_GetMaxMotorTorque(jointId: b2JointId) -> f32
-
     extern def b2CreateWeldJoint(worldId: b2WorldId, definition: const_ptr[b2WeldJointDef]) -> b2JointId
-
     extern def b2WeldJoint_SetLinearHertz(jointId: b2JointId, hertz: f32) -> void
-
     extern def b2WeldJoint_GetLinearHertz(jointId: b2JointId) -> f32
-
     extern def b2WeldJoint_SetLinearDampingRatio(jointId: b2JointId, dampingRatio: f32) -> void
-
     extern def b2WeldJoint_GetLinearDampingRatio(jointId: b2JointId) -> f32
-
     extern def b2WeldJoint_SetAngularHertz(jointId: b2JointId, hertz: f32) -> void
-
     extern def b2WeldJoint_GetAngularHertz(jointId: b2JointId) -> f32
-
     extern def b2WeldJoint_SetAngularDampingRatio(jointId: b2JointId, dampingRatio: f32) -> void
-
     extern def b2WeldJoint_GetAngularDampingRatio(jointId: b2JointId) -> f32
-
     extern def b2CreateWheelJoint(worldId: b2WorldId, definition: const_ptr[b2WheelJointDef]) -> b2JointId
-
     extern def b2WheelJoint_EnableSpring(jointId: b2JointId, enableSpring: bool) -> void
-
     extern def b2WheelJoint_IsSpringEnabled(jointId: b2JointId) -> bool
-
     extern def b2WheelJoint_SetSpringHertz(jointId: b2JointId, hertz: f32) -> void
-
     extern def b2WheelJoint_GetSpringHertz(jointId: b2JointId) -> f32
-
     extern def b2WheelJoint_SetSpringDampingRatio(jointId: b2JointId, dampingRatio: f32) -> void
-
     extern def b2WheelJoint_GetSpringDampingRatio(jointId: b2JointId) -> f32
-
     extern def b2WheelJoint_EnableLimit(jointId: b2JointId, enableLimit: bool) -> void
-
     extern def b2WheelJoint_IsLimitEnabled(jointId: b2JointId) -> bool
-
     extern def b2WheelJoint_GetLowerLimit(jointId: b2JointId) -> f32
-
     extern def b2WheelJoint_GetUpperLimit(jointId: b2JointId) -> f32
-
     extern def b2WheelJoint_SetLimits(jointId: b2JointId, lower: f32, upper: f32) -> void
-
     extern def b2WheelJoint_EnableMotor(jointId: b2JointId, enableMotor: bool) -> void
-
     extern def b2WheelJoint_IsMotorEnabled(jointId: b2JointId) -> bool
-
     extern def b2WheelJoint_SetMotorSpeed(jointId: b2JointId, motorSpeed: f32) -> void
-
     extern def b2WheelJoint_GetMotorSpeed(jointId: b2JointId) -> f32
-
     extern def b2WheelJoint_SetMaxMotorTorque(jointId: b2JointId, torque: f32) -> void
-
     extern def b2WheelJoint_GetMaxMotorTorque(jointId: b2JointId) -> f32
-
     extern def b2WheelJoint_GetMotorTorque(jointId: b2JointId) -> f32
-
     extern def b2Contact_IsValid(id: b2ContactId) -> bool
-
     extern def b2Contact_GetData(contactId: b2ContactId) -> b2ContactData
 
     const B2_ENABLE_VALIDATION: i32 = 0

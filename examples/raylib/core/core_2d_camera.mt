@@ -14,6 +14,7 @@ const controls_zoom: cstr = c"- Mouse Wheel to Zoom in-out"
 const controls_rotate: cstr = c"- A / S to Rotate"
 const controls_reset: cstr = c"- R to reset Zoom and Rotation"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

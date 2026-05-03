@@ -33,29 +33,36 @@ const count_format: cstr = c"%d"
 const ellipsis_text: cstr = c"..."
 const window_title: cstr = c"raylib [models] example - decals"
 
+
 def model_mesh(model: rl.Model, index: i32) -> rl.Mesh:
     unsafe:
         return model.meshes[index]
+
 
 def material_map(material: rl.Material, index: i32) -> rl.MaterialMap:
     unsafe:
         return material.maps[index]
 
+
 def alloc_vector3(count: i32) -> ptr[rl.Vector3]:
     unsafe:
         return ptr[rl.Vector3]<-rl.MemAlloc(u32<-count * u32<-sizeof(rl.Vector3))
+
 
 def alloc_vector2(count: i32) -> ptr[rl.Vector2]:
     unsafe:
         return ptr[rl.Vector2]<-rl.MemAlloc(u32<-count * u32<-sizeof(rl.Vector2))
 
+
 def alloc_f32(count: i32) -> ptr[f32]:
     unsafe:
         return ptr[f32]<-rl.MemAlloc(u32<-count * u32<-sizeof(f32))
 
+
 def mesh_has_indices(mesh: rl.Mesh) -> bool:
     unsafe:
         return mesh.indices != null
+
 
 def mesh_vertex(mesh: rl.Mesh, index: i32) -> rl.Vector3:
     unsafe:
@@ -65,6 +72,7 @@ def mesh_vertex(mesh: rl.Mesh, index: i32) -> rl.Vector3:
             z = mesh.vertices[index * 3 + 2],
         )
 
+
 def mesh_index(mesh: rl.Mesh, index: i32) -> i32:
     let indices = mesh.indices
     if indices != null:
@@ -73,12 +81,14 @@ def mesh_index(mesh: rl.Mesh, index: i32) -> i32:
 
     panic("mesh indices missing")
 
+
 def triangle_vertices(v0: rl.Vector3, v1: rl.Vector3, v2: rl.Vector3) -> array[rl.Vector3, 3]:
     var vertices = zero[array[rl.Vector3, 3]]()
     vertices[0] = v0
     vertices[1] = v1
     vertices[2] = v2
     return vertices
+
 
 def mesh_triangle(mesh: rl.Mesh, triangle_index: i32) -> array[rl.Vector3, 3]:
     if not mesh_has_indices(mesh):
@@ -93,6 +103,7 @@ def mesh_triangle(mesh: rl.Mesh, triangle_index: i32) -> array[rl.Vector3, 3]:
         mesh_vertex(mesh, mesh_index(mesh, triangle_index * 3 + 1)),
         mesh_vertex(mesh, mesh_index(mesh, triangle_index * 3 + 2)),
     )
+
 
 def add_triangle_to_mesh_builder(mb: ref[MeshBuilder], vertices: array[rl.Vector3, 3]) -> void:
     if mb.vertexCapacity <= mb.vertexCount + 3:
@@ -118,12 +129,14 @@ def add_triangle_to_mesh_builder(mb: ref[MeshBuilder], vertices: array[rl.Vector
     for index in range(0, 3):
         vertex_view[start + index] = vertices[index]
 
+
 def free_mesh_builder(mb: ref[MeshBuilder]) -> void:
     if mb.vertexCapacity > 0:
         rl.MemFree(mb.vertices)
     if mb.hasUvs:
         rl.MemFree(mb.uvs)
     read(mb) = zero[MeshBuilder]()
+
 
 def build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:
     var out_mesh = zero[rl.Mesh]()
@@ -150,16 +163,19 @@ def build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:
     rl.UploadMesh(ptr_of(ref_of(out_mesh)), false)
     return out_mesh
 
+
 def clip_segment(v0: rl.Vector3, v1: rl.Vector3, plane: rl.Vector3, distance: f32) -> rl.Vector3:
     let d0 = v0.dot(plane) - distance
     let d1 = v1.dot(plane) - distance
     let amount = d0 / (d0 - d1)
     return v0.lerp(v1, amount)
 
+
 def minf(a: f32, b: f32) -> f32:
     if a < b:
         return a
     return b
+
 
 def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, decal_offset: f32) -> rl.Mesh:
     let inv_proj = projection.invert()
@@ -286,6 +302,7 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
 
     return zero[rl.Mesh]()
 
+
 def gui_button(rec: rl.Rectangle, label: cstr) -> bool:
     var background_color = rl.GRAY
     var pressed = false
@@ -303,6 +320,7 @@ def gui_button(rec: rl.Rectangle, label: cstr) -> bool:
     rl.DrawText(label, i32<-(rec.x + rec.width * 0.5 - f32<-text_width * 0.5), i32<-(rec.y + rec.height * 0.5 - f32<-font_size * 0.5), font_size, rl.DARKGRAY)
 
     return pressed
+
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

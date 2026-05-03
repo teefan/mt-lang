@@ -19,12 +19,14 @@ const auto_text: cstr = c"AUTO"
 const manual_text: cstr = c"MANUAL"
 const window_title: cstr = c"raylib [shaders] example - hot reloading"
 
+
 def formatted_mod_time(mod_time: ref[ctime.time_t], buffer: ref[array[char, 64]]) -> cstr:
     let tm_info = ctime.localtime(ptr_of(ref_of(read(mod_time))))
 
     unsafe:
         ctime.strftime(ptr_of(ref_of(read(buffer)[0])), 64, modification_time_format, tm_info)
         return cstr<-ptr_of(ref_of(read(buffer)[0]))
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

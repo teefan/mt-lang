@@ -15,6 +15,7 @@ var previous_touch_y: f32 = -1.0
 var tilt_x: f32 = 0.0
 var tilt_y: f32 = 0.0
 
+
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
@@ -47,6 +48,7 @@ def pump_events() -> bool:
 
     return true
 
+
 def render_frame() -> void:
     var debug_text = zero[array[char, 1024]]()
 
@@ -60,6 +62,7 @@ def render_frame() -> void:
         c.SDL_RenderDebugText(renderer, 0.0, 8.0, cstr<-ptr_of(ref_of(debug_text[0])))
 
     c.SDL_RenderPresent(renderer)
+
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     var output_width: i32 = 0
@@ -102,6 +105,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

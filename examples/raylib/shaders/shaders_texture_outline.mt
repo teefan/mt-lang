@@ -15,6 +15,7 @@ const help_text: cstr = c"Scroll mouse wheel to\nchange outline size"
 const outline_format: cstr = c"Outline size: %i px"
 const window_title: cstr = c"raylib [shaders] example - texture outline"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

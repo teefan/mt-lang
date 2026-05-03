@@ -7,6 +7,7 @@ const screen_height: i32 = 450
 const grid_spacing: i32 = 40
 const window_title: cstr = c"raylib [core] example - highdpi testbed"
 
+
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE | rl.ConfigFlags.FLAG_WINDOW_HIGHDPI)
     rl.InitWindow(screen_width, screen_height, window_title)

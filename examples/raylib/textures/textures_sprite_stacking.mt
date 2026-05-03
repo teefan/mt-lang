@@ -11,6 +11,7 @@ const booth_path: cstr = c"../resources/booth.png"
 const help_text: cstr = c"A/D to spin\nmouse wheel to change separation (aka 'angle')"
 const credit_text: cstr = c"redbooth model (c) kluchek under cc 4.0"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

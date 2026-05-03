@@ -15,6 +15,7 @@ const moon_orbit_radius: f32 = 1.5
 const orbit_text: cstr = c"EARTH ORBITING AROUND THE SUN!"
 const window_title: cstr = c"raylib [models] example - rlgl solar system"
 
+
 def draw_sphere_basic(color: rl.Color) -> void:
     let rings = 16
     let slices = 16
@@ -48,6 +49,7 @@ def draw_sphere_basic(color: rl.Color) -> void:
             rlgl.rlVertex3f(cos_lat1 * sin_longitude1, sin_lat1, cos_lat1 * cos_longitude1)
 
     rlgl.rlEnd()
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

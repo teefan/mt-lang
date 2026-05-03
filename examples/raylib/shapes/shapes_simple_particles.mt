@@ -30,6 +30,7 @@ const type_help_text: cstr = c"LEFT/RIGHT: Change Particle Type (Water, Smoke, F
 const negative_rate_format: cstr = c"Particles every %d frames | Type: %s"
 const positive_rate_format: cstr = c"%d Particles per frame | Type: %s"
 
+
 def particle_type_name(particle_type: i32) -> cstr:
     if particle_type == ParticleType.WATER:
         return c"WATER"
@@ -37,8 +38,10 @@ def particle_type_name(particle_type: i32) -> cstr:
         return c"SMOKE"
     return c"FIRE"
 
+
 def next_buffer_index(index: i32) -> i32:
     return (index + 1) % max_particles
+
 
 def add_to_circular_buffer(head: ref[i32], tail: i32) -> i32:
     if next_buffer_index(read(head)) != tail:
@@ -46,6 +49,7 @@ def add_to_circular_buffer(head: ref[i32], tail: i32) -> i32:
         read(head) = next_buffer_index(read(head))
         return particle_index
     return -1
+
 
 def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_position: rl.Vector2, particle_type: i32) -> void:
     let particle_index = add_to_circular_buffer(head, tail)
@@ -76,6 +80,7 @@ def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_p
         y = speed * math.sinf(direction),
     )
     return
+
 
 def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32, height: i32) -> void:
     var particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
@@ -119,11 +124,13 @@ def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32,
         index = next_buffer_index(index)
     return
 
+
 def update_circular_buffer(particles: ptr[Particle], head: i32, tail: ref[i32]) -> void:
     let particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
     while read(tail) != head and not particles_view[read(tail)].alive:
         read(tail) = next_buffer_index(read(tail))
     return
+
 
 def draw_particles(particles: ptr[Particle], head: i32, tail: i32) -> void:
     let particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
@@ -133,6 +140,7 @@ def draw_particles(particles: ptr[Particle], head: i32, tail: i32) -> void:
             rl.DrawCircleV(particles_view[index].position, particles_view[index].radius, particles_view[index].color)
         index = next_buffer_index(index)
     return
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

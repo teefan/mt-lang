@@ -17,65 +17,81 @@ const upper_body_mode_text: cstr = c"Upper/Lower Body Blending"
 const uniform_mode_text: cstr = c"Uniform Blending"
 const window_title: cstr = c"raylib [models] example - animation blend custom"
 
+
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
+
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
         return read(anims + index)
 
+
 def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of(ref_of((anims + index).name[0])))
+
 
 def model_animation_pose(anim: rl.ModelAnimation, frame: i32) -> rl.ModelAnimPose:
     unsafe:
         return read(anim.keyframePoses + frame)
 
+
 def pose_transform(pose: rl.ModelAnimPose, index: i32) -> rl.Transform:
     unsafe:
         return read(pose + index)
+
 
 def bind_pose_transform(skeleton: rl.ModelSkeleton, index: i32) -> rl.Transform:
     unsafe:
         return read(skeleton.bindPose + index)
 
+
 def skeleton_bone_name(skeleton: rl.ModelSkeleton, index: i32) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of(ref_of((skeleton.bones + index).name[0])))
+
 
 def model_value(model: ptr[rl.Model]) -> rl.Model:
     unsafe:
         return read(model)
 
+
 def model_mesh(model: rl.Model, index: i32) -> rl.Mesh:
     unsafe:
         return model.meshes[index]
+
 
 def model_bone_matrix(model: rl.Model, index: i32) -> rl.Matrix:
     unsafe:
         return read(model.boneMatrices + index)
 
+
 def set_model_bone_matrix(model: rl.Model, index: i32, matrix: rl.Matrix) -> void:
     unsafe:
         read(model.boneMatrices + index) = matrix
+
 
 def read_f32(values: ptr[f32], index: i32) -> f32:
     unsafe:
         return read(values + index)
 
+
 def write_f32(values: ptr[f32], index: i32, value: f32) -> void:
     unsafe:
         read(values + index) = value
+
 
 def read_u8(values: ptr[u8], index: i32) -> u8:
     unsafe:
         return read(values + index)
 
+
 def mesh_vbo_id(mesh: rl.Mesh, index: i32) -> u32:
     unsafe:
         return read(mesh.vboId + index)
+
 
 def is_upper_body_bone(bone_name: cstr) -> bool:
     if rl.TextIsEqual(bone_name, c"spine") or rl.TextIsEqual(bone_name, c"spine1") or rl.TextIsEqual(bone_name, c"spine2"):
@@ -105,6 +121,7 @@ def is_upper_body_bone(bone_name: cstr) -> bool:
         return true
 
     return false
+
 
 def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation, frame0: i32, anim1: rl.ModelAnimation, frame1: i32, blend: f32, upper_body_blend: bool) -> void:
     let current_model = model_value(model)
@@ -200,6 +217,7 @@ def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation,
                 mesh.vertexCount * 3 * 4,
                 0,
             )
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

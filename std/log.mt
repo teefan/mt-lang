@@ -10,6 +10,7 @@ pub enum Level: u8
     warn = 3
     error = 4
 
+
 pub def level_name(level: Level) -> str:
     match level:
         Level.debug:
@@ -20,6 +21,7 @@ pub def level_name(level: Level) -> str:
             return "warn"
         Level.error:
             return "error"
+
 
 pub def write(level: Level, message: str) -> bool:
     var line = string.String.create()
@@ -32,14 +34,18 @@ pub def write(level: Level, message: str) -> bool:
     let ok = io.write_error_line(line.as_str())
     return ok
 
+
 pub def debug(message: str) -> bool:
     return write(Level.debug, message)
+
 
 pub def info(message: str) -> bool:
     return write(Level.info, message)
 
+
 pub def warn(message: str) -> bool:
     return write(Level.warn, message)
+
 
 pub def error(message: str) -> bool:
     return write(Level.error, message)

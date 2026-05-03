@@ -15,6 +15,7 @@ const texture_path: cstr = c"../resources/cubicmap_atlas.png"
 const light_path: cstr = c"../resources/spark_flame.png"
 const lightmap_label_format: cstr = c"LIGHTMAP: %ix%i pixels"
 
+
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)

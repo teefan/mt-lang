@@ -8,6 +8,7 @@ const screen_height: i32 = 450
 const window_title: cstr = c"raylib [textures] example - image generation"
 const cycle_message: cstr = c"MOUSE LEFT BUTTON to CYCLE PROCEDURAL TEXTURES"
 
+
 def texture_label(texture_index: i32) -> cstr:
     if texture_index == 0:
         return c"VERTICAL GRADIENT"
@@ -27,6 +28,7 @@ def texture_label(texture_index: i32) -> cstr:
         return c"PERLIN NOISE"
     return c"CELLULAR"
 
+
 def texture_label_color(texture_index: i32) -> rl.Color:
     if texture_index <= 2:
         return rl.RAYWHITE
@@ -37,6 +39,7 @@ def texture_label_color(texture_index: i32) -> rl.Color:
     elif texture_index <= 7:
         return rl.RED
     return rl.RAYWHITE
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

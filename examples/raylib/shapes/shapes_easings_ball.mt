@@ -9,12 +9,15 @@ const screen_height: i32 = 450
 const window_title: cstr = c"raylib [shapes] example - easings ball"
 const replay_text: cstr = c"PRESS [ENTER] TO PLAY AGAIN!"
 
+
 def pow2(exponent: f32) -> f32:
     return math.expf(math.logf(2.0) * exponent)
+
 
 def ease_cubic_out(t: f32, b: f32, c: f32, d: f32) -> f32:
     let normalized = t / d - 1.0
     return c * (normalized * normalized * normalized + 1.0) + b
+
 
 def ease_elastic_in(t: f32, b: f32, c: f32, d: f32) -> f32:
     if t == 0.0:
@@ -32,6 +35,7 @@ def ease_elastic_in(t: f32, b: f32, c: f32, d: f32) -> f32:
     let post_fix = amplitude * pow2(10.0 * normalized)
     return -(post_fix * math.sinf((normalized * d - shift) * mt_math.tau / period)) + b
 
+
 def ease_elastic_out(t: f32, b: f32, c: f32, d: f32) -> f32:
     if t == 0.0:
         return b
@@ -45,6 +49,7 @@ def ease_elastic_out(t: f32, b: f32, c: f32, d: f32) -> f32:
     let shift = period / 4.0
 
     return amplitude * pow2(-10.0 * normalized) * math.sinf((normalized * d - shift) * mt_math.tau / period) + c + b
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

@@ -13,6 +13,7 @@ const window_title: cstr = c"raylib [textures] example - clipboard image"
 const help_text: cstr = c"Clipboard Image - Ctrl+V to Paste and R to Reset "
 const clipboard_error_text: cstr = c"IMAGE: Could not retrieve image from clipboard"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

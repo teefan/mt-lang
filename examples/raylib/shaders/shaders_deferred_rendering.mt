@@ -42,12 +42,15 @@ const toggle_lights_text: cstr = c"Toggle lights keys: [Y][R][G][B]"
 const switch_textures_text: cstr = c"Switch G-buffer textures: [1][2][3][4]"
 const cube_scale: f32 = 0.25
 
+
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
 
+
 def gbuffer_texture(id: u32, width: i32, height: i32) -> rl.Texture:
     return rl.Texture(id = id, width = width, height = height, mipmaps = 1, format = 0)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

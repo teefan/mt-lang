@@ -7,6 +7,7 @@ const screen_height: i32 = 450
 const window_title: cstr = c"raylib [core] example - random values"
 const help_text: cstr = c"Every 2 seconds a new random value is generated:"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

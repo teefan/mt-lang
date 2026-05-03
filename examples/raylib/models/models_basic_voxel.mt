@@ -10,11 +10,14 @@ const window_title: cstr = c"raylib [models] example - basic voxel"
 const remove_text: cstr = c"Left-click a voxel to remove it!"
 const move_text: cstr = c"WASD to move, mouse to look around"
 
+
 def voxel_index(x: i32, y: i32, z: i32) -> i32:
     return x * world_size * world_size + y * world_size + z
 
+
 def voxel_position(x: i32, y: i32, z: i32) -> rl.Vector3:
     return rl.Vector3(x = f32<-x, y = f32<-y, z = f32<-z)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

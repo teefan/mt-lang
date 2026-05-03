@@ -9,6 +9,7 @@ const help_text: cstr = c"Use the scroll wheel to change the fps limit, r to res
 const delta_text: cstr = c"FUNC: x += GetFrameTime()*speed"
 const frame_text: cstr = c"FUNC: x += speed"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

@@ -18,11 +18,13 @@ const right_stick_deadzone_y: f32 = 0.1
 const left_trigger_deadzone: f32 = -0.9
 const right_trigger_deadzone: f32 = -0.9
 
+
 def gamepad_name_matches(gamepad_name: cstr, alias_one: cstr, alias_two: cstr) -> bool:
     let lower_gamepad_name = rl.TextToLower(gamepad_name)
     unsafe:
         let lower_gamepad_name_cstr = cstr<-lower_gamepad_name
         return rl.TextFindIndex(lower_gamepad_name_cstr, alias_one) > -1 or rl.TextFindIndex(lower_gamepad_name_cstr, alias_two) > -1
+
 
 def draw_stick(center_x: i32, center_y: i32, outer_radius: f32, inner_radius: f32, stick_x: f32, stick_y: f32, pressed: bool) -> void:
     var stick_color = rl.BLACK
@@ -34,10 +36,12 @@ def draw_stick(center_x: i32, center_y: i32, outer_radius: f32, inner_radius: f3
     rl.DrawCircle(center_x + i32<-(stick_x * 20.0), center_y + i32<-(stick_y * 20.0), 25.0, stick_color)
     return
 
+
 def draw_trigger_bar(pos_x: i32, pos_y: i32, trigger_value: f32) -> void:
     rl.DrawRectangle(pos_x, pos_y, 15, 70, rl.GRAY)
     rl.DrawRectangle(pos_x, pos_y, 15, i32<-(((1.0 + trigger_value) / 2.0) * 70.0), rl.RED)
     return
+
 
 def draw_xbox_gamepad(gamepad: i32, texture: rl.Texture2D, left_stick_x: f32, left_stick_y: f32, right_stick_x: f32, right_stick_y: f32, left_trigger: f32, right_trigger: f32) -> void:
     rl.DrawTexture(texture, 0, 0, rl.DARKGRAY)
@@ -80,6 +84,7 @@ def draw_xbox_gamepad(gamepad: i32, texture: rl.Texture2D, left_stick_x: f32, le
     draw_trigger_bar(604, 30, right_trigger)
     return
 
+
 def draw_ps_gamepad(gamepad: i32, texture: rl.Texture2D, left_stick_x: f32, left_stick_y: f32, right_stick_x: f32, right_stick_y: f32, left_trigger: f32, right_trigger: f32) -> void:
     rl.DrawTexture(texture, 0, 0, rl.DARKGRAY)
 
@@ -120,6 +125,7 @@ def draw_ps_gamepad(gamepad: i32, texture: rl.Texture2D, left_stick_x: f32, left
     draw_trigger_bar(169, 48, left_trigger)
     draw_trigger_bar(611, 48, right_trigger)
     return
+
 
 def draw_generic_gamepad(gamepad: i32, left_stick_x: f32, left_stick_y: f32, right_stick_x: f32, right_stick_y: f32, left_trigger: f32, right_trigger: f32) -> void:
     rl.DrawRectangleRounded(rl.Rectangle(x = 175.0, y = 110.0, width = 460.0, height = 220.0), 0.3, 16, rl.DARKGRAY)
@@ -174,11 +180,13 @@ def draw_generic_gamepad(gamepad: i32, left_stick_x: f32, left_stick_y: f32, rig
     draw_trigger_bar(644, 110, right_trigger)
     return
 
+
 def draw_axis_values(gamepad: i32, axis_count: i32) -> void:
     rl.DrawText(rl.TextFormat(c"DETECTED AXIS [%i]:", axis_count), 10, 50, 10, rl.MAROON)
     for axis_index in range(0, axis_count):
         rl.DrawText(rl.TextFormat(c"AXIS %i: %.02f", axis_index, rl.GetGamepadAxisMovement(gamepad, axis_index)), 20, 70 + 20 * axis_index, 10, rl.DARKGRAY)
     return
+
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

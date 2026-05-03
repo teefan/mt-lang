@@ -46,11 +46,13 @@ var frames_accumulated: c.Uint64 = 0
 var fps_last_tick: c.Uint64 = 0
 var past_tick: c.Uint64 = 0
 
+
 def min_f64(lhs: f64, rhs: f64) -> f64:
     if lhs < rhs:
         return lhs
 
     return rhs
+
 
 def max_f64(lhs: f64, rhs: f64) -> f64:
     if lhs > rhs:
@@ -58,8 +60,10 @@ def max_f64(lhs: f64, rhs: f64) -> f64:
 
     return rhs
 
+
 def clamp_f64(value: f64, min_value: f64, max_value: f64) -> f64:
     return max_f64(min_value, min_f64(max_value, value))
+
 
 def clamp_i32(value: i32, min_value: i32, max_value: i32) -> i32:
     if value < min_value:
@@ -69,6 +73,7 @@ def clamp_i32(value: i32, min_value: i32, max_value: i32) -> i32:
 
     return value
 
+
 def whose_mouse(mouse: c.SDL_MouseID) -> i32:
     for index in range(0, player_count):
         if players[index].mouse == mouse:
@@ -76,12 +81,14 @@ def whose_mouse(mouse: c.SDL_MouseID) -> i32:
 
     return -1
 
+
 def whose_keyboard(keyboard: c.SDL_KeyboardID) -> i32:
     for index in range(0, player_count):
         if players[index].keyboard == keyboard:
             return index
 
     return -1
+
 
 def set_player_color(index: i32) -> void:
     if index == 0:
@@ -106,10 +113,12 @@ def set_player_color(index: i32) -> void:
     players[index].color[1] = 255
     players[index].color[2] = 255
 
+
 def respawn_player(index: i32) -> void:
     players[index].pos[0] = f64<-(map_box_scale * (c.SDL_rand(256) - 128)) / 256.0
     players[index].pos[1] = f64<-(map_box_scale * (c.SDL_rand(256) - 128)) / 256.0
     players[index].pos[2] = f64<-(map_box_scale * (c.SDL_rand(256) - 128)) / 256.0
+
 
 def initialize_player(index: i32) -> void:
     let x_sign = if (index & 1) != 0: -1.0 else: 1.0
@@ -130,9 +139,11 @@ def initialize_player(index: i32) -> void:
     players[index].keyboard = 0
     set_player_color(index)
 
+
 def init_players() -> void:
     for index in range(0, max_player_count):
         initialize_player(index)
+
 
 def init_edges() -> void:
     let bound = f32<-map_box_scale
@@ -152,6 +163,7 @@ def init_edges() -> void:
             edges[index + 12 + map_box_scale][endpoint * 3] = distance
             edges[index + 12 + map_box_scale][endpoint * 3 + 1] = -bound
             edges[index + 12 + map_box_scale][endpoint * 3 + 2] = if endpoint != 0: bound else: -bound
+
 
 def shoot(shooter: i32) -> void:
     let x0 = players[shooter].pos[0]
@@ -191,6 +203,7 @@ def shoot(shooter: i32) -> void:
 
         if hit != 0:
             respawn_player(index)
+
 
 def update_players(dt_ns: c.Uint64) -> void:
     for index in range(0, player_count):
@@ -232,6 +245,7 @@ def update_players(dt_ns: c.Uint64) -> void:
         players[index].pos[1] = clamped_y
         players[index].pos[2] = clamped_z
 
+
 def draw_circle(radius: f32, x: f32, y: f32) -> void:
     var points = zero[array[c.SDL_FPoint, 33]]()
 
@@ -241,6 +255,7 @@ def draw_circle(radius: f32, x: f32, y: f32) -> void:
         points[index].y = y + (radius * c.SDL_sinf(angle))
 
     c.SDL_RenderLines(renderer, ptr_of(ref_of(points[0])), circle_draw_sides_len)
+
 
 def draw_clipped_segment(ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32, x: f32, y: f32, z: f32, w: f32) -> void:
     var start_x = ax
@@ -273,6 +288,7 @@ def draw_clipped_segment(ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32, x
     end_x = -z * end_x / end_z
     end_y = -z * end_y / end_z
     c.SDL_RenderLine(renderer, x + start_x, y - start_y, x + end_x, y - end_y)
+
 
 def render_frame() -> void:
     var output_width: i32 = 0
@@ -361,6 +377,7 @@ def render_frame() -> void:
     c.SDL_RenderDebugTextFormat(renderer, 0.0, 0.0, c"%zu fps", displayed_fps)
     c.SDL_RenderPresent(renderer)
 
+
 def set_wasd_bit(player_index: i32, scancode: c.SDL_Scancode, pressed: bool) -> void:
     var mask: u8 = 0
 
@@ -386,6 +403,7 @@ def set_wasd_bit(player_index: i32, scancode: c.SDL_Scancode, pressed: bool) -> 
         players[player_index].wasd |= mask
     else:
         players[player_index].wasd &= u8<-~mask
+
 
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
@@ -454,6 +472,7 @@ def pump_events() -> bool:
 
     return true
 
+
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     c.SDL_SetAppMetadata(c"Example splitscreen shooter game", c"1.0", c"com.example.woodeneye-008")
     c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.url", c"https://examples.libsdl.org/SDL3/demo/02-woodeneye-008/")
@@ -502,6 +521,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
             c.SDL_DelayNS(frame_ns - elapsed)
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

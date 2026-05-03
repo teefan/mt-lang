@@ -6,6 +6,7 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const cat_path: str = "../../raylib/resources/cat.png"
 
+
 def normalize_kernel(kernel: array[f32, 9]) -> array[f32, 9]:
     var values = kernel
     var sum: f32 = 0.0
@@ -18,6 +19,7 @@ def normalize_kernel(kernel: array[f32, 9]) -> array[f32, 9]:
 
     return values
 
+
 def apply_kernel(image: rl.Image, kernel: array[f32, 9], passes: i32) -> rl.Image:
     var result = image
     var kernel_values = kernel
@@ -25,6 +27,7 @@ def apply_kernel(image: rl.Image, kernel: array[f32, 9], passes: i32) -> rl.Imag
         let _ = index
         rl.image_kernel_convolution(inout result, const_ptr_of(kernel_values[0]), 9)
     return result
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Image Kernel")

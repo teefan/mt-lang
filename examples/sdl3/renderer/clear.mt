@@ -11,6 +11,7 @@ const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 
+
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
@@ -19,6 +20,7 @@ def pump_events() -> bool:
             return false
 
     return true
+
 
 def render_frame() -> void:
     let seconds = f32<-c.SDL_GetTicks() / 1000.0
@@ -29,6 +31,7 @@ def render_frame() -> void:
     c.SDL_SetRenderDrawColorFloat(renderer, red, green, blue, c.SDL_ALPHA_OPAQUE_FLOAT)
     c.SDL_RenderClear(renderer)
     c.SDL_RenderPresent(renderer)
+
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     c.SDL_SetAppMetadata(c"Example Renderer Clear", c"1.0", c"com.example.renderer-clear")
@@ -49,6 +52,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

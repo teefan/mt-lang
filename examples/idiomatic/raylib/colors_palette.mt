@@ -7,6 +7,7 @@ const screen_height: i32 = 450
 const color_count: i32 = 21
 const grid_columns: i32 = 7
 
+
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Colors Palette")
     defer rl.close_window()

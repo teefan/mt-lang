@@ -7,6 +7,7 @@ const screen_height: i32 = 450
 const window_title: cstr = c"raylib [core] example - vr simulator"
 const distortion_shader_path: cstr = c"../resources/shaders/glsl330/distortion.fs"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

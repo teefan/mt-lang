@@ -11,8 +11,10 @@ const drag_drop_text: cstr = c"Drag & drop model to load mesh/texture."
 const selected_text: cstr = c"MODEL SELECTED"
 const castle_credit: cstr = c"(c) Castle 3D model by Alberto Cano"
 
+
 def is_supported_model_path(path: cstr) -> bool:
     return rl.IsFileExtension(path, c".obj") or rl.IsFileExtension(path, c".gltf") or rl.IsFileExtension(path, c".glb") or rl.IsFileExtension(path, c".vox") or rl.IsFileExtension(path, c".iqm") or rl.IsFileExtension(path, c".m3d")
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

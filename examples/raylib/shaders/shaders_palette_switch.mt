@@ -14,6 +14,7 @@ const selector_text: cstr = c"< >"
 const current_palette_text: cstr = c"CURRENT PALETTE:"
 const window_title: cstr = c"raylib [shaders] example - palette switch"
 
+
 def set_palette_uniform(shader: rl.Shader, location: i32, palette: array[i32, palette_value_count]) -> void:
     var palette_data = palette
     rl.SetShaderValueV(
@@ -23,6 +24,7 @@ def set_palette_uniform(shader: rl.Shader, location: i32, palette: array[i32, pa
         rl.ShaderUniformDataType.SHADER_UNIFORM_IVEC3,
         colors_per_palette,
     )
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

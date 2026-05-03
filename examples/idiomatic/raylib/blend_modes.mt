@@ -8,6 +8,7 @@ const background_path: str = "../../raylib/resources/cyberpunk_street_background
 const foreground_path: str = "../../raylib/resources/cyberpunk_street_foreground.png"
 const blend_count_max: i32 = 4
 
+
 def blend_label(blend_mode: i32) -> str:
     if blend_mode == rl.BlendMode.BLEND_ALPHA:
         return "Current: BLEND_ALPHA"
@@ -16,6 +17,7 @@ def blend_label(blend_mode: i32) -> str:
     elif blend_mode == rl.BlendMode.BLEND_MULTIPLIED:
         return "Current: BLEND_MULTIPLIED"
     return "Current: BLEND_ADD_COLORS"
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Blend Modes")

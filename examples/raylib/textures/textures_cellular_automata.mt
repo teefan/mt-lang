@@ -18,6 +18,7 @@ const lines_updated_per_frame: i32 = 4
 const presets_count: i32 = 10
 const window_title: cstr = c"raylib [textures] example - cellular automata"
 
+
 def compute_line(image: ref[rl.Image], line: i32, rule: i32) -> void:
     for index in range(1, image_width - 1):
         let prev_value = (
@@ -29,6 +30,7 @@ def compute_line(image: ref[rl.Image], line: i32, rule: i32) -> void:
         )
         let curr_value = (rule & (1 << prev_value)) != 0
         rl.ImageDrawPixel(ptr_of(image), index, line, if curr_value: rl.BLACK else: rl.RAYWHITE)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

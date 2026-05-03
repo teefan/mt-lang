@@ -19,6 +19,7 @@ pub struct HashMap[K, V]:
     hash_fn: fn(key: K) -> u64
     equals_fn: fn(left: K, right: K) -> bool
 
+
 pub def create[K, V](hash_fn: fn(key: K) -> u64, equals_fn: fn(left: K, right: K) -> bool) -> HashMap[K, V]:
     return HashMap[K, V](
         entries = null,
@@ -28,11 +29,14 @@ pub def create[K, V](hash_fn: fn(key: K) -> u64, equals_fn: fn(left: K, right: K
         equals_fn = equals_fn,
     )
 
+
 pub def count[K, V](items: HashMap[K, V]) -> usize:
     return items.len
 
+
 pub def capacity[K, V](items: HashMap[K, V]) -> usize:
     return items.capacity
+
 
 pub def release[K, V](items: ref[HashMap[K, V]]) -> void:
     heap.release(items.entries)
@@ -41,13 +45,16 @@ pub def release[K, V](items: ref[HashMap[K, V]]) -> void:
     items.capacity = 0
     return
 
+
 def index_for(hash: u64, capacity: usize) -> usize:
     return usize<-(hash % u64<-capacity)
+
 
 def should_grow(len: usize, capacity: usize) -> bool:
     if capacity == 0:
         return true
     return (len + 1) * 4 >= capacity * 3
+
 
 def insert_existing[K, V](entries: ptr[Entry[K, V]], capacity: usize, entry: Entry[K, V]) -> void:
     var index = index_for(entry.hash, capacity)
@@ -62,6 +69,7 @@ def insert_existing[K, V](entries: ptr[Entry[K, V]], capacity: usize, entry: Ent
         probes += 1
 
     panic(c"map.insert_existing table full")
+
 
 pub def try_reserve[K, V](items: ref[HashMap[K, V]], min_capacity: usize) -> bool:
     if min_capacity <= items.capacity:
@@ -95,10 +103,12 @@ pub def try_reserve[K, V](items: ref[HashMap[K, V]], min_capacity: usize) -> boo
     items.capacity = new_capacity
     return true
 
+
 pub def reserve[K, V](items: ref[HashMap[K, V]], min_capacity: usize) -> void:
     if not try_reserve[K, V](items, min_capacity):
         panic(c"map.reserve out of memory")
     return
+
 
 pub def try_put[K, V](items: ref[HashMap[K, V]], key: K, value_item: V) -> bool:
     if should_grow(items.len, items.capacity):
@@ -152,10 +162,12 @@ pub def try_put[K, V](items: ref[HashMap[K, V]], key: K, value_item: V) -> bool:
 
     return false
 
+
 pub def put[K, V](items: ref[HashMap[K, V]], key: K, value_item: V) -> void:
     if not try_put[K, V](items, key, value_item):
         panic(c"map.put out of memory")
     return
+
 
 pub def get_into[K, V](items: HashMap[K, V], key: K, target: ref[V]) -> bool:
     if items.capacity == 0:
@@ -182,6 +194,7 @@ pub def get_into[K, V](items: HashMap[K, V], key: K, target: ref[V]) -> bool:
 
     return false
 
+
 pub def contains[K, V](items: HashMap[K, V], key: K) -> bool:
     if items.capacity == 0:
         return false
@@ -205,6 +218,7 @@ pub def contains[K, V](items: HashMap[K, V], key: K) -> bool:
         probes += 1
 
     return false
+
 
 pub def remove[K, V](items: ref[HashMap[K, V]], key: K) -> bool:
     if items.capacity == 0:

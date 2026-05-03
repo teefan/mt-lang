@@ -8,6 +8,7 @@ const screen_height: i32 = 450
 const button_fx_path: str = "../../raylib/resources/buttonfx.wav"
 const button_path: str = "../../raylib/resources/button.png"
 
+
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Sprite Button")
     defer rl.close_window()

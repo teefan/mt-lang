@@ -10,6 +10,7 @@ const collision_text: cstr = c"COLLISION!"
 const collision_area_format: cstr = c"Collision Area: %i"
 const pause_text: cstr = c"Press SPACE to PAUSE/RESUME"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

@@ -9,6 +9,7 @@ const window_title: cstr = c"raylib [core] example - 2d camera split screen"
 const player_one_text: cstr = c"PLAYER1: W/S/A/D to move"
 const player_two_text: cstr = c"PLAYER2: UP/DOWN/LEFT/RIGHT to move"
 
+
 def draw_grid() -> void:
     var column = 0
     while column < screen_width / player_size + 1:
@@ -22,12 +23,14 @@ def draw_grid() -> void:
         rl.DrawLineV(rl.Vector2(x = 0.0, y = y), rl.Vector2(x = screen_width, y = y), rl.LIGHTGRAY)
         row += 1
 
+
 def draw_camera_scene(camera: rl.Camera2D, player1: rl.Rectangle, player2: rl.Rectangle) -> void:
     rl.BeginMode2D(camera)
     draw_grid()
     rl.DrawRectangleRec(player1, rl.RED)
     rl.DrawRectangleRec(player2, rl.BLUE)
     rl.EndMode2D()
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

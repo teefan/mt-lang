@@ -10,12 +10,15 @@ const output_text_size: i32 = 120
 const window_title: cstr = c"raylib [core] example - compute hash"
 const default_input_text: cstr = c"The quick brown fox jumps over the lazy dog."
 
+
 def readonly_text_box(bounds: gui.Rectangle, text: cstr, text_size: i32) -> void:
     unsafe:
         gui.GuiTextBox(bounds, ptr[char]<-text, text_size, false)
 
+
 def hash_crc32_text(hash_crc32: u32) -> cstr:
     return rl.TextFormat(c"%08X", hash_crc32)
+
 
 def hash_md5_text(hash_md5: ptr[u32]?) -> cstr:
     if hash_md5 == null:
@@ -30,6 +33,7 @@ def hash_md5_text(hash_md5: ptr[u32]?) -> cstr:
             read(hash_md5 + 3),
         )
 
+
 def hash_sha1_text(hash_sha1: ptr[u32]?) -> cstr:
     if hash_sha1 == null:
         return c"0000000000000000000000000000000000000000"
@@ -43,6 +47,7 @@ def hash_sha1_text(hash_sha1: ptr[u32]?) -> cstr:
             read(hash_sha1 + 3),
             read(hash_sha1 + 4),
         )
+
 
 def hash_sha256_text(hash_sha256: ptr[u32]?) -> cstr:
     if hash_sha256 == null:
@@ -61,12 +66,14 @@ def hash_sha256_text(hash_sha256: ptr[u32]?) -> cstr:
             read(hash_sha256 + 7),
         )
 
+
 def base64_display_text(base64_text: ptr[char]?) -> cstr:
     if base64_text == null:
         return c""
 
     unsafe:
         return cstr<-base64_text
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

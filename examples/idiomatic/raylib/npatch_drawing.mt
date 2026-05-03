@@ -6,10 +6,12 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const npatch_texture_path: str = "../../raylib/resources/ninepatch_button.png"
 
+
 def clamp_min(value: f32, minimum: f32) -> f32:
     if value < minimum:
         return minimum
     return value
+
 
 def clamp_width(value: f32) -> f32:
     if value < 1.0:
@@ -17,6 +19,7 @@ def clamp_width(value: f32) -> f32:
     if value > 300.0:
         return 300.0
     return value
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea N-Patch Drawing")

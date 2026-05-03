@@ -2,6 +2,7 @@ module examples.idiomatic.std.format_specifiers
 
 import std.io as io
 
+
 def main() -> i32:
     let pi: f64 = 3.14159265358979
     let ratio: f64 = 1.0 / 3.0

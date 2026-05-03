@@ -6,15 +6,18 @@ import std.rlgl as rlgl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 
+
 def emit_triangle_edge(start: rl.Vector2, finish: rl.Vector2, start_color: rl.Color, finish_color: rl.Color) -> void:
     rlgl.color_4ub(start_color.r, start_color.g, start_color.b, start_color.a)
     rlgl.vertex_2f(start.x, start.y)
     rlgl.color_4ub(finish_color.r, finish_color.g, finish_color.b, finish_color.a)
     rlgl.vertex_2f(finish.x, finish.y)
 
+
 def emit_triangle_point(point: rl.Vector2, color: rl.Color) -> void:
     rlgl.color_4ub(color.r, color.g, color.b, color.a)
     rlgl.vertex_2f(point.x, point.y)
+
 
 def main() -> i32:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

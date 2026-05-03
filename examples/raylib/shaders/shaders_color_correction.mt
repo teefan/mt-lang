@@ -27,6 +27,7 @@ const brightness_text: cstr = c"Brightness"
 const reset_button_text: cstr = c"Reset"
 const window_title: cstr = c"raylib [shaders] example - color correction"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

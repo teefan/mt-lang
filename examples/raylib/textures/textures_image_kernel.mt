@@ -7,6 +7,7 @@ const screen_height: i32 = 450
 const window_title: cstr = c"raylib [textures] example - image kernel"
 const cat_path: cstr = c"../resources/cat.png"
 
+
 def normalize_kernel(kernel: ptr[f32], size: i32) -> void:
     unsafe:
         var sum: f32 = 0.0
@@ -16,6 +17,7 @@ def normalize_kernel(kernel: ptr[f32], size: i32) -> void:
         if sum != 0.0:
             for index in range(0, size):
                 read(kernel + index) /= sum
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

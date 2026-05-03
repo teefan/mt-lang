@@ -6,29 +6,38 @@ enum Mode: i32
     a = 0
     b = 1
 
+
 async def choose_mode(flag: bool) -> Mode:
     return if flag: Mode.a else: Mode.b
+
 
 async def limit() -> i32:
     return 3
 
+
 async def idx() -> i32:
     return 0
+
 
 async def cond(value: i32) -> bool:
     return value < 2
 
+
 async def truthy() -> bool:
     return true
+
 
 async def falsy() -> bool:
     return false
 
+
 async def score_a() -> i32:
     return 10
 
+
 async def score_b() -> i32:
     return 20
+
 
 async def showcase() -> i32:
     var total = 0
@@ -62,6 +71,7 @@ async def showcase() -> i32:
             total += 1000
 
     return total
+
 
 async def main() -> i32:
     let delay = aio.sleep(1)

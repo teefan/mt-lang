@@ -10,6 +10,7 @@ const window_title: cstr = c"raylib [shapes] example - colors palette"
 const title_text: cstr = c"raylib colors palette"
 const help_text: cstr = c"press SPACE to see all colors"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

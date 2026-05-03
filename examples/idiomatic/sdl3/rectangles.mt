@@ -12,6 +12,7 @@ const rect_count: i32 = 16
 var window: ptr[sdl.Window]
 var renderer: ptr[sdl.Renderer]
 
+
 def pump_events() -> bool:
     var event = zero[sdl.Event]()
 
@@ -19,8 +20,8 @@ def pump_events() -> bool:
         if sdl.EventType.SDL_EVENT_QUIT == sdl.EventType.SDL_EVENT_QUIT:
             return false
 
-
     return true
+
 
 def render_frame() -> void:
     let now = i32<-sdl.get_ticks()
@@ -68,6 +69,7 @@ def render_frame() -> void:
     sdl.render_fill_rects(renderer, const_ptr_of(rects[0]), rect_count)
     sdl.render_present(renderer)
 
+
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     sdl.set_app_metadata("Example Renderer Rectangles", "1.0", "com.example.renderer-rectangles")
 
@@ -87,6 +89,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return sdl.run_app(argc, argv, app_main)

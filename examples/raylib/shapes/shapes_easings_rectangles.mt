@@ -14,12 +14,15 @@ const play_time_in_frames: i32 = 240
 const window_title: cstr = c"raylib [shapes] example - easings rectangles"
 const replay_text: cstr = c"PRESS [SPACE] TO PLAY AGAIN!"
 
+
 def ease_linear_in(t: f32, b: f32, c: f32, d: f32) -> f32:
     return c * t / d + b
+
 
 def ease_circ_out(t: f32, b: f32, c: f32, d: f32) -> f32:
     let normalized = t / d - 1.0
     return c * math.sqrtf(1.0 - normalized * normalized) + b
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

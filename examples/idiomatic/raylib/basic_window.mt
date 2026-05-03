@@ -6,6 +6,7 @@ const screen_width: i32 = 960
 const screen_height: i32 = 540
 const accent_radius: f32 = 48.0
 
+
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea")
     defer rl.close_window()

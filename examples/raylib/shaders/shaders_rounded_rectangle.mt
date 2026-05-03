@@ -39,6 +39,7 @@ const rounded_combined_text: cstr = c"Rectangle with all three combined"
 const credit_text: cstr = c"(c) Rounded rectangle SDF by Inigo Quilez. MIT License."
 const window_title: cstr = c"raylib [shaders] example - rounded rectangle"
 
+
 def normalized_color(color: rl.Color) -> array[f32, 4]:
     return array[f32, 4](
         f32<-color.r / 255.0,
@@ -47,34 +48,43 @@ def normalized_color(color: rl.Color) -> array[f32, 4]:
         f32<-color.a / 255.0,
     )
 
+
 def rectangle_components(rectangle: rl.Rectangle) -> array[f32, 4]:
     return array[f32, 4](rectangle.x, rectangle.y, rectangle.width, rectangle.height)
+
 
 def vector4_components(vector: rl.Vector4) -> array[f32, 4]:
     return array[f32, 4](vector.x, vector.y, vector.z, vector.w)
 
+
 def vector2_components(vector: rl.Vector2) -> array[f32, 2]:
     return array[f32, 2](vector.x, vector.y)
+
 
 def set_vec4_uniform(shader: rl.Shader, location: i32, x: f32, y: f32, z: f32, w: f32) -> void:
     var values = array[f32, 4](x, y, z, w)
     rl.SetShaderValue(shader, location, ptr_of(ref_of(values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
+
 def set_vec2_uniform(shader: rl.Shader, location: i32, x: f32, y: f32) -> void:
     var values = array[f32, 2](x, y)
     rl.SetShaderValue(shader, location, ptr_of(ref_of(values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+
 
 def set_float_uniform(shader: rl.Shader, location: i32, value: f32) -> void:
     var storage: f32 = value
     rl.SetShaderValue(shader, location, ptr_of(ref_of(storage)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
+
 def set_rectangle_uniform(shader: rl.Shader, rounded_rectangle: RoundedRectangle, rectangle: rl.Rectangle) -> void:
     let rectangle_values = rectangle_components(rectangle)
     set_vec4_uniform(shader, rounded_rectangle.rectangle_loc, rectangle_values[0], rectangle_values[1], rectangle_values[2], rectangle_values[3])
 
+
 def set_color_uniform(shader: rl.Shader, location: i32, color: rl.Color) -> void:
     let color_values = normalized_color(color)
     set_vec4_uniform(shader, location, color_values[0], color_values[1], color_values[2], color_values[3])
+
 
 def update_rounded_rectangle(rounded_rectangle: RoundedRectangle, shader: rl.Shader) -> void:
     let radius_values = vector4_components(rounded_rectangle.corner_radius)
@@ -88,6 +98,7 @@ def update_rounded_rectangle(rounded_rectangle: RoundedRectangle, shader: rl.Sha
     set_vec2_uniform(shader, rounded_rectangle.shadow_offset_loc, shadow_offset_values[0], shadow_offset_values[1])
     set_float_uniform(shader, rounded_rectangle.shadow_scale_loc, shadow_scale)
     set_float_uniform(shader, rounded_rectangle.border_thickness_loc, border_thickness)
+
 
 def create_rounded_rectangle(corner_radius: rl.Vector4, shadow_radius: f32, shadow_offset: rl.Vector2, shadow_scale: f32, border_thickness: f32, shader: rl.Shader) -> RoundedRectangle:
     let rounded_rectangle = RoundedRectangle(
@@ -110,6 +121,7 @@ def create_rounded_rectangle(corner_radius: rl.Vector4, shadow_radius: f32, shad
     update_rounded_rectangle(rounded_rectangle, shader)
     return rounded_rectangle
 
+
 def flipped_rectangle(rectangle: rl.Rectangle) -> rl.Rectangle:
     return rl.Rectangle(
         x = rectangle.x,
@@ -117,6 +129,7 @@ def flipped_rectangle(rectangle: rl.Rectangle) -> rl.Rectangle:
         width = rectangle.width,
         height = rectangle.height,
     )
+
 
 def draw_shader_pass(shader: rl.Shader, rounded_rectangle: RoundedRectangle, rectangle: rl.Rectangle, color: rl.Color, shadow_color: rl.Color, border_color: rl.Color) -> void:
     set_rectangle_uniform(shader, rounded_rectangle, flipped_rectangle(rectangle))
@@ -127,6 +140,7 @@ def draw_shader_pass(shader: rl.Shader, rounded_rectangle: RoundedRectangle, rec
     rl.BeginShaderMode(shader)
     rl.DrawRectangle(0, 0, screen_width, screen_height, rl.WHITE)
     rl.EndShaderMode()
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

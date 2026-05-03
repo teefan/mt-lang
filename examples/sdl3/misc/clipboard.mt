@@ -22,8 +22,10 @@ var paste_pressed: bool = false
 var current_time: array[char, 64] = zero[array[char, 64]]()
 var pasted_str: ptr[char]? = null
 
+
 def text_width(text: cstr) -> f32:
     return f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(text)
+
 
 def min_usize(left: usize, right: usize) -> usize:
     if left < right:
@@ -31,12 +33,15 @@ def min_usize(left: usize, right: usize) -> usize:
 
     return right
 
+
 def point_in_rect(point: c.SDL_FPoint, rect: c.SDL_FRect) -> bool:
     return point.x >= rect.x and point.x < (rect.x + rect.w) and point.y >= rect.y and point.y < (rect.y + rect.h)
+
 
 def current_time_text() -> cstr:
     unsafe:
         return cstr<-ptr_of(ref_of(current_time[0]))
+
 
 def calculate_current_time_string() -> void:
     let month_names = array[cstr, 12](
@@ -73,6 +78,7 @@ def calculate_current_time_string() -> void:
             dt.second,
         )
 
+
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
@@ -107,6 +113,7 @@ def pump_events() -> bool:
 
     return true
 
+
 def render_truncated_line(text: ptr[char], x: f32, y: f32, max_chars_per_line: usize) -> void:
     unsafe:
         let line_length = min_usize(c.SDL_strlen(cstr<-text), max_chars_per_line)
@@ -115,6 +122,7 @@ def render_truncated_line(text: ptr[char], x: f32, y: f32, max_chars_per_line: u
         read(end_ptr) = char<-0
         c.SDL_RenderDebugText(renderer, x, y, cstr<-text)
         read(end_ptr) = saved_char
+
 
 def render_pasted_text() -> void:
     let initial_text = pasted_str
@@ -170,6 +178,7 @@ def render_pasted_text() -> void:
     if final_line != null and (h - y) >= f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE:
         render_truncated_line(final_line, x, y, max_chars_per_line)
 
+
 def render_frame() -> void:
     calculate_current_time_string()
 
@@ -212,6 +221,7 @@ def render_frame() -> void:
     c.SDL_RenderDebugText(renderer, paste_button_rect.x + 5.0, paste_button_rect.y + 5.0, paste_button_text)
 
     c.SDL_RenderPresent(renderer)
+
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     c.SDL_SetAppMetadata(c"Example Misc Clipboard", c"1.0", c"com.example.misc-clipboard")
@@ -258,6 +268,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

@@ -23,6 +23,7 @@ const show_percentages_text: cstr = c"Show Percentages"
 const make_donut_text: cstr = c"Make Donut"
 const inner_radius_text: cstr = c"Inner Radius"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

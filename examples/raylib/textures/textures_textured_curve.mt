@@ -16,6 +16,7 @@ const help_text: cstr = c"Drag points to move curve, press SPACE to show/hide ba
 const width_format: cstr = c"Curve width: %2.0f (Use + and - to adjust)"
 const segments_format: cstr = c"Curve segments: %d (Use LEFT and RIGHT to adjust)"
 
+
 def hovered_handle(mouse: rl.Vector2, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2) -> i32:
     if rl.CheckCollisionPointCircle(mouse, curve_start_position, 6.0):
         return start_handle
@@ -26,6 +27,7 @@ def hovered_handle(mouse: rl.Vector2, curve_start_position: rl.Vector2, curve_st
     if rl.CheckCollisionPointCircle(mouse, curve_end_position_tangent, 6.0):
         return end_tangent_handle
     return -1
+
 
 def draw_textured_curve(tex_road: rl.Texture, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2, curve_width: f32, curve_segments: i32) -> void:
     let step = 1.0 / f32<-curve_segments
@@ -71,6 +73,7 @@ def draw_textured_curve(tex_road: rl.Texture, curve_start_position: rl.Vector2, 
         previous_v = v
 
     rlgl.rlSetTexture(u32<-0)
+
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_VSYNC_HINT | rl.ConfigFlags.FLAG_MSAA_4X_HINT)

@@ -12,6 +12,7 @@ const scissor_height: f32 = 300.0
 const scissor_half_width: f32 = 150.0
 const scissor_half_height: f32 = 150.0
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

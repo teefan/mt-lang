@@ -9,6 +9,7 @@ const scissor_height: i32 = 300
 const scissor_half_width: i32 = 150
 const scissor_half_height: i32 = 150
 
+
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Scissor Test")
     defer rl.close_window()

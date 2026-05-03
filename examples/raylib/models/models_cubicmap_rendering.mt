@@ -10,6 +10,7 @@ const atlas_path: cstr = c"../resources/cubicmap_atlas.png"
 const cubicmap_caption_top: cstr = c"cubicmap image used to"
 const cubicmap_caption_bottom: cstr = c"generate map 3d model"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

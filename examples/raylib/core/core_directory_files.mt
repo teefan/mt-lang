@@ -10,6 +10,7 @@ const window_title: cstr = c"raylib [core] example - directory files"
 const filter_text: cstr = c".png;.c"
 const back_button_text: cstr = c"<"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

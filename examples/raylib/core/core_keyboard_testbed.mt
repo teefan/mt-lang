@@ -8,6 +8,7 @@ const key_rec_spacing: i32 = 4
 const window_title: cstr = c"raylib [core] example - keyboard testbed"
 const keyboard_layout_text: cstr = c"KEYBOARD LAYOUT: ENG-US"
 
+
 def key_text(key: i32) -> cstr:
     if key == rl.KeyboardKey.KEY_APOSTROPHE:
         return c"'"
@@ -175,6 +176,7 @@ def key_text(key: i32) -> cstr:
         return c"ALTGR"
     return c""
 
+
 def draw_keyboard_key(bounds: rl.Rectangle, key: i32) -> void:
     if key == rl.KeyboardKey.KEY_NULL:
         rl.DrawRectangleLinesEx(bounds, 2.0, rl.LIGHTGRAY)
@@ -190,6 +192,7 @@ def draw_keyboard_key(bounds: rl.Rectangle, key: i32) -> void:
     if rl.CheckCollisionPointRec(rl.GetMousePosition(), bounds):
         rl.DrawRectangleRec(bounds, rl.Fade(rl.RED, 0.2))
         rl.DrawRectangleLinesEx(bounds, 3.0, rl.RED)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

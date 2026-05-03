@@ -15,10 +15,12 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const smoke_path: str = "../../raylib/resources/spark_flame.png"
 
+
 def blend_label(blend_mode: i32) -> str:
     if blend_mode == rl.BlendMode.BLEND_ALPHA:
         return "ALPHA BLENDING"
     return "ADDITIVE BLENDING"
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Particles Blending")

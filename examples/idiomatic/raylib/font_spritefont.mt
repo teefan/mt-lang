@@ -11,12 +11,14 @@ const font1_path: str = "../../raylib/resources/custom_mecha.png"
 const font2_path: str = "../../raylib/resources/custom_alagard.png"
 const font3_path: str = "../../raylib/resources/custom_jupiter_crash.png"
 
+
 def centered_position(font: rl.Font, text: str, spacing: f32, y_offset: f32) -> rl.Vector2:
     let size = rl.measure_text_ex(font, text, f32<-font.baseSize, spacing)
     return rl.Vector2(
         x = f32<-screen_width / 2.0 - size.x / 2.0,
         y = f32<-screen_height / 2.0 - f32<-font.baseSize / 2.0 + y_offset,
     )
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Sprite Font")

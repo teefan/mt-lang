@@ -8,6 +8,7 @@ const window_title: cstr = c"raylib [core] example - world screen"
 const enemy_text: cstr = c"Enemy: 100/100"
 const help_text: cstr = c"Text 2d should be always on top of the cube"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

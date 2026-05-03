@@ -9,10 +9,12 @@ const npatch_texture_path: cstr = c"../resources/ninepatch_button.png"
 const help_text: cstr = c"Move the mouse to stretch or shrink the n-patches"
 const texture_label: cstr = c"TEXTURE"
 
+
 def clamp_min(value: f32, minimum: f32) -> f32:
     if value < minimum:
         return minimum
     return value
+
 
 def clamp_width(value: f32) -> f32:
     if value < 1.0:
@@ -20,6 +22,7 @@ def clamp_width(value: f32) -> f32:
     if value > 300.0:
         return 300.0
     return value
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

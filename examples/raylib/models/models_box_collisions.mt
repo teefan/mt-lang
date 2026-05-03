@@ -7,12 +7,14 @@ const screen_height: i32 = 450
 const window_title: cstr = c"raylib [models] example - box collisions"
 const collision_help_text: cstr = c"Move player with arrow keys to collide"
 
+
 def centered_box(position: rl.Vector3, size: rl.Vector3) -> rl.BoundingBox:
     let half = rl.Vector3(x = size.x / 2.0, y = size.y / 2.0, z = size.z / 2.0)
     return rl.BoundingBox(
         min = rl.Vector3(x = position.x - half.x, y = position.y - half.y, z = position.z - half.z),
         max = rl.Vector3(x = position.x + half.x, y = position.y + half.y, z = position.z + half.z),
     )
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

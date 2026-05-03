@@ -11,6 +11,7 @@ const panel_width: f32 = 270.0
 const panel_margin: f32 = 5.0
 const radius: f32 = 205.0
 
+
 def draw_slice_label(center: rl.Vector2, mid_angle: f32, label_text: cstr) -> void:
     let text_size = rl.measure_text_ex(rl.get_font_default(), label_text, 20.0, 1.0)
     let label_radius = radius * 0.7
@@ -19,6 +20,7 @@ def draw_slice_label(center: rl.Vector2, mid_angle: f32, label_text: cstr) -> vo
         y = center.y + math.sin(mid_angle * math.deg2rad) * label_radius - text_size.y / 2.0,
     )
     rl.draw_text(label_text, i32<-label_pos.x, i32<-label_pos.y, 20, rl.WHITE)
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Pie Chart")

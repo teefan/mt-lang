@@ -12,6 +12,7 @@ const custom_shader_text: cstr = c"USING CUSTOM SHADER"
 const credit_text: cstr = c"(c) Fudesumi sprite by Eiden Marsal"
 const window_title: cstr = c"raylib [shaders] example - shapes textures"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

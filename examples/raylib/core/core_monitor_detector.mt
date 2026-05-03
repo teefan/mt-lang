@@ -8,6 +8,7 @@ const window_title: cstr = c"raylib [core] example - monitor detector"
 const help_text: cstr = c"Press [Enter] to move window to next monitor available"
 const current_label: cstr = c"CURRENT"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

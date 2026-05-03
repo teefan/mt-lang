@@ -10,29 +10,36 @@ const current_animation_format: cstr = c"Current animation: %s"
 const skeleton_text: cstr = c"Press SPACE to draw skeleton"
 const credit_text: cstr = c"(c) CesiumMan model by KhronosGroup"
 
+
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
+
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
         return read(anims + index)
 
+
 def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of(ref_of((anims + index).name[0])))
+
 
 def model_animation_pose(anim: rl.ModelAnimation, frame: i32) -> rl.ModelAnimPose:
     unsafe:
         return read(anim.keyframePoses + frame)
 
+
 def pose_translation(pose: rl.ModelAnimPose, index: i32) -> rl.Vector3:
     unsafe:
         return (pose + index).translation
 
+
 def skeleton_bone_parent(skeleton: rl.ModelSkeleton, index: i32) -> i32:
     unsafe:
         return (skeleton.bones + index).parent
+
 
 def draw_model_skeleton(skeleton: rl.ModelSkeleton, pose: rl.ModelAnimPose, scale: f32, color: rl.Color) -> void:
     for index in range(0, skeleton.boneCount - 1):
@@ -42,6 +49,7 @@ def draw_model_skeleton(skeleton: rl.ModelSkeleton, pose: rl.ModelAnimPose, scal
         let parent = skeleton_bone_parent(skeleton, index)
         if parent >= 0:
             rl.DrawLine3D(translation, pose_translation(pose, parent), color)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

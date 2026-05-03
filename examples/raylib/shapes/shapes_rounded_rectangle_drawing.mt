@@ -10,6 +10,7 @@ const mode_format: cstr = c"MODE: %s"
 const manual_mode: cstr = c"MANUAL"
 const auto_mode: cstr = c"AUTO"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

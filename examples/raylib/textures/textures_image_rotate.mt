@@ -9,6 +9,7 @@ const window_title: cstr = c"raylib [textures] example - image rotate"
 const logo_path: cstr = c"../resources/raylib_logo.png"
 const help_text: cstr = c"Press LEFT MOUSE BUTTON to rotate the image clockwise"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

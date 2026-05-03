@@ -7,6 +7,7 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const save_path: str = "my_amazing_texture_painting.png"
 
+
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Mouse Painting")
     defer rl.close_window()

@@ -12,6 +12,7 @@ const screen_height: i32 = 540
 const logo_path: str = "../../raylib/resources/raylib_logo.png"
 const sound_path: str = "../../raylib/resources/sound.wav"
 
+
 def load_logo_bytes() -> bytes.Buffer:
     var scratch = arena.create(96)
     defer scratch.release()
@@ -21,6 +22,7 @@ def load_logo_bytes() -> bytes.Buffer:
         panic("could not read raylib logo bytes")
     return loaded.value
 
+
 def load_sound_bytes() -> bytes.Buffer:
     var scratch = arena.create(96)
     defer scratch.release()
@@ -29,6 +31,7 @@ def load_sound_bytes() -> bytes.Buffer:
     if not loaded.is_ok:
         panic("could not read raylib sound bytes")
     return loaded.value
+
 
 def texture_from_png_bytes(data: bytes.Buffer) -> rl.Texture2D:
     var scratch = arena.create(16)
@@ -45,6 +48,7 @@ def texture_from_png_bytes(data: bytes.Buffer) -> rl.Texture2D:
         panic("raylib could not upload texture bytes")
     return texture
 
+
 def sound_from_wav_bytes(data: bytes.Buffer) -> rl.Sound:
     var scratch = arena.create(16)
     defer scratch.release()
@@ -59,6 +63,7 @@ def sound_from_wav_bytes(data: bytes.Buffer) -> rl.Sound:
     if not rl.is_sound_valid(sound):
         panic("raylib could not create sound")
     return sound
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Async Asset Loading")

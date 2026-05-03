@@ -12,6 +12,7 @@ const frame_speed_label: cstr = c"FRAME SPEED: "
 const help_text: cstr = c"PRESS RIGHT/LEFT KEYS to CHANGE SPEED!"
 const credit_text: cstr = c"(c) Scarfy sprite by Eiden Marsal"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

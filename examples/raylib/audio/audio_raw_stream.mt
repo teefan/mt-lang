@@ -13,6 +13,7 @@ const frequency_text: cstr = c"Up/down to change frequency"
 const pan_text: cstr = c"Left/right to pan"
 const window_title: cstr = c"raylib [audio] example - raw stream"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

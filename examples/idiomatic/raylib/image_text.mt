@@ -8,6 +8,7 @@ const parrots_path: str = "../../raylib/resources/parrots.png"
 const font_path: str = "../../raylib/resources/KAISG.ttf"
 const font_size: i32 = 64
 
+
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Image Text")
     defer rl.close_window()

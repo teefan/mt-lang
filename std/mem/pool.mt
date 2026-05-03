@@ -9,6 +9,7 @@ pub struct Pool:
     slot_count: usize
     used_count: usize
 
+
 pub def create(slot_size_bytes: usize, slot_count: usize) -> Pool:
     if slot_size_bytes == 0 or slot_count == 0:
         return Pool(
@@ -40,6 +41,7 @@ pub def create(slot_size_bytes: usize, slot_count: usize) -> Pool:
         used_count = 0,
     )
 
+
 pub def slot_size_for[T]() -> usize:
     let size = usize<-sizeof(T)
     let alignment = usize<-alignof(T)
@@ -48,6 +50,7 @@ pub def slot_size_for[T]() -> usize:
         panic(c"pool.slot_size_for overflow")
 
     return (size + mask) & ~mask
+
 
 pub def create_for[T](slot_count: usize) -> Pool:
     let size = usize<-sizeof(T)
@@ -59,8 +62,11 @@ pub def create_for[T](slot_count: usize) -> Pool:
     return create((size + mask) & ~mask, slot_count)
 
 methods Pool:
+
+
     pub def remaining_slots() -> usize:
         return this.slot_count - this.used_count
+
 
     pub edit def alloc_bytes() -> ptr[byte]?:
         let memory = this.memory
@@ -81,6 +87,7 @@ methods Pool:
             index = index + 1
 
         return null
+
 
     pub edit def release_bytes(slot: ptr[byte]?) -> bool:
         if slot == null:
@@ -109,6 +116,7 @@ methods Pool:
 
         return false
 
+
     pub edit def release() -> void:
         heap.release(this.memory)
         heap.release(this.occupancy)
@@ -118,6 +126,7 @@ methods Pool:
         this.slot_count = 0
         this.used_count = 0
         return
+
 
 pub def alloc[T](space: ref[Pool]) -> ptr[T]?:
     let size = usize<-sizeof(T)
@@ -136,6 +145,7 @@ pub def alloc[T](space: ref[Pool]) -> ptr[T]?:
 
     unsafe:
         return ptr[T]<-memory
+
 
 pub def release[T](space: ref[Pool], slot: ptr[T]?) -> bool:
     if slot == null:

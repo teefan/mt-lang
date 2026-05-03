@@ -6,6 +6,7 @@ import std.raygui as gui
 const screen_width: i32 = 920
 const screen_height: i32 = 540
 
+
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Raygui Text Builders")
     defer rl.close_window()

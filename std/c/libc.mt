@@ -15,33 +15,19 @@ extern module std.c.libc:
         rem: i64
 
     extern def __ctype_get_mb_cur_max() -> usize
-
     extern def atof(__nptr: cstr) -> f64
-
     extern def atoi(__nptr: cstr) -> i32
-
     extern def atol(__nptr: cstr) -> isize
-
     extern def atoll(__nptr: cstr) -> i64
-
     extern def strtod(__nptr: cstr, __endptr: ptr[ptr[char]]?) -> f64
-
     extern def strtof(__nptr: cstr, __endptr: ptr[ptr[char]]?) -> f32
-
     extern def strtol(__nptr: cstr, __endptr: ptr[ptr[char]]?, __base: i32) -> isize
-
     extern def strtoul(__nptr: cstr, __endptr: ptr[ptr[char]]?, __base: i32) -> usize
-
     extern def strtoq(__nptr: cstr, __endptr: ptr[ptr[char]]?, __base: i32) -> i64
-
     extern def strtouq(__nptr: cstr, __endptr: ptr[ptr[char]]?, __base: i32) -> u64
-
     extern def strtoll(__nptr: cstr, __endptr: ptr[ptr[char]]?, __base: i32) -> i64
-
     extern def strtoull(__nptr: cstr, __endptr: ptr[ptr[char]]?, __base: i32) -> u64
-
     extern def l64a(__n: isize) -> ptr[char]
-
     extern def a64l(__s: cstr) -> isize
 
     type u_short = u16
@@ -101,11 +87,8 @@ extern module std.c.libc:
     type fsfilcnt_t = usize
 
     extern def random() -> isize
-
     extern def srandom(__seed: u32) -> void
-
     extern def initstate(__seed: u32, __statebuf: ptr[char], __statelen: usize) -> ptr[char]
-
     extern def setstate(__statebuf: ptr[char]) -> ptr[char]
 
     struct random_data:
@@ -118,35 +101,20 @@ extern module std.c.libc:
         end_ptr: ptr[i32]
 
     extern def random_r(__buf: ptr[random_data], __result: ptr[i32]) -> i32
-
     extern def srandom_r(__seed: u32, __buf: ptr[random_data]) -> i32
-
     extern def initstate_r(__seed: u32, __statebuf: ptr[char], __statelen: usize, __buf: ptr[random_data]) -> i32
-
     extern def setstate_r(__statebuf: ptr[char], __buf: ptr[random_data]) -> i32
-
     extern def rand() -> i32
-
     extern def srand(__seed: u32) -> void
-
     extern def rand_r(__seed: ptr[u32]) -> i32
-
     extern def drand48() -> f64
-
     extern def erand48(__xsubi: ptr[u16]) -> f64
-
     extern def lrand48() -> isize
-
     extern def nrand48(__xsubi: ptr[u16]) -> isize
-
     extern def mrand48() -> isize
-
     extern def jrand48(__xsubi: ptr[u16]) -> isize
-
     extern def srand48(__seedval: isize) -> void
-
     extern def seed48(__seed16v: ptr[u16]) -> ptr[u16]
-
     extern def lcong48(__param: ptr[u16]) -> void
 
     struct drand48_data:
@@ -157,123 +125,66 @@ extern module std.c.libc:
         __a: u64
 
     extern def drand48_r(__buffer: ptr[drand48_data], __result: ptr[f64]) -> i32
-
     extern def erand48_r(__xsubi: ptr[u16], __buffer: ptr[drand48_data], __result: ptr[f64]) -> i32
-
     extern def lrand48_r(__buffer: ptr[drand48_data], __result: ptr[isize]) -> i32
-
     extern def nrand48_r(__xsubi: ptr[u16], __buffer: ptr[drand48_data], __result: ptr[isize]) -> i32
-
     extern def mrand48_r(__buffer: ptr[drand48_data], __result: ptr[isize]) -> i32
-
     extern def jrand48_r(__xsubi: ptr[u16], __buffer: ptr[drand48_data], __result: ptr[isize]) -> i32
-
     extern def srand48_r(__seedval: isize, __buffer: ptr[drand48_data]) -> i32
-
     extern def seed48_r(__seed16v: ptr[u16], __buffer: ptr[drand48_data]) -> i32
-
     extern def lcong48_r(__param: ptr[u16], __buffer: ptr[drand48_data]) -> i32
-
     extern def arc4random() -> u32
-
     extern def arc4random_buf(__buf: ptr[void], __size: usize) -> void
-
     extern def arc4random_uniform(__upper_bound: u32) -> u32
-
     extern def malloc(__size: usize) -> ptr[void]?
-
     extern def calloc(__nmemb: usize, __size: usize) -> ptr[void]?
-
     extern def realloc(__ptr: ptr[void]?, __size: usize) -> ptr[void]?
-
     extern def free(__ptr: ptr[void]?) -> void
-
     extern def reallocarray(__ptr: ptr[void]?, __nmemb: usize, __size: usize) -> ptr[void]?
-
     extern def valloc(__size: usize) -> ptr[void]
-
     extern def posix_memalign(__memptr: ptr[ptr[void]], __alignment: usize, __size: usize) -> i32
-
     extern def aligned_alloc(__alignment: usize, __size: usize) -> ptr[void]?
-
     extern def abort() -> void
-
     extern def atexit(__func: fn() -> void) -> i32
-
     extern def at_quick_exit(__func: fn() -> void) -> i32
-
     extern def on_exit(__func: fn(arg0: i32, arg1: ptr[void]) -> void, __arg: ptr[void]) -> i32
-
     extern def exit(__status: i32) -> void
-
     extern def quick_exit(__status: i32) -> void
-
     extern def _Exit(__status: i32) -> void
-
     extern def getenv(__name: cstr) -> ptr[char]
-
     extern def putenv(__string: ptr[char]) -> i32
-
     extern def setenv(__name: cstr, __value: cstr, __replace: i32) -> i32
-
     extern def unsetenv(__name: cstr) -> i32
-
     extern def clearenv() -> i32
-
     extern def mktemp(__template: ptr[char]) -> ptr[char]
-
     extern def mkstemp(__template: ptr[char]) -> i32
-
     extern def mkstemps(__template: ptr[char], __suffixlen: i32) -> i32
-
     extern def mkdtemp(__template: ptr[char]) -> ptr[char]
-
     extern def system(__command: cstr) -> i32
-
     extern def realpath(__name: cstr, __resolved: ptr[char]) -> ptr[char]
 
     type __compar_fn_t = fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> i32
 
     extern def bsearch(__key: const_ptr[void], __base: const_ptr[void], __nmemb: usize, __size: usize, __compar: fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> i32) -> ptr[void]
-
     extern def qsort(__base: ptr[void], __nmemb: usize, __size: usize, __compar: fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> i32) -> void
-
     extern def abs(__x: i32) -> i32
-
     extern def labs(__x: isize) -> isize
-
     extern def llabs(__x: i64) -> i64
-
     extern def div(__numer: i32, __denom: i32) -> div_t
-
     extern def ldiv(__numer: isize, __denom: isize) -> ldiv_t
-
     extern def lldiv(__numer: i64, __denom: i64) -> lldiv_t
-
     extern def ecvt(__value: f64, __ndigit: i32, __decpt: ptr[i32], __sign: ptr[i32]) -> ptr[char]
-
     extern def fcvt(__value: f64, __ndigit: i32, __decpt: ptr[i32], __sign: ptr[i32]) -> ptr[char]
-
     extern def gcvt(__value: f64, __ndigit: i32, __buf: ptr[char]) -> ptr[char]
-
     extern def ecvt_r(__value: f64, __ndigit: i32, __decpt: ptr[i32], __sign: ptr[i32], __buf: ptr[char], __len: usize) -> i32
-
     extern def fcvt_r(__value: f64, __ndigit: i32, __decpt: ptr[i32], __sign: ptr[i32], __buf: ptr[char], __len: usize) -> i32
-
     extern def mblen(__s: cstr, __n: usize) -> i32
-
     extern def mbtowc(__pwc: ptr[i32], __s: cstr, __n: usize) -> i32
-
     extern def wctomb(__s: ptr[char], __wchar: i32) -> i32
-
     extern def mbstowcs(__pwcs: ptr[i32], __s: cstr, __n: usize) -> usize
-
     extern def wcstombs(__s: ptr[char], __pwcs: const_ptr[i32], __n: usize) -> usize
-
     extern def rpmatch(__response: cstr) -> i32
-
     extern def getsubopt(__optionp: ptr[ptr[char]], __tokens: const_ptr[ptr[char]], __valuep: ptr[ptr[char]]) -> i32
-
     extern def getloadavg(__loadavg: ptr[f64], __nelem: i32) -> i32
 
     const RAND_MAX: i32 = 2147483647

@@ -21,6 +21,7 @@ const help_iterations_text: cstr = c"Press UP | DOWN to change number of iterati
 const help_reset_text: cstr = c"Press R to recenter the camera"
 const window_title: cstr = c"raylib [shaders] example - mandelbrot set"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

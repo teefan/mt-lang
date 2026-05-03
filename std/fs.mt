@@ -14,6 +14,7 @@ pub enum Error: u8
     close_failed = 4
     invalid_utf8 = 5
 
+
 pub def exists(path: str, scratch: ref[arena.Arena]) -> bool:
     let mark = scratch.mark()
     defer scratch.reset(mark)
@@ -25,6 +26,7 @@ pub def exists(path: str, scratch: ref[arena.Arena]) -> bool:
 
     c.fclose(file)
     return true
+
 
 pub def read_bytes(path: str, scratch: ref[arena.Arena]) -> Result[bytes.Buffer, Error]:
     let mark = scratch.mark()
@@ -55,6 +57,7 @@ pub def read_bytes(path: str, scratch: ref[arena.Arena]) -> Result[bytes.Buffer,
 
     return ok(result)
 
+
 pub def read_text(path: str, scratch: ref[arena.Arena]) -> Result[string.String, Error]:
     let loaded = read_bytes(path, scratch)
     if not loaded.is_ok:
@@ -72,6 +75,7 @@ pub def read_text(path: str, scratch: ref[arena.Arena]) -> Result[string.String,
         result.append(borrowed)
         bytes.release(ref_of(data))
         return ok(result)
+
 
 pub def write_bytes(path: str, data: span[u8], scratch: ref[arena.Arena]) -> Result[bool, Error]:
     let mark = scratch.mark()
@@ -94,6 +98,7 @@ pub def write_bytes(path: str, data: span[u8], scratch: ref[arena.Arena]) -> Res
         return err(Error.close_failed)
 
     return ok(true)
+
 
 pub def write_text(path: str, data: str, scratch: ref[arena.Arena]) -> Result[bool, Error]:
     unsafe:

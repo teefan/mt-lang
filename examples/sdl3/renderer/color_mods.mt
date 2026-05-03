@@ -15,6 +15,7 @@ var texture: ptr[c.SDL_Texture]
 var texture_width: i32 = 0
 var texture_height: i32 = 0
 
+
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
@@ -23,6 +24,7 @@ def pump_events() -> bool:
             return false
 
     return true
+
 
 def render_frame() -> void:
     let now = f64<-c.SDL_GetTicks() / 1000.0
@@ -49,6 +51,7 @@ def render_frame() -> void:
     c.SDL_RenderTexture(renderer, texture, null, ptr_of(ref_of(destination)))
 
     c.SDL_RenderPresent(renderer)
+
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     c.SDL_SetAppMetadata(c"Example Renderer Color Mods", c"1.0", c"com.example.renderer-color-mods")
@@ -84,6 +87,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

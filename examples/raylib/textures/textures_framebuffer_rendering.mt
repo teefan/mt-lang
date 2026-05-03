@@ -15,6 +15,7 @@ const subject_view_text: cstr = c"Subject View"
 const near_plane: f32 = 0.05
 const capture_size: f32 = 128.0
 
+
 def draw_camera_prism(camera: rl.Camera3D, aspect: f32, color: rl.Color) -> void:
     let length = camera.position.distance(camera.target)
     let plane_ndc = array[rl.Vector3, 4](
@@ -46,6 +47,7 @@ def draw_camera_prism(camera: rl.Camera3D, aspect: f32, color: rl.Color) -> void
 
     for index in range(0, 4):
         rl.DrawLine3D(camera.position, corners[index], color)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

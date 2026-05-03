@@ -17,6 +17,7 @@ var audio_device: c.SDL_AudioDeviceID = 0
 var wav_data: ptr[c.Uint8]
 var wav_data_len: c.Uint32 = 0
 
+
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
@@ -25,6 +26,7 @@ def pump_events() -> bool:
             return false
 
     return true
+
 
 def render_frame() -> void:
     let active_stream = stream
@@ -35,6 +37,7 @@ def render_frame() -> void:
 
     c.SDL_RenderClear(renderer)
     c.SDL_RenderPresent(renderer)
+
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     var spec = zero[c.SDL_AudioSpec]()
@@ -78,6 +81,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

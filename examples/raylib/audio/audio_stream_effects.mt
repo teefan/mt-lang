@@ -20,9 +20,11 @@ var delay_read_index: u32 = 2
 var delay_write_index: u32 = 0
 var low_pass_state: array[f32, 2]
 
+
 def void_ptr_to_f32(value: ptr[void]) -> ptr[f32]:
     unsafe:
         return ptr[f32]<-value
+
 
 def allocate_delay_buffer() -> void:
     delay_buffer_size = u32<-(48000 * 2)
@@ -36,12 +38,14 @@ def allocate_delay_buffer() -> void:
             for index in range(0, i32<-delay_buffer_size):
                 read(samples + index) = 0.0
 
+
 def free_delay_buffer() -> void:
     if delay_buffer == null:
         return
 
     unsafe:
         rl.MemFree(ptr[f32]<-delay_buffer)
+
 
 def audio_process_effect_lpf(buffer: ptr[void], frames: u32) -> void:
     let buffer_data = void_ptr_to_f32(buffer)
@@ -59,6 +63,7 @@ def audio_process_effect_lpf(buffer: ptr[void], frames: u32) -> void:
             read(buffer_data + index + 1) = low_pass_state[1]
 
             index += 2
+
 
 def audio_process_effect_delay(buffer: ptr[void], frames: u32) -> void:
     if delay_buffer == null:
@@ -95,6 +100,7 @@ def audio_process_effect_delay(buffer: ptr[void], frames: u32) -> void:
                 delay_write_index = 0
 
             index += 2
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

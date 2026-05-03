@@ -34,16 +34,20 @@ struct TextParticle:
     color: rl.Color
     grabbed: bool
 
+
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
+
 
 def text_particle_text_ptr(tp: ptr[TextParticle]) -> ptr[char]:
     unsafe:
         return ptr_of(ref_of(tp.text[0]))
 
+
 def text_particle_text(tp: ptr[TextParticle]) -> cstr:
     return chars_to_cstr(text_particle_text_ptr(tp))
+
 
 def random_color() -> rl.Color:
     return rl.Color(
@@ -52,6 +56,7 @@ def random_color() -> rl.Color:
         b = u8<-rl.GetRandomValue(0, 255),
         a = 255,
     )
+
 
 def create_text_particle(text: cstr, x: f32, y: f32, color: rl.Color) -> TextParticle:
     var tp = zero[TextParticle]()
@@ -71,6 +76,7 @@ def create_text_particle(text: cstr, x: f32, y: f32, color: rl.Color) -> TextPar
 
     return tp
 
+
 def prepare_first_text_particle(text: cstr, tps: ptr[TextParticle], particle_count: ptr[i32]) -> void:
     unsafe:
         read(tps) = create_text_particle(
@@ -81,11 +87,13 @@ def prepare_first_text_particle(text: cstr, tps: ptr[TextParticle], particle_cou
         )
         read(particle_count) = 1
 
+
 def append_particle(tps: ptr[TextParticle], particle_count: ptr[i32], particle: TextParticle) -> void:
     unsafe:
         let next_index = read(particle_count)
         read(tps + next_index) = particle
         read(particle_count) = next_index + 1
+
 
 def reallocate_text_particles(tps: ptr[TextParticle], particle_pos: i32, particle_count: ptr[i32]) -> void:
     unsafe:
@@ -95,6 +103,7 @@ def reallocate_text_particles(tps: ptr[TextParticle], particle_pos: i32, particl
             index += 1
 
         read(particle_count) = read(particle_count) - 1
+
 
 def slice_text_particle(tp: ptr[TextParticle], particle_pos: i32, slice_length: i32, tps: ptr[TextParticle], particle_count: ptr[i32]) -> void:
     let length = i32<-rl.TextLength(text_particle_text(tp))
@@ -117,6 +126,7 @@ def slice_text_particle(tp: ptr[TextParticle], particle_pos: i32, slice_length: 
                 index += slice_length
 
             reallocate_text_particles(tps, particle_pos, particle_count)
+
 
 def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps: ptr[TextParticle], particle_count: ptr[i32]) -> void:
     var token_count = 0
@@ -158,8 +168,10 @@ def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps:
 
             reallocate_text_particles(tps, 0, particle_count)
 
+
 def shatter_text_particle(tp: ptr[TextParticle], particle_pos: i32, tps: ptr[TextParticle], particle_count: ptr[i32]) -> void:
     slice_text_particle(tp, particle_pos, 1, tps, particle_count)
+
 
 def glue_text_particles(grabbed_index: i32, target_index: i32, tps: ptr[TextParticle], particle_count: ptr[i32]) -> i32:
     unsafe:
@@ -187,6 +199,7 @@ def glue_text_particles(grabbed_index: i32, target_index: i32, tps: ptr[TextPart
             return read(particle_count) - 1
 
     return grabbed_index
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

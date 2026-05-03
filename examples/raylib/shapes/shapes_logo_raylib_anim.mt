@@ -8,6 +8,7 @@ const window_title: cstr = c"raylib [shapes] example - logo raylib anim"
 const raylib_text: cstr = c"raylib"
 const replay_text: cstr = c"[R] REPLAY"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

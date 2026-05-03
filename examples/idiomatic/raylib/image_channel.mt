@@ -6,6 +6,7 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const fudesumi_path: str = "../../raylib/resources/fudesumi.png"
 
+
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Image Channel")
     defer rl.close_window()

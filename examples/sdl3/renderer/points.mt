@@ -17,6 +17,7 @@ var last_time: usize = 0
 var points: array[c.SDL_FPoint, 500] = zero[array[c.SDL_FPoint, 500]]()
 var point_speeds: array[f32, 500] = zero[array[f32, 500]]()
 
+
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
@@ -25,6 +26,7 @@ def pump_events() -> bool:
             return false
 
     return true
+
 
 def render_frame() -> void:
     let now = c.SDL_GetTicks()
@@ -55,6 +57,7 @@ def render_frame() -> void:
     c.SDL_RenderPoints(renderer, ptr_of(ref_of(points[0])), point_count)
     c.SDL_RenderPresent(renderer)
 
+
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     c.SDL_SetAppMetadata(c"Example Renderer Points", c"1.0", c"com.example.renderer-points")
 
@@ -81,6 +84,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

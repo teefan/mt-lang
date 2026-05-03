@@ -21,13 +21,16 @@ const outline_status_format: cstr = c"Outline: %s  [C]"
 const bands_status_format: cstr = c"Bands: %.0f  [Q/E]"
 const window_title: cstr = c"raylib [shaders] example - cel shading"
 
+
 def model_shader(model: ptr[rl.Model]) -> rl.Shader:
     unsafe:
         return model.materials[0].shader
 
+
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
+
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

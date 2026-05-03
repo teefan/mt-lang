@@ -18,6 +18,7 @@ const window_title: cstr = c"raylib [textures] example - fog of war"
 const current_tile_format: cstr = c"Current tile: [%i,%i]"
 const help_text: cstr = c"ARROW KEYS to move"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

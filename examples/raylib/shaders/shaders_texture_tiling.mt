@@ -11,9 +11,11 @@ const tiling_uniform_name: cstr = c"tiling"
 const help_text: cstr = c"Use mouse to rotate the camera"
 const window_title: cstr = c"raylib [shaders] example - texture tiling"
 
+
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

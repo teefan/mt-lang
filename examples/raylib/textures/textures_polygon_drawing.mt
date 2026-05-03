@@ -11,6 +11,7 @@ const window_title: cstr = c"raylib [textures] example - polygon drawing"
 const title_text: cstr = c"textured polygon"
 const texture_path: cstr = c"../resources/cat.png"
 
+
 def draw_texture_poly(texture: rl.Texture, center: rl.Vector2, points: ptr[rl.Vector2], texcoords: ptr[rl.Vector2], point_count: i32, tint: rl.Color) -> void:
     unsafe:
         rlgl.rlSetTexture(texture.id)
@@ -30,6 +31,7 @@ def draw_texture_poly(texture: rl.Texture, center: rl.Vector2, points: ptr[rl.Ve
 
         rlgl.rlEnd()
         rlgl.rlSetTexture(u32<-0)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

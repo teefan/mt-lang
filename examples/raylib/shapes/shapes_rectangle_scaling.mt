@@ -8,6 +8,7 @@ const mouse_scale_mark_size: f32 = 12.0
 const window_title: cstr = c"raylib [shapes] example - rectangle scaling"
 const help_text: cstr = c"Scale rectangle dragging from bottom-right corner!"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

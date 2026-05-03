@@ -24,6 +24,7 @@ var messages: EventMessage = zero[EventMessage]()
 var messages_tail: ptr[EventMessage]? = null
 var axis_motion_cooldown_time: c.Uint64 = 0
 
+
 def battery_state_string(state: c.SDL_PowerState) -> cstr:
     if state == c.SDL_PowerState.SDL_POWERSTATE_ERROR:
         return c"ERROR"
@@ -44,6 +45,7 @@ def battery_state_string(state: c.SDL_PowerState) -> cstr:
                             return c"CHARGED"
 
     return c"UNKNOWN"
+
 
 def append_message(jid: u32, text: ptr[char]?) -> void:
     let message_text = text
@@ -66,6 +68,7 @@ def append_message(jid: u32, text: ptr[char]?) -> void:
 
     messages_tail = message
 
+
 def add_plain_message(jid: u32, text: cstr) -> void:
     var message: ptr[char]? = null
 
@@ -73,6 +76,7 @@ def add_plain_message(jid: u32, text: cstr) -> void:
         c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(ref_of(message)), c"%s", text)
 
     append_message(jid, message)
+
 
 def add_added_message(which: u32, gamepad: ptr[c.SDL_Gamepad]?) -> void:
     var message: ptr[char]? = null
@@ -98,6 +102,7 @@ def add_added_message(which: u32, gamepad: ptr[c.SDL_Gamepad]?) -> void:
 
         append_message(which, mapping_message)
 
+
 def add_removed_message(which: u32) -> void:
     var message: ptr[char]? = null
 
@@ -105,6 +110,7 @@ def add_removed_message(which: u32) -> void:
         c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(ref_of(message)), c"Gamepad #%u removed", which)
 
     append_message(which, message)
+
 
 def add_axis_message(which: u32, axis: c.Uint8, value: c.Sint16) -> void:
     var message: ptr[char]? = null
@@ -119,6 +125,7 @@ def add_axis_message(which: u32, axis: c.Uint8, value: c.Sint16) -> void:
         )
 
     append_message(which, message)
+
 
 def add_button_message(which: u32, button: c.Uint8, down: bool) -> void:
     var message: ptr[char]? = null
@@ -135,6 +142,7 @@ def add_button_message(which: u32, button: c.Uint8, down: bool) -> void:
 
     append_message(which, message)
 
+
 def add_battery_message(which: u32, state: c.SDL_PowerState, percent: i32) -> void:
     var message: ptr[char]? = null
 
@@ -142,6 +150,7 @@ def add_battery_message(which: u32, state: c.SDL_PowerState, percent: i32) -> vo
         c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(ref_of(message)), c"Gamepad #%u battery -> %s - %d%%", which, battery_state_string(state), percent)
 
     append_message(which, message)
+
 
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
@@ -176,6 +185,7 @@ def pump_events() -> bool:
                                     add_battery_message(event.jbattery.which, event.jbattery.state, event.jbattery.percent)
 
     return true
+
 
 def render_frame() -> void:
     let now = c.SDL_GetTicks()
@@ -228,6 +238,7 @@ def render_frame() -> void:
 
     c.SDL_RenderPresent(renderer)
 
+
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     c.SDL_SetAppMetadata(c"Example Input Gamepad Events", c"1.0", c"com.example.input-gamepad-events")
 
@@ -261,6 +272,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

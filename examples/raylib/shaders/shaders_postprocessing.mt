@@ -37,6 +37,7 @@ const title_text: cstr = c"CURRENT POSTPRO SHADER:"
 const switch_text: cstr = c"< >"
 const window_title: cstr = c"raylib [shaders] example - postprocessing"
 
+
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
 

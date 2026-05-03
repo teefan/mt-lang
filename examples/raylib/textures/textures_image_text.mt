@@ -11,6 +11,7 @@ const title_text: cstr = c"[Parrots font drawing]"
 const help_text: cstr = c"PRESS SPACE to SHOW FONT ATLAS USED"
 const font_size: i32 = 64
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

@@ -67,21 +67,26 @@ struct Light:
 
 var light_count: i32 = 0
 
+
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
+
 
 def set_material_map_color(materials: ptr[rl.Material], map_index: i32, color: rl.Color) -> void:
     unsafe:
         materials.maps[map_index].color = color
 
+
 def set_material_map_value(materials: ptr[rl.Material], map_index: i32, value: f32) -> void:
     unsafe:
         materials.maps[map_index].value = value
 
+
 def set_shader_int(shader: rl.Shader, location: i32, value: i32) -> void:
     var storage = value
     rl.SetShaderValue(shader, location, ptr_of(ref_of(storage)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+
 
 def update_light(shader: rl.Shader, light: Light) -> void:
     var enabled = light.enabled
@@ -97,6 +102,7 @@ def update_light(shader: rl.Shader, light: Light) -> void:
     rl.SetShaderValue(shader, light.target_loc, ptr_of(ref_of(target[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
     rl.SetShaderValue(shader, light.color_loc, ptr_of(ref_of(color[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
     rl.SetShaderValue(shader, light.intensity_loc, ptr_of(ref_of(intensity)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+
 
 def create_light(kind: i32, position: rl.Vector3, target: rl.Vector3, color: rl.Color, intensity: f32, shader: rl.Shader) -> Light:
     var light = Light(
@@ -137,6 +143,7 @@ def create_light(kind: i32, position: rl.Vector3, target: rl.Vector3, color: rl.
 
     return light
 
+
 def light_display_color(light: Light) -> rl.Color:
     return rl.Color(
         r = u8<-(light.color[0] * 255.0),
@@ -144,6 +151,7 @@ def light_display_color(light: Light) -> rl.Color:
         b = u8<-(light.color[2] * 255.0),
         a = u8<-(light.color[3] * 255.0),
     )
+
 
 def main() -> i32:
     light_count = 0

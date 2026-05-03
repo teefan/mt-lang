@@ -24,9 +24,11 @@ struct GolUpdateSSBO:
     count: u32
     commands: array[GolUpdateCmd, 48]
 
+
 def char_ptr_to_cstr(value: ptr[char]) -> cstr:
     unsafe:
         return cstr<-value
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

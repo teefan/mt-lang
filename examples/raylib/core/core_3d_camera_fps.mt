@@ -36,6 +36,8 @@ struct FpsState:
     lean: rl.Vector2
 
 methods Body:
+
+
     edit def update(rot: f32, side: i32, forward: i32, jump_pressed: bool, crouch_hold: bool) -> void:
         var input = rl.Vector2(x = side, y = -forward)
         if side != 0 and forward != 0:
@@ -86,6 +88,8 @@ methods Body:
             this.is_grounded = true
 
 methods FpsState:
+
+
     edit def update_camera(camera: ref[rl.Camera3D], body: Body) -> void:
         let up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
         let target_offset = rl.Vector3(x = 0.0, y = 0.0, z = -1.0)
@@ -117,6 +121,7 @@ methods FpsState:
 
         camera.position = camera.position.add(bobbing.scale(this.walk_lerp))
         camera.target = camera.position.add(pitch)
+
 
 def draw_level() -> void:
     let floor_extent = 25
@@ -155,6 +160,7 @@ def draw_level() -> void:
     rl.DrawCubeWiresV(tower_position, tower_size, rl.DARKBLUE)
 
     rl.DrawSphere(rl.Vector3(x = 300.0, y = 300.0, z = 0.0), 100.0, rl.RED)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

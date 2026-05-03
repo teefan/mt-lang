@@ -6,8 +6,10 @@ import std.raylib.math as math
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 
+
 def line_angle(start: rl.Vector2, finish: rl.Vector2) -> f32:
     return math.atan2(finish.y - start.y, finish.x - start.x)
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Vector Angle")

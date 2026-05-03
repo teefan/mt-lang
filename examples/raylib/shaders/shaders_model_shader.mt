@@ -11,9 +11,11 @@ const shader_path_format: cstr = c"../resources/shaders/glsl%i/grayscale.fs"
 const credit_text: cstr = c"(c) Watermill 3D model by Alberto Cano"
 const window_title: cstr = c"raylib [shaders] example - model shader"
 
+
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
+
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

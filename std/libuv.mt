@@ -195,318 +195,947 @@ pub const FS_COPYFILE_FICLONE_FORCE: i32 = c.UV_FS_COPYFILE_FICLONE_FORCE
 pub const FS_SYMLINK_DIR: i32 = c.UV_FS_SYMLINK_DIR
 pub const FS_SYMLINK_JUNCTION: i32 = c.UV_FS_SYMLINK_JUNCTION
 
+
 pub foreign def version() -> u32 = c.uv_version
+
+
 pub foreign def version_string() -> cstr = c.uv_version_string
+
+
 pub foreign def library_shutdown() -> void = c.uv_library_shutdown
+
+
 pub foreign def replace_allocator(malloc_func: fn(arg0: usize) -> ptr[void], realloc_func: fn(arg0: ptr[void], arg1: usize) -> ptr[void], calloc_func: fn(arg0: usize, arg1: usize) -> ptr[void], free_func: fn(arg0: ptr[void]) -> void) -> i32 = c.uv_replace_allocator
+
+
 pub foreign def default_loop() -> ptr[uv_loop_t] = c.uv_default_loop
+
+
 pub foreign def loop_init(loop: ptr[uv_loop_t]) -> i32 = c.uv_loop_init
+
+
 pub foreign def loop_close(loop: ptr[uv_loop_t]) -> i32 = c.uv_loop_close
+
+
 pub foreign def loop_new() -> ptr[uv_loop_t] = c.uv_loop_new
+
+
 pub foreign def loop_delete(arg_0: ptr[uv_loop_t]) -> void = c.uv_loop_delete
+
+
 pub foreign def loop_size() -> usize = c.uv_loop_size
+
+
 pub foreign def loop_alive(loop: const_ptr[uv_loop_t]) -> i32 = c.uv_loop_alive
+
+
 pub foreign def loop_fork(loop: ptr[uv_loop_t]) -> i32 = c.uv_loop_fork
+
+
 pub foreign def run(arg_0: ptr[uv_loop_t], mode: uv_run_mode) -> i32 = c.uv_run
+
+
 pub foreign def stop(arg_0: ptr[uv_loop_t]) -> void = c.uv_stop
+
+
 pub foreign def ref(arg_0: ptr[uv_handle_t]) -> void = c.uv_ref
+
+
 pub foreign def unref(arg_0: ptr[uv_handle_t]) -> void = c.uv_unref
+
+
 pub foreign def has_ref(arg_0: const_ptr[uv_handle_t]) -> i32 = c.uv_has_ref
+
+
 pub foreign def update_time(arg_0: ptr[uv_loop_t]) -> void = c.uv_update_time
+
+
 pub foreign def now(arg_0: const_ptr[uv_loop_t]) -> u64 = c.uv_now
+
+
 pub foreign def backend_fd(arg_0: const_ptr[uv_loop_t]) -> i32 = c.uv_backend_fd
+
+
 pub foreign def backend_timeout(arg_0: const_ptr[uv_loop_t]) -> i32 = c.uv_backend_timeout
+
+
 pub foreign def translate_sys_error(sys_errno: i32) -> i32 = c.uv_translate_sys_error
+
+
 pub foreign def strerror(err: i32) -> cstr = c.uv_strerror
+
+
 pub foreign def strerror_r(err: i32, buf: ptr[char], buflen: usize) -> ptr[char] = c.uv_strerror_r
+
+
 pub foreign def err_name(err: i32) -> cstr = c.uv_err_name
+
+
 pub foreign def err_name_r(err: i32, buf: ptr[char], buflen: usize) -> ptr[char] = c.uv_err_name_r
+
+
 pub foreign def shutdown(req: ptr[uv_shutdown_t], handle: ptr[uv_stream_t], cb: fn(arg0: ptr[uv_shutdown_t], arg1: i32) -> void) -> i32 = c.uv_shutdown
+
+
 pub foreign def handle_size(kind: uv_handle_type) -> usize = c.uv_handle_size
+
+
 pub foreign def handle_get_type(handle: const_ptr[uv_handle_t]) -> uv_handle_type = c.uv_handle_get_type
+
+
 pub foreign def handle_type_name(kind: uv_handle_type) -> cstr = c.uv_handle_type_name
+
+
 pub foreign def handle_get_data(handle: const_ptr[uv_handle_t]) -> ptr[void] = c.uv_handle_get_data
+
+
 pub foreign def handle_get_loop(handle: const_ptr[uv_handle_t]) -> ptr[uv_loop_t] = c.uv_handle_get_loop
+
+
 pub foreign def handle_set_data(handle: ptr[uv_handle_t], data: ptr[void]) -> void = c.uv_handle_set_data
+
+
 pub foreign def req_size(kind: uv_req_type) -> usize = c.uv_req_size
+
+
 pub foreign def req_get_data(req: const_ptr[uv_req_t]) -> ptr[void] = c.uv_req_get_data
+
+
 pub foreign def req_set_data(req: ptr[uv_req_t], data: ptr[void]) -> void = c.uv_req_set_data
+
+
 pub foreign def req_get_type(req: const_ptr[uv_req_t]) -> uv_req_type = c.uv_req_get_type
+
+
 pub foreign def req_type_name(kind: uv_req_type) -> cstr = c.uv_req_type_name
+
+
 pub foreign def is_active(handle: const_ptr[uv_handle_t]) -> i32 = c.uv_is_active
+
+
 pub foreign def walk(loop: ptr[uv_loop_t], walk_cb: fn(arg0: ptr[uv_handle_t], arg1: ptr[void]) -> void, arg: ptr[void]) -> void = c.uv_walk
+
+
 pub foreign def close(handle: ptr[uv_handle_t], close_cb: fn(arg0: ptr[uv_handle_t]) -> void) -> void = c.uv_close
+
+
 pub foreign def send_buffer_size(handle: ptr[uv_handle_t], value: ptr[i32]) -> i32 = c.uv_send_buffer_size
+
+
 pub foreign def recv_buffer_size(handle: ptr[uv_handle_t], value: ptr[i32]) -> i32 = c.uv_recv_buffer_size
+
+
 pub foreign def fileno(handle: const_ptr[uv_handle_t], fd: ptr[uv_os_fd_t]) -> i32 = c.uv_fileno
+
+
 pub foreign def buf_init(base: ptr[char], len: u32) -> uv_buf_t = c.uv_buf_init
+
+
 pub foreign def pipe(fds: ptr[uv_file], read_flags: i32, write_flags: i32) -> i32 = c.uv_pipe
+
+
 pub foreign def socketpair(kind: i32, protocol: i32, socket_vector: ptr[uv_os_sock_t], flags_0: i32, flags_1: i32) -> i32 = c.uv_socketpair
+
+
 pub foreign def stream_get_write_queue_size(stream: const_ptr[uv_stream_t]) -> usize = c.uv_stream_get_write_queue_size
+
+
 pub foreign def listen(stream: ptr[uv_stream_t], backlog: i32, cb: fn(arg0: ptr[uv_stream_t], arg1: i32) -> void) -> i32 = c.uv_listen
+
+
 pub foreign def accept(server: ptr[uv_stream_t], client: ptr[uv_stream_t]) -> i32 = c.uv_accept
+
+
 pub foreign def read_start(arg_0: ptr[uv_stream_t], alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: usize, arg2: ptr[uv_buf_t]) -> void, read_cb: fn(arg0: ptr[uv_stream_t], arg1: isize, arg2: const_ptr[uv_buf_t]) -> void) -> i32 = c.uv_read_start
+
+
 pub foreign def read_stop(arg_0: ptr[uv_stream_t]) -> i32 = c.uv_read_stop
+
+
 pub foreign def write(req: ptr[uv_write_t], handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf_t], nbufs: u32, cb: fn(arg0: ptr[uv_write_t], arg1: i32) -> void) -> i32 = c.uv_write
+
+
 pub foreign def write_2(req: ptr[uv_write_t], handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf_t], nbufs: u32, send_handle: ptr[uv_stream_t], cb: fn(arg0: ptr[uv_write_t], arg1: i32) -> void) -> i32 = c.uv_write2
+
+
 pub foreign def try_write(handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf_t], nbufs: u32) -> i32 = c.uv_try_write
+
+
 pub foreign def try_write_2(handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf_t], nbufs: u32, send_handle: ptr[uv_stream_t]) -> i32 = c.uv_try_write2
+
+
 pub foreign def is_readable(handle: const_ptr[uv_stream_t]) -> i32 = c.uv_is_readable
+
+
 pub foreign def is_writable(handle: const_ptr[uv_stream_t]) -> i32 = c.uv_is_writable
+
+
 pub foreign def stream_set_blocking(handle: ptr[uv_stream_t], blocking: i32) -> i32 = c.uv_stream_set_blocking
+
+
 pub foreign def is_closing(handle: const_ptr[uv_handle_t]) -> i32 = c.uv_is_closing
+
+
 pub foreign def tcp_init(arg_0: ptr[uv_loop_t], handle: ptr[uv_tcp_t]) -> i32 = c.uv_tcp_init
+
+
 pub foreign def tcp_init_ex(arg_0: ptr[uv_loop_t], handle: ptr[uv_tcp_t], flag_bits: u32) -> i32 = c.uv_tcp_init_ex
+
+
 pub foreign def tcp_open(handle: ptr[uv_tcp_t], sock: i32) -> i32 = c.uv_tcp_open
+
+
 pub foreign def tcp_nodelay(handle: ptr[uv_tcp_t], enable: i32) -> i32 = c.uv_tcp_nodelay
+
+
 pub foreign def tcp_keepalive(handle: ptr[uv_tcp_t], enable: i32, delay: u32) -> i32 = c.uv_tcp_keepalive
+
+
 pub foreign def tcp_keepalive_ex(handle: ptr[uv_tcp_t], on: i32, idle: u32, intvl: u32, cnt: u32) -> i32 = c.uv_tcp_keepalive_ex
+
+
 pub foreign def tcp_simultaneous_accepts(handle: ptr[uv_tcp_t], enable: i32) -> i32 = c.uv_tcp_simultaneous_accepts
+
+
 pub foreign def tcp_bind(handle: ptr[uv_tcp_t], addr: const_ptr[sys.sockaddr], flag_bits: u32) -> i32 = c.uv_tcp_bind
+
+
 pub foreign def tcp_getsockname(handle: const_ptr[uv_tcp_t], name: ptr[sys.sockaddr], namelen: ptr[i32]) -> i32 = c.uv_tcp_getsockname
+
+
 pub foreign def tcp_getpeername(handle: const_ptr[uv_tcp_t], name: ptr[sys.sockaddr], namelen: ptr[i32]) -> i32 = c.uv_tcp_getpeername
+
+
 pub foreign def tcp_close_reset(handle: ptr[uv_tcp_t], close_cb: fn(arg0: ptr[uv_handle_t]) -> void) -> i32 = c.uv_tcp_close_reset
+
+
 pub foreign def tcp_connect(req: ptr[uv_connect_t], handle: ptr[uv_tcp_t], addr: const_ptr[sys.sockaddr], cb: fn(arg0: ptr[uv_connect_t], arg1: i32) -> void) -> i32 = c.uv_tcp_connect
+
+
 pub foreign def udp_init(arg_0: ptr[uv_loop_t], handle: ptr[uv_udp_t]) -> i32 = c.uv_udp_init
+
+
 pub foreign def udp_init_ex(arg_0: ptr[uv_loop_t], handle: ptr[uv_udp_t], flag_bits: u32) -> i32 = c.uv_udp_init_ex
+
+
 pub foreign def udp_open(handle: ptr[uv_udp_t], sock: i32) -> i32 = c.uv_udp_open
+
+
 pub foreign def udp_open_ex(handle: ptr[uv_udp_t], sock: i32, flag_bits: u32) -> i32 = c.uv_udp_open_ex
+
+
 pub foreign def udp_bind(handle: ptr[uv_udp_t], addr: const_ptr[sys.sockaddr], flag_bits: u32) -> i32 = c.uv_udp_bind
+
+
 pub foreign def udp_connect(handle: ptr[uv_udp_t], addr: const_ptr[sys.sockaddr]) -> i32 = c.uv_udp_connect
+
+
 pub foreign def udp_getpeername(handle: const_ptr[uv_udp_t], name: ptr[sys.sockaddr], namelen: ptr[i32]) -> i32 = c.uv_udp_getpeername
+
+
 pub foreign def udp_getsockname(handle: const_ptr[uv_udp_t], name: ptr[sys.sockaddr], namelen: ptr[i32]) -> i32 = c.uv_udp_getsockname
+
+
 pub foreign def udp_set_membership(handle: ptr[uv_udp_t], multicast_addr: cstr, interface_addr: cstr, membership: uv_membership) -> i32 = c.uv_udp_set_membership
+
+
 pub foreign def udp_set_source_membership(handle: ptr[uv_udp_t], multicast_addr: cstr, interface_addr: cstr, source_addr: cstr, membership: uv_membership) -> i32 = c.uv_udp_set_source_membership
+
+
 pub foreign def udp_set_multicast_loop(handle: ptr[uv_udp_t], on: i32) -> i32 = c.uv_udp_set_multicast_loop
+
+
 pub foreign def udp_set_multicast_ttl(handle: ptr[uv_udp_t], ttl: i32) -> i32 = c.uv_udp_set_multicast_ttl
+
+
 pub foreign def udp_set_multicast_interface(handle: ptr[uv_udp_t], interface_addr: cstr) -> i32 = c.uv_udp_set_multicast_interface
+
+
 pub foreign def udp_set_broadcast(handle: ptr[uv_udp_t], on: i32) -> i32 = c.uv_udp_set_broadcast
+
+
 pub foreign def udp_set_ttl(handle: ptr[uv_udp_t], ttl: i32) -> i32 = c.uv_udp_set_ttl
+
+
 pub foreign def udp_send(req: ptr[uv_udp_send_t], handle: ptr[uv_udp_t], bufs: const_ptr[uv_buf_t], nbufs: u32, addr: const_ptr[sys.sockaddr], send_cb: fn(arg0: ptr[uv_udp_send_t], arg1: i32) -> void) -> i32 = c.uv_udp_send
+
+
 pub foreign def udp_try_send(handle: ptr[uv_udp_t], bufs: const_ptr[uv_buf_t], nbufs: u32, addr: const_ptr[sys.sockaddr]) -> i32 = c.uv_udp_try_send
+
+
 pub foreign def udp_try_send_2(handle: ptr[uv_udp_t], count: u32, bufs: ptr[ptr[uv_buf_t]], nbufs: ptr[u32], addrs: ptr[ptr[sys.sockaddr]], flag_bits: u32) -> i32 = c.uv_udp_try_send2
+
+
 pub foreign def udp_recv_start(handle: ptr[uv_udp_t], alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: usize, arg2: ptr[uv_buf_t]) -> void, recv_cb: fn(arg0: ptr[uv_udp_t], arg1: isize, arg2: const_ptr[uv_buf_t], arg3: const_ptr[sys.sockaddr], arg4: u32) -> void) -> i32 = c.uv_udp_recv_start
+
+
 pub foreign def udp_using_recvmmsg(handle: const_ptr[uv_udp_t]) -> i32 = c.uv_udp_using_recvmmsg
+
+
 pub foreign def udp_recv_stop(handle: ptr[uv_udp_t]) -> i32 = c.uv_udp_recv_stop
+
+
 pub foreign def udp_get_send_queue_size(handle: const_ptr[uv_udp_t]) -> usize = c.uv_udp_get_send_queue_size
+
+
 pub foreign def udp_get_send_queue_count(handle: const_ptr[uv_udp_t]) -> usize = c.uv_udp_get_send_queue_count
+
+
 pub foreign def tty_init(arg_0: ptr[uv_loop_t], arg_1: ptr[uv_tty_t], fd: i32, readable: i32) -> i32 = c.uv_tty_init
+
+
 pub foreign def tty_set_mode(arg_0: ptr[uv_tty_t], mode: uv_tty_mode_t) -> i32 = c.uv_tty_set_mode
+
+
 pub foreign def tty_reset_mode() -> i32 = c.uv_tty_reset_mode
+
+
 pub foreign def tty_get_winsize(arg_0: ptr[uv_tty_t], width: ptr[i32], height: ptr[i32]) -> i32 = c.uv_tty_get_winsize
+
+
 pub foreign def tty_set_vterm_state(state: uv_tty_vtermstate_t) -> void = c.uv_tty_set_vterm_state
+
+
 pub foreign def tty_get_vterm_state(state: ptr[uv_tty_vtermstate_t]) -> i32 = c.uv_tty_get_vterm_state
+
+
 pub foreign def guess_handle(file: i32) -> uv_handle_type = c.uv_guess_handle
+
+
 pub foreign def pipe_init(arg_0: ptr[uv_loop_t], handle: ptr[uv_pipe_t], ipc: i32) -> i32 = c.uv_pipe_init
+
+
 pub foreign def pipe_open(arg_0: ptr[uv_pipe_t], file: i32) -> i32 = c.uv_pipe_open
+
+
 pub foreign def pipe_bind(handle: ptr[uv_pipe_t], name: cstr) -> i32 = c.uv_pipe_bind
+
+
 pub foreign def pipe_bind_2(handle: ptr[uv_pipe_t], name: cstr, namelen: usize, flag_bits: u32) -> i32 = c.uv_pipe_bind2
+
+
 pub foreign def pipe_connect(req: ptr[uv_connect_t], handle: ptr[uv_pipe_t], name: cstr, cb: fn(arg0: ptr[uv_connect_t], arg1: i32) -> void) -> void = c.uv_pipe_connect
+
+
 pub foreign def pipe_connect_2(req: ptr[uv_connect_t], handle: ptr[uv_pipe_t], name: cstr, namelen: usize, flag_bits: u32, cb: fn(arg0: ptr[uv_connect_t], arg1: i32) -> void) -> i32 = c.uv_pipe_connect2
+
+
 pub foreign def pipe_getsockname(handle: const_ptr[uv_pipe_t], buffer: ptr[char], size: ptr[usize]) -> i32 = c.uv_pipe_getsockname
+
+
 pub foreign def pipe_getpeername(handle: const_ptr[uv_pipe_t], buffer: ptr[char], size: ptr[usize]) -> i32 = c.uv_pipe_getpeername
+
+
 pub foreign def pipe_pending_instances(handle: ptr[uv_pipe_t], count: i32) -> void = c.uv_pipe_pending_instances
+
+
 pub foreign def pipe_pending_count(handle: ptr[uv_pipe_t]) -> i32 = c.uv_pipe_pending_count
+
+
 pub foreign def pipe_pending_type(handle: ptr[uv_pipe_t]) -> uv_handle_type = c.uv_pipe_pending_type
+
+
 pub foreign def pipe_chmod(handle: ptr[uv_pipe_t], flag_bits: i32) -> i32 = c.uv_pipe_chmod
+
+
 pub foreign def poll_init(loop: ptr[uv_loop_t], handle: ptr[uv_poll_t], fd: i32) -> i32 = c.uv_poll_init
+
+
 pub foreign def poll_init_socket(loop: ptr[uv_loop_t], handle: ptr[uv_poll_t], socket: i32) -> i32 = c.uv_poll_init_socket
+
+
 pub foreign def poll_start(handle: ptr[uv_poll_t], events: i32, cb: fn(arg0: ptr[uv_poll_t], arg1: i32, arg2: i32) -> void) -> i32 = c.uv_poll_start
+
+
 pub foreign def poll_stop(handle: ptr[uv_poll_t]) -> i32 = c.uv_poll_stop
+
+
 pub foreign def prepare_init(arg_0: ptr[uv_loop_t], prepare: ptr[uv_prepare_t]) -> i32 = c.uv_prepare_init
+
+
 pub foreign def prepare_start(prepare: ptr[uv_prepare_t], cb: fn(arg0: ptr[uv_prepare_t]) -> void) -> i32 = c.uv_prepare_start
+
+
 pub foreign def prepare_stop(prepare: ptr[uv_prepare_t]) -> i32 = c.uv_prepare_stop
+
+
 pub foreign def check_init(arg_0: ptr[uv_loop_t], check: ptr[uv_check_t]) -> i32 = c.uv_check_init
+
+
 pub foreign def check_start(check: ptr[uv_check_t], cb: fn(arg0: ptr[uv_check_t]) -> void) -> i32 = c.uv_check_start
+
+
 pub foreign def check_stop(check: ptr[uv_check_t]) -> i32 = c.uv_check_stop
+
+
 pub foreign def idle_init(arg_0: ptr[uv_loop_t], idle: ptr[uv_idle_t]) -> i32 = c.uv_idle_init
+
+
 pub foreign def idle_start(idle: ptr[uv_idle_t], cb: fn(arg0: ptr[uv_idle_t]) -> void) -> i32 = c.uv_idle_start
+
+
 pub foreign def idle_stop(idle: ptr[uv_idle_t]) -> i32 = c.uv_idle_stop
+
+
 pub foreign def async_init(arg_0: ptr[uv_loop_t], handle: ptr[uv_async_t], async_cb: fn(arg0: ptr[uv_async_t]) -> void) -> i32 = c.uv_async_init
+
+
 pub foreign def async_send(handle: ptr[uv_async_t]) -> i32 = c.uv_async_send
+
+
 pub foreign def timer_init(arg_0: ptr[uv_loop_t], handle: ptr[uv_timer_t]) -> i32 = c.uv_timer_init
+
+
 pub foreign def timer_start(handle: ptr[uv_timer_t], cb: fn(arg0: ptr[uv_timer_t]) -> void, timeout: usize, repeat: usize) -> i32 = c.uv_timer_start
+
+
 pub foreign def timer_stop(handle: ptr[uv_timer_t]) -> i32 = c.uv_timer_stop
+
+
 pub foreign def timer_again(handle: ptr[uv_timer_t]) -> i32 = c.uv_timer_again
+
+
 pub foreign def timer_set_repeat(handle: ptr[uv_timer_t], repeat: usize) -> void = c.uv_timer_set_repeat
+
+
 pub foreign def timer_get_repeat(handle: const_ptr[uv_timer_t]) -> u64 = c.uv_timer_get_repeat
+
+
 pub foreign def timer_get_due_in(handle: const_ptr[uv_timer_t]) -> u64 = c.uv_timer_get_due_in
+
+
 pub foreign def getaddrinfo(loop: ptr[uv_loop_t], req: ptr[uv_getaddrinfo_t], getaddrinfo_cb: fn(arg0: ptr[uv_getaddrinfo_t], arg1: i32, arg2: ptr[sys.addrinfo]) -> void, node: cstr, service: cstr, hints: const_ptr[sys.addrinfo]) -> i32 = c.uv_getaddrinfo
+
+
 pub foreign def freeaddrinfo(ai: ptr[sys.addrinfo]) -> void = c.uv_freeaddrinfo
+
+
 pub foreign def getnameinfo(loop: ptr[uv_loop_t], req: ptr[uv_getnameinfo_t], getnameinfo_cb: fn(arg0: ptr[uv_getnameinfo_t], arg1: i32, arg2: cstr, arg3: cstr) -> void, addr: const_ptr[sys.sockaddr], flag_bits: i32) -> i32 = c.uv_getnameinfo
+
+
 pub foreign def spawn(loop: ptr[uv_loop_t], handle: ptr[uv_process_t], options: const_ptr[uv_process_options_t]) -> i32 = c.uv_spawn
+
+
 pub foreign def process_kill(arg_0: ptr[uv_process_t], signum: i32) -> i32 = c.uv_process_kill
+
+
 pub foreign def kill(pid: i32, signum: i32) -> i32 = c.uv_kill
+
+
 pub foreign def process_get_pid(arg_0: const_ptr[uv_process_t]) -> uv_pid_t = c.uv_process_get_pid
+
+
 pub foreign def queue_work(loop: ptr[uv_loop_t], req: ptr[uv_work_t], work_cb: fn(arg0: ptr[uv_work_t]) -> void, after_work_cb: fn(arg0: ptr[uv_work_t], arg1: i32) -> void) -> i32 = c.uv_queue_work
+
+
 pub foreign def cancel(req: ptr[uv_req_t]) -> i32 = c.uv_cancel
+
+
 pub foreign def setup_args(argc: i32, argv: ptr[ptr[char]]) -> ptr[ptr[char]] = c.uv_setup_args
+
+
 pub foreign def get_process_title(buffer: ptr[char], size: usize) -> i32 = c.uv_get_process_title
+
+
 pub foreign def set_process_title(title: cstr) -> i32 = c.uv_set_process_title
+
+
 pub foreign def resident_set_memory(rss: ptr[usize]) -> i32 = c.uv_resident_set_memory
+
+
 pub foreign def uptime(uptime: ptr[f64]) -> i32 = c.uv_uptime
+
+
 pub foreign def get_osfhandle(fd: i32) -> uv_os_fd_t = c.uv_get_osfhandle
+
+
 pub foreign def open_osfhandle(os_fd: i32) -> i32 = c.uv_open_osfhandle
+
+
 pub foreign def getrusage(rusage: ptr[uv_rusage_t]) -> i32 = c.uv_getrusage
+
+
 pub foreign def getrusage_thread(rusage: ptr[uv_rusage_t]) -> i32 = c.uv_getrusage_thread
+
+
 pub foreign def os_homedir(buffer: ptr[char], size: ptr[usize]) -> i32 = c.uv_os_homedir
+
+
 pub foreign def os_tmpdir(buffer: ptr[char], size: ptr[usize]) -> i32 = c.uv_os_tmpdir
+
+
 pub foreign def os_get_passwd(pwd: ptr[uv_passwd_t]) -> i32 = c.uv_os_get_passwd
+
+
 pub foreign def os_free_passwd(pwd: ptr[uv_passwd_t]) -> void = c.uv_os_free_passwd
+
+
 pub foreign def os_get_passwd_2(pwd: ptr[uv_passwd_t], uid: u32) -> i32 = c.uv_os_get_passwd2
+
+
 pub foreign def os_get_group(grp: ptr[uv_group_t], gid: u32) -> i32 = c.uv_os_get_group
+
+
 pub foreign def os_free_group(grp: ptr[uv_group_t]) -> void = c.uv_os_free_group
+
+
 pub foreign def os_getpid() -> uv_pid_t = c.uv_os_getpid
+
+
 pub foreign def os_getppid() -> uv_pid_t = c.uv_os_getppid
+
+
 pub foreign def os_getpriority(pid: i32, priority: ptr[i32]) -> i32 = c.uv_os_getpriority
+
+
 pub foreign def os_setpriority(pid: i32, priority: i32) -> i32 = c.uv_os_setpriority
+
+
 pub foreign def thread_getpriority(tid: usize, priority: ptr[i32]) -> i32 = c.uv_thread_getpriority
+
+
 pub foreign def thread_setpriority(tid: usize, priority: i32) -> i32 = c.uv_thread_setpriority
+
+
 pub foreign def available_parallelism() -> u32 = c.uv_available_parallelism
+
+
 pub foreign def cpu_info(cpu_infos: ptr[ptr[uv_cpu_info_t]], count: ptr[i32]) -> i32 = c.uv_cpu_info
+
+
 pub foreign def free_cpu_info(cpu_infos: ptr[uv_cpu_info_t], count: i32) -> void = c.uv_free_cpu_info
+
+
 pub foreign def cpumask_size() -> i32 = c.uv_cpumask_size
+
+
 pub foreign def interface_addresses(addresses: ptr[ptr[uv_interface_address_t]], count: ptr[i32]) -> i32 = c.uv_interface_addresses
+
+
 pub foreign def free_interface_addresses(addresses: ptr[uv_interface_address_t], count: i32) -> void = c.uv_free_interface_addresses
+
+
 pub foreign def os_environ(envitems: ptr[ptr[uv_env_item_t]], count: ptr[i32]) -> i32 = c.uv_os_environ
+
+
 pub foreign def os_free_environ(envitems: ptr[uv_env_item_t], count: i32) -> void = c.uv_os_free_environ
+
+
 pub foreign def os_getenv(name: cstr, buffer: ptr[char], size: ptr[usize]) -> i32 = c.uv_os_getenv
+
+
 pub foreign def os_setenv(name: cstr, value: cstr) -> i32 = c.uv_os_setenv
+
+
 pub foreign def os_unsetenv(name: cstr) -> i32 = c.uv_os_unsetenv
+
+
 pub foreign def os_gethostname(buffer: ptr[char], size: ptr[usize]) -> i32 = c.uv_os_gethostname
+
+
 pub foreign def os_uname(buffer: ptr[uv_utsname_t]) -> i32 = c.uv_os_uname
+
+
 pub foreign def metrics_info(loop: ptr[uv_loop_t], metrics: ptr[uv_metrics_t]) -> i32 = c.uv_metrics_info
+
+
 pub foreign def metrics_idle_time(loop: ptr[uv_loop_t]) -> u64 = c.uv_metrics_idle_time
+
+
 pub foreign def fs_get_type(arg_0: const_ptr[uv_fs_t]) -> uv_fs_type = c.uv_fs_get_type
+
+
 pub foreign def fs_get_result(arg_0: const_ptr[uv_fs_t]) -> isize = c.uv_fs_get_result
+
+
 pub foreign def fs_get_system_error(arg_0: const_ptr[uv_fs_t]) -> i32 = c.uv_fs_get_system_error
+
+
 pub foreign def fs_get_ptr(arg_0: const_ptr[uv_fs_t]) -> ptr[void] = c.uv_fs_get_ptr
+
+
 pub foreign def fs_get_path(arg_0: const_ptr[uv_fs_t]) -> cstr = c.uv_fs_get_path
+
+
 pub foreign def fs_get_statbuf(arg_0: ptr[uv_fs_t]) -> ptr[uv_stat_t] = c.uv_fs_get_statbuf
+
+
 pub foreign def fs_req_cleanup(req: ptr[uv_fs_t]) -> void = c.uv_fs_req_cleanup
+
+
 pub foreign def fs_close(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_close
+
+
 pub foreign def fs_open(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, flag_bits: i32, mode: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_open
+
+
 pub foreign def fs_read(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, bufs: const_ptr[uv_buf_t], nbufs: u32, offset: isize, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_read
+
+
 pub foreign def fs_unlink(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_unlink
+
+
 pub foreign def fs_write(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, bufs: const_ptr[uv_buf_t], nbufs: u32, offset: isize, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_write
+
+
 pub foreign def fs_copyfile(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, flag_bits: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_copyfile
+
+
 pub foreign def fs_mkdir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, mode: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_mkdir
+
+
 pub foreign def fs_mkdtemp(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], tpl: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_mkdtemp
+
+
 pub foreign def fs_mkstemp(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], tpl: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_mkstemp
+
+
 pub foreign def fs_rmdir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_rmdir
+
+
 pub foreign def fs_scandir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, flag_bits: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_scandir
+
+
 pub foreign def fs_scandir_next(req: ptr[uv_fs_t], ent: ptr[uv_dirent_t]) -> i32 = c.uv_fs_scandir_next
+
+
 pub foreign def fs_opendir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_opendir
+
+
 pub foreign def fs_readdir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], dir: ptr[uv_dir_t], cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_readdir
+
+
 pub foreign def fs_closedir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], dir: ptr[uv_dir_t], cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_closedir
+
+
 pub foreign def fs_stat(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_stat
+
+
 pub foreign def fs_fstat(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_fstat
+
+
 pub foreign def fs_rename(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_rename
+
+
 pub foreign def fs_fsync(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_fsync
+
+
 pub foreign def fs_fdatasync(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_fdatasync
+
+
 pub foreign def fs_ftruncate(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, offset: isize, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_ftruncate
+
+
 pub foreign def fs_sendfile(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], out_fd: i32, in_fd: i32, in_offset: isize, length: usize, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_sendfile
+
+
 pub foreign def fs_access(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, mode: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_access
+
+
 pub foreign def fs_chmod(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, mode: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_chmod
+
+
 pub foreign def fs_utime(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, atime: f64, mtime: f64, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_utime
+
+
 pub foreign def fs_futime(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, atime: f64, mtime: f64, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_futime
+
+
 pub foreign def fs_lutime(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, atime: f64, mtime: f64, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_lutime
+
+
 pub foreign def fs_lstat(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_lstat
+
+
 pub foreign def fs_link(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_link
+
+
 pub foreign def fs_symlink(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, flag_bits: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_symlink
+
+
 pub foreign def fs_readlink(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_readlink
+
+
 pub foreign def fs_realpath(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_realpath
+
+
 pub foreign def fs_fchmod(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, mode: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_fchmod
+
+
 pub foreign def fs_chown(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, uid: u32, gid: u32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_chown
+
+
 pub foreign def fs_fchown(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, uid: u32, gid: u32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_fchown
+
+
 pub foreign def fs_lchown(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, uid: u32, gid: u32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_lchown
+
+
 pub foreign def fs_statfs(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32 = c.uv_fs_statfs
+
+
 pub foreign def fs_poll_init(loop: ptr[uv_loop_t], handle: ptr[uv_fs_poll_t]) -> i32 = c.uv_fs_poll_init
+
+
 pub foreign def fs_poll_start(handle: ptr[uv_fs_poll_t], poll_cb: fn(arg0: ptr[uv_fs_poll_t], arg1: i32, arg2: const_ptr[uv_stat_t], arg3: const_ptr[uv_stat_t]) -> void, path: cstr, interval: u32) -> i32 = c.uv_fs_poll_start
+
+
 pub foreign def fs_poll_stop(handle: ptr[uv_fs_poll_t]) -> i32 = c.uv_fs_poll_stop
+
+
 pub foreign def fs_poll_getpath(handle: ptr[uv_fs_poll_t], buffer: ptr[char], size: ptr[usize]) -> i32 = c.uv_fs_poll_getpath
+
+
 pub foreign def signal_init(loop: ptr[uv_loop_t], handle: ptr[uv_signal_t]) -> i32 = c.uv_signal_init
+
+
 pub foreign def signal_start(handle: ptr[uv_signal_t], signal_cb: fn(arg0: ptr[uv_signal_t], arg1: i32) -> void, signum: i32) -> i32 = c.uv_signal_start
+
+
 pub foreign def signal_start_oneshot(handle: ptr[uv_signal_t], signal_cb: fn(arg0: ptr[uv_signal_t], arg1: i32) -> void, signum: i32) -> i32 = c.uv_signal_start_oneshot
+
+
 pub foreign def signal_stop(handle: ptr[uv_signal_t]) -> i32 = c.uv_signal_stop
+
+
 pub foreign def loadavg(avg: ptr[f64]) -> void = c.uv_loadavg
+
+
 pub foreign def fs_event_init(loop: ptr[uv_loop_t], handle: ptr[uv_fs_event_t]) -> i32 = c.uv_fs_event_init
+
+
 pub foreign def fs_event_start(handle: ptr[uv_fs_event_t], cb: fn(arg0: ptr[uv_fs_event_t], arg1: cstr, arg2: i32, arg3: i32) -> void, path: cstr, flag_bits: u32) -> i32 = c.uv_fs_event_start
+
+
 pub foreign def fs_event_stop(handle: ptr[uv_fs_event_t]) -> i32 = c.uv_fs_event_stop
+
+
 pub foreign def fs_event_getpath(handle: ptr[uv_fs_event_t], buffer: ptr[char], size: ptr[usize]) -> i32 = c.uv_fs_event_getpath
+
+
 pub foreign def ip_4_addr(ip: cstr, port: i32, addr: ptr[sys.sockaddr_in]) -> i32 = c.uv_ip4_addr
+
+
 pub foreign def ip_6_addr(ip: cstr, port: i32, addr: ptr[sys.sockaddr_in6]) -> i32 = c.uv_ip6_addr
+
+
 pub foreign def ip_4_name(src: const_ptr[sys.sockaddr_in], dst: ptr[char], size: usize) -> i32 = c.uv_ip4_name
+
+
 pub foreign def ip_6_name(src: const_ptr[sys.sockaddr_in6], dst: ptr[char], size: usize) -> i32 = c.uv_ip6_name
+
+
 pub foreign def ip_name(src: const_ptr[sys.sockaddr], dst: ptr[char], size: usize) -> i32 = c.uv_ip_name
+
+
 pub foreign def inet_ntop(af: i32, src: const_ptr[void], dst: ptr[char], size: usize) -> i32 = c.uv_inet_ntop
+
+
 pub foreign def inet_pton(af: i32, src: cstr, dst: ptr[void]) -> i32 = c.uv_inet_pton
+
+
 pub foreign def random(loop: ptr[uv_loop_t], req: ptr[uv_random_t], buf: ptr[void], buflen: usize, flag_bits: u32, cb: fn(arg0: ptr[uv_random_t], arg1: i32, arg2: ptr[void], arg3: usize) -> void) -> i32 = c.uv_random
+
+
 pub foreign def if_indextoname(ifindex: u32, buffer: ptr[char], size: ptr[usize]) -> i32 = c.uv_if_indextoname
+
+
 pub foreign def if_indextoiid(ifindex: u32, buffer: ptr[char], size: ptr[usize]) -> i32 = c.uv_if_indextoiid
+
+
 pub foreign def exepath(buffer: ptr[char], size: ptr[usize]) -> i32 = c.uv_exepath
+
+
 pub foreign def cwd(buffer: ptr[char], size: ptr[usize]) -> i32 = c.uv_cwd
+
+
 pub foreign def chdir(dir: cstr) -> i32 = c.uv_chdir
+
+
 pub foreign def get_free_memory() -> u64 = c.uv_get_free_memory
+
+
 pub foreign def get_total_memory() -> u64 = c.uv_get_total_memory
+
+
 pub foreign def get_constrained_memory() -> u64 = c.uv_get_constrained_memory
+
+
 pub foreign def get_available_memory() -> u64 = c.uv_get_available_memory
+
+
 pub foreign def clock_gettime(clock_id: uv_clock_id, ts: ptr[uv_timespec64_t]) -> i32 = c.uv_clock_gettime
+
+
 pub foreign def hrtime() -> u64 = c.uv_hrtime
+
+
 pub foreign def sleep(msec: u32) -> void = c.uv_sleep
+
+
 pub foreign def disable_stdio_inheritance() -> void = c.uv_disable_stdio_inheritance
+
+
 pub foreign def dlopen(filename: cstr, lib: ptr[uv_lib_t]) -> i32 = c.uv_dlopen
+
+
 pub foreign def dlclose(lib: ptr[uv_lib_t]) -> void = c.uv_dlclose
+
+
 pub foreign def dlsym(lib: ptr[uv_lib_t], name: cstr, ptr: ptr[ptr[void]]) -> i32 = c.uv_dlsym
+
+
 pub foreign def dlerror(lib: const_ptr[uv_lib_t]) -> cstr = c.uv_dlerror
+
+
 pub foreign def mutex_init(handle: ptr[uv_mutex_t]) -> i32 = c.uv_mutex_init
+
+
 pub foreign def mutex_init_recursive(handle: ptr[uv_mutex_t]) -> i32 = c.uv_mutex_init_recursive
+
+
 pub foreign def mutex_destroy(handle: ptr[uv_mutex_t]) -> void = c.uv_mutex_destroy
+
+
 pub foreign def mutex_lock(handle: ptr[uv_mutex_t]) -> void = c.uv_mutex_lock
+
+
 pub foreign def mutex_trylock(handle: ptr[uv_mutex_t]) -> i32 = c.uv_mutex_trylock
+
+
 pub foreign def mutex_unlock(handle: ptr[uv_mutex_t]) -> void = c.uv_mutex_unlock
+
+
 pub foreign def rwlock_init(rwlock: ptr[uv_rwlock_t]) -> i32 = c.uv_rwlock_init
+
+
 pub foreign def rwlock_destroy(rwlock: ptr[uv_rwlock_t]) -> void = c.uv_rwlock_destroy
+
+
 pub foreign def rwlock_rdlock(rwlock: ptr[uv_rwlock_t]) -> void = c.uv_rwlock_rdlock
+
+
 pub foreign def rwlock_tryrdlock(rwlock: ptr[uv_rwlock_t]) -> i32 = c.uv_rwlock_tryrdlock
+
+
 pub foreign def rwlock_rdunlock(rwlock: ptr[uv_rwlock_t]) -> void = c.uv_rwlock_rdunlock
+
+
 pub foreign def rwlock_wrlock(rwlock: ptr[uv_rwlock_t]) -> void = c.uv_rwlock_wrlock
+
+
 pub foreign def rwlock_trywrlock(rwlock: ptr[uv_rwlock_t]) -> i32 = c.uv_rwlock_trywrlock
+
+
 pub foreign def rwlock_wrunlock(rwlock: ptr[uv_rwlock_t]) -> void = c.uv_rwlock_wrunlock
+
+
 pub foreign def sem_init(sem: ptr[uv_sem_t], value: u32) -> i32 = c.uv_sem_init
+
+
 pub foreign def sem_destroy(sem: ptr[uv_sem_t]) -> void = c.uv_sem_destroy
+
+
 pub foreign def sem_post(sem: ptr[uv_sem_t]) -> void = c.uv_sem_post
+
+
 pub foreign def sem_wait(sem: ptr[uv_sem_t]) -> void = c.uv_sem_wait
+
+
 pub foreign def sem_trywait(sem: ptr[uv_sem_t]) -> i32 = c.uv_sem_trywait
+
+
 pub foreign def cond_init(cond: ptr[uv_cond_t]) -> i32 = c.uv_cond_init
+
+
 pub foreign def cond_destroy(cond: ptr[uv_cond_t]) -> void = c.uv_cond_destroy
+
+
 pub foreign def cond_signal(cond: ptr[uv_cond_t]) -> void = c.uv_cond_signal
+
+
 pub foreign def cond_broadcast(cond: ptr[uv_cond_t]) -> void = c.uv_cond_broadcast
+
+
 pub foreign def barrier_init(barrier: ptr[uv_barrier_t], count: u32) -> i32 = c.uv_barrier_init
+
+
 pub foreign def barrier_destroy(barrier: ptr[uv_barrier_t]) -> void = c.uv_barrier_destroy
+
+
 pub foreign def barrier_wait(barrier: ptr[uv_barrier_t]) -> i32 = c.uv_barrier_wait
+
+
 pub foreign def cond_wait(cond: ptr[uv_cond_t], mutex: ptr[uv_mutex_t]) -> void = c.uv_cond_wait
+
+
 pub foreign def cond_timedwait(cond: ptr[uv_cond_t], mutex: ptr[uv_mutex_t], timeout: usize) -> i32 = c.uv_cond_timedwait
+
+
 pub foreign def once(guard: ptr[uv_once_t], callback: fn() -> void) -> void = c.uv_once
+
+
 pub foreign def key_create(key: ptr[uv_key_t]) -> i32 = c.uv_key_create
+
+
 pub foreign def key_delete(key: ptr[uv_key_t]) -> void = c.uv_key_delete
+
+
 pub foreign def key_get(key: ptr[uv_key_t]) -> ptr[void] = c.uv_key_get
+
+
 pub foreign def key_set(key: ptr[uv_key_t], value: ptr[void]) -> void = c.uv_key_set
+
+
 pub foreign def gettimeofday(tv: ptr[uv_timeval64_t]) -> i32 = c.uv_gettimeofday
+
+
 pub foreign def thread_create(tid: ptr[uv_thread_t], entry: fn(arg0: ptr[void]) -> void, arg: ptr[void]) -> i32 = c.uv_thread_create
+
+
 pub foreign def thread_detach(tid: ptr[uv_thread_t]) -> i32 = c.uv_thread_detach
+
+
 pub foreign def thread_create_ex(tid: ptr[uv_thread_t], params: const_ptr[uv_thread_options_t], entry: fn(arg0: ptr[void]) -> void, arg: ptr[void]) -> i32 = c.uv_thread_create_ex
+
+
 pub foreign def thread_setaffinity(tid: ptr[uv_thread_t], cpumask: ptr[char], oldmask: ptr[char], mask_size: usize) -> i32 = c.uv_thread_setaffinity
+
+
 pub foreign def thread_getaffinity(tid: ptr[uv_thread_t], cpumask: ptr[char], mask_size: usize) -> i32 = c.uv_thread_getaffinity
+
+
 pub foreign def thread_getcpu() -> i32 = c.uv_thread_getcpu
+
+
 pub foreign def thread_self() -> uv_thread_t = c.uv_thread_self
+
+
 pub foreign def thread_join(tid: ptr[uv_thread_t]) -> i32 = c.uv_thread_join
+
+
 pub foreign def thread_equal(t_1: const_ptr[uv_thread_t], t_2: const_ptr[uv_thread_t]) -> i32 = c.uv_thread_equal
+
+
 pub foreign def thread_setname(name: cstr) -> i32 = c.uv_thread_setname
+
+
 pub foreign def thread_getname(tid: ptr[uv_thread_t], name: ptr[char], size: usize) -> i32 = c.uv_thread_getname
+
+
 pub foreign def loop_get_data(arg_0: const_ptr[uv_loop_t]) -> ptr[void] = c.uv_loop_get_data
+
+
 pub foreign def loop_set_data(arg_0: ptr[uv_loop_t], data: ptr[void]) -> void = c.uv_loop_set_data
+
+
 pub foreign def utf_16_length_as_wtf_8(utf_16: const_ptr[u16], utf_16_len: isize) -> usize = c.uv_utf16_length_as_wtf8
+
+
 pub foreign def utf_16_to_wtf_8(utf_16: const_ptr[u16], utf_16_len: isize, wtf_8_ptr: ptr[ptr[char]], wtf_8_len_ptr: ptr[usize]) -> i32 = c.uv_utf16_to_wtf8
+
+
 pub foreign def wtf_8_length_as_utf_16(wtf_8: cstr) -> isize = c.uv_wtf8_length_as_utf16
+
+
 pub foreign def wtf_8_to_utf_16(wtf_8: cstr, utf_16: ptr[u16], utf_16_len: usize) -> void = c.uv_wtf8_to_utf16

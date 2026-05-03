@@ -12,6 +12,7 @@ const window_title: cstr = c"raylib [shapes] example - math angle rotation"
 const title_text: cstr = c"Fixed angles + rotating line"
 const label_format: cstr = c"%d deg"
 
+
 def line_color(index: i32) -> rl.Color:
     if index == 0:
         return rl.GREEN
@@ -22,6 +23,7 @@ def line_color(index: i32) -> rl.Color:
     if index == 3:
         return rl.MAGENTA
     return rl.WHITE
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

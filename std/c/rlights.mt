@@ -24,7 +24,6 @@ extern module std.c.rlights:
         LIGHT_POINT = 1
 
     extern def CreateLight(kind: i32, position: rl.Vector3, target: rl.Vector3, color: rl.Color, shader: rl.Shader) -> Light
-
     extern def UpdateLightValues(shader: rl.Shader, light: Light) -> void
 
     const MAX_LIGHTS: i32 = 4

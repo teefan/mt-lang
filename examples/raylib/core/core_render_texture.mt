@@ -10,6 +10,7 @@ const render_texture_width: i32 = 300
 const render_texture_height: i32 = 300
 const ball_radius_limit: f32 = 20.0
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

@@ -13,12 +13,14 @@ const hour_mode_24: i32 = 24
 const hour_mode_12: i32 = 12
 const hands_move_duration: f32 = 0.5
 
+
 def blank_digit_angles() -> array[rl.Vector2, 24]:
     let zz = rl.Vector2(x = 135.0, y = 135.0)
     var result = zero[array[rl.Vector2, 24]]()
     for index in range(0, cells_per_digit):
         result[index] = zz
     return result
+
 
 def digit_angles_for(digit: i32) -> array[rl.Vector2, 24]:
     let tl = rl.Vector2(x = 0.0, y = 90.0)
@@ -122,6 +124,7 @@ def digit_angles_for(digit: i32) -> array[rl.Vector2, 24]:
 
     return blank_digit_angles()
 
+
 def digits_for(clock: time.ClockTime, hour_mode: i32) -> array[i32, 6]:
     var result = zero[array[i32, 6]]()
     let hour_value = if hour_mode == hour_mode_24: clock.hour else: time.hour_12(clock)
@@ -133,8 +136,10 @@ def digits_for(clock: time.ClockTime, hour_mode: i32) -> array[i32, 6]:
     result[5] = clock.second % 10
     return result
 
+
 def angle_slot(digit: i32, cell: i32) -> i32:
     return digit * cells_per_digit + cell
+
 
 def refresh_digits(current_clock: time.ClockTime, hour_mode: i32, current_angles: array[rl.Vector2, 144], src_angles: ref[array[rl.Vector2, 144]], dst_angles: ref[array[rl.Vector2, 144]]) -> void:
     let display_digits = digits_for(current_clock, hour_mode)
@@ -153,6 +158,7 @@ def refresh_digits(current_clock: time.ClockTime, hour_mode: i32, current_angles
                 read(src_angles)[slot].x -= 360.0
             if read(src_angles)[slot].y > target_angle.y:
                 read(src_angles)[slot].y -= 360.0
+
 
 def main() -> i32:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

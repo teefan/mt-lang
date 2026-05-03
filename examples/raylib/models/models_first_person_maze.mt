@@ -8,6 +8,7 @@ const window_title: cstr = c"raylib [models] example - first person maze"
 const cubicmap_path: cstr = c"../resources/cubicmap.png"
 const atlas_path: cstr = c"../resources/cubicmap_atlas.png"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

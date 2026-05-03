@@ -21,8 +21,10 @@ const clock_digital: i32 = 1
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 
+
 def clock_hand(angle: f32, length: i32, thickness: i32, color: rl.Color) -> ClockHand:
     return ClockHand(value = 0, angle = angle, length = length, thickness = thickness, color = color)
+
 
 def apply_clock_time(clock: ref[Clock], current: time.ClockTime) -> void:
     clock.hour.value = current.hour
@@ -40,10 +42,12 @@ def apply_clock_time(clock: ref[Clock], current: time.ClockTime) -> void:
     clock.second.angle = f32<-(clock.second.value % 60) * 6.0
     clock.second.angle -= 90.0
 
+
 def update_clock(clock: ref[Clock]) -> void:
     let current = time.local_clock()
     if current.is_ok:
         apply_clock_time(clock, current.value)
+
 
 def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
     rl.draw_circle_v(position, f32<-clock.second.length + 40.0, rl.LIGHTGRAY)
@@ -84,11 +88,13 @@ def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
         clock.hour.color,
     )
 
+
 def draw_segment_triangles(points: array[rl.Vector2, 6], color: rl.Color) -> void:
     rl.draw_triangle(points[0], points[1], points[2], color)
     rl.draw_triangle(points[2], points[1], points[3], color)
     rl.draw_triangle(points[2], points[3], points[4], color)
     rl.draw_triangle(points[4], points[3], points[5], color)
+
 
 def draw_display_segment(center: rl.Vector2, length: i32, thick: i32, vertical: bool, color: rl.Color) -> void:
     let half_length = f32<-length / 2.0
@@ -111,6 +117,7 @@ def draw_display_segment(center: rl.Vector2, length: i32, thick: i32, vertical: 
             rl.Vector2(x = center.x + half_thick, y = center.y + half_length),
             rl.Vector2(x = center.x, y = center.y + half_length + half_thick),
         ), color)
+
 
 def draw_7s_display(position: rl.Vector2, segments: i32, color_on: rl.Color, color_off: rl.Color) -> void:
     let segment_len = 60
@@ -167,6 +174,7 @@ def draw_7s_display(position: rl.Vector2, segments: i32, color_on: rl.Color, col
         if (segments & 64) != 0: color_on else: color_off,
     )
 
+
 def draw_display_value(position: rl.Vector2, value: i32, color_on: rl.Color, color_off: rl.Color) -> void:
     if value == 0:
         draw_7s_display(position, 63, color_on, color_off)
@@ -189,6 +197,7 @@ def draw_display_value(position: rl.Vector2, value: i32, color_on: rl.Color, col
     elif value == 9:
         draw_7s_display(position, 111, color_on, color_off)
 
+
 def draw_clock_digital(clock: Clock, position: rl.Vector2) -> void:
     let color_off = rl.fade(rl.LIGHTGRAY, 0.3)
 
@@ -206,6 +215,7 @@ def draw_clock_digital(clock: Clock, position: rl.Vector2) -> void:
 
     draw_display_value(rl.Vector2(x = position.x + 520.0, y = position.y), clock.second.value / 10, rl.RED, color_off)
     draw_display_value(rl.Vector2(x = position.x + 640.0, y = position.y), clock.second.value % 10, rl.RED, color_off)
+
 
 def main() -> i32:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

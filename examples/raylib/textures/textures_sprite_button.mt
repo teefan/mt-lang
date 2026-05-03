@@ -9,6 +9,7 @@ const window_title: cstr = c"raylib [textures] example - sprite button"
 const button_fx_path: cstr = c"../resources/buttonfx.wav"
 const button_path: cstr = c"../resources/button.png"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

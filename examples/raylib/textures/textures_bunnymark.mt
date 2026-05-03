@@ -18,6 +18,7 @@ const bunny_path: cstr = c"../resources/raybunny.png"
 const bunnies_format: cstr = c"bunnies: %i"
 const draw_calls_format: cstr = c"batched draw calls: %i"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

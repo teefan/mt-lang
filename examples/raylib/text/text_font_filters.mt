@@ -19,6 +19,7 @@ const bilinear_text: cstr = c"BILINEAR"
 const trilinear_text: cstr = c"TRILINEAR"
 const ttf_ext: cstr = c".ttf"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
