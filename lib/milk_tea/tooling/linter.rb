@@ -7,25 +7,24 @@ module MilkTea
     # severity: :error | :warning | :hint
     Warning = Data.define(:path, :line, :column, :length, :code, :message, :severity, :symbol_name) do
       def initialize(path:, line:, column: nil, length: nil, code:, message:, severity: :warning, symbol_name: nil) = super
+
+      def to_diagnostic
+        Diagnostic.new(path:, line:, column:, length:, code:, message:, severity:, symbol_name:)
+      end
     end
     # binding_kind: :local | :param
     # allow_prefer_let: true only for `var` locals — flag prefer-let if never mutated
     # mutated: true if ever the target of a plain `=` or compound assignment
-    # last_write_line: line of most recent plain-write (decl with value, or plain `=`)
-    # last_write_depth: branch nesting depth at the time of last_write_line
-    # reads_after_write: how many times binding was read since last write
-    # pending_dead_assignments: Array<Warning> — intermediate dead writes, emitted at scope exit only if used==true
     Binding = Struct.new(
       :name, :line, :column, :used, :binding_kind, :allow_prefer_let, :mutated,
-      :last_write_line, :last_write_column, :last_write_depth, :reads_after_write, :pending_dead_assignments,
       keyword_init: true
     )
 
-    def self.lint_source(source, path: nil, select: nil, ignore: nil)
+    def self.lint_source(source, path: nil, select: nil, ignore: nil, sema_analysis: nil)
       ast = Parser.parse(source, path:)
       trivia = Lexer.lex_with_trivia(source, path:).trivia
       suppressions = parse_suppressions(trivia)
-      warnings = new(path:).lint(ast)
+      warnings = new(path:, sema_analysis:).lint(ast)
       warnings = apply_suppressions(warnings, suppressions)
 
       # Layer in config-file defaults before per-call overrides
@@ -131,9 +130,8 @@ module MilkTea
         lines.delete_at(idx) if lines[idx]&.match?(/\A\s*import\b/)
       end
 
-      # dead-assignment: delete the dead reassignment statement.
-      # Only applies to plain assignments (not declarations), since
-      # mark_write is only called for Assignment nodes.
+      # dead-assignment: delete dead plain assignment statements.
+      # Declaration initializers are intentionally not auto-fixed.
       dead_fixes = warnings.select { |w| w.code == "dead-assignment" && w.line }
       dead_fixes.sort_by(&:line).reverse_each do |w|
         idx = w.line - 1
@@ -182,12 +180,11 @@ module MilkTea
       warnings
     end
 
-    def initialize(path: nil)
+    def initialize(path: nil, sema_analysis: nil)
       @path = path
+      @sema_analysis = sema_analysis
       @warnings = []
       @scopes = []
-      @loop_condition_reads_stack = []
-      @branch_depth = 0
     end
 
     def lint(ast)
@@ -356,6 +353,9 @@ module MilkTea
           )
         end
         visit_statement_list(function.body)
+        emit_dead_assignment_warnings(function.body)
+        emit_unreachable_warnings(function.body)
+        emit_borrow_warnings(function.body)
       end
       check_missing_return(function)
     end
@@ -456,16 +456,15 @@ module MilkTea
       )
     end
 
-    # Visits a list of statements in sequence, emitting unreachable-code for any
-    # statement that follows a guaranteed terminator (return/break/continue).
+    # Visits a list of statements in sequence for lint rules.
+    # Statements after a guaranteed terminator are skipped to avoid cascading
+    # false-positive unused/dead warnings on unreachable code.
+    # CFG-based emit_unreachable_warnings handles the actual diagnostic.
     def visit_statement_list(stmts)
       terminated = false
       stmts.each do |stmt|
-        if terminated
-          line = stmt.respond_to?(:line) ? stmt.line : nil
-          @warnings << Warning.new(path: @path, line:, code: "unreachable-code", message: "unreachable code")
-          next
-        end
+        next if terminated  # skip visitation only; CFG emits the warning
+
         visit_statement(stmt)
         terminated = true if terminator?(stmt)
       end
@@ -483,23 +482,19 @@ module MilkTea
           statement.name,
           statement.line,
           column: statement.column,
-          var: statement.kind == :var,
-          has_value: !statement.value.nil?
+          var: statement.kind == :var
         )
       when AST::Assignment
         visit_expression(statement.value)          # visit RHS first — reads in RHS count against dead-assignment
         mark_assignment_target_reads(statement.target, statement.operator) # compound: marks target as read
         visit_assignment_target(statement.target)  # non-identifier sub-expressions in target
-        if statement.target.is_a?(AST::Identifier)
-          mark_write(statement.target.name, statement.line, column: statement.target.column)
-        end
         mark_mutated(statement.target)
       when AST::IfStmt
         statement.branches.each do |branch|
           visit_expression(branch.condition)
-          with_scope { in_branch { visit_statement_list(branch.body) } }
+          with_scope { visit_statement_list(branch.body) }
         end
-        with_scope { in_branch { visit_statement_list(statement.else_body) } } if statement.else_body
+        with_scope { visit_statement_list(statement.else_body) } if statement.else_body
         check_redundant_else(statement)
       when AST::MatchStmt
         visit_expression(statement.expression)
@@ -508,7 +503,7 @@ module MilkTea
             binding_line = arm.binding_line || statement.line
             binding_column = arm.binding_column
             declare_local(arm.binding_name, binding_line, column: binding_column, var: false) if arm.binding_name
-            in_branch { visit_statement_list(arm.body) }
+            visit_statement_list(arm.body)
           end
         end
       when AST::UnsafeStmt
@@ -520,16 +515,8 @@ module MilkTea
           visit_statement_list(statement.body)
         end
       when AST::WhileStmt
-        condition_reads = collect_read_identifiers(statement.condition)
-        body_reads = collect_reads_from_stmts(statement.body)
-        loop_reads = condition_reads | body_reads
         visit_expression(statement.condition)
-        with_scope do
-          @loop_condition_reads_stack << loop_reads
-          visit_statement_list(statement.body)
-        ensure
-          @loop_condition_reads_stack.pop
-        end
+        with_scope { visit_statement_list(statement.body) }
       when AST::ReturnStmt
         visit_expression(statement.value) if statement.value
       when AST::DeferStmt
@@ -584,6 +571,9 @@ module MilkTea
             )
           end
           visit_statement_list(expression.body)
+          emit_dead_assignment_warnings(expression.body)
+          emit_unreachable_warnings(expression.body)
+          emit_borrow_warnings(expression.body)
         end
       when AST::AwaitExpr
         visit_expression(expression.expression)
@@ -644,14 +634,7 @@ module MilkTea
       emit_scope_warnings(@scopes.pop)
     end
 
-    def in_branch
-      @branch_depth += 1
-      yield
-    ensure
-      @branch_depth -= 1
-    end
-
-    def declare_local(name, line, column: nil, var: false, has_value: false)
+    def declare_local(name, line, column: nil, var: false)
       return if ignored_binding_name?(name)
 
       # shadow: check whether any outer scope already has a binding for this name
@@ -672,12 +655,7 @@ module MilkTea
         name:, line:, column:, used: false,
         binding_kind: :local,
         allow_prefer_let: var,
-        mutated: false,
-        last_write_line: has_value ? line : nil,
-        last_write_column: has_value ? column : nil,
-        last_write_depth: has_value ? @branch_depth : nil,
-        reads_after_write: 0,
-        pending_dead_assignments: nil
+        mutated: false
       )
     end
 
@@ -688,12 +666,7 @@ module MilkTea
         name:, line:, column:, used: false,
         binding_kind: :param,
         allow_prefer_let: false,
-        mutated: false,
-        last_write_line: nil,
-        last_write_column: nil,
-        last_write_depth: nil,
-        reads_after_write: 0,
-        pending_dead_assignments: nil
+        mutated: false
       )
     end
 
@@ -712,127 +685,82 @@ module MilkTea
         next unless binding
 
         binding.used = true
-        binding.reads_after_write += 1
         return
       end
     end
 
-    # Record a plain write to `name` at `line`.  If the previous write was never
-    # read (reads_after_write == 0), save a pending dead-assignment warning that
-    # will be emitted at scope exit — but only when binding.used is true (to
-    # avoid duplicate noise alongside unused-local).
-    def mark_write(name, line, column: nil)
-      @scopes.reverse_each do |scope|
-        binding = scope[name]
-        next unless binding
-
-        if binding.last_write_line && binding.reads_after_write == 0
-          # Only flag this overwrite as a dead assignment if the current write is
-          # at least as unconditional as the original write. When the overwrite
-          # happens inside a conditional branch (deeper branch_depth), the
-          # original write may still be consumed on the non-branch path — e.g.
-          # `var x = default; if cond: x = other; use(x)` is idiomatic.
-          if @branch_depth <= (binding.last_write_depth || 0)
-            w = Warning.new(
-              path: @path,
-              line: binding.last_write_line,
-              column: binding.last_write_column,
-              length: name.length,
-              code: "dead-assignment",
-              message: "value assigned to '#{name}' is never read before being overwritten",
-              symbol_name: name
-            )
-            (binding.pending_dead_assignments ||= []) << w
-          end
+    def emit_dead_assignment_warnings(stmts)
+      binding_resolution = @sema_analysis&.binding_resolution
+      cfg_binding_resolution =
+        if binding_resolution
+          CFG::BindingResolution.new(
+            identifier_binding_ids: binding_resolution.identifier_binding_ids,
+            declaration_binding_ids: binding_resolution.declaration_binding_ids,
+          )
         end
-        binding.last_write_line = line
-        binding.last_write_column = column
-        binding.last_write_depth = @branch_depth
-        binding.reads_after_write = 0
-        # Loops are analyzed as a single pass, so writes in the body that are
-        # read by the next iteration's condition would otherwise be misreported
-        # as dead assignments. Treat those as potentially read.
-        binding.reads_after_write = 1 if loop_condition_reads_include?(name)
-        return
+      graph = CFG::Builder.new(
+        ignore_name: method(:ignored_binding_name?),
+        binding_resolution: cfg_binding_resolution,
+      ).build(stmts)
+      liveness = CFG::Liveness.solve(graph)
+      readable_bindings = graph.read_bindings
+
+      graph.each_node do |node|
+        node.writes_info.each do |write|
+          binding_key = write[:binding_key]
+          name = write[:name]
+          next unless readable_bindings.include?(binding_key)
+          next if liveness.live_out[node.id].include?(binding_key)
+
+          @warnings << Warning.new(
+            path: @path,
+            line: write[:line],
+            column: write[:column],
+            length: name.length,
+            code: "dead-assignment",
+            message: "value assigned to '#{name}' is never read",
+            symbol_name: name
+          )
+        end
       end
     end
 
-    def loop_condition_reads_include?(name)
-      @loop_condition_reads_stack.any? { |set| set.include?(name) }
-    end
+    def emit_unreachable_warnings(stmts)
+      return if stmts.nil? || stmts.empty?
 
-    def collect_read_identifiers(expression, names = Set.new)
-      case expression
-      when nil
-        nil
-      when AST::Identifier
-        names << expression.name
-      when AST::MemberAccess
-        collect_read_identifiers(expression.receiver, names)
-      when AST::IndexAccess
-        collect_read_identifiers(expression.receiver, names)
-        collect_read_identifiers(expression.index, names)
-      when AST::Specialization
-        collect_read_identifiers(expression.callee, names)
-      when AST::Call
-        collect_read_identifiers(expression.callee, names)
-        expression.arguments.each { |argument| collect_read_identifiers(argument.value, names) }
-      when AST::UnaryOp
-        collect_read_identifiers(expression.operand, names)
-      when AST::BinaryOp
-        collect_read_identifiers(expression.left, names)
-        collect_read_identifiers(expression.right, names)
-      when AST::IfExpr
-        collect_read_identifiers(expression.condition, names)
-        collect_read_identifiers(expression.then_expression, names)
-        collect_read_identifiers(expression.else_expression, names)
-      when AST::ProcExpr
-        # Proc bodies are analyzed separately by normal lint traversal.
-        nil
-      when AST::AwaitExpr
-        collect_read_identifiers(expression.expression, names)
-      when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral,
-           AST::FormatString, AST::BooleanLiteral, AST::NullLiteral,
-           AST::SizeofExpr, AST::AlignofExpr, AST::OffsetofExpr
-        nil
-      else
-        nil
+      graph      = CFG::Builder.new(ignore_name: method(:ignored_binding_name?)).build(stmts)
+      reachable  = CFG::Reachability.solve(graph)
+
+      graph.each_node do |node|
+        next if reachable.reachable_ids.include?(node.id)
+        next if node.kind == :exit
+        next unless node.statement
+
+        line = node.statement.respond_to?(:line) ? node.statement.line : nil
+        @warnings << Warning.new(path: @path, line:, code: "unreachable-code", message: "unreachable code")
       end
-      names
     end
 
-    def collect_reads_from_stmts(stmts, names = Set.new)
-      return names unless stmts
-      stmts.each { |s| collect_reads_from_stmt(s, names) }
-      names
-    end
+    # Detects obvious aliasing hazards: a mutable reference (ref_of / ptr_of)
+    # is taken from a local variable that is also written later in the same body.
+    def emit_borrow_warnings(stmts)
+      return if stmts.nil? || stmts.empty?
 
-    def collect_reads_from_stmt(stmt, names)
-      case stmt
-      when AST::LocalDecl
-        collect_read_identifiers(stmt.value, names) if stmt.value
-      when AST::Assignment
-        collect_read_identifiers(stmt.value, names)
-        # For compound assignment or index/member targets, the target itself is also read
-        collect_read_identifiers(stmt.target, names) unless stmt.target.is_a?(AST::Identifier)
-      when AST::ReturnStmt
-        collect_read_identifiers(stmt.value, names) if stmt.value
-      when AST::ExpressionStmt
-        collect_read_identifiers(stmt.expression, names)
-      when AST::IfStmt
-        stmt.branches&.each do |b|
-          collect_read_identifiers(b.condition, names) if b.respond_to?(:condition)
-          collect_reads_from_stmts(b.body, names)
-        end
-        collect_reads_from_stmts(stmt.else_body, names) if stmt.else_body
-      when AST::WhileStmt
-        collect_read_identifiers(stmt.condition, names)
-        collect_reads_from_stmts(stmt.body, names)
-      when AST::ForStmt
-        collect_read_identifiers(stmt.iterable, names)
-        collect_reads_from_stmts(stmt.body, names)
-      when AST::UnsafeStmt, AST::DeferStmt
-        collect_reads_from_stmts(stmt.body, names) if stmt.respond_to?(:body)
+      borrowed = collect_borrowed_names(stmts)
+      return if borrowed.empty?
+
+      written = collect_written_names(stmts)
+      (borrowed & written).each do |name|
+        # Find the earliest borrow site for the warning location
+        borrow_line = find_borrow_line(stmts, name)
+        @warnings << Warning.new(
+          path: @path,
+          line: borrow_line,
+          code: "borrow-and-mutate",
+          message: "'#{name}' is borrowed via ref_of/ptr_of and also mutated in the same scope — potential aliasing hazard",
+          severity: :warning,
+          symbol_name: name,
+        )
       end
     end
 
@@ -851,20 +779,6 @@ module MilkTea
             symbol_name: binding.name,
           )
         else
-          # dead-assignment: emit confirmed intermediate overwrites
-          @warnings.concat(binding.pending_dead_assignments) if binding.pending_dead_assignments
-          # dead-assignment: final write whose value was never read
-          if binding.last_write_line && binding.reads_after_write == 0
-            @warnings << Warning.new(
-              path: @path,
-              line: binding.last_write_line,
-              column: binding.last_write_column,
-              length: binding.name.length,
-              code: "dead-assignment",
-              message: "value assigned to '#{binding.name}' is never read",
-              symbol_name: binding.name
-            )
-          end
           if binding.allow_prefer_let && !binding.mutated
             @warnings << Warning.new(
               path: @path,
@@ -883,6 +797,156 @@ module MilkTea
 
     def ignored_binding_name?(name)
       name == "_" || name.start_with?("_")
+    end
+
+    # ── borrow analysis helpers ───────────────────────────────────────────────
+
+    BORROW_CALL_NAMES = %w[ref_of ptr_of].freeze
+
+    def collect_borrowed_names(stmts)
+      names = Set.new
+      stmts.each { |s| collect_borrows_from_stmt(s, names) }
+      names
+    end
+
+    def collect_borrows_from_stmt(stmt, names)
+      case stmt
+      when AST::LocalDecl
+        collect_borrows_from_expr(stmt.value, names) if stmt.value
+      when AST::Assignment
+        collect_borrows_from_expr(stmt.value, names)
+      when AST::ExpressionStmt
+        collect_borrows_from_expr(stmt.expression, names)
+      when AST::IfStmt
+        stmt.branches.each do |b|
+          collect_borrows_from_expr(b.condition, names)
+          b.body.each { |s| collect_borrows_from_stmt(s, names) }
+        end
+        stmt.else_body&.each { |s| collect_borrows_from_stmt(s, names) }
+      when AST::WhileStmt
+        collect_borrows_from_expr(stmt.condition, names)
+        stmt.body.each { |s| collect_borrows_from_stmt(s, names) }
+      when AST::ForStmt
+        stmt.body.each { |s| collect_borrows_from_stmt(s, names) }
+      when AST::ReturnStmt
+        collect_borrows_from_expr(stmt.value, names) if stmt.value
+      end
+    end
+
+    def collect_borrows_from_expr(expr, names)
+      case expr
+      when nil then nil
+      when AST::Call
+        if expr.callee.is_a?(AST::Identifier) && BORROW_CALL_NAMES.include?(expr.callee.name)
+          arg = expr.arguments.first
+          if arg&.value.is_a?(AST::Identifier)
+            names << arg.value.name
+          end
+        else
+          collect_borrows_from_expr(expr.callee, names)
+          expr.arguments.each { |a| collect_borrows_from_expr(a.value, names) }
+        end
+      when AST::UnaryOp  then collect_borrows_from_expr(expr.operand, names)
+      when AST::BinaryOp
+        collect_borrows_from_expr(expr.left, names)
+        collect_borrows_from_expr(expr.right, names)
+      when AST::IfExpr
+        collect_borrows_from_expr(expr.condition, names)
+        collect_borrows_from_expr(expr.then_expression, names)
+        collect_borrows_from_expr(expr.else_expression, names)
+      when AST::MemberAccess  then collect_borrows_from_expr(expr.receiver, names)
+      when AST::IndexAccess
+        collect_borrows_from_expr(expr.receiver, names)
+        collect_borrows_from_expr(expr.index, names)
+      end
+    end
+
+    def collect_written_names(stmts)
+      names = Set.new
+      stmts.each { |s| collect_writes_from_stmt(s, names) }
+      names
+    end
+
+    def collect_writes_from_stmt(stmt, names)
+      case stmt
+      when AST::Assignment
+        names << stmt.target.name if stmt.target.is_a?(AST::Identifier)
+        collect_writes_from_stmt_list(stmt_sub_stmts(stmt), names)
+      when AST::IfStmt
+        stmt.branches.each { |b| b.body.each { |s| collect_writes_from_stmt(s, names) } }
+        stmt.else_body&.each { |s| collect_writes_from_stmt(s, names) }
+      when AST::WhileStmt
+        stmt.body.each { |s| collect_writes_from_stmt(s, names) }
+      when AST::ForStmt
+        stmt.body.each { |s| collect_writes_from_stmt(s, names) }
+      end
+    end
+
+    def collect_writes_from_stmt_list(stmts, names)
+      stmts.each { |s| collect_writes_from_stmt(s, names) }
+    end
+
+    def stmt_sub_stmts(_stmt)
+      []
+    end
+
+    def find_borrow_line(stmts, name)
+      stmts.each do |stmt|
+        line = find_borrow_line_in_stmt(stmt, name)
+        return line if line
+      end
+      nil
+    end
+
+    def find_borrow_line_in_stmt(stmt, name)
+      case stmt
+      when AST::LocalDecl
+        find_borrow_line_in_expr(stmt.value, name) if stmt.value
+      when AST::Assignment
+        find_borrow_line_in_expr(stmt.value, name)
+      when AST::ExpressionStmt
+        find_borrow_line_in_expr(stmt.expression, name)
+      when AST::IfStmt
+        stmt.branches.each do |b|
+          line = find_borrow_line_in_expr(b.condition, name)
+          return line if line
+          b.body.each { |s| line = find_borrow_line_in_stmt(s, name); return line if line }
+        end
+        nil
+      when AST::WhileStmt
+        line = find_borrow_line_in_expr(stmt.condition, name)
+        return line if line
+        stmt.body.each { |s| line = find_borrow_line_in_stmt(s, name); return line if line }
+        nil
+      when AST::ForStmt
+        stmt.body.each { |s| line = find_borrow_line_in_stmt(s, name); return line if line }
+        nil
+      when AST::ReturnStmt
+        find_borrow_line_in_expr(stmt.value, name) if stmt.value
+      end
+    end
+
+    def find_borrow_line_in_expr(expr, name)
+      case expr
+      when nil then nil
+      when AST::Call
+        if expr.callee.is_a?(AST::Identifier) && BORROW_CALL_NAMES.include?(expr.callee.name)
+          arg = expr.arguments.first
+          if arg&.value.is_a?(AST::Identifier) && arg.value.name == name
+            return expr.respond_to?(:line) ? expr.line : nil
+          end
+        end
+        expr.arguments.each do |a|
+          line = find_borrow_line_in_expr(a.value, name)
+          return line if line
+        end
+        nil
+      when AST::UnaryOp  then find_borrow_line_in_expr(expr.operand, name)
+      when AST::BinaryOp
+        find_borrow_line_in_expr(expr.left, name) || find_borrow_line_in_expr(expr.right, name)
+      else
+        nil
+      end
     end
   end
 end

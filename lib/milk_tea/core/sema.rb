@@ -9,20 +9,33 @@ module MilkTea
       @line = line
       @column = column
     end
+
+    def to_diagnostic(path: nil)
+      Diagnostic.new(
+        path:,
+        line: @line,
+        column: @column,
+        code: "sema-error",
+        message: message,
+        severity: :error,
+      )
+    end
   end
 
   class Sema
-    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :values, :functions, :methods, :local_completion_frames)
+    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :values, :functions, :methods, :local_completion_frames, :binding_resolution)
     LocalCompletionFrame = Data.define(:start_line, :end_line, :function_name, :receiver_type, :snapshots)
     LocalCompletionSnapshot = Data.define(:line, :column, :bindings)
+    BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids)
     FlowScope = Class.new(Hash)
-    ValueBinding = Data.define(:name, :storage_type, :flow_type, :mutable, :kind, :const_value) do
+    ValueBinding = Data.define(:id, :name, :storage_type, :flow_type, :mutable, :kind, :const_value) do
       def type
         flow_type || storage_type
       end
 
       def with_flow_type(refined_type)
         ValueBinding.new(
+          id:,
           name:,
           storage_type:,
           flow_type: refined_type == storage_type ? nil : refined_type,
@@ -97,6 +110,11 @@ module MilkTea
         @error_node_stack = []
         @local_completion_frames = []
         @active_local_completion = nil
+        @next_binding_id = 1
+        @binding_name_by_id = {}
+        @identifier_binding_ids = {}
+        @declaration_binding_ids = {}
+        @nullability_flow_result = nil
       end
 
       def check
@@ -125,6 +143,7 @@ module MilkTea
           functions: @top_level_functions,
           methods: snapshot_methods,
           local_completion_frames: @local_completion_frames.dup.freeze,
+          binding_resolution: binding_resolution_snapshot,
         )
       end
 
@@ -176,6 +195,7 @@ module MilkTea
           functions: @top_level_functions,
           methods: snapshot_methods,
           local_completion_frames: @local_completion_frames.dup.freeze,
+          binding_resolution: binding_resolution_snapshot,
         )
 
         { analysis: analysis, errors: errors.uniq { |e| [e.message, e.line] } }
@@ -501,7 +521,9 @@ module MilkTea
             boundary_type = foreign_parameter_boundary_type(param, type, type_params:)
             validate_foreign_boundary_type!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if param.boundary_type && param.mode != :in
             validate_in_foreign_parameter!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if param.mode == :in
-            body_params << value_binding(name: param.name, type: boundary_type || type, mutable: false, kind: :param)
+            param_binding = value_binding(name: param.name, type: boundary_type || type, mutable: false, kind: :param)
+            body_params << param_binding
+            record_declaration_binding(param, param_binding)
             if param.boundary_type
               body_params << value_binding(
                 name: foreign_mapping_public_alias_name(param.name),
@@ -512,7 +534,9 @@ module MilkTea
             end
             public_params << Types::Parameter.new(param.name, type, passing_mode: param.mode, boundary_type: boundary_type)
           else
-            body_params << value_binding(name: param.name, type:, mutable: false, kind: :param)
+            param_binding = value_binding(name: param.name, type:, mutable: false, kind: :param)
+            body_params << param_binding
+            record_declaration_binding(param, param_binding)
           end
         end
 
@@ -728,6 +752,7 @@ module MilkTea
 
         binding = @top_level_values.fetch(name)
         @top_level_values[name] = ValueBinding.new(
+          id: binding.id,
           name: binding.name,
           storage_type: binding.storage_type,
           flow_type: binding.flow_type,
@@ -875,6 +900,7 @@ module MilkTea
             end
           else
             validate_async_function_body!(binding.ast.body) if binding.async
+            run_nullability_pre_pass(binding)
             if binding.async
               with_async_function do
                 check_block(binding.ast.body, scopes:, return_type: binding.body_return_type)
@@ -882,18 +908,20 @@ module MilkTea
             else
               check_block(binding.ast.body, scopes:, return_type: binding.type.return_type)
             end
+            check_definite_assignment(binding)
           end
         end
         @checked_function_bindings[binding.object_id] = true
       ensure
         finish_local_completion_frame(binding)
+        @nullability_flow_result = nil
         @current_type_substitutions = previous_type_substitutions
         @checking_function_bindings.delete(binding.object_id)
       end
 
       def check_block(statements, scopes:, return_type:, allow_return: true)
         with_nested_scope(scopes) do |nested_scopes|
-          statements.each do |statement|
+          statements.each_with_index do |statement, idx|
             begin
               record_local_completion_snapshot(
                 statement.respond_to?(:line) ? statement.line : nil,
@@ -902,6 +930,10 @@ module MilkTea
               )
               refinements = check_statement(statement, scopes: nested_scopes, return_type:, allow_return:)
               apply_continuation_refinements!(nested_scopes, refinements)
+              # Apply CFG-derived nullability refinements before the next statement.
+              if @nullability_flow_result && idx + 1 < statements.length
+                apply_nullability_continuation_refinements!(nested_scopes, statements[idx + 1])
+              end
               record_local_completion_snapshot(statement_end_line(statement), 1_000_000, nested_scopes)
             rescue SemaError => e
               # Propagate as-is if position is already attached (set by an inner
@@ -916,6 +948,77 @@ module MilkTea
             end
           end
         end
+      end
+
+      def check_definite_assignment(binding)
+        return unless binding.ast.respond_to?(:body)
+
+        resolution = binding_resolution_snapshot
+        graph = CFG::Builder.new(
+          binding_resolution: CFG::BindingResolution.new(
+            identifier_binding_ids: resolution.identifier_binding_ids,
+            declaration_binding_ids: resolution.declaration_binding_ids,
+          ),
+          strict_binding_ids: true,
+          local_decl_without_initializer_writes: true,
+        ).build(binding.ast.body)
+
+        local_declared_ids = Set.new
+        graph.each_node do |node|
+          node.writes_info.each do |write|
+            origin = write[:origin]
+            next unless %i[declaration for_binding match_binding].include?(origin)
+
+            local_declared_ids << write[:binding_key]
+          end
+        end
+
+        initially_assigned = binding.body_params.each_with_object(Set.new) do |param, set|
+          set << param.id if param.id
+        end
+        # Any binding read but never defined in this function body is treated as
+        # preassigned (for example module-level const/var bindings).
+        initially_assigned.merge(graph.read_bindings - local_declared_ids)
+
+        result = CFG::DefiniteAssignment.solve(graph, initially_assigned:)
+        first_issue = result.read_before_assignment.first
+        return unless first_issue
+
+        name = @binding_name_by_id[first_issue.binding_key] || first_issue.binding_key
+        raise SemaError.new("read of '#{name}' before definite assignment", line: first_issue.line)
+      end
+
+      # Build a name-based CFG for the function body and run NullabilityFlow so
+      # that cross-branch non-null facts can be applied inside check_block.
+      # Uses string names (not sema binding IDs) so it runs before type-checking.
+      def run_nullability_pre_pass(binding)
+        return unless binding.ast.respond_to?(:body)
+
+        @nullability_flow_result = nil
+        graph = CFG::Builder.new.build(binding.ast.body)
+        @nullability_flow_result = CFG::NullabilityFlow.solve(graph)
+      rescue StandardError
+        @nullability_flow_result = nil
+      end
+
+      # After processing a statement, apply CFG-derived non-null refinements to
+      # the scopes so the *next* statement benefits from cross-branch narrowing.
+      def apply_nullability_continuation_refinements!(scopes, next_stmt)
+        return unless @nullability_flow_result
+
+        nonnull_names = @nullability_flow_result.nonnull_before(next_stmt)
+        return if nonnull_names.empty?
+
+        refinements = {}
+        nonnull_names.each do |name|
+          next unless name.is_a?(String)
+
+          binding = lookup_value(name, scopes)
+          next unless binding&.storage_type.is_a?(Types::Nullable)
+
+          refinements[name] = binding.storage_type.base
+        end
+        apply_continuation_refinements!(scopes, refinements) unless refinements.empty?
       end
 
       def check_statement(statement, scopes:, return_type:, allow_return: true)
@@ -1052,6 +1155,7 @@ module MilkTea
           mutable: statement.kind == :var,
           kind: statement.kind,
         )
+        record_declaration_binding(statement, current_scope[statement.name])
       end
 
       def check_assignment(statement, scopes:)
@@ -1192,6 +1296,7 @@ module MilkTea
 
             payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
             arm_scopes = [{ arm.binding_name => value_binding(name: arm.binding_name, type: payload_type, mutable: false, kind: :local) }] + arm_scopes
+            record_declaration_binding(arm, arm_scopes.first[arm.binding_name])
           end
           check_block(arm.body, scopes: arm_scopes, return_type:, allow_return:)
         end
@@ -1243,6 +1348,7 @@ module MilkTea
             mutable: false,
             kind: :let,
           )
+          record_declaration_binding(statement, current_actual_scope(loop_scopes)[statement.name])
           with_loop do
             check_block(statement.body, scopes: loop_scopes, return_type:, allow_return:)
           end
@@ -1296,6 +1402,7 @@ module MilkTea
         when AST::Identifier
           binding = lookup_value(expression.name, scopes)
           raise_sema_error("unknown name #{expression.name}") unless binding
+          record_identifier_binding(expression, binding)
           raise_sema_error("cannot assign to immutable #{expression.name}") unless binding.mutable
 
           binding.storage_type
@@ -1340,6 +1447,7 @@ module MilkTea
         when AST::Identifier
           binding = lookup_value(expression.name, scopes)
           raise_sema_error("unknown name #{expression.name}") unless binding
+          record_identifier_binding(expression, binding)
 
           return referenced_type(binding.type) if allow_ref_identifier && ref_type?(binding.type)
           if allow_pointer_identifier && pointer_type?(binding.type)
@@ -1485,7 +1593,10 @@ module MilkTea
 
       def infer_identifier(expression, scopes:, expected_type: nil)
         binding = lookup_value(expression.name, scopes)
-        return binding.type if binding
+        if binding
+          record_identifier_binding(expression, binding)
+          return binding.type
+        end
 
         if @top_level_functions.key?(expression.name)
           raise_sema_error("generic function #{expression.name} must be called") if @top_level_functions.fetch(expression.name).type_params.any?
@@ -3880,6 +3991,7 @@ module MilkTea
 
       def substitute_value_binding(binding, substitutions)
         ValueBinding.new(
+          id: binding.id,
           name: binding.name,
           storage_type: substitute_type(binding.storage_type, substitutions),
           flow_type: binding.flow_type ? substitute_type(binding.flow_type, substitutions) : nil,
@@ -4038,6 +4150,7 @@ module MilkTea
         frozen_scope = scope.is_a?(FlowScope) ? FlowScope.new : {}
         scope.each do |name, binding|
           frozen_scope[name] = ValueBinding.new(
+            id: binding.id,
             name: binding.name,
             storage_type: binding.storage_type,
             flow_type: binding.flow_type,
@@ -4446,7 +4559,36 @@ module MilkTea
       end
 
       def value_binding(name:, type:, mutable:, kind:, flow_type: nil)
-        ValueBinding.new(name:, storage_type: type, flow_type: flow_type == type ? nil : flow_type, mutable:, kind:, const_value: nil)
+        id = allocate_binding_id
+        @binding_name_by_id[id] = name
+        ValueBinding.new(id:, name:, storage_type: type, flow_type: flow_type == type ? nil : flow_type, mutable:, kind:, const_value: nil)
+      end
+
+      def binding_resolution_snapshot
+        BindingResolution.new(
+          identifier_binding_ids: @identifier_binding_ids.dup.freeze,
+          declaration_binding_ids: @declaration_binding_ids.dup.freeze,
+        )
+      end
+
+      def allocate_binding_id
+        id = @next_binding_id
+        @next_binding_id += 1
+        id
+      end
+
+      def record_identifier_binding(expression, binding)
+        return unless expression.is_a?(AST::Identifier)
+        return unless binding&.id
+
+        @identifier_binding_ids[expression.object_id] = binding.id
+      end
+
+      def record_declaration_binding(node, binding)
+        return unless node
+        return unless binding&.id
+
+        @declaration_binding_ids[node.object_id] = binding.id
       end
 
       def current_actual_scope(scopes)

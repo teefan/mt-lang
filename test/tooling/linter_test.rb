@@ -190,6 +190,57 @@ class MilkTeaLinterTest < Minitest::Test
     assert_equal [], warnings
   end
 
+  def test_unreachable_after_all_branches_terminate
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["missing-return"])
+      module demo.lint
+
+      def main(flag: bool) -> i32:
+          if flag:
+              return 1
+          else:
+              return 2
+          let dead = 3
+    MT
+
+    unreachable = warnings.select { |w| w.code == "unreachable-code" }
+    assert_equal 1, unreachable.length
+    assert_equal 8, unreachable.first.line
+  end
+
+  # ── borrow-and-mutate ────────────────────────────────────────────────
+
+  def test_borrow_and_mutate_warns_on_aliasing
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+      import std.mem
+
+      def foo(n: i32) -> i32:
+          var x: i32 = n
+          let p = ref_of(x)
+          x = 42
+          return read(p)
+    MT
+
+    borrow = warnings.select { |w| w.code == "borrow-and-mutate" }
+    refute_empty borrow
+    assert_match(/x/, borrow.first.message)
+  end
+
+  def test_no_borrow_warn_when_no_write_after_borrow
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+      import std.mem
+
+      def foo(n: i32) -> i32:
+          var x: i32 = n
+          let p = ref_of(x)
+          return read(p)
+    MT
+
+    borrow = warnings.select { |w| w.code == "borrow-and-mutate" }
+    assert_empty borrow
+  end
+
   # ── unused-import ────────────────────────────────────────────────────
 
   def test_reports_unused_import
@@ -339,6 +390,40 @@ class MilkTeaLinterTest < Minitest::Test
     MT
 
     refute warnings.any? { |w| w.code == "dead-assignment" }
+  end
+
+  def test_no_dead_assignment_for_conditional_overwrite
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main(cond: bool) -> i32:
+          var count: i32 = 0
+          if cond:
+              count = 1
+          return count
+    MT
+
+    refute warnings.any? { |w| w.code == "dead-assignment" }
+  end
+
+  def test_dead_assignment_when_overwritten_on_all_paths
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main(cond: bool) -> i32:
+          var x: i32 = 0
+          if cond:
+              x = 1
+          else:
+              x = 2
+          x = 3
+          return x
+    MT
+
+    dead = warnings.select { |w| w.code == "dead-assignment" }
+    assert_equal 3, dead.length
+    lines = dead.map(&:line).sort
+    assert_equal [4, 6, 8], lines
   end
 
   # ── fix_source ─────────────────────────────────────────────────────────
