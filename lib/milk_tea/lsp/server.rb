@@ -500,7 +500,7 @@ module MilkTea
         tokens_ms = elapsed_ms(tokens_start)
 
         analysis_start = monotonic_time
-        analysis_skip_reason = semantic_tokens_analysis_skip_reason(uri, content)
+        analysis_skip_reason = semantic_tokens_analysis_skip_reason(uri, content, for_lsp: true)
         analysis = analysis_skip_reason.nil? ? @workspace.get_analysis(uri) : nil
         analysis_ms = elapsed_ms(analysis_start)
 
@@ -757,7 +757,7 @@ module MilkTea
 
         only_kinds = params.dig('context', 'only')
         want_quickfix  = only_kinds.nil? || only_kinds.any? { |k| k == 'quickFix' || k.start_with?('quickFix.') }
-        want_fixall    = only_kinds.nil? || only_kinds.any? { |k| k == 'source.fixAll' || k == 'source' || k.start_with?('source.') }
+        want_fixall    = !only_kinds.nil? && only_kinds.any? { |k| k == 'source.fixAll' || k == 'source' || k.start_with?('source.') }
 
         actions = []
         lines = content.lines
@@ -1039,10 +1039,9 @@ module MilkTea
         true
       end
 
-      def semantic_tokens_analysis_skip_reason(uri, content)
-        # Only skip analysis for URIs outside the workspace (e.g. vscode-internal
-        # or gem paths). std files and large files are fine — analysis is 0ms warm
-        # via the shared module cache, and sema resolves imports correctly.
+      def semantic_tokens_analysis_skip_reason(uri, content, for_lsp: false)
+        # Skip analysis for URIs outside the workspace (e.g. vscode-internal or gem paths).
+        # This includes the system MilkTea stdlib and gem code.
         return 'library-uri' if library_uri?(uri)
 
         nil
