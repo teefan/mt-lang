@@ -320,7 +320,7 @@ module MilkTea
       when AST::RangeExpr
         collect_names_from_expr(expr.start_expr, used)
         collect_names_from_expr(expr.end_expr, used)
-      when AST::TupleLiteral
+      when AST::ExpressionList
         expr.elements.each { |e| collect_names_from_expr(e, used) }
       when AST::IfExpr
         collect_names_from_expr(expr.condition, used)
@@ -572,7 +572,7 @@ module MilkTea
       when AST::RangeExpr
         visit_expression(expression.start_expr)
         visit_expression(expression.end_expr)
-      when AST::TupleLiteral
+      when AST::ExpressionList
         expression.elements.each { |e| visit_expression(e) }
       when AST::IfExpr
         visit_expression(expression.condition)

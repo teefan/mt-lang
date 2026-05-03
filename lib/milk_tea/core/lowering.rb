@@ -2498,7 +2498,7 @@ module MilkTea
             if statement.operator == "=" &&
                statement.target.is_a?(AST::IndexAccess) &&
                statement.target.index.is_a?(AST::RangeExpr) &&
-               statement.value.is_a?(AST::TupleLiteral)
+               statement.value.is_a?(AST::ExpressionList)
               lowered.concat(lower_range_index_assignment(statement, env: local_env))
               next
             end
