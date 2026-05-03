@@ -40,9 +40,6 @@ module MilkTea
         equal_equal bang_equal less_equal greater_equal ellipsis
       ].to_set.freeze
       DIAGNOSTICS_WORKER_COUNT = Integer(ENV.fetch('MILK_TEA_LSP_DIAGNOSTICS_WORKERS', '2')).clamp(1, 8)
-      PERF_SUMMARY_EVERY = Integer(ENV.fetch('MILK_TEA_LSP_PERF_SUMMARY_EVERY', '50')).clamp(1, 500)
-      PERF_SAMPLE_WINDOW = Integer(ENV.fetch('MILK_TEA_LSP_PERF_SAMPLE_WINDOW', '200')).clamp(20, 2_000)
-      PERF_TOP_N = Integer(ENV.fetch('MILK_TEA_LSP_PERF_TOP_N', '5')).clamp(1, 20)
 
       def initialize
         @workspace = Workspace.new
@@ -51,9 +48,6 @@ module MilkTea
         @semantic_tokens_cache = {}
         @fixall_cache = {}
         @definition_file_token_cache = {}
-        @perf_request_count = 0
-        @perf_samples_by_method = Hash.new { |hash, key| hash[key] = [] }
-        @perf_top_slowest_by_method = Hash.new { |hash, key| hash[key] = [] }
         @diagnostics_perf = {
           scheduled: 0,
           skipped_unchanged: 0,
@@ -163,7 +157,6 @@ module MilkTea
           t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           result = handler.call(params)
           elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round(1)
-          record_request_perf(method_name, elapsed_ms, params)
           if perf_logging? && (perf_verbose? || elapsed_ms > PERF_LOG_THRESHOLD_MS)
             detail = perf_verbose? ? " #{summarize_lsp_params(method_name, params)}" : ""
             warn "[LSP perf] req #{method_name} #{elapsed_ms}ms id=#{id}#{detail}"
@@ -197,7 +190,7 @@ module MilkTea
 
       # Log every request regardless of threshold when MILK_TEA_LSP_PERF=verbose.
       # Log only requests exceeding PERF_LOG_THRESHOLD_MS when MILK_TEA_LSP_PERF=1.
-      PERF_LOG_THRESHOLD_MS = 20
+      PERF_LOG_THRESHOLD_MS = 1000
 
       def perf_logging?
         @perf_logging ||= !ENV.fetch('MILK_TEA_LSP_PERF', nil).to_s.empty?
@@ -224,70 +217,6 @@ module MilkTea
 
         id_detail = @current_request_id ? " id=#{@current_request_id}" : ''
         warn "[LSP perf] breakdown #{method_name} #{elapsed_ms_value}ms#{id_detail} #{detail}"
-      end
-
-      def record_request_perf(method_name, elapsed_ms_value, params)
-        return unless perf_logging?
-
-        @perf_request_count += 1
-
-        text_document = hget(params, 'textDocument')
-        uri = text_document.is_a?(Hash) ? hget(text_document, 'uri') : nil
-        short_uri = shorten_uri(uri) || uri || '-'
-
-        samples = @perf_samples_by_method[method_name]
-        samples << elapsed_ms_value
-        samples.shift while samples.length > PERF_SAMPLE_WINDOW
-
-        top = @perf_top_slowest_by_method[method_name]
-        top << { elapsed_ms: elapsed_ms_value, uri: short_uri, id: @current_request_id }
-        top.sort_by! { |entry| -entry[:elapsed_ms] }
-        top.slice!(PERF_TOP_N..-1) if top.length > PERF_TOP_N
-
-        return unless (@perf_request_count % PERF_SUMMARY_EVERY).zero?
-
-        emit_perf_summary
-      rescue StandardError => e
-        warn "LSP perf summary error: #{e.message}" if perf_verbose?
-      end
-
-      def emit_perf_summary
-        return unless perf_logging?
-
-        warn "[LSP perf] summary requests=#{@perf_request_count} window=#{PERF_SAMPLE_WINDOW} top_n=#{PERF_TOP_N}"
-
-        @perf_samples_by_method.keys.sort.each do |method_name|
-          values = @perf_samples_by_method[method_name]
-          next if values.empty?
-
-          count = values.length
-          avg = (values.sum / count.to_f).round(1)
-          p50 = percentile(values, 50)
-          p95 = percentile(values, 95)
-          p99 = percentile(values, 99)
-          warn "[LSP perf] summary method=#{method_name} n=#{count} avg=#{avg}ms p50=#{p50}ms p95=#{p95}ms p99=#{p99}ms"
-
-          top = @perf_top_slowest_by_method[method_name]
-          next if top.empty?
-
-          top_detail = top.each_with_index.map do |entry, idx|
-            "#{idx + 1}:#{entry[:elapsed_ms]}ms@#{entry[:uri]}(id=#{entry[:id]})"
-          end.join(' | ')
-          warn "[LSP perf] top method=#{method_name} #{top_detail}"
-        end
-
-        d = @diagnostics_perf
-        warn "[LSP perf] diagnostics scheduled=#{d[:scheduled]} skipped_unchanged=#{d[:skipped_unchanged]} cancelled=#{d[:cancelled]} dequeued=#{d[:dequeued]} published=#{d[:published]} dropped_stale=#{d[:dropped_stale]} requeued=#{d[:requeued]} queue_peak=#{d[:queue_peak]}"
-      end
-
-      def percentile(values, percent)
-        return 0.0 if values.empty?
-
-        sorted = values.sort
-        rank = ((percent.to_f / 100.0) * (sorted.length - 1))
-        lower = sorted[rank.floor]
-        upper = sorted[rank.ceil]
-        (lower + (upper - lower) * (rank - rank.floor)).round(1)
       end
 
       def summarize_lsp_params(method_name, params)
@@ -795,6 +724,10 @@ module MilkTea
         content = @workspace.get_content(uri)
         return [] unless content
 
+        only_kinds = params.dig('context', 'only')
+        want_quickfix  = only_kinds.nil? || only_kinds.any? { |k| k == 'quickFix' || k.start_with?('quickFix.') }
+        want_fixall    = only_kinds.nil? || only_kinds.any? { |k| k == 'source.fixAll' || k == 'source' || k.start_with?('source.') }
+
         actions = []
         lines = content.lines
         requested_diagnostics = params.dig('context', 'diagnostics') || []
@@ -802,6 +735,7 @@ module MilkTea
         quickfix_start = monotonic_time
 
         # ── Per-diagnostic quickfix actions ──────────────────────────────────
+        if want_quickfix
         requested_diagnostics.each do |diag|
           code = diag['code']
           message = diag['message'].to_s
@@ -1004,13 +938,14 @@ module MilkTea
             end
           end
         end
+        end # want_quickfix
         quickfix_ms = elapsed_ms(quickfix_start)
 
         # ── source.fixAll: apply all auto-fixes at once ────────────────────
         # Skip for files outside the workspace root (library/std files) since
         # formatting and linting a large stdlib file costs seconds per call.
         fixall_ms = 0.0
-        fixall_skipped_reason = skip_expensive_work_reason(uri, content)
+        fixall_skipped_reason = want_fixall ? skip_expensive_work_reason(uri, content) : 'not-requested'
         unless fixall_skipped_reason
           fixall_start = monotonic_time
           begin
