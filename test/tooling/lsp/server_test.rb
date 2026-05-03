@@ -654,6 +654,61 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_definition_on_imported_module_member_jumps_to_member_declaration
+    Dir.mktmpdir("milk-tea-lsp-def-member") do |dir|
+      lib_path = File.join(dir, "demo", "lib.mt")
+      main_path = File.join(dir, "main.mt")
+      Dir.mkdir(File.join(dir, "demo"))
+
+      lib_source = <<~MT
+        module demo.lib
+
+        def greet() -> i32:
+            return 1
+      MT
+      main_source = <<~MT
+        module demo.main
+
+        import demo.lib as lib
+
+        def main() -> i32:
+            return lib.greet()
+      MT
+
+      File.write(lib_path, lib_source)
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      lib_uri = path_to_uri(lib_path)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        call_line = main_source.lines.index { |line| line.include?("lib.greet") }
+        call_char = main_source.lines[call_line].index("greet") + 1
+
+        definition = client.send_request("textDocument/definition", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => call_line, "character" => call_char }
+        })
+
+        assert_equal lib_uri, definition.dig("result", "uri")
+        assert_equal 2, definition.dig("result", "range", "start", "line")
+        assert_equal 4, definition.dig("result", "range", "start", "character")
+      end
+    end
+  end
+
   def test_did_change_watched_files_refreshes_workspace_index
     Dir.mktmpdir("milk-tea-lsp-watch") do |dir|
       watched_path = File.join(dir, "watched.mt")
