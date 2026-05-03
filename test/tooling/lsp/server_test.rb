@@ -7,6 +7,9 @@ require "timeout"
 require_relative "../../test_helper"
 
 class LSPServerTest < Minitest::Test
+  HOVER_LATENCY_BUDGET_MS = 250.0
+  SEMANTIC_TOKENS_LATENCY_BUDGET_MS = 450.0
+
   class LSPClient
     def initialize(stdin_write, stdout_read)
       @stdin = stdin_write
@@ -95,6 +98,16 @@ class LSPServerTest < Minitest::Test
 
     def get_val() -> i32:
         return 1
+  MT
+
+  SOURCE_WITH_HOVER_DOCS = <<~MT
+    # Adds two values.
+    # Used by main.
+    def add(a: i32, b: i32) -> i32:
+        return a + b
+
+    def main() -> i32:
+        return add(1, 2)
   MT
 
   SOURCE_WITH_LOCAL_VALUE_COMPLETION = <<~MT
@@ -190,6 +203,13 @@ class LSPServerTest < Minitest::Test
         return array[i32, 4](1, 2, 3, 4)
   MT
 
+  SOURCE_WITH_FSTRING_INTERPOLATION = <<~'MT'
+    def main() -> i32:
+        let name = "milk"
+        let msg = f"hello #{name}"
+        return msg.len
+  MT
+
   def test_initialize_advertises_expected_capabilities
     with_server do |client|
       response = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -242,6 +262,76 @@ class LSPServerTest < Minitest::Test
       hover_value = hover_response.dig("result", "contents", "value")
       assert_includes hover_value, "add"
       assert_includes hover_value, "-> i32"
+    end
+  end
+
+  def test_hover_includes_docs_source_and_range
+    Dir.mktmpdir("milk-tea-lsp-hover") do |dir|
+      source_path = File.join(dir, "main.mt")
+      source = SOURCE_WITH_HOVER_DOCS
+      File.write(source_path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(source_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source
+          }
+        })
+
+        hover_response = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => 6, "character" => 11 }
+        })
+
+        hover_result = hover_response.fetch("result")
+        hover_value = hover_result.dig("contents", "value")
+        hover_range = hover_result.fetch("range")
+
+        assert_includes hover_value, "def add(a: i32, b: i32) -> i32"
+        assert_includes hover_value, "Adds two values."
+        assert_includes hover_value, "Used by main."
+        assert_includes hover_value, "Defined at main.mt:3"
+
+        assert_equal 6, hover_range.dig("start", "line")
+        assert_equal 11, hover_range.dig("start", "character")
+        assert_equal 14, hover_range.dig("end", "character")
+      end
+    end
+  end
+
+  def test_hover_response_stays_within_latency_budget
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      uri = "file:///tmp/lsp_hover_latency_test.mt"
+      source = SOURCE_WITH_HOVER_DOCS
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source
+        }
+      })
+
+      elapsed_ms, response = measure_request_ms do
+        client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => 6, "character" => 11 }
+        })
+      end
+
+      assert response.fetch("result"), "expected non-nil hover result"
+      assert_operator elapsed_ms, :<, HOVER_LATENCY_BUDGET_MS,
+                      "hover took #{format("%.2f", elapsed_ms)}ms (budget #{HOVER_LATENCY_BUDGET_MS}ms)"
     end
   end
 
@@ -1253,6 +1343,61 @@ class LSPServerTest < Minitest::Test
         assert_equal "function", array_ctor_entry.fetch("tokenType")
       end
     end
+
+    def test_semantic_tokens_fstring_delimiters_do_not_override_textmate
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_fstring_test.mt"
+        source = SOURCE_WITH_FSTRING_INTERPOLATION
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+        interpolation_line = source.lines.fetch(2)
+        hash_index = interpolation_line.index('#{')
+        rbrace_index = interpolation_line.index("}", hash_index)
+
+        refute entries.any? { |entry| entry.fetch("line") == 2 && entry.fetch("startChar") == hash_index && entry.fetch("tokenType") == "operator" }
+        refute entries.any? { |entry| entry.fetch("line") == 2 && entry.fetch("startChar") == (hash_index + 1) && entry.fetch("tokenType") == "operator" }
+        refute entries.any? { |entry| entry.fetch("line") == 2 && entry.fetch("startChar") == rbrace_index && entry.fetch("tokenType") == "operator" }
+
+        interpolation_name_entry = entries.find do |entry|
+          entry.fetch("line") == 2 && interpolation_line[entry.fetch("startChar"), 4] == "name"
+        end
+        refute_nil interpolation_name_entry
+        assert_equal "variable", interpolation_name_entry.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_full_stays_within_latency_budget
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_latency_test.mt"
+        source = [SOURCE_WITH_STR_BUILDER_METHODS, SOURCE_WITH_GENERIC_TYPE_SURFACES, SOURCE_WITH_FSTRING_INTERPOLATION].join("\n")
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        elapsed_ms, response = measure_request_ms do
+          client.send_request("textDocument/semanticTokens/full", {
+            "textDocument" => { "uri" => uri }
+          })
+        end
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        assert entries.length >= 6, "expected semantic token entries for latency source"
+        assert_operator elapsed_ms, :<, SEMANTIC_TOKENS_LATENCY_BUDGET_MS,
+                        "semanticTokens/full took #{format("%.2f", elapsed_ms)}ms (budget #{SEMANTIC_TOKENS_LATENCY_BUDGET_MS}ms)"
+      end
+    end
   end
 
   private
@@ -1367,6 +1512,13 @@ class LSPServerTest < Minitest::Test
         "modifierBits" => modifier_bits
       }
     end
+  end
+
+  def measure_request_ms
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    response = yield
+    finished = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    [(finished - started) * 1000.0, response]
   end
 
   def semantic_entry_for_lexeme(source, entries, lexeme)

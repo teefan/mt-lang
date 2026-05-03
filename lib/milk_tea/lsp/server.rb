@@ -546,10 +546,19 @@ module MilkTea
         lsp_line  = params['position']['line']
         lsp_char  = params['position']['character']
 
-        info = resolve_hover_info(uri, lsp_line, lsp_char)
+        token = @workspace.find_token_at(uri, lsp_line, lsp_char)
+        return nil unless token&.type == :identifier
+
+        info = resolve_hover_info(uri, lsp_line, lsp_char, token: token)
         return nil unless info
 
-        { contents: { kind: 'markdown', value: "```milk-tea\n#{info}\n```" } }
+        {
+          contents: {
+            kind: 'markdown',
+            value: render_hover_markdown(info)
+          },
+          range: token_to_range(token)
+        }
       rescue StandardError => e
         warn "Error in hover handler: #{e.message}"
         nil
@@ -1539,60 +1548,193 @@ module MilkTea
 
       # ── Enhancement 1 helpers: hover type resolution ─────────────────────────
 
-      def resolve_hover_info(uri, lsp_line, lsp_char)
-        token = @workspace.find_token_at(uri, lsp_line, lsp_char)
+      def resolve_hover_info(uri, lsp_line, lsp_char, token: nil)
+        token ||= @workspace.find_token_at(uri, lsp_line, lsp_char)
         return nil unless token&.type == :identifier
 
         tokens = @workspace.get_tokens(uri) || []
         token_index = tokens.index(token)
         if token_index
           module_info = module_declaration_info_at(tokens, token_index)
-          return "module #{module_info[:module_name]}" if module_info
+          if module_info
+            location = module_definition_location(uri, module_info[:module_name])
+            return {
+              signature: "module #{module_info[:module_name]}",
+              docs: nil,
+              source: hover_source_label_from_location(location),
+            }
+          end
         end
 
         if token_index
           import_info = import_path_info_at(tokens, token_index)
-          return "module #{import_info[:module_name]}" if import_info
+          if import_info
+            location = module_definition_location(uri, import_info[:module_name])
+            return {
+              signature: "module #{import_info[:module_name]}",
+              docs: nil,
+              source: hover_source_label_from_location(location),
+            }
+          end
         end
 
         analysis = @workspace.get_analysis(uri)
         return nil unless analysis
 
         name = token.lexeme
+        signature = nil
+        source_location = nil
 
         if (binding = analysis.functions[name])
           params_str = format_params(binding.type.params)
-          "def #{name}(#{params_str}) -> #{binding.type.return_type}"
+          signature = "def #{name}(#{params_str}) -> #{binding.type.return_type}"
         elsif analysis.types.key?(name)
           type = analysis.types[name]
-          "type #{name} = #{type}"
+          signature = "type #{name} = #{type}"
         elsif (binding = analysis.values[name])
-          "#{name}: #{binding.type}"
+          signature = "#{name}: #{binding.type}"
         elsif (import_binding = analysis.imports[name])
-          "module #{import_binding.name}"
+          signature = "module #{import_binding.name}"
+          source_location = module_definition_location(uri, import_binding.name)
         else
           dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
           if dot_receiver && (module_binding = analysis.imports[dot_receiver])
             if (fn = module_binding.functions[name])
               params_str = format_params(fn.type.params)
-              return "def #{name}(#{params_str}) -> #{fn.type.return_type}"
+              signature = "def #{name}(#{params_str}) -> #{fn.type.return_type}"
             elsif (val = module_binding.values[name])
-              return "#{name}: #{val.type}"
+              signature = "#{name}: #{val.type}"
             elsif module_binding.types.key?(name)
-              return "type #{name}"
+              signature = "type #{name}"
+            end
+
+            if signature
+              source_location = module_member_definition_location(uri, module_binding.name, name)
+              source_location ||= module_definition_location(uri, module_binding.name)
             end
           end
 
-          local_def = @workspace.find_definition_token(
-            uri,
-            name,
-            before_line: lsp_line + 1,
-            before_char: lsp_char + 1,
-          )
-          return "local #{name}" if local_def
+          unless signature
+            local_def = @workspace.find_definition_token(
+              uri,
+              name,
+              before_line: lsp_line + 1,
+              before_char: lsp_char + 1,
+            )
+            signature = "local #{name}" if local_def
+          end
 
-          nil
+          return nil unless signature
         end
+
+        definition_entry = if source_location
+                             hover_definition_entry_from_location(source_location)
+                           else
+                             @workspace.find_definition_token_global(
+                               name,
+                               preferred_uri: uri,
+                               before_line: lsp_line + 1,
+                               before_char: lsp_char + 1,
+                             )
+                           end
+
+        {
+          signature: signature,
+          docs: hover_doc_comment_for_definition(definition_entry),
+          source: hover_source_label_for_definition(definition_entry) || hover_source_label_from_location(source_location),
+        }
+      end
+
+      def render_hover_markdown(info)
+        lines = []
+        lines << "```milk-tea"
+        lines << info[:signature]
+        lines << "```"
+
+        docs = info[:docs].to_s.strip
+        unless docs.empty?
+          lines << ""
+          lines << docs
+        end
+
+        source = info[:source].to_s.strip
+        unless source.empty?
+          lines << ""
+          lines << "Defined at #{source}"
+        end
+
+        lines.join("\n")
+      end
+
+      def hover_doc_comment_for_definition(definition_entry)
+        return nil unless definition_entry
+
+        content = @workspace.get_content(definition_entry[:uri]).to_s
+        return nil if content.empty?
+
+        lines = content.split("\n", -1)
+        index = definition_entry[:token].line - 2
+        return nil if index.negative?
+
+        docs = []
+        while index >= 0
+          text = lines[index].to_s
+          stripped = text.strip
+          break if stripped.empty?
+          break unless stripped.start_with?('#')
+
+          docs << stripped.sub(/\A#\s?/, '')
+          index -= 1
+        end
+
+        return nil if docs.empty?
+
+        docs.reverse.join("\n")
+      end
+
+      def hover_source_label_for_definition(definition_entry)
+        return nil unless definition_entry
+
+        hover_source_label(definition_entry[:uri], definition_entry[:token].line)
+      end
+
+      def hover_source_label_from_location(location)
+        return nil unless location
+
+        line = location.dig(:range, :start, :line)
+        hover_source_label(location[:uri], (line || 0) + 1)
+      end
+
+      def hover_source_label(uri, line)
+        path = uri_to_path(uri)
+        return nil unless path
+
+        display = path
+        if @root_uri
+          root_path = uri_to_path(@root_uri)
+          if root_path
+            begin
+              relative = Pathname.new(path).relative_path_from(Pathname.new(root_path)).to_s
+              display = relative unless relative.start_with?('..')
+            rescue StandardError
+              display = path
+            end
+          end
+        end
+
+        "#{display}:#{line}"
+      end
+
+      def hover_definition_entry_from_location(location)
+        return nil unless location
+
+        start = location.dig(:range, :start)
+        return nil unless start
+
+        token = @workspace.find_token_at(location[:uri], start[:line], start[:character])
+        return nil unless token
+
+        { uri: location[:uri], token: token }
       end
 
       def resolve_definition_location(params)
@@ -1716,8 +1858,8 @@ module MilkTea
       end
 
       # Decomposes an fstring token into non-overlapping semantic token entries.
-      # Text segments are emitted as :string and interpolation segments are emitted
-      # semantically, including interpolation delimiters.
+      # Text segments are emitted as :string and interpolation expression segments
+      # are emitted semantically. Delimiter punctuation is left to TextMate.
       def fstring_interpolation_entries(fstring_tok, analysis)
         parts = fstring_tok.literal
         return [{ line: fstring_tok.line - 1, start_char: fstring_tok.column - 1, length: fstring_tok.lexeme.length, type: :string, modifiers: [] }] unless parts.is_a?(Array)
@@ -1741,9 +1883,6 @@ module MilkTea
           # :string for everything from cursor up to (but not including) `#`
           text_len = hash_col0 - cursor
           result << { line: fstr_line, start_char: cursor, length: text_len, type: :string, modifiers: [] } if text_len > 0
-
-          # Interpolation opener `#{`.
-          result << { line: fstr_line, start_char: hash_col0, length: 2, type: :operator, modifiers: [] }
 
           # classified entries for the expression source only (not format spec).
           source = part[:source]
@@ -1774,11 +1913,10 @@ module MilkTea
             end
           end
 
-          # classified entries for format spec (if present): `:` + numeric/operator parts.
+          # classified entries for format spec (if present), excluding the
+          # delimiter token so TextMate interpolation punctuation can style it.
           if part[:format_spec]
             spec_col0 = expr_col0 + source.length
-            # Colon operator
-            result << { line: fstr_line, start_char: spec_col0, length: 1, type: :operator, modifiers: [] }
             # Format spec content (e.g., ".0", "3", ".5f") as individual token-like entries.
             # Treat it as lexable content or just string for simplicity.
             spec = part[:format_spec]
@@ -1809,9 +1947,6 @@ module MilkTea
               end
             end
           end
-
-          # Interpolation closer `}`.
-          result << { line: fstr_line, start_char: rbrace_col0, length: 1, type: :operator, modifiers: [] }
 
           cursor = rbrace_col0 + 1
         end
