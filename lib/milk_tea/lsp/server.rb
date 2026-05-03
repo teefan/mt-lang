@@ -40,11 +40,28 @@ module MilkTea
         equal_equal bang_equal less_equal greater_equal ellipsis
       ].to_set.freeze
       DIAGNOSTICS_WORKER_COUNT = Integer(ENV.fetch('MILK_TEA_LSP_DIAGNOSTICS_WORKERS', '2')).clamp(1, 8)
+      PERF_SUMMARY_EVERY = Integer(ENV.fetch('MILK_TEA_LSP_PERF_SUMMARY_EVERY', '50')).clamp(1, 500)
+      PERF_SAMPLE_WINDOW = Integer(ENV.fetch('MILK_TEA_LSP_PERF_SAMPLE_WINDOW', '200')).clamp(20, 2_000)
+      PERF_TOP_N = Integer(ENV.fetch('MILK_TEA_LSP_PERF_TOP_N', '5')).clamp(1, 20)
 
       def initialize
         @workspace = Workspace.new
         @handlers = {}
         @diagnostic_report_cache = {}
+        @semantic_tokens_cache = {}
+        @perf_request_count = 0
+        @perf_samples_by_method = Hash.new { |hash, key| hash[key] = [] }
+        @perf_top_slowest_by_method = Hash.new { |hash, key| hash[key] = [] }
+        @diagnostics_perf = {
+          scheduled: 0,
+          skipped_unchanged: 0,
+          cancelled: 0,
+          dequeued: 0,
+          published: 0,
+          dropped_stale: 0,
+          requeued: 0,
+          queue_peak: 0,
+        }
         @diagnostics_mutex = Mutex.new
         @diagnostics_pending = {}
         @diagnostics_enqueued = Set.new
@@ -140,9 +157,11 @@ module MilkTea
         end
 
         begin
+          @current_request_id = id
           t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           result = handler.call(params)
           elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round(1)
+          record_request_perf(method_name, elapsed_ms, params)
           if perf_logging? && (perf_verbose? || elapsed_ms > PERF_LOG_THRESHOLD_MS)
             detail = perf_verbose? ? " #{summarize_lsp_params(method_name, params)}" : ""
             warn "[LSP perf] req #{method_name} #{elapsed_ms}ms id=#{id}#{detail}"
@@ -152,6 +171,8 @@ module MilkTea
           warn "Error in handler for #{method_name}: #{e.message}"
           warn e.backtrace.first(3).join("\n")
           Protocol.write_error(id, -32_603, "Internal error: #{e.message}")
+        ensure
+          @current_request_id = nil
         end
       end
 
@@ -182,6 +203,89 @@ module MilkTea
 
       def perf_verbose?
         @perf_verbose ||= ENV.fetch('MILK_TEA_LSP_PERF', nil).to_s == 'verbose'
+      end
+
+      def perf_breakdown_logging?(elapsed_ms)
+        perf_logging? && (perf_verbose? || elapsed_ms > PERF_LOG_THRESHOLD_MS)
+      end
+
+      def monotonic_time
+        Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      end
+
+      def elapsed_ms(start_time)
+        ((monotonic_time - start_time) * 1000).round(1)
+      end
+
+      def log_perf_breakdown(method_name, elapsed_ms_value, detail)
+        return unless perf_breakdown_logging?(elapsed_ms_value)
+
+        id_detail = @current_request_id ? " id=#{@current_request_id}" : ''
+        warn "[LSP perf] breakdown #{method_name} #{elapsed_ms_value}ms#{id_detail} #{detail}"
+      end
+
+      def record_request_perf(method_name, elapsed_ms_value, params)
+        return unless perf_logging?
+
+        @perf_request_count += 1
+
+        text_document = hget(params, 'textDocument')
+        uri = text_document.is_a?(Hash) ? hget(text_document, 'uri') : nil
+        short_uri = shorten_uri(uri) || uri || '-'
+
+        samples = @perf_samples_by_method[method_name]
+        samples << elapsed_ms_value
+        samples.shift while samples.length > PERF_SAMPLE_WINDOW
+
+        top = @perf_top_slowest_by_method[method_name]
+        top << { elapsed_ms: elapsed_ms_value, uri: short_uri, id: @current_request_id }
+        top.sort_by! { |entry| -entry[:elapsed_ms] }
+        top.slice!(PERF_TOP_N..-1) if top.length > PERF_TOP_N
+
+        return unless (@perf_request_count % PERF_SUMMARY_EVERY).zero?
+
+        emit_perf_summary
+      rescue StandardError => e
+        warn "LSP perf summary error: #{e.message}" if perf_verbose?
+      end
+
+      def emit_perf_summary
+        return unless perf_logging?
+
+        warn "[LSP perf] summary requests=#{@perf_request_count} window=#{PERF_SAMPLE_WINDOW} top_n=#{PERF_TOP_N}"
+
+        @perf_samples_by_method.keys.sort.each do |method_name|
+          values = @perf_samples_by_method[method_name]
+          next if values.empty?
+
+          count = values.length
+          avg = (values.sum / count.to_f).round(1)
+          p50 = percentile(values, 50)
+          p95 = percentile(values, 95)
+          p99 = percentile(values, 99)
+          warn "[LSP perf] summary method=#{method_name} n=#{count} avg=#{avg}ms p50=#{p50}ms p95=#{p95}ms p99=#{p99}ms"
+
+          top = @perf_top_slowest_by_method[method_name]
+          next if top.empty?
+
+          top_detail = top.each_with_index.map do |entry, idx|
+            "#{idx + 1}:#{entry[:elapsed_ms]}ms@#{entry[:uri]}(id=#{entry[:id]})"
+          end.join(' | ')
+          warn "[LSP perf] top method=#{method_name} #{top_detail}"
+        end
+
+        d = @diagnostics_perf
+        warn "[LSP perf] diagnostics scheduled=#{d[:scheduled]} skipped_unchanged=#{d[:skipped_unchanged]} cancelled=#{d[:cancelled]} dequeued=#{d[:dequeued]} published=#{d[:published]} dropped_stale=#{d[:dropped_stale]} requeued=#{d[:requeued]} queue_peak=#{d[:queue_peak]}"
+      end
+
+      def percentile(values, percent)
+        return 0.0 if values.empty?
+
+        sorted = values.sort
+        rank = ((percent.to_f / 100.0) * (sorted.length - 1))
+        lower = sorted[rank.floor]
+        upper = sorted[rank.ceil]
+        (lower + (upper - lower) * (rank - rank.floor)).round(1)
       end
 
       def summarize_lsp_params(method_name, params)
@@ -267,17 +371,23 @@ module MilkTea
       # Skip source.fixAll generation for files where full-file format+lint is
       # too expensive to run on each codeAction request.
       def skip_expensive_source_fix_all?(uri, content)
-        file_path = uri_to_path(uri)
-        return true if library_uri?(uri)
-        return true if file_path&.include?('/std/')
-
-        # Heuristic thresholds to avoid expensive full-file formatter/linter runs.
-        return true if content.bytesize > 200_000
-        return true if content.count("\n") > 1200
-
-        false
+        !skip_expensive_work_reason(uri, content).nil?
       rescue StandardError
         false
+      end
+
+      def skip_expensive_work_reason(uri, content)
+        file_path = uri_to_path(uri)
+        return 'library-uri' if library_uri?(uri)
+        return 'std-path' if file_path&.include?('/std/')
+
+        # Heuristic thresholds to avoid expensive full-file formatter/linter runs.
+        return 'large-bytes' if content.bytesize > 200_000
+        return 'large-lines' if content.count("\n") > 1200
+
+        nil
+      rescue StandardError
+        nil
       end
 
       # ── Lifecycle handlers ───────────────────────────────────────────────────
@@ -353,6 +463,7 @@ module MilkTea
         uri     = params['textDocument']['uri']
         content = params['textDocument']['text']
         @workspace.open_document(uri, content)
+        @semantic_tokens_cache.delete(uri)
         schedule_diagnostics(uri)
         nil
       end
@@ -371,6 +482,7 @@ module MilkTea
           end
         end
 
+        @semantic_tokens_cache.delete(uri)
         schedule_diagnostics(uri)
         nil
       end
@@ -379,6 +491,7 @@ module MilkTea
         uri = params['textDocument']['uri']
         cancel_diagnostics(uri)
         @workspace.close_document(uri)
+        @semantic_tokens_cache.delete(uri)
         Protocol.write_notification('textDocument/publishDiagnostics', {
           uri: uri,
           diagnostics: []
@@ -392,6 +505,7 @@ module MilkTea
 
         text = params['text']
         @workspace.update_document(uri, text) if text
+        @semantic_tokens_cache.delete(uri)
         schedule_diagnostics(uri)
         nil
       end
@@ -402,10 +516,45 @@ module MilkTea
         uri = params.dig('textDocument', 'uri')
         return { data: [] } unless uri
 
+        total_start = monotonic_time
+
+        content = @workspace.get_content(uri)
+        cache_key = content.hash
+        cached = @semantic_tokens_cache[uri]
+        if cached && cached[:content_hash] == cache_key
+          elapsed = elapsed_ms(total_start)
+          short_uri = shorten_uri(uri) || uri
+          log_perf_breakdown('textDocument/semanticTokens/full', elapsed,
+                             "uri=#{short_uri} bytes=#{content.bytesize} lines=#{content.count("\n") + 1} cache=hit data_len=#{cached[:data].length}")
+          return { data: cached[:data] }
+        end
+
+        tokens_start = monotonic_time
         tokens = @workspace.get_tokens(uri) || []
-        analysis = @workspace.get_analysis(uri)
+        tokens_ms = elapsed_ms(tokens_start)
+
+        analysis_start = monotonic_time
+        analysis_skip_reason = semantic_tokens_analysis_skip_reason(uri, content)
+        analysis = analysis_skip_reason.nil? ? @workspace.get_analysis(uri) : nil
+        analysis_ms = elapsed_ms(analysis_start)
+
+        build_start = monotonic_time
         semantic_entries = build_semantic_token_entries(tokens, analysis)
-        { data: encode_semantic_tokens(semantic_entries) }
+        build_ms = elapsed_ms(build_start)
+
+        encode_start = monotonic_time
+        data = encode_semantic_tokens(semantic_entries)
+        encode_ms = elapsed_ms(encode_start)
+
+        @semantic_tokens_cache[uri] = { content_hash: cache_key, data: data }
+
+        elapsed = elapsed_ms(total_start)
+        short_uri = shorten_uri(uri) || uri
+        analysis_detail = analysis_skip_reason ? "off(#{analysis_skip_reason})" : 'on'
+        log_perf_breakdown('textDocument/semanticTokens/full', elapsed,
+                           "uri=#{short_uri} bytes=#{content.bytesize} lines=#{content.count("\n") + 1} cache=miss tokens=#{tokens.length} entries=#{semantic_entries.length} data_len=#{data.length} analysis=#{analysis_detail} stages_ms=tokens:#{tokens_ms},analysis:#{analysis_ms},build:#{build_ms},encode:#{encode_ms}")
+
+        { data: data }
       rescue StandardError => e
         warn "Error in semanticTokens/full handler: #{e.message}"
         { data: [] }
@@ -636,20 +785,23 @@ module MilkTea
         uri    = params.dig('textDocument', 'uri')
         return [] unless uri
 
+        total_start = monotonic_time
         content = @workspace.get_content(uri)
         return [] unless content
 
         actions = []
+        lines = content.lines
+        requested_diagnostics = params.dig('context', 'diagnostics') || []
+
+        quickfix_start = monotonic_time
 
         # ── Per-diagnostic quickfix actions ──────────────────────────────────
-        requested_diagnostics = params.dig('context', 'diagnostics') || []
         requested_diagnostics.each do |diag|
           code = diag['code']
           message = diag['message'].to_s
           diag_line = diag.dig('range', 'start', 'line').to_i + 1  # 1-based
           diag_start_char = diag.dig('range', 'start', 'character').to_i
           diag_end_char = diag.dig('range', 'end', 'character').to_i
-          lines = content.lines
           source_line = lines[diag_line - 1].to_s
 
           if message.start_with?('cannot assign ') && !source_line.empty?
@@ -710,7 +862,6 @@ module MilkTea
           when 'redundant-else'
             # Remove the `else:` line above and dedent the body.
             # Supports diagnostics anchored either on `else:` or the first body line.
-            lines = content.lines
             diag_idx = diag_line - 1
             next if diag_idx.negative?
 
@@ -847,11 +998,15 @@ module MilkTea
             end
           end
         end
+        quickfix_ms = elapsed_ms(quickfix_start)
 
         # ── source.fixAll: apply all auto-fixes at once ────────────────────
         # Skip for files outside the workspace root (library/std files) since
         # formatting and linting a large stdlib file costs seconds per call.
-        unless library_uri?(uri)
+        fixall_ms = 0.0
+        fixall_skipped_reason = skip_expensive_work_reason(uri, content)
+        unless fixall_skipped_reason
+          fixall_start = monotonic_time
           begin
             formatted = begin
               Formatter.format_source(content, mode: :safe)
@@ -882,12 +1037,31 @@ module MilkTea
           rescue StandardError => e
             warn "Error building source.fixAll action: #{e.message}"
           end
+          fixall_ms = elapsed_ms(fixall_start)
         end
+
+        elapsed = elapsed_ms(total_start)
+        short_uri = shorten_uri(uri) || uri
+        fixall_detail = fixall_skipped_reason ? "skipped(#{fixall_skipped_reason})" : "generated(ms=#{fixall_ms})"
+        log_perf_breakdown('textDocument/codeAction', elapsed,
+                           "uri=#{short_uri} bytes=#{content.bytesize} lines=#{content.count("\n") + 1} diagnostics=#{requested_diagnostics.length} actions=#{actions.length} fixAll=#{fixall_detail} stages_ms=quickfix:#{quickfix_ms},fixAll:#{fixall_ms}")
 
         actions
       rescue StandardError => e
         warn "Error in codeAction handler: #{e.message}"
         []
+      end
+
+      def semantic_tokens_use_analysis?(uri, content)
+        return false if semantic_tokens_analysis_skip_reason(uri, content)
+
+        true
+      rescue StandardError
+        true
+      end
+
+      def semantic_tokens_analysis_skip_reason(uri, content)
+        skip_expensive_work_reason(uri, content)
       end
 
       def handle_document_diagnostic(params)
@@ -1206,10 +1380,14 @@ module MilkTea
         enqueue = false
 
         @diagnostics_mutex.synchronize do
-          return if @diagnostics_last_scheduled_hash[uri] == content_digest
+          if @diagnostics_last_scheduled_hash[uri] == content_digest
+            @diagnostics_perf[:skipped_unchanged] += 1 if perf_logging?
+            return
+          end
 
           @diagnostics_generation[uri] += 1
           @diagnostics_last_scheduled_hash[uri] = content_digest
+          @diagnostics_perf[:scheduled] += 1 if perf_logging?
           @diagnostics_pending[uri] = {
             generation: @diagnostics_generation[uri],
             content: content,
@@ -1221,7 +1399,12 @@ module MilkTea
           end
         end
 
-        @diagnostics_queue << uri if enqueue
+        if enqueue
+          @diagnostics_queue << uri
+          if perf_logging?
+            @diagnostics_perf[:queue_peak] = [@diagnostics_perf[:queue_peak], @diagnostics_queue.length].max
+          end
+        end
       end
 
       def cancel_diagnostics(uri)
@@ -1229,6 +1412,7 @@ module MilkTea
           @diagnostics_generation[uri] += 1
           @diagnostics_pending.delete(uri)
           @diagnostics_last_scheduled_hash.delete(uri)
+          @diagnostics_perf[:cancelled] += 1 if perf_logging?
         end
       end
 
@@ -1272,6 +1456,8 @@ module MilkTea
           end
           break unless snapshot
 
+          @diagnostics_perf[:dequeued] += 1 if perf_logging?
+
           diagnostics = collect_diagnostics_for_content(uri, snapshot[:content])
           publish = false
           @diagnostics_mutex.synchronize do
@@ -1279,10 +1465,13 @@ module MilkTea
           end
 
           if publish
+            @diagnostics_perf[:published] += 1 if perf_logging?
             Protocol.write_notification('textDocument/publishDiagnostics', {
               uri: uri,
               diagnostics: diagnostics
             })
+          elsif perf_logging?
+            @diagnostics_perf[:dropped_stale] += 1
           end
         end
       ensure
@@ -1295,7 +1484,13 @@ module MilkTea
           end
         end
 
-        @diagnostics_queue << uri if requeue
+        if requeue
+          @diagnostics_perf[:requeued] += 1 if perf_logging?
+          @diagnostics_queue << uri
+          if perf_logging?
+            @diagnostics_perf[:queue_peak] = [@diagnostics_perf[:queue_peak], @diagnostics_queue.length].max
+          end
+        end
       end
 
       def collect_diagnostics_for_content(uri, content)

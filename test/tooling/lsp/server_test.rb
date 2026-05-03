@@ -421,6 +421,41 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_code_action_skips_source_fixall_for_workspace_std_files
+    Dir.mktmpdir("milk-tea-lsp-code-action-std") do |dir|
+      std_dir = File.join(dir, "std", "c")
+      Dir.mkdir(File.join(dir, "std"))
+      Dir.mkdir(std_dir)
+
+      file_path = File.join(std_dir, "sdl3.mt")
+      source = "def add(a:i32,b:i32)->i32:\n    return a+b\n"
+      File.write(file_path, source)
+
+      root_uri = path_to_uri(dir)
+      uri = path_to_uri(file_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/codeAction", {
+          "textDocument" => { "uri" => uri },
+          "range" => {
+            "start" => { "line" => 0, "character" => 0 },
+            "end" => { "line" => 1, "character" => 14 }
+          },
+          "context" => { "diagnostics" => [] }
+        })
+
+        actions = response.fetch("result")
+        refute actions.any? { |a| a["kind"] == "source.fixAll" }
+      end
+    end
+  end
+
   def test_inlay_hint_returns_parameter_name_hints_for_call_arguments
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
