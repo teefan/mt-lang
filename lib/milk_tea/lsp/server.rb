@@ -16,8 +16,7 @@ module MilkTea
     #   2. Goto Def      — token-based definition site navigation
     #   3. Incremental   — textDocumentSync: 2 with range-based edits
     #   4. Multi-file    — workspace indexing via workspace/symbol
-    #   5. Code Lens     — function signature annotations above def sites
-    #   6. Completion    — function/type/value completions from analysis
+    #   5. Completion    — function/type/value completions from analysis
     class Server
       SEMANTIC_TOKEN_TYPES = %w[
         namespace type class enum interface struct typeParameter parameter variable property enumMember event
@@ -147,7 +146,6 @@ module MilkTea
         @handlers['textDocument/formatting']        = method(:handle_formatting)
         @handlers['textDocument/rangeFormatting']   = method(:handle_range_formatting)
         @handlers['textDocument/completion']        = method(:handle_completion)
-        @handlers['textDocument/codeLens']          = method(:handle_code_lens)
         @handlers['textDocument/codeAction']        = method(:handle_code_action)
         @handlers['textDocument/inlayHint']         = method(:handle_inlay_hint)
         @handlers['textDocument/semanticTokens/full'] = method(:handle_semantic_tokens_full)
@@ -383,9 +381,6 @@ module MilkTea
             signatureHelpProvider: {
               triggerCharacters: ['(', ','],
               retriggerCharacters: [',']
-            },
-            codeLensProvider: {
-              resolveProvider: false
             },
             codeActionProvider: {
               codeActionKinds: ['quickFix', 'source.fixAll']
@@ -1089,42 +1084,6 @@ module MilkTea
         []
       end
 
-      def handle_code_lens(params)
-        uri = params.dig('textDocument', 'uri')
-        return [] unless uri
-
-        symbols = @workspace.get_symbols(uri)
-        analysis = @workspace.get_analysis(uri)
-        return [] unless symbols && analysis
-
-        symbols.filter_map do |sym|
-          next unless sym[:kind] == 'function'
-
-          name = sym[:name]
-          binding = analysis.functions[name]
-          next unless binding && binding.type
-
-          params_str = binding.type.params.map { |p| "#{p.name}: #{p.type}" }.join(', ')
-          title = "#{name}(#{params_str}) -> #{binding.type.return_type}"
-          line = sym[:line].to_i - 1
-          col = sym[:column].to_i - 1
-
-          {
-            range: {
-              start: { line:, character: col },
-              end: { line:, character: col + name.length }
-            },
-            command: {
-              title:,
-              command: ''
-            }
-          }
-        end
-      rescue StandardError => e
-        warn "Error in codeLens handler: #{e.message}"
-        []
-      end
-
       def semantic_tokens_use_analysis?(uri, content)
         return false if semantic_tokens_analysis_skip_reason(uri, content)
 
@@ -1195,16 +1154,34 @@ module MilkTea
         i = 0
         while i < tokens.length - 1
           callee = tokens[i]
-          lparen = tokens[i + 1]
+          next_tok = tokens[i + 1]
 
           # Skip function definitions — `def foo(` has the same identifier+lparen
           # shape as a call site but must not get parameter-name inlay hints.
           prev_tok = i > 0 ? tokens[i - 1] : nil
 
-          if callee.type == :identifier && lparen.type == :lparen && prev_tok&.type != :def
-            binding = analysis.functions[callee.lexeme]
-            if binding
-              arg_starts, closing_index = collect_call_argument_starts(tokens, i + 1)
+          # Also support module-qualified call sites (`mod.fn(...)`).
+          # Ignore identifiers immediately after `.` to avoid treating member names
+          # as unqualified local calls.
+          if callee.type == :identifier && prev_tok&.type != :def && prev_tok&.type != :dot
+            binding = nil
+            lparen_index = nil
+
+            if next_tok&.type == :lparen
+              binding = analysis.functions[callee.lexeme]
+              lparen_index = i + 1
+            elsif next_tok&.type == :dot
+              member = tokens[i + 2]
+              member_lparen = tokens[i + 3]
+              if member&.type == :identifier && member_lparen&.type == :lparen
+                module_binding = analysis.imports[callee.lexeme]
+                binding = module_binding&.functions&.[](member.lexeme)
+                lparen_index = i + 3
+              end
+            end
+
+            if binding && lparen_index
+              arg_starts, closing_index = collect_call_argument_starts(tokens, lparen_index)
               params_list = binding.type.params
 
               arg_starts.each_with_index do |arg_tok, index|
@@ -1391,8 +1368,6 @@ module MilkTea
         warn "Error in completion handler: #{e.message}"
         { isIncomplete: false, items: [] }
       end
-
-      # ── Enhancement 5: Code Lens ─────────────────────────────────────────────
 
       # ── Enhancement 4: Workspace Symbol ─────────────────────────────────────
 

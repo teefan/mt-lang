@@ -759,6 +759,54 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_inlay_hint_returns_parameter_name_hints_for_imported_module_call_arguments
+    Dir.mktmpdir("mt_lsp_inlay_module_call") do |dir|
+      Dir.mkdir(File.join(dir, "std"))
+
+      module_path = File.join(dir, "mathx.mt")
+      module_source = <<~MT
+        module mathx
+
+        pub def add(a: i32, b: i32) -> i32:
+            return a + b
+      MT
+      File.write(module_path, module_source)
+
+      main_path = File.join(dir, "main.mt")
+      main_source = <<~MT
+        module main
+
+        import mathx as mx
+
+        def main() -> i32:
+            return mx.add(1, 2)
+      MT
+      File.write(main_path, main_source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+        uri = path_to_uri(main_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => main_source }
+        })
+
+        response = client.send_request("textDocument/inlayHint", {
+          "textDocument" => { "uri" => uri },
+          "range" => {
+            "start" => { "line" => 5, "character" => 0 },
+            "end" => { "line" => 5, "character" => 30 }
+          }
+        })
+
+        hints = response.fetch("result")
+        labels = hints.map { |h| h["label"] }
+        assert_includes labels, "a: "
+        assert_includes labels, "b: "
+      end
+    end
+  end
+
   def test_document_diagnostic_returns_full_report
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -1274,7 +1322,7 @@ class LSPServerTest < Minitest::Test
     end
   end
 
-  def test_code_lens_returns_function_signatures
+  def test_code_lens_returns_empty_when_disabled
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_codelens_test.mt"
@@ -1284,12 +1332,9 @@ class LSPServerTest < Minitest::Test
       response = client.send_request("textDocument/codeLens", {
         "textDocument" => { "uri" => uri }
       })
-      lenses = response.fetch("result")
-      assert_kind_of Array, lenses
-      assert lenses.length >= 2, "expected at least 2 code lenses (add + main), got #{lenses.length}"
-      titles = lenses.map { |l| l.dig("command", "title") }
-      assert titles.any? { |t| t.include?("add") && t.include?("-> i32") }
-      assert titles.any? { |t| t.include?("main") }
+      error = response.fetch("error")
+      assert_equal(-32_601, error["code"])
+      assert_includes(error["message"], "Method not found")
     end
   end
 
