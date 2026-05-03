@@ -49,6 +49,8 @@ module MilkTea
         @handlers = {}
         @diagnostic_report_cache = {}
         @semantic_tokens_cache = {}
+        @fixall_cache = {}
+        @definition_file_token_cache = {}
         @perf_request_count = 0
         @perf_samples_by_method = Hash.new { |hash, key| hash[key] = [] }
         @perf_top_slowest_by_method = Hash.new { |hash, key| hash[key] = [] }
@@ -464,6 +466,7 @@ module MilkTea
         content = params['textDocument']['text']
         @workspace.open_document(uri, content)
         @semantic_tokens_cache.delete(uri)
+        @fixall_cache.delete(uri)
         schedule_diagnostics(uri)
         nil
       end
@@ -483,6 +486,7 @@ module MilkTea
         end
 
         @semantic_tokens_cache.delete(uri)
+        @fixall_cache.delete(uri)
         schedule_diagnostics(uri)
         nil
       end
@@ -492,6 +496,7 @@ module MilkTea
         cancel_diagnostics(uri)
         @workspace.close_document(uri)
         @semantic_tokens_cache.delete(uri)
+        @fixall_cache.delete(uri)
         Protocol.write_notification('textDocument/publishDiagnostics', {
           uri: uri,
           diagnostics: []
@@ -506,6 +511,7 @@ module MilkTea
         text = params['text']
         @workspace.update_document(uri, text) if text
         @semantic_tokens_cache.delete(uri)
+        @fixall_cache.delete(uri)
         schedule_diagnostics(uri)
         nil
       end
@@ -1008,15 +1014,22 @@ module MilkTea
         unless fixall_skipped_reason
           fixall_start = monotonic_time
           begin
-            formatted = begin
-              Formatter.format_source(content, mode: :safe)
-            rescue StandardError
-              content
-            end
-            fixed = begin
-              Linter.fix_source(formatted, path: uri)
-            rescue StandardError
-              formatted
+            content_hash = content.hash
+            cached_fixall = @fixall_cache[uri]
+            if cached_fixall && cached_fixall[:content_hash] == content_hash
+              fixed = cached_fixall[:fixed]
+            else
+              formatted = begin
+                Formatter.format_source(content, mode: :safe)
+              rescue StandardError
+                content
+              end
+              fixed = begin
+                Linter.fix_source(formatted, path: uri)
+              rescue StandardError
+                formatted
+              end
+              @fixall_cache[uri] = { content_hash: content_hash, fixed: fixed }
             end
             line_count = content.count("\n")
             actions << {
@@ -1104,6 +1117,9 @@ module MilkTea
         start_char = range.dig('start', 'character') || 0
         end_line = range.dig('end', 'line') || 0
         end_char = range.dig('end', 'character') || 0
+
+        content = @workspace.get_content(uri)
+        return [] if content && skip_expensive_work_reason(uri, content)
 
         analysis = @workspace.get_analysis(uri)
         tokens = @workspace.get_tokens(uri)
@@ -1610,6 +1626,12 @@ module MilkTea
       end
 
       def build_semantic_token_entries(tokens, analysis = nil)
+        # Precompute line → non-trivia tokens index so non_trivia_tokens_on_line
+        # is O(1) per call instead of O(n), turning the overall build from O(n²) to O(n).
+        trivia_types = Set[:newline, :indent, :dedent, :eof]
+        @tokens_by_line_cache = Hash.new { |h, k| h[k] = [] }
+        tokens.each { |t| @tokens_by_line_cache[t.line] << t unless trivia_types.include?(t.type) }
+
         entries = []
 
         tokens.each_with_index do |tok, index|
@@ -1633,6 +1655,8 @@ module MilkTea
         end
 
         entries.sort_by { |entry| [entry[:line], entry[:start_char]] }
+      ensure
+        @tokens_by_line_cache = nil
       end
 
       # Decomposes an fstring token into non-overlapping semantic token entries.
@@ -1964,6 +1988,8 @@ module MilkTea
       end
 
       def non_trivia_tokens_on_line(tokens, line)
+        return @tokens_by_line_cache[line] if @tokens_by_line_cache
+
         tokens.select do |tok|
           tok.line == line && ![:newline, :indent, :dedent, :eof].include?(tok.type)
         end
@@ -2086,7 +2112,11 @@ module MilkTea
       end
 
       def find_definition_token_in_file(path, name)
-        tokens = MilkTea::Lexer.lex(File.read(path), path: path_to_uri(path))
+        mtime = File.mtime(path).to_i rescue 0
+        cache_key = "#{path}:#{mtime}"
+        tokens = @definition_file_token_cache[cache_key] ||= begin
+          MilkTea::Lexer.lex(File.read(path), path: path_to_uri(path))
+        end
 
         tokens.each_cons(2) do |kw_tok, id_tok|
           next unless MilkTea::LSP::Workspace::DEFINITION_KEYWORDS.include?(kw_tok.type)
