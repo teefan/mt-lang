@@ -13,6 +13,7 @@ const battery_format: cstr = c"Battery: %3d percent, %s remaining"
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 
+
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
@@ -21,6 +22,7 @@ def pump_events() -> bool:
             return false
 
     return true
+
 
 def render_frame() -> void:
     var frame = c.SDL_FRect(x = 100.0, y = 200.0, w = 440.0, h = 80.0)
@@ -130,6 +132,7 @@ def render_frame() -> void:
 
     c.SDL_RenderPresent(renderer)
 
+
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     c.SDL_SetAppMetadata(c"Example Misc Power", c"1.0", c"com.example.misc-power")
 
@@ -149,6 +152,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

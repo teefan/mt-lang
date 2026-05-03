@@ -6,6 +6,7 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const scarfy_path: str = "../../raylib/resources/scarfy.png"
 
+
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Texture Source/Dest")
     defer rl.close_window()

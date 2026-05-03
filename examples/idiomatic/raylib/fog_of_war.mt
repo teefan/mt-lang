@@ -10,6 +10,7 @@ const player_tile_visibility: i32 = 2
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 
+
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Fog Of War")
     defer rl.close_window()

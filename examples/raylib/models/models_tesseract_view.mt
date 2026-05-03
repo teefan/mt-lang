@@ -9,6 +9,7 @@ const screen_height: i32 = 450
 const vertex_count: i32 = 16
 const window_title: cstr = c"raylib [models] example - tesseract view"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

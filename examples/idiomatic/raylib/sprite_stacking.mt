@@ -8,6 +8,7 @@ const screen_height: i32 = 450
 const stack_count: i32 = 122
 const booth_path: str = "../../raylib/resources/booth.png"
 
+
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Sprite Stacking")
     defer rl.close_window()

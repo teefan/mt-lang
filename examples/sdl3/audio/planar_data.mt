@@ -25,8 +25,10 @@ var stream: ptr[c.SDL_AudioStream]? = null
 var audio_device: c.SDL_AudioDeviceID = 0
 var playing_sound: i32 = 0
 
+
 def point_in_rect(point: c.SDL_FPoint, rect: c.SDL_FRect) -> bool:
     return point.x >= rect.x and point.x < (rect.x + rect.w) and point.y >= rect.y and point.y < (rect.y + rect.h)
+
 
 def play_left_sound() -> void:
     let active_stream = stream
@@ -46,6 +48,7 @@ def play_left_sound() -> void:
 
     playing_sound = left_button_value
 
+
 def play_right_sound() -> void:
     let active_stream = stream
     if active_stream == null:
@@ -63,6 +66,7 @@ def play_right_sound() -> void:
         return
 
     playing_sound = right_button_value
+
 
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
@@ -83,6 +87,7 @@ def pump_events() -> bool:
 
     return true
 
+
 def render_button(rect: c.SDL_FRect, text: cstr, button_value: i32) -> void:
     var draw_rect = rect
 
@@ -99,6 +104,7 @@ def render_button(rect: c.SDL_FRect, text: cstr, button_value: i32) -> void:
     let y = rect.y + ((rect.h - f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) / 2.0)
     c.SDL_RenderDebugText(renderer, x, y, text)
 
+
 def render_frame() -> void:
     let active_stream = stream
 
@@ -111,6 +117,7 @@ def render_frame() -> void:
     render_button(left_button_rect, c"LEFT", left_button_value)
     render_button(right_button_rect, c"RIGHT", right_button_value)
     c.SDL_RenderPresent(renderer)
+
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     var spec = zero[c.SDL_AudioSpec]()
@@ -155,6 +162,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

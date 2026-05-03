@@ -13,11 +13,13 @@ struct Branch:
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 
+
 def branch_limit(depth: i32) -> i32:
     var limit = 1
     for _ in range(0, depth):
         limit *= 2
     return limit
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Recursive Tree")

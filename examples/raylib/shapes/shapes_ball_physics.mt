@@ -26,6 +26,7 @@ const help_text_4: cstr = c"middle click to shake"
 const ball_count_format: cstr = c"BALL COUNT: %d"
 const gravity_format: cstr = c"GRAVITY: %.2f"
 
+
 def ball_at(position: rl.Vector2, speed: rl.Vector2, radius: f32, color: rl.Color) -> Ball:
     return Ball(
         position = position,
@@ -38,10 +39,12 @@ def ball_at(position: rl.Vector2, speed: rl.Vector2, radius: f32, color: rl.Colo
         grabbed = false,
     )
 
+
 def distance(left: rl.Vector2, right: rl.Vector2) -> f32:
     let dx = left.x - right.x
     let dy = left.y - right.y
     return math.sqrtf(dx * dx + dy * dy)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

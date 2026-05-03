@@ -10,10 +10,12 @@ const midground_path: cstr = c"../resources/cyberpunk_street_midground.png"
 const foreground_path: cstr = c"../resources/cyberpunk_street_foreground.png"
 const background_scale: f32 = 2.0
 
+
 def reset_scroll(scroll: f32, texture_width: i32) -> f32:
     if scroll <= -f32<-(texture_width * 2):
         return 0.0
     return scroll
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

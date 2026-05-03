@@ -10,14 +10,18 @@ const window_title: cstr = c"raylib [core] example - screen recording"
 const gif_record_framerate: i32 = 5
 const max_sinewave_points: i32 = 256
 
+
 def half_screen_height() -> f32:
     return 0.5 * screen_height
+
 
 def horizontal_step() -> f32:
     return f32<-rl.GetScreenWidth() / f32<-180
 
+
 def sine_factor() -> f32:
     return (2.0 * rl.PI / 1.5)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

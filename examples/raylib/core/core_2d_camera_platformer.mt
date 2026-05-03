@@ -33,6 +33,8 @@ struct CameraLandingState:
     even_out_target: f32
 
 methods Player:
+
+
     edit def update(env_items: array[EnvItem, 5], delta: f32) -> void:
         if rl.IsKeyDown(rl.KeyboardKey.KEY_LEFT):
             this.position.x -= player_hor_speed * delta
@@ -59,12 +61,15 @@ methods Player:
         else:
             this.can_jump = true
 
+
 def screen_half(value: i32) -> f32:
     return 0.5 * value
+
 
 def update_camera_center(camera: ref[rl.Camera2D], player: Player, width: i32, height: i32) -> void:
     camera.offset = rl.Vector2(x = screen_half(width), y = screen_half(height))
     camera.target = player.position
+
 
 def update_camera_center_inside_map(camera: ref[rl.Camera2D], player: Player, env_items: array[EnvItem, 5], width: i32, height: i32) -> void:
     let half_width = screen_half(width)
@@ -101,6 +106,7 @@ def update_camera_center_inside_map(camera: ref[rl.Camera2D], player: Player, en
     if min_screen.y > 0.0:
         camera.offset.y = half_height - min_screen.y
 
+
 def update_camera_center_smooth_follow(camera: ref[rl.Camera2D], player: Player, delta: f32, width: i32, height: i32) -> void:
     camera.offset = rl.Vector2(x = screen_half(width), y = screen_half(height))
     let diff = player.position.subtract(camera.target)
@@ -111,6 +117,7 @@ def update_camera_center_smooth_follow(camera: ref[rl.Camera2D], player: Player,
         if speed < min_speed:
             speed = min_speed
         camera.target = camera.target.add(diff.scale(speed * delta / length))
+
 
 def update_camera_even_out_on_landing(camera: ref[rl.Camera2D], player: Player, width: i32, height: i32, state: ref[CameraLandingState]) -> void:
     camera.offset = rl.Vector2(x = screen_half(width), y = screen_half(height))
@@ -130,6 +137,7 @@ def update_camera_even_out_on_landing(camera: ref[rl.Camera2D], player: Player, 
     elif player.can_jump and player.speed == 0.0 and player.position.y != camera.target.y:
         state.evening_out = true
         state.even_out_target = player.position.y
+
 
 def update_camera_player_bounds_push(camera: ref[rl.Camera2D], player: Player, width: i32, height: i32) -> void:
     let bbox_world_min = rl.GetScreenToWorld2D(
@@ -160,6 +168,7 @@ def update_camera_player_bounds_push(camera: ref[rl.Camera2D], player: Player, w
     if player.position.y > bbox_world_max.y:
         camera.target.y = bbox_world_min.y + (player.position.y - bbox_world_max.y)
 
+
 def update_camera_for_mode(camera_option: i32, camera: ref[rl.Camera2D], player: Player, env_items: array[EnvItem, 5], delta: f32, width: i32, height: i32, landing_state: ref[CameraLandingState]) -> void:
     if camera_option == 0:
         update_camera_center(camera, player, width, height)
@@ -171,6 +180,7 @@ def update_camera_for_mode(camera_option: i32, camera: ref[rl.Camera2D], player:
         update_camera_even_out_on_landing(camera, player, width, height, landing_state)
     else:
         update_camera_player_bounds_push(camera, player, width, height)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

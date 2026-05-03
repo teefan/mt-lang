@@ -23,28 +23,34 @@ struct WorkState[T]:
     waiter: fn(frame: ptr[void]) -> void
     work: fn() -> T
 
+
 def sleep_state(frame: ptr[void]) -> ptr[SleepState]:
     unsafe:
         return ptr[SleepState]<-frame
 
+
 def work_state[T](frame: ptr[void]) -> ptr[WorkState[T]]:
     unsafe:
         return ptr[WorkState[T]]<-frame
+
 
 def require_current_loop() -> rt.Loop:
     if not current_loop_active:
         panic(c"libuv.async requires an active loop; use async.block_on or async.run, or call the explicit *_on helpers")
     return current_loop
 
+
 def activate_current_loop(loop: rt.Loop) -> void:
     current_loop = loop
     current_loop_active = true
     return
 
+
 def deactivate_current_loop() -> void:
     current_loop = zero[rt.Loop]()
     current_loop_active = false
     return
+
 
 def sleep_task(state: ptr[SleepState]) -> Task[i32]:
     unsafe:
@@ -56,6 +62,7 @@ def sleep_task(state: ptr[SleepState]) -> Task[i32]:
             take_result = sleep_take_result,
         )
 
+
 def work_task[T](state: ptr[WorkState[T]]) -> Task[T]:
     unsafe:
         return Task[T](
@@ -65,6 +72,7 @@ def work_task[T](state: ptr[WorkState[T]]) -> Task[T]:
             release = work_release[T],
             take_result = work_take_result[T],
         )
+
 
 def complete_sleep(state: ptr[SleepState], status: i32) -> void:
     unsafe:
@@ -77,6 +85,7 @@ def complete_sleep(state: ptr[SleepState], status: i32) -> void:
             return
     return
 
+
 def complete_work[T](state: ptr[WorkState[T]], status: i32) -> void:
     unsafe:
         state.status = status
@@ -88,11 +97,13 @@ def complete_work[T](state: ptr[WorkState[T]], status: i32) -> void:
             return
     return
 
+
 def on_sleep_closed(handle: ptr[uv.uv_handle_t]) -> void:
     unsafe:
         let state = ptr[SleepState]<-uv.handle_get_data(handle)
         complete_sleep(state, state.status)
     return
+
 
 def on_sleep_timer(timer: ptr[uv.uv_timer_t]) -> void:
     unsafe:
@@ -102,12 +113,14 @@ def on_sleep_timer(timer: ptr[uv.uv_timer_t]) -> void:
         uv.close(handle, on_sleep_closed)
     return
 
+
 def on_work_request[T](req: ptr[uv.uv_work_t]) -> void:
     unsafe:
         let request = ptr[uv.uv_req_t]<-req
         let state = ptr[WorkState[T]]<-uv.req_get_data(request)
         state.result = state.work()
     return
+
 
 def on_work_done[T](req: ptr[uv.uv_work_t], status: i32) -> void:
     unsafe:
@@ -116,9 +129,11 @@ def on_work_done[T](req: ptr[uv.uv_work_t], status: i32) -> void:
         complete_work[T](state, status)
     return
 
+
 pub def sleep_ready(frame: ptr[void]) -> bool:
     unsafe:
         return sleep_state(frame).ready
+
 
 pub def sleep_set_waiter(frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
     let state = sleep_state(frame)
@@ -130,6 +145,7 @@ pub def sleep_set_waiter(frame: ptr[void], waiter_frame: ptr[void], waiter: fn(f
         state.waiter = waiter
     return
 
+
 pub def sleep_release(frame: ptr[void]) -> void:
     let state = sleep_state(frame)
     unsafe:
@@ -140,13 +156,16 @@ pub def sleep_release(frame: ptr[void]) -> void:
     heap.release[SleepState](state)
     return
 
+
 pub def sleep_take_result(frame: ptr[void]) -> i32:
     unsafe:
         return sleep_state(frame).status
 
+
 pub def work_ready[T](frame: ptr[void]) -> bool:
     unsafe:
         return work_state[T](frame).ready
+
 
 pub def work_set_waiter[T](frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
     let state = work_state[T](frame)
@@ -158,6 +177,7 @@ pub def work_set_waiter[T](frame: ptr[void], waiter_frame: ptr[void], waiter: fn
         state.waiter = waiter
     return
 
+
 pub def work_release[T](frame: ptr[void]) -> void:
     let state = work_state[T](frame)
     unsafe:
@@ -168,12 +188,14 @@ pub def work_release[T](frame: ptr[void]) -> void:
     heap.release[WorkState[T]](state)
     return
 
+
 pub def work_take_result[T](frame: ptr[void]) -> T:
     let state = work_state[T](frame)
     unsafe:
         if state.status != 0:
             panic(c"libuv.async.work failed")
         return state.result
+
 
 pub def sleep_on(loop: rt.Loop, timeout: usize) -> Task[i32]:
     let state = heap.must_alloc_zeroed[SleepState](1)
@@ -197,8 +219,10 @@ pub def sleep_on(loop: rt.Loop, timeout: usize) -> Task[i32]:
             uv.close(ptr[uv.uv_handle_t]<-rt.handle_ptr(state.timer), on_sleep_closed)
     return sleep_task(state)
 
+
 pub def sleep(timeout: usize) -> Task[i32]:
     return sleep_on(require_current_loop(), timeout)
+
 
 pub def work_on[T](loop: rt.Loop, run_work: fn() -> T) -> Task[T]:
     let state = heap.must_alloc_zeroed[WorkState[T]](1)
@@ -217,8 +241,10 @@ pub def work_on[T](loop: rt.Loop, run_work: fn() -> T) -> Task[T]:
         panic(c"libuv.async.work queue_work failed")
     return work_task[T](state)
 
+
 pub def work[T](run_work: fn() -> T) -> Task[T]:
     return work_on[T](require_current_loop(), run_work)
+
 
 def must_create_loop() -> rt.Loop:
     let loop_result = rt.create_loop()
@@ -226,17 +252,21 @@ def must_create_loop() -> rt.Loop:
         panic(c"libuv.async.create_loop failed")
     return loop_result.value
 
+
 def must_release_loop(loop: ref[rt.Loop]) -> void:
     if rt.loop_release(loop) != 0:
         panic(c"libuv.async.loop_release failed")
     return
 
+
 pub def pump(loop: rt.Loop) -> void:
     rt.loop_run_nowait(loop)
     return
 
+
 pub def ready[T](task: Task[T]) -> bool:
     return task.ready(task.frame)
+
 
 pub def finish[T](task: Task[T]) -> T:
     if not ready[T](task):
@@ -245,6 +275,7 @@ pub def finish[T](task: Task[T]) -> T:
     let result = task.take_result(task.frame)
     task.release(task.frame)
     return result
+
 
 pub def block_on_loop[T](loop: rt.Loop, task: Task[T]) -> T:
     while not task.ready(task.frame):
@@ -256,6 +287,7 @@ pub def block_on_loop[T](loop: rt.Loop, task: Task[T]) -> T:
     task.release(task.frame)
     return result
 
+
 pub def run_loop(loop: rt.Loop, task: Task[void]) -> void:
     while not task.ready(task.frame):
         let status = rt.loop_run_default(loop)
@@ -265,6 +297,7 @@ pub def run_loop(loop: rt.Loop, task: Task[void]) -> void:
     task.take_result(task.frame)
     task.release(task.frame)
     return
+
 
 pub def block_on[T](root: proc() -> Task[T]) -> T:
     if current_loop_active:
@@ -276,6 +309,7 @@ pub def block_on[T](root: proc() -> Task[T]) -> T:
     deactivate_current_loop()
     must_release_loop(ref_of(loop))
     return result
+
 
 pub def run(root: proc() -> Task[void]) -> void:
     if current_loop_active:

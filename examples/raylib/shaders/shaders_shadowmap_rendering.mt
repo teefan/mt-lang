@@ -24,6 +24,7 @@ const use_keys_text: cstr = c"Use the arrow keys to rotate the light!"
 const footer_text: cstr = c"Shadows in raylib using the shadowmapping algorithm!"
 const screenshot_path: cstr = c"shaders_shadowmap.png"
 
+
 def raylib_matrix(mat: rlgl.Matrix) -> rl.Matrix:
     return rl.Matrix(
         m0 = mat.m0,
@@ -44,14 +45,17 @@ def raylib_matrix(mat: rlgl.Matrix) -> rl.Matrix:
         m15 = mat.m15,
     )
 
+
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
+
 
 def set_all_model_shaders(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         for index in range(0, model.materialCount):
             model.materials[index].shader = shader
+
 
 def load_shadowmap_render_texture(width: i32, height: i32) -> rl.RenderTexture2D:
     var target = zero[rl.RenderTexture2D]()
@@ -81,14 +85,17 @@ def load_shadowmap_render_texture(width: i32, height: i32) -> rl.RenderTexture2D
 
     return target
 
+
 def unload_shadowmap_render_texture(target: rl.RenderTexture2D) -> void:
     if target.id > 0:
         rlgl.rlUnloadFramebuffer(target.id)
+
 
 def draw_scene(cube: rl.Model, robot: rl.Model) -> void:
     rl.DrawModelEx(cube, rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector3(x = 0.0, y = 1.0, z = 0.0), 0.0, rl.Vector3(x = 10.0, y = 1.0, z = 10.0), rl.BLUE)
     rl.DrawModelEx(cube, rl.Vector3(x = 1.5, y = 1.0, z = -1.5), rl.Vector3(x = 0.0, y = 1.0, z = 0.0), 0.0, rl.Vector3(x = 1.0, y = 1.0, z = 1.0), rl.WHITE)
     rl.DrawModelEx(robot, rl.Vector3(x = 0.0, y = 0.5, z = 0.0), rl.Vector3(x = 0.0, y = 1.0, z = 0.0), 0.0, rl.Vector3(x = 1.0, y = 1.0, z = 1.0), rl.RED)
+
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

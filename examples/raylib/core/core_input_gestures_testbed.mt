@@ -11,6 +11,7 @@ const window_title: cstr = c"raylib [core] example - input gestures testbed"
 const mobile_message: cstr = c"Example optimized for Web/HTML5\non Smartphones with Touch Screen."
 const desktop_message: cstr = c"While running on Desktop Web Browsers,\ninspect and turn on Touch Emulation."
 
+
 def gesture_name(gesture: i32) -> cstr:
     if gesture == rl.Gesture.GESTURE_TAP:
         return c"Tap"
@@ -34,6 +35,7 @@ def gesture_name(gesture: i32) -> cstr:
         return c"Pinch Out"
     return c"None"
 
+
 def gesture_color_for(gesture: i32) -> rl.Color:
     if gesture == rl.Gesture.GESTURE_TAP:
         return rl.BLUE
@@ -54,6 +56,7 @@ def gesture_color_for(gesture: i32) -> rl.Color:
     if gesture == rl.Gesture.GESTURE_PINCH_OUT:
         return rl.ORANGE
     return rl.BLACK
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

@@ -10,6 +10,7 @@ const gravity_on_text: cstr = c"GRAVITY: ON (Press G to disable)"
 const gravity_off_text: cstr = c"GRAVITY: OFF (Press G to enable)"
 const paused_text: cstr = c"PAUSED"
 
+
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)

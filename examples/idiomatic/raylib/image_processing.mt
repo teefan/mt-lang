@@ -16,6 +16,7 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const parrots_path: str = "../../raylib/resources/parrots.png"
 
+
 def process_label(process: i32) -> str:
     if process == process_none:
         return "NO PROCESSING"
@@ -34,6 +35,7 @@ def process_label(process: i32) -> str:
     elif process == process_flip_vertical:
         return "FLIP VERTICAL"
     return "FLIP HORIZONTAL"
+
 
 def apply_process(image: rl.Image, process: i32) -> rl.Image:
     var processed = image
@@ -54,6 +56,7 @@ def apply_process(image: rl.Image, process: i32) -> rl.Image:
     elif process == process_flip_horizontal:
         rl.image_flip_horizontal(inout processed)
     return processed
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Image Processing")

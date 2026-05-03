@@ -12,6 +12,7 @@ const line_one_text: cstr = c"We are drawing only one texture from various image
 const line_two_text: cstr = c"Source images have been cropped, scaled, flipped and copied one over the other."
 const title_text: cstr = c"PARROTS & CAT"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

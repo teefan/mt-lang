@@ -7,17 +7,21 @@ import std.rlgl as rlgl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 
+
 def emit_color(color: rl.Color) -> void:
     rlgl.color_4ub(color.r, color.g, color.b, color.a)
 
+
 def emit_vertex(point: rl.Vector2) -> void:
     rlgl.vertex_2f(point.x, point.y)
+
 
 def emit_arc_vertex(center: rl.Vector2, angle: f32, radius: f32) -> void:
     rlgl.vertex_2f(
         center.x + math.cos(math.deg2rad * angle) * radius,
         center.y + math.sin(math.deg2rad * angle) * radius,
     )
+
 
 def draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: f32, roundness_right: f32, segments: i32, left: rl.Color, right: rl.Color) -> void:
     let not_rounded = roundness_left <= 0.0 and roundness_right <= 0.0
@@ -140,6 +144,7 @@ def draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: f32, ro
     emit_vertex(points[10])
 
     rlgl.end()
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Advanced Rectangles")

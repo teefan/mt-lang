@@ -14,10 +14,12 @@ const mouse_inside_a_text: cstr = c"Mouse inside ellipse A"
 const mouse_inside_b_text: cstr = c"Mouse inside ellipse B"
 const switch_control_text: cstr = c"Press [A] or [B] to switch control"
 
+
 def check_collision_point_ellipse(point: rl.Vector2, center: rl.Vector2, radius_x: f32, radius_y: f32) -> bool:
     let dx = (point.x - center.x) / radius_x
     let dy = (point.y - center.y) / radius_y
     return dx * dx + dy * dy <= 1.0
+
 
 def check_collision_ellipses(center1: rl.Vector2, radius_x1: f32, radius_y1: f32, center2: rl.Vector2, radius_x2: f32, radius_y2: f32) -> bool:
     let dx = center2.x - center1.x
@@ -34,6 +36,7 @@ def check_collision_ellipses(center1: rl.Vector2, radius_x1: f32, radius_y1: f32
     let r1 = (radius_x1 * radius_y1) / math.sqrtf((radius_y1 * cos_theta) * (radius_y1 * cos_theta) + (radius_x1 * sin_theta) * (radius_x1 * sin_theta))
     let r2 = (radius_x2 * radius_y2) / math.sqrtf((radius_y2 * cos_theta) * (radius_y2 * cos_theta) + (radius_x2 * sin_theta) * (radius_x2 * sin_theta))
     return distance <= r1 + r2
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

@@ -8,6 +8,7 @@ const max_trail_length: i32 = 30
 const window_title: cstr = c"raylib [shapes] example - mouse trail"
 const help_text: cstr = c"Move the mouse to see the trail effect!"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

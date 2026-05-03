@@ -38,6 +38,7 @@ var gamepad: ptr[c.SDL_Gamepad]? = null
 var left_thumb_last: c.Uint64 = 0
 var right_thumb_last: c.Uint64 = 0
 
+
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
@@ -57,18 +58,23 @@ def pump_events() -> bool:
 
     return true
 
+
 def thumbbox_x(origin: f32, axis_x: c.Sint16) -> f32:
     return origin + ((f32<-axis_x / 32767.0) * thumbbox_size)
+
 
 def thumbbox_y(origin: f32, axis_y: c.Sint16) -> f32:
     return origin + ((f32<-axis_y / 32767.0) * thumbbox_size)
 
+
 def axis_active(axis_x: c.Sint16, axis_y: c.Sint16) -> bool:
     return c.SDL_abs(i32<-axis_x) > 1000 or c.SDL_abs(i32<-axis_y) > 1000
+
 
 def trigger_box(x: f32, axis_y: c.Sint16) -> c.SDL_FRect:
     let height = (f32<-axis_y / 32767.0) * trigger_height
     return c.SDL_FRect(x = x, y = 1.0 + (trigger_height - height), w = 37.0, h = height)
+
 
 def render_frame() -> void:
     var text: cstr = c"Plug in a gamepad, please."
@@ -129,6 +135,7 @@ def render_frame() -> void:
     c.SDL_RenderDebugText(renderer, x, y, text)
     c.SDL_RenderPresent(renderer)
 
+
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     c.SDL_SetAppMetadata(c"Example Input Gamepad Polling", c"1.0", c"com.example.input-gamepad-polling")
 
@@ -162,6 +169,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         c.SDL_CloseGamepad(gamepad)
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

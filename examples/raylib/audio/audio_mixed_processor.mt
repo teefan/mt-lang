@@ -17,15 +17,18 @@ const window_title: cstr = c"raylib [audio] example - mixed processor"
 var exponent: f32 = 1.0
 var average_volume: array[f32, 400]
 
+
 def void_ptr_to_f32(value: ptr[void]) -> ptr[f32]:
     unsafe:
         return ptr[f32]<-value
+
 
 def signed_power(value: f32) -> f32:
     var sign: f32 = 1.0
     if value < 0.0:
         sign = -1.0
     return libm.powf(libm.fabsf(value), exponent) * sign
+
 
 def process_audio(buffer: ptr[void], frames: u32) -> void:
     let samples = void_ptr_to_f32(buffer)
@@ -50,6 +53,7 @@ def process_audio(buffer: ptr[void], frames: u32) -> void:
         average_volume[index] = average_volume[index + 1]
 
     average_volume[average_volume_size - 1] = average
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

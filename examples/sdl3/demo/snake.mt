@@ -42,14 +42,18 @@ var joystick: ptr[c.SDL_Joystick]? = null
 var snake_ctx: SnakeContext = zero[SnakeContext]()
 var last_step: c.Uint64 = 0
 
+
 def cell_index(x: i32, y: i32) -> i32:
     return x + (y * snake_game_width)
+
 
 def snake_cell_at(x: i32, y: i32) -> SnakeCell:
     return snake_ctx.cells[cell_index(x, y)]
 
+
 def put_cell_at(x: i32, y: i32, cell_type: SnakeCell) -> void:
     snake_ctx.cells[cell_index(x, y)] = cell_type
+
 
 def direction_cell(direction: SnakeDirection) -> SnakeCell:
     if direction == SnakeDirection.SNAKE_DIR_RIGHT:
@@ -60,6 +64,7 @@ def direction_cell(direction: SnakeDirection) -> SnakeCell:
         return SnakeCell.SNAKE_CELL_SLEFT
     return SnakeCell.SNAKE_CELL_SDOWN
 
+
 def wrap_coordinate(value: i32, max_value: i32) -> i32:
     if value < 0:
         return max_value - 1
@@ -67,10 +72,12 @@ def wrap_coordinate(value: i32, max_value: i32) -> i32:
         return 0
     return value
 
+
 def set_rect_xy(rect: ptr[c.SDL_FRect], x: i32, y: i32) -> void:
     unsafe:
         rect.x = f32<-(x * snake_block_size_in_pixels)
         rect.y = f32<-(y * snake_block_size_in_pixels)
+
 
 def are_cells_full() -> bool:
     for index in range(0, snake_matrix_size):
@@ -78,6 +85,7 @@ def are_cells_full() -> bool:
             return false
 
     return true
+
 
 def new_food_pos() -> void:
     while true:
@@ -87,6 +95,7 @@ def new_food_pos() -> void:
         if snake_cell_at(x, y) == SnakeCell.SNAKE_CELL_NOTHING:
             put_cell_at(x, y, SnakeCell.SNAKE_CELL_FOOD)
             return
+
 
 def snake_initialize() -> void:
     snake_ctx = zero[SnakeContext]()
@@ -101,6 +110,7 @@ def snake_initialize() -> void:
 
     for _index in range(0, 4):
         new_food_pos()
+
 
 def snake_redir(direction: SnakeDirection) -> void:
     let cell_type = snake_cell_at(snake_ctx.head_xpos, snake_ctx.head_ypos)
@@ -123,6 +133,7 @@ def snake_redir(direction: SnakeDirection) -> void:
     if cell_type != SnakeCell.SNAKE_CELL_SUP:
         snake_ctx.next_dir = direction
 
+
 def move_tail() -> void:
     let tail_cell = snake_cell_at(snake_ctx.tail_xpos, snake_ctx.tail_ypos)
     put_cell_at(snake_ctx.tail_xpos, snake_ctx.tail_ypos, SnakeCell.SNAKE_CELL_NOTHING)
@@ -141,6 +152,7 @@ def move_tail() -> void:
 
     snake_ctx.tail_xpos = wrap_coordinate(snake_ctx.tail_xpos, snake_game_width)
     snake_ctx.tail_ypos = wrap_coordinate(snake_ctx.tail_ypos, snake_game_height)
+
 
 def snake_step() -> void:
     if snake_ctx.inhibit_tail_step > 1:
@@ -182,6 +194,7 @@ def snake_step() -> void:
         new_food_pos()
         snake_ctx.inhibit_tail_step += 1
 
+
 def handle_key_event(key_code: c.SDL_Scancode) -> bool:
     if key_code == c.SDL_Scancode.SDL_SCANCODE_ESCAPE or key_code == c.SDL_Scancode.SDL_SCANCODE_Q:
         return false
@@ -207,6 +220,7 @@ def handle_key_event(key_code: c.SDL_Scancode) -> bool:
 
     return true
 
+
 def handle_hat_event(hat: u8) -> void:
     if hat == c.SDL_HAT_RIGHT:
         snake_redir(SnakeDirection.SNAKE_DIR_RIGHT)
@@ -219,6 +233,7 @@ def handle_hat_event(hat: u8) -> void:
             else:
                 if hat == c.SDL_HAT_DOWN:
                     snake_redir(SnakeDirection.SNAKE_DIR_DOWN)
+
 
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
@@ -245,6 +260,7 @@ def pump_events() -> bool:
                                 return false
 
     return true
+
 
 def render_frame() -> void:
     let now = c.SDL_GetTicks()
@@ -277,6 +293,7 @@ def render_frame() -> void:
     set_rect_xy(ptr_of(ref_of(rect)), snake_ctx.head_xpos, snake_ctx.head_ypos)
     c.SDL_RenderFillRect(renderer, ptr_of(ref_of(rect)))
     c.SDL_RenderPresent(renderer)
+
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     if not c.SDL_SetAppMetadata(c"Example Snake game", c"1.0", c"com.example.Snake"):
@@ -312,6 +329,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

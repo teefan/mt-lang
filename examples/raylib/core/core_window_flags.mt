@@ -8,6 +8,7 @@ const window_title: cstr = c"raylib [core] example - window flags"
 const runtime_flags_text: cstr = c"Following flags can be set after window creation:"
 const startup_flags_text: cstr = c"Following flags can only be set before window creation:"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

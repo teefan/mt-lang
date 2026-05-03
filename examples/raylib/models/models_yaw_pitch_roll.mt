@@ -13,6 +13,7 @@ const roll_controls_text: cstr = c"Roll controlled with: KEY_LEFT / KEY_RIGHT"
 const yaw_controls_text: cstr = c"Yaw controlled with: KEY_A / KEY_S"
 const credit_text: cstr = c"(c) WWI Plane Model created by GiaHanLam"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

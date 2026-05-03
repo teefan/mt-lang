@@ -31,13 +31,16 @@ const dark_text: cstr = c"Dark"
 const raysan_path: cstr = c"../resources/raysan.png"
 const window_title: cstr = c"raylib [shaders] example - spotlight rendering"
 
+
 def set_vec2_uniform(shader: rl.Shader, location: i32, vector: rl.Vector2) -> void:
     var values = array[f32, 2](vector.x, vector.y)
     rl.SetShaderValue(shader, location, ptr_of(ref_of(values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
+
 def set_float_uniform(shader: rl.Shader, location: i32, value: f32) -> void:
     var storage = value
     rl.SetShaderValue(shader, location, ptr_of(ref_of(storage)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+
 
 def reset_star(star: ref[Star]) -> void:
     var current = read(star)
@@ -52,6 +55,7 @@ def reset_star(star: ref[Star]) -> void:
     current.position = current.position.add(current.speed.multiply(rl.Vector2(x = 8.0, y = 8.0)))
     read(star) = current
 
+
 def update_star(star: ref[Star]) -> void:
     var current = read(star)
     current.position = current.position.add(current.speed)
@@ -62,6 +66,7 @@ def update_star(star: ref[Star]) -> void:
         return
 
     read(star) = current
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

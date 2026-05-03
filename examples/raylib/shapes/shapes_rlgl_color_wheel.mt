@@ -18,10 +18,12 @@ const copy_text: cstr = c"press ctrl+c to copy!"
 const slider_left_text: cstr = c"value: "
 const slider_right_text: cstr = c""
 
+
 def angle_fraction(center: rl.Vector2, circle_position: rl.Vector2, point_scale: f32) -> f32:
     let reference = rl.Vector2(x = 0.0, y = -point_scale)
     let relative = center.subtract(circle_position)
     return (reference.angle(relative) / rl.PI + 1.0) / 2.0
+
 
 def clamp_handle_position(center: rl.Vector2, circle_position: rl.Vector2, point_scale: f32) -> rl.Vector2:
     let distance = center.distance(circle_position) / point_scale
@@ -33,6 +35,7 @@ def clamp_handle_position(center: rl.Vector2, circle_position: rl.Vector2, point
         x = math.sinf(angle * (rl.PI * 2.0)) * point_scale,
         y = -math.cosf(angle * (rl.PI * 2.0)) * point_scale,
     ).add(center)
+
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

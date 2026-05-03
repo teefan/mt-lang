@@ -8,6 +8,7 @@ const glsl_version: i32 = 330
 const shader_path_format: cstr = c"../resources/shaders/glsl%i/eratosthenes.fs"
 const window_title: cstr = c"raylib [shaders] example - eratosthenes sieve"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

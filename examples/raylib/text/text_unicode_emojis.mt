@@ -32,13 +32,16 @@ struct EmojiMessage:
     text: cstr
     language: cstr
 
+
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
 
+
 def emoji_text_at(offset: i32) -> cstr:
     unsafe:
         return cstr<-(ptr[char]<-emoji_codepoints + offset)
+
 
 def randomize_emoji(emojis: ptr[EmojiSlot], hovered: ref[i32], selected: ref[i32], total_messages: i32) -> void:
     read(hovered) = -1
@@ -54,8 +57,10 @@ def randomize_emoji(emojis: ptr[EmojiSlot], hovered: ref[i32], selected: ref[i32
             (emojis + index).message = rl.GetRandomValue(0, total_messages - 1)
             index += 1
 
+
 def draw_text_boxed(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: f32, spacing: f32, word_wrap: bool, tint: rl.Color) -> void:
     draw_text_boxed_selectable(font, text, rec, font_size, spacing, word_wrap, tint, 0, 0, rl.WHITE, rl.WHITE)
+
 
 def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: f32, spacing: f32, word_wrap: bool, tint: rl.Color, select_start: i32, select_length: i32, select_tint: rl.Color, select_back_tint: rl.Color) -> void:
     let length = i32<-rl.TextLength(text)
@@ -172,6 +177,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
 
             i += 1
             k += 1
+
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT | rl.ConfigFlags.FLAG_VSYNC_HINT)

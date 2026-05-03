@@ -40,10 +40,12 @@ var fft_history: array[array[f32, 512], 45]
 var history_pos: i32 = 0
 var tapback_pos: f32 = 0.01
 
+
 def swap_fft_values(left: i32, right: i32) -> void:
     let temp = work_buffer[left]
     work_buffer[left] = work_buffer[right]
     work_buffer[right] = temp
+
 
 def cooley_tukey_fft_slow() -> void:
     var j = 0
@@ -89,6 +91,7 @@ def cooley_tukey_fft_slow() -> void:
 
         length *= 2
 
+
 def capture_frame(audio_samples: ptr[f32]) -> void:
     for index in range(0, fft_window_size):
         let x = (2.0 * rl.PI * f32<-index) / f32<-(fft_window_size - 1)
@@ -117,6 +120,7 @@ def capture_frame(audio_samples: ptr[f32]) -> void:
 
     history_pos = (history_pos + 1) % fft_history_len
 
+
 def render_frame(fft_image: ptr[rl.Image]) -> void:
     var frames_since_tapback = libm.floorf(tapback_pos / window_time)
     frames_since_tapback = rm.clamp(frames_since_tapback, 0.0, f32<-(fft_history_len - 1))
@@ -133,6 +137,7 @@ def render_frame(fft_image: ptr[rl.Image]) -> void:
             fft_row,
             rl.ColorFromNormalized(rl.Vector4(x = amplitude, y = unused_channel, z = unused_channel, w = unused_channel)),
         )
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

@@ -16,6 +16,7 @@ const thickness_text: cstr = c"THICKNESS:  "
 const size_text: cstr = c"TOTAL SIZE: "
 const empty_text: cstr = c""
 
+
 def compute_hilbert_step(order: i32, index_start: i32) -> rl.Vector2:
     let hilbert_points = array[rl.Vector2, 4](
         rl.Vector2(x = 0.0, y = 0.0),
@@ -50,6 +51,7 @@ def compute_hilbert_step(order: i32, index_start: i32) -> rl.Vector2:
             vect.y = temp
 
     return vect
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

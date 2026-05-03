@@ -12,6 +12,8 @@ struct Ball:
     color: rl.Color
 
 methods Ball:
+
+
     edit def update(dt: f32):
         this.position.x += this.velocity.x * dt
         this.position.y += this.velocity.y * dt
@@ -22,8 +24,10 @@ methods Ball:
         if this.position.y < this.radius or this.position.y > screen_height - this.radius:
             this.velocity.y = -this.velocity.y
 
+
     def draw():
         rl.draw_circle_v(this.position, this.radius, this.color)
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Bouncing Ball")

@@ -12,9 +12,11 @@ const counter_format: cstr = c"INPUT CHARS: %i/%i"
 const backspace_text: cstr = c"Press BACKSPACE to delete chars..."
 const underscore_text: cstr = c"_"
 
+
 def cstr_from_bytes(bytes: ptr[u8]) -> cstr:
     unsafe:
         return cstr<-bytes
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

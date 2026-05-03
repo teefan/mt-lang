@@ -13,6 +13,7 @@ const controls_modes: cstr = c"- Camera mode keys: 1, 2, 3, 4"
 const controls_zoom: cstr = c"- Zoom keys: num-plus, num-minus or mouse scroll"
 const controls_projection: cstr = c"- Camera projection key: P"
 
+
 def camera_mode_text(camera_mode: i32) -> cstr:
     if camera_mode == rl.CameraMode.CAMERA_FREE:
         return c"Mode: FREE"
@@ -24,12 +25,14 @@ def camera_mode_text(camera_mode: i32) -> cstr:
         return c"Mode: ORBITAL"
     return c"Mode: CUSTOM"
 
+
 def projection_text(projection: i32) -> cstr:
     if projection == rl.CameraProjection.CAMERA_PERSPECTIVE:
         return c"Projection: PERSPECTIVE"
     if projection == rl.CameraProjection.CAMERA_ORTHOGRAPHIC:
         return c"Projection: ORTHOGRAPHIC"
     return c"Projection: CUSTOM"
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

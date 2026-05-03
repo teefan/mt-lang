@@ -15,6 +15,7 @@ enum PadButton: i32
     BUTTON_RIGHT = 2
     BUTTON_DOWN = 3
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

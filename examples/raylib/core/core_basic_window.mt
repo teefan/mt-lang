@@ -7,6 +7,7 @@ const screen_height: i32 = 450
 const window_title: cstr = c"raylib [core] example - basic window"
 const message_text: cstr = c"Congrats! You created your first window!"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

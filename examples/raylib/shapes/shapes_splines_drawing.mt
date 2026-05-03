@@ -25,6 +25,7 @@ const spline_type_options: cstr = c"LINEAR;BSPLINE;CATMULLROM;BEZIER"
 const show_point_helpers_text: cstr = c"Show point helpers"
 const empty_text: cstr = c""
 
+
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)

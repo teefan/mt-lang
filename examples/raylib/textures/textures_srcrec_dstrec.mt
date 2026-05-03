@@ -8,6 +8,7 @@ const window_title: cstr = c"raylib [textures] example - srcrec dstrec"
 const scarfy_path: cstr = c"../resources/scarfy.png"
 const credit_text: cstr = c"(c) Scarfy sprite by Eiden Marsal"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

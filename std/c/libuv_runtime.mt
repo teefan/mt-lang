@@ -5,5 +5,4 @@ extern module std.c.libuv_runtime:
     include "libuv_runtime_helpers.h"
 
     extern def mt_libuv_sockaddr_in_size() -> usize
-
     extern def mt_libuv_sockaddr_in_port(addr: const_ptr[sys.sockaddr_in]) -> i32

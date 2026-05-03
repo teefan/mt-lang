@@ -13,6 +13,7 @@ var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 var points: array[c.SDL_FPoint, 500] = zero[array[c.SDL_FPoint, 500]]()
 
+
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
@@ -21,6 +22,7 @@ def pump_events() -> bool:
             return false
 
     return true
+
 
 def render_frame() -> void:
     var rect = c.SDL_FRect(x = 100.0, y = 100.0, w = 440.0, h = 280.0)
@@ -47,6 +49,7 @@ def render_frame() -> void:
 
     c.SDL_RenderPresent(renderer)
 
+
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     c.SDL_SetAppMetadata(c"Example Renderer Primitives", c"1.0", c"com.example.renderer-primitives")
 
@@ -70,6 +73,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

@@ -35,30 +35,37 @@ var keystate: c.Uint16 = 0
 var display_help: bool = true
 var positional_input: bool = false
 
+
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
 
+
 def read_u16(addr: i32) -> c.Uint16:
     return (c.Uint16<-ram[addr] << 8) | c.Uint16<-ram[addr + 1]
 
+
 def read_u24(addr: i32) -> c.Uint32:
     return (c.Uint32<-ram[addr] << 16) | (c.Uint32<-ram[addr + 1] << 8) | c.Uint32<-ram[addr + 2]
+
 
 def set_status_message(message: cstr) -> void:
     c.SDL_strlcpy(ptr_of(ref_of(status[0])), message, usize<-status_buffer_len)
     status[status_buffer_len - 1] = char<-0
     status_ticks = i32<-(frames_per_second * 3)
 
+
 def set_status_filename(prefix: cstr, path: cstr) -> void:
     c.SDL_snprintf(ptr_of(ref_of(status[0])), usize<-status_buffer_len, prefix, filename(path))
     status[status_buffer_len - 1] = char<-0
     status_ticks = i32<-(frames_per_second * 3)
 
+
 def set_status_renderer(name: cstr) -> void:
     c.SDL_snprintf(ptr_of(ref_of(status[0])), usize<-status_buffer_len, c"renderer: %s", name)
     status[status_buffer_len - 1] = char<-0
     status_ticks = i32<-(frames_per_second * 3)
+
 
 def filename(path: cstr) -> cstr:
     var index = i32<-c.SDL_strlen(path)
@@ -75,6 +82,7 @@ def filename(path: cstr) -> cstr:
                 break
 
     return result
+
 
 def load_stream(stream: ptr[c.SDL_IOStream]?, close_io: bool) -> bool:
     var bytes_read: usize = 0
@@ -101,6 +109,7 @@ def load_stream(stream: ptr[c.SDL_IOStream]?, close_io: bool) -> bool:
     display_help = not ok
     return ok
 
+
 def load_file(path: cstr) -> bool:
     if load_stream(c.SDL_IOFromFile(path, c"rb"), true):
         set_status_filename(c"loaded %s", path)
@@ -109,12 +118,14 @@ def load_file(path: cstr) -> bool:
     set_status_filename(c"load failed: %s", path)
     return false
 
+
 def print_text(x: i32, y: i32, text: cstr) -> void:
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderDebugText(renderer, f32<-(x + 1), f32<-(y + 1), text)
     c.SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderDebugText(renderer, f32<-x, f32<-y, text)
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
+
 
 def keycode_mask(key: u32) -> c.Uint16:
     if key >= u32<-48 and key <= u32<-57:
@@ -127,6 +138,7 @@ def keycode_mask(key: u32) -> c.Uint16:
         return c.Uint16<-1 << c.Uint16<-(key - u32<-97 + u32<-10)
 
     return 0
+
 
 def scancode_mask(scancode: c.SDL_Scancode) -> c.Uint16:
     if scancode == c.SDL_Scancode.SDL_SCANCODE_1:
@@ -164,6 +176,7 @@ def scancode_mask(scancode: c.SDL_Scancode) -> c.Uint16:
 
     return 0
 
+
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
@@ -197,6 +210,7 @@ def pump_events() -> bool:
                 keystate &= c.Uint16<-~mask
 
     return true
+
 
 def render_frame() -> void:
     let tick = c.SDL_GetTicksNS()
@@ -252,6 +266,7 @@ def render_frame() -> void:
     if active_render_target != null:
         c.SDL_RenderTexture(renderer, active_render_target, null, null)
     c.SDL_RenderPresent(renderer)
+
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     var usable_bounds = zero[c.SDL_Rect]()
@@ -373,6 +388,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

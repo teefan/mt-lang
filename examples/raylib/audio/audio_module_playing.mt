@@ -19,6 +19,7 @@ const speed_text: cstr = c"PRESS UP/DOWN TO CHANGE SPEED"
 const speed_format: cstr = c"SPEED: %f"
 const window_title: cstr = c"raylib [audio] example - module playing"
 
+
 def random_circle(circles: ref[array[CircleWave, 64]], index: i32, colors: ref[array[rl.Color, 14]]) -> void:
     var items = read(circles)
     var palette = read(colors)
@@ -31,6 +32,7 @@ def random_circle(circles: ref[array[CircleWave, 64]], index: i32, colors: ref[a
     circle.color = palette[rl.GetRandomValue(0, 13)]
     items[index] = circle
     read(circles) = items
+
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

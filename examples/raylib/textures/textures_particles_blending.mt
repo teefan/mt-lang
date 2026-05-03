@@ -17,10 +17,12 @@ const window_title: cstr = c"raylib [textures] example - particles blending"
 const smoke_path: cstr = c"../resources/spark_flame.png"
 const help_text: cstr = c"PRESS SPACE to CHANGE BLENDING MODE"
 
+
 def blend_label(blend_mode: i32) -> cstr:
     if blend_mode == rl.BlendMode.BLEND_ALPHA:
         return c"ALPHA BLENDING"
     return c"ADDITIVE BLENDING"
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

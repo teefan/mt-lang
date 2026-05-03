@@ -8,6 +8,7 @@ const screen_height: i32 = 450
 const window_title: cstr = c"raylib [shapes] example - lines drawing"
 const hint_text: cstr = c"try clicking and dragging!"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

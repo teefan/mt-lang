@@ -8,6 +8,7 @@ const render_texture_width: i32 = 300
 const render_texture_height: i32 = 300
 const ball_radius: f32 = 20.0
 
+
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Render Texture")
     defer rl.close_window()

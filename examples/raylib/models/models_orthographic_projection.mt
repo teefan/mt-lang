@@ -11,6 +11,7 @@ const perspective_text: cstr = c"PERSPECTIVE"
 const fovy_perspective: f32 = 45.0
 const width_orthographic: f32 = 10.0
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

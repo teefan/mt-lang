@@ -12,6 +12,7 @@ const max_recs_y: i32 = screen_height / recs_height
 const rec_count: i32 = max_recs_x * max_recs_y
 const play_time_in_frames: i32 = 240
 
+
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Easings Rectangles")
     defer rl.close_window()

@@ -9,8 +9,10 @@ const window_title: cstr = c"raylib [core] example - storage values"
 const score_position: usize = 0
 const hiscore_position: usize = 1
 
+
 def storage_size_bytes(position: usize) -> i32:
     return i32<-((position + 1) * usize<-sizeof(i32))
+
 
 def save_storage_value(position: usize, stored_value: i32) -> bool:
     var data_size = 0
@@ -46,6 +48,7 @@ def save_storage_value(position: usize, stored_value: i32) -> bool:
         rl.MemFree(ptr[void]<-new_file_data)
         return success
 
+
 def load_storage_value(position: usize) -> i32:
     var data_size = 0
     let loaded_file_data: ptr[u8]? = rl.LoadFileData(storage_data_file, ptr_of(ref_of(data_size)))
@@ -63,6 +66,7 @@ def load_storage_value(position: usize) -> i32:
         let stored_value = read(data_ptr + position)
         rl.UnloadFileData(file_data)
         return stored_value
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

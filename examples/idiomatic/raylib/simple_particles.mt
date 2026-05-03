@@ -23,6 +23,7 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const max_particles: i32 = 3000
 
+
 def particle_type_name(particle_type: i32) -> str:
     if particle_type == ParticleType.WATER:
         return "WATER"
@@ -30,8 +31,10 @@ def particle_type_name(particle_type: i32) -> str:
         return "SMOKE"
     return "FIRE"
 
+
 def next_buffer_index(index: i32) -> i32:
     return (index + 1) % max_particles
+
 
 def add_to_circular_buffer(head: ref[i32], tail: i32) -> i32:
     if next_buffer_index(read(head)) != tail:
@@ -39,6 +42,7 @@ def add_to_circular_buffer(head: ref[i32], tail: i32) -> i32:
         read(head) = next_buffer_index(read(head))
         return particle_index
     return -1
+
 
 def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_position: rl.Vector2, particle_type: i32) -> void:
     let particle_index = add_to_circular_buffer(head, tail)
@@ -69,6 +73,7 @@ def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_p
         y = speed * math.sin(direction),
     )
     return
+
 
 def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32, height: i32) -> void:
     var particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
@@ -112,11 +117,13 @@ def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32,
         index = next_buffer_index(index)
     return
 
+
 def update_circular_buffer(particles: ptr[Particle], head: i32, tail: ref[i32]) -> void:
     let particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
     while read(tail) != head and not particles_view[read(tail)].alive:
         read(tail) = next_buffer_index(read(tail))
     return
+
 
 def draw_particles(particles: ptr[Particle], head: i32, tail: i32) -> void:
     let particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
@@ -126,6 +133,7 @@ def draw_particles(particles: ptr[Particle], head: i32, tail: i32) -> void:
             rl.draw_circle_v(particles_view[index].position, particles_view[index].radius, particles_view[index].color)
         index = next_buffer_index(index)
     return
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Simple Particles")

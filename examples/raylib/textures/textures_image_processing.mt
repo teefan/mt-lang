@@ -18,6 +18,7 @@ const window_title: cstr = c"raylib [textures] example - image processing"
 const parrots_path: cstr = c"../resources/parrots.png"
 const title_text: cstr = c"IMAGE PROCESSING:"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

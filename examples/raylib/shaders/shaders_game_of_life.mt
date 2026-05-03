@@ -26,14 +26,17 @@ const zoom_format: cstr = c"Zoom: %ix"
 const speed_format: cstr = c"Speed: %i frame%s"
 const window_title: cstr = c"raylib [shaders] example - game of life"
 
+
 def gui_rect(x: f32, y: f32, width: f32, height: f32) -> gui.Rectangle:
     return gui.Rectangle(x = x, y = y, width = width, height = height)
+
 
 def free_image_to_draw(image_to_draw: ref[rl.Image], has_image_to_draw: ref[bool]) -> void:
     if read(has_image_to_draw):
         rl.UnloadImage(read(image_to_draw))
         read(image_to_draw) = zero[rl.Image]()
         read(has_image_to_draw) = false
+
 
 def load_preset_image(preset: i32) -> rl.Image:
     if preset == 0:
@@ -53,6 +56,7 @@ def load_preset_image(preset: i32) -> rl.Image:
     if preset == 7:
         return rl.LoadImage(c"../resources/game_of_life/glider_gun.png")
     return rl.LoadImage(c"../resources/game_of_life/breeder.png")
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

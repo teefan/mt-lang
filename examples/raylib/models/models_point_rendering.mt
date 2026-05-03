@@ -17,8 +17,10 @@ const point_count_format: cstr = c"Point Count: %d"
 const using_draw_model_points_text: cstr = c"Using: DrawModelPoints()"
 const using_draw_point3d_text: cstr = c"Using: DrawPoint3D()"
 
+
 def random_unit() -> f32:
     return f32<-rl.GetRandomValue(0, random_resolution) / f32<-random_resolution
+
 
 def gen_mesh_points(num_points: i32) -> rl.Mesh:
     var mesh = zero[rl.Mesh]()
@@ -50,12 +52,14 @@ def gen_mesh_points(num_points: i32) -> rl.Mesh:
     rl.UploadMesh(ptr_of(ref_of(mesh)), false)
     return mesh
 
+
 def draw_model_points(model: rl.Model, position: rl.Vector3, scale: f32, tint: rl.Color) -> void:
     rlgl.rlEnablePointMode()
     rlgl.rlDisableBackfaceCulling()
     rl.DrawModel(model, position, scale, tint)
     rlgl.rlEnableBackfaceCulling()
     rlgl.rlDisablePointMode()
+
 
 def mesh_point(mesh: rl.Mesh, index: i32) -> rl.Vector3:
     unsafe:
@@ -65,6 +69,7 @@ def mesh_point(mesh: rl.Mesh, index: i32) -> rl.Vector3:
             z = mesh.vertices[index * 3 + 2],
         )
 
+
 def mesh_color(mesh: rl.Mesh, index: i32) -> rl.Color:
     unsafe:
         return rl.Color(
@@ -73,6 +78,7 @@ def mesh_color(mesh: rl.Mesh, index: i32) -> rl.Color:
             b = mesh.colors[index * 4 + 2],
             a = mesh.colors[index * 4 + 3],
         )
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

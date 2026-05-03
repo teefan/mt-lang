@@ -33,6 +33,7 @@ const generations_format: cstr = c"generations: %d"
 const turtle_stack_overflow_text: cstr = c"TURTLE STACK OVERFLOW!"
 const turtle_stack_underflow_text: cstr = c"TURTLE STACK UNDERFLOW!"
 
+
 def append_text(buffer: ptr[char], position: ptr[i32], text: cstr) -> void:
     unsafe:
         let remaining = str_max_size - read(position) - 1
@@ -45,6 +46,7 @@ def append_text(buffer: ptr[char], position: ptr[i32], text: cstr) -> void:
         else:
             rl.TextAppend(buffer, rl.TextSubtext(text, 0, remaining), position)
 
+
 def append_char(buffer: ptr[char], position: ptr[i32], ch: char) -> void:
     unsafe:
         let remaining = str_max_size - read(position) - 1
@@ -55,6 +57,7 @@ def append_char(buffer: ptr[char], position: ptr[i32], ch: char) -> void:
         scratch[0] = ch
         rl.TextAppend(buffer, cstr<-ptr_of(ref_of(scratch[0])), position)
 
+
 def push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32], state: TurtleState) -> void:
     if read(top) < turtle_stack_max_size - 1:
         var items = read(stack)
@@ -63,6 +66,7 @@ def push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32], state: 
         read(stack) = items
     else:
         rl.TraceLog(rl.TraceLogLevel.LOG_WARNING, turtle_stack_overflow_text)
+
 
 def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32]) -> TurtleState:
     if read(top) >= 0:
@@ -73,6 +77,7 @@ def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32]) -> Turtl
 
     rl.TraceLog(rl.TraceLogLevel.LOG_WARNING, turtle_stack_underflow_text)
     return zero[TurtleState]()
+
 
 def create_penrose_lsystem(draw_length: f32) -> PenroseLSystem:
     var production: ptr[char]
@@ -91,6 +96,7 @@ def create_penrose_lsystem(draw_length: f32) -> PenroseLSystem:
         draw_length = draw_length,
         theta = 36.0,
     )
+
 
 def build_production_step(ls: ref[PenroseLSystem]) -> void:
     var new_production: ptr[char]
@@ -117,6 +123,7 @@ def build_production_step(ls: ref[PenroseLSystem]) -> void:
         ls.draw_length *= 0.5
         rl.TextCopy(ls.production, cstr<-new_production)
         rl.MemFree(ptr[void]<-new_production)
+
 
 def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[TurtleState, 50]], turtle_top: ref[i32]) -> void:
     let screen_center = rl.Vector2(x = rl.GetScreenWidth() / 2.0, y = rl.GetScreenHeight() / 2.0)
@@ -167,6 +174,7 @@ def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[Turtle
                 repeats = i32<-step - 48
 
     read(turtle_top) = -1
+
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

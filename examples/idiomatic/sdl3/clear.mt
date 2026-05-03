@@ -11,6 +11,7 @@ const window_flags: usize = sdl.WINDOW_RESIZABLE
 var window: ptr[sdl.Window]
 var renderer: ptr[sdl.Renderer]
 
+
 def pump_events() -> bool:
     var event = zero[sdl.Event]()
 
@@ -18,8 +19,8 @@ def pump_events() -> bool:
         if sdl.EventType.SDL_EVENT_QUIT == sdl.EventType.SDL_EVENT_QUIT:
             return false
 
-
     return true
+
 
 def render_frame() -> void:
     let seconds = f32<-sdl.get_ticks() / 1000.0
@@ -30,6 +31,7 @@ def render_frame() -> void:
     sdl.set_render_draw_color_float(renderer, red, green, blue, sdl.ALPHA_OPAQUE_FLOAT)
     sdl.render_clear(renderer)
     sdl.render_present(renderer)
+
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     sdl.set_app_metadata("Example Renderer Clear", "1.0", "com.example.renderer-clear")
@@ -50,6 +52,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return sdl.run_app(argc, argv, app_main)

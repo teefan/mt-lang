@@ -19,6 +19,7 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const max_balls: i32 = 5000
 
+
 def ball_at(position: rl.Vector2, speed: rl.Vector2, radius: f32, color: rl.Color) -> Ball:
     return Ball(
         position = position,
@@ -31,10 +32,12 @@ def ball_at(position: rl.Vector2, speed: rl.Vector2, radius: f32, color: rl.Colo
         grabbed = false,
     )
 
+
 def distance(left: rl.Vector2, right: rl.Vector2) -> f32:
     let dx = left.x - right.x
     let dy = left.y - right.y
     return math.sqrt(dx * dx + dy * dy)
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Ball Physics")

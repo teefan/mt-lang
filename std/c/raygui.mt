@@ -608,1167 +608,588 @@ extern module std.c.raygui:
     type SaveFileTextCallback = fn(arg0: cstr, arg1: ptr[char]) -> bool
 
     extern def InitWindow(width: i32, height: i32, title: cstr) -> void
-
     extern def CloseWindow() -> void
-
     extern def WindowShouldClose() -> bool
-
     extern def IsWindowReady() -> bool
-
     extern def IsWindowFullscreen() -> bool
-
     extern def IsWindowHidden() -> bool
-
     extern def IsWindowMinimized() -> bool
-
     extern def IsWindowMaximized() -> bool
-
     extern def IsWindowFocused() -> bool
-
     extern def IsWindowResized() -> bool
-
     extern def IsWindowState(flag: u32) -> bool
-
     extern def SetWindowState(flag_bits: u32) -> void
-
     extern def ClearWindowState(flag_bits: u32) -> void
-
     extern def ToggleFullscreen() -> void
-
     extern def ToggleBorderlessWindowed() -> void
-
     extern def MaximizeWindow() -> void
-
     extern def MinimizeWindow() -> void
-
     extern def RestoreWindow() -> void
-
     extern def SetWindowIcon(image: Image) -> void
-
     extern def SetWindowIcons(images: ptr[Image], count: i32) -> void
-
     extern def SetWindowTitle(title: cstr) -> void
-
     extern def SetWindowPosition(x: i32, y: i32) -> void
-
     extern def SetWindowMonitor(monitor: i32) -> void
-
     extern def SetWindowMinSize(width: i32, height: i32) -> void
-
     extern def SetWindowMaxSize(width: i32, height: i32) -> void
-
     extern def SetWindowSize(width: i32, height: i32) -> void
-
     extern def SetWindowOpacity(opacity: f32) -> void
-
     extern def SetWindowFocused() -> void
-
     extern def GetWindowHandle() -> ptr[void]
-
     extern def GetScreenWidth() -> i32
-
     extern def GetScreenHeight() -> i32
-
     extern def GetRenderWidth() -> i32
-
     extern def GetRenderHeight() -> i32
-
     extern def GetMonitorCount() -> i32
-
     extern def GetCurrentMonitor() -> i32
-
     extern def GetMonitorPosition(monitor: i32) -> Vector2
-
     extern def GetMonitorWidth(monitor: i32) -> i32
-
     extern def GetMonitorHeight(monitor: i32) -> i32
-
     extern def GetMonitorPhysicalWidth(monitor: i32) -> i32
-
     extern def GetMonitorPhysicalHeight(monitor: i32) -> i32
-
     extern def GetMonitorRefreshRate(monitor: i32) -> i32
-
     extern def GetWindowPosition() -> Vector2
-
     extern def GetWindowScaleDPI() -> Vector2
-
     extern def GetMonitorName(monitor: i32) -> cstr
-
     extern def SetClipboardText(text: cstr) -> void
-
     extern def GetClipboardText() -> cstr
-
     extern def GetClipboardImage() -> Image
-
     extern def EnableEventWaiting() -> void
-
     extern def DisableEventWaiting() -> void
-
     extern def ShowCursor() -> void
-
     extern def HideCursor() -> void
-
     extern def IsCursorHidden() -> bool
-
     extern def EnableCursor() -> void
-
     extern def DisableCursor() -> void
-
     extern def IsCursorOnScreen() -> bool
-
     extern def ClearBackground(color: Color) -> void
-
     extern def BeginDrawing() -> void
-
     extern def EndDrawing() -> void
-
     extern def BeginMode2D(camera: Camera2D) -> void
-
     extern def EndMode2D() -> void
-
     extern def BeginMode3D(camera: Camera3D) -> void
-
     extern def EndMode3D() -> void
-
     extern def BeginTextureMode(target: RenderTexture) -> void
-
     extern def EndTextureMode() -> void
-
     extern def BeginShaderMode(shader: Shader) -> void
-
     extern def EndShaderMode() -> void
-
     extern def BeginBlendMode(mode: i32) -> void
-
     extern def EndBlendMode() -> void
-
     extern def BeginScissorMode(x: i32, y: i32, width: i32, height: i32) -> void
-
     extern def EndScissorMode() -> void
-
     extern def BeginVrStereoMode(config: VrStereoConfig) -> void
-
     extern def EndVrStereoMode() -> void
-
     extern def LoadVrStereoConfig(device: VrDeviceInfo) -> VrStereoConfig
-
     extern def UnloadVrStereoConfig(config: VrStereoConfig) -> void
-
     extern def LoadShader(vsFileName: cstr?, fsFileName: cstr?) -> Shader
-
     extern def LoadShaderFromMemory(vsCode: cstr?, fsCode: cstr?) -> Shader
-
     extern def IsShaderValid(shader: Shader) -> bool
-
     extern def GetShaderLocation(shader: Shader, uniformName: cstr) -> i32
-
     extern def GetShaderLocationAttrib(shader: Shader, attribName: cstr) -> i32
-
     extern def SetShaderValue(shader: Shader, locIndex: i32, value: const_ptr[void], uniformType: i32) -> void
-
     extern def SetShaderValueV(shader: Shader, locIndex: i32, value: const_ptr[void], uniformType: i32, count: i32) -> void
-
     extern def SetShaderValueMatrix(shader: Shader, locIndex: i32, mat: Matrix) -> void
-
     extern def SetShaderValueTexture(shader: Shader, locIndex: i32, texture: Texture) -> void
-
     extern def UnloadShader(shader: Shader) -> void
-
     extern def GetScreenToWorldRay(position: Vector2, camera: Camera3D) -> Ray
-
     extern def GetScreenToWorldRayEx(position: Vector2, camera: Camera3D, width: i32, height: i32) -> Ray
-
     extern def GetWorldToScreen(position: Vector3, camera: Camera3D) -> Vector2
-
     extern def GetWorldToScreenEx(position: Vector3, camera: Camera3D, width: i32, height: i32) -> Vector2
-
     extern def GetWorldToScreen2D(position: Vector2, camera: Camera2D) -> Vector2
-
     extern def GetScreenToWorld2D(position: Vector2, camera: Camera2D) -> Vector2
-
     extern def GetCameraMatrix(camera: Camera3D) -> Matrix
-
     extern def GetCameraMatrix2D(camera: Camera2D) -> Matrix
-
     extern def SetTargetFPS(fps: i32) -> void
-
     extern def GetFrameTime() -> f32
-
     extern def GetTime() -> f64
-
     extern def GetFPS() -> i32
-
     extern def SwapScreenBuffer() -> void
-
     extern def PollInputEvents() -> void
-
     extern def WaitTime(seconds: f64) -> void
-
     extern def SetRandomSeed(seed: u32) -> void
-
     extern def GetRandomValue(min: i32, max: i32) -> i32
-
     extern def LoadRandomSequence(count: u32, min: i32, max: i32) -> ptr[i32]
-
     extern def UnloadRandomSequence(sequence: ptr[i32]) -> void
-
     extern def TakeScreenshot(fileName: cstr) -> void
-
     extern def SetConfigFlags(flag_bits: u32) -> void
-
     extern def OpenURL(url: cstr) -> void
-
     extern def TraceLog(logLevel: i32, text: cstr, ...) -> void
-
     extern def SetTraceLogLevel(logLevel: i32) -> void
-
     extern def MemAlloc(size: u32) -> ptr[void]
-
     extern def MemRealloc(ptr: ptr[void], size: u32) -> ptr[void]
-
     extern def MemFree(ptr: ptr[void]) -> void
-
     extern def SetTraceLogCallback(callback: fn(arg0: i32, arg1: cstr, arg2: va_list) -> void) -> void
-
     extern def SetLoadFileDataCallback(callback: fn(arg0: cstr, arg1: ptr[i32]) -> ptr[u8]) -> void
-
     extern def SetSaveFileDataCallback(callback: fn(arg0: cstr, arg1: ptr[void], arg2: i32) -> bool) -> void
-
     extern def SetLoadFileTextCallback(callback: fn(arg0: cstr) -> ptr[char]) -> void
-
     extern def SetSaveFileTextCallback(callback: fn(arg0: cstr, arg1: ptr[char]) -> bool) -> void
-
     extern def LoadFileData(fileName: cstr, dataSize: ptr[i32]) -> ptr[u8]
-
     extern def UnloadFileData(data: ptr[u8]) -> void
-
     extern def SaveFileData(fileName: cstr, data: ptr[void], dataSize: i32) -> bool
-
     extern def ExportDataAsCode(data: const_ptr[u8], dataSize: i32, fileName: cstr) -> bool
-
     extern def LoadFileText(fileName: cstr) -> ptr[char]
-
     extern def UnloadFileText(text: ptr[char]) -> void
-
     extern def SaveFileText(fileName: cstr, text: ptr[char]) -> bool
-
     extern def FileExists(fileName: cstr) -> bool
-
     extern def DirectoryExists(dirPath: cstr) -> bool
-
     extern def IsFileExtension(fileName: cstr, ext: cstr) -> bool
-
     extern def GetFileLength(fileName: cstr) -> i32
-
     extern def GetFileExtension(fileName: cstr) -> cstr
-
     extern def GetFileName(filePath: cstr) -> cstr
-
     extern def GetFileNameWithoutExt(filePath: cstr) -> cstr
-
     extern def GetDirectoryPath(filePath: cstr) -> cstr
-
     extern def GetPrevDirectoryPath(dirPath: cstr) -> cstr
-
     extern def GetWorkingDirectory() -> cstr
-
     extern def GetApplicationDirectory() -> cstr
-
     extern def MakeDirectory(dirPath: cstr) -> i32
-
     extern def ChangeDirectory(dir: cstr) -> bool
-
     extern def IsPathFile(path: cstr) -> bool
-
     extern def IsFileNameValid(fileName: cstr) -> bool
-
     extern def LoadDirectoryFiles(dirPath: cstr) -> FilePathList
-
     extern def LoadDirectoryFilesEx(basePath: cstr, filter: cstr, scanSubdirs: bool) -> FilePathList
-
     extern def UnloadDirectoryFiles(files: FilePathList) -> void
-
     extern def IsFileDropped() -> bool
-
     extern def LoadDroppedFiles() -> FilePathList
-
     extern def UnloadDroppedFiles(files: FilePathList) -> void
-
     extern def GetFileModTime(fileName: cstr) -> i64
-
     extern def CompressData(data: const_ptr[u8], dataSize: i32, compDataSize: ptr[i32]) -> ptr[u8]
-
     extern def DecompressData(compData: const_ptr[u8], compDataSize: i32, dataSize: ptr[i32]) -> ptr[u8]
-
     extern def EncodeDataBase64(data: const_ptr[u8], dataSize: i32, outputSize: ptr[i32]) -> ptr[char]
-
     extern def DecodeDataBase64(data: const_ptr[u8], outputSize: ptr[i32]) -> ptr[u8]
-
     extern def ComputeCRC32(data: ptr[u8], dataSize: i32) -> u32
-
     extern def ComputeMD5(data: ptr[u8], dataSize: i32) -> ptr[u32]
-
     extern def ComputeSHA1(data: ptr[u8], dataSize: i32) -> ptr[u32]
-
     extern def LoadAutomationEventList(fileName: cstr) -> AutomationEventList
-
     extern def UnloadAutomationEventList(list: AutomationEventList) -> void
-
     extern def ExportAutomationEventList(list: AutomationEventList, fileName: cstr) -> bool
-
     extern def SetAutomationEventList(list: ptr[AutomationEventList]) -> void
-
     extern def SetAutomationEventBaseFrame(frame: i32) -> void
-
     extern def StartAutomationEventRecording() -> void
-
     extern def StopAutomationEventRecording() -> void
-
     extern def PlayAutomationEvent(event: AutomationEvent) -> void
-
     extern def IsKeyPressed(key: i32) -> bool
-
     extern def IsKeyPressedRepeat(key: i32) -> bool
-
     extern def IsKeyDown(key: i32) -> bool
-
     extern def IsKeyReleased(key: i32) -> bool
-
     extern def IsKeyUp(key: i32) -> bool
-
     extern def GetKeyPressed() -> i32
-
     extern def GetCharPressed() -> i32
-
     extern def SetExitKey(key: i32) -> void
-
     extern def IsGamepadAvailable(gamepad: i32) -> bool
-
     extern def GetGamepadName(gamepad: i32) -> cstr
-
     extern def IsGamepadButtonPressed(gamepad: i32, button: i32) -> bool
-
     extern def IsGamepadButtonDown(gamepad: i32, button: i32) -> bool
-
     extern def IsGamepadButtonReleased(gamepad: i32, button: i32) -> bool
-
     extern def IsGamepadButtonUp(gamepad: i32, button: i32) -> bool
-
     extern def GetGamepadButtonPressed() -> i32
-
     extern def GetGamepadAxisCount(gamepad: i32) -> i32
-
     extern def GetGamepadAxisMovement(gamepad: i32, axis: i32) -> f32
-
     extern def SetGamepadMappings(mappings: cstr) -> i32
-
     extern def SetGamepadVibration(gamepad: i32, leftMotor: f32, rightMotor: f32, duration: f32) -> void
-
     extern def IsMouseButtonPressed(button: i32) -> bool
-
     extern def IsMouseButtonDown(button: i32) -> bool
-
     extern def IsMouseButtonReleased(button: i32) -> bool
-
     extern def IsMouseButtonUp(button: i32) -> bool
-
     extern def GetMouseX() -> i32
-
     extern def GetMouseY() -> i32
-
     extern def GetMousePosition() -> Vector2
-
     extern def GetMouseDelta() -> Vector2
-
     extern def SetMousePosition(x: i32, y: i32) -> void
-
     extern def SetMouseOffset(offsetX: i32, offsetY: i32) -> void
-
     extern def SetMouseScale(scaleX: f32, scaleY: f32) -> void
-
     extern def GetMouseWheelMove() -> f32
-
     extern def GetMouseWheelMoveV() -> Vector2
-
     extern def SetMouseCursor(cursor: i32) -> void
-
     extern def GetTouchX() -> i32
-
     extern def GetTouchY() -> i32
-
     extern def GetTouchPosition(index: i32) -> Vector2
-
     extern def GetTouchPointId(index: i32) -> i32
-
     extern def GetTouchPointCount() -> i32
-
     extern def SetGesturesEnabled(flag_bits: u32) -> void
-
     extern def IsGestureDetected(gesture: u32) -> bool
-
     extern def GetGestureDetected() -> i32
-
     extern def GetGestureHoldDuration() -> f32
-
     extern def GetGestureDragVector() -> Vector2
-
     extern def GetGestureDragAngle() -> f32
-
     extern def GetGesturePinchVector() -> Vector2
-
     extern def GetGesturePinchAngle() -> f32
-
     extern def UpdateCamera(camera: ptr[Camera], mode: i32) -> void
-
     extern def UpdateCameraPro(camera: ptr[Camera], movement: Vector3, rotation: Vector3, zoom: f32) -> void
-
     extern def SetShapesTexture(texture: Texture, source: Rectangle) -> void
-
     extern def GetShapesTexture() -> Texture2D
-
     extern def GetShapesTextureRectangle() -> Rectangle
-
     extern def DrawPixel(posX: i32, posY: i32, color: Color) -> void
-
     extern def DrawPixelV(position: Vector2, color: Color) -> void
-
     extern def DrawLine(startPosX: i32, startPosY: i32, endPosX: i32, endPosY: i32, color: Color) -> void
-
     extern def DrawLineV(startPos: Vector2, endPos: Vector2, color: Color) -> void
-
     extern def DrawLineEx(startPos: Vector2, endPos: Vector2, thick: f32, color: Color) -> void
-
     extern def DrawLineStrip(points: const_ptr[Vector2], pointCount: i32, color: Color) -> void
-
     extern def DrawLineBezier(startPos: Vector2, endPos: Vector2, thick: f32, color: Color) -> void
-
     extern def DrawCircle(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
-
     extern def DrawCircleSector(center: Vector2, radius: f32, startAngle: f32, endAngle: f32, segments: i32, color: Color) -> void
-
     extern def DrawCircleSectorLines(center: Vector2, radius: f32, startAngle: f32, endAngle: f32, segments: i32, color: Color) -> void
-
     extern def DrawCircleGradient(centerX: i32, centerY: i32, radius: f32, inner: Color, outer: Color) -> void
-
     extern def DrawCircleV(center: Vector2, radius: f32, color: Color) -> void
-
     extern def DrawCircleLines(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
-
     extern def DrawCircleLinesV(center: Vector2, radius: f32, color: Color) -> void
-
     extern def DrawEllipse(centerX: i32, centerY: i32, radiusH: f32, radiusV: f32, color: Color) -> void
-
     extern def DrawEllipseLines(centerX: i32, centerY: i32, radiusH: f32, radiusV: f32, color: Color) -> void
-
     extern def DrawRing(center: Vector2, innerRadius: f32, outerRadius: f32, startAngle: f32, endAngle: f32, segments: i32, color: Color) -> void
-
     extern def DrawRingLines(center: Vector2, innerRadius: f32, outerRadius: f32, startAngle: f32, endAngle: f32, segments: i32, color: Color) -> void
-
     extern def DrawRectangle(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
-
     extern def DrawRectangleV(position: Vector2, size: Vector2, color: Color) -> void
-
     extern def DrawRectangleRec(rec: Rectangle, color: Color) -> void
-
     extern def DrawRectanglePro(rec: Rectangle, origin: Vector2, rotation: f32, color: Color) -> void
-
     extern def DrawRectangleGradientV(posX: i32, posY: i32, width: i32, height: i32, top: Color, bottom: Color) -> void
-
     extern def DrawRectangleGradientH(posX: i32, posY: i32, width: i32, height: i32, left: Color, right: Color) -> void
-
     extern def DrawRectangleGradientEx(rec: Rectangle, topLeft: Color, bottomLeft: Color, topRight: Color, bottomRight: Color) -> void
-
     extern def DrawRectangleLines(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
-
     extern def DrawRectangleLinesEx(rec: Rectangle, lineThick: f32, color: Color) -> void
-
     extern def DrawRectangleRounded(rec: Rectangle, roundness: f32, segments: i32, color: Color) -> void
-
     extern def DrawRectangleRoundedLines(rec: Rectangle, roundness: f32, segments: i32, color: Color) -> void
-
     extern def DrawRectangleRoundedLinesEx(rec: Rectangle, roundness: f32, segments: i32, lineThick: f32, color: Color) -> void
-
     extern def DrawTriangle(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
-
     extern def DrawTriangleLines(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
-
     extern def DrawTriangleFan(points: const_ptr[Vector2], pointCount: i32, color: Color) -> void
-
     extern def DrawTriangleStrip(points: const_ptr[Vector2], pointCount: i32, color: Color) -> void
-
     extern def DrawPoly(center: Vector2, sides: i32, radius: f32, rotation: f32, color: Color) -> void
-
     extern def DrawPolyLines(center: Vector2, sides: i32, radius: f32, rotation: f32, color: Color) -> void
-
     extern def DrawPolyLinesEx(center: Vector2, sides: i32, radius: f32, rotation: f32, lineThick: f32, color: Color) -> void
-
     extern def DrawSplineLinear(points: const_ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
-
     extern def DrawSplineBasis(points: const_ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
-
     extern def DrawSplineCatmullRom(points: const_ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
-
     extern def DrawSplineBezierQuadratic(points: const_ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
-
     extern def DrawSplineBezierCubic(points: const_ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
-
     extern def DrawSplineSegmentLinear(p1: Vector2, p2: Vector2, thick: f32, color: Color) -> void
-
     extern def DrawSplineSegmentBasis(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, thick: f32, color: Color) -> void
-
     extern def DrawSplineSegmentCatmullRom(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, thick: f32, color: Color) -> void
-
     extern def DrawSplineSegmentBezierQuadratic(p1: Vector2, c2: Vector2, p3: Vector2, thick: f32, color: Color) -> void
-
     extern def DrawSplineSegmentBezierCubic(p1: Vector2, c2: Vector2, c3: Vector2, p4: Vector2, thick: f32, color: Color) -> void
-
     extern def GetSplinePointLinear(startPos: Vector2, endPos: Vector2, t: f32) -> Vector2
-
     extern def GetSplinePointBasis(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, t: f32) -> Vector2
-
     extern def GetSplinePointCatmullRom(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, t: f32) -> Vector2
-
     extern def GetSplinePointBezierQuad(p1: Vector2, c2: Vector2, p3: Vector2, t: f32) -> Vector2
-
     extern def GetSplinePointBezierCubic(p1: Vector2, c2: Vector2, c3: Vector2, p4: Vector2, t: f32) -> Vector2
-
     extern def CheckCollisionRecs(rec1: Rectangle, rec2: Rectangle) -> bool
-
     extern def CheckCollisionCircles(center1: Vector2, radius1: f32, center2: Vector2, radius2: f32) -> bool
-
     extern def CheckCollisionCircleRec(center: Vector2, radius: f32, rec: Rectangle) -> bool
-
     extern def CheckCollisionCircleLine(center: Vector2, radius: f32, p1: Vector2, p2: Vector2) -> bool
-
     extern def CheckCollisionPointRec(point: Vector2, rec: Rectangle) -> bool
-
     extern def CheckCollisionPointCircle(point: Vector2, center: Vector2, radius: f32) -> bool
-
     extern def CheckCollisionPointTriangle(point: Vector2, p1: Vector2, p2: Vector2, p3: Vector2) -> bool
-
     extern def CheckCollisionPointLine(point: Vector2, p1: Vector2, p2: Vector2, threshold: i32) -> bool
-
     extern def CheckCollisionPointPoly(point: Vector2, points: const_ptr[Vector2], pointCount: i32) -> bool
-
     extern def CheckCollisionLines(startPos1: Vector2, endPos1: Vector2, startPos2: Vector2, endPos2: Vector2, collisionPoint: ptr[Vector2]) -> bool
-
     extern def GetCollisionRec(rec1: Rectangle, rec2: Rectangle) -> Rectangle
-
     extern def LoadImage(fileName: cstr) -> Image
-
     extern def LoadImageRaw(fileName: cstr, width: i32, height: i32, format: i32, headerSize: i32) -> Image
-
     extern def LoadImageAnim(fileName: cstr, frames: ptr[i32]) -> Image
-
     extern def LoadImageAnimFromMemory(fileType: cstr, fileData: const_ptr[u8], dataSize: i32, frames: ptr[i32]) -> Image
-
     extern def LoadImageFromMemory(fileType: cstr, fileData: const_ptr[u8], dataSize: i32) -> Image
-
     extern def LoadImageFromTexture(texture: Texture) -> Image
-
     extern def LoadImageFromScreen() -> Image
-
     extern def IsImageValid(image: Image) -> bool
-
     extern def UnloadImage(image: Image) -> void
-
     extern def ExportImage(image: Image, fileName: cstr) -> bool
-
     extern def ExportImageToMemory(image: Image, fileType: cstr, fileSize: ptr[i32]) -> ptr[u8]
-
     extern def ExportImageAsCode(image: Image, fileName: cstr) -> bool
-
     extern def GenImageColor(width: i32, height: i32, color: Color) -> Image
-
     extern def GenImageGradientLinear(width: i32, height: i32, direction: i32, start: Color, end: Color) -> Image
-
     extern def GenImageGradientRadial(width: i32, height: i32, density: f32, inner: Color, outer: Color) -> Image
-
     extern def GenImageGradientSquare(width: i32, height: i32, density: f32, inner: Color, outer: Color) -> Image
-
     extern def GenImageChecked(width: i32, height: i32, checksX: i32, checksY: i32, col1: Color, col2: Color) -> Image
-
     extern def GenImageWhiteNoise(width: i32, height: i32, factor: f32) -> Image
-
     extern def GenImagePerlinNoise(width: i32, height: i32, offsetX: i32, offsetY: i32, scale: f32) -> Image
-
     extern def GenImageCellular(width: i32, height: i32, tileSize: i32) -> Image
-
     extern def GenImageText(width: i32, height: i32, text: cstr) -> Image
-
     extern def ImageCopy(image: Image) -> Image
-
     extern def ImageFromImage(image: Image, rec: Rectangle) -> Image
-
     extern def ImageFromChannel(image: Image, selectedChannel: i32) -> Image
-
     extern def ImageText(text: cstr, fontSize: i32, color: Color) -> Image
-
     extern def ImageTextEx(font: Font, text: cstr, fontSize: f32, spacing: f32, tint: Color) -> Image
-
     extern def ImageFormat(image: ptr[Image], newFormat: i32) -> void
-
     extern def ImageToPOT(image: ptr[Image], fill: Color) -> void
-
     extern def ImageCrop(image: ptr[Image], crop: Rectangle) -> void
-
     extern def ImageAlphaCrop(image: ptr[Image], threshold: f32) -> void
-
     extern def ImageAlphaClear(image: ptr[Image], color: Color, threshold: f32) -> void
-
     extern def ImageAlphaMask(image: ptr[Image], alphaMask: Image) -> void
-
     extern def ImageAlphaPremultiply(image: ptr[Image]) -> void
-
     extern def ImageBlurGaussian(image: ptr[Image], blurSize: i32) -> void
-
     extern def ImageKernelConvolution(image: ptr[Image], kernel: const_ptr[f32], kernelSize: i32) -> void
-
     extern def ImageResize(image: ptr[Image], newWidth: i32, newHeight: i32) -> void
-
     extern def ImageResizeNN(image: ptr[Image], newWidth: i32, newHeight: i32) -> void
-
     extern def ImageResizeCanvas(image: ptr[Image], newWidth: i32, newHeight: i32, offsetX: i32, offsetY: i32, fill: Color) -> void
-
     extern def ImageMipmaps(image: ptr[Image]) -> void
-
     extern def ImageDither(image: ptr[Image], rBpp: i32, gBpp: i32, bBpp: i32, aBpp: i32) -> void
-
     extern def ImageFlipVertical(image: ptr[Image]) -> void
-
     extern def ImageFlipHorizontal(image: ptr[Image]) -> void
-
     extern def ImageRotate(image: ptr[Image], degrees: i32) -> void
-
     extern def ImageRotateCW(image: ptr[Image]) -> void
-
     extern def ImageRotateCCW(image: ptr[Image]) -> void
-
     extern def ImageColorTint(image: ptr[Image], color: Color) -> void
-
     extern def ImageColorInvert(image: ptr[Image]) -> void
-
     extern def ImageColorGrayscale(image: ptr[Image]) -> void
-
     extern def ImageColorContrast(image: ptr[Image], contrast: f32) -> void
-
     extern def ImageColorBrightness(image: ptr[Image], brightness: i32) -> void
-
     extern def ImageColorReplace(image: ptr[Image], color: Color, replace: Color) -> void
-
     extern def LoadImageColors(image: Image) -> ptr[Color]
-
     extern def LoadImagePalette(image: Image, maxPaletteSize: i32, colorCount: ptr[i32]) -> ptr[Color]
-
     extern def UnloadImageColors(colors: ptr[Color]) -> void
-
     extern def UnloadImagePalette(colors: ptr[Color]) -> void
-
     extern def GetImageAlphaBorder(image: Image, threshold: f32) -> Rectangle
-
     extern def GetImageColor(image: Image, x: i32, y: i32) -> Color
-
     extern def ImageClearBackground(dst: ptr[Image], color: Color) -> void
-
     extern def ImageDrawPixel(dst: ptr[Image], posX: i32, posY: i32, color: Color) -> void
-
     extern def ImageDrawPixelV(dst: ptr[Image], position: Vector2, color: Color) -> void
-
     extern def ImageDrawLine(dst: ptr[Image], startPosX: i32, startPosY: i32, endPosX: i32, endPosY: i32, color: Color) -> void
-
     extern def ImageDrawLineV(dst: ptr[Image], start: Vector2, end: Vector2, color: Color) -> void
-
     extern def ImageDrawLineEx(dst: ptr[Image], start: Vector2, end: Vector2, thick: i32, color: Color) -> void
-
     extern def ImageDrawCircle(dst: ptr[Image], centerX: i32, centerY: i32, radius: i32, color: Color) -> void
-
     extern def ImageDrawCircleV(dst: ptr[Image], center: Vector2, radius: i32, color: Color) -> void
-
     extern def ImageDrawCircleLines(dst: ptr[Image], centerX: i32, centerY: i32, radius: i32, color: Color) -> void
-
     extern def ImageDrawCircleLinesV(dst: ptr[Image], center: Vector2, radius: i32, color: Color) -> void
-
     extern def ImageDrawRectangle(dst: ptr[Image], posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
-
     extern def ImageDrawRectangleV(dst: ptr[Image], position: Vector2, size: Vector2, color: Color) -> void
-
     extern def ImageDrawRectangleRec(dst: ptr[Image], rec: Rectangle, color: Color) -> void
-
     extern def ImageDrawRectangleLines(dst: ptr[Image], rec: Rectangle, thick: i32, color: Color) -> void
-
     extern def ImageDrawTriangle(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
-
     extern def ImageDrawTriangleEx(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, c1: Color, c2: Color, c3: Color) -> void
-
     extern def ImageDrawTriangleLines(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
-
     extern def ImageDrawTriangleFan(dst: ptr[Image], points: ptr[Vector2], pointCount: i32, color: Color) -> void
-
     extern def ImageDrawTriangleStrip(dst: ptr[Image], points: ptr[Vector2], pointCount: i32, color: Color) -> void
-
     extern def ImageDraw(dst: ptr[Image], src: Image, srcRec: Rectangle, dstRec: Rectangle, tint: Color) -> void
-
     extern def ImageDrawText(dst: ptr[Image], text: cstr, posX: i32, posY: i32, fontSize: i32, color: Color) -> void
-
     extern def ImageDrawTextEx(dst: ptr[Image], font: Font, text: cstr, position: Vector2, fontSize: f32, spacing: f32, tint: Color) -> void
-
     extern def LoadTexture(fileName: cstr) -> Texture2D
-
     extern def LoadTextureFromImage(image: Image) -> Texture2D
-
     extern def LoadTextureCubemap(image: Image, layout: i32) -> TextureCubemap
-
     extern def LoadRenderTexture(width: i32, height: i32) -> RenderTexture2D
-
     extern def IsTextureValid(texture: Texture) -> bool
-
     extern def UnloadTexture(texture: Texture) -> void
-
     extern def IsRenderTextureValid(target: RenderTexture) -> bool
-
     extern def UnloadRenderTexture(target: RenderTexture) -> void
-
     extern def UpdateTexture(texture: Texture, pixels: const_ptr[void]) -> void
-
     extern def UpdateTextureRec(texture: Texture, rec: Rectangle, pixels: const_ptr[void]) -> void
-
     extern def GenTextureMipmaps(texture: ptr[Texture2D]) -> void
-
     extern def SetTextureFilter(texture: Texture, filter: i32) -> void
-
     extern def SetTextureWrap(texture: Texture, wrap: i32) -> void
-
     extern def DrawTexture(texture: Texture, posX: i32, posY: i32, tint: Color) -> void
-
     extern def DrawTextureV(texture: Texture, position: Vector2, tint: Color) -> void
-
     extern def DrawTextureEx(texture: Texture, position: Vector2, rotation: f32, scale: f32, tint: Color) -> void
-
     extern def DrawTextureRec(texture: Texture, source: Rectangle, position: Vector2, tint: Color) -> void
-
     extern def DrawTexturePro(texture: Texture, source: Rectangle, dest: Rectangle, origin: Vector2, rotation: f32, tint: Color) -> void
-
     extern def DrawTextureNPatch(texture: Texture, nPatchInfo: NPatchInfo, dest: Rectangle, origin: Vector2, rotation: f32, tint: Color) -> void
-
     extern def ColorIsEqual(col1: Color, col2: Color) -> bool
-
     extern def Fade(color: Color, alpha: f32) -> Color
-
     extern def ColorToInt(color: Color) -> i32
-
     extern def ColorNormalize(color: Color) -> Vector4
-
     extern def ColorFromNormalized(normalized: Vector4) -> Color
-
     extern def ColorToHSV(color: Color) -> Vector3
-
     extern def ColorFromHSV(hue: f32, saturation: f32, value: f32) -> Color
-
     extern def ColorTint(color: Color, tint: Color) -> Color
-
     extern def ColorBrightness(color: Color, factor: f32) -> Color
-
     extern def ColorContrast(color: Color, contrast: f32) -> Color
-
     extern def ColorAlpha(color: Color, alpha: f32) -> Color
-
     extern def ColorAlphaBlend(dst: Color, src: Color, tint: Color) -> Color
-
     extern def ColorLerp(color1: Color, color2: Color, factor: f32) -> Color
-
     extern def GetColor(hexValue: u32) -> Color
-
     extern def GetPixelColor(srcPtr: ptr[void], format: i32) -> Color
-
     extern def SetPixelColor(dstPtr: ptr[void], color: Color, format: i32) -> void
-
     extern def GetPixelDataSize(width: i32, height: i32, format: i32) -> i32
-
     extern def GetFontDefault() -> Font
-
     extern def LoadFont(fileName: cstr) -> Font
-
     extern def LoadFontEx(fileName: cstr, fontSize: i32, codepoints: ptr[i32]?, codepointCount: i32) -> Font
-
     extern def LoadFontFromImage(image: Image, key: Color, firstChar: i32) -> Font
-
     extern def LoadFontFromMemory(fileType: cstr, fileData: const_ptr[u8], dataSize: i32, fontSize: i32, codepoints: ptr[i32]?, codepointCount: i32) -> Font
-
     extern def IsFontValid(font: Font) -> bool
-
     extern def LoadFontData(fileData: const_ptr[u8], dataSize: i32, fontSize: i32, codepoints: ptr[i32]?, codepointCount: i32, kind: i32) -> ptr[GlyphInfo]
-
     extern def GenImageFontAtlas(glyphs: const_ptr[GlyphInfo], glyphRecs: ptr[ptr[Rectangle]], glyphCount: i32, fontSize: i32, padding: i32, packMethod: i32) -> Image
-
     extern def UnloadFontData(glyphs: ptr[GlyphInfo], glyphCount: i32) -> void
-
     extern def UnloadFont(font: Font) -> void
-
     extern def ExportFontAsCode(font: Font, fileName: cstr) -> bool
-
     extern def DrawFPS(posX: i32, posY: i32) -> void
-
     extern def DrawText(text: cstr, posX: i32, posY: i32, fontSize: i32, color: Color) -> void
-
     extern def DrawTextEx(font: Font, text: cstr, position: Vector2, fontSize: f32, spacing: f32, tint: Color) -> void
-
     extern def DrawTextPro(font: Font, text: cstr, position: Vector2, origin: Vector2, rotation: f32, fontSize: f32, spacing: f32, tint: Color) -> void
-
     extern def DrawTextCodepoint(font: Font, codepoint: i32, position: Vector2, fontSize: f32, tint: Color) -> void
-
     extern def DrawTextCodepoints(font: Font, codepoints: const_ptr[i32], codepointCount: i32, position: Vector2, fontSize: f32, spacing: f32, tint: Color) -> void
-
     extern def SetTextLineSpacing(spacing: i32) -> void
-
     extern def MeasureText(text: cstr, fontSize: i32) -> i32
-
     extern def MeasureTextEx(font: Font, text: cstr, fontSize: f32, spacing: f32) -> Vector2
-
     extern def GetGlyphIndex(font: Font, codepoint: i32) -> i32
-
     extern def GetGlyphInfo(font: Font, codepoint: i32) -> GlyphInfo
-
     extern def GetGlyphAtlasRec(font: Font, codepoint: i32) -> Rectangle
-
     extern def LoadUTF8(codepoints: const_ptr[i32], length: i32) -> ptr[char]
-
     extern def UnloadUTF8(text: ptr[char]) -> void
-
     extern def LoadCodepoints(text: cstr, count: ptr[i32]) -> ptr[i32]
-
     extern def UnloadCodepoints(codepoints: ptr[i32]) -> void
-
     extern def GetCodepointCount(text: cstr) -> i32
-
     extern def GetCodepoint(text: cstr, codepointSize: ptr[i32]) -> i32
-
     extern def GetCodepointNext(text: cstr, codepointSize: ptr[i32]) -> i32
-
     extern def GetCodepointPrevious(text: cstr, codepointSize: ptr[i32]) -> i32
-
     extern def CodepointToUTF8(codepoint: i32, utf8Size: ptr[i32]) -> cstr
-
     extern def TextCopy(dst: ptr[char], src: cstr) -> i32
-
     extern def TextIsEqual(text1: cstr, text2: cstr) -> bool
-
     extern def TextLength(text: cstr) -> u32
-
     extern def TextFormat(text: cstr, ...) -> cstr
-
     extern def TextSubtext(text: cstr, position: i32, length: i32) -> cstr
-
     extern def TextReplace(text: cstr, replace: cstr, by: cstr) -> ptr[char]
-
     extern def TextInsert(text: cstr, insert: cstr, position: i32) -> ptr[char]
-
     extern def TextJoin(textList: ptr[cstr], count: i32, delimiter: cstr) -> cstr
-
     extern def TextSplit(text: cstr, delimiter: char, count: ptr[i32]) -> ptr[cstr]
-
     extern def TextAppend(text: ptr[char], append: cstr, position: ptr[i32]) -> void
-
     extern def TextFindIndex(text: cstr, find: cstr) -> i32
-
     extern def TextToUpper(text: cstr) -> cstr
-
     extern def TextToLower(text: cstr) -> cstr
-
     extern def TextToPascal(text: cstr) -> cstr
-
     extern def TextToSnake(text: cstr) -> cstr
-
     extern def TextToCamel(text: cstr) -> cstr
-
     extern def TextToInteger(text: cstr) -> i32
-
     extern def TextToFloat(text: cstr) -> f32
-
     extern def DrawLine3D(startPos: Vector3, endPos: Vector3, color: Color) -> void
-
     extern def DrawPoint3D(position: Vector3, color: Color) -> void
-
     extern def DrawCircle3D(center: Vector3, radius: f32, rotationAxis: Vector3, rotationAngle: f32, color: Color) -> void
-
     extern def DrawTriangle3D(v1: Vector3, v2: Vector3, v3: Vector3, color: Color) -> void
-
     extern def DrawTriangleStrip3D(points: const_ptr[Vector3], pointCount: i32, color: Color) -> void
-
     extern def DrawCube(position: Vector3, width: f32, height: f32, length: f32, color: Color) -> void
-
     extern def DrawCubeV(position: Vector3, size: Vector3, color: Color) -> void
-
     extern def DrawCubeWires(position: Vector3, width: f32, height: f32, length: f32, color: Color) -> void
-
     extern def DrawCubeWiresV(position: Vector3, size: Vector3, color: Color) -> void
-
     extern def DrawSphere(centerPos: Vector3, radius: f32, color: Color) -> void
-
     extern def DrawSphereEx(centerPos: Vector3, radius: f32, rings: i32, slices: i32, color: Color) -> void
-
     extern def DrawSphereWires(centerPos: Vector3, radius: f32, rings: i32, slices: i32, color: Color) -> void
-
     extern def DrawCylinder(position: Vector3, radiusTop: f32, radiusBottom: f32, height: f32, slices: i32, color: Color) -> void
-
     extern def DrawCylinderEx(startPos: Vector3, endPos: Vector3, startRadius: f32, endRadius: f32, sides: i32, color: Color) -> void
-
     extern def DrawCylinderWires(position: Vector3, radiusTop: f32, radiusBottom: f32, height: f32, slices: i32, color: Color) -> void
-
     extern def DrawCylinderWiresEx(startPos: Vector3, endPos: Vector3, startRadius: f32, endRadius: f32, sides: i32, color: Color) -> void
-
     extern def DrawCapsule(startPos: Vector3, endPos: Vector3, radius: f32, slices: i32, rings: i32, color: Color) -> void
-
     extern def DrawCapsuleWires(startPos: Vector3, endPos: Vector3, radius: f32, slices: i32, rings: i32, color: Color) -> void
-
     extern def DrawPlane(centerPos: Vector3, size: Vector2, color: Color) -> void
-
     extern def DrawRay(ray: Ray, color: Color) -> void
-
     extern def DrawGrid(slices: i32, spacing: f32) -> void
-
     extern def LoadModel(fileName: cstr) -> Model
-
     extern def LoadModelFromMesh(mesh: Mesh) -> Model
-
     extern def IsModelValid(model: Model) -> bool
-
     extern def UnloadModel(model: Model) -> void
-
     extern def GetModelBoundingBox(model: Model) -> BoundingBox
-
     extern def DrawModel(model: Model, position: Vector3, scale: f32, tint: Color) -> void
-
     extern def DrawModelEx(model: Model, position: Vector3, rotationAxis: Vector3, rotationAngle: f32, scale: Vector3, tint: Color) -> void
-
     extern def DrawModelWires(model: Model, position: Vector3, scale: f32, tint: Color) -> void
-
     extern def DrawModelWiresEx(model: Model, position: Vector3, rotationAxis: Vector3, rotationAngle: f32, scale: Vector3, tint: Color) -> void
-
     extern def DrawModelPoints(model: Model, position: Vector3, scale: f32, tint: Color) -> void
-
     extern def DrawModelPointsEx(model: Model, position: Vector3, rotationAxis: Vector3, rotationAngle: f32, scale: Vector3, tint: Color) -> void
-
     extern def DrawBoundingBox(box: BoundingBox, color: Color) -> void
-
     extern def DrawBillboard(camera: Camera3D, texture: Texture, position: Vector3, scale: f32, tint: Color) -> void
-
     extern def DrawBillboardRec(camera: Camera3D, texture: Texture, source: Rectangle, position: Vector3, size: Vector2, tint: Color) -> void
-
     extern def DrawBillboardPro(camera: Camera3D, texture: Texture, source: Rectangle, position: Vector3, up: Vector3, size: Vector2, origin: Vector2, rotation: f32, tint: Color) -> void
-
     extern def UploadMesh(mesh: ptr[Mesh], dynamic: bool) -> void
-
     extern def UpdateMeshBuffer(mesh: Mesh, index: i32, data: const_ptr[void], dataSize: i32, offset: i32) -> void
-
     extern def UnloadMesh(mesh: Mesh) -> void
-
     extern def DrawMesh(mesh: Mesh, material: Material, transform: Matrix) -> void
-
     extern def DrawMeshInstanced(mesh: Mesh, material: Material, transforms: const_ptr[Matrix], instances: i32) -> void
-
     extern def GetMeshBoundingBox(mesh: Mesh) -> BoundingBox
-
     extern def GenMeshTangents(mesh: ptr[Mesh]) -> void
-
     extern def ExportMesh(mesh: Mesh, fileName: cstr) -> bool
-
     extern def ExportMeshAsCode(mesh: Mesh, fileName: cstr) -> bool
-
     extern def GenMeshPoly(sides: i32, radius: f32) -> Mesh
-
     extern def GenMeshPlane(width: f32, length: f32, resX: i32, resZ: i32) -> Mesh
-
     extern def GenMeshCube(width: f32, height: f32, length: f32) -> Mesh
-
     extern def GenMeshSphere(radius: f32, rings: i32, slices: i32) -> Mesh
-
     extern def GenMeshHemiSphere(radius: f32, rings: i32, slices: i32) -> Mesh
-
     extern def GenMeshCylinder(radius: f32, height: f32, slices: i32) -> Mesh
-
     extern def GenMeshCone(radius: f32, height: f32, slices: i32) -> Mesh
-
     extern def GenMeshTorus(radius: f32, size: f32, radSeg: i32, sides: i32) -> Mesh
-
     extern def GenMeshKnot(radius: f32, size: f32, radSeg: i32, sides: i32) -> Mesh
-
     extern def GenMeshHeightmap(heightmap: Image, size: Vector3) -> Mesh
-
     extern def GenMeshCubicmap(cubicmap: Image, cubeSize: Vector3) -> Mesh
-
     extern def LoadMaterials(fileName: cstr, materialCount: ptr[i32]) -> ptr[Material]
-
     extern def LoadMaterialDefault() -> Material
-
     extern def IsMaterialValid(material: Material) -> bool
-
     extern def UnloadMaterial(material: Material) -> void
-
     extern def SetMaterialTexture(material: ptr[Material], mapType: i32, texture: Texture) -> void
-
     extern def SetModelMeshMaterial(model: ptr[Model], meshId: i32, materialId: i32) -> void
-
     extern def LoadModelAnimations(fileName: cstr, animCount: ptr[i32]) -> ptr[ModelAnimation]
-
     extern def UpdateModelAnimation(model: Model, anim: ModelAnimation, frame: i32) -> void
-
     extern def UpdateModelAnimationBones(model: Model, anim: ModelAnimation, frame: i32) -> void
-
     extern def UnloadModelAnimation(anim: ModelAnimation) -> void
-
     extern def UnloadModelAnimations(animations: ptr[ModelAnimation], animCount: i32) -> void
-
     extern def IsModelAnimationValid(model: Model, anim: ModelAnimation) -> bool
-
     extern def CheckCollisionSpheres(center1: Vector3, radius1: f32, center2: Vector3, radius2: f32) -> bool
-
     extern def CheckCollisionBoxes(box1: BoundingBox, box2: BoundingBox) -> bool
-
     extern def CheckCollisionBoxSphere(box: BoundingBox, center: Vector3, radius: f32) -> bool
-
     extern def GetRayCollisionSphere(ray: Ray, center: Vector3, radius: f32) -> RayCollision
-
     extern def GetRayCollisionBox(ray: Ray, box: BoundingBox) -> RayCollision
-
     extern def GetRayCollisionMesh(ray: Ray, mesh: Mesh, transform: Matrix) -> RayCollision
-
     extern def GetRayCollisionTriangle(ray: Ray, p1: Vector3, p2: Vector3, p3: Vector3) -> RayCollision
-
     extern def GetRayCollisionQuad(ray: Ray, p1: Vector3, p2: Vector3, p3: Vector3, p4: Vector3) -> RayCollision
 
     type AudioCallback = fn(arg0: ptr[void], arg1: u32) -> void
 
     extern def InitAudioDevice() -> void
-
     extern def CloseAudioDevice() -> void
-
     extern def IsAudioDeviceReady() -> bool
-
     extern def SetMasterVolume(volume: f32) -> void
-
     extern def GetMasterVolume() -> f32
-
     extern def LoadWave(fileName: cstr) -> Wave
-
     extern def LoadWaveFromMemory(fileType: cstr, fileData: const_ptr[u8], dataSize: i32) -> Wave
-
     extern def IsWaveValid(wave: Wave) -> bool
-
     extern def LoadSound(fileName: cstr) -> Sound
-
     extern def LoadSoundFromWave(wave: Wave) -> Sound
-
     extern def LoadSoundAlias(source: Sound) -> Sound
-
     extern def IsSoundValid(sound: Sound) -> bool
-
     extern def UpdateSound(sound: Sound, data: const_ptr[void], sampleCount: i32) -> void
-
     extern def UnloadWave(wave: Wave) -> void
-
     extern def UnloadSound(sound: Sound) -> void
-
     extern def UnloadSoundAlias(alias: Sound) -> void
-
     extern def ExportWave(wave: Wave, fileName: cstr) -> bool
-
     extern def ExportWaveAsCode(wave: Wave, fileName: cstr) -> bool
-
     extern def PlaySound(sound: Sound) -> void
-
     extern def StopSound(sound: Sound) -> void
-
     extern def PauseSound(sound: Sound) -> void
-
     extern def ResumeSound(sound: Sound) -> void
-
     extern def IsSoundPlaying(sound: Sound) -> bool
-
     extern def SetSoundVolume(sound: Sound, volume: f32) -> void
-
     extern def SetSoundPitch(sound: Sound, pitch: f32) -> void
-
     extern def SetSoundPan(sound: Sound, pan: f32) -> void
-
     extern def WaveCopy(wave: Wave) -> Wave
-
     extern def WaveCrop(wave: ptr[Wave], initFrame: i32, finalFrame: i32) -> void
-
     extern def WaveFormat(wave: ptr[Wave], sampleRate: i32, sampleSize: i32, channels: i32) -> void
-
     extern def LoadWaveSamples(wave: Wave) -> ptr[f32]
-
     extern def UnloadWaveSamples(samples: ptr[f32]) -> void
-
     extern def LoadMusicStream(fileName: cstr) -> Music
-
     extern def LoadMusicStreamFromMemory(fileType: cstr, data: const_ptr[u8], dataSize: i32) -> Music
-
     extern def IsMusicValid(music: Music) -> bool
-
     extern def UnloadMusicStream(music: Music) -> void
-
     extern def PlayMusicStream(music: Music) -> void
-
     extern def IsMusicStreamPlaying(music: Music) -> bool
-
     extern def UpdateMusicStream(music: Music) -> void
-
     extern def StopMusicStream(music: Music) -> void
-
     extern def PauseMusicStream(music: Music) -> void
-
     extern def ResumeMusicStream(music: Music) -> void
-
     extern def SeekMusicStream(music: Music, position: f32) -> void
-
     extern def SetMusicVolume(music: Music, volume: f32) -> void
-
     extern def SetMusicPitch(music: Music, pitch: f32) -> void
-
     extern def SetMusicPan(music: Music, pan: f32) -> void
-
     extern def GetMusicTimeLength(music: Music) -> f32
-
     extern def GetMusicTimePlayed(music: Music) -> f32
-
     extern def LoadAudioStream(sampleRate: u32, sampleSize: u32, channels: u32) -> AudioStream
-
     extern def IsAudioStreamValid(stream: AudioStream) -> bool
-
     extern def UnloadAudioStream(stream: AudioStream) -> void
-
     extern def UpdateAudioStream(stream: AudioStream, data: const_ptr[void], frameCount: i32) -> void
-
     extern def IsAudioStreamProcessed(stream: AudioStream) -> bool
-
     extern def PlayAudioStream(stream: AudioStream) -> void
-
     extern def PauseAudioStream(stream: AudioStream) -> void
-
     extern def ResumeAudioStream(stream: AudioStream) -> void
-
     extern def IsAudioStreamPlaying(stream: AudioStream) -> bool
-
     extern def StopAudioStream(stream: AudioStream) -> void
-
     extern def SetAudioStreamVolume(stream: AudioStream, volume: f32) -> void
-
     extern def SetAudioStreamPitch(stream: AudioStream, pitch: f32) -> void
-
     extern def SetAudioStreamPan(stream: AudioStream, pan: f32) -> void
-
     extern def SetAudioStreamBufferSizeDefault(size: i32) -> void
-
     extern def SetAudioStreamCallback(stream: AudioStream, callback: fn(arg0: ptr[void], arg1: u32) -> void) -> void
-
     extern def AttachAudioStreamProcessor(stream: AudioStream, processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void
-
     extern def DetachAudioStreamProcessor(stream: AudioStream, processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void
-
     extern def AttachAudioMixedProcessor(processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void
-
     extern def DetachAudioMixedProcessor(processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void
 
     struct GuiStyleProp:
@@ -1896,119 +1317,62 @@ extern module std.c.raygui:
         HUEBAR_SELECTOR_OVERFLOW = 20
 
     extern def GuiEnable() -> void
-
     extern def GuiDisable() -> void
-
     extern def GuiLock() -> void
-
     extern def GuiUnlock() -> void
-
     extern def GuiIsLocked() -> bool
-
     extern def GuiSetAlpha(alpha: f32) -> void
-
     extern def GuiSetState(state: i32) -> void
-
     extern def GuiGetState() -> i32
-
     extern def GuiSetFont(font: Font) -> void
-
     extern def GuiGetFont() -> Font
-
     extern def GuiSetStyle(control: i32, property: i32, value: i32) -> void
-
     extern def GuiGetStyle(control: i32, property: i32) -> i32
-
     extern def GuiLoadStyle(fileName: cstr) -> void
-
     extern def GuiLoadStyleDefault() -> void
-
     extern def GuiEnableTooltip() -> void
-
     extern def GuiDisableTooltip() -> void
-
     extern def GuiSetTooltip(tooltip: cstr) -> void
-
     extern def GuiIconText(iconId: i32, text: cstr) -> cstr
-
     extern def GuiSetIconScale(scale: i32) -> void
-
     extern def GuiGetIcons() -> ptr[u32]
-
     extern def GuiLoadIcons(fileName: cstr, loadIconsName: bool) -> ptr[ptr[char]]
-
     extern def GuiDrawIcon(iconId: i32, posX: i32, posY: i32, pixelSize: i32, color: Color) -> void
-
     extern def GuiGetTextWidth(text: cstr) -> i32
-
     extern def GuiWindowBox(bounds: Rectangle, title: cstr) -> i32
-
     extern def GuiGroupBox(bounds: Rectangle, text: cstr) -> i32
-
     extern def GuiLine(bounds: Rectangle, text: cstr) -> i32
-
     extern def GuiPanel(bounds: Rectangle, text: cstr) -> i32
-
     extern def GuiTabBar(bounds: Rectangle, text: ptr[ptr[char]], count: i32, active: ptr[i32]) -> i32
-
     extern def GuiScrollPanel(bounds: Rectangle, text: cstr, content: Rectangle, scroll: ptr[Vector2], view: ptr[Rectangle]) -> i32
-
     extern def GuiLabel(bounds: Rectangle, text: cstr) -> i32
-
     extern def GuiButton(bounds: Rectangle, text: cstr) -> i32
-
     extern def GuiLabelButton(bounds: Rectangle, text: cstr) -> i32
-
     extern def GuiToggle(bounds: Rectangle, text: cstr, active: ptr[bool]) -> i32
-
     extern def GuiToggleGroup(bounds: Rectangle, text: cstr, active: ptr[i32]) -> i32
-
     extern def GuiToggleSlider(bounds: Rectangle, text: cstr, active: ptr[i32]) -> i32
-
     extern def GuiCheckBox(bounds: Rectangle, text: cstr, checked: ptr[bool]) -> i32
-
     extern def GuiComboBox(bounds: Rectangle, text: cstr, active: ptr[i32]) -> i32
-
     extern def GuiDropdownBox(bounds: Rectangle, text: cstr, active: ptr[i32], editMode: bool) -> i32
-
     extern def GuiSpinner(bounds: Rectangle, text: cstr, value: ptr[i32], minValue: i32, maxValue: i32, editMode: bool) -> i32
-
     extern def GuiValueBox(bounds: Rectangle, text: cstr, value: ptr[i32], minValue: i32, maxValue: i32, editMode: bool) -> i32
-
     extern def GuiValueBoxFloat(bounds: Rectangle, text: cstr, textValue: ptr[char], value: ptr[f32], editMode: bool) -> i32
-
     extern def GuiTextBox(bounds: Rectangle, text: ptr[char], textSize: i32, editMode: bool) -> i32
-
     extern def GuiSlider(bounds: Rectangle, textLeft: cstr, textRight: cstr, value: ptr[f32], minValue: f32, maxValue: f32) -> i32
-
     extern def GuiSliderBar(bounds: Rectangle, textLeft: cstr, textRight: cstr, value: ptr[f32], minValue: f32, maxValue: f32) -> i32
-
     extern def GuiProgressBar(bounds: Rectangle, textLeft: cstr, textRight: cstr, value: ptr[f32], minValue: f32, maxValue: f32) -> i32
-
     extern def GuiStatusBar(bounds: Rectangle, text: cstr) -> i32
-
     extern def GuiDummyRec(bounds: Rectangle, text: cstr) -> i32
-
     extern def GuiGrid(bounds: Rectangle, text: cstr, spacing: f32, subdivs: i32, mouseCell: ptr[Vector2]) -> i32
-
     extern def GuiListView(bounds: Rectangle, text: cstr, scrollIndex: ptr[i32], active: ptr[i32]) -> i32
-
     extern def GuiListViewEx(bounds: Rectangle, text: ptr[ptr[char]], count: i32, scrollIndex: ptr[i32], active: ptr[i32], focus: ptr[i32]) -> i32
-
     extern def GuiMessageBox(bounds: Rectangle, title: cstr, message: cstr, buttons: cstr) -> i32
-
     extern def GuiTextInputBox(bounds: Rectangle, title: cstr, message: cstr, buttons: cstr, text: ptr[char], textMaxSize: i32, secretViewActive: ptr[bool]) -> i32
-
     extern def GuiColorPicker(bounds: Rectangle, text: cstr, color: ptr[Color]) -> i32
-
     extern def GuiColorPanel(bounds: Rectangle, text: cstr, color: ptr[Color]) -> i32
-
     extern def GuiColorBarAlpha(bounds: Rectangle, text: cstr, alpha: ptr[f32]) -> i32
-
     extern def GuiColorBarHue(bounds: Rectangle, text: cstr, value: ptr[f32]) -> i32
-
     extern def GuiColorPickerHSV(bounds: Rectangle, text: cstr, colorHsv: ptr[Vector3]) -> i32
-
     extern def GuiColorPanelHSV(bounds: Rectangle, text: cstr, colorHsv: ptr[Vector3]) -> i32
 
     enum GuiIconName: i32

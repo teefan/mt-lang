@@ -20,6 +20,7 @@ const rotation_format: cstr = c"%.0f degrees"
 const reset_text: cstr = c"Press [SPACE] to reset"
 const fps_format: cstr = c"%i FPS"
 
+
 def draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rectangle, origin: rl.Vector2, rotation: f32, scale: f32, tint: rl.Color) -> void:
     if texture.id <= 0 or scale <= 0.0:
         return
@@ -176,6 +177,7 @@ def draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rec
                 rotation,
                 tint,
             )
+
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE)

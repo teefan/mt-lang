@@ -9,6 +9,7 @@ const help_text: cstr = c"move the ball with arrow keys"
 const ball_radius: f32 = 50.0
 const ball_step: f32 = 2.0
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

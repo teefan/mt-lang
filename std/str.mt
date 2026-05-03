@@ -4,6 +4,7 @@ import std.ascii as ascii
 import std.mem.arena as arena
 import std.option as option
 
+
 pub def cstr_len(text: cstr) -> usize:
     var count: usize = 0
     unsafe:
@@ -12,16 +13,20 @@ pub def cstr_len(text: cstr) -> usize:
             count += 1
     return count
 
+
 pub def cstr_as_str(text: cstr) -> str:
     unsafe:
         return str(data = ptr[char]<-text, len = cstr_len(text))
+
 
 pub def chars_as_str(text: ptr[char]) -> str:
     unsafe:
         return str(data = text, len = cstr_len(cstr<-text))
 
+
 pub def utf8_continuation_byte(byte: u8) -> bool:
     return (byte & u8<-0xC0) == u8<-0x80
+
 
 def utf8_boundary(text: str, index: usize) -> bool:
     if index == 0 or index == text.len:
@@ -31,12 +36,14 @@ def utf8_boundary(text: str, index: usize) -> bool:
         let byte = u8<-read(text.data + index)
         return not utf8_continuation_byte(byte)
 
+
 pub def byte_at(text: str, index: usize) -> u8:
     if index >= text.len:
         panic(c"str.byte_at index out of bounds")
 
     unsafe:
         return u8<-read(text.data + index)
+
 
 pub def equal(left: str, right: str) -> bool:
     if left.len != right.len:
@@ -49,6 +56,7 @@ pub def equal(left: str, right: str) -> bool:
         index += 1
     return true
 
+
 pub def starts_with(text: str, prefix: str) -> bool:
     if prefix.len > text.len:
         return false
@@ -59,6 +67,7 @@ pub def starts_with(text: str, prefix: str) -> bool:
             return false
         index += 1
     return true
+
 
 pub def ends_with(text: str, suffix: str) -> bool:
     if suffix.len > text.len:
@@ -72,6 +81,7 @@ pub def ends_with(text: str, suffix: str) -> bool:
         index += 1
     return true
 
+
 pub def find_byte(text: str, byte: u8) -> option.Option[usize]:
     var index: usize = 0
     while index < text.len:
@@ -79,6 +89,7 @@ pub def find_byte(text: str, byte: u8) -> option.Option[usize]:
             return option.some[usize](index)
         index += 1
     return option.none[usize]()
+
 
 pub def trim_ascii_whitespace(text: str) -> str:
     var start: usize = 0
@@ -91,6 +102,7 @@ pub def trim_ascii_whitespace(text: str) -> str:
 
     unsafe:
         return str(data = text.data + start, len = stop - start)
+
 
 pub def is_valid_utf8(text: str) -> bool:
     var index: usize = 0
@@ -148,6 +160,8 @@ pub def is_valid_utf8(text: str) -> bool:
     return true
 
 methods str:
+
+
     pub def slice(start: usize, len: usize) -> str:
         if start > this.len:
             panic(c"str slice start out of bounds")
@@ -162,6 +176,7 @@ methods str:
 
         unsafe:
             return str(data = this.data + start, len = len)
+
 
     pub def to_cstr(space: ref[arena.Arena]) -> cstr:
         return space.to_cstr(this)

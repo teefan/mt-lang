@@ -12,17 +12,21 @@ const shader_vertex_path_format: cstr = c"../resources/shaders/glsl%i/skinning.v
 const shader_fragment_path_format: cstr = c"../resources/shaders/glsl%i/skinning.fs"
 const window_title: cstr = c"raylib [models] example - animation gpu skinning"
 
+
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
+
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
         return read(anims + index)
 
+
 def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of(ref_of((anims + index).name[0])))
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

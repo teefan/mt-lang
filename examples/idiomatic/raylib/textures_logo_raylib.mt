@@ -6,6 +6,7 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const texture_path: str = "../../raylib/resources/raylib_logo.png"
 
+
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Texture Logo")
     defer rl.close_window()

@@ -7,6 +7,7 @@ const screen_height: i32 = 450
 const window_title: cstr = c"raylib [models] example - rotating cube"
 const texture_path: cstr = c"../resources/cubicmap_atlas.png"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

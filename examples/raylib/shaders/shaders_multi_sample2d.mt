@@ -11,6 +11,7 @@ const divider_uniform_name: cstr = c"divider"
 const help_text: cstr = c"Use KEY_LEFT/KEY_RIGHT to move texture mixing in shader!"
 const window_title: cstr = c"raylib [shaders] example - multi sample2d"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

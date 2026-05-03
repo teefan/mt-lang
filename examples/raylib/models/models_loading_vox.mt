@@ -18,12 +18,14 @@ const cycle_models_text: cstr = c"- MOUSE LEFT BUTTON: CYCLE VOX MODELS"
 const camera_rotate_text: cstr = c"- MOUSE MIDDLE BUTTON: ZOOM OR ROTATE CAMERA"
 const camera_move_text: cstr = c"- UP-DOWN-LEFT-RIGHT KEYS: MOVE CAMERA"
 
+
 def camera_axis_speed(positive: bool, negative: bool) -> f32:
     if positive and not negative:
         return 0.1
     if negative and not positive:
         return -0.1
     return 0.0
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

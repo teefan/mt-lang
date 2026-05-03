@@ -8,16 +8,19 @@ const gravity: f32 = 9.81
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 
+
 def calculate_pendulum_end_point(length: f32, theta: f32) -> rl.Vector2:
     return rl.Vector2(
         x = 10.0 * length * math.sin(theta),
         y = 10.0 * length * math.cos(theta),
     )
 
+
 def calculate_double_pendulum_end_point(length1: f32, theta1: f32, length2: f32, theta2: f32) -> rl.Vector2:
     let endpoint1 = calculate_pendulum_end_point(length1, theta1)
     let endpoint2 = calculate_pendulum_end_point(length2, theta2)
     return rl.Vector2(x = endpoint1.x + endpoint2.x, y = endpoint1.y + endpoint2.y)
+
 
 def main() -> i32:
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_HIGHDPI)

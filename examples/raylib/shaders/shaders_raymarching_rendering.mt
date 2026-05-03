@@ -13,6 +13,7 @@ const resolution_uniform_name: cstr = c"resolution"
 const credit_text: cstr = c"(c) Raymarching shader by Inigo Quilez. MIT License."
 const window_title: cstr = c"raylib [shaders] example - raymarching rendering"
 
+
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE)
 

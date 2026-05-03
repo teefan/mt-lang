@@ -120,437 +120,1304 @@ pub const B2_PI: f32 = c.B2_PI
 pub const B2_MAX_POLYGON_VERTICES: i32 = c.B2_MAX_POLYGON_VERTICES
 pub const B2_DEFAULT_CATEGORY_BITS: i32 = c.B2_DEFAULT_CATEGORY_BITS
 
+
 pub foreign def set_allocator(alloc_fcn: ptr[AllocFcn], free_fcn: ptr[FreeFcn]) -> void = c.b2SetAllocator
+
+
 pub foreign def get_byte_count() -> i32 = c.b2GetByteCount
+
+
 pub foreign def set_assert_fcn(assert_fcn: ptr[AssertFcn]) -> void = c.b2SetAssertFcn
+
+
 pub foreign def set_log_fcn(log_fcn: ptr[LogFcn]) -> void = c.b2SetLogFcn
+
+
 pub foreign def get_version() -> Version = c.b2GetVersion
+
+
 pub foreign def internal_assert(condition: cstr, file_name: cstr, line_number: i32) -> i32 = c.b2InternalAssert
+
+
 pub foreign def get_ticks() -> u64 = c.b2GetTicks
+
+
 pub foreign def get_milliseconds(ticks: usize) -> f32 = c.b2GetMilliseconds
+
+
 pub foreign def get_milliseconds_and_reset(ticks: ptr[u64]) -> f32 = c.b2GetMillisecondsAndReset
+
+
 pub foreign def yield() -> void = c.b2Yield
+
+
 pub foreign def hash(hash: u32, data: const_ptr[u8], count: i32) -> u32 = c.b2Hash
+
+
 pub foreign def is_valid_float(a: f32) -> bool = c.b2IsValidFloat
+
+
 pub foreign def is_valid_vec_2(v: Vec2) -> bool = c.b2IsValidVec2
+
+
 pub foreign def is_valid_rotation(q: Rot) -> bool = c.b2IsValidRotation
+
+
 pub foreign def is_valid_transform(t: Transform) -> bool = c.b2IsValidTransform
+
+
 pub foreign def is_valid_aabb(aabb: AABB) -> bool = c.b2IsValidAABB
+
+
 pub foreign def is_valid_plane(a: Plane) -> bool = c.b2IsValidPlane
+
+
 pub foreign def atan_2(y: f32, x: f32) -> f32 = c.b2Atan2
+
+
 pub foreign def compute_cos_sin(radians: f32) -> CosSin = c.b2ComputeCosSin
+
+
 pub foreign def compute_rotation_between_unit_vectors(v_1: Vec2, v_2: Vec2) -> Rot = c.b2ComputeRotationBetweenUnitVectors
+
+
 pub foreign def set_length_units_per_meter(length_units: f32) -> void = c.b2SetLengthUnitsPerMeter
+
+
 pub foreign def get_length_units_per_meter() -> f32 = c.b2GetLengthUnitsPerMeter
+
+
 pub foreign def is_valid_ray(input: const_ptr[RayCastInput]) -> bool = c.b2IsValidRay
+
+
 pub foreign def make_polygon(hull: const_ptr[Hull], radius: f32) -> Polygon = c.b2MakePolygon
+
+
 pub foreign def make_offset_polygon(hull: const_ptr[Hull], position: Vec2, rotation: Rot) -> Polygon = c.b2MakeOffsetPolygon
+
+
 pub foreign def make_offset_rounded_polygon(hull: const_ptr[Hull], position: Vec2, rotation: Rot, radius: f32) -> Polygon = c.b2MakeOffsetRoundedPolygon
+
+
 pub foreign def make_square(half_width: f32) -> Polygon = c.b2MakeSquare
+
+
 pub foreign def make_box(half_width: f32, half_height: f32) -> Polygon = c.b2MakeBox
+
+
 pub foreign def make_rounded_box(half_width: f32, half_height: f32, radius: f32) -> Polygon = c.b2MakeRoundedBox
+
+
 pub foreign def make_offset_box(half_width: f32, half_height: f32, center: Vec2, rotation: Rot) -> Polygon = c.b2MakeOffsetBox
+
+
 pub foreign def make_offset_rounded_box(half_width: f32, half_height: f32, center: Vec2, rotation: Rot, radius: f32) -> Polygon = c.b2MakeOffsetRoundedBox
+
+
 pub foreign def transform_polygon(transform: Transform, polygon: const_ptr[Polygon]) -> Polygon = c.b2TransformPolygon
+
+
 pub foreign def compute_circle_mass(shape: const_ptr[Circle], density: f32) -> MassData = c.b2ComputeCircleMass
+
+
 pub foreign def compute_capsule_mass(shape: const_ptr[Capsule], density: f32) -> MassData = c.b2ComputeCapsuleMass
+
+
 pub foreign def compute_polygon_mass(shape: const_ptr[Polygon], density: f32) -> MassData = c.b2ComputePolygonMass
+
+
 pub foreign def compute_circle_aabb(shape: const_ptr[Circle], transform: Transform) -> AABB = c.b2ComputeCircleAABB
+
+
 pub foreign def compute_capsule_aabb(shape: const_ptr[Capsule], transform: Transform) -> AABB = c.b2ComputeCapsuleAABB
+
+
 pub foreign def compute_polygon_aabb(shape: const_ptr[Polygon], transform: Transform) -> AABB = c.b2ComputePolygonAABB
+
+
 pub foreign def compute_segment_aabb(shape: const_ptr[Segment], transform: Transform) -> AABB = c.b2ComputeSegmentAABB
+
+
 pub foreign def point_in_circle(shape: const_ptr[Circle], point: Vec2) -> bool = c.b2PointInCircle
+
+
 pub foreign def point_in_capsule(shape: const_ptr[Capsule], point: Vec2) -> bool = c.b2PointInCapsule
+
+
 pub foreign def point_in_polygon(shape: const_ptr[Polygon], point: Vec2) -> bool = c.b2PointInPolygon
+
+
 pub foreign def ray_cast_circle(shape: const_ptr[Circle], input: const_ptr[RayCastInput]) -> CastOutput = c.b2RayCastCircle
+
+
 pub foreign def ray_cast_capsule(shape: const_ptr[Capsule], input: const_ptr[RayCastInput]) -> CastOutput = c.b2RayCastCapsule
+
+
 pub foreign def ray_cast_segment(shape: const_ptr[Segment], input: const_ptr[RayCastInput], one_sided: bool) -> CastOutput = c.b2RayCastSegment
+
+
 pub foreign def ray_cast_polygon(shape: const_ptr[Polygon], input: const_ptr[RayCastInput]) -> CastOutput = c.b2RayCastPolygon
+
+
 pub foreign def shape_cast_circle(shape: const_ptr[Circle], input: const_ptr[ShapeCastInput]) -> CastOutput = c.b2ShapeCastCircle
+
+
 pub foreign def shape_cast_capsule(shape: const_ptr[Capsule], input: const_ptr[ShapeCastInput]) -> CastOutput = c.b2ShapeCastCapsule
+
+
 pub foreign def shape_cast_segment(shape: const_ptr[Segment], input: const_ptr[ShapeCastInput]) -> CastOutput = c.b2ShapeCastSegment
+
+
 pub foreign def shape_cast_polygon(shape: const_ptr[Polygon], input: const_ptr[ShapeCastInput]) -> CastOutput = c.b2ShapeCastPolygon
+
+
 pub foreign def compute_hull(points: const_ptr[Vec2], count: i32) -> Hull = c.b2ComputeHull
+
+
 pub foreign def validate_hull(hull: const_ptr[Hull]) -> bool = c.b2ValidateHull
+
+
 pub foreign def segment_distance(p_1: Vec2, q_1: Vec2, p_2: Vec2, q_2: Vec2) -> SegmentDistanceResult = c.b2SegmentDistance
+
+
 pub foreign def shape_distance(input: const_ptr[DistanceInput], cache: ptr[SimplexCache], simplexes: ptr[Simplex], simplex_capacity: i32) -> DistanceOutput = c.b2ShapeDistance
+
+
 pub foreign def shape_cast(input: const_ptr[ShapeCastPairInput]) -> CastOutput = c.b2ShapeCast
+
+
 pub foreign def make_proxy(points: const_ptr[Vec2], count: i32, radius: f32) -> ShapeProxy = c.b2MakeProxy
+
+
 pub foreign def make_offset_proxy(points: const_ptr[Vec2], count: i32, radius: f32, position: Vec2, rotation: Rot) -> ShapeProxy = c.b2MakeOffsetProxy
+
+
 pub foreign def get_sweep_transform(sweep: const_ptr[Sweep], time: f32) -> Transform = c.b2GetSweepTransform
+
+
 pub foreign def time_of_impact(input: const_ptr[TOIInput]) -> TOIOutput = c.b2TimeOfImpact
+
+
 pub foreign def collide_circles(circle_a: const_ptr[Circle], xf_a: Transform, circle_b: const_ptr[Circle], xf_b: Transform) -> Manifold = c.b2CollideCircles
+
+
 pub foreign def collide_capsule_and_circle(capsule_a: const_ptr[Capsule], xf_a: Transform, circle_b: const_ptr[Circle], xf_b: Transform) -> Manifold = c.b2CollideCapsuleAndCircle
+
+
 pub foreign def collide_segment_and_circle(segment_a: const_ptr[Segment], xf_a: Transform, circle_b: const_ptr[Circle], xf_b: Transform) -> Manifold = c.b2CollideSegmentAndCircle
+
+
 pub foreign def collide_polygon_and_circle(polygon_a: const_ptr[Polygon], xf_a: Transform, circle_b: const_ptr[Circle], xf_b: Transform) -> Manifold = c.b2CollidePolygonAndCircle
+
+
 pub foreign def collide_capsules(capsule_a: const_ptr[Capsule], xf_a: Transform, capsule_b: const_ptr[Capsule], xf_b: Transform) -> Manifold = c.b2CollideCapsules
+
+
 pub foreign def collide_segment_and_capsule(segment_a: const_ptr[Segment], xf_a: Transform, capsule_b: const_ptr[Capsule], xf_b: Transform) -> Manifold = c.b2CollideSegmentAndCapsule
+
+
 pub foreign def collide_polygon_and_capsule(polygon_a: const_ptr[Polygon], xf_a: Transform, capsule_b: const_ptr[Capsule], xf_b: Transform) -> Manifold = c.b2CollidePolygonAndCapsule
+
+
 pub foreign def collide_polygons(polygon_a: const_ptr[Polygon], xf_a: Transform, polygon_b: const_ptr[Polygon], xf_b: Transform) -> Manifold = c.b2CollidePolygons
+
+
 pub foreign def collide_segment_and_polygon(segment_a: const_ptr[Segment], xf_a: Transform, polygon_b: const_ptr[Polygon], xf_b: Transform) -> Manifold = c.b2CollideSegmentAndPolygon
+
+
 pub foreign def collide_chain_segment_and_circle(segment_a: const_ptr[ChainSegment], xf_a: Transform, circle_b: const_ptr[Circle], xf_b: Transform) -> Manifold = c.b2CollideChainSegmentAndCircle
+
+
 pub foreign def collide_chain_segment_and_capsule(segment_a: const_ptr[ChainSegment], xf_a: Transform, capsule_b: const_ptr[Capsule], xf_b: Transform, cache: ptr[SimplexCache]) -> Manifold = c.b2CollideChainSegmentAndCapsule
+
+
 pub foreign def collide_chain_segment_and_polygon(segment_a: const_ptr[ChainSegment], xf_a: Transform, polygon_b: const_ptr[Polygon], xf_b: Transform, cache: ptr[SimplexCache]) -> Manifold = c.b2CollideChainSegmentAndPolygon
+
+
 pub foreign def dynamic_tree_create() -> DynamicTree = c.b2DynamicTree_Create
+
+
 pub foreign def dynamic_tree_destroy(tree: ptr[DynamicTree]) -> void = c.b2DynamicTree_Destroy
+
+
 pub foreign def dynamic_tree_create_proxy(tree: ptr[DynamicTree], aabb: AABB, category_bits: usize, user_data: usize) -> i32 = c.b2DynamicTree_CreateProxy
+
+
 pub foreign def dynamic_tree_destroy_proxy(tree: ptr[DynamicTree], proxy_id: i32) -> void = c.b2DynamicTree_DestroyProxy
+
+
 pub foreign def dynamic_tree_move_proxy(tree: ptr[DynamicTree], proxy_id: i32, aabb: AABB) -> void = c.b2DynamicTree_MoveProxy
+
+
 pub foreign def dynamic_tree_enlarge_proxy(tree: ptr[DynamicTree], proxy_id: i32, aabb: AABB) -> void = c.b2DynamicTree_EnlargeProxy
+
+
 pub foreign def dynamic_tree_set_category_bits(tree: ptr[DynamicTree], proxy_id: i32, category_bits: usize) -> void = c.b2DynamicTree_SetCategoryBits
+
+
 pub foreign def dynamic_tree_get_category_bits(tree: ptr[DynamicTree], proxy_id: i32) -> u64 = c.b2DynamicTree_GetCategoryBits
+
+
 pub foreign def dynamic_tree_query(tree: const_ptr[DynamicTree], aabb: AABB, mask_bits: usize, callback: ptr[TreeQueryCallbackFcn], context: ptr[void]) -> TreeStats = c.b2DynamicTree_Query
+
+
 pub foreign def dynamic_tree_query_all(tree: const_ptr[DynamicTree], aabb: AABB, callback: ptr[TreeQueryCallbackFcn], context: ptr[void]) -> TreeStats = c.b2DynamicTree_QueryAll
+
+
 pub foreign def dynamic_tree_ray_cast(tree: const_ptr[DynamicTree], input: const_ptr[RayCastInput], mask_bits: usize, callback: ptr[TreeRayCastCallbackFcn], context: ptr[void]) -> TreeStats = c.b2DynamicTree_RayCast
+
+
 pub foreign def dynamic_tree_shape_cast(tree: const_ptr[DynamicTree], input: const_ptr[ShapeCastInput], mask_bits: usize, callback: ptr[TreeShapeCastCallbackFcn], context: ptr[void]) -> TreeStats = c.b2DynamicTree_ShapeCast
+
+
 pub foreign def dynamic_tree_get_height(tree: const_ptr[DynamicTree]) -> i32 = c.b2DynamicTree_GetHeight
+
+
 pub foreign def dynamic_tree_get_area_ratio(tree: const_ptr[DynamicTree]) -> f32 = c.b2DynamicTree_GetAreaRatio
+
+
 pub foreign def dynamic_tree_get_root_bounds(tree: const_ptr[DynamicTree]) -> AABB = c.b2DynamicTree_GetRootBounds
+
+
 pub foreign def dynamic_tree_get_proxy_count(tree: const_ptr[DynamicTree]) -> i32 = c.b2DynamicTree_GetProxyCount
+
+
 pub foreign def dynamic_tree_rebuild(tree: ptr[DynamicTree], full_build: bool) -> i32 = c.b2DynamicTree_Rebuild
+
+
 pub foreign def dynamic_tree_get_byte_count(tree: const_ptr[DynamicTree]) -> i32 = c.b2DynamicTree_GetByteCount
+
+
 pub foreign def dynamic_tree_get_user_data(tree: const_ptr[DynamicTree], proxy_id: i32) -> u64 = c.b2DynamicTree_GetUserData
+
+
 pub foreign def dynamic_tree_get_aabb(tree: const_ptr[DynamicTree], proxy_id: i32) -> AABB = c.b2DynamicTree_GetAABB
+
+
 pub foreign def dynamic_tree_validate(tree: const_ptr[DynamicTree]) -> void = c.b2DynamicTree_Validate
+
+
 pub foreign def dynamic_tree_validate_no_enlarged(tree: const_ptr[DynamicTree]) -> void = c.b2DynamicTree_ValidateNoEnlarged
+
+
 pub foreign def solve_planes(target_delta: Vec2, planes: ptr[CollisionPlane], count: i32) -> PlaneSolverResult = c.b2SolvePlanes
+
+
 pub foreign def clip_vector(vector: Vec2, planes: const_ptr[CollisionPlane], count: i32) -> Vec2 = c.b2ClipVector
+
+
 pub foreign def default_world_def() -> WorldDef = c.b2DefaultWorldDef
+
+
 pub foreign def default_body_def() -> BodyDef = c.b2DefaultBodyDef
+
+
 pub foreign def default_filter() -> Filter = c.b2DefaultFilter
+
+
 pub foreign def default_query_filter() -> QueryFilter = c.b2DefaultQueryFilter
+
+
 pub foreign def default_surface_material() -> SurfaceMaterial = c.b2DefaultSurfaceMaterial
+
+
 pub foreign def default_shape_def() -> ShapeDef = c.b2DefaultShapeDef
+
+
 pub foreign def default_chain_def() -> ChainDef = c.b2DefaultChainDef
+
+
 pub foreign def default_distance_joint_def() -> DistanceJointDef = c.b2DefaultDistanceJointDef
+
+
 pub foreign def default_motor_joint_def() -> MotorJointDef = c.b2DefaultMotorJointDef
+
+
 pub foreign def default_filter_joint_def() -> FilterJointDef = c.b2DefaultFilterJointDef
+
+
 pub foreign def default_prismatic_joint_def() -> PrismaticJointDef = c.b2DefaultPrismaticJointDef
+
+
 pub foreign def default_revolute_joint_def() -> RevoluteJointDef = c.b2DefaultRevoluteJointDef
+
+
 pub foreign def default_weld_joint_def() -> WeldJointDef = c.b2DefaultWeldJointDef
+
+
 pub foreign def default_wheel_joint_def() -> WheelJointDef = c.b2DefaultWheelJointDef
+
+
 pub foreign def default_explosion_def() -> ExplosionDef = c.b2DefaultExplosionDef
+
+
 pub foreign def default_debug_draw() -> DebugDraw = c.b2DefaultDebugDraw
+
+
 pub foreign def create_world(in world_def: WorldDef) -> WorldId = c.b2CreateWorld
+
+
 pub foreign def destroy_world(world_id: WorldId) -> void = c.b2DestroyWorld
+
+
 pub foreign def world_is_valid(id: WorldId) -> bool = c.b2World_IsValid
+
+
 pub foreign def world_step(world_id: WorldId, time_step: f32, sub_step_count: i32) -> void = c.b2World_Step
+
+
 pub foreign def world_draw(world_id: WorldId, inout draw: DebugDraw) -> void = c.b2World_Draw
+
+
 pub foreign def world_get_body_events(world_id: WorldId) -> BodyEvents = c.b2World_GetBodyEvents
+
+
 pub foreign def world_get_sensor_events(world_id: WorldId) -> SensorEvents = c.b2World_GetSensorEvents
+
+
 pub foreign def world_get_contact_events(world_id: WorldId) -> ContactEvents = c.b2World_GetContactEvents
+
+
 pub foreign def world_get_joint_events(world_id: WorldId) -> JointEvents = c.b2World_GetJointEvents
+
+
 pub foreign def world_overlap_aabb(world_id: WorldId, aabb: AABB, filter: QueryFilter, fcn: ptr[OverlapResultFcn], context: ptr[void]) -> TreeStats = c.b2World_OverlapAABB
+
+
 pub foreign def world_overlap_shape(world_id: WorldId, proxy: const_ptr[ShapeProxy], filter: QueryFilter, fcn: ptr[OverlapResultFcn], context: ptr[void]) -> TreeStats = c.b2World_OverlapShape
+
+
 pub foreign def world_cast_ray(world_id: WorldId, origin: Vec2, translation: Vec2, filter: QueryFilter, fcn: ptr[CastResultFcn], context: ptr[void]) -> TreeStats = c.b2World_CastRay
+
+
 pub foreign def world_cast_ray_closest(world_id: WorldId, origin: Vec2, translation: Vec2, filter: QueryFilter) -> RayResult = c.b2World_CastRayClosest
+
+
 pub foreign def world_cast_shape(world_id: WorldId, proxy: const_ptr[ShapeProxy], translation: Vec2, filter: QueryFilter, fcn: ptr[CastResultFcn], context: ptr[void]) -> TreeStats = c.b2World_CastShape
+
+
 pub foreign def world_cast_mover(world_id: WorldId, mover: const_ptr[Capsule], translation: Vec2, filter: QueryFilter) -> f32 = c.b2World_CastMover
+
+
 pub foreign def world_collide_mover(world_id: WorldId, mover: const_ptr[Capsule], filter: QueryFilter, fcn: ptr[PlaneResultFcn], context: ptr[void]) -> void = c.b2World_CollideMover
+
+
 pub foreign def world_enable_sleeping(world_id: WorldId, flag: bool) -> void = c.b2World_EnableSleeping
+
+
 pub foreign def world_is_sleeping_enabled(world_id: WorldId) -> bool = c.b2World_IsSleepingEnabled
+
+
 pub foreign def world_enable_continuous(world_id: WorldId, flag: bool) -> void = c.b2World_EnableContinuous
+
+
 pub foreign def world_is_continuous_enabled(world_id: WorldId) -> bool = c.b2World_IsContinuousEnabled
+
+
 pub foreign def world_set_restitution_threshold(world_id: WorldId, value: f32) -> void = c.b2World_SetRestitutionThreshold
+
+
 pub foreign def world_get_restitution_threshold(world_id: WorldId) -> f32 = c.b2World_GetRestitutionThreshold
+
+
 pub foreign def world_set_hit_event_threshold(world_id: WorldId, value: f32) -> void = c.b2World_SetHitEventThreshold
+
+
 pub foreign def world_get_hit_event_threshold(world_id: WorldId) -> f32 = c.b2World_GetHitEventThreshold
+
+
 pub foreign def world_set_custom_filter_callback(world_id: WorldId, fcn: ptr[CustomFilterFcn], context: ptr[void]) -> void = c.b2World_SetCustomFilterCallback
+
+
 pub foreign def world_set_pre_solve_callback(world_id: WorldId, fcn: ptr[PreSolveFcn], context: ptr[void]) -> void = c.b2World_SetPreSolveCallback
+
+
 pub foreign def world_set_gravity(world_id: WorldId, gravity: Vec2) -> void = c.b2World_SetGravity
+
+
 pub foreign def world_get_gravity(world_id: WorldId) -> Vec2 = c.b2World_GetGravity
+
+
 pub foreign def world_explode(world_id: WorldId, in explosion_def: ExplosionDef) -> void = c.b2World_Explode
+
+
 pub foreign def world_set_contact_tuning(world_id: WorldId, hertz: f32, damping_ratio: f32, push_speed: f32) -> void = c.b2World_SetContactTuning
+
+
 pub foreign def world_set_contact_recycle_distance(world_id: WorldId, recycle_distance: f32) -> void = c.b2World_SetContactRecycleDistance
+
+
 pub foreign def world_get_contact_recycle_distance(world_id: WorldId) -> f32 = c.b2World_GetContactRecycleDistance
+
+
 pub foreign def world_set_maximum_linear_speed(world_id: WorldId, maximum_linear_speed: f32) -> void = c.b2World_SetMaximumLinearSpeed
+
+
 pub foreign def world_get_maximum_linear_speed(world_id: WorldId) -> f32 = c.b2World_GetMaximumLinearSpeed
+
+
 pub foreign def world_enable_warm_starting(world_id: WorldId, flag: bool) -> void = c.b2World_EnableWarmStarting
+
+
 pub foreign def world_is_warm_starting_enabled(world_id: WorldId) -> bool = c.b2World_IsWarmStartingEnabled
+
+
 pub foreign def world_get_awake_body_count(world_id: WorldId) -> i32 = c.b2World_GetAwakeBodyCount
+
+
 pub foreign def world_get_profile(world_id: WorldId) -> Profile = c.b2World_GetProfile
+
+
 pub foreign def world_get_counters(world_id: WorldId) -> Counters = c.b2World_GetCounters
+
+
 pub foreign def world_set_user_data(world_id: WorldId, user_data: ptr[void]) -> void = c.b2World_SetUserData
+
+
 pub foreign def world_get_user_data(world_id: WorldId) -> ptr[void] = c.b2World_GetUserData
+
+
 pub foreign def world_set_friction_callback(world_id: WorldId, callback: ptr[FrictionCallback]) -> void = c.b2World_SetFrictionCallback
+
+
 pub foreign def world_set_restitution_callback(world_id: WorldId, callback: ptr[RestitutionCallback]) -> void = c.b2World_SetRestitutionCallback
+
+
 pub foreign def world_set_worker_count(world_id: WorldId, count: i32) -> void = c.b2World_SetWorkerCount
+
+
 pub foreign def world_get_worker_count(world_id: WorldId) -> i32 = c.b2World_GetWorkerCount
+
+
 pub foreign def world_dump_memory_stats(world_id: WorldId) -> void = c.b2World_DumpMemoryStats
+
+
 pub foreign def world_rebuild_static_tree(world_id: WorldId) -> void = c.b2World_RebuildStaticTree
+
+
 pub foreign def world_enable_speculative(world_id: WorldId, flag: bool) -> void = c.b2World_EnableSpeculative
+
+
 pub foreign def create_body(world_id: WorldId, in body_def: BodyDef) -> BodyId = c.b2CreateBody
+
+
 pub foreign def destroy_body(body_id: BodyId) -> void = c.b2DestroyBody
+
+
 pub foreign def body_is_valid(id: BodyId) -> bool = c.b2Body_IsValid
+
+
 pub foreign def body_get_type(body_id: BodyId) -> BodyType = c.b2Body_GetType
+
+
 pub foreign def body_set_type(body_id: BodyId, kind: BodyType) -> void = c.b2Body_SetType
+
+
 pub foreign def body_set_name(body_id: BodyId, name: cstr) -> void = c.b2Body_SetName
+
+
 pub foreign def body_get_name(body_id: BodyId) -> cstr = c.b2Body_GetName
+
+
 pub foreign def body_set_user_data(body_id: BodyId, user_data: ptr[void]) -> void = c.b2Body_SetUserData
+
+
 pub foreign def body_get_user_data(body_id: BodyId) -> ptr[void] = c.b2Body_GetUserData
+
+
 pub foreign def body_get_position(body_id: BodyId) -> Vec2 = c.b2Body_GetPosition
+
+
 pub foreign def body_get_rotation(body_id: BodyId) -> Rot = c.b2Body_GetRotation
+
+
 pub foreign def body_get_transform(body_id: BodyId) -> Transform = c.b2Body_GetTransform
+
+
 pub foreign def body_set_transform(body_id: BodyId, position: Vec2, rotation: Rot) -> void = c.b2Body_SetTransform
+
+
 pub foreign def body_get_local_point(body_id: BodyId, world_point: Vec2) -> Vec2 = c.b2Body_GetLocalPoint
+
+
 pub foreign def body_get_world_point(body_id: BodyId, local_point: Vec2) -> Vec2 = c.b2Body_GetWorldPoint
+
+
 pub foreign def body_get_local_vector(body_id: BodyId, world_vector: Vec2) -> Vec2 = c.b2Body_GetLocalVector
+
+
 pub foreign def body_get_world_vector(body_id: BodyId, local_vector: Vec2) -> Vec2 = c.b2Body_GetWorldVector
+
+
 pub foreign def body_get_linear_velocity(body_id: BodyId) -> Vec2 = c.b2Body_GetLinearVelocity
+
+
 pub foreign def body_get_angular_velocity(body_id: BodyId) -> f32 = c.b2Body_GetAngularVelocity
+
+
 pub foreign def body_set_linear_velocity(body_id: BodyId, linear_velocity: Vec2) -> void = c.b2Body_SetLinearVelocity
+
+
 pub foreign def body_set_angular_velocity(body_id: BodyId, angular_velocity: f32) -> void = c.b2Body_SetAngularVelocity
+
+
 pub foreign def body_set_target_transform(body_id: BodyId, target: Transform, time_step: f32, wake: bool) -> void = c.b2Body_SetTargetTransform
+
+
 pub foreign def body_get_local_point_velocity(body_id: BodyId, local_point: Vec2) -> Vec2 = c.b2Body_GetLocalPointVelocity
+
+
 pub foreign def body_get_world_point_velocity(body_id: BodyId, world_point: Vec2) -> Vec2 = c.b2Body_GetWorldPointVelocity
+
+
 pub foreign def body_apply_force(body_id: BodyId, force: Vec2, point: Vec2, wake: bool) -> void = c.b2Body_ApplyForce
+
+
 pub foreign def body_apply_force_to_center(body_id: BodyId, force: Vec2, wake: bool) -> void = c.b2Body_ApplyForceToCenter
+
+
 pub foreign def body_apply_torque(body_id: BodyId, torque: f32, wake: bool) -> void = c.b2Body_ApplyTorque
+
+
 pub foreign def body_clear_forces(body_id: BodyId) -> void = c.b2Body_ClearForces
+
+
 pub foreign def body_apply_linear_impulse(body_id: BodyId, impulse: Vec2, point: Vec2, wake: bool) -> void = c.b2Body_ApplyLinearImpulse
+
+
 pub foreign def body_apply_linear_impulse_to_center(body_id: BodyId, impulse: Vec2, wake: bool) -> void = c.b2Body_ApplyLinearImpulseToCenter
+
+
 pub foreign def body_apply_angular_impulse(body_id: BodyId, impulse: f32, wake: bool) -> void = c.b2Body_ApplyAngularImpulse
+
+
 pub foreign def body_get_mass(body_id: BodyId) -> f32 = c.b2Body_GetMass
+
+
 pub foreign def body_get_rotational_inertia(body_id: BodyId) -> f32 = c.b2Body_GetRotationalInertia
+
+
 pub foreign def body_get_local_center_of_mass(body_id: BodyId) -> Vec2 = c.b2Body_GetLocalCenterOfMass
+
+
 pub foreign def body_get_world_center_of_mass(body_id: BodyId) -> Vec2 = c.b2Body_GetWorldCenterOfMass
+
+
 pub foreign def body_set_mass_data(body_id: BodyId, mass_data: MassData) -> void = c.b2Body_SetMassData
+
+
 pub foreign def body_get_mass_data(body_id: BodyId) -> MassData = c.b2Body_GetMassData
+
+
 pub foreign def body_apply_mass_from_shapes(body_id: BodyId) -> void = c.b2Body_ApplyMassFromShapes
+
+
 pub foreign def body_set_linear_damping(body_id: BodyId, linear_damping: f32) -> void = c.b2Body_SetLinearDamping
+
+
 pub foreign def body_get_linear_damping(body_id: BodyId) -> f32 = c.b2Body_GetLinearDamping
+
+
 pub foreign def body_set_angular_damping(body_id: BodyId, angular_damping: f32) -> void = c.b2Body_SetAngularDamping
+
+
 pub foreign def body_get_angular_damping(body_id: BodyId) -> f32 = c.b2Body_GetAngularDamping
+
+
 pub foreign def body_set_gravity_scale(body_id: BodyId, gravity_scale: f32) -> void = c.b2Body_SetGravityScale
+
+
 pub foreign def body_get_gravity_scale(body_id: BodyId) -> f32 = c.b2Body_GetGravityScale
+
+
 pub foreign def body_is_awake(body_id: BodyId) -> bool = c.b2Body_IsAwake
+
+
 pub foreign def body_set_awake(body_id: BodyId, awake: bool) -> void = c.b2Body_SetAwake
+
+
 pub foreign def body_wake_touching(body_id: BodyId) -> void = c.b2Body_WakeTouching
+
+
 pub foreign def body_enable_sleep(body_id: BodyId, enable_sleep: bool) -> void = c.b2Body_EnableSleep
+
+
 pub foreign def body_is_sleep_enabled(body_id: BodyId) -> bool = c.b2Body_IsSleepEnabled
+
+
 pub foreign def body_set_sleep_threshold(body_id: BodyId, sleep_threshold: f32) -> void = c.b2Body_SetSleepThreshold
+
+
 pub foreign def body_get_sleep_threshold(body_id: BodyId) -> f32 = c.b2Body_GetSleepThreshold
+
+
 pub foreign def body_is_enabled(body_id: BodyId) -> bool = c.b2Body_IsEnabled
+
+
 pub foreign def body_disable(body_id: BodyId) -> void = c.b2Body_Disable
+
+
 pub foreign def body_enable(body_id: BodyId) -> void = c.b2Body_Enable
+
+
 pub foreign def body_set_motion_locks(body_id: BodyId, locks: MotionLocks) -> void = c.b2Body_SetMotionLocks
+
+
 pub foreign def body_get_motion_locks(body_id: BodyId) -> MotionLocks = c.b2Body_GetMotionLocks
+
+
 pub foreign def body_set_bullet(body_id: BodyId, flag: bool) -> void = c.b2Body_SetBullet
+
+
 pub foreign def body_is_bullet(body_id: BodyId) -> bool = c.b2Body_IsBullet
+
+
 pub foreign def body_enable_contact_events(body_id: BodyId, flag: bool) -> void = c.b2Body_EnableContactEvents
+
+
 pub foreign def body_enable_hit_events(body_id: BodyId, flag: bool) -> void = c.b2Body_EnableHitEvents
+
+
 pub foreign def body_get_world(body_id: BodyId) -> WorldId = c.b2Body_GetWorld
+
+
 pub foreign def body_get_shape_count(body_id: BodyId) -> i32 = c.b2Body_GetShapeCount
+
+
 pub foreign def body_get_shapes(body_id: BodyId, shape_array: ptr[ShapeId], capacity: i32) -> i32 = c.b2Body_GetShapes
+
+
 pub foreign def body_get_joint_count(body_id: BodyId) -> i32 = c.b2Body_GetJointCount
+
+
 pub foreign def body_get_joints(body_id: BodyId, joint_array: ptr[JointId], capacity: i32) -> i32 = c.b2Body_GetJoints
+
+
 pub foreign def body_get_contact_capacity(body_id: BodyId) -> i32 = c.b2Body_GetContactCapacity
+
+
 pub foreign def body_get_contact_data(body_id: BodyId, contact_data: ptr[ContactData], capacity: i32) -> i32 = c.b2Body_GetContactData
+
+
 pub foreign def body_compute_aabb(body_id: BodyId) -> AABB = c.b2Body_ComputeAABB
+
+
 pub foreign def create_circle_shape(body_id: BodyId, in shape_def: ShapeDef, in circle: Circle) -> ShapeId = c.b2CreateCircleShape
+
+
 pub foreign def create_segment_shape(body_id: BodyId, in shape_def: ShapeDef, in segment: Segment) -> ShapeId = c.b2CreateSegmentShape
+
+
 pub foreign def create_capsule_shape(body_id: BodyId, in shape_def: ShapeDef, in capsule: Capsule) -> ShapeId = c.b2CreateCapsuleShape
+
+
 pub foreign def create_polygon_shape(body_id: BodyId, in shape_def: ShapeDef, in polygon: Polygon) -> ShapeId = c.b2CreatePolygonShape
+
+
 pub foreign def destroy_shape(shape_id: ShapeId, update_body_mass: bool) -> void = c.b2DestroyShape
+
+
 pub foreign def shape_is_valid(id: ShapeId) -> bool = c.b2Shape_IsValid
+
+
 pub foreign def shape_get_type(shape_id: ShapeId) -> ShapeType = c.b2Shape_GetType
+
+
 pub foreign def shape_get_body(shape_id: ShapeId) -> BodyId = c.b2Shape_GetBody
+
+
 pub foreign def shape_get_world(shape_id: ShapeId) -> WorldId = c.b2Shape_GetWorld
+
+
 pub foreign def shape_is_sensor(shape_id: ShapeId) -> bool = c.b2Shape_IsSensor
+
+
 pub foreign def shape_set_user_data(shape_id: ShapeId, user_data: ptr[void]) -> void = c.b2Shape_SetUserData
+
+
 pub foreign def shape_get_user_data(shape_id: ShapeId) -> ptr[void] = c.b2Shape_GetUserData
+
+
 pub foreign def shape_set_density(shape_id: ShapeId, density: f32, update_body_mass: bool) -> void = c.b2Shape_SetDensity
+
+
 pub foreign def shape_get_density(shape_id: ShapeId) -> f32 = c.b2Shape_GetDensity
+
+
 pub foreign def shape_set_friction(shape_id: ShapeId, friction: f32) -> void = c.b2Shape_SetFriction
+
+
 pub foreign def shape_get_friction(shape_id: ShapeId) -> f32 = c.b2Shape_GetFriction
+
+
 pub foreign def shape_set_restitution(shape_id: ShapeId, restitution: f32) -> void = c.b2Shape_SetRestitution
+
+
 pub foreign def shape_get_restitution(shape_id: ShapeId) -> f32 = c.b2Shape_GetRestitution
+
+
 pub foreign def shape_set_user_material(shape_id: ShapeId, material: usize) -> void = c.b2Shape_SetUserMaterial
+
+
 pub foreign def shape_get_user_material(shape_id: ShapeId) -> u64 = c.b2Shape_GetUserMaterial
+
+
 pub foreign def shape_set_surface_material(shape_id: ShapeId, surface_material: const_ptr[SurfaceMaterial]) -> void = c.b2Shape_SetSurfaceMaterial
+
+
 pub foreign def shape_get_surface_material(shape_id: ShapeId) -> SurfaceMaterial = c.b2Shape_GetSurfaceMaterial
+
+
 pub foreign def shape_get_filter(shape_id: ShapeId) -> Filter = c.b2Shape_GetFilter
+
+
 pub foreign def shape_set_filter(shape_id: ShapeId, filter: Filter) -> void = c.b2Shape_SetFilter
+
+
 pub foreign def shape_enable_sensor_events(shape_id: ShapeId, flag: bool) -> void = c.b2Shape_EnableSensorEvents
+
+
 pub foreign def shape_are_sensor_events_enabled(shape_id: ShapeId) -> bool = c.b2Shape_AreSensorEventsEnabled
+
+
 pub foreign def shape_enable_contact_events(shape_id: ShapeId, flag: bool) -> void = c.b2Shape_EnableContactEvents
+
+
 pub foreign def shape_are_contact_events_enabled(shape_id: ShapeId) -> bool = c.b2Shape_AreContactEventsEnabled
+
+
 pub foreign def shape_enable_pre_solve_events(shape_id: ShapeId, flag: bool) -> void = c.b2Shape_EnablePreSolveEvents
+
+
 pub foreign def shape_are_pre_solve_events_enabled(shape_id: ShapeId) -> bool = c.b2Shape_ArePreSolveEventsEnabled
+
+
 pub foreign def shape_enable_hit_events(shape_id: ShapeId, flag: bool) -> void = c.b2Shape_EnableHitEvents
+
+
 pub foreign def shape_are_hit_events_enabled(shape_id: ShapeId) -> bool = c.b2Shape_AreHitEventsEnabled
+
+
 pub foreign def shape_test_point(shape_id: ShapeId, point: Vec2) -> bool = c.b2Shape_TestPoint
+
+
 pub foreign def shape_ray_cast(shape_id: ShapeId, input: const_ptr[RayCastInput]) -> CastOutput = c.b2Shape_RayCast
+
+
 pub foreign def shape_get_circle(shape_id: ShapeId) -> Circle = c.b2Shape_GetCircle
+
+
 pub foreign def shape_get_segment(shape_id: ShapeId) -> Segment = c.b2Shape_GetSegment
+
+
 pub foreign def shape_get_chain_segment(shape_id: ShapeId) -> ChainSegment = c.b2Shape_GetChainSegment
+
+
 pub foreign def shape_get_capsule(shape_id: ShapeId) -> Capsule = c.b2Shape_GetCapsule
+
+
 pub foreign def shape_get_polygon(shape_id: ShapeId) -> Polygon = c.b2Shape_GetPolygon
+
+
 pub foreign def shape_set_circle(shape_id: ShapeId, circle: const_ptr[Circle]) -> void = c.b2Shape_SetCircle
+
+
 pub foreign def shape_set_capsule(shape_id: ShapeId, capsule: const_ptr[Capsule]) -> void = c.b2Shape_SetCapsule
+
+
 pub foreign def shape_set_segment(shape_id: ShapeId, segment: const_ptr[Segment]) -> void = c.b2Shape_SetSegment
+
+
 pub foreign def shape_set_polygon(shape_id: ShapeId, polygon: const_ptr[Polygon]) -> void = c.b2Shape_SetPolygon
+
+
 pub foreign def shape_get_parent_chain(shape_id: ShapeId) -> ChainId = c.b2Shape_GetParentChain
+
+
 pub foreign def shape_get_contact_capacity(shape_id: ShapeId) -> i32 = c.b2Shape_GetContactCapacity
+
+
 pub foreign def shape_get_contact_data(shape_id: ShapeId, contact_data: ptr[ContactData], capacity: i32) -> i32 = c.b2Shape_GetContactData
+
+
 pub foreign def shape_get_sensor_capacity(shape_id: ShapeId) -> i32 = c.b2Shape_GetSensorCapacity
+
+
 pub foreign def shape_get_sensor_data(shape_id: ShapeId, visitor_ids: ptr[ShapeId], capacity: i32) -> i32 = c.b2Shape_GetSensorData
+
+
 pub foreign def shape_get_aabb(shape_id: ShapeId) -> AABB = c.b2Shape_GetAABB
+
+
 pub foreign def shape_compute_mass_data(shape_id: ShapeId) -> MassData = c.b2Shape_ComputeMassData
+
+
 pub foreign def shape_get_closest_point(shape_id: ShapeId, target: Vec2) -> Vec2 = c.b2Shape_GetClosestPoint
+
+
 pub foreign def shape_apply_wind(shape_id: ShapeId, wind: Vec2, drag: f32, lift: f32, wake: bool) -> void = c.b2Shape_ApplyWind
+
+
 pub foreign def create_chain(body_id: BodyId, in chain_def: ChainDef) -> ChainId = c.b2CreateChain
+
+
 pub foreign def destroy_chain(chain_id: ChainId) -> void = c.b2DestroyChain
+
+
 pub foreign def chain_get_world(chain_id: ChainId) -> WorldId = c.b2Chain_GetWorld
+
+
 pub foreign def chain_get_segment_count(chain_id: ChainId) -> i32 = c.b2Chain_GetSegmentCount
+
+
 pub foreign def chain_get_segments(chain_id: ChainId, segment_array: ptr[ShapeId], capacity: i32) -> i32 = c.b2Chain_GetSegments
+
+
 pub foreign def chain_get_surface_material_count(chain_id: ChainId) -> i32 = c.b2Chain_GetSurfaceMaterialCount
+
+
 pub foreign def chain_set_surface_material(chain_id: ChainId, material: const_ptr[SurfaceMaterial], material_index: i32) -> void = c.b2Chain_SetSurfaceMaterial
+
+
 pub foreign def chain_get_surface_material(chain_id: ChainId, material_index: i32) -> SurfaceMaterial = c.b2Chain_GetSurfaceMaterial
+
+
 pub foreign def chain_is_valid(id: ChainId) -> bool = c.b2Chain_IsValid
+
+
 pub foreign def destroy_joint(joint_id: JointId, wake_attached: bool) -> void = c.b2DestroyJoint
+
+
 pub foreign def joint_is_valid(id: JointId) -> bool = c.b2Joint_IsValid
+
+
 pub foreign def joint_get_type(joint_id: JointId) -> JointType = c.b2Joint_GetType
+
+
 pub foreign def joint_get_body_a(joint_id: JointId) -> BodyId = c.b2Joint_GetBodyA
+
+
 pub foreign def joint_get_body_b(joint_id: JointId) -> BodyId = c.b2Joint_GetBodyB
+
+
 pub foreign def joint_get_world(joint_id: JointId) -> WorldId = c.b2Joint_GetWorld
+
+
 pub foreign def joint_set_local_frame_a(joint_id: JointId, local_frame: Transform) -> void = c.b2Joint_SetLocalFrameA
+
+
 pub foreign def joint_get_local_frame_a(joint_id: JointId) -> Transform = c.b2Joint_GetLocalFrameA
+
+
 pub foreign def joint_set_local_frame_b(joint_id: JointId, local_frame: Transform) -> void = c.b2Joint_SetLocalFrameB
+
+
 pub foreign def joint_get_local_frame_b(joint_id: JointId) -> Transform = c.b2Joint_GetLocalFrameB
+
+
 pub foreign def joint_set_collide_connected(joint_id: JointId, should_collide: bool) -> void = c.b2Joint_SetCollideConnected
+
+
 pub foreign def joint_get_collide_connected(joint_id: JointId) -> bool = c.b2Joint_GetCollideConnected
+
+
 pub foreign def joint_set_user_data(joint_id: JointId, user_data: ptr[void]) -> void = c.b2Joint_SetUserData
+
+
 pub foreign def joint_get_user_data(joint_id: JointId) -> ptr[void] = c.b2Joint_GetUserData
+
+
 pub foreign def joint_wake_bodies(joint_id: JointId) -> void = c.b2Joint_WakeBodies
+
+
 pub foreign def joint_get_constraint_force(joint_id: JointId) -> Vec2 = c.b2Joint_GetConstraintForce
+
+
 pub foreign def joint_get_constraint_torque(joint_id: JointId) -> f32 = c.b2Joint_GetConstraintTorque
+
+
 pub foreign def joint_get_linear_separation(joint_id: JointId) -> f32 = c.b2Joint_GetLinearSeparation
+
+
 pub foreign def joint_get_angular_separation(joint_id: JointId) -> f32 = c.b2Joint_GetAngularSeparation
+
+
 pub foreign def joint_set_constraint_tuning(joint_id: JointId, hertz: f32, damping_ratio: f32) -> void = c.b2Joint_SetConstraintTuning
+
+
 pub foreign def joint_get_constraint_tuning(joint_id: JointId, hertz: ptr[f32], damping_ratio: ptr[f32]) -> void = c.b2Joint_GetConstraintTuning
+
+
 pub foreign def joint_set_force_threshold(joint_id: JointId, threshold: f32) -> void = c.b2Joint_SetForceThreshold
+
+
 pub foreign def joint_get_force_threshold(joint_id: JointId) -> f32 = c.b2Joint_GetForceThreshold
+
+
 pub foreign def joint_set_torque_threshold(joint_id: JointId, threshold: f32) -> void = c.b2Joint_SetTorqueThreshold
+
+
 pub foreign def joint_get_torque_threshold(joint_id: JointId) -> f32 = c.b2Joint_GetTorqueThreshold
+
+
 pub foreign def create_distance_joint(world_id: WorldId, in joint_def: DistanceJointDef) -> JointId = c.b2CreateDistanceJoint
+
+
 pub foreign def distance_joint_set_length(joint_id: JointId, length: f32) -> void = c.b2DistanceJoint_SetLength
+
+
 pub foreign def distance_joint_get_length(joint_id: JointId) -> f32 = c.b2DistanceJoint_GetLength
+
+
 pub foreign def distance_joint_enable_spring(joint_id: JointId, enable_spring: bool) -> void = c.b2DistanceJoint_EnableSpring
+
+
 pub foreign def distance_joint_is_spring_enabled(joint_id: JointId) -> bool = c.b2DistanceJoint_IsSpringEnabled
+
+
 pub foreign def distance_joint_set_spring_force_range(joint_id: JointId, lower_force: f32, upper_force: f32) -> void = c.b2DistanceJoint_SetSpringForceRange
+
+
 pub foreign def distance_joint_get_spring_force_range(joint_id: JointId, lower_force: ptr[f32], upper_force: ptr[f32]) -> void = c.b2DistanceJoint_GetSpringForceRange
+
+
 pub foreign def distance_joint_set_spring_hertz(joint_id: JointId, hertz: f32) -> void = c.b2DistanceJoint_SetSpringHertz
+
+
 pub foreign def distance_joint_set_spring_damping_ratio(joint_id: JointId, damping_ratio: f32) -> void = c.b2DistanceJoint_SetSpringDampingRatio
+
+
 pub foreign def distance_joint_get_spring_hertz(joint_id: JointId) -> f32 = c.b2DistanceJoint_GetSpringHertz
+
+
 pub foreign def distance_joint_get_spring_damping_ratio(joint_id: JointId) -> f32 = c.b2DistanceJoint_GetSpringDampingRatio
+
+
 pub foreign def distance_joint_enable_limit(joint_id: JointId, enable_limit: bool) -> void = c.b2DistanceJoint_EnableLimit
+
+
 pub foreign def distance_joint_is_limit_enabled(joint_id: JointId) -> bool = c.b2DistanceJoint_IsLimitEnabled
+
+
 pub foreign def distance_joint_set_length_range(joint_id: JointId, min_length: f32, max_length: f32) -> void = c.b2DistanceJoint_SetLengthRange
+
+
 pub foreign def distance_joint_get_min_length(joint_id: JointId) -> f32 = c.b2DistanceJoint_GetMinLength
+
+
 pub foreign def distance_joint_get_max_length(joint_id: JointId) -> f32 = c.b2DistanceJoint_GetMaxLength
+
+
 pub foreign def distance_joint_get_current_length(joint_id: JointId) -> f32 = c.b2DistanceJoint_GetCurrentLength
+
+
 pub foreign def distance_joint_enable_motor(joint_id: JointId, enable_motor: bool) -> void = c.b2DistanceJoint_EnableMotor
+
+
 pub foreign def distance_joint_is_motor_enabled(joint_id: JointId) -> bool = c.b2DistanceJoint_IsMotorEnabled
+
+
 pub foreign def distance_joint_set_motor_speed(joint_id: JointId, motor_speed: f32) -> void = c.b2DistanceJoint_SetMotorSpeed
+
+
 pub foreign def distance_joint_get_motor_speed(joint_id: JointId) -> f32 = c.b2DistanceJoint_GetMotorSpeed
+
+
 pub foreign def distance_joint_set_max_motor_force(joint_id: JointId, force: f32) -> void = c.b2DistanceJoint_SetMaxMotorForce
+
+
 pub foreign def distance_joint_get_max_motor_force(joint_id: JointId) -> f32 = c.b2DistanceJoint_GetMaxMotorForce
+
+
 pub foreign def distance_joint_get_motor_force(joint_id: JointId) -> f32 = c.b2DistanceJoint_GetMotorForce
+
+
 pub foreign def create_motor_joint(world_id: WorldId, in joint_def: MotorJointDef) -> JointId = c.b2CreateMotorJoint
+
+
 pub foreign def motor_joint_set_linear_velocity(joint_id: JointId, velocity: Vec2) -> void = c.b2MotorJoint_SetLinearVelocity
+
+
 pub foreign def motor_joint_get_linear_velocity(joint_id: JointId) -> Vec2 = c.b2MotorJoint_GetLinearVelocity
+
+
 pub foreign def motor_joint_set_angular_velocity(joint_id: JointId, velocity: f32) -> void = c.b2MotorJoint_SetAngularVelocity
+
+
 pub foreign def motor_joint_get_angular_velocity(joint_id: JointId) -> f32 = c.b2MotorJoint_GetAngularVelocity
+
+
 pub foreign def motor_joint_set_max_velocity_force(joint_id: JointId, max_force: f32) -> void = c.b2MotorJoint_SetMaxVelocityForce
+
+
 pub foreign def motor_joint_get_max_velocity_force(joint_id: JointId) -> f32 = c.b2MotorJoint_GetMaxVelocityForce
+
+
 pub foreign def motor_joint_set_max_velocity_torque(joint_id: JointId, max_torque: f32) -> void = c.b2MotorJoint_SetMaxVelocityTorque
+
+
 pub foreign def motor_joint_get_max_velocity_torque(joint_id: JointId) -> f32 = c.b2MotorJoint_GetMaxVelocityTorque
+
+
 pub foreign def motor_joint_set_linear_hertz(joint_id: JointId, hertz: f32) -> void = c.b2MotorJoint_SetLinearHertz
+
+
 pub foreign def motor_joint_get_linear_hertz(joint_id: JointId) -> f32 = c.b2MotorJoint_GetLinearHertz
+
+
 pub foreign def motor_joint_set_linear_damping_ratio(joint_id: JointId, damping: f32) -> void = c.b2MotorJoint_SetLinearDampingRatio
+
+
 pub foreign def motor_joint_get_linear_damping_ratio(joint_id: JointId) -> f32 = c.b2MotorJoint_GetLinearDampingRatio
+
+
 pub foreign def motor_joint_set_angular_hertz(joint_id: JointId, hertz: f32) -> void = c.b2MotorJoint_SetAngularHertz
+
+
 pub foreign def motor_joint_get_angular_hertz(joint_id: JointId) -> f32 = c.b2MotorJoint_GetAngularHertz
+
+
 pub foreign def motor_joint_set_angular_damping_ratio(joint_id: JointId, damping: f32) -> void = c.b2MotorJoint_SetAngularDampingRatio
+
+
 pub foreign def motor_joint_get_angular_damping_ratio(joint_id: JointId) -> f32 = c.b2MotorJoint_GetAngularDampingRatio
+
+
 pub foreign def motor_joint_set_max_spring_force(joint_id: JointId, max_force: f32) -> void = c.b2MotorJoint_SetMaxSpringForce
+
+
 pub foreign def motor_joint_get_max_spring_force(joint_id: JointId) -> f32 = c.b2MotorJoint_GetMaxSpringForce
+
+
 pub foreign def motor_joint_set_max_spring_torque(joint_id: JointId, max_torque: f32) -> void = c.b2MotorJoint_SetMaxSpringTorque
+
+
 pub foreign def motor_joint_get_max_spring_torque(joint_id: JointId) -> f32 = c.b2MotorJoint_GetMaxSpringTorque
+
+
 pub foreign def create_filter_joint(world_id: WorldId, in joint_def: FilterJointDef) -> JointId = c.b2CreateFilterJoint
+
+
 pub foreign def create_prismatic_joint(world_id: WorldId, in joint_def: PrismaticJointDef) -> JointId = c.b2CreatePrismaticJoint
+
+
 pub foreign def prismatic_joint_enable_spring(joint_id: JointId, enable_spring: bool) -> void = c.b2PrismaticJoint_EnableSpring
+
+
 pub foreign def prismatic_joint_is_spring_enabled(joint_id: JointId) -> bool = c.b2PrismaticJoint_IsSpringEnabled
+
+
 pub foreign def prismatic_joint_set_spring_hertz(joint_id: JointId, hertz: f32) -> void = c.b2PrismaticJoint_SetSpringHertz
+
+
 pub foreign def prismatic_joint_get_spring_hertz(joint_id: JointId) -> f32 = c.b2PrismaticJoint_GetSpringHertz
+
+
 pub foreign def prismatic_joint_set_spring_damping_ratio(joint_id: JointId, damping_ratio: f32) -> void = c.b2PrismaticJoint_SetSpringDampingRatio
+
+
 pub foreign def prismatic_joint_get_spring_damping_ratio(joint_id: JointId) -> f32 = c.b2PrismaticJoint_GetSpringDampingRatio
+
+
 pub foreign def prismatic_joint_set_target_translation(joint_id: JointId, translation: f32) -> void = c.b2PrismaticJoint_SetTargetTranslation
+
+
 pub foreign def prismatic_joint_get_target_translation(joint_id: JointId) -> f32 = c.b2PrismaticJoint_GetTargetTranslation
+
+
 pub foreign def prismatic_joint_enable_limit(joint_id: JointId, enable_limit: bool) -> void = c.b2PrismaticJoint_EnableLimit
+
+
 pub foreign def prismatic_joint_is_limit_enabled(joint_id: JointId) -> bool = c.b2PrismaticJoint_IsLimitEnabled
+
+
 pub foreign def prismatic_joint_get_lower_limit(joint_id: JointId) -> f32 = c.b2PrismaticJoint_GetLowerLimit
+
+
 pub foreign def prismatic_joint_get_upper_limit(joint_id: JointId) -> f32 = c.b2PrismaticJoint_GetUpperLimit
+
+
 pub foreign def prismatic_joint_set_limits(joint_id: JointId, lower: f32, upper: f32) -> void = c.b2PrismaticJoint_SetLimits
+
+
 pub foreign def prismatic_joint_enable_motor(joint_id: JointId, enable_motor: bool) -> void = c.b2PrismaticJoint_EnableMotor
+
+
 pub foreign def prismatic_joint_is_motor_enabled(joint_id: JointId) -> bool = c.b2PrismaticJoint_IsMotorEnabled
+
+
 pub foreign def prismatic_joint_set_motor_speed(joint_id: JointId, motor_speed: f32) -> void = c.b2PrismaticJoint_SetMotorSpeed
+
+
 pub foreign def prismatic_joint_get_motor_speed(joint_id: JointId) -> f32 = c.b2PrismaticJoint_GetMotorSpeed
+
+
 pub foreign def prismatic_joint_set_max_motor_force(joint_id: JointId, force: f32) -> void = c.b2PrismaticJoint_SetMaxMotorForce
+
+
 pub foreign def prismatic_joint_get_max_motor_force(joint_id: JointId) -> f32 = c.b2PrismaticJoint_GetMaxMotorForce
+
+
 pub foreign def prismatic_joint_get_motor_force(joint_id: JointId) -> f32 = c.b2PrismaticJoint_GetMotorForce
+
+
 pub foreign def prismatic_joint_get_translation(joint_id: JointId) -> f32 = c.b2PrismaticJoint_GetTranslation
+
+
 pub foreign def prismatic_joint_get_speed(joint_id: JointId) -> f32 = c.b2PrismaticJoint_GetSpeed
+
+
 pub foreign def create_revolute_joint(world_id: WorldId, in joint_def: RevoluteJointDef) -> JointId = c.b2CreateRevoluteJoint
+
+
 pub foreign def revolute_joint_enable_spring(joint_id: JointId, enable_spring: bool) -> void = c.b2RevoluteJoint_EnableSpring
+
+
 pub foreign def revolute_joint_is_spring_enabled(joint_id: JointId) -> bool = c.b2RevoluteJoint_IsSpringEnabled
+
+
 pub foreign def revolute_joint_set_spring_hertz(joint_id: JointId, hertz: f32) -> void = c.b2RevoluteJoint_SetSpringHertz
+
+
 pub foreign def revolute_joint_get_spring_hertz(joint_id: JointId) -> f32 = c.b2RevoluteJoint_GetSpringHertz
+
+
 pub foreign def revolute_joint_set_spring_damping_ratio(joint_id: JointId, damping_ratio: f32) -> void = c.b2RevoluteJoint_SetSpringDampingRatio
+
+
 pub foreign def revolute_joint_get_spring_damping_ratio(joint_id: JointId) -> f32 = c.b2RevoluteJoint_GetSpringDampingRatio
+
+
 pub foreign def revolute_joint_set_target_angle(joint_id: JointId, angle: f32) -> void = c.b2RevoluteJoint_SetTargetAngle
+
+
 pub foreign def revolute_joint_get_target_angle(joint_id: JointId) -> f32 = c.b2RevoluteJoint_GetTargetAngle
+
+
 pub foreign def revolute_joint_get_angle(joint_id: JointId) -> f32 = c.b2RevoluteJoint_GetAngle
+
+
 pub foreign def revolute_joint_enable_limit(joint_id: JointId, enable_limit: bool) -> void = c.b2RevoluteJoint_EnableLimit
+
+
 pub foreign def revolute_joint_is_limit_enabled(joint_id: JointId) -> bool = c.b2RevoluteJoint_IsLimitEnabled
+
+
 pub foreign def revolute_joint_get_lower_limit(joint_id: JointId) -> f32 = c.b2RevoluteJoint_GetLowerLimit
+
+
 pub foreign def revolute_joint_get_upper_limit(joint_id: JointId) -> f32 = c.b2RevoluteJoint_GetUpperLimit
+
+
 pub foreign def revolute_joint_set_limits(joint_id: JointId, lower: f32, upper: f32) -> void = c.b2RevoluteJoint_SetLimits
+
+
 pub foreign def revolute_joint_enable_motor(joint_id: JointId, enable_motor: bool) -> void = c.b2RevoluteJoint_EnableMotor
+
+
 pub foreign def revolute_joint_is_motor_enabled(joint_id: JointId) -> bool = c.b2RevoluteJoint_IsMotorEnabled
+
+
 pub foreign def revolute_joint_set_motor_speed(joint_id: JointId, motor_speed: f32) -> void = c.b2RevoluteJoint_SetMotorSpeed
+
+
 pub foreign def revolute_joint_get_motor_speed(joint_id: JointId) -> f32 = c.b2RevoluteJoint_GetMotorSpeed
+
+
 pub foreign def revolute_joint_get_motor_torque(joint_id: JointId) -> f32 = c.b2RevoluteJoint_GetMotorTorque
+
+
 pub foreign def revolute_joint_set_max_motor_torque(joint_id: JointId, torque: f32) -> void = c.b2RevoluteJoint_SetMaxMotorTorque
+
+
 pub foreign def revolute_joint_get_max_motor_torque(joint_id: JointId) -> f32 = c.b2RevoluteJoint_GetMaxMotorTorque
+
+
 pub foreign def create_weld_joint(world_id: WorldId, in joint_def: WeldJointDef) -> JointId = c.b2CreateWeldJoint
+
+
 pub foreign def weld_joint_set_linear_hertz(joint_id: JointId, hertz: f32) -> void = c.b2WeldJoint_SetLinearHertz
+
+
 pub foreign def weld_joint_get_linear_hertz(joint_id: JointId) -> f32 = c.b2WeldJoint_GetLinearHertz
+
+
 pub foreign def weld_joint_set_linear_damping_ratio(joint_id: JointId, damping_ratio: f32) -> void = c.b2WeldJoint_SetLinearDampingRatio
+
+
 pub foreign def weld_joint_get_linear_damping_ratio(joint_id: JointId) -> f32 = c.b2WeldJoint_GetLinearDampingRatio
+
+
 pub foreign def weld_joint_set_angular_hertz(joint_id: JointId, hertz: f32) -> void = c.b2WeldJoint_SetAngularHertz
+
+
 pub foreign def weld_joint_get_angular_hertz(joint_id: JointId) -> f32 = c.b2WeldJoint_GetAngularHertz
+
+
 pub foreign def weld_joint_set_angular_damping_ratio(joint_id: JointId, damping_ratio: f32) -> void = c.b2WeldJoint_SetAngularDampingRatio
+
+
 pub foreign def weld_joint_get_angular_damping_ratio(joint_id: JointId) -> f32 = c.b2WeldJoint_GetAngularDampingRatio
+
+
 pub foreign def create_wheel_joint(world_id: WorldId, in joint_def: WheelJointDef) -> JointId = c.b2CreateWheelJoint
+
+
 pub foreign def wheel_joint_enable_spring(joint_id: JointId, enable_spring: bool) -> void = c.b2WheelJoint_EnableSpring
+
+
 pub foreign def wheel_joint_is_spring_enabled(joint_id: JointId) -> bool = c.b2WheelJoint_IsSpringEnabled
+
+
 pub foreign def wheel_joint_set_spring_hertz(joint_id: JointId, hertz: f32) -> void = c.b2WheelJoint_SetSpringHertz
+
+
 pub foreign def wheel_joint_get_spring_hertz(joint_id: JointId) -> f32 = c.b2WheelJoint_GetSpringHertz
+
+
 pub foreign def wheel_joint_set_spring_damping_ratio(joint_id: JointId, damping_ratio: f32) -> void = c.b2WheelJoint_SetSpringDampingRatio
+
+
 pub foreign def wheel_joint_get_spring_damping_ratio(joint_id: JointId) -> f32 = c.b2WheelJoint_GetSpringDampingRatio
+
+
 pub foreign def wheel_joint_enable_limit(joint_id: JointId, enable_limit: bool) -> void = c.b2WheelJoint_EnableLimit
+
+
 pub foreign def wheel_joint_is_limit_enabled(joint_id: JointId) -> bool = c.b2WheelJoint_IsLimitEnabled
+
+
 pub foreign def wheel_joint_get_lower_limit(joint_id: JointId) -> f32 = c.b2WheelJoint_GetLowerLimit
+
+
 pub foreign def wheel_joint_get_upper_limit(joint_id: JointId) -> f32 = c.b2WheelJoint_GetUpperLimit
+
+
 pub foreign def wheel_joint_set_limits(joint_id: JointId, lower: f32, upper: f32) -> void = c.b2WheelJoint_SetLimits
+
+
 pub foreign def wheel_joint_enable_motor(joint_id: JointId, enable_motor: bool) -> void = c.b2WheelJoint_EnableMotor
+
+
 pub foreign def wheel_joint_is_motor_enabled(joint_id: JointId) -> bool = c.b2WheelJoint_IsMotorEnabled
+
+
 pub foreign def wheel_joint_set_motor_speed(joint_id: JointId, motor_speed: f32) -> void = c.b2WheelJoint_SetMotorSpeed
+
+
 pub foreign def wheel_joint_get_motor_speed(joint_id: JointId) -> f32 = c.b2WheelJoint_GetMotorSpeed
+
+
 pub foreign def wheel_joint_set_max_motor_torque(joint_id: JointId, torque: f32) -> void = c.b2WheelJoint_SetMaxMotorTorque
+
+
 pub foreign def wheel_joint_get_max_motor_torque(joint_id: JointId) -> f32 = c.b2WheelJoint_GetMaxMotorTorque
+
+
 pub foreign def wheel_joint_get_motor_torque(joint_id: JointId) -> f32 = c.b2WheelJoint_GetMotorTorque
+
+
 pub foreign def contact_is_valid(id: ContactId) -> bool = c.b2Contact_IsValid
+
+
 pub foreign def contact_get_data(contact_id: ContactId) -> ContactData = c.b2Contact_GetData

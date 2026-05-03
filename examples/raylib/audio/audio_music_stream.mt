@@ -12,12 +12,14 @@ const pause_text: cstr = c"PRESS P TO PAUSE/RESUME MUSIC"
 const volume_text: cstr = c"UP-DOWN for VOLUME CONTROL"
 const window_title: cstr = c"raylib [audio] example - music stream"
 
+
 def clamp(value: f32, min_value: f32, max_value: f32) -> f32:
     if value < min_value:
         return min_value
     if value > max_value:
         return max_value
     return value
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

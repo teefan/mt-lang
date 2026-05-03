@@ -9,6 +9,7 @@ pub struct Arena:
     capacity: usize
     offset: usize
 
+
 pub def create(capacity_bytes: usize) -> Arena:
     let memory = heap.alloc[byte](capacity_bytes)
     if memory == null and capacity_bytes != 0:
@@ -21,18 +22,24 @@ pub def create(capacity_bytes: usize) -> Arena:
     )
 
 methods Arena:
+
+
     pub def mark() -> Mark:
         return this.offset
+
 
     pub edit def reset(mark: Mark) -> void:
         this.offset = mark
         return
 
+
     pub def remaining_bytes() -> usize:
         return this.capacity - this.offset
 
+
     pub edit def alloc_bytes(size_bytes: usize) -> ptr[byte]?:
         return this.alloc_bytes_aligned(size_bytes, 1)
+
 
     pub edit def alloc_bytes_aligned(size_bytes: usize, alignment: usize) -> ptr[byte]?:
         let backing = this.memory
@@ -58,6 +65,7 @@ methods Arena:
             this.offset = aligned_offset + size_bytes
             return result
 
+
     pub edit def try_to_cstr(text: str) -> cstr?:
         let memory = this.alloc_bytes(text.len + 1)
         if memory == null:
@@ -71,6 +79,7 @@ methods Arena:
                 index += 1
             read(buffer + text.len) = zero[char]()
             return cstr<-buffer
+
 
     pub edit def to_cstr(text: str) -> cstr:
         let memory = this.alloc_bytes(text.len + 1)
@@ -86,12 +95,14 @@ methods Arena:
             read(buffer + text.len) = zero[char]()
             return cstr<-buffer
 
+
     pub edit def release() -> void:
         heap.release(this.memory)
         this.memory = null
         this.offset = 0
         this.capacity = 0
         return
+
 
 pub def alloc[T](space: ref[Arena], count: usize) -> ptr[T]?:
     let element_size = usize<-sizeof(T)

@@ -27,6 +27,7 @@ const byte_right_bracket: u8 = 93
 const byte_zero: u8 = 48
 const byte_nine: u8 = 57
 
+
 def append_rule(output: ref[string.String], step: u8) -> void:
     if step == byte_w:
         output.append("YF++ZF4-XF[-YF4-WF]++")
@@ -39,6 +40,7 @@ def append_rule(output: ref[string.String], step: u8) -> void:
     elif step != byte_f:
         output.push_byte(step)
 
+
 def build_production_step(production: string.String) -> string.String:
     let production_view = production.as_str()
     var next = string.String.with_capacity(production_view.len * 4)
@@ -48,6 +50,7 @@ def build_production_step(production: string.String) -> string.String:
         index += 1
     return next
 
+
 def rebuild_production(generations: i32) -> string.String:
     var production = string.String.from_str("[X]++[X]++[X]++[X]++[X]")
     for generation in range(0, generations):
@@ -56,12 +59,14 @@ def rebuild_production(generations: i32) -> string.String:
         production = next
     return production
 
+
 def push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32], state: TurtleState) -> void:
     if read(top) < turtle_stack_max_size - 1:
         var items = read(stack)
         read(top) += 1
         items[read(top)] = state
         read(stack) = items
+
 
 def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32]) -> TurtleState:
     if read(top) >= 0:
@@ -70,6 +75,7 @@ def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32]) -> Turtl
         read(top) -= 1
         return state
     return zero[TurtleState]()
+
 
 def draw_penrose_lsystem(production: string.String, draw_length: f32, steps: ref[i32], turtle_stack: ref[array[TurtleState, 50]], turtle_top: ref[i32]) -> void:
     let production_view = production.as_str()
@@ -120,8 +126,10 @@ def draw_penrose_lsystem(production: string.String, draw_length: f32, steps: ref
 
     read(turtle_top) = -1
 
+
 def draw_length_for(generations: i32) -> f32:
     return draw_length_base * f32<-generations / f32<-max_generations
+
 
 def main() -> i32:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

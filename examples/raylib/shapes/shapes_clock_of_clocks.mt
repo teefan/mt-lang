@@ -17,12 +17,14 @@ const mode_format: cstr = c"%d-h mode, space to change"
 const time_format_24: cstr = c"%H%M%S"
 const time_format_12: cstr = c"%I%M%S"
 
+
 def blank_digit_angles() -> array[rl.Vector2, 24]:
     let zz = rl.Vector2(x = 135.0, y = 135.0)
     var result = zero[array[rl.Vector2, 24]]()
     for index in range(0, cells_per_digit):
         result[index] = zz
     return result
+
 
 def digit_angles_for(digit: i32) -> array[rl.Vector2, 24]:
     let tl = rl.Vector2(x = 0.0, y = 90.0)
@@ -126,8 +128,10 @@ def digit_angles_for(digit: i32) -> array[rl.Vector2, 24]:
 
     return blank_digit_angles()
 
+
 def digit_value(time_buffer: array[char, 7], index: i32) -> i32:
     return i32<-time_buffer[index] - 48
+
 
 def load_time_digits(time_buffer: ref[array[char, 7]], hour_mode: i32) -> void:
     var now: ctime.time_t = 0
@@ -138,8 +142,10 @@ def load_time_digits(time_buffer: ref[array[char, 7]], hour_mode: i32) -> void:
     unsafe:
         ctime.strftime(ptr_of(ref_of(read(time_buffer)[0])), 7, format, tm_info)
 
+
 def angle_slot(digit: i32, cell: i32) -> i32:
     return digit * cells_per_digit + cell
+
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

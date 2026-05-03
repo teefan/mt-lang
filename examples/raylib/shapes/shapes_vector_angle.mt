@@ -16,8 +16,10 @@ const v1_label: cstr = c"v1"
 const v2_label: cstr = c"v2"
 const angle_format: cstr = c"ANGLE: %2.2f"
 
+
 def line_angle(start: rl.Vector2, finish: rl.Vector2) -> f32:
     return rm.atan2(finish.y - start.y, finish.x - start.x)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

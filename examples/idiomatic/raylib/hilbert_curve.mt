@@ -12,6 +12,7 @@ const max_order: i32 = 8
 const max_stroke_count: i32 = 65536
 const panel_width: f32 = 350.0
 
+
 def compute_hilbert_step(order: i32, index_start: i32) -> rl.Vector2:
     let hilbert_points = array[rl.Vector2, 4](
         rl.Vector2(x = 0.0, y = 0.0),
@@ -47,6 +48,7 @@ def compute_hilbert_step(order: i32, index_start: i32) -> rl.Vector2:
 
     return vect
 
+
 def rebuild_path(hilbert_path: span[rl.Vector2], order: i32, size: f32) -> i32:
     let path_count = 1 << order
     let stroke_count = path_count * path_count
@@ -58,6 +60,7 @@ def rebuild_path(hilbert_path: span[rl.Vector2], order: i32, size: f32) -> i32:
         hilbert_path[index].y = hilbert_path[index].y * path_len + path_len / 2.0
 
     return stroke_count
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Hilbert Curve")

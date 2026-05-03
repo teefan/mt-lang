@@ -11,6 +11,7 @@ const hidden_text: cstr = c"CURSOR HIDDEN"
 const visible_text: cstr = c"CURSOR VISIBLE"
 const ball_radius: f32 = 40.0
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

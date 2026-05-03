@@ -14,6 +14,7 @@ const render_texture_text: cstr = c"TEXT DRAWN IN RENDER TEXTURE"
 const credit_text: cstr = c"(c) Barracks 3D model by Alberto Cano"
 const window_title: cstr = c"raylib [shaders] example - custom uniform"
 
+
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
 

@@ -11,17 +11,21 @@ const animation_path: cstr = c"../resources/models/iqm/guyanim.iqm"
 const current_animation_format: cstr = c"Current animation: %s"
 const credit_text: cstr = c"(c) Guy IQM 3D model by @culacant"
 
+
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
+
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
         return read(anims + index)
 
+
 def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of(ref_of((anims + index).name[0])))
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

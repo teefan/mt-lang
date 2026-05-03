@@ -8,21 +8,26 @@ struct Segment:
     start: usize
     len: usize
 
+
 def byte_at(path: str, index: usize) -> u8:
     unsafe:
         return u8<-read(path.data + index)
+
 
 def segment_text(path: str, segment: Segment) -> str:
     unsafe:
         return str(data = path.data + segment.start, len = segment.len)
 
+
 def segment_equals(path: str, segment: Segment, value: str) -> bool:
     return text.equal(segment_text(path, segment), value)
+
 
 pub def is_absolute(path: str) -> bool:
     if path.len == 0:
         return false
     return byte_at(path, 0) == u8<-47
+
 
 pub def join(left: str, right: str) -> string.String:
     if left.len == 0:
@@ -45,6 +50,7 @@ pub def join(left: str, right: str) -> string.String:
     result.append(right)
     return result
 
+
 pub def module_relative_path(module_name: str) -> string.String:
     var result = string.String.with_capacity(module_name.len + 3)
     var index: usize = 0
@@ -59,6 +65,7 @@ pub def module_relative_path(module_name: str) -> string.String:
 
     result.append(".mt")
     return result
+
 
 pub def normalize(path: str) -> string.String:
     let absolute = is_absolute(path)
@@ -109,6 +116,7 @@ pub def normalize(path: str) -> string.String:
     vec.release[Segment](ref_of(segments))
     return result
 
+
 pub def expand(path: str, cwd: str) -> string.String:
     if is_absolute(path):
         return normalize(path)
@@ -117,6 +125,7 @@ pub def expand(path: str, cwd: str) -> string.String:
     let result = normalize(joined.as_str())
     joined.release()
     return result
+
 
 pub def basename(path: str) -> string.String:
     if path.len == 0:
@@ -135,6 +144,7 @@ pub def basename(path: str) -> string.String:
 
     unsafe:
         return string.String.from_str(str(data = path.data + start, len = stop - start))
+
 
 pub def dirname(path: str) -> string.String:
     if path.len == 0:

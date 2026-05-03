@@ -6,10 +6,12 @@ import std.raylib.math as math
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 
+
 def check_collision_point_ellipse(point: rl.Vector2, center: rl.Vector2, radius_x: f32, radius_y: f32) -> bool:
     let dx = (point.x - center.x) / radius_x
     let dy = (point.y - center.y) / radius_y
     return dx * dx + dy * dy <= 1.0
+
 
 def check_collision_ellipses(center_a: rl.Vector2, radius_x_a: f32, radius_y_a: f32, center_b: rl.Vector2, radius_x_b: f32, radius_y_b: f32) -> bool:
     let dx = center_b.x - center_a.x
@@ -24,6 +26,7 @@ def check_collision_ellipses(center_a: rl.Vector2, radius_x_a: f32, radius_y_a: 
     let radius_a = (radius_x_a * radius_y_a) / math.sqrt((radius_y_a * cos_theta) * (radius_y_a * cos_theta) + (radius_x_a * sin_theta) * (radius_x_a * sin_theta))
     let radius_b = (radius_x_b * radius_y_b) / math.sqrt((radius_y_b * cos_theta) * (radius_y_b * cos_theta) + (radius_x_b * sin_theta) * (radius_x_b * sin_theta))
     return distance <= radius_a + radius_b
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Ellipse Collision")

@@ -8,6 +8,7 @@ const screen_height: i32 = 400
 const line_length: f32 = 150.0
 const angle_count: i32 = 4
 
+
 def line_color(index: i32) -> rl.Color:
     if index == 0:
         return rl.GREEN
@@ -18,6 +19,7 @@ def line_color(index: i32) -> rl.Color:
     if index == 3:
         return rl.MAGENTA
     return rl.WHITE
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Angle Rotation")

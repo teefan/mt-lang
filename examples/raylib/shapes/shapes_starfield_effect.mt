@@ -12,6 +12,7 @@ const mode_format: cstr = c"[SPACE] Current draw mode: %s"
 const lines_text: cstr = c"Lines"
 const circles_text: cstr = c"Circles"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

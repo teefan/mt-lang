@@ -6,6 +6,7 @@ import std.raylib.math as math
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 
+
 def clamp_to_circle(point: rl.Vector2, center: rl.Vector2, radius: f32) -> rl.Vector2:
     if rl.check_collision_point_circle(point, center, radius):
         return point
@@ -17,6 +18,7 @@ def clamp_to_circle(point: rl.Vector2, center: rl.Vector2, radius: f32) -> rl.Ve
         x = center.x + radius * math.cos(angle),
         y = center.y + radius * math.sin(angle),
     )
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Following Eyes")

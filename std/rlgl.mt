@@ -105,166 +105,491 @@ pub const RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEINDICES: i32 = c.RL_DEFAULT_SHAD
 pub const RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEWEIGHTS: i32 = c.RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEWEIGHTS
 pub const RL_DEFAULT_SHADER_ATTRIB_LOCATION_INSTANCETRANSFORM: i32 = c.RL_DEFAULT_SHADER_ATTRIB_LOCATION_INSTANCETRANSFORM
 
+
 pub foreign def matrix_mode(mode: i32) -> void = c.rlMatrixMode
+
+
 pub foreign def push_matrix() -> void = c.rlPushMatrix
+
+
 pub foreign def pop_matrix() -> void = c.rlPopMatrix
+
+
 pub foreign def load_identity() -> void = c.rlLoadIdentity
+
+
 pub foreign def translatef(x: f32, y: f32, z: f32) -> void = c.rlTranslatef
+
+
 pub foreign def rotatef(angle: f32, x: f32, y: f32, z: f32) -> void = c.rlRotatef
+
+
 pub foreign def scalef(x: f32, y: f32, z: f32) -> void = c.rlScalef
+
+
 pub foreign def mult_matrixf(matf: const_ptr[f32]) -> void = c.rlMultMatrixf
+
+
 pub foreign def frustum(left: f64, right: f64, bottom: f64, top: f64, znear: f64, zfar: f64) -> void = c.rlFrustum
+
+
 pub foreign def ortho(left: f64, right: f64, bottom: f64, top: f64, znear: f64, zfar: f64) -> void = c.rlOrtho
+
+
 pub foreign def viewport(x: i32, y: i32, width: i32, height: i32) -> void = c.rlViewport
+
+
 pub foreign def set_clip_planes(near_plane: f64, far_plane: f64) -> void = c.rlSetClipPlanes
+
+
 pub foreign def get_cull_distance_near() -> f64 = c.rlGetCullDistanceNear
+
+
 pub foreign def get_cull_distance_far() -> f64 = c.rlGetCullDistanceFar
+
+
 pub foreign def begin(mode: i32) -> void = c.rlBegin
+
+
 pub foreign def end() -> void = c.rlEnd
+
+
 pub foreign def vertex_2i(x: i32, y: i32) -> void = c.rlVertex2i
+
+
 pub foreign def vertex_2f(x: f32, y: f32) -> void = c.rlVertex2f
+
+
 pub foreign def vertex_3f(x: f32, y: f32, z: f32) -> void = c.rlVertex3f
+
+
 pub foreign def tex_coord_2f(x: f32, y: f32) -> void = c.rlTexCoord2f
+
+
 pub foreign def normal_3f(x: f32, y: f32, z: f32) -> void = c.rlNormal3f
+
+
 pub foreign def color_4ub(r: u8, g: u8, b: u8, a: u8) -> void = c.rlColor4ub
+
+
 pub foreign def color_3f(x: f32, y: f32, z: f32) -> void = c.rlColor3f
+
+
 pub foreign def color_4f(x: f32, y: f32, z: f32, w: f32) -> void = c.rlColor4f
+
+
 pub foreign def enable_vertex_array(vao_id: u32) -> bool = c.rlEnableVertexArray
+
+
 pub foreign def disable_vertex_array() -> void = c.rlDisableVertexArray
+
+
 pub foreign def enable_vertex_buffer(id: u32) -> void = c.rlEnableVertexBuffer
+
+
 pub foreign def disable_vertex_buffer() -> void = c.rlDisableVertexBuffer
+
+
 pub foreign def enable_vertex_buffer_element(id: u32) -> void = c.rlEnableVertexBufferElement
+
+
 pub foreign def disable_vertex_buffer_element() -> void = c.rlDisableVertexBufferElement
+
+
 pub foreign def enable_vertex_attribute(index: u32) -> void = c.rlEnableVertexAttribute
+
+
 pub foreign def disable_vertex_attribute(index: u32) -> void = c.rlDisableVertexAttribute
+
+
 pub foreign def enable_state_pointer(vertex_attrib_type: i32, buffer: ptr[void]) -> void = c.rlEnableStatePointer
+
+
 pub foreign def disable_state_pointer(vertex_attrib_type: i32) -> void = c.rlDisableStatePointer
+
+
 pub foreign def active_texture_slot(slot: i32) -> void = c.rlActiveTextureSlot
+
+
 pub foreign def enable_texture(id: u32) -> void = c.rlEnableTexture
+
+
 pub foreign def disable_texture() -> void = c.rlDisableTexture
+
+
 pub foreign def enable_texture_cubemap(id: u32) -> void = c.rlEnableTextureCubemap
+
+
 pub foreign def disable_texture_cubemap() -> void = c.rlDisableTextureCubemap
+
+
 pub foreign def texture_parameters(id: u32, param: i32, value: i32) -> void = c.rlTextureParameters
+
+
 pub foreign def cubemap_parameters(id: u32, param: i32, value: i32) -> void = c.rlCubemapParameters
+
+
 pub foreign def enable_shader(id: u32) -> void = c.rlEnableShader
+
+
 pub foreign def disable_shader() -> void = c.rlDisableShader
+
+
 pub foreign def enable_framebuffer(id: u32) -> void = c.rlEnableFramebuffer
+
+
 pub foreign def disable_framebuffer() -> void = c.rlDisableFramebuffer
+
+
 pub foreign def get_active_framebuffer() -> u32 = c.rlGetActiveFramebuffer
+
+
 pub foreign def active_draw_buffers(count: i32) -> void = c.rlActiveDrawBuffers
+
+
 pub foreign def blit_framebuffer(src_x: i32, src_y: i32, src_width: i32, src_height: i32, dst_x: i32, dst_y: i32, dst_width: i32, dst_height: i32, buffer_mask: i32) -> void = c.rlBlitFramebuffer
+
+
 pub foreign def bind_framebuffer(target: u32, framebuffer: u32) -> void = c.rlBindFramebuffer
+
+
 pub foreign def enable_color_blend() -> void = c.rlEnableColorBlend
+
+
 pub foreign def disable_color_blend() -> void = c.rlDisableColorBlend
+
+
 pub foreign def enable_depth_test() -> void = c.rlEnableDepthTest
+
+
 pub foreign def disable_depth_test() -> void = c.rlDisableDepthTest
+
+
 pub foreign def enable_depth_mask() -> void = c.rlEnableDepthMask
+
+
 pub foreign def disable_depth_mask() -> void = c.rlDisableDepthMask
+
+
 pub foreign def enable_backface_culling() -> void = c.rlEnableBackfaceCulling
+
+
 pub foreign def disable_backface_culling() -> void = c.rlDisableBackfaceCulling
+
+
 pub foreign def color_mask(r: bool, g: bool, b: bool, a: bool) -> void = c.rlColorMask
+
+
 pub foreign def set_cull_face(mode: i32) -> void = c.rlSetCullFace
+
+
 pub foreign def enable_scissor_test() -> void = c.rlEnableScissorTest
+
+
 pub foreign def disable_scissor_test() -> void = c.rlDisableScissorTest
+
+
 pub foreign def scissor(x: i32, y: i32, width: i32, height: i32) -> void = c.rlScissor
+
+
 pub foreign def enable_point_mode() -> void = c.rlEnablePointMode
+
+
 pub foreign def disable_point_mode() -> void = c.rlDisablePointMode
+
+
 pub foreign def set_point_size(size: f32) -> void = c.rlSetPointSize
+
+
 pub foreign def get_point_size() -> f32 = c.rlGetPointSize
+
+
 pub foreign def enable_wire_mode() -> void = c.rlEnableWireMode
+
+
 pub foreign def disable_wire_mode() -> void = c.rlDisableWireMode
+
+
 pub foreign def set_line_width(width: f32) -> void = c.rlSetLineWidth
+
+
 pub foreign def get_line_width() -> f32 = c.rlGetLineWidth
+
+
 pub foreign def enable_smooth_lines() -> void = c.rlEnableSmoothLines
+
+
 pub foreign def disable_smooth_lines() -> void = c.rlDisableSmoothLines
+
+
 pub foreign def enable_stereo_render() -> void = c.rlEnableStereoRender
+
+
 pub foreign def disable_stereo_render() -> void = c.rlDisableStereoRender
+
+
 pub foreign def is_stereo_render_enabled() -> bool = c.rlIsStereoRenderEnabled
+
+
 pub foreign def clear_color(r: u8, g: u8, b: u8, a: u8) -> void = c.rlClearColor
+
+
 pub foreign def clear_screen_buffers() -> void = c.rlClearScreenBuffers
+
+
 pub foreign def check_errors() -> void = c.rlCheckErrors
+
+
 pub foreign def set_blend_mode(mode: i32) -> void = c.rlSetBlendMode
+
+
 pub foreign def set_blend_factors(gl_src_factor: i32, gl_dst_factor: i32, gl_equation: i32) -> void = c.rlSetBlendFactors
+
+
 pub foreign def set_blend_factors_separate(gl_src_rgb: i32, gl_dst_rgb: i32, gl_src_alpha: i32, gl_dst_alpha: i32, gl_eq_rgb: i32, gl_eq_alpha: i32) -> void = c.rlSetBlendFactorsSeparate
+
+
 pub foreign def gl_init(width: i32, height: i32) -> void = c.rlglInit
+
+
 pub foreign def gl_close() -> void = c.rlglClose
+
+
 pub foreign def load_extensions(loader: ptr[void]) -> void = c.rlLoadExtensions
+
+
 pub foreign def get_proc_address(proc_name: cstr) -> ptr[void] = c.rlGetProcAddress
+
+
 pub foreign def get_version() -> i32 = c.rlGetVersion
+
+
 pub foreign def set_framebuffer_width(width: i32) -> void = c.rlSetFramebufferWidth
+
+
 pub foreign def get_framebuffer_width() -> i32 = c.rlGetFramebufferWidth
+
+
 pub foreign def set_framebuffer_height(height: i32) -> void = c.rlSetFramebufferHeight
+
+
 pub foreign def get_framebuffer_height() -> i32 = c.rlGetFramebufferHeight
+
+
 pub foreign def get_texture_id_default() -> u32 = c.rlGetTextureIdDefault
+
+
 pub foreign def get_shader_id_default() -> u32 = c.rlGetShaderIdDefault
+
+
 pub foreign def get_shader_locs_default() -> ptr[i32] = c.rlGetShaderLocsDefault
+
+
 pub foreign def load_render_batch(num_buffers: i32, buffer_elements: i32) -> RenderBatch = c.rlLoadRenderBatch
+
+
 pub foreign def unload_render_batch(batch: RenderBatch) -> void = c.rlUnloadRenderBatch
+
+
 pub foreign def draw_render_batch(batch: ptr[RenderBatch]) -> void = c.rlDrawRenderBatch
+
+
 pub foreign def set_render_batch_active(batch: ptr[RenderBatch]) -> void = c.rlSetRenderBatchActive
+
+
 pub foreign def draw_render_batch_active() -> void = c.rlDrawRenderBatchActive
+
+
 pub foreign def check_render_batch_limit(v_count: i32) -> bool = c.rlCheckRenderBatchLimit
+
+
 pub foreign def set_texture(id: u32) -> void = c.rlSetTexture
+
+
 pub foreign def load_vertex_array() -> u32 = c.rlLoadVertexArray
+
+
 pub foreign def load_vertex_buffer[T](buffer: ptr[T] as const_ptr[void], size: i32, dynamic: bool) -> u32 = c.rlLoadVertexBuffer
+
+
 pub foreign def load_vertex_buffer_element[T](buffer: ptr[T] as const_ptr[void], size: i32, dynamic: bool) -> u32 = c.rlLoadVertexBufferElement
+
+
 pub foreign def update_vertex_buffer[T](buffer_id: u32, data: ptr[T] as const_ptr[void], data_size: i32, offset: i32) -> void = c.rlUpdateVertexBuffer
+
+
 pub foreign def update_vertex_buffer_elements[T](id: u32, data: ptr[T] as const_ptr[void], data_size: i32, offset: i32) -> void = c.rlUpdateVertexBufferElements
+
+
 pub foreign def unload_vertex_array(vao_id: u32) -> void = c.rlUnloadVertexArray
+
+
 pub foreign def unload_vertex_buffer(vbo_id: u32) -> void = c.rlUnloadVertexBuffer
+
+
 pub foreign def set_vertex_attribute(index: u32, comp_size: i32, kind: i32, normalized: bool, stride: i32, offset: i32) -> void = c.rlSetVertexAttribute
+
+
 pub foreign def set_vertex_attribute_divisor(index: u32, divisor: i32) -> void = c.rlSetVertexAttributeDivisor
+
+
 pub foreign def set_vertex_attribute_default[T](loc_index: i32, value: ptr[T] as const_ptr[void], attrib_type: i32, count: i32) -> void = c.rlSetVertexAttributeDefault
+
+
 pub foreign def draw_vertex_array(offset: i32, count: i32) -> void = c.rlDrawVertexArray
+
+
 pub foreign def draw_vertex_array_elements(offset: i32, count: i32, buffer: const_ptr[void]) -> void = c.rlDrawVertexArrayElements
+
+
 pub foreign def draw_vertex_array_instanced(offset: i32, count: i32, instances: i32) -> void = c.rlDrawVertexArrayInstanced
+
+
 pub foreign def draw_vertex_array_elements_instanced(offset: i32, count: i32, buffer: const_ptr[void], instances: i32) -> void = c.rlDrawVertexArrayElementsInstanced
+
+
 pub foreign def load_texture(data: const_ptr[void]?, width: i32, height: i32, format: i32, mipmap_count: i32) -> u32 = c.rlLoadTexture
+
+
 pub foreign def load_texture_depth(width: i32, height: i32, use_render_buffer: bool) -> u32 = c.rlLoadTextureDepth
+
+
 pub foreign def load_texture_cubemap(data: const_ptr[void]?, size: i32, format: i32, mipmap_count: i32) -> u32 = c.rlLoadTextureCubemap
+
+
 pub foreign def update_texture[T](id: u32, offset_x: i32, offset_y: i32, width: i32, height: i32, format: i32, data: ptr[T] as const_ptr[void]) -> void = c.rlUpdateTexture
+
+
 pub foreign def get_gl_texture_formats(format: i32, gl_internal_format: ptr[u32], gl_format: ptr[u32], gl_type: ptr[u32]) -> void = c.rlGetGlTextureFormats
+
+
 pub foreign def get_pixel_format_name(format: u32) -> cstr = c.rlGetPixelFormatName
+
+
 pub foreign def unload_texture(id: u32) -> void = c.rlUnloadTexture
+
+
 pub foreign def gen_texture_mipmaps(id: u32, width: i32, height: i32, format: i32, mipmaps: ptr[i32]) -> void = c.rlGenTextureMipmaps
+
+
 pub foreign def read_texture_pixels(id: u32, width: i32, height: i32, format: i32) -> ptr[void] = c.rlReadTexturePixels
+
+
 pub foreign def read_screen_pixels(width: i32, height: i32) -> ptr[u8] = c.rlReadScreenPixels
+
+
 pub foreign def load_framebuffer() -> u32 = c.rlLoadFramebuffer
+
+
 pub foreign def framebuffer_attach(id: u32, tex_id: u32, attach_type: i32, tex_type: i32, mip_level: i32) -> void = c.rlFramebufferAttach
+
+
 pub foreign def framebuffer_complete(id: u32) -> bool = c.rlFramebufferComplete
+
+
 pub foreign def unload_framebuffer(id: u32) -> void = c.rlUnloadFramebuffer
+
+
 pub foreign def copy_framebuffer(x: i32, y: i32, width: i32, height: i32, format: i32, pixels: ptr[void]) -> void = c.rlCopyFramebuffer
+
+
 pub foreign def resize_framebuffer(width: i32, height: i32) -> void = c.rlResizeFramebuffer
+
+
 pub foreign def load_shader(code: cstr, kind: i32) -> u32 = c.rlLoadShader
+
+
 pub foreign def load_shader_program(vs_code: cstr, fs_code: cstr) -> u32 = c.rlLoadShaderProgram
+
+
 pub foreign def load_shader_program_ex(vs_id: u32, fs_id: u32) -> u32 = c.rlLoadShaderProgramEx
+
+
 pub foreign def load_shader_program_compute(cs_id: u32) -> u32 = c.rlLoadShaderProgramCompute
+
+
 pub foreign def unload_shader(id: u32) -> void = c.rlUnloadShader
+
+
 pub foreign def unload_shader_program(id: u32) -> void = c.rlUnloadShaderProgram
+
+
 pub foreign def get_location_uniform(id: u32, uniform_name: cstr) -> i32 = c.rlGetLocationUniform
+
+
 pub foreign def get_location_attrib(id: u32, attrib_name: cstr) -> i32 = c.rlGetLocationAttrib
+
+
 pub foreign def set_uniform[T](loc_index: i32, value: ptr[T] as const_ptr[void], uniform_type: i32, count: i32) -> void = c.rlSetUniform
+
+
 pub foreign def set_uniform_matrix(loc_index: i32, mat: Matrix) -> void = c.rlSetUniformMatrix
+
+
 pub foreign def set_uniform_matrices(loc_index: i32, mat: const_ptr[Matrix], count: i32) -> void = c.rlSetUniformMatrices
+
+
 pub foreign def set_uniform_sampler(loc_index: i32, texture_id: u32) -> void = c.rlSetUniformSampler
+
+
 pub foreign def set_shader(id: u32, locs: ptr[i32]) -> void = c.rlSetShader
+
+
 pub foreign def compute_shader_dispatch(group_x: u32, group_y: u32, group_z: u32) -> void = c.rlComputeShaderDispatch
+
+
 pub foreign def load_shader_buffer(size: u32, data: const_ptr[void]?, usage_hint: i32) -> u32 = c.rlLoadShaderBuffer
+
+
 pub foreign def unload_shader_buffer(ssbo_id: u32) -> void = c.rlUnloadShaderBuffer
+
+
 pub foreign def update_shader_buffer[T](id: u32, data: ptr[T] as const_ptr[void], data_size: u32, offset: u32) -> void = c.rlUpdateShaderBuffer
+
+
 pub foreign def bind_shader_buffer(id: u32, index: u32) -> void = c.rlBindShaderBuffer
+
+
 pub foreign def read_shader_buffer[T](id: u32, dest: ptr[T] as ptr[void], count: u32, offset: u32) -> void = c.rlReadShaderBuffer
+
+
 pub foreign def copy_shader_buffer(dest_id: u32, src_id: u32, dest_offset: u32, src_offset: u32, count: u32) -> void = c.rlCopyShaderBuffer
+
+
 pub foreign def get_shader_buffer_size(id: u32) -> u32 = c.rlGetShaderBufferSize
+
+
 pub foreign def bind_image_texture(id: u32, index: u32, format: i32, readonly: bool) -> void = c.rlBindImageTexture
+
+
 pub foreign def get_matrix_modelview() -> Matrix = c.rlGetMatrixModelview
+
+
 pub foreign def get_matrix_projection() -> Matrix = c.rlGetMatrixProjection
+
+
 pub foreign def get_matrix_transform() -> Matrix = c.rlGetMatrixTransform
+
+
 pub foreign def get_matrix_projection_stereo(eye: i32) -> Matrix = c.rlGetMatrixProjectionStereo
+
+
 pub foreign def get_matrix_view_offset_stereo(eye: i32) -> Matrix = c.rlGetMatrixViewOffsetStereo
+
+
 pub foreign def set_matrix_projection(proj: Matrix) -> void = c.rlSetMatrixProjection
+
+
 pub foreign def set_matrix_modelview(view: Matrix) -> void = c.rlSetMatrixModelview
+
+
 pub foreign def set_matrix_projection_stereo(right: Matrix, left: Matrix) -> void = c.rlSetMatrixProjectionStereo
+
+
 pub foreign def set_matrix_view_offset_stereo(right: Matrix, left: Matrix) -> void = c.rlSetMatrixViewOffsetStereo
+
+
 pub foreign def load_draw_cube() -> void = c.rlLoadDrawCube
+
+
 pub foreign def load_draw_quad() -> void = c.rlLoadDrawQuad

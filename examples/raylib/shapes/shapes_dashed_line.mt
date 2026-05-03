@@ -12,6 +12,7 @@ const space_help_text: cstr = c"LEFT/RIGHT: Change Space Length"
 const color_help_text: cstr = c"C: Cycle Color"
 const status_format: cstr = c"Dash: %.0f | Space: %.0f"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

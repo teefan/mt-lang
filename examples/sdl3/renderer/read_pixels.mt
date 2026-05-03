@@ -18,6 +18,7 @@ var converted_texture: ptr[c.SDL_Texture]?
 var converted_texture_width: i32 = 0
 var converted_texture_height: i32 = 0
 
+
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
@@ -26,6 +27,7 @@ def pump_events() -> bool:
             return false
 
     return true
+
 
 def render_frame() -> bool:
     let now = i32<-c.SDL_GetTicks()
@@ -111,6 +113,7 @@ def render_frame() -> bool:
     c.SDL_RenderPresent(renderer)
     return true
 
+
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     c.SDL_SetAppMetadata(c"Example Renderer Read Pixels", c"1.0", c"com.example.renderer-read-pixels")
 
@@ -149,6 +152,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
             return 1
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

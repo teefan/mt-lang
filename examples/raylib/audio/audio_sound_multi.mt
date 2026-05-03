@@ -9,6 +9,7 @@ const sound_path: cstr = c"../resources/sound.wav"
 const prompt_text: cstr = c"Press SPACE to PLAY a WAV sound!"
 const window_title: cstr = c"raylib [audio] example - sound multi"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

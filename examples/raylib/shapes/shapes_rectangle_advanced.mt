@@ -9,17 +9,21 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const window_title: cstr = c"raylib [shapes] example - rectangle advanced"
 
+
 def emit_color(color: rl.Color) -> void:
     rlgl.rlColor4ub(color.r, color.g, color.b, color.a)
 
+
 def emit_vertex(point: rl.Vector2) -> void:
     rlgl.rlVertex2f(point.x, point.y)
+
 
 def emit_arc_vertex(center: rl.Vector2, angle: f32, radius: f32) -> void:
     rlgl.rlVertex2f(
         center.x + math.cosf(mt_math.deg2rad * angle) * radius,
         center.y + math.sinf(mt_math.deg2rad * angle) * radius,
     )
+
 
 def draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: f32, roundness_right: f32, segments: i32, left: rl.Color, right: rl.Color) -> void:
     let not_rounded = roundness_left <= 0.0 and roundness_right <= 0.0
@@ -142,6 +146,7 @@ def draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: f32, ro
     emit_vertex(points[10])
 
     rlgl.rlEnd()
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

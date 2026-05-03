@@ -22,6 +22,7 @@ var renderer: ptr[c.SDL_Renderer]
 var audio_device: c.SDL_AudioDeviceID = 0
 var sounds: array[Sound, 2] = zero[array[Sound, 2]]()
 
+
 def init_sound(path: cstr, sound_index: i32) -> bool:
     var spec = zero[c.SDL_AudioSpec]()
     var wav_data: ptr[c.Uint8]
@@ -45,6 +46,7 @@ def init_sound(path: cstr, sound_index: i32) -> bool:
     sounds[sound_index].stream = created_stream
     return true
 
+
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
@@ -53,6 +55,7 @@ def pump_events() -> bool:
             return false
 
     return true
+
 
 def render_frame() -> void:
     for index in range(0, sound_count):
@@ -67,6 +70,7 @@ def render_frame() -> void:
     c.SDL_RenderClear(renderer)
     c.SDL_RenderPresent(renderer)
 
+
 def cleanup_sound(sound_index: i32) -> void:
     let stream = sounds[sound_index].stream
     if stream != null:
@@ -79,6 +83,7 @@ def cleanup_sound(sound_index: i32) -> void:
         sounds[sound_index].wav_data = null
 
     sounds[sound_index].wav_data_len = 0
+
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     c.SDL_SetAppMetadata(c"Example Audio Multiple Streams", c"1.0", c"com.example.audio-multiple-streams")
@@ -112,6 +117,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

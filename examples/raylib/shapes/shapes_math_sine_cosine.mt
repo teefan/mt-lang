@@ -20,6 +20,7 @@ const complementary_format: cstr = c"Complementary  %.0f deg"
 const supplementary_format: cstr = c"Supplementary  %.0f deg"
 const explementary_format: cstr = c"Explementary  %.0f deg"
 
+
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)

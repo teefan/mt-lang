@@ -19,6 +19,7 @@ const gesture_swipe_down_text: cstr = c"GESTURE SWIPE DOWN"
 const gesture_pinch_in_text: cstr = c"GESTURE PINCH IN"
 const gesture_pinch_out_text: cstr = c"GESTURE PINCH OUT"
 
+
 def gesture_label(gesture: i32) -> cstr:
     if gesture == rl.Gesture.GESTURE_TAP:
         return gesture_tap_text
@@ -42,6 +43,7 @@ def gesture_label(gesture: i32) -> cstr:
         return gesture_pinch_out_text
 
     return gesture_none_text
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

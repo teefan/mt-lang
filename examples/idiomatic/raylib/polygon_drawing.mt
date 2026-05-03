@@ -9,6 +9,7 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const texture_path: str = "../../raylib/resources/cat.png"
 
+
 def draw_texture_poly(texture: rl.Texture2D, center: rl.Vector2, points: array[rl.Vector2, 11], texcoords: array[rl.Vector2, 11], tint: rl.Color) -> void:
     rlgl.set_texture(texture.id)
     rlgl.begin(rlgl.RL_TRIANGLES)
@@ -26,6 +27,7 @@ def draw_texture_poly(texture: rl.Texture2D, center: rl.Vector2, points: array[r
 
     rlgl.end()
     rlgl.set_texture(u32<-0)
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Polygon Drawing")

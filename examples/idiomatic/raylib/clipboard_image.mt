@@ -10,11 +10,13 @@ const max_texture_collection: i32 = 20
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 
+
 def unload_collection(collection: array[TextureCollection, 20], count: i32) -> void:
     for index in range(0, count):
         if rl.is_texture_valid(collection[index].texture):
             rl.unload_texture(collection[index].texture)
     return
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Clipboard Image")

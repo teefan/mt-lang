@@ -12,6 +12,7 @@ const turret_texture_path: cstr = c"../resources/models/obj/turret_diffuse.png"
 const toggle_text: cstr = c"Right click mouse to toggle camera controls"
 const turret_credit: cstr = c"(c) Turret 3D model by Alberto Cano"
 
+
 def vector3_barycenter(point: rl.Vector3, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3) -> rl.Vector3:
     let v0 = b.subtract(a)
     let v1 = c.subtract(a)
@@ -28,6 +29,7 @@ def vector3_barycenter(point: rl.Vector3, a: rl.Vector3, b: rl.Vector3, c: rl.Ve
     let w = (d00 * d21 - d01 * d20) / denominator
     let u = 1.0 - v - w
     return rl.Vector3(x = u, y = v, z = w)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

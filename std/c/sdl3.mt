@@ -55,11 +55,8 @@ extern module std.c.sdl3:
         DUMMY_ENUM_VALUE = 0
 
     extern def SDL_malloc(size: usize) -> ptr[void]
-
     extern def SDL_calloc(nmemb: usize, size: usize) -> ptr[void]
-
     extern def SDL_realloc(mem: ptr[void], size: usize) -> ptr[void]
-
     extern def SDL_free(mem: ptr[void]) -> void
 
     type SDL_malloc_func = fn(arg0: usize) -> ptr[void]
@@ -71,325 +68,171 @@ extern module std.c.sdl3:
     type SDL_free_func = fn(arg0: ptr[void]) -> void
 
     extern def SDL_GetOriginalMemoryFunctions(malloc_func: ptr[SDL_malloc_func], calloc_func: ptr[SDL_calloc_func], realloc_func: ptr[SDL_realloc_func], free_func: ptr[SDL_free_func]) -> void
-
     extern def SDL_GetMemoryFunctions(malloc_func: ptr[SDL_malloc_func], calloc_func: ptr[SDL_calloc_func], realloc_func: ptr[SDL_realloc_func], free_func: ptr[SDL_free_func]) -> void
-
     extern def SDL_SetMemoryFunctions(malloc_func: fn(arg0: usize) -> ptr[void], calloc_func: fn(arg0: usize, arg1: usize) -> ptr[void], realloc_func: fn(arg0: ptr[void], arg1: usize) -> ptr[void], free_func: fn(arg0: ptr[void]) -> void) -> bool
-
     extern def SDL_aligned_alloc(alignment: usize, size: usize) -> ptr[void]
-
     extern def SDL_aligned_free(mem: ptr[void]) -> void
-
     extern def SDL_GetNumAllocations() -> i32
 
     opaque SDL_Environment = c"SDL_Environment"
 
     extern def SDL_GetEnvironment() -> ptr[SDL_Environment]
-
     extern def SDL_CreateEnvironment(populated: bool) -> ptr[SDL_Environment]
-
     extern def SDL_GetEnvironmentVariable(env: ptr[SDL_Environment], name: cstr) -> cstr
-
     extern def SDL_GetEnvironmentVariables(env: ptr[SDL_Environment]) -> ptr[ptr[char]]
-
     extern def SDL_SetEnvironmentVariable(env: ptr[SDL_Environment], name: cstr, value: cstr, overwrite: bool) -> bool
-
     extern def SDL_UnsetEnvironmentVariable(env: ptr[SDL_Environment], name: cstr) -> bool
-
     extern def SDL_DestroyEnvironment(env: ptr[SDL_Environment]) -> void
-
     extern def SDL_getenv(name: cstr) -> cstr
-
     extern def SDL_getenv_unsafe(name: cstr) -> cstr
-
     extern def SDL_setenv_unsafe(name: cstr, value: cstr, overwrite: i32) -> i32
-
     extern def SDL_unsetenv_unsafe(name: cstr) -> i32
 
     type SDL_CompareCallback = fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> i32
 
     extern def SDL_qsort(base: ptr[void], nmemb: usize, size: usize, compare: fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> i32) -> void
-
     extern def SDL_bsearch(key: const_ptr[void], base: const_ptr[void], nmemb: usize, size: usize, compare: fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> i32) -> ptr[void]
 
     type SDL_CompareCallback_r = fn(arg0: ptr[void], arg1: const_ptr[void], arg2: const_ptr[void]) -> i32
 
     extern def SDL_qsort_r(base: ptr[void], nmemb: usize, size: usize, compare: fn(arg0: ptr[void], arg1: const_ptr[void], arg2: const_ptr[void]) -> i32, userdata: ptr[void]) -> void
-
     extern def SDL_bsearch_r(key: const_ptr[void], base: const_ptr[void], nmemb: usize, size: usize, compare: fn(arg0: ptr[void], arg1: const_ptr[void], arg2: const_ptr[void]) -> i32, userdata: ptr[void]) -> ptr[void]
-
     extern def SDL_abs(x: i32) -> i32
-
     extern def SDL_isalpha(x: i32) -> i32
-
     extern def SDL_isalnum(x: i32) -> i32
-
     extern def SDL_isblank(x: i32) -> i32
-
     extern def SDL_iscntrl(x: i32) -> i32
-
     extern def SDL_isdigit(x: i32) -> i32
-
     extern def SDL_isxdigit(x: i32) -> i32
-
     extern def SDL_ispunct(x: i32) -> i32
-
     extern def SDL_isspace(x: i32) -> i32
-
     extern def SDL_isupper(x: i32) -> i32
-
     extern def SDL_islower(x: i32) -> i32
-
     extern def SDL_isprint(x: i32) -> i32
-
     extern def SDL_isgraph(x: i32) -> i32
-
     extern def SDL_toupper(x: i32) -> i32
-
     extern def SDL_tolower(x: i32) -> i32
-
     extern def SDL_crc16(crc: u16, data: const_ptr[void], len: usize) -> Uint16
-
     extern def SDL_crc32(crc: u32, data: const_ptr[void], len: usize) -> Uint32
-
     extern def SDL_murmur3_32(data: const_ptr[void], len: usize, seed: u32) -> Uint32
-
     extern def SDL_memcpy(dst: ptr[void], src: const_ptr[void], len: usize) -> ptr[void]
-
     extern def SDL_memmove(dst: ptr[void], src: const_ptr[void], len: usize) -> ptr[void]
-
     extern def SDL_memset(dst: ptr[void], c: i32, len: usize) -> ptr[void]
-
     extern def SDL_memset4(dst: ptr[void], val: u32, dwords: usize) -> ptr[void]
-
     extern def SDL_memcmp(s1: const_ptr[void], s2: const_ptr[void], len: usize) -> i32
-
     extern def SDL_wcslen(wstr: const_ptr[i32]) -> usize
-
     extern def SDL_wcsnlen(wstr: const_ptr[i32], maxlen: usize) -> usize
-
     extern def SDL_wcslcpy(dst: ptr[i32], src: const_ptr[i32], maxlen: usize) -> usize
-
     extern def SDL_wcslcat(dst: ptr[i32], src: const_ptr[i32], maxlen: usize) -> usize
-
     extern def SDL_wcsdup(wstr: const_ptr[i32]) -> ptr[i32]
-
     extern def SDL_wcsstr(haystack: const_ptr[i32], needle: const_ptr[i32]) -> ptr[i32]
-
     extern def SDL_wcsnstr(haystack: const_ptr[i32], needle: const_ptr[i32], maxlen: usize) -> ptr[i32]
-
     extern def SDL_wcscmp(str1: const_ptr[i32], str2: const_ptr[i32]) -> i32
-
     extern def SDL_wcsncmp(str1: const_ptr[i32], str2: const_ptr[i32], maxlen: usize) -> i32
-
     extern def SDL_wcscasecmp(str1: const_ptr[i32], str2: const_ptr[i32]) -> i32
-
     extern def SDL_wcsncasecmp(str1: const_ptr[i32], str2: const_ptr[i32], maxlen: usize) -> i32
-
     extern def SDL_wcstol(str: const_ptr[i32], endp: ptr[ptr[i32]], base: i32) -> isize
-
     extern def SDL_strlen(str: cstr) -> usize
-
     extern def SDL_strnlen(str: cstr, maxlen: usize) -> usize
-
     extern def SDL_strlcpy(dst: ptr[char], src: cstr, maxlen: usize) -> usize
-
     extern def SDL_utf8strlcpy(dst: ptr[char], src: cstr, dst_bytes: usize) -> usize
-
     extern def SDL_strlcat(dst: ptr[char], src: cstr, maxlen: usize) -> usize
-
     extern def SDL_strdup(str: cstr) -> ptr[char]?
-
     extern def SDL_strndup(str: cstr, maxlen: usize) -> ptr[char]
-
     extern def SDL_strrev(str: ptr[char]) -> ptr[char]
-
     extern def SDL_strupr(str: ptr[char]) -> ptr[char]
-
     extern def SDL_strlwr(str: ptr[char]) -> ptr[char]
-
     extern def SDL_strchr(str: cstr, c: i32) -> ptr[char]?
-
     extern def SDL_strrchr(str: cstr, c: i32) -> ptr[char]
-
     extern def SDL_strstr(haystack: cstr, needle: cstr) -> ptr[char]
-
     extern def SDL_strnstr(haystack: cstr, needle: cstr, maxlen: usize) -> ptr[char]
-
     extern def SDL_strcasestr(haystack: cstr, needle: cstr) -> ptr[char]
-
     extern def SDL_strtok_r(str: ptr[char], delim: cstr, saveptr: ptr[ptr[char]]) -> ptr[char]
-
     extern def SDL_utf8strlen(str: cstr) -> usize
-
     extern def SDL_utf8strnlen(str: cstr, bytes: usize) -> usize
-
     extern def SDL_itoa(value: i32, str: ptr[char], radix: i32) -> ptr[char]
-
     extern def SDL_uitoa(value: u32, str: ptr[char], radix: i32) -> ptr[char]
-
     extern def SDL_ltoa(value: isize, str: ptr[char], radix: i32) -> ptr[char]
-
     extern def SDL_ultoa(value: usize, str: ptr[char], radix: i32) -> ptr[char]
-
     extern def SDL_lltoa(value: i64, str: ptr[char], radix: i32) -> ptr[char]
-
     extern def SDL_ulltoa(value: u64, str: ptr[char], radix: i32) -> ptr[char]
-
     extern def SDL_atoi(str: cstr) -> i32
-
     extern def SDL_atof(str: cstr) -> f64
-
     extern def SDL_strtol(str: cstr, endp: ptr[ptr[char]], base: i32) -> isize
-
     extern def SDL_strtoul(str: cstr, endp: ptr[ptr[char]], base: i32) -> usize
-
     extern def SDL_strtoll(str: cstr, endp: ptr[ptr[char]], base: i32) -> i64
-
     extern def SDL_strtoull(str: cstr, endp: ptr[ptr[char]], base: i32) -> u64
-
     extern def SDL_strtod(str: cstr, endp: ptr[ptr[char]]) -> f64
-
     extern def SDL_strcmp(str1: cstr, str2: cstr) -> i32
-
     extern def SDL_strncmp(str1: cstr, str2: cstr, maxlen: usize) -> i32
-
     extern def SDL_strcasecmp(str1: cstr, str2: cstr) -> i32
-
     extern def SDL_strncasecmp(str1: cstr, str2: cstr, maxlen: usize) -> i32
-
     extern def SDL_strpbrk(str: cstr, breakset: cstr) -> ptr[char]
-
     extern def SDL_StepUTF8(pstr: ptr[cstr], pslen: ptr[usize]?) -> Uint32
-
     extern def SDL_StepBackUTF8(start: cstr, pstr: ptr[cstr]) -> Uint32
-
     extern def SDL_UCS4ToUTF8(codepoint: u32, dst: ptr[char]) -> ptr[char]
-
     extern def SDL_sscanf(text: cstr, fmt: cstr, ...) -> i32
-
     extern def SDL_vsscanf(text: cstr, fmt: cstr, ap: va_list) -> i32
-
     extern def SDL_snprintf(text: ptr[char], maxlen: usize, fmt: cstr, ...) -> i32
-
     extern def SDL_swprintf(text: ptr[i32], maxlen: usize, fmt: const_ptr[i32], ...) -> i32
-
     extern def SDL_vsnprintf(text: ptr[char], maxlen: usize, fmt: cstr, ap: va_list) -> i32
-
     extern def SDL_vswprintf(text: ptr[i32], maxlen: usize, fmt: const_ptr[i32], ap: va_list) -> i32
-
     extern def SDL_asprintf(strp: ptr[ptr[char]], fmt: cstr, ...) -> i32
-
     extern def SDL_vasprintf(strp: ptr[ptr[char]], fmt: cstr, ap: va_list) -> i32
-
     extern def SDL_srand(seed: usize) -> void
-
     extern def SDL_rand(n: i32) -> Sint32
-
     extern def SDL_randf() -> f32
-
     extern def SDL_rand_bits() -> Uint32
-
     extern def SDL_rand_r(state: ptr[Uint64], n: i32) -> Sint32
-
     extern def SDL_randf_r(state: ptr[Uint64]) -> f32
-
     extern def SDL_rand_bits_r(state: ptr[Uint64]) -> Uint32
-
     extern def SDL_acos(x: f64) -> f64
-
     extern def SDL_acosf(x: f32) -> f32
-
     extern def SDL_asin(x: f64) -> f64
-
     extern def SDL_asinf(x: f32) -> f32
-
     extern def SDL_atan(x: f64) -> f64
-
     extern def SDL_atanf(x: f32) -> f32
-
     extern def SDL_atan2(y: f64, x: f64) -> f64
-
     extern def SDL_atan2f(y: f32, x: f32) -> f32
-
     extern def SDL_ceil(x: f64) -> f64
-
     extern def SDL_ceilf(x: f32) -> f32
-
     extern def SDL_copysign(x: f64, y: f64) -> f64
-
     extern def SDL_copysignf(x: f32, y: f32) -> f32
-
     extern def SDL_cos(x: f64) -> f64
-
     extern def SDL_cosf(x: f32) -> f32
-
     extern def SDL_exp(x: f64) -> f64
-
     extern def SDL_expf(x: f32) -> f32
-
     extern def SDL_fabs(x: f64) -> f64
-
     extern def SDL_fabsf(x: f32) -> f32
-
     extern def SDL_floor(x: f64) -> f64
-
     extern def SDL_floorf(x: f32) -> f32
-
     extern def SDL_trunc(x: f64) -> f64
-
     extern def SDL_truncf(x: f32) -> f32
-
     extern def SDL_fmod(x: f64, y: f64) -> f64
-
     extern def SDL_fmodf(x: f32, y: f32) -> f32
-
     extern def SDL_isinf(x: f64) -> i32
-
     extern def SDL_isinff(x: f32) -> i32
-
     extern def SDL_isnan(x: f64) -> i32
-
     extern def SDL_isnanf(x: f32) -> i32
-
     extern def SDL_log(x: f64) -> f64
-
     extern def SDL_logf(x: f32) -> f32
-
     extern def SDL_log10(x: f64) -> f64
-
     extern def SDL_log10f(x: f32) -> f32
-
     extern def SDL_modf(x: f64, y: ptr[f64]) -> f64
-
     extern def SDL_modff(x: f32, y: ptr[f32]) -> f32
-
     extern def SDL_pow(x: f64, y: f64) -> f64
-
     extern def SDL_powf(x: f32, y: f32) -> f32
-
     extern def SDL_round(x: f64) -> f64
-
     extern def SDL_roundf(x: f32) -> f32
-
     extern def SDL_lround(x: f64) -> isize
-
     extern def SDL_lroundf(x: f32) -> isize
-
     extern def SDL_scalbn(x: f64, n: i32) -> f64
-
     extern def SDL_scalbnf(x: f32, n: i32) -> f32
-
     extern def SDL_sin(x: f64) -> f64
-
     extern def SDL_sinf(x: f32) -> f32
-
     extern def SDL_sqrt(x: f64) -> f64
-
     extern def SDL_sqrtf(x: f32) -> f32
-
     extern def SDL_tan(x: f64) -> f64
-
     extern def SDL_tanf(x: f32) -> f32
 
     opaque SDL_iconv_data_t = c"struct SDL_iconv_data_t"
@@ -397,11 +240,8 @@ extern module std.c.sdl3:
     type SDL_iconv_t = ptr[SDL_iconv_data_t]
 
     extern def SDL_iconv_open(tocode: cstr, fromcode: cstr) -> SDL_iconv_t
-
     extern def SDL_iconv_close(cd: ptr[SDL_iconv_data_t]) -> i32
-
     extern def SDL_iconv(cd: ptr[SDL_iconv_data_t], inbuf: ptr[cstr], inbytesleft: ptr[usize], outbuf: ptr[ptr[char]], outbytesleft: ptr[usize]) -> usize
-
     extern def SDL_iconv_string(tocode: cstr, fromcode: cstr, inbuf: cstr, inbytesleft: usize) -> ptr[char]
 
     type SDL_FunctionPointer = fn() -> void
@@ -427,13 +267,9 @@ extern module std.c.sdl3:
     type SDL_AssertionHandler = fn(arg0: SDL_AssertData, arg1: ptr[void]) -> SDL_AssertState
 
     extern def SDL_SetAssertionHandler(handler: fn(arg0: const_ptr[SDL_AssertData], arg1: ptr[void]) -> SDL_AssertState, userdata: ptr[void]) -> void
-
     extern def SDL_GetDefaultAssertionHandler() -> SDL_AssertionHandler
-
     extern def SDL_GetAssertionHandler(puserdata: ptr[ptr[void]]) -> SDL_AssertionHandler
-
     extern def SDL_GetAssertionReport() -> const_ptr[SDL_AssertData]
-
     extern def SDL_ResetAssertionReport() -> void
 
     opaque SDL_AsyncIO = c"SDL_AsyncIO"
@@ -461,75 +297,47 @@ extern module std.c.sdl3:
     opaque SDL_AsyncIOQueue = c"SDL_AsyncIOQueue"
 
     extern def SDL_AsyncIOFromFile(file: cstr, mode: cstr) -> ptr[SDL_AsyncIO]
-
     extern def SDL_GetAsyncIOSize(asyncio: ptr[SDL_AsyncIO]) -> Sint64
-
     extern def SDL_ReadAsyncIO(asyncio: ptr[SDL_AsyncIO], ptr: ptr[void], offset: usize, size: usize, queue: ptr[SDL_AsyncIOQueue], userdata: ptr[void]) -> bool
-
     extern def SDL_WriteAsyncIO(asyncio: ptr[SDL_AsyncIO], ptr: ptr[void], offset: usize, size: usize, queue: ptr[SDL_AsyncIOQueue], userdata: ptr[void]) -> bool
-
     extern def SDL_CloseAsyncIO(asyncio: ptr[SDL_AsyncIO], flush: bool, queue: ptr[SDL_AsyncIOQueue], userdata: ptr[void]) -> bool
-
     extern def SDL_CreateAsyncIOQueue() -> ptr[SDL_AsyncIOQueue]
-
     extern def SDL_DestroyAsyncIOQueue(queue: ptr[SDL_AsyncIOQueue]) -> void
-
     extern def SDL_GetAsyncIOResult(queue: ptr[SDL_AsyncIOQueue], outcome: ptr[SDL_AsyncIOOutcome]) -> bool
-
     extern def SDL_WaitAsyncIOResult(queue: ptr[SDL_AsyncIOQueue], outcome: ptr[SDL_AsyncIOOutcome], timeoutMS: i32) -> bool
-
     extern def SDL_SignalAsyncIOQueue(queue: ptr[SDL_AsyncIOQueue]) -> void
-
     extern def SDL_LoadFileAsync(file: cstr, queue: ptr[SDL_AsyncIOQueue], userdata: ptr[void]) -> bool
 
     type SDL_SpinLock = i32
 
     extern def SDL_TryLockSpinlock(lock: ptr[SDL_SpinLock]) -> bool
-
     extern def SDL_LockSpinlock(lock: ptr[SDL_SpinLock]) -> void
-
     extern def SDL_UnlockSpinlock(lock: ptr[SDL_SpinLock]) -> void
-
     extern def SDL_MemoryBarrierReleaseFunction() -> void
-
     extern def SDL_MemoryBarrierAcquireFunction() -> void
 
     struct SDL_AtomicInt:
         value: i32
 
     extern def SDL_CompareAndSwapAtomicInt(a: ptr[SDL_AtomicInt], oldval: i32, newval: i32) -> bool
-
     extern def SDL_SetAtomicInt(a: ptr[SDL_AtomicInt], v: i32) -> i32
-
     extern def SDL_GetAtomicInt(a: ptr[SDL_AtomicInt]) -> i32
-
     extern def SDL_AddAtomicInt(a: ptr[SDL_AtomicInt], v: i32) -> i32
 
     struct SDL_AtomicU32:
         value: u32
 
     extern def SDL_CompareAndSwapAtomicU32(a: ptr[SDL_AtomicU32], oldval: u32, newval: u32) -> bool
-
     extern def SDL_SetAtomicU32(a: ptr[SDL_AtomicU32], v: u32) -> Uint32
-
     extern def SDL_GetAtomicU32(a: ptr[SDL_AtomicU32]) -> Uint32
-
     extern def SDL_AddAtomicU32(a: ptr[SDL_AtomicU32], v: i32) -> Uint32
-
     extern def SDL_CompareAndSwapAtomicPointer(a: ptr[ptr[void]], oldval: ptr[void], newval: ptr[void]) -> bool
-
     extern def SDL_SetAtomicPointer(a: ptr[ptr[void]], v: ptr[void]) -> ptr[void]
-
     extern def SDL_GetAtomicPointer(a: ptr[ptr[void]]) -> ptr[void]
-
     extern def SDL_SetError(fmt: cstr, ...) -> bool
-
     extern def SDL_SetErrorV(fmt: cstr, ap: va_list) -> bool
-
     extern def SDL_OutOfMemory() -> bool
-
     extern def SDL_GetError() -> cstr
-
     extern def SDL_ClearError() -> bool
 
     type SDL_PropertiesID = u32
@@ -543,49 +351,31 @@ extern module std.c.sdl3:
         SDL_PROPERTY_TYPE_BOOLEAN = 5
 
     extern def SDL_GetGlobalProperties() -> SDL_PropertiesID
-
     extern def SDL_CreateProperties() -> SDL_PropertiesID
-
     extern def SDL_CopyProperties(src: u32, dst: u32) -> bool
-
     extern def SDL_LockProperties(props: u32) -> bool
-
     extern def SDL_UnlockProperties(props: u32) -> void
 
     type SDL_CleanupPropertyCallback = fn(arg0: ptr[void], arg1: ptr[void]) -> void
 
     extern def SDL_SetPointerPropertyWithCleanup(props: u32, name: cstr, value: ptr[void], cleanup: fn(arg0: ptr[void], arg1: ptr[void]) -> void, userdata: ptr[void]) -> bool
-
     extern def SDL_SetPointerProperty(props: u32, name: cstr, value: ptr[void]) -> bool
-
     extern def SDL_SetStringProperty(props: u32, name: cstr, value: cstr) -> bool
-
     extern def SDL_SetNumberProperty(props: u32, name: cstr, value: isize) -> bool
-
     extern def SDL_SetFloatProperty(props: u32, name: cstr, value: f32) -> bool
-
     extern def SDL_SetBooleanProperty(props: u32, name: cstr, value: bool) -> bool
-
     extern def SDL_HasProperty(props: u32, name: cstr) -> bool
-
     extern def SDL_GetPropertyType(props: u32, name: cstr) -> SDL_PropertyType
-
     extern def SDL_GetPointerProperty(props: u32, name: cstr, default_value: ptr[void]) -> ptr[void]
-
     extern def SDL_GetStringProperty(props: u32, name: cstr, default_value: cstr) -> cstr
-
     extern def SDL_GetNumberProperty(props: u32, name: cstr, default_value: isize) -> Sint64
-
     extern def SDL_GetFloatProperty(props: u32, name: cstr, default_value: f32) -> f32
-
     extern def SDL_GetBooleanProperty(props: u32, name: cstr, default_value: bool) -> bool
-
     extern def SDL_ClearProperty(props: u32, name: cstr) -> bool
 
     type SDL_EnumeratePropertiesCallback = fn(arg0: ptr[void], arg1: SDL_PropertiesID, arg2: cstr) -> void
 
     extern def SDL_EnumerateProperties(props: u32, callback: fn(arg0: ptr[void], arg1: SDL_PropertiesID, arg2: cstr) -> void, userdata: ptr[void]) -> bool
-
     extern def SDL_DestroyProperties(props: u32) -> void
 
     opaque SDL_Thread = c"SDL_Thread"
@@ -609,87 +399,56 @@ extern module std.c.sdl3:
     type SDL_ThreadFunction = fn(arg0: ptr[void]) -> i32
 
     extern def SDL_CreateThreadRuntime(func: fn(arg0: ptr[void]) -> i32, name: cstr, data: ptr[void], pfnBeginThread: fn() -> void, pfnEndThread: fn() -> void) -> ptr[SDL_Thread]
-
     extern def SDL_CreateThreadWithPropertiesRuntime(props: u32, pfnBeginThread: fn() -> void, pfnEndThread: fn() -> void) -> ptr[SDL_Thread]
-
     extern def SDL_GetThreadName(thread: ptr[SDL_Thread]) -> cstr
-
     extern def SDL_GetCurrentThreadID() -> SDL_ThreadID
-
     extern def SDL_GetThreadID(thread: ptr[SDL_Thread]) -> SDL_ThreadID
-
     extern def SDL_SetCurrentThreadPriority(priority: SDL_ThreadPriority) -> bool
-
     extern def SDL_WaitThread(thread: ptr[SDL_Thread], status: ptr[i32]) -> void
-
     extern def SDL_GetThreadState(thread: ptr[SDL_Thread]) -> SDL_ThreadState
-
     extern def SDL_DetachThread(thread: ptr[SDL_Thread]) -> void
-
     extern def SDL_GetTLS(id: ptr[SDL_TLSID]) -> ptr[void]
 
     type SDL_TLSDestructorCallback = fn(arg0: ptr[void]) -> void
 
     extern def SDL_SetTLS(id: ptr[SDL_TLSID], value: const_ptr[void], destructor: fn(arg0: ptr[void]) -> void) -> bool
-
     extern def SDL_CleanupTLS() -> void
 
     opaque SDL_Mutex = c"SDL_Mutex"
 
     extern def SDL_CreateMutex() -> ptr[SDL_Mutex]
-
     extern def SDL_LockMutex(mutex: ptr[SDL_Mutex]) -> void
-
     extern def SDL_TryLockMutex(mutex: ptr[SDL_Mutex]) -> bool
-
     extern def SDL_UnlockMutex(mutex: ptr[SDL_Mutex]) -> void
-
     extern def SDL_DestroyMutex(mutex: ptr[SDL_Mutex]) -> void
 
     opaque SDL_RWLock = c"SDL_RWLock"
 
     extern def SDL_CreateRWLock() -> ptr[SDL_RWLock]
-
     extern def SDL_LockRWLockForReading(rwlock: ptr[SDL_RWLock]) -> void
-
     extern def SDL_LockRWLockForWriting(rwlock: ptr[SDL_RWLock]) -> void
-
     extern def SDL_TryLockRWLockForReading(rwlock: ptr[SDL_RWLock]) -> bool
-
     extern def SDL_TryLockRWLockForWriting(rwlock: ptr[SDL_RWLock]) -> bool
-
     extern def SDL_UnlockRWLock(rwlock: ptr[SDL_RWLock]) -> void
-
     extern def SDL_DestroyRWLock(rwlock: ptr[SDL_RWLock]) -> void
 
     opaque SDL_Semaphore = c"SDL_Semaphore"
 
     extern def SDL_CreateSemaphore(initial_value: u32) -> ptr[SDL_Semaphore]
-
     extern def SDL_DestroySemaphore(sem: ptr[SDL_Semaphore]) -> void
-
     extern def SDL_WaitSemaphore(sem: ptr[SDL_Semaphore]) -> void
-
     extern def SDL_TryWaitSemaphore(sem: ptr[SDL_Semaphore]) -> bool
-
     extern def SDL_WaitSemaphoreTimeout(sem: ptr[SDL_Semaphore], timeoutMS: i32) -> bool
-
     extern def SDL_SignalSemaphore(sem: ptr[SDL_Semaphore]) -> void
-
     extern def SDL_GetSemaphoreValue(sem: ptr[SDL_Semaphore]) -> Uint32
 
     opaque SDL_Condition = c"SDL_Condition"
 
     extern def SDL_CreateCondition() -> ptr[SDL_Condition]
-
     extern def SDL_DestroyCondition(cond: ptr[SDL_Condition]) -> void
-
     extern def SDL_SignalCondition(cond: ptr[SDL_Condition]) -> void
-
     extern def SDL_BroadcastCondition(cond: ptr[SDL_Condition]) -> void
-
     extern def SDL_WaitCondition(cond: ptr[SDL_Condition], mutex: ptr[SDL_Mutex]) -> void
-
     extern def SDL_WaitConditionTimeout(cond: ptr[SDL_Condition], mutex: ptr[SDL_Mutex], timeoutMS: i32) -> bool
 
     enum SDL_InitStatus: i32
@@ -704,9 +463,7 @@ extern module std.c.sdl3:
         reserved: ptr[void]
 
     extern def SDL_ShouldInit(state: ptr[SDL_InitState]) -> bool
-
     extern def SDL_ShouldQuit(state: ptr[SDL_InitState]) -> bool
-
     extern def SDL_SetInitialized(state: ptr[SDL_InitState], initialized: bool) -> void
 
     enum SDL_IOStatus: i32
@@ -734,99 +491,52 @@ extern module std.c.sdl3:
     opaque SDL_IOStream = c"SDL_IOStream"
 
     extern def SDL_IOFromFile(file: cstr, mode: cstr) -> ptr[SDL_IOStream]
-
     extern def SDL_IOFromMem(mem: ptr[void], size: usize) -> ptr[SDL_IOStream]
-
     extern def SDL_IOFromConstMem(mem: const_ptr[void], size: usize) -> ptr[SDL_IOStream]
-
     extern def SDL_IOFromDynamicMem() -> ptr[SDL_IOStream]
-
     extern def SDL_OpenIO(iface: const_ptr[SDL_IOStreamInterface], userdata: ptr[void]) -> ptr[SDL_IOStream]
-
     extern def SDL_CloseIO(context: ptr[SDL_IOStream]) -> bool
-
     extern def SDL_GetIOProperties(context: ptr[SDL_IOStream]) -> SDL_PropertiesID
-
     extern def SDL_GetIOStatus(context: ptr[SDL_IOStream]) -> SDL_IOStatus
-
     extern def SDL_GetIOSize(context: ptr[SDL_IOStream]) -> Sint64
-
     extern def SDL_SeekIO(context: ptr[SDL_IOStream], offset: isize, whence: SDL_IOWhence) -> Sint64
-
     extern def SDL_TellIO(context: ptr[SDL_IOStream]) -> Sint64
-
     extern def SDL_ReadIO(context: ptr[SDL_IOStream], ptr: ptr[void], size: usize) -> usize
-
     extern def SDL_WriteIO(context: ptr[SDL_IOStream], ptr: const_ptr[void], size: usize) -> usize
-
     extern def SDL_IOprintf(context: ptr[SDL_IOStream], fmt: cstr, ...) -> usize
-
     extern def SDL_IOvprintf(context: ptr[SDL_IOStream], fmt: cstr, ap: va_list) -> usize
-
     extern def SDL_FlushIO(context: ptr[SDL_IOStream]) -> bool
-
     extern def SDL_LoadFile_IO(src: ptr[SDL_IOStream], datasize: ptr[usize], closeio: bool) -> ptr[void]
-
     extern def SDL_LoadFile(file: cstr, datasize: ptr[usize]) -> ptr[void]?
-
     extern def SDL_SaveFile_IO(src: ptr[SDL_IOStream], data: const_ptr[void], datasize: usize, closeio: bool) -> bool
-
     extern def SDL_SaveFile(file: cstr, data: const_ptr[void], datasize: usize) -> bool
-
     extern def SDL_ReadU8(src: ptr[SDL_IOStream], value: ptr[Uint8]) -> bool
-
     extern def SDL_ReadS8(src: ptr[SDL_IOStream], value: ptr[Sint8]) -> bool
-
     extern def SDL_ReadU16LE(src: ptr[SDL_IOStream], value: ptr[Uint16]) -> bool
-
     extern def SDL_ReadS16LE(src: ptr[SDL_IOStream], value: ptr[Sint16]) -> bool
-
     extern def SDL_ReadU16BE(src: ptr[SDL_IOStream], value: ptr[Uint16]) -> bool
-
     extern def SDL_ReadS16BE(src: ptr[SDL_IOStream], value: ptr[Sint16]) -> bool
-
     extern def SDL_ReadU32LE(src: ptr[SDL_IOStream], value: ptr[Uint32]) -> bool
-
     extern def SDL_ReadS32LE(src: ptr[SDL_IOStream], value: ptr[Sint32]) -> bool
-
     extern def SDL_ReadU32BE(src: ptr[SDL_IOStream], value: ptr[Uint32]) -> bool
-
     extern def SDL_ReadS32BE(src: ptr[SDL_IOStream], value: ptr[Sint32]) -> bool
-
     extern def SDL_ReadU64LE(src: ptr[SDL_IOStream], value: ptr[Uint64]) -> bool
-
     extern def SDL_ReadS64LE(src: ptr[SDL_IOStream], value: ptr[Sint64]) -> bool
-
     extern def SDL_ReadU64BE(src: ptr[SDL_IOStream], value: ptr[Uint64]) -> bool
-
     extern def SDL_ReadS64BE(src: ptr[SDL_IOStream], value: ptr[Sint64]) -> bool
-
     extern def SDL_WriteU8(dst: ptr[SDL_IOStream], value: u8) -> bool
-
     extern def SDL_WriteS8(dst: ptr[SDL_IOStream], value: i8) -> bool
-
     extern def SDL_WriteU16LE(dst: ptr[SDL_IOStream], value: u16) -> bool
-
     extern def SDL_WriteS16LE(dst: ptr[SDL_IOStream], value: i16) -> bool
-
     extern def SDL_WriteU16BE(dst: ptr[SDL_IOStream], value: u16) -> bool
-
     extern def SDL_WriteS16BE(dst: ptr[SDL_IOStream], value: i16) -> bool
-
     extern def SDL_WriteU32LE(dst: ptr[SDL_IOStream], value: u32) -> bool
-
     extern def SDL_WriteS32LE(dst: ptr[SDL_IOStream], value: i32) -> bool
-
     extern def SDL_WriteU32BE(dst: ptr[SDL_IOStream], value: u32) -> bool
-
     extern def SDL_WriteS32BE(dst: ptr[SDL_IOStream], value: i32) -> bool
-
     extern def SDL_WriteU64LE(dst: ptr[SDL_IOStream], value: usize) -> bool
-
     extern def SDL_WriteS64LE(dst: ptr[SDL_IOStream], value: isize) -> bool
-
     extern def SDL_WriteU64BE(dst: ptr[SDL_IOStream], value: usize) -> bool
-
     extern def SDL_WriteS64BE(dst: ptr[SDL_IOStream], value: isize) -> bool
 
     enum SDL_AudioFormat: i32
@@ -853,125 +563,71 @@ extern module std.c.sdl3:
     opaque SDL_AudioStream = c"SDL_AudioStream"
 
     extern def SDL_GetNumAudioDrivers() -> i32
-
     extern def SDL_GetAudioDriver(index: i32) -> cstr
-
     extern def SDL_GetCurrentAudioDriver() -> cstr
-
     extern def SDL_GetAudioPlaybackDevices(count: ptr[i32]) -> ptr[SDL_AudioDeviceID]
-
     extern def SDL_GetAudioRecordingDevices(count: ptr[i32]) -> ptr[SDL_AudioDeviceID]
-
     extern def SDL_GetAudioDeviceName(devid: u32) -> cstr
-
     extern def SDL_GetAudioDeviceFormat(devid: u32, spec: ptr[SDL_AudioSpec], sample_frames: ptr[i32]) -> bool
-
     extern def SDL_GetAudioDeviceChannelMap(devid: u32, count: ptr[i32]) -> ptr[i32]
-
     extern def SDL_OpenAudioDevice(devid: u32, spec: const_ptr[SDL_AudioSpec]?) -> SDL_AudioDeviceID
-
     extern def SDL_IsAudioDevicePhysical(devid: u32) -> bool
-
     extern def SDL_IsAudioDevicePlayback(devid: u32) -> bool
-
     extern def SDL_PauseAudioDevice(devid: u32) -> bool
-
     extern def SDL_ResumeAudioDevice(devid: u32) -> bool
-
     extern def SDL_AudioDevicePaused(devid: u32) -> bool
-
     extern def SDL_GetAudioDeviceGain(devid: u32) -> f32
-
     extern def SDL_SetAudioDeviceGain(devid: u32, gain: f32) -> bool
-
     extern def SDL_CloseAudioDevice(devid: u32) -> void
-
     extern def SDL_BindAudioStreams(devid: u32, streams: const_ptr[ptr[SDL_AudioStream]], num_streams: i32) -> bool
-
     extern def SDL_BindAudioStream(devid: u32, stream: ptr[SDL_AudioStream]) -> bool
-
     extern def SDL_UnbindAudioStreams(streams: const_ptr[ptr[SDL_AudioStream]], num_streams: i32) -> void
-
     extern def SDL_UnbindAudioStream(stream: ptr[SDL_AudioStream]) -> void
-
     extern def SDL_GetAudioStreamDevice(stream: ptr[SDL_AudioStream]) -> SDL_AudioDeviceID
-
     extern def SDL_CreateAudioStream(src_spec: const_ptr[SDL_AudioSpec], dst_spec: const_ptr[SDL_AudioSpec]?) -> ptr[SDL_AudioStream]?
-
     extern def SDL_GetAudioStreamProperties(stream: ptr[SDL_AudioStream]) -> SDL_PropertiesID
-
     extern def SDL_GetAudioStreamFormat(stream: ptr[SDL_AudioStream], src_spec: ptr[SDL_AudioSpec], dst_spec: ptr[SDL_AudioSpec]) -> bool
-
     extern def SDL_SetAudioStreamFormat(stream: ptr[SDL_AudioStream], src_spec: const_ptr[SDL_AudioSpec], dst_spec: const_ptr[SDL_AudioSpec]) -> bool
-
     extern def SDL_GetAudioStreamFrequencyRatio(stream: ptr[SDL_AudioStream]) -> f32
-
     extern def SDL_SetAudioStreamFrequencyRatio(stream: ptr[SDL_AudioStream], ratio: f32) -> bool
-
     extern def SDL_GetAudioStreamGain(stream: ptr[SDL_AudioStream]) -> f32
-
     extern def SDL_SetAudioStreamGain(stream: ptr[SDL_AudioStream], gain: f32) -> bool
-
     extern def SDL_GetAudioStreamInputChannelMap(stream: ptr[SDL_AudioStream], count: ptr[i32]) -> ptr[i32]
-
     extern def SDL_GetAudioStreamOutputChannelMap(stream: ptr[SDL_AudioStream], count: ptr[i32]) -> ptr[i32]
-
     extern def SDL_SetAudioStreamInputChannelMap(stream: ptr[SDL_AudioStream], chmap: const_ptr[i32], count: i32) -> bool
-
     extern def SDL_SetAudioStreamOutputChannelMap(stream: ptr[SDL_AudioStream], chmap: const_ptr[i32], count: i32) -> bool
-
     extern def SDL_PutAudioStreamData(stream: ptr[SDL_AudioStream], buf: const_ptr[void], len: i32) -> bool
 
     type SDL_AudioStreamDataCompleteCallback = fn(arg0: ptr[void], arg1: const_ptr[void], arg2: i32) -> void
 
     extern def SDL_PutAudioStreamDataNoCopy(stream: ptr[SDL_AudioStream], buf: const_ptr[void], len: i32, callback: fn(arg0: ptr[void], arg1: const_ptr[void], arg2: i32) -> void, userdata: ptr[void]) -> bool
-
     extern def SDL_PutAudioStreamPlanarData(stream: ptr[SDL_AudioStream], channel_buffers: const_ptr[const_ptr[void]?], num_channels: i32, num_samples: i32) -> bool
-
     extern def SDL_GetAudioStreamData(stream: ptr[SDL_AudioStream], buf: ptr[void], len: i32) -> i32
-
     extern def SDL_GetAudioStreamAvailable(stream: ptr[SDL_AudioStream]) -> i32
-
     extern def SDL_GetAudioStreamQueued(stream: ptr[SDL_AudioStream]) -> i32
-
     extern def SDL_FlushAudioStream(stream: ptr[SDL_AudioStream]) -> bool
-
     extern def SDL_ClearAudioStream(stream: ptr[SDL_AudioStream]) -> bool
-
     extern def SDL_PauseAudioStreamDevice(stream: ptr[SDL_AudioStream]) -> bool
-
     extern def SDL_ResumeAudioStreamDevice(stream: ptr[SDL_AudioStream]) -> bool
-
     extern def SDL_AudioStreamDevicePaused(stream: ptr[SDL_AudioStream]) -> bool
-
     extern def SDL_LockAudioStream(stream: ptr[SDL_AudioStream]) -> bool
-
     extern def SDL_UnlockAudioStream(stream: ptr[SDL_AudioStream]) -> bool
 
     type SDL_AudioStreamCallback = fn(arg0: ptr[void], arg1: SDL_AudioStream, arg2: i32, arg3: i32) -> void
 
     extern def SDL_SetAudioStreamGetCallback(stream: ptr[SDL_AudioStream], callback: fn(arg0: ptr[void], arg1: ptr[SDL_AudioStream], arg2: i32, arg3: i32) -> void, userdata: ptr[void]) -> bool
-
     extern def SDL_SetAudioStreamPutCallback(stream: ptr[SDL_AudioStream], callback: fn(arg0: ptr[void], arg1: ptr[SDL_AudioStream], arg2: i32, arg3: i32) -> void, userdata: ptr[void]) -> bool
-
     extern def SDL_DestroyAudioStream(stream: ptr[SDL_AudioStream]) -> void
-
     extern def SDL_OpenAudioDeviceStream(devid: u32, spec: const_ptr[SDL_AudioSpec], callback: fn(arg0: ptr[void], arg1: ptr[SDL_AudioStream], arg2: i32, arg3: i32) -> void, userdata: ptr[void]?) -> ptr[SDL_AudioStream]?
 
     type SDL_AudioPostmixCallback = fn(arg0: ptr[void], arg1: SDL_AudioSpec, arg2: ptr[f32], arg3: i32) -> void
 
     extern def SDL_SetAudioPostmixCallback(devid: u32, callback: fn(arg0: ptr[void], arg1: const_ptr[SDL_AudioSpec], arg2: ptr[f32], arg3: i32) -> void, userdata: ptr[void]) -> bool
-
     extern def SDL_LoadWAV_IO(src: ptr[SDL_IOStream], closeio: bool, spec: ptr[SDL_AudioSpec], audio_buf: ptr[ptr[Uint8]], audio_len: ptr[Uint32]) -> bool
-
     extern def SDL_LoadWAV(path: cstr, spec: ptr[SDL_AudioSpec], audio_buf: ptr[ptr[Uint8]], audio_len: ptr[Uint32]) -> bool
-
     extern def SDL_MixAudio(dst: ptr[Uint8], src: const_ptr[Uint8], format: SDL_AudioFormat, len: u32, volume: f32) -> bool
-
     extern def SDL_ConvertAudioSamples(src_spec: const_ptr[SDL_AudioSpec], src_data: const_ptr[Uint8], src_len: i32, dst_spec: const_ptr[SDL_AudioSpec], dst_data: ptr[ptr[Uint8]], dst_len: ptr[i32]) -> bool
-
     extern def SDL_GetAudioFormatName(format: SDL_AudioFormat) -> cstr
-
     extern def SDL_GetSilenceValueForFormat(format: SDL_AudioFormat) -> i32
 
     type SDL_BlendMode = u32
@@ -1245,25 +901,15 @@ extern module std.c.sdl3:
         Ashift: u8
 
     extern def SDL_GetPixelFormatName(format: SDL_PixelFormat) -> cstr
-
     extern def SDL_GetMasksForPixelFormat(format: SDL_PixelFormat, bpp: ptr[i32], Rmask: ptr[Uint32], Gmask: ptr[Uint32], Bmask: ptr[Uint32], Amask: ptr[Uint32]) -> bool
-
     extern def SDL_GetPixelFormatForMasks(bpp: i32, Rmask: u32, Gmask: u32, Bmask: u32, Amask: u32) -> SDL_PixelFormat
-
     extern def SDL_GetPixelFormatDetails(format: SDL_PixelFormat) -> const_ptr[SDL_PixelFormatDetails]
-
     extern def SDL_CreatePalette(ncolors: i32) -> ptr[SDL_Palette]
-
     extern def SDL_SetPaletteColors(palette: ptr[SDL_Palette], colors: const_ptr[SDL_Color], firstcolor: i32, ncolors: i32) -> bool
-
     extern def SDL_DestroyPalette(palette: ptr[SDL_Palette]) -> void
-
     extern def SDL_MapRGB(format: const_ptr[SDL_PixelFormatDetails], palette: const_ptr[SDL_Palette]?, r: u8, g: u8, b: u8) -> Uint32
-
     extern def SDL_MapRGBA(format: const_ptr[SDL_PixelFormatDetails], palette: const_ptr[SDL_Palette]?, r: u8, g: u8, b: u8, a: u8) -> Uint32
-
     extern def SDL_GetRGB(pixelvalue: u32, format: const_ptr[SDL_PixelFormatDetails], palette: const_ptr[SDL_Palette], r: ptr[Uint8], g: ptr[Uint8], b: ptr[Uint8]) -> void
-
     extern def SDL_GetRGBA(pixelvalue: u32, format: const_ptr[SDL_PixelFormatDetails], palette: const_ptr[SDL_Palette], r: ptr[Uint8], g: ptr[Uint8], b: ptr[Uint8], a: ptr[Uint8]) -> void
 
     struct SDL_Point:
@@ -1287,23 +933,14 @@ extern module std.c.sdl3:
         h: f32
 
     extern def SDL_HasRectIntersection(A: const_ptr[SDL_Rect], B: const_ptr[SDL_Rect]) -> bool
-
     extern def SDL_GetRectIntersection(A: const_ptr[SDL_Rect], B: const_ptr[SDL_Rect], result: ptr[SDL_Rect]) -> bool
-
     extern def SDL_GetRectUnion(A: const_ptr[SDL_Rect], B: const_ptr[SDL_Rect], result: ptr[SDL_Rect]) -> bool
-
     extern def SDL_GetRectEnclosingPoints(points: const_ptr[SDL_Point], count: i32, clip: const_ptr[SDL_Rect], result: ptr[SDL_Rect]) -> bool
-
     extern def SDL_GetRectAndLineIntersection(rect: const_ptr[SDL_Rect], X1: ptr[i32], Y1: ptr[i32], X2: ptr[i32], Y2: ptr[i32]) -> bool
-
     extern def SDL_HasRectIntersectionFloat(A: const_ptr[SDL_FRect], B: const_ptr[SDL_FRect]) -> bool
-
     extern def SDL_GetRectIntersectionFloat(A: const_ptr[SDL_FRect], B: const_ptr[SDL_FRect], result: ptr[SDL_FRect]) -> bool
-
     extern def SDL_GetRectUnionFloat(A: const_ptr[SDL_FRect], B: const_ptr[SDL_FRect], result: ptr[SDL_FRect]) -> bool
-
     extern def SDL_GetRectEnclosingPointsFloat(points: const_ptr[SDL_FPoint], count: i32, clip: const_ptr[SDL_FRect], result: ptr[SDL_FRect]) -> bool
-
     extern def SDL_GetRectAndLineIntersectionFloat(rect: const_ptr[SDL_FRect], X1: ptr[f32], Y1: ptr[f32], X2: ptr[f32], Y2: ptr[f32]) -> bool
 
     type SDL_SurfaceFlags = u32
@@ -1331,133 +968,69 @@ extern module std.c.sdl3:
         reserved: ptr[void]
 
     extern def SDL_CreateSurface(width: i32, height: i32, format: SDL_PixelFormat) -> ptr[SDL_Surface]
-
     extern def SDL_CreateSurfaceFrom(width: i32, height: i32, format: SDL_PixelFormat, pixels: ptr[void], pitch: i32) -> ptr[SDL_Surface]
-
     extern def SDL_DestroySurface(surface: ptr[SDL_Surface]) -> void
-
     extern def SDL_GetSurfaceProperties(surface: ptr[SDL_Surface]) -> SDL_PropertiesID
-
     extern def SDL_SetSurfaceColorspace(surface: ptr[SDL_Surface], colorspace: SDL_Colorspace) -> bool
-
     extern def SDL_GetSurfaceColorspace(surface: ptr[SDL_Surface]) -> SDL_Colorspace
-
     extern def SDL_CreateSurfacePalette(surface: ptr[SDL_Surface]) -> ptr[SDL_Palette]
-
     extern def SDL_SetSurfacePalette(surface: ptr[SDL_Surface], palette: ptr[SDL_Palette]) -> bool
-
     extern def SDL_GetSurfacePalette(surface: ptr[SDL_Surface]) -> ptr[SDL_Palette]
-
     extern def SDL_AddSurfaceAlternateImage(surface: ptr[SDL_Surface], image: ptr[SDL_Surface]) -> bool
-
     extern def SDL_SurfaceHasAlternateImages(surface: ptr[SDL_Surface]) -> bool
-
     extern def SDL_GetSurfaceImages(surface: ptr[SDL_Surface], count: ptr[i32]) -> ptr[ptr[SDL_Surface]]
-
     extern def SDL_RemoveSurfaceAlternateImages(surface: ptr[SDL_Surface]) -> void
-
     extern def SDL_LockSurface(surface: ptr[SDL_Surface]) -> bool
-
     extern def SDL_UnlockSurface(surface: ptr[SDL_Surface]) -> void
-
     extern def SDL_LoadSurface_IO(src: ptr[SDL_IOStream], closeio: bool) -> ptr[SDL_Surface]
-
     extern def SDL_LoadSurface(file: cstr) -> ptr[SDL_Surface]
-
     extern def SDL_LoadBMP_IO(src: ptr[SDL_IOStream], closeio: bool) -> ptr[SDL_Surface]
-
     extern def SDL_LoadBMP(file: cstr) -> ptr[SDL_Surface]
-
     extern def SDL_SaveBMP_IO(surface: ptr[SDL_Surface], dst: ptr[SDL_IOStream], closeio: bool) -> bool
-
     extern def SDL_SaveBMP(surface: ptr[SDL_Surface], file: cstr) -> bool
-
     extern def SDL_LoadPNG_IO(src: ptr[SDL_IOStream], closeio: bool) -> ptr[SDL_Surface]
-
     extern def SDL_LoadPNG(file: cstr) -> ptr[SDL_Surface]?
-
     extern def SDL_SavePNG_IO(surface: ptr[SDL_Surface], dst: ptr[SDL_IOStream], closeio: bool) -> bool
-
     extern def SDL_SavePNG(surface: ptr[SDL_Surface], file: cstr) -> bool
-
     extern def SDL_SetSurfaceRLE(surface: ptr[SDL_Surface], enabled: bool) -> bool
-
     extern def SDL_SurfaceHasRLE(surface: ptr[SDL_Surface]) -> bool
-
     extern def SDL_SetSurfaceColorKey(surface: ptr[SDL_Surface], enabled: bool, key: u32) -> bool
-
     extern def SDL_SurfaceHasColorKey(surface: ptr[SDL_Surface]) -> bool
-
     extern def SDL_GetSurfaceColorKey(surface: ptr[SDL_Surface], key: ptr[Uint32]) -> bool
-
     extern def SDL_SetSurfaceColorMod(surface: ptr[SDL_Surface], r: u8, g: u8, b: u8) -> bool
-
     extern def SDL_GetSurfaceColorMod(surface: ptr[SDL_Surface], r: ptr[Uint8], g: ptr[Uint8], b: ptr[Uint8]) -> bool
-
     extern def SDL_SetSurfaceAlphaMod(surface: ptr[SDL_Surface], alpha: u8) -> bool
-
     extern def SDL_GetSurfaceAlphaMod(surface: ptr[SDL_Surface], alpha: ptr[Uint8]) -> bool
-
     extern def SDL_SetSurfaceBlendMode(surface: ptr[SDL_Surface], blendMode: u32) -> bool
-
     extern def SDL_GetSurfaceBlendMode(surface: ptr[SDL_Surface], blendMode: ptr[SDL_BlendMode]) -> bool
-
     extern def SDL_SetSurfaceClipRect(surface: ptr[SDL_Surface], rect: const_ptr[SDL_Rect]) -> bool
-
     extern def SDL_GetSurfaceClipRect(surface: ptr[SDL_Surface], rect: ptr[SDL_Rect]) -> bool
-
     extern def SDL_FlipSurface(surface: ptr[SDL_Surface], flip: SDL_FlipMode) -> bool
-
     extern def SDL_RotateSurface(surface: ptr[SDL_Surface], angle: f32) -> ptr[SDL_Surface]
-
     extern def SDL_DuplicateSurface(surface: ptr[SDL_Surface]) -> ptr[SDL_Surface]
-
     extern def SDL_ScaleSurface(surface: ptr[SDL_Surface], width: i32, height: i32, scaleMode: SDL_ScaleMode) -> ptr[SDL_Surface]
-
     extern def SDL_ConvertSurface(surface: ptr[SDL_Surface], format: SDL_PixelFormat) -> ptr[SDL_Surface]?
-
     extern def SDL_ConvertSurfaceAndColorspace(surface: ptr[SDL_Surface], format: SDL_PixelFormat, palette: ptr[SDL_Palette], colorspace: SDL_Colorspace, props: u32) -> ptr[SDL_Surface]
-
     extern def SDL_ConvertPixels(width: i32, height: i32, src_format: SDL_PixelFormat, src: const_ptr[void], src_pitch: i32, dst_format: SDL_PixelFormat, dst: ptr[void], dst_pitch: i32) -> bool
-
     extern def SDL_ConvertPixelsAndColorspace(width: i32, height: i32, src_format: SDL_PixelFormat, src_colorspace: SDL_Colorspace, src_properties: u32, src: const_ptr[void], src_pitch: i32, dst_format: SDL_PixelFormat, dst_colorspace: SDL_Colorspace, dst_properties: u32, dst: ptr[void], dst_pitch: i32) -> bool
-
     extern def SDL_PremultiplyAlpha(width: i32, height: i32, src_format: SDL_PixelFormat, src: const_ptr[void], src_pitch: i32, dst_format: SDL_PixelFormat, dst: ptr[void], dst_pitch: i32, linear: bool) -> bool
-
     extern def SDL_PremultiplySurfaceAlpha(surface: ptr[SDL_Surface], linear: bool) -> bool
-
     extern def SDL_ClearSurface(surface: ptr[SDL_Surface], r: f32, g: f32, b: f32, a: f32) -> bool
-
     extern def SDL_FillSurfaceRect(dst: ptr[SDL_Surface], rect: const_ptr[SDL_Rect]?, color: u32) -> bool
-
     extern def SDL_FillSurfaceRects(dst: ptr[SDL_Surface], rects: const_ptr[SDL_Rect], count: i32, color: u32) -> bool
-
     extern def SDL_BlitSurface(src: ptr[SDL_Surface], srcrect: const_ptr[SDL_Rect], dst: ptr[SDL_Surface], dstrect: const_ptr[SDL_Rect]) -> bool
-
     extern def SDL_BlitSurfaceUnchecked(src: ptr[SDL_Surface], srcrect: const_ptr[SDL_Rect], dst: ptr[SDL_Surface], dstrect: const_ptr[SDL_Rect]) -> bool
-
     extern def SDL_BlitSurfaceScaled(src: ptr[SDL_Surface], srcrect: const_ptr[SDL_Rect], dst: ptr[SDL_Surface], dstrect: const_ptr[SDL_Rect], scaleMode: SDL_ScaleMode) -> bool
-
     extern def SDL_BlitSurfaceUncheckedScaled(src: ptr[SDL_Surface], srcrect: const_ptr[SDL_Rect], dst: ptr[SDL_Surface], dstrect: const_ptr[SDL_Rect], scaleMode: SDL_ScaleMode) -> bool
-
     extern def SDL_StretchSurface(src: ptr[SDL_Surface], srcrect: const_ptr[SDL_Rect], dst: ptr[SDL_Surface], dstrect: const_ptr[SDL_Rect], scaleMode: SDL_ScaleMode) -> bool
-
     extern def SDL_BlitSurfaceTiled(src: ptr[SDL_Surface], srcrect: const_ptr[SDL_Rect], dst: ptr[SDL_Surface], dstrect: const_ptr[SDL_Rect]) -> bool
-
     extern def SDL_BlitSurfaceTiledWithScale(src: ptr[SDL_Surface], srcrect: const_ptr[SDL_Rect], scale: f32, scaleMode: SDL_ScaleMode, dst: ptr[SDL_Surface], dstrect: const_ptr[SDL_Rect]) -> bool
-
     extern def SDL_BlitSurface9Grid(src: ptr[SDL_Surface], srcrect: const_ptr[SDL_Rect], left_width: i32, right_width: i32, top_height: i32, bottom_height: i32, scale: f32, scaleMode: SDL_ScaleMode, dst: ptr[SDL_Surface], dstrect: const_ptr[SDL_Rect]) -> bool
-
     extern def SDL_MapSurfaceRGB(surface: ptr[SDL_Surface], r: u8, g: u8, b: u8) -> Uint32
-
     extern def SDL_MapSurfaceRGBA(surface: ptr[SDL_Surface], r: u8, g: u8, b: u8, a: u8) -> Uint32
-
     extern def SDL_ReadSurfacePixel(surface: ptr[SDL_Surface], x: i32, y: i32, r: ptr[Uint8], g: ptr[Uint8], b: ptr[Uint8], a: ptr[Uint8]) -> bool
-
     extern def SDL_ReadSurfacePixelFloat(surface: ptr[SDL_Surface], x: i32, y: i32, r: ptr[f32], g: ptr[f32], b: ptr[f32], a: ptr[f32]) -> bool
-
     extern def SDL_WriteSurfacePixel(surface: ptr[SDL_Surface], x: i32, y: i32, r: u8, g: u8, b: u8, a: u8) -> bool
-
     extern def SDL_WriteSurfacePixelFloat(surface: ptr[SDL_Surface], x: i32, y: i32, r: f32, g: f32, b: f32, a: f32) -> bool
 
     type SDL_CameraID = u32
@@ -1483,45 +1056,25 @@ extern module std.c.sdl3:
         SDL_CAMERA_PERMISSION_STATE_APPROVED = 1
 
     extern def SDL_GetNumCameraDrivers() -> i32
-
     extern def SDL_GetCameraDriver(index: i32) -> cstr
-
     extern def SDL_GetCurrentCameraDriver() -> cstr
-
     extern def SDL_GetCameras(count: ptr[i32]) -> ptr[SDL_CameraID]?
-
     extern def SDL_GetCameraSupportedFormats(instance_id: u32, count: ptr[i32]) -> ptr[ptr[SDL_CameraSpec]]
-
     extern def SDL_GetCameraName(instance_id: u32) -> cstr
-
     extern def SDL_GetCameraPosition(instance_id: u32) -> SDL_CameraPosition
-
     extern def SDL_OpenCamera(instance_id: u32, spec: const_ptr[SDL_CameraSpec]?) -> ptr[SDL_Camera]?
-
     extern def SDL_GetCameraPermissionState(camera: ptr[SDL_Camera]) -> SDL_CameraPermissionState
-
     extern def SDL_GetCameraID(camera: ptr[SDL_Camera]) -> SDL_CameraID
-
     extern def SDL_GetCameraProperties(camera: ptr[SDL_Camera]) -> SDL_PropertiesID
-
     extern def SDL_GetCameraFormat(camera: ptr[SDL_Camera], spec: ptr[SDL_CameraSpec]) -> bool
-
     extern def SDL_AcquireCameraFrame(camera: ptr[SDL_Camera], timestampNS: ptr[Uint64]) -> ptr[SDL_Surface]?
-
     extern def SDL_ReleaseCameraFrame(camera: ptr[SDL_Camera], frame: ptr[SDL_Surface]) -> void
-
     extern def SDL_CloseCamera(camera: ptr[SDL_Camera]) -> void
-
     extern def SDL_SetClipboardText(text: cstr) -> bool
-
     extern def SDL_GetClipboardText() -> ptr[char]?
-
     extern def SDL_HasClipboardText() -> bool
-
     extern def SDL_SetPrimarySelectionText(text: cstr) -> bool
-
     extern def SDL_GetPrimarySelectionText() -> ptr[char]?
-
     extern def SDL_HasPrimarySelectionText() -> bool
 
     type SDL_ClipboardDataCallback = fn(arg0: ptr[void], arg1: cstr, arg2: ptr[usize]) -> const_ptr[void]
@@ -1529,51 +1082,28 @@ extern module std.c.sdl3:
     type SDL_ClipboardCleanupCallback = fn(arg0: ptr[void]) -> void
 
     extern def SDL_SetClipboardData(callback: fn(arg0: ptr[void], arg1: cstr, arg2: ptr[usize]) -> const_ptr[void], cleanup: fn(arg0: ptr[void]) -> void, userdata: ptr[void], mime_types: const_ptr[cstr], num_mime_types: usize) -> bool
-
     extern def SDL_ClearClipboardData() -> bool
-
     extern def SDL_GetClipboardData(mime_type: cstr, size: ptr[usize]) -> ptr[void]
-
     extern def SDL_HasClipboardData(mime_type: cstr) -> bool
-
     extern def SDL_GetClipboardMimeTypes(num_mime_types: ptr[usize]) -> ptr[ptr[char]]
-
     extern def SDL_GetNumLogicalCPUCores() -> i32
-
     extern def SDL_GetCPUCacheLineSize() -> i32
-
     extern def SDL_HasAltiVec() -> bool
-
     extern def SDL_HasMMX() -> bool
-
     extern def SDL_HasSSE() -> bool
-
     extern def SDL_HasSSE2() -> bool
-
     extern def SDL_HasSSE3() -> bool
-
     extern def SDL_HasSSE41() -> bool
-
     extern def SDL_HasSSE42() -> bool
-
     extern def SDL_HasAVX() -> bool
-
     extern def SDL_HasAVX2() -> bool
-
     extern def SDL_HasAVX512F() -> bool
-
     extern def SDL_HasARMSIMD() -> bool
-
     extern def SDL_HasNEON() -> bool
-
     extern def SDL_HasLSX() -> bool
-
     extern def SDL_HasLASX() -> bool
-
     extern def SDL_GetSystemRAM() -> i32
-
     extern def SDL_GetSIMDAlignment() -> usize
-
     extern def SDL_GetSystemPageSize() -> i32
 
     type SDL_DisplayID = u32
@@ -1679,169 +1209,87 @@ extern module std.c.sdl3:
     type SDL_GLContextResetNotification = u32
 
     extern def SDL_GetNumVideoDrivers() -> i32
-
     extern def SDL_GetVideoDriver(index: i32) -> cstr
-
     extern def SDL_GetCurrentVideoDriver() -> cstr
-
     extern def SDL_GetSystemTheme() -> SDL_SystemTheme
-
     extern def SDL_GetDisplays(count: ptr[i32]) -> ptr[SDL_DisplayID]
-
     extern def SDL_GetPrimaryDisplay() -> SDL_DisplayID
-
     extern def SDL_GetDisplayProperties(displayID: u32) -> SDL_PropertiesID
-
     extern def SDL_GetDisplayName(displayID: u32) -> cstr
-
     extern def SDL_GetDisplayBounds(displayID: u32, rect: ptr[SDL_Rect]) -> bool
-
     extern def SDL_GetDisplayUsableBounds(displayID: u32, rect: ptr[SDL_Rect]) -> bool
-
     extern def SDL_GetNaturalDisplayOrientation(displayID: u32) -> SDL_DisplayOrientation
-
     extern def SDL_GetCurrentDisplayOrientation(displayID: u32) -> SDL_DisplayOrientation
-
     extern def SDL_GetDisplayContentScale(displayID: u32) -> f32
-
     extern def SDL_GetFullscreenDisplayModes(displayID: u32, count: ptr[i32]) -> ptr[ptr[SDL_DisplayMode]]
-
     extern def SDL_GetClosestFullscreenDisplayMode(displayID: u32, w: i32, h: i32, refresh_rate: f32, include_high_density_modes: bool, closest: ptr[SDL_DisplayMode]) -> bool
-
     extern def SDL_GetDesktopDisplayMode(displayID: u32) -> const_ptr[SDL_DisplayMode]
-
     extern def SDL_GetCurrentDisplayMode(displayID: u32) -> const_ptr[SDL_DisplayMode]
-
     extern def SDL_GetDisplayForPoint(point: const_ptr[SDL_Point]) -> SDL_DisplayID
-
     extern def SDL_GetDisplayForRect(rect: const_ptr[SDL_Rect]) -> SDL_DisplayID
-
     extern def SDL_GetDisplayForWindow(window: ptr[SDL_Window]) -> SDL_DisplayID
-
     extern def SDL_GetWindowPixelDensity(window: ptr[SDL_Window]) -> f32
-
     extern def SDL_GetWindowDisplayScale(window: ptr[SDL_Window]) -> f32
-
     extern def SDL_SetWindowFullscreenMode(window: ptr[SDL_Window], mode: const_ptr[SDL_DisplayMode]) -> bool
-
     extern def SDL_GetWindowFullscreenMode(window: ptr[SDL_Window]) -> const_ptr[SDL_DisplayMode]
-
     extern def SDL_GetWindowICCProfile(window: ptr[SDL_Window], size: ptr[usize]) -> ptr[void]
-
     extern def SDL_GetWindowPixelFormat(window: ptr[SDL_Window]) -> SDL_PixelFormat
-
     extern def SDL_GetWindows(count: ptr[i32]) -> ptr[ptr[SDL_Window]]
-
     extern def SDL_CreateWindow(title: cstr, w: i32, h: i32, flag_bits: usize) -> ptr[SDL_Window]
-
     extern def SDL_CreatePopupWindow(parent: ptr[SDL_Window], offset_x: i32, offset_y: i32, w: i32, h: i32, flag_bits: usize) -> ptr[SDL_Window]
-
     extern def SDL_CreateWindowWithProperties(props: u32) -> ptr[SDL_Window]
-
     extern def SDL_GetWindowID(window: ptr[SDL_Window]) -> SDL_WindowID
-
     extern def SDL_GetWindowFromID(id: u32) -> ptr[SDL_Window]
-
     extern def SDL_GetWindowParent(window: ptr[SDL_Window]) -> ptr[SDL_Window]
-
     extern def SDL_GetWindowProperties(window: ptr[SDL_Window]) -> SDL_PropertiesID
-
     extern def SDL_GetWindowFlags(window: ptr[SDL_Window]) -> SDL_WindowFlags
-
     extern def SDL_SetWindowTitle(window: ptr[SDL_Window], title: cstr) -> bool
-
     extern def SDL_GetWindowTitle(window: ptr[SDL_Window]) -> cstr
-
     extern def SDL_SetWindowIcon(window: ptr[SDL_Window], icon: ptr[SDL_Surface]) -> bool
-
     extern def SDL_SetWindowPosition(window: ptr[SDL_Window], x: i32, y: i32) -> bool
-
     extern def SDL_GetWindowPosition(window: ptr[SDL_Window], x: ptr[i32], y: ptr[i32]) -> bool
-
     extern def SDL_SetWindowSize(window: ptr[SDL_Window], w: i32, h: i32) -> bool
-
     extern def SDL_GetWindowSize(window: ptr[SDL_Window], w: ptr[i32], h: ptr[i32]) -> bool
-
     extern def SDL_GetWindowSafeArea(window: ptr[SDL_Window], rect: ptr[SDL_Rect]) -> bool
-
     extern def SDL_SetWindowAspectRatio(window: ptr[SDL_Window], min_aspect: f32, max_aspect: f32) -> bool
-
     extern def SDL_GetWindowAspectRatio(window: ptr[SDL_Window], min_aspect: ptr[f32], max_aspect: ptr[f32]) -> bool
-
     extern def SDL_GetWindowBordersSize(window: ptr[SDL_Window], top: ptr[i32], left: ptr[i32], bottom: ptr[i32], right: ptr[i32]) -> bool
-
     extern def SDL_GetWindowSizeInPixels(window: ptr[SDL_Window], w: ptr[i32], h: ptr[i32]) -> bool
-
     extern def SDL_SetWindowMinimumSize(window: ptr[SDL_Window], min_w: i32, min_h: i32) -> bool
-
     extern def SDL_GetWindowMinimumSize(window: ptr[SDL_Window], w: ptr[i32], h: ptr[i32]) -> bool
-
     extern def SDL_SetWindowMaximumSize(window: ptr[SDL_Window], max_w: i32, max_h: i32) -> bool
-
     extern def SDL_GetWindowMaximumSize(window: ptr[SDL_Window], w: ptr[i32], h: ptr[i32]) -> bool
-
     extern def SDL_SetWindowBordered(window: ptr[SDL_Window], bordered: bool) -> bool
-
     extern def SDL_SetWindowResizable(window: ptr[SDL_Window], resizable: bool) -> bool
-
     extern def SDL_SetWindowAlwaysOnTop(window: ptr[SDL_Window], on_top: bool) -> bool
-
     extern def SDL_SetWindowFillDocument(window: ptr[SDL_Window], fill: bool) -> bool
-
     extern def SDL_ShowWindow(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_HideWindow(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_RaiseWindow(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_MaximizeWindow(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_MinimizeWindow(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_RestoreWindow(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_SetWindowFullscreen(window: ptr[SDL_Window], fullscreen: bool) -> bool
-
     extern def SDL_SyncWindow(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_WindowHasSurface(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_GetWindowSurface(window: ptr[SDL_Window]) -> ptr[SDL_Surface]
-
     extern def SDL_SetWindowSurfaceVSync(window: ptr[SDL_Window], vsync: i32) -> bool
-
     extern def SDL_GetWindowSurfaceVSync(window: ptr[SDL_Window], vsync: ptr[i32]) -> bool
-
     extern def SDL_UpdateWindowSurface(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_UpdateWindowSurfaceRects(window: ptr[SDL_Window], rects: const_ptr[SDL_Rect], numrects: i32) -> bool
-
     extern def SDL_DestroyWindowSurface(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_SetWindowKeyboardGrab(window: ptr[SDL_Window], grabbed: bool) -> bool
-
     extern def SDL_SetWindowMouseGrab(window: ptr[SDL_Window], grabbed: bool) -> bool
-
     extern def SDL_GetWindowKeyboardGrab(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_GetWindowMouseGrab(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_GetGrabbedWindow() -> ptr[SDL_Window]
-
     extern def SDL_SetWindowMouseRect(window: ptr[SDL_Window], rect: const_ptr[SDL_Rect]) -> bool
-
     extern def SDL_GetWindowMouseRect(window: ptr[SDL_Window]) -> const_ptr[SDL_Rect]
-
     extern def SDL_SetWindowOpacity(window: ptr[SDL_Window], opacity: f32) -> bool
-
     extern def SDL_GetWindowOpacity(window: ptr[SDL_Window]) -> f32
-
     extern def SDL_SetWindowParent(window: ptr[SDL_Window], parent: ptr[SDL_Window]) -> bool
-
     extern def SDL_SetWindowModal(window: ptr[SDL_Window], modal: bool) -> bool
-
     extern def SDL_SetWindowFocusable(window: ptr[SDL_Window], focusable: bool) -> bool
-
     extern def SDL_ShowWindowSystemMenu(window: ptr[SDL_Window], x: i32, y: i32) -> bool
 
     enum SDL_HitTestResult: i32
@@ -1859,65 +1307,35 @@ extern module std.c.sdl3:
     type SDL_HitTest = fn(arg0: SDL_Window, arg1: SDL_Point, arg2: ptr[void]) -> SDL_HitTestResult
 
     extern def SDL_SetWindowHitTest(window: ptr[SDL_Window], callback: fn(arg0: ptr[SDL_Window], arg1: const_ptr[SDL_Point], arg2: ptr[void]) -> SDL_HitTestResult, callback_data: ptr[void]) -> bool
-
     extern def SDL_SetWindowShape(window: ptr[SDL_Window], shape: ptr[SDL_Surface]) -> bool
-
     extern def SDL_FlashWindow(window: ptr[SDL_Window], operation: SDL_FlashOperation) -> bool
-
     extern def SDL_SetWindowProgressState(window: ptr[SDL_Window], state: SDL_ProgressState) -> bool
-
     extern def SDL_GetWindowProgressState(window: ptr[SDL_Window]) -> SDL_ProgressState
-
     extern def SDL_SetWindowProgressValue(window: ptr[SDL_Window], value: f32) -> bool
-
     extern def SDL_GetWindowProgressValue(window: ptr[SDL_Window]) -> f32
-
     extern def SDL_DestroyWindow(window: ptr[SDL_Window]) -> void
-
     extern def SDL_ScreenSaverEnabled() -> bool
-
     extern def SDL_EnableScreenSaver() -> bool
-
     extern def SDL_DisableScreenSaver() -> bool
-
     extern def SDL_GL_LoadLibrary(path: cstr) -> bool
-
     extern def SDL_GL_GetProcAddress(proc_name: cstr) -> SDL_FunctionPointer
-
     extern def SDL_EGL_GetProcAddress(proc_name: cstr) -> SDL_FunctionPointer
-
     extern def SDL_GL_UnloadLibrary() -> void
-
     extern def SDL_GL_ExtensionSupported(extension: cstr) -> bool
-
     extern def SDL_GL_ResetAttributes() -> void
-
     extern def SDL_GL_SetAttribute(attr: SDL_GLAttr, value: i32) -> bool
-
     extern def SDL_GL_GetAttribute(attr: SDL_GLAttr, value: ptr[i32]) -> bool
-
     extern def SDL_GL_CreateContext(window: ptr[SDL_Window]) -> SDL_GLContext
-
     extern def SDL_GL_MakeCurrent(window: ptr[SDL_Window], context: ptr[SDL_GLContextState]) -> bool
-
     extern def SDL_GL_GetCurrentWindow() -> ptr[SDL_Window]
-
     extern def SDL_GL_GetCurrentContext() -> SDL_GLContext
-
     extern def SDL_EGL_GetCurrentDisplay() -> SDL_EGLDisplay
-
     extern def SDL_EGL_GetCurrentConfig() -> SDL_EGLConfig
-
     extern def SDL_EGL_GetWindowSurface(window: ptr[SDL_Window]) -> SDL_EGLSurface
-
     extern def SDL_EGL_SetAttributeCallbacks(platformAttribCallback: fn(arg0: ptr[void]) -> ptr[SDL_EGLAttrib], surfaceAttribCallback: fn(arg0: ptr[void], arg1: SDL_EGLDisplay, arg2: SDL_EGLConfig) -> ptr[SDL_EGLint], contextAttribCallback: fn(arg0: ptr[void], arg1: SDL_EGLDisplay, arg2: SDL_EGLConfig) -> ptr[SDL_EGLint], userdata: ptr[void]) -> void
-
     extern def SDL_GL_SetSwapInterval(interval: i32) -> bool
-
     extern def SDL_GL_GetSwapInterval(interval: ptr[i32]) -> bool
-
     extern def SDL_GL_SwapWindow(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_GL_DestroyContext(context: ptr[SDL_GLContextState]) -> bool
 
     struct SDL_DialogFileFilter:
@@ -1927,9 +1345,7 @@ extern module std.c.sdl3:
     type SDL_DialogFileCallback = fn(arg0: ptr[void], arg1: const_ptr[cstr], arg2: i32) -> void
 
     extern def SDL_ShowOpenFileDialog(callback: fn(arg0: ptr[void], arg1: const_ptr[cstr], arg2: i32) -> void, userdata: ptr[void], window: ptr[SDL_Window], filters: const_ptr[SDL_DialogFileFilter], nfilters: i32, default_location: cstr, allow_many: bool) -> void
-
     extern def SDL_ShowSaveFileDialog(callback: fn(arg0: ptr[void], arg1: const_ptr[cstr], arg2: i32) -> void, userdata: ptr[void], window: ptr[SDL_Window], filters: const_ptr[SDL_DialogFileFilter], nfilters: i32, default_location: cstr) -> void
-
     extern def SDL_ShowOpenFolderDialog(callback: fn(arg0: ptr[void], arg1: const_ptr[cstr], arg2: i32) -> void, userdata: ptr[void], window: ptr[SDL_Window], default_location: cstr, allow_many: bool) -> void
 
     flags SDL_FileDialogType: i32
@@ -1943,7 +1359,6 @@ extern module std.c.sdl3:
         data: array[Uint8, 16]
 
     extern def SDL_GUIDToString(guid: SDL_GUID, pszGUID: ptr[char], cbGUID: i32) -> void
-
     extern def SDL_StringToGUID(pchGUID: cstr) -> SDL_GUID
 
     enum SDL_PowerState: i32
@@ -1972,31 +1387,18 @@ extern module std.c.sdl3:
         SDL_SENSOR_COUNT = 7
 
     extern def SDL_GetSensors(count: ptr[i32]) -> ptr[SDL_SensorID]
-
     extern def SDL_GetSensorNameForID(instance_id: u32) -> cstr
-
     extern def SDL_GetSensorTypeForID(instance_id: u32) -> SDL_SensorType
-
     extern def SDL_GetSensorNonPortableTypeForID(instance_id: u32) -> i32
-
     extern def SDL_OpenSensor(instance_id: u32) -> ptr[SDL_Sensor]
-
     extern def SDL_GetSensorFromID(instance_id: u32) -> ptr[SDL_Sensor]
-
     extern def SDL_GetSensorProperties(sensor: ptr[SDL_Sensor]) -> SDL_PropertiesID
-
     extern def SDL_GetSensorName(sensor: ptr[SDL_Sensor]) -> cstr
-
     extern def SDL_GetSensorType(sensor: ptr[SDL_Sensor]) -> SDL_SensorType
-
     extern def SDL_GetSensorNonPortableType(sensor: ptr[SDL_Sensor]) -> i32
-
     extern def SDL_GetSensorID(sensor: ptr[SDL_Sensor]) -> SDL_SensorID
-
     extern def SDL_GetSensorData(sensor: ptr[SDL_Sensor], data: ptr[f32], num_values: i32) -> bool
-
     extern def SDL_CloseSensor(sensor: ptr[SDL_Sensor]) -> void
-
     extern def SDL_UpdateSensors() -> void
 
     opaque SDL_Joystick = c"SDL_Joystick"
@@ -2023,35 +1425,20 @@ extern module std.c.sdl3:
         SDL_JOYSTICK_CONNECTION_WIRELESS = 2
 
     extern def SDL_LockJoysticks() -> void
-
     extern def SDL_TryLockJoysticks() -> bool
-
     extern def SDL_UnlockJoysticks() -> void
-
     extern def SDL_HasJoystick() -> bool
-
     extern def SDL_GetJoysticks(count: ptr[i32]) -> ptr[SDL_JoystickID]
-
     extern def SDL_GetJoystickNameForID(instance_id: u32) -> cstr
-
     extern def SDL_GetJoystickPathForID(instance_id: u32) -> cstr
-
     extern def SDL_GetJoystickPlayerIndexForID(instance_id: u32) -> i32
-
     extern def SDL_GetJoystickGUIDForID(instance_id: u32) -> SDL_GUID
-
     extern def SDL_GetJoystickVendorForID(instance_id: u32) -> Uint16
-
     extern def SDL_GetJoystickProductForID(instance_id: u32) -> Uint16
-
     extern def SDL_GetJoystickProductVersionForID(instance_id: u32) -> Uint16
-
     extern def SDL_GetJoystickTypeForID(instance_id: u32) -> SDL_JoystickType
-
     extern def SDL_OpenJoystick(instance_id: u32) -> ptr[SDL_Joystick]?
-
     extern def SDL_GetJoystickFromID(instance_id: u32) -> ptr[SDL_Joystick]?
-
     extern def SDL_GetJoystickFromPlayerIndex(player_index: i32) -> ptr[SDL_Joystick]
 
     struct SDL_VirtualJoystickTouchpadDesc:
@@ -2091,89 +1478,47 @@ extern module std.c.sdl3:
         Cleanup: fn(arg0: ptr[void]) -> void
 
     extern def SDL_AttachVirtualJoystick(desc: const_ptr[SDL_VirtualJoystickDesc]) -> SDL_JoystickID
-
     extern def SDL_DetachVirtualJoystick(instance_id: u32) -> bool
-
     extern def SDL_IsJoystickVirtual(instance_id: u32) -> bool
-
     extern def SDL_SetJoystickVirtualAxis(joystick: ptr[SDL_Joystick], axis: i32, value: i16) -> bool
-
     extern def SDL_SetJoystickVirtualBall(joystick: ptr[SDL_Joystick], ball: i32, xrel: i16, yrel: i16) -> bool
-
     extern def SDL_SetJoystickVirtualButton(joystick: ptr[SDL_Joystick], button: i32, down: bool) -> bool
-
     extern def SDL_SetJoystickVirtualHat(joystick: ptr[SDL_Joystick], hat: i32, value: u8) -> bool
-
     extern def SDL_SetJoystickVirtualTouchpad(joystick: ptr[SDL_Joystick], touchpad: i32, finger: i32, down: bool, x: f32, y: f32, pressure: f32) -> bool
-
     extern def SDL_SendJoystickVirtualSensorData(joystick: ptr[SDL_Joystick], kind: SDL_SensorType, sensor_timestamp: usize, data: const_ptr[f32], num_values: i32) -> bool
-
     extern def SDL_GetJoystickProperties(joystick: ptr[SDL_Joystick]) -> SDL_PropertiesID
-
     extern def SDL_GetJoystickName(joystick: ptr[SDL_Joystick]) -> cstr
-
     extern def SDL_GetJoystickPath(joystick: ptr[SDL_Joystick]) -> cstr
-
     extern def SDL_GetJoystickPlayerIndex(joystick: ptr[SDL_Joystick]) -> i32
-
     extern def SDL_SetJoystickPlayerIndex(joystick: ptr[SDL_Joystick], player_index: i32) -> bool
-
     extern def SDL_GetJoystickGUID(joystick: ptr[SDL_Joystick]) -> SDL_GUID
-
     extern def SDL_GetJoystickVendor(joystick: ptr[SDL_Joystick]) -> Uint16
-
     extern def SDL_GetJoystickProduct(joystick: ptr[SDL_Joystick]) -> Uint16
-
     extern def SDL_GetJoystickProductVersion(joystick: ptr[SDL_Joystick]) -> Uint16
-
     extern def SDL_GetJoystickFirmwareVersion(joystick: ptr[SDL_Joystick]) -> Uint16
-
     extern def SDL_GetJoystickSerial(joystick: ptr[SDL_Joystick]) -> cstr
-
     extern def SDL_GetJoystickType(joystick: ptr[SDL_Joystick]) -> SDL_JoystickType
-
     extern def SDL_GetJoystickGUIDInfo(guid: SDL_GUID, vendor: ptr[Uint16], product: ptr[Uint16], version: ptr[Uint16], crc16: ptr[Uint16]) -> void
-
     extern def SDL_JoystickConnected(joystick: ptr[SDL_Joystick]) -> bool
-
     extern def SDL_GetJoystickID(joystick: ptr[SDL_Joystick]) -> SDL_JoystickID
-
     extern def SDL_GetNumJoystickAxes(joystick: ptr[SDL_Joystick]) -> i32
-
     extern def SDL_GetNumJoystickBalls(joystick: ptr[SDL_Joystick]) -> i32
-
     extern def SDL_GetNumJoystickHats(joystick: ptr[SDL_Joystick]) -> i32
-
     extern def SDL_GetNumJoystickButtons(joystick: ptr[SDL_Joystick]) -> i32
-
     extern def SDL_SetJoystickEventsEnabled(enabled: bool) -> void
-
     extern def SDL_JoystickEventsEnabled() -> bool
-
     extern def SDL_UpdateJoysticks() -> void
-
     extern def SDL_GetJoystickAxis(joystick: ptr[SDL_Joystick], axis: i32) -> Sint16
-
     extern def SDL_GetJoystickAxisInitialState(joystick: ptr[SDL_Joystick], axis: i32, state: ptr[Sint16]) -> bool
-
     extern def SDL_GetJoystickBall(joystick: ptr[SDL_Joystick], ball: i32, dx: ptr[i32], dy: ptr[i32]) -> bool
-
     extern def SDL_GetJoystickHat(joystick: ptr[SDL_Joystick], hat: i32) -> Uint8
-
     extern def SDL_GetJoystickButton(joystick: ptr[SDL_Joystick], button: i32) -> bool
-
     extern def SDL_RumbleJoystick(joystick: ptr[SDL_Joystick], low_frequency_rumble: u16, high_frequency_rumble: u16, duration_ms: u32) -> bool
-
     extern def SDL_RumbleJoystickTriggers(joystick: ptr[SDL_Joystick], left_rumble: u16, right_rumble: u16, duration_ms: u32) -> bool
-
     extern def SDL_SetJoystickLED(joystick: ptr[SDL_Joystick], red: u8, green: u8, blue: u8) -> bool
-
     extern def SDL_SendJoystickEffect(joystick: ptr[SDL_Joystick], data: const_ptr[void], size: i32) -> bool
-
     extern def SDL_CloseJoystick(joystick: ptr[SDL_Joystick]) -> void
-
     extern def SDL_GetJoystickConnectionState(joystick: ptr[SDL_Joystick]) -> SDL_JoystickConnectionState
-
     extern def SDL_GetJoystickPowerInfo(joystick: ptr[SDL_Joystick], percent: ptr[i32]) -> SDL_PowerState
 
     opaque SDL_Gamepad = c"SDL_Gamepad"
@@ -2257,149 +1602,77 @@ extern module std.c.sdl3:
         output: SDL_GamepadBinding_output
 
     extern def SDL_AddGamepadMapping(mapping: cstr) -> i32
-
     extern def SDL_AddGamepadMappingsFromIO(src: ptr[SDL_IOStream], closeio: bool) -> i32
-
     extern def SDL_AddGamepadMappingsFromFile(file: cstr) -> i32
-
     extern def SDL_ReloadGamepadMappings() -> bool
-
     extern def SDL_GetGamepadMappings(count: ptr[i32]) -> ptr[ptr[char]]
-
     extern def SDL_GetGamepadMappingForGUID(guid: SDL_GUID) -> ptr[char]?
-
     extern def SDL_GetGamepadMapping(gamepad: ptr[SDL_Gamepad]) -> ptr[char]?
-
     extern def SDL_SetGamepadMapping(instance_id: u32, mapping: cstr) -> bool
-
     extern def SDL_HasGamepad() -> bool
-
     extern def SDL_GetGamepads(count: ptr[i32]) -> ptr[SDL_JoystickID]
-
     extern def SDL_IsGamepad(instance_id: u32) -> bool
-
     extern def SDL_GetGamepadNameForID(instance_id: u32) -> cstr
-
     extern def SDL_GetGamepadPathForID(instance_id: u32) -> cstr
-
     extern def SDL_GetGamepadPlayerIndexForID(instance_id: u32) -> i32
-
     extern def SDL_GetGamepadGUIDForID(instance_id: u32) -> SDL_GUID
-
     extern def SDL_GetGamepadVendorForID(instance_id: u32) -> Uint16
-
     extern def SDL_GetGamepadProductForID(instance_id: u32) -> Uint16
-
     extern def SDL_GetGamepadProductVersionForID(instance_id: u32) -> Uint16
-
     extern def SDL_GetGamepadTypeForID(instance_id: u32) -> SDL_GamepadType
-
     extern def SDL_GetRealGamepadTypeForID(instance_id: u32) -> SDL_GamepadType
-
     extern def SDL_GetGamepadMappingForID(instance_id: u32) -> ptr[char]?
-
     extern def SDL_OpenGamepad(instance_id: u32) -> ptr[SDL_Gamepad]?
-
     extern def SDL_GetGamepadFromID(instance_id: u32) -> ptr[SDL_Gamepad]?
-
     extern def SDL_GetGamepadFromPlayerIndex(player_index: i32) -> ptr[SDL_Gamepad]
-
     extern def SDL_GetGamepadProperties(gamepad: ptr[SDL_Gamepad]) -> SDL_PropertiesID
-
     extern def SDL_GetGamepadID(gamepad: ptr[SDL_Gamepad]) -> SDL_JoystickID
-
     extern def SDL_GetGamepadName(gamepad: ptr[SDL_Gamepad]) -> cstr
-
     extern def SDL_GetGamepadPath(gamepad: ptr[SDL_Gamepad]) -> cstr
-
     extern def SDL_GetGamepadType(gamepad: ptr[SDL_Gamepad]) -> SDL_GamepadType
-
     extern def SDL_GetRealGamepadType(gamepad: ptr[SDL_Gamepad]) -> SDL_GamepadType
-
     extern def SDL_GetGamepadPlayerIndex(gamepad: ptr[SDL_Gamepad]) -> i32
-
     extern def SDL_SetGamepadPlayerIndex(gamepad: ptr[SDL_Gamepad], player_index: i32) -> bool
-
     extern def SDL_GetGamepadVendor(gamepad: ptr[SDL_Gamepad]) -> Uint16
-
     extern def SDL_GetGamepadProduct(gamepad: ptr[SDL_Gamepad]) -> Uint16
-
     extern def SDL_GetGamepadProductVersion(gamepad: ptr[SDL_Gamepad]) -> Uint16
-
     extern def SDL_GetGamepadFirmwareVersion(gamepad: ptr[SDL_Gamepad]) -> Uint16
-
     extern def SDL_GetGamepadSerial(gamepad: ptr[SDL_Gamepad]) -> cstr
-
     extern def SDL_GetGamepadSteamHandle(gamepad: ptr[SDL_Gamepad]) -> Uint64
-
     extern def SDL_GetGamepadConnectionState(gamepad: ptr[SDL_Gamepad]) -> SDL_JoystickConnectionState
-
     extern def SDL_GetGamepadPowerInfo(gamepad: ptr[SDL_Gamepad], percent: ptr[i32]) -> SDL_PowerState
-
     extern def SDL_GamepadConnected(gamepad: ptr[SDL_Gamepad]) -> bool
-
     extern def SDL_GetGamepadJoystick(gamepad: ptr[SDL_Gamepad]) -> ptr[SDL_Joystick]
-
     extern def SDL_SetGamepadEventsEnabled(enabled: bool) -> void
-
     extern def SDL_GamepadEventsEnabled() -> bool
-
     extern def SDL_GetGamepadBindings(gamepad: ptr[SDL_Gamepad], count: ptr[i32]) -> ptr[ptr[SDL_GamepadBinding]]
-
     extern def SDL_UpdateGamepads() -> void
-
     extern def SDL_GetGamepadTypeFromString(str: cstr) -> SDL_GamepadType
-
     extern def SDL_GetGamepadStringForType(kind: SDL_GamepadType) -> cstr
-
     extern def SDL_GetGamepadAxisFromString(str: cstr) -> SDL_GamepadAxis
-
     extern def SDL_GetGamepadStringForAxis(axis: SDL_GamepadAxis) -> cstr
-
     extern def SDL_GamepadHasAxis(gamepad: ptr[SDL_Gamepad], axis: SDL_GamepadAxis) -> bool
-
     extern def SDL_GetGamepadAxis(gamepad: ptr[SDL_Gamepad], axis: SDL_GamepadAxis) -> Sint16
-
     extern def SDL_GetGamepadButtonFromString(str: cstr) -> SDL_GamepadButton
-
     extern def SDL_GetGamepadStringForButton(button: SDL_GamepadButton) -> cstr
-
     extern def SDL_GamepadHasButton(gamepad: ptr[SDL_Gamepad], button: SDL_GamepadButton) -> bool
-
     extern def SDL_GetGamepadButton(gamepad: ptr[SDL_Gamepad], button: SDL_GamepadButton) -> bool
-
     extern def SDL_GetGamepadButtonLabelForType(kind: SDL_GamepadType, button: SDL_GamepadButton) -> SDL_GamepadButtonLabel
-
     extern def SDL_GetGamepadButtonLabel(gamepad: ptr[SDL_Gamepad], button: SDL_GamepadButton) -> SDL_GamepadButtonLabel
-
     extern def SDL_GetNumGamepadTouchpads(gamepad: ptr[SDL_Gamepad]) -> i32
-
     extern def SDL_GetNumGamepadTouchpadFingers(gamepad: ptr[SDL_Gamepad], touchpad: i32) -> i32
-
     extern def SDL_GetGamepadTouchpadFinger(gamepad: ptr[SDL_Gamepad], touchpad: i32, finger: i32, down: ptr[bool], x: ptr[f32], y: ptr[f32], pressure: ptr[f32]) -> bool
-
     extern def SDL_GamepadHasSensor(gamepad: ptr[SDL_Gamepad], kind: SDL_SensorType) -> bool
-
     extern def SDL_SetGamepadSensorEnabled(gamepad: ptr[SDL_Gamepad], kind: SDL_SensorType, enabled: bool) -> bool
-
     extern def SDL_GamepadSensorEnabled(gamepad: ptr[SDL_Gamepad], kind: SDL_SensorType) -> bool
-
     extern def SDL_GetGamepadSensorDataRate(gamepad: ptr[SDL_Gamepad], kind: SDL_SensorType) -> f32
-
     extern def SDL_GetGamepadSensorData(gamepad: ptr[SDL_Gamepad], kind: SDL_SensorType, data: ptr[f32], num_values: i32) -> bool
-
     extern def SDL_RumbleGamepad(gamepad: ptr[SDL_Gamepad], low_frequency_rumble: u16, high_frequency_rumble: u16, duration_ms: u32) -> bool
-
     extern def SDL_RumbleGamepadTriggers(gamepad: ptr[SDL_Gamepad], left_rumble: u16, right_rumble: u16, duration_ms: u32) -> bool
-
     extern def SDL_SetGamepadLED(gamepad: ptr[SDL_Gamepad], red: u8, green: u8, blue: u8) -> bool
-
     extern def SDL_SendGamepadEffect(gamepad: ptr[SDL_Gamepad], data: const_ptr[void], size: i32) -> bool
-
     extern def SDL_CloseGamepad(gamepad: ptr[SDL_Gamepad]) -> void
-
     extern def SDL_GetGamepadAppleSFSymbolsNameForButton(gamepad: ptr[SDL_Gamepad], button: SDL_GamepadButton) -> cstr
-
     extern def SDL_GetGamepadAppleSFSymbolsNameForAxis(gamepad: ptr[SDL_Gamepad], axis: SDL_GamepadAxis) -> cstr
 
     enum SDL_Scancode: i32
@@ -2660,35 +1933,20 @@ extern module std.c.sdl3:
     type SDL_KeyboardID = u32
 
     extern def SDL_HasKeyboard() -> bool
-
     extern def SDL_GetKeyboards(count: ptr[i32]) -> ptr[SDL_KeyboardID]
-
     extern def SDL_GetKeyboardNameForID(instance_id: u32) -> cstr
-
     extern def SDL_GetKeyboardFocus() -> ptr[SDL_Window]
-
     extern def SDL_GetKeyboardState(numkeys: ptr[i32]) -> const_ptr[bool]
-
     extern def SDL_ResetKeyboard() -> void
-
     extern def SDL_GetModState() -> SDL_Keymod
-
     extern def SDL_SetModState(modstate: u16) -> void
-
     extern def SDL_GetKeyFromScancode(scancode: SDL_Scancode, modstate: u16, key_event: bool) -> SDL_Keycode
-
     extern def SDL_GetScancodeFromKey(key: u32, modstate: ptr[SDL_Keymod]) -> SDL_Scancode
-
     extern def SDL_SetScancodeName(scancode: SDL_Scancode, name: cstr) -> bool
-
     extern def SDL_GetScancodeName(scancode: SDL_Scancode) -> cstr
-
     extern def SDL_GetScancodeFromName(name: cstr) -> SDL_Scancode
-
     extern def SDL_GetKeyName(key: u32) -> cstr
-
     extern def SDL_GetKeyFromName(name: cstr) -> SDL_Keycode
-
     extern def SDL_StartTextInput(window: ptr[SDL_Window]) -> bool
 
     enum SDL_TextInputType: i32
@@ -2709,19 +1967,12 @@ extern module std.c.sdl3:
         SDL_CAPITALIZE_LETTERS = 3
 
     extern def SDL_StartTextInputWithProperties(window: ptr[SDL_Window], props: u32) -> bool
-
     extern def SDL_TextInputActive(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_StopTextInput(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_ClearComposition(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_SetTextInputArea(window: ptr[SDL_Window], rect: const_ptr[SDL_Rect], cursor: i32) -> bool
-
     extern def SDL_GetTextInputArea(window: ptr[SDL_Window], rect: ptr[SDL_Rect], cursor: ptr[i32]) -> bool
-
     extern def SDL_HasScreenKeyboardSupport() -> bool
-
     extern def SDL_ScreenKeyboardShown(window: ptr[SDL_Window]) -> bool
 
     type SDL_MouseID = u32
@@ -2764,51 +2015,28 @@ extern module std.c.sdl3:
     type SDL_MouseMotionTransformCallback = fn(arg0: ptr[void], arg1: Uint64, arg2: SDL_Window, arg3: SDL_MouseID, arg4: ptr[f32], arg5: ptr[f32]) -> void
 
     extern def SDL_HasMouse() -> bool
-
     extern def SDL_GetMice(count: ptr[i32]) -> ptr[SDL_MouseID]
-
     extern def SDL_GetMouseNameForID(instance_id: u32) -> cstr
-
     extern def SDL_GetMouseFocus() -> ptr[SDL_Window]
-
     extern def SDL_GetMouseState(x: ptr[f32], y: ptr[f32]) -> SDL_MouseButtonFlags
-
     extern def SDL_GetGlobalMouseState(x: ptr[f32], y: ptr[f32]) -> SDL_MouseButtonFlags
-
     extern def SDL_GetRelativeMouseState(x: ptr[f32], y: ptr[f32]) -> SDL_MouseButtonFlags
-
     extern def SDL_WarpMouseInWindow(window: ptr[SDL_Window], x: f32, y: f32) -> void
-
     extern def SDL_WarpMouseGlobal(x: f32, y: f32) -> bool
-
     extern def SDL_SetRelativeMouseTransform(callback: fn(arg0: ptr[void], arg1: Uint64, arg2: ptr[SDL_Window], arg3: SDL_MouseID, arg4: ptr[f32], arg5: ptr[f32]) -> void, userdata: ptr[void]) -> bool
-
     extern def SDL_SetWindowRelativeMouseMode(window: ptr[SDL_Window], enabled: bool) -> bool
-
     extern def SDL_GetWindowRelativeMouseMode(window: ptr[SDL_Window]) -> bool
-
     extern def SDL_CaptureMouse(enabled: bool) -> bool
-
     extern def SDL_CreateCursor(data: const_ptr[Uint8], mask: const_ptr[Uint8], w: i32, h: i32, hot_x: i32, hot_y: i32) -> ptr[SDL_Cursor]
-
     extern def SDL_CreateColorCursor(surface: ptr[SDL_Surface], hot_x: i32, hot_y: i32) -> ptr[SDL_Cursor]
-
     extern def SDL_CreateAnimatedCursor(frames: ptr[SDL_CursorFrameInfo], frame_count: i32, hot_x: i32, hot_y: i32) -> ptr[SDL_Cursor]
-
     extern def SDL_CreateSystemCursor(id: SDL_SystemCursor) -> ptr[SDL_Cursor]
-
     extern def SDL_SetCursor(cursor: ptr[SDL_Cursor]) -> bool
-
     extern def SDL_GetCursor() -> ptr[SDL_Cursor]
-
     extern def SDL_GetDefaultCursor() -> ptr[SDL_Cursor]
-
     extern def SDL_DestroyCursor(cursor: ptr[SDL_Cursor]) -> void
-
     extern def SDL_ShowCursor() -> bool
-
     extern def SDL_HideCursor() -> bool
-
     extern def SDL_CursorVisible() -> bool
 
     type SDL_TouchID = usize
@@ -2828,11 +2056,8 @@ extern module std.c.sdl3:
         pressure: f32
 
     extern def SDL_GetTouchDevices(count: ptr[i32]) -> ptr[SDL_TouchID]
-
     extern def SDL_GetTouchDeviceName(touchID: usize) -> cstr
-
     extern def SDL_GetTouchDeviceType(touchID: usize) -> SDL_TouchDeviceType
-
     extern def SDL_GetTouchFingers(touchID: usize, count: ptr[i32]) -> ptr[ptr[SDL_Finger]]
 
     type SDL_PenID = u32
@@ -3388,47 +2613,28 @@ extern module std.c.sdl3:
         SDL_GETEVENT = 2
 
     extern def SDL_PeepEvents(events: ptr[SDL_Event], numevents: i32, action: SDL_EventAction, minType: u32, maxType: u32) -> i32
-
     extern def SDL_HasEvent(kind: u32) -> bool
-
     extern def SDL_HasEvents(minType: u32, maxType: u32) -> bool
-
     extern def SDL_FlushEvent(kind: u32) -> void
-
     extern def SDL_FlushEvents(minType: u32, maxType: u32) -> void
-
     extern def SDL_PollEvent(event: ptr[SDL_Event]) -> bool
-
     extern def SDL_WaitEvent(event: ptr[SDL_Event]) -> bool
-
     extern def SDL_WaitEventTimeout(event: ptr[SDL_Event], timeoutMS: i32) -> bool
-
     extern def SDL_PushEvent(event: ptr[SDL_Event]) -> bool
 
     type SDL_EventFilter = fn(arg0: ptr[void], arg1: SDL_Event) -> bool
 
     extern def SDL_SetEventFilter(filter: fn(arg0: ptr[void], arg1: ptr[SDL_Event]) -> bool, userdata: ptr[void]) -> void
-
     extern def SDL_GetEventFilter(filter: ptr[SDL_EventFilter], userdata: ptr[ptr[void]]) -> bool
-
     extern def SDL_AddEventWatch(filter: fn(arg0: ptr[void], arg1: ptr[SDL_Event]) -> bool, userdata: ptr[void]) -> bool
-
     extern def SDL_RemoveEventWatch(filter: fn(arg0: ptr[void], arg1: ptr[SDL_Event]) -> bool, userdata: ptr[void]) -> void
-
     extern def SDL_FilterEvents(filter: fn(arg0: ptr[void], arg1: ptr[SDL_Event]) -> bool, userdata: ptr[void]) -> void
-
     extern def SDL_SetEventEnabled(kind: u32, enabled: bool) -> void
-
     extern def SDL_EventEnabled(kind: u32) -> bool
-
     extern def SDL_RegisterEvents(numevents: i32) -> Uint32
-
     extern def SDL_GetWindowFromEvent(event: const_ptr[SDL_Event]) -> ptr[SDL_Window]
-
     extern def SDL_GetEventDescription(event: const_ptr[SDL_Event], buf: ptr[char], buflen: i32) -> i32
-
     extern def SDL_GetBasePath() -> cstr?
-
     extern def SDL_GetPrefPath(org: cstr, app: cstr) -> ptr[char]
 
     enum SDL_Folder: i32
@@ -3472,17 +2678,11 @@ extern module std.c.sdl3:
     type SDL_EnumerateDirectoryCallback = fn(arg0: ptr[void], arg1: cstr, arg2: cstr) -> SDL_EnumerationResult
 
     extern def SDL_EnumerateDirectory(path: cstr, callback: fn(arg0: ptr[void], arg1: cstr, arg2: cstr) -> SDL_EnumerationResult, userdata: ptr[void]) -> bool
-
     extern def SDL_RemovePath(path: cstr) -> bool
-
     extern def SDL_RenamePath(oldpath: cstr, newpath: cstr) -> bool
-
     extern def SDL_CopyFile(oldpath: cstr, newpath: cstr) -> bool
-
     extern def SDL_GetPathInfo(path: cstr, info: ptr[SDL_PathInfo]) -> bool
-
     extern def SDL_GlobDirectory(path: cstr, pattern: cstr, flag_bits: u32, count: ptr[i32]) -> ptr[ptr[char]]
-
     extern def SDL_GetCurrentDirectory() -> ptr[char]
 
     opaque SDL_GPUDevice = c"SDL_GPUDevice"
@@ -4095,11 +3295,8 @@ extern module std.c.sdl3:
         padding3: u8
 
     extern def SDL_GPUSupportsShaderFormats(format_flags: u32, name: cstr) -> bool
-
     extern def SDL_GPUSupportsProperties(props: u32) -> bool
-
     extern def SDL_CreateGPUDevice(format_flags: u32, debug_mode: bool, name: cstr) -> ptr[SDL_GPUDevice]
-
     extern def SDL_CreateGPUDeviceWithProperties(props: u32) -> ptr[SDL_GPUDevice]
 
     struct SDL_GPUVulkanOptions:
@@ -4112,185 +3309,95 @@ extern module std.c.sdl3:
         instance_extension_names: ptr[cstr]
 
     extern def SDL_DestroyGPUDevice(device: ptr[SDL_GPUDevice]) -> void
-
     extern def SDL_GetNumGPUDrivers() -> i32
-
     extern def SDL_GetGPUDriver(index: i32) -> cstr
-
     extern def SDL_GetGPUDeviceDriver(device: ptr[SDL_GPUDevice]) -> cstr
-
     extern def SDL_GetGPUShaderFormats(device: ptr[SDL_GPUDevice]) -> SDL_GPUShaderFormat
-
     extern def SDL_GetGPUDeviceProperties(device: ptr[SDL_GPUDevice]) -> SDL_PropertiesID
-
     extern def SDL_CreateGPUComputePipeline(device: ptr[SDL_GPUDevice], createinfo: const_ptr[SDL_GPUComputePipelineCreateInfo]) -> ptr[SDL_GPUComputePipeline]
-
     extern def SDL_CreateGPUGraphicsPipeline(device: ptr[SDL_GPUDevice], createinfo: const_ptr[SDL_GPUGraphicsPipelineCreateInfo]) -> ptr[SDL_GPUGraphicsPipeline]
-
     extern def SDL_CreateGPUSampler(device: ptr[SDL_GPUDevice], createinfo: const_ptr[SDL_GPUSamplerCreateInfo]) -> ptr[SDL_GPUSampler]
-
     extern def SDL_CreateGPUShader(device: ptr[SDL_GPUDevice], createinfo: const_ptr[SDL_GPUShaderCreateInfo]) -> ptr[SDL_GPUShader]
-
     extern def SDL_CreateGPUTexture(device: ptr[SDL_GPUDevice], createinfo: const_ptr[SDL_GPUTextureCreateInfo]) -> ptr[SDL_GPUTexture]
-
     extern def SDL_CreateGPUBuffer(device: ptr[SDL_GPUDevice], createinfo: const_ptr[SDL_GPUBufferCreateInfo]) -> ptr[SDL_GPUBuffer]
-
     extern def SDL_CreateGPUTransferBuffer(device: ptr[SDL_GPUDevice], createinfo: const_ptr[SDL_GPUTransferBufferCreateInfo]) -> ptr[SDL_GPUTransferBuffer]
-
     extern def SDL_SetGPUBufferName(device: ptr[SDL_GPUDevice], buffer: ptr[SDL_GPUBuffer], text: cstr) -> void
-
     extern def SDL_SetGPUTextureName(device: ptr[SDL_GPUDevice], texture: ptr[SDL_GPUTexture], text: cstr) -> void
-
     extern def SDL_InsertGPUDebugLabel(command_buffer: ptr[SDL_GPUCommandBuffer], text: cstr) -> void
-
     extern def SDL_PushGPUDebugGroup(command_buffer: ptr[SDL_GPUCommandBuffer], name: cstr) -> void
-
     extern def SDL_PopGPUDebugGroup(command_buffer: ptr[SDL_GPUCommandBuffer]) -> void
-
     extern def SDL_ReleaseGPUTexture(device: ptr[SDL_GPUDevice], texture: ptr[SDL_GPUTexture]) -> void
-
     extern def SDL_ReleaseGPUSampler(device: ptr[SDL_GPUDevice], sampler: ptr[SDL_GPUSampler]) -> void
-
     extern def SDL_ReleaseGPUBuffer(device: ptr[SDL_GPUDevice], buffer: ptr[SDL_GPUBuffer]) -> void
-
     extern def SDL_ReleaseGPUTransferBuffer(device: ptr[SDL_GPUDevice], transfer_buffer: ptr[SDL_GPUTransferBuffer]) -> void
-
     extern def SDL_ReleaseGPUComputePipeline(device: ptr[SDL_GPUDevice], compute_pipeline: ptr[SDL_GPUComputePipeline]) -> void
-
     extern def SDL_ReleaseGPUShader(device: ptr[SDL_GPUDevice], shader: ptr[SDL_GPUShader]) -> void
-
     extern def SDL_ReleaseGPUGraphicsPipeline(device: ptr[SDL_GPUDevice], graphics_pipeline: ptr[SDL_GPUGraphicsPipeline]) -> void
-
     extern def SDL_AcquireGPUCommandBuffer(device: ptr[SDL_GPUDevice]) -> ptr[SDL_GPUCommandBuffer]
-
     extern def SDL_PushGPUVertexUniformData(command_buffer: ptr[SDL_GPUCommandBuffer], slot_index: u32, data: const_ptr[void], length: u32) -> void
-
     extern def SDL_PushGPUFragmentUniformData(command_buffer: ptr[SDL_GPUCommandBuffer], slot_index: u32, data: const_ptr[void], length: u32) -> void
-
     extern def SDL_PushGPUComputeUniformData(command_buffer: ptr[SDL_GPUCommandBuffer], slot_index: u32, data: const_ptr[void], length: u32) -> void
-
     extern def SDL_BeginGPURenderPass(command_buffer: ptr[SDL_GPUCommandBuffer], color_target_infos: const_ptr[SDL_GPUColorTargetInfo], num_color_targets: u32, depth_stencil_target_info: const_ptr[SDL_GPUDepthStencilTargetInfo]) -> ptr[SDL_GPURenderPass]
-
     extern def SDL_BindGPUGraphicsPipeline(render_pass: ptr[SDL_GPURenderPass], graphics_pipeline: ptr[SDL_GPUGraphicsPipeline]) -> void
-
     extern def SDL_SetGPUViewport(render_pass: ptr[SDL_GPURenderPass], viewport: const_ptr[SDL_GPUViewport]) -> void
-
     extern def SDL_SetGPUScissor(render_pass: ptr[SDL_GPURenderPass], scissor: const_ptr[SDL_Rect]) -> void
-
     extern def SDL_SetGPUBlendConstants(render_pass: ptr[SDL_GPURenderPass], blend_constants: SDL_FColor) -> void
-
     extern def SDL_SetGPUStencilReference(render_pass: ptr[SDL_GPURenderPass], reference: u8) -> void
-
     extern def SDL_BindGPUVertexBuffers(render_pass: ptr[SDL_GPURenderPass], first_slot: u32, bindings: const_ptr[SDL_GPUBufferBinding], num_bindings: u32) -> void
-
     extern def SDL_BindGPUIndexBuffer(render_pass: ptr[SDL_GPURenderPass], binding: const_ptr[SDL_GPUBufferBinding], index_element_size: SDL_GPUIndexElementSize) -> void
-
     extern def SDL_BindGPUVertexSamplers(render_pass: ptr[SDL_GPURenderPass], first_slot: u32, texture_sampler_bindings: const_ptr[SDL_GPUTextureSamplerBinding], num_bindings: u32) -> void
-
     extern def SDL_BindGPUVertexStorageTextures(render_pass: ptr[SDL_GPURenderPass], first_slot: u32, storage_textures: const_ptr[ptr[SDL_GPUTexture]], num_bindings: u32) -> void
-
     extern def SDL_BindGPUVertexStorageBuffers(render_pass: ptr[SDL_GPURenderPass], first_slot: u32, storage_buffers: const_ptr[ptr[SDL_GPUBuffer]], num_bindings: u32) -> void
-
     extern def SDL_BindGPUFragmentSamplers(render_pass: ptr[SDL_GPURenderPass], first_slot: u32, texture_sampler_bindings: const_ptr[SDL_GPUTextureSamplerBinding], num_bindings: u32) -> void
-
     extern def SDL_BindGPUFragmentStorageTextures(render_pass: ptr[SDL_GPURenderPass], first_slot: u32, storage_textures: const_ptr[ptr[SDL_GPUTexture]], num_bindings: u32) -> void
-
     extern def SDL_BindGPUFragmentStorageBuffers(render_pass: ptr[SDL_GPURenderPass], first_slot: u32, storage_buffers: const_ptr[ptr[SDL_GPUBuffer]], num_bindings: u32) -> void
-
     extern def SDL_DrawGPUIndexedPrimitives(render_pass: ptr[SDL_GPURenderPass], num_indices: u32, num_instances: u32, first_index: u32, vertex_offset: i32, first_instance: u32) -> void
-
     extern def SDL_DrawGPUPrimitives(render_pass: ptr[SDL_GPURenderPass], num_vertices: u32, num_instances: u32, first_vertex: u32, first_instance: u32) -> void
-
     extern def SDL_DrawGPUPrimitivesIndirect(render_pass: ptr[SDL_GPURenderPass], buffer: ptr[SDL_GPUBuffer], offset: u32, draw_count: u32) -> void
-
     extern def SDL_DrawGPUIndexedPrimitivesIndirect(render_pass: ptr[SDL_GPURenderPass], buffer: ptr[SDL_GPUBuffer], offset: u32, draw_count: u32) -> void
-
     extern def SDL_EndGPURenderPass(render_pass: ptr[SDL_GPURenderPass]) -> void
-
     extern def SDL_BeginGPUComputePass(command_buffer: ptr[SDL_GPUCommandBuffer], storage_texture_bindings: const_ptr[SDL_GPUStorageTextureReadWriteBinding], num_storage_texture_bindings: u32, storage_buffer_bindings: const_ptr[SDL_GPUStorageBufferReadWriteBinding], num_storage_buffer_bindings: u32) -> ptr[SDL_GPUComputePass]
-
     extern def SDL_BindGPUComputePipeline(compute_pass: ptr[SDL_GPUComputePass], compute_pipeline: ptr[SDL_GPUComputePipeline]) -> void
-
     extern def SDL_BindGPUComputeSamplers(compute_pass: ptr[SDL_GPUComputePass], first_slot: u32, texture_sampler_bindings: const_ptr[SDL_GPUTextureSamplerBinding], num_bindings: u32) -> void
-
     extern def SDL_BindGPUComputeStorageTextures(compute_pass: ptr[SDL_GPUComputePass], first_slot: u32, storage_textures: const_ptr[ptr[SDL_GPUTexture]], num_bindings: u32) -> void
-
     extern def SDL_BindGPUComputeStorageBuffers(compute_pass: ptr[SDL_GPUComputePass], first_slot: u32, storage_buffers: const_ptr[ptr[SDL_GPUBuffer]], num_bindings: u32) -> void
-
     extern def SDL_DispatchGPUCompute(compute_pass: ptr[SDL_GPUComputePass], groupcount_x: u32, groupcount_y: u32, groupcount_z: u32) -> void
-
     extern def SDL_DispatchGPUComputeIndirect(compute_pass: ptr[SDL_GPUComputePass], buffer: ptr[SDL_GPUBuffer], offset: u32) -> void
-
     extern def SDL_EndGPUComputePass(compute_pass: ptr[SDL_GPUComputePass]) -> void
-
     extern def SDL_MapGPUTransferBuffer(device: ptr[SDL_GPUDevice], transfer_buffer: ptr[SDL_GPUTransferBuffer], cycle: bool) -> ptr[void]
-
     extern def SDL_UnmapGPUTransferBuffer(device: ptr[SDL_GPUDevice], transfer_buffer: ptr[SDL_GPUTransferBuffer]) -> void
-
     extern def SDL_BeginGPUCopyPass(command_buffer: ptr[SDL_GPUCommandBuffer]) -> ptr[SDL_GPUCopyPass]
-
     extern def SDL_UploadToGPUTexture(copy_pass: ptr[SDL_GPUCopyPass], source: const_ptr[SDL_GPUTextureTransferInfo], destination: const_ptr[SDL_GPUTextureRegion], cycle: bool) -> void
-
     extern def SDL_UploadToGPUBuffer(copy_pass: ptr[SDL_GPUCopyPass], source: const_ptr[SDL_GPUTransferBufferLocation], destination: const_ptr[SDL_GPUBufferRegion], cycle: bool) -> void
-
     extern def SDL_CopyGPUTextureToTexture(copy_pass: ptr[SDL_GPUCopyPass], source: const_ptr[SDL_GPUTextureLocation], destination: const_ptr[SDL_GPUTextureLocation], w: u32, h: u32, d: u32, cycle: bool) -> void
-
     extern def SDL_CopyGPUBufferToBuffer(copy_pass: ptr[SDL_GPUCopyPass], source: const_ptr[SDL_GPUBufferLocation], destination: const_ptr[SDL_GPUBufferLocation], size: u32, cycle: bool) -> void
-
     extern def SDL_DownloadFromGPUTexture(copy_pass: ptr[SDL_GPUCopyPass], source: const_ptr[SDL_GPUTextureRegion], destination: const_ptr[SDL_GPUTextureTransferInfo]) -> void
-
     extern def SDL_DownloadFromGPUBuffer(copy_pass: ptr[SDL_GPUCopyPass], source: const_ptr[SDL_GPUBufferRegion], destination: const_ptr[SDL_GPUTransferBufferLocation]) -> void
-
     extern def SDL_EndGPUCopyPass(copy_pass: ptr[SDL_GPUCopyPass]) -> void
-
     extern def SDL_GenerateMipmapsForGPUTexture(command_buffer: ptr[SDL_GPUCommandBuffer], texture: ptr[SDL_GPUTexture]) -> void
-
     extern def SDL_BlitGPUTexture(command_buffer: ptr[SDL_GPUCommandBuffer], info: const_ptr[SDL_GPUBlitInfo]) -> void
-
     extern def SDL_WindowSupportsGPUSwapchainComposition(device: ptr[SDL_GPUDevice], window: ptr[SDL_Window], swapchain_composition: SDL_GPUSwapchainComposition) -> bool
-
     extern def SDL_WindowSupportsGPUPresentMode(device: ptr[SDL_GPUDevice], window: ptr[SDL_Window], present_mode: SDL_GPUPresentMode) -> bool
-
     extern def SDL_ClaimWindowForGPUDevice(device: ptr[SDL_GPUDevice], window: ptr[SDL_Window]) -> bool
-
     extern def SDL_ReleaseWindowFromGPUDevice(device: ptr[SDL_GPUDevice], window: ptr[SDL_Window]) -> void
-
     extern def SDL_SetGPUSwapchainParameters(device: ptr[SDL_GPUDevice], window: ptr[SDL_Window], swapchain_composition: SDL_GPUSwapchainComposition, present_mode: SDL_GPUPresentMode) -> bool
-
     extern def SDL_SetGPUAllowedFramesInFlight(device: ptr[SDL_GPUDevice], allowed_frames_in_flight: u32) -> bool
-
     extern def SDL_GetGPUSwapchainTextureFormat(device: ptr[SDL_GPUDevice], window: ptr[SDL_Window]) -> SDL_GPUTextureFormat
-
     extern def SDL_AcquireGPUSwapchainTexture(command_buffer: ptr[SDL_GPUCommandBuffer], window: ptr[SDL_Window], swapchain_texture: ptr[ptr[SDL_GPUTexture]], swapchain_texture_width: ptr[Uint32], swapchain_texture_height: ptr[Uint32]) -> bool
-
     extern def SDL_WaitForGPUSwapchain(device: ptr[SDL_GPUDevice], window: ptr[SDL_Window]) -> bool
-
     extern def SDL_WaitAndAcquireGPUSwapchainTexture(command_buffer: ptr[SDL_GPUCommandBuffer], window: ptr[SDL_Window], swapchain_texture: ptr[ptr[SDL_GPUTexture]], swapchain_texture_width: ptr[Uint32], swapchain_texture_height: ptr[Uint32]) -> bool
-
     extern def SDL_SubmitGPUCommandBuffer(command_buffer: ptr[SDL_GPUCommandBuffer]) -> bool
-
     extern def SDL_SubmitGPUCommandBufferAndAcquireFence(command_buffer: ptr[SDL_GPUCommandBuffer]) -> ptr[SDL_GPUFence]
-
     extern def SDL_CancelGPUCommandBuffer(command_buffer: ptr[SDL_GPUCommandBuffer]) -> bool
-
     extern def SDL_WaitForGPUIdle(device: ptr[SDL_GPUDevice]) -> bool
-
     extern def SDL_WaitForGPUFences(device: ptr[SDL_GPUDevice], wait_all: bool, fences: const_ptr[ptr[SDL_GPUFence]], num_fences: u32) -> bool
-
     extern def SDL_QueryGPUFence(device: ptr[SDL_GPUDevice], fence: ptr[SDL_GPUFence]) -> bool
-
     extern def SDL_ReleaseGPUFence(device: ptr[SDL_GPUDevice], fence: ptr[SDL_GPUFence]) -> void
-
     extern def SDL_GPUTextureFormatTexelBlockSize(format: SDL_GPUTextureFormat) -> Uint32
-
     extern def SDL_GPUTextureSupportsFormat(device: ptr[SDL_GPUDevice], format: SDL_GPUTextureFormat, kind: SDL_GPUTextureType, usage: u32) -> bool
-
     extern def SDL_GPUTextureSupportsSampleCount(device: ptr[SDL_GPUDevice], format: SDL_GPUTextureFormat, sample_count: SDL_GPUSampleCount) -> bool
-
     extern def SDL_CalculateGPUTextureFormatSize(format: SDL_GPUTextureFormat, width: u32, height: u32, depth_or_layer_count: u32) -> Uint32
-
     extern def SDL_GetPixelFormatFromGPUTextureFormat(format: SDL_GPUTextureFormat) -> SDL_PixelFormat
-
     extern def SDL_GetGPUTextureFormatFromPixelFormat(format: SDL_PixelFormat) -> SDL_GPUTextureFormat
 
     opaque SDL_Haptic = c"SDL_Haptic"
@@ -4396,65 +3503,35 @@ extern module std.c.sdl3:
     type SDL_HapticID = u32
 
     extern def SDL_GetHaptics(count: ptr[i32]) -> ptr[SDL_HapticID]
-
     extern def SDL_GetHapticNameForID(instance_id: u32) -> cstr
-
     extern def SDL_OpenHaptic(instance_id: u32) -> ptr[SDL_Haptic]
-
     extern def SDL_GetHapticFromID(instance_id: u32) -> ptr[SDL_Haptic]
-
     extern def SDL_GetHapticID(haptic: ptr[SDL_Haptic]) -> SDL_HapticID
-
     extern def SDL_GetHapticName(haptic: ptr[SDL_Haptic]) -> cstr
-
     extern def SDL_IsMouseHaptic() -> bool
-
     extern def SDL_OpenHapticFromMouse() -> ptr[SDL_Haptic]
-
     extern def SDL_IsJoystickHaptic(joystick: ptr[SDL_Joystick]) -> bool
-
     extern def SDL_OpenHapticFromJoystick(joystick: ptr[SDL_Joystick]) -> ptr[SDL_Haptic]
-
     extern def SDL_CloseHaptic(haptic: ptr[SDL_Haptic]) -> void
-
     extern def SDL_GetMaxHapticEffects(haptic: ptr[SDL_Haptic]) -> i32
-
     extern def SDL_GetMaxHapticEffectsPlaying(haptic: ptr[SDL_Haptic]) -> i32
-
     extern def SDL_GetHapticFeatures(haptic: ptr[SDL_Haptic]) -> Uint32
-
     extern def SDL_GetNumHapticAxes(haptic: ptr[SDL_Haptic]) -> i32
-
     extern def SDL_HapticEffectSupported(haptic: ptr[SDL_Haptic], effect: const_ptr[SDL_HapticEffect]) -> bool
-
     extern def SDL_CreateHapticEffect(haptic: ptr[SDL_Haptic], effect: const_ptr[SDL_HapticEffect]) -> SDL_HapticEffectID
-
     extern def SDL_UpdateHapticEffect(haptic: ptr[SDL_Haptic], effect: i32, data: const_ptr[SDL_HapticEffect]) -> bool
-
     extern def SDL_RunHapticEffect(haptic: ptr[SDL_Haptic], effect: i32, iterations: u32) -> bool
-
     extern def SDL_StopHapticEffect(haptic: ptr[SDL_Haptic], effect: i32) -> bool
-
     extern def SDL_DestroyHapticEffect(haptic: ptr[SDL_Haptic], effect: i32) -> void
-
     extern def SDL_GetHapticEffectStatus(haptic: ptr[SDL_Haptic], effect: i32) -> bool
-
     extern def SDL_SetHapticGain(haptic: ptr[SDL_Haptic], gain: i32) -> bool
-
     extern def SDL_SetHapticAutocenter(haptic: ptr[SDL_Haptic], autocenter: i32) -> bool
-
     extern def SDL_PauseHaptic(haptic: ptr[SDL_Haptic]) -> bool
-
     extern def SDL_ResumeHaptic(haptic: ptr[SDL_Haptic]) -> bool
-
     extern def SDL_StopHapticEffects(haptic: ptr[SDL_Haptic]) -> bool
-
     extern def SDL_HapticRumbleSupported(haptic: ptr[SDL_Haptic]) -> bool
-
     extern def SDL_InitHapticRumble(haptic: ptr[SDL_Haptic]) -> bool
-
     extern def SDL_PlayHapticRumble(haptic: ptr[SDL_Haptic], strength: f32, length: u32) -> bool
-
     extern def SDL_StopHapticRumble(haptic: ptr[SDL_Haptic]) -> bool
 
     opaque SDL_hid_device = c"SDL_hid_device"
@@ -4484,49 +3561,27 @@ extern module std.c.sdl3:
         next: ptr[SDL_hid_device_info]
 
     extern def SDL_hid_init() -> i32
-
     extern def SDL_hid_exit() -> i32
-
     extern def SDL_hid_device_change_count() -> Uint32
-
     extern def SDL_hid_enumerate(vendor_id: u16, product_id: u16) -> ptr[SDL_hid_device_info]
-
     extern def SDL_hid_free_enumeration(devs: ptr[SDL_hid_device_info]) -> void
-
     extern def SDL_hid_open(vendor_id: u16, product_id: u16, serial_number: const_ptr[i32]) -> ptr[SDL_hid_device]
-
     extern def SDL_hid_open_path(path: cstr) -> ptr[SDL_hid_device]
-
     extern def SDL_hid_get_properties(dev: ptr[SDL_hid_device]) -> SDL_PropertiesID
-
     extern def SDL_hid_write(dev: ptr[SDL_hid_device], data: const_ptr[u8], length: usize) -> i32
-
     extern def SDL_hid_read_timeout(dev: ptr[SDL_hid_device], data: ptr[u8], length: usize, milliseconds: i32) -> i32
-
     extern def SDL_hid_read(dev: ptr[SDL_hid_device], data: ptr[u8], length: usize) -> i32
-
     extern def SDL_hid_set_nonblocking(dev: ptr[SDL_hid_device], nonblock: i32) -> i32
-
     extern def SDL_hid_send_feature_report(dev: ptr[SDL_hid_device], data: const_ptr[u8], length: usize) -> i32
-
     extern def SDL_hid_get_feature_report(dev: ptr[SDL_hid_device], data: ptr[u8], length: usize) -> i32
-
     extern def SDL_hid_get_input_report(dev: ptr[SDL_hid_device], data: ptr[u8], length: usize) -> i32
-
     extern def SDL_hid_close(dev: ptr[SDL_hid_device]) -> i32
-
     extern def SDL_hid_get_manufacturer_string(dev: ptr[SDL_hid_device], string: ptr[i32], maxlen: usize) -> i32
-
     extern def SDL_hid_get_product_string(dev: ptr[SDL_hid_device], string: ptr[i32], maxlen: usize) -> i32
-
     extern def SDL_hid_get_serial_number_string(dev: ptr[SDL_hid_device], string: ptr[i32], maxlen: usize) -> i32
-
     extern def SDL_hid_get_indexed_string(dev: ptr[SDL_hid_device], string_index: i32, string: ptr[i32], maxlen: usize) -> i32
-
     extern def SDL_hid_get_device_info(dev: ptr[SDL_hid_device]) -> ptr[SDL_hid_device_info]
-
     extern def SDL_hid_get_report_descriptor(dev: ptr[SDL_hid_device], buf: ptr[u8], buf_size: usize) -> i32
-
     extern def SDL_hid_ble_scan(active: bool) -> void
 
     flags SDL_HintPriority: i32
@@ -4535,21 +3590,15 @@ extern module std.c.sdl3:
         SDL_HINT_OVERRIDE = 2
 
     extern def SDL_SetHintWithPriority(name: cstr, value: cstr, priority: SDL_HintPriority) -> bool
-
     extern def SDL_SetHint(name: cstr, value: cstr) -> bool
-
     extern def SDL_ResetHint(name: cstr) -> bool
-
     extern def SDL_ResetHints() -> void
-
     extern def SDL_GetHint(name: cstr) -> cstr
-
     extern def SDL_GetHintBoolean(name: cstr, default_value: bool) -> bool
 
     type SDL_HintCallback = fn(arg0: ptr[void], arg1: cstr, arg2: cstr, arg3: cstr) -> void
 
     extern def SDL_AddHintCallback(name: cstr, callback: fn(arg0: ptr[void], arg1: cstr, arg2: cstr, arg3: cstr) -> void, userdata: ptr[void]) -> bool
-
     extern def SDL_RemoveHintCallback(name: cstr, callback: fn(arg0: ptr[void], arg1: cstr, arg2: cstr, arg3: cstr) -> void, userdata: ptr[void]) -> void
 
     type SDL_InitFlags = u32
@@ -4568,33 +3617,23 @@ extern module std.c.sdl3:
     type SDL_AppQuit_func = fn(arg0: ptr[void], arg1: SDL_AppResult) -> void
 
     extern def SDL_Init(flag_bits: u32) -> bool
-
     extern def SDL_InitSubSystem(flag_bits: u32) -> bool
-
     extern def SDL_QuitSubSystem(flag_bits: u32) -> void
-
     extern def SDL_WasInit(flag_bits: u32) -> SDL_InitFlags
-
     extern def SDL_Quit() -> void
-
     extern def SDL_IsMainThread() -> bool
 
     type SDL_MainThreadCallback = fn(arg0: ptr[void]) -> void
 
     extern def SDL_RunOnMainThread(callback: fn(arg0: ptr[void]) -> void, userdata: ptr[void], wait_complete: bool) -> bool
-
     extern def SDL_SetAppMetadata(appname: cstr, appversion: cstr, appidentifier: cstr) -> bool
-
     extern def SDL_SetAppMetadataProperty(name: cstr, value: cstr) -> bool
-
     extern def SDL_GetAppMetadataProperty(name: cstr) -> cstr
 
     opaque SDL_SharedObject = c"SDL_SharedObject"
 
     extern def SDL_LoadObject(sofile: cstr) -> ptr[SDL_SharedObject]
-
     extern def SDL_LoadFunction(handle: ptr[SDL_SharedObject], name: cstr) -> SDL_FunctionPointer
-
     extern def SDL_UnloadObject(handle: ptr[SDL_SharedObject]) -> void
 
     struct SDL_Locale:
@@ -4637,41 +3676,25 @@ extern module std.c.sdl3:
         SDL_LOG_PRIORITY_COUNT = 8
 
     extern def SDL_SetLogPriorities(priority: SDL_LogPriority) -> void
-
     extern def SDL_SetLogPriority(category: i32, priority: SDL_LogPriority) -> void
-
     extern def SDL_GetLogPriority(category: i32) -> SDL_LogPriority
-
     extern def SDL_ResetLogPriorities() -> void
-
     extern def SDL_SetLogPriorityPrefix(priority: SDL_LogPriority, prefix: cstr) -> bool
-
     extern def SDL_Log(fmt: cstr, ...) -> void
-
     extern def SDL_LogTrace(category: i32, fmt: cstr, ...) -> void
-
     extern def SDL_LogVerbose(category: i32, fmt: cstr, ...) -> void
-
     extern def SDL_LogDebug(category: i32, fmt: cstr, ...) -> void
-
     extern def SDL_LogInfo(category: i32, fmt: cstr, ...) -> void
-
     extern def SDL_LogWarn(category: i32, fmt: cstr, ...) -> void
-
     extern def SDL_LogError(category: i32, fmt: cstr, ...) -> void
-
     extern def SDL_LogCritical(category: i32, fmt: cstr, ...) -> void
-
     extern def SDL_LogMessage(category: i32, priority: SDL_LogPriority, fmt: cstr, ...) -> void
-
     extern def SDL_LogMessageV(category: i32, priority: SDL_LogPriority, fmt: cstr, ap: va_list) -> void
 
     type SDL_LogOutputFunction = fn(arg0: ptr[void], arg1: i32, arg2: SDL_LogPriority, arg3: cstr) -> void
 
     extern def SDL_GetDefaultLogOutputFunction() -> SDL_LogOutputFunction
-
     extern def SDL_GetLogOutputFunction(callback: ptr[SDL_LogOutputFunction], userdata: ptr[ptr[void]]) -> void
-
     extern def SDL_SetLogOutputFunction(callback: fn(arg0: ptr[void], arg1: i32, arg2: SDL_LogPriority, arg3: cstr) -> void, userdata: ptr[void]) -> void
 
     type SDL_MessageBoxFlags = u32
@@ -4709,19 +3732,14 @@ extern module std.c.sdl3:
         colorScheme: const_ptr[SDL_MessageBoxColorScheme]
 
     extern def SDL_ShowMessageBox(messageboxdata: const_ptr[SDL_MessageBoxData], buttonid: ptr[i32]) -> bool
-
     extern def SDL_ShowSimpleMessageBox(flag_bits: u32, title: cstr, message: cstr, window: ptr[SDL_Window]) -> bool
 
     type SDL_MetalView = ptr[void]
 
     extern def SDL_Metal_CreateView(window: ptr[SDL_Window]) -> SDL_MetalView
-
     extern def SDL_Metal_DestroyView(view: ptr[void]) -> void
-
     extern def SDL_Metal_GetLayer(view: ptr[void]) -> ptr[void]
-
     extern def SDL_OpenURL(url: cstr) -> bool
-
     extern def SDL_GetPlatform() -> cstr
 
     opaque SDL_Process = c"SDL_Process"
@@ -4735,19 +3753,12 @@ extern module std.c.sdl3:
         SDL_PROCESS_STDIO_REDIRECT = 3
 
     extern def SDL_CreateProcessWithProperties(props: u32) -> ptr[SDL_Process]
-
     extern def SDL_GetProcessProperties(process: ptr[SDL_Process]) -> SDL_PropertiesID
-
     extern def SDL_ReadProcess(process: ptr[SDL_Process], datasize: ptr[usize], exitcode: ptr[i32]) -> ptr[void]
-
     extern def SDL_GetProcessInput(process: ptr[SDL_Process]) -> ptr[SDL_IOStream]
-
     extern def SDL_GetProcessOutput(process: ptr[SDL_Process]) -> ptr[SDL_IOStream]
-
     extern def SDL_KillProcess(process: ptr[SDL_Process], force: bool) -> bool
-
     extern def SDL_WaitProcess(process: ptr[SDL_Process], block: bool, exitcode: ptr[i32]) -> bool
-
     extern def SDL_DestroyProcess(process: ptr[SDL_Process]) -> void
 
     struct SDL_Vertex:
@@ -4782,199 +3793,102 @@ extern module std.c.sdl3:
         refcount: i32
 
     extern def SDL_GetNumRenderDrivers() -> i32
-
     extern def SDL_GetRenderDriver(index: i32) -> cstr
-
     extern def SDL_CreateWindowAndRenderer(title: cstr, width: i32, height: i32, window_flags: usize, window: ptr[ptr[SDL_Window]], renderer: ptr[ptr[SDL_Renderer]]) -> bool
-
     extern def SDL_CreateRenderer(window: ptr[SDL_Window], name: cstr) -> ptr[SDL_Renderer]
-
     extern def SDL_CreateRendererWithProperties(props: u32) -> ptr[SDL_Renderer]
-
     extern def SDL_CreateGPURenderer(device: ptr[SDL_GPUDevice], window: ptr[SDL_Window]) -> ptr[SDL_Renderer]
-
     extern def SDL_GetGPURendererDevice(renderer: ptr[SDL_Renderer]) -> ptr[SDL_GPUDevice]
-
     extern def SDL_CreateSoftwareRenderer(surface: ptr[SDL_Surface]) -> ptr[SDL_Renderer]
-
     extern def SDL_GetRenderer(window: ptr[SDL_Window]) -> ptr[SDL_Renderer]
-
     extern def SDL_GetRenderWindow(renderer: ptr[SDL_Renderer]) -> ptr[SDL_Window]
-
     extern def SDL_GetRendererName(renderer: ptr[SDL_Renderer]) -> cstr
-
     extern def SDL_GetRendererProperties(renderer: ptr[SDL_Renderer]) -> SDL_PropertiesID
-
     extern def SDL_GetRenderOutputSize(renderer: ptr[SDL_Renderer], w: ptr[i32], h: ptr[i32]) -> bool
-
     extern def SDL_GetCurrentRenderOutputSize(renderer: ptr[SDL_Renderer], w: ptr[i32], h: ptr[i32]) -> bool
-
     extern def SDL_CreateTexture(renderer: ptr[SDL_Renderer], format: SDL_PixelFormat, access: SDL_TextureAccess, w: i32, h: i32) -> ptr[SDL_Texture]?
-
     extern def SDL_CreateTextureFromSurface(renderer: ptr[SDL_Renderer], surface: ptr[SDL_Surface]) -> ptr[SDL_Texture]?
-
     extern def SDL_CreateTextureWithProperties(renderer: ptr[SDL_Renderer], props: u32) -> ptr[SDL_Texture]
-
     extern def SDL_GetTextureProperties(texture: ptr[SDL_Texture]) -> SDL_PropertiesID
-
     extern def SDL_GetRendererFromTexture(texture: ptr[SDL_Texture]) -> ptr[SDL_Renderer]
-
     extern def SDL_GetTextureSize(texture: ptr[SDL_Texture], w: ptr[f32], h: ptr[f32]) -> bool
-
     extern def SDL_SetTexturePalette(texture: ptr[SDL_Texture], palette: ptr[SDL_Palette]) -> bool
-
     extern def SDL_GetTexturePalette(texture: ptr[SDL_Texture]) -> ptr[SDL_Palette]
-
     extern def SDL_SetTextureColorMod(texture: ptr[SDL_Texture], r: u8, g: u8, b: u8) -> bool
-
     extern def SDL_SetTextureColorModFloat(texture: ptr[SDL_Texture], r: f32, g: f32, b: f32) -> bool
-
     extern def SDL_GetTextureColorMod(texture: ptr[SDL_Texture], r: ptr[Uint8], g: ptr[Uint8], b: ptr[Uint8]) -> bool
-
     extern def SDL_GetTextureColorModFloat(texture: ptr[SDL_Texture], r: ptr[f32], g: ptr[f32], b: ptr[f32]) -> bool
-
     extern def SDL_SetTextureAlphaMod(texture: ptr[SDL_Texture], alpha: u8) -> bool
-
     extern def SDL_SetTextureAlphaModFloat(texture: ptr[SDL_Texture], alpha: f32) -> bool
-
     extern def SDL_GetTextureAlphaMod(texture: ptr[SDL_Texture], alpha: ptr[Uint8]) -> bool
-
     extern def SDL_GetTextureAlphaModFloat(texture: ptr[SDL_Texture], alpha: ptr[f32]) -> bool
-
     extern def SDL_SetTextureBlendMode(texture: ptr[SDL_Texture], blendMode: u32) -> bool
-
     extern def SDL_GetTextureBlendMode(texture: ptr[SDL_Texture], blendMode: ptr[SDL_BlendMode]) -> bool
-
     extern def SDL_SetTextureScaleMode(texture: ptr[SDL_Texture], scaleMode: SDL_ScaleMode) -> bool
-
     extern def SDL_GetTextureScaleMode(texture: ptr[SDL_Texture], scaleMode: ptr[SDL_ScaleMode]) -> bool
-
     extern def SDL_UpdateTexture(texture: ptr[SDL_Texture], rect: const_ptr[SDL_Rect]?, pixels: const_ptr[void], pitch: i32) -> bool
-
     extern def SDL_UpdateYUVTexture(texture: ptr[SDL_Texture], rect: const_ptr[SDL_Rect], Yplane: const_ptr[Uint8], Ypitch: i32, Uplane: const_ptr[Uint8], Upitch: i32, Vplane: const_ptr[Uint8], Vpitch: i32) -> bool
-
     extern def SDL_UpdateNVTexture(texture: ptr[SDL_Texture], rect: const_ptr[SDL_Rect], Yplane: const_ptr[Uint8], Ypitch: i32, UVplane: const_ptr[Uint8], UVpitch: i32) -> bool
-
     extern def SDL_LockTexture(texture: ptr[SDL_Texture], rect: const_ptr[SDL_Rect], pixels: ptr[ptr[void]], pitch: ptr[i32]) -> bool
-
     extern def SDL_LockTextureToSurface(texture: ptr[SDL_Texture], rect: const_ptr[SDL_Rect]?, surface: ptr[ptr[SDL_Surface]]) -> bool
-
     extern def SDL_UnlockTexture(texture: ptr[SDL_Texture]) -> void
-
     extern def SDL_SetRenderTarget(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture]?) -> bool
-
     extern def SDL_GetRenderTarget(renderer: ptr[SDL_Renderer]) -> ptr[SDL_Texture]
-
     extern def SDL_SetRenderLogicalPresentation(renderer: ptr[SDL_Renderer], w: i32, h: i32, mode: SDL_RendererLogicalPresentation) -> bool
-
     extern def SDL_GetRenderLogicalPresentation(renderer: ptr[SDL_Renderer], w: ptr[i32], h: ptr[i32], mode: ptr[SDL_RendererLogicalPresentation]) -> bool
-
     extern def SDL_GetRenderLogicalPresentationRect(renderer: ptr[SDL_Renderer], rect: ptr[SDL_FRect]) -> bool
-
     extern def SDL_RenderCoordinatesFromWindow(renderer: ptr[SDL_Renderer], window_x: f32, window_y: f32, x: ptr[f32], y: ptr[f32]) -> bool
-
     extern def SDL_RenderCoordinatesToWindow(renderer: ptr[SDL_Renderer], x: f32, y: f32, window_x: ptr[f32], window_y: ptr[f32]) -> bool
-
     extern def SDL_ConvertEventToRenderCoordinates(renderer: ptr[SDL_Renderer], event: ptr[SDL_Event]) -> bool
-
     extern def SDL_SetRenderViewport(renderer: ptr[SDL_Renderer], rect: const_ptr[SDL_Rect]?) -> bool
-
     extern def SDL_GetRenderViewport(renderer: ptr[SDL_Renderer], rect: ptr[SDL_Rect]) -> bool
-
     extern def SDL_RenderViewportSet(renderer: ptr[SDL_Renderer]) -> bool
-
     extern def SDL_GetRenderSafeArea(renderer: ptr[SDL_Renderer], rect: ptr[SDL_Rect]) -> bool
-
     extern def SDL_SetRenderClipRect(renderer: ptr[SDL_Renderer], rect: const_ptr[SDL_Rect]?) -> bool
-
     extern def SDL_GetRenderClipRect(renderer: ptr[SDL_Renderer], rect: ptr[SDL_Rect]) -> bool
-
     extern def SDL_RenderClipEnabled(renderer: ptr[SDL_Renderer]) -> bool
-
     extern def SDL_SetRenderScale(renderer: ptr[SDL_Renderer], scaleX: f32, scaleY: f32) -> bool
-
     extern def SDL_GetRenderScale(renderer: ptr[SDL_Renderer], scaleX: ptr[f32], scaleY: ptr[f32]) -> bool
-
     extern def SDL_SetRenderDrawColor(renderer: ptr[SDL_Renderer], r: u8, g: u8, b: u8, a: u8) -> bool
-
     extern def SDL_SetRenderDrawColorFloat(renderer: ptr[SDL_Renderer], r: f32, g: f32, b: f32, a: f32) -> bool
-
     extern def SDL_GetRenderDrawColor(renderer: ptr[SDL_Renderer], r: ptr[Uint8], g: ptr[Uint8], b: ptr[Uint8], a: ptr[Uint8]) -> bool
-
     extern def SDL_GetRenderDrawColorFloat(renderer: ptr[SDL_Renderer], r: ptr[f32], g: ptr[f32], b: ptr[f32], a: ptr[f32]) -> bool
-
     extern def SDL_SetRenderColorScale(renderer: ptr[SDL_Renderer], scale: f32) -> bool
-
     extern def SDL_GetRenderColorScale(renderer: ptr[SDL_Renderer], scale: ptr[f32]) -> bool
-
     extern def SDL_SetRenderDrawBlendMode(renderer: ptr[SDL_Renderer], blendMode: u32) -> bool
-
     extern def SDL_GetRenderDrawBlendMode(renderer: ptr[SDL_Renderer], blendMode: ptr[SDL_BlendMode]) -> bool
-
     extern def SDL_RenderClear(renderer: ptr[SDL_Renderer]) -> bool
-
     extern def SDL_RenderPoint(renderer: ptr[SDL_Renderer], x: f32, y: f32) -> bool
-
     extern def SDL_RenderPoints(renderer: ptr[SDL_Renderer], points: const_ptr[SDL_FPoint], count: i32) -> bool
-
     extern def SDL_RenderLine(renderer: ptr[SDL_Renderer], x1: f32, y1: f32, x2: f32, y2: f32) -> bool
-
     extern def SDL_RenderLines(renderer: ptr[SDL_Renderer], points: const_ptr[SDL_FPoint], count: i32) -> bool
-
     extern def SDL_RenderRect(renderer: ptr[SDL_Renderer], rect: const_ptr[SDL_FRect]) -> bool
-
     extern def SDL_RenderRects(renderer: ptr[SDL_Renderer], rects: const_ptr[SDL_FRect], count: i32) -> bool
-
     extern def SDL_RenderFillRect(renderer: ptr[SDL_Renderer], rect: const_ptr[SDL_FRect]) -> bool
-
     extern def SDL_RenderFillRects(renderer: ptr[SDL_Renderer], rects: const_ptr[SDL_FRect], count: i32) -> bool
-
     extern def SDL_RenderTexture(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], srcrect: const_ptr[SDL_FRect]?, dstrect: const_ptr[SDL_FRect]?) -> bool
-
     extern def SDL_RenderTextureRotated(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], srcrect: const_ptr[SDL_FRect]?, dstrect: const_ptr[SDL_FRect], angle: f64, center: const_ptr[SDL_FPoint], flip: SDL_FlipMode) -> bool
-
     extern def SDL_RenderTextureAffine(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], srcrect: const_ptr[SDL_FRect]?, origin: const_ptr[SDL_FPoint], right: const_ptr[SDL_FPoint], down: const_ptr[SDL_FPoint]) -> bool
-
     extern def SDL_RenderTextureTiled(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], srcrect: const_ptr[SDL_FRect], scale: f32, dstrect: const_ptr[SDL_FRect]) -> bool
-
     extern def SDL_RenderTexture9Grid(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], srcrect: const_ptr[SDL_FRect], left_width: f32, right_width: f32, top_height: f32, bottom_height: f32, scale: f32, dstrect: const_ptr[SDL_FRect]) -> bool
-
     extern def SDL_RenderTexture9GridTiled(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], srcrect: const_ptr[SDL_FRect], left_width: f32, right_width: f32, top_height: f32, bottom_height: f32, scale: f32, dstrect: const_ptr[SDL_FRect], tileScale: f32) -> bool
-
     extern def SDL_RenderGeometry(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture]?, vertices: const_ptr[SDL_Vertex], num_vertices: i32, indices: const_ptr[i32]?, num_indices: i32) -> bool
-
     extern def SDL_RenderGeometryRaw(renderer: ptr[SDL_Renderer], texture: ptr[SDL_Texture], xy: const_ptr[f32], xy_stride: i32, color: const_ptr[SDL_FColor], color_stride: i32, uv: const_ptr[f32], uv_stride: i32, num_vertices: i32, indices: const_ptr[void], num_indices: i32, size_indices: i32) -> bool
-
     extern def SDL_SetRenderTextureAddressMode(renderer: ptr[SDL_Renderer], u_mode: SDL_TextureAddressMode, v_mode: SDL_TextureAddressMode) -> bool
-
     extern def SDL_GetRenderTextureAddressMode(renderer: ptr[SDL_Renderer], u_mode: ptr[SDL_TextureAddressMode], v_mode: ptr[SDL_TextureAddressMode]) -> bool
-
     extern def SDL_RenderReadPixels(renderer: ptr[SDL_Renderer], rect: const_ptr[SDL_Rect]?) -> ptr[SDL_Surface]?
-
     extern def SDL_RenderPresent(renderer: ptr[SDL_Renderer]) -> bool
-
     extern def SDL_DestroyTexture(texture: ptr[SDL_Texture]) -> void
-
     extern def SDL_DestroyRenderer(renderer: ptr[SDL_Renderer]) -> void
-
     extern def SDL_FlushRenderer(renderer: ptr[SDL_Renderer]) -> bool
-
     extern def SDL_GetRenderMetalLayer(renderer: ptr[SDL_Renderer]) -> ptr[void]
-
     extern def SDL_GetRenderMetalCommandEncoder(renderer: ptr[SDL_Renderer]) -> ptr[void]
-
     extern def SDL_AddVulkanRenderSemaphores(renderer: ptr[SDL_Renderer], wait_stage_mask: u32, wait_semaphore: isize, signal_semaphore: isize) -> bool
-
     extern def SDL_SetRenderVSync(renderer: ptr[SDL_Renderer], vsync: i32) -> bool
-
     extern def SDL_GetRenderVSync(renderer: ptr[SDL_Renderer], vsync: ptr[i32]) -> bool
-
     extern def SDL_RenderDebugText(renderer: ptr[SDL_Renderer], x: f32, y: f32, str: cstr) -> bool
-
     extern def SDL_RenderDebugTextFormat(renderer: ptr[SDL_Renderer], x: f32, y: f32, fmt: cstr, ...) -> bool
-
     extern def SDL_SetDefaultTextureScaleMode(renderer: ptr[SDL_Renderer], scale_mode: SDL_ScaleMode) -> bool
-
     extern def SDL_GetDefaultTextureScaleMode(renderer: ptr[SDL_Renderer], scale_mode: ptr[SDL_ScaleMode]) -> bool
 
     struct SDL_GPURenderStateCreateInfo:
@@ -4990,17 +3904,11 @@ extern module std.c.sdl3:
     opaque SDL_GPURenderState = c"SDL_GPURenderState"
 
     extern def SDL_CreateGPURenderState(renderer: ptr[SDL_Renderer], createinfo: const_ptr[SDL_GPURenderStateCreateInfo]) -> ptr[SDL_GPURenderState]
-
     extern def SDL_SetGPURenderStateSamplerBindings(state: ptr[SDL_GPURenderState], num_sampler_bindings: i32, sampler_bindings: const_ptr[SDL_GPUTextureSamplerBinding]) -> bool
-
     extern def SDL_SetGPURenderStateStorageTextures(state: ptr[SDL_GPURenderState], num_storage_textures: i32, storage_textures: const_ptr[ptr[SDL_GPUTexture]]) -> bool
-
     extern def SDL_SetGPURenderStateStorageBuffers(state: ptr[SDL_GPURenderState], num_storage_buffers: i32, storage_buffers: const_ptr[ptr[SDL_GPUBuffer]]) -> bool
-
     extern def SDL_SetGPURenderStateFragmentUniforms(state: ptr[SDL_GPURenderState], slot_index: u32, data: const_ptr[void], length: u32) -> bool
-
     extern def SDL_SetGPURenderState(renderer: ptr[SDL_Renderer], state: ptr[SDL_GPURenderState]) -> bool
-
     extern def SDL_DestroyGPURenderState(state: ptr[SDL_GPURenderState]) -> void
 
     struct SDL_StorageInterface:
@@ -5020,47 +3928,26 @@ extern module std.c.sdl3:
     opaque SDL_Storage = c"SDL_Storage"
 
     extern def SDL_OpenTitleStorage(override: cstr, props: u32) -> ptr[SDL_Storage]
-
     extern def SDL_OpenUserStorage(org: cstr, app: cstr, props: u32) -> ptr[SDL_Storage]
-
     extern def SDL_OpenFileStorage(path: cstr) -> ptr[SDL_Storage]
-
     extern def SDL_OpenStorage(iface: const_ptr[SDL_StorageInterface], userdata: ptr[void]) -> ptr[SDL_Storage]
-
     extern def SDL_CloseStorage(storage: ptr[SDL_Storage]) -> bool
-
     extern def SDL_StorageReady(storage: ptr[SDL_Storage]) -> bool
-
     extern def SDL_GetStorageFileSize(storage: ptr[SDL_Storage], path: cstr, length: ptr[Uint64]) -> bool
-
     extern def SDL_ReadStorageFile(storage: ptr[SDL_Storage], path: cstr, destination: ptr[void], length: usize) -> bool
-
     extern def SDL_WriteStorageFile(storage: ptr[SDL_Storage], path: cstr, source: const_ptr[void], length: usize) -> bool
-
     extern def SDL_CreateStorageDirectory(storage: ptr[SDL_Storage], path: cstr) -> bool
-
     extern def SDL_EnumerateStorageDirectory(storage: ptr[SDL_Storage], path: cstr, callback: fn(arg0: ptr[void], arg1: cstr, arg2: cstr) -> SDL_EnumerationResult, userdata: ptr[void]) -> bool
-
     extern def SDL_RemoveStoragePath(storage: ptr[SDL_Storage], path: cstr) -> bool
-
     extern def SDL_RenameStoragePath(storage: ptr[SDL_Storage], oldpath: cstr, newpath: cstr) -> bool
-
     extern def SDL_CopyStorageFile(storage: ptr[SDL_Storage], oldpath: cstr, newpath: cstr) -> bool
-
     extern def SDL_GetStoragePathInfo(storage: ptr[SDL_Storage], path: cstr, info: ptr[SDL_PathInfo]) -> bool
-
     extern def SDL_GetStorageSpaceRemaining(storage: ptr[SDL_Storage]) -> Uint64
-
     extern def SDL_GlobStorageDirectory(storage: ptr[SDL_Storage], path: cstr, pattern: cstr, flag_bits: u32, count: ptr[i32]) -> ptr[ptr[char]]
-
     extern def SDL_SetLinuxThreadPriority(threadID: isize, priority: i32) -> bool
-
     extern def SDL_SetLinuxThreadPriorityAndPolicy(threadID: isize, sdlPriority: i32, schedPolicy: i32) -> bool
-
     extern def SDL_IsPhone() -> bool
-
     extern def SDL_IsTablet() -> bool
-
     extern def SDL_IsTV() -> bool
 
     enum SDL_Sandbox: i32
@@ -5071,17 +3958,11 @@ extern module std.c.sdl3:
         SDL_SANDBOX_MACOS = 4
 
     extern def SDL_GetSandbox() -> SDL_Sandbox
-
     extern def SDL_OnApplicationWillTerminate() -> void
-
     extern def SDL_OnApplicationDidReceiveMemoryWarning() -> void
-
     extern def SDL_OnApplicationWillEnterBackground() -> void
-
     extern def SDL_OnApplicationDidEnterBackground() -> void
-
     extern def SDL_OnApplicationWillEnterForeground() -> void
-
     extern def SDL_OnApplicationDidEnterForeground() -> void
 
     struct SDL_DateTime:
@@ -5105,35 +3986,20 @@ extern module std.c.sdl3:
         SDL_TIME_FORMAT_12HR = 1
 
     extern def SDL_GetDateTimeLocalePreferences(dateFormat: ptr[SDL_DateFormat], timeFormat: ptr[SDL_TimeFormat]) -> bool
-
     extern def SDL_GetCurrentTime(ticks: ptr[SDL_Time]) -> bool
-
     extern def SDL_TimeToDateTime(ticks: isize, dt: ptr[SDL_DateTime], localTime: bool) -> bool
-
     extern def SDL_DateTimeToTime(dt: const_ptr[SDL_DateTime], ticks: ptr[SDL_Time]) -> bool
-
     extern def SDL_TimeToWindows(ticks: isize, dwLowDateTime: ptr[Uint32], dwHighDateTime: ptr[Uint32]) -> void
-
     extern def SDL_TimeFromWindows(dwLowDateTime: u32, dwHighDateTime: u32) -> SDL_Time
-
     extern def SDL_GetDaysInMonth(year: i32, month: i32) -> i32
-
     extern def SDL_GetDayOfYear(year: i32, month: i32, day: i32) -> i32
-
     extern def SDL_GetDayOfWeek(year: i32, month: i32, day: i32) -> i32
-
     extern def SDL_GetTicks() -> Uint64
-
     extern def SDL_GetTicksNS() -> Uint64
-
     extern def SDL_GetPerformanceCounter() -> Uint64
-
     extern def SDL_GetPerformanceFrequency() -> Uint64
-
     extern def SDL_Delay(ms: u32) -> void
-
     extern def SDL_DelayNS(ns: usize) -> void
-
     extern def SDL_DelayPrecise(ns: usize) -> void
 
     type SDL_TimerID = u32
@@ -5145,7 +4011,6 @@ extern module std.c.sdl3:
     type SDL_NSTimerCallback = fn(arg0: ptr[void], arg1: SDL_TimerID, arg2: Uint64) -> Uint64
 
     extern def SDL_AddTimerNS(interval: usize, callback: fn(arg0: ptr[void], arg1: SDL_TimerID, arg2: Uint64) -> Uint64, userdata: ptr[void]) -> SDL_TimerID
-
     extern def SDL_RemoveTimer(id: u32) -> bool
 
     opaque SDL_Tray = c"SDL_Tray"
@@ -5161,67 +4026,38 @@ extern module std.c.sdl3:
     type SDL_TrayClickCallback = fn(arg0: ptr[void], arg1: SDL_Tray) -> bool
 
     extern def SDL_CreateTray(icon: ptr[SDL_Surface], tooltip: cstr) -> ptr[SDL_Tray]
-
     extern def SDL_CreateTrayWithProperties(props: u32) -> ptr[SDL_Tray]
-
     extern def SDL_SetTrayIcon(tray: ptr[SDL_Tray], icon: ptr[SDL_Surface]) -> void
-
     extern def SDL_SetTrayTooltip(tray: ptr[SDL_Tray], tooltip: cstr) -> void
-
     extern def SDL_CreateTrayMenu(tray: ptr[SDL_Tray]) -> ptr[SDL_TrayMenu]
-
     extern def SDL_CreateTraySubmenu(entry: ptr[SDL_TrayEntry]) -> ptr[SDL_TrayMenu]
-
     extern def SDL_GetTrayMenu(tray: ptr[SDL_Tray]) -> ptr[SDL_TrayMenu]
-
     extern def SDL_GetTraySubmenu(entry: ptr[SDL_TrayEntry]) -> ptr[SDL_TrayMenu]
-
     extern def SDL_GetTrayEntries(menu: ptr[SDL_TrayMenu], count: ptr[i32]) -> ptr[const_ptr[SDL_TrayEntry]]
-
     extern def SDL_RemoveTrayEntry(entry: ptr[SDL_TrayEntry]) -> void
-
     extern def SDL_InsertTrayEntryAt(menu: ptr[SDL_TrayMenu], pos: i32, label: cstr, flag_bits: u32) -> ptr[SDL_TrayEntry]
-
     extern def SDL_SetTrayEntryLabel(entry: ptr[SDL_TrayEntry], label: cstr) -> void
-
     extern def SDL_GetTrayEntryLabel(entry: ptr[SDL_TrayEntry]) -> cstr
-
     extern def SDL_SetTrayEntryChecked(entry: ptr[SDL_TrayEntry], checked: bool) -> void
-
     extern def SDL_GetTrayEntryChecked(entry: ptr[SDL_TrayEntry]) -> bool
-
     extern def SDL_SetTrayEntryEnabled(entry: ptr[SDL_TrayEntry], enabled: bool) -> void
-
     extern def SDL_GetTrayEntryEnabled(entry: ptr[SDL_TrayEntry]) -> bool
-
     extern def SDL_SetTrayEntryCallback(entry: ptr[SDL_TrayEntry], callback: fn(arg0: ptr[void], arg1: ptr[SDL_TrayEntry]) -> void, userdata: ptr[void]) -> void
-
     extern def SDL_ClickTrayEntry(entry: ptr[SDL_TrayEntry]) -> void
-
     extern def SDL_DestroyTray(tray: ptr[SDL_Tray]) -> void
-
     extern def SDL_GetTrayEntryParent(entry: ptr[SDL_TrayEntry]) -> ptr[SDL_TrayMenu]
-
     extern def SDL_GetTrayMenuParentEntry(menu: ptr[SDL_TrayMenu]) -> ptr[SDL_TrayEntry]
-
     extern def SDL_GetTrayMenuParentTray(menu: ptr[SDL_TrayMenu]) -> ptr[SDL_Tray]
-
     extern def SDL_UpdateTrays() -> void
-
     extern def SDL_GetVersion() -> i32
-
     extern def SDL_GetRevision() -> cstr
 
     type SDL_main_func = fn(arg0: i32, arg1: ptr[ptr[char]]) -> i32
 
     extern def SDL_main(argc: i32, argv: ptr[ptr[char]]) -> i32
-
     extern def SDL_SetMainReady() -> void
-
     extern def SDL_RunApp(argc: i32, argv: ptr[ptr[char]], mainFunction: fn(arg0: i32, arg1: ptr[ptr[char]]) -> i32, reserved: ptr[void]?) -> i32
-
     extern def SDL_EnterAppMainCallbacks(argc: i32, argv: ptr[ptr[char]], appinit: fn(arg0: ptr[ptr[void]], arg1: i32, arg2: ptr[ptr[char]]) -> SDL_AppResult, appiter: fn(arg0: ptr[void]) -> SDL_AppResult, appevent: fn(arg0: ptr[void], arg1: ptr[SDL_Event]) -> SDL_AppResult, appquit: fn(arg0: ptr[void], arg1: SDL_AppResult) -> void) -> i32
-
     extern def SDL_GDKSuspendComplete() -> void
 
     const SDL_PLATFORM_LINUX: i32 = 1

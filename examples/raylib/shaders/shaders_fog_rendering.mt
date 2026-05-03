@@ -18,9 +18,11 @@ const fog_density_uniform_name: cstr = c"fogDensity"
 const fog_density_format: cstr = c"Use KEY_UP/KEY_DOWN to change fog density [%.2f]"
 const window_title: cstr = c"raylib [shaders] example - fog rendering"
 
+
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
+
 
 def rotate_x(angle: f32) -> rl.Matrix:
     let cosx = rm.cos(angle)
@@ -43,6 +45,7 @@ def rotate_x(angle: f32) -> rl.Matrix:
         m11 = 0.0,
         m15 = 1.0,
     )
+
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

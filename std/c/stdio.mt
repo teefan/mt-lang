@@ -8,9 +8,7 @@ extern module std.c.stdio:
 
     extern def printf(format: cstr, ...) -> i32
     extern def snprintf(text: ptr[char], maxlen: usize, format: cstr, ...) -> i32
-
     extern def vprintf(format: cstr, args: va_list) -> i32
-
     extern def fopen(path: cstr, mode: cstr) -> FILE?
     extern def fclose(stream: FILE?) -> i32
     extern def fgetc(stream: FILE?) -> i32

@@ -22,23 +22,29 @@ const do_gamma_text: cstr = c"doGamma"
 const vflipped_text: cstr = c"vflipped"
 const window_title: cstr = c"raylib [models] example - skybox rendering"
 
+
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
 
+
 def text_buffer_ptr(text: ref[array[char, 256]]) -> ptr[char]:
     return ptr_of(ref_of(read(text)[0]))
 
+
 def text_buffer_cstr(text: ref[array[char, 256]]) -> cstr:
     return chars_to_cstr(text_buffer_ptr(text))
+
 
 def shader_location(shader: rl.Shader, location_index: i32) -> i32:
     unsafe:
         return read(shader.locs + location_index)
 
+
 def file_path_list_path(files: rl.FilePathList, index: i32) -> cstr:
     unsafe:
         return cstr<-read(files.paths + usize<-index)
+
 
 def rlgl_matrix(mat: rl.Matrix) -> rlgl.Matrix:
     return rlgl.Matrix(
@@ -60,6 +66,7 @@ def rlgl_matrix(mat: rl.Matrix) -> rlgl.Matrix:
         m15 = mat.m15,
     )
 
+
 def set_shader_int(shader: rl.Shader, uniform_name: cstr, value: i32) -> void:
     var raw_value = zero[array[i32, 1]]()
     raw_value[0] = value
@@ -70,17 +77,21 @@ def set_shader_int(shader: rl.Shader, uniform_name: cstr, value: i32) -> void:
         rl.ShaderUniformDataType.SHADER_UNIFORM_INT,
     )
 
+
 def set_skybox_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
+
 
 def set_skybox_cubemap(model: ptr[rl.Model], texture: rl.TextureCubemap) -> void:
     unsafe:
         model.materials[0].maps[i32<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = texture
 
+
 def skybox_cubemap(model: rl.Model) -> rl.TextureCubemap:
     unsafe:
         return model.materials[0].maps[i32<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture
+
 
 def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: i32, format: i32) -> rl.TextureCubemap:
     var cubemap = zero[rl.TextureCubemap]()
@@ -156,6 +167,7 @@ def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: i32, fo
 
     return cubemap
 
+
 def load_skybox_texture(skybox: ptr[rl.Model], cubemap_shader: rl.Shader, use_hdr: bool, skybox_file_name: ref[array[char, 256]], file_path: cstr) -> void:
     rl.TextCopy(text_buffer_ptr(skybox_file_name), file_path)
 
@@ -175,6 +187,7 @@ def load_skybox_texture(skybox: ptr[rl.Model], cubemap_shader: rl.Shader, use_hd
         let image = rl.LoadImage(file_path)
         set_skybox_cubemap(skybox, rl.LoadTextureCubemap(image, i32<-rl.CubemapLayout.CUBEMAP_LAYOUT_AUTO_DETECT))
         rl.UnloadImage(image)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

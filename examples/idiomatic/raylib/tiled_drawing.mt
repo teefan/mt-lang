@@ -11,6 +11,7 @@ const screen_width: i32 = 800
 const screen_height: i32 = 450
 const pattern_path: str = "../../raylib/resources/patterns.png"
 
+
 def draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rectangle, origin: rl.Vector2, rotation: f32, scale: f32, tint: rl.Color) -> void:
     if texture.id <= 0 or scale <= 0.0:
         return
@@ -167,6 +168,7 @@ def draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rec
                 rotation,
                 tint,
             )
+
 
 def main() -> i32:
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE)

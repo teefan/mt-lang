@@ -12,6 +12,7 @@ const empty_prompt_text: cstr = c"Drop your files to this window!"
 const dropped_files_text: cstr = c"Dropped files:"
 const continue_prompt_text: cstr = c"Drop new files..."
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

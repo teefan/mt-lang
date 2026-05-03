@@ -13,6 +13,7 @@ const font_size_uniform_name: cstr = c"fontSize"
 const title_format: cstr = c"Ascii effect - FontSize:%2.0f - [Left] -1 [Right] +1 "
 const window_title: cstr = c"raylib [shaders] example - ascii rendering"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

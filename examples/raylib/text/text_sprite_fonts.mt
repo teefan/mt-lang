@@ -16,6 +16,7 @@ const font5_path: cstr = c"../resources/sprite_fonts/pixantiqua.png"
 const font6_path: cstr = c"../resources/sprite_fonts/alpha_beta.png"
 const font7_path: cstr = c"../resources/sprite_fonts/jupiter_crash.png"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

@@ -9,6 +9,7 @@ const game_screen_width: i32 = 640
 const game_screen_height: i32 = 480
 const bar_count: i32 = 10
 
+
 def random_bar_color() -> rl.Color:
     return rl.Color(
         r = rl.get_random_value(100, 250),
@@ -17,6 +18,7 @@ def random_bar_color() -> rl.Color:
         a = 255,
     )
 
+
 def fresh_colors() -> array[rl.Color, 10]:
     var colors = zero[array[rl.Color, 10]]()
     var color_index = 0
@@ -24,6 +26,7 @@ def fresh_colors() -> array[rl.Color, 10]:
         colors[color_index] = random_bar_color()
         color_index += 1
     return colors
+
 
 def main() -> i32:
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE | rl.ConfigFlags.FLAG_VSYNC_HINT)

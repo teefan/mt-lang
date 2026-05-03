@@ -5,9 +5,12 @@ import std.io as io
 import std.string as string
 
 # Demonstrates a declared `str` initialized from interpolation.
+
+
 def print_declared_header(user: str, count: i32) -> bool:
     let header: str = f"declared-str -> user=#{user} count=#{count}"
     return io.println(header)
+
 
 def main() -> i32:
     let user: str = "milk-tea"

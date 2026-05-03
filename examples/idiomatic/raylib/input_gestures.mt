@@ -5,6 +5,7 @@ import std.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 
+
 def gesture_label(gesture: i32) -> str:
     if gesture == rl.Gesture.GESTURE_TAP:
         return "GESTURE TAP"
@@ -27,6 +28,7 @@ def gesture_label(gesture: i32) -> str:
     if gesture == rl.Gesture.GESTURE_PINCH_OUT:
         return "GESTURE PINCH OUT"
     return "GESTURE NONE"
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Gestures")

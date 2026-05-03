@@ -28,6 +28,7 @@ struct LightInfo:
     shadows: array[ShadowGeometry, 60]
     shadow_count: i32
 
+
 def move_light(light: LightInfo, x: f32, y: f32) -> LightInfo:
     var current = light
     current.dirty = true
@@ -36,6 +37,7 @@ def move_light(light: LightInfo, x: f32, y: f32) -> LightInfo:
     current.bounds.x = x - current.outer_radius
     current.bounds.y = y - current.outer_radius
     return current
+
 
 def push_shadow(light: LightInfo, v0: rl.Vector2, v1: rl.Vector2, v2: rl.Vector2, v3: rl.Vector2) -> LightInfo:
     var current = light
@@ -49,6 +51,7 @@ def push_shadow(light: LightInfo, v0: rl.Vector2, v1: rl.Vector2, v2: rl.Vector2
     current.shadow_count += 1
     return current
 
+
 def compute_shadow_volume_for_edge(light: LightInfo, start_point: rl.Vector2, end_point: rl.Vector2) -> LightInfo:
     let extension = light.outer_radius * 2.0
     let start_vector = start_point.subtract(light.position).normalize()
@@ -56,6 +59,7 @@ def compute_shadow_volume_for_edge(light: LightInfo, start_point: rl.Vector2, en
     let end_vector = end_point.subtract(light.position).normalize()
     let end_projection = end_point.add(end_vector.scale(extension))
     return push_shadow(light, start_point, end_point, end_projection, start_projection)
+
 
 def draw_light_mask(light: LightInfo) -> void:
     rl.BeginTextureMode(light.mask)
@@ -82,11 +86,13 @@ def draw_light_mask(light: LightInfo) -> void:
     rl.EndTextureMode()
     return
 
+
 def move_light_slot(lights: ref[array[LightInfo, 16]], slot: i32, x: f32, y: f32) -> void:
     var lights_view = read(lights)
     lights_view[slot] = move_light(lights_view[slot], x, y)
     read(lights) = lights_view
     return
+
 
 def setup_light(lights: ref[array[LightInfo, 16]], slot: i32, x: f32, y: f32, radius: f32) -> void:
     var lights_view = read(lights)
@@ -102,6 +108,7 @@ def setup_light(lights: ref[array[LightInfo, 16]], slot: i32, x: f32, y: f32, ra
     read(lights) = lights_view
     draw_light_mask(light)
     return
+
 
 def update_light(lights: ref[array[LightInfo, 16]], slot: i32, boxes: array[rl.Rectangle, 20], count: i32) -> bool:
     var lights_view = read(lights)
@@ -150,6 +157,7 @@ def update_light(lights: ref[array[LightInfo, 16]], slot: i32, boxes: array[rl.R
     draw_light_mask(light)
     return true
 
+
 def setup_boxes(boxes: ref[array[rl.Rectangle, 20]], count: ref[i32]) -> void:
     var items = read(boxes)
     items[0] = rl.Rectangle(x = 150.0, y = 80.0, width = 40.0, height = 40.0)
@@ -169,6 +177,7 @@ def setup_boxes(boxes: ref[array[rl.Rectangle, 20]], count: ref[i32]) -> void:
     read(boxes) = items
     read(count) = max_boxes
     return
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

@@ -10,6 +10,7 @@ const virtual_screen_height: i32 = 90
 const virtual_ratio: f32 = f32<-screen_width / virtual_screen_width
 const window_title: cstr = c"raylib [core] example - smooth pixelperfect"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

@@ -6,6 +6,7 @@ const num_textures: i32 = 9
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 
+
 def texture_label(texture_index: i32) -> str:
     if texture_index == 0:
         return "VERTICAL GRADIENT"
@@ -25,6 +26,7 @@ def texture_label(texture_index: i32) -> str:
         return "PERLIN NOISE"
     return "CELLULAR"
 
+
 def texture_label_color(texture_index: i32) -> rl.Color:
     if texture_index <= 2:
         return rl.RAYWHITE
@@ -35,6 +37,7 @@ def texture_label_color(texture_index: i32) -> rl.Color:
     elif texture_index <= 7:
         return rl.RED
     return rl.RAYWHITE
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Image Generation")

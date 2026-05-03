@@ -11,6 +11,7 @@ const pause_text: cstr = c"PRESS SPACE to PAUSE MOVEMENT"
 const target_text: cstr = c"PRESS UP | DOWN to CHANGE TARGET FPS"
 const custom_frame_control_env: cstr = c"MILK_TEA_RAYLIB_ENABLE_CUSTOM_FRAME_CONTROL"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

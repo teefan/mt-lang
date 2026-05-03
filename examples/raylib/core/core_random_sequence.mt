@@ -15,11 +15,13 @@ const initial_rect_count: i32 = 20
 const sequence_height_factor: f32 = 0.75
 const min_rect_count: i32 = 4
 
+
 def remap(value: f32, input_start: f32, input_end: f32, output_start: f32, output_end: f32) -> f32:
     if input_end == input_start:
         return output_start
     let normalized = (value - input_start) / (input_end - input_start)
     return output_start + normalized * (output_end - output_start)
+
 
 def generate_random_color() -> rl.Color:
     return rl.Color(
@@ -29,12 +31,15 @@ def generate_random_color() -> rl.Color:
         a = 255,
     )
 
+
 def alloc_color_rects(rect_count: i32) -> ptr[ColorRect]:
     return heap.must_alloc_zeroed[ColorRect](usize<-rect_count)
+
 
 def release_color_rects(rectangles: ptr[ColorRect]) -> void:
     heap.release(rectangles)
     return
+
 
 def generate_random_color_rect_sequence(rect_count: i32, rect_width: f32, width: f32, height: f32) -> ptr[ColorRect]:
     let rectangles = alloc_color_rects(rect_count)
@@ -59,6 +64,7 @@ def generate_random_color_rect_sequence(rect_count: i32, rect_width: f32, width:
     rl.UnloadRandomSequence(sequence)
     return rectangles
 
+
 def swap_color_rect_values(left: ref[ColorRect], right: ref[ColorRect]) -> void:
     let tmp = read(left)
     left.color = right.color
@@ -68,6 +74,7 @@ def swap_color_rect_values(left: ref[ColorRect], right: ref[ColorRect]) -> void:
     right.rect.height = tmp.rect.height
     right.rect.y = tmp.rect.y
     return
+
 
 def shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: i32) -> void:
     let sequence = rl.LoadRandomSequence(rect_count, 0, rect_count - 1)
@@ -83,10 +90,12 @@ def shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: i32) -> 
     rl.UnloadRandomSequence(sequence)
     return
 
+
 def draw_help_text(height: i32) -> void:
     rl.DrawText(c"Press SPACE to shuffle the current sequence", 10, height - 96, 20, rl.BLACK)
     rl.DrawText(c"Press UP to add a rectangle and generate a new sequence", 10, height - 64, 20, rl.BLACK)
     rl.DrawText(c"Press DOWN to remove a rectangle and generate a new sequence", 10, height - 32, 20, rl.BLACK)
+
 
 def rect_count_text(rect_count: i32) -> cstr:
     if rect_count == 4:
@@ -126,6 +135,7 @@ def rect_count_text(rect_count: i32) -> cstr:
     if rect_count == 21:
         return c"Count: 21 rectangles"
     return c"Count: 22 rectangles"
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

@@ -17,6 +17,7 @@ const speed_x_uniform_name: cstr = c"speedX"
 const speed_y_uniform_name: cstr = c"speedY"
 const window_title: cstr = c"raylib [shaders] example - texture waves"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

@@ -15,6 +15,7 @@ const render_size_format: cstr = c"RENDER SIZE: %02.02f"
 const scale_help_text: cstr = c"Use MOUSE WHEEL to SCALE TEXT!"
 const hold_space_text: cstr = c"HOLD SPACE to USE SDF FONT VERSION!"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

@@ -8,6 +8,7 @@ const max_touch_points: i32 = 10
 const window_title: cstr = c"raylib [core] example - input multitouch"
 const help_text: cstr = c"touch the screen at multiple locations to get multiple balls"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

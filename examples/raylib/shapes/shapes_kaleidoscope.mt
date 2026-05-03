@@ -17,6 +17,7 @@ const next_button_text: cstr = c">"
 const reset_button_text: cstr = c"Reset"
 const lines_format: cstr = c"LINES: %i/%i"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

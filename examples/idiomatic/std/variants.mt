@@ -9,14 +9,20 @@ variant Event:
     quit
 
 # Payload construction with named arguments.
+
+
 def make_click(x: i32, y: i32) -> Event:
     return Event.click(x= x, y= y)
 
 # No-payload arm construction as a plain value.
+
+
 def make_quit() -> Event:
     return Event.quit
 
 # Exhaustive matching over every arm.
+
+
 def event_code(event: Event) -> i32:
     match event:
         Event.click as click_event:
@@ -32,12 +38,15 @@ def event_code(event: Event) -> i32:
     return 0
 
 # Wildcard matching when only one arm needs special handling.
+
+
 def is_terminal(event: Event) -> bool:
     match event:
         Event.quit:
             return true
         _:
             return false
+
 
 def main() -> i32:
     let click = make_click(7, 9)

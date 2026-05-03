@@ -19,6 +19,7 @@ const stack_columns: i32 = 5
 const stack_rows: i32 = 6
 const stack_box_count: i32 = 30
 
+
 def create_static_box(world_id: b2.WorldId, position: b2.Vec2, half_width: f32, half_height: f32) -> b2.BodyId:
     var body_def = b2.default_body_def()
     body_def.position = position
@@ -28,6 +29,7 @@ def create_static_box(world_id: b2.WorldId, position: b2.Vec2, half_width: f32, 
     let polygon = b2.make_box(half_width, half_height)
     b2.create_polygon_shape(body_id, in shape_def, in polygon)
     return body_id
+
 
 def create_dynamic_box(world_id: b2.WorldId, position: b2.Vec2, half_width: f32, half_height: f32, density: f32) -> b2.BodyId:
     var body_def = b2.default_body_def()
@@ -41,15 +43,18 @@ def create_dynamic_box(world_id: b2.WorldId, position: b2.Vec2, half_width: f32,
     b2.create_polygon_shape(body_id, in shape_def, in polygon)
     return body_id
 
+
 def to_screen(position: b2.Vec2) -> rl.Vector2:
     return rl.Vector2(
         x = position.x * pixels_per_meter,
         y = position.y * pixels_per_meter,
     )
 
+
 def body_angle_degrees(body_id: b2.BodyId) -> f32:
     let rotation = b2.body_get_rotation(body_id)
     return math.atan2(rotation.s, rotation.c) * math.rad2deg
+
 
 def draw_box(sprite: BoxSprite) -> void:
     let center = to_screen(b2.body_get_position(sprite.body_id))
@@ -67,6 +72,7 @@ def draw_box(sprite: BoxSprite) -> void:
         body_angle_degrees(sprite.body_id),
         sprite.color,
     )
+
 
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Box2D Box Stack")

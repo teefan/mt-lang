@@ -11,6 +11,7 @@ const culling_text: cstr = c"LEFT-RIGHT: Toggle backface culling"
 const mouse_text: cstr = c"MOUSE: Click and drag vertex points"
 const reset_text: cstr = c"R: Reset triangle to start positions"
 
+
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)

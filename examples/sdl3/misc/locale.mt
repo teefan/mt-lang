@@ -11,6 +11,7 @@ const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogic
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 
+
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
@@ -19,6 +20,7 @@ def pump_events() -> bool:
             return false
 
     return true
+
 
 def render_frame() -> void:
     let frame = c.SDL_FRect(x = 0.0, y = 0.0, w = 640.0, h = 480.0)
@@ -67,6 +69,7 @@ def render_frame() -> void:
 
     c.SDL_RenderPresent(renderer)
 
+
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     c.SDL_SetAppMetadata(c"Example Misc Locale", c"1.0", c"com.example.misc-locale")
 
@@ -86,6 +89,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

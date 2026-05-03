@@ -17,11 +17,13 @@ var renderer: ptr[c.SDL_Renderer]
 var stream: ptr[c.SDL_AudioStream]? = null
 var current_sine_sample: i32 = 0
 
+
 def min_i32(lhs: i32, rhs: i32) -> i32:
     if lhs < rhs:
         return lhs
 
     return rhs
+
 
 def feed_audio_stream_more(userdata: ptr[void], astream: ptr[c.SDL_AudioStream], additional_amount: i32, total_amount: i32) -> void:
     var remaining_samples = additional_amount / i32<-sizeof(f32)
@@ -39,6 +41,7 @@ def feed_audio_stream_more(userdata: ptr[void], astream: ptr[c.SDL_AudioStream],
         c.SDL_PutAudioStreamData(astream, ptr_of(ref_of(samples[0])), total * i32<-sizeof(f32))
         remaining_samples -= total
 
+
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
@@ -48,9 +51,11 @@ def pump_events() -> bool:
 
     return true
 
+
 def render_frame() -> void:
     c.SDL_RenderClear(renderer)
     c.SDL_RenderPresent(renderer)
+
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     var spec = zero[c.SDL_AudioSpec]()
@@ -86,6 +91,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         render_frame()
 
     return 0
+
 
 def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return c.SDL_RunApp(argc, argv, app_main, null)

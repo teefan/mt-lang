@@ -13,9 +13,11 @@ const time_uniform_name: cstr = c"time"
 const title_text: cstr = c"Vertex displacement"
 const window_title: cstr = c"raylib [shaders] example - vertex displacement"
 
+
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

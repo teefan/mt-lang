@@ -13,21 +13,26 @@ const frame_speed_label: cstr = c"FRAME SPEED: "
 const model_path: cstr = c"../resources/models/gltf/robot.glb"
 const window_title: cstr = c"raylib [models] example - animation timing"
 
+
 def chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
+
 
 def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
     unsafe:
         return read(anims + index)
 
+
 def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of(ref_of((anims + index).name[0])))
 
+
 def text_join(text_list: ptr[cstr], count: i32, delimiter: cstr) -> cstr:
     unsafe:
         return cstr<-rl.TextJoin(ptr[ptr[char]]<-text_list, count, delimiter)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

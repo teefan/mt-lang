@@ -32,60 +32,78 @@ pub struct Lexer:
     source: str
     index: usize
 
+
 pub def create(source: str) -> Lexer:
     return Lexer(source = source, index = 0)
+
 
 pub def left_brace() -> TokenKind:
     return TokenKind.left_brace
 
+
 pub def right_brace() -> TokenKind:
     return TokenKind.right_brace
+
 
 pub def left_bracket() -> TokenKind:
     return TokenKind.left_bracket
 
+
 pub def right_bracket() -> TokenKind:
     return TokenKind.right_bracket
+
 
 pub def colon() -> TokenKind:
     return TokenKind.colon
 
+
 pub def comma() -> TokenKind:
     return TokenKind.comma
+
 
 pub def string_value() -> TokenKind:
     return TokenKind.string_value
 
+
 pub def number_value() -> TokenKind:
     return TokenKind.number_value
+
 
 pub def true_value() -> TokenKind:
     return TokenKind.true_value
 
+
 pub def false_value() -> TokenKind:
     return TokenKind.false_value
+
 
 pub def null_value() -> TokenKind:
     return TokenKind.null_value
 
+
 pub def eof() -> TokenKind:
     return TokenKind.eof
 
+
 def token(kind: TokenKind) -> Token:
     return Token(kind = kind, text = "")
+
 
 def slice_token(kind: TokenKind, source: str, start: usize, stop: usize) -> Token:
     unsafe:
         return Token(kind = kind, text = str(data = source.data + start, len = stop - start))
 
+
 def byte_at(source: str, index: usize) -> u8:
     unsafe:
         return u8<-read(source.data + index)
+
 
 def skip_space(lexer: ref[Lexer]) -> void:
     while lexer.index < lexer.source.len and ascii.is_space(byte_at(lexer.source, lexer.index)):
         lexer.index += 1
     return
+
 
 def match_keyword(lexer: ref[Lexer], keyword: str) -> bool:
     if lexer.source.len - lexer.index < keyword.len:
@@ -99,6 +117,7 @@ def match_keyword(lexer: ref[Lexer], keyword: str) -> bool:
 
     lexer.index += keyword.len
     return true
+
 
 def read_string(lexer: ref[Lexer]) -> Result[Token, Error]:
     let start = lexer.index
@@ -134,6 +153,7 @@ def read_string(lexer: ref[Lexer]) -> Result[Token, Error]:
             lexer.index += 1
 
     return err(Error.unexpected_end)
+
 
 def read_number(lexer: ref[Lexer]) -> Result[Token, Error]:
     let start = lexer.index
@@ -173,6 +193,7 @@ def read_number(lexer: ref[Lexer]) -> Result[Token, Error]:
 
     return ok(slice_token(TokenKind.number_value, lexer.source, start, lexer.index))
 
+
 pub def next(lexer: ref[Lexer]) -> Result[Token, Error]:
     skip_space(lexer)
     if lexer.index >= lexer.source.len:
@@ -211,21 +232,26 @@ pub def next(lexer: ref[Lexer]) -> Result[Token, Error]:
 
     return err(Error.unexpected_char)
 
+
 pub def append_null(output: ref[string.String]) -> void:
     output.append("null")
     return
+
 
 pub def append_bool(output: ref[string.String], value: bool) -> void:
     fmt.append_bool(output, value)
     return
 
+
 pub def append_i32(output: ref[string.String], value: i32) -> void:
     fmt.append_i32(output, value)
     return
 
+
 pub def append_usize(output: ref[string.String], value: usize) -> void:
     fmt.append_usize(output, value)
     return
+
 
 def append_hex_nibble(output: ref[string.String], nibble: u8) -> void:
     if nibble < u8<-10:
@@ -233,6 +259,7 @@ def append_hex_nibble(output: ref[string.String], nibble: u8) -> void:
     else:
         output.push_byte(u8<-65 + (nibble - u8<-10))
     return
+
 
 pub def append_string(output: ref[string.String], text_value: str) -> void:
     output.append("\"")

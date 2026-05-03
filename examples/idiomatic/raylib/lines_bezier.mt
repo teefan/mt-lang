@@ -5,6 +5,7 @@ import std.raylib as rl
 const screen_width: i32 = 800
 const screen_height: i32 = 450
 
+
 def main() -> i32:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(screen_width, screen_height, "Milk Tea Bezier Lines")

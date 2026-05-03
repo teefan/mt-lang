@@ -22,9 +22,11 @@ const specular_change_text: cstr = c"Use keys [Up][Down] to change specular expo
 const specular_exponent_format: cstr = c"Specular Exponent: %.2f"
 const window_title: cstr = c"raylib [shaders] example - normalmap rendering"
 
+
 def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
+
 
 def rotate_y(angle: f32) -> rl.Matrix:
     let cosy = rm.cos(angle)
@@ -47,6 +49,7 @@ def rotate_y(angle: f32) -> rl.Matrix:
         m11 = 0.0,
         m15 = 1.0,
     )
+
 
 def main() -> i32:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

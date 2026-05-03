@@ -18,6 +18,7 @@ const words_source: cstr = c"raylib is a simple and easy-to-use library to enjoy
 const help_text: cstr = c"Use Arrow Keys to change the text alignment"
 const align_format: cstr = c"Alignment: Horizontal = %s, Vertical = %s"
 
+
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

@@ -7,6 +7,7 @@ const screen_height: i32 = 450
 const ball_radius: f32 = 50.0
 const ball_step: f32 = 2.0
 
+
 def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Input Keys")
     defer rl.close_window()
