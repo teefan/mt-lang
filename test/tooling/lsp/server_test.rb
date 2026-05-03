@@ -186,6 +186,7 @@ class LSPServerTest < Minitest::Test
       assert_equal true, capabilities["declarationProvider"]
       assert_equal true, capabilities["typeDefinitionProvider"]
       assert_equal true, capabilities["referencesProvider"]
+      assert_kind_of Hash, capabilities["documentLinkProvider"]
       assert_equal true, capabilities["documentHighlightProvider"]
       assert_equal true, capabilities["documentRangeFormattingProvider"]
       assert_kind_of Hash, capabilities["codeActionProvider"]
@@ -226,6 +227,49 @@ class LSPServerTest < Minitest::Test
       hover_value = hover_response.dig("result", "contents", "value")
       assert_includes hover_value, "add"
       assert_includes hover_value, "-> i32"
+    end
+  end
+
+  def test_document_link_resolves_existing_relative_resource_path_string
+    Dir.mktmpdir("milk-tea-lsp-doc-link") do |dir|
+      assets_dir = File.join(dir, "assets")
+      Dir.mkdir(assets_dir)
+
+      asset_path = File.join(assets_dir, "raybunny.png")
+      File.binwrite(asset_path, "png")
+
+      main_path = File.join(dir, "main.mt")
+      source = <<~MT
+        const bunny_path: str = "./assets/raybunny.png"
+        const title: str = "Milk Tea Bunnymark"
+      MT
+      File.write(main_path, source)
+
+      root_uri = path_to_uri(dir)
+      main_uri = path_to_uri(main_path)
+      asset_uri = path_to_uri(asset_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source
+          }
+        })
+
+        response = client.send_request("textDocument/documentLink", {
+          "textDocument" => { "uri" => main_uri }
+        })
+
+        links = response.fetch("result")
+        assert_equal 1, links.length
+        assert_equal asset_uri, links[0]["target"]
+        assert_equal 0, links[0].dig("range", "start", "line")
+      end
     end
   end
 
