@@ -141,6 +141,7 @@ module MilkTea
         @handlers['textDocument/declaration']       = method(:handle_declaration)
         @handlers['textDocument/typeDefinition']    = method(:handle_type_definition)
         @handlers['textDocument/references']        = method(:handle_references)
+        @handlers['textDocument/documentLink']      = method(:handle_document_link)
         @handlers['textDocument/documentHighlight'] = method(:handle_document_highlight)
         @handlers['textDocument/documentSymbol']    = method(:handle_document_symbols)
         @handlers['textDocument/formatting']        = method(:handle_formatting)
@@ -372,6 +373,9 @@ module MilkTea
             declarationProvider: true,
             typeDefinitionProvider: true,
             referencesProvider: true,
+            documentLinkProvider: {
+              resolveProvider: false
+            },
             documentHighlightProvider: true,
             documentSymbolProvider: true,
             documentFormattingProvider: true,
@@ -603,6 +607,22 @@ module MilkTea
         end
       rescue StandardError => e
         warn "Error in references handler: #{e.message}"
+        []
+      end
+
+      def handle_document_link(params)
+        uri = params['textDocument']['uri']
+        file_path = uri_to_path(uri)
+        return [] unless file_path
+
+        tokens = @workspace.get_tokens(uri)
+        return [] unless tokens
+
+        tokens.filter_map do |token|
+          resource_document_link(uri, file_path, token)
+        end
+      rescue StandardError => e
+        warn "Error in documentLink handler: #{e.message}"
         []
       end
 
@@ -1624,6 +1644,41 @@ module MilkTea
           uri: found[:uri],
           range: token_to_range(found[:token])
         }
+      end
+
+      def resource_document_link(uri, file_path, token)
+        return nil unless [:string, :cstring].include?(token.type)
+
+        literal = token.literal
+        return nil unless literal.is_a?(String)
+        return nil unless path_like_string_literal?(literal)
+
+        resolved_path = resolve_document_link_path(file_path, literal)
+        return nil unless resolved_path
+
+        {
+          range: token_to_range(token),
+          target: path_to_uri(resolved_path),
+          tooltip: "Open linked file"
+        }
+      end
+
+      def path_like_string_literal?(literal)
+        literal.include?('/') || literal.include?(File::SEPARATOR)
+      end
+
+      def resolve_document_link_path(source_path, literal)
+        base_dir = File.dirname(source_path)
+        candidate = if Pathname.new(literal).absolute?
+                      literal
+                    else
+                      File.expand_path(literal, base_dir)
+                    end
+        return nil unless File.exist?(candidate)
+
+        candidate
+      rescue StandardError
+        nil
       end
 
       def build_semantic_token_entries(tokens, analysis = nil)
