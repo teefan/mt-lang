@@ -355,12 +355,19 @@ module MilkTea
           write_targets_from_expression(expression.callee, line:, writes:, writes_info:)
           expression.arguments.each do |argument|
             value = argument.value
+            target_identifier = nil
             if value.is_a?(AST::UnaryOp) && %w[out inout].include?(value.operator) && value.operand.is_a?(AST::Identifier)
-              key = identifier_binding_key(value.operand)
+              target_identifier = value.operand
+            else
+              target_identifier = call_argument_mutation_target(value)
+            end
+
+            if target_identifier
+              key = identifier_binding_key(target_identifier)
               if key
                 writes << key
                 writes_info << {
-                  name: value.operand.name,
+                  name: target_identifier.name,
                   binding_key: key,
                   line: line,
                   column: nil,
@@ -398,6 +405,27 @@ module MilkTea
         end
 
         [writes, writes_info]
+      end
+
+      def call_argument_mutation_target(expression)
+        return nil unless expression.is_a?(AST::Call)
+        return nil unless expression.callee.is_a?(AST::Identifier)
+
+        callee_name = expression.callee.name
+        return nil unless expression.arguments.length == 1
+
+        argument_value = expression.arguments.first.value
+
+        if callee_name == "ref_of"
+          return argument_value if argument_value.is_a?(AST::Identifier)
+          return nil
+        end
+
+        if %w[ptr_of const_ptr_of].include?(callee_name)
+          return call_argument_mutation_target(argument_value)
+        end
+
+        nil
       end
 
       def identifier_binding_key(identifier_expression)

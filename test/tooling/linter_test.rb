@@ -1304,6 +1304,25 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     refute warnings.any? { |w| w.code == "constant-condition" }
     refute warnings.any? { |w| w.code == "prefer-let" && w.symbol_name == "tab_active" }
   end
+
+  def test_no_constant_condition_or_prefer_let_after_ptr_of_ref_of_call
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local"])
+      module demo.lint
+
+      def mutate(value: ptr[i32]) -> void:
+          return
+
+      def main() -> i32:
+          var device_count: i32 = 0
+          mutate(ptr_of(ref_of(device_count)))
+          if device_count == 0:
+              return 1
+          return 2
+    MT
+
+    refute warnings.any? { |w| w.code == "constant-condition" }
+    refute warnings.any? { |w| w.code == "prefer-let" && w.symbol_name == "device_count" }
+  end
 end
 
 # ── redundant-null-check ───────────────────────────────────────────────────
