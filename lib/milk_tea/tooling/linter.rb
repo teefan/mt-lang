@@ -723,6 +723,16 @@ module MilkTea
       liveness = CFG::Liveness.solve(graph)
       readable_bindings = graph.read_bindings
 
+      # Only flag assignments to locally declared bindings. Writes to globals
+      # (names that are assigned but never declared in this function's body)
+      # always escape via persistent state and must never be flagged.
+      locally_declared = Set.new
+      graph.each_node do |node|
+        node.writes_info.each do |w|
+          locally_declared << w[:binding_key] if w[:origin] == :declaration
+        end
+      end
+
       graph.each_node do |node|
         node.writes_info.each do |write|
           next if write[:origin] == :call_argument
@@ -730,6 +740,7 @@ module MilkTea
           binding_key = write[:binding_key]
           name = write[:name]
           next unless readable_bindings.include?(binding_key)
+          next unless locally_declared.include?(binding_key)
           next if liveness.live_out[node.id].include?(binding_key)
 
           @warnings << Warning.new(

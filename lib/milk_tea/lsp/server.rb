@@ -1843,6 +1843,8 @@ module MilkTea
           return [:type, []]
         end
 
+        return [:enumMember, ['declaration']] if variant_enum_member_declaration?(tokens, index)
+
         if prev_tok&.type == :dot
           if analysis
             module_binding = imported_module_binding_for_member(tokens, index, analysis)
@@ -1858,6 +1860,7 @@ module MilkTea
             end
           end
 
+          return [:enumMember, []] if type_name_member_access?(tokens, index)
           return [:property, []]
         end
 
@@ -1957,6 +1960,85 @@ module MilkTea
         return { module_name: module_name, role: :module_path } if module_identifiers.include?(tok)
         return { module_name: module_name, role: :alias } if alias_token == tok
 
+        nil
+      end
+
+      # Returns true if the identifier at `index` is a variant/enum/flags member
+      # declared directly in a type body — e.g. `none` or `some(value: T)` inside
+      # `variant Option[T]:`. Detects this by finding that the token is the first
+      # non-trivia token on its (indented) line and the nearest less-indented line
+      # starts with `variant`, `enum`, or `flags`.
+      def variant_enum_member_declaration?(tokens, index)
+        tok = tokens[index]
+        line_tokens = non_trivia_tokens_on_line(tokens, tok.line)
+        return false unless line_tokens.first.equal?(tok) && tok.column > 1
+
+        i = index - 1
+        while i >= 0
+          t = tokens[i]
+          i -= 1
+          next if [:newline, :indent, :dedent, :eof].include?(t.type)
+          next if t.line == tok.line
+          next if t.column >= tok.column
+
+          header_line_toks = non_trivia_tokens_on_line(tokens, t.line)
+          return [:variant, :enum, :flags].include?(header_line_toks.first&.type)
+        end
+        false
+      end
+
+      # Returns true if the token at `index` (accessed via `.`) is a member of a
+      # type name receiver, e.g. `Option.none`, `Outcome[i32, str].ok`.
+      def type_name_member_access?(tokens, index)
+        dot_index = previous_non_trivia_token_index(tokens, index)
+        return false unless dot_index && tokens[dot_index].type == :dot
+
+        receiver_index = previous_non_trivia_token_index(tokens, dot_index)
+        return false unless receiver_index
+
+        receiver = tokens[receiver_index]
+        if receiver.type == :identifier
+          return receiver.lexeme.match?(/\A[A-Z]/)
+        end
+
+        if receiver.type == :rbracket
+          lbracket_i = matching_opener_index(tokens, receiver_index)
+          return false unless lbracket_i
+
+          base_index = previous_non_trivia_token_index(tokens, lbracket_i)
+          return false unless base_index
+
+          base = tokens[base_index]
+          return base.type == :identifier && base.lexeme.match?(/\A[A-Z]/)
+        end
+
+        false
+      end
+
+      # Backward version of matching_closer_index: given the index of a closing
+      # bracket/paren, find the matching opener by scanning backward.
+      def matching_opener_index(tokens, closer_index)
+        closer = tokens[closer_index]
+        return nil unless closer
+
+        opener_type, closer_type = case closer.type
+          when :rbracket then [:lbracket, :rbracket]
+          when :rparen   then [:lparen,   :rparen]
+          else return nil
+        end
+
+        depth = 0
+        i = closer_index
+        while i >= 0
+          t = tokens[i]
+          if t.type == closer_type
+            depth += 1
+          elsif t.type == opener_type
+            depth -= 1
+            return i if depth.zero?
+          end
+          i -= 1
+        end
         nil
       end
 
