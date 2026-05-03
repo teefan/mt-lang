@@ -5,7 +5,7 @@ module MilkTea
 
   class Formatter
     CheckResult = Data.define(:changed, :formatted_source)
-    MODES = %i[safe canonical preserve].freeze
+    MODES = %i[safe canonical preserve tidy].freeze
 
     def self.format_source(source, path: nil, mode: :safe)
       validate_mode!(mode)
@@ -15,6 +15,8 @@ module MilkTea
         canonical_format(source, path:)
       when :preserve
         preserve_format(source, path:)
+      when :tidy
+        tidy_format(source, path:)
       end
     end
 
@@ -36,6 +38,11 @@ module MilkTea
     def self.preserve_format(source, path:)
       cst = build_cst(source, path:)
       CSTFormatter.format(cst)
+    end
+
+    def self.tidy_format(source, path:)
+      cst = build_cst(source, path:)
+      CSTFormatter.format_normalized(cst)
     end
 
     def self.validate_mode!(mode)

@@ -9,6 +9,28 @@ module MilkTea
         reconstruct_from_tokens
       end
 
+      def reconstruct_normalized
+        return "" if tokens.empty?
+
+        tokens.each_with_object(+"") do |token, result|
+          token.leading_trivia.each do |entry|
+            if entry.kind == :space && entry.column > 1
+              result << " "
+            else
+              result << segment_text(entry.start_offset, entry.end_offset, entry.text)
+            end
+          end
+          result << segment_text(token.start_offset, token.end_offset, token.lexeme) unless token.eof?
+          token.trailing_trivia.each do |entry|
+            if entry.kind == :space
+              result << " "
+            else
+              result << segment_text(entry.start_offset, entry.end_offset, entry.text)
+            end
+          end
+        end
+      end
+
       def reconstruct_from_tokens
         return "" if tokens.empty?
 

@@ -682,10 +682,24 @@ module MilkTea
     def parse_if_stmt
       line = previous.line
       branches = []
-      branches << AST::IfBranch.new(condition: parse_expression, body: parse_block)
+      branch_token = previous
+      branches << AST::IfBranch.new(
+        condition: parse_expression,
+        body: parse_block,
+        line: branch_token.line,
+        column: branch_token.column,
+        length: branch_token.lexeme.length,
+      )
 
       while match(:elif)
-        branches << AST::IfBranch.new(condition: parse_expression, body: parse_block)
+        branch_token = previous
+        branches << AST::IfBranch.new(
+          condition: parse_expression,
+          body: parse_block,
+          line: branch_token.line,
+          column: branch_token.column,
+          length: branch_token.lexeme.length,
+        )
       end
 
       else_line = nil

@@ -5,5 +5,9 @@ module MilkTea
     def self.format(cst)
       cst.reconstruct
     end
+
+    def self.format_normalized(cst)
+      cst.reconstruct_normalized
+    end
   end
 end

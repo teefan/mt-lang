@@ -156,6 +156,23 @@
           "default": 10,
           "minimum": 1,
           "description": "Delay in seconds between DAP retry attempts."
+        },
+        "milkTea.format.mode": {
+          "type": "string",
+          "enum": [
+            "tidy",
+            "preserve",
+            "safe",
+            "canonical"
+          ],
+          "enumDescriptions": [
+            "Preserves line structure and multi-line calls; normalizes inline whitespace (recommended).",
+            "Fully verbatim — keeps all spacing and alignment as written.",
+            "Full AST re-emit: normalizes everything including multi-line call layout.",
+            "Alias for safe."
+          ],
+          "default": "tidy",
+          "description": "Controls how the Milk Tea formatter rewrites source files on save or format."
         }
       }
     },

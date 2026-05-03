@@ -77,6 +77,9 @@ export class MilkTeaLspClient {
       synchronize: {
         fileEvents: vscode.workspace.createFileSystemWatcher('**/*.mt'),
       },
+      initializationOptions: {
+        milkTea: { format: { mode: getConfig().format.mode } },
+      },
     };
 
     this.client = new LanguageClient(
@@ -154,6 +157,15 @@ export class MilkTeaLspClient {
     this.log.info('Restarting LSP server…');
     await this.stop();
     await this.startWithRetry();
+  }
+
+  // Called when format mode config changes — no restart needed.
+  async syncFormatMode(): Promise<void> {
+    if (!this.client) { return; }
+    const mode = getConfig().format.mode;
+    await this.client.sendNotification('workspace/didChangeConfiguration', {
+      settings: { milkTea: { format: { mode } } },
+    });
   }
 
   // Called when workspace config changes so trace level stays in sync.

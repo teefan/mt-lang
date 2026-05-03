@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 
 export type LogLevel = 'off' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
+export type FormatterMode = 'tidy' | 'preserve' | 'safe' | 'canonical';
 
 export interface RetryConfig {
   enabled: boolean;
@@ -22,6 +23,9 @@ export interface MilkTeaConfig {
     serverPath: string;
     extraArgs: string[];
     retry: RetryConfig;
+  };
+  format: {
+    mode: FormatterMode;
   };
 }
 
@@ -49,6 +53,9 @@ export function getConfig(): MilkTeaConfig {
         maxAttempts:  cfg.get<number>('dap.retry.maxAttempts', 3),
         delaySeconds: cfg.get<number>('dap.retry.delaySeconds', 10),
       },
+    },
+    format: {
+      mode: cfg.get<FormatterMode>('format.mode', 'tidy'),
     },
   };
 }
