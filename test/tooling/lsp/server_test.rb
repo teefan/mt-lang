@@ -175,6 +175,21 @@ class LSPServerTest < Minitest::Test
         return origin.x
   MT
 
+  SOURCE_WITH_STR_BUILDER_METHODS = <<~MT
+    def main() -> i32:
+        var editor_text: str_builder[64]
+        editor_text.assign("Milk Tea")
+        let current = editor_text.as_str()
+        if editor_text.capacity() == 64:
+            return current.len
+        return 0
+  MT
+
+  SOURCE_WITH_GENERIC_TYPE_SURFACES = <<~MT
+    def takes(values: span[i32]) -> array[i32, 4]:
+        return array[i32, 4](1, 2, 3, 4)
+  MT
+
   def test_initialize_advertises_expected_capabilities
     with_server do |client|
       response = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -1174,6 +1189,68 @@ class LSPServerTest < Minitest::Test
 
         assert_equal "namespace", alias_entry.fetch("tokenType")
         assert_equal "function", member_entry.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_classify_str_builder_and_value_receiver_methods
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_str_builder_test.mt"
+        source = SOURCE_WITH_STR_BUILDER_METHODS
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        str_builder_entry = semantic_entry_for_lexeme(source, entries, "str_builder")
+        assign_entry = semantic_entry_for_lexeme(source, entries, "assign")
+        as_str_entry = semantic_entry_for_lexeme(source, entries, "as_str")
+        capacity_entry = semantic_entry_for_lexeme(source, entries, "capacity")
+
+        assert_equal "type", str_builder_entry.fetch("tokenType")
+        assert_equal "method", assign_entry.fetch("tokenType")
+        assert_equal "method", as_str_entry.fetch("tokenType")
+        assert_equal "method", capacity_entry.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_classify_array_and_span_as_types_but_array_ctor_as_function
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_generic_types_test.mt"
+        source = SOURCE_WITH_GENERIC_TYPE_SURFACES
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        span_type_entry = entries.find do |entry|
+          entry.fetch("line") == 0 && source.lines.fetch(entry.fetch("line"))[entry.fetch("startChar"), 4] == "span"
+        end or flunk("expected span semantic token entry in parameter type")
+
+        array_return_entry = entries.find do |entry|
+          entry.fetch("line") == 0 && source.lines.fetch(entry.fetch("line"))[entry.fetch("startChar"), 5] == "array"
+        end or flunk("expected array semantic token entry in return type")
+
+        array_ctor_entry = entries.find do |entry|
+          entry.fetch("line") == 1 && source.lines.fetch(entry.fetch("line"))[entry.fetch("startChar"), 5] == "array"
+        end or flunk("expected array semantic token entry in constructor call")
+
+        assert_equal "type", span_type_entry.fetch("tokenType")
+        assert_equal "type", array_return_entry.fetch("tokenType")
+        assert_equal "function", array_ctor_entry.fetch("tokenType")
       end
     end
   end

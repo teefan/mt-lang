@@ -28,8 +28,8 @@ module MilkTea
       ].freeze
 
       KEYWORD_TOKEN_TYPES = Token::KEYWORDS.values.to_set.freeze
-      PRIMITIVE_TYPE_NAMES = %w[
-        bool byte char i8 i16 i32 i64 u8 u16 u32 u64 isize usize f32 f64 void str cstr ptr ref
+      DEFAULT_LIBRARY_TYPE_NAMES = %w[
+        bool byte char i8 i16 i32 i64 u8 u16 u32 u64 isize usize f32 f64 void str cstr ptr ref str_builder array span
       ].to_set.freeze
       BUILTIN_FUNCTION_NAMES = %w[ref_of const_ptr_of ptr_of read panic ok err cast reinterpret array span zero range].to_set.freeze
       OPERATOR_TOKEN_TYPES = %i[
@@ -1916,6 +1916,7 @@ module MilkTea
           end
 
           return [:enumMember, []] if type_name_member_access?(tokens, index)
+          return [:method, []] if next_tok&.type == :lparen
           return [:property, []]
         end
 
@@ -1925,12 +1926,14 @@ module MilkTea
           return [:function, modifiers]
         end
 
-        # Specialization syntax: `cast[T](x)`, `array[T](n)`, etc.
-        if next_tok&.type == :lbracket && BUILTIN_FUNCTION_NAMES.include?(name)
+        # Specialization syntax that is followed by a call: `cast[T](x)`,
+        # `array[T](...)`, etc. Bare `array[T, N]` and `span[T]` in annotations
+        # are types, not functions.
+        if next_tok&.type == :lbracket && BUILTIN_FUNCTION_NAMES.include?(name) && specialized_call_with_type_args?(tokens, index)
           return [:function, ['defaultLibrary']]
         end
 
-        if PRIMITIVE_TYPE_NAMES.include?(name)
+        if DEFAULT_LIBRARY_TYPE_NAMES.include?(name)
           return [:type, ['defaultLibrary']]
         end
 
