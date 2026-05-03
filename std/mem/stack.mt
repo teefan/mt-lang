@@ -13,8 +13,6 @@ pub def create(capacity_bytes: usize) -> Stack:
     return Stack(arena = arena.create(capacity_bytes))
 
 methods Stack:
-
-
     pub def mark() -> Mark:
         return this.arena.mark()
 

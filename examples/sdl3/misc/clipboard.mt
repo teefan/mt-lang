@@ -85,16 +85,16 @@ def pump_events() -> bool:
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
         c.SDL_ConvertEventToRenderCoordinates(renderer, ptr_of(ref_of(event)))
 
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
-            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
+            if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
                 if event.button.button == c.Uint8<-c.SDL_BUTTON_LEFT:
                     let point = c.SDL_FPoint(x = event.button.x, y = event.button.y)
                     copy_pressed = point_in_rect(point, copy_button_rect)
                     paste_pressed = point_in_rect(point, paste_button_rect)
             else:
-                if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_UP:
+                if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_UP:
                     if event.button.button == c.Uint8<-c.SDL_BUTTON_LEFT:
                         let point = c.SDL_FPoint(x = event.button.x, y = event.button.y)
 

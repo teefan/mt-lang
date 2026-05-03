@@ -22,8 +22,6 @@ pub def create(capacity_bytes: usize) -> Arena:
     )
 
 methods Arena:
-
-
     pub def mark() -> Mark:
         return this.offset
 

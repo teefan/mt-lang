@@ -43,14 +43,14 @@ def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
-            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_GAMEPAD_ADDED:
+            if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_GAMEPAD_ADDED:
                 if gamepad == null:
                     gamepad = c.SDL_OpenGamepad(event.gdevice.which)
             else:
-                if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_GAMEPAD_REMOVED:
+                if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_GAMEPAD_REMOVED:
                     if gamepad != null:
                         if c.SDL_GetGamepadID(gamepad) == event.gdevice.which:
                             c.SDL_CloseGamepad(gamepad)

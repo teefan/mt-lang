@@ -156,31 +156,31 @@ def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
-            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_GAMEPAD_ADDED:
+            if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_GAMEPAD_ADDED:
                 let which = event.gdevice.which
                 let gamepad = c.SDL_OpenGamepad(which)
                 add_added_message(which, gamepad)
             else:
-                if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_GAMEPAD_REMOVED:
+                if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_GAMEPAD_REMOVED:
                     let which = event.gdevice.which
                     let gamepad = c.SDL_GetGamepadFromID(which)
                     if gamepad != null:
                         c.SDL_CloseGamepad(gamepad)
                     add_removed_message(which)
                 else:
-                    if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_GAMEPAD_AXIS_MOTION:
+                    if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_GAMEPAD_AXIS_MOTION:
                         let now = c.SDL_GetTicks()
                         if now >= axis_motion_cooldown_time:
                             axis_motion_cooldown_time = now + motion_event_cooldown
                             add_axis_message(event.gaxis.which, event.gaxis.axis, event.gaxis.value)
                     else:
-                        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_GAMEPAD_BUTTON_UP or c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+                        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_GAMEPAD_BUTTON_UP or event.type_ == u32<-c.SDL_EventType.SDL_EVENT_GAMEPAD_BUTTON_DOWN:
                             add_button_message(event.gbutton.which, event.gbutton.button, event.gbutton.down)
                         else:
-                            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_BATTERY_UPDATED:
+                            if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_BATTERY_UPDATED:
                                 if c.SDL_IsGamepad(event.jbattery.which):
                                     add_battery_message(event.jbattery.which, event.jbattery.state, event.jbattery.percent)
 

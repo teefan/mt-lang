@@ -62,8 +62,6 @@ pub def create_for[T](slot_count: usize) -> Pool:
     return create((size + mask) & ~mask, slot_count)
 
 methods Pool:
-
-
     pub def remaining_slots() -> usize:
         return this.slot_count - this.used_count
 

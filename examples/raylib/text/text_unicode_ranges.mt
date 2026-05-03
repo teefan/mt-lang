@@ -18,6 +18,7 @@ const atlas_size_format: cstr = c"ATLAS SIZE: %ix%i px (x%02.2f)"
 const glyph_count_format: cstr = c"CODEPOINTS GLYPHS LOADED: %i"
 const attribution_text: cstr = c"Font: Noto Sans TC. License: SIL Open Font License 1.1"
 
+
 def add_codepoint_range(font: rl.Font, font_path: cstr, start: i32, stop: i32) -> rl.Font:
     let range_size = stop - start + 1
     let current_range_size = font.glyphCount
@@ -34,6 +35,7 @@ def add_codepoint_range(font: rl.Font, font_path: cstr, start: i32, stop: i32) -
 
     rl.UnloadFont(font)
     return rl.LoadFontEx(font_path, 32, updated_codepoints, updated_codepoint_count)
+
 
 def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)

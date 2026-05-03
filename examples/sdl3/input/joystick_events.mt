@@ -184,40 +184,40 @@ def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
-            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_ADDED:
+            if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_ADDED:
                 let which = event.jdevice.which
                 let joystick = c.SDL_OpenJoystick(which)
                 add_added_message(which, joystick)
             else:
-                if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_REMOVED:
+                if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_REMOVED:
                     let which = event.jdevice.which
                     let joystick = c.SDL_GetJoystickFromID(which)
                     if joystick != null:
                         c.SDL_CloseJoystick(joystick)
                     add_removed_message(which)
                 else:
-                    if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_AXIS_MOTION:
+                    if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_AXIS_MOTION:
                         let now = c.SDL_GetTicks()
                         if now >= axis_motion_cooldown_time:
                             axis_motion_cooldown_time = now + motion_event_cooldown
                             add_axis_message(event.jaxis.which, event.jaxis.axis, event.jaxis.value)
                     else:
-                        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_BALL_MOTION:
+                        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_BALL_MOTION:
                             let now = c.SDL_GetTicks()
                             if now >= ball_motion_cooldown_time:
                                 ball_motion_cooldown_time = now + motion_event_cooldown
                                 add_ball_message(event.jball.which, event.jball.ball, event.jball.xrel, event.jball.yrel)
                         else:
-                            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_HAT_MOTION:
+                            if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_HAT_MOTION:
                                 add_hat_message(event.jhat.which, event.jhat.hat, event.jhat.value)
                             else:
-                                if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_BUTTON_UP or c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_BUTTON_DOWN:
+                                if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_BUTTON_UP or event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_BUTTON_DOWN:
                                     add_button_message(event.jbutton.which, event.jbutton.button, event.jbutton.down)
                                 else:
-                                    if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_JOYSTICK_BATTERY_UPDATED:
+                                    if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_BATTERY_UPDATED:
                                         add_battery_message(event.jbattery.which, event.jbattery.state, event.jbattery.percent)
 
     return true

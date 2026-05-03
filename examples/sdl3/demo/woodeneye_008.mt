@@ -409,22 +409,22 @@ def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_MOUSE_REMOVED:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_MOUSE_REMOVED:
             for index in range(0, player_count):
                 if players[index].mouse == event.mdevice.which:
                     players[index].mouse = 0
             continue
 
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_KEYBOARD_REMOVED:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_KEYBOARD_REMOVED:
             for index in range(0, player_count):
                 if players[index].keyboard == event.kdevice.which:
                     players[index].keyboard = 0
             continue
 
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_MOUSE_MOTION:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_MOUSE_MOTION:
             let mouse_id = event.motion.which
             let player_index = whose_mouse(mouse_id)
 
@@ -441,13 +441,13 @@ def pump_events() -> bool:
                             break
             continue
 
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
             let player_index = whose_mouse(event.button.which)
             if player_index >= 0:
                 shoot(player_index)
             continue
 
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_KEY_DOWN:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_KEY_DOWN:
             let player_index = whose_keyboard(event.key.which)
 
             if player_index >= 0:
@@ -462,7 +462,7 @@ def pump_events() -> bool:
                             break
             continue
 
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_KEY_UP:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_KEY_UP:
             if event.key.scancode == c.SDL_Scancode.SDL_SCANCODE_ESCAPE:
                 return false
 

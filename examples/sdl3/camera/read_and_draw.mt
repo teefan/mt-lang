@@ -19,13 +19,13 @@ def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
     while c.SDL_PollEvent(ptr_of(ref_of(event))):
-        if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
-            if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_CAMERA_DEVICE_APPROVED:
+            if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_CAMERA_DEVICE_APPROVED:
                 c.SDL_Log(c"Camera use approved by user!")
             else:
-                if c.SDL_EventType.SDL_EVENT_QUIT == c.SDL_EventType.SDL_EVENT_CAMERA_DEVICE_DENIED:
+                if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_CAMERA_DEVICE_DENIED:
                     c.SDL_Log(c"Camera use denied by user!")
                     exit_status = 1
                     return false

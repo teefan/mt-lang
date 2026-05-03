@@ -23,8 +23,6 @@ struct EnvElement:
     color: rl.Color
 
 methods Player:
-
-
     edit def update(env_elements: array[EnvElement, 5], delta: f32) -> void:
         if rl.IsKeyDown(rl.KeyboardKey.KEY_LEFT):
             this.position.x -= player_hor_speed * delta
