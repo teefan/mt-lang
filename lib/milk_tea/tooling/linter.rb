@@ -627,7 +627,7 @@ module MilkTea
     end
 
     def mark_mutated(target)
-      return unless target.is_a?(AST::Identifier) || target.is_a?(AST::IndexAccess)
+      return unless target.is_a?(AST::Identifier) || target.is_a?(AST::IndexAccess) || target.is_a?(AST::MemberAccess)
 
       # For direct identifier assignment (e.g., x = value), mark x as mutated.
       if target.is_a?(AST::Identifier)
@@ -644,13 +644,27 @@ module MilkTea
       if target.is_a?(AST::IndexAccess)
         mark_mutated(target.receiver)
       end
+
+      # For field assignment (e.g., rect.w = value), mark the struct variable as mutated.
+      if target.is_a?(AST::MemberAccess)
+        mark_mutated(target.receiver)
+      end
     end
 
     def mark_call_argument_mutated(expression)
-      return unless expression.is_a?(AST::UnaryOp)
-      return unless %w[out inout].include?(expression.operator)
+      if expression.is_a?(AST::UnaryOp) && %w[out inout].include?(expression.operator)
+        mark_mutated(expression.operand)
+        return
+      end
 
-      mark_mutated(expression.operand)
+      # ref_of(x) takes the address of x — treat as potential mutation since the
+      # pointer may be written through by the callee (common C-FFI out-param pattern).
+      if expression.is_a?(AST::Call) &&
+         expression.callee.is_a?(AST::Identifier) &&
+         expression.callee.name == "ref_of" &&
+         expression.arguments.length == 1
+        mark_mutated(expression.arguments.first.value)
+      end
     end
 
     def with_scope
