@@ -22,7 +22,7 @@ def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Clipboard Image")
     defer rl.close_window()
 
-    var collection = zero[array[TextureCollection, 20]]()
+    var collection = zero[array[TextureCollection, 20]]
     var current_collection_index = 0
     var show_clipboard_error = false
 
@@ -31,7 +31,7 @@ def main() -> i32:
     while not rl.window_should_close():
         if rl.is_key_pressed(rl.KeyboardKey.KEY_R):
             unload_collection(collection, current_collection_index)
-            collection = zero[array[TextureCollection, 20]]()
+            collection = zero[array[TextureCollection, 20]]
             current_collection_index = 0
             show_clipboard_error = false
 

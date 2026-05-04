@@ -34,7 +34,7 @@ def main() -> i32:
         rl.UnloadImage(image_origin)
         rl.UnloadTexture(texture)
 
-    var process_text = zero[array[cstr, num_processes]]()
+    var process_text = zero[array[cstr, num_processes]]
     process_text[0] = c"NO PROCESSING"
     process_text[1] = c"COLOR GRAYSCALE"
     process_text[2] = c"COLOR TINT"
@@ -45,7 +45,7 @@ def main() -> i32:
     process_text[7] = c"FLIP VERTICAL"
     process_text[8] = c"FLIP HORIZONTAL"
 
-    var toggle_rects = zero[array[rl.Rectangle, num_processes]]()
+    var toggle_rects = zero[array[rl.Rectangle, num_processes]]
     for index in 0..num_processes:
         toggle_rects[index] = rl.Rectangle(x = 40.0, y = f32<-(50 + 32 * index), width = 150.0, height = 30.0)
 

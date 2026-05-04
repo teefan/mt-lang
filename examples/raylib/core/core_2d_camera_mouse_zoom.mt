@@ -24,7 +24,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var camera = zero[rl.Camera2D]()
+    var camera = zero[rl.Camera2D]
     camera.zoom = 1.0
 
     var zoom_mode = 0

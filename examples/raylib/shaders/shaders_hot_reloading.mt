@@ -34,7 +34,7 @@ def main() -> i32:
 
     let shader_path = rl.TextFormat(shader_file_name_format, glsl_version)
     var frag_shader_mod_time: ctime.time_t = rl.GetFileModTime(shader_path)
-    var shader = rl.LoadShader(zero[cstr?](), shader_path)
+    var shader = rl.LoadShader(zero[cstr?], shader_path)
 
     var resolution_location = rl.GetShaderLocation(shader, resolution_uniform_name)
     var mouse_location = rl.GetShaderLocation(shader, mouse_uniform_name)
@@ -45,7 +45,7 @@ def main() -> i32:
 
     var total_time: f32 = 0.0
     var shader_auto_reloading = false
-    var mod_time_buffer = zero[array[char, 64]]()
+    var mod_time_buffer = zero[array[char, 64]]
 
     rl.SetTargetFPS(60)
 
@@ -62,7 +62,7 @@ def main() -> i32:
             let current_frag_shader_mod_time = rl.GetFileModTime(shader_path)
 
             if current_frag_shader_mod_time != frag_shader_mod_time:
-                let updated_shader = rl.LoadShader(zero[cstr?](), shader_path)
+                let updated_shader = rl.LoadShader(zero[cstr?], shader_path)
 
                 if updated_shader.id != rlgl.rlGetShaderIdDefault():
                     rl.UnloadShader(shader)

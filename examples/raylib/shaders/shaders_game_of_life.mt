@@ -34,7 +34,7 @@ def gui_rect(x: f32, y: f32, width: f32, height: f32) -> gui.Rectangle:
 def free_image_to_draw(image_to_draw: ref[rl.Image], has_image_to_draw: ref[bool]) -> void:
     if read(has_image_to_draw):
         rl.UnloadImage(read(image_to_draw))
-        read(image_to_draw) = zero[rl.Image]()
+        read(image_to_draw) = zero[rl.Image]
         read(has_image_to_draw) = false
 
 
@@ -104,7 +104,7 @@ def main() -> i32:
     var button_faster = false
     var button_slower = false
 
-    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?], rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let resolution_loc = rl.GetShaderLocation(shader, resolution_uniform_name)
@@ -137,7 +137,7 @@ def main() -> i32:
     var current_world = world2
     var previous_world = world1
 
-    var image_to_draw = zero[rl.Image]()
+    var image_to_draw = zero[rl.Image]
     var has_image_to_draw = false
 
     var previous_mouse_position = rl.Vector2(x = 0.0, y = 0.0)

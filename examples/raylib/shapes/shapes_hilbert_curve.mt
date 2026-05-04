@@ -60,7 +60,7 @@ def main() -> i32:
     var order = min_order
     var size: f32 = f32<-rl.GetScreenHeight()
     var stroke_count = 0
-    var hilbert_path = zero[array[rl.Vector2, 65536]]()
+    var hilbert_path = zero[array[rl.Vector2, 65536]]
 
     var previous_order = order
     var previous_size = i32<-size

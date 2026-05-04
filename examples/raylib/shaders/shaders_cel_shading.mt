@@ -72,7 +72,7 @@ def main() -> i32:
     defer rl.UnloadShader(outline_shader)
     let outline_thickness_loc = rl.GetShaderLocation(outline_shader, outline_thickness_uniform_name)
 
-    var light_sources = zero[array[lights.Light, 4]]()
+    var light_sources = zero[array[lights.Light, 4]]
     light_sources[0] = lights.CreateLight(i32<-lights.LightType.LIGHT_DIRECTIONAL, rl.Vector3(x = 50.0, y = 50.0, z = 50.0), rm.Vector3.zero(), rl.WHITE, cel_shader)
 
     var cel_enabled = true

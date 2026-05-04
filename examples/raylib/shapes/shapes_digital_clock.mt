@@ -234,7 +234,7 @@ def main() -> i32:
         minute = clock_hand(10.0, 130, 7, rl.DARKGRAY),
         hour = clock_hand(0.0, 100, 7, rl.BLACK),
     )
-    var time_buffer = zero[array[char, 9]]()
+    var time_buffer = zero[array[char, 9]]
 
     rl.SetTargetFPS(60)
 

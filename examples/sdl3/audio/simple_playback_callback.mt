@@ -29,7 +29,7 @@ def feed_audio_stream_more(userdata: ptr[void], astream: ptr[c.SDL_AudioStream],
     var remaining_samples = additional_amount / i32<-sizeof(f32)
 
     while remaining_samples > 0:
-        var samples = zero[array[f32, 128]]()
+        var samples = zero[array[f32, 128]]
         let total = min_i32(remaining_samples, sample_chunk_size)
 
         for index in 0..total:
@@ -43,7 +43,7 @@ def feed_audio_stream_more(userdata: ptr[void], astream: ptr[c.SDL_AudioStream],
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
@@ -58,7 +58,7 @@ def render_frame() -> void:
 
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
-    var spec = zero[c.SDL_AudioSpec]()
+    var spec = zero[c.SDL_AudioSpec]
 
     c.SDL_SetAppMetadata(c"Example Simple Audio Playback Callback", c"1.0", c"com.example.audio-simple-playback-callback")
 

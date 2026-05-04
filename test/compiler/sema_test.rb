@@ -1404,7 +1404,7 @@ class MilkTeaSemaTest < Minitest::Test
       extern def update_texture(pixels: ptr[void]) -> void
 
       def main() -> void:
-          var pixels = zero[array[i32, 4]]()
+          var pixels = zero[array[i32, 4]]
           let data = ptr_of(pixels[0])
           update_texture(data)
     MT
@@ -1890,7 +1890,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           var buffer: str_builder[CAPACITY]
-          var values = zero[array[i32, CAPACITY]]()
+          var values = zero[array[i32, CAPACITY]]
           values[0] = i32<-capacity_of[CAPACITY](buffer)
           return values[0]
     MT
@@ -3101,8 +3101,8 @@ class MilkTeaSemaTest < Minitest::Test
           colors: array[u32, 4]
 
       def main() -> i32:
-          let palette = zero[array[u32, 4]]()
-          let holder = zero[Palette]()
+          let palette = zero[array[u32, 4]]
+          let holder = zero[Palette]
           return 0
     MT
 
@@ -3160,7 +3160,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.zero_bad
 
       def main() -> i32:
-          let value = zero[void]()
+          let value = zero[void]
           return 0
     MT
 
@@ -3468,7 +3468,7 @@ class MilkTeaSemaTest < Minitest::Test
       extern def get_text() -> cstr
 
       def main() -> void:
-          var buffer = zero[array[char, 32]]()
+          var buffer = zero[array[char, 32]]
           unsafe:
               let raw_buffer = ptr_of(buffer[0])
               set_text(cstr<-raw_buffer)
@@ -3601,7 +3601,7 @@ class MilkTeaSemaTest < Minitest::Test
           return items.len
 
       def main() -> i32:
-          var buffer = zero[array[char, 32]]()
+          var buffer = zero[array[char, 32]]
           buffer[0] = 65
           let used = view(buffer)
           return i32<-used
@@ -3647,7 +3647,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.char_array_methods
 
       def main() -> i32:
-          var buffer = zero[array[char, 16]]()
+          var buffer = zero[array[char, 16]]
           let view = buffer.as_str()
           let label = buffer.as_cstr()
           return i32<-view.len
@@ -3695,7 +3695,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.char_array_bad_view
 
       def main() -> str:
-          return zero[array[char, 8]]().as_str()
+          return zero[array[char, 8]].as_str()
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -3710,7 +3710,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.char_array_bad_cstr
 
       def main() -> cstr:
-          return zero[array[char, 8]]().as_cstr()
+          return zero[array[char, 8]].as_cstr()
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -3760,8 +3760,8 @@ class MilkTeaSemaTest < Minitest::Test
       import std.mem as mem
 
       def main() -> void:
-          var fixed = zero[array[char, 32]]()
-          var dynamic = zero[array[char, 64]]()
+          var fixed = zero[array[char, 32]]
+          var dynamic = zero[array[char, 64]]
           mem.write_fixed(fixed)
           mem.write_dynamic(dynamic)
     MT
@@ -3819,7 +3819,7 @@ class MilkTeaSemaTest < Minitest::Test
       import std.ui as ui
 
       def main() -> void:
-          var buffer = zero[array[char, 32]]()
+          var buffer = zero[array[char, 32]]
           ui.text_box(buffer)
     MT
 
@@ -3998,7 +3998,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> i32:
           let first = 65
-          var ptr: ptr[char] = zero[ptr[char]]()
+          var ptr: ptr[char] = zero[ptr[char]]
           unsafe:
               ptr[0] = first
               ptr[1] = char<-66
@@ -4015,14 +4015,14 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.bad_zero_pointer_initializer
 
       def main() -> void:
-          let maybe_buffer: ptr[char]? = zero[ptr[char]]()
+          let maybe_buffer: ptr[char]? = zero[ptr[char]]
     MT
 
     error = assert_raises(MilkTea::SemaError) do
       check_source(source)
     end
 
-    assert_match(/use null instead of zero\[ptr\[char\]\]\(\) in nullable pointer-like context ptr\[char\]\?/, error.message)
+    assert_match(/use null instead of zero\[ptr\[char\]\] in nullable pointer-like context ptr\[char\]\?/, error.message)
   end
 
   def test_rejects_zero_pointer_assignment_to_nullable_pointer_local
@@ -4031,14 +4031,14 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> void:
           var maybe_buffer: ptr[char]? = null
-          maybe_buffer = zero[ptr[char]]()
+          maybe_buffer = zero[ptr[char]]
     MT
 
     error = assert_raises(MilkTea::SemaError) do
       check_source(source)
     end
 
-    assert_match(/use null instead of zero\[ptr\[char\]\]\(\) in nullable pointer-like context ptr\[char\]\?/, error.message)
+    assert_match(/use null instead of zero\[ptr\[char\]\] in nullable pointer-like context ptr\[char\]\?/, error.message)
   end
 
   def test_rejects_zero_pointer_argument_for_nullable_pointer_parameter
@@ -4048,14 +4048,14 @@ class MilkTeaSemaTest < Minitest::Test
       extern def set_buffer(value: ptr[char]?) -> void
 
       def main() -> void:
-          set_buffer(zero[ptr[char]]())
+          set_buffer(zero[ptr[char]])
     MT
 
     error = assert_raises(MilkTea::SemaError) do
       check_source(source)
     end
 
-    assert_match(/use null instead of zero\[ptr\[char\]\]\(\) in nullable pointer-like context ptr\[char\]\?/, error.message)
+    assert_match(/use null instead of zero\[ptr\[char\]\] in nullable pointer-like context ptr\[char\]\?/, error.message)
   end
 
   def test_rejects_zero_pointer_return_for_nullable_pointer_return
@@ -4063,14 +4063,14 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.bad_zero_pointer_return
 
       def main() -> ptr[char]?:
-          return zero[ptr[char]]()
+          return zero[ptr[char]]
     MT
 
     error = assert_raises(MilkTea::SemaError) do
       check_source(source)
     end
 
-    assert_match(/use null instead of zero\[ptr\[char\]\]\(\) in nullable pointer-like context ptr\[char\]\?/, error.message)
+    assert_match(/use null instead of zero\[ptr\[char\]\] in nullable pointer-like context ptr\[char\]\?/, error.message)
   end
 
   def test_rejects_char_as_general_numeric_type

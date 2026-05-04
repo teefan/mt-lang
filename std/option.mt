@@ -10,7 +10,7 @@ pub def some[T](item: T) -> Option[T]:
 
 
 pub def none[T]() -> Option[T]:
-    return Option[T](is_some = false, value = zero[T]())
+    return Option[T](is_some = false, value = zero[T])
 
 
 pub def is_some[T](item: Option[T]) -> bool:
@@ -41,5 +41,5 @@ pub def set_some[T](item: ref[Option[T]], value_item: T) -> void:
 
 pub def clear[T](item: ref[Option[T]]) -> void:
     item.is_some = false
-    item.value = zero[T]()
+    item.value = zero[T]
     return

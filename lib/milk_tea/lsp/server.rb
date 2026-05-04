@@ -1602,6 +1602,12 @@ module MilkTea
           end
 
           unless signature
+            if (local_type = resolve_local_hover_type(analysis, name, lsp_line + 1, lsp_char + 1))
+              signature = "#{name}: #{local_type}"
+            end
+          end
+
+          unless signature
             local_def = @workspace.find_definition_token(
               uri,
               name,
@@ -2404,6 +2410,18 @@ module MilkTea
         analysis.values[receiver_name]&.type
       end
 
+      def resolve_local_hover_type(analysis, name, line, char)
+        frame = enclosing_completion_frame(analysis, line)
+        return nil unless frame
+
+        snapshot = latest_completion_snapshot(frame, line, char)
+        binding = snapshot&.bindings&.dig(name)
+        return binding.type if binding
+
+        future_snapshot = same_line_future_completion_snapshot(frame, line, char)
+        future_snapshot&.bindings&.dig(name)&.type
+      end
+
       def enclosing_completion_frame(analysis, line)
         frames = Array(analysis.local_completion_frames)
         containing = frames.select { |frame| frame.start_line && frame.end_line && frame.start_line <= line && line <= frame.end_line }
@@ -2415,6 +2433,17 @@ module MilkTea
         snapshots.reverse_each do |snapshot|
           next if snapshot.line > line
           next if snapshot.line == line && snapshot.column > char
+
+          return snapshot
+        end
+        nil
+      end
+
+      def same_line_future_completion_snapshot(frame, line, char)
+        snapshots = Array(frame.snapshots)
+        snapshots.each do |snapshot|
+          next unless snapshot.line == line
+          next if snapshot.column <= char
 
           return snapshot
         end

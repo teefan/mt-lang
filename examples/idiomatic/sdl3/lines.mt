@@ -25,7 +25,7 @@ var renderer: ptr[sdl.Renderer]
 
 
 def pump_events() -> bool:
-    var event = zero[sdl.Event]()
+    var event = zero[sdl.Event]
 
     while sdl.poll_event(out event):
         if sdl.EventType.SDL_EVENT_QUIT == sdl.EventType.SDL_EVENT_QUIT:

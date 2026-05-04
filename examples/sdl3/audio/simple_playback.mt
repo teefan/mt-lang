@@ -21,7 +21,7 @@ var current_sine_sample: i32 = 0
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
@@ -34,7 +34,7 @@ def render_frame() -> void:
     let active_stream = stream
     if active_stream != null:
         if c.SDL_GetAudioStreamQueued(active_stream) < minimum_audio:
-            var samples = zero[array[f32, 512]]()
+            var samples = zero[array[f32, 512]]
 
             for index in 0..sample_chunk_size:
                 let phase = f32<-(current_sine_sample * tone_frequency) / f32<-audio_sample_rate
@@ -49,7 +49,7 @@ def render_frame() -> void:
 
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
-    var spec = zero[c.SDL_AudioSpec]()
+    var spec = zero[c.SDL_AudioSpec]
 
     c.SDL_SetAppMetadata(c"Example Audio Simple Playback", c"1.0", c"com.example.audio-simple-playback")
 

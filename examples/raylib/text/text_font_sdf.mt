@@ -24,7 +24,7 @@ def main() -> i32:
     let file_data = rl.LoadFileData(font_path, ptr_of(file_size))
     defer rl.UnloadFileData(file_data)
 
-    var font_default = zero[rl.Font]()
+    var font_default = zero[rl.Font]
     font_default.baseSize = 16
     font_default.glyphCount = 95
     font_default.glyphs = rl.LoadFontData(file_data, file_size, 16, null, 95, rl.FontType.FONT_DEFAULT, ptr_of(font_default.glyphCount))
@@ -33,7 +33,7 @@ def main() -> i32:
     rl.UnloadImage(atlas)
     defer rl.UnloadFont(font_default)
 
-    var font_sdf = zero[rl.Font]()
+    var font_sdf = zero[rl.Font]
     font_sdf.baseSize = 16
     font_sdf.glyphCount = 95
     font_sdf.glyphs = rl.LoadFontData(file_data, file_size, 16, null, 0, rl.FontType.FONT_SDF, ptr_of(font_sdf.glyphCount))
@@ -42,7 +42,7 @@ def main() -> i32:
     rl.UnloadImage(atlas)
     defer rl.UnloadFont(font_sdf)
 
-    var shader = zero[rl.Shader]()
+    var shader = zero[rl.Shader]
     shader = rl.LoadShader(null, shader_path)
     defer rl.UnloadShader(shader)
 

@@ -253,7 +253,7 @@ def main() -> i32:
     var car_emissive = array[f32, 4](1.0, 162.0 / 255.0, 0.0, 1.0)
     var floor_emissive = array[f32, 4](0.0, 0.0, 0.0, 1.0)
 
-    var light_sources = zero[array[Light, 4]]()
+    var light_sources = zero[array[Light, 4]]
     light_sources[0] = create_light(i32<-LightType.LIGHT_POINT, rl.Vector3(x = -1.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.YELLOW, 4.0, shader)
     light_sources[1] = create_light(i32<-LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = 1.0), rm.Vector3.zero(), rl.GREEN, 3.3, shader)
     light_sources[2] = create_light(i32<-LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = 1.0), rm.Vector3.zero(), rl.RED, 8.3, shader)

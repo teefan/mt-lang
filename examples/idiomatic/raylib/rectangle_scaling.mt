@@ -12,7 +12,7 @@ def main() -> i32:
     defer rl.close_window()
 
     var rectangle = rl.Rectangle(x = 100.0, y = 100.0, width = 200.0, height = 80.0)
-    var mouse_position = zero[rl.Vector2]()
+    var mouse_position = zero[rl.Vector2]
     var handle_hovered = false
     var scaling = false
 

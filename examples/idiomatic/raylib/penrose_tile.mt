@@ -74,7 +74,7 @@ def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32]) -> Turtl
         let state = items[read(top)]
         read(top) -= 1
         return state
-    return zero[TurtleState]()
+    return zero[TurtleState]
 
 
 def draw_penrose_lsystem(production: string.String, draw_length: f32, steps: ref[i32], turtle_stack: ref[array[TurtleState, 50]], turtle_top: ref[i32]) -> void:
@@ -140,7 +140,7 @@ def main() -> i32:
     var production = rebuild_production(generations)
     defer production.release()
     var steps = 0
-    var turtle_stack = zero[array[TurtleState, 50]]()
+    var turtle_stack = zero[array[TurtleState, 50]]
     var turtle_top = -1
 
     rl.set_target_fps(120)

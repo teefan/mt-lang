@@ -58,7 +58,7 @@ def set_all_model_shaders(model: ptr[rl.Model], shader: rl.Shader) -> void:
 
 
 def load_shadowmap_render_texture(width: i32, height: i32) -> rl.RenderTexture2D:
-    var target = zero[rl.RenderTexture2D]()
+    var target = zero[rl.RenderTexture2D]
     target.id = rlgl.rlLoadFramebuffer()
     target.texture.width = width
     target.texture.height = height
@@ -146,7 +146,7 @@ def main() -> i32:
     var anim_count = 0
     let anims = rl.LoadModelAnimations(robot_model_path, ptr_of(anim_count))
     defer rl.UnloadModelAnimations(anims, anim_count)
-    var anim = zero[rl.ModelAnimation]()
+    var anim = zero[rl.ModelAnimation]
     unsafe:
         anim = anims[0]
 
@@ -162,9 +162,9 @@ def main() -> i32:
     )
 
     var frame_counter = 0
-    var light_view = zero[rl.Matrix]()
-    var light_proj = zero[rl.Matrix]()
-    var light_view_proj = zero[rl.Matrix]()
+    var light_view = zero[rl.Matrix]
+    var light_proj = zero[rl.Matrix]
+    var light_view_proj = zero[rl.Matrix]
     var texture_active_slot = 10
 
     rl.SetTargetFPS(60)

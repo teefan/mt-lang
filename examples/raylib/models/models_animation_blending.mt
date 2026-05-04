@@ -83,7 +83,7 @@ def main() -> i32:
     var anim_blend_time_counter: f32 = 0.0
     var anim_pause = false
 
-    var anim_names = zero[array[cstr, max_anim_names]]()
+    var anim_names = zero[array[cstr, max_anim_names]]
     for index in 0..anim_count:
         anim_names[index] = model_animation_name(anims, index)
 

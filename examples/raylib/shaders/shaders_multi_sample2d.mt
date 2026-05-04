@@ -26,7 +26,7 @@ def main() -> i32:
     rl.UnloadImage(blue_image)
     defer rl.UnloadTexture(blue_texture)
 
-    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?], rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let blue_texture_location = rl.GetShaderLocation(shader, texture_uniform_name)

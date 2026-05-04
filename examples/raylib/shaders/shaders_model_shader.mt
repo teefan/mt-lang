@@ -37,7 +37,7 @@ def main() -> i32:
     let texture = rl.LoadTexture(texture_path)
     defer rl.UnloadTexture(texture)
 
-    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?], rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     set_model_shader(ptr_of(model), shader)

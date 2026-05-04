@@ -20,7 +20,7 @@ def main() -> i32:
     let fudesumi = rl.LoadTexture(texture_path)
     defer rl.UnloadTexture(fudesumi)
 
-    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?], rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     rl.SetTargetFPS(60)

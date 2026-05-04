@@ -20,7 +20,7 @@ def random_bar_color() -> rl.Color:
 
 
 def fresh_colors() -> array[rl.Color, 10]:
-    var colors = zero[array[rl.Color, 10]]()
+    var colors = zero[array[rl.Color, 10]]
     var color_index = 0
     while color_index < bar_count:
         colors[color_index] = random_bar_color()

@@ -28,7 +28,7 @@ def main() -> i32:
         projection = rl.CameraProjection.CAMERA_PERSPECTIVE,
     )
 
-    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?], rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let view_eye_loc = rl.GetShaderLocation(shader, view_eye_uniform_name)

@@ -53,7 +53,7 @@ def append_char(buffer: ptr[char], position: ptr[i32], ch: char) -> void:
         if remaining <= 0:
             return
 
-        var scratch = zero[array[char, 2]]()
+        var scratch = zero[array[char, 2]]
         scratch[0] = ch
         rl.TextAppend(buffer, cstr<-ptr_of(scratch[0]), position)
 
@@ -76,7 +76,7 @@ def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32]) -> Turtl
         return state
 
     rl.TraceLog(rl.TraceLogLevel.LOG_WARNING, turtle_stack_underflow_text)
-    return zero[TurtleState]()
+    return zero[TurtleState]
 
 
 def create_penrose_lsystem(draw_length: f32) -> PenroseLSystem:
@@ -186,7 +186,7 @@ def main() -> i32:
     for index in 0..generations:
         build_production_step(ref_of(ls))
 
-    var turtle_stack = zero[array[TurtleState, 50]]()
+    var turtle_stack = zero[array[TurtleState, 50]]
     var turtle_top = -1
 
     rl.SetTargetFPS(120)

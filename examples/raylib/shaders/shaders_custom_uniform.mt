@@ -37,7 +37,7 @@ def main() -> i32:
     rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
-    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?], rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let swirl_center_loc = rl.GetShaderLocation(shader, swirl_center_uniform_name)

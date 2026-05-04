@@ -14,7 +14,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var points = zero[array[rl.Vector2, 122]]()
+    var points = zero[array[rl.Vector2, 122]]
     let center = rl.Vector2(x = screen_width / 2.0 - 125.0, y = screen_height / 2.0)
     var segments: f32 = 6.0
     var inside_radius: f32 = 100.0

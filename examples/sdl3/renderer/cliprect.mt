@@ -14,13 +14,13 @@ const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 var texture: ptr[c.SDL_Texture]
-var cliprect_position: c.SDL_FPoint = zero[c.SDL_FPoint]()
-var cliprect_direction: c.SDL_FPoint = zero[c.SDL_FPoint]()
+var cliprect_position: c.SDL_FPoint = zero[c.SDL_FPoint]
+var cliprect_direction: c.SDL_FPoint = zero[c.SDL_FPoint]
 var last_time: c.Uint64 = 0
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:

@@ -18,7 +18,7 @@ def main() -> i32:
         rl.LIGHTGRAY, rl.GRAY, rl.DARKGRAY, rl.BLACK,
     )
 
-    var colors_recs = zero[array[rl.Rectangle, 23]]()
+    var colors_recs = zero[array[rl.Rectangle, 23]]
     for index in 0..max_colors_count:
         colors_recs[index].x = 10.0 + 30.0 * f32<-index + 2.0 * f32<-index
         colors_recs[index].y = 10.0

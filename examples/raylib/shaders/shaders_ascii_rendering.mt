@@ -24,7 +24,7 @@ def main() -> i32:
     let raysan = rl.LoadTexture(raysan_path)
     defer rl.UnloadTexture(raysan)
 
-    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?], rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let resolution_location = rl.GetShaderLocation(shader, resolution_uniform_name)

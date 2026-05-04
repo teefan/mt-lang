@@ -120,10 +120,10 @@ def main() -> i32:
         EnvElement(rect = rl.Rectangle(x = 250.0, y = 300.0, width = 100.0, height = 10.0), blocking = true, color = rl.GRAY),
         EnvElement(rect = rl.Rectangle(x = 650.0, y = 300.0, width = 100.0, height = 10.0), blocking = true, color = rl.GRAY),
     )
-    var camera = zero[rl.Camera2D]()
+    var camera = zero[rl.Camera2D]
     reset_scene(ref_of(player), ref_of(camera))
 
-    var aelist = zero[rl.AutomationEventList]()
+    var aelist = zero[rl.AutomationEventList]
     aelist = rl.LoadAutomationEventList(null)
     rl.SetAutomationEventList(ptr_of(aelist))
 

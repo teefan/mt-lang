@@ -26,7 +26,7 @@ def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Particles Blending")
     defer rl.close_window()
 
-    var mouse_tail = zero[array[Particle, 200]]()
+    var mouse_tail = zero[array[Particle, 200]]
 
     for index in 0..max_particles:
         mouse_tail[index].position = rl.Vector2(x = 0.0, y = 0.0)

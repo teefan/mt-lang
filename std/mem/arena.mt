@@ -75,7 +75,7 @@ methods Arena:
             while index < text.len:
                 read(buffer + index) = read(text.data + index)
                 index += 1
-            read(buffer + text.len) = zero[char]()
+            read(buffer + text.len) = zero[char]
             return cstr<-buffer
 
 
@@ -90,7 +90,7 @@ methods Arena:
             while index < text.len:
                 read(buffer + index) = read(text.data + index)
                 index += 1
-            read(buffer + text.len) = zero[char]()
+            read(buffer + text.len) = zero[char]
             return cstr<-buffer
 
 

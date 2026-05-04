@@ -22,7 +22,7 @@ def main() -> i32:
         projection = rl.CameraProjection.CAMERA_PERSPECTIVE,
     )
 
-    var tesseract = zero[array[rl.Vector4, 16]]()
+    var tesseract = zero[array[rl.Vector4, 16]]
     tesseract[0] = rl.Vector4(x = 1.0, y = 1.0, z = 1.0, w = 1.0)
     tesseract[1] = rl.Vector4(x = 1.0, y = 1.0, z = 1.0, w = -1.0)
     tesseract[2] = rl.Vector4(x = 1.0, y = 1.0, z = -1.0, w = 1.0)
@@ -40,8 +40,8 @@ def main() -> i32:
     tesseract[14] = rl.Vector4(x = -1.0, y = -1.0, z = -1.0, w = 1.0)
     tesseract[15] = rl.Vector4(x = -1.0, y = -1.0, z = -1.0, w = -1.0)
 
-    var transformed = zero[array[rl.Vector3, 16]]()
-    var w_values = zero[array[f32, 16]]()
+    var transformed = zero[array[rl.Vector3, 16]]
+    var w_values = zero[array[f32, 16]]
 
     rl.SetTargetFPS(60)
 

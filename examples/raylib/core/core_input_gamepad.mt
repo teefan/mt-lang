@@ -198,7 +198,7 @@ def main() -> i32:
     let tex_xbox_pad = rl.LoadTexture(xbox_texture_path)
     defer rl.UnloadTexture(tex_xbox_pad)
 
-    var vibrate_button = zero[rl.Rectangle]()
+    var vibrate_button = zero[rl.Rectangle]
     var gamepad = 0
 
     rl.SetTargetFPS(60)

@@ -44,7 +44,7 @@ def main() -> i32:
     let model3 = rl.LoadModelFromMesh(sphere)
     defer rl.UnloadModel(model3)
 
-    var shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
+    var shader = rl.LoadShader(zero[cstr?], rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let tex_diffuse = rl.LoadTexture(diffuse_texture_path)

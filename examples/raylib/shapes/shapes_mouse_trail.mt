@@ -13,7 +13,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var trail_positions = zero[array[rl.Vector2, 30]]()
+    var trail_positions = zero[array[rl.Vector2, 30]]
 
     rl.SetTargetFPS(60)
 

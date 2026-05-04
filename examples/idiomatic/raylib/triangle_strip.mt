@@ -12,7 +12,7 @@ def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Triangle Strip")
     defer rl.close_window()
 
-    var points = zero[array[rl.Vector2, 122]]()
+    var points = zero[array[rl.Vector2, 122]]
     let center = rl.Vector2(x = f32<-screen_width / 2.0 - 125.0, y = f32<-screen_height / 2.0)
     var segments: f32 = 6.0
     var inside_radius: f32 = 100.0

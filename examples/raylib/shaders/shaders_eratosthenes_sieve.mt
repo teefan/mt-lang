@@ -16,7 +16,7 @@ def main() -> i32:
     let target = rl.LoadRenderTexture(screen_width, screen_height)
     defer rl.UnloadRenderTexture(target)
 
-    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?], rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     rl.SetTargetFPS(60)

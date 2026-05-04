@@ -80,8 +80,8 @@ def main() -> i32:
     let logo_task = aio.work_on(loop, load_logo_bytes)
     let sound_task = aio.work_on(loop, load_sound_bytes)
 
-    var logo = zero[rl.Texture2D]()
-    var ping = zero[rl.Sound]()
+    var logo = zero[rl.Texture2D]
+    var ping = zero[rl.Sound]
     var logo_loaded = false
     var sound_loaded = false
     var played_ready_sound = false

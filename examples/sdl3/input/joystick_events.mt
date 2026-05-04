@@ -19,8 +19,8 @@ struct EventMessage:
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
-var colors: array[c.SDL_Color, 64] = zero[array[c.SDL_Color, 64]]()
-var messages: EventMessage = zero[EventMessage]()
+var colors: array[c.SDL_Color, 64] = zero[array[c.SDL_Color, 64]]
+var messages: EventMessage = zero[EventMessage]
 var messages_tail: ptr[EventMessage]? = null
 var axis_motion_cooldown_time: c.Uint64 = 0
 var ball_motion_cooldown_time: c.Uint64 = 0
@@ -181,7 +181,7 @@ def add_battery_message(which: u32, state: c.SDL_PowerState, percent: i32) -> vo
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
@@ -287,7 +287,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)
 
-    messages = zero[EventMessage]()
+    messages = zero[EventMessage]
     messages_tail = ptr[EventMessage]<-ptr_of(messages)
     axis_motion_cooldown_time = 0
     ball_motion_cooldown_time = 0

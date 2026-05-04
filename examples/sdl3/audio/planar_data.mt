@@ -69,7 +69,7 @@ def play_right_sound() -> void:
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         c.SDL_ConvertEventToRenderCoordinates(renderer, ptr_of(event))
@@ -120,7 +120,7 @@ def render_frame() -> void:
 
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
-    var spec = zero[c.SDL_AudioSpec]()
+    var spec = zero[c.SDL_AudioSpec]
 
     c.SDL_SetAppMetadata(c"Example Audio Planar Data", c"1.0", c"com.example.audio-planar-data")
 

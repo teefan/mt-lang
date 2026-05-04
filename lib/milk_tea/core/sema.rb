@@ -674,6 +674,10 @@ module MilkTea
           validate_static_storage_initializer!(expression.condition, scopes:)
           validate_static_storage_initializer!(expression.then_expression, scopes:)
           validate_static_storage_initializer!(expression.else_expression, scopes:)
+        when AST::Specialization
+          return if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "zero"
+
+          raise_sema_error("module variable initializer must be static-storage-safe")
         when AST::Call
           validate_static_storage_call_initializer!(expression, scopes:)
         else
@@ -1815,6 +1819,11 @@ module MilkTea
           when AST::Call
             infer_call(expression, scopes:, expected_type:)
           when AST::Specialization
+            if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "zero"
+              callable_kind, callable, = resolve_callable(expression, scopes:)
+              return check_zero_call(callable, [], expected_type:) if callable_kind == :zero
+            end
+
             if (function_binding = resolve_specialized_function_binding(expression))
               return function_binding.type
             end
@@ -2171,7 +2180,7 @@ module MilkTea
         when :reinterpret
           check_reinterpret_call(callable, expression.arguments, scopes:)
         when :zero
-          check_zero_call(callable, expression.arguments, expected_type:)
+          raise_sema_error("zero[T]() is no longer supported; use zero[T]")
         when :result_ok, :result_err
           check_result_construction(callable_kind, expression.arguments, scopes:, expected_type:)
         when :panic
@@ -2860,7 +2869,7 @@ module MilkTea
 
         zero_initializable_type?(target_type)
         if expected_type.is_a?(Types::Nullable) && typed_null_target_type?(expected_type.base) && types_compatible?(target_type, expected_type.base)
-          raise_sema_error("use null instead of zero[#{target_type}]() in nullable pointer-like context #{expected_type}")
+          raise_sema_error("use null instead of zero[#{target_type}] in nullable pointer-like context #{expected_type}")
         end
 
         target_type
@@ -3926,9 +3935,13 @@ module MilkTea
         nil
       end
 
+      BUILTIN_VALUE_SPECIALIZATIONS = %w[zero reinterpret cast].freeze
+
       def type_ref_from_specialization(expression)
         case expression.callee
         when AST::Identifier
+          return nil if BUILTIN_VALUE_SPECIALIZATIONS.include?(expression.callee.name)
+
           AST::TypeRef.new(name: AST::QualifiedName.new(parts: [expression.callee.name]), arguments: expression.arguments, nullable: false)
         when AST::MemberAccess
           return nil unless expression.callee.receiver.is_a?(AST::Identifier)

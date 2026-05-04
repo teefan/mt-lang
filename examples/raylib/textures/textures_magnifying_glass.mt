@@ -33,7 +33,7 @@ def main() -> i32:
         rl.UnloadTexture(parrots)
         rl.UnloadTexture(bunny)
 
-    var camera = zero[rl.Camera2D]()
+    var camera = zero[rl.Camera2D]
     camera.zoom = 2.0
     camera.offset = rl.Vector2(x = glass_radius, y = glass_radius)
 

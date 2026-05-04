@@ -31,15 +31,15 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var points = zero[array[rl.Vector2, 32]]()
+    var points = zero[array[rl.Vector2, 32]]
     points[0] = rl.Vector2(x = 50.0, y = 400.0)
     points[1] = rl.Vector2(x = 160.0, y = 220.0)
     points[2] = rl.Vector2(x = 340.0, y = 380.0)
     points[3] = rl.Vector2(x = 520.0, y = 60.0)
     points[4] = rl.Vector2(x = 710.0, y = 260.0)
 
-    var points_interleaved = zero[array[rl.Vector2, 94]]()
-    var control_points = zero[array[ControlPoint, 31]]()
+    var points_interleaved = zero[array[rl.Vector2, 94]]
+    var control_points = zero[array[ControlPoint, 31]]
 
     var point_count = 5
     var selected_point = -1

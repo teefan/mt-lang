@@ -2473,8 +2473,8 @@ class MilkTeaCodegenTest < Minitest::Test
       "    colors: array[u32, 4]",
       "",
       "def main() -> i32:",
-      "    var palette = zero[array[u32, 4]]()",
-      "    var holder = zero[Palette]()",
+      "    var palette = zero[array[u32, 4]]",
+      "    var holder = zero[Palette]",
       "    return 0",
       "",
     ].join("\n")
@@ -2598,7 +2598,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "extern def get_text() -> cstr",
       "",
       "def main() -> void:",
-      "    var buffer = zero[array[char, 32]]()",
+      "    var buffer = zero[array[char, 32]]",
       "    unsafe:",
       "        let raw_buffer = ptr_of(buffer[0])",
       "        set_text(cstr<-raw_buffer)",
@@ -2640,7 +2640,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    return items.len",
       "",
       "def main() -> i32:",
-      "    var buffer = zero[array[char, 32]]()",
+      "    var buffer = zero[array[char, 32]]",
       "    buffer[0] = 65",
       "    return i32<-view(buffer)",
       "",
@@ -2673,7 +2673,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.char_array_methods",
       "",
       "def main() -> i32:",
-      "    var buffer = zero[array[char, 16]]()",
+      "    var buffer = zero[array[char, 16]]",
       "    let view = buffer.as_str()",
       "    let label = buffer.as_cstr()",
       "    return i32<-view.len",
@@ -2908,8 +2908,8 @@ class MilkTeaCodegenTest < Minitest::Test
       import std.mem as mem
 
       def main() -> void:
-          var fixed = zero[array[char, 32]]()
-          var dynamic = zero[array[char, 64]]()
+          var fixed = zero[array[char, 32]]
+          var dynamic = zero[array[char, 64]]
           mem.write_fixed(fixed)
           mem.write_dynamic(dynamic)
     MT
@@ -2945,7 +2945,7 @@ class MilkTeaCodegenTest < Minitest::Test
       import std.ui as ui
 
       def main() -> void:
-          var buffer = zero[array[char, 32]]()
+          var buffer = zero[array[char, 32]]
           ui.text_box(buffer)
     MT
 
@@ -2993,7 +2993,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.char_buffer_surface",
       "",
       "def main() -> i32:",
-      "    var ptr: ptr[char] = zero[ptr[char]]()",
+      "    var ptr: ptr[char] = zero[ptr[char]]",
       "    unsafe:",
       "        ptr[0] = 65",
       "        ptr[1] = char<-66",
@@ -3012,7 +3012,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.pointer_offset_surface",
       "",
       "def main() -> i32:",
-      "    var ptr: ptr[char] = zero[ptr[char]]()",
+      "    var ptr: ptr[char] = zero[ptr[char]]",
       "    let offset = 1",
       "    unsafe:",
       "        var next = ptr + offset",

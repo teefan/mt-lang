@@ -77,7 +77,7 @@ def main() -> i32:
     let tex_ray = rl.LoadTexture(raysan_path)
     defer rl.UnloadTexture(tex_ray)
 
-    var stars = zero[array[Star, max_stars]]()
+    var stars = zero[array[Star, max_stars]]
     for index in 0..max_stars:
         reset_star(ref_of(stars[index]))
 
@@ -87,14 +87,14 @@ def main() -> i32:
 
     var frame_counter = 0
 
-    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?], rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let position_names = array[cstr, max_spots](c"spots[0].pos", c"spots[1].pos", c"spots[2].pos")
     let inner_names = array[cstr, max_spots](c"spots[0].inner", c"spots[1].inner", c"spots[2].inner")
     let radius_names = array[cstr, max_spots](c"spots[0].radius", c"spots[1].radius", c"spots[2].radius")
 
-    var spots = zero[array[Spot, max_spots]]()
+    var spots = zero[array[Spot, max_spots]]
     for index in 0..max_spots:
         spots[index].position_loc = rl.GetShaderLocation(shader, position_names[index])
         spots[index].inner_loc = rl.GetShaderLocation(shader, inner_names[index])

@@ -66,7 +66,7 @@ def main() -> i32:
     var last_gesture: i32 = rl.Gesture.GESTURE_NONE
     let last_gesture_position = rl.Vector2(x = 165.0, y = 130.0)
 
-    var gesture_log = zero[array[cstr, 20]]()
+    var gesture_log = zero[array[cstr, 20]]
     for index in 0..gesture_log_size:
         gesture_log[index] = c""
     var gesture_log_index = gesture_log_size
@@ -149,7 +149,7 @@ def main() -> i32:
             y = angle_length * math.cosf(current_angle_radians) + protractor_position.y,
         )
 
-        var touch_positions = zero[array[rl.Vector2, 32]]()
+        var touch_positions = zero[array[rl.Vector2, 32]]
         var mouse_position = rl.Vector2(x = 0.0, y = 0.0)
         if current_gesture != rl.Gesture.GESTURE_NONE:
             if touch_count != 0:

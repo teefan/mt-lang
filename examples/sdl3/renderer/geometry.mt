@@ -17,7 +17,7 @@ var texture_height: i32 = 0
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
@@ -32,7 +32,7 @@ def render_frame() -> void:
     let scale = (f32<-((now % 1000) - 500) / 500.0) * direction
     let size = 200.0 + (200.0 * scale)
 
-    var vertices = zero[array[c.SDL_Vertex, 4]]()
+    var vertices = zero[array[c.SDL_Vertex, 4]]
     var indices = array[i32, 6](0, 1, 2, 1, 2, 3)
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)

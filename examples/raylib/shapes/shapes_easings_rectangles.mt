@@ -28,7 +28,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var recs = zero[array[rl.Rectangle, 144]]()
+    var recs = zero[array[rl.Rectangle, 144]]
 
     for y in 0..max_recs_y:
         for x in 0..max_recs_x:

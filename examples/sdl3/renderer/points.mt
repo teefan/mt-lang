@@ -14,12 +14,12 @@ const max_pixels_per_second: f32 = 60.0
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 var last_time: usize = 0
-var points: array[c.SDL_FPoint, 500] = zero[array[c.SDL_FPoint, 500]]()
-var point_speeds: array[f32, 500] = zero[array[f32, 500]]()
+var points: array[c.SDL_FPoint, 500] = zero[array[c.SDL_FPoint, 500]]
+var point_speeds: array[f32, 500] = zero[array[f32, 500]]
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:

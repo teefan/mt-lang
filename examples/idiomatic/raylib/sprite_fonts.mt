@@ -34,8 +34,8 @@ def main() -> i32:
     let spacings = array[i32, max_fonts](2, 4, 8, 4, 3, 4, 4, 1)
     let colors = array[rl.Color, max_fonts](rl.MAROON, rl.ORANGE, rl.DARKGREEN, rl.DARKBLUE, rl.DARKPURPLE, rl.LIME, rl.GOLD, rl.RED)
 
-    var fonts = zero[array[rl.Font, max_fonts]]()
-    var positions = zero[array[rl.Vector2, max_fonts]]()
+    var fonts = zero[array[rl.Font, max_fonts]]
+    var positions = zero[array[rl.Vector2, max_fonts]]
 
     for index in 0..max_fonts:
         fonts[index] = rl.load_font(font_paths[index])

@@ -43,7 +43,7 @@ def main() -> i32:
         projection = rl.CameraProjection.CAMERA_PERSPECTIVE,
     )
 
-    var ray = zero[rl.Ray]()
+    var ray = zero[rl.Ray]
 
     let tower = rl.LoadModel(turret_model_path)
     defer rl.UnloadModel(tower)
@@ -82,7 +82,7 @@ def main() -> i32:
             else:
                 rl.DisableCursor()
 
-        var collision = zero[rl.RayCollision]()
+        var collision = zero[rl.RayCollision]
         var hit_object_name: cstr = c"None"
         collision.distance = float_max
         collision.hit = false
@@ -115,7 +115,7 @@ def main() -> i32:
             cursor_color = rl.ORANGE
             hit_object_name = c"Box"
 
-            var mesh_hit_info = zero[rl.RayCollision]()
+            var mesh_hit_info = zero[rl.RayCollision]
             for mesh_index in 0..tower.meshCount:
                 unsafe:
                     mesh_hit_info = rl.GetRayCollisionMesh(ray, tower.meshes[mesh_index], tower.transform)

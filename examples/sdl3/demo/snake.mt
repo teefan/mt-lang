@@ -39,7 +39,7 @@ struct SnakeContext:
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 var joystick: ptr[c.SDL_Joystick]? = null
-var snake_ctx: SnakeContext = zero[SnakeContext]()
+var snake_ctx: SnakeContext = zero[SnakeContext]
 var last_step: c.Uint64 = 0
 
 
@@ -98,7 +98,7 @@ def new_food_pos() -> void:
 
 
 def snake_initialize() -> void:
-    snake_ctx = zero[SnakeContext]()
+    snake_ctx = zero[SnakeContext]
     snake_ctx.head_xpos = snake_game_width / 2
     snake_ctx.head_ypos = snake_game_height / 2
     snake_ctx.tail_xpos = snake_ctx.head_xpos
@@ -236,7 +236,7 @@ def handle_hat_event(hat: u8) -> void:
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:

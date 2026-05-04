@@ -4,7 +4,7 @@ import std.libuv as uv
 import std.libuv.runtime as rt
 import std.mem.heap as heap
 
-var current_loop: rt.Loop = zero[rt.Loop]()
+var current_loop: rt.Loop = zero[rt.Loop]
 var current_loop_active: bool = false
 
 struct SleepState:
@@ -47,7 +47,7 @@ def activate_current_loop(loop: rt.Loop) -> void:
 
 
 def deactivate_current_loop() -> void:
-    current_loop = zero[rt.Loop]()
+    current_loop = zero[rt.Loop]
     current_loop_active = false
     return
 

@@ -12,7 +12,7 @@ def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Colors Palette")
     defer rl.close_window()
 
-    var colors = zero[array[rl.Color, 21]]()
+    var colors = zero[array[rl.Color, 21]]
     colors[0] = rl.DARKGRAY
     colors[1] = rl.MAROON
     colors[2] = rl.ORANGE
@@ -35,7 +35,7 @@ def main() -> i32:
     colors[19] = rl.PURPLE
     colors[20] = rl.BEIGE
 
-    var color_names = zero[array[str, 21]]()
+    var color_names = zero[array[str, 21]]
     color_names[0] = "DARKGRAY"
     color_names[1] = "MAROON"
     color_names[2] = "ORANGE"
@@ -58,8 +58,8 @@ def main() -> i32:
     color_names[19] = "PURPLE"
     color_names[20] = "BEIGE"
 
-    var rectangles = zero[array[rl.Rectangle, 21]]()
-    var hovered = zero[array[bool, 21]]()
+    var rectangles = zero[array[rl.Rectangle, 21]]
+    var hovered = zero[array[bool, 21]]
 
     for index in 0..color_count:
         let column = index % grid_columns

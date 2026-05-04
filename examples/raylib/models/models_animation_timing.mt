@@ -60,7 +60,7 @@ def main() -> i32:
     var anim_frame_speed: f32 = 0.5
     var anim_pause = false
 
-    var anim_names = zero[array[cstr, max_anim_names]]()
+    var anim_names = zero[array[cstr, max_anim_names]]
     for index in 0..anim_count:
         anim_names[index] = model_animation_name(anims, index)
 

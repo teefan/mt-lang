@@ -13,13 +13,13 @@ const unknown_time_text: cstr = c"(Don't know the current time, sorry.)"
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
-var current_time_rect: c.SDL_FRect = zero[c.SDL_FRect]()
-var copy_button_rect: c.SDL_FRect = zero[c.SDL_FRect]()
-var paste_text_rect: c.SDL_FRect = zero[c.SDL_FRect]()
-var paste_button_rect: c.SDL_FRect = zero[c.SDL_FRect]()
+var current_time_rect: c.SDL_FRect = zero[c.SDL_FRect]
+var copy_button_rect: c.SDL_FRect = zero[c.SDL_FRect]
+var paste_text_rect: c.SDL_FRect = zero[c.SDL_FRect]
+var paste_button_rect: c.SDL_FRect = zero[c.SDL_FRect]
 var copy_pressed: bool = false
 var paste_pressed: bool = false
-var current_time: array[char, 64] = zero[array[char, 64]]()
+var current_time: array[char, 64] = zero[array[char, 64]]
 var pasted_str: ptr[char]? = null
 
 
@@ -60,7 +60,7 @@ def calculate_current_time_string() -> void:
     )
     let day_names = array[cstr, 7](c"Sunday", c"Monday", c"Tuesday", c"Wednesday", c"Thursday", c"Friday", c"Saturday")
     var ticks: c.SDL_Time = 0
-    var dt = zero[c.SDL_DateTime]()
+    var dt = zero[c.SDL_DateTime]
 
     if not c.SDL_GetCurrentTime(ptr_of(ticks)) or not c.SDL_TimeToDateTime(ticks, ptr_of(dt), true):
         c.SDL_snprintf(ptr_of(current_time[0]), 64, c"%s", unknown_time_text)
@@ -80,7 +80,7 @@ def calculate_current_time_string() -> void:
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         c.SDL_ConvertEventToRenderCoordinates(renderer, ptr_of(event))

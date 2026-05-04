@@ -104,7 +104,7 @@ def main() -> i32:
     let box_half_width: f32 = 0.45
     let box_half_height: f32 = 0.45
     var box_count = 0
-    var boxes = zero[array[BoxSprite, 30]]()
+    var boxes = zero[array[BoxSprite, 30]]
 
     for row in 0..stack_rows:
         for column in 0..stack_columns:

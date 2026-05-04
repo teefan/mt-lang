@@ -39,8 +39,8 @@ const box_edge_map: array[i32, 24] = array[i32, 24](
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 var player_count: i32 = 1
-var players: array[Player, 4] = zero[array[Player, 4]]()
-var edges: array[array[f32, 6], 44] = zero[array[array[f32, 6], 44]]()
+var players: array[Player, 4] = zero[array[Player, 4]]
+var edges: array[array[f32, 6], 44] = zero[array[array[f32, 6], 44]]
 var displayed_fps: c.Uint64 = 0
 var frames_accumulated: c.Uint64 = 0
 var fps_last_tick: c.Uint64 = 0
@@ -247,7 +247,7 @@ def update_players(dt_ns: c.Uint64) -> void:
 
 
 def draw_circle(radius: f32, x: f32, y: f32) -> void:
-    var points = zero[array[c.SDL_FPoint, 33]]()
+    var points = zero[array[c.SDL_FPoint, 33]]
 
     for index in 0..circle_draw_sides_len:
         let angle = (2.0 * c.SDL_PI_F * f32<-index) / f32<-circle_draw_sides
@@ -406,7 +406,7 @@ def set_wasd_bit(player_index: i32, scancode: c.SDL_Scancode, pressed: bool) -> 
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:

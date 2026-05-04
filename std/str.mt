@@ -9,7 +9,7 @@ pub def cstr_len(text: cstr) -> usize:
     var count: usize = 0
     unsafe:
         let data = ptr[char]<-text
-        while read(data + count) != zero[char]():
+        while read(data + count) != zero[char]:
             count += 1
     return count
 

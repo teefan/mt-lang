@@ -17,7 +17,7 @@ var texture_height: i32 = 0
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
@@ -28,7 +28,7 @@ def pump_events() -> bool:
 
 def render_frame() -> void:
     var destination = c.SDL_FRect(x = 0.0, y = 0.0, w = f32<-texture_width, h = f32<-texture_height)
-    var viewport = zero[c.SDL_Rect]()
+    var viewport = zero[c.SDL_Rect]
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)

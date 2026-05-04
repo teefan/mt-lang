@@ -19,7 +19,7 @@ const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogic
 const default_playback_device: u32 = u32<-0xFFFFFFFF
 const status_buffer_len: i32 = screen_width / 8
 
-var ram: array[c.Uint8, 16777224] = zero[array[c.Uint8, 16777224]]()
+var ram: array[c.Uint8, 16777224] = zero[array[c.Uint8, 16777224]]
 var last_tick: c.Uint64 = 0
 var tick_acc: c.Uint64 = 0
 var window: ptr[c.SDL_Window]
@@ -29,7 +29,7 @@ var texture: ptr[c.SDL_Texture]? = null
 var render_target: ptr[c.SDL_Texture]? = null
 var audio_stream: ptr[c.SDL_AudioStream]? = null
 var audio_device: c.SDL_AudioDeviceID = 0
-var status: array[char, 32] = zero[array[char, 32]]()
+var status: array[char, 32] = zero[array[char, 32]]
 var status_ticks: i32 = 0
 var keystate: c.Uint16 = 0
 var display_help: bool = true
@@ -178,7 +178,7 @@ def scancode_mask(scancode: c.SDL_Scancode) -> c.Uint16:
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
@@ -269,8 +269,8 @@ def render_frame() -> void:
 
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
-    var usable_bounds = zero[c.SDL_Rect]()
-    var audio_spec = zero[c.SDL_AudioSpec]()
+    var usable_bounds = zero[c.SDL_Rect]
+    var audio_spec = zero[c.SDL_AudioSpec]
     var zoom = 2
 
     if not c.SDL_SetAppMetadata(c"SDL 3 BytePusher", c"1.0", c"com.example.SDL3BytePusher"):

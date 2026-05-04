@@ -42,7 +42,7 @@ def main() -> i32:
     let gol_logic_program = rlgl.load_shader_program_compute(gol_logic_shader)
     rl.UnloadFileText(gol_logic_code)
 
-    let gol_render_shader = rl.LoadShader(zero[cstr?](), gol_render_shader_path)
+    let gol_render_shader = rl.LoadShader(zero[cstr?], gol_render_shader_path)
     defer rl.UnloadShader(gol_render_shader)
     let res_uniform_loc = rl.GetShaderLocation(gol_render_shader, resolution_uniform_name)
 
@@ -60,7 +60,7 @@ def main() -> i32:
     let ssbo_transfert = rlgl.load_shader_buffer(u32<-sizeof(GolUpdateSSBO), null, rlgl.RL_DYNAMIC_COPY)
     defer rlgl.unload_shader_buffer(ssbo_transfert)
 
-    var transfert_buffer = zero[GolUpdateSSBO]()
+    var transfert_buffer = zero[GolUpdateSSBO]
 
     let white_image = rl.GenImageColor(gol_width, gol_width, rl.WHITE)
     let white_tex = rl.LoadTextureFromImage(white_image)

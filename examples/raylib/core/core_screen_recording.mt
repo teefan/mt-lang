@@ -29,11 +29,11 @@ def main() -> i32:
 
     var gif_recording = false
     var gif_frame_counter = 0
-    var gif_state = zero[gif.MsfGifState]()
+    var gif_state = zero[gif.MsfGifState]
 
     var circle_position = rl.Vector2(x = 0.0, y = half_screen_height())
     var time_counter: f32 = 0.0
-    var sine_points = zero[array[rl.Vector2, 256]]()
+    var sine_points = zero[array[rl.Vector2, 256]]
     var point_index = 0
     while point_index < max_sinewave_points:
         sine_points[point_index].x = f32<-point_index * horizontal_step()
