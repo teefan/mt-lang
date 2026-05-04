@@ -1,0 +1,12 @@
+[package]
+name = "snake_duel"
+version = "0.1.0"
+
+[profile]
+default = "debug"
+
+[platform]
+default = "linux"
+
+[build]
+entry = "src/main.mt"
