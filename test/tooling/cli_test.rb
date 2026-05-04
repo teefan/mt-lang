@@ -282,6 +282,57 @@ class MilkTeaCliTest < Minitest::Test
     assert_match(/missing value for --cc/, err.string)
   end
 
+  def test_build_command_clean_removes_package_build_root
+    Dir.mktmpdir("milk-tea-cli-build-clean") do |dir|
+      source_dir = File.join(dir, "src")
+      build_dir = File.join(dir, "build")
+      FileUtils.mkdir_p(source_dir)
+      FileUtils.mkdir_p(File.join(build_dir, "bin", "linux", "debug"))
+      File.write(File.join(source_dir, "main.mt"), <<~MT)
+        module demo.clean
+
+        def main() -> i32:
+            return 0
+      MT
+      File.write(File.join(dir, "package.toml"), <<~TOML)
+        [package]
+        name = "demo-clean"
+
+        [build]
+        entry = "src/main.mt"
+      TOML
+      marker_path = File.join(build_dir, "bin", "linux", "debug", "stale")
+      File.write(marker_path, "stale")
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = Dir.chdir(dir) { MilkTea::CLI.start(["build", "--clean"], out:, err:) }
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/cleaned .*\/build/, out.string)
+      refute File.exist?(marker_path)
+      refute File.directory?(build_dir)
+    end
+  end
+
+  def test_build_command_clean_removes_explicit_output
+    Dir.mktmpdir("milk-tea-cli-build-clean-output") do |dir|
+      output_path = File.join(dir, "custom-bin")
+      File.write(output_path, "stale")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["build", demo_path, "--clean", "-o", output_path], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/cleaned .*custom-bin/, out.string)
+      refute File.exist?(output_path)
+    end
+  end
+
   def test_run_command_executes_built_program_and_returns_its_status
     Dir.mktmpdir("milk-tea-cli-run") do |dir|
       compiler_log = File.join(dir, "compiler.log")
@@ -393,8 +444,8 @@ class MilkTeaCliTest < Minitest::Test
     assert_match(/mtc check PATH/, err.string)
     assert_match(/mtc lower PATH/, err.string)
     assert_match(/mtc emit-c PATH/, err.string)
-    assert_match(/mtc build PATH/, err.string)
-    assert_match(/mtc run PATH/, err.string)
+    assert_match(/mtc build \[PATH_OR_PACKAGE\]/, err.string)
+    assert_match(/mtc run \[PATH_OR_PACKAGE\]/, err.string)
     assert_match(/mtc deps bootstrap/, err.string)
     assert_match(/mtc bindgen MODULE HEADER/, err.string)
     assert_match(/mtc dap/, err.string)

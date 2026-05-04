@@ -332,15 +332,29 @@ module MilkTea
     end
 
     def build_command
-      path = @argv.shift
-      unless path
-        @err.puts("missing source file path")
-        print_usage(@err)
-        return 1
+      path = nil
+      if @argv.first && !@argv.first.start_with?("-")
+        path = @argv.shift
       end
 
-      options = parse_build_options
+      options = parse_build_options(allow_clean: true)
       return 1 unless options
+
+      unless path
+        if File.file?(File.join(Dir.pwd, "package.toml"))
+          path = Dir.pwd
+        else
+          @err.puts("missing source file path")
+          print_usage(@err)
+          return 1
+        end
+      end
+
+      if options.delete(:clean)
+        cleaned_path = Build.clean(path, output_path: options[:output_path], profile: options[:profile], platform: options[:platform])
+        @out.puts("cleaned #{cleaned_path}")
+        return 0
+      end
 
       result = Build.build(path, module_roots: module_roots_for(path), **options)
       @out.puts("built #{path} -> #{result.output_path}")
@@ -349,15 +363,23 @@ module MilkTea
     end
 
     def run_command
-      path = @argv.shift
-      unless path
-        @err.puts("missing source file path")
-        print_usage(@err)
-        return 1
+      path = nil
+      if @argv.first && !@argv.first.start_with?("-")
+        path = @argv.shift
       end
 
       options = parse_build_options
       return 1 unless options
+
+      unless path
+        if File.file?(File.join(Dir.pwd, "package.toml"))
+          path = Dir.pwd
+        else
+          @err.puts("missing source file path")
+          print_usage(@err)
+          return 1
+        end
+      end
 
       result = Run.run(path, module_roots: module_roots_for(path), **options)
       @out.write(result.stdout)
@@ -471,7 +493,7 @@ module MilkTea
       0
     end
 
-    def parse_build_options
+    def parse_build_options(allow_clean: false)
       options = {
         output_path: nil,
         cc: ENV.fetch("CC", "cc"),
@@ -479,6 +501,7 @@ module MilkTea
         profile: nil,
         platform: nil,
       }
+      options[:clean] = false if allow_clean
 
       until @argv.empty?
         option = @argv.shift
@@ -508,6 +531,14 @@ module MilkTea
           return missing_option_value(option) unless value
 
           options[:platform] = value
+        when "--clean"
+          if allow_clean
+            options[:clean] = true
+          else
+            @err.puts("unknown build option #{option}")
+            print_usage(@err)
+            return nil
+          end
         else
           @err.puts("unknown build option #{option}")
           print_usage(@err)
@@ -704,9 +735,10 @@ module MilkTea
       "lower"           => "Usage: mtc lower PATH\n\n  Lower a source file to IR and print it.",
       "emit-c"          => "Usage: mtc emit-c PATH\n\n  Compile a source file to C and print the output.",
       "build"           => <<~HELP,
-        Usage: mtc build PATH_OR_PACKAGE [OPTIONS]
+        Usage: mtc build [PATH_OR_PACKAGE] [OPTIONS]
 
-          Compile a source file or package build entry.
+          Compile a source file or package. Defaults to current directory if a
+          package.toml is present.
 
           Options:
             -o, --output OUTPUT          Output path for the compiled artifact.
@@ -714,12 +746,14 @@ module MilkTea
             --keep-c C_PATH              Write the generated C source to this path.
             --profile PROFILE            debug (default) | release.
             --platform PLATFORM          linux (default) | windows.
+            --clean                      Remove existing build outputs and exit.
             -I PATH                      Add an extra module root.
         HELP
       "run"             => <<~HELP,
-        Usage: mtc run PATH_OR_PACKAGE [OPTIONS]
+        Usage: mtc run [PATH_OR_PACKAGE] [OPTIONS]
 
-          Build and execute an executable target.
+          Build and execute an executable target. Defaults to current directory
+          if a package.toml is present.
 
           Options:
             -o, --output OUTPUT          Output path for the compiled binary.
@@ -771,8 +805,8 @@ module MilkTea
       io.puts("       mtc check PATH")
       io.puts("       mtc lower PATH")
       io.puts("       mtc emit-c PATH")
-      io.puts("       mtc build PATH_OR_PACKAGE [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows] [-I PATH]")
-      io.puts("       mtc run PATH_OR_PACKAGE [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows] [-I PATH]")
+      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows] [--clean] [-I PATH]")
+      io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows] [-I PATH]")
       io.puts("       mtc dap")
       io.puts("       mtc deps bootstrap")
       io.puts("       mtc deps doctor")
