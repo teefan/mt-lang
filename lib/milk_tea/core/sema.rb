@@ -27,7 +27,15 @@ module MilkTea
     LocalCompletionFrame = Data.define(:start_line, :end_line, :function_name, :receiver_type, :snapshots)
     LocalCompletionSnapshot = Data.define(:line, :column, :bindings)
     BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids)
-    FlowScope = Class.new(Hash)
+    class FlowScope
+      def initialize = (@bindings = {})
+      def [](key) = @bindings[key]
+      def []=(key, val); @bindings[key] = val; end
+      def key?(key) = @bindings.key?(key)
+      def empty? = @bindings.empty?
+      def each(&block) = @bindings.each(&block)
+      def each_with_object(init, &block) = @bindings.each_with_object(init, &block)
+    end
     ValueBinding = Data.define(:id, :name, :storage_type, :flow_type, :mutable, :kind, :const_value) do
       def type
         flow_type || storage_type

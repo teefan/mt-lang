@@ -268,6 +268,9 @@ while running:
 for i in range(0, count):
 	update_enemy(i)
 
+for i in 0..count:
+	update_enemy(i)
+
 for body in bodies:
 	simulate(body)
 
@@ -283,6 +286,7 @@ Rules:
 - Conditions must be `bool`. Integers and pointers do not become truthy implicitly.
 - `match` must be exhaustive for enums.
 - `break` and `continue` work exactly as in C and Python.
+- `for` accepts `range(start, stop)`, the `start..stop` range expression, `array[T, N]`, and `span[T]` as iterables.
 
 ### Useful structured features
 
@@ -702,7 +706,7 @@ Rules for raw pointers:
 - raw pointer offsets and indices may use ordinary integer expressions directly; code does not need a pre-emptive cast to `usize` just to write `ptr[i]` or `ptr + offset`.
 - pointer comparison is explicit and never treated as boolean truthiness.
 - `ptr[char]` is the ordinary representation for mutable C text and byte-oriented FFI buffers; writing control bytes such as NUL or newline uses `char` values, typically spelled with `char<-0` and `char<-10`.
-- imported foreign declarations may project ABI-identical pointer forms at the boundary. A raw `ptr[void]` parameter may surface as `ptr[T]?` or an opaque handle type when the imported declaration says so. Reinterpretation inside user code still requires explicit `cast` and, when dereferenced, `unsafe`.
+- imported foreign declarations may project ABI-identical pointer forms at the boundary. A raw `ptr[void]` parameter may surface as `ptr[T]?` or an opaque handle type when the imported declaration says so. Reinterpretation inside user code still requires an explicit `T<-value` cast and, when dereferenced, `unsafe`.
 
 References are separate from methods:
 
@@ -976,7 +980,7 @@ The right side is deliberately not a normal function body. It is a restricted lo
 - the referenced raw foreign symbol
 - imported parameters
 - field access such as `data.data` and `data.len`
-- `cast`, `sizeof`, `alignof`, literals, `null`, and simple arithmetic
+- `T<-expr`, `sizeof`, `alignof`, literals, `null`, and simple arithmetic
 
 It may not use:
 
@@ -1093,7 +1097,7 @@ Declarative RHS mapping lowering:
 - the lowering clause is expanded by substituting lowered public arguments into the restricted RHS expression tree
 - the expanded raw call becomes the emitted call target and raw argument list
 - field access such as `data.data` and `data.len` lowers exactly as the corresponding member access on the public argument value
-- builtin forms such as `cast`, `sizeof`, `alignof`, and `offsetof` lower exactly as they do elsewhere in the language
+- builtin forms such as `T<-expr`, `sizeof`, `alignof`, and `offsetof` lower exactly as they do elsewhere in the language
 
 Automatic text marshalling lowering:
 
@@ -1135,7 +1139,7 @@ let success = rl.save_file_data("storage.data", bytes)
 let ints = rl.mem_alloc[i32](16)
 ```
 
-`str as cstr` and `span[str]` foreign boundaries use ordinary imported-call syntax. When the boundary needs synthesized temporary C-compatible storage or other statement-shaped setup, lowering hoists that work into visible temporary locals and branch-local control flow as needed, so nested call arguments, arithmetic, `if ... then ... else ...` expressions, and short-circuit boolean expressions still read like ordinary Milk Tea while generated C stays explicit about the temporary storage.
+`str as cstr` and `span[str]` foreign boundaries use ordinary imported-call syntax. When the boundary needs synthesized temporary C-compatible storage or other statement-shaped setup, lowering hoists that work into visible temporary locals and branch-local control flow as needed, so nested call arguments, arithmetic, `if ...: ... else: ...` expressions, and short-circuit boolean expressions still read like ordinary Milk Tea while generated C stays explicit about the temporary storage.
 
 `in name`, `out name`, and `inout name` are foreign-boundary forms, not raw pointer expressions. They lower to address-taking at the imported call site without exposing `const_ptr_of(...)`, `ptr_of(ref_of(...))`, or ABI casts in ordinary code.
 
