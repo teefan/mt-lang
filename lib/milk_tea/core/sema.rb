@@ -2159,7 +2159,7 @@ module MilkTea
           callable.type.return_type
         when :method
           callable = specialize_function_binding(callable, expression.arguments, scopes:) if callable.type_params.any?
-          raise_sema_error("cannot call mut method #{callable.name} on an immutable receiver") if callable.type.receiver_mutable && !assignable_receiver?(receiver, scopes)
+          raise_sema_error("cannot call edit method #{callable.name} on an immutable receiver") if callable.type.receiver_mutable && !assignable_receiver?(receiver, scopes)
 
           check_function_call(callable, expression.arguments, scopes:)
           callable.owner.send(:check_function, callable) unless callable.type_arguments.empty?
@@ -2893,11 +2893,11 @@ module MilkTea
 
         case kind
         when :str_builder_clear
-          raise_sema_error("cannot call mut method #{receiver_type}.clear on an immutable receiver") unless assignable_receiver?(receiver, scopes)
+          raise_sema_error("cannot call edit method #{receiver_type}.clear on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
           @types.fetch("void")
         when :str_builder_assign, :str_builder_append
-          raise_sema_error("cannot call mut method #{receiver_type}.#{method_name} on an immutable receiver") unless assignable_receiver?(receiver, scopes)
+          raise_sema_error("cannot call edit method #{receiver_type}.#{method_name} on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
           actual_type = infer_expression(arguments.first.value, scopes:, expected_type: @types.fetch("str"))
           ensure_argument_assignable!(

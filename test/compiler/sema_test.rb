@@ -3346,7 +3346,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/cannot call mut method add on an immutable receiver/, error.message)
+    assert_match(/cannot call edit method add on an immutable receiver/, error.message)
   end
 
   def test_rejects_safe_indexing_of_temporary_array_values
