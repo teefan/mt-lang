@@ -25,7 +25,7 @@ def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimat
 
 def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
     unsafe:
-        return chars_to_cstr(ptr_of(ref_of((anims + index).name[0])))
+        return chars_to_cstr(ptr_of((anims + index).name[0]))
 
 
 def main() -> i32:
@@ -54,7 +54,7 @@ def main() -> i32:
         model.materials[1].shader = skinning_shader
 
     var anim_count = 0
-    let anims = rl.LoadModelAnimations(model_path, ptr_of(ref_of(anim_count)))
+    let anims = rl.LoadModelAnimations(model_path, ptr_of(anim_count))
     defer rl.UnloadModelAnimations(anims, anim_count)
 
     var anim_index = 0
@@ -63,7 +63,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_RIGHT):
             anim_index = (anim_index + 1) % anim_count

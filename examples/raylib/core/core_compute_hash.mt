@@ -80,7 +80,7 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var text_input = zero[array[char, 96]]()
-    let text_input_ptr = ptr_of(ref_of(text_input[0]))
+    let text_input_ptr = ptr_of(text_input[0])
     rl.TextCopy(text_input_ptr, default_input_text)
 
     var text_box_edit_mode = false
@@ -103,7 +103,7 @@ def main() -> i32:
                     rl.MemFree(ptr[void]<-owned_base64_text)
 
                 let input_bytes = ptr[u8]<-text_input_ptr
-                base64_text = rl.EncodeDataBase64(input_bytes, text_input_len, ptr_of(ref_of(base64_text_size)))
+                base64_text = rl.EncodeDataBase64(input_bytes, text_input_len, ptr_of(base64_text_size))
                 hash_crc32 = rl.ComputeCRC32(input_bytes, text_input_len)
                 hash_md5 = rl.ComputeMD5(input_bytes, text_input_len)
                 hash_sha1 = rl.ComputeSHA1(input_bytes, text_input_len)

@@ -1333,7 +1333,7 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
 
       def main() -> i32:
           var device_count: i32 = 0
-          mutate(ptr_of(ref_of(device_count)))
+          mutate(ptr_of(device_count))
           if device_count == 0:
               return 1
           return 2

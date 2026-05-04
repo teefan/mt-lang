@@ -19,7 +19,7 @@ var texture_height: i32 = 0
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
-    while c.SDL_PollEvent(ptr_of(ref_of(event))):
+    while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
@@ -53,7 +53,7 @@ def render_frame() -> void:
     vertices[2].color.b = 1.0
     vertices[2].color.a = 1.0
 
-    c.SDL_RenderGeometry(renderer, null, ptr_of(ref_of(vertices[0])), 3, null, 0)
+    c.SDL_RenderGeometry(renderer, null, ptr_of(vertices[0]), 3, null, 0)
 
     vertices[0].position.x = 10.0
     vertices[0].position.y = 10.0
@@ -82,7 +82,7 @@ def render_frame() -> void:
     vertices[2].tex_coord.x = 0.0
     vertices[2].tex_coord.y = 1.0
 
-    c.SDL_RenderGeometry(renderer, texture, ptr_of(ref_of(vertices[0])), 3, null, 0)
+    c.SDL_RenderGeometry(renderer, texture, ptr_of(vertices[0]), 3, null, 0)
 
     for index in 0..3:
         vertices[index].position.x += 450.0
@@ -96,7 +96,7 @@ def render_frame() -> void:
     vertices[3].tex_coord.x = 1.0
     vertices[3].tex_coord.y = 1.0
 
-    c.SDL_RenderGeometry(renderer, texture, ptr_of(ref_of(vertices[0])), 4, ptr_of(ref_of(indices[0])), 6)
+    c.SDL_RenderGeometry(renderer, texture, ptr_of(vertices[0]), 4, ptr_of(indices[0]), 6)
     c.SDL_RenderPresent(renderer)
 
 
@@ -107,7 +107,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(window), ptr_of(renderer)):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)

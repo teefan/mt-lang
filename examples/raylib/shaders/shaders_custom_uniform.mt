@@ -49,12 +49,12 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
         let mouse_position = rl.GetMousePosition()
         swirl_center[0] = mouse_position.x
         swirl_center[1] = screen_height_f - mouse_position.y
-        rl.SetShaderValue(shader, swirl_center_loc, ptr_of(ref_of(swirl_center[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.SetShaderValue(shader, swirl_center_loc, ptr_of(swirl_center[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
         rl.BeginTextureMode(target)
         rl.ClearBackground(rl.RAYWHITE)

@@ -424,7 +424,12 @@ module MilkTea
           return nil
         end
 
-        if %w[ptr_of const_ptr_of].include?(callee_name)
+        if callee_name == "ptr_of"
+          return argument_value if argument_value.is_a?(AST::Identifier)
+          return call_argument_mutation_target(argument_value)
+        end
+
+        if callee_name == "const_ptr_of"
           return call_argument_mutation_target(argument_value)
         end
 

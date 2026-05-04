@@ -55,7 +55,7 @@ def append_char(buffer: ptr[char], position: ptr[i32], ch: char) -> void:
 
         var scratch = zero[array[char, 2]]()
         scratch[0] = ch
-        rl.TextAppend(buffer, cstr<-ptr_of(ref_of(scratch[0])), position)
+        rl.TextAppend(buffer, cstr<-ptr_of(scratch[0]), position)
 
 
 def push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32], state: TurtleState) -> void:
@@ -110,15 +110,15 @@ def build_production_step(ls: ref[PenroseLSystem]) -> void:
         for index in 0..production_length:
             let step = ls.production[index]
             if step == char<-87:
-                append_text(new_production, ptr_of(ref_of(new_length)), ls.rule_w)
+                append_text(new_production, ptr_of(new_length), ls.rule_w)
             elif step == char<-88:
-                append_text(new_production, ptr_of(ref_of(new_length)), ls.rule_x)
+                append_text(new_production, ptr_of(new_length), ls.rule_x)
             elif step == char<-89:
-                append_text(new_production, ptr_of(ref_of(new_length)), ls.rule_y)
+                append_text(new_production, ptr_of(new_length), ls.rule_y)
             elif step == char<-90:
-                append_text(new_production, ptr_of(ref_of(new_length)), ls.rule_z)
+                append_text(new_production, ptr_of(new_length), ls.rule_z)
             elif step != char<-70:
-                append_char(new_production, ptr_of(ref_of(new_length)), step)
+                append_char(new_production, ptr_of(new_length), step)
 
         ls.draw_length *= 0.5
         rl.TextCopy(ls.production, cstr<-new_production)

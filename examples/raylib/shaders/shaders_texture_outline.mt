@@ -34,9 +34,9 @@ def main() -> i32:
     let outline_color_loc = rl.GetShaderLocation(shader, outline_color_uniform_name)
     let texture_size_loc = rl.GetShaderLocation(shader, texture_size_uniform_name)
 
-    rl.SetShaderValue(shader, outline_size_loc, ptr_of(ref_of(outline_size)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.SetShaderValue(shader, outline_color_loc, ptr_of(ref_of(outline_color[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
-    rl.SetShaderValue(shader, texture_size_loc, ptr_of(ref_of(texture_size[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, outline_size_loc, ptr_of(outline_size), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, outline_color_loc, ptr_of(outline_color[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shader, texture_size_loc, ptr_of(texture_size[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     rl.SetTargetFPS(60)
 
@@ -45,7 +45,7 @@ def main() -> i32:
         if outline_size < 1.0:
             outline_size = 1.0
 
-        rl.SetShaderValue(shader, outline_size_loc, ptr_of(ref_of(outline_size)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, outline_size_loc, ptr_of(outline_size), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

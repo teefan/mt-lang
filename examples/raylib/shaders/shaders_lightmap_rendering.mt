@@ -59,7 +59,7 @@ def main() -> i32:
     let light = rl.LoadTexture(light_path)
     defer rl.UnloadTexture(light)
 
-    rl.GenTextureMipmaps(ptr_of(ref_of(texture)))
+    rl.GenTextureMipmaps(ptr_of(texture))
     rl.SetTextureFilter(texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
 
     var lightmap = rl.LoadRenderTexture(map_size, map_size)
@@ -101,13 +101,13 @@ def main() -> i32:
     rl.EndBlendMode()
     rl.EndTextureMode()
 
-    rl.GenTextureMipmaps(ptr_of(ref_of(lightmap.texture)))
+    rl.GenTextureMipmaps(ptr_of(lightmap.texture))
     rl.SetTextureFilter(lightmap.texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

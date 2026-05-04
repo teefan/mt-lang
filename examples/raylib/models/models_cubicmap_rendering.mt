@@ -48,7 +48,7 @@ def main() -> i32:
             pause = not pause
 
         if not pause:
-            rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
+            rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

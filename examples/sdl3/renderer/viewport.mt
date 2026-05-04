@@ -19,7 +19,7 @@ var texture_height: i32 = 0
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
-    while c.SDL_PollEvent(ptr_of(ref_of(event))):
+    while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
@@ -34,29 +34,29 @@ def render_frame() -> void:
     c.SDL_RenderClear(renderer)
 
     c.SDL_SetRenderViewport(renderer, null)
-    c.SDL_RenderTexture(renderer, texture, null, ptr_of(ref_of(destination)))
+    c.SDL_RenderTexture(renderer, texture, null, ptr_of(destination))
 
     viewport.x = window_width / 2
     viewport.y = window_height / 2
     viewport.w = window_width / 2
     viewport.h = window_height / 2
-    c.SDL_SetRenderViewport(renderer, ptr_of(ref_of(viewport)))
-    c.SDL_RenderTexture(renderer, texture, null, ptr_of(ref_of(destination)))
+    c.SDL_SetRenderViewport(renderer, ptr_of(viewport))
+    c.SDL_RenderTexture(renderer, texture, null, ptr_of(destination))
 
     viewport.x = 0
     viewport.y = window_height - (window_height / 5)
     viewport.w = window_width / 5
     viewport.h = window_height / 5
-    c.SDL_SetRenderViewport(renderer, ptr_of(ref_of(viewport)))
-    c.SDL_RenderTexture(renderer, texture, null, ptr_of(ref_of(destination)))
+    c.SDL_SetRenderViewport(renderer, ptr_of(viewport))
+    c.SDL_RenderTexture(renderer, texture, null, ptr_of(destination))
 
     viewport.x = 100
     viewport.y = 200
     viewport.w = window_width
     viewport.h = window_height
-    c.SDL_SetRenderViewport(renderer, ptr_of(ref_of(viewport)))
+    c.SDL_SetRenderViewport(renderer, ptr_of(viewport))
     destination.y = -50.0
-    c.SDL_RenderTexture(renderer, texture, null, ptr_of(ref_of(destination)))
+    c.SDL_RenderTexture(renderer, texture, null, ptr_of(destination))
 
     c.SDL_RenderPresent(renderer)
 
@@ -68,7 +68,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(window), ptr_of(renderer)):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)

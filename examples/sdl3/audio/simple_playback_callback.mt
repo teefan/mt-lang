@@ -38,14 +38,14 @@ def feed_audio_stream_more(userdata: ptr[void], astream: ptr[c.SDL_AudioStream],
             current_sine_sample += 1
 
         current_sine_sample %= audio_sample_rate
-        c.SDL_PutAudioStreamData(astream, ptr_of(ref_of(samples[0])), total * i32<-sizeof(f32))
+        c.SDL_PutAudioStreamData(astream, ptr_of(samples[0]), total * i32<-sizeof(f32))
         remaining_samples -= total
 
 
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
-    while c.SDL_PollEvent(ptr_of(ref_of(event))):
+    while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
@@ -66,7 +66,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(window), ptr_of(renderer)):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)
@@ -80,7 +80,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     spec.format = c.SDL_AudioFormat.SDL_AUDIO_F32
     spec.freq = audio_sample_rate
 
-    let opened_stream = c.SDL_OpenAudioDeviceStream(default_playback_device, ptr_of(ref_of(spec)), feed_audio_stream_more, null)
+    let opened_stream = c.SDL_OpenAudioDeviceStream(default_playback_device, ptr_of(spec), feed_audio_stream_more, null)
     if opened_stream == null:
         return 1
 

@@ -79,7 +79,7 @@ def draw_light_mask(light: LightInfo) -> void:
 
     for index in 0..light.shadow_count:
         var shadow_vertices = light.shadows[index].vertices
-        rl.DrawTriangleFan(ptr_of(ref_of(shadow_vertices[0])), 4, rl.WHITE)
+        rl.DrawTriangleFan(ptr_of(shadow_vertices[0]), 4, rl.WHITE)
 
     rlgl.rlDrawRenderBatchActive()
     rlgl.rlSetBlendMode(rl.BlendMode.BLEND_ALPHA)
@@ -271,7 +271,7 @@ def main() -> i32:
         if show_lines:
             for index in 0..lights[0].shadow_count:
                 var shadow_vertices = lights[0].shadows[index].vertices
-                rl.DrawTriangleFan(ptr_of(ref_of(shadow_vertices[0])), 4, rl.DARKPURPLE)
+                rl.DrawTriangleFan(ptr_of(shadow_vertices[0]), 4, rl.DARKPURPLE)
 
             for index in 0..box_count:
                 if rl.CheckCollisionRecs(boxes[index], lights[0].bounds):

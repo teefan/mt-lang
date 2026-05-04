@@ -47,15 +47,15 @@ def main() -> i32:
         if draw_circle_lines:
             rl.DrawCircleSectorLines(center, outer_radius, start_angle, end_angle, i32<-segments, rl.Fade(rl.BLACK, 0.4))
 
-        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 40.0, width = 120.0, height = 20.0), c"StartAngle", rl.TextFormat(c"%.2f", start_angle), ptr_of(ref_of(start_angle)), -450.0, 450.0)
-        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 70.0, width = 120.0, height = 20.0), c"EndAngle", rl.TextFormat(c"%.2f", end_angle), ptr_of(ref_of(end_angle)), -450.0, 450.0)
-        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 140.0, width = 120.0, height = 20.0), c"InnerRadius", rl.TextFormat(c"%.2f", inner_radius), ptr_of(ref_of(inner_radius)), 0.0, 100.0)
-        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 170.0, width = 120.0, height = 20.0), c"OuterRadius", rl.TextFormat(c"%.2f", outer_radius), ptr_of(ref_of(outer_radius)), 0.0, 200.0)
-        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 240.0, width = 120.0, height = 20.0), c"Segments", rl.TextFormat(c"%.2f", segments), ptr_of(ref_of(segments)), 0.0, 100.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 40.0, width = 120.0, height = 20.0), c"StartAngle", rl.TextFormat(c"%.2f", start_angle), ptr_of(start_angle), -450.0, 450.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 70.0, width = 120.0, height = 20.0), c"EndAngle", rl.TextFormat(c"%.2f", end_angle), ptr_of(end_angle), -450.0, 450.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 140.0, width = 120.0, height = 20.0), c"InnerRadius", rl.TextFormat(c"%.2f", inner_radius), ptr_of(inner_radius), 0.0, 100.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 170.0, width = 120.0, height = 20.0), c"OuterRadius", rl.TextFormat(c"%.2f", outer_radius), ptr_of(outer_radius), 0.0, 200.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 600.0, y = 240.0, width = 120.0, height = 20.0), c"Segments", rl.TextFormat(c"%.2f", segments), ptr_of(segments), 0.0, 100.0)
 
-        gui.GuiCheckBox(gui.Rectangle(x = 600.0, y = 320.0, width = 20.0, height = 20.0), c"Draw Ring", ptr_of(ref_of(draw_ring)))
-        gui.GuiCheckBox(gui.Rectangle(x = 600.0, y = 350.0, width = 20.0, height = 20.0), c"Draw RingLines", ptr_of(ref_of(draw_ring_lines)))
-        gui.GuiCheckBox(gui.Rectangle(x = 600.0, y = 380.0, width = 20.0, height = 20.0), c"Draw CircleLines", ptr_of(ref_of(draw_circle_lines)))
+        gui.GuiCheckBox(gui.Rectangle(x = 600.0, y = 320.0, width = 20.0, height = 20.0), c"Draw Ring", ptr_of(draw_ring))
+        gui.GuiCheckBox(gui.Rectangle(x = 600.0, y = 350.0, width = 20.0, height = 20.0), c"Draw RingLines", ptr_of(draw_ring_lines))
+        gui.GuiCheckBox(gui.Rectangle(x = 600.0, y = 380.0, width = 20.0, height = 20.0), c"Draw CircleLines", ptr_of(draw_circle_lines))
 
         let min_segments = i32<-math.ceilf((end_angle - start_angle) / 90.0)
         let mode = if segments >= f32<-min_segments: manual_mode else: auto_mode

@@ -43,8 +43,8 @@ def main() -> i32:
     defer rl.UnloadShader(shader)
 
     rl.SetTextureWrap(texture, i32<-rl.TextureWrap.TEXTURE_WRAP_REPEAT)
-    rl.SetShaderValue(shader, rl.GetShaderLocation(shader, tiling_uniform_name), ptr_of(ref_of(tiling[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-    set_model_shader(ptr_of(ref_of(model)), shader)
+    rl.SetShaderValue(shader, rl.GetShaderLocation(shader, tiling_uniform_name), ptr_of(tiling[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    set_model_shader(ptr_of(model), shader)
 
     rl.DisableCursor()
     defer rl.EnableCursor()
@@ -52,7 +52,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_FREE)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_FREE)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_Z):
             camera.target = rl.Vector3(x = 0.0, y = 0.5, z = 0.0)

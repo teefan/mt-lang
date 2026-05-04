@@ -65,7 +65,7 @@ def main() -> i32:
         else:
             frames_counter = 0
 
-        let name_text = cstr_from_bytes(ptr_of(ref_of(name[0])))
+        let name_text = cstr_from_bytes(ptr_of(name[0]))
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

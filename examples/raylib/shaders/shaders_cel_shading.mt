@@ -58,12 +58,12 @@ def main() -> i32:
     unsafe:
         cel_shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
-    let default_shader = model_shader(ptr_of(ref_of(model)))
-    set_model_shader(ptr_of(ref_of(model)), cel_shader)
+    let default_shader = model_shader(ptr_of(model))
+    set_model_shader(ptr_of(model), cel_shader)
 
     var num_bands: f32 = 10.0
     let num_bands_loc = rl.GetShaderLocation(cel_shader, num_bands_uniform_name)
-    rl.SetShaderValue(cel_shader, num_bands_loc, ptr_of(ref_of(num_bands)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(cel_shader, num_bands_loc, ptr_of(num_bands), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
     let outline_shader = rl.LoadShader(
         rl.TextFormat(outline_vertex_path_format, glsl_version),
@@ -84,17 +84,17 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
         var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
-        rl.SetShaderValue(cel_shader, view_loc, ptr_of(ref_of(camera_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(cel_shader, view_loc, ptr_of(camera_pos[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_Z):
             cel_enabled = not cel_enabled
             if cel_enabled:
-                set_model_shader(ptr_of(ref_of(model)), cel_shader)
+                set_model_shader(ptr_of(model), cel_shader)
             else:
-                set_model_shader(ptr_of(ref_of(model)), default_shader)
+                set_model_shader(ptr_of(model), default_shader)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_C):
             outline_enabled = not outline_enabled
@@ -103,7 +103,7 @@ def main() -> i32:
             num_bands = rm.clamp(num_bands + 1.0, 2.0, 20.0)
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_Q) or rl.IsKeyPressedRepeat(rl.KeyboardKey.KEY_Q):
             num_bands = rm.clamp(num_bands - 1.0, 2.0, 20.0)
-        rl.SetShaderValue(cel_shader, num_bands_loc, ptr_of(ref_of(num_bands)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(cel_shader, num_bands_loc, ptr_of(num_bands), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         let time = f32<-rl.GetTime()
         light_sources[0].position = rl.Vector3(
@@ -122,15 +122,15 @@ def main() -> i32:
 
         rl.BeginMode3D(camera)
         if outline_enabled:
-            rl.SetShaderValue(outline_shader, outline_thickness_loc, ptr_of(ref_of(outline_thickness)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+            rl.SetShaderValue(outline_shader, outline_thickness_loc, ptr_of(outline_thickness), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
             rlgl.rlSetCullFace(i32<-rlgl.rlCullMode.RL_CULL_FACE_FRONT)
-            set_model_shader(ptr_of(ref_of(model)), outline_shader)
+            set_model_shader(ptr_of(model), outline_shader)
             rl.DrawModel(model, rm.Vector3.zero(), 0.75, rl.WHITE)
 
             if cel_enabled:
-                set_model_shader(ptr_of(ref_of(model)), cel_shader)
+                set_model_shader(ptr_of(model), cel_shader)
             else:
-                set_model_shader(ptr_of(ref_of(model)), default_shader)
+                set_model_shader(ptr_of(model), default_shader)
 
             rlgl.rlSetCullFace(i32<-rlgl.rlCullMode.RL_CULL_FACE_BACK)
 

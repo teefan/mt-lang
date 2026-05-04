@@ -74,7 +74,7 @@ def main() -> i32:
                 for x in 0..image_width:
                     let index = x + y * image_width
                     let color_index = i32<-read(index_buffer + index)
-                    rl.ImageDrawPixel(ptr_of(ref_of(screen_image)), x, y, palette[color_index])
+                    rl.ImageDrawPixel(ptr_of(screen_image), x, y, palette[color_index])
 
             rl.UpdateTexture(screen_texture, screen_image.data)
 

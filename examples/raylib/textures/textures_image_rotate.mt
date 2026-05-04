@@ -18,9 +18,9 @@ def main() -> i32:
     var image_90 = rl.LoadImage(logo_path)
     var image_neg_90 = rl.LoadImage(logo_path)
 
-    rl.ImageRotate(ptr_of(ref_of(image_45)), 45)
-    rl.ImageRotate(ptr_of(ref_of(image_90)), 90)
-    rl.ImageRotate(ptr_of(ref_of(image_neg_90)), -90)
+    rl.ImageRotate(ptr_of(image_45), 45)
+    rl.ImageRotate(ptr_of(image_90), 90)
+    rl.ImageRotate(ptr_of(image_neg_90), -90)
 
     var textures = zero[array[rl.Texture2D, num_textures]]()
     defer:

@@ -160,7 +160,7 @@ def build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:
                 out_mesh.texcoords[index * 2] = uvs[index].x
                 out_mesh.texcoords[index * 2 + 1] = uvs[index].y
 
-    rl.UploadMesh(ptr_of(ref_of(out_mesh)), false)
+    rl.UploadMesh(ptr_of(out_mesh), false)
     return out_mesh
 
 
@@ -368,7 +368,7 @@ def main() -> i32:
         decal_material.maps[0].color = rl.YELLOW
 
     var decal_image = rl.LoadImage(decal_texture_path)
-    rl.ImageResizeNN(ptr_of(ref_of(decal_image)), decal_image.width / 4, decal_image.height / 4)
+    rl.ImageResizeNN(ptr_of(decal_image), decal_image.width / 4, decal_image.height / 4)
     let decal_texture = rl.LoadTextureFromImage(decal_image)
     defer rl.UnloadTexture(decal_texture)
     rl.UnloadImage(decal_image)
@@ -389,7 +389,7 @@ def main() -> i32:
 
     while not rl.WindowShouldClose():
         if rl.IsMouseButtonDown(rl.MouseButton.MOUSE_BUTTON_RIGHT):
-            rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_THIRD_PERSON)
+            rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_THIRD_PERSON)
 
         var collision = zero[rl.RayCollision]()
         collision.distance = float_max

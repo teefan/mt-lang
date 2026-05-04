@@ -2700,10 +2700,11 @@ module MilkTea
         raise_sema_error("ptr_of does not support named arguments") if arguments.any?(&:name)
         raise_sema_error("ptr_of expects 1 argument, got #{arguments.length}") unless arguments.length == 1
 
-        source_type = infer_expression(arguments.first.value, scopes:)
-        raise_sema_error("ptr_of expects ref[...] argument, got #{source_type}") unless ref_type?(source_type)
+        source_expression = arguments.first.value
+        source_type = infer_expression(source_expression, scopes:)
+        return pointer_to(referenced_type(source_type)) if ref_type?(source_type)
 
-        pointer_to(referenced_type(source_type))
+        pointer_to(infer_addr_source_type(source_expression, scopes:))
       end
 
       def check_aggregate_construction(struct_type, arguments, scopes:)

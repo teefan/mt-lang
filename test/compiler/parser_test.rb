@@ -669,7 +669,7 @@ class MilkTeaParserTest < Minitest::Test
 
       def main() -> i32:
           let value = 7
-          let items = Slice[i32](data = ptr_of(ref_of(value)), len = 1)
+          let items = Slice[i32](data = ptr_of(value), len = 1)
           return items.len
     MT
 

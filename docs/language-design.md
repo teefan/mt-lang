@@ -149,7 +149,7 @@ Milk Tea should use a deliberately small punctuation set. The only everyday symb
 
 Everything else should prefer words over symbols.
 
-Address formation and dereference stay as word forms: `ref_of(expr)`, `const_ptr_of(expr)`, `ptr_of(ref_value)`, `read(ref_value)`, and `read(ptr_value)`.
+Address formation and dereference stay as word forms: `ref_of(expr)`, `const_ptr_of(expr)`, `ptr_of(expr)`, `read(ref_value)`, and `read(ptr_value)`.
 
 ### Declarations
 
@@ -685,7 +685,8 @@ Rules for safe references:
 - `ref_of(expr)` requires a mutable addressable lvalue source and produces `ref[T]`.
 - `const_ptr_of(expr)` requires an addressable lvalue source and produces `const_ptr[T]` for read-only raw interop.
 - `read(ref_value)` is safe and yields the referenced lvalue/value.
-- `ptr_of(ref_value)` converts a safe reference to `ptr[T]` explicitly.
+- `ptr_of(expr)` forms a writable raw pointer from a mutable safe lvalue.
+- `ptr_of(ref_value)` converts an existing safe reference to `ptr[T]` explicitly.
 - member access and method calls auto-project through refs, so `handle.field` and `handle.edit_method()` are the preferred forms.
 - there is no implicit ref-to-value call conversion: if a function expects `T`, pass `read(handle)`.
 - references do not support arithmetic, pointer indexing, or nullable semantics.
@@ -695,7 +696,7 @@ Rules for raw pointers:
 
 - `ptr[T]`, `ptr[T]?`, `const_ptr[T]`, and `const_ptr[T]?` are raw pointer values.
 - there is no source `&expr`, `*ptr`, or `ptr->field`.
-- spell writable address formation as `ref_of(expr)`, read-only raw address formation as `const_ptr_of(expr)`, and writable raw pointer formation as `ptr_of(ref_of(expr))` when you truly need a raw pointer.
+- spell writable address formation as `ref_of(expr)`, read-only raw address formation as `const_ptr_of(expr)`, and writable raw pointer formation as `ptr_of(expr)` when you truly need a raw pointer.
 - `read(ptr)` dereferences a raw pointer and requires `unsafe`.
 - `const_ptr[T]` is the read-only raw-pointer surface and lowers to C `const T*`. `const_ptr[void]` is valid and represents C `const void *`.
 - `ptr.field` and `ptr.method()` access pointee fields and methods through a raw pointer and require `unsafe`.
@@ -1108,7 +1109,7 @@ Automatic text marshalling lowering:
 
 Directional pointer lowering:
 
-- `out x` lowers to address-taking of `x` at the raw call boundary without exposing `ptr_of(ref_of(x))` in user source
+- `out x` lowers to address-taking of `x` at the raw call boundary without exposing `ptr_of(x)` in user source
 - `in value` lowers to const address-taking at the raw call boundary without exposing `const_ptr_of(value)` or casts in user source; non-addressable operands lower through a visible temporary in statement-shaped foreign calls
 - `inout x` lowers to the same address-taking form, but sema preserves the read-write contract instead of pure output
 - if the raw target expects `ptr[void]` or another identity-projection pointer type, lowering inserts only the minimal cast required by the raw C signature
@@ -1138,7 +1139,7 @@ let ints = rl.mem_alloc[i32](16)
 
 `str as cstr` and `span[str]` foreign boundaries use ordinary imported-call syntax. When the boundary needs synthesized temporary C-compatible storage or other statement-shaped setup, lowering hoists that work into visible temporary locals and branch-local control flow as needed, so nested call arguments, arithmetic, `if ...: ... else: ...` expressions, and short-circuit boolean expressions still read like ordinary Milk Tea while generated C stays explicit about the temporary storage.
 
-`in name`, `out name`, and `inout name` are foreign-boundary forms, not raw pointer expressions. They lower to address-taking at the imported call site without exposing `const_ptr_of(...)`, `ptr_of(ref_of(...))`, or ABI casts in ordinary code.
+`in name`, `out name`, and `inout name` are foreign-boundary forms, not raw pointer expressions. They lower to address-taking at the imported call site without exposing `const_ptr_of(...)`, `ptr_of(...)`, or ABI casts in ordinary code.
 
 This is the C# part worth copying: declarations say how the boundary works, while raw pointer code remains explicitly low-level.
 

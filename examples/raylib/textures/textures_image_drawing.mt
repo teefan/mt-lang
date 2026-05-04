@@ -18,29 +18,29 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var cat = rl.LoadImage(cat_path)
-    rl.ImageCrop(ptr_of(ref_of(cat)), rl.Rectangle(x = 100.0, y = 10.0, width = 280.0, height = 380.0))
-    rl.ImageFlipHorizontal(ptr_of(ref_of(cat)))
-    rl.ImageResize(ptr_of(ref_of(cat)), 150, 200)
+    rl.ImageCrop(ptr_of(cat), rl.Rectangle(x = 100.0, y = 10.0, width = 280.0, height = 380.0))
+    rl.ImageFlipHorizontal(ptr_of(cat))
+    rl.ImageResize(ptr_of(cat), 150, 200)
 
     var parrots = rl.LoadImage(parrots_path)
 
     rl.ImageDraw(
-        ptr_of(ref_of(parrots)),
+        ptr_of(parrots),
         cat,
         rl.Rectangle(x = 0.0, y = 0.0, width = f32<-cat.width, height = f32<-cat.height),
         rl.Rectangle(x = 30.0, y = 40.0, width = f32<-cat.width * 1.5, height = f32<-cat.height * 1.5),
         rl.WHITE,
     )
-    rl.ImageCrop(ptr_of(ref_of(parrots)), rl.Rectangle(x = 0.0, y = 50.0, width = f32<-parrots.width, height = f32<-parrots.height - 100.0))
+    rl.ImageCrop(ptr_of(parrots), rl.Rectangle(x = 0.0, y = 50.0, width = f32<-parrots.width, height = f32<-parrots.height - 100.0))
 
-    rl.ImageDrawPixel(ptr_of(ref_of(parrots)), 10, 10, rl.RAYWHITE)
-    rl.ImageDrawCircleLines(ptr_of(ref_of(parrots)), 10, 10, 5, rl.RAYWHITE)
-    rl.ImageDrawRectangle(ptr_of(ref_of(parrots)), 5, 20, 10, 10, rl.RAYWHITE)
+    rl.ImageDrawPixel(ptr_of(parrots), 10, 10, rl.RAYWHITE)
+    rl.ImageDrawCircleLines(ptr_of(parrots), 10, 10, 5, rl.RAYWHITE)
+    rl.ImageDrawRectangle(ptr_of(parrots), 5, 20, 10, 10, rl.RAYWHITE)
 
     rl.UnloadImage(cat)
 
     let font = rl.LoadFont(font_path)
-    rl.ImageDrawTextEx(ptr_of(ref_of(parrots)), font, title_text, rl.Vector2(x = 300.0, y = 230.0), f32<-font.baseSize, -2.0, rl.WHITE)
+    rl.ImageDrawTextEx(ptr_of(parrots), font, title_text, rl.Vector2(x = 300.0, y = 230.0), f32<-font.baseSize, -2.0, rl.WHITE)
     rl.UnloadFont(font)
 
     let texture = rl.LoadTextureFromImage(parrots)

@@ -87,28 +87,28 @@ def main() -> i32:
 
     let ambient_loc = rl.GetShaderLocation(shader, ambient_uniform_name)
     var ambient = array[f32, 4](0.2, 0.2, 0.2, 1.0)
-    rl.SetShaderValue(shader, ambient_loc, ptr_of(ref_of(ambient[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shader, ambient_loc, ptr_of(ambient[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     let fog_color_value = rl.ColorNormalize(rl.GRAY)
     let fog_color_loc = rl.GetShaderLocation(shader, fog_color_uniform_name)
     var fog_color = array[f32, 4](fog_color_value.x, fog_color_value.y, fog_color_value.z, fog_color_value.w)
-    rl.SetShaderValue(shader, fog_color_loc, ptr_of(ref_of(fog_color[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shader, fog_color_loc, ptr_of(fog_color[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     var fog_density: f32 = 0.15
     let fog_density_step: f32 = 0.001
     let fog_density_loc = rl.GetShaderLocation(shader, fog_density_uniform_name)
-    rl.SetShaderValue(shader, fog_density_loc, ptr_of(ref_of(fog_density)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, fog_density_loc, ptr_of(fog_density), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
-    set_model_shader(ptr_of(ref_of(model_a)), shader)
-    set_model_shader(ptr_of(ref_of(model_b)), shader)
-    set_model_shader(ptr_of(ref_of(model_c)), shader)
+    set_model_shader(ptr_of(model_a), shader)
+    set_model_shader(ptr_of(model_b), shader)
+    set_model_shader(ptr_of(model_c), shader)
 
     lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 0.0, y = 2.0, z = 6.0), rm.Vector3.zero(), rl.WHITE, shader)
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
         if rl.IsKeyDown(rl.KeyboardKey.KEY_UP):
             fog_density += fog_density_step
@@ -120,13 +120,13 @@ def main() -> i32:
             if fog_density < 0.0:
                 fog_density = 0.0
 
-        rl.SetShaderValue(shader, fog_density_loc, ptr_of(ref_of(fog_density)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, fog_density_loc, ptr_of(fog_density), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         model_a.transform = model_a.transform.multiply(rotate_x(-0.025))
         model_a.transform = model_a.transform.multiply(rm.Matrix.rotate_z(0.012))
 
         var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
-        rl.SetShaderValue(shader, view_loc, ptr_of(ref_of(camera_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(shader, view_loc, ptr_of(camera_pos[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

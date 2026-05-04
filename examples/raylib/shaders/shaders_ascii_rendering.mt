@@ -32,7 +32,7 @@ def main() -> i32:
 
     var font_size: f32 = 9.0
     var resolution = array[f32, 2](f32<-screen_width, f32<-screen_height)
-    rl.SetShaderValue(shader, resolution_location, ptr_of(ref_of(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, resolution_location, ptr_of(resolution[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     var circle_position = rl.Vector2(x = 40.0, y = f32<-screen_height * 0.5)
     var circle_speed: f32 = 1.0
@@ -52,7 +52,7 @@ def main() -> i32:
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_RIGHT) and font_size < 15.0:
             font_size += 1.0
 
-        rl.SetShaderValue(shader, font_size_location, ptr_of(ref_of(font_size)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, font_size_location, ptr_of(font_size), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         rl.BeginTextureMode(target)
         rl.ClearBackground(rl.WHITE)

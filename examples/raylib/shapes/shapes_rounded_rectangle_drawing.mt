@@ -52,15 +52,15 @@ def main() -> i32:
         if draw_rounded_lines:
             rl.DrawRectangleRoundedLinesEx(rec, roundness, i32<-segments, line_thick, rl.Fade(rl.MAROON, 0.4))
 
-        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 40.0, width = 105.0, height = 20.0), c"Width", rl.TextFormat(c"%.2f", width), ptr_of(ref_of(width)), 0.0, f32<-rl.GetScreenWidth() - 300.0)
-        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 70.0, width = 105.0, height = 20.0), c"Height", rl.TextFormat(c"%.2f", height), ptr_of(ref_of(height)), 0.0, f32<-rl.GetScreenHeight() - 50.0)
-        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 140.0, width = 105.0, height = 20.0), c"Roundness", rl.TextFormat(c"%.2f", roundness), ptr_of(ref_of(roundness)), 0.0, 1.0)
-        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 170.0, width = 105.0, height = 20.0), c"Thickness", rl.TextFormat(c"%.2f", line_thick), ptr_of(ref_of(line_thick)), 0.0, 20.0)
-        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 240.0, width = 105.0, height = 20.0), c"Segments", rl.TextFormat(c"%.2f", segments), ptr_of(ref_of(segments)), 0.0, 60.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 40.0, width = 105.0, height = 20.0), c"Width", rl.TextFormat(c"%.2f", width), ptr_of(width), 0.0, f32<-rl.GetScreenWidth() - 300.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 70.0, width = 105.0, height = 20.0), c"Height", rl.TextFormat(c"%.2f", height), ptr_of(height), 0.0, f32<-rl.GetScreenHeight() - 50.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 140.0, width = 105.0, height = 20.0), c"Roundness", rl.TextFormat(c"%.2f", roundness), ptr_of(roundness), 0.0, 1.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 170.0, width = 105.0, height = 20.0), c"Thickness", rl.TextFormat(c"%.2f", line_thick), ptr_of(line_thick), 0.0, 20.0)
+        gui.GuiSliderBar(gui.Rectangle(x = 640.0, y = 240.0, width = 105.0, height = 20.0), c"Segments", rl.TextFormat(c"%.2f", segments), ptr_of(segments), 0.0, 60.0)
 
-        gui.GuiCheckBox(gui.Rectangle(x = 640.0, y = 320.0, width = 20.0, height = 20.0), c"DrawRoundedRect", ptr_of(ref_of(draw_rounded_rect)))
-        gui.GuiCheckBox(gui.Rectangle(x = 640.0, y = 350.0, width = 20.0, height = 20.0), c"DrawRoundedLines", ptr_of(ref_of(draw_rounded_lines)))
-        gui.GuiCheckBox(gui.Rectangle(x = 640.0, y = 380.0, width = 20.0, height = 20.0), c"DrawRect", ptr_of(ref_of(draw_rect)))
+        gui.GuiCheckBox(gui.Rectangle(x = 640.0, y = 320.0, width = 20.0, height = 20.0), c"DrawRoundedRect", ptr_of(draw_rounded_rect))
+        gui.GuiCheckBox(gui.Rectangle(x = 640.0, y = 350.0, width = 20.0, height = 20.0), c"DrawRoundedLines", ptr_of(draw_rounded_lines))
+        gui.GuiCheckBox(gui.Rectangle(x = 640.0, y = 380.0, width = 20.0, height = 20.0), c"DrawRect", ptr_of(draw_rect))
 
         let mode = if segments >= 4.0: manual_mode else: auto_mode
         let mode_color = if segments >= 4.0: rl.MAROON else: rl.DARKGRAY

@@ -26,7 +26,7 @@ def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimat
 
 def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
     unsafe:
-        return chars_to_cstr(ptr_of(ref_of((anims + index).name[0])))
+        return chars_to_cstr(ptr_of((anims + index).name[0]))
 
 
 def text_join(text_list: ptr[cstr], count: i32, delimiter: cstr) -> cstr:
@@ -52,7 +52,7 @@ def main() -> i32:
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 
     var anim_count = 0
-    let anims = rl.LoadModelAnimations(model_path, ptr_of(ref_of(anim_count)))
+    let anims = rl.LoadModelAnimations(model_path, ptr_of(anim_count))
     defer rl.UnloadModelAnimations(anims, anim_count)
 
     var anim_index = 10
@@ -70,7 +70,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_P):
             anim_pause = not anim_pause
@@ -96,8 +96,8 @@ def main() -> i32:
         gui.GuiSetStyle(gui.GuiControl.DROPDOWNBOX, i32<-gui.GuiDropdownBoxProperty.DROPDOWN_ITEMS_SPACING, 1)
         if gui.GuiDropdownBox(
             gui.Rectangle(x = 10.0, y = 10.0, width = 140.0, height = 24.0),
-            text_join(ptr_of(ref_of(anim_names[0])), anim_count, c";"),
-            ptr_of(ref_of(anim_index)),
+            text_join(ptr_of(anim_names[0]), anim_count, c";"),
+            ptr_of(anim_index),
             dropdown_edit_mode,
         ) != 0:
             dropdown_edit_mode = not dropdown_edit_mode
@@ -106,7 +106,7 @@ def main() -> i32:
             gui.Rectangle(x = 260.0, y = 10.0, width = 500.0, height = 24.0),
             frame_speed_label,
             rl.TextFormat(anim_speed_format, anim_frame_speed),
-            ptr_of(ref_of(anim_frame_speed)),
+            ptr_of(anim_frame_speed),
             0.1,
             2.0,
         )
@@ -120,7 +120,7 @@ def main() -> i32:
             gui.Rectangle(x = 10.0, y = rl.GetScreenHeight() - 40.0, width = rl.GetScreenWidth() - 20.0, height = 24.0),
             empty_text,
             empty_text,
-            ptr_of(ref_of(anim_frame_progress)),
+            ptr_of(anim_frame_progress),
             0.0,
             f32<-anim.keyframeCount,
         )

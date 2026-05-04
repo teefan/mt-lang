@@ -81,24 +81,24 @@ def main() -> i32:
 
     let ambient_loc = rl.GetShaderLocation(shader, ambient_uniform_name)
     var ambient = array[f32, 4](0.2, 0.2, 0.2, 1.0)
-    rl.SetShaderValue(shader, ambient_loc, ptr_of(ref_of(ambient[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shader, ambient_loc, ptr_of(ambient[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     lights.CreateLight(i32<-lights.LightType.LIGHT_DIRECTIONAL, rl.Vector3(x = 50.0, y = 50.0, z = 0.0), rm.Vector3.zero(), rl.WHITE, shader)
 
     var mat_instances = rl.LoadMaterialDefault()
     mat_instances.shader = shader
-    set_material_color(ptr_of(ref_of(mat_instances)), i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, rl.RED)
+    set_material_color(ptr_of(mat_instances), i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, rl.RED)
 
     var mat_default = rl.LoadMaterialDefault()
-    set_material_color(ptr_of(ref_of(mat_default)), i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, rl.BLUE)
+    set_material_color(ptr_of(mat_default), i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, rl.BLUE)
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
         var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
-        rl.SetShaderValue(shader, view_loc, ptr_of(ref_of(camera_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(shader, view_loc, ptr_of(camera_pos[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

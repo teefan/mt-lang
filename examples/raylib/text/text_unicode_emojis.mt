@@ -82,7 +82,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
         while i < length:
             let current_ptr = raw_text + i
             var codepoint_byte_count = 0
-            let codepoint = rl.GetCodepoint(cstr<-current_ptr, ptr_of(ref_of(codepoint_byte_count)))
+            let codepoint = rl.GetCodepoint(cstr<-current_ptr, ptr_of(codepoint_byte_count))
             let glyph_index = rl.GetGlyphIndex(font, codepoint)
 
             if codepoint == 0x3f:
@@ -247,13 +247,13 @@ def main() -> i32:
     let font_emoji = rl.LoadFont(symbola_font_path)
     defer rl.UnloadFont(font_emoji)
 
-    randomize_emoji(ptr_of(ref_of(emojis[0])), ref_of(hovered), ref_of(selected), message_count)
+    randomize_emoji(ptr_of(emojis[0]), ref_of(hovered), ref_of(selected), message_count)
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_SPACE):
-            randomize_emoji(ptr_of(ref_of(emojis[0])), ref_of(hovered), ref_of(selected), message_count)
+            randomize_emoji(ptr_of(emojis[0]), ref_of(hovered), ref_of(selected), message_count)
 
         if rl.IsMouseButtonPressed(rl.MouseButton.MOUSE_BUTTON_LEFT) and hovered != -1 and hovered != selected:
             selected = hovered

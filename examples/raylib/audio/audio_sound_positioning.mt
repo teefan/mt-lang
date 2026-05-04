@@ -52,7 +52,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_FREE)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_FREE)
 
         let th = f32<-rl.GetTime()
         let sphere_pos = rl.Vector3(

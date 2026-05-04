@@ -22,7 +22,7 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var anim_frames = 0
-    let im_scarfy_anim = rl.LoadImageAnim(scarfy_run_path, ptr_of(ref_of(anim_frames)))
+    let im_scarfy_anim = rl.LoadImageAnim(scarfy_run_path, ptr_of(anim_frames))
     defer rl.UnloadImage(im_scarfy_anim)
 
     let tex_scarfy_anim = rl.LoadTextureFromImage(im_scarfy_anim)

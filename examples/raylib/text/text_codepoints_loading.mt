@@ -43,11 +43,11 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var codepoint_count = 0
-    let codepoints = rl.LoadCodepoints(text, ptr_of(ref_of(codepoint_count)))
+    let codepoints = rl.LoadCodepoints(text, ptr_of(codepoint_count))
     defer rl.UnloadCodepoints(codepoints)
 
     var codepoints_no_dups_count = 0
-    let codepoints_no_dups = codepoint_remove_duplicates(codepoints, codepoint_count, ptr_of(ref_of(codepoints_no_dups_count)))
+    let codepoints_no_dups = codepoint_remove_duplicates(codepoints, codepoint_count, ptr_of(codepoints_no_dups_count))
     defer heap.release(codepoints_no_dups)
 
     let font = rl.LoadFontEx(font_path, 36, codepoints_no_dups, codepoints_no_dups_count)

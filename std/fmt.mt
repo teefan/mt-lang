@@ -36,12 +36,12 @@ pub def append_bool(output: ref[string.String], bool_value: bool) -> void:
 
 def append_formatted_float(output: ref[string.String], format: cstr, number: f64) -> void:
     var buffer = zero[array[char, 64]]()
-    let written = c.snprintf(ptr_of(ref_of(buffer[0])), float_buffer_capacity, format, number)
+    let written = c.snprintf(ptr_of(buffer[0]), float_buffer_capacity, format, number)
     if written < 0 or usize<-written >= float_buffer_capacity:
         panic("fmt could not format float")
 
     unsafe:
-        append_cstr(output, cstr<-ptr_of(ref_of(buffer[0])))
+        append_cstr(output, cstr<-ptr_of(buffer[0]))
     return
 
 
@@ -57,12 +57,12 @@ pub def append_f64(output: ref[string.String], number: f64) -> void:
 
 pub def append_f64_precision(output: ref[string.String], number: f64, precision: i32) -> void:
     var buffer = zero[array[char, 64]]()
-    let written = c.snprintf(ptr_of(ref_of(buffer[0])), float_buffer_capacity, c"%.*f", precision, number)
+    let written = c.snprintf(ptr_of(buffer[0]), float_buffer_capacity, c"%.*f", precision, number)
     if written < 0 or usize<-written >= float_buffer_capacity:
         panic("fmt could not format float with precision")
 
     unsafe:
-        append_cstr(output, cstr<-ptr_of(ref_of(buffer[0])))
+        append_cstr(output, cstr<-ptr_of(buffer[0]))
     return
 
 

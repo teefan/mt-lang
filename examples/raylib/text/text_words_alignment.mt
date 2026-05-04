@@ -35,7 +35,7 @@ def main() -> i32:
 
     var word_index = 0
     var word_count = 0
-    let words = rl.TextSplit(words_source, char<-32, ptr_of(ref_of(word_count)))
+    let words = rl.TextSplit(words_source, char<-32, ptr_of(word_count))
 
     let font_size = 40
     let font = rl.GetFontDefault()

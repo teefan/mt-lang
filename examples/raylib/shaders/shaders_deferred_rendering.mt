@@ -105,13 +105,13 @@ def main() -> i32:
     var tex_unit_position = 0
     var tex_unit_normal = 1
     var tex_unit_albedo_spec = 2
-    rl.SetShaderValue(deferred_shader, rlgl.rlGetLocationUniform(deferred_shader.id, gposition_uniform_name), ptr_of(ref_of(tex_unit_position)), rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D)
-    rl.SetShaderValue(deferred_shader, rlgl.rlGetLocationUniform(deferred_shader.id, gnormal_uniform_name), ptr_of(ref_of(tex_unit_normal)), rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D)
-    rl.SetShaderValue(deferred_shader, rlgl.rlGetLocationUniform(deferred_shader.id, galbedo_spec_uniform_name), ptr_of(ref_of(tex_unit_albedo_spec)), rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D)
+    rl.SetShaderValue(deferred_shader, rlgl.rlGetLocationUniform(deferred_shader.id, gposition_uniform_name), ptr_of(tex_unit_position), rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D)
+    rl.SetShaderValue(deferred_shader, rlgl.rlGetLocationUniform(deferred_shader.id, gnormal_uniform_name), ptr_of(tex_unit_normal), rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D)
+    rl.SetShaderValue(deferred_shader, rlgl.rlGetLocationUniform(deferred_shader.id, galbedo_spec_uniform_name), ptr_of(tex_unit_albedo_spec), rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D)
     rlgl.rlDisableShader()
 
-    set_model_shader(ptr_of(ref_of(model)), gbuffer_shader)
-    set_model_shader(ptr_of(ref_of(cube)), gbuffer_shader)
+    set_model_shader(ptr_of(model), gbuffer_shader)
+    set_model_shader(ptr_of(cube), gbuffer_shader)
 
     var light_sources = zero[array[lights.Light, 4]]()
     light_sources[0] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.YELLOW, deferred_shader)
@@ -135,10 +135,10 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
         var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
-        rl.SetShaderValue(deferred_shader, view_loc, ptr_of(ref_of(camera_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(deferred_shader, view_loc, ptr_of(camera_pos[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_Y):
             light_sources[0].enabled = not light_sources[0].enabled

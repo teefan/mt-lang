@@ -28,13 +28,13 @@ def log_level_prefix(level: i32) -> cstr:
 def custom_trace_log(level: i32, text: cstr, args: rl.va_list) -> void:
     var time_str = zero[array[char, 64]]()
     var now: ctime.time_t = 0
-    now = ctime.time(ptr_of(ref_of(now)))
-    let tm_info = ctime.localtime(ptr_of(ref_of(now)))
+    now = ctime.time(ptr_of(now))
+    let tm_info = ctime.localtime(ptr_of(now))
 
     stdio.printf(c"[")
     unsafe:
-        ctime.strftime(ptr_of(ref_of(time_str[0])), 64, time_format, tm_info)
-        stdio.printf(cstr<-ptr_of(ref_of(time_str[0])))
+        ctime.strftime(ptr_of(time_str[0]), 64, time_format, tm_info)
+        stdio.printf(cstr<-ptr_of(time_str[0]))
         stdio.printf(c"] ")
         stdio.printf(log_level_prefix(level))
         vprintf_raylib_args(text, args)

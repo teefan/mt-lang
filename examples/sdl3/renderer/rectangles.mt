@@ -16,7 +16,7 @@ var renderer: ptr[c.SDL_Renderer]
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
-    while c.SDL_PollEvent(ptr_of(ref_of(event))):
+    while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
@@ -39,7 +39,7 @@ def render_frame() -> void:
     rects[0].w = 100.0 + (100.0 * scale)
     rects[0].h = 100.0 + (100.0 * scale)
     c.SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255)
-    c.SDL_RenderRect(renderer, ptr_of(ref_of(rects[0])))
+    c.SDL_RenderRect(renderer, ptr_of(rects[0]))
 
     for index in 0..3:
         let size = f32<-(index + 1) * 50.0
@@ -49,14 +49,14 @@ def render_frame() -> void:
         rects[index].y = (f32<-window_height - rects[index].h) / 2.0
 
     c.SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255)
-    c.SDL_RenderRects(renderer, ptr_of(ref_of(rects[0])), 3)
+    c.SDL_RenderRects(renderer, ptr_of(rects[0]), 3)
 
     rects[0].x = 400.0
     rects[0].y = 50.0
     rects[0].w = 100.0 + (100.0 * scale)
     rects[0].h = 50.0 + (50.0 * scale)
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255)
-    c.SDL_RenderFillRect(renderer, ptr_of(ref_of(rects[0])))
+    c.SDL_RenderFillRect(renderer, ptr_of(rects[0]))
 
     for index in 0..rect_count:
         let height = f32<-index * 8.0
@@ -66,7 +66,7 @@ def render_frame() -> void:
         rects[index].h = height
 
     c.SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255)
-    c.SDL_RenderFillRects(renderer, ptr_of(ref_of(rects[0])), rect_count)
+    c.SDL_RenderFillRects(renderer, ptr_of(rects[0]), rect_count)
     c.SDL_RenderPresent(renderer)
 
 
@@ -77,7 +77,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(window), ptr_of(renderer)):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)

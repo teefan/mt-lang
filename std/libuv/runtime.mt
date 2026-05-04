@@ -240,7 +240,7 @@ pub def tcp_local_port(tcp: Handle[uv.uv_tcp_t]) -> Result[i32, i32]:
     unsafe:
         let raw_addr = ptr[sys.sockaddr_in]<-storage
         var name_len: i32 = i32<-helper.mt_libuv_sockaddr_in_size()
-        let status = uv.tcp_getsockname(tcp.raw, ptr[sys.sockaddr]<-raw_addr, ptr_of(ref_of(name_len)))
+        let status = uv.tcp_getsockname(tcp.raw, ptr[sys.sockaddr]<-raw_addr, ptr_of(name_len))
         if failed(status):
             heap.release_bytes(storage)
             return err(status)
@@ -288,12 +288,12 @@ pub def fs_open(loop: Loop, request: Request[uv.uv_fs_t], path: str, flag_bits: 
 
 pub def fs_write(loop: Loop, request: Request[uv.uv_fs_t], file: i32, data: span[u8], offset: isize, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> i32:
     var buffer = byte_buffer(data)
-    return uv.fs_write(loop.raw, request.raw, file, ptr_of(ref_of(buffer)), 1, offset, callback)
+    return uv.fs_write(loop.raw, request.raw, file, ptr_of(buffer), 1, offset, callback)
 
 
 pub def fs_read(loop: Loop, request: Request[uv.uv_fs_t], file: i32, data: span[u8], offset: isize, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> i32:
     var buffer = byte_buffer(data)
-    return uv.fs_read(loop.raw, request.raw, file, ptr_of(ref_of(buffer)), 1, offset, callback)
+    return uv.fs_read(loop.raw, request.raw, file, ptr_of(buffer), 1, offset, callback)
 
 
 pub def fs_close(loop: Loop, request: Request[uv.uv_fs_t], file: i32, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> i32:
