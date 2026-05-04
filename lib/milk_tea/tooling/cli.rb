@@ -19,6 +19,12 @@ module MilkTea
       extract_include_paths!
       command = @argv.shift
 
+      if @argv.first == "--help" || @argv.first == "-h"
+        @argv.shift
+        print_command_help(command, @out)
+        return 0
+      end
+
       case command
       when "lex"
         lex_command
@@ -82,7 +88,7 @@ module MilkTea
 
       require "json"
 
-      payload = MilkTea::LSP::Server.semantic_tokens_for_path(path, module_roots: @module_roots)
+      payload = MilkTea::LSP::Server.semantic_tokens_for_path(path, module_roots: module_roots_for(path))
       @out.puts(JSON.pretty_generate(payload))
       0
     end
@@ -95,7 +101,7 @@ module MilkTea
         return 1
       end
 
-      ast = make_module_loader.load_file(path)
+      ast = make_module_loader(path).load_file(path)
       @out.write(PrettyPrinter.format_ast(ast))
       0
     end
@@ -293,7 +299,7 @@ module MilkTea
         return 1
       end
 
-      result = make_module_loader.check_file(path)
+      result = make_module_loader(path).check_file(path)
       module_name = result.module_name || "(anonymous)"
       @out.puts("checked #{path} as #{module_name}")
       0
@@ -307,7 +313,7 @@ module MilkTea
         return 1
       end
 
-      program = make_module_loader.check_program(path)
+      program = make_module_loader(path).check_program(path)
       @out.write(PrettyPrinter.format_ir(Lowering.lower(program)))
       0
     end
@@ -320,7 +326,7 @@ module MilkTea
         return 1
       end
 
-      program = make_module_loader.check_program(path)
+      program = make_module_loader(path).check_program(path)
       @out.write(Codegen.generate_c(program))
       0
     end
@@ -336,7 +342,7 @@ module MilkTea
       options = parse_build_options
       return 1 unless options
 
-      result = Build.build(path, module_roots: @module_roots, **options)
+      result = Build.build(path, module_roots: module_roots_for(path), **options)
       @out.puts("built #{path} -> #{result.output_path}")
       @out.puts("saved C to #{result.c_path}") if result.c_path
       0
@@ -353,7 +359,7 @@ module MilkTea
       options = parse_build_options
       return 1 unless options
 
-      result = Run.run(path, module_roots: @module_roots, **options)
+      result = Run.run(path, module_roots: module_roots_for(path), **options)
       @out.write(result.stdout)
       @err.write(result.stderr)
       result.exit_status
@@ -384,6 +390,49 @@ module MilkTea
           @out.puts("#{verb} #{result.source.name} -> #{result.path}")
         end
         0
+      when "doctor"
+        if @argv.any?
+          @err.puts("unknown deps option #{@argv.first}")
+          print_usage(@err)
+          return 1
+        end
+
+        require_relative "../bindings"
+
+        cc = ENV.fetch("CC", "cc")
+        ar = ENV.fetch("AR", "ar")
+        checks = []
+
+        checks << ["ruby", true, RUBY_DESCRIPTION]
+        checks << ["cc", executable_available?(cc), cc]
+        checks << ["ar", executable_available?(ar), ar]
+        checks << ["bundle", executable_available?("bundle"), "bundle"]
+
+        raylib_ok = false
+        raylib_detail = "std.c.raylib binding missing"
+        if checks.assoc("cc")[1]
+          begin
+            registry = RawBindings.default_registry(root: MilkTea.root)
+            raylib_binding = registry.find_by_module_name("std.c.raylib")
+            if raylib_binding
+              raylib_binding.prepare!(cc: cc)
+              raylib_ok = true
+              raylib_detail = "std.c.raylib prepared"
+            end
+          rescue RawBindings::Error => e
+            raylib_ok = false
+            raylib_detail = e.message
+          end
+        else
+          raylib_detail = "skipped (missing C compiler)"
+        end
+        checks << ["raylib", raylib_ok, raylib_detail]
+
+        checks.each do |name, ok, detail|
+          @out.puts("#{ok ? 'ok' : 'fail'} #{name}: #{detail}")
+        end
+
+        checks.all? { |_, ok, _| ok } ? 0 : 1
       else
         @err.puts("unknown deps subcommand #{subcommand}")
         print_usage(@err)
@@ -427,6 +476,8 @@ module MilkTea
         output_path: nil,
         cc: ENV.fetch("CC", "cc"),
         keep_c_path: nil,
+        profile: nil,
+        platform: nil,
       }
 
       until @argv.empty?
@@ -447,6 +498,16 @@ module MilkTea
           return missing_option_value(option) unless value
 
           options[:keep_c_path] = value
+        when "--profile"
+          value = @argv.shift
+          return missing_option_value(option) unless value
+
+          options[:profile] = value
+        when "--platform"
+          value = @argv.shift
+          return missing_option_value(option) unless value
+
+          options[:platform] = value
         else
           @err.puts("unknown build option #{option}")
           print_usage(@err)
@@ -566,8 +627,18 @@ module MilkTea
       raise ModuleLoadError.new("expected a source file, got a directory", path: path)
     end
 
-    def make_module_loader
-      ModuleLoader.new(module_roots: @module_roots)
+    def make_module_loader(path = nil)
+      ModuleLoader.new(module_roots: module_roots_for(path))
+    end
+
+    def module_roots_for(path = nil)
+      roots = @module_roots.dup
+      return roots unless path
+
+      MilkTea::ModuleRoots.roots_for_path(path).each do |root|
+        roots << root unless roots.include?(root)
+      end
+      roots
     end
 
     def extract_include_paths!
@@ -591,6 +662,106 @@ module MilkTea
       @argv = remaining
     end
 
+    def executable_available?(program)
+      return File.executable?(program) if program.include?(File::SEPARATOR)
+
+      ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |entry|
+        candidate = File.join(entry, program)
+        File.file?(candidate) && File.executable?(candidate)
+      end
+    end
+
+    COMMAND_HELP = {
+      "lex"             => "Usage: mtc lex PATH\n\n  Tokenize a source file and print the token stream.",
+      "semantic-tokens" => "Usage: mtc semantic-tokens PATH\n\n  Emit LSP-style semantic token data for a source file as JSON.",
+      "parse"           => "Usage: mtc parse PATH\n\n  Parse a source file and print the AST.",
+      "fmt"             => <<~HELP,
+        Usage: mtc fmt PATH|DIR [OPTIONS]
+
+          Format Milk Tea source files.
+
+          Options:
+            --check          Report files that need formatting without writing them.
+            --write, -w      Rewrite files in place.
+            --safe           Format only unambiguous style changes (default).
+            --canonical      Apply all canonical style normalisations.
+            --preserve       Preserve existing formatting where possible.
+
+          When PATH is a directory, --check or --write is required.
+        HELP
+      "lint"            => <<~HELP,
+        Usage: mtc lint PATH|DIR [OPTIONS]
+
+          Lint Milk Tea source files and report warnings.
+
+          Options:
+            --select RULES          Comma-separated list of rule codes to enable.
+            --ignore RULES          Comma-separated list of rule codes to suppress.
+            --fix                   Apply auto-fixable changes in place.
+            --output-format FORMAT  Output format: text (default) or json.
+        HELP
+      "check"           => "Usage: mtc check PATH\n\n  Run semantic analysis on a source file and report errors.",
+      "lower"           => "Usage: mtc lower PATH\n\n  Lower a source file to IR and print it.",
+      "emit-c"          => "Usage: mtc emit-c PATH\n\n  Compile a source file to C and print the output.",
+      "build"           => <<~HELP,
+        Usage: mtc build PATH_OR_PACKAGE [OPTIONS]
+
+          Compile a source file or package build entry.
+
+          Options:
+            -o, --output OUTPUT          Output path for the compiled artifact.
+            --cc COMPILER                C compiler to use (default: $CC or cc).
+            --keep-c C_PATH              Write the generated C source to this path.
+            --profile PROFILE            debug (default) | release.
+            --platform PLATFORM          linux (default) | windows.
+            -I PATH                      Add an extra module root.
+        HELP
+      "run"             => <<~HELP,
+        Usage: mtc run PATH_OR_PACKAGE [OPTIONS]
+
+          Build and execute an executable target.
+
+          Options:
+            -o, --output OUTPUT          Output path for the compiled binary.
+            --cc COMPILER                C compiler to use (default: $CC or cc).
+            --keep-c C_PATH              Write the generated C source to this path.
+            --profile PROFILE            debug (default) | release.
+            --platform PLATFORM          linux (default) | windows.
+            -I PATH                      Add an extra module root.
+        HELP
+      "dap"             => "Usage: mtc dap\n\n  Start the Debug Adapter Protocol server (stdio).",
+      "deps"            => <<~HELP,
+        Usage: mtc deps SUBCOMMAND
+
+          Manage toolchain dependencies.
+
+          Subcommands:
+            bootstrap    Download and prepare all upstream native libraries.
+            doctor       Check that all required tools and libraries are available.
+        HELP
+      "bindgen"         => <<~HELP,
+        Usage: mtc bindgen MODULE HEADER [OPTIONS]
+
+          Generate a Milk Tea binding module from a C header.
+
+          Options:
+            -o, --output OUTPUT    Write the generated module to this file.
+            --link LIB             Link against this library (repeatable).
+            --include HEADER       Extra #include directive (repeatable).
+            --clang PATH           Clang binary to use (default: $CLANG or clang).
+            --clang-arg ARG        Extra argument to pass to clang (repeatable).
+        HELP
+    }.freeze
+
+    def print_command_help(command, io)
+      text = COMMAND_HELP[command]
+      if text
+        io.puts(text.chomp)
+      else
+        print_usage(io)
+      end
+    end
+
     def print_usage(io)
       io.puts("Usage: mtc lex PATH")
       io.puts("       mtc semantic-tokens PATH")
@@ -600,10 +771,11 @@ module MilkTea
       io.puts("       mtc check PATH")
       io.puts("       mtc lower PATH")
       io.puts("       mtc emit-c PATH")
-      io.puts("       mtc build PATH [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [-I PATH]")
-      io.puts("       mtc run PATH [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [-I PATH]")
+      io.puts("       mtc build PATH_OR_PACKAGE [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows] [-I PATH]")
+      io.puts("       mtc run PATH_OR_PACKAGE [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows] [-I PATH]")
       io.puts("       mtc dap")
       io.puts("       mtc deps bootstrap")
+      io.puts("       mtc deps doctor")
       io.puts("       mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
     end
   end

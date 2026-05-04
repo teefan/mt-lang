@@ -8,11 +8,11 @@ module MilkTea
   class BuildError < StandardError; end
 
   class Build
-    Result = Data.define(:output_path, :c_path, :compiler, :link_flags)
+    Result = Data.define(:output_path, :c_path, :compiler, :link_flags, :profile, :platform)
 
-    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, debug: false)
+    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, debug: false, profile: nil, platform: nil)
       raw_bindings ||= default_raw_bindings
-      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, debug:).build
+      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, debug:, profile:, platform:).build
     end
 
     def self.default_raw_bindings(root: MilkTea.root)
@@ -22,9 +22,30 @@ module MilkTea
     end
     private_class_method :default_raw_bindings
 
-    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, debug: false)
+    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, debug: false, profile: nil, platform: nil)
+      manifest = PackageManifest.load(path)
+      @source_path = manifest.source_path
+      @project_root = manifest.root_dir
+      @package_name = manifest.package_name
+      @profile = normalize_profile(profile || manifest.profile || (debug ? :debug : :debug))
+      @platform = normalize_platform(platform || manifest.platform || host_platform)
+      resolved_output = output_path || manifest.output_path || default_package_output_path
+      @output_path = File.expand_path(resolved_output)
+      @cc = cc
+      @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
+      @raw_bindings = raw_bindings
+      @module_roots = (module_roots || [MilkTea.root]).dup
+      @module_roots << manifest.root_dir unless @module_roots.include?(manifest.root_dir)
+      @debug = debug
+    rescue PackageManifestError => e
+      raise BuildError, e.message if File.directory?(path)
+
       @source_path = File.expand_path(path)
-      @output_path = File.expand_path(output_path || default_output_path(@source_path))
+      @project_root = File.dirname(@source_path)
+      @package_name = File.basename(@project_root).tr("-", "_")
+      @profile = normalize_profile(profile || (debug ? :debug : :debug))
+      @platform = normalize_platform(platform || host_platform)
+      @output_path = File.expand_path(output_path || default_source_output_path(@source_path))
       @cc = cc
       @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
       @raw_bindings = raw_bindings
@@ -45,7 +66,7 @@ module MilkTea
       if @keep_c_path
         write_c_file(@keep_c_path, generated_c)
         compile(@keep_c_path, compiler_flags, link_flags)
-        return Result.new(output_path: @output_path, c_path: @keep_c_path, compiler: @cc, link_flags:)
+        return Result.new(output_path: @output_path, c_path: @keep_c_path, compiler: @cc, link_flags:, profile: @profile, platform: @platform)
       end
 
       Tempfile.create(["milk-tea-build", ".c"]) do |file|
@@ -56,13 +77,40 @@ module MilkTea
         compile(file.path, compiler_flags, link_flags)
       end
 
-      Result.new(output_path: @output_path, c_path: nil, compiler: @cc, link_flags:)
+      Result.new(output_path: @output_path, c_path: nil, compiler: @cc, link_flags:, profile: @profile, platform: @platform)
     end
 
     private
 
-    def default_output_path(source_path)
+    def default_source_output_path(source_path)
       source_path.sub(/\.mt\z/, "")
+    end
+
+    def default_package_output_path
+      build_root = File.join(@project_root, "build")
+      File.join(build_root, "bin", @platform.to_s, @profile.to_s, "#{@package_name}#{executable_extension}")
+    end
+
+    def normalize_profile(value)
+      case value.to_s
+      when "", "debug", "dev"
+        :debug
+      when "release", "rel"
+        :release
+      else
+        raise BuildError, "unknown profile #{value}; expected debug|release"
+      end
+    end
+
+    def normalize_platform(value)
+      case value.to_s
+      when "", "linux"
+        :linux
+      when "windows", "win", "win32"
+        :windows
+      else
+        raise BuildError, "unknown platform #{value}; expected linux|windows"
+      end
     end
 
     def prepare_bindings(program)
@@ -132,8 +180,8 @@ module MilkTea
     end
 
     def compile(c_path, compiler_flags, link_flags)
-      debug_flags = @debug ? ["-g", "-O0"] : []
-      command = [@cc, "-std=c11", *debug_flags, *compiler_flags, c_path, "-o", @output_path, *link_flags]
+      profile_flags = profile_compiler_flags
+      command = [@cc, "-std=c11", *profile_flags, *compiler_flags, c_path, "-o", @output_path, *link_flags]
       stdout, stderr, status = Open3.capture3(*command)
       return if status.success?
 
@@ -141,6 +189,24 @@ module MilkTea
       raise BuildError, details.empty? ? "C compiler failed" : "C compiler failed:\n#{details}"
     rescue Errno::ENOENT
       raise BuildError, "C compiler not found: #{@cc}"
+    end
+
+    def host_platform
+      /mswin|mingw|cygwin/ === RUBY_PLATFORM ? :windows : :linux
+    end
+
+    def target_windows?
+      @platform == :windows
+    end
+
+    def executable_extension
+      target_windows? ? ".exe" : ""
+    end
+
+    def profile_compiler_flags
+      return ["-g", "-O0"] if @debug || @profile == :debug
+
+      ["-O3", "-DNDEBUG"]
     end
 
     def compiler_available?(compiler)
