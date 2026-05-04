@@ -9,6 +9,9 @@ module MilkTea
 
       add_env_roots!(roots, env)
 
+      package_root = package_root_for_path(path)
+      roots << package_root if package_root
+
       project_root = project_root_for_path(path)
       roots << project_root if project_root
 
@@ -26,6 +29,20 @@ module MilkTea
       current = File.expand_path(File.directory?(path) ? path : File.dirname(path))
       loop do
         return current if File.directory?(File.join(current, 'std'))
+
+        parent = File.dirname(current)
+        return nil if parent == current
+
+        current = parent
+      end
+    end
+
+    def package_root_for_path(path)
+      return nil unless path
+
+      current = File.expand_path(File.directory?(path) ? path : File.dirname(path))
+      loop do
+        return current if File.file?(File.join(current, 'package.toml'))
 
         parent = File.dirname(current)
         return nil if parent == current
