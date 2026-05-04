@@ -20,11 +20,11 @@ struct Sound:
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 var audio_device: c.SDL_AudioDeviceID = 0
-var sounds: array[Sound, 2] = zero[array[Sound, 2]]()
+var sounds: array[Sound, 2] = zero[array[Sound, 2]]
 
 
 def init_sound(path: cstr, sound_index: i32) -> bool:
-    var spec = zero[c.SDL_AudioSpec]()
+    var spec = zero[c.SDL_AudioSpec]
     var wav_data: ptr[c.Uint8]
     var wav_data_len: c.Uint32 = 0
 
@@ -48,7 +48,7 @@ def init_sound(path: cstr, sound_index: i32) -> bool:
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:

@@ -22,7 +22,7 @@ def main() -> i32:
     defer rl.UnloadRenderTexture(target)
     rl.SetTextureFilter(target.texture, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
 
-    var colors = zero[array[rl.Color, 10]]()
+    var colors = zero[array[rl.Color, 10]]
     var color_index = 0
     while color_index < bar_count:
         colors[color_index] = rl.Color(

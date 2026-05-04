@@ -39,7 +39,7 @@ def main() -> i32:
     rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     var tiling = array[f32, 2](3.0, 3.0)
-    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?], rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     rl.SetTextureWrap(texture, i32<-rl.TextureWrap.TEXTURE_WRAP_REPEAT)

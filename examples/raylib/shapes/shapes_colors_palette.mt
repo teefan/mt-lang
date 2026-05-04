@@ -15,7 +15,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var colors = zero[array[rl.Color, 21]]()
+    var colors = zero[array[rl.Color, 21]]
     colors[0] = rl.DARKGRAY
     colors[1] = rl.MAROON
     colors[2] = rl.ORANGE
@@ -38,7 +38,7 @@ def main() -> i32:
     colors[19] = rl.PURPLE
     colors[20] = rl.BEIGE
 
-    var color_names = zero[array[cstr, 21]]()
+    var color_names = zero[array[cstr, 21]]
     color_names[0] = c"DARKGRAY"
     color_names[1] = c"MAROON"
     color_names[2] = c"ORANGE"
@@ -61,8 +61,8 @@ def main() -> i32:
     color_names[19] = c"PURPLE"
     color_names[20] = c"BEIGE"
 
-    var color_rects = zero[array[rl.Rectangle, 21]]()
-    var color_state = zero[array[i32, 21]]()
+    var color_rects = zero[array[rl.Rectangle, 21]]
+    var color_state = zero[array[i32, 21]]
 
     for index in 0..max_colors_count:
         let column = index % grid_columns

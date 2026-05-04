@@ -28,7 +28,7 @@ def main() -> i32:
         width = 60.0,
         height = 60.0,
     )
-    var box_collision = zero[rl.Rectangle]()
+    var box_collision = zero[rl.Rectangle]
     var pause = false
     var collision = false
 

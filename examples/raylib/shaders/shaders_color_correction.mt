@@ -45,7 +45,7 @@ def main() -> i32:
             rl.UnloadTexture(textures[unload_index])
             unload_index += 1
 
-    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?], rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     let contrast_location = rl.GetShaderLocation(shader, contrast_uniform_name)

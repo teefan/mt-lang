@@ -20,7 +20,7 @@ def main() -> i32:
     let font_bm = rl.LoadFont(font_bm_path)
     defer rl.UnloadFont(font_bm)
 
-    var font_ttf = zero[rl.Font]()
+    var font_ttf = zero[rl.Font]
     font_ttf = rl.LoadFontEx(font_ttf_path, 32, null, 250)
     defer rl.UnloadFont(font_ttf)
 

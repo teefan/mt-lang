@@ -303,7 +303,7 @@ def main() -> i32:
     var show_letter_boundary = false
     var show_text_boundary = false
 
-    var camera = zero[rl.Camera3D]()
+    var camera = zero[rl.Camera3D]
     camera.position = rl.Vector3(x = -10.0, y = 15.0, z = -10.0)
     camera.target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
     camera.up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
@@ -320,7 +320,7 @@ def main() -> i32:
     var font_spacing = f32<-0.05
     var line_spacing = f32<-(-0.1)
 
-    var text = zero[array[char, 64]]()
+    var text = zero[array[char, 64]]
     rl.TextCopy(text_buffer_ptr(ref_of(text)), initial_text)
 
     var text_box = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
@@ -337,11 +337,11 @@ def main() -> i32:
     var time = f32<-0.0
     var light = rl.MAROON
     var dark = rl.RED
-    var alpha_discard = zero[rl.Shader]()
+    var alpha_discard = zero[rl.Shader]
     alpha_discard = rl.LoadShader(null, alpha_discard_shader_path)
     defer rl.UnloadShader(alpha_discard)
 
-    var multi = zero[array[rl.Color, 32]]()
+    var multi = zero[array[rl.Color, 32]]
 
     rl.DisableCursor()
     rl.SetTargetFPS(60)
@@ -369,7 +369,7 @@ def main() -> i32:
             show_text_boundary = not show_text_boundary
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_F3):
             spin = not spin
-            camera = zero[rl.Camera3D]()
+            camera = zero[rl.Camera3D]
             camera.target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
             camera.up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
             camera.fovy = 45.0

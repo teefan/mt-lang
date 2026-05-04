@@ -68,7 +68,7 @@ def rlgl_matrix(mat: rl.Matrix) -> rlgl.Matrix:
 
 
 def set_shader_int(shader: rl.Shader, uniform_name: cstr, value: i32) -> void:
-    var raw_value = zero[array[i32, 1]]()
+    var raw_value = zero[array[i32, 1]]
     raw_value[0] = value
     rl.SetShaderValue(
         shader,
@@ -94,7 +94,7 @@ def skybox_cubemap(model: rl.Model) -> rl.TextureCubemap:
 
 
 def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: i32, format: i32) -> rl.TextureCubemap:
-    var cubemap = zero[rl.TextureCubemap]()
+    var cubemap = zero[rl.TextureCubemap]
 
     rlgl.rlDisableBackfaceCulling()
 
@@ -127,7 +127,7 @@ def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: i32, fo
     )
     rlgl.rlSetUniformMatrix(shader_location(shader, i32<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_PROJECTION), rlgl_matrix(projection))
 
-    var fbo_views = zero[array[rl.Matrix, 6]]()
+    var fbo_views = zero[array[rl.Matrix, 6]]
     fbo_views[0] = rm.Matrix.look_at(rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector3(x = 1.0, y = 0.0, z = 0.0), rl.Vector3(x = 0.0, y = -1.0, z = 0.0))
     fbo_views[1] = rm.Matrix.look_at(rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector3(x = -1.0, y = 0.0, z = 0.0), rl.Vector3(x = 0.0, y = -1.0, z = 0.0))
     fbo_views[2] = rm.Matrix.look_at(rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector3(x = 0.0, y = 1.0, z = 0.0), rl.Vector3(x = 0.0, y = 0.0, z = 1.0))
@@ -225,7 +225,7 @@ def main() -> i32:
     defer rl.UnloadShader(cubemap_shader)
     set_shader_int(cubemap_shader, equirectangular_map_text, 0)
 
-    var skybox_file_name = zero[array[char, 256]]()
+    var skybox_file_name = zero[array[char, 256]]
     load_skybox_texture(ptr_of(skybox), cubemap_shader, use_hdr, ref_of(skybox_file_name), if use_hdr: skybox_hdr_path else: skybox_texture_path)
 
     rl.DisableCursor()

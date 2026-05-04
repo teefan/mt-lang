@@ -215,9 +215,9 @@ def main() -> i32:
     var game_width = 64
     var game_height = 64
 
-    var target = zero[rl.RenderTexture2D]()
-    var source_rect = zero[rl.Rectangle]()
-    var dest_rect = zero[rl.Rectangle]()
+    var target = zero[rl.RenderTexture2D]
+    var source_rect = zero[rl.Rectangle]
+    var dest_rect = zero[rl.Rectangle]
 
     var viewport_type = ViewportType.KEEP_ASPECT_INTEGER
     resize_render_size(viewport_type, ref_of(screen_width), ref_of(screen_height), game_width, game_height, ref_of(source_rect), ref_of(dest_rect), ref_of(target))

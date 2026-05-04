@@ -15,12 +15,12 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var directory = zero[array[char, 1024]]()
+    var directory = zero[array[char, 1024]]
     let directory_ptr = ptr_of(directory[0])
     unsafe:
         rl.TextCopy(directory_ptr, rl.GetWorkingDirectory())
 
-    var files = zero[rl.FilePathList]()
+    var files = zero[rl.FilePathList]
     unsafe:
         files = rl.LoadDirectoryFilesEx(cstr<-directory_ptr, filter_text, false)
 

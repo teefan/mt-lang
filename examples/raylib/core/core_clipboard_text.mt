@@ -26,8 +26,8 @@ def main() -> i32:
     )
 
     var clipboard_text = c""
-    var input_buffer = zero[array[char, 256]]()
-    var clipboard_buffer = zero[array[char, 256]]()
+    var input_buffer = zero[array[char, 256]]
+    var clipboard_buffer = zero[array[char, 256]]
     let input_buffer_ptr = ptr_of(input_buffer[0])
     let clipboard_buffer_ptr = ptr_of(clipboard_buffer[0])
 

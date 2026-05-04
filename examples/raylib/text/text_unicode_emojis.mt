@@ -234,7 +234,7 @@ def main() -> i32:
         EmojiMessage(text = c"\xED\x95\x9C\xEA\xB5\xAD\xEB\xA7\x90\x20\xED\x95\x98\xEC\x8B\xA4\x20\xEC\xA4\x84\x20\xEC\x95\x84\xEC\x84\xB8\xEC\x9A\x94\x3F", language = c"Korean"),
     )
 
-    var emojis = zero[array[EmojiSlot, 32]]()
+    var emojis = zero[array[EmojiSlot, 32]]
     var hovered = -1
     var selected = -1
     var hovered_pos = rl.Vector2(x = 0.0, y = 0.0)

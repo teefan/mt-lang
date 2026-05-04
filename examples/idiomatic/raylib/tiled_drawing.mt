@@ -190,7 +190,7 @@ def main() -> i32:
     )
 
     let colors = array[rl.Color, 10](rl.BLACK, rl.MAROON, rl.ORANGE, rl.BLUE, rl.PURPLE, rl.BEIGE, rl.LIME, rl.RED, rl.DARKGRAY, rl.SKYBLUE)
-    var color_rec = zero[array[rl.Rectangle, 10]]()
+    var color_rec = zero[array[rl.Rectangle, 10]]
 
     var x: f32 = 0.0
     var y: f32 = 0.0

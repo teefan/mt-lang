@@ -57,7 +57,7 @@ class MilkTeaStdStringTest < Minitest::Test
       "    var count = 0",
       "    unsafe:",
       "        let data = ptr[char]<-text",
-      "        while read(data + count) != zero[char]():",
+      "        while read(data + count) != zero[char]:",
       "            count += 1",
       "    return count",
       "",

@@ -40,7 +40,7 @@ def model_label_x(model_index: i32) -> i32:
 
 
 def custom_mesh() -> rl.Mesh:
-    var mesh = zero[rl.Mesh]()
+    var mesh = zero[rl.Mesh]
     mesh.triangleCount = 1
     mesh.vertexCount = mesh.triangleCount * 3
 
@@ -92,7 +92,7 @@ def main() -> i32:
     rl.UnloadImage(checked)
     defer rl.UnloadTexture(texture)
 
-    var models = zero[array[rl.Model, 9]]()
+    var models = zero[array[rl.Model, 9]]
     models[0] = rl.LoadModelFromMesh(rl.GenMeshPlane(2.0, 2.0, 4, 3))
     models[1] = rl.LoadModelFromMesh(rl.GenMeshCube(2.0, 1.0, 2.0))
     models[2] = rl.LoadModelFromMesh(rl.GenMeshSphere(2.0, 32, 32))

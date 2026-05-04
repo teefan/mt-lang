@@ -13,7 +13,7 @@ var renderer: ptr[c.SDL_Renderer]
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
@@ -24,7 +24,7 @@ def pump_events() -> bool:
 
 def render_frame() -> void:
     let frame = c.SDL_FRect(x = 0.0, y = 0.0, w = 640.0, h = 480.0)
-    var msgbuf = zero[array[char, 128]]()
+    var msgbuf = zero[array[char, 128]]
     var count: i32 = 0
     let locales_memory = c.SDL_GetPreferredLocales(ptr_of(count))
 

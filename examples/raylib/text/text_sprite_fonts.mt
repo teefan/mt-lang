@@ -21,7 +21,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var fonts = zero[array[rl.Font, max_fonts]]()
+    var fonts = zero[array[rl.Font, max_fonts]]
     fonts[0] = rl.LoadFont(font0_path)
     fonts[1] = rl.LoadFont(font1_path)
     fonts[2] = rl.LoadFont(font2_path)
@@ -45,7 +45,7 @@ def main() -> i32:
         c"JUPITER_CRASH FONT designed by Brian Kent (AEnigma)",
     )
     let spacings = array[i32, max_fonts](2, 4, 8, 4, 3, 4, 4, 1)
-    var positions = zero[array[rl.Vector2, max_fonts]]()
+    var positions = zero[array[rl.Vector2, max_fonts]]
 
     for index in 0..max_fonts:
         positions[index].x = f32<-screen_width / 2.0 - rl.MeasureTextEx(fonts[index], messages[index], f32<-fonts[index].baseSize * 2.0, f32<-spacings[index]).x / 2.0

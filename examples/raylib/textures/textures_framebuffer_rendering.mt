@@ -27,7 +27,7 @@ def draw_camera_prism(camera: rl.Camera3D, aspect: f32, color: rl.Color) -> void
     let view = rl.GetCameraMatrix(camera)
     let proj = rm.Matrix.perspective(camera.fovy * rm.deg2rad, aspect, near_plane, length)
     let inverse_view_proj = view.multiply(proj).invert()
-    var corners = zero[array[rl.Vector3, 4]]()
+    var corners = zero[array[rl.Vector3, 4]]
 
     for index in 0..4:
         let point = plane_ndc[index]

@@ -51,7 +51,7 @@ def draw_text_styled(font: rl.Font, text: cstr, position: rl.Vector2, font_size:
                 elif index + 1 < text_len and (read(current_ptr + 1) == char<-99 or read(current_ptr + 1) == char<-98):
                     let color_kind = read(current_ptr + 1)
                     let color_ptr = current_ptr + 2
-                    var color_text = zero[array[char, 9]]()
+                    var color_text = zero[array[char, 9]]
                     var color_count = 0
 
                     while read(color_ptr + color_count) != char<-0 and read(color_ptr + color_count) != char<-93:

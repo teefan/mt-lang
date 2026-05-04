@@ -23,7 +23,7 @@ def random_unit() -> f32:
 
 
 def gen_mesh_points(num_points: i32) -> rl.Mesh:
-    var mesh = zero[rl.Mesh]()
+    var mesh = zero[rl.Mesh]
     mesh.triangleCount = 1
     mesh.vertexCount = num_points
 

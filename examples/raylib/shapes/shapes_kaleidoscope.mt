@@ -22,7 +22,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var lines = zero[array[Line, 8192]]()
+    var lines = zero[array[Line, 8192]]
 
     var symmetry: i32 = 6
     let angle = 360.0 / f32<-symmetry

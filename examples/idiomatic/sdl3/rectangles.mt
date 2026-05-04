@@ -14,7 +14,7 @@ var renderer: ptr[sdl.Renderer]
 
 
 def pump_events() -> bool:
-    var event = zero[sdl.Event]()
+    var event = zero[sdl.Event]
 
     while sdl.poll_event(out event):
         if sdl.EventType.SDL_EVENT_QUIT == sdl.EventType.SDL_EVENT_QUIT:
@@ -29,7 +29,7 @@ def render_frame() -> void:
     let scale = (f32<-((now % 1000) - 500) / 500.0) * direction
     let column_width = f32<-window_width / f32<-rect_count
 
-    var rects = zero[array[sdl.FRect, 16]]()
+    var rects = zero[array[sdl.FRect, 16]]
 
     sdl.set_render_draw_color(renderer, 0, 0, 0, 255)
     sdl.render_clear(renderer)

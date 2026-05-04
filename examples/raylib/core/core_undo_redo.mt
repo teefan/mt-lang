@@ -170,7 +170,7 @@ def main() -> i32:
         color = rl.RED,
     )
 
-    var states = zero[array[PlayerState, 26]]()
+    var states = zero[array[PlayerState, 26]]
     initialize_states(ref_of(states), player)
 
     let grid_position = rl.Vector2(x = 40.0, y = 60.0)

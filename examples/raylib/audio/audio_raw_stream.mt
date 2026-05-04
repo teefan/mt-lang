@@ -22,7 +22,7 @@ def main() -> i32:
     defer rl.CloseAudioDevice()
 
     rl.SetAudioStreamBufferSizeDefault(buffer_size)
-    var buffer = zero[array[f32, 4096]]()
+    var buffer = zero[array[f32, 4096]]
 
     let stream = rl.LoadAudioStream(sample_rate, 32, 1)
     defer rl.UnloadAudioStream(stream)

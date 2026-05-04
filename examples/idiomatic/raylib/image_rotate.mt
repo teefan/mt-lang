@@ -20,7 +20,7 @@ def main() -> i32:
     rl.image_rotate(inout image_90, 90)
     rl.image_rotate(inout image_neg_90, -90)
 
-    var textures = zero[array[rl.Texture2D, 3]]()
+    var textures = zero[array[rl.Texture2D, 3]]
     defer:
         for texture_index in 0..num_textures:
             rl.unload_texture(textures[texture_index])

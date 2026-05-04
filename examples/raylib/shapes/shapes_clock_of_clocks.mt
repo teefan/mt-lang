@@ -20,7 +20,7 @@ const time_format_12: cstr = c"%I%M%S"
 
 def blank_digit_angles() -> array[rl.Vector2, 24]:
     let zz = rl.Vector2(x = 135.0, y = 135.0)
-    var result = zero[array[rl.Vector2, 24]]()
+    var result = zero[array[rl.Vector2, 24]]
     for index in 0..cells_per_digit:
         result[index] = zz
     return result
@@ -161,12 +161,12 @@ def main() -> i32:
 
     var previous_second = -1
     var previous_hour_mode = -1
-    var current_angles = zero[array[rl.Vector2, 144]]()
-    var src_angles = zero[array[rl.Vector2, 144]]()
-    var dst_angles = zero[array[rl.Vector2, 144]]()
+    var current_angles = zero[array[rl.Vector2, 144]]
+    var src_angles = zero[array[rl.Vector2, 144]]
+    var dst_angles = zero[array[rl.Vector2, 144]]
     var hands_move_timer: f32 = 0.0
     var hour_mode = hour_mode_24
-    var time_buffer = zero[array[char, 7]]()
+    var time_buffer = zero[array[char, 7]]
 
     rl.SetTargetFPS(60)
 

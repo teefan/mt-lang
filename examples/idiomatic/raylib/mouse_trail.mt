@@ -11,7 +11,7 @@ def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Mouse Trail")
     defer rl.close_window()
 
-    var trail_positions = zero[array[rl.Vector2, 30]]()
+    var trail_positions = zero[array[rl.Vector2, 30]]
 
     rl.set_target_fps(60)
 

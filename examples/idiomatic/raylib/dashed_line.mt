@@ -15,7 +15,7 @@ def main() -> i32:
     var end_position = rl.Vector2(x = 780.0, y = 400.0)
     var dash_length: f32 = 25.0
     var blank_length: f32 = 15.0
-    var colors = zero[array[rl.Color, 8]]()
+    var colors = zero[array[rl.Color, 8]]
     colors[0] = rl.RED
     colors[1] = rl.ORANGE
     colors[2] = rl.GOLD

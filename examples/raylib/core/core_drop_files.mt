@@ -18,7 +18,7 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var file_path_counter = 0
-    var file_paths = zero[array[ptr[char], 4096]]()
+    var file_paths = zero[array[ptr[char], 4096]]
 
     for index in 0..max_filepaths_recorded:
         file_paths[index] = heap.must_alloc_zeroed[char](usize<-max_filepath_size)

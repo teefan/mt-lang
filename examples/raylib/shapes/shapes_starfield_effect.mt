@@ -21,8 +21,8 @@ def main() -> i32:
 
     var speed: f32 = 10.0 / 9.0
     var draw_lines = true
-    var stars = zero[array[rl.Vector3, 420]]()
-    var stars_screen_pos = zero[array[rl.Vector2, 420]]()
+    var stars = zero[array[rl.Vector3, 420]]
+    var stars_screen_pos = zero[array[rl.Vector2, 420]]
 
     for index in 0..star_count:
         stars[index].x = f32<-rl.GetRandomValue(-screen_width / 2, screen_width / 2)

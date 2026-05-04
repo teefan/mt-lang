@@ -20,7 +20,7 @@ def main() -> i32:
     rl.UnloadImage(blank_image)
     defer rl.UnloadTexture(texture)
 
-    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?], rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     var time: f32 = 0.0

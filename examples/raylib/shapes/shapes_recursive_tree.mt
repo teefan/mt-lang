@@ -33,7 +33,7 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         let theta = angle * mt_math.deg2rad
         let max_branches = i32<-math.powf(2.0, math.floorf(tree_depth))
-        var branches = zero[array[Branch, 1030]]()
+        var branches = zero[array[Branch, 1030]]
         var count = 0
 
         let initial_end = rl.Vector2(

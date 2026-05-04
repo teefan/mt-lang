@@ -83,7 +83,7 @@ def mesh_index(mesh: rl.Mesh, index: i32) -> i32:
 
 
 def triangle_vertices(v0: rl.Vector3, v1: rl.Vector3, v2: rl.Vector3) -> array[rl.Vector3, 3]:
-    var vertices = zero[array[rl.Vector3, 3]]()
+    var vertices = zero[array[rl.Vector3, 3]]
     vertices[0] = v0
     vertices[1] = v1
     vertices[2] = v2
@@ -135,11 +135,11 @@ def free_mesh_builder(mb: ref[MeshBuilder]) -> void:
         rl.MemFree(mb.vertices)
     if mb.hasUvs:
         rl.MemFree(mb.uvs)
-    read(mb) = zero[MeshBuilder]()
+    read(mb) = zero[MeshBuilder]
 
 
 def build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:
-    var out_mesh = zero[rl.Mesh]()
+    var out_mesh = zero[rl.Mesh]
     out_mesh.vertexCount = mb.vertexCount
     out_mesh.triangleCount = mb.vertexCount / 3
 
@@ -179,7 +179,7 @@ def minf(a: f32, b: f32) -> f32:
 
 def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, decal_offset: f32) -> rl.Mesh:
     let inv_proj = projection.invert()
-    var mesh_builders = zero[array[MeshBuilder, 2]]()
+    var mesh_builders = zero[array[MeshBuilder, 2]]
     defer:
         free_mesh_builder(ref_of(mesh_builders[0]))
         free_mesh_builder(ref_of(mesh_builders[1]))
@@ -201,7 +201,7 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
             if inside_count > 0:
                 add_triangle_to_mesh_builder(ref_of(mesh_builders[mb_index]), vertices)
 
-    var planes = zero[array[rl.Vector3, 6]]()
+    var planes = zero[array[rl.Vector3, 6]]
     planes[0] = rl.Vector3(x = 1.0, y = 0.0, z = 0.0)
     planes[1] = rl.Vector3(x = -1.0, y = 0.0, z = 0.0)
     planes[2] = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
@@ -222,10 +222,10 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
 
         var vertex_index = 0
         while vertex_index < in_mesh.vertexCount:
-            var next_v1 = zero[rl.Vector3]()
-            var next_v2 = zero[rl.Vector3]()
-            var next_v3 = zero[rl.Vector3]()
-            var next_v4 = zero[rl.Vector3]()
+            var next_v1 = zero[rl.Vector3]
+            var next_v2 = zero[rl.Vector3]
+            var next_v3 = zero[rl.Vector3]
+            var next_v4 = zero[rl.Vector3]
 
             let d1 = in_vertices[vertex_index].dot(planes[face]) - clip_distance
             let d2 = in_vertices[vertex_index + 1].dot(planes[face]) - clip_distance
@@ -300,7 +300,7 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
 
         return build_mesh(final_mesh)
 
-    return zero[rl.Mesh]()
+    return zero[rl.Mesh]
 
 
 def gui_button(rec: rl.Rectangle, label: cstr) -> bool:
@@ -379,7 +379,7 @@ def main() -> i32:
         decal_material.maps[i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO].color = rl.RAYWHITE
 
     var show_model = true
-    var decal_models = zero[array[rl.Model, 256]]()
+    var decal_models = zero[array[rl.Model, 256]]
     var decal_count = 0
     defer:
         for index in 0..decal_count:
@@ -391,7 +391,7 @@ def main() -> i32:
         if rl.IsMouseButtonDown(rl.MouseButton.MOUSE_BUTTON_RIGHT):
             rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_THIRD_PERSON)
 
-        var collision = zero[rl.RayCollision]()
+        var collision = zero[rl.RayCollision]
         collision.distance = float_max
         collision.hit = false
 
@@ -399,7 +399,7 @@ def main() -> i32:
         let box_hit_info = rl.GetRayCollisionBox(ray, model_bbox)
 
         if box_hit_info.hit and decal_count < max_decals:
-            var mesh_hit_info = zero[rl.RayCollision]()
+            var mesh_hit_info = zero[rl.RayCollision]
             for mesh_index in 0..model.meshCount:
                 mesh_hit_info = rl.GetRayCollisionMesh(ray, model_mesh(model, mesh_index), model.transform)
                 if mesh_hit_info.hit:

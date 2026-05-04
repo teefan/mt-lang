@@ -51,12 +51,12 @@ def main() -> i32:
         rl.Vector2(x = 0.75, y = 0.0),
     )
 
-    var points = zero[array[rl.Vector2, max_points]]()
+    var points = zero[array[rl.Vector2, max_points]]
     for index in 0..max_points:
         points[index].x = (texcoords[index].x - 0.5) * 256.0
         points[index].y = (texcoords[index].y - 0.5) * 256.0
 
-    var positions = zero[array[rl.Vector2, max_points]]()
+    var positions = zero[array[rl.Vector2, max_points]]
     for index in 0..max_points:
         positions[index] = points[index]
 

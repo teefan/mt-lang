@@ -171,7 +171,7 @@ def main() -> i32:
     defer rl.close_window()
 
     var box_count: i32 = 0
-    var boxes = zero[array[rl.Rectangle, 20]]()
+    var boxes = zero[array[rl.Rectangle, 20]]
     setup_boxes(ref_of(boxes), ref_of(box_count))
 
     let image = rl.gen_image_checked(64, 64, 32, 32, rl.DARKBROWN, rl.DARKGRAY)
@@ -182,7 +182,7 @@ def main() -> i32:
     let light_mask = rl.load_render_texture(rl.get_screen_width(), rl.get_screen_height())
     defer rl.unload_render_texture(light_mask)
 
-    var lights = zero[array[LightInfo, 16]]()
+    var lights = zero[array[LightInfo, 16]]
     setup_light(ref_of(lights), 0, 600.0, 400.0, 300.0)
     var next_light = 1
     var show_lines = false

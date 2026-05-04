@@ -15,10 +15,10 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var world_space_camera = zero[rl.Camera2D]()
+    var world_space_camera = zero[rl.Camera2D]
     world_space_camera.zoom = 1.0
 
-    var screen_space_camera = zero[rl.Camera2D]()
+    var screen_space_camera = zero[rl.Camera2D]
     screen_space_camera.zoom = 1.0
 
     let target = rl.LoadRenderTexture(virtual_screen_width, virtual_screen_height)

@@ -5862,6 +5862,10 @@ module MilkTea
       end
 
       def lower_specialization(expression, env:, type:)
+        if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "zero"
+          return IR::ZeroInit.new(type:)
+        end
+
         if (function_binding = resolve_specialized_function_binding(expression))
           raise LoweringError, "foreign function #{function_binding.name} cannot be used as a value" if foreign_function_binding?(function_binding)
 
@@ -6166,6 +6170,9 @@ module MilkTea
         when AST::Specialization
           if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "cast"
             resolve_type_ref(expression.arguments.fetch(0).value)
+          elsif expression.callee.is_a?(AST::Identifier) && expression.callee.name == "zero"
+            _, _, _, function_type = resolve_callee(expression, env, arguments: [])
+            function_type.return_type
           elsif (function_binding = resolve_specialized_function_binding(expression))
             function_binding.type
           else

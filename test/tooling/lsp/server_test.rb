@@ -325,6 +325,98 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_hover_shows_local_variable_type
+    source = <<~MT
+      def main() -> i32:
+          let value = 1
+          return value
+    MT
+
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      uri = "file:///tmp/lsp_hover_local_type.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source,
+        },
+      })
+
+      hover_response = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 2, "character" => 11 },
+      })
+
+      hover_value = hover_response.dig("result", "contents", "value")
+      assert_includes hover_value, "value: i32"
+    end
+  end
+
+  def test_hover_shows_local_declaration_type
+    source = <<~MT
+      def main() -> i32:
+          let value = 1
+          return value
+    MT
+
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      uri = "file:///tmp/lsp_hover_local_decl_type.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source,
+        },
+      })
+
+      hover_response = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 1, "character" => 8 },
+      })
+
+      hover_value = hover_response.dig("result", "contents", "value")
+      assert_includes hover_value, "value: i32"
+    end
+  end
+
+  def test_hover_shows_parameter_type
+    source = <<~MT
+      def main(value: i32) -> i32:
+          return value
+    MT
+
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      uri = "file:///tmp/lsp_hover_param_type.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source,
+        },
+      })
+
+      hover_response = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 0, "character" => 9 },
+      })
+
+      hover_value = hover_response.dig("result", "contents", "value")
+      assert_includes hover_value, "value: i32"
+    end
+  end
+
   def test_hover_response_stays_within_latency_budget
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })

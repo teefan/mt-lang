@@ -26,8 +26,8 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var sine_points = zero[array[rl.Vector2, 36]]()
-    var cos_points = zero[array[rl.Vector2, 36]]()
+    var sine_points = zero[array[rl.Vector2, 36]]
+    var cos_points = zero[array[rl.Vector2, 36]]
     let center = rl.Vector2(x = screen_width / 2.0 - 30.0, y = screen_height / 2.0)
     let start = rl.Rectangle(x = 20.0, y = screen_height - 120.0, width = 200.0, height = 100.0)
     let half_wave_height = start.height / 2.0

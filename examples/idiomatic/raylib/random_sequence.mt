@@ -31,7 +31,7 @@ def generate_random_color() -> rl.Color:
 
 
 def shuffled_ranks(rect_count: i32) -> array[i32, 22]:
-    var ranks = zero[array[i32, 22]]()
+    var ranks = zero[array[i32, 22]]
 
     var index = 0
     while index < rect_count:
@@ -50,7 +50,7 @@ def shuffled_ranks(rect_count: i32) -> array[i32, 22]:
 
 
 def generate_rectangles(rect_count: i32, rect_width: f32, width: f32, height: f32) -> array[ColorRect, 22]:
-    var rectangles = zero[array[ColorRect, 22]]()
+    var rectangles = zero[array[ColorRect, 22]]
     let ranks = shuffled_ranks(rect_count)
     let rect_sequence_width = f32<-rect_count * rect_width
     let start_x = (width - rect_sequence_width) * 0.5

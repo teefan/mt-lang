@@ -73,7 +73,7 @@ def main() -> i32:
         rl.unload_image(image_copy)
         rl.unload_image(image_origin)
 
-    var toggle_rects = zero[array[rl.Rectangle, 9]]()
+    var toggle_rects = zero[array[rl.Rectangle, 9]]
     for index in 0..num_processes:
         toggle_rects[index] = rl.Rectangle(x = 40.0, y = f32<-(50 + 32 * index), width = 150.0, height = 30.0)
 

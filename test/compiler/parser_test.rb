@@ -1018,7 +1018,7 @@ class MilkTeaParserTest < Minitest::Test
       module demo.zero
 
       def main() -> i32:
-          let palette = zero[array[u32, 4]]()
+          let palette = zero[array[u32, 4]]
           return 0
     MT
 
@@ -1026,17 +1026,15 @@ class MilkTeaParserTest < Minitest::Test
     main_fn = ast.declarations.first
     local_decl = main_fn.body.first
 
-    assert_instance_of MilkTea::AST::Call, local_decl.value
-    assert_instance_of MilkTea::AST::Specialization, local_decl.value.callee
-    assert_equal "zero", local_decl.value.callee.callee.name
-    assert_equal 1, local_decl.value.callee.arguments.length
-    array_type = local_decl.value.callee.arguments.first.value
+    assert_instance_of MilkTea::AST::Specialization, local_decl.value
+    assert_equal "zero", local_decl.value.callee.name
+    assert_equal 1, local_decl.value.arguments.length
+    array_type = local_decl.value.arguments.first.value
     assert_instance_of MilkTea::AST::TypeRef, array_type
     assert_equal "array", array_type.name.to_s
     assert_equal 2, array_type.arguments.length
     assert_equal "u32", array_type.arguments.first.value.name.to_s
     assert_equal 4, array_type.arguments[1].value.value
-    assert_equal 0, local_decl.value.arguments.length
   end
 
   def test_parses_array_char_zero_constructor_calls
@@ -1044,7 +1042,7 @@ class MilkTeaParserTest < Minitest::Test
       module demo.char_array
 
       def main() -> i32:
-          let buffer = zero[array[char, 64]]()
+          let buffer = zero[array[char, 64]]
           return 0
     MT
 
@@ -1052,16 +1050,14 @@ class MilkTeaParserTest < Minitest::Test
     main_fn = ast.declarations.first
     local_decl = main_fn.body.first
 
-    assert_instance_of MilkTea::AST::Call, local_decl.value
-    assert_instance_of MilkTea::AST::Specialization, local_decl.value.callee
-    assert_equal "zero", local_decl.value.callee.callee.name
-    assert_equal 1, local_decl.value.callee.arguments.length
-    array_type = local_decl.value.callee.arguments.first.value
+    assert_instance_of MilkTea::AST::Specialization, local_decl.value
+    assert_equal "zero", local_decl.value.callee.name
+    assert_equal 1, local_decl.value.arguments.length
+    array_type = local_decl.value.arguments.first.value
     assert_instance_of MilkTea::AST::TypeRef, array_type
     assert_equal "array", array_type.name.to_s
     assert_equal "char", array_type.arguments.first.value.name.to_s
     assert_equal 64, array_type.arguments[1].value.value
-    assert_equal 0, local_decl.value.arguments.length
   end
 
   def test_parses_partial_aggregate_and_array_constructor_calls

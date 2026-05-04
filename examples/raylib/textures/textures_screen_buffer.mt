@@ -18,7 +18,7 @@ def main() -> i32:
     let image_height = screen_height / scale_factor
     let flame_width = screen_width / scale_factor
 
-    var palette = zero[array[rl.Color, 256]]()
+    var palette = zero[array[rl.Color, 256]]
     for index in 0..max_colors:
         let t = f32<-index / f32<-(max_colors - 1)
         let hue = t * t

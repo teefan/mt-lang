@@ -53,7 +53,7 @@ def main() -> i32:
     let perlin_noise = rl.gen_image_perlin_noise(screen_width, screen_height, 50, 50, 4.0)
     let cellular = rl.gen_image_cellular(screen_width, screen_height, 32)
 
-    var textures = zero[array[rl.Texture2D, 9]]()
+    var textures = zero[array[rl.Texture2D, 9]]
     defer:
         for texture_index in 0..num_textures:
             rl.unload_texture(textures[texture_index])

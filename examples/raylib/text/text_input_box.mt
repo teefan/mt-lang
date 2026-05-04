@@ -22,7 +22,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var name = zero[array[u8, max_input_bytes]]()
+    var name = zero[array[u8, max_input_bytes]]
     var letter_count = 0
 
     let text_box = rl.Rectangle(

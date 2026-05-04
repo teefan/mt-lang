@@ -17,7 +17,7 @@ def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Kaleidoscope")
     defer rl.close_window()
 
-    var lines = zero[array[Line, 8192]]()
+    var lines = zero[array[Line, 8192]]
     let symmetry: i32 = 6
     let angle = 360.0 / f32<-symmetry
     let thickness: f32 = 3.0

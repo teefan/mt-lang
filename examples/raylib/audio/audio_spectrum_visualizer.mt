@@ -102,7 +102,7 @@ def capture_frame(audio_samples: ptr[f32]) -> void:
 
     cooley_tukey_fft_slow()
 
-    var smoothed_spectrum = zero[array[f32, 512]]()
+    var smoothed_spectrum = zero[array[f32, 512]]
     for bin in 0..buffer_size:
         let re = work_buffer[bin].real
         let im = work_buffer[bin].imaginary
@@ -179,8 +179,8 @@ def main() -> i32:
 
     var wav_cursor = 0
     let wav_frame_count = i32<-wav.frameCount
-    var chunk_samples = zero[array[f32, 2048]]()
-    var audio_samples = zero[array[f32, 1024]]()
+    var chunk_samples = zero[array[f32, 2048]]
+    var audio_samples = zero[array[f32, 1024]]
 
     rl.SetTargetFPS(60)
 

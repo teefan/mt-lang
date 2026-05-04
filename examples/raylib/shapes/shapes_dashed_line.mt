@@ -22,7 +22,7 @@ def main() -> i32:
     var dash_length: f32 = 25.0
     var blank_length: f32 = 15.0
 
-    var line_colors = zero[array[rl.Color, 8]]()
+    var line_colors = zero[array[rl.Color, 8]]
     line_colors[0] = rl.RED
     line_colors[1] = rl.ORANGE
     line_colors[2] = rl.GOLD

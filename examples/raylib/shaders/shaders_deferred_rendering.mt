@@ -84,7 +84,7 @@ def main() -> i32:
     unsafe:
         deferred_shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
-    var gbuffer = zero[GBuffer]()
+    var gbuffer = zero[GBuffer]
     gbuffer.framebuffer_id = rlgl.rlLoadFramebuffer()
     rlgl.rlEnableFramebuffer(gbuffer.framebuffer_id)
 
@@ -113,14 +113,14 @@ def main() -> i32:
     set_model_shader(ptr_of(model), gbuffer_shader)
     set_model_shader(ptr_of(cube), gbuffer_shader)
 
-    var light_sources = zero[array[lights.Light, 4]]()
+    var light_sources = zero[array[lights.Light, 4]]
     light_sources[0] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.YELLOW, deferred_shader)
     light_sources[1] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = 2.0), rm.Vector3.zero(), rl.RED, deferred_shader)
     light_sources[2] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = 2.0), rm.Vector3.zero(), rl.GREEN, deferred_shader)
     light_sources[3] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.BLUE, deferred_shader)
 
-    var cube_positions = zero[array[rl.Vector3, 30]]()
-    var cube_rotations = zero[array[f32, 30]]()
+    var cube_positions = zero[array[rl.Vector3, 30]]
+    var cube_rotations = zero[array[f32, 30]]
     for index in 0..max_cubes:
         cube_positions[index] = rl.Vector3(
             x = f32<-rl.GetRandomValue(0, 9) - 5.0,

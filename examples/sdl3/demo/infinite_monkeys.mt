@@ -30,7 +30,7 @@ var row: i32 = 0
 var rows: i32 = 0
 var cols: i32 = 0
 var lines: ptr[Line]? = null
-var monkey_chars: Line = zero[Line]()
+var monkey_chars: Line = zero[Line]
 var monkeys: i32 = default_monkey_count
 
 
@@ -205,7 +205,7 @@ def monkey_play() -> u32:
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:

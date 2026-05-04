@@ -67,7 +67,7 @@ def main() -> i32:
     var character_model = rl.LoadModel(character_model_path)
     defer rl.UnloadModel(character_model)
 
-    var equip_models = zero[array[rl.Model, bone_sockets]]()
+    var equip_models = zero[array[rl.Model, bone_sockets]]
     equip_models[bone_socket_hat] = rl.LoadModel(hat_model_path)
     equip_models[bone_socket_hand_r] = rl.LoadModel(sword_model_path)
     equip_models[bone_socket_hand_l] = rl.LoadModel(shield_model_path)

@@ -32,7 +32,7 @@ def two_digits(buffer: array[char, 7], index: i32) -> i32:
 
 
 def clock_from_tm(time_info: ptr[c.tm]) -> Result[ClockTime, Error]:
-    var buffer = zero[array[char, 7]]()
+    var buffer = zero[array[char, 7]]
     let written = c.strftime(ptr_of(buffer[0]), u64<-clock_buffer_capacity, c"%H%M%S", time_info)
     if written != usize<-6:
         return err(Error.invalid_time)

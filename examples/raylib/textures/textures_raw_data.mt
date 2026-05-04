@@ -25,7 +25,7 @@ def main() -> i32:
     let fudesumi = rl.LoadTextureFromImage(fudesumi_raw)
     rl.UnloadImage(fudesumi_raw)
 
-    var checked = zero[rl.Texture2D]()
+    var checked = zero[rl.Texture2D]
     unsafe:
         let pixel_count = u32<-(checked_width * checked_height)
         let allocation_size = pixel_count * u32<-sizeof(rl.Color)

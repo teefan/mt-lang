@@ -16,7 +16,7 @@ const hands_move_duration: f32 = 0.5
 
 def blank_digit_angles() -> array[rl.Vector2, 24]:
     let zz = rl.Vector2(x = 135.0, y = 135.0)
-    var result = zero[array[rl.Vector2, 24]]()
+    var result = zero[array[rl.Vector2, 24]]
     for index in 0..cells_per_digit:
         result[index] = zz
     return result
@@ -126,7 +126,7 @@ def digit_angles_for(digit: i32) -> array[rl.Vector2, 24]:
 
 
 def digits_for(clock: time.ClockTime, hour_mode: i32) -> array[i32, 6]:
-    var result = zero[array[i32, 6]]()
+    var result = zero[array[i32, 6]]
     let hour_value = if hour_mode == hour_mode_24: clock.hour else: time.hour_12(clock)
     result[0] = hour_value / 10
     result[1] = hour_value % 10
@@ -174,9 +174,9 @@ def main() -> i32:
 
     var previous_second = -1
     var previous_hour_mode = -1
-    var current_angles = zero[array[rl.Vector2, 144]]()
-    var src_angles = zero[array[rl.Vector2, 144]]()
-    var dst_angles = zero[array[rl.Vector2, 144]]()
+    var current_angles = zero[array[rl.Vector2, 144]]
+    var src_angles = zero[array[rl.Vector2, 144]]
+    var dst_angles = zero[array[rl.Vector2, 144]]
     var hands_move_timer: f32 = 0.0
     var hour_mode = hour_mode_24
     var current_clock = time.ClockTime(hour = 0, minute = 0, second = 0)

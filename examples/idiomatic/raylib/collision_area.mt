@@ -24,7 +24,7 @@ def main() -> i32:
         width = 60.0,
         height = 60.0,
     )
-    var overlap = zero[rl.Rectangle]()
+    var overlap = zero[rl.Rectangle]
     var paused = false
 
     rl.set_target_fps(60)

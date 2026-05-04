@@ -460,7 +460,7 @@ Unsafe context is required for raw-pointer-level operations such as:
 - nullable form: `T?` for pointer-like/null-capable types
 - `null` and typed `null[...]` supported
 - typed null target must be pointer-like
-- in nullable pointer-like contexts, use `null` instead of `zero[ptr[T]]()`
+- in nullable pointer-like contexts, use `null` instead of `zero[ptr[T]]`
 
 ### 6.4 Generics
 
@@ -489,7 +489,7 @@ Special recognized callables:
 - `ptr_of(x)`
 - `T<-value`
 - `reinterpret[T](value)`
-- `zero[T]()`
+- `zero[T]`
 - `array[T, N](...)`
 - `span[T](data = ..., len = ...)`
 

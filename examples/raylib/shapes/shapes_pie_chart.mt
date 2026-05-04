@@ -30,7 +30,7 @@ def main() -> i32:
 
     var slice_count = 7
     var donut_inner_radius: f32 = 25.0
-    var values = zero[array[f32, 10]]()
+    var values = zero[array[f32, 10]]
     values[0] = 300.0
     values[1] = 100.0
     values[2] = 450.0
@@ -39,8 +39,8 @@ def main() -> i32:
     values[5] = 380.0
     values[6] = 750.0
 
-    var labels = zero[array[array[char, 32], 10]]()
-    var editing_label = zero[array[bool, 10]]()
+    var labels = zero[array[array[char, 32], 10]]
+    var editing_label = zero[array[bool, 10]]
     for index in 0..max_pie_slices:
         rl.TextCopy(ptr_of(labels[index][0]), rl.TextFormat(slice_name_format, index + 1))
 

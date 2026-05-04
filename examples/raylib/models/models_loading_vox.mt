@@ -46,7 +46,7 @@ def main() -> i32:
         projection = rl.CameraProjection.CAMERA_PERSPECTIVE,
     )
 
-    var models = zero[array[rl.Model, max_vox_files]]()
+    var models = zero[array[rl.Model, max_vox_files]]
     for model_index in 0..max_vox_files:
         let load_start_ms = rl.GetTime() * 1000.0
         models[model_index] = rl.LoadModel(vox_file_names[model_index])
@@ -83,7 +83,7 @@ def main() -> i32:
             for material_index in 0..models[model_index].materialCount:
                 models[model_index].materials[material_index].shader = shader
 
-    var light_sources = zero[array[lights.Light, max_lights]]()
+    var light_sources = zero[array[lights.Light, max_lights]]
     light_sources[0] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -20.0, y = 20.0, z = -20.0), rm.Vector3.zero(), rl.GRAY, shader)
     light_sources[1] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 20.0, y = -20.0, z = 20.0), rm.Vector3.zero(), rl.GRAY, shader)
     light_sources[2] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -20.0, y = 20.0, z = 20.0), rm.Vector3.zero(), rl.GRAY, shader)

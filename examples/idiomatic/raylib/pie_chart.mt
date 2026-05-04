@@ -28,7 +28,7 @@ def main() -> i32:
 
     var slice_count = 7
     var donut_inner_radius: f32 = 25.0
-    var values = zero[array[f32, 10]]()
+    var values = zero[array[f32, 10]]
     values[0] = 300.0
     values[1] = 100.0
     values[2] = 450.0
@@ -37,7 +37,7 @@ def main() -> i32:
     values[5] = 380.0
     values[6] = 750.0
 
-    var labels = zero[array[str_builder[32], 10]]()
+    var labels = zero[array[str_builder[32], 10]]
     labels[0].assign("Slice 01")
     labels[1].assign("Slice 02")
     labels[2].assign("Slice 03")
@@ -48,7 +48,7 @@ def main() -> i32:
     labels[7].assign("Slice 08")
     labels[8].assign("Slice 09")
     labels[9].assign("Slice 10")
-    var editing_label = zero[array[bool, 10]]()
+    var editing_label = zero[array[bool, 10]]
 
     var show_values = true
     var show_percentages = false

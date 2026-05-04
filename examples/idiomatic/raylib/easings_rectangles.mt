@@ -17,7 +17,7 @@ def main() -> i32:
     rl.init_window(screen_width, screen_height, "Milk Tea Easings Rectangles")
     defer rl.close_window()
 
-    var recs = zero[array[rl.Rectangle, 144]]()
+    var recs = zero[array[rl.Rectangle, 144]]
 
     for y in 0..max_recs_y:
         for x in 0..max_recs_x:

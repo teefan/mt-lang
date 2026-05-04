@@ -42,7 +42,7 @@ def main() -> i32:
     rl.InitAudioDevice()
     defer rl.CloseAudioDevice()
 
-    var colors = zero[array[rl.Color, 14]]()
+    var colors = zero[array[rl.Color, 14]]
     colors[0] = rl.ORANGE
     colors[1] = rl.RED
     colors[2] = rl.GOLD
@@ -58,7 +58,7 @@ def main() -> i32:
     colors[12] = rl.PURPLE
     colors[13] = rl.BEIGE
 
-    var circles = zero[array[CircleWave, 64]]()
+    var circles = zero[array[CircleWave, 64]]
     for index in 0..max_circles:
         random_circle(ref_of(circles), max_circles - 1 - index, ref_of(colors))
 

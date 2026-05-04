@@ -79,7 +79,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var text_input = zero[array[char, 96]]()
+    var text_input = zero[array[char, 96]]
     let text_input_ptr = ptr_of(text_input[0])
     rl.TextCopy(text_input_ptr, default_input_text)
 

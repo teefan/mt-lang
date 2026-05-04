@@ -23,7 +23,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var map = zero[Map]()
+    var map = zero[Map]
     map.tiles_x = 25
     map.tiles_y = 15
     var player_position = rl.Vector2(x = 180.0, y = 130.0)

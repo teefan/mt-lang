@@ -37,7 +37,7 @@ def main() -> i32:
     let cube_model = rl.LoadModelFromMesh(cube_mesh)
     defer rl.UnloadModel(cube_model)
 
-    var voxels = zero[array[bool, voxel_count]]()
+    var voxels = zero[array[bool, voxel_count]]
     for index in 0..voxel_count:
         voxels[index] = true
 

@@ -134,7 +134,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       module demo.array_char
 
       def main() -> i32:
-          var buffer = zero[array[char, 64]]()
+          var buffer = zero[array[char, 64]]
           buffer[0] = 65
           return 0
     MT

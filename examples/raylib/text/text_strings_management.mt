@@ -59,7 +59,7 @@ def random_color() -> rl.Color:
 
 
 def create_text_particle(text: cstr, x: f32, y: f32, color: rl.Color) -> TextParticle:
-    var tp = zero[TextParticle]()
+    var tp = zero[TextParticle]
     tp.rect = rl.Rectangle(x = x, y = y, width = 30.0, height = 30.0)
     tp.vel = rl.Vector2(x = f32<-rl.GetRandomValue(-200, 200), y = f32<-rl.GetRandomValue(-200, 200))
     tp.ppos = rl.Vector2(x = 0.0, y = 0.0)
@@ -205,7 +205,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var text_particles = zero[array[TextParticle, 100]]()
+    var text_particles = zero[array[TextParticle, 100]]
     var particle_count = 0
     var grabbed_particle_index = -1
     var press_offset = rl.Vector2(x = 0.0, y = 0.0)

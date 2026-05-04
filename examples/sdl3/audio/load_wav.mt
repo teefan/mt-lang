@@ -19,7 +19,7 @@ var wav_data_len: c.Uint32 = 0
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
@@ -40,7 +40,7 @@ def render_frame() -> void:
 
 
 def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
-    var spec = zero[c.SDL_AudioSpec]()
+    var spec = zero[c.SDL_AudioSpec]
 
     c.SDL_SetAppMetadata(c"Example Audio Load Wave", c"1.0", c"com.example.audio-load-wav")
 

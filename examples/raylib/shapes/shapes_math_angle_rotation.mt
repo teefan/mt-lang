@@ -31,7 +31,7 @@ def main() -> i32:
 
     let center = rl.Vector2(x = screen_width / 2.0, y = screen_height / 2.0)
 
-    var angles = zero[array[i32, 4]]()
+    var angles = zero[array[i32, 4]]
     angles[0] = 0
     angles[1] = 30
     angles[2] = 60

@@ -12,7 +12,7 @@ const window_title: cstr = c"raylib [shaders] example - depth writing"
 
 
 def load_render_texture_depth_tex(width: i32, height: i32) -> rl.RenderTexture2D:
-    var target = zero[rl.RenderTexture2D]()
+    var target = zero[rl.RenderTexture2D]
 
     target.id = rlgl.rlLoadFramebuffer()
     if target.id > 0:
@@ -73,7 +73,7 @@ def main() -> i32:
     let target = load_render_texture_depth_tex(screen_width, screen_height)
     defer unload_render_texture_depth_tex(target)
 
-    let shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(shader_path_format, glsl_version))
+    let shader = rl.LoadShader(zero[cstr?], rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
     rl.SetTargetFPS(60)

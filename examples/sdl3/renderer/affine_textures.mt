@@ -17,7 +17,7 @@ var texture_height: i32 = 0
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
@@ -53,7 +53,7 @@ def render_frame() -> void:
         cosine + ((1.0 - cosine) * k[2] * k[2]),
     )
     let bit_masks = array[i32, 3](1, 2, 4)
-    var corners = zero[array[f32, 16]]()
+    var corners = zero[array[f32, 16]]
 
     for index in 0..8:
         let x = if (index & 1) != 0: f32<-(-0.5) else: f32<-0.5

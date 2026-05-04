@@ -18,7 +18,7 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var collection = zero[array[TextureCollection, 20]]()
+    var collection = zero[array[TextureCollection, 20]]
     var current_collection_index = 0
 
     rl.SetTargetFPS(60)

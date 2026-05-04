@@ -22,7 +22,7 @@ const window_title: cstr = c"raylib [shaders] example - hybrid rendering"
 
 
 def load_render_texture_depth_tex(width: i32, height: i32) -> rl.RenderTexture2D:
-    var target = zero[rl.RenderTexture2D]()
+    var target = zero[rl.RenderTexture2D]
 
     target.id = rlgl.rlLoadFramebuffer()
     if target.id > 0:
@@ -72,9 +72,9 @@ def main() -> i32:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let raymarch_shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(raymarch_shader_path_format, glsl_version))
+    let raymarch_shader = rl.LoadShader(zero[cstr?], rl.TextFormat(raymarch_shader_path_format, glsl_version))
     defer rl.UnloadShader(raymarch_shader)
-    let raster_shader = rl.LoadShader(zero[cstr?](), rl.TextFormat(raster_shader_path_format, glsl_version))
+    let raster_shader = rl.LoadShader(zero[cstr?], rl.TextFormat(raster_shader_path_format, glsl_version))
     defer rl.UnloadShader(raster_shader)
 
     let march_locs = RayLocs(

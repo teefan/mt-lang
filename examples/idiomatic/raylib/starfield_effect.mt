@@ -15,8 +15,8 @@ def main() -> i32:
     let background = rl.color_lerp(rl.DARKBLUE, rl.BLACK, 0.69)
     var speed: f32 = 10.0 / 9.0
     var draw_lines = true
-    var stars = zero[array[rl.Vector3, 420]]()
-    var screen_positions = zero[array[rl.Vector2, 420]]()
+    var stars = zero[array[rl.Vector3, 420]]
+    var screen_positions = zero[array[rl.Vector2, 420]]
 
     for index in 0..star_count:
         stars[index].x = f32<-rl.get_random_value(-screen_width / 2, screen_width / 2)

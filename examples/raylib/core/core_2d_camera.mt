@@ -20,8 +20,8 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var player = rl.Rectangle(x = 400.0, y = 280.0, width = 40.0, height = 40.0)
-    var buildings = zero[array[rl.Rectangle, 100]]()
-    var build_colors = zero[array[rl.Color, 100]]()
+    var buildings = zero[array[rl.Rectangle, 100]]
+    var build_colors = zero[array[rl.Color, 100]]
     var spacing = 0
 
     for index in 0..building_count:

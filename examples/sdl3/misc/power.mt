@@ -15,7 +15,7 @@ var renderer: ptr[c.SDL_Renderer]
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
@@ -86,8 +86,8 @@ def render_frame() -> void:
 
     if percent >= 0:
         var pct_rect = frame
-        var remainstr = zero[array[char, 64]]()
-        var msgbuf = zero[array[char, 128]]()
+        var remainstr = zero[array[char, 64]]
+        var msgbuf = zero[array[char, 128]]
         var x: f32 = 0.0
         var y: f32 = 0.0
 

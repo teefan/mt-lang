@@ -12,11 +12,11 @@ const joystick_size: f32 = 30.0
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 var joystick: ptr[c.SDL_Joystick]? = null
-var colors: array[c.SDL_Color, 64] = zero[array[c.SDL_Color, 64]]()
+var colors: array[c.SDL_Color, 64] = zero[array[c.SDL_Color, 64]]
 
 
 def pump_events() -> bool:
-    var event = zero[c.SDL_Event]()
+    var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
@@ -88,7 +88,7 @@ def render_frame() -> void:
             let color_index = index % color_count
             let third_size = joystick_size / 3.0
             let hat = u32<-c.SDL_GetJoystickHat(joystick, index)
-            var cross = zero[array[c.SDL_FRect, 2]]()
+            var cross = zero[array[c.SDL_FRect, 2]]
 
             cross[0].x = x
             cross[0].y = y + third_size

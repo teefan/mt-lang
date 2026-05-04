@@ -17,7 +17,7 @@ def main() -> i32:
     rl.InitAudioDevice()
     defer rl.CloseAudioDevice()
 
-    var sound_array = zero[array[rl.Sound, 10]]()
+    var sound_array = zero[array[rl.Sound, 10]]
     sound_array[0] = rl.LoadSound(sound_path)
     defer rl.UnloadSound(sound_array[0])
 
