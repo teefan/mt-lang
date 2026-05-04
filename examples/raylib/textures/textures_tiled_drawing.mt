@@ -203,7 +203,7 @@ def main() -> i32:
 
     var x: f32 = 0.0
     var y: f32 = 0.0
-    for index in range(0, max_colors):
+    for index in 0..max_colors:
         color_rec[index].x = 2.0 + f32<-margin_size + x
         color_rec[index].y = 22.0 + 256.0 + f32<-margin_size + y
         color_rec[index].width = f32<-(color_size * 2)
@@ -226,7 +226,7 @@ def main() -> i32:
         if rl.IsMouseButtonPressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
             let mouse = rl.GetMousePosition()
 
-            for index in range(0, pattern_count):
+            for index in 0..pattern_count:
                 if rl.CheckCollisionPointRec(
                     mouse,
                     rl.Rectangle(
@@ -239,7 +239,7 @@ def main() -> i32:
                     active_pattern = index
                     break
 
-            for index in range(0, max_colors):
+            for index in 0..max_colors:
                 if rl.CheckCollisionPointRec(mouse, color_rec[index]):
                     active_col = index
                     break
@@ -296,7 +296,7 @@ def main() -> i32:
         )
 
         rl.DrawText(select_color_text, 2 + margin_size, 10 + 256 + margin_size, 10, rl.BLACK)
-        for index in range(0, max_colors):
+        for index in 0..max_colors:
             rl.DrawRectangleRec(color_rec[index], colors[index])
             if active_col == index:
                 rl.DrawRectangleLinesEx(color_rec[index], 3.0, rl.ColorAlpha(rl.WHITE, 0.5))

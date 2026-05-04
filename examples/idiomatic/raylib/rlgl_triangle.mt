@@ -42,7 +42,7 @@ def main() -> i32:
             lines_mode = not lines_mode
 
         let mouse_position = rl.get_mouse_position()
-        for index in range(0, 3):
+        for index in 0..3:
             if rl.check_collision_point_circle(mouse_position, triangle_positions[index], handle_radius) and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT):
                 triangle_index = index
                 break
@@ -84,7 +84,7 @@ def main() -> i32:
             emit_triangle_point(triangle_positions[2], rl.BLUE)
             rlgl.end()
 
-        for index in range(0, 3):
+        for index in 0..3:
             if rl.check_collision_point_circle(mouse_position, triangle_positions[index], handle_radius):
                 rl.draw_circle_v(triangle_positions[index], handle_radius, rl.fade(rl.DARKGRAY, 0.5))
 

@@ -55,7 +55,7 @@ def render_frame() -> void:
     let bit_masks = array[i32, 3](1, 2, 4)
     var corners = zero[array[f32, 16]]()
 
-    for index in range(0, 8):
+    for index in 0..8:
         let x = if (index & 1) != 0: f32<-(-0.5) else: f32<-0.5
         let y = if (index & 2) != 0: f32<-(-0.5) else: f32<-0.5
         let z = if (index & 4) != 0: f32<-(-0.5) else: f32<-0.5
@@ -65,7 +65,7 @@ def render_frame() -> void:
     c.SDL_SetRenderDrawColor(renderer, 0x42, 0x87, 0xF5, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
 
-    for index in range(1, 7):
+    for index in 1..7:
         let dir = if (index & 4) != 0: 7 - index else: index
         let odd = (
             (if (index & 1) != 0: 1 else: 0) +

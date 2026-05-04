@@ -48,7 +48,7 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         let rotation = rm.deg2rad * 45.0 * f32<-rl.GetTime()
 
-        for index in range(0, vertex_count):
+        for index in 0..vertex_count:
             var point = tesseract[index]
             let rotated_xw = rl.Vector2(x = point.x, y = point.w).rotate(rotation)
             point.x = rotated_xw.x
@@ -68,10 +68,10 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
         rl.BeginMode3D(camera)
 
-        for i in range(0, vertex_count):
+        for i in 0..vertex_count:
             rl.DrawSphere(transformed[i], math.fabsf(w_values[i] * 0.1), rl.RED)
 
-            for j in range(0, vertex_count):
+            for j in 0..vertex_count:
                 let v1 = tesseract[i]
                 let v2 = tesseract[j]
                 var diff = 0

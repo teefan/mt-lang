@@ -49,7 +49,7 @@ def main() -> i32:
     var focused_control_segment = -1
     var focused_control_side = control_start
 
-    for index in range(0, point_count - 1):
+    for index in 0..point_count - 1:
         control_points[index].start = rl.Vector2(x = points[index].x + 50.0, y = points[index].y)
         control_points[index].end = rl.Vector2(x = points[index + 1].x - 50.0, y = points[index + 1].y)
 
@@ -74,7 +74,7 @@ def main() -> i32:
         if selected_point == -1:
             if spline_type_active != spline_bezier or selected_control_segment == -1:
                 focused_point = -1
-                for index in range(0, point_count):
+                for index in 0..point_count:
                     if rl.CheckCollisionPointCircle(mouse_position, points[index], 8.0):
                         focused_point = index
                         break
@@ -91,7 +91,7 @@ def main() -> i32:
             if focused_point == -1:
                 if selected_control_segment == -1:
                     focused_control_segment = -1
-                    for index in range(0, point_count - 1):
+                    for index in 0..point_count - 1:
                         if rl.CheckCollisionPointCircle(mouse_position, control_points[index].start, 6.0):
                             focused_control_segment = index
                             focused_control_side = control_start
@@ -147,7 +147,7 @@ def main() -> i32:
         elif spline_type_active == spline_catmull_rom:
             rl.DrawSplineCatmullRom(ptr_of(ref_of(points[0])), point_count, spline_thickness, rl.RED)
         elif spline_type_active == spline_bezier:
-            for index in range(0, point_count - 1):
+            for index in 0..point_count - 1:
                 points_interleaved[3 * index] = points[index]
                 points_interleaved[3 * index + 1] = control_points[index].start
                 points_interleaved[3 * index + 2] = control_points[index].end
@@ -155,7 +155,7 @@ def main() -> i32:
             points_interleaved[3 * (point_count - 1)] = points[point_count - 1]
             rl.DrawSplineBezierCubic(ptr_of(ref_of(points_interleaved[0])), 3 * (point_count - 1) + 1, spline_thickness, rl.RED)
 
-            for index in range(0, point_count - 1):
+            for index in 0..point_count - 1:
                 rl.DrawCircleV(control_points[index].start, 6.0, rl.GOLD)
                 rl.DrawCircleV(control_points[index].end, 6.0, rl.GOLD)
 
@@ -170,7 +170,7 @@ def main() -> i32:
                 rl.DrawLineV(control_points[index].end, points[index + 1], rl.GRAY)
 
         if spline_helpers_active:
-            for index in range(0, point_count):
+            for index in 0..point_count:
                 var helper_radius: f32 = 8.0
                 var helper_color = rl.DARKBLUE
                 if focused_point == index:

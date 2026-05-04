@@ -111,7 +111,7 @@ def main() -> i32:
                 )
 
         if rl.IsMouseButtonPressed(rl.MouseButton.MOUSE_BUTTON_MIDDLE):
-            for index in range(0, ball_count):
+            for index in 0..ball_count:
                 if not balls_view[index].grabbed:
                     balls_view[index].speed = rl.Vector2(
                         x = f32<-rl.GetRandomValue(-2000, 2000),
@@ -120,7 +120,7 @@ def main() -> i32:
 
         gravity += rl.GetMouseWheelMove() * 5.0
 
-        for index in range(0, ball_count):
+        for index in 0..ball_count:
             if not balls_view[index].grabbed:
                 balls_view[index].position.x += balls_view[index].speed.x * delta
                 balls_view[index].position.y += balls_view[index].speed.y * delta
@@ -153,7 +153,7 @@ def main() -> i32:
 
         rl.ClearBackground(rl.RAYWHITE)
 
-        for index in range(0, ball_count):
+        for index in 0..ball_count:
             rl.DrawCircleV(balls_view[index].position, balls_view[index].radius, balls_view[index].color)
             rl.DrawCircleLinesV(balls_view[index].position, balls_view[index].radius, rl.BLACK)
 

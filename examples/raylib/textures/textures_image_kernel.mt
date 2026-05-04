@@ -11,11 +11,11 @@ const cat_path: cstr = c"../resources/cat.png"
 def normalize_kernel(kernel: ptr[f32], size: i32) -> void:
     unsafe:
         var sum: f32 = 0.0
-        for index in range(0, size):
+        for index in 0..size:
             sum += read(kernel + index)
 
         if sum != 0.0:
-            for index in range(0, size):
+            for index in 0..size:
                 read(kernel + index) /= sum
 
 
@@ -52,7 +52,7 @@ def main() -> i32:
     rl.ImageKernelConvolution(ptr_of(ref_of(cat_sobel)), ptr_of(ref_of(sobel_kernel[0])), 9)
 
     var cat_gaussian = rl.ImageCopy(image)
-    for index in range(0, 6):
+    for index in 0..6:
         let _ = index
         rl.ImageKernelConvolution(ptr_of(ref_of(cat_gaussian)), ptr_of(ref_of(gaussian_kernel[0])), 9)
 

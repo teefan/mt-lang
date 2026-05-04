@@ -46,7 +46,7 @@ def main() -> i32:
     process_text[8] = c"FLIP HORIZONTAL"
 
     var toggle_rects = zero[array[rl.Rectangle, num_processes]]()
-    for index in range(0, num_processes):
+    for index in 0..num_processes:
         toggle_rects[index] = rl.Rectangle(x = 40.0, y = f32<-(50 + 32 * index), width = 150.0, height = 30.0)
 
     var current_process = process_none
@@ -57,7 +57,7 @@ def main() -> i32:
 
     while not rl.WindowShouldClose():
         mouse_hover_rect = -1
-        for index in range(0, num_processes):
+        for index in 0..num_processes:
             if rl.CheckCollisionPointRec(rl.GetMousePosition(), toggle_rects[index]):
                 mouse_hover_rect = index
 
@@ -109,7 +109,7 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
         rl.DrawText(title_text, 40, 30, 10, rl.DARKGRAY)
 
-        for index in range(0, num_processes):
+        for index in 0..num_processes:
             let active = index == current_process or index == mouse_hover_rect
             let fill_color = if active: rl.SKYBLUE else: rl.LIGHTGRAY
             let stroke_color = if active: rl.BLUE else: rl.GRAY

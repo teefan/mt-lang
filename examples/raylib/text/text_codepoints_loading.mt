@@ -18,10 +18,10 @@ def codepoint_remove_duplicates(codepoints: ptr[i32], codepoint_count: i32, code
     var codepoints_no_dups_count = codepoint_count
 
     unsafe:
-        for index in range(0, codepoint_count):
+        for index in 0..codepoint_count:
             read(codepoints_no_dups + index) = read(codepoints + index)
 
-        for index in range(0, codepoints_no_dups_count):
+        for index in 0..codepoints_no_dups_count:
             var check = index + 1
             while check < codepoints_no_dups_count:
                 if read(codepoints_no_dups + index) == read(codepoints_no_dups + check):

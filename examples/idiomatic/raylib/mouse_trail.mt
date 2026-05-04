@@ -30,7 +30,7 @@ def main() -> i32:
 
         rl.clear_background(rl.BLACK)
 
-        for index in range(0, max_trail_length):
+        for index in 0..max_trail_length:
             if trail_positions[index].x != 0.0 or trail_positions[index].y != 0.0:
                 let ratio: f32 = f32<-(max_trail_length - index) / f32<-max_trail_length
                 rl.draw_circle_v(trail_positions[index], 15.0 * ratio, rl.fade(rl.SKYBLUE, ratio * 0.5 + 0.5))

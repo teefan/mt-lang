@@ -89,7 +89,7 @@ def main() -> i32:
     shaders[fx_blur] = rl.LoadShader(zero[cstr?](), rl.TextFormat(blur_shader_path, glsl_version))
 
     defer:
-        for shader_index in range(0, max_postpro_shaders):
+        for shader_index in 0..max_postpro_shaders:
             rl.UnloadShader(shaders[shader_index])
 
     var current_shader = fx_grayscale

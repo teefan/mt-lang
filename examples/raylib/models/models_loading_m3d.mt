@@ -42,7 +42,7 @@ def skeleton_bone_parent(skeleton: rl.ModelSkeleton, index: i32) -> i32:
 
 
 def draw_model_skeleton(skeleton: rl.ModelSkeleton, pose: rl.ModelAnimPose, scale: f32, color: rl.Color) -> void:
-    for index in range(0, skeleton.boneCount - 1):
+    for index in 0..skeleton.boneCount - 1:
         let translation = pose_translation(pose, index)
         rl.DrawCube(translation, scale * 0.05, scale * 0.05, scale * 0.05, color)
 

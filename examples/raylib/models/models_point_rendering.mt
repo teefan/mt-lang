@@ -34,7 +34,7 @@ def gen_mesh_points(num_points: i32) -> rl.Mesh:
         mesh.vertices = ptr[f32]<-rl.MemAlloc(vertex_count * u32<-sizeof(f32))
         mesh.colors = ptr[u8]<-rl.MemAlloc(color_count * u32<-sizeof(u8))
 
-        for index in range(0, num_points):
+        for index in 0..num_points:
             let theta = pi * random_unit()
             let phi = two_pi * random_unit()
             let radius = 10.0 * random_unit()
@@ -129,7 +129,7 @@ def main() -> i32:
         if use_draw_model_points:
             draw_model_points(model, position, 1.0, rl.WHITE)
         else:
-            for index in range(0, num_points):
+            for index in 0..num_points:
                 rl.DrawPoint3D(mesh_point(mesh, index), mesh_color(mesh, index))
 
         rl.DrawSphereWires(position, 1.0, 10, 10, rl.YELLOW)

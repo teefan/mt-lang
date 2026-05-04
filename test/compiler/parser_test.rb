@@ -350,7 +350,7 @@ class MilkTeaParserTest < Minitest::Test
       module demo.flow
 
       def main(count: i32) -> i32:
-          for i in range(0, count):
+          for i in 0..count:
               tick(i)
           return 0
     MT
@@ -361,10 +361,10 @@ class MilkTeaParserTest < Minitest::Test
 
     assert_instance_of MilkTea::AST::ForStmt, for_stmt
     assert_equal "i", for_stmt.name
-    assert_instance_of MilkTea::AST::Call, for_stmt.iterable
-    assert_instance_of MilkTea::AST::Identifier, for_stmt.iterable.callee
-    assert_equal "range", for_stmt.iterable.callee.name
-    assert_equal 2, for_stmt.iterable.arguments.length
+    assert_instance_of MilkTea::AST::RangeExpr, for_stmt.iterable
+    assert_instance_of MilkTea::AST::IntegerLiteral, for_stmt.iterable.start_expr
+    assert_instance_of MilkTea::AST::Identifier, for_stmt.iterable.end_expr
+    assert_equal "count", for_stmt.iterable.end_expr.name
     assert_instance_of MilkTea::AST::ExpressionStmt, for_stmt.body.first
   end
 

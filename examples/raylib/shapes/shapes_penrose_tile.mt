@@ -107,7 +107,7 @@ def build_production_step(ls: ref[PenroseLSystem]) -> void:
         let production_length = i32<-rl.TextLength(cstr<-ls.production)
         var new_length = 0
 
-        for index in range(0, production_length):
+        for index in 0..production_length:
             let step = ls.production[index]
             if step == char<-87:
                 append_text(new_production, ptr_of(ref_of(new_length)), ls.rule_w)
@@ -136,10 +136,10 @@ def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[Turtle
         if ls.steps > production_length:
             ls.steps = production_length
 
-        for index in range(0, ls.steps):
+        for index in 0..ls.steps:
             let step = ls.production[index]
             if step == char<-70:
-                for repeat_index in range(0, repeats):
+                for repeat_index in 0..repeats:
                     let start_pos_world = turtle.origin
                     let rad_angle = mt_math.deg2rad * turtle.angle
                     turtle.origin.x += ls.draw_length * math.cosf(rad_angle)
@@ -157,12 +157,12 @@ def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[Turtle
 
                 repeats = 1
             elif step == char<-43:
-                for repeat_index in range(0, repeats):
+                for repeat_index in 0..repeats:
                     turtle.angle += ls.theta
 
                 repeats = 1
             elif step == char<-45:
-                for repeat_index in range(0, repeats):
+                for repeat_index in 0..repeats:
                     turtle.angle -= ls.theta
 
                 repeats = 1
@@ -183,7 +183,7 @@ def main() -> i32:
 
     var generations = 0
     var ls = create_penrose_lsystem(draw_length_base * f32<-generations / f32<-max_generations)
-    for index in range(0, generations):
+    for index in 0..generations:
         build_production_step(ref_of(ls))
 
     var turtle_stack = zero[array[TurtleState, 50]]()
@@ -207,7 +207,7 @@ def main() -> i32:
             unsafe:
                 rl.MemFree(ptr[void]<-ls.production)
             ls = create_penrose_lsystem(draw_length_base * f32<-generations / f32<-max_generations)
-            for index in range(0, generations):
+            for index in 0..generations:
                 build_production_step(ref_of(ls))
 
         rl.BeginDrawing()

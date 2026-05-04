@@ -19,7 +19,7 @@ def main() -> i32:
     let flame_width = screen_width / scale_factor
 
     var palette = zero[array[rl.Color, 256]]()
-    for index in range(0, max_colors):
+    for index in 0..max_colors:
         let t = f32<-index / f32<-(max_colors - 1)
         let hue = t * t
         let saturation = t
@@ -41,21 +41,21 @@ def main() -> i32:
         rl.SetTargetFPS(60)
 
         while not rl.WindowShouldClose():
-            for x in range(2, flame_width):
+            for x in 2..flame_width:
                 var flame = i32<-read(flame_root_buffer + x)
                 flame += rl.GetRandomValue(0, 2)
                 read(flame_root_buffer + x) = if flame > 255: u8<-255 else: u8<-flame
 
-            for x in range(0, flame_width):
+            for x in 0..flame_width:
                 let index = x + (image_height - 1) * image_width
                 read(index_buffer + index) = read(flame_root_buffer + x)
 
-            for x in range(0, image_width):
+            for x in 0..image_width:
                 if read(index_buffer + x) != 0:
                     read(index_buffer + x) = 0
 
-            for y in range(1, image_height):
-                for x in range(0, image_width):
+            for y in 1..image_height:
+                for x in 0..image_width:
                     let index = x + y * image_width
                     let color_index = i32<-read(index_buffer + index)
 
@@ -70,8 +70,8 @@ def main() -> i32:
                             let next_color_index = color_index - (if decay < color_index: decay else: color_index)
                             read(index_buffer + index_above) = u8<-next_color_index
 
-            for y in range(1, image_height):
-                for x in range(0, image_width):
+            for y in 1..image_height:
+                for x in 0..image_width:
                     let index = x + y * image_width
                     let color_index = i32<-read(index_buffer + index)
                     rl.ImageDrawPixel(ptr_of(ref_of(screen_image)), x, y, palette[color_index])

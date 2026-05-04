@@ -24,7 +24,7 @@ def main() -> i32:
 
         rl.clear_background(rl.RAYWHITE)
 
-        for index in range(0, touch_count):
+        for index in 0..touch_count:
             let touch_position = rl.get_touch_position(index)
             if touch_position.x > 0.0 and touch_position.y > 0.0:
                 rl.draw_circle_v(touch_position, touch_radius, rl.ORANGE)

@@ -64,7 +64,7 @@ def main() -> i32:
     var color_rects = zero[array[rl.Rectangle, 21]]()
     var color_state = zero[array[i32, 21]]()
 
-    for index in range(0, max_colors_count):
+    for index in 0..max_colors_count:
         let column = index % grid_columns
         let row = index / grid_columns
         let column_f: f32 = column
@@ -82,7 +82,7 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         let mouse_point = rl.GetMousePosition()
 
-        for index in range(0, max_colors_count):
+        for index in 0..max_colors_count:
             if rl.CheckCollisionPointRec(mouse_point, color_rects[index]):
                 color_state[index] = 1
             else:
@@ -96,7 +96,7 @@ def main() -> i32:
         rl.DrawText(title_text, 28, 42, 20, rl.BLACK)
         rl.DrawText(help_text, rl.GetScreenWidth() - 180, rl.GetScreenHeight() - 40, 10, rl.GRAY)
 
-        for index in range(0, max_colors_count):
+        for index in 0..max_colors_count:
             rl.DrawRectangleRec(color_rects[index], rl.Fade(colors[index], if color_state[index] != 0: 0.6 else: 1.0))
 
             if rl.IsKeyDown(rl.KeyboardKey.KEY_SPACE) or color_state[index] != 0:

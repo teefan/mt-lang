@@ -52,7 +52,7 @@ def main() -> i32:
 
         if not paused:
             let frame_time = rl.get_frame_time()
-            for index in range(0, bunnies_count):
+            for index in 0..bunnies_count:
                 bunnies_view[index].position.x += bunnies_view[index].speed.x * frame_time
                 bunnies_view[index].position.y += bunnies_view[index].speed.y * frame_time
 
@@ -66,7 +66,7 @@ def main() -> i32:
 
         rl.clear_background(rl.RAYWHITE)
 
-        for index in range(0, bunnies_count):
+        for index in 0..bunnies_count:
             rl.draw_texture(tex_bunny, i32<-bunnies_view[index].position.x, i32<-bunnies_view[index].position.y, bunnies_view[index].color)
 
         rl.draw_rectangle(0, 0, screen_width, 40, rl.BLACK)

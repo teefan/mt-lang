@@ -139,7 +139,7 @@ def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: i32, fo
     rlgl.rlActiveTextureSlot(0)
     rlgl.rlEnableTexture(panorama.id)
 
-    for index in range(0, 6):
+    for index in 0..6:
         rlgl.rlSetUniformMatrix(shader_location(shader, i32<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_VIEW), rlgl_matrix(fbo_views[index]))
         rlgl.rlFramebufferAttach(
             fbo,

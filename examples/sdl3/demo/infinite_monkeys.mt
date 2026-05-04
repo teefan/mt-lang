@@ -37,7 +37,7 @@ var monkeys: i32 = default_monkey_count
 def free_lines() -> void:
     let line_storage = lines
     if line_storage != null:
-        for index in range(0, rows):
+        for index in 0..rows:
             unsafe:
                 let line = line_storage + usize<-index
                 heap.release(line.text)
@@ -72,7 +72,7 @@ def on_window_size_changed() -> void:
     let line_storage = heap.must_alloc_zeroed[Line](usize<-rows)
     lines = line_storage
 
-    for index in range(0, rows):
+    for index in 0..rows:
         unsafe:
             let line = line_storage + usize<-index
             line.text = heap.must_alloc_zeroed[u32](usize<-cols)
@@ -83,7 +83,7 @@ def on_window_size_changed() -> void:
 
     let monkey_text = monkey_chars.text
     if monkey_text != null:
-        for index in range(0, cols):
+        for index in 0..cols:
             unsafe:
                 read(monkey_text + usize<-index) = u32<-32
 
@@ -120,7 +120,7 @@ def display_line(x: f32, y: f32, line: ptr[Line]) -> void:
     unsafe:
         var spot = utf8
 
-        for index in range(0, line_length):
+        for index in 0..line_length:
             spot = c.SDL_UCS4ToUTF8(read(line_text + usize<-index), spot)
 
         read(spot) = char<-0
@@ -220,7 +220,7 @@ def pump_events() -> bool:
 def render_frame() -> void:
     var next_char: u32 = 0
 
-    for monkey in range(0, monkeys):
+    for monkey in 0..monkeys:
         if next_char == 0:
             next_char = get_next_char()
             if next_char == 0:
@@ -244,7 +244,7 @@ def render_frame() -> void:
         if row_offset < 0:
             row_offset = 0
 
-        for index in range(0, rows):
+        for index in 0..rows:
             unsafe:
                 let line = line_storage + usize<-((row_offset + index) % rows)
                 display_line(x, y, line)

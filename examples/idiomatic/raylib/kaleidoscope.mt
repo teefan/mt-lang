@@ -52,7 +52,7 @@ def main() -> i32:
                         var line_start = base_line_start
                         var line_end = base_line_end
 
-                        for _ in range(0, symmetry):
+                        for _ in 0..symmetry:
                             if total_line_counter >= max_draw_lines - 1:
                                 break
 
@@ -81,7 +81,7 @@ def main() -> i32:
         rl.clear_background(rl.RAYWHITE)
         rl.begin_mode_2d(camera)
 
-        for _ in range(0, symmetry):
+        for _ in 0..symmetry:
             var index = 0
             while index < current_line_counter:
                 rl.draw_line_ex(lines[index].start, lines[index].finish, thickness, rl.BLACK)

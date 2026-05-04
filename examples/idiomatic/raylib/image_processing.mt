@@ -74,7 +74,7 @@ def main() -> i32:
         rl.unload_image(image_origin)
 
     var toggle_rects = zero[array[rl.Rectangle, 9]]()
-    for index in range(0, num_processes):
+    for index in 0..num_processes:
         toggle_rects[index] = rl.Rectangle(x = 40.0, y = f32<-(50 + 32 * index), width = 150.0, height = 30.0)
 
     var current_process = process_none
@@ -85,7 +85,7 @@ def main() -> i32:
 
     while not rl.window_should_close():
         mouse_hover_rect = -1
-        for index in range(0, num_processes):
+        for index in 0..num_processes:
             if rl.check_collision_point_rec(rl.get_mouse_position(), toggle_rects[index]):
                 mouse_hover_rect = index
 
@@ -122,7 +122,7 @@ def main() -> i32:
         rl.clear_background(rl.RAYWHITE)
         rl.draw_text("IMAGE PROCESSING:", 40, 30, 10, rl.DARKGRAY)
 
-        for index in range(0, num_processes):
+        for index in 0..num_processes:
             let active = index == current_process or index == mouse_hover_rect
             let fill_color = if active: rl.SKYBLUE else: rl.LIGHTGRAY
             let stroke_color = if active: rl.BLUE else: rl.GRAY

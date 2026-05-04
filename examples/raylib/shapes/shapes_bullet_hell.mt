@@ -71,7 +71,7 @@ def main() -> i32:
             spawn_cooldown_timer = spawn_cooldown
 
             let degrees_per_row = 360.0 / f32<-bullet_rows
-            for row in range(0, bullet_rows):
+            for row in 0..bullet_rows:
                 if bullet_count < max_bullets:
                     bullets_view[bullet_count].position = rl.Vector2(x = screen_width / 2.0, y = screen_height / 2.0)
                     bullets_view[bullet_count].disabled = false
@@ -88,7 +88,7 @@ def main() -> i32:
 
             base_direction += f32<-angle_increment
 
-        for index in range(0, bullet_count):
+        for index in 0..bullet_count:
             if not bullets_view[index].disabled:
                 bullets_view[index].position.x += bullets_view[index].acceleration.x
                 bullets_view[index].position.y += bullets_view[index].acceleration.y
@@ -144,7 +144,7 @@ def main() -> i32:
         rl.DrawCircleLines(screen_width / 2, screen_height / 2, 30.0, rl.BLACK)
 
         if draw_in_performance_mode:
-            for index in range(0, bullet_count):
+            for index in 0..bullet_count:
                 if not bullets_view[index].disabled:
                     rl.DrawTexture(
                         bullet_texture.texture,
@@ -153,7 +153,7 @@ def main() -> i32:
                         bullets_view[index].color,
                     )
         else:
-            for index in range(0, bullet_count):
+            for index in 0..bullet_count:
                 if not bullets_view[index].disabled:
                     rl.DrawCircleV(bullets_view[index].position, f32<-bullet_radius, bullets_view[index].color)
                     rl.DrawCircleLinesV(bullets_view[index].position, f32<-bullet_radius, rl.BLACK)

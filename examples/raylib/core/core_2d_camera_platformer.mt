@@ -43,7 +43,7 @@ methods Player:
             this.can_jump = false
 
         var hit_obstacle = false
-        for index in range(0, env_item_count):
+        for index in 0..env_item_count:
             let item = env_items[index]
             if item.blocking:
                 if item.rect.x <= this.position.x and item.rect.x + item.rect.width >= this.position.x and item.rect.y >= this.position.y and item.rect.y <= this.position.y + this.speed * delta:
@@ -81,7 +81,7 @@ def update_camera_center_inside_map(camera: ref[rl.Camera2D], player: Player, en
     var max_x: f32 = -1000.0
     var max_y: f32 = -1000.0
 
-    for index in range(0, env_item_count):
+    for index in 0..env_item_count:
         let item = env_items[index]
         if item.rect.x < min_x:
             min_x = item.rect.x
@@ -241,7 +241,7 @@ def main() -> i32:
         rl.BeginMode2D(camera)
         defer rl.EndMode2D()
 
-        for index in range(0, env_item_count):
+        for index in 0..env_item_count:
             let item = env_items[index]
             rl.DrawRectangleRec(item.rect, item.color)
 

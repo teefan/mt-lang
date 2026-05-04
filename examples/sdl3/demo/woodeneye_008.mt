@@ -75,7 +75,7 @@ def clamp_i32(value: i32, min_value: i32, max_value: i32) -> i32:
 
 
 def whose_mouse(mouse: c.SDL_MouseID) -> i32:
-    for index in range(0, player_count):
+    for index in 0..player_count:
         if players[index].mouse == mouse:
             return index
 
@@ -83,7 +83,7 @@ def whose_mouse(mouse: c.SDL_MouseID) -> i32:
 
 
 def whose_keyboard(keyboard: c.SDL_KeyboardID) -> i32:
-    for index in range(0, player_count):
+    for index in 0..player_count:
         if players[index].keyboard == keyboard:
             return index
 
@@ -141,22 +141,22 @@ def initialize_player(index: i32) -> void:
 
 
 def init_players() -> void:
-    for index in range(0, max_player_count):
+    for index in 0..max_player_count:
         initialize_player(index)
 
 
 def init_edges() -> void:
     let bound = f32<-map_box_scale
 
-    for index in range(0, 12):
-        for axis in range(0, 3):
+    for index in 0..12:
+        for axis in 0..3:
             edges[index][axis] = if (box_edge_map[index * 2] & (1 << axis)) != 0: bound else: -bound
             edges[index][axis + 3] = if (box_edge_map[index * 2 + 1] & (1 << axis)) != 0: bound else: -bound
 
-    for index in range(0, map_box_scale):
+    for index in 0..map_box_scale:
         let distance = f32<-(index * 2) - bound
 
-        for endpoint in range(0, 2):
+        for endpoint in 0..2:
             edges[index + 12][endpoint * 3] = if endpoint != 0: bound else: -bound
             edges[index + 12][endpoint * 3 + 1] = -bound
             edges[index + 12][endpoint * 3 + 2] = distance
@@ -179,13 +179,13 @@ def shoot(shooter: i32) -> void:
     let vy = sin_pitch
     let vz = -cos_yaw * cos_pitch
 
-    for index in range(0, player_count):
+    for index in 0..player_count:
         if index == shooter:
             continue
 
         var hit = 0
 
-        for circle_index in range(0, 2):
+        for circle_index in 0..2:
             let radius = f64<-players[index].radius
             let height = f64<-players[index].height
             let dx = players[index].pos[0] - x0
@@ -206,7 +206,7 @@ def shoot(shooter: i32) -> void:
 
 
 def update_players(dt_ns: c.Uint64) -> void:
-    for index in range(0, player_count):
+    for index in 0..player_count:
         let time = f64<-dt_ns * 1.0e-9
         let drag = c.SDL_exp(-time * 6.0)
         let diff = 1.0 - drag
@@ -249,7 +249,7 @@ def update_players(dt_ns: c.Uint64) -> void:
 def draw_circle(radius: f32, x: f32, y: f32) -> void:
     var points = zero[array[c.SDL_FPoint, 33]]()
 
-    for index in range(0, circle_draw_sides_len):
+    for index in 0..circle_draw_sides_len:
         let angle = (2.0 * c.SDL_PI_F * f32<-index) / f32<-circle_draw_sides
         points[index].x = x + (radius * c.SDL_cosf(angle))
         points[index].y = y + (radius * c.SDL_sinf(angle))
@@ -306,7 +306,7 @@ def render_frame() -> void:
         let size_hor = f32<-output_width / f32<-part_hor
         let size_ver = f32<-output_height / f32<-part_ver
 
-        for player_index in range(0, player_count):
+        for player_index in 0..player_count:
             let hor_origin = (f32<-(player_index % part_hor) + 0.5) * size_hor
             let ver_origin = (f32<-(player_index / part_hor) + 0.5) * size_ver
             let cam_origin = f32<-(0.5 * c.SDL_sqrt(f64<-((size_hor * size_hor) + (size_ver * size_ver))))
@@ -331,7 +331,7 @@ def render_frame() -> void:
             c.SDL_SetRenderClipRect(renderer, ptr_of(ref_of(clip_rect)))
             c.SDL_SetRenderDrawColor(renderer, 64, 64, 64, c.SDL_ALPHA_OPAQUE)
 
-            for edge_index in range(0, map_box_edges_len):
+            for edge_index in 0..map_box_edges_len:
                 let line = edges[edge_index]
                 let line_ax = f64<-line[0]
                 let line_ay = f64<-line[1]
@@ -348,13 +348,13 @@ def render_frame() -> void:
 
                 draw_clipped_segment(f32<-ax, f32<-ay, f32<-az, f32<-bx, f32<-by, f32<-bz, hor_origin, ver_origin, cam_origin, 1.0)
 
-            for target_index in range(0, player_count):
+            for target_index in 0..player_count:
                 if player_index == target_index:
                     continue
 
                 c.SDL_SetRenderDrawColor(renderer, players[target_index].color[0], players[target_index].color[1], players[target_index].color[2], c.SDL_ALPHA_OPAQUE)
 
-                for circle_index in range(0, 2):
+                for circle_index in 0..2:
                     let rx = players[target_index].pos[0] - px
                     let ry = players[target_index].pos[1] - py + (f64<-(players[target_index].radius - players[target_index].height) * f64<-circle_index)
                     let rz = players[target_index].pos[2] - pz
@@ -413,13 +413,13 @@ def pump_events() -> bool:
             return false
 
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_MOUSE_REMOVED:
-            for index in range(0, player_count):
+            for index in 0..player_count:
                 if players[index].mouse == event.mdevice.which:
                     players[index].mouse = 0
             continue
 
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_KEYBOARD_REMOVED:
-            for index in range(0, player_count):
+            for index in 0..player_count:
                 if players[index].keyboard == event.kdevice.which:
                     players[index].keyboard = 0
             continue
@@ -433,7 +433,7 @@ def pump_events() -> bool:
                 players[player_index].pitch = clamp_i32(players[player_index].pitch - (i32<-event.motion.yrel * mouse_turn_step), pitch_min, pitch_max)
             else:
                 if mouse_id != 0:
-                    for index in range(0, max_player_count):
+                    for index in 0..max_player_count:
                         if players[index].mouse == 0:
                             players[index].mouse = mouse_id
                             if player_count < index + 1:
@@ -454,7 +454,7 @@ def pump_events() -> bool:
                 set_wasd_bit(player_index, event.key.scancode, true)
             else:
                 if event.key.which != 0:
-                    for index in range(0, max_player_count):
+                    for index in 0..max_player_count:
                         if players[index].keyboard == 0:
                             players[index].keyboard = event.key.which
                             if player_count < index + 1:

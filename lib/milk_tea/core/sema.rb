@@ -1587,16 +1587,14 @@ module MilkTea
 
       def check_for_stmt(statement, scopes:, return_type:, allow_return:)
         validate_consuming_foreign_expression!(statement.iterable, scopes:, root_allowed: false)
-        loop_type = if range_call?(statement.iterable)
-                      check_range_loop(statement.iterable, scopes:)
-                    elsif range_expr?(statement.iterable)
+        loop_type = if range_expr?(statement.iterable)
                       check_range_expr_loop(statement.iterable, scopes:)
                     else
                       iterable_type = infer_expression(statement.iterable, scopes:)
                       collection_loop_type(iterable_type)
                     end
 
-        raise_sema_error("for loop expects range(start, stop), start..stop, array[T, N], or span[T]") unless loop_type
+        raise_sema_error("for loop expects start..stop, array[T, N], or span[T]") unless loop_type
 
         with_nested_scope(scopes) do |loop_scopes|
           current_actual_scope(loop_scopes)[statement.name] = value_binding(
@@ -1627,33 +1625,6 @@ module MilkTea
         return if string_like_type?(message_type)
 
         raise_sema_error("static_assert message must be str or cstr, got #{message_type}")
-      end
-
-      def check_range_loop(expression, scopes:)
-        raise_sema_error("range does not support named arguments") if expression.arguments.any?(&:name)
-        raise_sema_error("range expects 2 arguments, got #{expression.arguments.length}") unless expression.arguments.length == 2
-
-        start_expr = expression.arguments[0].value
-        stop_expr = expression.arguments[1].value
-
-        start_type = infer_expression(start_expr, scopes:)
-        stop_type = infer_expression(stop_expr, scopes:)
-
-        unless integer_type?(start_type) && integer_type?(stop_type)
-          raise_sema_error("range bounds must be integer types, got #{start_type} and #{stop_type}")
-        end
-
-        if start_type != stop_type
-          if start_expr.is_a?(AST::IntegerLiteral)
-            start_type = infer_expression(start_expr, scopes:, expected_type: stop_type)
-          elsif stop_expr.is_a?(AST::IntegerLiteral)
-            stop_type = infer_expression(stop_expr, scopes:, expected_type: start_type)
-          end
-        end
-
-        raise_sema_error("range bounds must use matching integer types, got #{start_type} and #{stop_type}") unless start_type == stop_type
-
-        start_type
       end
 
       def check_range_expr_loop(expression, scopes:)
@@ -4015,16 +3986,8 @@ module MilkTea
         type.is_a?(Types::Primitive) && type.integer?
       end
 
-      def range_call?(expression)
-        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "range"
-      end
-
       def range_expr?(expression)
         expression.is_a?(AST::RangeExpr)
-      end
-
-      def range_iterable?(expression)
-        range_call?(expression) || range_expr?(expression)
       end
 
       def collection_loop_type(type)

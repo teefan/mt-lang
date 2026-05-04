@@ -183,7 +183,7 @@ def draw_generic_gamepad(gamepad: i32, left_stick_x: f32, left_stick_y: f32, rig
 
 def draw_axis_values(gamepad: i32, axis_count: i32) -> void:
     rl.DrawText(rl.TextFormat(c"DETECTED AXIS [%i]:", axis_count), 10, 50, 10, rl.MAROON)
-    for axis_index in range(0, axis_count):
+    for axis_index in 0..axis_count:
         rl.DrawText(rl.TextFormat(c"AXIS %i: %.02f", axis_index, rl.GetGamepadAxisMovement(gamepad, axis_index)), 20, 70 + 20 * axis_index, 10, rl.DARKGRAY)
     return
 

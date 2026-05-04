@@ -76,7 +76,7 @@ def main() -> i32:
         rl.DrawText(rl.TextFormat(frame_delay_format, frame_delay), 620, 305, 10, rl.DARKGRAY)
         rl.DrawText(speed_help_text, 290, 350, 10, rl.DARKGRAY)
 
-        for index in range(0, max_frame_delay):
+        for index in 0..max_frame_delay:
             if index < frame_delay:
                 rl.DrawRectangle(190 + 21 * index, 300, 20, 20, rl.RED)
             rl.DrawRectangleLines(190 + 21 * index, 300, 20, 20, rl.MAROON)

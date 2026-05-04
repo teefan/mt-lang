@@ -129,7 +129,7 @@ def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation,
     let pose1 = model_animation_pose(anim1, frame1)
     let clamped_blend = rm.clamp(blend, 0.0, 1.0)
 
-    for bone_index in range(0, current_model.skeleton.boneCount):
+    for bone_index in 0..current_model.skeleton.boneCount:
         var bone_blend_factor = clamped_blend
         if upper_body_blend:
             if is_upper_body_bone(skeleton_bone_name(current_model.skeleton, bone_index)):
@@ -157,7 +157,7 @@ def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation,
 
         set_model_bone_matrix(current_model, bone_index, bind_matrix.invert().multiply(blended_matrix))
 
-    for mesh_index in range(0, current_model.meshCount):
+    for mesh_index in 0..current_model.meshCount:
         let mesh = model_mesh(current_model, mesh_index)
         let vertex_values_count = mesh.vertexCount * 3
 
@@ -172,7 +172,7 @@ def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation,
             write_f32(mesh.animNormals, v_counter + 1, 0.0)
             write_f32(mesh.animNormals, v_counter + 2, 0.0)
 
-            for _ in range(0, 4):
+            for _ in 0..4:
                 let bone_weight = read_f32(mesh.boneWeights, bone_counter)
                 let bone_index = i32<-read_u8(mesh.boneIndices, bone_counter)
 

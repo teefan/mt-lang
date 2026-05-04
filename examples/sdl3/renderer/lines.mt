@@ -46,7 +46,7 @@ def render_frame() -> void:
     c.SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255)
     c.SDL_RenderLines(renderer, ptr_of(ref_of(line_points[0])), 9)
 
-    for angle in range(0, 360):
+    for angle in 0..360:
         let size = 30.0
         let x = 320.0
         let y = 95.0 - (size / 2.0)

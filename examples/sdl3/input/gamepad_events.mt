@@ -260,7 +260,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     colors[0].b = 255
     colors[0].a = 255
 
-    for index in range(1, color_count):
+    for index in 1..color_count:
         colors[index].r = c.Uint8<-c.SDL_rand(255)
         colors[index].g = c.Uint8<-c.SDL_rand(255)
         colors[index].b = c.Uint8<-c.SDL_rand(255)

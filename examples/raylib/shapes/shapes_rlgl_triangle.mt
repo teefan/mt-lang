@@ -39,7 +39,7 @@ def main() -> i32:
             lines_mode = not lines_mode
 
         let mouse_position = rl.GetMousePosition()
-        for index in range(0, 3):
+        for index in 0..3:
             if rl.CheckCollisionPointCircle(mouse_position, triangle_positions[index], handle_radius) and rl.IsMouseButtonDown(rl.MouseButton.MOUSE_BUTTON_LEFT):
                 triangle_index = index
                 break
@@ -95,7 +95,7 @@ def main() -> i32:
             rlgl.rlVertex2f(triangle_positions[2].x, triangle_positions[2].y)
             rlgl.rlEnd()
 
-        for index in range(0, 3):
+        for index in 0..3:
             if rl.CheckCollisionPointCircle(mouse_position, triangle_positions[index], handle_radius):
                 rl.DrawCircleV(triangle_positions[index], handle_radius, rl.Fade(rl.DARKGRAY, 0.5))
 

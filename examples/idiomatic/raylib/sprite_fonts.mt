@@ -37,7 +37,7 @@ def main() -> i32:
     var fonts = zero[array[rl.Font, max_fonts]]()
     var positions = zero[array[rl.Vector2, max_fonts]]()
 
-    for index in range(0, max_fonts):
+    for index in 0..max_fonts:
         fonts[index] = rl.load_font(font_paths[index])
         let size = rl.measure_text_ex(fonts[index], messages[index], f32<-fonts[index].baseSize * 2.0, f32<-spacings[index])
         positions[index].x = f32<-screen_width / 2.0 - size.x / 2.0
@@ -48,7 +48,7 @@ def main() -> i32:
     positions[7].y -= 8.0
 
     defer:
-        for index in range(0, max_fonts):
+        for index in 0..max_fonts:
             rl.unload_font(fonts[index])
 
     rl.set_target_fps(60)
@@ -61,7 +61,7 @@ def main() -> i32:
         rl.draw_text("free sprite fonts included with raylib", 220, 20, 20, rl.DARKGRAY)
         rl.draw_line(220, 50, 600, 50, rl.DARKGRAY)
 
-        for index in range(0, max_fonts):
+        for index in 0..max_fonts:
             rl.draw_text_ex(fonts[index], messages[index], positions[index], f32<-fonts[index].baseSize * 2.0, f32<-spacings[index], colors[index])
 
     return 0

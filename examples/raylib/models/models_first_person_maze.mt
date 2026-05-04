@@ -65,9 +65,9 @@ def main() -> i32:
         elif player_cell_y >= cubicmap.height:
             player_cell_y = cubicmap.height - 1
 
-        for y in range(player_cell_y - 1, player_cell_y + 2):
+        for y in player_cell_y - 1..player_cell_y + 2:
             if y >= 0 and y < cubicmap.height:
-                for x in range(player_cell_x - 1, player_cell_x + 2):
+                for x in player_cell_x - 1..player_cell_x + 2:
                     if x >= 0 and x < cubicmap.width:
                         let cell = rl.Rectangle(
                             x = map_position.x - 0.5 + f32<-x,

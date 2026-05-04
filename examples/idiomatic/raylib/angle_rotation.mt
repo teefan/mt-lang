@@ -46,7 +46,7 @@ def main() -> i32:
         rl.clear_background(rl.WHITE)
         rl.draw_text("Fixed angles + rotating line", 10, 10, 20, rl.LIGHTGRAY)
 
-        for index in range(0, angle_count):
+        for index in 0..angle_count:
             let radians = f32<-angles[index] * math.deg2rad
             let end_point = rl.Vector2(
                 x = center.x + math.cos(radians) * line_length,

@@ -37,7 +37,7 @@ def process_audio(buffer: ptr[void], frames: u32) -> void:
     var average: f32 = 0.0
 
     unsafe:
-        for frame in range(0, frame_count):
+        for frame in 0..frame_count:
             let left_index = frame * 2
             let right_index = left_index + 1
             let left_sample = signed_power(read(samples + left_index))
@@ -49,7 +49,7 @@ def process_audio(buffer: ptr[void], frames: u32) -> void:
             average += libm.fabsf(left_sample) / frames_f
             average += libm.fabsf(right_sample) / frames_f
 
-    for index in range(0, average_volume_size - 1):
+    for index in 0..average_volume_size - 1:
         average_volume[index] = average_volume[index + 1]
 
     average_volume[average_volume_size - 1] = average
@@ -98,7 +98,7 @@ def main() -> i32:
         rl.DrawText(rl.TextFormat(exponent_format, exponent), 215, 180, 20, rl.LIGHTGRAY)
 
         rl.DrawRectangle(199, 199, 402, 34, rl.LIGHTGRAY)
-        for index in range(0, average_volume_size):
+        for index in 0..average_volume_size:
             rl.DrawLine(201 + index, 232 - i32<-(average_volume[index] * 32.0), 201 + index, 232, rl.MAROON)
         rl.DrawRectangleLines(199, 199, 402, 34, rl.GRAY)
 

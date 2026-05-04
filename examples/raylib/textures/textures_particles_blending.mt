@@ -30,7 +30,7 @@ def main() -> i32:
 
     var mouse_tail = zero[array[Particle, 200]]()
 
-    for index in range(0, max_particles):
+    for index in 0..max_particles:
         mouse_tail[index].position = rl.Vector2(x = 0.0, y = 0.0)
         mouse_tail[index].color = rl.Color(
             r = u8<-rl.GetRandomValue(0, 255),
@@ -52,14 +52,14 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        for index in range(0, max_particles):
+        for index in 0..max_particles:
             if not mouse_tail[index].active:
                 mouse_tail[index].active = true
                 mouse_tail[index].alpha = 1.0
                 mouse_tail[index].position = rl.GetMousePosition()
                 break
 
-        for index in range(0, max_particles):
+        for index in 0..max_particles:
             if mouse_tail[index].active:
                 mouse_tail[index].position.y += gravity / 2.0
                 mouse_tail[index].alpha -= 0.005
@@ -79,7 +79,7 @@ def main() -> i32:
         rl.ClearBackground(rl.DARKGRAY)
 
         rl.BeginBlendMode(blending)
-        for index in range(0, max_particles):
+        for index in 0..max_particles:
             if mouse_tail[index].active:
                 let particle = mouse_tail[index]
                 let width = f32<-smoke.width * particle.size

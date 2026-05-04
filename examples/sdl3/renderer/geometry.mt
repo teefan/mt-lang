@@ -84,7 +84,7 @@ def render_frame() -> void:
 
     c.SDL_RenderGeometry(renderer, texture, ptr_of(ref_of(vertices[0])), 3, null, 0)
 
-    for index in range(0, 3):
+    for index in 0..3:
         vertices[index].position.x += 450.0
 
     vertices[3].position.x = 600.0

@@ -84,7 +84,7 @@ def main() -> i32:
     var anim_pause = false
 
     var anim_names = zero[array[cstr, max_anim_names]]()
-    for index in range(0, anim_count):
+    for index in 0..anim_count:
         anim_names[index] = model_animation_name(anims, index)
 
     var dropdown_edit_mode0 = false
@@ -239,7 +239,7 @@ def main() -> i32:
             0.0,
             f32<-anim0.keyframeCount,
         )
-        for index in range(0, anim0.keyframeCount):
+        for index in 0..anim0.keyframeCount:
             let timeline_x = 60 + i32<-((f32<-(rl.GetScreenWidth() - 180) / f32<-anim0.keyframeCount) * f32<-index)
             rl.DrawRectangle(timeline_x, rl.GetScreenHeight() - 60, 1, 20, rl.BLUE)
 
@@ -252,7 +252,7 @@ def main() -> i32:
             0.0,
             f32<-anim1.keyframeCount,
         )
-        for index in range(0, anim1.keyframeCount):
+        for index in 0..anim1.keyframeCount:
             let timeline_x = 60 + i32<-((f32<-(rl.GetScreenWidth() - 180) / f32<-anim1.keyframeCount) * f32<-index)
             rl.DrawRectangle(timeline_x, rl.GetScreenHeight() - 30, 1, 20, rl.BLUE)
 

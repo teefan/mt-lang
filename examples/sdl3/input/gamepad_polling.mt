@@ -92,7 +92,7 @@ def render_frame() -> void:
         c.SDL_RenderTexture(renderer, texture, null, null)
 
         c.SDL_SetRenderDrawColor(renderer, 0, 255, 0, c.SDL_ALPHA_OPAQUE)
-        for index in range(0, button_rect_count):
+        for index in 0..button_rect_count:
             if c.SDL_GetGamepadButton(gamepad, c.SDL_GamepadButton<-index):
                 c.SDL_RenderFillRect(renderer, ptr_of(ref_of(button_rects[index])))
 

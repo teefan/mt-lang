@@ -1844,7 +1844,7 @@ module MilkTea
       def lower_async_cf_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:)
         iterable_type = infer_expression_type(statement.iterable, env:)
         element_type = collection_loop_type(iterable_type)
-        raise LoweringError, "for loop expects range(start, stop), array[T, N], or span[T], got #{iterable_type}" unless element_type
+        raise LoweringError, "for loop expects start..stop, array[T, N], or span[T], got #{iterable_type}" unless element_type
 
         iterable_setup, prepared_iterable = prepare_expression_for_inline_lowering(statement.iterable, env:, expected_type: iterable_type)
         iterable_c_name = fresh_c_temp_name(env, "for_items")
@@ -2108,7 +2108,7 @@ module MilkTea
       def lower_async_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, async_info:)
         iterable_type = infer_expression_type(statement.iterable, env:)
         element_type = collection_loop_type(iterable_type)
-        raise LoweringError, "for loop expects range(start, stop), array[T, N], or span[T], got #{iterable_type}" unless element_type
+        raise LoweringError, "for loop expects start..stop, array[T, N], or span[T], got #{iterable_type}" unless element_type
 
         iterable_setup, prepared_iterable = prepare_expression_for_inline_lowering(statement.iterable, env:, expected_type: iterable_type)
         iterable_c_name = fresh_c_temp_name(env, "for_items")
@@ -3339,7 +3339,7 @@ module MilkTea
       def lower_collection_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
         iterable_type = infer_expression_type(statement.iterable, env:)
         element_type = collection_loop_type(iterable_type)
-        raise LoweringError, "for loop expects range(start, stop), array[T, N], or span[T], got #{iterable_type}" unless element_type
+        raise LoweringError, "for loop expects start..stop, array[T, N], or span[T], got #{iterable_type}" unless element_type
         iterable_setup, prepared_iterable = prepare_expression_for_inline_lowering(statement.iterable, env:, expected_type: iterable_type)
 
         iterable_c_name = fresh_c_temp_name(env, "for_items")
@@ -6821,24 +6821,20 @@ module MilkTea
         type.is_a?(Types::GenericInstance) && type.name == "ref" && type.arguments.length == 1
       end
 
-      def range_call?(expression)
-        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "range"
-      end
-
       def range_expr?(expression)
         expression.is_a?(AST::RangeExpr)
       end
 
       def range_iterable?(expression)
-        range_call?(expression) || range_expr?(expression)
+        range_expr?(expression)
       end
 
       def range_start_of(iterable)
-        iterable.is_a?(AST::RangeExpr) ? iterable.start_expr : iterable.arguments[0].value
+        iterable.start_expr
       end
 
       def range_end_of(iterable)
-        iterable.is_a?(AST::RangeExpr) ? iterable.end_expr : iterable.arguments[1].value
+        iterable.end_expr
       end
 
       def wildcard_arm_pattern?(expression)

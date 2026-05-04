@@ -389,7 +389,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       async def parent() -> i32:
           var total = 0
-          for i in range(0, await upper()):
+          for i in 0..await upper():
               total += i
           return total
     MT
@@ -2051,7 +2051,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.for_loops
 
       def scan(items: span[i32]) -> i32:
-          for i in range(0, items.len):
+          for i in 0..items.len:
               let index: usize = i
 
           for item in items:
@@ -2102,7 +2102,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.defer_loop
 
       def main() -> i32:
-          for outer in range(0, 1):
+          for outer in 0..1:
               defer:
                   while true:
                       break
@@ -2136,7 +2136,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.defer_continue
 
       def main() -> i32:
-          for outer in range(0, 1):
+          for outer in 0..1:
               defer:
                   continue
           return 0
@@ -2673,7 +2673,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/for loop expects range\(start, stop\), start\.\.stop, array\[T, N\], or span\[T\]/, error.message)
+    assert_match(/for loop expects start\.\.stop, array\[T, N\], or span\[T\]/, error.message)
   end
 
   def test_type_checks_dot_dot_range_in_for_loop

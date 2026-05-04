@@ -245,11 +245,11 @@ def main() -> i32:
                 rl.UnloadImage(pattern)
             else:
                 var pattern = rl.GenImageColor(world_width / random_tiles, world_height / random_tiles, rl.RAYWHITE)
-                for tile_x in range(0, random_tiles):
-                    for tile_y in range(0, random_tiles):
+                for tile_x in 0..random_tiles:
+                    for tile_y in 0..random_tiles:
                         rl.ImageClearBackground(ptr_of(ref_of(pattern)), rl.RAYWHITE)
-                        for pixel_x in range(0, pattern.width):
-                            for pixel_y in range(0, pattern.height):
+                        for pixel_x in 0..pattern.width:
+                            for pixel_y in 0..pattern.height:
                                 if rl.GetRandomValue(0, 100) < 15:
                                     rl.ImageDrawPixel(ptr_of(ref_of(pattern)), pixel_x, pixel_y, rl.BLACK)
                         rl.UpdateTextureRec(
@@ -310,7 +310,7 @@ def main() -> i32:
 
         rl.DrawText(c"Presets", 710, 58, 8, rl.GRAY)
         preset = -1
-        for index in range(0, number_of_presets):
+        for index in 0..number_of_presets:
             if gui.GuiButton(gui_rect(710.0, 70.0 + 18.0 * f32<-index, 80.0, 16.0), preset_names[index]) != 0:
                 preset = index
 

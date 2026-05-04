@@ -38,7 +38,7 @@ def main() -> i32:
     defer rl.UnloadModel(cube_model)
 
     var voxels = zero[array[bool, voxel_count]]()
-    for index in range(0, voxel_count):
+    for index in 0..voxel_count:
         voxels[index] = true
 
     rl.SetTargetFPS(60)
@@ -55,9 +55,9 @@ def main() -> i32:
             var closest_y = -1
             var closest_z = -1
 
-            for x in range(0, world_size):
-                for y in range(0, world_size):
-                    for z in range(0, world_size):
+            for x in 0..world_size:
+                for y in 0..world_size:
+                    for z in 0..world_size:
                         if not voxels[voxel_index(x, y, z)]:
                             continue
 
@@ -85,9 +85,9 @@ def main() -> i32:
 
         rl.DrawGrid(10, 1.0)
 
-        for x in range(0, world_size):
-            for y in range(0, world_size):
-                for z in range(0, world_size):
+        for x in 0..world_size:
+            for y in 0..world_size:
+                for z in 0..world_size:
                     if not voxels[voxel_index(x, y, z)]:
                         continue
 

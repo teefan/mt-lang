@@ -49,7 +49,7 @@ def swap_fft_values(left: i32, right: i32) -> void:
 
 def cooley_tukey_fft_slow() -> void:
     var j = 0
-    for index in range(1, fft_window_size - 1):
+    for index in 1..fft_window_size - 1:
         var bit = fft_window_size / 2
         while j >= bit:
             j -= bit
@@ -66,7 +66,7 @@ def cooley_tukey_fft_slow() -> void:
 
         while offset < fft_window_size:
             var twiddle_current = FFTComplex(real = 1.0, imaginary = 0.0)
-            for half_index in range(0, length / 2):
+            for half_index in 0..length / 2:
                 let even = work_buffer[offset + half_index]
                 let odd = work_buffer[offset + half_index + length / 2]
                 let twiddled_odd = FFTComplex(
@@ -93,7 +93,7 @@ def cooley_tukey_fft_slow() -> void:
 
 
 def capture_frame(audio_samples: ptr[f32]) -> void:
-    for index in range(0, fft_window_size):
+    for index in 0..fft_window_size:
         let x = (2.0 * rl.PI * f32<-index) / f32<-(fft_window_size - 1)
         let blackman_weight = 0.42 - 0.5 * rm.cos(x) + 0.08 * rm.cos(2.0 * x)
         unsafe:
@@ -103,7 +103,7 @@ def capture_frame(audio_samples: ptr[f32]) -> void:
     cooley_tukey_fft_slow()
 
     var smoothed_spectrum = zero[array[f32, 512]]()
-    for bin in range(0, buffer_size):
+    for bin in 0..buffer_size:
         let re = work_buffer[bin].real
         let im = work_buffer[bin].imaginary
         let linear_magnitude = rm.sqrt(re * re + im * im) / f32<-fft_window_size
@@ -115,7 +115,7 @@ def capture_frame(audio_samples: ptr[f32]) -> void:
         let normalized = (db - min_decibels) * inverse_decibel_range
         smoothed_spectrum[bin] = rm.clamp(normalized, 0.0, 1.0)
 
-    for bin in range(0, buffer_size):
+    for bin in 0..buffer_size:
         fft_history[history_pos][bin] = smoothed_spectrum[bin]
 
     history_pos = (history_pos + 1) % fft_history_len
@@ -129,7 +129,7 @@ def render_frame(fft_image: ptr[rl.Image]) -> void:
     if history_position < 0:
         history_position += fft_history_len
 
-    for bin in range(0, buffer_size):
+    for bin in 0..buffer_size:
         let amplitude = fft_history[history_position][bin]
         rl.ImageDrawPixel(
             fft_image,
@@ -187,7 +187,7 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         while rl.IsAudioStreamProcessed(audio_stream):
             unsafe:
-                for index in range(0, audio_stream_ring_buffer_size):
+                for index in 0..audio_stream_ring_buffer_size:
                     chunk_samples[index] = read(wav_samples + wav_cursor)
                     wav_cursor += 1
                     if wav_cursor >= wav_frame_count:
@@ -195,7 +195,7 @@ def main() -> i32:
 
             rl.UpdateAudioStream(audio_stream, ptr_of(ref_of(chunk_samples[0])), audio_stream_ring_buffer_size)
 
-            for index in range(0, fft_window_size):
+            for index in 0..fft_window_size:
                 audio_samples[index] = (chunk_samples[index * 2] + chunk_samples[index * 2 + 1]) * 0.5
 
         capture_frame(ptr_of(ref_of(audio_samples[0])))

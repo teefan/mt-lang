@@ -72,7 +72,7 @@ def main() -> i32:
     equip_models[bone_socket_hand_r] = rl.LoadModel(sword_model_path)
     equip_models[bone_socket_hand_l] = rl.LoadModel(shield_model_path)
     defer:
-        for index in range(0, bone_sockets):
+        for index in 0..bone_sockets:
             rl.UnloadModel(equip_models[index])
 
     var show_equip = array[bool, bone_sockets](true, true, true)
@@ -85,7 +85,7 @@ def main() -> i32:
     var anim_current_frame = 0
 
     var bone_socket_index = array[i32, bone_sockets](-1, -1, -1)
-    for index in range(0, character_model.skeleton.boneCount):
+    for index in 0..character_model.skeleton.boneCount:
         let name = skeleton_bone_name(character_model.skeleton, index)
         if rl.TextIsEqual(name, hat_socket_name):
             bone_socket_index[bone_socket_hat] = index
@@ -140,7 +140,7 @@ def main() -> i32:
             rl.DrawMesh(character_model.meshes[0], character_model.materials[1], character_model.transform)
 
         let pose = model_animation_pose(anim, anim_current_frame)
-        for index in range(0, bone_sockets):
+        for index in 0..bone_sockets:
             if not show_equip[index]:
                 continue
 

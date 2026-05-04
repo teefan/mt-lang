@@ -21,10 +21,10 @@ def main() -> i32:
     sound_array[0] = rl.LoadSound(sound_path)
     defer rl.UnloadSound(sound_array[0])
 
-    for index in range(1, max_sounds):
+    for index in 1..max_sounds:
         sound_array[index] = rl.LoadSoundAlias(sound_array[0])
     defer:
-        for index in range(1, max_sounds):
+        for index in 1..max_sounds:
             rl.UnloadSoundAlias(sound_array[index])
 
     var current_sound = 0

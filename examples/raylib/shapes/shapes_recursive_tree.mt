@@ -73,7 +73,7 @@ def main() -> i32:
 
         rl.ClearBackground(rl.RAYWHITE)
 
-        for draw_index in range(0, count):
+        for draw_index in 0..count:
             let branch = branches[draw_index]
             if branch.length >= 2.0:
                 if bezier:

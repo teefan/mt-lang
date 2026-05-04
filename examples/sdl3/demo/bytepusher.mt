@@ -234,7 +234,7 @@ def render_frame() -> void:
         ram[io_keyboard + 1] = c.Uint8<-keystate
 
         var pc = i32<-read_u24(io_pc)
-        for index in range(0, screen_width * screen_height):
+        for index in 0..screen_width * screen_height:
             let src = i32<-read_u24(pc)
             let dst = i32<-read_u24(pc + 3)
             ram[dst] = ram[src]
@@ -327,9 +327,9 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
 
     var color_index = 0
     unsafe:
-        for red in range(0, 6):
-            for green in range(0, 6):
-                for blue in range(0, 6):
+        for red in 0..6:
+            for green in 0..6:
+                for blue in 0..6:
                     created_palette.colors[color_index] = c.SDL_Color(
                         r = c.Uint8<-(red * 0x33),
                         g = c.Uint8<-(green * 0x33),
@@ -338,7 +338,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
                     )
                     color_index += 1
 
-        for index in range(color_index, 256):
+        for index in color_index..256:
             created_palette.colors[index] = c.SDL_Color(r = 0, g = 0, b = 0, a = c.SDL_ALPHA_OPAQUE)
 
     let created_texture = c.SDL_CreateTexture(renderer, c.SDL_PixelFormat.SDL_PIXELFORMAT_INDEX8, c.SDL_TextureAccess.SDL_TEXTUREACCESS_STREAMING, screen_width, screen_height)

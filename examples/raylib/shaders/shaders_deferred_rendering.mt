@@ -121,7 +121,7 @@ def main() -> i32:
 
     var cube_positions = zero[array[rl.Vector3, 30]]()
     var cube_rotations = zero[array[f32, 30]]()
-    for index in range(0, max_cubes):
+    for index in 0..max_cubes:
         cube_positions[index] = rl.Vector3(
             x = f32<-rl.GetRandomValue(0, 9) - 5.0,
             y = f32<-rl.GetRandomValue(0, 4),
@@ -158,7 +158,7 @@ def main() -> i32:
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_FOUR):
             mode = i32<-DeferredMode.DEFERRED_SHADING
 
-        for index in range(0, lights.MAX_LIGHTS):
+        for index in 0..lights.MAX_LIGHTS:
             lights.UpdateLightValues(deferred_shader, light_sources[index])
 
         rl.BeginDrawing()
@@ -173,7 +173,7 @@ def main() -> i32:
         rlgl.rlEnableShader(gbuffer_shader.id)
         rl.DrawModel(model, rm.Vector3.zero(), 1.0, rl.WHITE)
         rl.DrawModel(cube, rl.Vector3(x = 0.0, y = 1.0, z = 0.0), 1.0, rl.WHITE)
-        for index in range(0, max_cubes):
+        for index in 0..max_cubes:
             let position = cube_positions[index]
             rl.DrawModelEx(cube, position, rl.Vector3(x = 1.0, y = 1.0, z = 1.0), cube_rotations[index], rl.Vector3(x = cube_scale, y = cube_scale, z = cube_scale), rl.WHITE)
         rlgl.rlDisableShader()
@@ -205,7 +205,7 @@ def main() -> i32:
 
             rl.BeginMode3D(camera)
             rlgl.rlEnableShader(rlgl.rlGetShaderIdDefault())
-            for index in range(0, lights.MAX_LIGHTS):
+            for index in 0..lights.MAX_LIGHTS:
                 if light_sources[index].enabled:
                     rl.DrawSphereEx(light_sources[index].position, 0.2, 8, 8, light_sources[index].color)
                 else:

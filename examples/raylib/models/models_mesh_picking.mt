@@ -116,7 +116,7 @@ def main() -> i32:
             hit_object_name = c"Box"
 
             var mesh_hit_info = zero[rl.RayCollision]()
-            for mesh_index in range(0, tower.meshCount):
+            for mesh_index in 0..tower.meshCount:
                 unsafe:
                     mesh_hit_info = rl.GetRayCollisionMesh(ray, tower.meshes[mesh_index], tower.transform)
 

@@ -68,7 +68,7 @@ def draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: f32, ro
 
     rlgl.begin(rlgl.RL_TRIANGLES)
 
-    for corner_index in range(0, 4):
+    for corner_index in 0..4:
         var color = rl.Color(r = 0, g = 0, b = 0, a = 0)
         var radius: f32 = 0.0
         if corner_index == 0:
@@ -87,7 +87,7 @@ def draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: f32, ro
         var angle = angles[corner_index]
         let center = centers[corner_index]
 
-        for _ in range(0, segments):
+        for _ in 0..segments:
             emit_color(color)
             emit_vertex(center)
             emit_arc_vertex(center, angle + step_length, radius)

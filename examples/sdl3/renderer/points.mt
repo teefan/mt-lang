@@ -34,7 +34,7 @@ def render_frame() -> void:
     let width_f = f32<-window_width
     let height_f = f32<-window_height
 
-    for index in range(0, point_count):
+    for index in 0..point_count:
         let distance = elapsed * point_speeds[index]
         points[index].x += distance
         points[index].y += distance
@@ -73,7 +73,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     if not c.SDL_SetRenderLogicalPresentation(renderer, window_width, window_height, presentation_mode):
         return 1
 
-    for index in range(0, point_count):
+    for index in 0..point_count:
         points[index].x = c.SDL_randf() * f32<-window_width
         points[index].y = c.SDL_randf() * f32<-window_height
         point_speeds[index] = min_pixels_per_second + (c.SDL_randf() * (max_pixels_per_second - min_pixels_per_second))

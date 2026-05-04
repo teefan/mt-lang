@@ -25,7 +25,7 @@ def main() -> i32:
 
     while not rl.WindowShouldClose():
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_R):
-            for index in range(0, max_texture_collection):
+            for index in 0..max_texture_collection:
                 rl.UnloadTexture(collection[index].texture)
 
             current_collection_index = 0
@@ -45,7 +45,7 @@ def main() -> i32:
 
         rl.ClearBackground(rl.RAYWHITE)
 
-        for index in range(0, current_collection_index):
+        for index in 0..current_collection_index:
             let texture = collection[index].texture
             let position = collection[index].position
             if rl.IsTextureValid(texture):
@@ -63,7 +63,7 @@ def main() -> i32:
 
         rl.EndDrawing()
 
-    for index in range(0, max_texture_collection):
+    for index in 0..max_texture_collection:
         rl.UnloadTexture(collection[index].texture)
 
     return 0

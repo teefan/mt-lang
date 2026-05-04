@@ -65,7 +65,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     if not sdl.set_render_logical_presentation(renderer, window_width, window_height, presentation_mode):
         return 1
 
-    for index in range(0, point_count):
+    for index in 0..point_count:
         points[index].x = (sdl.randf() * 440.0) + 100.0
         points[index].y = (sdl.randf() * 280.0) + 100.0
 

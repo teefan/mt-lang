@@ -41,7 +41,7 @@ def main() -> i32:
 
     var labels = zero[array[array[char, 32], 10]]()
     var editing_label = zero[array[bool, 10]]()
-    for index in range(0, max_pie_slices):
+    for index in 0..max_pie_slices:
         rl.TextCopy(ptr_of(ref_of(labels[index][0])), rl.TextFormat(slice_name_format, index + 1))
 
     var show_values = true
@@ -67,7 +67,7 @@ def main() -> i32:
 
     while not rl.WindowShouldClose():
         var total_value: f32 = 0.0
-        for index in range(0, slice_count):
+        for index in 0..slice_count:
             total_value += values[index]
 
         hovered_slice = -1
@@ -83,7 +83,7 @@ def main() -> i32:
                     angle = angle + f32<-360.0
 
                 var current_angle: f32 = 0.0
-                for index in range(0, slice_count):
+                for index in 0..slice_count:
                     let sweep = if total_value > 0.0: values[index] / total_value * f32<-360.0 else: f32<-0.0
 
                     if angle >= current_angle and angle < current_angle + sweep:
@@ -98,7 +98,7 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
 
         var start_angle: f32 = 0.0
-        for index in range(0, slice_count):
+        for index in 0..slice_count:
             let sweep_angle = if total_value > 0.0: values[index] / total_value * f32<-360.0 else: f32<-0.0
             let mid_angle = start_angle + sweep_angle / 2.0
             let color = rl.ColorFromHSV(f32<-index / f32<-slice_count * 360.0, 0.75, 0.9)
@@ -166,7 +166,7 @@ def main() -> i32:
         let content_y = view.y + scroll_content_offset.y
 
         rl.BeginScissorMode(i32<-view.x, i32<-view.y, i32<-view.width, i32<-view.height)
-        for index in range(0, slice_count):
+        for index in 0..slice_count:
             let row_y = i32<-(content_y + 5.0 + f32<-(index * 35))
             let color = rl.ColorFromHSV(f32<-index / f32<-slice_count * 360.0, 0.75, 0.9)
             rl.DrawRectangle(i32<-(content_x + 15.0), row_y + 5, 20, 20, color)

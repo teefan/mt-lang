@@ -288,7 +288,7 @@ def main() -> i32:
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_FOUR):
             light_sources[0].enabled = 1 - light_sources[0].enabled
 
-        for light_index in range(0, max_lights):
+        for light_index in 0..max_lights:
             update_light(shader, light_sources[light_index])
 
         rl.BeginDrawing()
@@ -311,7 +311,7 @@ def main() -> i32:
         rl.SetShaderValue(shader, roughness_value_loc, ptr_of(ref_of(car_roughness_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
         rl.DrawModel(car, rm.Vector3.zero(), 0.25, rl.WHITE)
 
-        for light_index in range(0, max_lights):
+        for light_index in 0..max_lights:
             let light_color = light_display_color(light_sources[light_index])
             if light_sources[light_index].enabled != 0:
                 rl.DrawSphereEx(light_sources[light_index].position, 0.2, 8, 8, light_color)

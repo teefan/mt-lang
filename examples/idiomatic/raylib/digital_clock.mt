@@ -53,7 +53,7 @@ def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
     rl.draw_circle_v(position, f32<-clock.second.length + 40.0, rl.LIGHTGRAY)
     rl.draw_circle_v(position, 12.0, rl.GRAY)
 
-    for index in range(0, 60):
+    for index in 0..60:
         let tick_angle = 6.0 * f32<-index - 90.0
         let inner_offset = if index % 5 != 0: 10.0 else: 6.0
         rl.draw_line_ex(
