@@ -79,11 +79,11 @@ def render_frame() -> bool:
                     converted_texture_width = processed_surface.w
                     converted_texture_height = processed_surface.h
 
-                for y in range(0, processed_surface.h):
+                for y in 0..processed_surface.h:
                     let row_bytes = ptr[c.Uint8]<-processed_surface.pixels + (y * processed_surface.pitch)
                     let row_pixels = ptr[c.Uint32]<-row_bytes
 
-                    for x in range(0, processed_surface.w):
+                    for x in 0..processed_surface.w:
                         let pixel_bytes = ptr[c.Uint8]<-(row_pixels + x)
                         let average = (u32<-read(pixel_bytes + 1) + u32<-read(pixel_bytes + 2) + u32<-read(pixel_bytes + 3)) / 3
 

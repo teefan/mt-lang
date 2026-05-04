@@ -12,7 +12,7 @@ const screen_height: i32 = 450
 
 
 def unload_collection(collection: array[TextureCollection, 20], count: i32) -> void:
-    for index in range(0, count):
+    for index in 0..count:
         if rl.is_texture_valid(collection[index].texture):
             rl.unload_texture(collection[index].texture)
     return
@@ -52,7 +52,7 @@ def main() -> i32:
 
         rl.clear_background(rl.RAYWHITE)
 
-        for index in range(0, current_collection_index):
+        for index in 0..current_collection_index:
             let texture = collection[index].texture
             let position = collection[index].position
             if rl.is_texture_valid(texture):

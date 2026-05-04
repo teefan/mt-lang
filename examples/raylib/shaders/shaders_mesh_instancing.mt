@@ -52,7 +52,7 @@ def main() -> i32:
     let transforms = alloc_transforms(max_instances)
     defer free_transforms(transforms)
 
-    for index in range(0, max_instances):
+    for index in 0..max_instances:
         let translation = rm.Matrix.translate(
             f32<-rl.GetRandomValue(-50, 50),
             f32<-rl.GetRandomValue(-50, 50),

@@ -52,7 +52,7 @@ def main() -> i32:
         rl.ClearBackground(rl.WHITE)
         rl.DrawText(title_text, 10, 10, 20, rl.LIGHTGRAY)
 
-        for index in range(0, angle_count):
+        for index in 0..angle_count:
             let radians = f32<-angles[index] * mt_math.deg2rad
             let end = rl.Vector2(
                 x = center.x + math.cosf(radians) * line_length,

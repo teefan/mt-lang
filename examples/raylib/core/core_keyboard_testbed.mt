@@ -264,7 +264,7 @@ def main() -> i32:
         rl.DrawText(keyboard_layout_text, 26, 38, 20, rl.LIGHTGRAY)
 
         var rec_offset_x = 0
-        for index in range(0, 15):
+        for index in 0..15:
             draw_keyboard_key(
                 rl.Rectangle(x = keyboard_offset.x + rec_offset_x, y = keyboard_offset.y, width = line01_widths[index], height = 30.0),
                 line01_keys[index],
@@ -272,7 +272,7 @@ def main() -> i32:
             rec_offset_x += line01_widths[index] + key_rec_spacing
 
         rec_offset_x = 0
-        for index in range(0, 15):
+        for index in 0..15:
             draw_keyboard_key(
                 rl.Rectangle(
                     x = keyboard_offset.x + rec_offset_x,
@@ -285,7 +285,7 @@ def main() -> i32:
             rec_offset_x += line02_widths[index] + key_rec_spacing
 
         rec_offset_x = 0
-        for index in range(0, 15):
+        for index in 0..15:
             draw_keyboard_key(
                 rl.Rectangle(
                     x = keyboard_offset.x + rec_offset_x,
@@ -298,7 +298,7 @@ def main() -> i32:
             rec_offset_x += line03_widths[index] + key_rec_spacing
 
         rec_offset_x = 0
-        for index in range(0, 14):
+        for index in 0..14:
             draw_keyboard_key(
                 rl.Rectangle(
                     x = keyboard_offset.x + rec_offset_x,
@@ -311,7 +311,7 @@ def main() -> i32:
             rec_offset_x += line04_widths[index] + key_rec_spacing
 
         rec_offset_x = 0
-        for index in range(0, 14):
+        for index in 0..14:
             draw_keyboard_key(
                 rl.Rectangle(
                     x = keyboard_offset.x + rec_offset_x,
@@ -324,7 +324,7 @@ def main() -> i32:
             rec_offset_x += line05_widths[index] + key_rec_spacing
 
         rec_offset_x = 0
-        for index in range(0, 11):
+        for index in 0..11:
             draw_keyboard_key(
                 rl.Rectangle(
                     x = keyboard_offset.x + rec_offset_x,

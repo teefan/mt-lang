@@ -58,7 +58,7 @@ def pump_events() -> bool:
 
 
 def render_frame() -> void:
-    for index in range(0, sound_count):
+    for index in 0..sound_count:
         let stream = sounds[index].stream
         if stream != null:
             let wav_data = sounds[index].wav_data
@@ -92,7 +92,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
     defer:
-        for index in range(0, sound_count):
+        for index in 0..sound_count:
             cleanup_sound(index)
 
     if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):

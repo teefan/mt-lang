@@ -61,7 +61,7 @@ def main() -> i32:
     var rectangles = zero[array[rl.Rectangle, 21]]()
     var hovered = zero[array[bool, 21]]()
 
-    for index in range(0, color_count):
+    for index in 0..color_count:
         let column = index % grid_columns
         let row = index / grid_columns
         rectangles[index] = rl.Rectangle(
@@ -76,7 +76,7 @@ def main() -> i32:
     while not rl.window_should_close():
         let mouse_position = rl.get_mouse_position()
 
-        for index in range(0, color_count):
+        for index in 0..color_count:
             hovered[index] = rl.check_collision_point_rec(mouse_position, rectangles[index])
 
         rl.begin_drawing()
@@ -86,7 +86,7 @@ def main() -> i32:
         rl.draw_text("raylib colors palette", 28, 42, 20, rl.BLACK)
         rl.draw_text("press SPACE to see all colors", rl.get_screen_width() - 180, rl.get_screen_height() - 40, 10, rl.GRAY)
 
-        for index in range(0, color_count):
+        for index in 0..color_count:
             let rectangle = rectangles[index]
             rl.draw_rectangle_rec(rectangle, rl.fade(colors[index], if hovered[index]: 0.6 else: 1.0))
 

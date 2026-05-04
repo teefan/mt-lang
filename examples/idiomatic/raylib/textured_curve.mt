@@ -33,7 +33,7 @@ def draw_textured_curve(tex_road: rl.Texture2D, curve_start_position: rl.Vector2
     var previous_v: f32 = 0.0
     var tangent_set = false
 
-    for index in range(1, curve_segments + 1):
+    for index in 1..curve_segments + 1:
         let t = step * f32<-index
         let current = rl.get_spline_point_bezier_cubic(curve_start_position, curve_start_position_tangent, curve_end_position_tangent, curve_end_position, t)
         let delta = current.subtract(previous)

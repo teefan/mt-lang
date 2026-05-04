@@ -19,7 +19,7 @@ def main() -> i32:
     )
 
     var colors_recs = zero[array[rl.Rectangle, 23]]()
-    for index in range(0, max_colors_count):
+    for index in 0..max_colors_count:
         colors_recs[index].x = 10.0 + 30.0 * f32<-index + 2.0 * f32<-index
         colors_recs[index].y = 10.0
         colors_recs[index].width = 30.0
@@ -59,7 +59,7 @@ def main() -> i32:
             color_selected = 0
 
         color_mouse_hover = -1
-        for index in range(0, max_colors_count):
+        for index in 0..max_colors_count:
             if rl.check_collision_point_rec(mouse_pos, colors_recs[index]):
                 color_mouse_hover = index
                 break
@@ -135,7 +135,7 @@ def main() -> i32:
         rl.draw_rectangle(0, 0, rl.get_screen_width(), 50, rl.RAYWHITE)
         rl.draw_line(0, 50, rl.get_screen_width(), 50, rl.LIGHTGRAY)
 
-        for index in range(0, max_colors_count):
+        for index in 0..max_colors_count:
             rl.draw_rectangle_rec(colors_recs[index], colors[index])
         rl.draw_rectangle_lines(10, 10, 30, 30, rl.LIGHTGRAY)
 

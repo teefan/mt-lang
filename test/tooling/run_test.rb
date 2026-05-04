@@ -664,7 +664,7 @@ class MilkTeaRunTest < Minitest::Test
         "    var total = 0",
         "    for item in items:",
         "        total += item",
-        "    for i in range(0, 4):",
+        "    for i in 0..4:",
         "        total += i",
         "    return total",
         "",

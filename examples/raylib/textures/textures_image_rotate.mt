@@ -24,7 +24,7 @@ def main() -> i32:
 
     var textures = zero[array[rl.Texture2D, num_textures]]()
     defer:
-        for texture_index in range(0, num_textures):
+        for texture_index in 0..num_textures:
             rl.UnloadTexture(textures[texture_index])
 
     textures[0] = rl.LoadTextureFromImage(image_45)

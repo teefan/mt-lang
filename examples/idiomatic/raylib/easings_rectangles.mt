@@ -19,8 +19,8 @@ def main() -> i32:
 
     var recs = zero[array[rl.Rectangle, 144]]()
 
-    for y in range(0, max_recs_y):
-        for x in range(0, max_recs_x):
+    for y in 0..max_recs_y:
+        for x in 0..max_recs_x:
             let index = y * max_recs_x + x
             recs[index].x = recs_width / 2.0 + recs_width * x
             recs[index].y = recs_height / 2.0 + recs_height * y
@@ -37,7 +37,7 @@ def main() -> i32:
         if state == 0:
             frames_counter += 1
 
-            for index in range(0, rec_count):
+            for index in 0..rec_count:
                 recs[index].height = ease.circ_out(f32<-frames_counter, f32<-recs_height, -f32<-recs_height, f32<-play_time_in_frames)
                 recs[index].width = ease.circ_out(f32<-frames_counter, f32<-recs_width, -f32<-recs_width, f32<-play_time_in_frames)
 
@@ -53,7 +53,7 @@ def main() -> i32:
         elif state == 1 and rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE):
             frames_counter = 0
 
-            for index in range(0, rec_count):
+            for index in 0..rec_count:
                 recs[index].height = recs_height
                 recs[index].width = recs_width
 
@@ -65,7 +65,7 @@ def main() -> i32:
         rl.clear_background(rl.RAYWHITE)
 
         if state == 0:
-            for index in range(0, rec_count):
+            for index in 0..rec_count:
                 rl.draw_rectangle_pro(recs[index], rl.Vector2(x = recs[index].width / 2.0, y = recs[index].height / 2.0), rotation, rl.RED)
         elif state == 1:
             rl.draw_text("PRESS [SPACE] TO PLAY AGAIN!", 240, 200, 20, rl.GRAY)

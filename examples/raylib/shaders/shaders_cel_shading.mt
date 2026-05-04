@@ -112,7 +112,7 @@ def main() -> i32:
             z = rm.cos(-time * light_rotation_speed) * light_radius,
         )
 
-        for light_index in range(0, lights.MAX_LIGHTS):
+        for light_index in 0..lights.MAX_LIGHTS:
             lights.UpdateLightValues(cel_shader, light_sources[light_index])
 
         rl.BeginDrawing()

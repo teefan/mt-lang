@@ -35,7 +35,7 @@ def main() -> i32:
 
     while not rl.WindowShouldClose():
         if rl.IsMouseButtonDown(rl.MouseButton.MOUSE_BUTTON_LEFT):
-            for index in range(0, 100):
+            for index in 0..100:
                 let _ = index
                 if bunnies_count < max_bunnies:
                     bunnies_view[bunnies_count].position = rl.GetMousePosition()
@@ -54,7 +54,7 @@ def main() -> i32:
 
         if not paused:
             let frame_time = rl.GetFrameTime()
-            for index in range(0, bunnies_count):
+            for index in 0..bunnies_count:
                 bunnies_view[index].position.x += bunnies_view[index].speed.x * frame_time
                 bunnies_view[index].position.y += bunnies_view[index].speed.y * frame_time
 
@@ -68,7 +68,7 @@ def main() -> i32:
 
         rl.ClearBackground(rl.RAYWHITE)
 
-        for index in range(0, bunnies_count):
+        for index in 0..bunnies_count:
             rl.DrawTexture(tex_bunny, i32<-bunnies_view[index].position.x, i32<-bunnies_view[index].position.y, bunnies_view[index].color)
 
         rl.DrawRectangle(0, 0, screen_width, 40, rl.BLACK)

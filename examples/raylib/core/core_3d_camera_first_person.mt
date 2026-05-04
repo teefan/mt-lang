@@ -68,7 +68,7 @@ def main() -> i32:
         rl.BLACK, rl.BLACK, rl.BLACK, rl.BLACK, rl.BLACK, rl.BLACK, rl.BLACK, rl.BLACK, rl.BLACK, rl.BLACK,
     )
 
-    for index in range(0, max_columns):
+    for index in 0..max_columns:
         heights[index] = f32<-rl.GetRandomValue(1, 12)
         positions[index] = rl.Vector3(
             x = rl.GetRandomValue(-15, 15),
@@ -129,7 +129,7 @@ def main() -> i32:
         rl.DrawCube(rl.Vector3(x = 16.0, y = 2.5, z = 0.0), 1.0, 5.0, 32.0, rl.LIME)
         rl.DrawCube(rl.Vector3(x = 0.0, y = 2.5, z = 16.0), 32.0, 5.0, 1.0, rl.GOLD)
 
-        for index in range(0, max_columns):
+        for index in 0..max_columns:
             rl.DrawCube(positions[index], 2.0, heights[index], 2.0, colors[index])
             rl.DrawCubeWires(positions[index], 2.0, heights[index], 2.0, rl.MAROON)
 

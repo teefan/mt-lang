@@ -22,7 +22,7 @@ def main() -> i32:
 
     var textures = zero[array[rl.Texture2D, 3]]()
     defer:
-        for texture_index in range(0, num_textures):
+        for texture_index in 0..num_textures:
             rl.unload_texture(textures[texture_index])
 
     textures[0] = rl.load_texture_from_image(image_45)

@@ -24,7 +24,7 @@ def draw_sphere_basic(color: rl.Color) -> void:
     rlgl.rlBegin(rlgl.RL_TRIANGLES)
     rlgl.rlColor4ub(color.r, color.g, color.b, color.a)
 
-    for i in range(0, rings + 2):
+    for i in 0..rings + 2:
         let latitude0 = rm.deg2rad * (270.0 + (180.0 / f32<-(rings + 1)) * f32<-i)
         let latitude1 = rm.deg2rad * (270.0 + (180.0 / f32<-(rings + 1)) * f32<-(i + 1))
         let cos_lat0 = math.cosf(latitude0)
@@ -32,7 +32,7 @@ def draw_sphere_basic(color: rl.Color) -> void:
         let cos_lat1 = math.cosf(latitude1)
         let sin_lat1 = math.sinf(latitude1)
 
-        for j in range(0, slices):
+        for j in 0..slices:
             let longitude0 = rm.deg2rad * (f32<-j * 360.0 / f32<-slices)
             let longitude1 = rm.deg2rad * (f32<-(j + 1) * 360.0 / f32<-slices)
             let sin_longitude0 = math.sinf(longitude0)

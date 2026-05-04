@@ -106,8 +106,8 @@ def main() -> i32:
     var box_count = 0
     var boxes = zero[array[BoxSprite, 30]]()
 
-    for row in range(0, stack_rows):
-        for column in range(0, stack_columns):
+    for row in 0..stack_rows:
+        for column in 0..stack_columns:
             let position = b2.Vec2(
                 x = 7.6 + f32<-column * 0.96,
                 y = 11.3 - f32<-row * 0.96,
@@ -133,7 +133,7 @@ def main() -> i32:
         rl.clear_background(rl.Color(r = 234, g = 242, b = 248, a = 255))
         draw_box(ground_sprite)
 
-        for index in range(0, box_count):
+        for index in 0..box_count:
             draw_box(boxes[index])
 
         rl.draw_text("SPACE nudges the top crate", 24, 20, 20, rl.DARKGRAY)

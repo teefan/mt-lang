@@ -70,7 +70,7 @@ def main() -> i32:
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_B):
             light_sources[3].enabled = not light_sources[3].enabled
 
-        for light_index in range(0, lights.MAX_LIGHTS):
+        for light_index in 0..lights.MAX_LIGHTS:
             lights.UpdateLightValues(shader, light_sources[light_index])
 
         rl.BeginDrawing()
@@ -84,7 +84,7 @@ def main() -> i32:
         rl.DrawCube(rm.Vector3.zero(), 2.0, 4.0, 2.0, rl.WHITE)
         rl.EndShaderMode()
 
-        for light_index in range(0, lights.MAX_LIGHTS):
+        for light_index in 0..lights.MAX_LIGHTS:
             if light_sources[light_index].enabled:
                 rl.DrawSphereEx(light_sources[light_index].position, 0.2, 8, 8, light_sources[light_index].color)
             else:

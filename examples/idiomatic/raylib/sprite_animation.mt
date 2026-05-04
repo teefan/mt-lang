@@ -67,7 +67,7 @@ def main() -> i32:
         rl.draw_text(rl.text_format_i32("%02i FPS", frames_speed), 575, 210, 10, rl.DARKGRAY)
         rl.draw_text("PRESS RIGHT/LEFT KEYS to CHANGE SPEED!", 290, 240, 10, rl.DARKGRAY)
 
-        for index in range(0, max_frame_speed):
+        for index in 0..max_frame_speed:
             if index < frames_speed:
                 rl.draw_rectangle(250 + 21 * index, 205, 20, 20, rl.RED)
             rl.draw_rectangle_lines(250 + 21 * index, 205, 20, 20, rl.MAROON)

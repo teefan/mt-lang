@@ -265,9 +265,6 @@ else:
 while running:
 	tick()
 
-for i in range(0, count):
-	update_enemy(i)
-
 for i in 0..count:
 	update_enemy(i)
 
@@ -286,7 +283,7 @@ Rules:
 - Conditions must be `bool`. Integers and pointers do not become truthy implicitly.
 - `match` must be exhaustive for enums.
 - `break` and `continue` work exactly as in C and Python.
-- `for` accepts `range(start, stop)`, the `start..stop` range expression, `array[T, N]`, and `span[T]` as iterables.
+- `for` accepts `start..stop`, `array[T, N]`, and `span[T]` as iterables.
 
 ### Useful structured features
 

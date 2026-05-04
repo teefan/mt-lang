@@ -53,7 +53,7 @@ def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
 
 def set_all_model_shaders(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
-        for index in range(0, model.materialCount):
+        for index in 0..model.materialCount:
             model.materials[index].shader = shader
 
 

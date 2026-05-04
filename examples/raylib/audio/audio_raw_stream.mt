@@ -58,7 +58,7 @@ def main() -> i32:
             rl.SetAudioStreamPan(stream, pan)
 
         if rl.IsAudioStreamProcessed(stream):
-            for index in range(0, buffer_size):
+            for index in 0..buffer_size:
                 let wavelength = sample_rate / sine_frequency
                 let phase = 2.0 * rl.PI * f32<-sine_index / f32<-wavelength
                 buffer[index] = rm.sin(phase)
@@ -85,7 +85,7 @@ def main() -> i32:
         let window_size = i32<-(0.1 * f32<-sample_rate)
         let wavelength = sample_rate / sine_frequency
 
-        for index in range(0, screen_width):
+        for index in 0..screen_width:
             let t0 = window_start + index * window_size / screen_width
             let t1 = window_start + (index + 1) * window_size / screen_width
             let start_pos = rl.Vector2(

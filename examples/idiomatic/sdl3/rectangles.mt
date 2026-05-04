@@ -41,7 +41,7 @@ def render_frame() -> void:
     sdl.set_render_draw_color(renderer, 255, 0, 0, 255)
     sdl.render_rect(renderer, const_ptr_of(rects[0]))
 
-    for index in range(0, 3):
+    for index in 0..3:
         let size = f32<-(index + 1) * 50.0
         rects[index].w = size + (size * scale)
         rects[index].h = size + (size * scale)
@@ -58,7 +58,7 @@ def render_frame() -> void:
     sdl.set_render_draw_color(renderer, 0, 0, 255, 255)
     sdl.render_fill_rect(renderer, const_ptr_of(rects[0]))
 
-    for index in range(0, rect_count):
+    for index in 0..rect_count:
         let height = f32<-index * 8.0
         rects[index].x = f32<-index * column_width
         rects[index].y = f32<-window_height - height

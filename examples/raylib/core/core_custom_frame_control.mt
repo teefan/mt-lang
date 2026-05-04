@@ -59,7 +59,7 @@ def main() -> i32:
 
         rl.ClearBackground(rl.RAYWHITE)
 
-        for column in range(0, rl.GetScreenWidth() / 200):
+        for column in 0..rl.GetScreenWidth() / 200:
             rl.DrawRectangle(200 * column, 0, 1, rl.GetScreenHeight(), rl.SKYBLUE)
 
         rl.DrawCircle(i32<-position, rl.GetScreenHeight() / 2 - 25, 50.0, rl.RED)

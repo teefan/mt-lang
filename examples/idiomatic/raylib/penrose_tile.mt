@@ -53,7 +53,7 @@ def build_production_step(production: string.String) -> string.String:
 
 def rebuild_production(generations: i32) -> string.String:
     var production = string.String.from_str("[X]++[X]++[X]++[X]++[X]")
-    for generation in range(0, generations):
+    for generation in 0..generations:
         var next = build_production_step(production)
         production.release()
         production = next
@@ -87,10 +87,10 @@ def draw_penrose_lsystem(production: string.String, draw_length: f32, steps: ref
     if read(steps) > i32<-production_view.len:
         read(steps) = i32<-production_view.len
 
-    for index in range(0, read(steps)):
+    for index in 0..read(steps):
         let step = text.byte_at(production_view, usize<-index)
         if step == byte_f:
-            for repeat_index in range(0, repeats):
+            for repeat_index in 0..repeats:
                 let start_pos_world = turtle.origin
                 let rad_angle = math.deg2rad * turtle.angle
                 turtle.origin.x += draw_length * math.cos(rad_angle)
@@ -108,12 +108,12 @@ def draw_penrose_lsystem(production: string.String, draw_length: f32, steps: ref
 
             repeats = 1
         elif step == byte_plus:
-            for repeat_index in range(0, repeats):
+            for repeat_index in 0..repeats:
                 turtle.angle += 36.0
 
             repeats = 1
         elif step == byte_minus:
-            for repeat_index in range(0, repeats):
+            for repeat_index in 0..repeats:
                 turtle.angle -= 36.0
 
             repeats = 1

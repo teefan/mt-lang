@@ -21,7 +21,7 @@ const time_format_12: cstr = c"%I%M%S"
 def blank_digit_angles() -> array[rl.Vector2, 24]:
     let zz = rl.Vector2(x = 135.0, y = 135.0)
     var result = zero[array[rl.Vector2, 24]]()
-    for index in range(0, cells_per_digit):
+    for index in 0..cells_per_digit:
         result[index] = zz
     return result
 
@@ -184,14 +184,14 @@ def main() -> i32:
             previous_second = current_second
             previous_hour_mode = hour_mode
 
-            for digit in range(0, digit_count):
+            for digit in 0..digit_count:
                 var digit_angles = blank_digit_angles()
                 if digit == 0 and hour_mode == hour_mode_12 and i32<-time_buffer[0] == 48:
                     digit_angles = blank_digit_angles()
                 else:
                     digit_angles = digit_angles_for(digit_value(time_buffer, digit))
 
-                for cell in range(0, cells_per_digit):
+                for cell in 0..cells_per_digit:
                     let slot = angle_slot(digit, cell)
                     src_angles[slot] = current_angles[slot]
                     dst_angles[slot] = digit_angles[cell]
@@ -208,8 +208,8 @@ def main() -> i32:
             let t = hands_move_timer / hands_move_duration
             let smooth_t = t * t * (3.0 - 2.0 * t)
 
-            for digit in range(0, digit_count):
-                for cell in range(0, cells_per_digit):
+            for digit in 0..digit_count:
+                for cell in 0..cells_per_digit:
                     let slot = angle_slot(digit, cell)
                     current_angles[slot].x = mt_math.lerp(src_angles[slot].x, dst_angles[slot].x, smooth_t)
                     current_angles[slot].y = mt_math.lerp(src_angles[slot].y, dst_angles[slot].y, smooth_t)
@@ -221,9 +221,9 @@ def main() -> i32:
         rl.DrawText(rl.TextFormat(mode_format, hour_mode), 10, 30, 20, rl.RAYWHITE)
 
         var x_offset: f32 = 4.0
-        for digit in range(0, digit_count):
-            for row in range(0, 6):
-                for col in range(0, 4):
+        for digit in 0..digit_count:
+            for row in 0..6:
+                for col in 0..4:
                     let center = rl.Vector2(
                         x = x_offset + f32<-col * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
                         y = 100.0 + f32<-row * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,

@@ -25,7 +25,7 @@ def main() -> i32:
         let point_count = i32<-segments
         let angle_step = 360.0 / f32<-point_count * math.deg2rad
 
-        for index in range(0, point_count):
+        for index in 0..point_count:
             let point_index = index * 2
             let inner_angle = f32<-index * angle_step
             points[point_index] = rl.Vector2(
@@ -47,7 +47,7 @@ def main() -> i32:
 
         rl.clear_background(rl.RAYWHITE)
 
-        for index in range(0, point_count):
+        for index in 0..point_count:
             let a = points[index * 2]
             let b = points[index * 2 + 1]
             let c = points[index * 2 + 2]

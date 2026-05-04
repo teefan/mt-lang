@@ -19,7 +19,7 @@ def draw_texture_poly(texture: rl.Texture, center: rl.Vector2, points: ptr[rl.Ve
 
         rlgl.rlColor4ub(tint.r, tint.g, tint.b, tint.a)
 
-        for index in range(0, point_count - 1):
+        for index in 0..point_count - 1:
             rlgl.rlTexCoord2f(0.5, 0.5)
             rlgl.rlVertex2f(center.x, center.y)
 
@@ -52,12 +52,12 @@ def main() -> i32:
     )
 
     var points = zero[array[rl.Vector2, max_points]]()
-    for index in range(0, max_points):
+    for index in 0..max_points:
         points[index].x = (texcoords[index].x - 0.5) * 256.0
         points[index].y = (texcoords[index].y - 0.5) * 256.0
 
     var positions = zero[array[rl.Vector2, max_points]]()
-    for index in range(0, max_points):
+    for index in 0..max_points:
         positions[index] = points[index]
 
     let texture = rl.LoadTexture(texture_path)
@@ -70,7 +70,7 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         angle += 1.0
 
-        for index in range(0, max_points):
+        for index in 0..max_points:
             positions[index] = points[index].rotate(angle * rm.deg2rad)
 
         rl.BeginDrawing()

@@ -20,7 +20,7 @@ def main() -> i32:
     var file_path_counter = 0
     var file_paths = zero[array[ptr[char], 4096]]()
 
-    for index in range(0, max_filepaths_recorded):
+    for index in 0..max_filepaths_recorded:
         file_paths[index] = heap.must_alloc_zeroed[char](usize<-max_filepath_size)
 
     rl.SetTargetFPS(60)
@@ -61,7 +61,7 @@ def main() -> i32:
 
             rl.DrawText(continue_prompt_text, 100, 110 + 40 * file_path_counter, 20, rl.DARKGRAY)
 
-    for index in range(0, max_filepaths_recorded):
+    for index in 0..max_filepaths_recorded:
         heap.release(file_paths[index])
 
     return 0

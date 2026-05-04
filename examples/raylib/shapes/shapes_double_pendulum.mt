@@ -58,7 +58,7 @@ def main() -> i32:
         let step = delta_time / f32<-simulation_steps
         let step2 = step * step
 
-        for _ in range(0, simulation_steps):
+        for _ in 0..simulation_steps:
             let delta = theta1 - theta2
             let sin_delta = math.sinf(delta)
             let cos_delta = math.cosf(delta)

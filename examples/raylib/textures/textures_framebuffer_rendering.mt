@@ -29,7 +29,7 @@ def draw_camera_prism(camera: rl.Camera3D, aspect: f32, color: rl.Color) -> void
     let inverse_view_proj = view.multiply(proj).invert()
     var corners = zero[array[rl.Vector3, 4]]()
 
-    for index in range(0, 4):
+    for index in 0..4:
         let point = plane_ndc[index]
         let x = point.x
         let y = point.y
@@ -45,7 +45,7 @@ def draw_camera_prism(camera: rl.Camera3D, aspect: f32, color: rl.Color) -> void
     rl.DrawLine3D(corners[2], corners[3], color)
     rl.DrawLine3D(corners[3], corners[0], color)
 
-    for index in range(0, 4):
+    for index in 0..4:
         rl.DrawLine3D(camera.position, corners[index], color)
 
 

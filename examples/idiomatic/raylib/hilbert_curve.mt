@@ -27,7 +27,7 @@ def compute_hilbert_step(order: i32, index_start: i32) -> rl.Vector2:
     var temp: f32 = 0.0
     var len = 0
 
-    for level in range(1, order):
+    for level in 1..order:
         index = index >> 2
         hilbert_index = index & 3
         len = 1 << level
@@ -54,7 +54,7 @@ def rebuild_path(hilbert_path: span[rl.Vector2], order: i32, size: f32) -> i32:
     let stroke_count = path_count * path_count
     let path_len = size / f32<-path_count
 
-    for index in range(0, stroke_count):
+    for index in 0..stroke_count:
         hilbert_path[index] = compute_hilbert_step(order, index)
         hilbert_path[index].x = hilbert_path[index].x * path_len + path_len / 2.0
         hilbert_path[index].y = hilbert_path[index].y * path_len + path_len / 2.0
@@ -110,13 +110,13 @@ def main() -> i32:
         rl.clear_background(rl.RAYWHITE)
 
         if counter < stroke_count:
-            for index in range(1, counter + 1):
+            for index in 1..counter + 1:
                 let hue = f32<-index / f32<-stroke_count * 360.0
                 rl.draw_line_ex(path_view[index], path_view[index - 1], thick, rl.color_from_hsv(hue, 1.0, 1.0))
 
             counter += 1
         else:
-            for index in range(1, stroke_count):
+            for index in 1..stroke_count:
                 let hue = f32<-index / f32<-stroke_count * 360.0
                 rl.draw_line_ex(path_view[index], path_view[index - 1], thick, rl.color_from_hsv(hue, 1.0, 1.0))
 

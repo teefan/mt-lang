@@ -20,7 +20,7 @@ const window_title: cstr = c"raylib [textures] example - cellular automata"
 
 
 def compute_line(image: ref[rl.Image], line: i32, rule: i32) -> void:
-    for index in range(1, image_width - 1):
+    for index in 1..image_width - 1:
         let prev_value = (
             if rl.GetImageColor(read(image), index - 1, line - 1).r < 5: 4 else: 0
         ) + (
@@ -54,7 +54,7 @@ def main() -> i32:
         let mouse = rl.GetMousePosition()
         var mouse_in_cell = -1
 
-        for index in range(0, 8):
+        for index in 0..8:
             let cell_x = draw_rule_start_x - draw_rule_group_spacing * index + draw_rule_spacing
             let cell_y = draw_rule_start_y + draw_rule_spacing
             if mouse.x >= f32<-cell_x and mouse.x <= f32<-(cell_x + draw_rule_size) and mouse.y >= f32<-cell_y and mouse.y <= f32<-(cell_y + draw_rule_size):
@@ -62,7 +62,7 @@ def main() -> i32:
                 break
 
         if mouse_in_cell < 0:
-            for index in range(0, presets_count):
+            for index in 0..presets_count:
                 let cell_x = 4 + (presets_size_x + 2) * (index / 2)
                 let cell_y = 2 + (presets_size_y + 2) * (index % 2)
                 if mouse.x >= f32<-cell_x and mouse.x <= f32<-(cell_x + presets_size_x) and mouse.y >= f32<-cell_y and mouse.y <= f32<-(cell_y + presets_size_y):
@@ -80,7 +80,7 @@ def main() -> i32:
             line = 1
 
         if line < image_height:
-            for index in range(0, lines_updated_per_frame):
+            for index in 0..lines_updated_per_frame:
                 if line + index >= image_height:
                     break
                 compute_line(ref_of(image), line + index, rule)
@@ -93,7 +93,7 @@ def main() -> i32:
 
         rl.DrawTexture(texture, 0, screen_height - image_height, rl.WHITE)
 
-        for index in range(0, presets_count):
+        for index in 0..presets_count:
             let preset_x = 4 + (presets_size_x + 2) * (index / 2)
             let preset_y = 2 + (presets_size_y + 2) * (index % 2)
             rl.DrawText(rl.TextFormat(c"%i", preset_values[index]), 8 + (presets_size_x + 2) * (index / 2), 4 + (presets_size_y + 2) * (index % 2), 20, rl.GRAY)
@@ -106,8 +106,8 @@ def main() -> i32:
                     rl.RED,
                 )
 
-        for index in range(0, 8):
-            for bit_index in range(0, 3):
+        for index in 0..8:
+            for bit_index in 0..3:
                 let rule_x = draw_rule_start_x - draw_rule_group_spacing * index + draw_rule_spacing * bit_index
                 rl.DrawRectangleLines(rule_x, draw_rule_start_y, draw_rule_size, draw_rule_size, rl.GRAY)
                 if (index & (4 >> bit_index)) != 0:

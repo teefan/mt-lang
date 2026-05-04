@@ -264,7 +264,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       async def sum_range(limit: i32) -> i32:
           var total: i32 = 0
-          for i in range(0, limit):
+          for i in 0..limit:
               total += i
           return total
 
@@ -1070,7 +1070,7 @@ class MilkTeaCodegenTest < Minitest::Test
           color: i32
 
       def main(items: span[Bunny], count: i32) -> void:
-          for index in range(0, count):
+          for index in 0..count:
               sample.draw(items[index].x, items[index].y, items[index].color)
     MT
 
@@ -1807,7 +1807,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    var total = 0",
       "    for item in items:",
       "        total += item",
-      "    for i in range(0, 4):",
+      "    for i in 0..4:",
       "        total += i",
       "    return total",
       "",
@@ -1842,7 +1842,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    # start..end with non-constant bound should hoist stop just like range(start, end)
+    # start..end with non-constant bound should hoist stop once
     assert_match(/int32_t __mt_for_stop_\d+ = n;/, generated)
     assert_match(/for \(int32_t i = 0; i < __mt_for_stop_\d+; i \+= 1\)/, generated)
   end
@@ -1890,7 +1890,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "def main() -> i32:",
       "    var stop = 4",
       "    var total = 0",
-      "    for i in range(0, stop):",
+      "    for i in 0..stop:",
       "        stop += 1",
       "        total += i",
       "    return total + stop",
@@ -2013,7 +2013,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var total = 0",
-      "    for i in range(0, 5):",
+      "    for i in 0..5:",
       "        if i == 2:",
       "            continue",
       "        total += i",

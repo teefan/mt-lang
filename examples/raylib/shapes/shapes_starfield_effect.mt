@@ -24,7 +24,7 @@ def main() -> i32:
     var stars = zero[array[rl.Vector3, 420]]()
     var stars_screen_pos = zero[array[rl.Vector2, 420]]()
 
-    for index in range(0, star_count):
+    for index in 0..star_count:
         stars[index].x = f32<-rl.GetRandomValue(-screen_width / 2, screen_width / 2)
         stars[index].y = f32<-rl.GetRandomValue(-screen_height / 2, screen_height / 2)
         stars[index].z = 1.0
@@ -44,7 +44,7 @@ def main() -> i32:
             draw_lines = not draw_lines
 
         let dt = rl.GetFrameTime()
-        for index in range(0, star_count):
+        for index in 0..star_count:
             stars[index].z -= dt * speed
 
             stars_screen_pos[index] = rl.Vector2(
@@ -62,7 +62,7 @@ def main() -> i32:
 
         rl.ClearBackground(bg_color)
 
-        for index in range(0, star_count):
+        for index in 0..star_count:
             if draw_lines:
                 let t = mt_math.clamp(stars[index].z + 1.0 / 32.0, 0.0, 1.0)
                 if t - stars[index].z > 0.001:

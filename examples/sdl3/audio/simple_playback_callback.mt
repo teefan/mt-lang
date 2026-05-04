@@ -32,7 +32,7 @@ def feed_audio_stream_more(userdata: ptr[void], astream: ptr[c.SDL_AudioStream],
         var samples = zero[array[f32, 128]]()
         let total = min_i32(remaining_samples, sample_chunk_size)
 
-        for index in range(0, total):
+        for index in 0..total:
             let phase = f32<-(current_sine_sample * tone_frequency) / f32<-audio_sample_rate
             samples[index] = c.SDL_sinf(phase * 2.0 * c.SDL_PI_F)
             current_sine_sample += 1

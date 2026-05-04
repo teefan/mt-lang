@@ -80,7 +80,7 @@ def set_rect_xy(rect: ptr[c.SDL_FRect], x: i32, y: i32) -> void:
 
 
 def are_cells_full() -> bool:
-    for index in range(0, snake_matrix_size):
+    for index in 0..snake_matrix_size:
         if snake_ctx.cells[index] == SnakeCell.SNAKE_CELL_NOTHING:
             return false
 
@@ -108,7 +108,7 @@ def snake_initialize() -> void:
 
     put_cell_at(snake_ctx.tail_xpos, snake_ctx.tail_ypos, SnakeCell.SNAKE_CELL_SRIGHT)
 
-    for _index in range(0, 4):
+    for _index in 0..4:
         new_food_pos()
 
 
@@ -273,8 +273,8 @@ def render_frame() -> void:
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
 
-    for x in range(0, snake_game_width):
-        for y in range(0, snake_game_height):
+    for x in 0..snake_game_width:
+        for y in 0..snake_game_height:
             let cell_type = snake_cell_at(x, y)
 
             if cell_type == SnakeCell.SNAKE_CELL_NOTHING:

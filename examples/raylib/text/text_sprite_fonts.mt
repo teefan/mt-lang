@@ -31,7 +31,7 @@ def main() -> i32:
     fonts[6] = rl.LoadFont(font6_path)
     fonts[7] = rl.LoadFont(font7_path)
     defer:
-        for index in range(0, max_fonts):
+        for index in 0..max_fonts:
             rl.UnloadFont(fonts[index])
 
     let messages = array[cstr, max_fonts](
@@ -47,7 +47,7 @@ def main() -> i32:
     let spacings = array[i32, max_fonts](2, 4, 8, 4, 3, 4, 4, 1)
     var positions = zero[array[rl.Vector2, max_fonts]]()
 
-    for index in range(0, max_fonts):
+    for index in 0..max_fonts:
         positions[index].x = f32<-screen_width / 2.0 - rl.MeasureTextEx(fonts[index], messages[index], f32<-fonts[index].baseSize * 2.0, f32<-spacings[index]).x / 2.0
         positions[index].y = 60.0 + f32<-fonts[index].baseSize + 45.0 * f32<-index
 
@@ -68,7 +68,7 @@ def main() -> i32:
         rl.DrawText(title_text, 220, 20, 20, rl.DARKGRAY)
         rl.DrawLine(220, 50, 600, 50, rl.DARKGRAY)
 
-        for index in range(0, max_fonts):
+        for index in 0..max_fonts:
             rl.DrawTextEx(fonts[index], messages[index], positions[index], f32<-fonts[index].baseSize * 2.0, f32<-spacings[index], colors[index])
 
     return 0

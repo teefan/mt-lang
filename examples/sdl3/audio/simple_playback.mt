@@ -36,7 +36,7 @@ def render_frame() -> void:
         if c.SDL_GetAudioStreamQueued(active_stream) < minimum_audio:
             var samples = zero[array[f32, 512]]()
 
-            for index in range(0, sample_chunk_size):
+            for index in 0..sample_chunk_size:
                 let phase = f32<-(current_sine_sample * tone_frequency) / f32<-audio_sample_rate
                 samples[index] = c.SDL_sinf(phase * 2.0 * c.SDL_PI_F)
                 current_sine_sample += 1

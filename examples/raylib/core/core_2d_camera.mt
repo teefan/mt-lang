@@ -24,7 +24,7 @@ def main() -> i32:
     var build_colors = zero[array[rl.Color, 100]]()
     var spacing = 0
 
-    for index in range(0, building_count):
+    for index in 0..building_count:
         let width = rl.GetRandomValue(50, 200)
         let height = rl.GetRandomValue(100, 800)
         buildings[index] = rl.Rectangle(
@@ -86,7 +86,7 @@ def main() -> i32:
 
         rl.BeginMode2D(camera)
         rl.DrawRectangle(-6000, 320, 13000, 8000, rl.DARKGRAY)
-        for index in range(0, building_count):
+        for index in 0..building_count:
             rl.DrawRectangleRec(buildings[index], build_colors[index])
         rl.DrawRectangleRec(player, rl.RED)
         rl.DrawLine(camera.target.x, -screen_height * 10, camera.target.x, screen_height * 10, rl.GREEN)

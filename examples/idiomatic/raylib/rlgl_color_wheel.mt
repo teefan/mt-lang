@@ -119,7 +119,7 @@ def main() -> i32:
         rl.clear_background(rl.RAYWHITE)
 
         rlgl.begin(render_type)
-        for index in range(0, triangle_count):
+        for index in 0..triangle_count:
             let angle_offset = (rl.PI * 2.0) / f32<-triangle_count
             let angle = angle_offset * f32<-index
             let angle_offset_calculated = (f32<-index + 1.0) * angle_offset

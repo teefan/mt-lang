@@ -40,10 +40,10 @@ def advance_wave_state(wavelength: i32) -> void:
 
 def save_wave_samples(samples: ptr[f32], frame_count: i32) -> void:
     unsafe:
-        for index in range(0, sample_rate - frame_count):
+        for index in 0..sample_rate - frame_count:
             buffer[index] = buffer[index + frame_count]
 
-        for index in range(0, frame_count):
+        for index in 0..frame_count:
             buffer[sample_rate - frame_count + index] = read(samples + index)
 
 
@@ -53,7 +53,7 @@ def sine_callback(frames_out: ptr[void], frame_count: u32) -> void:
     let wavelength = sample_rate / wave_frequency
 
     unsafe:
-        for index in range(0, count):
+        for index in 0..count:
             read(samples + index) = rm.sin(2.0 * rl.PI * f32<-wave_index / f32<-wavelength)
             advance_wave_state(wavelength)
 
@@ -67,7 +67,7 @@ def square_callback(frames_out: ptr[void], frame_count: u32) -> void:
     let half_wavelength = wavelength / 2
 
     unsafe:
-        for index in range(0, count):
+        for index in 0..count:
             read(samples + index) = if wave_index < half_wavelength: 1.0 else: -1.0
             advance_wave_state(wavelength)
 
@@ -81,7 +81,7 @@ def triangle_callback(frames_out: ptr[void], frame_count: u32) -> void:
     let half_wavelength = wavelength / 2
 
     unsafe:
-        for index in range(0, count):
+        for index in 0..count:
             var sample: f32 = 0.0
             if wave_index < half_wavelength:
                 sample = -1.0 + 2.0 * f32<-wave_index / f32<-half_wavelength
@@ -100,7 +100,7 @@ def sawtooth_callback(frames_out: ptr[void], frame_count: u32) -> void:
     let wavelength = sample_rate / wave_frequency
 
     unsafe:
-        for index in range(0, count):
+        for index in 0..count:
             read(samples + index) = -1.0 + 2.0 * f32<-wave_index / f32<-wavelength
             advance_wave_state(wavelength)
 
@@ -185,7 +185,7 @@ def main() -> i32:
         rl.DrawText(frequency_text, 10, 10, 20, rl.DARKGRAY)
         rl.DrawText(wave_type_text, 10, 30, 20, rl.DARKGRAY)
 
-        for index in range(0, screen_width):
+        for index in 0..screen_width:
             let start_sample = preview_sample_index(index)
             let end_sample = preview_sample_index(index + 1)
             let start_pos = rl.Vector2(

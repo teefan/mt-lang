@@ -49,7 +49,7 @@ async def showcase() -> i32:
     while await cond(total):
         total += 1
 
-    for i in range(0, await limit()):
+    for i in 0..await limit():
         total += i
 
     slots[await idx()] = total

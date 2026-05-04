@@ -47,7 +47,7 @@ def main() -> i32:
     )
 
     var models = zero[array[rl.Model, max_vox_files]]()
-    for model_index in range(0, max_vox_files):
+    for model_index in 0..max_vox_files:
         let load_start_ms = rl.GetTime() * 1000.0
         models[model_index] = rl.LoadModel(vox_file_names[model_index])
         let load_end_ms = rl.GetTime() * 1000.0
@@ -79,8 +79,8 @@ def main() -> i32:
         rl.SetShaderValue(shader, ambient_loc, ptr[void]<-ptr_of(ref_of(ambient[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     unsafe:
-        for model_index in range(0, max_vox_files):
-            for material_index in range(0, models[model_index].materialCount):
+        for model_index in 0..max_vox_files:
+            for material_index in 0..models[model_index].materialCount:
                 models[model_index].materials[material_index].shader = shader
 
     var light_sources = zero[array[lights.Light, max_lights]]()
@@ -120,7 +120,7 @@ def main() -> i32:
         unsafe:
             rl.SetShaderValue(shader, view_loc, ptr[void]<-ptr_of(ref_of(camera_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
-        for light_index in range(0, max_lights):
+        for light_index in 0..max_lights:
             lights.UpdateLightValues(shader, light_sources[light_index])
 
         rl.BeginDrawing()
@@ -132,7 +132,7 @@ def main() -> i32:
         rl.DrawModel(models[current_model], model_pos, 1.0, rl.WHITE)
         rl.DrawGrid(10, 1.0)
 
-        for light_index in range(0, max_lights):
+        for light_index in 0..max_lights:
             if light_sources[light_index].enabled:
                 rl.DrawSphereEx(light_sources[light_index].position, 0.2, 8, 8, light_sources[light_index].color)
             else:
@@ -147,7 +147,7 @@ def main() -> i32:
         rl.DrawText(rl.TextFormat(vox_model_label_format, rl.GetFileName(vox_file_names[current_model])), 10, 10, 20, rl.GRAY)
 
     rl.UnloadShader(shader)
-    for model_index in range(0, max_vox_files):
+    for model_index in 0..max_vox_files:
         rl.UnloadModel(models[model_index])
 
     return 0

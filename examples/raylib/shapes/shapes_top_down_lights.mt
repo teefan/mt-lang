@@ -77,7 +77,7 @@ def draw_light_mask(light: LightInfo) -> void:
     rlgl.rlSetBlendFactors(rlgl_src_alpha, rlgl_src_alpha, rlgl_max)
     rlgl.rlSetBlendMode(rl.BlendMode.BLEND_CUSTOM)
 
-    for index in range(0, light.shadow_count):
+    for index in 0..light.shadow_count:
         var shadow_vertices = light.shadows[index].vertices
         rl.DrawTriangleFan(ptr_of(ref_of(shadow_vertices[0])), 4, rl.WHITE)
 
@@ -121,7 +121,7 @@ def update_light(lights: ref[array[LightInfo, 16]], slot: i32, boxes: array[rl.R
     light.shadow_count = 0
     light.valid = false
 
-    for index in range(0, count):
+    for index in 0..count:
         let box = boxes[index]
 
         if rl.CheckCollisionPointRec(light.position, box):
@@ -166,7 +166,7 @@ def setup_boxes(boxes: ref[array[rl.Rectangle, 20]], count: ref[i32]) -> void:
     items[3] = rl.Rectangle(x = 1000.0, y = 50.0, width = 40.0, height = 40.0)
     items[4] = rl.Rectangle(x = 500.0, y = 350.0, width = 40.0, height = 40.0)
 
-    for index in range(5, max_boxes):
+    for index in 5..max_boxes:
         items[index] = rl.Rectangle(
             x = f32<-rl.GetRandomValue(0, rl.GetScreenWidth()),
             y = f32<-rl.GetRandomValue(0, rl.GetScreenHeight()),
@@ -230,7 +230,7 @@ def main() -> i32:
             show_lines = not show_lines
 
         var dirty_lights = false
-        for index in range(0, max_lights):
+        for index in 0..max_lights:
             if update_light(ref_of(lights), index, boxes, box_count):
                 dirty_lights = true
 
@@ -241,7 +241,7 @@ def main() -> i32:
             rlgl.rlSetBlendFactors(rlgl_src_alpha, rlgl_src_alpha, rlgl_min)
             rlgl.rlSetBlendMode(rl.BlendMode.BLEND_CUSTOM)
 
-            for index in range(0, max_lights):
+            for index in 0..max_lights:
                 if lights[index].active:
                     rl.DrawTextureRec(lights[index].mask.texture, flipped_screen_rect, origin, rl.WHITE)
 
@@ -261,7 +261,7 @@ def main() -> i32:
 
         rl.DrawTextureRec(light_mask.texture, flipped_screen_rect, origin, rl.ColorAlpha(rl.WHITE, overlay_alpha))
 
-        for index in range(0, max_lights):
+        for index in 0..max_lights:
             if lights[index].active:
                 var light_color = rl.WHITE
                 if index == 0:
@@ -269,11 +269,11 @@ def main() -> i32:
                 rl.DrawCircle(i32<-lights[index].position.x, i32<-lights[index].position.y, 10.0, light_color)
 
         if show_lines:
-            for index in range(0, lights[0].shadow_count):
+            for index in 0..lights[0].shadow_count:
                 var shadow_vertices = lights[0].shadows[index].vertices
                 rl.DrawTriangleFan(ptr_of(ref_of(shadow_vertices[0])), 4, rl.DARKPURPLE)
 
-            for index in range(0, box_count):
+            for index in 0..box_count:
                 if rl.CheckCollisionRecs(boxes[index], lights[0].bounds):
                     rl.DrawRectangleRec(boxes[index], rl.PURPLE)
 
@@ -293,7 +293,7 @@ def main() -> i32:
         rl.DrawText(c"Drag to move light #1", 10, 10, 10, rl.DARKGREEN)
         rl.DrawText(c"Right click to add new light", 10, 30, 10, rl.DARKGREEN)
 
-    for index in range(0, max_lights):
+    for index in 0..max_lights:
         if lights[index].active:
             rl.UnloadRenderTexture(lights[index].mask)
 

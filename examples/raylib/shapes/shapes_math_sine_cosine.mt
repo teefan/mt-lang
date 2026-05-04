@@ -35,7 +35,7 @@ def main() -> i32:
     var angle: f32 = 0.0
     var pause = false
 
-    for index in range(0, wave_points):
+    for index in 0..wave_points:
         let t = f32<-index / f32<-(wave_points - 1)
         let current_angle = t * 360.0 * rm.deg2rad
         sine_points[index] = rl.Vector2(

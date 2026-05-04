@@ -78,11 +78,11 @@ def main() -> i32:
     defer rl.UnloadTexture(tex_ray)
 
     var stars = zero[array[Star, max_stars]]()
-    for index in range(0, max_stars):
+    for index in 0..max_stars:
         reset_star(ref_of(stars[index]))
 
-    for _ in range(0, screen_width / 2):
-        for index in range(0, max_stars):
+    for _ in 0..screen_width / 2:
+        for index in 0..max_stars:
             update_star(ref_of(stars[index]))
 
     var frame_counter = 0
@@ -95,7 +95,7 @@ def main() -> i32:
     let radius_names = array[cstr, max_spots](c"spots[0].radius", c"spots[1].radius", c"spots[2].radius")
 
     var spots = zero[array[Spot, max_spots]]()
-    for index in range(0, max_spots):
+    for index in 0..max_spots:
         spots[index].position_loc = rl.GetShaderLocation(shader, position_names[index])
         spots[index].inner_loc = rl.GetShaderLocation(shader, inner_names[index])
         spots[index].radius_loc = rl.GetShaderLocation(shader, radius_names[index])
@@ -103,7 +103,7 @@ def main() -> i32:
     let screen_width_loc = rl.GetShaderLocation(shader, screen_width_uniform_name)
     set_float_uniform(shader, screen_width_loc, screen_width_f)
 
-    for index in range(0, max_spots):
+    for index in 0..max_spots:
         spots[index].position.x = f32<-rl.GetRandomValue(64, screen_width - 64)
         spots[index].position.y = f32<-rl.GetRandomValue(64, screen_height - 64)
         spots[index].speed = rl.Vector2(x = 0.0, y = 0.0)
@@ -124,10 +124,10 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         frame_counter += 1
 
-        for index in range(0, max_stars):
+        for index in 0..max_stars:
             update_star(ref_of(stars[index]))
 
-        for index in range(0, max_spots):
+        for index in 0..max_spots:
             if index == 0:
                 let mouse = rl.GetMousePosition()
                 spots[index].position.x = mouse.x
@@ -152,10 +152,10 @@ def main() -> i32:
 
         rl.ClearBackground(rl.DARKBLUE)
 
-        for index in range(0, max_stars):
+        for index in 0..max_stars:
             rl.DrawRectangle(i32<-stars[index].position.x, i32<-stars[index].position.y, 2, 2, rl.WHITE)
 
-        for index in range(0, 16):
+        for index in 0..16:
             let phase = f32<-(frame_counter + index * 8)
             let bob_x = i32<-(screen_width_f / 2.0 + rm.cos(phase / 51.45) * (screen_width_f / 2.2) - 32.0)
             let bob_y = i32<-(screen_height_f / 2.0 + rm.sin(phase / 17.87) * (screen_height_f / 4.2))

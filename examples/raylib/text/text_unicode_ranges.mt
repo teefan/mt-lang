@@ -27,10 +27,10 @@ def add_codepoint_range(font: rl.Font, font_path: cstr, start: i32, stop: i32) -
     defer heap.release(updated_codepoints)
 
     unsafe:
-        for index in range(0, current_range_size):
+        for index in 0..current_range_size:
             read(updated_codepoints + index) = font.glyphs[index].value
 
-        for index in range(current_range_size, updated_codepoint_count):
+        for index in current_range_size..updated_codepoint_count:
             read(updated_codepoints + index) = start + (index - current_range_size)
 
     rl.UnloadFont(font)

@@ -114,7 +114,7 @@ def add_triangle_to_mesh_builder(mb: ref[MeshBuilder], vertices: array[rl.Vector
         if mb.vertexCapacity > 0:
             let old_vertices = sp.from_ptr[rl.Vector3](mb.vertices, usize<-mb.vertexCount)
             var new_vertex_view = sp.from_ptr[rl.Vector3](new_vertices, usize<-mb.vertexCount)
-            for index in range(0, mb.vertexCount):
+            for index in 0..mb.vertexCount:
                 new_vertex_view[index] = old_vertices[index]
 
             rl.MemFree(mb.vertices)
@@ -126,7 +126,7 @@ def add_triangle_to_mesh_builder(mb: ref[MeshBuilder], vertices: array[rl.Vector
     mb.vertexCount += 3
 
     var vertex_view = sp.from_ptr[rl.Vector3](mb.vertices, usize<-mb.vertexCount)
-    for index in range(0, 3):
+    for index in 0..3:
         vertex_view[start + index] = vertices[index]
 
 
@@ -151,7 +151,7 @@ def build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:
     let uvs = if mb.hasUvs: sp.from_ptr[rl.Vector2](mb.uvs, usize<-mb.vertexCount) else: sp.empty[rl.Vector2]()
 
     unsafe:
-        for index in range(0, mb.vertexCount):
+        for index in 0..mb.vertexCount:
             out_mesh.vertices[index * 3] = vertices[index].x
             out_mesh.vertices[index * 3 + 1] = vertices[index].y
             out_mesh.vertices[index * 3 + 2] = vertices[index].z
@@ -186,13 +186,13 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
 
     var mb_index = 0
 
-    for mesh_index in range(0, target.meshCount):
+    for mesh_index in 0..target.meshCount:
         let mesh = model_mesh(target, mesh_index)
-        for triangle_index in range(0, mesh.triangleCount):
+        for triangle_index in 0..mesh.triangleCount:
             var vertices = mesh_triangle(mesh, triangle_index)
             var inside_count = 0
 
-            for index in range(0, 3):
+            for index in 0..3:
                 let projected = vertices[index].transform(projection)
                 if libm.fabsf(projected.x) < decal_size or libm.fabsf(projected.y) <= decal_size or libm.fabsf(projected.z) <= decal_size:
                     inside_count += 1
@@ -209,7 +209,7 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
     planes[4] = rl.Vector3(x = 0.0, y = 0.0, z = 1.0)
     planes[5] = rl.Vector3(x = 0.0, y = 0.0, z = -1.0)
 
-    for face in range(0, 6):
+    for face in 0..6:
         mb_index = 1 - mb_index
 
         let in_index = 1 - mb_index
@@ -292,7 +292,7 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
         var vertices = sp.from_ptr[rl.Vector3](final_mesh.vertices, usize<-final_mesh.vertexCount)
         var uvs = sp.from_ptr[rl.Vector2](final_mesh.uvs, usize<-final_mesh.vertexCount)
 
-        for index in range(0, final_mesh.vertexCount):
+        for index in 0..final_mesh.vertexCount:
             uvs[index].x = vertices[index].x / decal_size + 0.5
             uvs[index].y = vertices[index].y / decal_size + 0.5
             vertices[index].z -= decal_offset
@@ -382,7 +382,7 @@ def main() -> i32:
     var decal_models = zero[array[rl.Model, 256]]()
     var decal_count = 0
     defer:
-        for index in range(0, decal_count):
+        for index in 0..decal_count:
             rl.UnloadModel(decal_models[index])
 
     rl.SetTargetFPS(60)
@@ -400,7 +400,7 @@ def main() -> i32:
 
         if box_hit_info.hit and decal_count < max_decals:
             var mesh_hit_info = zero[rl.RayCollision]()
-            for mesh_index in range(0, model.meshCount):
+            for mesh_index in 0..model.meshCount:
                 mesh_hit_info = rl.GetRayCollisionMesh(ray, model_mesh(model, mesh_index), model.transform)
                 if mesh_hit_info.hit:
                     if not collision.hit or collision.distance > mesh_hit_info.distance:
@@ -431,7 +431,7 @@ def main() -> i32:
         if show_model:
             rl.DrawModel(model, rl.Vector3(x = 0.0, y = 0.0, z = 0.0), 1.0, rl.WHITE)
 
-        for index in range(0, decal_count):
+        for index in 0..decal_count:
             rl.DrawModel(decal_models[index], rl.Vector3(x = 0.0, y = 0.0, z = 0.0), 1.0, rl.WHITE)
 
         if collision.hit:
@@ -454,7 +454,7 @@ def main() -> i32:
 
         var vertex_count = 0
         var triangle_count = 0
-        for mesh_index in range(0, model.meshCount):
+        for mesh_index in 0..model.meshCount:
             let mesh = model_mesh(model, mesh_index)
             vertex_count += mesh.vertexCount
             triangle_count += mesh.triangleCount
@@ -464,7 +464,7 @@ def main() -> i32:
         rl.DrawText(rl.TextFormat(count_format, triangle_count), i32<-x2, i32<-y_pos, 10, rl.LIME)
         y_pos += 15.0
 
-        for index in range(0, decal_count):
+        for index in 0..decal_count:
             if index == 20:
                 rl.DrawText(ellipsis_text, i32<-x0, i32<-y_pos, 10, rl.LIME)
                 y_pos += 15.0
@@ -490,7 +490,7 @@ def main() -> i32:
             show_model = not show_model
 
         if gui_button(rl.Rectangle(x = 120.0, y = screen_height - 100.0, width = 100.0, height = 60.0), clear_decals_text):
-            for index in range(0, decal_count):
+            for index in 0..decal_count:
                 rl.UnloadModel(decal_models[index])
             decal_count = 0
 

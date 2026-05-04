@@ -35,7 +35,7 @@ def allocate_delay_buffer() -> void:
         delay_buffer = ptr[f32]?<-rl.MemAlloc(delay_buffer_size * u32<-sizeof(f32))
         if delay_buffer != null:
             let samples = ptr[f32]<-delay_buffer
-            for index in range(0, i32<-delay_buffer_size):
+            for index in 0..i32<-delay_buffer_size:
                 read(samples + index) = 0.0
 
 

@@ -10,11 +10,11 @@ const cat_path: str = "../../raylib/resources/cat.png"
 def normalize_kernel(kernel: array[f32, 9]) -> array[f32, 9]:
     var values = kernel
     var sum: f32 = 0.0
-    for index in range(0, 9):
+    for index in 0..9:
         sum += values[index]
 
     if sum != 0.0:
-        for index in range(0, 9):
+        for index in 0..9:
             values[index] /= sum
 
     return values
@@ -23,7 +23,7 @@ def normalize_kernel(kernel: array[f32, 9]) -> array[f32, 9]:
 def apply_kernel(image: rl.Image, kernel: array[f32, 9], passes: i32) -> rl.Image:
     var result = image
     var kernel_values = kernel
-    for index in range(0, passes):
+    for index in 0..passes:
         let _ = index
         rl.image_kernel_convolution(inout result, const_ptr_of(kernel_values[0]), 9)
     return result

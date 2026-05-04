@@ -155,7 +155,7 @@ def main() -> i32:
             if rl.get_random_value(0, -emission_rate - 1) == 0:
                 emit_particle(particles, ref_of(head), tail, emitter_position, current_type)
         else:
-            for index in range(0, emission_rate + 1):
+            for index in 0..emission_rate + 1:
                 let _ = index
                 emit_particle(particles, ref_of(head), tail, emitter_position, current_type)
 

@@ -40,9 +40,9 @@ def main() -> i32:
 
         rl.DrawGrid(10, 5.0)
 
-        for x in range(0, num_blocks):
-            for y in range(0, num_blocks):
-                for z in range(0, num_blocks):
+        for x in 0..num_blocks:
+            for y in 0..num_blocks:
+                for z in 0..num_blocks:
                     let block_scale = f32<-(x + y + z) / 30.0
                     let scatter = rm.sin(block_scale * 20.0 + time * 4.0)
                     let cube_pos = rl.Vector3(

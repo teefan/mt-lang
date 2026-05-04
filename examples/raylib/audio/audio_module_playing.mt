@@ -59,7 +59,7 @@ def main() -> i32:
     colors[13] = rl.BEIGE
 
     var circles = zero[array[CircleWave, 64]]()
-    for index in range(0, max_circles):
+    for index in 0..max_circles:
         random_circle(ref_of(circles), max_circles - 1 - index, ref_of(colors))
 
     var music = rl.LoadMusicStream(music_path)
@@ -97,7 +97,7 @@ def main() -> i32:
         time_played = rl.GetMusicTimePlayed(music) / rl.GetMusicTimeLength(music) * f32<-(screen_width - 40)
 
         if not pause:
-            for index in range(0, max_circles):
+            for index in 0..max_circles:
                 var circle = circles[max_circles - 1 - index]
                 circle.alpha += circle.speed
                 circle.radius += circle.speed * 10.0
@@ -115,7 +115,7 @@ def main() -> i32:
 
         rl.ClearBackground(rl.RAYWHITE)
 
-        for index in range(0, max_circles):
+        for index in 0..max_circles:
             let circle = circles[max_circles - 1 - index]
             rl.DrawCircleV(circle.position, circle.radius, rl.Fade(circle.color, circle.alpha))
 

@@ -84,7 +84,7 @@ def main() -> i32:
 
         rl.ClearBackground(rl.RAYWHITE)
 
-        for index in range(0, max_sinewave_points - 1):
+        for index in 0..max_sinewave_points - 1:
             rl.DrawLineV(sine_points[index], sine_points[index + 1], rl.MAROON)
             rl.DrawCircleV(sine_points[index], 3.0, rl.MAROON)
 

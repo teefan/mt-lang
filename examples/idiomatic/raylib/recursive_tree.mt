@@ -16,7 +16,7 @@ const screen_height: i32 = 450
 
 def branch_limit(depth: i32) -> i32:
     var limit = 1
-    for _ in range(0, depth):
+    for _ in 0..depth:
         limit *= 2
     return limit
 
@@ -78,7 +78,7 @@ def main() -> i32:
 
         rl.clear_background(rl.RAYWHITE)
 
-        for draw_index in range(0, count):
+        for draw_index in 0..count:
             let branch = branches[draw_index]
             if branch.length >= 2.0:
                 if bezier:

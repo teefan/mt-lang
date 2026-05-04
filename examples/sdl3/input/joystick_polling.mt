@@ -54,7 +54,7 @@ def render_frame() -> void:
         y = (f32<-winh - (f32<-total * joystick_size)) / 2.0
         x = f32<-winw / 2.0
 
-        for index in range(0, total):
+        for index in 0..total:
             let color_index = index % color_count
             let value = f32<-c.SDL_GetJoystickAxis(joystick, index) / 32767.0
             let dx = x + (value * x)
@@ -66,7 +66,7 @@ def render_frame() -> void:
         total = c.SDL_GetNumJoystickButtons(joystick)
         x = (f32<-winw - (f32<-total * joystick_size)) / 2.0
 
-        for index in range(0, total):
+        for index in 0..total:
             let color_index = index % color_count
             var dst = c.SDL_FRect(x = x, y = 0.0, w = joystick_size, h = joystick_size)
 
@@ -84,7 +84,7 @@ def render_frame() -> void:
         x = ((f32<-winw - (f32<-total * (joystick_size * 2.0))) / 2.0) + (joystick_size / 2.0)
         y = f32<-winh - joystick_size
 
-        for index in range(0, total):
+        for index in 0..total:
             let color_index = index % color_count
             let third_size = joystick_size / 3.0
             let hat = u32<-c.SDL_GetJoystickHat(joystick, index)
@@ -141,7 +141,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)
 
-    for index in range(0, color_count):
+    for index in 0..color_count:
         colors[index].r = c.Uint8<-c.SDL_rand(255)
         colors[index].g = c.Uint8<-c.SDL_rand(255)
         colors[index].b = c.Uint8<-c.SDL_rand(255)

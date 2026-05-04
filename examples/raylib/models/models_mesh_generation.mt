@@ -103,10 +103,10 @@ def main() -> i32:
     models[7] = rl.LoadModelFromMesh(rl.GenMeshPoly(5, 2.0))
     models[8] = rl.LoadModelFromMesh(custom_mesh())
     defer:
-        for index in range(0, num_models):
+        for index in 0..num_models:
             rl.UnloadModel(models[index])
 
-    for index in range(0, num_models):
+    for index in 0..num_models:
         rl.SetMaterialTexture(models[index].materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     var camera = rl.Camera3D(
