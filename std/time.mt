@@ -19,7 +19,7 @@ pub struct ClockTime:
 
 pub def now_unix_seconds() -> i64:
     var storage: c.time_t = 0
-    let result = c.time(ptr_of(ref_of(storage)))
+    let result = c.time(ptr_of(storage))
     return i64<-result
 
 
@@ -33,7 +33,7 @@ def two_digits(buffer: array[char, 7], index: i32) -> i32:
 
 def clock_from_tm(time_info: ptr[c.tm]) -> Result[ClockTime, Error]:
     var buffer = zero[array[char, 7]]()
-    let written = c.strftime(ptr_of(ref_of(buffer[0])), u64<-clock_buffer_capacity, c"%H%M%S", time_info)
+    let written = c.strftime(ptr_of(buffer[0]), u64<-clock_buffer_capacity, c"%H%M%S", time_info)
     if written != usize<-6:
         return err(Error.invalid_time)
 
@@ -53,13 +53,13 @@ pub def hour_12(clock: ClockTime) -> i32:
 
 pub def clock_utc(timestamp: i64) -> Result[ClockTime, Error]:
     var time_value: c.time_t = c.time_t<-timestamp
-    let time_info = c.gmtime(ptr_of(ref_of(time_value)))
+    let time_info = c.gmtime(ptr_of(time_value))
     return clock_from_tm(time_info)
 
 
 pub def clock_local(timestamp: i64) -> Result[ClockTime, Error]:
     var time_value: c.time_t = c.time_t<-timestamp
-    let time_info = c.localtime(ptr_of(ref_of(time_value)))
+    let time_info = c.localtime(ptr_of(time_value))
     return clock_from_tm(time_info)
 
 
@@ -73,7 +73,7 @@ def format_tm(time_info: ptr[c.tm], format: str, scratch: ref[arena.Arena]) -> R
 
     let c_format = scratch.to_cstr(format)
     var buffer: array[char, 128]
-    let written = c.strftime(ptr_of(ref_of(buffer[0])), u64<-format_buffer_capacity, c_format, time_info)
+    let written = c.strftime(ptr_of(buffer[0]), u64<-format_buffer_capacity, c_format, time_info)
     if written == 0:
         return err(Error.output_too_large)
 
@@ -81,7 +81,7 @@ def format_tm(time_info: ptr[c.tm], format: str, scratch: ref[arena.Arena]) -> R
     var index: usize = 0
     while index < written:
         unsafe:
-            result.push_byte(u8<-read(ptr_of(ref_of(buffer[0])) + index))
+            result.push_byte(u8<-read(ptr_of(buffer[0]) + index))
         index += 1
 
     return ok(result)
@@ -89,11 +89,11 @@ def format_tm(time_info: ptr[c.tm], format: str, scratch: ref[arena.Arena]) -> R
 
 pub def format_utc(timestamp: i64, format: str, scratch: ref[arena.Arena]) -> Result[string.String, Error]:
     var time_value: c.time_t = c.time_t<-timestamp
-    let time_info = c.gmtime(ptr_of(ref_of(time_value)))
+    let time_info = c.gmtime(ptr_of(time_value))
     return format_tm(time_info, format, scratch)
 
 
 pub def format_local(timestamp: i64, format: str, scratch: ref[arena.Arena]) -> Result[string.String, Error]:
     var time_value: c.time_t = c.time_t<-timestamp
-    let time_info = c.localtime(ptr_of(ref_of(time_value)))
+    let time_info = c.localtime(ptr_of(time_value))
     return format_tm(time_info, format, scratch)

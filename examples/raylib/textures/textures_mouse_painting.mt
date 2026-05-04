@@ -107,7 +107,7 @@ def main() -> i32:
 
         if (btn_save_mouse_hover and rl.IsMouseButtonReleased(rl.MouseButton.MOUSE_BUTTON_LEFT)) or rl.IsKeyPressed(rl.KeyboardKey.KEY_S):
             var image = rl.LoadImageFromTexture(target.texture)
-            rl.ImageFlipVertical(ptr_of(ref_of(image)))
+            rl.ImageFlipVertical(ptr_of(image))
             rl.ExportImage(image, save_path)
             rl.UnloadImage(image)
             show_save_message = true

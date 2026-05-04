@@ -125,7 +125,7 @@ def main() -> i32:
 
     var aelist = zero[rl.AutomationEventList]()
     aelist = rl.LoadAutomationEventList(null)
-    rl.SetAutomationEventList(ptr_of(ref_of(aelist)))
+    rl.SetAutomationEventList(ptr_of(aelist))
 
     var event_recording = false
     var event_playing = false

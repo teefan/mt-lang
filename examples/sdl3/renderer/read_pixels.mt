@@ -22,7 +22,7 @@ var converted_texture_height: i32 = 0
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
-    while c.SDL_PollEvent(ptr_of(ref_of(event))):
+    while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
@@ -46,7 +46,7 @@ def render_frame() -> bool:
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
-    c.SDL_RenderTextureRotated(renderer, texture, null, ptr_of(ref_of(destination)), f64<-rotation, ptr_of(ref_of(center)), c.SDL_FlipMode.SDL_FLIP_NONE)
+    c.SDL_RenderTextureRotated(renderer, texture, null, ptr_of(destination), f64<-rotation, ptr_of(center), c.SDL_FlipMode.SDL_FLIP_NONE)
 
     var surface = c.SDL_RenderReadPixels(renderer, null)
     var processed_surface: ptr[c.SDL_Surface]? = surface
@@ -105,7 +105,7 @@ def render_frame() -> bool:
                     destination.y = 0.0
                     destination.w = f32<-window_width / 4.0
                     destination.h = f32<-window_height / 4.0
-                    c.SDL_RenderTexture(renderer, converted_texture, null, ptr_of(ref_of(destination)))
+                    c.SDL_RenderTexture(renderer, converted_texture, null, ptr_of(destination))
                 else:
                     c.SDL_DestroySurface(processed_surface)
                     return false
@@ -121,7 +121,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(window), ptr_of(renderer)):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)

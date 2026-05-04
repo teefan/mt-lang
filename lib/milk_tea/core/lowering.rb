@@ -4341,7 +4341,12 @@ module MilkTea
           IR::Unary.new(operator: "*", operand: lower_expression(argument.value, env:), type:)
         when :ptr_of
           argument = expression.arguments.fetch(0)
-          IR::Cast.new(target_type: type, expression: lower_expression(argument.value, env:), type:)
+          argument_type = infer_expression_type(argument.value, env:)
+          if ref_type?(argument_type)
+            IR::Cast.new(target_type: type, expression: lower_expression(argument.value, env:), type:)
+          else
+            lower_addr_expression(argument.value, env:, target_type: type)
+          end
         else
           raise LoweringError, "unsupported call kind #{kind}"
         end
@@ -5049,16 +5054,27 @@ module MilkTea
           IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type:)
         when :ptr_of
           argument = expression.arguments.fetch(0)
-          IR::Cast.new(
-            target_type: type,
-            expression: lower_inline_foreign_mapping_expression(
+          argument_type = with_analysis_context(owner_analysis) do
+            infer_expression_type(argument.value, env: mapping_env)
+          end
+          if ref_type?(argument_type)
+            IR::Cast.new(
+              target_type: type,
+              expression: lower_inline_foreign_mapping_expression(
+                argument.value,
+                mapping_env:,
+                replacements:,
+                owner_analysis:,
+              ),
+              type:,
+            )
+          else
+            lower_addr_expression(
               argument.value,
-              mapping_env:,
-              replacements:,
-              owner_analysis:,
-            ),
-            type:,
-          )
+              env: mapping_env,
+              target_type: type,
+            )
+          end
         else
           raise LoweringError, "unsupported inline foreign mapping call kind #{kind}"
         end
@@ -5093,15 +5109,7 @@ module MilkTea
       def raw_pointer_argument_expression(operand)
         AST::Call.new(
           callee: AST::Identifier.new(name: "ptr_of"),
-          arguments: [
-            AST::Argument.new(
-              name: nil,
-              value: AST::Call.new(
-                callee: AST::Identifier.new(name: "ref_of"),
-                arguments: [AST::Argument.new(name: nil, value: operand)],
-              ),
-            ),
-          ],
+          arguments: [AST::Argument.new(name: nil, value: operand)],
         )
       end
 
@@ -6128,7 +6136,12 @@ module MilkTea
           when :read
             infer_value_type(expression.arguments.fetch(0).value, env:)
           when :ptr_of
-            Types::GenericInstance.new("ptr", [infer_ref_argument_type(expression.arguments.fetch(0).value, env:)])
+            argument_type = infer_expression_type(expression.arguments.fetch(0).value, env:)
+            if ref_type?(argument_type)
+              Types::GenericInstance.new("ptr", [referenced_type(argument_type)])
+            else
+              Types::GenericInstance.new("ptr", [infer_expression_type(expression.arguments.fetch(0).value, env:, expected_type: expected_type && pointer_type?(expected_type) ? pointee_type(expected_type) : nil)])
+            end
           when :cast
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             function_type.return_type
@@ -7049,13 +7062,6 @@ module MilkTea
         return pointee_type(receiver_type) if pointer_type?(receiver_type)
 
         receiver_type
-      end
-
-      def infer_ref_argument_type(handle_expression, env:)
-        handle_type = infer_expression_type(handle_expression, env:)
-        return referenced_type(handle_type) if ref_type?(handle_type)
-
-        raise LoweringError, "ptr_of expects ref[...] argument, got #{handle_type}"
       end
 
       def collection_loop_type(type)

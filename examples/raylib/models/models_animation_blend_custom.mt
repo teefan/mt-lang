@@ -30,7 +30,7 @@ def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimat
 
 def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
     unsafe:
-        return chars_to_cstr(ptr_of(ref_of((anims + index).name[0])))
+        return chars_to_cstr(ptr_of((anims + index).name[0]))
 
 
 def model_animation_pose(anim: rl.ModelAnimation, frame: i32) -> rl.ModelAnimPose:
@@ -50,7 +50,7 @@ def bind_pose_transform(skeleton: rl.ModelSkeleton, index: i32) -> rl.Transform:
 
 def skeleton_bone_name(skeleton: rl.ModelSkeleton, index: i32) -> cstr:
     unsafe:
-        return chars_to_cstr(ptr_of(ref_of((skeleton.bones + index).name[0])))
+        return chars_to_cstr(ptr_of((skeleton.bones + index).name[0]))
 
 
 def model_value(model: ptr[rl.Model]) -> rl.Model:
@@ -244,7 +244,7 @@ def main() -> i32:
         model.materials[1].shader = skinning_shader
 
     var anim_count = 0
-    let anims = rl.LoadModelAnimations(model_path, ptr_of(ref_of(anim_count)))
+    let anims = rl.LoadModelAnimations(model_path, ptr_of(anim_count))
     defer rl.UnloadModelAnimations(anims, anim_count)
 
     var anim_index0 = 2
@@ -262,7 +262,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_SPACE):
             upper_body_blend = not upper_body_blend
@@ -274,7 +274,7 @@ def main() -> i32:
         anim_current_frame1 = (anim_current_frame1 + 1) % anim1.keyframeCount
 
         let blend_factor = if upper_body_blend: f32<-1.0 else: f32<-0.5
-        update_model_animation_bones(ptr_of(ref_of(model)), anim0, anim_current_frame0, anim1, anim_current_frame1, blend_factor, upper_body_blend)
+        update_model_animation_bones(ptr_of(model), anim0, anim_current_frame0, anim1, anim_current_frame1, blend_factor, upper_body_blend)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

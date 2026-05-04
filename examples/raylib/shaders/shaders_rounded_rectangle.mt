@@ -63,17 +63,17 @@ def vector2_components(vector: rl.Vector2) -> array[f32, 2]:
 
 def set_vec4_uniform(shader: rl.Shader, location: i32, x: f32, y: f32, z: f32, w: f32) -> void:
     var values = array[f32, 4](x, y, z, w)
-    rl.SetShaderValue(shader, location, ptr_of(ref_of(values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shader, location, ptr_of(values[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
 
 def set_vec2_uniform(shader: rl.Shader, location: i32, x: f32, y: f32) -> void:
     var values = array[f32, 2](x, y)
-    rl.SetShaderValue(shader, location, ptr_of(ref_of(values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, location, ptr_of(values[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
 
 def set_float_uniform(shader: rl.Shader, location: i32, value: f32) -> void:
     var storage: f32 = value
-    rl.SetShaderValue(shader, location, ptr_of(ref_of(storage)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, location, ptr_of(storage), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
 
 def set_rectangle_uniform(shader: rl.Shader, rounded_rectangle: RoundedRectangle, rectangle: rl.Rectangle) -> void:

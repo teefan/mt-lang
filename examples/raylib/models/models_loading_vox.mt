@@ -76,7 +76,7 @@ def main() -> i32:
     let ambient_loc = rl.GetShaderLocation(shader, c"ambient")
     var ambient = array[f32, 4](0.1, 0.1, 0.1, 1.0)
     unsafe:
-        rl.SetShaderValue(shader, ambient_loc, ptr[void]<-ptr_of(ref_of(ambient[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+        rl.SetShaderValue(shader, ambient_loc, ptr[void]<-ptr_of(ambient[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     unsafe:
         for model_index in 0..max_vox_files:
@@ -107,7 +107,7 @@ def main() -> i32:
             rl.IsKeyDown(rl.KeyboardKey.KEY_A) or rl.IsKeyDown(rl.KeyboardKey.KEY_LEFT),
         )
         rl.UpdateCameraPro(
-            ptr_of(ref_of(camera)),
+            ptr_of(camera),
             rl.Vector3(x = move_forward, y = move_side, z = 0.0),
             camera_rot,
             rl.GetMouseWheelMove() * -2.0,
@@ -118,7 +118,7 @@ def main() -> i32:
 
         var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
         unsafe:
-            rl.SetShaderValue(shader, view_loc, ptr[void]<-ptr_of(ref_of(camera_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+            rl.SetShaderValue(shader, view_loc, ptr[void]<-ptr_of(camera_pos[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         for light_index in 0..max_lights:
             lights.UpdateLightValues(shader, light_sources[light_index])

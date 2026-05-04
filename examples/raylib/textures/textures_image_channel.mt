@@ -15,16 +15,16 @@ def main() -> i32:
     let fudesumi_image = rl.LoadImage(fudesumi_path)
 
     var image_alpha = rl.ImageFromChannel(fudesumi_image, 3)
-    rl.ImageAlphaMask(ptr_of(ref_of(image_alpha)), image_alpha)
+    rl.ImageAlphaMask(ptr_of(image_alpha), image_alpha)
 
     var image_red = rl.ImageFromChannel(fudesumi_image, 0)
-    rl.ImageAlphaMask(ptr_of(ref_of(image_red)), image_alpha)
+    rl.ImageAlphaMask(ptr_of(image_red), image_alpha)
 
     var image_green = rl.ImageFromChannel(fudesumi_image, 1)
-    rl.ImageAlphaMask(ptr_of(ref_of(image_green)), image_alpha)
+    rl.ImageAlphaMask(ptr_of(image_green), image_alpha)
 
     var image_blue = rl.ImageFromChannel(fudesumi_image, 2)
-    rl.ImageAlphaMask(ptr_of(ref_of(image_blue)), image_alpha)
+    rl.ImageAlphaMask(ptr_of(image_blue), image_alpha)
 
     let background_image = rl.GenImageChecked(screen_width, screen_height, screen_width / 20, screen_height / 20, rl.ORANGE, rl.YELLOW)
 

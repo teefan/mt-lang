@@ -24,7 +24,7 @@ def chars_to_cstr(text: ptr[char]) -> cstr:
 
 
 def text_buffer_ptr(text: ref[array[char, 64]]) -> ptr[char]:
-    return ptr_of(ref_of(read(text)[0]))
+    return ptr_of(read(text)[0])
 
 
 def text_buffer_cstr(text: ref[array[char, 64]]) -> cstr:
@@ -145,7 +145,7 @@ def draw_text_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size: f32
     var index = 0
     while index < length:
         var codepoint_byte_count = 0
-        let codepoint = text_codepoint_at(text, index, ptr_of(ref_of(codepoint_byte_count)))
+        let codepoint = text_codepoint_at(text, index, ptr_of(codepoint_byte_count))
         let glyph_index = rl.GetGlyphIndex(font, codepoint)
         let glyph = font_glyph(font, glyph_index)
         let rec = font_rec(font, glyph_index)
@@ -188,7 +188,7 @@ def draw_text_wave_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size
     var glyph_position = 0
     while index < length:
         var codepoint_byte_count = 0
-        let codepoint = text_codepoint_at(text, index, ptr_of(ref_of(codepoint_byte_count)))
+        let codepoint = text_codepoint_at(text, index, ptr_of(codepoint_byte_count))
         let glyph_index = rl.GetGlyphIndex(font, codepoint)
         let glyph = font_glyph(font, glyph_index)
         let rec = font_rec(font, glyph_index)
@@ -202,7 +202,7 @@ def draw_text_wave_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size
             glyph_position = 0
         elif codepoint == 126:
             var next_byte_count = 0
-            let next_codepoint = text_codepoint_at(text, index + 1, ptr_of(ref_of(next_byte_count)))
+            let next_codepoint = text_codepoint_at(text, index + 1, ptr_of(next_byte_count))
             if next_codepoint == 126:
                 codepoint_byte_count += 1
                 wave = not wave
@@ -246,7 +246,7 @@ def measure_text_wave_3d(font: rl.Font, text: cstr, font_size: f32, font_spacing
     var index = 0
     while index < length:
         var next_bytes = 0
-        let codepoint = text_codepoint_at(text, index, ptr_of(ref_of(next_bytes)))
+        let codepoint = text_codepoint_at(text, index, ptr_of(next_bytes))
         let glyph_index = rl.GetGlyphIndex(font, codepoint)
         let glyph = font_glyph(font, glyph_index)
         let rec = font_rec(font, glyph_index)
@@ -257,7 +257,7 @@ def measure_text_wave_3d(font: rl.Font, text: cstr, font_size: f32, font_spacing
         if codepoint != 10:
             if codepoint == 126:
                 var next_codepoint_bytes = 0
-                if text_codepoint_at(text, index + 1, ptr_of(ref_of(next_codepoint_bytes))) == 126:
+                if text_codepoint_at(text, index + 1, ptr_of(next_codepoint_bytes)) == 126:
                     index += 1
                 else:
                     len_counter += 1
@@ -347,7 +347,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), camera_mode)
+        rl.UpdateCamera(ptr_of(camera), camera_mode)
 
         if rl.IsFileDropped():
             let dropped_files = rl.LoadDroppedFiles()
@@ -475,7 +475,7 @@ def main() -> i32:
                 font_spacing,
                 line_spacing,
                 true,
-                ptr_of(ref_of(wave_config)),
+                ptr_of(wave_config),
                 time,
                 layer_color,
                 show_letter_boundary,

@@ -29,7 +29,7 @@ def chars_to_cstr(text: ptr[char]) -> cstr:
 
 
 def text_buffer_ptr(text: ref[array[char, 256]]) -> ptr[char]:
-    return ptr_of(ref_of(read(text)[0]))
+    return ptr_of(read(text)[0])
 
 
 def text_buffer_cstr(text: ref[array[char, 256]]) -> cstr:
@@ -73,7 +73,7 @@ def set_shader_int(shader: rl.Shader, uniform_name: cstr, value: i32) -> void:
     rl.SetShaderValue(
         shader,
         rl.GetShaderLocation(shader, uniform_name),
-        ptr_of(ref_of(raw_value[0])),
+        ptr_of(raw_value[0]),
         rl.ShaderUniformDataType.SHADER_UNIFORM_INT,
     )
 
@@ -212,7 +212,7 @@ def main() -> i32:
         rl.TextFormat(skybox_shader_fragment_path_format, glsl_version),
     )
     defer rl.UnloadShader(skybox_shader)
-    set_skybox_shader(ptr_of(ref_of(skybox)), skybox_shader)
+    set_skybox_shader(ptr_of(skybox), skybox_shader)
 
     set_shader_int(skybox_shader, environment_map_text, i32<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP)
     set_shader_int(skybox_shader, do_gamma_text, if use_hdr: 1 else: 0)
@@ -226,13 +226,13 @@ def main() -> i32:
     set_shader_int(cubemap_shader, equirectangular_map_text, 0)
 
     var skybox_file_name = zero[array[char, 256]]()
-    load_skybox_texture(ptr_of(ref_of(skybox)), cubemap_shader, use_hdr, ref_of(skybox_file_name), if use_hdr: skybox_hdr_path else: skybox_texture_path)
+    load_skybox_texture(ptr_of(skybox), cubemap_shader, use_hdr, ref_of(skybox_file_name), if use_hdr: skybox_hdr_path else: skybox_texture_path)
 
     rl.DisableCursor()
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_FIRST_PERSON)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_FIRST_PERSON)
 
         if rl.IsFileDropped():
             let dropped_files = rl.LoadDroppedFiles()
@@ -241,7 +241,7 @@ def main() -> i32:
                 let dropped_path = file_path_list_path(dropped_files, 0)
                 if rl.IsFileExtension(dropped_path, drop_extensions):
                     rl.UnloadTexture(skybox_cubemap(skybox))
-                    load_skybox_texture(ptr_of(ref_of(skybox)), cubemap_shader, use_hdr, ref_of(skybox_file_name), dropped_path)
+                    load_skybox_texture(ptr_of(skybox), cubemap_shader, use_hdr, ref_of(skybox_file_name), dropped_path)
 
             rl.UnloadDroppedFiles(dropped_files)
 

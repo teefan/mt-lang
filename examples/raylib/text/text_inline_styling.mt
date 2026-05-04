@@ -34,7 +34,7 @@ def draw_text_styled(font: rl.Font, text: cstr, position: rl.Vector2, font_size:
         while index < text_len:
             let current_ptr = raw_text + index
             var codepoint_byte_count = 0
-            let codepoint = rl.GetCodepointNext(cstr<-current_ptr, ptr_of(ref_of(codepoint_byte_count)))
+            let codepoint = rl.GetCodepointNext(cstr<-current_ptr, ptr_of(codepoint_byte_count))
 
             if codepoint == 10:
                 text_offset_y += font_size + text_line_spacing
@@ -62,7 +62,7 @@ def draw_text_styled(font: rl.Font, text: cstr, position: rl.Vector2, font_size:
                         else:
                             break
 
-                    let color_value = libc.strtoul(cstr<-ptr_of(ref_of(color_text[0])), null, 16)
+                    let color_value = libc.strtoul(cstr<-ptr_of(color_text[0]), null, 16)
                     if color_kind == char<-99:
                         col_front = rl.GetColor(u32<-color_value)
                     elif color_kind == char<-98:
@@ -117,7 +117,7 @@ def measure_text_styled(font: rl.Font, text: cstr, font_size: f32, spacing: f32)
         while index < text_len:
             let current_ptr = raw_text + index
             var codepoint_byte_count = 0
-            let codepoint = rl.GetCodepointNext(cstr<-current_ptr, ptr_of(ref_of(codepoint_byte_count)))
+            let codepoint = rl.GetCodepointNext(cstr<-current_ptr, ptr_of(codepoint_byte_count))
 
             if codepoint == 91:
                 if index + 2 < text_len and read(current_ptr + 1) == char<-114 and read(current_ptr + 2) == char<-93:

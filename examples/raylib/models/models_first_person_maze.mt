@@ -47,7 +47,7 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         let old_camera_position = camera.position
 
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_FIRST_PERSON)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_FIRST_PERSON)
 
         let player_pos = rl.Vector2(x = camera.position.x, y = camera.position.z)
         let player_radius: f32 = 0.1

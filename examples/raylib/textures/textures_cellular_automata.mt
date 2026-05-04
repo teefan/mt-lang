@@ -37,7 +37,7 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var image = rl.GenImageColor(image_width, image_height, rl.RAYWHITE)
-    rl.ImageDrawPixel(ptr_of(ref_of(image)), image_width / 2, 0, rl.BLACK)
+    rl.ImageDrawPixel(ptr_of(image), image_width / 2, 0, rl.BLACK)
 
     let texture = rl.LoadTextureFromImage(image)
     defer:
@@ -75,8 +75,8 @@ def main() -> i32:
             else:
                 rule = preset_values[mouse_in_cell - 8]
 
-            rl.ImageClearBackground(ptr_of(ref_of(image)), rl.RAYWHITE)
-            rl.ImageDrawPixel(ptr_of(ref_of(image)), image_width / 2, 0, rl.BLACK)
+            rl.ImageClearBackground(ptr_of(image), rl.RAYWHITE)
+            rl.ImageDrawPixel(ptr_of(image), image_width / 2, 0, rl.BLACK)
             line = 1
 
         if line < image_height:

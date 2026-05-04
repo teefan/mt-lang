@@ -24,7 +24,7 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var image_origin = rl.LoadImage(parrots_path)
-    rl.ImageFormat(ptr_of(ref_of(image_origin)), rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
+    rl.ImageFormat(ptr_of(image_origin), rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
 
     let texture = rl.LoadTextureFromImage(image_origin)
     var image_copy = rl.ImageCopy(image_origin)
@@ -82,21 +82,21 @@ def main() -> i32:
             image_copy = rl.ImageCopy(image_origin)
 
             if current_process == process_color_grayscale:
-                rl.ImageColorGrayscale(ptr_of(ref_of(image_copy)))
+                rl.ImageColorGrayscale(ptr_of(image_copy))
             elif current_process == process_color_tint:
-                rl.ImageColorTint(ptr_of(ref_of(image_copy)), rl.GREEN)
+                rl.ImageColorTint(ptr_of(image_copy), rl.GREEN)
             elif current_process == process_color_invert:
-                rl.ImageColorInvert(ptr_of(ref_of(image_copy)))
+                rl.ImageColorInvert(ptr_of(image_copy))
             elif current_process == process_color_contrast:
-                rl.ImageColorContrast(ptr_of(ref_of(image_copy)), -40.0)
+                rl.ImageColorContrast(ptr_of(image_copy), -40.0)
             elif current_process == process_color_brightness:
-                rl.ImageColorBrightness(ptr_of(ref_of(image_copy)), -80)
+                rl.ImageColorBrightness(ptr_of(image_copy), -80)
             elif current_process == process_gaussian_blur:
-                rl.ImageBlurGaussian(ptr_of(ref_of(image_copy)), 10)
+                rl.ImageBlurGaussian(ptr_of(image_copy), 10)
             elif current_process == process_flip_vertical:
-                rl.ImageFlipVertical(ptr_of(ref_of(image_copy)))
+                rl.ImageFlipVertical(ptr_of(image_copy))
             elif current_process == process_flip_horizontal:
-                rl.ImageFlipHorizontal(ptr_of(ref_of(image_copy)))
+                rl.ImageFlipHorizontal(ptr_of(image_copy))
 
             let pixels = rl.LoadImageColors(image_copy)
             rl.UpdateTexture(texture, pixels)

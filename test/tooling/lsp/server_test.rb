@@ -187,7 +187,7 @@ class LSPServerTest < Minitest::Test
 
     def main() -> i32:
         var p = Point(x = 1, y = 2)
-        let pp = ptr_of(ref_of(p))
+        let pp = ptr_of(p)
         unsafe:
             return pp.x
   MT

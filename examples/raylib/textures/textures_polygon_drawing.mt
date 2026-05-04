@@ -82,8 +82,8 @@ def main() -> i32:
         draw_texture_poly(
             texture,
             rl.Vector2(x = f32<-rl.GetScreenWidth() / 2.0, y = f32<-rl.GetScreenHeight() / 2.0),
-            ptr_of(ref_of(positions[0])),
-            ptr_of(ref_of(texcoords[0])),
+            ptr_of(positions[0]),
+            ptr_of(texcoords[0]),
             max_points,
             rl.WHITE,
         )

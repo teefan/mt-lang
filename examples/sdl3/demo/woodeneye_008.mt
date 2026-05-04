@@ -254,7 +254,7 @@ def draw_circle(radius: f32, x: f32, y: f32) -> void:
         points[index].x = x + (radius * c.SDL_cosf(angle))
         points[index].y = y + (radius * c.SDL_sinf(angle))
 
-    c.SDL_RenderLines(renderer, ptr_of(ref_of(points[0])), circle_draw_sides_len)
+    c.SDL_RenderLines(renderer, ptr_of(points[0]), circle_draw_sides_len)
 
 
 def draw_clipped_segment(ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32, x: f32, y: f32, z: f32, w: f32) -> void:
@@ -294,7 +294,7 @@ def render_frame() -> void:
     var output_width: i32 = 0
     var output_height: i32 = 0
 
-    if not c.SDL_GetRenderOutputSize(renderer, ptr_of(ref_of(output_width)), ptr_of(ref_of(output_height))):
+    if not c.SDL_GetRenderOutputSize(renderer, ptr_of(output_width), ptr_of(output_height)):
         return
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
@@ -328,7 +328,7 @@ def render_frame() -> void:
                 sin_yaw * cos_pitch, -sin_pitch, cos_yaw * cos_pitch,
             )
 
-            c.SDL_SetRenderClipRect(renderer, ptr_of(ref_of(clip_rect)))
+            c.SDL_SetRenderClipRect(renderer, ptr_of(clip_rect))
             c.SDL_SetRenderDrawColor(renderer, 64, 64, 64, c.SDL_ALPHA_OPAQUE)
 
             for edge_index in 0..map_box_edges_len:
@@ -408,7 +408,7 @@ def set_wasd_bit(player_index: i32, scancode: c.SDL_Scancode, pressed: bool) -> 
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
-    while c.SDL_PollEvent(ptr_of(ref_of(event))):
+    while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
@@ -484,7 +484,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(window), ptr_of(renderer)):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)

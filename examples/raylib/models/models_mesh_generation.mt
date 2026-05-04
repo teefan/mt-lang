@@ -79,7 +79,7 @@ def custom_mesh() -> rl.Mesh:
         mesh.texcoords[4] = 1.0
         mesh.texcoords[5] = 0.0
 
-    rl.UploadMesh(ptr_of(ref_of(mesh)), false)
+    rl.UploadMesh(ptr_of(mesh), false)
     return mesh
 
 
@@ -123,7 +123,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
         if rl.IsMouseButtonPressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
             current_model = (current_model + 1) % num_models

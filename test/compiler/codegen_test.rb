@@ -167,7 +167,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var value = 7",
-      "    let items = span[i32](data = ptr_of(ref_of(value)), len = 1)",
+      "    let items = span[i32](data = ptr_of(value), len = 1)",
       "    return first(items)",
       "",
     ].join("\n")
@@ -1237,7 +1237,7 @@ class MilkTeaCodegenTest < Minitest::Test
       def main() -> shared.Matrix:
           var matrix = sample.get_matrix()
           sample.set_matrix(shared.IDENTITY)
-          sample.set_matrix_ptr(ptr_of(ref_of(matrix)))
+          sample.set_matrix_ptr(ptr_of(matrix))
           return matrix
     MT
 
@@ -1381,7 +1381,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var value = 7",
-      "    let items = span[i32](data = ptr_of(ref_of(value)), len = 1)",
+      "    let items = span[i32](data = ptr_of(value), len = 1)",
       "    return bump(items)",
       "",
     ].join("\n")
@@ -1538,7 +1538,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var value = 7",
-      "    let holder = Holder(items = Slice[i32](data = ptr_of(ref_of(value)), len = 1))",
+      "    let holder = Holder(items = Slice[i32](data = ptr_of(value), len = 1))",
       "    return first(holder.items)",
       "",
     ].join("\n")
@@ -1574,7 +1574,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var value = 7",
-      "    let items = Slice[i32](data = ptr_of(ref_of(value)), len = 1)",
+      "    let items = Slice[i32](data = ptr_of(value), len = 1)",
       "    let smallest = min(9, 4)",
       "    unsafe:",
       "        return read(head(items)) + smallest",
@@ -1919,7 +1919,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "def main() -> i32:",
       "    var total = 0",
       "    for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):",
-      "        defer add(ptr_of(ref_of(total)), 1)",
+      "        defer add(ptr_of(total), 1)",
       "        match step:",
       "            Step.skip:",
       "                continue",
@@ -2161,7 +2161,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var counter = Counter(value = 3)",
-      "    let counter_ptr = ptr_of(ref_of(counter))",
+      "    let counter_ptr = ptr_of(counter)",
       "    unsafe:",
       "        read(counter_ptr).value = 7",
       "    return counter.value",
@@ -2184,7 +2184,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var counter = Counter(value = 3)",
-      "    let counter_ptr = ptr_of(ref_of(counter))",
+      "    let counter_ptr = ptr_of(counter)",
       "    unsafe:",
       "        counter_ptr.value = 7",
       "        return counter_ptr.value",
@@ -2214,7 +2214,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var counter = Counter(value = 3)",
-      "    let counter_ptr = ptr_of(ref_of(counter))",
+      "    let counter_ptr = ptr_of(counter)",
       "    unsafe:",
       "        counter_ptr.add(4)",
       "        return counter_ptr.read()",
@@ -2360,9 +2360,9 @@ class MilkTeaCodegenTest < Minitest::Test
       "    var palette = array[u32, 4](1, 2, 3, 4)",
       "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
       "    unsafe:",
-      "        if read(ptr_of(ref_of(palette[0]))) != 1:",
+      "        if read(ptr_of(palette[0])) != 1:",
       "            return 1",
-      "        if read(ptr_of(ref_of(holder.colors[0]))) != 5:",
+      "        if read(ptr_of(holder.colors[0])) != 5:",
       "            return 2",
       "    return 0",
       "",
@@ -2387,8 +2387,8 @@ class MilkTeaCodegenTest < Minitest::Test
       "def main() -> u32:",
       "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
       "    unsafe:",
-      "        let base = ptr_of(ref_of(holder))",
-      "        let first = ptr_of(ref_of(read(base).colors[0]))",
+      "        let base = ptr_of(holder)",
+      "        let first = ptr_of(read(base).colors[0])",
       "        read(first) = 9",
       "    return holder.colors[0]",
       "",
@@ -2424,7 +2424,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    var index = 1",
       "    use(points[index].x, points[index].y, points[index].x + points[index].y, points[index].x)",
       "    var cursor = 0",
-      "    use(points[next(ptr_of(ref_of(cursor)))].x, points[next(ptr_of(ref_of(cursor)))].y, 0, 0)",
+      "    use(points[next(ptr_of(cursor))].x, points[next(ptr_of(cursor))].y, 0, 0)",
       "    return 0",
       "",
     ].join("\n")
@@ -2600,7 +2600,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "def main() -> void:",
       "    var buffer = zero[array[char, 32]]()",
       "    unsafe:",
-      "        let raw_buffer = ptr_of(ref_of(buffer[0]))",
+      "        let raw_buffer = ptr_of(buffer[0])",
       "        set_text(cstr<-raw_buffer)",
       "        let clipboard = get_text()",
       "        let writable = ptr[char]<-clipboard",

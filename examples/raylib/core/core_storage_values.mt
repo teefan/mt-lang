@@ -16,7 +16,7 @@ def storage_size_bytes(position: usize) -> i32:
 
 def save_storage_value(position: usize, stored_value: i32) -> bool:
     var data_size = 0
-    let loaded_file_data: ptr[u8]? = rl.LoadFileData(storage_data_file, ptr_of(ref_of(data_size)))
+    let loaded_file_data: ptr[u8]? = rl.LoadFileData(storage_data_file, ptr_of(data_size))
     let required_size = storage_size_bytes(position)
 
     if loaded_file_data != null:
@@ -51,7 +51,7 @@ def save_storage_value(position: usize, stored_value: i32) -> bool:
 
 def load_storage_value(position: usize) -> i32:
     var data_size = 0
-    let loaded_file_data: ptr[u8]? = rl.LoadFileData(storage_data_file, ptr_of(ref_of(data_size)))
+    let loaded_file_data: ptr[u8]? = rl.LoadFileData(storage_data_file, ptr_of(data_size))
     if loaded_file_data == null:
         return 0
 

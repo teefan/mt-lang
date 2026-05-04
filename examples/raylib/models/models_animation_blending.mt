@@ -33,7 +33,7 @@ def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimat
 
 def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
     unsafe:
-        return chars_to_cstr(ptr_of(ref_of((anims + index).name[0])))
+        return chars_to_cstr(ptr_of((anims + index).name[0]))
 
 
 def text_join(text_list: ptr[cstr], count: i32, delimiter: cstr) -> cstr:
@@ -64,7 +64,7 @@ def main() -> i32:
     defer rl.UnloadShader(skinning_shader)
 
     var anim_count = 0
-    let anims = rl.LoadModelAnimations(model_path, ptr_of(ref_of(anim_count)))
+    let anims = rl.LoadModelAnimations(model_path, ptr_of(anim_count))
     defer rl.UnloadModelAnimations(anims, anim_count)
 
     var current_anim_playing = 0
@@ -96,7 +96,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_P):
             anim_pause = not anim_pause
@@ -180,7 +180,7 @@ def main() -> i32:
             gui.Rectangle(x = 10.0, y = 38.0, width = 160.0, height = 12.0),
             empty_text,
             rl.TextFormat(left_speed_format, anim_frame_speed0),
-            ptr_of(ref_of(anim_frame_speed0)),
+            ptr_of(anim_frame_speed0),
             0.1,
             2.0,
         )
@@ -192,7 +192,7 @@ def main() -> i32:
             gui.Rectangle(x = rl.GetScreenWidth() - 170.0, y = 38.0, width = 160.0, height = 12.0),
             rl.TextFormat(right_speed_format, anim_frame_speed1),
             empty_text,
-            ptr_of(ref_of(anim_frame_speed1)),
+            ptr_of(anim_frame_speed1),
             0.1,
             2.0,
         )
@@ -201,8 +201,8 @@ def main() -> i32:
         gui.GuiSetStyle(gui.GuiControl.DROPDOWNBOX, i32<-gui.GuiDropdownBoxProperty.DROPDOWN_ITEMS_SPACING, 1)
         if gui.GuiDropdownBox(
             gui.Rectangle(x = 10.0, y = 10.0, width = 160.0, height = 24.0),
-            text_join(ptr_of(ref_of(anim_names[0])), anim_count, c";"),
-            ptr_of(ref_of(anim_index0)),
+            text_join(ptr_of(anim_names[0]), anim_count, c";"),
+            ptr_of(anim_index0),
             dropdown_edit_mode0,
         ) != 0:
             dropdown_edit_mode0 = not dropdown_edit_mode0
@@ -216,7 +216,7 @@ def main() -> i32:
             gui.Rectangle(x = 180.0, y = 14.0, width = 440.0, height = 16.0),
             empty_text,
             empty_text,
-            ptr_of(ref_of(anim_blend_progress)),
+            ptr_of(anim_blend_progress),
             0.0,
             1.0,
         )
@@ -224,8 +224,8 @@ def main() -> i32:
 
         if gui.GuiDropdownBox(
             gui.Rectangle(x = rl.GetScreenWidth() - 170.0, y = 10.0, width = 160.0, height = 24.0),
-            text_join(ptr_of(ref_of(anim_names[0])), anim_count, c";"),
-            ptr_of(ref_of(anim_index1)),
+            text_join(ptr_of(anim_names[0]), anim_count, c";"),
+            ptr_of(anim_index1),
             dropdown_edit_mode1,
         ) != 0:
             dropdown_edit_mode1 = not dropdown_edit_mode1
@@ -235,7 +235,7 @@ def main() -> i32:
             gui.Rectangle(x = 60.0, y = rl.GetScreenHeight() - 60.0, width = rl.GetScreenWidth() - 180.0, height = 20.0),
             anim0_label,
             rl.TextFormat(frame0_format, anim_frame_progress0, anim0.keyframeCount),
-            ptr_of(ref_of(anim_frame_progress0)),
+            ptr_of(anim_frame_progress0),
             0.0,
             f32<-anim0.keyframeCount,
         )
@@ -248,7 +248,7 @@ def main() -> i32:
             gui.Rectangle(x = 60.0, y = rl.GetScreenHeight() - 30.0, width = rl.GetScreenWidth() - 180.0, height = 20.0),
             anim1_label,
             rl.TextFormat(frame1_format, anim_frame_progress1, anim1.keyframeCount),
-            ptr_of(ref_of(anim_frame_progress1)),
+            ptr_of(anim_frame_progress1),
             0.0,
             f32<-anim1.keyframeCount,
         )

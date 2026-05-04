@@ -34,12 +34,12 @@ const window_title: cstr = c"raylib [shaders] example - spotlight rendering"
 
 def set_vec2_uniform(shader: rl.Shader, location: i32, vector: rl.Vector2) -> void:
     var values = array[f32, 2](vector.x, vector.y)
-    rl.SetShaderValue(shader, location, ptr_of(ref_of(values[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, location, ptr_of(values[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
 
 def set_float_uniform(shader: rl.Shader, location: i32, value: f32) -> void:
     var storage = value
-    rl.SetShaderValue(shader, location, ptr_of(ref_of(storage)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+    rl.SetShaderValue(shader, location, ptr_of(storage), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
 
 def reset_star(star: ref[Star]) -> void:

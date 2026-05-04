@@ -80,15 +80,15 @@ def main() -> i32:
 
     var plane = rl.LoadModel(model_path)
     defer rl.UnloadModel(plane)
-    set_model_shader(ptr_of(ref_of(plane)), shader)
+    set_model_shader(ptr_of(plane), shader)
 
     var diffuse_texture = rl.LoadTexture(diffuse_texture_path)
     defer rl.UnloadTexture(diffuse_texture)
     var normal_texture = rl.LoadTexture(normal_texture_path)
     defer rl.UnloadTexture(normal_texture)
 
-    rl.GenTextureMipmaps(ptr_of(ref_of(diffuse_texture)))
-    rl.GenTextureMipmaps(ptr_of(ref_of(normal_texture)))
+    rl.GenTextureMipmaps(ptr_of(diffuse_texture))
+    rl.GenTextureMipmaps(ptr_of(normal_texture))
     rl.SetTextureFilter(diffuse_texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
     rl.SetTextureFilter(normal_texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
     rl.SetMaterialTexture(plane.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, diffuse_texture)
@@ -131,13 +131,13 @@ def main() -> i32:
         plane.transform = rotate_y(f32<-rl.GetTime() * 0.5)
 
         var light_pos = array[f32, 3](light_position.x, light_position.y, light_position.z)
-        rl.SetShaderValue(shader, light_pos_loc, ptr_of(ref_of(light_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(shader, light_pos_loc, ptr_of(light_pos[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
-        rl.SetShaderValue(shader, view_loc, ptr_of(ref_of(camera_pos[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(shader, view_loc, ptr_of(camera_pos[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
-        rl.SetShaderValue(shader, specular_exponent_loc, ptr_of(ref_of(specular_exponent)), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-        rl.SetShaderValue(shader, use_normal_map_loc, ptr_of(ref_of(use_normal_map)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+        rl.SetShaderValue(shader, specular_exponent_loc, ptr_of(specular_exponent), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.SetShaderValue(shader, use_normal_map_loc, ptr_of(use_normal_map), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

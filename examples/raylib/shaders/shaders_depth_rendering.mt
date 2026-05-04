@@ -80,7 +80,7 @@ def main() -> i32:
     let depth_loc = rl.GetShaderLocation(depth_shader, depth_uniform_name)
     let flip_texture_loc = rl.GetShaderLocation(depth_shader, flip_uniform_name)
     var flip_y = 1
-    rl.SetShaderValue(depth_shader, flip_texture_loc, ptr_of(ref_of(flip_y)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+    rl.SetShaderValue(depth_shader, flip_texture_loc, ptr_of(flip_y), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
 
     let cube = rl.LoadModelFromMesh(rl.GenMeshCube(1.0, 1.0, 1.0))
     defer rl.UnloadModel(cube)
@@ -93,7 +93,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_FREE)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_FREE)
 
         rl.BeginTextureMode(target)
         rl.ClearBackground(rl.WHITE)

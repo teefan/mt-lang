@@ -109,7 +109,7 @@ def main() -> i32:
 
     let resolution_loc = rl.GetShaderLocation(shader, resolution_uniform_name)
     var resolution = array[f32, 2](f32<-world_width, f32<-world_height)
-    rl.SetShaderValue(shader, resolution_loc, ptr_of(ref_of(resolution[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.SetShaderValue(shader, resolution_loc, ptr_of(resolution[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     let world1 = rl.LoadRenderTexture(world_width, world_height)
     let world2 = rl.LoadRenderTexture(world_width, world_height)
@@ -215,7 +215,7 @@ def main() -> i32:
                     first_color = if rl.GetImageColor(image_to_draw, mouse_x, mouse_y).r < 5: 0 else: 1
                 let previous_color = if rl.GetImageColor(image_to_draw, mouse_x, mouse_y).r < 5: 0 else: 1
 
-                rl.ImageDrawPixel(ptr_of(ref_of(image_to_draw)), mouse_x, mouse_y, if first_color != 0: rl.BLACK else: rl.RAYWHITE)
+                rl.ImageDrawPixel(ptr_of(image_to_draw), mouse_x, mouse_y, if first_color != 0: rl.BLACK else: rl.RAYWHITE)
 
                 if previous_color != first_color:
                     rl.UpdateTextureRec(
@@ -247,11 +247,11 @@ def main() -> i32:
                 var pattern = rl.GenImageColor(world_width / random_tiles, world_height / random_tiles, rl.RAYWHITE)
                 for tile_x in 0..random_tiles:
                     for tile_y in 0..random_tiles:
-                        rl.ImageClearBackground(ptr_of(ref_of(pattern)), rl.RAYWHITE)
+                        rl.ImageClearBackground(ptr_of(pattern), rl.RAYWHITE)
                         for pixel_x in 0..pattern.width:
                             for pixel_y in 0..pattern.height:
                                 if rl.GetRandomValue(0, 100) < 15:
-                                    rl.ImageDrawPixel(ptr_of(ref_of(pattern)), pixel_x, pixel_y, rl.BLACK)
+                                    rl.ImageDrawPixel(ptr_of(pattern), pixel_x, pixel_y, rl.BLACK)
                         rl.UpdateTextureRec(
                             current_world.texture,
                             rl.Rectangle(
@@ -314,7 +314,7 @@ def main() -> i32:
             if gui.GuiButton(gui_rect(710.0, 70.0 + 18.0 * f32<-index, 80.0, 16.0), preset_names[index]) != 0:
                 preset = index
 
-        gui.GuiToggleGroup(gui_rect(710.0, 258.0, 80.0, 16.0), toggle_group_text, ptr_of(ref_of(mode)))
+        gui.GuiToggleGroup(gui_rect(710.0, 258.0, 80.0, 16.0), toggle_group_text, ptr_of(mode))
 
         rl.DrawText(rl.TextFormat(zoom_format, zoom), 710, 316, 8, rl.GRAY)
         button_zoom_in = gui.GuiButton(gui_rect(710.0, 328.0, 80.0, 16.0), c"Zoom in") != 0

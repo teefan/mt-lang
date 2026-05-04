@@ -18,7 +18,7 @@ var colors: array[c.SDL_Color, 64] = zero[array[c.SDL_Color, 64]]()
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]()
 
-    while c.SDL_PollEvent(ptr_of(ref_of(event))):
+    while c.SDL_PollEvent(ptr_of(event)):
         if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
@@ -47,7 +47,7 @@ def render_frame() -> void:
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
-    c.SDL_GetWindowSize(window, ptr_of(ref_of(winw)), ptr_of(ref_of(winh)))
+    c.SDL_GetWindowSize(window, ptr_of(winw), ptr_of(winh))
 
     if joystick != null:
         var total = c.SDL_GetNumJoystickAxes(joystick)
@@ -60,7 +60,7 @@ def render_frame() -> void:
             let dx = x + (value * x)
             var dst = c.SDL_FRect(x = dx, y = y, w = x - c.SDL_fabsf(dx), h = joystick_size)
             c.SDL_SetRenderDrawColor(renderer, colors[color_index].r, colors[color_index].g, colors[color_index].b, colors[color_index].a)
-            c.SDL_RenderFillRect(renderer, ptr_of(ref_of(dst)))
+            c.SDL_RenderFillRect(renderer, ptr_of(dst))
             y += joystick_size
 
         total = c.SDL_GetNumJoystickButtons(joystick)
@@ -75,9 +75,9 @@ def render_frame() -> void:
             else:
                 c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
 
-            c.SDL_RenderFillRect(renderer, ptr_of(ref_of(dst)))
+            c.SDL_RenderFillRect(renderer, ptr_of(dst))
             c.SDL_SetRenderDrawColor(renderer, 255, 255, 255, colors[color_index].a)
-            c.SDL_RenderRect(renderer, ptr_of(ref_of(dst)))
+            c.SDL_RenderRect(renderer, ptr_of(dst))
             x += joystick_size
 
         total = c.SDL_GetNumJoystickHats(joystick)
@@ -100,24 +100,24 @@ def render_frame() -> void:
             cross[1].h = joystick_size
 
             c.SDL_SetRenderDrawColor(renderer, 90, 90, 90, c.SDL_ALPHA_OPAQUE)
-            c.SDL_RenderFillRects(renderer, ptr_of(ref_of(cross[0])), 2)
+            c.SDL_RenderFillRects(renderer, ptr_of(cross[0]), 2)
             c.SDL_SetRenderDrawColor(renderer, colors[color_index].r, colors[color_index].g, colors[color_index].b, colors[color_index].a)
 
             if (hat & c.SDL_HAT_UP) != 0:
                 var dst = c.SDL_FRect(x = x + third_size, y = y, w = third_size, h = third_size)
-                c.SDL_RenderFillRect(renderer, ptr_of(ref_of(dst)))
+                c.SDL_RenderFillRect(renderer, ptr_of(dst))
 
             if (hat & c.SDL_HAT_RIGHT) != 0:
                 var dst = c.SDL_FRect(x = x + (third_size * 2.0), y = y + third_size, w = third_size, h = third_size)
-                c.SDL_RenderFillRect(renderer, ptr_of(ref_of(dst)))
+                c.SDL_RenderFillRect(renderer, ptr_of(dst))
 
             if (hat & c.SDL_HAT_DOWN) != 0:
                 var dst = c.SDL_FRect(x = x + third_size, y = y + (third_size * 2.0), w = third_size, h = third_size)
-                c.SDL_RenderFillRect(renderer, ptr_of(ref_of(dst)))
+                c.SDL_RenderFillRect(renderer, ptr_of(dst))
 
             if (hat & c.SDL_HAT_LEFT) != 0:
                 var dst = c.SDL_FRect(x = x, y = y + third_size, w = third_size, h = third_size)
-                c.SDL_RenderFillRect(renderer, ptr_of(ref_of(dst)))
+                c.SDL_RenderFillRect(renderer, ptr_of(dst))
 
             x += joystick_size * 2.0
 
@@ -136,7 +136,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
     defer c.SDL_Quit()
 
-    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(ref_of(window)), ptr_of(ref_of(renderer))):
+    if not c.SDL_CreateWindowAndRenderer(window_title, window_width, window_height, window_flags, ptr_of(window), ptr_of(renderer)):
         return 1
     defer c.SDL_DestroyRenderer(renderer)
     defer c.SDL_DestroyWindow(window)

@@ -49,7 +49,7 @@ def gen_mesh_points(num_points: i32) -> rl.Mesh:
             mesh.colors[index * 4 + 2] = color.b
             mesh.colors[index * 4 + 3] = color.a
 
-    rl.UploadMesh(ptr_of(ref_of(mesh)), false)
+    rl.UploadMesh(ptr_of(mesh), false)
     return mesh
 
 
@@ -104,7 +104,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_SPACE):
             use_draw_model_points = not use_draw_model_points

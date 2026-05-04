@@ -124,27 +124,27 @@ def main() -> i32:
     let light_dir_loc = rl.GetShaderLocation(shadow_shader, light_dir_uniform_name)
     var light_color_normalized = rl.ColorNormalize(rl.WHITE)
     let light_col_loc = rl.GetShaderLocation(shadow_shader, light_color_uniform_name)
-    rl.SetShaderValue(shadow_shader, light_dir_loc, ptr_of(ref_of(light_dir)), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
-    rl.SetShaderValue(shadow_shader, light_col_loc, ptr_of(ref_of(light_color_normalized)), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shadow_shader, light_dir_loc, ptr_of(light_dir), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+    rl.SetShaderValue(shadow_shader, light_col_loc, ptr_of(light_color_normalized), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     let ambient_loc = rl.GetShaderLocation(shadow_shader, ambient_uniform_name)
     var ambient = array[f32, 4](0.1, 0.1, 0.1, 1.0)
-    rl.SetShaderValue(shadow_shader, ambient_loc, ptr_of(ref_of(ambient[0])), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.SetShaderValue(shadow_shader, ambient_loc, ptr_of(ambient[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
     let light_vp_loc = rl.GetShaderLocation(shadow_shader, light_vp_uniform_name)
     let shadow_map_loc = rl.GetShaderLocation(shadow_shader, shadow_map_uniform_name)
     var shadow_map_resolution_value = shadowmap_resolution
-    rl.SetShaderValue(shadow_shader, rl.GetShaderLocation(shadow_shader, shadow_map_resolution_uniform_name), ptr_of(ref_of(shadow_map_resolution_value)), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+    rl.SetShaderValue(shadow_shader, rl.GetShaderLocation(shadow_shader, shadow_map_resolution_uniform_name), ptr_of(shadow_map_resolution_value), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
 
     var cube = rl.LoadModelFromMesh(rl.GenMeshCube(1.0, 1.0, 1.0))
     defer rl.UnloadModel(cube)
-    set_model_shader(ptr_of(ref_of(cube)), shadow_shader)
+    set_model_shader(ptr_of(cube), shadow_shader)
 
     var robot = rl.LoadModel(robot_model_path)
     defer rl.UnloadModel(robot)
-    set_all_model_shaders(ptr_of(ref_of(robot)), shadow_shader)
+    set_all_model_shaders(ptr_of(robot), shadow_shader)
 
     var anim_count = 0
-    let anims = rl.LoadModelAnimations(robot_model_path, ptr_of(ref_of(anim_count)))
+    let anims = rl.LoadModelAnimations(robot_model_path, ptr_of(anim_count))
     defer rl.UnloadModelAnimations(anims, anim_count)
     var anim = zero[rl.ModelAnimation]()
     unsafe:
@@ -173,8 +173,8 @@ def main() -> i32:
         let delta_time = rl.GetFrameTime()
 
         var camera_pos = rl.Vector3(x = camera.position.x, y = camera.position.y, z = camera.position.z)
-        rl.SetShaderValue(shadow_shader, view_loc, ptr_of(ref_of(camera_pos)), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_ORBITAL)
+        rl.SetShaderValue(shadow_shader, view_loc, ptr_of(camera_pos), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
         frame_counter += 1
         frame_counter %= anim.keyframeCount
@@ -196,7 +196,7 @@ def main() -> i32:
 
         light_dir = light_dir.normalize()
         light_camera.position = light_dir.scale(-15.0)
-        rl.SetShaderValue(shadow_shader, light_dir_loc, ptr_of(ref_of(light_dir)), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.SetShaderValue(shadow_shader, light_dir_loc, ptr_of(light_dir), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         rl.BeginTextureMode(shadow_map)
         rl.ClearBackground(rl.WHITE)
@@ -217,7 +217,7 @@ def main() -> i32:
         rlgl.rlEnableShader(shadow_shader.id)
         rlgl.rlActiveTextureSlot(texture_active_slot)
         rlgl.rlEnableTexture(shadow_map.depth.id)
-        rlgl.rlSetUniform(shadow_map_loc, ptr_of(ref_of(texture_active_slot)), i32<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT, 1)
+        rlgl.rlSetUniform(shadow_map_loc, ptr_of(texture_active_slot), i32<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT, 1)
 
         rl.BeginMode3D(camera)
         draw_scene(cube, robot)

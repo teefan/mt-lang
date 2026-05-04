@@ -41,26 +41,26 @@ def main() -> i32:
         0.0, -1.0, 0.0,
     )
 
-    normalize_kernel(ptr_of(ref_of(gaussian_kernel[0])), 9)
-    normalize_kernel(ptr_of(ref_of(sharpen_kernel[0])), 9)
-    normalize_kernel(ptr_of(ref_of(sobel_kernel[0])), 9)
+    normalize_kernel(ptr_of(gaussian_kernel[0]), 9)
+    normalize_kernel(ptr_of(sharpen_kernel[0]), 9)
+    normalize_kernel(ptr_of(sobel_kernel[0]), 9)
 
     var cat_sharpened = rl.ImageCopy(image)
-    rl.ImageKernelConvolution(ptr_of(ref_of(cat_sharpened)), ptr_of(ref_of(sharpen_kernel[0])), 9)
+    rl.ImageKernelConvolution(ptr_of(cat_sharpened), ptr_of(sharpen_kernel[0]), 9)
 
     var cat_sobel = rl.ImageCopy(image)
-    rl.ImageKernelConvolution(ptr_of(ref_of(cat_sobel)), ptr_of(ref_of(sobel_kernel[0])), 9)
+    rl.ImageKernelConvolution(ptr_of(cat_sobel), ptr_of(sobel_kernel[0]), 9)
 
     var cat_gaussian = rl.ImageCopy(image)
     for index in 0..6:
         let _ = index
-        rl.ImageKernelConvolution(ptr_of(ref_of(cat_gaussian)), ptr_of(ref_of(gaussian_kernel[0])), 9)
+        rl.ImageKernelConvolution(ptr_of(cat_gaussian), ptr_of(gaussian_kernel[0]), 9)
 
     let crop = rl.Rectangle(x = 0.0, y = 0.0, width = 200.0, height = 450.0)
-    rl.ImageCrop(ptr_of(ref_of(image)), crop)
-    rl.ImageCrop(ptr_of(ref_of(cat_gaussian)), crop)
-    rl.ImageCrop(ptr_of(ref_of(cat_sobel)), crop)
-    rl.ImageCrop(ptr_of(ref_of(cat_sharpened)), crop)
+    rl.ImageCrop(ptr_of(image), crop)
+    rl.ImageCrop(ptr_of(cat_gaussian), crop)
+    rl.ImageCrop(ptr_of(cat_sobel), crop)
+    rl.ImageCrop(ptr_of(cat_sharpened), crop)
 
     let texture = rl.LoadTextureFromImage(image)
     let cat_sharpened_texture = rl.LoadTextureFromImage(cat_sharpened)

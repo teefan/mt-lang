@@ -667,11 +667,11 @@ module MilkTea
         return
       end
 
-      # ref_of(x) takes the address of x — treat as potential mutation since the
-      # pointer may be written through by the callee (common C-FFI out-param pattern).
+      # ref_of(x) and ptr_of(x) can expose writable aliases — treat as potential
+      # mutation since callees may write through them (common C-FFI out-param pattern).
       if expression.is_a?(AST::Call) &&
          expression.callee.is_a?(AST::Identifier) &&
-         expression.callee.name == "ref_of" &&
+        ["ref_of", "ptr_of"].include?(expression.callee.name) &&
          expression.arguments.length == 1
         mark_mutated(expression.arguments.first.value)
       end

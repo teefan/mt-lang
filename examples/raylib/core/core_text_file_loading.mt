@@ -28,7 +28,7 @@ def main() -> i32:
     var line_count = 0
     var lines: ptr[ptr[char]]
     unsafe:
-        lines = rl.LoadTextLines(cstr<-text, ptr_of(ref_of(line_count)))
+        lines = rl.LoadTextLines(cstr<-text, ptr_of(line_count))
 
     let default_font = rl.GetFontDefault()
     let space_char = char<-32

@@ -44,7 +44,7 @@ def pose_transform(pose: rl.ModelAnimPose, index: i32) -> rl.Transform:
 
 def skeleton_bone_name(skeleton: rl.ModelSkeleton, index: i32) -> cstr:
     unsafe:
-        return chars_to_cstr(ptr_of(ref_of((skeleton.bones + index).name[0])))
+        return chars_to_cstr(ptr_of((skeleton.bones + index).name[0]))
 
 
 def bind_pose_transform(skeleton: rl.ModelSkeleton, index: i32) -> rl.Transform:
@@ -78,7 +78,7 @@ def main() -> i32:
     var show_equip = array[bool, bone_sockets](true, true, true)
 
     var anims_count = 0
-    let model_animations = rl.LoadModelAnimations(character_model_path, ptr_of(ref_of(anims_count)))
+    let model_animations = rl.LoadModelAnimations(character_model_path, ptr_of(anims_count))
     defer rl.UnloadModelAnimations(model_animations, anims_count)
 
     var anim_index = 0
@@ -103,7 +103,7 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        rl.UpdateCamera(ptr_of(ref_of(camera)), rl.CameraMode.CAMERA_THIRD_PERSON)
+        rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_THIRD_PERSON)
 
         if rl.IsKeyDown(rl.KeyboardKey.KEY_F):
             angle = (angle + 1) % 360

@@ -21,14 +21,14 @@ def main() -> i32:
     defer rl.CloseWindow()
 
     var file_size = 0
-    let file_data = rl.LoadFileData(font_path, ptr_of(ref_of(file_size)))
+    let file_data = rl.LoadFileData(font_path, ptr_of(file_size))
     defer rl.UnloadFileData(file_data)
 
     var font_default = zero[rl.Font]()
     font_default.baseSize = 16
     font_default.glyphCount = 95
-    font_default.glyphs = rl.LoadFontData(file_data, file_size, 16, null, 95, rl.FontType.FONT_DEFAULT, ptr_of(ref_of(font_default.glyphCount)))
-    var atlas = rl.GenImageFontAtlas(font_default.glyphs, ptr_of(ref_of(font_default.recs)), 95, 16, 4, 0)
+    font_default.glyphs = rl.LoadFontData(file_data, file_size, 16, null, 95, rl.FontType.FONT_DEFAULT, ptr_of(font_default.glyphCount))
+    var atlas = rl.GenImageFontAtlas(font_default.glyphs, ptr_of(font_default.recs), 95, 16, 4, 0)
     font_default.texture = rl.LoadTextureFromImage(atlas)
     rl.UnloadImage(atlas)
     defer rl.UnloadFont(font_default)
@@ -36,8 +36,8 @@ def main() -> i32:
     var font_sdf = zero[rl.Font]()
     font_sdf.baseSize = 16
     font_sdf.glyphCount = 95
-    font_sdf.glyphs = rl.LoadFontData(file_data, file_size, 16, null, 0, rl.FontType.FONT_SDF, ptr_of(ref_of(font_sdf.glyphCount)))
-    atlas = rl.GenImageFontAtlas(font_sdf.glyphs, ptr_of(ref_of(font_sdf.recs)), 95, 16, 0, 1)
+    font_sdf.glyphs = rl.LoadFontData(file_data, file_size, 16, null, 0, rl.FontType.FONT_SDF, ptr_of(font_sdf.glyphCount))
+    atlas = rl.GenImageFontAtlas(font_sdf.glyphs, ptr_of(font_sdf.recs), 95, 16, 0, 1)
     font_sdf.texture = rl.LoadTextureFromImage(atlas)
     rl.UnloadImage(atlas)
     defer rl.UnloadFont(font_sdf)

@@ -486,7 +486,7 @@ Special recognized callables:
 - `const_ptr_of(x)`
 - `read(r)`
 - `read(p)`
-- `ptr_of(r)`
+- `ptr_of(x)`
 - `T<-value`
 - `reinterpret[T](value)`
 - `zero[T]()`

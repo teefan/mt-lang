@@ -54,14 +54,14 @@ def main() -> i32:
         if rl.IsKeyDown(rl.KeyboardKey.KEY_LEFT_CONTROL) and rl.IsKeyPressed(rl.KeyboardKey.KEY_R):
             if gif_recording:
                 gif_recording = false
-                let result = gif.msf_gif_end(ptr_of(ref_of(gif_state)))
+                let result = gif.msf_gif_end(ptr_of(gif_state))
                 rl.SaveFileData(rl.TextFormat(c"%s/screenrecording.gif", rl.GetApplicationDirectory()), result.data, i32<-result.dataSize)
                 gif.msf_gif_free(result)
                 rl.TraceLog(rl.TraceLogLevel.LOG_INFO, c"Finish animated GIF recording")
             else:
                 gif_recording = true
                 gif_frame_counter = 0
-                gif.msf_gif_begin(ptr_of(ref_of(gif_state)), rl.GetRenderWidth(), rl.GetRenderHeight())
+                gif.msf_gif_begin(ptr_of(gif_state), rl.GetRenderWidth(), rl.GetRenderHeight())
                 rl.TraceLog(rl.TraceLogLevel.LOG_INFO, c"Start animated GIF recording")
 
         if gif_recording:
@@ -70,7 +70,7 @@ def main() -> i32:
                 let image_screen = rl.LoadImageFromScreen()
                 unsafe:
                     gif.msf_gif_frame(
-                        ptr_of(ref_of(gif_state)),
+                        ptr_of(gif_state),
                         ptr[u8]<-image_screen.data,
                         i32<-((1.0 / 60.0) * gif_record_framerate) / 10,
                         16,
@@ -92,7 +92,7 @@ def main() -> i32:
         rl.DrawFPS(10, 10)
 
     if gif_recording:
-        let result = gif.msf_gif_end(ptr_of(ref_of(gif_state)))
+        let result = gif.msf_gif_end(ptr_of(gif_state))
         gif.msf_gif_free(result)
 
     return 0

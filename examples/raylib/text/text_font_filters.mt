@@ -27,7 +27,7 @@ def main() -> i32:
     var font = rl.LoadFontEx(font_path, 96, null, 0)
     defer rl.UnloadFont(font)
 
-    rl.GenTextureMipmaps(ptr_of(ref_of(font.texture)))
+    rl.GenTextureMipmaps(ptr_of(font.texture))
 
     var font_size = f32<-font.baseSize
     var font_position = rl.Vector2(x = 40.0, y = f32<-screen_height / 2.0 - 80.0)

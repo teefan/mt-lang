@@ -24,7 +24,7 @@ class MilkTeaStdSpanTest < Minitest::Test
       "",
       "def main() -> i32:",
       "    var values = array[i32, 3](7, 8, 9)",
-      "    let view = sp.from_ptr[i32](ptr_of(ref_of(values[0])), 3)",
+      "    let view = sp.from_ptr[i32](ptr_of(values[0]), 3)",
       "    let empty = sp.empty[i32]()",
       "    var missing: ptr[i32]? = null",
       "    let null_view = sp.from_nullable_ptr[i32](missing, 0)",
