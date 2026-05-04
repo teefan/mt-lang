@@ -354,7 +354,8 @@ match token:
 
 `for` supports:
 
-- `range(start, stop)`
+- `range(start, stop)` — exclusive integer range via built-in call
+- `start..stop` — exclusive integer range via range expression
 - `array[T, N]`
 - `span[T]`
 
@@ -397,7 +398,7 @@ Unsafe context is required for raw-pointer-level operations such as:
 - `alignof(T)`
 - `offsetof(T, field)`
 - `proc(...) -> T: ...`
-- `if cond then a else b`
+- `if cond: a else: b`
 
 ### 5.2 Postfix
 
@@ -535,7 +536,7 @@ The following standard library functions receive special lowering for format str
 
 - conditions must be `bool`
 - no truthy/falsy integer or pointer coercion
-- mixed signed/unsigned integer arithmetic requires explicit cast
+- mixed signed/unsigned integer arithmetic requires an explicit `T<-value` cast
 - `%` requires integer-compatible operands
 - bitwise operators require matching integer/flags types
 - shift operators require integer operands
@@ -567,14 +568,69 @@ Current async limitations:
 
 - `await` is supported inside `if` expressions, `if`/`elif`/`else` bodies and conditions, `while` bodies and conditions, `for` bodies and iterables, `match` discriminants and arms, `unsafe` blocks, short-circuit `and`/`or` expressions, and assignment targets
 
-## 11. Current Unsupported Or Rejected Surfaces
+## 11. Linting
+
+The linter checks for common issues and style problems without changing program behavior.
+
+### 11.1 Running the linter
+
+```sh
+mtc lint path/to/file.mt
+mtc lint src/                              # lint all .mt files in a directory
+mtc lint --fix path/to/file.mt             # apply auto-fixes in place
+mtc lint --select prefer-let,dead-assignment file.mt
+mtc lint --ignore shadow file.mt
+```
+
+### 11.2 Rules
+
+| Code | Severity | Auto-fix | Description |
+|---|---|---|---|
+| `unused-import` | warning | yes | Import alias is never referenced |
+| `missing-return` | error | — | Function with a non-void return type lacks a guaranteed return on all paths |
+| `prefer-let` | warning | yes | `var` binding is never mutated; use `let` instead |
+| `dead-assignment` | warning | yes | Assignment result is never read |
+| `redundant-else` | warning | yes | `else` block is unnecessary because all prior branches return |
+| `unreachable-code` | warning | — | Code after `return`, `break`, or `continue` |
+| `useless-expression` | warning | — | Expression statement with no side effects |
+| `shadow` | warning | — | Local binding shadows an outer binding with the same name |
+| `borrow-and-mutate` | warning | — | Variable is borrowed via `ref_of` or `ptr_of` and also directly mutated |
+| `constant-condition` | warning | — | `if` condition is always `true` or always `false` |
+| `redundant-null-check` | warning | — | Null check on a value already known to be non-null by flow analysis |
+| `loop-single-iteration` | warning | — | `while` loop that always exits after at most one iteration |
+
+### 11.3 Config file
+
+Place `.mt-lint.yml` in the project root (or any ancestor directory):
+
+```yaml
+ignore:
+  - shadow
+  - useless-expression
+# select:
+#   - prefer-let
+#   - missing-return
+```
+
+When both `select` and `ignore` are present, `select` takes precedence and `ignore` is unused.
+
+### 11.4 Per-line suppressions
+
+```mt
+var count = 0  # lint: ignore
+var total = 0  # lint: ignore(prefer-let, dead-assignment)
+```
+
+`# lint: ignore` silences all rules on that line. `# lint: ignore(rule1, rule2)` silences only the listed rules.
+
+## 12. Current Unsupported Or Rejected Surfaces
 
 Current implementation rejects:
 
 - generic constraints on type parameters
 - interface declarations and interface constraints
 
-## 12. Example
+## 13. Example
 
 ```mt
 module demo.main
