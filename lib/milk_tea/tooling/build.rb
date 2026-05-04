@@ -15,6 +15,20 @@ module MilkTea
       new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, debug:, profile:, platform:).build
     end
 
+    def self.clean(path, output_path: nil, profile: nil, platform: nil)
+      new(
+        path,
+        output_path:,
+        cc: ENV.fetch("CC", "cc"),
+        keep_c_path: nil,
+        raw_bindings: nil,
+        module_roots: nil,
+        debug: false,
+        profile:,
+        platform:
+      ).clean
+    end
+
     def self.default_raw_bindings(root: MilkTea.root)
       require_relative "../bindings"
 
@@ -24,11 +38,14 @@ module MilkTea
 
     def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, debug: false, profile: nil, platform: nil)
       manifest = PackageManifest.load(path)
+      @package_build = true
       @source_path = manifest.source_path
       @project_root = manifest.root_dir
       @package_name = manifest.package_name
       @profile = normalize_profile(profile || manifest.profile || (debug ? :debug : :debug))
       @platform = normalize_platform(platform || manifest.platform || host_platform)
+      @manifest_output_path = manifest.output_path
+      @explicit_output_path = !output_path.nil?
       resolved_output = output_path || manifest.output_path || default_package_output_path
       @output_path = File.expand_path(resolved_output)
       @cc = cc
@@ -40,17 +57,30 @@ module MilkTea
     rescue PackageManifestError => e
       raise BuildError, e.message if File.directory?(path)
 
+      @package_build = false
       @source_path = File.expand_path(path)
       @project_root = File.dirname(@source_path)
       @package_name = File.basename(@project_root).tr("-", "_")
       @profile = normalize_profile(profile || (debug ? :debug : :debug))
       @platform = normalize_platform(platform || host_platform)
+      @manifest_output_path = nil
+      @explicit_output_path = !output_path.nil?
       @output_path = File.expand_path(output_path || default_source_output_path(@source_path))
       @cc = cc
       @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
       @raw_bindings = raw_bindings
       @module_roots = module_roots || [MilkTea.root]
       @debug = debug
+    end
+
+    def clean
+      target_path = clean_target_path
+      if File.directory?(target_path)
+        FileUtils.rm_rf(target_path)
+      else
+        FileUtils.rm_f(target_path)
+      end
+      target_path
     end
 
     def build
@@ -81,6 +111,14 @@ module MilkTea
     end
 
     private
+
+    def clean_target_path
+      if @package_build && !@explicit_output_path && @manifest_output_path.nil?
+        File.join(@project_root, "build")
+      else
+        @output_path
+      end
+    end
 
     def default_source_output_path(source_path)
       source_path.sub(/\.mt\z/, "")
