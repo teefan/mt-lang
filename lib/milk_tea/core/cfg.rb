@@ -79,12 +79,6 @@ module MilkTea
         @nodes.keys
       end
 
-      def read_names
-        names = Set.new
-        each_node { |node| names.merge(node.reads) }
-        names
-      end
-
       def read_bindings
         keys = Set.new
         each_node { |node| keys.merge(node.reads) }
@@ -325,16 +319,22 @@ module MilkTea
         when AST::RangeExpr
           read_identifiers(expression.start_expr, names)
           read_identifiers(expression.end_expr, names)
+        when AST::ExpressionList
+          expression.elements.each { |element| read_identifiers(element, names) }
         when AST::IfExpr
           read_identifiers(expression.condition, names)
           read_identifiers(expression.then_expression, names)
           read_identifiers(expression.else_expression, names)
+        when AST::FormatString
+          expression.parts.each do |part|
+            read_identifiers(part.expression, names) if part.is_a?(AST::FormatExprPart)
+          end
         when AST::ProcExpr
           nil
         when AST::AwaitExpr
           read_identifiers(expression.expression, names)
         when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral,
-             AST::FormatString, AST::BooleanLiteral, AST::NullLiteral,
+             AST::BooleanLiteral, AST::NullLiteral,
              AST::SizeofExpr, AST::AlignofExpr, AST::OffsetofExpr
           nil
         else
@@ -385,10 +385,21 @@ module MilkTea
         when AST::BinaryOp
           write_targets_from_expression(expression.left, line:, writes:, writes_info:)
           write_targets_from_expression(expression.right, line:, writes:, writes_info:)
+        when AST::RangeExpr
+          write_targets_from_expression(expression.start_expr, line:, writes:, writes_info:)
+          write_targets_from_expression(expression.end_expr, line:, writes:, writes_info:)
+        when AST::ExpressionList
+          expression.elements.each do |element|
+            write_targets_from_expression(element, line:, writes:, writes_info:)
+          end
         when AST::IfExpr
           write_targets_from_expression(expression.condition, line:, writes:, writes_info:)
           write_targets_from_expression(expression.then_expression, line:, writes:, writes_info:)
           write_targets_from_expression(expression.else_expression, line:, writes:, writes_info:)
+        when AST::FormatString
+          expression.parts.each do |part|
+            write_targets_from_expression(part.expression, line:, writes:, writes_info:) if part.is_a?(AST::FormatExprPart)
+          end
         when AST::AwaitExpr
           write_targets_from_expression(expression.expression, line:, writes:, writes_info:)
         when AST::ProcExpr,
@@ -396,7 +407,6 @@ module MilkTea
              AST::IntegerLiteral,
              AST::FloatLiteral,
              AST::StringLiteral,
-             AST::FormatString,
              AST::BooleanLiteral,
              AST::NullLiteral,
              AST::SizeofExpr,
@@ -522,12 +532,9 @@ module MilkTea
       end
 
       def merge_null_pairs(left, right)
-        # Keep only pairs that agree between both branches
-        left.each_with_object({}) do |(key, dir), merged|
-          merged[key] = dir if right[key] == dir
-        end.merge(
-          right.each_with_object({}) { |(key, dir), merged| merged[key] = dir unless left.key?(key) }
-        )
+        left.merge(right) do |_key, left_dir, right_dir|
+          left_dir == right_dir ? left_dir : nil
+        end.compact
       end
     end
 

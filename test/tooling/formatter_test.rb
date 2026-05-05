@@ -91,6 +91,14 @@ class MilkTeaFormatterTest < Minitest::Test
     assert_equal source, cst.reconstruct
   end
 
+  def test_preserve_mode_normalizes_crlf_without_truncation
+    source = "module demo.crlf\r\n\r\ndef main() -> i32:\r\n    return 0\r\n"
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :preserve)
+
+    assert_equal "module demo.crlf\n\ndef main() -> i32:\n    return 0\n", formatted
+  end
+
   # ── comment preservation ─────────────────────────────────────────────
 
   def test_canonical_preserves_leading_standalone_comment

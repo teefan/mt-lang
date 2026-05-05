@@ -2,9 +2,7 @@
 
 module MilkTea
   module CST
-    TokenNode = Data.define(:token)
-
-    SourceFile = Data.define(:source, :tokens, :trivia, :nodes) do
+    SourceFile = Data.define(:source, :tokens, :trivia) do
       def reconstruct
         reconstruct_from_tokens
       end
@@ -45,7 +43,13 @@ module MilkTea
         return fallback unless source
         return "" if end_offset <= start_offset
 
-        source.byteslice(start_offset, end_offset - start_offset) || fallback
+        fallback_text = fallback.dup.force_encoding(source.encoding)
+        segment = source.byteslice(start_offset, end_offset - start_offset)
+        return fallback_text unless segment
+        segment = segment.dup.force_encoding(source.encoding)
+        return fallback_text if segment != fallback_text
+
+        segment
       end
     end
   end

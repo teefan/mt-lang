@@ -13,8 +13,7 @@ module MilkTea
 
     def build
       lexed = Lexer.lex_with_trivia(@source, path: @path)
-      nodes = lexed.tokens.map { |token| CST::TokenNode.new(token:) }
-      CST::SourceFile.new(source: @source, tokens: lexed.tokens, trivia: lexed.trivia, nodes:)
+      CST::SourceFile.new(source: @source, tokens: lexed.tokens, trivia: lexed.trivia)
     end
   end
 end
