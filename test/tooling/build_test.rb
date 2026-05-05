@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "json"
 require "open3"
 require "tmpdir"
 require_relative "../test_helper"
@@ -37,6 +38,45 @@ class MilkTeaBuildTest < Minitest::Test
     end
 
     assert_match(/C compiler not found/, error.message)
+  end
+
+  def test_build_emits_debug_map_sidecar_for_user_functions
+    Dir.mktmpdir("milk-tea-build-debug-map") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      source_path = File.join(dir, "debug-map.mt")
+      output_path = File.join(dir, "debug-map")
+
+      File.write(source_path, [
+        "module demo.debug_map",
+        "",
+        "def add(a: i32, b: i32) -> i32:",
+        "    let total = a + b",
+        "    return total",
+        "",
+        "def main() -> i32:",
+        "    return add(1, 2)",
+        "",
+      ].join("\n"))
+
+      MilkTea::Build.build(source_path, output_path:, cc: compiler_path)
+
+      debug_map_path = MilkTea::DebugMap.sidecar_path_for(output_path)
+      assert File.exist?(debug_map_path)
+
+      payload = JSON.parse(File.read(debug_map_path))
+      assert_equal File.expand_path(output_path), payload["binaryPath"]
+      assert_equal File.expand_path(source_path), payload["programSourcePath"]
+
+      add_function = payload.fetch("functions").find { |function| function["cName"] == "demo_debug_map_add" }
+      refute_nil add_function
+      assert_equal "add", add_function["name"]
+      assert_equal File.expand_path(source_path), add_function["sourcePath"]
+      assert_equal %w[a b], add_function.fetch("params").map { |param| param["name"] }
+      assert_equal %w[a b], add_function.fetch("params").map { |param| param["cName"] }
+      assert_equal ["total"], add_function.fetch("locals").map { |entry| entry["name"] }
+      assert_equal ["total"], add_function.fetch("locals").map { |entry| entry["cName"] }
+    end
   end
 
   def test_build_with_host_compiler_produces_runnable_binary

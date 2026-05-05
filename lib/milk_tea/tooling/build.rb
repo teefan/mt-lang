@@ -4,6 +4,8 @@ require "fileutils"
 require "open3"
 require "tempfile"
 
+require_relative "debug_map"
+
 module MilkTea
   class BuildError < StandardError; end
 
@@ -79,6 +81,7 @@ module MilkTea
         FileUtils.rm_rf(target_path)
       else
         FileUtils.rm_f(target_path)
+        FileUtils.rm_f(DebugMap.sidecar_path_for(@output_path))
       end
       target_path
     end
@@ -87,15 +90,19 @@ module MilkTea
       ensure_compiler_available!
       program = ModuleLoader.new(module_roots: @module_roots).check_program(@source_path)
       prepare_bindings(program)
-      generated_c = Codegen.generate_c(program)
+      ir_program = program.is_a?(IR::Program) ? program : Lowering.lower(program)
+      generated_c = CBackend.emit(ir_program)
+      debug_map = DebugMap.from_ir(ir_program, binary_path: @output_path)
       compiler_flags = collect_compiler_flags(program)
       link_flags = collect_link_flags(program)
+      debug_map_path = DebugMap.sidecar_path_for(@output_path)
 
       FileUtils.mkdir_p(File.dirname(@output_path))
 
       if @keep_c_path
         write_c_file(@keep_c_path, generated_c)
         compile(@keep_c_path, compiler_flags, link_flags)
+        debug_map.write(debug_map_path)
         return Result.new(output_path: @output_path, c_path: @keep_c_path, compiler: @cc, link_flags:, profile: @profile, platform: @platform)
       end
 
@@ -106,6 +113,8 @@ module MilkTea
 
         compile(file.path, compiler_flags, link_flags)
       end
+
+      debug_map.write(debug_map_path)
 
       Result.new(output_path: @output_path, c_path: nil, compiler: @cc, link_flags:, profile: @profile, platform: @platform)
     end

@@ -20,12 +20,7 @@
     "mt"
   ],
   "activationEvents": [
-    "onLanguage:milk-tea",
-    "onDebug:milk-tea",
-    "onCommand:milkTea.restartLsp",
-    "onCommand:milkTea.viewLspLogs",
-    "onCommand:milkTea.viewDapLogs",
-    "onCommand:milkTea.restartDap"
+    "onDebug:milk-tea"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -140,6 +135,27 @@
           "default": [],
           "description": "Extra command-line arguments passed to 'mtc dap'."
         },
+        "milkTea.dap.logLevel": {
+          "type": "string",
+          "enum": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "enumDescriptions": [
+            "No DAP logging.",
+            "Only DAP errors.",
+            "DAP errors and warnings.",
+            "Session lifecycle plus key launch/configuration protocol messages.",
+            "All DAP message summaries.",
+            "Full DAP protocol trace with sensitive fields redacted."
+          ],
+          "default": "info",
+          "description": "Controls how much Milk Tea DAP output is written to the 'Milk Tea DAP' output channel."
+        },
         "milkTea.dap.retry.enabled": {
           "type": "boolean",
           "default": true,
@@ -211,6 +227,19 @@
               "program"
             ],
             "properties": {
+              "backend": {
+                "type": "string",
+                "enum": [
+                  "lldb-dap",
+                  "process"
+                ],
+                "default": "lldb-dap",
+                "description": "Debug backend to use. Use lldb-dap for native debugging features."
+              },
+              "adapterPath": {
+                "type": "string",
+                "description": "Optional path to the lldb-dap executable used by the Milk Tea adapter."
+              },
               "program": {
                 "type": "string",
                 "description": "Absolute path to the Milk Tea source file (.mt) to compile and debug.",
@@ -241,6 +270,144 @@
                 },
                 "default": {},
                 "description": "Environment variables set for the debugged program."
+              },
+              "sourceMap": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": {},
+                "description": "Optional source remapping passed through to lldb-dap."
+              },
+              "preInitCommands": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [],
+                "description": "LLDB commands to run before adapter initialization."
+              },
+              "initCommands": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [],
+                "description": "LLDB commands to run during session initialization."
+              },
+              "preRunCommands": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [],
+                "description": "LLDB commands to run after launch/attach and before execution continues."
+              },
+              "postRunCommands": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [],
+                "description": "LLDB commands to run after the target starts."
+              },
+              "coreFile": {
+                "type": "string",
+                "description": "Optional core file path for post-mortem debugging."
+              }
+            }
+          },
+          "attach": {
+            "properties": {
+              "backend": {
+                "type": "string",
+                "enum": [
+                  "lldb-dap",
+                  "process"
+                ],
+                "default": "lldb-dap",
+                "description": "Debug backend to use. Attach requires lldb-dap."
+              },
+              "adapterPath": {
+                "type": "string",
+                "description": "Optional path to the lldb-dap executable used by the Milk Tea adapter."
+              },
+              "program": {
+                "type": "string",
+                "description": "Optional executable or Milk Tea source used to provide symbols when attaching."
+              },
+              "pid": {
+                "type": [
+                  "number",
+                  "string"
+                ],
+                "description": "Process ID to attach to."
+              },
+              "processName": {
+                "type": "string",
+                "description": "Process name to attach to when supported by lldb-dap."
+              },
+              "waitFor": {
+                "type": "boolean",
+                "default": false,
+                "description": "Wait for the named process to appear before attaching."
+              },
+              "cwd": {
+                "type": "string",
+                "default": "${workspaceFolder}",
+                "description": "Working directory used for relative debugger paths."
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": {},
+                "description": "Environment variables available to debugger-launched helper processes."
+              },
+              "sourceMap": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": {},
+                "description": "Optional source remapping passed through to lldb-dap."
+              },
+              "preInitCommands": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [],
+                "description": "LLDB commands to run before adapter initialization."
+              },
+              "initCommands": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [],
+                "description": "LLDB commands to run during session initialization."
+              },
+              "preRunCommands": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [],
+                "description": "LLDB commands to run after attach and before execution continues."
+              },
+              "postRunCommands": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [],
+                "description": "LLDB commands to run after the attach completes."
+              },
+              "coreFile": {
+                "type": "string",
+                "description": "Optional core file path for post-mortem debugging."
               }
             }
           }
@@ -250,9 +417,17 @@
             "type": "milk-tea",
             "request": "launch",
             "name": "Debug Milk Tea Program",
+            "backend": "lldb-dap",
             "program": "${file}",
             "args": [],
             "stopOnEntry": false
+          },
+          {
+            "type": "milk-tea",
+            "request": "attach",
+            "name": "Attach to Process",
+            "backend": "lldb-dap",
+            "pid": 12345
           }
         ],
         "configurationSnippets": [
@@ -263,9 +438,21 @@
               "type": "milk-tea",
               "request": "launch",
               "name": "${1:Debug Milk Tea Program}",
+              "backend": "lldb-dap",
               "program": "${file}",
               "args": [],
               "stopOnEntry": false
+            }
+          },
+          {
+            "label": "Milk Tea: Attach",
+            "description": "Attach LLDB to a running native process.",
+            "body": {
+              "type": "milk-tea",
+              "request": "attach",
+              "name": "${1:Attach to Process}",
+              "backend": "lldb-dap",
+              "pid": "${2:12345}"
             }
           }
         ]
