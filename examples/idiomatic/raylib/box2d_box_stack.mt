@@ -6,21 +6,21 @@ import std.raylib.math as math
 
 struct BoxSprite:
     body_id: b2.BodyId
-    half_width: f32
-    half_height: f32
+    half_width: float
+    half_height: float
     color: rl.Color
 
-const screen_width: i32 = 960
-const screen_height: i32 = 640
-const pixels_per_meter: f32 = 48.0
-const time_step: f32 = 1.0 / 60.0
-const sub_step_count: i32 = 4
-const stack_columns: i32 = 5
-const stack_rows: i32 = 6
-const stack_box_count: i32 = 30
+const screen_width: int = 960
+const screen_height: int = 640
+const pixels_per_meter: float = 48.0
+const time_step: float = 1.0 / 60.0
+const sub_step_count: int = 4
+const stack_columns: int = 5
+const stack_rows: int = 6
+const stack_box_count: int = 30
 
 
-def create_static_box(world_id: b2.WorldId, position: b2.Vec2, half_width: f32, half_height: f32) -> b2.BodyId:
+def create_static_box(world_id: b2.WorldId, position: b2.Vec2, half_width: float, half_height: float) -> b2.BodyId:
     var body_def = b2.default_body_def()
     body_def.position = position
     let body_id = b2.create_body(world_id, in body_def)
@@ -31,7 +31,7 @@ def create_static_box(world_id: b2.WorldId, position: b2.Vec2, half_width: f32, 
     return body_id
 
 
-def create_dynamic_box(world_id: b2.WorldId, position: b2.Vec2, half_width: f32, half_height: f32, density: f32) -> b2.BodyId:
+def create_dynamic_box(world_id: b2.WorldId, position: b2.Vec2, half_width: float, half_height: float, density: float) -> b2.BodyId:
     var body_def = b2.default_body_def()
     body_def.position = position
     let body_id = b2.create_body(world_id, in body_def)
@@ -51,7 +51,7 @@ def to_screen(position: b2.Vec2) -> rl.Vector2:
     )
 
 
-def body_angle_degrees(body_id: b2.BodyId) -> f32:
+def body_angle_degrees(body_id: b2.BodyId) -> float:
     let rotation = b2.body_get_rotation(body_id)
     return math.atan2(rotation.s, rotation.c) * math.rad2deg
 
@@ -74,7 +74,7 @@ def draw_box(sprite: BoxSprite) -> void:
     )
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Box2D Box Stack")
     defer rl.close_window()
     rl.set_target_fps(60)
@@ -101,16 +101,16 @@ def main() -> i32:
         rl.Color(r = 128, g = 128, b = 181, a = 255),
     )
 
-    let box_half_width: f32 = 0.45
-    let box_half_height: f32 = 0.45
+    let box_half_width: float = 0.45
+    let box_half_height: float = 0.45
     var box_count = 0
     var boxes = zero[array[BoxSprite, 30]]
 
     for row in 0..stack_rows:
         for column in 0..stack_columns:
             let position = b2.Vec2(
-                x = 7.6 + f32<-column * 0.96,
-                y = 11.3 - f32<-row * 0.96,
+                x = 7.6 + float<-column * 0.96,
+                y = 11.3 - float<-row * 0.96,
             )
             boxes[box_count] = BoxSprite(
                 body_id = create_dynamic_box(world_id, position, box_half_width, box_half_height, 1.0),

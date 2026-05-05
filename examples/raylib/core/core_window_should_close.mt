@@ -2,14 +2,14 @@ module examples.raylib.core.core_window_should_close
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - window should close"
 const exit_prompt_text: cstr = c"Are you sure you want to exit program? [Y/N]"
 const info_text: cstr = c"Try to close the window to get confirmation message!"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

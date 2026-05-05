@@ -2,14 +2,14 @@ module examples.idiomatic.raylib.image_kernel
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const cat_path: str = "../../raylib/resources/cat.png"
 
 
-def normalize_kernel(kernel: array[f32, 9]) -> array[f32, 9]:
+def normalize_kernel(kernel: array[float, 9]) -> array[float, 9]:
     var values = kernel
-    var sum: f32 = 0.0
+    var sum: float = 0.0
     for index in 0..9:
         sum += values[index]
 
@@ -20,7 +20,7 @@ def normalize_kernel(kernel: array[f32, 9]) -> array[f32, 9]:
     return values
 
 
-def apply_kernel(image: rl.Image, kernel: array[f32, 9], passes: i32) -> rl.Image:
+def apply_kernel(image: rl.Image, kernel: array[float, 9], passes: int) -> rl.Image:
     var result = image
     var kernel_values = kernel
     for index in 0..passes:
@@ -29,23 +29,23 @@ def apply_kernel(image: rl.Image, kernel: array[f32, 9], passes: i32) -> rl.Imag
     return result
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Image Kernel")
     defer rl.close_window()
 
     var image = rl.load_image(cat_path)
 
-    let gaussian_kernel = normalize_kernel(array[f32, 9](
+    let gaussian_kernel = normalize_kernel(array[float, 9](
         1.0, 2.0, 1.0,
         2.0, 4.0, 2.0,
         1.0, 2.0, 1.0,
     ))
-    let sobel_kernel = normalize_kernel(array[f32, 9](
+    let sobel_kernel = normalize_kernel(array[float, 9](
         1.0, 0.0, -1.0,
         2.0, 0.0, -2.0,
         1.0, 0.0, -1.0,
     ))
-    let sharpen_kernel = normalize_kernel(array[f32, 9](
+    let sharpen_kernel = normalize_kernel(array[float, 9](
         0.0, -1.0, 0.0,
        -1.0, 5.0, -1.0,
         0.0, -1.0, 0.0,

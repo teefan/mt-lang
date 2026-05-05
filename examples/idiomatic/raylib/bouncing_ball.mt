@@ -2,17 +2,17 @@ module examples.idiomatic.raylib.bouncing_ball
 
 import std.raylib as rl
 
-const screen_width: i32 = 1280
-const screen_height: i32 = 720
+const screen_width: int = 1280
+const screen_height: int = 720
 
 struct Ball:
     position: rl.Vector2
     velocity: rl.Vector2
-    radius: f32
+    radius: float
     color: rl.Color
 
 methods Ball:
-    edit def update(dt: f32):
+    edit def update(dt: float):
         this.position.x += this.velocity.x * dt
         this.position.y += this.velocity.y * dt
 
@@ -27,7 +27,7 @@ methods Ball:
         rl.draw_circle_v(this.position, this.radius, this.color)
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Bouncing Ball")
     defer rl.close_window()
 

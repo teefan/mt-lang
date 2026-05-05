@@ -3,14 +3,14 @@ module examples.raylib.textures.textures_screen_buffer
 import std.c.raylib as rl
 import std.mem.heap as heap
 
-const max_colors: i32 = 256
-const scale_factor: i32 = 2
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const max_colors: int = 256
+const scale_factor: int = 2
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - screen buffer"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -20,15 +20,15 @@ def main() -> i32:
 
     var palette = zero[array[rl.Color, 256]]
     for index in 0..max_colors:
-        let t = f32<-index / f32<-(max_colors - 1)
+        let t = float<-index / float<-(max_colors - 1)
         let hue = t * t
         let saturation = t
         let value = t
         palette[index] = rl.ColorFromHSV(250.0 + 150.0 * hue, saturation, value)
 
     unsafe:
-        let index_buffer = heap.must_alloc_zeroed[u8](usize<-(image_width * image_height))
-        let flame_root_buffer = heap.must_alloc_zeroed[u8](usize<-flame_width)
+        let index_buffer = heap.must_alloc_zeroed[ubyte](ptr_uint<-(image_width * image_height))
+        let flame_root_buffer = heap.must_alloc_zeroed[ubyte](ptr_uint<-flame_width)
         var screen_image = rl.GenImageColor(image_width, image_height, rl.BLACK)
         let screen_texture = rl.LoadTextureFromImage(screen_image)
 
@@ -42,9 +42,9 @@ def main() -> i32:
 
         while not rl.WindowShouldClose():
             for x in 2..flame_width:
-                var flame = i32<-read(flame_root_buffer + x)
+                var flame = int<-read(flame_root_buffer + x)
                 flame += rl.GetRandomValue(0, 2)
-                read(flame_root_buffer + x) = if flame > 255: u8<-255 else: u8<-flame
+                read(flame_root_buffer + x) = if flame > 255: ubyte<-255 else: ubyte<-flame
 
             for x in 0..flame_width:
                 let index = x + (image_height - 1) * image_width
@@ -57,7 +57,7 @@ def main() -> i32:
             for y in 1..image_height:
                 for x in 0..image_width:
                     let index = x + y * image_width
-                    let color_index = i32<-read(index_buffer + index)
+                    let color_index = int<-read(index_buffer + index)
 
                     if color_index != 0:
                         read(index_buffer + index) = 0
@@ -68,12 +68,12 @@ def main() -> i32:
                             let index_above = index - image_width + move_x
                             let decay = rl.GetRandomValue(0, 3)
                             let next_color_index = color_index - (if decay < color_index: decay else: color_index)
-                            read(index_buffer + index_above) = u8<-next_color_index
+                            read(index_buffer + index_above) = ubyte<-next_color_index
 
             for y in 1..image_height:
                 for x in 0..image_width:
                     let index = x + y * image_width
-                    let color_index = i32<-read(index_buffer + index)
+                    let color_index = int<-read(index_buffer + index)
                     rl.ImageDrawPixel(ptr_of(screen_image), x, y, palette[color_index])
 
             rl.UpdateTexture(screen_texture, screen_image.data)

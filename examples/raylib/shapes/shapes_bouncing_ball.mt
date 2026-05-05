@@ -2,8 +2,8 @@ module examples.raylib.shapes.shapes_bouncing_ball
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - bouncing ball"
 const pause_text: cstr = c"PRESS SPACE to PAUSE BALL MOVEMENT"
 const gravity_on_text: cstr = c"GRAVITY: ON (Press G to disable)"
@@ -11,7 +11,7 @@ const gravity_off_text: cstr = c"GRAVITY: OFF (Press G to enable)"
 const paused_text: cstr = c"PAUSED"
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -19,7 +19,7 @@ def main() -> i32:
     var ball_position = rl.Vector2(x = rl.GetScreenWidth() / 2.0, y = rl.GetScreenHeight() / 2.0)
     var ball_speed = rl.Vector2(x = 5.0, y = 4.0)
     let ball_radius = 20
-    let gravity: f32 = 0.2
+    let gravity: float = 0.2
 
     var use_gravity = true
     var pause = false

@@ -3,10 +3,10 @@ module examples.raylib.models.models_mesh_picking
 import std.c.raylib as rl
 import std.raylib.math as mt_math
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [models] example - mesh picking"
-const float_max: f32 = 340282346638528859811704183484516925440.0
+const float_max: float = 340282346638528859811704183484516925440.0
 const turret_model_path: cstr = c"../resources/models/obj/turret.obj"
 const turret_texture_path: cstr = c"../resources/models/obj/turret_diffuse.png"
 const toggle_text: cstr = c"Right click mouse to toggle camera controls"
@@ -31,7 +31,7 @@ def vector3_barycenter(point: rl.Vector3, a: rl.Vector3, b: rl.Vector3, c: rl.Ve
     return rl.Vector3(x = u, y = v, z = w)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -51,7 +51,7 @@ def main() -> i32:
     let texture = rl.LoadTexture(turret_texture_path)
     defer rl.UnloadTexture(texture)
 
-    rl.SetMaterialTexture(tower.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+    rl.SetMaterialTexture(tower.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let tower_pos = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
     let tower_bbox = rl.GetModelBoundingBox(tower)
@@ -68,7 +68,7 @@ def main() -> i32:
     var bary = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 
     let sp = rl.Vector3(x = -30.0, y = 5.0, z = 5.0)
-    let sr: f32 = 4.0
+    let sr: float = 4.0
 
     rl.SetTargetFPS(60)
 

@@ -2,8 +2,8 @@ module examples.raylib.models.models_loading
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [models] example - loading"
 const castle_model_path: cstr = c"../resources/models/obj/castle.obj"
 const castle_texture_path: cstr = c"../resources/models/obj/castle_diffuse.png"
@@ -16,7 +16,7 @@ def is_supported_model_path(path: cstr) -> bool:
     return rl.IsFileExtension(path, c".obj") or rl.IsFileExtension(path, c".gltf") or rl.IsFileExtension(path, c".glb") or rl.IsFileExtension(path, c".vox") or rl.IsFileExtension(path, c".iqm") or rl.IsFileExtension(path, c".m3d")
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -30,7 +30,7 @@ def main() -> i32:
 
     var model = rl.LoadModel(castle_model_path)
     var texture = rl.LoadTexture(castle_texture_path)
-    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+    rl.SetMaterialTexture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
     var bounds = rl.GetModelBoundingBox(model)
@@ -51,7 +51,7 @@ def main() -> i32:
                     if is_supported_model_path(dropped_path):
                         rl.UnloadModel(model)
                         model = rl.LoadModel(dropped_path)
-                        rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+                        rl.SetMaterialTexture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
                         bounds = rl.GetModelBoundingBox(model)
                         camera.position.x = bounds.max.x + 10.0
@@ -60,7 +60,7 @@ def main() -> i32:
                     elif rl.IsFileExtension(dropped_path, c".png"):
                         rl.UnloadTexture(texture)
                         texture = rl.LoadTexture(dropped_path)
-                        rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+                        rl.SetMaterialTexture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
             rl.UnloadDroppedFiles(dropped_files)
 

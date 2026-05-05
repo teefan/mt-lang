@@ -32,7 +32,7 @@
         "params": [
           {
             "name": "argc",
-            "type": "i32"
+            "type": "int"
           },
           {
             "name": "argv",
@@ -43,7 +43,7 @@
             "type": "MainFunc"
           }
         ],
-        "return_type": "i32",
+        "return_type": "int",
         "mapping": "c.SDL_RunApp(argc, argv, main_function, null)"
       },
       {
@@ -77,15 +77,15 @@
           },
           {
             "name": "w",
-            "type": "i32"
+            "type": "int"
           },
           {
             "name": "h",
-            "type": "i32"
+            "type": "int"
           },
           {
             "name": "flag_bits",
-            "type": "usize"
+            "type": "ptr_uint"
           }
         ],
         "return_type": "ptr[Window]"
@@ -100,15 +100,15 @@
           },
           {
             "name": "width",
-            "type": "i32"
+            "type": "int"
           },
           {
             "name": "height",
-            "type": "i32"
+            "type": "int"
           },
           {
             "name": "window_flags",
-            "type": "usize"
+            "type": "ptr_uint"
           },
           {
             "name": "window",
@@ -153,12 +153,12 @@
           },
           {
             "name": "w",
-            "type": "i32",
+            "type": "int",
             "mode": "out"
           },
           {
             "name": "h",
-            "type": "i32",
+            "type": "int",
             "mode": "out"
           }
         ],
@@ -195,12 +195,12 @@
           },
           {
             "name": "w",
-            "type": "i32",
+            "type": "int",
             "mode": "out"
           },
           {
             "name": "h",
-            "type": "i32",
+            "type": "int",
             "mode": "out"
           }
         ],
@@ -215,12 +215,12 @@
           },
           {
             "name": "w",
-            "type": "i32",
+            "type": "int",
             "mode": "out"
           },
           {
             "name": "h",
-            "type": "i32",
+            "type": "int",
             "mode": "out"
           }
         ],
@@ -231,12 +231,12 @@
         "params": [
           {
             "name": "seconds",
-            "type": "i32",
+            "type": "int",
             "mode": "out"
           },
           {
             "name": "percent",
-            "type": "i32",
+            "type": "int",
             "mode": "out"
           }
         ],
@@ -247,7 +247,7 @@
         "params": [
           {
             "name": "count",
-            "type": "i32",
+            "type": "int",
             "mode": "out"
           }
         ],
@@ -258,7 +258,7 @@
         "params": [
           {
             "name": "count",
-            "type": "i32",
+            "type": "int",
             "mode": "out"
           }
         ],
@@ -269,7 +269,7 @@
         "params": [
           {
             "name": "count",
-            "type": "i32",
+            "type": "int",
             "mode": "out"
           }
         ],
@@ -329,11 +329,11 @@
           },
           {
             "name": "x",
-            "type": "f32"
+            "type": "float"
           },
           {
             "name": "y",
-            "type": "f32"
+            "type": "float"
           },
           {
             "name": "text",

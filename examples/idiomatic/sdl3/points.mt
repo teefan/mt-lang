@@ -2,20 +2,20 @@ module examples.idiomatic.sdl3.points
 
 import std.sdl3 as sdl
 
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: str = "examples/renderer/points"
 const presentation_mode: sdl.RendererLogicalPresentation = sdl.RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: usize = sdl.WINDOW_RESIZABLE
-const point_count: i32 = 500
-const min_pixels_per_second: f32 = 30.0
-const max_pixels_per_second: f32 = 60.0
+const window_flags: ptr_uint = sdl.WINDOW_RESIZABLE
+const point_count: int = 500
+const min_pixels_per_second: float = 30.0
+const max_pixels_per_second: float = 60.0
 
 var window: ptr[sdl.Window]
 var renderer: ptr[sdl.Renderer]
-var last_time: usize = 0
+var last_time: ptr_uint = 0
 var points: array[sdl.FPoint, 500] = zero[array[sdl.FPoint, 500]]
-var point_speeds: array[f32, 500] = zero[array[f32, 500]]
+var point_speeds: array[float, 500] = zero[array[float, 500]]
 
 
 def pump_events() -> bool:
@@ -30,9 +30,9 @@ def pump_events() -> bool:
 
 def render_frame() -> void:
     let now = sdl.get_ticks()
-    let elapsed = f32<-(now - last_time) / 1000.0
-    let width_f = f32<-window_width
-    let height_f = f32<-window_height
+    let elapsed = float<-(now - last_time) / 1000.0
+    let width_f = float<-window_width
+    let height_f = float<-window_height
 
     for index in 0..point_count:
         let distance = elapsed * point_speeds[index]
@@ -58,7 +58,7 @@ def render_frame() -> void:
     sdl.render_present(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     sdl.set_app_metadata("Example Renderer Points", "1.0", "com.example.renderer-points")
 
     if not sdl.init(sdl.INIT_VIDEO):
@@ -74,8 +74,8 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
 
     for index in 0..point_count:
-        points[index].x = sdl.randf() * f32<-window_width
-        points[index].y = sdl.randf() * f32<-window_height
+        points[index].x = sdl.randf() * float<-window_width
+        points[index].y = sdl.randf() * float<-window_height
         point_speeds[index] = min_pixels_per_second + (sdl.randf() * (max_pixels_per_second - min_pixels_per_second))
 
     last_time = sdl.get_ticks()
@@ -86,5 +86,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return sdl.run_app(argc, argv, app_main)

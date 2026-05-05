@@ -5,25 +5,25 @@ import std.span as sp
 
 pub struct Vec[T]:
     data: ptr[T]?
-    len: usize
-    capacity: usize
+    len: ptr_uint
+    capacity: ptr_uint
 
 
 pub def create[T]() -> Vec[T]:
     return Vec[T](data = null, len = 0, capacity = 0)
 
 
-pub def with_capacity[T](capacity: usize) -> Vec[T]:
+pub def with_capacity[T](capacity: ptr_uint) -> Vec[T]:
     var items = create[T]()
     reserve[T](ref_of(items), capacity)
     return items
 
 
-pub def count[T](items: Vec[T]) -> usize:
+pub def count[T](items: Vec[T]) -> ptr_uint:
     return items.len
 
 
-pub def capacity[T](items: Vec[T]) -> usize:
+pub def capacity[T](items: Vec[T]) -> ptr_uint:
     return items.capacity
 
 
@@ -52,7 +52,7 @@ pub def release[T](items: ref[Vec[T]]) -> void:
     return
 
 
-pub def try_reserve[T](items: ref[Vec[T]], min_capacity: usize) -> bool:
+pub def try_reserve[T](items: ref[Vec[T]], min_capacity: ptr_uint) -> bool:
     if min_capacity <= items.capacity:
         return true
 
@@ -61,7 +61,7 @@ pub def try_reserve[T](items: ref[Vec[T]], min_capacity: usize) -> bool:
         new_capacity = 4
 
     while new_capacity < min_capacity:
-        if new_capacity > heap.usize_max() / 2:
+        if new_capacity > heap.ptr_uint_max() / 2:
             new_capacity = min_capacity
         else:
             new_capacity *= 2
@@ -75,7 +75,7 @@ pub def try_reserve[T](items: ref[Vec[T]], min_capacity: usize) -> bool:
     return true
 
 
-pub def reserve[T](items: ref[Vec[T]], min_capacity: usize) -> void:
+pub def reserve[T](items: ref[Vec[T]], min_capacity: ptr_uint) -> void:
     if not try_reserve[T](items, min_capacity):
         panic(c"vec.reserve out of memory")
     return
@@ -103,7 +103,7 @@ pub def push[T](items: ref[Vec[T]], item: T) -> void:
     return
 
 
-pub def get[T](items: Vec[T], index: usize) -> T:
+pub def get[T](items: Vec[T], index: ptr_uint) -> T:
     if index >= items.len:
         panic(c"vec.get index out of bounds")
 
@@ -115,7 +115,7 @@ pub def get[T](items: Vec[T], index: usize) -> T:
             return read(data + index)
 
 
-pub def set[T](items: ref[Vec[T]], index: usize, item: T) -> void:
+pub def set[T](items: ref[Vec[T]], index: ptr_uint, item: T) -> void:
     if index >= items.len:
         panic(c"vec.set index out of bounds")
 
@@ -139,7 +139,7 @@ pub def pop_into[T](items: ref[Vec[T]], target: ref[T]) -> bool:
     return true
 
 
-pub def remove_swap[T](items: ref[Vec[T]], index: usize) -> T:
+pub def remove_swap[T](items: ref[Vec[T]], index: ptr_uint) -> T:
     if index >= items.len:
         panic(c"vec.remove_swap index out of bounds")
 
@@ -150,7 +150,7 @@ pub def remove_swap[T](items: ref[Vec[T]], index: usize) -> T:
     return result
 
 
-pub def remove_ordered[T](items: ref[Vec[T]], index: usize) -> T:
+pub def remove_ordered[T](items: ref[Vec[T]], index: ptr_uint) -> T:
     if index >= items.len:
         panic(c"vec.remove_ordered index out of bounds")
 

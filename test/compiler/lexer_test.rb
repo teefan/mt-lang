@@ -8,7 +8,7 @@ class MilkTeaLexerTest < Minitest::Test
       module demo.main
 
       struct Ball:
-          radius: f32
+          radius: float
     MT
 
     types = MilkTea::Lexer.lex(source).map(&:type)
@@ -21,7 +21,7 @@ class MilkTeaLexerTest < Minitest::Test
 
   def test_rejects_tabs
     source = <<~MT
-      def main() -> i32:
+      def main() -> int:
 	return 0
     MT
 
@@ -34,7 +34,7 @@ class MilkTeaLexerTest < Minitest::Test
 
   def test_ignores_indentation_inside_parenthesized_calls
     source = <<~MT
-      def main() -> i32:
+      def main() -> int:
           var ball = Ball(
               radius = 20.0,
           )
@@ -50,8 +50,8 @@ class MilkTeaLexerTest < Minitest::Test
 
   def test_lexes_cstrings_booleans_nulls_and_non_decimal_numbers
     source = <<~MT
-      const mask: i32 = 0xff
-      const bits: i32 = 0b1010
+      const mask: int = 0xff
+      const bits: int = 0b1010
       const title: cstr = c"Milk\\nTea"
       const ready: bool = true
       const missing: ptr[Window]? = null
@@ -68,8 +68,8 @@ class MilkTeaLexerTest < Minitest::Test
 
   def test_lexes_scientific_float_literals
     source = <<~MT
-      const epsilon: f32 = 1.1920929E-7
-      const large: f64 = 2e+3
+      const epsilon: float = 1.1920929E-7
+      const large: double = 2e+3
     MT
 
     tokens = MilkTea::Lexer.lex(source)
@@ -80,7 +80,7 @@ class MilkTeaLexerTest < Minitest::Test
 
   def test_reports_indentation_and_grouping_errors
     indentation_error = assert_raises(MilkTea::LexError) do
-      MilkTea::Lexer.lex("def main() -> i32:\n  return 0\n")
+      MilkTea::Lexer.lex("def main() -> int:\n  return 0\n")
     end
     assert_match(/multiples of 4 spaces/, indentation_error.message)
 
@@ -97,7 +97,7 @@ class MilkTeaLexerTest < Minitest::Test
 
   def test_lexes_bitwise_tokens_and_normal_strings
     source = <<~MT
-      const mask: u32 = ~0 | 1 & 2 ^ 4 << 1 >> 0
+      const mask: uint = ~0 | 1 & 2 ^ 4 << 1 >> 0
       link "c"
     MT
 
@@ -113,7 +113,7 @@ class MilkTeaLexerTest < Minitest::Test
   end
 
   def test_lexes_ellipsis_token
-    types = MilkTea::Lexer.lex("extern def printf(format: cstr, ...) -> i32\n").map(&:type)
+    types = MilkTea::Lexer.lex("extern def printf(format: cstr, ...) -> int\n").map(&:type)
 
     assert_includes types, :ellipsis
   end
@@ -134,7 +134,7 @@ class MilkTeaLexerTest < Minitest::Test
     source = <<~MT
       # module banner
 
-      def main() -> i32: # inline doc
+      def main() -> int: # inline doc
           return 0
     MT
 

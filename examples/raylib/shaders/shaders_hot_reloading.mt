@@ -4,9 +4,9 @@ import std.c.raylib as rl
 import std.c.rlgl as rlgl
 import std.c.time as ctime
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const shader_file_name_format: cstr = c"../resources/shaders/glsl%i/reload.fs"
 const resolution_uniform_name: cstr = c"resolution"
 const mouse_uniform_name: cstr = c"mouse"
@@ -28,7 +28,7 @@ def formatted_mod_time(mod_time: ref[ctime.time_t], buffer: ref[array[char, 64]]
         return cstr<-ptr_of(read(buffer)[0])
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -40,20 +40,20 @@ def main() -> i32:
     var mouse_location = rl.GetShaderLocation(shader, mouse_uniform_name)
     var time_location = rl.GetShaderLocation(shader, time_uniform_name)
 
-    var resolution = array[f32, 2](f32<-screen_width, f32<-screen_height)
+    var resolution = array[float, 2](float<-screen_width, float<-screen_height)
     rl.SetShaderValue(shader, resolution_location, ptr_of(resolution[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
-    var total_time: f32 = 0.0
+    var total_time: float = 0.0
     var shader_auto_reloading = false
     var mod_time_buffer = zero[array[char, 64]]
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        total_time += f32<-rl.GetFrameTime()
+        total_time += float<-rl.GetFrameTime()
 
         let mouse = rl.GetMousePosition()
-        var mouse_position = array[f32, 2](mouse.x, mouse.y)
+        var mouse_position = array[float, 2](mouse.x, mouse.y)
 
         rl.SetShaderValue(shader, time_location, ptr_of(total_time), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
         rl.SetShaderValue(shader, mouse_location, ptr_of(mouse_position[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)

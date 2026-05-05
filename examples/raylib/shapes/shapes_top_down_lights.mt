@@ -4,14 +4,14 @@ import std.c.raylib as rl
 import std.c.rlgl as rlgl
 import std.raylib.math as mt_math
 
-const rlgl_src_alpha: i32 = 0x0302
-const rlgl_min: i32 = 0x8007
-const rlgl_max: i32 = 0x8008
-const max_boxes: i32 = 20
-const max_shadows: i32 = max_boxes * 3
-const max_lights: i32 = 16
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const rlgl_src_alpha: int = 0x0302
+const rlgl_min: int = 0x8007
+const rlgl_max: int = 0x8008
+const max_boxes: int = 20
+const max_shadows: int = max_boxes * 3
+const max_lights: int = 16
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - top down lights"
 
 struct ShadowGeometry:
@@ -23,13 +23,13 @@ struct LightInfo:
     valid: bool
     position: rl.Vector2
     mask: rl.RenderTexture
-    outer_radius: f32
+    outer_radius: float
     bounds: rl.Rectangle
     shadows: array[ShadowGeometry, 60]
-    shadow_count: i32
+    shadow_count: int
 
 
-def move_light(light: LightInfo, x: f32, y: f32) -> LightInfo:
+def move_light(light: LightInfo, x: float, y: float) -> LightInfo:
     var current = light
     current.dirty = true
     current.position.x = x
@@ -87,14 +87,14 @@ def draw_light_mask(light: LightInfo) -> void:
     return
 
 
-def move_light_slot(lights: ref[array[LightInfo, 16]], slot: i32, x: f32, y: f32) -> void:
+def move_light_slot(lights: ref[array[LightInfo, 16]], slot: int, x: float, y: float) -> void:
     var lights_view = read(lights)
     lights_view[slot] = move_light(lights_view[slot], x, y)
     read(lights) = lights_view
     return
 
 
-def setup_light(lights: ref[array[LightInfo, 16]], slot: i32, x: f32, y: f32, radius: f32) -> void:
+def setup_light(lights: ref[array[LightInfo, 16]], slot: int, x: float, y: float, radius: float) -> void:
     var lights_view = read(lights)
     var light = lights_view[slot]
     light.active = true
@@ -110,7 +110,7 @@ def setup_light(lights: ref[array[LightInfo, 16]], slot: i32, x: f32, y: f32, ra
     return
 
 
-def update_light(lights: ref[array[LightInfo, 16]], slot: i32, boxes: array[rl.Rectangle, 20], count: i32) -> bool:
+def update_light(lights: ref[array[LightInfo, 16]], slot: int, boxes: array[rl.Rectangle, 20], count: int) -> bool:
     var lights_view = read(lights)
     var light = lights_view[slot]
 
@@ -158,7 +158,7 @@ def update_light(lights: ref[array[LightInfo, 16]], slot: i32, boxes: array[rl.R
     return true
 
 
-def setup_boxes(boxes: ref[array[rl.Rectangle, 20]], count: ref[i32]) -> void:
+def setup_boxes(boxes: ref[array[rl.Rectangle, 20]], count: ref[int]) -> void:
     var items = read(boxes)
     items[0] = rl.Rectangle(x = 150.0, y = 80.0, width = 40.0, height = 40.0)
     items[1] = rl.Rectangle(x = 1200.0, y = 700.0, width = 40.0, height = 40.0)
@@ -168,10 +168,10 @@ def setup_boxes(boxes: ref[array[rl.Rectangle, 20]], count: ref[i32]) -> void:
 
     for index in 5..max_boxes:
         items[index] = rl.Rectangle(
-            x = f32<-rl.GetRandomValue(0, rl.GetScreenWidth()),
-            y = f32<-rl.GetRandomValue(0, rl.GetScreenHeight()),
-            width = f32<-rl.GetRandomValue(10, 100),
-            height = f32<-rl.GetRandomValue(10, 100),
+            x = float<-rl.GetRandomValue(0, rl.GetScreenWidth()),
+            y = float<-rl.GetRandomValue(0, rl.GetScreenHeight()),
+            width = float<-rl.GetRandomValue(10, 100),
+            height = float<-rl.GetRandomValue(10, 100),
         )
 
     read(boxes) = items
@@ -179,11 +179,11 @@ def setup_boxes(boxes: ref[array[rl.Rectangle, 20]], count: ref[i32]) -> void:
     return
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var box_count: i32 = 0
+    var box_count: int = 0
     var boxes = zero[array[rl.Rectangle, 20]]
     setup_boxes(ref_of(boxes), ref_of(box_count))
 
@@ -203,14 +203,14 @@ def main() -> i32:
     let screen_rect = rl.Rectangle(
         x = 0.0,
         y = 0.0,
-        width = f32<-rl.GetScreenWidth(),
-        height = f32<-rl.GetScreenHeight(),
+        width = float<-rl.GetScreenWidth(),
+        height = float<-rl.GetScreenHeight(),
     )
     let flipped_screen_rect = rl.Rectangle(
         x = 0.0,
         y = 0.0,
-        width = f32<-rl.GetScreenWidth(),
-        height = -f32<-rl.GetScreenHeight(),
+        width = float<-rl.GetScreenWidth(),
+        height = -float<-rl.GetScreenHeight(),
     )
     let origin = rl.Vector2(x = 0.0, y = 0.0)
 
@@ -255,7 +255,7 @@ def main() -> i32:
         rl.ClearBackground(rl.BLACK)
         rl.DrawTextureRec(background_texture, screen_rect, origin, rl.WHITE)
 
-        var overlay_alpha: f32 = 1.0
+        var overlay_alpha: float = 1.0
         if show_lines:
             overlay_alpha = 0.75
 
@@ -266,7 +266,7 @@ def main() -> i32:
                 var light_color = rl.WHITE
                 if index == 0:
                     light_color = rl.YELLOW
-                rl.DrawCircle(i32<-lights[index].position.x, i32<-lights[index].position.y, 10.0, light_color)
+                rl.DrawCircle(int<-lights[index].position.x, int<-lights[index].position.y, 10.0, light_color)
 
         if show_lines:
             for index in 0..lights[0].shadow_count:
@@ -278,10 +278,10 @@ def main() -> i32:
                     rl.DrawRectangleRec(boxes[index], rl.PURPLE)
 
                 rl.DrawRectangleLines(
-                    i32<-boxes[index].x,
-                    i32<-boxes[index].y,
-                    i32<-boxes[index].width,
-                    i32<-boxes[index].height,
+                    int<-boxes[index].x,
+                    int<-boxes[index].y,
+                    int<-boxes[index].width,
+                    int<-boxes[index].height,
                     rl.DARKBLUE,
                 )
 

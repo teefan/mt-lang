@@ -6,25 +6,25 @@ import std.raylib.math as mt_math
 
 struct TurtleState:
     origin: rl.Vector2
-    angle: f32
+    angle: float
 
 struct PenroseLSystem:
-    steps: i32
+    steps: int
     production: ptr[char]
     rule_w: cstr
     rule_x: cstr
     rule_y: cstr
     rule_z: cstr
-    draw_length: f32
-    theta: f32
+    draw_length: float
+    theta: float
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const str_max_size: i32 = 10000
-const turtle_stack_max_size: i32 = 50
-const draw_length_base: f32 = 460.0
-const min_generations: i32 = 0
-const max_generations: i32 = 4
+const screen_width: int = 800
+const screen_height: int = 450
+const str_max_size: int = 10000
+const turtle_stack_max_size: int = 50
+const draw_length_base: float = 460.0
+const min_generations: int = 0
+const max_generations: int = 4
 const initial_production: cstr = c"[X]++[X]++[X]++[X]++[X]"
 const window_title: cstr = c"raylib [shapes] example - penrose tile"
 const title_text: cstr = c"penrose l-system"
@@ -34,20 +34,20 @@ const turtle_stack_overflow_text: cstr = c"TURTLE STACK OVERFLOW!"
 const turtle_stack_underflow_text: cstr = c"TURTLE STACK UNDERFLOW!"
 
 
-def append_text(buffer: ptr[char], position: ptr[i32], text: cstr) -> void:
+def append_text(buffer: ptr[char], position: ptr[int], text: cstr) -> void:
     unsafe:
         let remaining = str_max_size - read(position) - 1
         if remaining <= 0:
             return
 
-        let text_length = i32<-rl.TextLength(text)
+        let text_length = int<-rl.TextLength(text)
         if text_length <= remaining:
             rl.TextAppend(buffer, text, position)
         else:
             rl.TextAppend(buffer, rl.TextSubtext(text, 0, remaining), position)
 
 
-def append_char(buffer: ptr[char], position: ptr[i32], ch: char) -> void:
+def append_char(buffer: ptr[char], position: ptr[int], ch: char) -> void:
     unsafe:
         let remaining = str_max_size - read(position) - 1
         if remaining <= 0:
@@ -58,7 +58,7 @@ def append_char(buffer: ptr[char], position: ptr[i32], ch: char) -> void:
         rl.TextAppend(buffer, cstr<-ptr_of(scratch[0]), position)
 
 
-def push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32], state: TurtleState) -> void:
+def push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[int], state: TurtleState) -> void:
     if read(top) < turtle_stack_max_size - 1:
         var items = read(stack)
         read(top) += 1
@@ -68,7 +68,7 @@ def push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32], state: 
         rl.TraceLog(rl.TraceLogLevel.LOG_WARNING, turtle_stack_overflow_text)
 
 
-def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32]) -> TurtleState:
+def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[int]) -> TurtleState:
     if read(top) >= 0:
         let items = read(stack)
         let state = items[read(top)]
@@ -79,10 +79,10 @@ def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[i32]) -> Turtl
     return zero[TurtleState]
 
 
-def create_penrose_lsystem(draw_length: f32) -> PenroseLSystem:
+def create_penrose_lsystem(draw_length: float) -> PenroseLSystem:
     var production: ptr[char]
     unsafe:
-        production = ptr[char]<-rl.MemAlloc(u32<-str_max_size)
+        production = ptr[char]<-rl.MemAlloc(uint<-str_max_size)
         production[0] = char<-0
         rl.TextCopy(production, initial_production)
 
@@ -101,10 +101,10 @@ def create_penrose_lsystem(draw_length: f32) -> PenroseLSystem:
 def build_production_step(ls: ref[PenroseLSystem]) -> void:
     var new_production: ptr[char]
     unsafe:
-        new_production = ptr[char]<-rl.MemAlloc(u32<-str_max_size)
+        new_production = ptr[char]<-rl.MemAlloc(uint<-str_max_size)
         new_production[0] = char<-0
 
-        let production_length = i32<-rl.TextLength(cstr<-ls.production)
+        let production_length = int<-rl.TextLength(cstr<-ls.production)
         var new_length = 0
 
         for index in 0..production_length:
@@ -125,13 +125,13 @@ def build_production_step(ls: ref[PenroseLSystem]) -> void:
         rl.MemFree(ptr[void]<-new_production)
 
 
-def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[TurtleState, 50]], turtle_top: ref[i32]) -> void:
+def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[TurtleState, 50]], turtle_top: ref[int]) -> void:
     let screen_center = rl.Vector2(x = rl.GetScreenWidth() / 2.0, y = rl.GetScreenHeight() / 2.0)
     var turtle = TurtleState(origin = rl.Vector2(x = 0.0, y = 0.0), angle = -90.0)
     var repeats = 1
 
     unsafe:
-        let production_length = i32<-rl.TextLength(cstr<-ls.production)
+        let production_length = int<-rl.TextLength(cstr<-ls.production)
         ls.steps += 12
         if ls.steps > production_length:
             ls.steps = production_length
@@ -170,19 +170,19 @@ def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[Turtle
                 push_turtle_state(turtle_stack, turtle_top, turtle)
             elif step == char<-93:
                 turtle = pop_turtle_state(turtle_stack, turtle_top)
-            elif i32<-step >= 48 and i32<-step <= 57:
-                repeats = i32<-step - 48
+            elif int<-step >= 48 and int<-step <= 57:
+                repeats = int<-step - 48
 
     read(turtle_top) = -1
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
     var generations = 0
-    var ls = create_penrose_lsystem(draw_length_base * f32<-generations / f32<-max_generations)
+    var ls = create_penrose_lsystem(draw_length_base * float<-generations / float<-max_generations)
     for index in 0..generations:
         build_production_step(ref_of(ls))
 
@@ -206,7 +206,7 @@ def main() -> i32:
         if rebuild:
             unsafe:
                 rl.MemFree(ptr[void]<-ls.production)
-            ls = create_penrose_lsystem(draw_length_base * f32<-generations / f32<-max_generations)
+            ls = create_penrose_lsystem(draw_length_base * float<-generations / float<-max_generations)
             for index in 0..generations:
                 build_production_step(ref_of(ls))
 

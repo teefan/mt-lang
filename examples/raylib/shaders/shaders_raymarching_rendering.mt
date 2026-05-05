@@ -2,9 +2,9 @@ module examples.raylib.shaders.shaders_raymarching_rendering
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const shader_path_format: cstr = c"../resources/shaders/glsl%i/raymarching.fs"
 const view_eye_uniform_name: cstr = c"viewEye"
 const view_center_uniform_name: cstr = c"viewCenter"
@@ -14,7 +14,7 @@ const credit_text: cstr = c"(c) Raymarching shader by Inigo Quilez. MIT License.
 const window_title: cstr = c"raylib [shaders] example - raymarching rendering"
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE)
 
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -36,10 +36,10 @@ def main() -> i32:
     let run_time_loc = rl.GetShaderLocation(shader, run_time_uniform_name)
     let resolution_loc = rl.GetShaderLocation(shader, resolution_uniform_name)
 
-    var resolution = array[f32, 2](f32<-screen_width, f32<-screen_height)
+    var resolution = array[float, 2](float<-screen_width, float<-screen_height)
     rl.SetShaderValue(shader, resolution_loc, ptr_of(resolution[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
-    var run_time: f32 = 0.0
+    var run_time: float = 0.0
 
     rl.DisableCursor()
     defer rl.EnableCursor()
@@ -48,8 +48,8 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_FIRST_PERSON)
 
-        var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
-        var camera_target = array[f32, 3](camera.target.x, camera.target.y, camera.target.z)
+        var camera_pos = array[float, 3](camera.position.x, camera.position.y, camera.position.z)
+        var camera_target = array[float, 3](camera.target.x, camera.target.y, camera.target.z)
 
         run_time += rl.GetFrameTime()
 
@@ -58,8 +58,8 @@ def main() -> i32:
         rl.SetShaderValue(shader, run_time_loc, ptr_of(run_time), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         if rl.IsWindowResized():
-            resolution[0] = f32<-rl.GetScreenWidth()
-            resolution[1] = f32<-rl.GetScreenHeight()
+            resolution[0] = float<-rl.GetScreenWidth()
+            resolution[1] = float<-rl.GetScreenHeight()
             rl.SetShaderValue(shader, resolution_loc, ptr_of(resolution[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
         rl.BeginDrawing()

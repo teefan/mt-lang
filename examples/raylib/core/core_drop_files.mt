@@ -3,17 +3,17 @@ module examples.raylib.core.core_drop_files
 import std.c.raylib as rl
 import std.mem.heap as heap
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const max_filepaths_recorded: i32 = 4096
-const max_filepath_size: i32 = 2048
+const screen_width: int = 800
+const screen_height: int = 450
+const max_filepaths_recorded: int = 4096
+const max_filepath_size: int = 2048
 const window_title: cstr = c"raylib [core] example - drop files"
 const empty_prompt_text: cstr = c"Drop your files to this window!"
 const dropped_files_text: cstr = c"Dropped files:"
 const continue_prompt_text: cstr = c"Drop new files..."
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -21,21 +21,21 @@ def main() -> i32:
     var file_paths = zero[array[ptr[char], 4096]]
 
     for index in 0..max_filepaths_recorded:
-        file_paths[index] = heap.must_alloc_zeroed[char](usize<-max_filepath_size)
+        file_paths[index] = heap.must_alloc_zeroed[char](ptr_uint<-max_filepath_size)
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
         if rl.IsFileDropped():
             let dropped_files = rl.LoadDroppedFiles()
-            let dropped_count = i32<-dropped_files.count
+            let dropped_count = int<-dropped_files.count
             let offset = file_path_counter
             var dropped_index = 0
 
             while dropped_index < dropped_count:
                 if file_path_counter < max_filepaths_recorded - 1:
                     unsafe:
-                        let dropped_path = read(dropped_files.paths + usize<-dropped_index)
+                        let dropped_path = read(dropped_files.paths + ptr_uint<-dropped_index)
                         rl.TextCopy(file_paths[offset + dropped_index], cstr<-dropped_path)
                     file_path_counter += 1
                 dropped_index += 1

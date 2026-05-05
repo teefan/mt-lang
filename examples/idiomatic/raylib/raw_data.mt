@@ -2,17 +2,17 @@ module examples.idiomatic.raylib.raw_data
 
 import std.raylib as rl
 
-const raw_width: i32 = 384
-const raw_height: i32 = 512
-const checked_width: i32 = 960
-const checked_height: i32 = 480
-const check_size: i32 = 32
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const raw_width: int = 384
+const raw_height: int = 512
+const checked_width: int = 960
+const checked_height: int = 480
+const check_size: int = 32
+const screen_width: int = 800
+const screen_height: int = 450
 const raw_image_path: str = "../../raylib/resources/fudesumi.raw"
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Raw Texture Data")
     defer rl.close_window()
 

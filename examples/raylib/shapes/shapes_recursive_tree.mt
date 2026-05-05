@@ -8,31 +8,31 @@ import std.raylib.math as mt_math
 struct Branch:
     start: rl.Vector2
     finish: rl.Vector2
-    angle: f32
-    length: f32
+    angle: float
+    length: float
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - recursive tree"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let start_position = rl.Vector2(x = screen_width / 2.0 - 125.0, y = f32<-screen_height)
-    var angle: f32 = 40.0
-    var thick: f32 = 1.0
-    var tree_depth: f32 = 10.0
-    var branch_decay: f32 = 0.66
-    var length: f32 = 120.0
+    let start_position = rl.Vector2(x = screen_width / 2.0 - 125.0, y = float<-screen_height)
+    var angle: float = 40.0
+    var thick: float = 1.0
+    var tree_depth: float = 10.0
+    var branch_decay: float = 0.66
+    var length: float = 120.0
     var bezier = false
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
         let theta = angle * mt_math.deg2rad
-        let max_branches = i32<-math.powf(2.0, math.floorf(tree_depth))
+        let max_branches = int<-math.powf(2.0, math.floorf(tree_depth))
         var branches = zero[array[Branch, 1030]]
         var count = 0
 

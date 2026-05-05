@@ -2,12 +2,12 @@ module examples.sdl3.renderer.streaming_textures
 
 import std.c.sdl3 as c
 
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/renderer/streaming-textures"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
-const texture_size: i32 = 150
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
+const texture_size: int = 150
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
@@ -18,16 +18,16 @@ def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
 
 
 def render_frame() -> void:
-    let now = i32<-c.SDL_GetTicks()
+    let now = int<-c.SDL_GetTicks()
     let direction = if (now % 2000) >= 1000: 1.0 else: -1.0
-    let scale = (f32<-((now % 1000) - 500) / 500.0) * direction
+    let scale = (float<-((now % 1000) - 500) / 500.0) * direction
 
     var surface: ptr[c.SDL_Surface]
     if c.SDL_LockTextureToSurface(texture, null, ptr_of(surface)):
@@ -39,16 +39,16 @@ def render_frame() -> void:
 
             c.SDL_FillSurfaceRect(surface, null, black)
 
-            strip.y = i32<-(f32<-(texture_size - strip.h) * ((scale + 1.0) / 2.0))
+            strip.y = int<-(float<-(texture_size - strip.h) * ((scale + 1.0) / 2.0))
             c.SDL_FillSurfaceRect(surface, ptr_of(strip), green)
 
         c.SDL_UnlockTexture(texture)
 
     var destination = c.SDL_FRect(
-        x = f32<-(window_width - texture_size) / 2.0,
-        y = f32<-(window_height - texture_size) / 2.0,
-        w = f32<-texture_size,
-        h = f32<-texture_size,
+        x = float<-(window_width - texture_size) / 2.0,
+        y = float<-(window_height - texture_size) / 2.0,
+        w = float<-texture_size,
+        h = float<-texture_size,
     )
 
     c.SDL_SetRenderDrawColor(renderer, 66, 66, 66, c.SDL_ALPHA_OPAQUE)
@@ -57,7 +57,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Renderer Streaming Textures", c"1.0", c"com.example.renderer-streaming-textures")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -90,5 +90,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

@@ -2,10 +2,10 @@ module examples.sdl3.misc.power
 
 import std.c.sdl3 as c
 
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/misc/power"
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
 const unknown_time_text: cstr = c"unknown time"
 const battery_format: cstr = c"Battery: %3d percent, %s remaining"
@@ -18,7 +18,7 @@ def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
@@ -26,8 +26,8 @@ def pump_events() -> bool:
 
 def render_frame() -> void:
     var frame = c.SDL_FRect(x = 100.0, y = 200.0, w = 440.0, h = 80.0)
-    var seconds: i32 = 0
-    var percent: i32 = 0
+    var seconds: int = 0
+    var percent: int = 0
     let state = c.SDL_GetPowerInfo(ptr_of(seconds), ptr_of(percent))
 
     var clear_r: c.Uint8 = 0
@@ -88,14 +88,14 @@ def render_frame() -> void:
         var pct_rect = frame
         var remainstr = zero[array[char, 64]]
         var msgbuf = zero[array[char, 128]]
-        var x: f32 = 0.0
-        var y: f32 = 0.0
+        var x: float = 0.0
+        var y: float = 0.0
 
         unsafe:
             let remainstr_ptr = cstr<-ptr_of(remainstr[0])
             let msgbuf_ptr = cstr<-ptr_of(msgbuf[0])
 
-            pct_rect.w *= f32<-percent / 100.0
+            pct_rect.w *= float<-percent / 100.0
 
             if seconds < 0:
                 c.SDL_strlcpy(ptr_of(remainstr[0]), unknown_time_text, 64)
@@ -107,8 +107,8 @@ def render_frame() -> void:
                 c.SDL_snprintf(ptr_of(remainstr[0]), 64, c"%02d:%02d:%02d", hours, minutes, seconds)
 
             c.SDL_snprintf(ptr_of(msgbuf[0]), 128, battery_format, percent, remainstr_ptr)
-            x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msgbuf_ptr))) / 2.0)
-            y = frame.y + frame.h + f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE
+            x = frame.x + ((frame.w - (float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * float<-c.SDL_strlen(msgbuf_ptr))) / 2.0)
+            y = frame.y + frame.h + float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE
 
         c.SDL_SetRenderDrawColor(renderer, bar_r, bar_g, bar_b, c.SDL_ALPHA_OPAQUE)
         c.SDL_RenderFillRect(renderer, ptr_of(pct_rect))
@@ -119,21 +119,21 @@ def render_frame() -> void:
             c.SDL_RenderDebugText(renderer, x, y, cstr<-ptr_of(msgbuf[0]))
 
     if has_msg:
-        let x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msg))) / 2.0)
-        let y = frame.y - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2.0)
+        let x = frame.x + ((frame.w - (float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * float<-c.SDL_strlen(msg))) / 2.0)
+        let y = frame.y - (float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2.0)
         c.SDL_SetRenderDrawColor(renderer, text_r, text_g, text_b, c.SDL_ALPHA_OPAQUE)
         c.SDL_RenderDebugText(renderer, x, y, msg)
 
     if has_msg2:
-        let x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msg2))) / 2.0)
-        let y = frame.y - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 4.0)
+        let x = frame.x + ((frame.w - (float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * float<-c.SDL_strlen(msg2))) / 2.0)
+        let y = frame.y - (float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 4.0)
         c.SDL_SetRenderDrawColor(renderer, text_r, text_g, text_b, c.SDL_ALPHA_OPAQUE)
         c.SDL_RenderDebugText(renderer, x, y, msg2)
 
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Misc Power", c"1.0", c"com.example.misc-power")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -154,5 +154,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

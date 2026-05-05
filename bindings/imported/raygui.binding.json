@@ -44,7 +44,7 @@
     "overrides": [
       {
         "raw": "GuiSetState",
-        "mapping": "c.GuiSetState(i32<-state)",
+        "mapping": "c.GuiSetState(int<-state)",
         "params": [
           {
             "name": "state",
@@ -59,7 +59,7 @@
       },
       {
         "raw": "GuiSetStyle",
-        "mapping": "c.GuiSetStyle(i32<-control, property, value)",
+        "mapping": "c.GuiSetStyle(int<-control, property, value)",
         "params": [
           {
             "name": "control",
@@ -67,17 +67,17 @@
           },
           {
             "name": "property",
-            "type": "i32"
+            "type": "int"
           },
           {
             "name": "value",
-            "type": "i32"
+            "type": "int"
           }
         ]
       },
       {
         "raw": "GuiGetStyle",
-        "mapping": "c.GuiGetStyle(i32<-control, property)",
+        "mapping": "c.GuiGetStyle(int<-control, property)",
         "params": [
           {
             "name": "control",
@@ -85,7 +85,7 @@
           },
           {
             "name": "property",
-            "type": "i32"
+            "type": "int"
           }
         ]
       },
@@ -111,7 +111,7 @@
       },
       {
         "raw": "GuiIconText",
-        "mapping": "c.GuiIconText(i32<-icon_id, text)",
+        "mapping": "c.GuiIconText(int<-icon_id, text)",
         "params": [
           {
             "name": "icon_id",
@@ -126,7 +126,7 @@
       },
       {
         "raw": "GuiDrawIcon",
-        "mapping": "c.GuiDrawIcon(i32<-icon_id, pos_x, pos_y, pixel_size, color)",
+        "mapping": "c.GuiDrawIcon(int<-icon_id, pos_x, pos_y, pixel_size, color)",
         "params": [
           {
             "name": "icon_id",
@@ -134,15 +134,15 @@
           },
           {
             "name": "pos_x",
-            "type": "i32"
+            "type": "int"
           },
           {
             "name": "pos_y",
-            "type": "i32"
+            "type": "int"
           },
           {
             "name": "pixel_size",
-            "type": "i32"
+            "type": "int"
           },
           {
             "name": "color",
@@ -152,8 +152,8 @@
       },
       {
         "raw": "GuiGetIcons",
-        "mapping": "span[u32](data = c.GuiGetIcons(), len = 2048)",
-        "return_type": "span[u32]"
+        "mapping": "span[uint](data = c.GuiGetIcons(), len = 2048)",
+        "return_type": "span[uint]"
       },
       {
         "raw": "GuiGetTextWidth",
@@ -235,11 +235,11 @@
           },
           {
             "name": "active",
-            "type": "i32",
+            "type": "int",
             "mode": "inout"
           }
         ],
-        "mapping": "c.GuiTabBar(bounds, text.data, i32<-text.len, active)"
+        "mapping": "c.GuiTabBar(bounds, text.data, int<-text.len, active)"
       },
       {
         "raw": "GuiScrollPanel",
@@ -344,7 +344,7 @@
           },
           {
             "name": "active",
-            "type": "i32",
+            "type": "int",
             "mode": "inout"
           }
         ]
@@ -363,7 +363,7 @@
           },
           {
             "name": "active",
-            "type": "i32",
+            "type": "int",
             "mode": "inout"
           }
         ]
@@ -401,7 +401,7 @@
           },
           {
             "name": "active",
-            "type": "i32",
+            "type": "int",
             "mode": "inout"
           }
         ]
@@ -420,7 +420,7 @@
           },
           {
             "name": "active",
-            "type": "i32",
+            "type": "int",
             "mode": "inout"
           },
           {
@@ -443,16 +443,16 @@
           },
           {
             "name": "value",
-            "type": "i32",
+            "type": "int",
             "mode": "inout"
           },
           {
             "name": "min_value",
-            "type": "i32"
+            "type": "int"
           },
           {
             "name": "max_value",
-            "type": "i32"
+            "type": "int"
           },
           {
             "name": "edit_mode",
@@ -474,16 +474,16 @@
           },
           {
             "name": "value",
-            "type": "i32",
+            "type": "int",
             "mode": "inout"
           },
           {
             "name": "min_value",
-            "type": "i32"
+            "type": "int"
           },
           {
             "name": "max_value",
-            "type": "i32"
+            "type": "int"
           },
           {
             "name": "edit_mode",
@@ -513,7 +513,7 @@
           },
           {
             "name": "value",
-            "type": "f32",
+            "type": "float",
             "mode": "inout"
           },
           {
@@ -543,7 +543,7 @@
             "type": "bool"
           }
         ],
-        "mapping": "c.GuiTextBox(bounds, text, i32<-(text_public.capacity() + 1), edit_mode)"
+        "mapping": "c.GuiTextBox(bounds, text, int<-(text_public.capacity() + 1), edit_mode)"
       },
       {
         "raw": "GuiTextInputBox",
@@ -581,7 +581,7 @@
             "mode": "inout"
           }
         ],
-        "mapping": "c.GuiTextInputBox(bounds, title, message, buttons, text, i32<-(text_public.capacity() + 1), secret_view_active)"
+        "mapping": "c.GuiTextInputBox(bounds, title, message, buttons, text, int<-(text_public.capacity() + 1), secret_view_active)"
       },
       {
         "raw": "GuiSlider",
@@ -602,16 +602,16 @@
           },
           {
             "name": "value",
-            "type": "f32",
+            "type": "float",
             "mode": "inout"
           },
           {
             "name": "min_value",
-            "type": "f32"
+            "type": "float"
           },
           {
             "name": "max_value",
-            "type": "f32"
+            "type": "float"
           }
         ]
       },
@@ -634,16 +634,16 @@
           },
           {
             "name": "value",
-            "type": "f32",
+            "type": "float",
             "mode": "inout"
           },
           {
             "name": "min_value",
-            "type": "f32"
+            "type": "float"
           },
           {
             "name": "max_value",
-            "type": "f32"
+            "type": "float"
           }
         ]
       },
@@ -666,16 +666,16 @@
           },
           {
             "name": "value",
-            "type": "f32",
+            "type": "float",
             "mode": "inout"
           },
           {
             "name": "min_value",
-            "type": "f32"
+            "type": "float"
           },
           {
             "name": "max_value",
-            "type": "f32"
+            "type": "float"
           }
         ]
       },
@@ -721,11 +721,11 @@
           },
           {
             "name": "spacing",
-            "type": "f32"
+            "type": "float"
           },
           {
             "name": "subdivs",
-            "type": "i32"
+            "type": "int"
           },
           {
             "name": "mouse_cell",
@@ -748,12 +748,12 @@
           },
           {
             "name": "scroll_index",
-            "type": "i32",
+            "type": "int",
             "mode": "inout"
           },
           {
             "name": "active",
-            "type": "i32",
+            "type": "int",
             "mode": "inout"
           }
         ]
@@ -772,21 +772,21 @@
           },
           {
             "name": "scroll_index",
-            "type": "i32",
+            "type": "int",
             "mode": "inout"
           },
           {
             "name": "active",
-            "type": "i32",
+            "type": "int",
             "mode": "inout"
           },
           {
             "name": "focus",
-            "type": "i32",
+            "type": "int",
             "mode": "inout"
           }
         ],
-        "mapping": "c.GuiListViewEx(bounds, text.data, i32<-text.len, scroll_index, active, focus)"
+        "mapping": "c.GuiListViewEx(bounds, text.data, int<-text.len, scroll_index, active, focus)"
       },
       {
         "raw": "GuiMessageBox",
@@ -864,7 +864,7 @@
           },
           {
             "name": "alpha",
-            "type": "f32",
+            "type": "float",
             "mode": "inout"
           }
         ]
@@ -883,7 +883,7 @@
           },
           {
             "name": "value",
-            "type": "f32",
+            "type": "float",
             "mode": "inout"
           }
         ]

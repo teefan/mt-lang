@@ -6,13 +6,13 @@ import std.option as option
 import std.str as text_ops
 
 
-pub def arg_count(argc: i32) -> usize:
+pub def arg_count(argc: int) -> ptr_uint:
     if argc <= 0:
         return 0
-    return usize<-argc
+    return ptr_uint<-argc
 
 
-pub def arg(argc: i32, argv: ptr[cstr], index: usize) -> option.Option[str]:
+pub def arg(argc: int, argv: ptr[cstr], index: ptr_uint) -> option.Option[str]:
     if index >= arg_count(argc):
         return option.none[str]()
 
@@ -37,6 +37,6 @@ pub def env_exists(name: str, scratch: ref[arena.Arena]) -> bool:
     return option.is_some[str](env(name, scratch))
 
 
-pub def exit(status: i32) -> void:
+pub def exit(status: int) -> void:
     libc.exit(status)
     return

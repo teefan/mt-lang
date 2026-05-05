@@ -3,42 +3,42 @@ module examples.sdl3.renderer.scaling_textures
 import std.c.sdl3 as c
 
 const sample_texture_path: cstr = c"../resources/sample.png"
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/renderer/scaling-textures"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 var texture: ptr[c.SDL_Texture]
-var texture_width: i32 = 0
-var texture_height: i32 = 0
+var texture_width: int = 0
+var texture_height: int = 0
 
 
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
 
 
 def render_frame() -> void:
-    let now = i32<-c.SDL_GetTicks()
+    let now = int<-c.SDL_GetTicks()
     let direction = if (now % 2000) >= 1000: 1.0 else: -1.0
-    let scale = (f32<-((now % 1000) - 500) / 500.0) * direction
+    let scale = (float<-((now % 1000) - 500) / 500.0) * direction
 
     var destination = c.SDL_FRect(
         x = 0.0,
         y = 0.0,
-        w = f32<-texture_width + (f32<-texture_width * scale),
-        h = f32<-texture_height + (f32<-texture_height * scale),
+        w = float<-texture_width + (float<-texture_width * scale),
+        h = float<-texture_height + (float<-texture_height * scale),
     )
-    destination.x = (f32<-window_width - destination.w) / 2.0
-    destination.y = (f32<-window_height - destination.h) / 2.0
+    destination.x = (float<-window_width - destination.w) / 2.0
+    destination.y = (float<-window_height - destination.h) / 2.0
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
@@ -46,7 +46,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Renderer Scaling Textures", c"1.0", c"com.example.renderer-scaling-textures")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -82,5 +82,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

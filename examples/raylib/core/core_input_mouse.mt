@@ -2,17 +2,17 @@ module examples.raylib.core.core_input_mouse
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - input mouse"
 const movement_text: cstr = c"move ball with mouse and click mouse button to change color"
 const cursor_text: cstr = c"Press 'H' to toggle cursor visibility"
 const hidden_text: cstr = c"CURSOR HIDDEN"
 const visible_text: cstr = c"CURSOR VISIBLE"
-const ball_radius: f32 = 40.0
+const ball_radius: float = 40.0
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

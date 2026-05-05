@@ -4,42 +4,42 @@ extern module std.c.msf_gif:
 
     struct MsfGifResult:
         data: ptr[void]
-        dataSize: u64
-        allocSize: u64
+        dataSize: ulong
+        allocSize: ulong
         contextPointer: ptr[void]
 
     struct MsfCookedFrame:
-        pixels: ptr[u32]
-        depth: i32
-        count: i32
-        rbits: i32
-        gbits: i32
-        bbits: i32
+        pixels: ptr[uint]
+        depth: int
+        count: int
+        rbits: int
+        gbits: int
+        bbits: int
 
     struct MsfGifBuffer:
         next: ptr[MsfGifBuffer]
-        size: u64
-        data: array[u8, 1]
+        size: ulong
+        data: array[ubyte, 1]
 
-    type MsfGifFileWriteFunc = fn(arg0: const_ptr[void], arg1: usize, arg2: usize, arg3: ptr[void]) -> usize
+    type MsfGifFileWriteFunc = fn(arg0: const_ptr[void], arg1: ptr_uint, arg2: ptr_uint, arg3: ptr[void]) -> ptr_uint
 
     struct MsfGifState:
-        fileWriteFunc: fn(arg0: const_ptr[void], arg1: usize, arg2: usize, arg3: ptr[void]) -> usize
+        fileWriteFunc: fn(arg0: const_ptr[void], arg1: ptr_uint, arg2: ptr_uint, arg3: ptr[void]) -> ptr_uint
         fileWriteData: ptr[void]
         previousFrame: MsfCookedFrame
         currentFrame: MsfCookedFrame
-        lzwMem: ptr[i16]
+        lzwMem: ptr[short]
         listHead: ptr[MsfGifBuffer]
         listTail: ptr[MsfGifBuffer]
-        width: i32
-        height: i32
+        width: int
+        height: int
         customAllocatorContext: ptr[void]
-        framesSubmitted: i32
+        framesSubmitted: int
 
-    extern def msf_gif_begin(handle: ptr[MsfGifState], width: i32, height: i32) -> i32
-    extern def msf_gif_frame(handle: ptr[MsfGifState], pixelData: ptr[u8], centiSecondsPerFame: i32, maxBitDepth: i32, pitchInBytes: i32) -> i32
+    extern def msf_gif_begin(handle: ptr[MsfGifState], width: int, height: int) -> int
+    extern def msf_gif_frame(handle: ptr[MsfGifState], pixelData: ptr[ubyte], centiSecondsPerFame: int, maxBitDepth: int, pitchInBytes: int) -> int
     extern def msf_gif_end(handle: ptr[MsfGifState]) -> MsfGifResult
     extern def msf_gif_free(result: MsfGifResult) -> void
-    extern def msf_gif_begin_to_file(handle: ptr[MsfGifState], width: i32, height: i32, func: fn(arg0: const_ptr[void], arg1: usize, arg2: usize, arg3: ptr[void]) -> usize, filePointer: ptr[void]) -> i32
-    extern def msf_gif_frame_to_file(handle: ptr[MsfGifState], pixelData: ptr[u8], centiSecondsPerFame: i32, maxBitDepth: i32, pitchInBytes: i32) -> i32
-    extern def msf_gif_end_to_file(handle: ptr[MsfGifState]) -> i32
+    extern def msf_gif_begin_to_file(handle: ptr[MsfGifState], width: int, height: int, func: fn(arg0: const_ptr[void], arg1: ptr_uint, arg2: ptr_uint, arg3: ptr[void]) -> ptr_uint, filePointer: ptr[void]) -> int
+    extern def msf_gif_frame_to_file(handle: ptr[MsfGifState], pixelData: ptr[ubyte], centiSecondsPerFame: int, maxBitDepth: int, pitchInBytes: int) -> int
+    extern def msf_gif_end_to_file(handle: ptr[MsfGifState]) -> int

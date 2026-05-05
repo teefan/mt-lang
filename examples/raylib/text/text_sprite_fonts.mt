@@ -2,9 +2,9 @@ module examples.raylib.text.text_sprite_fonts
 
 import std.c.raylib as rl
 
-const max_fonts: i32 = 8
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const max_fonts: int = 8
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [text] example - sprite fonts"
 const title_text: cstr = c"free sprite fonts included with raylib"
 const font0_path: cstr = c"../resources/sprite_fonts/alagard.png"
@@ -17,7 +17,7 @@ const font6_path: cstr = c"../resources/sprite_fonts/alpha_beta.png"
 const font7_path: cstr = c"../resources/sprite_fonts/jupiter_crash.png"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -44,12 +44,12 @@ def main() -> i32:
         c"ALPHA_BETA FONT designed by Brian Kent (AEnigma)",
         c"JUPITER_CRASH FONT designed by Brian Kent (AEnigma)",
     )
-    let spacings = array[i32, max_fonts](2, 4, 8, 4, 3, 4, 4, 1)
+    let spacings = array[int, max_fonts](2, 4, 8, 4, 3, 4, 4, 1)
     var positions = zero[array[rl.Vector2, max_fonts]]
 
     for index in 0..max_fonts:
-        positions[index].x = f32<-screen_width / 2.0 - rl.MeasureTextEx(fonts[index], messages[index], f32<-fonts[index].baseSize * 2.0, f32<-spacings[index]).x / 2.0
-        positions[index].y = 60.0 + f32<-fonts[index].baseSize + 45.0 * f32<-index
+        positions[index].x = float<-screen_width / 2.0 - rl.MeasureTextEx(fonts[index], messages[index], float<-fonts[index].baseSize * 2.0, float<-spacings[index]).x / 2.0
+        positions[index].y = 60.0 + float<-fonts[index].baseSize + 45.0 * float<-index
 
     positions[3].y += 8.0
     positions[4].y += 2.0
@@ -69,6 +69,6 @@ def main() -> i32:
         rl.DrawLine(220, 50, 600, 50, rl.DARKGRAY)
 
         for index in 0..max_fonts:
-            rl.DrawTextEx(fonts[index], messages[index], positions[index], f32<-fonts[index].baseSize * 2.0, f32<-spacings[index], colors[index])
+            rl.DrawTextEx(fonts[index], messages[index], positions[index], float<-fonts[index].baseSize * 2.0, float<-spacings[index], colors[index])
 
     return 0

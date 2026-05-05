@@ -3,50 +3,50 @@ module examples.sdl3.renderer.read_pixels
 import std.c.sdl3 as c
 
 const sample_texture_path: cstr = c"../resources/sample.png"
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/renderer/read-pixels"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 var texture: ptr[c.SDL_Texture]
-var texture_width: i32 = 0
-var texture_height: i32 = 0
+var texture_width: int = 0
+var texture_height: int = 0
 var converted_texture: ptr[c.SDL_Texture]?
-var converted_texture_width: i32 = 0
-var converted_texture_height: i32 = 0
+var converted_texture_width: int = 0
+var converted_texture_height: int = 0
 
 
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
 
 
 def render_frame() -> bool:
-    let now = i32<-c.SDL_GetTicks()
-    let rotation = (f32<-(now % 2000) / 2000.0) * 360.0
+    let now = int<-c.SDL_GetTicks()
+    let rotation = (float<-(now % 2000) / 2000.0) * 360.0
 
     var center = c.SDL_FPoint(
-        x = f32<-texture_width / 2.0,
-        y = f32<-texture_height / 2.0,
+        x = float<-texture_width / 2.0,
+        y = float<-texture_height / 2.0,
     )
     var destination = c.SDL_FRect(
-        x = f32<-(window_width - texture_width) / 2.0,
-        y = f32<-(window_height - texture_height) / 2.0,
-        w = f32<-texture_width,
-        h = f32<-texture_height,
+        x = float<-(window_width - texture_width) / 2.0,
+        y = float<-(window_height - texture_height) / 2.0,
+        w = float<-texture_width,
+        h = float<-texture_height,
     )
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
-    c.SDL_RenderTextureRotated(renderer, texture, null, ptr_of(destination), f64<-rotation, ptr_of(center), c.SDL_FlipMode.SDL_FLIP_NONE)
+    c.SDL_RenderTextureRotated(renderer, texture, null, ptr_of(destination), double<-rotation, ptr_of(center), c.SDL_FlipMode.SDL_FLIP_NONE)
 
     var surface = c.SDL_RenderReadPixels(renderer, null)
     var processed_surface: ptr[c.SDL_Surface]? = surface
@@ -85,7 +85,7 @@ def render_frame() -> bool:
 
                     for x in 0..processed_surface.w:
                         let pixel_bytes = ptr[c.Uint8]<-(row_pixels + x)
-                        let average = (u32<-read(pixel_bytes + 1) + u32<-read(pixel_bytes + 2) + u32<-read(pixel_bytes + 3)) / 3
+                        let average = (uint<-read(pixel_bytes + 1) + uint<-read(pixel_bytes + 2) + uint<-read(pixel_bytes + 3)) / 3
 
                         if average == 0:
                             read(pixel_bytes + 0) = 0xFF
@@ -103,8 +103,8 @@ def render_frame() -> bool:
 
                     destination.x = 0.0
                     destination.y = 0.0
-                    destination.w = f32<-window_width / 4.0
-                    destination.h = f32<-window_height / 4.0
+                    destination.w = float<-window_width / 4.0
+                    destination.h = float<-window_height / 4.0
                     c.SDL_RenderTexture(renderer, converted_texture, null, ptr_of(destination))
                 else:
                     c.SDL_DestroySurface(processed_surface)
@@ -114,7 +114,7 @@ def render_frame() -> bool:
     return true
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Renderer Read Pixels", c"1.0", c"com.example.renderer-read-pixels")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -154,5 +154,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

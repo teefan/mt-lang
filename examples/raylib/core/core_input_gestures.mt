@@ -2,8 +2,8 @@ module examples.raylib.core.core_input_gestures
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - input gestures"
 const test_area_text: cstr = c"GESTURES TEST AREA"
 const detected_text: cstr = c"DETECTED GESTURE"
@@ -20,7 +20,7 @@ const gesture_pinch_in_text: cstr = c"GESTURE PINCH IN"
 const gesture_pinch_out_text: cstr = c"GESTURE PINCH OUT"
 
 
-def gesture_label(gesture: i32) -> cstr:
+def gesture_label(gesture: int) -> cstr:
     if gesture == rl.Gesture.GESTURE_TAP:
         return gesture_tap_text
     if gesture == rl.Gesture.GESTURE_DOUBLETAP:
@@ -45,7 +45,7 @@ def gesture_label(gesture: i32) -> cstr:
     return gesture_none_text
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -61,8 +61,8 @@ def main() -> i32:
         width = screen_width - 240.0,
         height = screen_height - 30.0,
     )
-    let gesture_circle_radius: f32 = 30.0
-    let label_alpha: f32 = 0.5
+    let gesture_circle_radius: float = 30.0
+    let label_alpha: float = 0.5
 
     rl.SetTargetFPS(60)
 

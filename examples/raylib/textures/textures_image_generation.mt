@@ -2,14 +2,14 @@ module examples.raylib.textures.textures_image_generation
 
 import std.c.raylib as rl
 
-const num_textures: i32 = 9
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const num_textures: int = 9
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - image generation"
 const cycle_message: cstr = c"MOUSE LEFT BUTTON to CYCLE PROCEDURAL TEXTURES"
 
 
-def texture_label(texture_index: i32) -> cstr:
+def texture_label(texture_index: int) -> cstr:
     if texture_index == 0:
         return c"VERTICAL GRADIENT"
     elif texture_index == 1:
@@ -29,7 +29,7 @@ def texture_label(texture_index: i32) -> cstr:
     return c"CELLULAR"
 
 
-def texture_label_color(texture_index: i32) -> rl.Color:
+def texture_label_color(texture_index: int) -> rl.Color:
     if texture_index <= 2:
         return rl.RAYWHITE
     elif texture_index <= 4:
@@ -41,7 +41,7 @@ def texture_label_color(texture_index: i32) -> rl.Color:
     return rl.RAYWHITE
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

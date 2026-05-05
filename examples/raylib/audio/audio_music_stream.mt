@@ -2,8 +2,8 @@ module examples.raylib.audio.audio_music_stream
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const music_path: cstr = c"../resources/country.mp3"
 const playing_text: cstr = c"MUSIC SHOULD BE PLAYING!"
 const pan_text: cstr = c"LEFT-RIGHT for PAN CONTROL"
@@ -13,7 +13,7 @@ const volume_text: cstr = c"UP-DOWN for VOLUME CONTROL"
 const window_title: cstr = c"raylib [audio] example - music stream"
 
 
-def clamp(value: f32, min_value: f32, max_value: f32) -> f32:
+def clamp(value: float, min_value: float, max_value: float) -> float:
     if value < min_value:
         return min_value
     if value > max_value:
@@ -21,7 +21,7 @@ def clamp(value: f32, min_value: f32, max_value: f32) -> f32:
     return value
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -33,13 +33,13 @@ def main() -> i32:
 
     rl.PlayMusicStream(music)
 
-    var time_played: f32 = 0.0
+    var time_played: float = 0.0
     var pause = false
 
-    var pan: f32 = 0.0
+    var pan: float = 0.0
     rl.SetMusicPan(music, pan)
 
-    var volume: f32 = 0.8
+    var volume: float = 0.8
     rl.SetMusicVolume(music, volume)
 
     rl.SetTargetFPS(30)
@@ -86,10 +86,10 @@ def main() -> i32:
         rl.DrawText(pan_text, 320, 74, 10, rl.DARKBLUE)
         rl.DrawRectangle(300, 100, 200, 12, rl.LIGHTGRAY)
         rl.DrawRectangleLines(300, 100, 200, 12, rl.GRAY)
-        rl.DrawRectangle(i32<-(300.0 + ((pan + 1.0) / 2.0) * 200.0 - 5.0), 92, 10, 28, rl.DARKGRAY)
+        rl.DrawRectangle(int<-(300.0 + ((pan + 1.0) / 2.0) * 200.0 - 5.0), 92, 10, 28, rl.DARKGRAY)
 
         rl.DrawRectangle(200, 200, 400, 12, rl.LIGHTGRAY)
-        rl.DrawRectangle(200, 200, i32<-(time_played * 400.0), 12, rl.MAROON)
+        rl.DrawRectangle(200, 200, int<-(time_played * 400.0), 12, rl.MAROON)
         rl.DrawRectangleLines(200, 200, 400, 12, rl.GRAY)
 
         rl.DrawText(restart_text, 215, 250, 20, rl.LIGHTGRAY)
@@ -98,6 +98,6 @@ def main() -> i32:
         rl.DrawText(volume_text, 320, 334, 10, rl.DARKGREEN)
         rl.DrawRectangle(300, 360, 200, 12, rl.LIGHTGRAY)
         rl.DrawRectangleLines(300, 360, 200, 12, rl.GRAY)
-        rl.DrawRectangle(i32<-(300.0 + volume * 200.0 - 5.0), 352, 10, 28, rl.DARKGRAY)
+        rl.DrawRectangle(int<-(300.0 + volume * 200.0 - 5.0), 352, 10, 28, rl.DARKGRAY)
 
     return 0

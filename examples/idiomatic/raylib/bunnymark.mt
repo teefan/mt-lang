@@ -9,24 +9,24 @@ struct Bunny:
     speed: rl.Vector2
     color: rl.Color
 
-const max_bunnies: i32 = 80000
-const max_batch_elements: i32 = 8192
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const max_bunnies: int = 80000
+const max_batch_elements: int = 8192
+const screen_width: int = 800
+const screen_height: int = 450
 const bunny_path: str = "../../raylib/resources/raybunny.png"
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Bunnymark")
     defer rl.close_window()
 
     let tex_bunny = rl.load_texture(bunny_path)
     defer rl.unload_texture(tex_bunny)
 
-    let bunnies = heap.must_alloc_zeroed[Bunny](usize<-max_bunnies)
+    let bunnies = heap.must_alloc_zeroed[Bunny](ptr_uint<-max_bunnies)
     defer heap.release(bunnies)
 
-    var bunnies_view = sp.from_ptr[Bunny](bunnies, usize<-max_bunnies)
+    var bunnies_view = sp.from_ptr[Bunny](bunnies, ptr_uint<-max_bunnies)
     var bunnies_count = 0
     var paused = false
 
@@ -36,12 +36,12 @@ def main() -> i32:
             while spawn_count < 100:
                 if bunnies_count < max_bunnies:
                     bunnies_view[bunnies_count].position = rl.get_mouse_position()
-                    bunnies_view[bunnies_count].speed.x = f32<-rl.get_random_value(-250, 250)
-                    bunnies_view[bunnies_count].speed.y = f32<-rl.get_random_value(-250, 250)
+                    bunnies_view[bunnies_count].speed.x = float<-rl.get_random_value(-250, 250)
+                    bunnies_view[bunnies_count].speed.y = float<-rl.get_random_value(-250, 250)
                     bunnies_view[bunnies_count].color = rl.Color(
-                        r = u8<-rl.get_random_value(50, 240),
-                        g = u8<-rl.get_random_value(80, 240),
-                        b = u8<-rl.get_random_value(100, 240),
+                        r = ubyte<-rl.get_random_value(50, 240),
+                        g = ubyte<-rl.get_random_value(80, 240),
+                        b = ubyte<-rl.get_random_value(100, 240),
                         a = 255,
                     )
                     bunnies_count += 1
@@ -56,9 +56,9 @@ def main() -> i32:
                 bunnies_view[index].position.x += bunnies_view[index].speed.x * frame_time
                 bunnies_view[index].position.y += bunnies_view[index].speed.y * frame_time
 
-                if bunnies_view[index].position.x + f32<-tex_bunny.width / 2.0 > f32<-rl.get_screen_width() or bunnies_view[index].position.x + f32<-tex_bunny.width / 2.0 < 0.0:
+                if bunnies_view[index].position.x + float<-tex_bunny.width / 2.0 > float<-rl.get_screen_width() or bunnies_view[index].position.x + float<-tex_bunny.width / 2.0 < 0.0:
                     bunnies_view[index].speed.x *= -1.0
-                if bunnies_view[index].position.y + f32<-tex_bunny.height / 2.0 > f32<-rl.get_screen_height() or bunnies_view[index].position.y + f32<-tex_bunny.height / 2.0 - 40.0 < 0.0:
+                if bunnies_view[index].position.y + float<-tex_bunny.height / 2.0 > float<-rl.get_screen_height() or bunnies_view[index].position.y + float<-tex_bunny.height / 2.0 - 40.0 < 0.0:
                     bunnies_view[index].speed.y *= -1.0
 
         rl.begin_drawing()
@@ -67,11 +67,11 @@ def main() -> i32:
         rl.clear_background(rl.RAYWHITE)
 
         for index in 0..bunnies_count:
-            rl.draw_texture(tex_bunny, i32<-bunnies_view[index].position.x, i32<-bunnies_view[index].position.y, bunnies_view[index].color)
+            rl.draw_texture(tex_bunny, int<-bunnies_view[index].position.x, int<-bunnies_view[index].position.y, bunnies_view[index].color)
 
         rl.draw_rectangle(0, 0, screen_width, 40, rl.BLACK)
-        rl.draw_text(rl.text_format_i32("bunnies: %i", bunnies_count), 120, 10, 20, rl.GREEN)
-        rl.draw_text(rl.text_format_i32("batched draw calls: %i", 1 + bunnies_count / max_batch_elements), 320, 10, 20, rl.MAROON)
+        rl.draw_text(rl.text_format_int("bunnies: %i", bunnies_count), 120, 10, 20, rl.GREEN)
+        rl.draw_text(rl.text_format_int("batched draw calls: %i", 1 + bunnies_count / max_batch_elements), 320, 10, 20, rl.MAROON)
         rl.draw_fps(10, 10)
 
     return 0

@@ -2,26 +2,26 @@ module examples.idiomatic.raylib.background_scrolling
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const background_path: str = "../../raylib/resources/cyberpunk_street_background.png"
 const midground_path: str = "../../raylib/resources/cyberpunk_street_midground.png"
 const foreground_path: str = "../../raylib/resources/cyberpunk_street_foreground.png"
-const background_scale: f32 = 2.0
+const background_scale: float = 2.0
 
 
-def reset_scroll(scroll: f32, texture_width: i32) -> f32:
-    if scroll <= -f32<-(texture_width * 2):
+def reset_scroll(scroll: float, texture_width: int) -> float:
+    if scroll <= -float<-(texture_width * 2):
         return 0.0
     return scroll
 
 
-def draw_layer(texture: rl.Texture2D, scroll: f32, y: f32) -> void:
+def draw_layer(texture: rl.Texture2D, scroll: float, y: float) -> void:
     rl.draw_texture_ex(texture, rl.Vector2(x = scroll, y = y), 0.0, background_scale, rl.WHITE)
-    rl.draw_texture_ex(texture, rl.Vector2(x = f32<-(texture.width * 2) + scroll, y = y), 0.0, background_scale, rl.WHITE)
+    rl.draw_texture_ex(texture, rl.Vector2(x = float<-(texture.width * 2) + scroll, y = y), 0.0, background_scale, rl.WHITE)
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Background Scrolling")
     defer rl.close_window()
 
@@ -33,9 +33,9 @@ def main() -> i32:
         rl.unload_texture(midground)
         rl.unload_texture(background)
 
-    var scrolling_back: f32 = 0.0
-    var scrolling_mid: f32 = 0.0
-    var scrolling_fore: f32 = 0.0
+    var scrolling_back: float = 0.0
+    var scrolling_mid: float = 0.0
+    var scrolling_fore: float = 0.0
 
     rl.set_target_fps(60)
 

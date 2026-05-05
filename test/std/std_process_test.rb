@@ -20,7 +20,7 @@ class MilkTeaStdProcessTest < Minitest::Test
         "import std.process as process",
         "import std.str as text",
         "",
-        "def main(argc: i32, argv: ptr[cstr]) -> i32:",
+        "def main(argc: int, argv: ptr[cstr]) -> int:",
         "    var scratch = arena.create(128)",
         "    defer scratch.release()",
         "",
@@ -35,7 +35,7 @@ class MilkTeaStdProcessTest < Minitest::Test
         "        return 3",
         "    if not text.equal(option.unwrap[str](env_value), \"present\"):",
         "        return 4",
-        "    return i32<-process.arg_count(argc) + i32<-option.unwrap[str](first).len + i32<-option.unwrap[str](second).len",
+        "    return int<-process.arg_count(argc) + int<-option.unwrap[str](first).len + int<-option.unwrap[str](second).len",
         "",
       ].join("\n"))
 

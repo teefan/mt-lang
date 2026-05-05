@@ -9,9 +9,9 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       "module demo.pretty",
       "",
       "struct Counter:",
-      "    value: i32",
+      "    value: int",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var counter = Counter(value = 3)",
       "    let counter_ptr = ptr_of(counter)",
       "    unsafe:",
@@ -31,7 +31,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
           link "sample"
           include "sample.h"
 
-          extern def add(a: i32, b: i32) -> i32
+          extern def add(a: int, b: int) -> int
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -60,16 +60,16 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       module demo.pretty
 
       pub struct Counter:
-          value: i32
+          value: int
 
       methods Counter:
-          pub def read() -> i32:
+          pub def read() -> int:
               return this.value
 
           def bump() -> void:
               this.value += 1
 
-      pub def main() -> i32:
+      pub def main() -> int:
           let counter = Counter(value = 3)
           return counter.read()
     MT
@@ -84,7 +84,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       extern module std.c.stdio:
           include "stdio.h"
 
-          extern def printf(format: cstr, ...) -> i32
+          extern def printf(format: cstr, ...) -> int
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -109,15 +109,15 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
       import std.c.raylib as c
 
-      pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
+      pub foreign def load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
 
-      pub foreign def set_shader_value[T](shader: Shader, loc_index: i32, in value: T as const_ptr[void], uniform_type: i32) -> void = c.SetShaderValue
+      pub foreign def set_shader_value[T](shader: Shader, loc_index: int, in value: T as const_ptr[void], uniform_type: int) -> void = c.SetShaderValue
 
       pub foreign def close_window(consuming window: Window) -> void = c.CloseWindow
 
-      pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, i32<-data.len)
+      pub foreign def save_file_data(file_name: str as cstr, data: span[ubyte]) -> bool = c.SaveFileData(file_name, data.data, int<-data.len)
 
-      def main(path: str) -> ptr[u8]?:
+      def main(path: str) -> ptr[ubyte]?:
           var data_size = 0
           let contrast = 1.0
           set_shader_value(Shader(), 0, in contrast, 0)
@@ -133,7 +133,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     source = <<~MT
       module demo.array_char
 
-      def main() -> i32:
+      def main() -> int:
           var buffer = zero[array[char, 64]]
           buffer[0] = 65
           return 0
@@ -177,9 +177,9 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       "module demo.pretty",
       "",
       "struct Counter:",
-      "    value: i32",
+      "    value: int",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var counter = Counter(value = 3)",
       "    let counter_ptr = ptr_of(counter)",
       "    unsafe:",
@@ -194,7 +194,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
     assert_includes output, "program demo.pretty"
     assert_includes output, "struct Counter as demo_pretty_Counter:"
-    assert_includes output, "fn main() -> i32 [entry]:"
+    assert_includes output, "fn main() -> int [entry]:"
     assert_includes output, "let counter_ptr: ptr[demo.pretty.Counter] = &counter"
     assert_includes output, "counter_ptr->value = 7"
     assert_includes output, "return counter.value"
@@ -204,7 +204,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     source = [
       "module demo.pretty_for",
       "",
-      "def keep(value: i32) -> void:",
+      "def keep(value: int) -> void:",
       "    return",
       "",
       "def main() -> void:",
@@ -218,7 +218,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     end
 
     assert_includes output, "fn main() -> void [entry]:"
-    assert_includes output, "for i: i32 = 0; i < 3; i += 1:"
+    assert_includes output, "for i: int = 0; i < 3; i += 1:"
     assert_includes output, "demo_pretty_for_keep(i)"
   end
 

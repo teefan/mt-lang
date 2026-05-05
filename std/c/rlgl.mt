@@ -4,48 +4,48 @@ extern module std.c.rlgl:
     include "rlgl.h"
 
     struct Matrix:
-        m0: f32
-        m4: f32
-        m8: f32
-        m12: f32
-        m1: f32
-        m5: f32
-        m9: f32
-        m13: f32
-        m2: f32
-        m6: f32
-        m10: f32
-        m14: f32
-        m3: f32
-        m7: f32
-        m11: f32
-        m15: f32
+        m0: float
+        m4: float
+        m8: float
+        m12: float
+        m1: float
+        m5: float
+        m9: float
+        m13: float
+        m2: float
+        m6: float
+        m10: float
+        m14: float
+        m3: float
+        m7: float
+        m11: float
+        m15: float
 
     struct rlVertexBuffer:
-        elementCount: i32
-        vertices: ptr[f32]
-        texcoords: ptr[f32]
-        normals: ptr[f32]
-        colors: ptr[u8]
-        indices: ptr[u32]
-        vaoId: u32
-        vboId: array[u32, 5]
+        elementCount: int
+        vertices: ptr[float]
+        texcoords: ptr[float]
+        normals: ptr[float]
+        colors: ptr[ubyte]
+        indices: ptr[uint]
+        vaoId: uint
+        vboId: array[uint, 5]
 
     struct rlDrawCall:
-        mode: i32
-        vertexCount: i32
-        vertexAlignment: i32
-        textureId: u32
+        mode: int
+        vertexCount: int
+        vertexAlignment: int
+        textureId: uint
 
     struct rlRenderBatch:
-        bufferCount: i32
-        currentBuffer: i32
+        bufferCount: int
+        currentBuffer: int
         vertexBuffer: ptr[rlVertexBuffer]
         draws: ptr[rlDrawCall]
-        drawCounter: i32
-        currentDepth: f32
+        drawCounter: int
+        currentDepth: float
 
-    enum rlGlVersion: i32
+    enum rlGlVersion: int
         RL_OPENGL_SOFTWARE = 0
         RL_OPENGL_11 = 1
         RL_OPENGL_21 = 2
@@ -54,7 +54,7 @@ extern module std.c.rlgl:
         RL_OPENGL_ES_20 = 5
         RL_OPENGL_ES_30 = 6
 
-    enum rlTraceLogLevel: i32
+    enum rlTraceLogLevel: int
         RL_LOG_ALL = 0
         RL_LOG_TRACE = 1
         RL_LOG_DEBUG = 2
@@ -64,7 +64,7 @@ extern module std.c.rlgl:
         RL_LOG_FATAL = 6
         RL_LOG_NONE = 7
 
-    enum rlPixelFormat: i32
+    enum rlPixelFormat: int
         RL_PIXELFORMAT_UNCOMPRESSED_GRAYSCALE = 1
         RL_PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA = 2
         RL_PIXELFORMAT_UNCOMPRESSED_R5G6B5 = 3
@@ -90,7 +90,7 @@ extern module std.c.rlgl:
         RL_PIXELFORMAT_COMPRESSED_ASTC_4x4_RGBA = 23
         RL_PIXELFORMAT_COMPRESSED_ASTC_8x8_RGBA = 24
 
-    enum rlTextureFilter: i32
+    enum rlTextureFilter: int
         RL_TEXTURE_FILTER_POINT = 0
         RL_TEXTURE_FILTER_BILINEAR = 1
         RL_TEXTURE_FILTER_TRILINEAR = 2
@@ -98,7 +98,7 @@ extern module std.c.rlgl:
         RL_TEXTURE_FILTER_ANISOTROPIC_8X = 4
         RL_TEXTURE_FILTER_ANISOTROPIC_16X = 5
 
-    enum rlBlendMode: i32
+    enum rlBlendMode: int
         RL_BLEND_ALPHA = 0
         RL_BLEND_ADDITIVE = 1
         RL_BLEND_MULTIPLIED = 2
@@ -108,7 +108,7 @@ extern module std.c.rlgl:
         RL_BLEND_CUSTOM = 6
         RL_BLEND_CUSTOM_SEPARATE = 7
 
-    enum rlShaderLocationIndex: i32
+    enum rlShaderLocationIndex: int
         RL_SHADER_LOC_VERTEX_POSITION = 0
         RL_SHADER_LOC_VERTEX_TEXCOORD01 = 1
         RL_SHADER_LOC_VERTEX_TEXCOORD02 = 2
@@ -136,7 +136,7 @@ extern module std.c.rlgl:
         RL_SHADER_LOC_MAP_PREFILTER = 24
         RL_SHADER_LOC_MAP_BRDF = 25
 
-    enum rlShaderUniformDataType: i32
+    enum rlShaderUniformDataType: int
         RL_SHADER_UNIFORM_FLOAT = 0
         RL_SHADER_UNIFORM_VEC2 = 1
         RL_SHADER_UNIFORM_VEC3 = 2
@@ -151,13 +151,13 @@ extern module std.c.rlgl:
         RL_SHADER_UNIFORM_UIVEC4 = 11
         RL_SHADER_UNIFORM_SAMPLER2D = 12
 
-    enum rlShaderAttributeDataType: i32
+    enum rlShaderAttributeDataType: int
         RL_SHADER_ATTRIB_FLOAT = 0
         RL_SHADER_ATTRIB_VEC2 = 1
         RL_SHADER_ATTRIB_VEC3 = 2
         RL_SHADER_ATTRIB_VEC4 = 3
 
-    enum rlFramebufferAttachType: i32
+    enum rlFramebufferAttachType: int
         RL_ATTACHMENT_COLOR_CHANNEL0 = 0
         RL_ATTACHMENT_COLOR_CHANNEL1 = 1
         RL_ATTACHMENT_COLOR_CHANNEL2 = 2
@@ -169,7 +169,7 @@ extern module std.c.rlgl:
         RL_ATTACHMENT_DEPTH = 100
         RL_ATTACHMENT_STENCIL = 200
 
-    enum rlFramebufferAttachTextureType: i32
+    enum rlFramebufferAttachTextureType: int
         RL_ATTACHMENT_CUBEMAP_POSITIVE_X = 0
         RL_ATTACHMENT_CUBEMAP_NEGATIVE_X = 1
         RL_ATTACHMENT_CUBEMAP_POSITIVE_Y = 2
@@ -179,59 +179,59 @@ extern module std.c.rlgl:
         RL_ATTACHMENT_TEXTURE2D = 100
         RL_ATTACHMENT_RENDERBUFFER = 200
 
-    flags rlCullMode: i32
+    flags rlCullMode: int
         RL_CULL_FACE_FRONT = 0
         RL_CULL_FACE_BACK = 1
 
-    extern def rlMatrixMode(mode: i32) -> void
+    extern def rlMatrixMode(mode: int) -> void
     extern def rlPushMatrix() -> void
     extern def rlPopMatrix() -> void
     extern def rlLoadIdentity() -> void
-    extern def rlTranslatef(x: f32, y: f32, z: f32) -> void
-    extern def rlRotatef(angle: f32, x: f32, y: f32, z: f32) -> void
-    extern def rlScalef(x: f32, y: f32, z: f32) -> void
-    extern def rlMultMatrixf(matf: const_ptr[f32]) -> void
-    extern def rlFrustum(left: f64, right: f64, bottom: f64, top: f64, znear: f64, zfar: f64) -> void
-    extern def rlOrtho(left: f64, right: f64, bottom: f64, top: f64, znear: f64, zfar: f64) -> void
-    extern def rlViewport(x: i32, y: i32, width: i32, height: i32) -> void
-    extern def rlSetClipPlanes(nearPlane: f64, farPlane: f64) -> void
-    extern def rlGetCullDistanceNear() -> f64
-    extern def rlGetCullDistanceFar() -> f64
-    extern def rlBegin(mode: i32) -> void
+    extern def rlTranslatef(x: float, y: float, z: float) -> void
+    extern def rlRotatef(angle: float, x: float, y: float, z: float) -> void
+    extern def rlScalef(x: float, y: float, z: float) -> void
+    extern def rlMultMatrixf(matf: const_ptr[float]) -> void
+    extern def rlFrustum(left: double, right: double, bottom: double, top: double, znear: double, zfar: double) -> void
+    extern def rlOrtho(left: double, right: double, bottom: double, top: double, znear: double, zfar: double) -> void
+    extern def rlViewport(x: int, y: int, width: int, height: int) -> void
+    extern def rlSetClipPlanes(nearPlane: double, farPlane: double) -> void
+    extern def rlGetCullDistanceNear() -> double
+    extern def rlGetCullDistanceFar() -> double
+    extern def rlBegin(mode: int) -> void
     extern def rlEnd() -> void
-    extern def rlVertex2i(x: i32, y: i32) -> void
-    extern def rlVertex2f(x: f32, y: f32) -> void
-    extern def rlVertex3f(x: f32, y: f32, z: f32) -> void
-    extern def rlTexCoord2f(x: f32, y: f32) -> void
-    extern def rlNormal3f(x: f32, y: f32, z: f32) -> void
-    extern def rlColor4ub(r: u8, g: u8, b: u8, a: u8) -> void
-    extern def rlColor3f(x: f32, y: f32, z: f32) -> void
-    extern def rlColor4f(x: f32, y: f32, z: f32, w: f32) -> void
-    extern def rlEnableVertexArray(vaoId: u32) -> bool
+    extern def rlVertex2i(x: int, y: int) -> void
+    extern def rlVertex2f(x: float, y: float) -> void
+    extern def rlVertex3f(x: float, y: float, z: float) -> void
+    extern def rlTexCoord2f(x: float, y: float) -> void
+    extern def rlNormal3f(x: float, y: float, z: float) -> void
+    extern def rlColor4ub(r: ubyte, g: ubyte, b: ubyte, a: ubyte) -> void
+    extern def rlColor3f(x: float, y: float, z: float) -> void
+    extern def rlColor4f(x: float, y: float, z: float, w: float) -> void
+    extern def rlEnableVertexArray(vaoId: uint) -> bool
     extern def rlDisableVertexArray() -> void
-    extern def rlEnableVertexBuffer(id: u32) -> void
+    extern def rlEnableVertexBuffer(id: uint) -> void
     extern def rlDisableVertexBuffer() -> void
-    extern def rlEnableVertexBufferElement(id: u32) -> void
+    extern def rlEnableVertexBufferElement(id: uint) -> void
     extern def rlDisableVertexBufferElement() -> void
-    extern def rlEnableVertexAttribute(index: u32) -> void
-    extern def rlDisableVertexAttribute(index: u32) -> void
-    extern def rlEnableStatePointer(vertexAttribType: i32, buffer: ptr[void]) -> void
-    extern def rlDisableStatePointer(vertexAttribType: i32) -> void
-    extern def rlActiveTextureSlot(slot: i32) -> void
-    extern def rlEnableTexture(id: u32) -> void
+    extern def rlEnableVertexAttribute(index: uint) -> void
+    extern def rlDisableVertexAttribute(index: uint) -> void
+    extern def rlEnableStatePointer(vertexAttribType: int, buffer: ptr[void]) -> void
+    extern def rlDisableStatePointer(vertexAttribType: int) -> void
+    extern def rlActiveTextureSlot(slot: int) -> void
+    extern def rlEnableTexture(id: uint) -> void
     extern def rlDisableTexture() -> void
-    extern def rlEnableTextureCubemap(id: u32) -> void
+    extern def rlEnableTextureCubemap(id: uint) -> void
     extern def rlDisableTextureCubemap() -> void
-    extern def rlTextureParameters(id: u32, param: i32, value: i32) -> void
-    extern def rlCubemapParameters(id: u32, param: i32, value: i32) -> void
-    extern def rlEnableShader(id: u32) -> void
+    extern def rlTextureParameters(id: uint, param: int, value: int) -> void
+    extern def rlCubemapParameters(id: uint, param: int, value: int) -> void
+    extern def rlEnableShader(id: uint) -> void
     extern def rlDisableShader() -> void
-    extern def rlEnableFramebuffer(id: u32) -> void
+    extern def rlEnableFramebuffer(id: uint) -> void
     extern def rlDisableFramebuffer() -> void
-    extern def rlGetActiveFramebuffer() -> u32
-    extern def rlActiveDrawBuffers(count: i32) -> void
-    extern def rlBlitFramebuffer(srcX: i32, srcY: i32, srcWidth: i32, srcHeight: i32, dstX: i32, dstY: i32, dstWidth: i32, dstHeight: i32, bufferMask: i32) -> void
-    extern def rlBindFramebuffer(target: u32, framebuffer: u32) -> void
+    extern def rlGetActiveFramebuffer() -> uint
+    extern def rlActiveDrawBuffers(count: int) -> void
+    extern def rlBlitFramebuffer(srcX: int, srcY: int, srcWidth: int, srcHeight: int, dstX: int, dstY: int, dstWidth: int, dstHeight: int, bufferMask: int) -> void
+    extern def rlBindFramebuffer(target: uint, framebuffer: uint) -> void
     extern def rlEnableColorBlend() -> void
     extern def rlDisableColorBlend() -> void
     extern def rlEnableDepthTest() -> void
@@ -241,105 +241,105 @@ extern module std.c.rlgl:
     extern def rlEnableBackfaceCulling() -> void
     extern def rlDisableBackfaceCulling() -> void
     extern def rlColorMask(r: bool, g: bool, b: bool, a: bool) -> void
-    extern def rlSetCullFace(mode: i32) -> void
+    extern def rlSetCullFace(mode: int) -> void
     extern def rlEnableScissorTest() -> void
     extern def rlDisableScissorTest() -> void
-    extern def rlScissor(x: i32, y: i32, width: i32, height: i32) -> void
+    extern def rlScissor(x: int, y: int, width: int, height: int) -> void
     extern def rlEnablePointMode() -> void
     extern def rlDisablePointMode() -> void
-    extern def rlSetPointSize(size: f32) -> void
-    extern def rlGetPointSize() -> f32
+    extern def rlSetPointSize(size: float) -> void
+    extern def rlGetPointSize() -> float
     extern def rlEnableWireMode() -> void
     extern def rlDisableWireMode() -> void
-    extern def rlSetLineWidth(width: f32) -> void
-    extern def rlGetLineWidth() -> f32
+    extern def rlSetLineWidth(width: float) -> void
+    extern def rlGetLineWidth() -> float
     extern def rlEnableSmoothLines() -> void
     extern def rlDisableSmoothLines() -> void
     extern def rlEnableStereoRender() -> void
     extern def rlDisableStereoRender() -> void
     extern def rlIsStereoRenderEnabled() -> bool
-    extern def rlClearColor(r: u8, g: u8, b: u8, a: u8) -> void
+    extern def rlClearColor(r: ubyte, g: ubyte, b: ubyte, a: ubyte) -> void
     extern def rlClearScreenBuffers() -> void
     extern def rlCheckErrors() -> void
-    extern def rlSetBlendMode(mode: i32) -> void
-    extern def rlSetBlendFactors(glSrcFactor: i32, glDstFactor: i32, glEquation: i32) -> void
-    extern def rlSetBlendFactorsSeparate(glSrcRGB: i32, glDstRGB: i32, glSrcAlpha: i32, glDstAlpha: i32, glEqRGB: i32, glEqAlpha: i32) -> void
-    extern def rlglInit(width: i32, height: i32) -> void
+    extern def rlSetBlendMode(mode: int) -> void
+    extern def rlSetBlendFactors(glSrcFactor: int, glDstFactor: int, glEquation: int) -> void
+    extern def rlSetBlendFactorsSeparate(glSrcRGB: int, glDstRGB: int, glSrcAlpha: int, glDstAlpha: int, glEqRGB: int, glEqAlpha: int) -> void
+    extern def rlglInit(width: int, height: int) -> void
     extern def rlglClose() -> void
     extern def rlLoadExtensions(loader: ptr[void]) -> void
     extern def rlGetProcAddress(procName: cstr) -> ptr[void]
-    extern def rlGetVersion() -> i32
-    extern def rlSetFramebufferWidth(width: i32) -> void
-    extern def rlGetFramebufferWidth() -> i32
-    extern def rlSetFramebufferHeight(height: i32) -> void
-    extern def rlGetFramebufferHeight() -> i32
-    extern def rlGetTextureIdDefault() -> u32
-    extern def rlGetShaderIdDefault() -> u32
-    extern def rlGetShaderLocsDefault() -> ptr[i32]
-    extern def rlLoadRenderBatch(numBuffers: i32, bufferElements: i32) -> rlRenderBatch
+    extern def rlGetVersion() -> int
+    extern def rlSetFramebufferWidth(width: int) -> void
+    extern def rlGetFramebufferWidth() -> int
+    extern def rlSetFramebufferHeight(height: int) -> void
+    extern def rlGetFramebufferHeight() -> int
+    extern def rlGetTextureIdDefault() -> uint
+    extern def rlGetShaderIdDefault() -> uint
+    extern def rlGetShaderLocsDefault() -> ptr[int]
+    extern def rlLoadRenderBatch(numBuffers: int, bufferElements: int) -> rlRenderBatch
     extern def rlUnloadRenderBatch(batch: rlRenderBatch) -> void
     extern def rlDrawRenderBatch(batch: ptr[rlRenderBatch]) -> void
     extern def rlSetRenderBatchActive(batch: ptr[rlRenderBatch]) -> void
     extern def rlDrawRenderBatchActive() -> void
-    extern def rlCheckRenderBatchLimit(vCount: i32) -> bool
-    extern def rlSetTexture(id: u32) -> void
-    extern def rlLoadVertexArray() -> u32
-    extern def rlLoadVertexBuffer(buffer: const_ptr[void], size: i32, dynamic: bool) -> u32
-    extern def rlLoadVertexBufferElement(buffer: const_ptr[void], size: i32, dynamic: bool) -> u32
-    extern def rlUpdateVertexBuffer(bufferId: u32, data: const_ptr[void], dataSize: i32, offset: i32) -> void
-    extern def rlUpdateVertexBufferElements(id: u32, data: const_ptr[void], dataSize: i32, offset: i32) -> void
-    extern def rlUnloadVertexArray(vaoId: u32) -> void
-    extern def rlUnloadVertexBuffer(vboId: u32) -> void
-    extern def rlSetVertexAttribute(index: u32, compSize: i32, kind: i32, normalized: bool, stride: i32, offset: i32) -> void
-    extern def rlSetVertexAttributeDivisor(index: u32, divisor: i32) -> void
-    extern def rlSetVertexAttributeDefault(locIndex: i32, value: const_ptr[void], attribType: i32, count: i32) -> void
-    extern def rlDrawVertexArray(offset: i32, count: i32) -> void
-    extern def rlDrawVertexArrayElements(offset: i32, count: i32, buffer: const_ptr[void]) -> void
-    extern def rlDrawVertexArrayInstanced(offset: i32, count: i32, instances: i32) -> void
-    extern def rlDrawVertexArrayElementsInstanced(offset: i32, count: i32, buffer: const_ptr[void], instances: i32) -> void
-    extern def rlLoadTexture(data: const_ptr[void]?, width: i32, height: i32, format: i32, mipmapCount: i32) -> u32
-    extern def rlLoadTextureDepth(width: i32, height: i32, useRenderBuffer: bool) -> u32
-    extern def rlLoadTextureCubemap(data: const_ptr[void]?, size: i32, format: i32, mipmapCount: i32) -> u32
-    extern def rlUpdateTexture(id: u32, offsetX: i32, offsetY: i32, width: i32, height: i32, format: i32, data: const_ptr[void]) -> void
-    extern def rlGetGlTextureFormats(format: i32, glInternalFormat: ptr[u32], glFormat: ptr[u32], glType: ptr[u32]) -> void
-    extern def rlGetPixelFormatName(format: u32) -> cstr
-    extern def rlUnloadTexture(id: u32) -> void
-    extern def rlGenTextureMipmaps(id: u32, width: i32, height: i32, format: i32, mipmaps: ptr[i32]) -> void
-    extern def rlReadTexturePixels(id: u32, width: i32, height: i32, format: i32) -> ptr[void]
-    extern def rlReadScreenPixels(width: i32, height: i32) -> ptr[u8]
-    extern def rlLoadFramebuffer() -> u32
-    extern def rlFramebufferAttach(id: u32, texId: u32, attachType: i32, texType: i32, mipLevel: i32) -> void
-    extern def rlFramebufferComplete(id: u32) -> bool
-    extern def rlUnloadFramebuffer(id: u32) -> void
-    extern def rlCopyFramebuffer(x: i32, y: i32, width: i32, height: i32, format: i32, pixels: ptr[void]) -> void
-    extern def rlResizeFramebuffer(width: i32, height: i32) -> void
-    extern def rlLoadShader(code: cstr, kind: i32) -> u32
-    extern def rlLoadShaderProgram(vsCode: cstr, fsCode: cstr) -> u32
-    extern def rlLoadShaderProgramEx(vsId: u32, fsId: u32) -> u32
-    extern def rlLoadShaderProgramCompute(csId: u32) -> u32
-    extern def rlUnloadShader(id: u32) -> void
-    extern def rlUnloadShaderProgram(id: u32) -> void
-    extern def rlGetLocationUniform(id: u32, uniformName: cstr) -> i32
-    extern def rlGetLocationAttrib(id: u32, attribName: cstr) -> i32
-    extern def rlSetUniform(locIndex: i32, value: const_ptr[void], uniformType: i32, count: i32) -> void
-    extern def rlSetUniformMatrix(locIndex: i32, mat: Matrix) -> void
-    extern def rlSetUniformMatrices(locIndex: i32, mat: const_ptr[Matrix], count: i32) -> void
-    extern def rlSetUniformSampler(locIndex: i32, textureId: u32) -> void
-    extern def rlSetShader(id: u32, locs: ptr[i32]) -> void
-    extern def rlComputeShaderDispatch(groupX: u32, groupY: u32, groupZ: u32) -> void
-    extern def rlLoadShaderBuffer(size: u32, data: const_ptr[void]?, usageHint: i32) -> u32
-    extern def rlUnloadShaderBuffer(ssboId: u32) -> void
-    extern def rlUpdateShaderBuffer(id: u32, data: const_ptr[void], dataSize: u32, offset: u32) -> void
-    extern def rlBindShaderBuffer(id: u32, index: u32) -> void
-    extern def rlReadShaderBuffer(id: u32, dest: ptr[void], count: u32, offset: u32) -> void
-    extern def rlCopyShaderBuffer(destId: u32, srcId: u32, destOffset: u32, srcOffset: u32, count: u32) -> void
-    extern def rlGetShaderBufferSize(id: u32) -> u32
-    extern def rlBindImageTexture(id: u32, index: u32, format: i32, readonly: bool) -> void
+    extern def rlCheckRenderBatchLimit(vCount: int) -> bool
+    extern def rlSetTexture(id: uint) -> void
+    extern def rlLoadVertexArray() -> uint
+    extern def rlLoadVertexBuffer(buffer: const_ptr[void], size: int, dynamic: bool) -> uint
+    extern def rlLoadVertexBufferElement(buffer: const_ptr[void], size: int, dynamic: bool) -> uint
+    extern def rlUpdateVertexBuffer(bufferId: uint, data: const_ptr[void], dataSize: int, offset: int) -> void
+    extern def rlUpdateVertexBufferElements(id: uint, data: const_ptr[void], dataSize: int, offset: int) -> void
+    extern def rlUnloadVertexArray(vaoId: uint) -> void
+    extern def rlUnloadVertexBuffer(vboId: uint) -> void
+    extern def rlSetVertexAttribute(index: uint, compSize: int, kind: int, normalized: bool, stride: int, offset: int) -> void
+    extern def rlSetVertexAttributeDivisor(index: uint, divisor: int) -> void
+    extern def rlSetVertexAttributeDefault(locIndex: int, value: const_ptr[void], attribType: int, count: int) -> void
+    extern def rlDrawVertexArray(offset: int, count: int) -> void
+    extern def rlDrawVertexArrayElements(offset: int, count: int, buffer: const_ptr[void]) -> void
+    extern def rlDrawVertexArrayInstanced(offset: int, count: int, instances: int) -> void
+    extern def rlDrawVertexArrayElementsInstanced(offset: int, count: int, buffer: const_ptr[void], instances: int) -> void
+    extern def rlLoadTexture(data: const_ptr[void]?, width: int, height: int, format: int, mipmapCount: int) -> uint
+    extern def rlLoadTextureDepth(width: int, height: int, useRenderBuffer: bool) -> uint
+    extern def rlLoadTextureCubemap(data: const_ptr[void]?, size: int, format: int, mipmapCount: int) -> uint
+    extern def rlUpdateTexture(id: uint, offsetX: int, offsetY: int, width: int, height: int, format: int, data: const_ptr[void]) -> void
+    extern def rlGetGlTextureFormats(format: int, glInternalFormat: ptr[uint], glFormat: ptr[uint], glType: ptr[uint]) -> void
+    extern def rlGetPixelFormatName(format: uint) -> cstr
+    extern def rlUnloadTexture(id: uint) -> void
+    extern def rlGenTextureMipmaps(id: uint, width: int, height: int, format: int, mipmaps: ptr[int]) -> void
+    extern def rlReadTexturePixels(id: uint, width: int, height: int, format: int) -> ptr[void]
+    extern def rlReadScreenPixels(width: int, height: int) -> ptr[ubyte]
+    extern def rlLoadFramebuffer() -> uint
+    extern def rlFramebufferAttach(id: uint, texId: uint, attachType: int, texType: int, mipLevel: int) -> void
+    extern def rlFramebufferComplete(id: uint) -> bool
+    extern def rlUnloadFramebuffer(id: uint) -> void
+    extern def rlCopyFramebuffer(x: int, y: int, width: int, height: int, format: int, pixels: ptr[void]) -> void
+    extern def rlResizeFramebuffer(width: int, height: int) -> void
+    extern def rlLoadShader(code: cstr, kind: int) -> uint
+    extern def rlLoadShaderProgram(vsCode: cstr, fsCode: cstr) -> uint
+    extern def rlLoadShaderProgramEx(vsId: uint, fsId: uint) -> uint
+    extern def rlLoadShaderProgramCompute(csId: uint) -> uint
+    extern def rlUnloadShader(id: uint) -> void
+    extern def rlUnloadShaderProgram(id: uint) -> void
+    extern def rlGetLocationUniform(id: uint, uniformName: cstr) -> int
+    extern def rlGetLocationAttrib(id: uint, attribName: cstr) -> int
+    extern def rlSetUniform(locIndex: int, value: const_ptr[void], uniformType: int, count: int) -> void
+    extern def rlSetUniformMatrix(locIndex: int, mat: Matrix) -> void
+    extern def rlSetUniformMatrices(locIndex: int, mat: const_ptr[Matrix], count: int) -> void
+    extern def rlSetUniformSampler(locIndex: int, textureId: uint) -> void
+    extern def rlSetShader(id: uint, locs: ptr[int]) -> void
+    extern def rlComputeShaderDispatch(groupX: uint, groupY: uint, groupZ: uint) -> void
+    extern def rlLoadShaderBuffer(size: uint, data: const_ptr[void]?, usageHint: int) -> uint
+    extern def rlUnloadShaderBuffer(ssboId: uint) -> void
+    extern def rlUpdateShaderBuffer(id: uint, data: const_ptr[void], dataSize: uint, offset: uint) -> void
+    extern def rlBindShaderBuffer(id: uint, index: uint) -> void
+    extern def rlReadShaderBuffer(id: uint, dest: ptr[void], count: uint, offset: uint) -> void
+    extern def rlCopyShaderBuffer(destId: uint, srcId: uint, destOffset: uint, srcOffset: uint, count: uint) -> void
+    extern def rlGetShaderBufferSize(id: uint) -> uint
+    extern def rlBindImageTexture(id: uint, index: uint, format: int, readonly: bool) -> void
     extern def rlGetMatrixModelview() -> Matrix
     extern def rlGetMatrixProjection() -> Matrix
     extern def rlGetMatrixTransform() -> Matrix
-    extern def rlGetMatrixProjectionStereo(eye: i32) -> Matrix
-    extern def rlGetMatrixViewOffsetStereo(eye: i32) -> Matrix
+    extern def rlGetMatrixProjectionStereo(eye: int) -> Matrix
+    extern def rlGetMatrixViewOffsetStereo(eye: int) -> Matrix
     extern def rlSetMatrixProjection(proj: Matrix) -> void
     extern def rlSetMatrixModelview(view: Matrix) -> void
     extern def rlSetMatrixProjectionStereo(right: Matrix, left: Matrix) -> void
@@ -347,170 +347,170 @@ extern module std.c.rlgl:
     extern def rlLoadDrawCube() -> void
     extern def rlLoadDrawQuad() -> void
 
-    const RL_DEFAULT_BATCH_BUFFER_ELEMENTS: i32 = 8192
+    const RL_DEFAULT_BATCH_BUFFER_ELEMENTS: int = 8192
 
-    const RL_DEFAULT_BATCH_BUFFERS: i32 = 1
+    const RL_DEFAULT_BATCH_BUFFERS: int = 1
 
-    const RL_DEFAULT_BATCH_DRAWCALLS: i32 = 256
+    const RL_DEFAULT_BATCH_DRAWCALLS: int = 256
 
-    const RL_DEFAULT_BATCH_MAX_TEXTURE_UNITS: i32 = 4
+    const RL_DEFAULT_BATCH_MAX_TEXTURE_UNITS: int = 4
 
-    const RL_MAX_MATRIX_STACK_SIZE: i32 = 32
+    const RL_MAX_MATRIX_STACK_SIZE: int = 32
 
-    const RL_MAX_SHADER_LOCATIONS: i32 = 32
+    const RL_MAX_SHADER_LOCATIONS: int = 32
 
-    const RL_CULL_DISTANCE_NEAR: f64 = 0.050000000000000003
+    const RL_CULL_DISTANCE_NEAR: double = 0.050000000000000003
 
-    const RL_CULL_DISTANCE_FAR: f64 = 4000.0
+    const RL_CULL_DISTANCE_FAR: double = 4000.0
 
-    const RL_TEXTURE_WRAP_S: i32 = 10242
+    const RL_TEXTURE_WRAP_S: int = 10242
 
-    const RL_TEXTURE_WRAP_T: i32 = 10243
+    const RL_TEXTURE_WRAP_T: int = 10243
 
-    const RL_TEXTURE_MAG_FILTER: i32 = 10240
+    const RL_TEXTURE_MAG_FILTER: int = 10240
 
-    const RL_TEXTURE_MIN_FILTER: i32 = 10241
+    const RL_TEXTURE_MIN_FILTER: int = 10241
 
-    const RL_TEXTURE_FILTER_NEAREST: i32 = 9728
+    const RL_TEXTURE_FILTER_NEAREST: int = 9728
 
-    const RL_TEXTURE_FILTER_LINEAR: i32 = 9729
+    const RL_TEXTURE_FILTER_LINEAR: int = 9729
 
-    const RL_TEXTURE_FILTER_MIP_NEAREST: i32 = 9984
+    const RL_TEXTURE_FILTER_MIP_NEAREST: int = 9984
 
-    const RL_TEXTURE_FILTER_NEAREST_MIP_LINEAR: i32 = 9986
+    const RL_TEXTURE_FILTER_NEAREST_MIP_LINEAR: int = 9986
 
-    const RL_TEXTURE_FILTER_LINEAR_MIP_NEAREST: i32 = 9985
+    const RL_TEXTURE_FILTER_LINEAR_MIP_NEAREST: int = 9985
 
-    const RL_TEXTURE_FILTER_MIP_LINEAR: i32 = 9987
+    const RL_TEXTURE_FILTER_MIP_LINEAR: int = 9987
 
-    const RL_TEXTURE_FILTER_ANISOTROPIC: i32 = 12288
+    const RL_TEXTURE_FILTER_ANISOTROPIC: int = 12288
 
-    const RL_TEXTURE_MIPMAP_BIAS_RATIO: i32 = 16384
+    const RL_TEXTURE_MIPMAP_BIAS_RATIO: int = 16384
 
-    const RL_TEXTURE_WRAP_REPEAT: i32 = 10497
+    const RL_TEXTURE_WRAP_REPEAT: int = 10497
 
-    const RL_TEXTURE_WRAP_CLAMP: i32 = 33071
+    const RL_TEXTURE_WRAP_CLAMP: int = 33071
 
-    const RL_TEXTURE_WRAP_MIRROR_REPEAT: i32 = 33648
+    const RL_TEXTURE_WRAP_MIRROR_REPEAT: int = 33648
 
-    const RL_TEXTURE_WRAP_MIRROR_CLAMP: i32 = 34626
+    const RL_TEXTURE_WRAP_MIRROR_CLAMP: int = 34626
 
-    const RL_MODELVIEW: i32 = 5888
+    const RL_MODELVIEW: int = 5888
 
-    const RL_PROJECTION: i32 = 5889
+    const RL_PROJECTION: int = 5889
 
-    const RL_TEXTURE: i32 = 5890
+    const RL_TEXTURE: int = 5890
 
-    const RL_LINES: i32 = 1
+    const RL_LINES: int = 1
 
-    const RL_TRIANGLES: i32 = 4
+    const RL_TRIANGLES: int = 4
 
-    const RL_QUADS: i32 = 7
+    const RL_QUADS: int = 7
 
-    const RL_UNSIGNED_BYTE: i32 = 5121
+    const RL_UNSIGNED_BYTE: int = 5121
 
-    const RL_FLOAT: i32 = 5126
+    const RL_FLOAT: int = 5126
 
-    const RL_STREAM_DRAW: i32 = 35040
+    const RL_STREAM_DRAW: int = 35040
 
-    const RL_STREAM_READ: i32 = 35041
+    const RL_STREAM_READ: int = 35041
 
-    const RL_STREAM_COPY: i32 = 35042
+    const RL_STREAM_COPY: int = 35042
 
-    const RL_STATIC_DRAW: i32 = 35044
+    const RL_STATIC_DRAW: int = 35044
 
-    const RL_STATIC_READ: i32 = 35045
+    const RL_STATIC_READ: int = 35045
 
-    const RL_STATIC_COPY: i32 = 35046
+    const RL_STATIC_COPY: int = 35046
 
-    const RL_DYNAMIC_DRAW: i32 = 35048
+    const RL_DYNAMIC_DRAW: int = 35048
 
-    const RL_DYNAMIC_READ: i32 = 35049
+    const RL_DYNAMIC_READ: int = 35049
 
-    const RL_DYNAMIC_COPY: i32 = 35050
+    const RL_DYNAMIC_COPY: int = 35050
 
-    const RL_FRAGMENT_SHADER: i32 = 35632
+    const RL_FRAGMENT_SHADER: int = 35632
 
-    const RL_VERTEX_SHADER: i32 = 35633
+    const RL_VERTEX_SHADER: int = 35633
 
-    const RL_COMPUTE_SHADER: i32 = 37305
+    const RL_COMPUTE_SHADER: int = 37305
 
-    const RL_ZERO: i32 = 0
+    const RL_ZERO: int = 0
 
-    const RL_ONE: i32 = 1
+    const RL_ONE: int = 1
 
-    const RL_SRC_COLOR: i32 = 768
+    const RL_SRC_COLOR: int = 768
 
-    const RL_ONE_MINUS_SRC_COLOR: i32 = 769
+    const RL_ONE_MINUS_SRC_COLOR: int = 769
 
-    const RL_SRC_ALPHA: i32 = 770
+    const RL_SRC_ALPHA: int = 770
 
-    const RL_ONE_MINUS_SRC_ALPHA: i32 = 771
+    const RL_ONE_MINUS_SRC_ALPHA: int = 771
 
-    const RL_DST_ALPHA: i32 = 772
+    const RL_DST_ALPHA: int = 772
 
-    const RL_ONE_MINUS_DST_ALPHA: i32 = 773
+    const RL_ONE_MINUS_DST_ALPHA: int = 773
 
-    const RL_DST_COLOR: i32 = 774
+    const RL_DST_COLOR: int = 774
 
-    const RL_ONE_MINUS_DST_COLOR: i32 = 775
+    const RL_ONE_MINUS_DST_COLOR: int = 775
 
-    const RL_SRC_ALPHA_SATURATE: i32 = 776
+    const RL_SRC_ALPHA_SATURATE: int = 776
 
-    const RL_CONSTANT_COLOR: i32 = 32769
+    const RL_CONSTANT_COLOR: int = 32769
 
-    const RL_ONE_MINUS_CONSTANT_COLOR: i32 = 32770
+    const RL_ONE_MINUS_CONSTANT_COLOR: int = 32770
 
-    const RL_CONSTANT_ALPHA: i32 = 32771
+    const RL_CONSTANT_ALPHA: int = 32771
 
-    const RL_ONE_MINUS_CONSTANT_ALPHA: i32 = 32772
+    const RL_ONE_MINUS_CONSTANT_ALPHA: int = 32772
 
-    const RL_FUNC_ADD: i32 = 32774
+    const RL_FUNC_ADD: int = 32774
 
-    const RL_MIN: i32 = 32775
+    const RL_MIN: int = 32775
 
-    const RL_MAX: i32 = 32776
+    const RL_MAX: int = 32776
 
-    const RL_FUNC_SUBTRACT: i32 = 32778
+    const RL_FUNC_SUBTRACT: int = 32778
 
-    const RL_FUNC_REVERSE_SUBTRACT: i32 = 32779
+    const RL_FUNC_REVERSE_SUBTRACT: int = 32779
 
-    const RL_BLEND_EQUATION: i32 = 32777
+    const RL_BLEND_EQUATION: int = 32777
 
-    const RL_BLEND_EQUATION_RGB: i32 = 32777
+    const RL_BLEND_EQUATION_RGB: int = 32777
 
-    const RL_BLEND_EQUATION_ALPHA: i32 = 34877
+    const RL_BLEND_EQUATION_ALPHA: int = 34877
 
-    const RL_BLEND_DST_RGB: i32 = 32968
+    const RL_BLEND_DST_RGB: int = 32968
 
-    const RL_BLEND_SRC_RGB: i32 = 32969
+    const RL_BLEND_SRC_RGB: int = 32969
 
-    const RL_BLEND_DST_ALPHA: i32 = 32970
+    const RL_BLEND_DST_ALPHA: int = 32970
 
-    const RL_BLEND_SRC_ALPHA: i32 = 32971
+    const RL_BLEND_SRC_ALPHA: int = 32971
 
-    const RL_BLEND_COLOR: i32 = 32773
+    const RL_BLEND_COLOR: int = 32773
 
-    const RL_READ_FRAMEBUFFER: i32 = 36008
+    const RL_READ_FRAMEBUFFER: int = 36008
 
-    const RL_DRAW_FRAMEBUFFER: i32 = 36009
+    const RL_DRAW_FRAMEBUFFER: int = 36009
 
-    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_POSITION: i32 = 0
+    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_POSITION: int = 0
 
-    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_TEXCOORD: i32 = 1
+    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_TEXCOORD: int = 1
 
-    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_NORMAL: i32 = 2
+    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_NORMAL: int = 2
 
-    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_COLOR: i32 = 3
+    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_COLOR: int = 3
 
-    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_TANGENT: i32 = 4
+    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_TANGENT: int = 4
 
-    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_TEXCOORD2: i32 = 5
+    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_TEXCOORD2: int = 5
 
-    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_INDICES: i32 = 6
+    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_INDICES: int = 6
 
-    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEINDICES: i32 = 7
+    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEINDICES: int = 7
 
-    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEWEIGHTS: i32 = 8
+    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEWEIGHTS: int = 8
 
-    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_INSTANCETRANSFORM: i32 = 9
+    const RL_DEFAULT_SHADER_ATTRIB_LOCATION_INSTANCETRANSFORM: int = 9

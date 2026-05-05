@@ -4,21 +4,21 @@ import std.c.libm as math
 import std.c.raygui as gui
 import std.c.raylib as rl
 
-enum InteractionMode: i32
+enum InteractionMode: int
     MODE_RUN = 0
     MODE_PAUSE = 1
     MODE_DRAW = 2
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const menu_width: i32 = 100
-const window_width: i32 = screen_width - menu_width
-const window_height: i32 = screen_height
-const world_width: i32 = 2048
-const world_height: i32 = 2048
-const random_tiles: i32 = 8
-const number_of_presets: i32 = 10
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const menu_width: int = 100
+const window_width: int = screen_width - menu_width
+const window_height: int = screen_height
+const world_width: int = 2048
+const world_height: int = 2048
+const random_tiles: int = 8
+const number_of_presets: int = 10
+const glsl_version: int = 330
 const shader_path_format: cstr = c"../resources/shaders/glsl%i/game_of_life.fs"
 const resolution_uniform_name: cstr = c"resolution"
 const toggle_group_text: cstr = c"Run\nPause\nDraw"
@@ -27,7 +27,7 @@ const speed_format: cstr = c"Speed: %i frame%s"
 const window_title: cstr = c"raylib [shaders] example - game of life"
 
 
-def gui_rect(x: f32, y: f32, width: f32, height: f32) -> gui.Rectangle:
+def gui_rect(x: float, y: float, width: float, height: float) -> gui.Rectangle:
     return gui.Rectangle(x = x, y = y, width = width, height = height)
 
 
@@ -38,7 +38,7 @@ def free_image_to_draw(image_to_draw: ref[rl.Image], has_image_to_draw: ref[bool
         read(has_image_to_draw) = false
 
 
-def load_preset_image(preset: i32) -> rl.Image:
+def load_preset_image(preset: int) -> rl.Image:
     if preset == 0:
         return rl.LoadImage(c"../resources/game_of_life/glider.png")
     if preset == 1:
@@ -58,13 +58,13 @@ def load_preset_image(preset: i32) -> rl.Image:
     return rl.LoadImage(c"../resources/game_of_life/breeder.png")
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let world_rect_source = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-world_width, height = -f32<-world_height)
-    let world_rect_dest = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-world_width, height = f32<-world_height)
-    let texture_on_screen = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-window_width, height = f32<-window_height)
+    let world_rect_source = rl.Rectangle(x = 0.0, y = 0.0, width = float<-world_width, height = -float<-world_height)
+    let world_rect_dest = rl.Rectangle(x = 0.0, y = 0.0, width = float<-world_width, height = float<-world_height)
+    let texture_on_screen = rl.Rectangle(x = 0.0, y = 0.0, width = float<-window_width, height = float<-window_height)
 
     let preset_names = array[cstr, 10](
         c"Glider",
@@ -92,13 +92,13 @@ def main() -> i32:
     )
 
     var zoom = 1
-    var offset_x: f32 = f32<-(world_width - window_width) / 2.0
-    var offset_y: f32 = f32<-(world_height - window_height) / 2.0
+    var offset_x: float = float<-(world_width - window_width) / 2.0
+    var offset_y: float = float<-(world_height - window_height) / 2.0
     var frames_per_step = 1
     var frame = 0
 
     var preset = -1
-    var mode = i32<-InteractionMode.MODE_RUN
+    var mode = int<-InteractionMode.MODE_RUN
     var button_zoom_in = false
     var button_zoom_out = false
     var button_faster = false
@@ -108,7 +108,7 @@ def main() -> i32:
     defer rl.UnloadShader(shader)
 
     let resolution_loc = rl.GetShaderLocation(shader, resolution_uniform_name)
-    var resolution = array[f32, 2](f32<-world_width, f32<-world_height)
+    var resolution = array[float, 2](float<-world_width, float<-world_height)
     rl.SetShaderValue(shader, resolution_loc, ptr_of(resolution[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     let world1 = rl.LoadRenderTexture(world_width, world_height)
@@ -127,8 +127,8 @@ def main() -> i32:
         rl.Rectangle(
             x = world_width / 2.0,
             y = world_height / 2.0,
-            width = f32<-start_pattern.width,
-            height = f32<-start_pattern.height,
+            width = float<-start_pattern.width,
+            height = float<-start_pattern.height,
         ),
         start_pattern.data,
     )
@@ -152,48 +152,48 @@ def main() -> i32:
         if button_zoom_in or (button_zoom_out and zoom > 1) or mouse_wheel_move != 0.0:
             free_image_to_draw(ref_of(image_to_draw), ref_of(has_image_to_draw))
 
-            let zoom_f = f32<-zoom
-            let center_x = offset_x + f32<-window_width / 2.0 / zoom_f
-            let center_y = offset_y + f32<-window_height / 2.0 / zoom_f
+            let zoom_f = float<-zoom
+            let center_x = offset_x + float<-window_width / 2.0 / zoom_f
+            let center_y = offset_y + float<-window_height / 2.0 / zoom_f
             if button_zoom_in or mouse_wheel_move > 0.0:
                 zoom *= 2
             if (button_zoom_out or mouse_wheel_move < 0.0) and zoom > 1:
                 zoom /= 2
-            let new_zoom_f = f32<-zoom
-            offset_x = center_x - f32<-window_width / 2.0 / new_zoom_f
-            offset_y = center_y - f32<-window_height / 2.0 / new_zoom_f
+            let new_zoom_f = float<-zoom
+            offset_x = center_x - float<-window_width / 2.0 / new_zoom_f
+            offset_y = center_y - float<-window_height / 2.0 / new_zoom_f
 
         if button_faster and frames_per_step > 1:
             frames_per_step -= 1
         if button_slower:
             frames_per_step += 1
 
-        if mode == i32<-InteractionMode.MODE_RUN or mode == i32<-InteractionMode.MODE_PAUSE:
+        if mode == int<-InteractionMode.MODE_RUN or mode == int<-InteractionMode.MODE_PAUSE:
             free_image_to_draw(ref_of(image_to_draw), ref_of(has_image_to_draw))
 
             let mouse_position = rl.GetMousePosition()
-            if rl.IsMouseButtonDown(rl.MouseButton.MOUSE_BUTTON_LEFT) and mouse_position.x < f32<-window_width:
-                offset_x -= (mouse_position.x - previous_mouse_position.x) / f32<-zoom
-                offset_y -= (mouse_position.y - previous_mouse_position.y) / f32<-zoom
+            if rl.IsMouseButtonDown(rl.MouseButton.MOUSE_BUTTON_LEFT) and mouse_position.x < float<-window_width:
+                offset_x -= (mouse_position.x - previous_mouse_position.x) / float<-zoom
+                offset_y -= (mouse_position.y - previous_mouse_position.y) / float<-zoom
             previous_mouse_position = mouse_position
         else:
             let offset_decimal_x = offset_x - math.floorf(offset_x)
             let offset_decimal_y = offset_y - math.floorf(offset_y)
-            let zoom_f = f32<-zoom
-            var size_in_world_x = i32<-math.ceilf((f32<-window_width + offset_decimal_x * zoom_f) / zoom_f)
-            var size_in_world_y = i32<-math.ceilf((f32<-window_height + offset_decimal_y * zoom_f) / zoom_f)
-            if offset_x + f32<-size_in_world_x >= f32<-world_width:
-                size_in_world_x = world_width - i32<-math.floorf(offset_x)
-            if offset_y + f32<-size_in_world_y >= f32<-world_height:
-                size_in_world_y = world_height - i32<-math.floorf(offset_y)
+            let zoom_f = float<-zoom
+            var size_in_world_x = int<-math.ceilf((float<-window_width + offset_decimal_x * zoom_f) / zoom_f)
+            var size_in_world_y = int<-math.ceilf((float<-window_height + offset_decimal_y * zoom_f) / zoom_f)
+            if offset_x + float<-size_in_world_x >= float<-world_width:
+                size_in_world_x = world_width - int<-math.floorf(offset_x)
+            if offset_y + float<-size_in_world_y >= float<-world_height:
+                size_in_world_y = world_height - int<-math.floorf(offset_y)
 
             if not has_image_to_draw:
                 let world_on_screen = rl.LoadRenderTexture(size_in_world_x, size_in_world_y)
                 rl.BeginTextureMode(world_on_screen)
                 rl.DrawTexturePro(
                     current_world.texture,
-                    rl.Rectangle(x = math.floorf(offset_x), y = math.floorf(offset_y), width = f32<-size_in_world_x, height = -f32<-size_in_world_y),
-                    rl.Rectangle(x = 0.0, y = 0.0, width = f32<-size_in_world_x, height = f32<-size_in_world_y),
+                    rl.Rectangle(x = math.floorf(offset_x), y = math.floorf(offset_y), width = float<-size_in_world_x, height = -float<-size_in_world_y),
+                    rl.Rectangle(x = 0.0, y = 0.0, width = float<-size_in_world_x, height = float<-size_in_world_y),
                     rl.Vector2(x = 0.0, y = 0.0),
                     0.0,
                     rl.WHITE,
@@ -204,9 +204,9 @@ def main() -> i32:
                 rl.UnloadRenderTexture(world_on_screen)
 
             let mouse_position = rl.GetMousePosition()
-            if rl.IsMouseButtonDown(rl.MouseButton.MOUSE_BUTTON_LEFT) and mouse_position.x < f32<-window_width:
-                var mouse_x = i32<-((mouse_position.x + offset_decimal_x * zoom_f) / zoom_f)
-                var mouse_y = i32<-((mouse_position.y + offset_decimal_y * zoom_f) / zoom_f)
+            if rl.IsMouseButtonDown(rl.MouseButton.MOUSE_BUTTON_LEFT) and mouse_position.x < float<-window_width:
+                var mouse_x = int<-((mouse_position.x + offset_decimal_x * zoom_f) / zoom_f)
+                var mouse_y = int<-((mouse_position.y + offset_decimal_y * zoom_f) / zoom_f)
                 if mouse_x >= size_in_world_x:
                     mouse_x = size_in_world_x - 1
                 if mouse_y >= size_in_world_y:
@@ -220,7 +220,7 @@ def main() -> i32:
                 if previous_color != first_color:
                     rl.UpdateTextureRec(
                         current_world.texture,
-                        rl.Rectangle(x = math.floorf(offset_x), y = math.floorf(offset_y), width = f32<-size_in_world_x, height = f32<-size_in_world_y),
+                        rl.Rectangle(x = math.floorf(offset_x), y = math.floorf(offset_y), width = float<-size_in_world_x, height = float<-size_in_world_y),
                         image_to_draw.data,
                     )
             else:
@@ -235,10 +235,10 @@ def main() -> i32:
                 rl.UpdateTextureRec(
                     current_world.texture,
                     rl.Rectangle(
-                        x = f32<-world_width * preset_positions[preset].x - f32<-pattern.width / 2.0,
-                        y = f32<-world_height * preset_positions[preset].y - f32<-pattern.height / 2.0,
-                        width = f32<-pattern.width,
-                        height = f32<-pattern.height,
+                        x = float<-world_width * preset_positions[preset].x - float<-pattern.width / 2.0,
+                        y = float<-world_height * preset_positions[preset].y - float<-pattern.height / 2.0,
+                        width = float<-pattern.width,
+                        height = float<-pattern.height,
                     ),
                     pattern.data,
                 )
@@ -255,36 +255,36 @@ def main() -> i32:
                         rl.UpdateTextureRec(
                             current_world.texture,
                             rl.Rectangle(
-                                x = f32<-(pattern.width * tile_x),
-                                y = f32<-(pattern.height * tile_y),
-                                width = f32<-pattern.width,
-                                height = f32<-pattern.height,
+                                x = float<-(pattern.width * tile_x),
+                                y = float<-(pattern.height * tile_y),
+                                width = float<-pattern.width,
+                                height = float<-pattern.height,
                             ),
                             pattern.data,
                         )
                 rl.UnloadImage(pattern)
 
-            mode = i32<-InteractionMode.MODE_PAUSE
-            offset_x = f32<-world_width * preset_positions[preset].x - f32<-window_width / f32<-zoom / 2.0
-            offset_y = f32<-world_height * preset_positions[preset].y - f32<-window_height / f32<-zoom / 2.0
+            mode = int<-InteractionMode.MODE_PAUSE
+            offset_x = float<-world_width * preset_positions[preset].x - float<-window_width / float<-zoom / 2.0
+            offset_y = float<-world_height * preset_positions[preset].y - float<-window_height / float<-zoom / 2.0
 
         if offset_x < 0.0:
             offset_x = 0.0
         if offset_y < 0.0:
             offset_y = 0.0
-        if offset_x > f32<-world_width - f32<-window_width / f32<-zoom:
-            offset_x = f32<-world_width - f32<-window_width / f32<-zoom
-        if offset_y > f32<-world_height - f32<-window_height / f32<-zoom:
-            offset_y = f32<-world_height - f32<-window_height / f32<-zoom
+        if offset_x > float<-world_width - float<-window_width / float<-zoom:
+            offset_x = float<-world_width - float<-window_width / float<-zoom
+        if offset_y > float<-world_height - float<-window_height / float<-zoom:
+            offset_y = float<-world_height - float<-window_height / float<-zoom
 
         let texture_source_to_screen = rl.Rectangle(
             x = offset_x,
             y = offset_y,
-            width = f32<-window_width / f32<-zoom,
-            height = f32<-window_height / f32<-zoom,
+            width = float<-window_width / float<-zoom,
+            height = float<-window_height / float<-zoom,
         )
 
-        if mode == i32<-InteractionMode.MODE_RUN and (frame % frames_per_step) == 0:
+        if mode == int<-InteractionMode.MODE_RUN and (frame % frames_per_step) == 0:
             let temp_world = current_world
             current_world = previous_world
             previous_world = temp_world
@@ -311,7 +311,7 @@ def main() -> i32:
         rl.DrawText(c"Presets", 710, 58, 8, rl.GRAY)
         preset = -1
         for index in 0..number_of_presets:
-            if gui.GuiButton(gui_rect(710.0, 70.0 + 18.0 * f32<-index, 80.0, 16.0), preset_names[index]) != 0:
+            if gui.GuiButton(gui_rect(710.0, 70.0 + 18.0 * float<-index, 80.0, 16.0), preset_names[index]) != 0:
                 preset = index
 
         gui.GuiToggleGroup(gui_rect(710.0, 258.0, 80.0, 16.0), toggle_group_text, ptr_of(mode))

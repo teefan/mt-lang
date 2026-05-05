@@ -4,11 +4,11 @@ import std.c.raylib as rl
 import std.c.rlights as lights
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const max_vox_files: i32 = 4
-const max_lights: i32 = 4
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const max_vox_files: int = 4
+const max_lights: int = 4
+const glsl_version: int = 330
 const window_title: cstr = c"raylib [models] example - loading vox"
 const model_load_time_format: cstr = c"[%s] Model file loaded in %.3f ms"
 const shader_vertex_path_format: cstr = c"../resources/shaders/glsl%i/voxel_lighting.vs"
@@ -19,7 +19,7 @@ const camera_rotate_text: cstr = c"- MOUSE MIDDLE BUTTON: ZOOM OR ROTATE CAMERA"
 const camera_move_text: cstr = c"- UP-DOWN-LEFT-RIGHT KEYS: MOVE CAMERA"
 
 
-def camera_axis_speed(positive: bool, negative: bool) -> f32:
+def camera_axis_speed(positive: bool, negative: bool) -> float:
     if positive and not negative:
         return 0.1
     if negative and not positive:
@@ -27,7 +27,7 @@ def camera_axis_speed(positive: bool, negative: bool) -> f32:
     return 0.0
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -71,10 +71,10 @@ def main() -> i32:
     )
     let view_loc = rl.GetShaderLocation(shader, c"viewPos")
     unsafe:
-        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
+        shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     let ambient_loc = rl.GetShaderLocation(shader, c"ambient")
-    var ambient = array[f32, 4](0.1, 0.1, 0.1, 1.0)
+    var ambient = array[float, 4](0.1, 0.1, 0.1, 1.0)
     unsafe:
         rl.SetShaderValue(shader, ambient_loc, ptr[void]<-ptr_of(ambient[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
@@ -84,10 +84,10 @@ def main() -> i32:
                 models[model_index].materials[material_index].shader = shader
 
     var light_sources = zero[array[lights.Light, max_lights]]
-    light_sources[0] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -20.0, y = 20.0, z = -20.0), rm.Vector3.zero(), rl.GRAY, shader)
-    light_sources[1] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 20.0, y = -20.0, z = 20.0), rm.Vector3.zero(), rl.GRAY, shader)
-    light_sources[2] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -20.0, y = 20.0, z = 20.0), rm.Vector3.zero(), rl.GRAY, shader)
-    light_sources[3] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 20.0, y = -20.0, z = -20.0), rm.Vector3.zero(), rl.GRAY, shader)
+    light_sources[0] = lights.CreateLight(int<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -20.0, y = 20.0, z = -20.0), rm.Vector3.zero(), rl.GRAY, shader)
+    light_sources[1] = lights.CreateLight(int<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 20.0, y = -20.0, z = 20.0), rm.Vector3.zero(), rl.GRAY, shader)
+    light_sources[2] = lights.CreateLight(int<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -20.0, y = 20.0, z = 20.0), rm.Vector3.zero(), rl.GRAY, shader)
+    light_sources[3] = lights.CreateLight(int<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 20.0, y = -20.0, z = -20.0), rm.Vector3.zero(), rl.GRAY, shader)
 
     rl.SetTargetFPS(60)
 
@@ -116,7 +116,7 @@ def main() -> i32:
         if rl.IsMouseButtonPressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
             current_model = (current_model + 1) % max_vox_files
 
-        var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
+        var camera_pos = array[float, 3](camera.position.x, camera.position.y, camera.position.z)
         unsafe:
             rl.SetShaderValue(shader, view_loc, ptr[void]<-ptr_of(camera_pos[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 

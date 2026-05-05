@@ -2,12 +2,12 @@ module examples.idiomatic.sdl3.primitives
 
 import std.sdl3 as sdl
 
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: str = "examples/renderer/primitives"
 const presentation_mode: sdl.RendererLogicalPresentation = sdl.RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: usize = sdl.WINDOW_RESIZABLE
-const point_count: i32 = 500
+const window_flags: ptr_uint = sdl.WINDOW_RESIZABLE
+const point_count: int = 500
 
 var window: ptr[sdl.Window]
 var renderer: ptr[sdl.Renderer]
@@ -44,13 +44,13 @@ def render_frame() -> void:
     sdl.render_rect(renderer, const_ptr_of(rect))
 
     sdl.set_render_draw_color(renderer, 255, 255, 0, 255)
-    sdl.render_line(renderer, f32<-0.0, f32<-0.0, f32<-window_width, f32<-window_height)
-    sdl.render_line(renderer, f32<-0.0, f32<-window_height, f32<-window_width, f32<-0.0)
+    sdl.render_line(renderer, float<-0.0, float<-0.0, float<-window_width, float<-window_height)
+    sdl.render_line(renderer, float<-0.0, float<-window_height, float<-window_width, float<-0.0)
 
     sdl.render_present(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     sdl.set_app_metadata("Example Renderer Primitives", "1.0", "com.example.renderer-primitives")
 
     if not sdl.init(sdl.INIT_VIDEO):
@@ -75,5 +75,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return sdl.run_app(argc, argv, app_main)

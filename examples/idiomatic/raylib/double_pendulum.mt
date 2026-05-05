@@ -3,47 +3,47 @@ module examples.idiomatic.raylib.double_pendulum
 import std.raylib as rl
 import std.raylib.math as math
 
-const simulation_steps: i32 = 30
-const gravity: f32 = 9.81
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const simulation_steps: int = 30
+const gravity: float = 9.81
+const screen_width: int = 800
+const screen_height: int = 450
 
 
-def calculate_pendulum_end_point(length: f32, theta: f32) -> rl.Vector2:
+def calculate_pendulum_end_point(length: float, theta: float) -> rl.Vector2:
     return rl.Vector2(
         x = 10.0 * length * math.sin(theta),
         y = 10.0 * length * math.cos(theta),
     )
 
 
-def calculate_double_pendulum_end_point(length1: f32, theta1: f32, length2: f32, theta2: f32) -> rl.Vector2:
+def calculate_double_pendulum_end_point(length1: float, theta1: float, length2: float, theta2: float) -> rl.Vector2:
     let endpoint1 = calculate_pendulum_end_point(length1, theta1)
     let endpoint2 = calculate_pendulum_end_point(length2, theta2)
     return rl.Vector2(x = endpoint1.x + endpoint2.x, y = endpoint1.y + endpoint2.y)
 
 
-def main() -> i32:
+def main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_HIGHDPI)
     rl.init_window(screen_width, screen_height, "Milk Tea Double Pendulum")
     defer rl.close_window()
 
-    let length1: f32 = 15.0
-    let mass1: f32 = 0.2
-    var theta1: f32 = math.deg2rad * 170.0
-    var omega1: f32 = 0.0
-    let length2: f32 = 15.0
-    let mass2: f32 = 0.1
-    var theta2: f32 = 0.0
-    var omega2: f32 = 0.0
+    let length1: float = 15.0
+    let mass1: float = 0.2
+    var theta1: float = math.deg2rad * 170.0
+    var omega1: float = 0.0
+    let length2: float = 15.0
+    let mass2: float = 0.1
+    var theta2: float = 0.0
+    var omega2: float = 0.0
     let total_mass = mass1 + mass2
 
     var previous_position = calculate_double_pendulum_end_point(length1, theta1, length2, theta2)
-    previous_position.x += f32<-screen_width / 2.0
-    previous_position.y += f32<-screen_height / 2.0 - 100.0
+    previous_position.x += float<-screen_width / 2.0
+    previous_position.y += float<-screen_height / 2.0 - 100.0
 
-    let line_thickness: f32 = 20.0
-    let trail_thickness: f32 = 2.0
-    let fade_alpha: f32 = 0.01
+    let line_thickness: float = 20.0
+    let trail_thickness: float = 2.0
+    let fade_alpha: float = 0.01
 
     let target = rl.load_render_texture(screen_width, screen_height)
     defer rl.unload_render_texture(target)
@@ -53,7 +53,7 @@ def main() -> i32:
 
     while not rl.window_should_close():
         let delta_time = rl.get_frame_time()
-        let step = delta_time / f32<-simulation_steps
+        let step = delta_time / float<-simulation_steps
         let step2 = step * step
 
         for _ in 0..simulation_steps:
@@ -84,8 +84,8 @@ def main() -> i32:
             omega2 += alpha2 * step
 
         var current_position = calculate_double_pendulum_end_point(length1, theta1, length2, theta2)
-        current_position.x += f32<-screen_width / 2.0
-        current_position.y += f32<-screen_height / 2.0 - 100.0
+        current_position.x += float<-screen_width / 2.0
+        current_position.y += float<-screen_height / 2.0 - 100.0
 
         rl.begin_texture_mode(target)
         rl.draw_rectangle(0, 0, screen_width, screen_height, rl.fade(rl.BLACK, fade_alpha))
@@ -109,8 +109,8 @@ def main() -> i32:
 
         rl.draw_rectangle_pro(
             rl.Rectangle(
-                x = f32<-screen_width / 2.0,
-                y = f32<-screen_height / 2.0 - 100.0,
+                x = float<-screen_width / 2.0,
+                y = float<-screen_height / 2.0 - 100.0,
                 width = 10.0 * length1,
                 height = line_thickness,
             ),
@@ -120,8 +120,8 @@ def main() -> i32:
         )
         rl.draw_rectangle_pro(
             rl.Rectangle(
-                x = f32<-screen_width / 2.0 + endpoint1.x,
-                y = f32<-screen_height / 2.0 - 100.0 + endpoint1.y,
+                x = float<-screen_width / 2.0 + endpoint1.x,
+                y = float<-screen_height / 2.0 - 100.0 + endpoint1.y,
                 width = 10.0 * length2,
                 height = line_thickness,
             ),

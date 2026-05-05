@@ -3,13 +3,13 @@ module examples.raylib.shaders.shaders_mandelbrot_set
 import std.c.libm as libm
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
-const zoom_speed: f32 = 1.01
-const offset_speed_mul: f32 = 2.0
-const starting_zoom: f32 = 0.6
-const starting_offset: array[f32, 2] = array[f32, 2](-0.5, 0.0)
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
+const zoom_speed: float = 1.01
+const offset_speed_mul: float = 2.0
+const starting_zoom: float = 0.6
+const starting_offset: array[float, 2] = array[float, 2](-0.5, 0.0)
 const shader_path_format: cstr = c"../resources/shaders/glsl%i/mandelbrot_set.fs"
 const zoom_uniform_name: cstr = c"zoom"
 const offset_uniform_name: cstr = c"offset"
@@ -22,7 +22,7 @@ const help_reset_text: cstr = c"Press R to recenter the camera"
 const window_title: cstr = c"raylib [shaders] example - mandelbrot set"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -32,19 +32,19 @@ def main() -> i32:
     let target = rl.LoadRenderTexture(rl.GetScreenWidth(), rl.GetScreenHeight())
     defer rl.UnloadRenderTexture(target)
 
-    let points_of_interest = array[array[f32, 3], 6](
-        array[f32, 3](-1.76826775, -0.00422996283, 28435.9238),
-        array[f32, 3](0.322004497, -0.0357099883, 56499.7266),
-        array[f32, 3](-0.748880744, -0.0562955774, 9237.59082),
-        array[f32, 3](-1.78385007, -0.0156200649, 14599.5283),
-        array[f32, 3](-0.0985441282, -0.924688697, 26259.8535),
-        array[f32, 3](0.317785531, -0.0322612226, 29297.9258),
+    let points_of_interest = array[array[float, 3], 6](
+        array[float, 3](-1.76826775, -0.00422996283, 28435.9238),
+        array[float, 3](0.322004497, -0.0357099883, 56499.7266),
+        array[float, 3](-0.748880744, -0.0562955774, 9237.59082),
+        array[float, 3](-1.78385007, -0.0156200649, 14599.5283),
+        array[float, 3](-0.0985441282, -0.924688697, 26259.8535),
+        array[float, 3](0.317785531, -0.0322612226, 29297.9258),
     )
 
-    var offset = array[f32, 2](starting_offset[0], starting_offset[1])
-    var zoom: f32 = starting_zoom
+    var offset = array[float, 2](starting_offset[0], starting_offset[1])
+    var zoom: float = starting_zoom
     var max_iterations = 333
-    var max_iterations_multiplier: f32 = 166.5
+    var max_iterations_multiplier: float = 166.5
 
     let zoom_loc = rl.GetShaderLocation(shader, zoom_uniform_name)
     let offset_loc = rl.GetShaderLocation(shader, offset_uniform_name)
@@ -105,8 +105,8 @@ def main() -> i32:
 
             let mouse_pos = rl.GetMousePosition()
             let offset_velocity = rl.Vector2(
-                x = (mouse_pos.x / f32<-screen_width - 0.5) * offset_speed_mul / zoom,
-                y = (mouse_pos.y / f32<-screen_height - 0.5) * offset_speed_mul / zoom,
+                x = (mouse_pos.x / float<-screen_width - 0.5) * offset_speed_mul / zoom,
+                y = (mouse_pos.y / float<-screen_height - 0.5) * offset_speed_mul / zoom,
             )
 
             offset[0] += rl.GetFrameTime() * offset_velocity.x
@@ -114,7 +114,7 @@ def main() -> i32:
             update_shader = true
 
         if update_shader:
-            max_iterations = i32<-(libm.sqrtf(2.0 * libm.sqrtf(libm.fabsf(1.0 - libm.sqrtf(37.5 * zoom)))) * max_iterations_multiplier)
+            max_iterations = int<-(libm.sqrtf(2.0 * libm.sqrtf(libm.fabsf(1.0 - libm.sqrtf(37.5 * zoom)))) * max_iterations_multiplier)
 
             rl.SetShaderValue(shader, zoom_loc, ptr_of(zoom), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
             rl.SetShaderValue(shader, offset_loc, ptr_of(offset[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)

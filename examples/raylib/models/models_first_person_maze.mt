@@ -2,14 +2,14 @@ module examples.raylib.models.models_first_person_maze
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [models] example - first person maze"
 const cubicmap_path: cstr = c"../resources/cubicmap.png"
 const atlas_path: cstr = c"../resources/cubicmap_atlas.png"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -34,7 +34,7 @@ def main() -> i32:
     let texture = rl.LoadTexture(atlas_path)
     defer rl.UnloadTexture(texture)
 
-    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+    rl.SetMaterialTexture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let map_pixels = rl.LoadImageColors(image)
     defer rl.UnloadImageColors(map_pixels)
@@ -50,10 +50,10 @@ def main() -> i32:
         rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_FIRST_PERSON)
 
         let player_pos = rl.Vector2(x = camera.position.x, y = camera.position.z)
-        let player_radius: f32 = 0.1
+        let player_radius: float = 0.1
 
-        var player_cell_x = i32<-(player_pos.x - map_position.x + 0.5)
-        var player_cell_y = i32<-(player_pos.y - map_position.z + 0.5)
+        var player_cell_x = int<-(player_pos.x - map_position.x + 0.5)
+        var player_cell_y = int<-(player_pos.y - map_position.z + 0.5)
 
         if player_cell_x < 0:
             player_cell_x = 0
@@ -70,13 +70,13 @@ def main() -> i32:
                 for x in player_cell_x - 1..player_cell_x + 2:
                     if x >= 0 and x < cubicmap.width:
                         let cell = rl.Rectangle(
-                            x = map_position.x - 0.5 + f32<-x,
-                            y = map_position.z - 0.5 + f32<-y,
+                            x = map_position.x - 0.5 + float<-x,
+                            y = map_position.z - 0.5 + float<-y,
                             width = 1.0,
                             height = 1.0,
                         )
                         unsafe:
-                            if map_pixels[(y * cubicmap.width) + x].r == u8<-255 and rl.CheckCollisionCircleRec(player_pos, player_radius, cell):
+                            if map_pixels[(y * cubicmap.width) + x].r == ubyte<-255 and rl.CheckCollisionCircleRec(player_pos, player_radius, cell):
                                 camera.position = old_camera_position
 
         rl.BeginDrawing()
@@ -91,7 +91,7 @@ def main() -> i32:
         let radar_origin_y = 20
         rl.DrawTextureEx(
             cubicmap,
-            rl.Vector2(x = f32<-radar_origin_x, y = f32<-radar_origin_y),
+            rl.Vector2(x = float<-radar_origin_x, y = float<-radar_origin_y),
             0.0,
             4.0,
             rl.WHITE,

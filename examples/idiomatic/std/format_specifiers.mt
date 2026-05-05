@@ -3,10 +3,10 @@ module examples.idiomatic.std.format_specifiers
 import std.io as io
 
 
-def main() -> i32:
-    let pi: f64 = 3.14159265358979
-    let ratio: f64 = 1.0 / 3.0
-    let small: f32 = 0.00123
+def main() -> int:
+    let pi: double = 3.14159265358979
+    let ratio: double = 1.0 / 3.0
+    let small: float = 0.00123
 
     # Float precision specifiers
     io.println(f"pi:.0 -> #{pi:.0}")
@@ -17,7 +17,7 @@ def main() -> i32:
 
     # Mix precision with ordinary interpolation
     let label = "euler"
-    let e: f64 = 2.71828182845
+    let e: double = 2.71828182845
     io.println(f"mixed -> #{label}=#{e:.3}")
 
     return 0

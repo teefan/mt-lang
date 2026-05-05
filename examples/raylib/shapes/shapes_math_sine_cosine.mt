@@ -5,9 +5,9 @@ import std.c.raygui as gui
 import std.c.raylib as rl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const wave_points: i32 = 36
+const screen_width: int = 800
+const screen_height: int = 450
+const wave_points: int = 36
 const window_title: cstr = c"raylib [shapes] example - math sine cosine"
 const pause_text: cstr = c"Pause"
 const angle_text: cstr = c"Angle"
@@ -21,7 +21,7 @@ const supplementary_format: cstr = c"Supplementary  %.0f deg"
 const explementary_format: cstr = c"Explementary  %.0f deg"
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -31,12 +31,12 @@ def main() -> i32:
     let center = rl.Vector2(x = screen_width / 2.0 - 30.0, y = screen_height / 2.0)
     let start = rl.Rectangle(x = 20.0, y = screen_height - 120.0, width = 200.0, height = 100.0)
     let half_wave_height = start.height / 2.0
-    var radius: f32 = 130.0
-    var angle: f32 = 0.0
+    var radius: float = 130.0
+    var angle: float = 0.0
     var pause = false
 
     for index in 0..wave_points:
-        let t = f32<-index / f32<-(wave_points - 1)
+        let t = float<-index / float<-(wave_points - 1)
         let current_angle = t * 360.0 * rm.deg2rad
         sine_points[index] = rl.Vector2(
             x = start.x + t * start.width,
@@ -91,11 +91,11 @@ def main() -> i32:
         rl.DrawLineEx(rl.Vector2(x = start.x + start.width, y = start.y), rl.Vector2(x = start.x + start.width, y = start.y + start.height), 2.0, rl.GRAY)
         rl.DrawLineEx(rl.Vector2(x = start.x, y = start.y + half_wave_height), rl.Vector2(x = start.x + start.width, y = start.y + half_wave_height), 2.0, rl.GRAY)
 
-        rl.DrawText(c"1", i32<-start.x - 8, i32<-start.y, 6, rl.GRAY)
-        rl.DrawText(c"0", i32<-start.x - 8, i32<-(start.y + half_wave_height) - 6, 6, rl.GRAY)
-        rl.DrawText(c"-1", i32<-start.x - 12, i32<-(start.y + start.height) - 8, 6, rl.GRAY)
-        rl.DrawText(c"0", i32<-start.x - 2, i32<-(start.y + start.height) + 4, 6, rl.GRAY)
-        rl.DrawText(c"360", i32<-(start.x + start.width) - 8, i32<-(start.y + start.height) + 4, 6, rl.GRAY)
+        rl.DrawText(c"1", int<-start.x - 8, int<-start.y, 6, rl.GRAY)
+        rl.DrawText(c"0", int<-start.x - 8, int<-(start.y + half_wave_height) - 6, 6, rl.GRAY)
+        rl.DrawText(c"-1", int<-start.x - 12, int<-(start.y + start.height) - 8, 6, rl.GRAY)
+        rl.DrawText(c"0", int<-start.x - 2, int<-(start.y + start.height) + 4, 6, rl.GRAY)
+        rl.DrawText(c"360", int<-(start.x + start.width) - 8, int<-(start.y + start.height) + 4, 6, rl.GRAY)
 
         rl.DrawLineEx(rl.Vector2(x = center.x, y = center.y), rl.Vector2(x = center.x, y = point.y), 2.0, rl.RED)
         rl.DrawLineDashed(rl.Vector2(x = point.x, y = center.y), rl.Vector2(x = point.x, y = point.y), 10, 4, rl.RED)

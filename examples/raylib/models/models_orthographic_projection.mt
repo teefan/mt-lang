@@ -2,17 +2,17 @@ module examples.raylib.models.models_orthographic_projection
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [models] example - orthographic projection"
 const switch_camera_text: cstr = c"Press Spacebar to switch camera type"
 const orthographic_text: cstr = c"ORTHOGRAPHIC"
 const perspective_text: cstr = c"PERSPECTIVE"
-const fovy_perspective: f32 = 45.0
-const width_orthographic: f32 = 10.0
+const fovy_perspective: float = 45.0
+const width_orthographic: float = 10.0
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -2,12 +2,12 @@ module examples.idiomatic.raylib.basic_window
 
 import std.raylib as rl
 
-const screen_width: i32 = 960
-const screen_height: i32 = 540
-const accent_radius: f32 = 48.0
+const screen_width: int = 960
+const screen_height: int = 540
+const accent_radius: float = 48.0
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea")
     defer rl.close_window()
 

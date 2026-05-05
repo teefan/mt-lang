@@ -3,12 +3,12 @@ module examples.raylib.core.core_input_virtual_controls
 import std.c.raylib as rl
 import std.math as math
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - input virtual controls"
 const help_text: cstr = c"move the player with D-Pad buttons"
 
-enum PadButton: i32
+enum PadButton: int
     BUTTON_NONE = -1
     BUTTON_UP = 0
     BUTTON_LEFT = 1
@@ -16,13 +16,13 @@ enum PadButton: i32
     BUTTON_DOWN = 3
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
     let pad_position = rl.Vector2(x = 100.0, y = 350.0)
-    let button_radius: f32 = 30.0
-    let player_speed: f32 = 75.0
+    let button_radius: float = 30.0
+    let player_speed: float = 75.0
 
     let button_up = rl.Vector2(x = pad_position.x, y = pad_position.y - button_radius * 1.5)
     let button_left = rl.Vector2(x = pad_position.x - button_radius * 1.5, y = pad_position.y)

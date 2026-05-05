@@ -2,17 +2,17 @@ module examples.raylib.textures.textures_blend_modes
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - blend modes"
 const background_path: cstr = c"../resources/cyberpunk_street_background.png"
 const foreground_path: cstr = c"../resources/cyberpunk_street_foreground.png"
-const blend_count_max: i32 = 4
+const blend_count_max: int = 4
 const help_text: cstr = c"Press SPACE to change blend modes."
 const credit_text: cstr = c"(c) Cyberpunk Street Environment by Luis Zuno (@ansimuz)"
 
 
-def blend_label(blend_mode: i32) -> cstr:
+def blend_label(blend_mode: int) -> cstr:
     if blend_mode == rl.BlendMode.BLEND_ALPHA:
         return c"Current: BLEND_ALPHA"
     elif blend_mode == rl.BlendMode.BLEND_ADDITIVE:
@@ -22,7 +22,7 @@ def blend_label(blend_mode: i32) -> cstr:
     return c"Current: BLEND_ADD_COLORS"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -38,7 +38,7 @@ def main() -> i32:
         rl.UnloadTexture(foreground_texture)
         rl.UnloadTexture(background_texture)
 
-    var blend_mode: i32 = rl.BlendMode.BLEND_ALPHA
+    var blend_mode: int = rl.BlendMode.BLEND_ALPHA
 
     rl.SetTargetFPS(60)
 

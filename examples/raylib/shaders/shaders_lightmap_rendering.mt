@@ -4,10 +4,10 @@ import std.c.raylib as rl
 import std.c.rlgl as rlgl
 import std.raylib.math as rm
 
-const glsl_version: i32 = 330
-const map_size: i32 = 16
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const glsl_version: int = 330
+const map_size: int = 16
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shaders] example - lightmap rendering"
 const vertex_shader_path_format: cstr = c"../resources/shaders/glsl%i/lightmap.vs"
 const fragment_shader_path_format: cstr = c"../resources/shaders/glsl%i/lightmap.fs"
@@ -16,7 +16,7 @@ const light_path: cstr = c"../resources/spark_flame.png"
 const lightmap_label_format: cstr = c"LIGHTMAP: %ix%i pixels"
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -29,10 +29,10 @@ def main() -> i32:
         projection = rl.CameraProjection.CAMERA_PERSPECTIVE,
     )
 
-    var mesh = rl.GenMeshPlane(f32<-map_size, f32<-map_size, 1, 1)
+    var mesh = rl.GenMeshPlane(float<-map_size, float<-map_size, 1, 1)
 
     unsafe:
-        mesh.texcoords2 = ptr[f32]<-rl.MemAlloc(u32<-(mesh.vertexCount * 2) * u32<-sizeof(f32))
+        mesh.texcoords2 = ptr[float]<-rl.MemAlloc(uint<-(mesh.vertexCount * 2) * uint<-sizeof(float))
         mesh.texcoords2[0] = 0.0
         mesh.texcoords2[1] = 0.0
         mesh.texcoords2[2] = 1.0
@@ -42,7 +42,7 @@ def main() -> i32:
         mesh.texcoords2[6] = 1.0
         mesh.texcoords2[7] = 1.0
 
-        mesh.vboId[i32<-rl.ShaderLocationIndex.SHADER_LOC_VERTEX_TEXCOORD02] = rlgl.rlLoadVertexBuffer(ptr[void]<-mesh.texcoords2, mesh.vertexCount * 2 * i32<-sizeof(f32), false)
+        mesh.vboId[int<-rl.ShaderLocationIndex.SHADER_LOC_VERTEX_TEXCOORD02] = rlgl.rlLoadVertexBuffer(ptr[void]<-mesh.texcoords2, mesh.vertexCount * 2 * int<-sizeof(float), false)
         rlgl.rlEnableVertexArray(mesh.vaoId)
         rlgl.rlSetVertexAttribute(5, 2, rlgl.RL_FLOAT, false, 0, 0)
         rlgl.rlEnableVertexAttribute(5)
@@ -68,33 +68,33 @@ def main() -> i32:
     var material = rl.LoadMaterialDefault()
     material.shader = shader
     unsafe:
-        material.maps[i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO].texture = texture
-        material.maps[i32<-rl.MaterialMapIndex.MATERIAL_MAP_METALNESS].texture = lightmap.texture
+        material.maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO].texture = texture
+        material.maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_METALNESS].texture = lightmap.texture
 
     rl.BeginTextureMode(lightmap)
     rl.ClearBackground(rl.BLACK)
     rl.BeginBlendMode(rl.BlendMode.BLEND_ADDITIVE)
     rl.DrawTexturePro(
         light,
-        rl.Rectangle(x = 0.0, y = 0.0, width = f32<-light.width, height = f32<-light.height),
-        rl.Rectangle(x = 0.0, y = 0.0, width = f32<-(2 * map_size), height = f32<-(2 * map_size)),
-        rl.Vector2(x = f32<-map_size, y = f32<-map_size),
+        rl.Rectangle(x = 0.0, y = 0.0, width = float<-light.width, height = float<-light.height),
+        rl.Rectangle(x = 0.0, y = 0.0, width = float<-(2 * map_size), height = float<-(2 * map_size)),
+        rl.Vector2(x = float<-map_size, y = float<-map_size),
         0.0,
         rl.RED,
     )
     rl.DrawTexturePro(
         light,
-        rl.Rectangle(x = 0.0, y = 0.0, width = f32<-light.width, height = f32<-light.height),
-        rl.Rectangle(x = f32<-map_size * 0.8, y = f32<-map_size / 2.0, width = f32<-(2 * map_size), height = f32<-(2 * map_size)),
-        rl.Vector2(x = f32<-map_size, y = f32<-map_size),
+        rl.Rectangle(x = 0.0, y = 0.0, width = float<-light.width, height = float<-light.height),
+        rl.Rectangle(x = float<-map_size * 0.8, y = float<-map_size / 2.0, width = float<-(2 * map_size), height = float<-(2 * map_size)),
+        rl.Vector2(x = float<-map_size, y = float<-map_size),
         0.0,
         rl.BLUE,
     )
     rl.DrawTexturePro(
         light,
-        rl.Rectangle(x = 0.0, y = 0.0, width = f32<-light.width, height = f32<-light.height),
-        rl.Rectangle(x = f32<-map_size * 0.8, y = f32<-map_size * 0.8, width = f32<-map_size, height = f32<-map_size),
-        rl.Vector2(x = f32<-map_size / 2.0, y = f32<-map_size / 2.0),
+        rl.Rectangle(x = 0.0, y = 0.0, width = float<-light.width, height = float<-light.height),
+        rl.Rectangle(x = float<-map_size * 0.8, y = float<-map_size * 0.8, width = float<-map_size, height = float<-map_size),
+        rl.Vector2(x = float<-map_size / 2.0, y = float<-map_size / 2.0),
         0.0,
         rl.GREEN,
     )
@@ -120,8 +120,8 @@ def main() -> i32:
 
         rl.DrawTexturePro(
             lightmap.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = -f32<-map_size, height = -f32<-map_size),
-            rl.Rectangle(x = f32<-(rl.GetRenderWidth() - map_size * 8 - 10), y = 10.0, width = f32<-(map_size * 8), height = f32<-(map_size * 8)),
+            rl.Rectangle(x = 0.0, y = 0.0, width = -float<-map_size, height = -float<-map_size),
+            rl.Rectangle(x = float<-(rl.GetRenderWidth() - map_size * 8 - 10), y = 10.0, width = float<-(map_size * 8), height = float<-(map_size * 8)),
             rl.Vector2(x = 0.0, y = 0.0),
             0.0,
             rl.WHITE,

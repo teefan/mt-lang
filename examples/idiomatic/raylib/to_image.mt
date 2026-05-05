@@ -2,12 +2,12 @@ module examples.idiomatic.raylib.to_image
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const image_path: str = "../../raylib/resources/raylib_logo.png"
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Texture To Image")
     defer rl.close_window()
 

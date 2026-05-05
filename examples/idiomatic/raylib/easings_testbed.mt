@@ -3,21 +3,21 @@ module examples.idiomatic.raylib.easings_testbed
 import std.easing as ease
 import std.raylib as rl
 
-const font_size: i32 = 20
-const d_step: f32 = 20.0
-const d_step_fine: f32 = 2.0
-const d_min: f32 = 1.0
-const d_max: f32 = 10000.0
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const easing_none: i32 = 28
+const font_size: int = 20
+const d_step: float = 20.0
+const d_step_fine: float = 2.0
+const d_min: float = 1.0
+const d_max: float = 10000.0
+const screen_width: int = 800
+const screen_height: int = 450
+const easing_none: int = 28
 
 struct EasingFunc:
     name: str
-    callback: fn(time: f32, start: f32, change: f32, duration: f32) -> f32
+    callback: fn(time: float, start: float, change: float, duration: float) -> float
 
 
-def restart_requested(bounded_t: bool, t: f32, duration: f32) -> bool:
+def restart_requested(bounded_t: bool, t: float, duration: float) -> bool:
     if rl.is_key_pressed(rl.KeyboardKey.KEY_RIGHT) or rl.is_key_pressed(rl.KeyboardKey.KEY_LEFT):
         return true
     if rl.is_key_pressed(rl.KeyboardKey.KEY_DOWN) or rl.is_key_pressed(rl.KeyboardKey.KEY_UP):
@@ -32,7 +32,7 @@ def restart_requested(bounded_t: bool, t: f32, duration: f32) -> bool:
     return rl.is_key_pressed(rl.KeyboardKey.KEY_ENTER) and bounded_t and t >= duration
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Easings Testbed")
     defer rl.close_window()
 
@@ -69,8 +69,8 @@ def main() -> i32:
         EasingFunc(name = "None", callback = ease.none),
     )
 
-    var t: f32 = 0.0
-    var duration: f32 = 300.0
+    var t: float = 0.0
+    var duration: float = 300.0
     var paused = true
     var bounded_t = true
     var easing_x = easing_none
@@ -133,7 +133,7 @@ def main() -> i32:
         rl.draw_text(rl.text_format_cstr("Easing x: %s", easings[easing_x].name), 20, font_size, font_size, rl.LIGHTGRAY)
         rl.draw_text(rl.text_format_cstr("Easing y: %s", easings[easing_y].name), 20, font_size * 2, font_size, rl.LIGHTGRAY)
         rl.draw_text(
-            rl.text_format_cstr_f32_f32("t (%s) = %.2f d = %.2f", if bounded_t: "b" else: "u", t, duration),
+            rl.text_format_cstr_float_float("t (%s) = %.2f d = %.2f", if bounded_t: "b" else: "u", t, duration),
             20,
             font_size * 3,
             font_size,

@@ -2,6 +2,13 @@
 
 module MilkTea
   module Types
+    BUILTIN_PRIMITIVE_NAMES = %w[
+      bool byte ubyte char short ushort int uint long ulong ptr_int ptr_uint float double void str cstr
+    ].freeze
+    BUILTIN_TYPE_NAMES = (BUILTIN_PRIMITIVE_NAMES + %w[
+      ptr const_ptr ref span array str_builder Result Task
+    ]).freeze
+
     class Base
       def bitwise?
         false
@@ -37,23 +44,23 @@ module MilkTea
     end
 
     class Primitive < Base
-      INTEGER_NAMES = %w[i8 i16 i32 i64 u8 u16 u32 u64 isize usize].freeze
-      FLOAT_NAMES = %w[f32 f64].freeze
+      INTEGER_NAMES = %w[byte short int long ubyte ushort uint ulong ptr_int ptr_uint].freeze
+      FLOAT_NAMES = %w[float double].freeze
       FIXED_SIGNED_INTEGER_WIDTHS = {
-        "i8" => 8,
-        "i16" => 16,
-        "i32" => 32,
-        "i64" => 64,
+        "byte" => 8,
+        "short" => 16,
+        "int" => 32,
+        "long" => 64,
       }.freeze
       FIXED_UNSIGNED_INTEGER_WIDTHS = {
-        "u8" => 8,
-        "u16" => 16,
-        "u32" => 32,
-        "u64" => 64,
+        "ubyte" => 8,
+        "ushort" => 16,
+        "uint" => 32,
+        "ulong" => 64,
       }.freeze
       FLOAT_WIDTHS = {
-        "f32" => 32,
-        "f64" => 64,
+        "float" => 32,
+        "double" => 64,
       }.freeze
 
       attr_reader :name
@@ -90,11 +97,11 @@ module MilkTea
       end
 
       def signed_integer?
-        FIXED_SIGNED_INTEGER_WIDTHS.key?(name) || name == "isize"
+        FIXED_SIGNED_INTEGER_WIDTHS.key?(name) || name == "ptr_int"
       end
 
       def unsigned_integer?
-        FIXED_UNSIGNED_INTEGER_WIDTHS.key?(name) || name == "usize"
+        FIXED_UNSIGNED_INTEGER_WIDTHS.key?(name) || name == "ptr_uint"
       end
 
       def fixed_width_integer?
@@ -102,7 +109,7 @@ module MilkTea
       end
 
       def pointer_sized_integer?
-        name == "isize" || name == "usize"
+        name == "ptr_int" || name == "ptr_uint"
       end
 
       def integer_width
@@ -253,7 +260,7 @@ module MilkTea
         @element_type = element_type
         @fields = {
           "data" => GenericInstance.new("ptr", [element_type]),
-          "len" => Primitive.new("usize"),
+          "len" => Primitive.new("ptr_uint"),
         }.freeze
         freeze
       end
@@ -293,7 +300,7 @@ module MilkTea
         @module_name = nil
         @fields = {
           "data" => GenericInstance.new("ptr", [Primitive.new("char")]),
-          "len" => Primitive.new("usize"),
+          "len" => Primitive.new("ptr_uint"),
         }.freeze
         freeze
       end

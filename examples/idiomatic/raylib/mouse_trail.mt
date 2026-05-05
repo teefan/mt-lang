@@ -2,12 +2,12 @@ module examples.idiomatic.raylib.mouse_trail
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const max_trail_length: i32 = 30
+const screen_width: int = 800
+const screen_height: int = 450
+const max_trail_length: int = 30
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Mouse Trail")
     defer rl.close_window()
 
@@ -32,7 +32,7 @@ def main() -> i32:
 
         for index in 0..max_trail_length:
             if trail_positions[index].x != 0.0 or trail_positions[index].y != 0.0:
-                let ratio: f32 = f32<-(max_trail_length - index) / f32<-max_trail_length
+                let ratio: float = float<-(max_trail_length - index) / float<-max_trail_length
                 rl.draw_circle_v(trail_positions[index], 15.0 * ratio, rl.fade(rl.SKYBLUE, ratio * 0.5 + 0.5))
 
         rl.draw_circle_v(mouse_position, 15.0, rl.WHITE)

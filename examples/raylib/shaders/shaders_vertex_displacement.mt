@@ -3,9 +3,9 @@ module examples.raylib.shaders.shaders_vertex_displacement
 import std.c.raylib as rl
 import std.c.rlgl as rlgl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const shader_vertex_path_format: cstr = c"../resources/shaders/glsl%i/vertex_displacement.vs"
 const shader_fragment_path_format: cstr = c"../resources/shaders/glsl%i/vertex_displacement.fs"
 const perlin_noise_uniform_name: cstr = c"perlinNoiseMap"
@@ -19,7 +19,7 @@ def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
         model.materials[0].shader = shader
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -55,7 +55,7 @@ def main() -> i32:
 
     let plane_position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
     let time_loc = rl.GetShaderLocation(shader, time_uniform_name)
-    var time: f32 = 0.0
+    var time: float = 0.0
 
     rl.SetTargetFPS(60)
 

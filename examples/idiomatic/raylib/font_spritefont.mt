@@ -2,8 +2,8 @@ module examples.idiomatic.raylib.font_spritefont
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const msg1: str = "THIS IS A custom SPRITE FONT..."
 const msg2: str = "...and this is ANOTHER CUSTOM font..."
 const msg3: str = "...and a THIRD one! GREAT! :D"
@@ -12,15 +12,15 @@ const font2_path: str = "../../raylib/resources/custom_alagard.png"
 const font3_path: str = "../../raylib/resources/custom_jupiter_crash.png"
 
 
-def centered_position(font: rl.Font, text: str, spacing: f32, y_offset: f32) -> rl.Vector2:
-    let size = rl.measure_text_ex(font, text, f32<-font.baseSize, spacing)
+def centered_position(font: rl.Font, text: str, spacing: float, y_offset: float) -> rl.Vector2:
+    let size = rl.measure_text_ex(font, text, float<-font.baseSize, spacing)
     return rl.Vector2(
-        x = f32<-screen_width / 2.0 - size.x / 2.0,
-        y = f32<-screen_height / 2.0 - f32<-font.baseSize / 2.0 + y_offset,
+        x = float<-screen_width / 2.0 - size.x / 2.0,
+        y = float<-screen_height / 2.0 - float<-font.baseSize / 2.0 + y_offset,
     )
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Sprite Font")
     defer rl.close_window()
 
@@ -44,8 +44,8 @@ def main() -> i32:
         defer rl.end_drawing()
 
         rl.clear_background(rl.RAYWHITE)
-        rl.draw_text_ex(font1, msg1, font_position1, f32<-font1.baseSize, -3.0, rl.WHITE)
-        rl.draw_text_ex(font2, msg2, font_position2, f32<-font2.baseSize, -2.0, rl.WHITE)
-        rl.draw_text_ex(font3, msg3, font_position3, f32<-font3.baseSize, 2.0, rl.WHITE)
+        rl.draw_text_ex(font1, msg1, font_position1, float<-font1.baseSize, -3.0, rl.WHITE)
+        rl.draw_text_ex(font2, msg2, font_position2, float<-font2.baseSize, -2.0, rl.WHITE)
+        rl.draw_text_ex(font3, msg3, font_position3, float<-font3.baseSize, 2.0, rl.WHITE)
 
     return 0

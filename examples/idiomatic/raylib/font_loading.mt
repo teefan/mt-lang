@@ -2,14 +2,14 @@ module examples.idiomatic.raylib.font_loading
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const message: str = "!#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHI\nJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmn\nopqrstuvwxyz{|}~¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓ\nÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷\nøùúûüýþÿ"
 const font_bm_path: str = "../../raylib/resources/pixantiqua.fnt"
 const font_ttf_path: str = "../../raylib/resources/pixantiqua.ttf"
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Font Loading")
     defer rl.close_window()
 
@@ -32,10 +32,10 @@ def main() -> i32:
         rl.draw_text("Hold SPACE to use TTF generated font", 20, 20, 20, rl.LIGHTGRAY)
 
         if not use_ttf:
-            rl.draw_text_ex(font_bm, message, rl.Vector2(x = 20.0, y = 100.0), f32<-font_bm.baseSize, 2.0, rl.MAROON)
+            rl.draw_text_ex(font_bm, message, rl.Vector2(x = 20.0, y = 100.0), float<-font_bm.baseSize, 2.0, rl.MAROON)
             rl.draw_text("Using BMFont imported", 20, rl.get_screen_height() - 30, 20, rl.GRAY)
         else:
-            rl.draw_text_ex(font_ttf, message, rl.Vector2(x = 20.0, y = 100.0), f32<-font_ttf.baseSize, 2.0, rl.LIME)
+            rl.draw_text_ex(font_ttf, message, rl.Vector2(x = 20.0, y = 100.0), float<-font_ttf.baseSize, 2.0, rl.LIME)
             rl.draw_text("Using TTF font generated", 20, rl.get_screen_height() - 30, 20, rl.GRAY)
 
     return 0

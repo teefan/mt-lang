@@ -376,16 +376,16 @@ module MilkTea
       end
 
       lexeme = line[start...index]
-      if line[index, 3] == "f32" && !identifier_part?(line[index + 3].to_s)
+      if line[index, 5] == "float" && !identifier_part?(line[index + 5].to_s)
         type = :float
-        index += 3
-      elsif line[index, 3] == "f64" && !identifier_part?(line[index + 3].to_s)
+        index += 5
+      elsif line[index, 6] == "double" && !identifier_part?(line[index + 6].to_s)
         type = :float
-        index += 3
+        index += 6
       end
 
       lexeme = line[start...index]
-      literal = type == :integer ? parse_integer(lexeme) : lexeme.delete("_").delete_suffix("f32").delete_suffix("f64").to_f
+      literal = type == :integer ? parse_integer(lexeme) : lexeme.delete("_").delete_suffix("float").delete_suffix("double").to_f
       @tokens << token(type, lexeme, literal, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
       index
     end

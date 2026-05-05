@@ -3,8 +3,8 @@ module examples.idiomatic.raylib.rlgl_triangle
 import std.raylib as rl
 import std.rlgl as rlgl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 
 
 def emit_triangle_edge(start: rl.Vector2, finish: rl.Vector2, start_color: rl.Color, finish_color: rl.Color) -> void:
@@ -19,7 +19,7 @@ def emit_triangle_point(point: rl.Vector2, color: rl.Color) -> void:
     rlgl.vertex_2f(point.x, point.y)
 
 
-def main() -> i32:
+def main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(screen_width, screen_height, "Milk Tea rlgl Triangle")
     defer rl.close_window()
@@ -33,7 +33,7 @@ def main() -> i32:
 
     var triangle_index = -1
     var lines_mode = false
-    let handle_radius: f32 = 8.0
+    let handle_radius: float = 8.0
 
     rl.set_target_fps(60)
 

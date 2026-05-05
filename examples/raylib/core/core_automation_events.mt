@@ -2,19 +2,19 @@ module examples.raylib.core.core_automation_events
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - automation events"
-const gravity: f32 = 400.0
-const player_jump_speed: f32 = 350.0
-const player_hor_speed: f32 = 200.0
-const env_item_count: i32 = 5
+const gravity: float = 400.0
+const player_jump_speed: float = 350.0
+const player_hor_speed: float = 200.0
+const env_item_count: int = 5
 const automation_export_path: cstr = c"automation.rae"
 const automation_extensions: cstr = c".txt;.rae"
 
 struct Player:
     position: rl.Vector2
-    speed: f32
+    speed: float
     can_jump: bool
 
 struct EnvElement:
@@ -23,7 +23,7 @@ struct EnvElement:
     color: rl.Color
 
 methods Player:
-    edit def update(env_elements: array[EnvElement, 5], delta: f32) -> void:
+    edit def update(env_elements: array[EnvElement, 5], delta: float) -> void:
         if rl.IsKeyDown(rl.KeyboardKey.KEY_LEFT):
             this.position.x -= player_hor_speed * delta
         if rl.IsKeyDown(rl.KeyboardKey.KEY_RIGHT):
@@ -50,7 +50,7 @@ methods Player:
             this.can_jump = true
 
 
-def screen_half(value: i32) -> f32:
+def screen_half(value: int) -> float:
     return 0.5 * value
 
 
@@ -75,10 +75,10 @@ def update_camera(camera: ref[rl.Camera2D], player: Player, env_elements: array[
     elif camera.zoom < 0.25:
         camera.zoom = 0.25
 
-    var min_x: f32 = 1000.0
-    var min_y: f32 = 1000.0
-    var max_x: f32 = -1000.0
-    var max_y: f32 = -1000.0
+    var min_x: float = 1000.0
+    var min_y: float = 1000.0
+    var max_x: float = -1000.0
+    var max_y: float = -1000.0
 
     for index in 0..env_item_count:
         let element = env_elements[index]
@@ -104,7 +104,7 @@ def update_camera(camera: ref[rl.Camera2D], player: Player, env_elements: array[
         camera.offset.y = screen_half(screen_height) - min_screen.y
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -129,14 +129,14 @@ def main() -> i32:
 
     var event_recording = false
     var event_playing = false
-    var frame_counter: u32 = 0
-    var play_frame_counter: u32 = 0
-    var current_play_frame: u32 = 0
+    var frame_counter: uint = 0
+    var play_frame_counter: uint = 0
+    var current_play_frame: uint = 0
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        let delta_time: f32 = 0.015
+        let delta_time: float = 0.015
 
         if rl.IsFileDropped():
             let dropped_files = rl.LoadDroppedFiles()
@@ -167,7 +167,7 @@ def main() -> i32:
             else:
                 unsafe:
                     while current_play_frame < aelist.count:
-                        let event = read(aelist.events + usize<-current_play_frame)
+                        let event = read(aelist.events + ptr_uint<-current_play_frame)
                         if play_frame_counter != event.frame:
                             break
 
@@ -192,7 +192,7 @@ def main() -> i32:
                     rl.StopAutomationEventRecording()
                     event_recording = false
                     rl.ExportAutomationEventList(aelist, automation_export_path)
-                    rl.TraceLog(rl.TraceLogLevel.LOG_INFO, c"RECORDED FRAMES: %i", i32<-aelist.count)
+                    rl.TraceLog(rl.TraceLogLevel.LOG_INFO, c"RECORDED FRAMES: %i", int<-aelist.count)
                 else:
                     rl.SetAutomationEventBaseFrame(180)
                     rl.StartAutomationEventRecording()
@@ -238,7 +238,7 @@ def main() -> i32:
             rl.DrawCircle(30, 175, 10.0, rl.MAROON)
 
             if (frame_counter / 15) % 2 == 1:
-                rl.DrawText(rl.TextFormat(c"RECORDING EVENTS... [%i]", i32<-aelist.count), 50, 170, 10, rl.MAROON)
+                rl.DrawText(rl.TextFormat(c"RECORDING EVENTS... [%i]", int<-aelist.count), 50, 170, 10, rl.MAROON)
         elif event_playing:
             rl.DrawRectangle(10, 160, 290, 30, rl.Fade(rl.LIME, 0.3))
             rl.DrawRectangleLines(10, 160, 290, 30, rl.Fade(rl.DARKGREEN, 0.8))
@@ -250,7 +250,7 @@ def main() -> i32:
             )
 
             if (frame_counter / 15) % 2 == 1:
-                rl.DrawText(rl.TextFormat(c"PLAYING RECORDED EVENTS... [%i]", i32<-current_play_frame), 50, 170, 10, rl.DARKGREEN)
+                rl.DrawText(rl.TextFormat(c"PLAYING RECORDED EVENTS... [%i]", int<-current_play_frame), 50, 170, 10, rl.DARKGREEN)
 
     rl.UnloadAutomationEventList(aelist)
     return 0

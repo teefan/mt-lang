@@ -2,14 +2,14 @@ module examples.idiomatic.raylib.blend_modes
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const background_path: str = "../../raylib/resources/cyberpunk_street_background.png"
 const foreground_path: str = "../../raylib/resources/cyberpunk_street_foreground.png"
-const blend_count_max: i32 = 4
+const blend_count_max: int = 4
 
 
-def blend_label(blend_mode: i32) -> str:
+def blend_label(blend_mode: int) -> str:
     if blend_mode == rl.BlendMode.BLEND_ALPHA:
         return "Current: BLEND_ALPHA"
     elif blend_mode == rl.BlendMode.BLEND_ADDITIVE:
@@ -19,7 +19,7 @@ def blend_label(blend_mode: i32) -> str:
     return "Current: BLEND_ADD_COLORS"
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Blend Modes")
     defer rl.close_window()
 
@@ -29,7 +29,7 @@ def main() -> i32:
         rl.unload_texture(foreground_texture)
         rl.unload_texture(background_texture)
 
-    var blend_mode: i32 = rl.BlendMode.BLEND_ALPHA
+    var blend_mode: int = rl.BlendMode.BLEND_ALPHA
 
     rl.set_target_fps(60)
 

@@ -2,15 +2,15 @@ module examples.raylib.text.text_writing_anim
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [text] example - writing anim"
 const message: cstr = c"This sample illustrates a text writing\nanimation effect! Check it out! ;)"
 const restart_text: cstr = c"PRESS [ENTER] to RESTART!"
 const speed_text: cstr = c"HOLD [SPACE] to SPEED UP!"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

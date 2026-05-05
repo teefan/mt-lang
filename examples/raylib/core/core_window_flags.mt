@@ -2,14 +2,14 @@ module examples.raylib.core.core_window_flags
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - window flags"
 const runtime_flags_text: cstr = c"Following flags can be set after window creation:"
 const startup_flags_text: cstr = c"Following flags can only be set before window creation:"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -18,7 +18,7 @@ def main() -> i32:
         y = 0.5 * rl.GetScreenHeight(),
     )
     var ball_speed = rl.Vector2(x = 5.0, y = 4.0)
-    var ball_radius: f32 = 20.0
+    var ball_radius: float = 20.0
     var frames_counter = 0
 
     let fullscreen_flag = rl.ConfigFlags.FLAG_FULLSCREEN_MODE
@@ -35,9 +35,9 @@ def main() -> i32:
     let borderless_flag = rl.ConfigFlags.FLAG_BORDERLESS_WINDOWED_MODE
     let vsync_flag = rl.ConfigFlags.FLAG_VSYNC_HINT
     let msaa_flag = rl.ConfigFlags.FLAG_MSAA_4X_HINT
-    let overlay_alpha: f32 = 0.5
-    let outline_thickness: f32 = 4.0
-    let cursor_radius: f32 = 10.0
+    let overlay_alpha: float = 0.5
+    let outline_thickness: float = 4.0
+    let cursor_radius: float = 10.0
 
     rl.SetTargetFPS(60)
 

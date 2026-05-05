@@ -56,7 +56,7 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.flow
 
-      def main() -> i32:
+      def main() -> int:
           if ready:
               return 1
           elif fallback:
@@ -84,15 +84,15 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.visibility
 
-      pub const answer: i32 = 42
-      pub var counter: i32 = 0
-      pub type Score = i32
+      pub const answer: int = 42
+      pub var counter: int = 0
+      pub type Score = int
 
       pub struct Counter:
-          value: i32
+          value: int
 
       methods Counter:
-          pub def read() -> i32:
+          pub def read() -> int:
               return this.value
 
           def bump() -> void:
@@ -121,10 +121,10 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.globals
 
-      var counter: i32 = 0
-      pub var scratch: array[u8, 16]
+      var counter: int = 0
+      pub var scratch: array[ubyte, 16]
 
-      def main() -> i32:
+      def main() -> int:
           counter += 1
           return counter
     MT
@@ -180,7 +180,7 @@ class MilkTeaParserTest < Minitest::Test
       module demo.visibility
 
       pub methods Counter:
-          def read() -> i32:
+          def read() -> int:
               return 0
     MT
 
@@ -193,7 +193,7 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.expr
 
-      def main(ready: bool) -> i32:
+      def main(ready: bool) -> int:
           return if ready: 1 else: 0
     MT
 
@@ -211,11 +211,11 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.async_expr
 
-      async def compute() -> i32:
+      async def compute() -> int:
           let value = await child()
           return value
 
-      async def child() -> i32:
+      async def child() -> int:
           return 41
     MT
 
@@ -233,9 +233,9 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.float_literals
 
-      const epsilon: f32 = 1.1920929E-7
+      const epsilon: float = 1.1920929E-7
 
-      def main() -> f32:
+      def main() -> float:
           return epsilon
     MT
 
@@ -272,9 +272,9 @@ class MilkTeaParserTest < Minitest::Test
       import std.fmt as fmt
       import std.string as string
 
-      def main(count: i32) -> i32:
+      def main(count: int) -> int:
           let text = fmt.string(f"count=\#{count} ok=\#{true}")
-          return i32<-text.count()
+          return int<-text.count()
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -293,8 +293,8 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.prefix_cast
 
-      def main(value: f32) -> i32:
-          return i32<-value
+      def main(value: float) -> int:
+          return int<-value
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -303,7 +303,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::ReturnStmt, return_stmt
     assert_instance_of MilkTea::AST::Call, return_stmt.value
     assert_equal "cast", return_stmt.value.callee.callee.name
-    assert_equal "i32", return_stmt.value.callee.arguments.first.value.name.to_s
+    assert_equal "int", return_stmt.value.callee.arguments.first.value.name.to_s
     assert_instance_of MilkTea::AST::Identifier, return_stmt.value.arguments.first.value
     assert_equal "value", return_stmt.value.arguments.first.value.name
   end
@@ -312,8 +312,8 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.prefix_cast
 
-      def main(a: i32, b: i32) -> u8:
-          return u8<-(a - b)
+      def main(a: int, b: int) -> ubyte:
+          return ubyte<-(a - b)
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -322,7 +322,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::ReturnStmt, return_stmt
     assert_instance_of MilkTea::AST::Call, return_stmt.value
     assert_equal "cast", return_stmt.value.callee.callee.name
-    assert_equal "u8", return_stmt.value.callee.arguments.first.value.name.to_s
+    assert_equal "ubyte", return_stmt.value.callee.arguments.first.value.name.to_s
     assert_instance_of MilkTea::AST::BinaryOp, return_stmt.value.arguments.first.value
     assert_equal "-", return_stmt.value.arguments.first.value.operator
   end
@@ -331,25 +331,25 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.prefix_cast
 
-      def main(value: i32) -> f64:
-          return f64<-f32<-value
+      def main(value: int) -> double:
+          return double<-float<-value
     MT
 
     ast = MilkTea::Parser.parse(source)
     return_stmt = ast.declarations.first.body.first
 
     assert_instance_of MilkTea::AST::Call, return_stmt.value
-    assert_equal "f64", return_stmt.value.callee.arguments.first.value.name.to_s
+    assert_equal "double", return_stmt.value.callee.arguments.first.value.name.to_s
     inner = return_stmt.value.arguments.first.value
     assert_instance_of MilkTea::AST::Call, inner
-    assert_equal "f32", inner.callee.arguments.first.value.name.to_s
+    assert_equal "float", inner.callee.arguments.first.value.name.to_s
   end
 
   def test_parses_for_range_statement
     source = <<~MT
       module demo.flow
 
-      def main(count: i32) -> i32:
+      def main(count: int) -> int:
           for i in 0..count:
               tick(i)
           return 0
@@ -372,7 +372,7 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.flow
 
-      def main(items: span[i32]) -> i32:
+      def main(items: span[int]) -> int:
           for item in items:
               tick(item)
           return 0
@@ -415,11 +415,11 @@ class MilkTeaParserTest < Minitest::Test
       module demo.variant_parse
 
       variant Shape:
-          circle(radius: f64)
-          rect(w: f64, h: f64)
+          circle(radius: double)
+          rect(w: double, h: double)
           point
 
-      def area(s: Shape) -> f64:
+      def area(s: Shape) -> double:
           match s:
               Shape.circle as c:
                   return 3.14 * c.radius * c.radius
@@ -452,12 +452,12 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.flow
 
-      enum Step: u8
+      enum Step: ubyte
           skip = 1
           keep = 2
           stop = 3
 
-      def main(items: array[Step, 3]) -> i32:
+      def main(items: array[Step, 3]) -> int:
           for step in items:
               match step:
                   Step.skip:
@@ -485,12 +485,12 @@ class MilkTeaParserTest < Minitest::Test
       module demo.layout
 
       struct Header:
-          magic: array[u8, 4]
-          version: u16
+          magic: array[ubyte, 4]
+          version: ushort
 
       static_assert(sizeof(Header) >= 6, "Header must include version")
 
-      def main() -> usize:
+      def main() -> ptr_uint:
           return offsetof(Header, version) + alignof(Header)
     MT
 
@@ -513,11 +513,11 @@ class MilkTeaParserTest < Minitest::Test
       module demo.layout
 
       packed struct Header:
-          tag: u8
-          value: u32
+          tag: ubyte
+          value: uint
 
       align(16) struct Mat4:
-          data: array[f32, 16]
+          data: array[float, 16]
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -534,10 +534,10 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.bits
 
-      def main() -> u32:
-          let value: f32 = 1.0
+      def main() -> uint:
+          let value: float = 1.0
           unsafe:
-              let bits = reinterpret[u32](value)
+              let bits = reinterpret[uint](value)
               return bits
     MT
 
@@ -550,18 +550,18 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::Call, bits_decl.value
     assert_instance_of MilkTea::AST::Specialization, bits_decl.value.callee
     assert_equal "reinterpret", bits_decl.value.callee.callee.name
-    assert_equal "u32", bits_decl.value.callee.arguments.first.value.name.to_s
+    assert_equal "uint", bits_decl.value.callee.arguments.first.value.name.to_s
   end
 
   def test_parses_match_statement_with_enum_member_arms
     source = <<~MT
       module demo.flow
 
-      enum EventKind: u8
+      enum EventKind: ubyte
           quit = 1
           resize = 2
 
-      def main(kind: EventKind) -> i32:
+      def main(kind: EventKind) -> int:
           match kind:
               EventKind.quit:
                   return 0
@@ -590,7 +590,7 @@ class MilkTeaParserTest < Minitest::Test
       const ready: bool = true
       const title: cstr = c"Hello"
 
-      def load(buffer: span[u8]) -> ptr[Window]?:
+      def load(buffer: span[ubyte]) -> ptr[Window]?:
           return
     MT
 
@@ -612,7 +612,7 @@ class MilkTeaParserTest < Minitest::Test
 
     load = ast.declarations[3]
     assert_equal "span", load.params.first.type.name.to_s
-    assert_equal "u8", load.params.first.type.arguments.first.value.name.to_s
+    assert_equal "ubyte", load.params.first.type.arguments.first.value.name.to_s
     assert_equal true, load.return_type.nullable
     assert_nil load.body.first.value
   end
@@ -636,7 +636,7 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.const_pointers
 
-      extern def inspect(values: const_ptr[i32]) -> void
+      extern def inspect(values: const_ptr[int]) -> void
 
       def main() -> void:
           let value = 7
@@ -647,7 +647,7 @@ class MilkTeaParserTest < Minitest::Test
 
     inspect_fn = ast.declarations[0]
     assert_equal "const_ptr", inspect_fn.params.first.type.name.to_s
-    assert_equal "i32", inspect_fn.params.first.type.arguments.first.value.name.to_s
+    assert_equal "int", inspect_fn.params.first.type.arguments.first.value.name.to_s
 
     main_fn = ast.declarations[1]
     inspect_call = main_fn.body[1].expression
@@ -665,11 +665,11 @@ class MilkTeaParserTest < Minitest::Test
 
       struct Slice[T]:
           data: ptr[T]
-          len: usize
+          len: ptr_uint
 
-      def main() -> i32:
+      def main() -> int:
           let value = 7
-          let items = Slice[i32](data = ptr_of(value), len = 1)
+          let items = Slice[int](data = ptr_of(value), len = 1)
           return items.len
     MT
 
@@ -687,7 +687,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::Call, constructor
     assert_instance_of MilkTea::AST::Specialization, constructor.callee
     assert_equal "Slice", constructor.callee.callee.name
-    assert_equal "i32", constructor.callee.arguments.first.value.name.to_s
+    assert_equal "int", constructor.callee.arguments.first.value.name.to_s
     assert_equal %w[data len], constructor.arguments.map(&:name)
   end
 
@@ -697,7 +697,7 @@ class MilkTeaParserTest < Minitest::Test
 
       struct Slice[T]:
           data: ptr[T]
-          len: usize
+          len: ptr_uint
 
       def first[T](items: Slice[T]) -> ptr[T]?:
           return items.data
@@ -718,7 +718,7 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.index_call
 
-      def main() -> i32:
+      def main() -> int:
           return callbacks[0](1)
     MT
 
@@ -734,20 +734,20 @@ class MilkTeaParserTest < Minitest::Test
       module demo.callable_values
 
       struct Entry:
-          callback: fn(value: f32) -> f32
+          callback: fn(value: float) -> float
 
-      def ease(value: f32) -> f32:
+      def ease(value: float) -> float:
           return value
 
-      def main() -> i32:
-          let callbacks = array[fn(value: i32) -> i32, 1](identity)
+      def main() -> int:
+          let callbacks = array[fn(value: int) -> int, 1](identity)
           let entry = Entry(callback = ease)
-          let callback: fn(value: f32) -> f32 = entry.callback
+          let callback: fn(value: float) -> float = entry.callback
           let left = callbacks[0](1)
           let right = callback(1.0)
-          return i32<-right + left
+          return int<-right + left
 
-      def identity(value: i32) -> i32:
+      def identity(value: int) -> int:
           return value
     MT
 
@@ -776,8 +776,8 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.cast_form
 
-      def main(value: i32) -> i64:
-          return cast[i64](value)
+      def main(value: int) -> long:
+          return cast[long](value)
     MT
 
     error = assert_raises(MilkTea::ParseError) do
@@ -791,8 +791,8 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.cast_hint
 
-      def main(value: i32) -> i64:
-          return i64 < -value
+      def main(value: int) -> long:
+          return long < -value
     MT
 
     error = assert_raises(MilkTea::ParseError) do
@@ -806,7 +806,7 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.proc_params
 
-      def apply(callback: proc(value: i32) -> i32, value: i32) -> i32:
+      def apply(callback: proc(value: int) -> int, value: int) -> int:
           return callback(value)
     MT
 
@@ -816,16 +816,16 @@ class MilkTeaParserTest < Minitest::Test
 
     assert_instance_of MilkTea::AST::ProcType, callback_param.type
     assert_equal "value", callback_param.type.params.first.name
-    assert_equal "i32", callback_param.type.return_type.name.to_s
+    assert_equal "int", callback_param.type.return_type.name.to_s
   end
 
   def test_parses_proc_expressions
     source = <<~MT
       module demo.proc_values
 
-      def main() -> i32:
+      def main() -> int:
           let offset = 4
-          let callback = proc(value: i32) -> i32:
+          let callback = proc(value: int) -> int:
               return value + offset
           return callback(3)
     MT
@@ -836,20 +836,20 @@ class MilkTeaParserTest < Minitest::Test
 
     assert_instance_of MilkTea::AST::LocalDecl, callback_decl
     assert_instance_of MilkTea::AST::ProcExpr, callback_decl.value
-    assert_equal "i32", callback_decl.value.return_type.name.to_s
+    assert_equal "int", callback_decl.value.return_type.name.to_s
     assert_equal "value", callback_decl.value.params.first.name
-    assert_equal "i32", callback_decl.value.params.first.type.name.to_s
+    assert_equal "int", callback_decl.value.params.first.type.name.to_s
   end
 
   def test_parses_explicit_generic_function_specialization_call
     source = <<~MT
       module demo.generic_call
 
-      def bytes_for[T](count: usize) -> usize:
+      def bytes_for[T](count: ptr_uint) -> ptr_uint:
           return count
 
-      def main() -> i32:
-          return i32<-bytes_for[i32](4)
+      def main() -> int:
+          return int<-bytes_for[int](4)
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -858,19 +858,19 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::Call, call
     assert_instance_of MilkTea::AST::Specialization, call.callee
     assert_equal "bytes_for", call.callee.callee.name
-    assert_equal "i32", call.callee.arguments.first.value.name.to_s
+    assert_equal "int", call.callee.arguments.first.value.name.to_s
   end
 
   def test_parses_explicit_generic_function_literal_specialization_call
     source = <<~MT
       module demo.generic_literal_call
 
-      def capacity_of[N](buffer: str_builder[N]) -> usize:
+      def capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
           return buffer.capacity()
 
-      def main() -> i32:
+      def main() -> int:
           var buffer: str_builder[32]
-          return i32<-capacity_of[32](buffer)
+          return int<-capacity_of[32](buffer)
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -886,14 +886,14 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.generic_named_const_call
 
-      const CAPACITY: i32 = 32
+      const CAPACITY: int = 32
 
-      def capacity_of[N](buffer: str_builder[N]) -> usize:
+      def capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
           return buffer.capacity()
 
-      def main() -> i32:
+      def main() -> int:
           var buffer: str_builder[CAPACITY]
-          return i32<-capacity_of[CAPACITY](buffer)
+          return int<-capacity_of[CAPACITY](buffer)
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -911,7 +911,7 @@ class MilkTeaParserTest < Minitest::Test
 
       import std.ui as ui
 
-      def main() -> i32:
+      def main() -> int:
           var buffer: str_builder[32]
           ui.text_box[32](buffer)
           return 0
@@ -934,7 +934,7 @@ class MilkTeaParserTest < Minitest::Test
 
       foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text)
 
-      def main() -> i32:
+      def main() -> int:
           var buffer: str_builder[32]
           text_box[32](buffer)
           return 0
@@ -953,8 +953,8 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.spans
 
-      def main() -> i32:
-          let view = span[i32](data = buffer, len = 3)
+      def main() -> int:
+          let view = span[int](data = buffer, len = 3)
           return view.len
     MT
 
@@ -966,7 +966,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::Call, local_decl.value
     assert_instance_of MilkTea::AST::Specialization, local_decl.value.callee
     assert_equal "span", local_decl.value.callee.callee.name
-    assert_equal "i32", local_decl.value.callee.arguments.first.value.name.to_s
+    assert_equal "int", local_decl.value.callee.arguments.first.value.name.to_s
     assert_equal %w[data len], local_decl.value.arguments.map(&:name)
   end
 
@@ -974,8 +974,8 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.arrays
 
-      def main() -> i32:
-          let palette = array[u32, 4](1, 2, 3, 4)
+      def main() -> int:
+          let palette = array[uint, 4](1, 2, 3, 4)
           return 0
     MT
 
@@ -987,7 +987,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::Specialization, local_decl.value.callee
     assert_equal "array", local_decl.value.callee.callee.name
     assert_equal 2, local_decl.value.callee.arguments.length
-    assert_equal "u32", local_decl.value.callee.arguments.first.value.name.to_s
+    assert_equal "uint", local_decl.value.callee.arguments.first.value.name.to_s
     assert_equal 4, local_decl.value.callee.arguments[1].value.value
     assert_equal 4, local_decl.value.arguments.length
   end
@@ -1017,8 +1017,8 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.zero
 
-      def main() -> i32:
-          let palette = zero[array[u32, 4]]
+      def main() -> int:
+          let palette = zero[array[uint, 4]]
           return 0
     MT
 
@@ -1033,7 +1033,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::TypeRef, array_type
     assert_equal "array", array_type.name.to_s
     assert_equal 2, array_type.arguments.length
-    assert_equal "u32", array_type.arguments.first.value.name.to_s
+    assert_equal "uint", array_type.arguments.first.value.name.to_s
     assert_equal 4, array_type.arguments[1].value.value
   end
 
@@ -1041,7 +1041,7 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.char_array
 
-      def main() -> i32:
+      def main() -> int:
           let buffer = zero[array[char, 64]]
           return 0
     MT
@@ -1065,13 +1065,13 @@ class MilkTeaParserTest < Minitest::Test
       module demo.partial_literals
 
       struct Point:
-          x: i32
-          y: i32
+          x: int
+          y: int
 
-      def main() -> i32:
+      def main() -> int:
           let origin = Point()
           let point = Point(x = 1)
-          let palette = array[u32, 4](1, 2)
+          let palette = array[uint, 4](1, 2)
           return 0
     MT
 
@@ -1100,7 +1100,7 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.arrays
 
-      def main() -> i32:
+      def main() -> int:
           unsafe:
               let value = palette[1]
           return 0
@@ -1122,7 +1122,7 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.callbacks
 
-      type LogCallback = fn(level: i32, message: cstr, user_data: ptr[void]) -> void
+      type LogCallback = fn(level: int, message: cstr, user_data: ptr[void]) -> void
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -1131,7 +1131,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "LogCallback", callback.name
     assert_instance_of MilkTea::AST::FunctionType, callback.target
     assert_equal %w[level message user_data], callback.target.params.map(&:name)
-    assert_equal "i32", callback.target.params[0].type.name.to_s
+    assert_equal "int", callback.target.params[0].type.name.to_s
     assert_equal "ptr", callback.target.params[2].type.name.to_s
     assert_equal "void", callback.target.return_type.name.to_s
   end
@@ -1141,10 +1141,10 @@ class MilkTeaParserTest < Minitest::Test
       module demo.async_methods
 
       struct Counter:
-          value: i32
+          value: int
 
       methods Counter:
-          async def read() -> i32:
+          async def read() -> int:
               return this.value
 
           async edit def bump() -> void:
@@ -1165,9 +1165,9 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.unsafe_surface
 
-      def main(memory: ptr[void]) -> i32:
+      def main(memory: ptr[void]) -> int:
           unsafe:
-              let advanced = ptr[byte]<-memory + 4
+              let advanced = ptr[ubyte]<-memory + 4
           return 0
     MT
 
@@ -1188,9 +1188,9 @@ class MilkTeaParserTest < Minitest::Test
       module demo.handles
 
       struct Counter:
-          value: i32
+          value: int
 
-      def main() -> i32:
+      def main() -> int:
           var counter = Counter(value = 3)
           let handle = ref_of(counter)
           unsafe:
@@ -1223,7 +1223,7 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.compound_assignments
 
-      flags Bits: u32
+      flags Bits: uint
           a = 1 << 0
           b = 1 << 1
 
@@ -1250,9 +1250,9 @@ class MilkTeaParserTest < Minitest::Test
       module demo.bad
 
       struct Counter:
-          value: i32
+          value: int
 
-      def main() -> i32:
+      def main() -> int:
           var counter = Counter(value = 3)
           let counter_ptr = &counter
           return counter_ptr->value
@@ -1268,7 +1268,7 @@ class MilkTeaParserTest < Minitest::Test
       module demo.keywords
 
       struct Event:
-          kind: i32
+          kind: int
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -1282,7 +1282,7 @@ class MilkTeaParserTest < Minitest::Test
       module demo.keywords
 
       struct Event:
-          type: i32
+          type: int
     MT
 
     error = assert_raises(MilkTea::ParseError) do
@@ -1314,26 +1314,26 @@ class MilkTeaParserTest < Minitest::Test
           include "raylib.h"
 
           struct Color:
-              r: u8
-              g: u8
-              b: u8
-              a: u8
+              r: ubyte
+              g: ubyte
+              b: ubyte
+              a: ubyte
 
           const BLACK: Color = Color(r = 0, g = 0, b = 0, a = 255)
 
-          enum LogLevel: i32
+          enum LogLevel: int
               info = 1
               warning = 2
 
-          flags WindowFlags: u32
+          flags WindowFlags: uint
               visible = 1 << 0
 
           union Number:
-              i: i32
-              f: f32
+              i: int
+              f: float
 
           opaque SDL_Window
-          extern def InitWindow(width: i32, height: i32, title: cstr) -> void
+          extern def InitWindow(width: int, height: int, title: cstr) -> void
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -1353,7 +1353,7 @@ class MilkTeaParserTest < Minitest::Test
 
     flags_decl = ast.declarations[3]
     assert_equal "WindowFlags", flags_decl.name
-    assert_equal "u32", flags_decl.backing_type.name.to_s
+    assert_equal "uint", flags_decl.backing_type.name.to_s
     assert_instance_of MilkTea::AST::BinaryOp, flags_decl.members.first.value
     assert_equal "<<", flags_decl.members.first.value.operator
 
@@ -1368,7 +1368,7 @@ class MilkTeaParserTest < Minitest::Test
       extern module std.c.stdio:
           include "stdio.h"
 
-          extern def printf(format: cstr, ...) -> i32
+          extern def printf(format: cstr, ...) -> int
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -1385,13 +1385,13 @@ class MilkTeaParserTest < Minitest::Test
 
       import std.c.raylib as c
 
-      pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
-      pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
-      pub foreign def set_shader_value[T](shader: Shader, loc_index: i32, in value: T as const_ptr[void], uniform_type: i32) -> void = c.SetShaderValue
-      pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, i32<-data.len)
+      pub foreign def init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow
+      pub foreign def load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
+      pub foreign def set_shader_value[T](shader: Shader, loc_index: int, in value: T as const_ptr[void], uniform_type: int) -> void = c.SetShaderValue
+      pub foreign def save_file_data(file_name: str as cstr, data: span[ubyte]) -> bool = c.SaveFileData(file_name, data.data, int<-data.len)
       pub foreign def close_window(consuming window: Window) -> void = c.CloseWindow
 
-      def main(path: str) -> ptr[u8]?:
+      def main(path: str) -> ptr[ubyte]?:
           var data_size = 0
           let contrast = 1.0
           set_shader_value(Shader(), 0, in contrast, 0)
@@ -1446,8 +1446,8 @@ class MilkTeaParserTest < Minitest::Test
 
       import std.io as io
 
-      def main() -> i32:
-          let pi: f64 = 3.14159
+      def main() -> int:
+          let pi: double = 3.14159
           io.println(f"pi=\#{pi:.2}")
           io.println(f"\#{pi:.0}")
           return 0

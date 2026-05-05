@@ -2,11 +2,11 @@ module examples.idiomatic.raylib.input_actions
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const gamepad_index: i32 = 0
+const screen_width: int = 800
+const screen_height: int = 450
+const gamepad_index: int = 0
 
-enum ActionType: i32
+enum ActionType: int
     ACTION_UP = 1
     ACTION_DOWN = 2
     ACTION_LEFT = 3
@@ -80,7 +80,7 @@ def is_action_down(action: ActionType, cursor_set: bool) -> bool:
     return rl.is_key_down(rl.KeyboardKey.KEY_SPACE) or rl.is_gamepad_button_down(gamepad_index, rl.GamepadButton.GAMEPAD_BUTTON_RIGHT_FACE_DOWN)
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Input Actions")
     defer rl.close_window()
 

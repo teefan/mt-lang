@@ -2,15 +2,15 @@ module examples.sdl3.audio.multiple_streams
 
 import std.c.sdl3 as c
 
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/audio/multiple-streams"
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const default_playback_device: u32 = u32<-0xFFFFFFFF
+const default_playback_device: uint = uint<-0xFFFFFFFF
 const sample_wav_path: cstr = c"../resources/sample.wav"
 const sword_wav_path: cstr = c"../resources/sword.wav"
-const sound_count: i32 = 2
+const sound_count: int = 2
 
 struct Sound:
     wav_data: ptr[c.Uint8]?
@@ -23,7 +23,7 @@ var audio_device: c.SDL_AudioDeviceID = 0
 var sounds: array[Sound, 2] = zero[array[Sound, 2]]
 
 
-def init_sound(path: cstr, sound_index: i32) -> bool:
+def init_sound(path: cstr, sound_index: int) -> bool:
     var spec = zero[c.SDL_AudioSpec]
     var wav_data: ptr[c.Uint8]
     var wav_data_len: c.Uint32 = 0
@@ -51,7 +51,7 @@ def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
@@ -63,15 +63,15 @@ def render_frame() -> void:
         if stream != null:
             let wav_data = sounds[index].wav_data
             if wav_data != null:
-                if c.SDL_GetAudioStreamQueued(stream) < i32<-sounds[index].wav_data_len:
-                    c.SDL_PutAudioStreamData(stream, wav_data, i32<-sounds[index].wav_data_len)
+                if c.SDL_GetAudioStreamQueued(stream) < int<-sounds[index].wav_data_len:
+                    c.SDL_PutAudioStreamData(stream, wav_data, int<-sounds[index].wav_data_len)
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
     c.SDL_RenderPresent(renderer)
 
 
-def cleanup_sound(sound_index: i32) -> void:
+def cleanup_sound(sound_index: int) -> void:
     let stream = sounds[sound_index].stream
     if stream != null:
         c.SDL_DestroyAudioStream(stream)
@@ -85,7 +85,7 @@ def cleanup_sound(sound_index: i32) -> void:
     sounds[sound_index].wav_data_len = 0
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Audio Multiple Streams", c"1.0", c"com.example.audio-multiple-streams")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO):
@@ -119,5 +119,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

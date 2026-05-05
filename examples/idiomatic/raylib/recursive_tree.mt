@@ -7,37 +7,37 @@ import std.raylib.math as math
 struct Branch:
     start: rl.Vector2
     finish: rl.Vector2
-    angle: f32
-    length: f32
+    angle: float
+    length: float
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 
 
-def branch_limit(depth: i32) -> i32:
+def branch_limit(depth: int) -> int:
     var limit = 1
     for _ in 0..depth:
         limit *= 2
     return limit
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Recursive Tree")
     defer rl.close_window()
 
-    let start_position = rl.Vector2(x = screen_width / 2.0 - 125.0, y = f32<-screen_height)
-    var angle: f32 = 40.0
-    var thick: f32 = 1.0
-    var tree_depth: f32 = 10.0
-    var branch_decay: f32 = 0.66
-    var length: f32 = 120.0
+    let start_position = rl.Vector2(x = screen_width / 2.0 - 125.0, y = float<-screen_height)
+    var angle: float = 40.0
+    var thick: float = 1.0
+    var tree_depth: float = 10.0
+    var branch_decay: float = 0.66
+    var length: float = 120.0
     var bezier = false
 
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
         let theta = angle * math.deg2rad
-        let max_branches = branch_limit(i32<-math.floor(tree_depth))
+        let max_branches = branch_limit(int<-math.floor(tree_depth))
         var branches = zero[array[Branch, 1030]]
         var count = 0
 
@@ -89,11 +89,11 @@ def main() -> i32:
         rl.draw_line(580, 0, 580, rl.get_screen_height(), rl.Color(r = 218, g = 218, b = 218, a = 255))
         rl.draw_rectangle(580, 0, rl.get_screen_width(), rl.get_screen_height(), rl.Color(r = 232, g = 232, b = 232, a = 255))
 
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0), "Angle", rl.text_format_f32("%.0f", angle), inout angle, 0.0, 180.0)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 70.0, width = 120.0, height = 20.0), "Length", rl.text_format_f32("%.0f", length), inout length, 12.0, 240.0)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 100.0, width = 120.0, height = 20.0), "Decay", rl.text_format_f32("%.2f", branch_decay), inout branch_decay, 0.1, 0.78)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 130.0, width = 120.0, height = 20.0), "Depth", rl.text_format_f32("%.0f", tree_depth), inout tree_depth, 1.0, 10.0)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 160.0, width = 120.0, height = 20.0), "Thick", rl.text_format_f32("%.0f", thick), inout thick, 1.0, 8.0)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0), "Angle", rl.text_format_float("%.0f", angle), inout angle, 0.0, 180.0)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 70.0, width = 120.0, height = 20.0), "Length", rl.text_format_float("%.0f", length), inout length, 12.0, 240.0)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 100.0, width = 120.0, height = 20.0), "Decay", rl.text_format_float("%.2f", branch_decay), inout branch_decay, 0.1, 0.78)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 130.0, width = 120.0, height = 20.0), "Depth", rl.text_format_float("%.0f", tree_depth), inout tree_depth, 1.0, 10.0)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 160.0, width = 120.0, height = 20.0), "Thick", rl.text_format_float("%.0f", thick), inout thick, 1.0, 8.0)
         gui.check_box(rl.Rectangle(x = 640.0, y = 190.0, width = 20.0, height = 20.0), "Bezier", inout bezier)
         rl.draw_fps(10, 10)
 

@@ -10,14 +10,14 @@ var current_loop_active: bool = false
 struct SleepState:
     timer: rt.Handle[uv.uv_timer_t]
     ready: bool
-    status: i32
+    status: int
     waiter_frame: ptr[void]?
     waiter: fn(frame: ptr[void]) -> void
 
 struct WorkState[T]:
     request: rt.Request[uv.uv_work_t]
     ready: bool
-    status: i32
+    status: int
     result: T
     waiter_frame: ptr[void]?
     waiter: fn(frame: ptr[void]) -> void
@@ -52,9 +52,9 @@ def deactivate_current_loop() -> void:
     return
 
 
-def sleep_task(state: ptr[SleepState]) -> Task[i32]:
+def sleep_task(state: ptr[SleepState]) -> Task[int]:
     unsafe:
-        return Task[i32](
+        return Task[int](
             frame = ptr[void]<-state,
             ready = sleep_ready,
             set_waiter = sleep_set_waiter,
@@ -74,7 +74,7 @@ def work_task[T](state: ptr[WorkState[T]]) -> Task[T]:
         )
 
 
-def complete_sleep(state: ptr[SleepState], status: i32) -> void:
+def complete_sleep(state: ptr[SleepState], status: int) -> void:
     unsafe:
         state.status = status
         state.ready = true
@@ -86,7 +86,7 @@ def complete_sleep(state: ptr[SleepState], status: i32) -> void:
     return
 
 
-def complete_work[T](state: ptr[WorkState[T]], status: i32) -> void:
+def complete_work[T](state: ptr[WorkState[T]], status: int) -> void:
     unsafe:
         state.status = status
         state.ready = true
@@ -122,7 +122,7 @@ def on_work_request[T](req: ptr[uv.uv_work_t]) -> void:
     return
 
 
-def on_work_done[T](req: ptr[uv.uv_work_t], status: i32) -> void:
+def on_work_done[T](req: ptr[uv.uv_work_t], status: int) -> void:
     unsafe:
         let request = ptr[uv.uv_req_t]<-req
         let state = ptr[WorkState[T]]<-uv.req_get_data(request)
@@ -157,7 +157,7 @@ pub def sleep_release(frame: ptr[void]) -> void:
     return
 
 
-pub def sleep_take_result(frame: ptr[void]) -> i32:
+pub def sleep_take_result(frame: ptr[void]) -> int:
     unsafe:
         return sleep_state(frame).status
 
@@ -197,7 +197,7 @@ pub def work_take_result[T](frame: ptr[void]) -> T:
         return state.result
 
 
-pub def sleep_on(loop: rt.Loop, timeout: usize) -> Task[i32]:
+pub def sleep_on(loop: rt.Loop, timeout: ptr_uint) -> Task[int]:
     let state = heap.must_alloc_zeroed[SleepState](1)
     let timer_result = rt.create_timer(loop)
     if not timer_result.is_ok:
@@ -220,7 +220,7 @@ pub def sleep_on(loop: rt.Loop, timeout: usize) -> Task[i32]:
     return sleep_task(state)
 
 
-pub def sleep(timeout: usize) -> Task[i32]:
+pub def sleep(timeout: ptr_uint) -> Task[int]:
     return sleep_on(require_current_loop(), timeout)
 
 

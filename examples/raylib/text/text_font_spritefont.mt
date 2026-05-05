@@ -2,8 +2,8 @@ module examples.raylib.text.text_font_spritefont
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [text] example - font spritefont"
 const msg1: cstr = c"THIS IS A custom SPRITE FONT..."
 const msg2: cstr = c"...and this is ANOTHER CUSTOM font..."
@@ -13,7 +13,7 @@ const font2_path: cstr = c"../resources/custom_alagard.png"
 const font3_path: cstr = c"../resources/custom_jupiter_crash.png"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -27,16 +27,16 @@ def main() -> i32:
     defer rl.UnloadFont(font3)
 
     let font_position1 = rl.Vector2(
-        x = f32<-screen_width / 2.0 - rl.MeasureTextEx(font1, msg1, f32<-font1.baseSize, -3.0).x / 2.0,
-        y = f32<-screen_height / 2.0 - f32<-font1.baseSize / 2.0 - 80.0,
+        x = float<-screen_width / 2.0 - rl.MeasureTextEx(font1, msg1, float<-font1.baseSize, -3.0).x / 2.0,
+        y = float<-screen_height / 2.0 - float<-font1.baseSize / 2.0 - 80.0,
     )
     let font_position2 = rl.Vector2(
-        x = f32<-screen_width / 2.0 - rl.MeasureTextEx(font2, msg2, f32<-font2.baseSize, -2.0).x / 2.0,
-        y = f32<-screen_height / 2.0 - f32<-font2.baseSize / 2.0 - 10.0,
+        x = float<-screen_width / 2.0 - rl.MeasureTextEx(font2, msg2, float<-font2.baseSize, -2.0).x / 2.0,
+        y = float<-screen_height / 2.0 - float<-font2.baseSize / 2.0 - 10.0,
     )
     let font_position3 = rl.Vector2(
-        x = f32<-screen_width / 2.0 - rl.MeasureTextEx(font3, msg3, f32<-font3.baseSize, 2.0).x / 2.0,
-        y = f32<-screen_height / 2.0 - f32<-font3.baseSize / 2.0 + 50.0,
+        x = float<-screen_width / 2.0 - rl.MeasureTextEx(font3, msg3, float<-font3.baseSize, 2.0).x / 2.0,
+        y = float<-screen_height / 2.0 - float<-font3.baseSize / 2.0 + 50.0,
     )
 
     rl.SetTargetFPS(60)
@@ -47,8 +47,8 @@ def main() -> i32:
 
         rl.ClearBackground(rl.RAYWHITE)
 
-        rl.DrawTextEx(font1, msg1, font_position1, f32<-font1.baseSize, -3.0, rl.WHITE)
-        rl.DrawTextEx(font2, msg2, font_position2, f32<-font2.baseSize, -2.0, rl.WHITE)
-        rl.DrawTextEx(font3, msg3, font_position3, f32<-font3.baseSize, 2.0, rl.WHITE)
+        rl.DrawTextEx(font1, msg1, font_position1, float<-font1.baseSize, -3.0, rl.WHITE)
+        rl.DrawTextEx(font2, msg2, font_position2, float<-font2.baseSize, -2.0, rl.WHITE)
+        rl.DrawTextEx(font3, msg3, font_position3, float<-font3.baseSize, 2.0, rl.WHITE)
 
     return 0

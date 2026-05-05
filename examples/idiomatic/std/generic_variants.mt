@@ -11,7 +11,7 @@ variant Outcome[T, E]:
     err(error: E)
 
 
-def is_some(value: Option[i32]) -> bool:
+def is_some(value: Option[int]) -> bool:
     match value:
         Option.some:
             return true
@@ -19,7 +19,7 @@ def is_some(value: Option[i32]) -> bool:
             return false
 
 
-def unwrap_or(value: Option[i32], fallback: i32) -> i32:
+def unwrap_or(value: Option[int], fallback: int) -> int:
     match value:
         Option.some as payload:
             return payload.value
@@ -27,7 +27,7 @@ def unwrap_or(value: Option[i32], fallback: i32) -> i32:
             return fallback
 
 
-def outcome_code(value: Outcome[i32, str]) -> i32:
+def outcome_code(value: Outcome[int, str]) -> int:
     match value:
         Outcome.ok:
             return 1
@@ -35,7 +35,7 @@ def outcome_code(value: Outcome[i32, str]) -> i32:
             return -1
 
 
-def outcome_has_error(value: Outcome[i32, str]) -> bool:
+def outcome_has_error(value: Outcome[int, str]) -> bool:
     match value:
         Outcome.ok:
             return false
@@ -43,12 +43,12 @@ def outcome_has_error(value: Outcome[i32, str]) -> bool:
             return payload.error.len > 0
 
 
-def main() -> i32:
-    let empty: Option[i32] = Option[i32].none
-    let seeded: Option[i32] = Option[i32].some(value= 41)
+def main() -> int:
+    let empty: Option[int] = Option[int].none
+    let seeded: Option[int] = Option[int].some(value= 41)
 
-    let ok_value: Outcome[i32, str] = Outcome[i32, str].ok(value= 41)
-    let err_value: Outcome[i32, str] = Outcome[i32, str].err(error= "missing")
+    let ok_value: Outcome[int, str] = Outcome[int, str].ok(value= 41)
+    let err_value: Outcome[int, str] = Outcome[int, str].err(error= "missing")
 
     if not io.println("generic variant showcase"):
         return 1

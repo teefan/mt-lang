@@ -4,7 +4,7 @@ import std.hash as hash
 import std.set as set
 
 
-def hash_key(key: str) -> u64:
+def hash_key(key: str) -> ulong:
     return hash.str_value(key)
 
 
@@ -19,7 +19,7 @@ pub def create() -> StrSet:
     return StrSet(items = set.create[str](hash_key, equal_key))
 
 
-pub def count(items: StrSet) -> usize:
+pub def count(items: StrSet) -> ptr_uint:
     return set.count[str](items.items)
 
 

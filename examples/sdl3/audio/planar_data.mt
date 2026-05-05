@@ -2,18 +2,18 @@ module examples.sdl3.audio.planar_data
 
 import std.c.sdl3 as c
 
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/audio/planar-data"
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const default_playback_device: u32 = u32<-0xFFFFFFFF
-const audio_sample_rate: i32 = 4000
-const audio_channel_count: i32 = 2
-const left_button_value: i32 = -1
-const right_button_value: i32 = 1
-const left_channel_sample_count: i32 = 1870
-const right_channel_sample_count: i32 = 1777
+const default_playback_device: uint = uint<-0xFFFFFFFF
+const audio_sample_rate: int = 4000
+const audio_channel_count: int = 2
+const left_button_value: int = -1
+const right_button_value: int = 1
+const left_channel_sample_count: int = 1870
+const right_channel_sample_count: int = 1777
 
 var left_button_rect: c.SDL_FRect = c.SDL_FRect(x = 100.0, y = 170.0, w = 100.0, h = 100.0)
 var right_button_rect: c.SDL_FRect = c.SDL_FRect(x = 440.0, y = 170.0, w = 100.0, h = 100.0)
@@ -23,7 +23,7 @@ var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 var stream: ptr[c.SDL_AudioStream]? = null
 var audio_device: c.SDL_AudioDeviceID = 0
-var playing_sound: i32 = 0
+var playing_sound: int = 0
 
 
 def point_in_rect(point: c.SDL_FPoint, rect: c.SDL_FRect) -> bool:
@@ -74,9 +74,9 @@ def pump_events() -> bool:
     while c.SDL_PollEvent(ptr_of(event)):
         c.SDL_ConvertEventToRenderCoordinates(renderer, ptr_of(event))
 
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
-        elif event.type_ == u32<-c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
+        elif event.type_ == uint<-c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
             if event.button.button == c.Uint8<-c.SDL_BUTTON_LEFT and playing_sound == 0:
                 let point = c.SDL_FPoint(x = event.button.x, y = event.button.y)
 
@@ -88,7 +88,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_button(rect: c.SDL_FRect, text: cstr, button_value: i32) -> void:
+def render_button(rect: c.SDL_FRect, text: cstr, button_value: int) -> void:
     var draw_rect = rect
 
     if playing_sound == button_value:
@@ -99,9 +99,9 @@ def render_button(rect: c.SDL_FRect, text: cstr, button_value: i32) -> void:
     c.SDL_RenderFillRect(renderer, ptr_of(draw_rect))
     c.SDL_SetRenderDrawColor(renderer, 255, 255, 255, c.SDL_ALPHA_OPAQUE)
 
-    let text_width = f32<-(c.SDL_strlen(text) * usize<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
+    let text_width = float<-(c.SDL_strlen(text) * ptr_uint<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
     let x = rect.x + ((rect.w - text_width) / 2.0)
-    let y = rect.y + ((rect.h - f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) / 2.0)
+    let y = rect.y + ((rect.h - float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) / 2.0)
     c.SDL_RenderDebugText(renderer, x, y, text)
 
 
@@ -119,7 +119,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     var spec = zero[c.SDL_AudioSpec]
 
     c.SDL_SetAppMetadata(c"Example Audio Planar Data", c"1.0", c"com.example.audio-planar-data")
@@ -164,5 +164,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

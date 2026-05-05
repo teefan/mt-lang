@@ -12,15 +12,15 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
-    assert_equal({ "indices" => "ptr[u16]?" }, registry.fetch("raylib").field_type_overrides.fetch("Mesh"))
+    assert_equal({ "indices" => "ptr[ushort]?" }, registry.fetch("raylib").field_type_overrides.fetch("Mesh"))
     assert_equal({ "fileName" => "cstr?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadAutomationEventList"))
-    assert_equal({ "codepoints" => "ptr[i32]?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadFontEx"))
+    assert_equal({ "codepoints" => "ptr[int]?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadFontEx"))
     assert_equal({ "vsFileName" => "cstr?", "fsFileName" => "cstr?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadShader"))
     assert_equal({ "vsCode" => "cstr?", "fsCode" => "cstr?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadShaderFromMemory"))
     assert_equal ["RAYGUI_IMPLEMENTATION"], registry.fetch("raygui").implementation_defines
     assert_equal ["raylib", "m"], registry.fetch("raygui").link_libraries
     assert_includes registry.fetch("raygui").header_candidates.first, "third_party/raylib-upstream/examples/shapes/raygui.h"
-    assert_equal({ "codepoints" => "ptr[i32]?" }, registry.fetch("raygui").function_param_type_overrides.fetch("LoadFontData"))
+    assert_equal({ "codepoints" => "ptr[int]?" }, registry.fetch("raygui").function_param_type_overrides.fetch("LoadFontData"))
     assert_equal "std.c.rlights", registry.fetch("rlights").module_name
     assert_equal ["RLIGHTS_IMPLEMENTATION"], registry.fetch("rlights").implementation_defines
     assert_equal ["raylib"], registry.fetch("rlights").link_libraries
@@ -48,7 +48,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal({ "dst_spec" => "const_ptr[SDL_AudioSpec]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_CreateAudioStream"))
     assert_equal({ "userdata" => "ptr[void]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_OpenAudioDeviceStream"))
     assert_equal({ "channel_buffers" => "const_ptr[const_ptr[void]?]" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_PutAudioStreamPlanarData"))
-    assert_equal({ "pslen" => "ptr[usize]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_StepUTF8"))
+    assert_equal({ "pslen" => "ptr[ptr_uint]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_StepUTF8"))
     assert_equal({ "palette" => "const_ptr[SDL_Palette]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_MapRGB"))
     assert_equal({ "palette" => "const_ptr[SDL_Palette]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_MapRGBA"))
     assert_equal({ "rect" => "const_ptr[SDL_Rect]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_LockTextureToSurface"))
@@ -62,7 +62,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal({ "srcrect" => "const_ptr[SDL_FRect]?", "dstrect" => "const_ptr[SDL_FRect]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_RenderTexture"))
     assert_equal({ "srcrect" => "const_ptr[SDL_FRect]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_RenderTextureRotated"))
     assert_equal({ "srcrect" => "const_ptr[SDL_FRect]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_RenderTextureAffine"))
-    assert_equal({ "texture" => "ptr[SDL_Texture]?", "indices" => "const_ptr[i32]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_RenderGeometry"))
+    assert_equal({ "texture" => "ptr[SDL_Texture]?", "indices" => "const_ptr[int]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_RenderGeometry"))
     assert_equal "ptr[SDL_Surface]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_LoadPNG")
     assert_equal "ptr[SDL_Surface]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_ConvertSurface")
     assert_equal "ptr[SDL_Texture]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_CreateTexture")
@@ -177,8 +177,8 @@ class MilkTeaRawBindingsTest < Minitest::Test
         link_libraries: ["sample"],
         env_var: "SAMPLE_HEADER",
         clang_args: ["-I#{dir}"],
-        function_param_type_overrides: { "sample_function" => { "data" => "ptr[u8]?" } },
-        field_type_overrides: { "Sample" => { "data" => "ptr[u8]?" } },
+        function_param_type_overrides: { "sample_function" => { "data" => "ptr[ubyte]?" } },
+        field_type_overrides: { "Sample" => { "data" => "ptr[ubyte]?" } },
       )
 
       observed = nil
@@ -201,9 +201,9 @@ class MilkTeaRawBindingsTest < Minitest::Test
           clang: "clang-custom",
           clang_args: ["-I#{dir}"],
           type_overrides: {},
-          function_param_type_overrides: { "sample_function" => { "data" => "ptr[u8]?" } },
+          function_param_type_overrides: { "sample_function" => { "data" => "ptr[ubyte]?" } },
           function_return_type_overrides: {},
-          field_type_overrides: { "Sample" => { "data" => "ptr[u8]?" } },
+          field_type_overrides: { "Sample" => { "data" => "ptr[ubyte]?" } },
         },
         observed,
       )
@@ -339,7 +339,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
         env_var: "SAMPLE_HEADER",
       )
 
-      with_singleton_method_override(MilkTea::Bindgen, :generate, ->(**) { "# generated by mtc bindgen from #{header_path}\nextern module std.c.sample:\n    const CHANGED: i32 = 1\n" }) do
+      with_singleton_method_override(MilkTea::Bindgen, :generate, ->(**) { "# generated by mtc bindgen from #{header_path}\nextern module std.c.sample:\n    const CHANGED: int = 1\n" }) do
         error = assert_raises(MilkTea::RawBindings::Error) do
           binding.check!(env: { "SAMPLE_HEADER" => header_path })
         end

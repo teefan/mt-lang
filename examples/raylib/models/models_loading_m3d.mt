@@ -2,8 +2,8 @@ module examples.raylib.models.models_loading_m3d
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [models] example - loading m3d"
 const model_path: cstr = c"../resources/models/m3d/cesium_man.m3d"
 const current_animation_format: cstr = c"Current animation: %s"
@@ -16,32 +16,32 @@ def chars_to_cstr(text: ptr[char]) -> cstr:
         return cstr<-text
 
 
-def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
+def model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
     unsafe:
         return read(anims + index)
 
 
-def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
+def model_animation_name(anims: ptr[rl.ModelAnimation], index: int) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of((anims + index).name[0]))
 
 
-def model_animation_pose(anim: rl.ModelAnimation, frame: i32) -> rl.ModelAnimPose:
+def model_animation_pose(anim: rl.ModelAnimation, frame: int) -> rl.ModelAnimPose:
     unsafe:
         return read(anim.keyframePoses + frame)
 
 
-def pose_translation(pose: rl.ModelAnimPose, index: i32) -> rl.Vector3:
+def pose_translation(pose: rl.ModelAnimPose, index: int) -> rl.Vector3:
     unsafe:
         return (pose + index).translation
 
 
-def skeleton_bone_parent(skeleton: rl.ModelSkeleton, index: i32) -> i32:
+def skeleton_bone_parent(skeleton: rl.ModelSkeleton, index: int) -> int:
     unsafe:
         return (skeleton.bones + index).parent
 
 
-def draw_model_skeleton(skeleton: rl.ModelSkeleton, pose: rl.ModelAnimPose, scale: f32, color: rl.Color) -> void:
+def draw_model_skeleton(skeleton: rl.ModelSkeleton, pose: rl.ModelAnimPose, scale: float, color: rl.Color) -> void:
     for index in 0..skeleton.boneCount - 1:
         let translation = pose_translation(pose, index)
         rl.DrawCube(translation, scale * 0.05, scale * 0.05, scale * 0.05, color)
@@ -51,7 +51,7 @@ def draw_model_skeleton(skeleton: rl.ModelSkeleton, pose: rl.ModelAnimPose, scal
             rl.DrawLine3D(translation, pose_translation(pose, parent), color)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -73,7 +73,7 @@ def main() -> i32:
     defer rl.UnloadModelAnimations(anims, anim_count)
 
     var anim_index = 0
-    var anim_current_frame: f32 = 0.0
+    var anim_current_frame: float = 0.0
 
     rl.SetTargetFPS(60)
 
@@ -87,7 +87,7 @@ def main() -> i32:
 
         let anim = model_animation(anims, anim_index)
         anim_current_frame += 1.0
-        if anim_current_frame >= f32<-anim.keyframeCount:
+        if anim_current_frame >= float<-anim.keyframeCount:
             anim_current_frame = 0.0
 
         rl.UpdateModelAnimation(model, anim, anim_current_frame)
@@ -101,7 +101,7 @@ def main() -> i32:
         if not rl.IsKeyDown(rl.KeyboardKey.KEY_SPACE):
             rl.DrawModel(model, position, 1.0, rl.WHITE)
         else:
-            draw_model_skeleton(model.skeleton, model_animation_pose(anim, i32<-anim_current_frame), 1.0, rl.RED)
+            draw_model_skeleton(model.skeleton, model_animation_pose(anim, int<-anim_current_frame), 1.0, rl.RED)
 
         rl.DrawGrid(10, 1.0)
         rl.EndMode3D()

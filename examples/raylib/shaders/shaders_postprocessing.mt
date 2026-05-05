@@ -2,22 +2,22 @@ module examples.raylib.shaders.shaders_postprocessing
 
 import std.c.raylib as rl
 
-const max_postpro_shaders: i32 = 12
-const fx_grayscale: i32 = 0
-const fx_posterization: i32 = 1
-const fx_dream_vision: i32 = 2
-const fx_pixelizer: i32 = 3
-const fx_cross_hatching: i32 = 4
-const fx_cross_stitching: i32 = 5
-const fx_predator_view: i32 = 6
-const fx_scanlines: i32 = 7
-const fx_fisheye: i32 = 8
-const fx_sobel: i32 = 9
-const fx_bloom: i32 = 10
-const fx_blur: i32 = 11
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const max_postpro_shaders: int = 12
+const fx_grayscale: int = 0
+const fx_posterization: int = 1
+const fx_dream_vision: int = 2
+const fx_pixelizer: int = 3
+const fx_cross_hatching: int = 4
+const fx_cross_stitching: int = 5
+const fx_predator_view: int = 6
+const fx_scanlines: int = 7
+const fx_fisheye: int = 8
+const fx_sobel: int = 9
+const fx_bloom: int = 10
+const fx_blur: int = 11
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const model_path: cstr = c"../resources/models/church.obj"
 const texture_path: cstr = c"../resources/models/church_diffuse.png"
 const grayscale_shader_path: cstr = c"../resources/shaders/glsl%i/grayscale.fs"
@@ -38,7 +38,7 @@ const switch_text: cstr = c"< >"
 const window_title: cstr = c"raylib [shaders] example - postprocessing"
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
 
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -57,7 +57,7 @@ def main() -> i32:
 
     let texture = rl.LoadTexture(texture_path)
     defer rl.UnloadTexture(texture)
-    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+    rl.SetMaterialTexture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let shader_names = array[cstr, max_postpro_shaders](
         c"GRAYSCALE",
@@ -129,7 +129,7 @@ def main() -> i32:
         rl.BeginShaderMode(shaders[current_shader])
         rl.DrawTextureRec(
             target.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-target.texture.width, height = -f32<-target.texture.height),
+            rl.Rectangle(x = 0.0, y = 0.0, width = float<-target.texture.width, height = -float<-target.texture.height),
             rl.Vector2(x = 0.0, y = 0.0),
             rl.WHITE,
         )

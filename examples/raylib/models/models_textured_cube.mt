@@ -3,13 +3,13 @@ module examples.raylib.models.models_textured_cube
 import std.c.raylib as rl
 import std.c.rlgl as rlgl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const texture_path: cstr = c"../resources/cubicmap_atlas.png"
 const window_title: cstr = c"raylib [models] example - textured cube"
 
 
-def draw_cube_texture(texture: rl.Texture2D, position: rl.Vector3, width: f32, height: f32, length: f32, color: rl.Color) -> void:
+def draw_cube_texture(texture: rl.Texture2D, position: rl.Vector3, width: float, height: float, length: float, color: rl.Color) -> void:
     let x = position.x
     let y = position.y
     let z = position.z
@@ -82,15 +82,15 @@ def draw_cube_texture(texture: rl.Texture2D, position: rl.Vector3, width: f32, h
     rlgl.rlVertex3f(x - half_width, y + half_height, z - half_length)
 
     rlgl.rlEnd()
-    rlgl.rlSetTexture(u32<-0)
+    rlgl.rlSetTexture(uint<-0)
 
 
-def draw_cube_texture_rec(texture: rl.Texture2D, source: rl.Rectangle, position: rl.Vector3, width: f32, height: f32, length: f32, color: rl.Color) -> void:
+def draw_cube_texture_rec(texture: rl.Texture2D, source: rl.Rectangle, position: rl.Vector3, width: float, height: float, length: float, color: rl.Color) -> void:
     let x = position.x
     let y = position.y
     let z = position.z
-    let tex_width = f32<-texture.width
-    let tex_height = f32<-texture.height
+    let tex_width = float<-texture.width
+    let tex_height = float<-texture.height
     let half_width = width / 2.0
     let half_height = height / 2.0
     let half_length = length / 2.0
@@ -160,10 +160,10 @@ def draw_cube_texture_rec(texture: rl.Texture2D, source: rl.Rectangle, position:
     rlgl.rlVertex3f(x - half_width, y + half_height, z - half_length)
 
     rlgl.rlEnd()
-    rlgl.rlSetTexture(u32<-0)
+    rlgl.rlSetTexture(uint<-0)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -191,9 +191,9 @@ def main() -> i32:
 
         let source = rl.Rectangle(
             x = 0.0,
-            y = f32<-texture.height / 2.0,
-            width = f32<-texture.width / 2.0,
-            height = f32<-texture.height / 2.0,
+            y = float<-texture.height / 2.0,
+            width = float<-texture.width / 2.0,
+            height = float<-texture.height / 2.0,
         )
         draw_cube_texture_rec(texture, source, rl.Vector3(x = 2.0, y = 1.0, z = 0.0), 2.0, 2.0, 2.0, rl.WHITE)
 

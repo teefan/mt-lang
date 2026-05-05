@@ -3,38 +3,38 @@ module examples.sdl3.renderer.rotating_textures
 import std.c.sdl3 as c
 
 const sample_texture_path: cstr = c"../resources/sample.png"
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/renderer/rotating-textures"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 var texture: ptr[c.SDL_Texture]
-var texture_width: i32 = 0
-var texture_height: i32 = 0
+var texture_width: int = 0
+var texture_height: int = 0
 
 
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
 
 
 def render_frame() -> void:
-    let now = i32<-c.SDL_GetTicks()
-    let rotation = (f32<-(now % 2000) / 2000.0) * 360.0
-    let texture_width_f = f32<-texture_width
-    let texture_height_f = f32<-texture_height
+    let now = int<-c.SDL_GetTicks()
+    let rotation = (float<-(now % 2000) / 2000.0) * 360.0
+    let texture_width_f = float<-texture_width
+    let texture_height_f = float<-texture_height
 
     var destination = c.SDL_FRect(
-        x = f32<-(window_width - texture_width) / 2.0,
-        y = f32<-(window_height - texture_height) / 2.0,
+        x = float<-(window_width - texture_width) / 2.0,
+        y = float<-(window_height - texture_height) / 2.0,
         w = texture_width_f,
         h = texture_height_f,
     )
@@ -45,11 +45,11 @@ def render_frame() -> void:
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
-    c.SDL_RenderTextureRotated(renderer, texture, null, ptr_of(destination), f64<-rotation, ptr_of(center), c.SDL_FlipMode.SDL_FLIP_NONE)
+    c.SDL_RenderTextureRotated(renderer, texture, null, ptr_of(destination), double<-rotation, ptr_of(center), c.SDL_FlipMode.SDL_FLIP_NONE)
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Renderer Rotating Textures", c"1.0", c"com.example.renderer-rotating-textures")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -85,5 +85,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

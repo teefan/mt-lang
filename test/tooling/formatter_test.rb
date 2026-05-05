@@ -4,12 +4,12 @@ require_relative "../test_helper"
 
 class MilkTeaFormatterTest < Minitest::Test
   def test_check_source_detects_changes
-    source = "module demo.f\n\ndef main()->i32:\n    return 0\n"
+    source = "module demo.f\n\ndef main()->int:\n    return 0\n"
 
     result = MilkTea::Formatter.check_source(source, path: "demo.mt")
 
     assert_equal true, result.changed
-    assert_equal "module demo.f\n\ndef main() -> i32:\n    return 0\n", result.formatted_source
+    assert_equal "module demo.f\n\ndef main() -> int:\n    return 0\n", result.formatted_source
   end
 
   def test_build_cst_reconstructs_original_source
@@ -17,7 +17,7 @@ class MilkTeaFormatterTest < Minitest::Test
       # banner
       module demo.cst
 
-      def main() -> i32: # keep
+      def main() -> int: # keep
           return 0
     MT
 
@@ -33,7 +33,7 @@ class MilkTeaFormatterTest < Minitest::Test
       # banner
       module demo.fmt
 
-      def main() -> i32: # trailing
+      def main() -> int: # trailing
           return 0
     MT
 
@@ -46,7 +46,7 @@ class MilkTeaFormatterTest < Minitest::Test
     source = <<~MT
       module demo.fmt
 
-      def main() -> i32:
+      def main() -> int:
           log(
               "a",
               "b",
@@ -92,11 +92,11 @@ class MilkTeaFormatterTest < Minitest::Test
   end
 
   def test_preserve_mode_normalizes_crlf_without_truncation
-    source = "module demo.crlf\r\n\r\ndef main() -> i32:\r\n    return 0\r\n"
+    source = "module demo.crlf\r\n\r\ndef main() -> int:\r\n    return 0\r\n"
 
     formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :preserve)
 
-    assert_equal "module demo.crlf\n\ndef main() -> i32:\n    return 0\n", formatted
+    assert_equal "module demo.crlf\n\ndef main() -> int:\n    return 0\n", formatted
   end
 
   # ── comment preservation ─────────────────────────────────────────────
@@ -117,7 +117,7 @@ class MilkTeaFormatterTest < Minitest::Test
       module demo.comments
 
       # computes sum
-      def add(a: i32, b: i32) -> i32:
+      def add(a: int, b: int) -> int:
           return a + b
     MT
 
@@ -133,7 +133,7 @@ class MilkTeaFormatterTest < Minitest::Test
     source = <<~MT
       module demo.comments
 
-      def main() -> i32:
+      def main() -> int:
           # initialize counter
           let x = 0
           return x
@@ -149,7 +149,7 @@ class MilkTeaFormatterTest < Minitest::Test
     source = <<~MT
       module demo.comments
 
-      def main() -> i32:
+      def main() -> int:
           let x = 42  # the answer
           return x
     MT
@@ -164,12 +164,12 @@ class MilkTeaFormatterTest < Minitest::Test
     source = <<~MT
       module demo.var
 
-      pub var  counter  :  i32   =  1
+      pub var  counter  :  int   =  1
     MT
 
     formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
 
-    assert_equal "module demo.var\n\npub var counter: i32 = 1\n", formatted
+    assert_equal "module demo.var\n\npub var counter: int = 1\n", formatted
   end
 
   def test_tidy_mode_does_not_insert_blank_lines_before_first_method
@@ -177,7 +177,7 @@ class MilkTeaFormatterTest < Minitest::Test
       module demo.methods
 
       struct Ball:
-          x: i32
+          x: int
 
       methods Ball:
 

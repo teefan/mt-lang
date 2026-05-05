@@ -2,11 +2,11 @@ module examples.idiomatic.raylib.monitor_detector
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Monitor Detector")
     defer rl.close_window()
 
@@ -27,10 +27,10 @@ def main() -> i32:
             let height = rl.get_monitor_height(index)
 
             if position.x < monitor_offset_x:
-                monitor_offset_x = -i32<-position.x
+                monitor_offset_x = -int<-position.x
 
-            let right_edge = i32<-position.x + width
-            let bottom_edge = i32<-position.y + height
+            let right_edge = int<-position.x + width
+            let bottom_edge = int<-position.y + height
             if max_width < right_edge:
                 max_width = right_edge
             if max_height < bottom_edge:
@@ -46,13 +46,13 @@ def main() -> i32:
         else:
             current_monitor_index = rl.get_current_monitor()
 
-        var monitor_scale: f32 = 0.6
+        var monitor_scale: float = 0.6
         if max_height > max_width + monitor_offset_x:
-            monitor_scale *= f32<-screen_height / max_height
+            monitor_scale *= float<-screen_height / max_height
         else:
-            monitor_scale *= f32<-screen_width / (max_width + monitor_offset_x)
+            monitor_scale *= float<-screen_width / (max_width + monitor_offset_x)
 
-        let monitor_offset_x_f: f32 = monitor_offset_x
+        let monitor_offset_x_f: float = monitor_offset_x
 
         rl.begin_drawing()
         defer rl.end_drawing()
@@ -72,9 +72,9 @@ def main() -> i32:
                 width = width * monitor_scale,
                 height = height * monitor_scale,
             )
-            let label_x = i32<-(rec.x + 10.0)
-            let label_y = i32<-(rec.y + 10.0)
-            let current_y = i32<-(rec.y + 40.0)
+            let label_x = int<-(rec.x + 10.0)
+            let label_y = int<-(rec.y + 10.0)
+            let current_y = int<-(rec.y + 40.0)
 
             rl.draw_text(rl.get_monitor_name(draw_index), label_x, label_y, 20, rl.BLUE)
 

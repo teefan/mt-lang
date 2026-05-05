@@ -2,15 +2,15 @@ module examples.raylib.textures.textures_sprite_button
 
 import std.c.raylib as rl
 
-const num_frames: i32 = 3
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const num_frames: int = 3
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - sprite button"
 const button_fx_path: cstr = c"../resources/buttonfx.wav"
 const button_path: cstr = c"../resources/button.png"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -24,12 +24,12 @@ def main() -> i32:
         rl.UnloadTexture(button)
         rl.UnloadSound(fx_button)
 
-    let frame_height = f32<-button.height / f32<-num_frames
-    var source_rec = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-button.width, height = frame_height)
+    let frame_height = float<-button.height / float<-num_frames
+    var source_rec = rl.Rectangle(x = 0.0, y = 0.0, width = float<-button.width, height = frame_height)
     let btn_bounds = rl.Rectangle(
-        x = f32<-screen_width / 2.0 - f32<-button.width / 2.0,
-        y = f32<-screen_height / 2.0 - f32<-button.height / f32<-num_frames / 2.0,
-        width = f32<-button.width,
+        x = float<-screen_width / 2.0 - float<-button.width / 2.0,
+        y = float<-screen_height / 2.0 - float<-button.height / float<-num_frames / 2.0,
+        width = float<-button.width,
         height = frame_height,
     )
 
@@ -56,7 +56,7 @@ def main() -> i32:
         if btn_action:
             rl.PlaySound(fx_button)
 
-        source_rec.y = f32<-btn_state * frame_height
+        source_rec.y = float<-btn_state * frame_height
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

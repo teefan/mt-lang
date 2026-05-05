@@ -2,18 +2,18 @@ module examples.raylib.core.core_input_multitouch
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const max_touch_points: i32 = 10
+const screen_width: int = 800
+const screen_height: int = 450
+const max_touch_points: int = 10
 const window_title: cstr = c"raylib [core] example - input multitouch"
 const help_text: cstr = c"touch the screen at multiple locations to get multiple balls"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let touch_radius: f32 = 34.0
+    let touch_radius: float = 34.0
 
     rl.SetTargetFPS(60)
 

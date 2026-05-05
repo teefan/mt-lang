@@ -3,20 +3,20 @@ module examples.raylib.models.models_billboard_rendering
 import std.c.libm as math
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [models] example - billboard rendering"
 const billboard_path: cstr = c"../resources/billboard.png"
 
 
-def vector3_distance(left: rl.Vector3, right: rl.Vector3) -> f32:
+def vector3_distance(left: rl.Vector3, right: rl.Vector3) -> float:
     let dx = right.x - left.x
     let dy = right.y - left.y
     let dz = right.z - left.z
     return math.sqrtf(dx * dx + dy * dy + dz * dz)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -33,14 +33,14 @@ def main() -> i32:
 
     let bill_position_static = rl.Vector3(x = 0.0, y = 2.0, z = 0.0)
     let bill_position_rotating = rl.Vector3(x = 1.0, y = 2.0, z = 1.0)
-    let source = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-bill.width, height = f32<-bill.height)
+    let source = rl.Rectangle(x = 0.0, y = 0.0, width = float<-bill.width, height = float<-bill.height)
     let bill_up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
     let size = rl.Vector2(x = source.width / source.height, y = 1.0)
     let origin = rl.Vector2(x = size.x * 0.5, y = size.y * 0.5)
 
-    var distance_static: f32 = 0.0
-    var distance_rotating: f32 = 0.0
-    var rotation: f32 = 0.0
+    var distance_static: float = 0.0
+    var distance_rotating: float = 0.0
+    var rotation: float = 0.0
 
     rl.SetTargetFPS(60)
 

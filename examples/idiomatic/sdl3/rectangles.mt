@@ -2,12 +2,12 @@ module examples.idiomatic.sdl3.rectangles
 
 import std.sdl3 as sdl
 
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: str = "examples/renderer/rectangles"
 const presentation_mode: sdl.RendererLogicalPresentation = sdl.RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: usize = sdl.WINDOW_RESIZABLE
-const rect_count: i32 = 16
+const window_flags: ptr_uint = sdl.WINDOW_RESIZABLE
+const rect_count: int = 16
 
 var window: ptr[sdl.Window]
 var renderer: ptr[sdl.Renderer]
@@ -24,10 +24,10 @@ def pump_events() -> bool:
 
 
 def render_frame() -> void:
-    let now = i32<-sdl.get_ticks()
+    let now = int<-sdl.get_ticks()
     let direction = if (now % 2000) >= 1000: 1.0 else: -1.0
-    let scale = (f32<-((now % 1000) - 500) / 500.0) * direction
-    let column_width = f32<-window_width / f32<-rect_count
+    let scale = (float<-((now % 1000) - 500) / 500.0) * direction
+    let column_width = float<-window_width / float<-rect_count
 
     var rects = zero[array[sdl.FRect, 16]]
 
@@ -42,11 +42,11 @@ def render_frame() -> void:
     sdl.render_rect(renderer, const_ptr_of(rects[0]))
 
     for index in 0..3:
-        let size = f32<-(index + 1) * 50.0
+        let size = float<-(index + 1) * 50.0
         rects[index].w = size + (size * scale)
         rects[index].h = size + (size * scale)
-        rects[index].x = (f32<-window_width - rects[index].w) / 2.0
-        rects[index].y = (f32<-window_height - rects[index].h) / 2.0
+        rects[index].x = (float<-window_width - rects[index].w) / 2.0
+        rects[index].y = (float<-window_height - rects[index].h) / 2.0
 
     sdl.set_render_draw_color(renderer, 0, 255, 0, 255)
     sdl.render_rects(renderer, const_ptr_of(rects[0]), 3)
@@ -59,9 +59,9 @@ def render_frame() -> void:
     sdl.render_fill_rect(renderer, const_ptr_of(rects[0]))
 
     for index in 0..rect_count:
-        let height = f32<-index * 8.0
-        rects[index].x = f32<-index * column_width
-        rects[index].y = f32<-window_height - height
+        let height = float<-index * 8.0
+        rects[index].x = float<-index * column_width
+        rects[index].y = float<-window_height - height
         rects[index].w = column_width
         rects[index].h = height
 
@@ -70,7 +70,7 @@ def render_frame() -> void:
     sdl.render_present(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     sdl.set_app_metadata("Example Renderer Rectangles", "1.0", "com.example.renderer-rectangles")
 
     if not sdl.init(sdl.INIT_VIDEO):
@@ -91,5 +91,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return sdl.run_app(argc, argv, app_main)

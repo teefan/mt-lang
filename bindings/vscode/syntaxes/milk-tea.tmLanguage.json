@@ -125,7 +125,7 @@
 
     "type-primitive": {
       "name": "support.type.primitive.milk-tea",
-      "match": "\\b(bool|byte|char|i8|i16|i32|i64|u8|u16|u32|u64|isize|usize|f32|f64|void|str|cstr)\\b"
+      "match": "\\b(bool|byte|char|byte|short|int|long|ubyte|ushort|uint|ulong|ptr_int|ptr_uint|float|double|void|str|cstr)\\b"
     },
 
     "constant-language": {

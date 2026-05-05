@@ -2,8 +2,8 @@ module examples.raylib.textures.textures_image_drawing
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - image drawing"
 const cat_path: cstr = c"../resources/cat.png"
 const parrots_path: cstr = c"../resources/parrots.png"
@@ -13,7 +13,7 @@ const line_two_text: cstr = c"Source images have been cropped, scaled, flipped a
 const title_text: cstr = c"PARROTS & CAT"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -27,11 +27,11 @@ def main() -> i32:
     rl.ImageDraw(
         ptr_of(parrots),
         cat,
-        rl.Rectangle(x = 0.0, y = 0.0, width = f32<-cat.width, height = f32<-cat.height),
-        rl.Rectangle(x = 30.0, y = 40.0, width = f32<-cat.width * 1.5, height = f32<-cat.height * 1.5),
+        rl.Rectangle(x = 0.0, y = 0.0, width = float<-cat.width, height = float<-cat.height),
+        rl.Rectangle(x = 30.0, y = 40.0, width = float<-cat.width * 1.5, height = float<-cat.height * 1.5),
         rl.WHITE,
     )
-    rl.ImageCrop(ptr_of(parrots), rl.Rectangle(x = 0.0, y = 50.0, width = f32<-parrots.width, height = f32<-parrots.height - 100.0))
+    rl.ImageCrop(ptr_of(parrots), rl.Rectangle(x = 0.0, y = 50.0, width = float<-parrots.width, height = float<-parrots.height - 100.0))
 
     rl.ImageDrawPixel(ptr_of(parrots), 10, 10, rl.RAYWHITE)
     rl.ImageDrawCircleLines(ptr_of(parrots), 10, 10, 5, rl.RAYWHITE)
@@ -40,7 +40,7 @@ def main() -> i32:
     rl.UnloadImage(cat)
 
     let font = rl.LoadFont(font_path)
-    rl.ImageDrawTextEx(ptr_of(parrots), font, title_text, rl.Vector2(x = 300.0, y = 230.0), f32<-font.baseSize, -2.0, rl.WHITE)
+    rl.ImageDrawTextEx(ptr_of(parrots), font, title_text, rl.Vector2(x = 300.0, y = 230.0), float<-font.baseSize, -2.0, rl.WHITE)
     rl.UnloadFont(font)
 
     let texture = rl.LoadTextureFromImage(parrots)

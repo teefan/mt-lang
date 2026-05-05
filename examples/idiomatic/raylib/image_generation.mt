@@ -2,12 +2,12 @@ module examples.idiomatic.raylib.image_generation
 
 import std.raylib as rl
 
-const num_textures: i32 = 9
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const num_textures: int = 9
+const screen_width: int = 800
+const screen_height: int = 450
 
 
-def texture_label(texture_index: i32) -> str:
+def texture_label(texture_index: int) -> str:
     if texture_index == 0:
         return "VERTICAL GRADIENT"
     elif texture_index == 1:
@@ -27,7 +27,7 @@ def texture_label(texture_index: i32) -> str:
     return "CELLULAR"
 
 
-def texture_label_color(texture_index: i32) -> rl.Color:
+def texture_label_color(texture_index: int) -> rl.Color:
     if texture_index <= 2:
         return rl.RAYWHITE
     elif texture_index <= 4:
@@ -39,7 +39,7 @@ def texture_label_color(texture_index: i32) -> rl.Color:
     return rl.RAYWHITE
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Image Generation")
     defer rl.close_window()
 

@@ -2,16 +2,16 @@ module examples.raylib.core.core_render_texture
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - render texture"
 const help_text: cstr = c"DRAWING BOUNCING BALL INSIDE RENDER TEXTURE!"
-const render_texture_width: i32 = 300
-const render_texture_height: i32 = 300
-const ball_radius_limit: f32 = 20.0
+const render_texture_width: int = 300
+const render_texture_height: int = 300
+const ball_radius_limit: float = 20.0
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -23,7 +23,7 @@ def main() -> i32:
         y = 0.5 * render_texture_height,
     )
     var ball_speed = rl.Vector2(x = 5.0, y = 4.0)
-    var rotation: f32 = 0.0
+    var rotation: float = 0.0
 
     rl.SetTargetFPS(60)
 

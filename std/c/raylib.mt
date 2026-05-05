@@ -6,72 +6,72 @@ extern module std.c.raylib:
     opaque va_list = c"va_list"
 
     struct Vector2:
-        x: f32
-        y: f32
+        x: float
+        y: float
 
     struct Vector3:
-        x: f32
-        y: f32
-        z: f32
+        x: float
+        y: float
+        z: float
 
     struct Vector4:
-        x: f32
-        y: f32
-        z: f32
-        w: f32
+        x: float
+        y: float
+        z: float
+        w: float
 
     type Quaternion = Vector4
 
     struct Matrix:
-        m0: f32
-        m4: f32
-        m8: f32
-        m12: f32
-        m1: f32
-        m5: f32
-        m9: f32
-        m13: f32
-        m2: f32
-        m6: f32
-        m10: f32
-        m14: f32
-        m3: f32
-        m7: f32
-        m11: f32
-        m15: f32
+        m0: float
+        m4: float
+        m8: float
+        m12: float
+        m1: float
+        m5: float
+        m9: float
+        m13: float
+        m2: float
+        m6: float
+        m10: float
+        m14: float
+        m3: float
+        m7: float
+        m11: float
+        m15: float
 
     struct Color:
-        r: u8
-        g: u8
-        b: u8
-        a: u8
+        r: ubyte
+        g: ubyte
+        b: ubyte
+        a: ubyte
 
     struct Rectangle:
-        x: f32
-        y: f32
-        width: f32
-        height: f32
+        x: float
+        y: float
+        width: float
+        height: float
 
     struct Image:
         data: ptr[void]
-        width: i32
-        height: i32
-        mipmaps: i32
-        format: i32
+        width: int
+        height: int
+        mipmaps: int
+        format: int
 
     struct Texture:
-        id: u32
-        width: i32
-        height: i32
-        mipmaps: i32
-        format: i32
+        id: uint
+        width: int
+        height: int
+        mipmaps: int
+        format: int
 
     type Texture2D = Texture
 
     type TextureCubemap = Texture
 
     struct RenderTexture:
-        id: u32
+        id: uint
         texture: Texture
         depth: Texture
 
@@ -79,23 +79,23 @@ extern module std.c.raylib:
 
     struct NPatchInfo:
         source: Rectangle
-        left: i32
-        top: i32
-        right: i32
-        bottom: i32
-        layout: i32
+        left: int
+        top: int
+        right: int
+        bottom: int
+        layout: int
 
     struct GlyphInfo:
-        value: i32
-        offsetX: i32
-        offsetY: i32
-        advanceX: i32
+        value: int
+        offsetX: int
+        offsetY: int
+        advanceX: int
         image: Image
 
     struct Font:
-        baseSize: i32
-        glyphCount: i32
-        glyphPadding: i32
+        baseSize: int
+        glyphCount: int
+        glyphPadding: int
         texture: Texture
         recs: ptr[Rectangle]
         glyphs: ptr[GlyphInfo]
@@ -104,48 +104,48 @@ extern module std.c.raylib:
         position: Vector3
         target: Vector3
         up: Vector3
-        fovy: f32
-        projection: i32
+        fovy: float
+        projection: int
 
     type Camera = Camera3D
 
     struct Camera2D:
         offset: Vector2
         target: Vector2
-        rotation: f32
-        zoom: f32
+        rotation: float
+        zoom: float
 
     struct Mesh:
-        vertexCount: i32
-        triangleCount: i32
-        vertices: ptr[f32]
-        texcoords: ptr[f32]
-        texcoords2: ptr[f32]
-        normals: ptr[f32]
-        tangents: ptr[f32]
-        colors: ptr[u8]
-        indices: ptr[u16]?
-        boneCount: i32
-        boneIndices: ptr[u8]
-        boneWeights: ptr[f32]
-        animVertices: ptr[f32]
-        animNormals: ptr[f32]
-        vaoId: u32
-        vboId: ptr[u32]
+        vertexCount: int
+        triangleCount: int
+        vertices: ptr[float]
+        texcoords: ptr[float]
+        texcoords2: ptr[float]
+        normals: ptr[float]
+        tangents: ptr[float]
+        colors: ptr[ubyte]
+        indices: ptr[ushort]?
+        boneCount: int
+        boneIndices: ptr[ubyte]
+        boneWeights: ptr[float]
+        animVertices: ptr[float]
+        animNormals: ptr[float]
+        vaoId: uint
+        vboId: ptr[uint]
 
     struct Shader:
-        id: u32
-        locs: ptr[i32]
+        id: uint
+        locs: ptr[int]
 
     struct MaterialMap:
         texture: Texture
         color: Color
-        value: f32
+        value: float
 
     struct Material:
         shader: Shader
         maps: ptr[MaterialMap]
-        params: array[f32, 4]
+        params: array[float, 4]
 
     struct Transform:
         translation: Vector3
@@ -156,28 +156,28 @@ extern module std.c.raylib:
 
     struct BoneInfo:
         name: array[char, 32]
-        parent: i32
+        parent: int
 
     struct ModelSkeleton:
-        boneCount: i32
+        boneCount: int
         bones: ptr[BoneInfo]
         bindPose: ptr[Transform]
 
     struct Model:
         transform: Matrix
-        meshCount: i32
-        materialCount: i32
+        meshCount: int
+        materialCount: int
         meshes: ptr[Mesh]
         materials: ptr[Material]
-        meshMaterial: ptr[i32]
+        meshMaterial: ptr[int]
         skeleton: ModelSkeleton
         currentPose: ptr[Transform]
         boneMatrices: ptr[Matrix]
 
     struct ModelAnimation:
         name: array[char, 32]
-        boneCount: i32
-        keyframeCount: i32
+        boneCount: int
+        keyframeCount: int
         keyframePoses: ptr[ModelAnimPose]
 
     struct Ray:
@@ -186,7 +186,7 @@ extern module std.c.raylib:
 
     struct RayCollision:
         hit: bool
-        distance: f32
+        distance: float
         point: Vector3
         normal: Vector3
 
@@ -195,10 +195,10 @@ extern module std.c.raylib:
         max: Vector3
 
     struct Wave:
-        frameCount: u32
-        sampleRate: u32
-        sampleSize: u32
-        channels: u32
+        frameCount: uint
+        sampleRate: uint
+        sampleSize: uint
+        channels: uint
         data: ptr[void]
 
     opaque rAudioBuffer = c"rAudioBuffer"
@@ -208,57 +208,57 @@ extern module std.c.raylib:
     struct AudioStream:
         buffer: ptr[rAudioBuffer]
         processor: ptr[rAudioProcessor]
-        sampleRate: u32
-        sampleSize: u32
-        channels: u32
+        sampleRate: uint
+        sampleSize: uint
+        channels: uint
 
     struct Sound:
         stream: AudioStream
-        frameCount: u32
+        frameCount: uint
 
     struct Music:
         stream: AudioStream
-        frameCount: u32
+        frameCount: uint
         looping: bool
-        ctxType: i32
+        ctxType: int
         ctxData: ptr[void]
 
     struct VrDeviceInfo:
-        hResolution: i32
-        vResolution: i32
-        hScreenSize: f32
-        vScreenSize: f32
-        eyeToScreenDistance: f32
-        lensSeparationDistance: f32
-        interpupillaryDistance: f32
-        lensDistortionValues: array[f32, 4]
-        chromaAbCorrection: array[f32, 4]
+        hResolution: int
+        vResolution: int
+        hScreenSize: float
+        vScreenSize: float
+        eyeToScreenDistance: float
+        lensSeparationDistance: float
+        interpupillaryDistance: float
+        lensDistortionValues: array[float, 4]
+        chromaAbCorrection: array[float, 4]
 
     struct VrStereoConfig:
         projection: array[Matrix, 2]
         viewOffset: array[Matrix, 2]
-        leftLensCenter: array[f32, 2]
-        rightLensCenter: array[f32, 2]
-        leftScreenCenter: array[f32, 2]
-        rightScreenCenter: array[f32, 2]
-        scale: array[f32, 2]
-        scaleIn: array[f32, 2]
+        leftLensCenter: array[float, 2]
+        rightLensCenter: array[float, 2]
+        leftScreenCenter: array[float, 2]
+        rightScreenCenter: array[float, 2]
+        scale: array[float, 2]
+        scaleIn: array[float, 2]
 
     struct FilePathList:
-        count: u32
+        count: uint
         paths: ptr[ptr[char]]
 
     struct AutomationEvent:
-        frame: u32
-        kind: u32
-        params: array[i32, 4]
+        frame: uint
+        kind: uint
+        params: array[int, 4]
 
     struct AutomationEventList:
-        capacity: u32
-        count: u32
+        capacity: uint
+        count: uint
         events: ptr[AutomationEvent]
 
-    flags ConfigFlags: i32
+    flags ConfigFlags: int
         FLAG_VSYNC_HINT = 64
         FLAG_FULLSCREEN_MODE = 2
         FLAG_WINDOW_RESIZABLE = 4
@@ -276,7 +276,7 @@ extern module std.c.raylib:
         FLAG_MSAA_4X_HINT = 32
         FLAG_INTERLACED_HINT = 65536
 
-    enum TraceLogLevel: i32
+    enum TraceLogLevel: int
         LOG_ALL = 0
         LOG_TRACE = 1
         LOG_DEBUG = 2
@@ -286,7 +286,7 @@ extern module std.c.raylib:
         LOG_FATAL = 6
         LOG_NONE = 7
 
-    enum KeyboardKey: i32
+    enum KeyboardKey: int
         KEY_NULL = 0
         KEY_APOSTROPHE = 39
         KEY_COMMA = 44
@@ -398,7 +398,7 @@ extern module std.c.raylib:
         KEY_VOLUME_UP = 24
         KEY_VOLUME_DOWN = 25
 
-    enum MouseButton: i32
+    enum MouseButton: int
         MOUSE_BUTTON_LEFT = 0
         MOUSE_BUTTON_RIGHT = 1
         MOUSE_BUTTON_MIDDLE = 2
@@ -407,7 +407,7 @@ extern module std.c.raylib:
         MOUSE_BUTTON_FORWARD = 5
         MOUSE_BUTTON_BACK = 6
 
-    enum MouseCursor: i32
+    enum MouseCursor: int
         MOUSE_CURSOR_DEFAULT = 0
         MOUSE_CURSOR_ARROW = 1
         MOUSE_CURSOR_IBEAM = 2
@@ -420,7 +420,7 @@ extern module std.c.raylib:
         MOUSE_CURSOR_RESIZE_ALL = 9
         MOUSE_CURSOR_NOT_ALLOWED = 10
 
-    enum GamepadButton: i32
+    enum GamepadButton: int
         GAMEPAD_BUTTON_UNKNOWN = 0
         GAMEPAD_BUTTON_LEFT_FACE_UP = 1
         GAMEPAD_BUTTON_LEFT_FACE_RIGHT = 2
@@ -440,7 +440,7 @@ extern module std.c.raylib:
         GAMEPAD_BUTTON_LEFT_THUMB = 16
         GAMEPAD_BUTTON_RIGHT_THUMB = 17
 
-    enum GamepadAxis: i32
+    enum GamepadAxis: int
         GAMEPAD_AXIS_LEFT_X = 0
         GAMEPAD_AXIS_LEFT_Y = 1
         GAMEPAD_AXIS_RIGHT_X = 2
@@ -448,7 +448,7 @@ extern module std.c.raylib:
         GAMEPAD_AXIS_LEFT_TRIGGER = 4
         GAMEPAD_AXIS_RIGHT_TRIGGER = 5
 
-    enum MaterialMapIndex: i32
+    enum MaterialMapIndex: int
         MATERIAL_MAP_ALBEDO = 0
         MATERIAL_MAP_METALNESS = 1
         MATERIAL_MAP_NORMAL = 2
@@ -461,7 +461,7 @@ extern module std.c.raylib:
         MATERIAL_MAP_PREFILTER = 9
         MATERIAL_MAP_BRDF = 10
 
-    enum ShaderLocationIndex: i32
+    enum ShaderLocationIndex: int
         SHADER_LOC_VERTEX_POSITION = 0
         SHADER_LOC_VERTEX_TEXCOORD01 = 1
         SHADER_LOC_VERTEX_TEXCOORD02 = 2
@@ -493,7 +493,7 @@ extern module std.c.raylib:
         SHADER_LOC_MATRIX_BONETRANSFORMS = 28
         SHADER_LOC_VERTEX_INSTANCETRANSFORM = 29
 
-    enum ShaderUniformDataType: i32
+    enum ShaderUniformDataType: int
         SHADER_UNIFORM_FLOAT = 0
         SHADER_UNIFORM_VEC2 = 1
         SHADER_UNIFORM_VEC3 = 2
@@ -508,13 +508,13 @@ extern module std.c.raylib:
         SHADER_UNIFORM_UIVEC4 = 11
         SHADER_UNIFORM_SAMPLER2D = 12
 
-    enum ShaderAttributeDataType: i32
+    enum ShaderAttributeDataType: int
         SHADER_ATTRIB_FLOAT = 0
         SHADER_ATTRIB_VEC2 = 1
         SHADER_ATTRIB_VEC3 = 2
         SHADER_ATTRIB_VEC4 = 3
 
-    enum PixelFormat: i32
+    enum PixelFormat: int
         PIXELFORMAT_UNCOMPRESSED_GRAYSCALE = 1
         PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA = 2
         PIXELFORMAT_UNCOMPRESSED_R5G6B5 = 3
@@ -540,7 +540,7 @@ extern module std.c.raylib:
         PIXELFORMAT_COMPRESSED_ASTC_4x4_RGBA = 23
         PIXELFORMAT_COMPRESSED_ASTC_8x8_RGBA = 24
 
-    enum TextureFilter: i32
+    enum TextureFilter: int
         TEXTURE_FILTER_POINT = 0
         TEXTURE_FILTER_BILINEAR = 1
         TEXTURE_FILTER_TRILINEAR = 2
@@ -548,25 +548,25 @@ extern module std.c.raylib:
         TEXTURE_FILTER_ANISOTROPIC_8X = 4
         TEXTURE_FILTER_ANISOTROPIC_16X = 5
 
-    enum TextureWrap: i32
+    enum TextureWrap: int
         TEXTURE_WRAP_REPEAT = 0
         TEXTURE_WRAP_CLAMP = 1
         TEXTURE_WRAP_MIRROR_REPEAT = 2
         TEXTURE_WRAP_MIRROR_CLAMP = 3
 
-    enum CubemapLayout: i32
+    enum CubemapLayout: int
         CUBEMAP_LAYOUT_AUTO_DETECT = 0
         CUBEMAP_LAYOUT_LINE_VERTICAL = 1
         CUBEMAP_LAYOUT_LINE_HORIZONTAL = 2
         CUBEMAP_LAYOUT_CROSS_THREE_BY_FOUR = 3
         CUBEMAP_LAYOUT_CROSS_FOUR_BY_THREE = 4
 
-    flags FontType: i32
+    flags FontType: int
         FONT_DEFAULT = 0
         FONT_BITMAP = 1
         FONT_SDF = 2
 
-    enum BlendMode: i32
+    enum BlendMode: int
         BLEND_ALPHA = 0
         BLEND_ADDITIVE = 1
         BLEND_MULTIPLIED = 2
@@ -576,7 +576,7 @@ extern module std.c.raylib:
         BLEND_CUSTOM = 6
         BLEND_CUSTOM_SEPARATE = 7
 
-    flags Gesture: i32
+    flags Gesture: int
         GESTURE_NONE = 0
         GESTURE_TAP = 1
         GESTURE_DOUBLETAP = 2
@@ -589,33 +589,33 @@ extern module std.c.raylib:
         GESTURE_PINCH_IN = 256
         GESTURE_PINCH_OUT = 512
 
-    enum CameraMode: i32
+    enum CameraMode: int
         CAMERA_CUSTOM = 0
         CAMERA_FREE = 1
         CAMERA_ORBITAL = 2
         CAMERA_FIRST_PERSON = 3
         CAMERA_THIRD_PERSON = 4
 
-    flags CameraProjection: i32
+    flags CameraProjection: int
         CAMERA_PERSPECTIVE = 0
         CAMERA_ORTHOGRAPHIC = 1
 
-    flags NPatchLayout: i32
+    flags NPatchLayout: int
         NPATCH_NINE_PATCH = 0
         NPATCH_THREE_PATCH_VERTICAL = 1
         NPATCH_THREE_PATCH_HORIZONTAL = 2
 
-    type TraceLogCallback = fn(arg0: i32, arg1: cstr, arg2: va_list) -> void
+    type TraceLogCallback = fn(arg0: int, arg1: cstr, arg2: va_list) -> void
 
-    type LoadFileDataCallback = fn(arg0: cstr, arg1: ptr[i32]) -> ptr[u8]
+    type LoadFileDataCallback = fn(arg0: cstr, arg1: ptr[int]) -> ptr[ubyte]
 
-    type SaveFileDataCallback = fn(arg0: cstr, arg1: ptr[void], arg2: i32) -> bool
+    type SaveFileDataCallback = fn(arg0: cstr, arg1: ptr[void], arg2: int) -> bool
 
     type LoadFileTextCallback = fn(arg0: cstr) -> ptr[char]
 
     type SaveFileTextCallback = fn(arg0: cstr, arg1: cstr) -> bool
 
-    extern def InitWindow(width: i32, height: i32, title: cstr) -> void
+    extern def InitWindow(width: int, height: int, title: cstr) -> void
     extern def CloseWindow() -> void
     extern def WindowShouldClose() -> bool
     extern def IsWindowReady() -> bool
@@ -625,40 +625,40 @@ extern module std.c.raylib:
     extern def IsWindowMaximized() -> bool
     extern def IsWindowFocused() -> bool
     extern def IsWindowResized() -> bool
-    extern def IsWindowState(flag: u32) -> bool
-    extern def SetWindowState(flag_bits: u32) -> void
-    extern def ClearWindowState(flag_bits: u32) -> void
+    extern def IsWindowState(flag: uint) -> bool
+    extern def SetWindowState(flag_bits: uint) -> void
+    extern def ClearWindowState(flag_bits: uint) -> void
     extern def ToggleFullscreen() -> void
     extern def ToggleBorderlessWindowed() -> void
     extern def MaximizeWindow() -> void
     extern def MinimizeWindow() -> void
     extern def RestoreWindow() -> void
     extern def SetWindowIcon(image: Image) -> void
-    extern def SetWindowIcons(images: ptr[Image], count: i32) -> void
+    extern def SetWindowIcons(images: ptr[Image], count: int) -> void
     extern def SetWindowTitle(title: cstr) -> void
-    extern def SetWindowPosition(x: i32, y: i32) -> void
-    extern def SetWindowMonitor(monitor: i32) -> void
-    extern def SetWindowMinSize(width: i32, height: i32) -> void
-    extern def SetWindowMaxSize(width: i32, height: i32) -> void
-    extern def SetWindowSize(width: i32, height: i32) -> void
-    extern def SetWindowOpacity(opacity: f32) -> void
+    extern def SetWindowPosition(x: int, y: int) -> void
+    extern def SetWindowMonitor(monitor: int) -> void
+    extern def SetWindowMinSize(width: int, height: int) -> void
+    extern def SetWindowMaxSize(width: int, height: int) -> void
+    extern def SetWindowSize(width: int, height: int) -> void
+    extern def SetWindowOpacity(opacity: float) -> void
     extern def SetWindowFocused() -> void
     extern def GetWindowHandle() -> ptr[void]
-    extern def GetScreenWidth() -> i32
-    extern def GetScreenHeight() -> i32
-    extern def GetRenderWidth() -> i32
-    extern def GetRenderHeight() -> i32
-    extern def GetMonitorCount() -> i32
-    extern def GetCurrentMonitor() -> i32
-    extern def GetMonitorPosition(monitor: i32) -> Vector2
-    extern def GetMonitorWidth(monitor: i32) -> i32
-    extern def GetMonitorHeight(monitor: i32) -> i32
-    extern def GetMonitorPhysicalWidth(monitor: i32) -> i32
-    extern def GetMonitorPhysicalHeight(monitor: i32) -> i32
-    extern def GetMonitorRefreshRate(monitor: i32) -> i32
+    extern def GetScreenWidth() -> int
+    extern def GetScreenHeight() -> int
+    extern def GetRenderWidth() -> int
+    extern def GetRenderHeight() -> int
+    extern def GetMonitorCount() -> int
+    extern def GetCurrentMonitor() -> int
+    extern def GetMonitorPosition(monitor: int) -> Vector2
+    extern def GetMonitorWidth(monitor: int) -> int
+    extern def GetMonitorHeight(monitor: int) -> int
+    extern def GetMonitorPhysicalWidth(monitor: int) -> int
+    extern def GetMonitorPhysicalHeight(monitor: int) -> int
+    extern def GetMonitorRefreshRate(monitor: int) -> int
     extern def GetWindowPosition() -> Vector2
     extern def GetWindowScaleDPI() -> Vector2
-    extern def GetMonitorName(monitor: i32) -> cstr
+    extern def GetMonitorName(monitor: int) -> cstr
     extern def SetClipboardText(text: cstr) -> void
     extern def GetClipboardText() -> cstr
     extern def GetClipboardImage() -> Image
@@ -681,9 +681,9 @@ extern module std.c.raylib:
     extern def EndTextureMode() -> void
     extern def BeginShaderMode(shader: Shader) -> void
     extern def EndShaderMode() -> void
-    extern def BeginBlendMode(mode: i32) -> void
+    extern def BeginBlendMode(mode: int) -> void
     extern def EndBlendMode() -> void
-    extern def BeginScissorMode(x: i32, y: i32, width: i32, height: i32) -> void
+    extern def BeginScissorMode(x: int, y: int, width: int, height: int) -> void
     extern def EndScissorMode() -> void
     extern def BeginVrStereoMode(config: VrStereoConfig) -> void
     extern def EndVrStereoMode() -> void
@@ -692,63 +692,63 @@ extern module std.c.raylib:
     extern def LoadShader(vsFileName: cstr?, fsFileName: cstr?) -> Shader
     extern def LoadShaderFromMemory(vsCode: cstr?, fsCode: cstr?) -> Shader
     extern def IsShaderValid(shader: Shader) -> bool
-    extern def GetShaderLocation(shader: Shader, uniformName: cstr) -> i32
-    extern def GetShaderLocationAttrib(shader: Shader, attribName: cstr) -> i32
-    extern def SetShaderValue(shader: Shader, locIndex: i32, value: const_ptr[void], uniformType: i32) -> void
-    extern def SetShaderValueV(shader: Shader, locIndex: i32, value: const_ptr[void], uniformType: i32, count: i32) -> void
-    extern def SetShaderValueMatrix(shader: Shader, locIndex: i32, mat: Matrix) -> void
-    extern def SetShaderValueTexture(shader: Shader, locIndex: i32, texture: Texture) -> void
+    extern def GetShaderLocation(shader: Shader, uniformName: cstr) -> int
+    extern def GetShaderLocationAttrib(shader: Shader, attribName: cstr) -> int
+    extern def SetShaderValue(shader: Shader, locIndex: int, value: const_ptr[void], uniformType: int) -> void
+    extern def SetShaderValueV(shader: Shader, locIndex: int, value: const_ptr[void], uniformType: int, count: int) -> void
+    extern def SetShaderValueMatrix(shader: Shader, locIndex: int, mat: Matrix) -> void
+    extern def SetShaderValueTexture(shader: Shader, locIndex: int, texture: Texture) -> void
     extern def UnloadShader(shader: Shader) -> void
     extern def GetScreenToWorldRay(position: Vector2, camera: Camera3D) -> Ray
-    extern def GetScreenToWorldRayEx(position: Vector2, camera: Camera3D, width: i32, height: i32) -> Ray
+    extern def GetScreenToWorldRayEx(position: Vector2, camera: Camera3D, width: int, height: int) -> Ray
     extern def GetWorldToScreen(position: Vector3, camera: Camera3D) -> Vector2
-    extern def GetWorldToScreenEx(position: Vector3, camera: Camera3D, width: i32, height: i32) -> Vector2
+    extern def GetWorldToScreenEx(position: Vector3, camera: Camera3D, width: int, height: int) -> Vector2
     extern def GetWorldToScreen2D(position: Vector2, camera: Camera2D) -> Vector2
     extern def GetScreenToWorld2D(position: Vector2, camera: Camera2D) -> Vector2
     extern def GetCameraMatrix(camera: Camera3D) -> Matrix
     extern def GetCameraMatrix2D(camera: Camera2D) -> Matrix
-    extern def SetTargetFPS(fps: i32) -> void
-    extern def GetFrameTime() -> f32
-    extern def GetTime() -> f64
-    extern def GetFPS() -> i32
+    extern def SetTargetFPS(fps: int) -> void
+    extern def GetFrameTime() -> float
+    extern def GetTime() -> double
+    extern def GetFPS() -> int
     extern def SwapScreenBuffer() -> void
     extern def PollInputEvents() -> void
-    extern def WaitTime(seconds: f64) -> void
-    extern def SetRandomSeed(seed: u32) -> void
-    extern def GetRandomValue(min: i32, max: i32) -> i32
-    extern def LoadRandomSequence(count: u32, min: i32, max: i32) -> ptr[i32]
-    extern def UnloadRandomSequence(sequence: ptr[i32]) -> void
+    extern def WaitTime(seconds: double) -> void
+    extern def SetRandomSeed(seed: uint) -> void
+    extern def GetRandomValue(min: int, max: int) -> int
+    extern def LoadRandomSequence(count: uint, min: int, max: int) -> ptr[int]
+    extern def UnloadRandomSequence(sequence: ptr[int]) -> void
     extern def TakeScreenshot(fileName: cstr) -> void
-    extern def SetConfigFlags(flag_bits: u32) -> void
+    extern def SetConfigFlags(flag_bits: uint) -> void
     extern def OpenURL(url: cstr) -> void
-    extern def SetTraceLogLevel(logLevel: i32) -> void
-    extern def TraceLog(logLevel: i32, text: cstr, ...) -> void
-    extern def SetTraceLogCallback(callback: fn(arg0: i32, arg1: cstr, arg2: va_list) -> void) -> void
-    extern def MemAlloc(size: u32) -> ptr[void]
-    extern def MemRealloc(ptr: ptr[void], size: u32) -> ptr[void]
+    extern def SetTraceLogLevel(logLevel: int) -> void
+    extern def TraceLog(logLevel: int, text: cstr, ...) -> void
+    extern def SetTraceLogCallback(callback: fn(arg0: int, arg1: cstr, arg2: va_list) -> void) -> void
+    extern def MemAlloc(size: uint) -> ptr[void]
+    extern def MemRealloc(ptr: ptr[void], size: uint) -> ptr[void]
     extern def MemFree(ptr: ptr[void]) -> void
-    extern def LoadFileData(fileName: cstr, dataSize: ptr[i32]) -> ptr[u8]
-    extern def UnloadFileData(data: ptr[u8]) -> void
-    extern def SaveFileData(fileName: cstr, data: ptr[void], dataSize: i32) -> bool
-    extern def ExportDataAsCode(data: const_ptr[u8], dataSize: i32, fileName: cstr) -> bool
+    extern def LoadFileData(fileName: cstr, dataSize: ptr[int]) -> ptr[ubyte]
+    extern def UnloadFileData(data: ptr[ubyte]) -> void
+    extern def SaveFileData(fileName: cstr, data: ptr[void], dataSize: int) -> bool
+    extern def ExportDataAsCode(data: const_ptr[ubyte], dataSize: int, fileName: cstr) -> bool
     extern def LoadFileText(fileName: cstr) -> ptr[char]
     extern def UnloadFileText(text: ptr[char]) -> void
     extern def SaveFileText(fileName: cstr, text: cstr) -> bool
-    extern def SetLoadFileDataCallback(callback: fn(arg0: cstr, arg1: ptr[i32]) -> ptr[u8]) -> void
-    extern def SetSaveFileDataCallback(callback: fn(arg0: cstr, arg1: ptr[void], arg2: i32) -> bool) -> void
+    extern def SetLoadFileDataCallback(callback: fn(arg0: cstr, arg1: ptr[int]) -> ptr[ubyte]) -> void
+    extern def SetSaveFileDataCallback(callback: fn(arg0: cstr, arg1: ptr[void], arg2: int) -> bool) -> void
     extern def SetLoadFileTextCallback(callback: fn(arg0: cstr) -> ptr[char]) -> void
     extern def SetSaveFileTextCallback(callback: fn(arg0: cstr, arg1: cstr) -> bool) -> void
-    extern def FileRename(fileName: cstr, fileRename: cstr) -> i32
-    extern def FileRemove(fileName: cstr) -> i32
-    extern def FileCopy(srcPath: cstr, dstPath: cstr) -> i32
-    extern def FileMove(srcPath: cstr, dstPath: cstr) -> i32
-    extern def FileTextReplace(fileName: cstr, search: cstr, replacement: cstr) -> i32
-    extern def FileTextFindIndex(fileName: cstr, search: cstr) -> i32
+    extern def FileRename(fileName: cstr, fileRename: cstr) -> int
+    extern def FileRemove(fileName: cstr) -> int
+    extern def FileCopy(srcPath: cstr, dstPath: cstr) -> int
+    extern def FileMove(srcPath: cstr, dstPath: cstr) -> int
+    extern def FileTextReplace(fileName: cstr, search: cstr, replacement: cstr) -> int
+    extern def FileTextFindIndex(fileName: cstr, search: cstr) -> int
     extern def FileExists(fileName: cstr) -> bool
     extern def DirectoryExists(dirPath: cstr) -> bool
     extern def IsFileExtension(fileName: cstr, ext: cstr) -> bool
-    extern def GetFileLength(fileName: cstr) -> i32
-    extern def GetFileModTime(fileName: cstr) -> isize
+    extern def GetFileLength(fileName: cstr) -> int
+    extern def GetFileModTime(fileName: cstr) -> ptr_int
     extern def GetFileExtension(fileName: cstr) -> cstr
     extern def GetFileName(filePath: cstr) -> cstr
     extern def GetFileNameWithoutExt(filePath: cstr) -> cstr
@@ -756,7 +756,7 @@ extern module std.c.raylib:
     extern def GetPrevDirectoryPath(dirPath: cstr) -> cstr
     extern def GetWorkingDirectory() -> cstr
     extern def GetApplicationDirectory() -> cstr
-    extern def MakeDirectory(dirPath: cstr) -> i32
+    extern def MakeDirectory(dirPath: cstr) -> int
     extern def ChangeDirectory(dirPath: cstr) -> bool
     extern def IsPathFile(path: cstr) -> bool
     extern def IsFileNameValid(fileName: cstr) -> bool
@@ -766,225 +766,225 @@ extern module std.c.raylib:
     extern def IsFileDropped() -> bool
     extern def LoadDroppedFiles() -> FilePathList
     extern def UnloadDroppedFiles(files: FilePathList) -> void
-    extern def GetDirectoryFileCount(dirPath: cstr) -> u32
-    extern def GetDirectoryFileCountEx(basePath: cstr, filter: cstr, scanSubdirs: bool) -> u32
-    extern def CompressData(data: const_ptr[u8], dataSize: i32, compDataSize: ptr[i32]) -> ptr[u8]
-    extern def DecompressData(compData: const_ptr[u8], compDataSize: i32, dataSize: ptr[i32]) -> ptr[u8]
-    extern def EncodeDataBase64(data: const_ptr[u8], dataSize: i32, outputSize: ptr[i32]) -> ptr[char]
-    extern def DecodeDataBase64(text: cstr, outputSize: ptr[i32]) -> ptr[u8]
-    extern def ComputeCRC32(data: ptr[u8], dataSize: i32) -> u32
-    extern def ComputeMD5(data: ptr[u8], dataSize: i32) -> ptr[u32]
-    extern def ComputeSHA1(data: ptr[u8], dataSize: i32) -> ptr[u32]
-    extern def ComputeSHA256(data: ptr[u8], dataSize: i32) -> ptr[u32]
+    extern def GetDirectoryFileCount(dirPath: cstr) -> uint
+    extern def GetDirectoryFileCountEx(basePath: cstr, filter: cstr, scanSubdirs: bool) -> uint
+    extern def CompressData(data: const_ptr[ubyte], dataSize: int, compDataSize: ptr[int]) -> ptr[ubyte]
+    extern def DecompressData(compData: const_ptr[ubyte], compDataSize: int, dataSize: ptr[int]) -> ptr[ubyte]
+    extern def EncodeDataBase64(data: const_ptr[ubyte], dataSize: int, outputSize: ptr[int]) -> ptr[char]
+    extern def DecodeDataBase64(text: cstr, outputSize: ptr[int]) -> ptr[ubyte]
+    extern def ComputeCRC32(data: ptr[ubyte], dataSize: int) -> uint
+    extern def ComputeMD5(data: ptr[ubyte], dataSize: int) -> ptr[uint]
+    extern def ComputeSHA1(data: ptr[ubyte], dataSize: int) -> ptr[uint]
+    extern def ComputeSHA256(data: ptr[ubyte], dataSize: int) -> ptr[uint]
     extern def LoadAutomationEventList(fileName: cstr?) -> AutomationEventList
     extern def UnloadAutomationEventList(list: AutomationEventList) -> void
     extern def ExportAutomationEventList(list: AutomationEventList, fileName: cstr) -> bool
     extern def SetAutomationEventList(list: ptr[AutomationEventList]) -> void
-    extern def SetAutomationEventBaseFrame(frame: i32) -> void
+    extern def SetAutomationEventBaseFrame(frame: int) -> void
     extern def StartAutomationEventRecording() -> void
     extern def StopAutomationEventRecording() -> void
     extern def PlayAutomationEvent(event: AutomationEvent) -> void
-    extern def IsKeyPressed(key: i32) -> bool
-    extern def IsKeyPressedRepeat(key: i32) -> bool
-    extern def IsKeyDown(key: i32) -> bool
-    extern def IsKeyReleased(key: i32) -> bool
-    extern def IsKeyUp(key: i32) -> bool
-    extern def GetKeyPressed() -> i32
-    extern def GetCharPressed() -> i32
-    extern def GetKeyName(key: i32) -> cstr
-    extern def SetExitKey(key: i32) -> void
-    extern def IsGamepadAvailable(gamepad: i32) -> bool
-    extern def GetGamepadName(gamepad: i32) -> cstr
-    extern def IsGamepadButtonPressed(gamepad: i32, button: i32) -> bool
-    extern def IsGamepadButtonDown(gamepad: i32, button: i32) -> bool
-    extern def IsGamepadButtonReleased(gamepad: i32, button: i32) -> bool
-    extern def IsGamepadButtonUp(gamepad: i32, button: i32) -> bool
-    extern def GetGamepadButtonPressed() -> i32
-    extern def GetGamepadAxisCount(gamepad: i32) -> i32
-    extern def GetGamepadAxisMovement(gamepad: i32, axis: i32) -> f32
-    extern def SetGamepadMappings(mappings: cstr) -> i32
-    extern def SetGamepadVibration(gamepad: i32, leftMotor: f32, rightMotor: f32, duration: f32) -> void
-    extern def IsMouseButtonPressed(button: i32) -> bool
-    extern def IsMouseButtonDown(button: i32) -> bool
-    extern def IsMouseButtonReleased(button: i32) -> bool
-    extern def IsMouseButtonUp(button: i32) -> bool
-    extern def GetMouseX() -> i32
-    extern def GetMouseY() -> i32
+    extern def IsKeyPressed(key: int) -> bool
+    extern def IsKeyPressedRepeat(key: int) -> bool
+    extern def IsKeyDown(key: int) -> bool
+    extern def IsKeyReleased(key: int) -> bool
+    extern def IsKeyUp(key: int) -> bool
+    extern def GetKeyPressed() -> int
+    extern def GetCharPressed() -> int
+    extern def GetKeyName(key: int) -> cstr
+    extern def SetExitKey(key: int) -> void
+    extern def IsGamepadAvailable(gamepad: int) -> bool
+    extern def GetGamepadName(gamepad: int) -> cstr
+    extern def IsGamepadButtonPressed(gamepad: int, button: int) -> bool
+    extern def IsGamepadButtonDown(gamepad: int, button: int) -> bool
+    extern def IsGamepadButtonReleased(gamepad: int, button: int) -> bool
+    extern def IsGamepadButtonUp(gamepad: int, button: int) -> bool
+    extern def GetGamepadButtonPressed() -> int
+    extern def GetGamepadAxisCount(gamepad: int) -> int
+    extern def GetGamepadAxisMovement(gamepad: int, axis: int) -> float
+    extern def SetGamepadMappings(mappings: cstr) -> int
+    extern def SetGamepadVibration(gamepad: int, leftMotor: float, rightMotor: float, duration: float) -> void
+    extern def IsMouseButtonPressed(button: int) -> bool
+    extern def IsMouseButtonDown(button: int) -> bool
+    extern def IsMouseButtonReleased(button: int) -> bool
+    extern def IsMouseButtonUp(button: int) -> bool
+    extern def GetMouseX() -> int
+    extern def GetMouseY() -> int
     extern def GetMousePosition() -> Vector2
     extern def GetMouseDelta() -> Vector2
-    extern def SetMousePosition(x: i32, y: i32) -> void
-    extern def SetMouseOffset(offsetX: i32, offsetY: i32) -> void
-    extern def SetMouseScale(scaleX: f32, scaleY: f32) -> void
-    extern def GetMouseWheelMove() -> f32
+    extern def SetMousePosition(x: int, y: int) -> void
+    extern def SetMouseOffset(offsetX: int, offsetY: int) -> void
+    extern def SetMouseScale(scaleX: float, scaleY: float) -> void
+    extern def GetMouseWheelMove() -> float
     extern def GetMouseWheelMoveV() -> Vector2
-    extern def SetMouseCursor(cursor: i32) -> void
-    extern def GetTouchX() -> i32
-    extern def GetTouchY() -> i32
-    extern def GetTouchPosition(index: i32) -> Vector2
-    extern def GetTouchPointId(index: i32) -> i32
-    extern def GetTouchPointCount() -> i32
-    extern def SetGesturesEnabled(flag_bits: u32) -> void
-    extern def IsGestureDetected(gesture: u32) -> bool
-    extern def GetGestureDetected() -> i32
-    extern def GetGestureHoldDuration() -> f32
+    extern def SetMouseCursor(cursor: int) -> void
+    extern def GetTouchX() -> int
+    extern def GetTouchY() -> int
+    extern def GetTouchPosition(index: int) -> Vector2
+    extern def GetTouchPointId(index: int) -> int
+    extern def GetTouchPointCount() -> int
+    extern def SetGesturesEnabled(flag_bits: uint) -> void
+    extern def IsGestureDetected(gesture: uint) -> bool
+    extern def GetGestureDetected() -> int
+    extern def GetGestureHoldDuration() -> float
     extern def GetGestureDragVector() -> Vector2
-    extern def GetGestureDragAngle() -> f32
+    extern def GetGestureDragAngle() -> float
     extern def GetGesturePinchVector() -> Vector2
-    extern def GetGesturePinchAngle() -> f32
-    extern def UpdateCamera(camera: ptr[Camera], mode: i32) -> void
-    extern def UpdateCameraPro(camera: ptr[Camera], movement: Vector3, rotation: Vector3, zoom: f32) -> void
+    extern def GetGesturePinchAngle() -> float
+    extern def UpdateCamera(camera: ptr[Camera], mode: int) -> void
+    extern def UpdateCameraPro(camera: ptr[Camera], movement: Vector3, rotation: Vector3, zoom: float) -> void
     extern def SetShapesTexture(texture: Texture, source: Rectangle) -> void
     extern def GetShapesTexture() -> Texture2D
     extern def GetShapesTextureRectangle() -> Rectangle
-    extern def DrawPixel(posX: i32, posY: i32, color: Color) -> void
+    extern def DrawPixel(posX: int, posY: int, color: Color) -> void
     extern def DrawPixelV(position: Vector2, color: Color) -> void
-    extern def DrawLine(startPosX: i32, startPosY: i32, endPosX: i32, endPosY: i32, color: Color) -> void
+    extern def DrawLine(startPosX: int, startPosY: int, endPosX: int, endPosY: int, color: Color) -> void
     extern def DrawLineV(startPos: Vector2, endPos: Vector2, color: Color) -> void
-    extern def DrawLineEx(startPos: Vector2, endPos: Vector2, thick: f32, color: Color) -> void
-    extern def DrawLineStrip(points: const_ptr[Vector2], pointCount: i32, color: Color) -> void
-    extern def DrawLineBezier(startPos: Vector2, endPos: Vector2, thick: f32, color: Color) -> void
-    extern def DrawLineDashed(startPos: Vector2, endPos: Vector2, dashSize: i32, spaceSize: i32, color: Color) -> void
-    extern def DrawCircle(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
-    extern def DrawCircleV(center: Vector2, radius: f32, color: Color) -> void
-    extern def DrawCircleGradient(center: Vector2, radius: f32, inner: Color, outer: Color) -> void
-    extern def DrawCircleSector(center: Vector2, radius: f32, startAngle: f32, endAngle: f32, segments: i32, color: Color) -> void
-    extern def DrawCircleSectorLines(center: Vector2, radius: f32, startAngle: f32, endAngle: f32, segments: i32, color: Color) -> void
-    extern def DrawCircleLines(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
-    extern def DrawCircleLinesV(center: Vector2, radius: f32, color: Color) -> void
-    extern def DrawEllipse(centerX: i32, centerY: i32, radiusH: f32, radiusV: f32, color: Color) -> void
-    extern def DrawEllipseV(center: Vector2, radiusH: f32, radiusV: f32, color: Color) -> void
-    extern def DrawEllipseLines(centerX: i32, centerY: i32, radiusH: f32, radiusV: f32, color: Color) -> void
-    extern def DrawEllipseLinesV(center: Vector2, radiusH: f32, radiusV: f32, color: Color) -> void
-    extern def DrawRing(center: Vector2, innerRadius: f32, outerRadius: f32, startAngle: f32, endAngle: f32, segments: i32, color: Color) -> void
-    extern def DrawRingLines(center: Vector2, innerRadius: f32, outerRadius: f32, startAngle: f32, endAngle: f32, segments: i32, color: Color) -> void
-    extern def DrawRectangle(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
+    extern def DrawLineEx(startPos: Vector2, endPos: Vector2, thick: float, color: Color) -> void
+    extern def DrawLineStrip(points: const_ptr[Vector2], pointCount: int, color: Color) -> void
+    extern def DrawLineBezier(startPos: Vector2, endPos: Vector2, thick: float, color: Color) -> void
+    extern def DrawLineDashed(startPos: Vector2, endPos: Vector2, dashSize: int, spaceSize: int, color: Color) -> void
+    extern def DrawCircle(centerX: int, centerY: int, radius: float, color: Color) -> void
+    extern def DrawCircleV(center: Vector2, radius: float, color: Color) -> void
+    extern def DrawCircleGradient(center: Vector2, radius: float, inner: Color, outer: Color) -> void
+    extern def DrawCircleSector(center: Vector2, radius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
+    extern def DrawCircleSectorLines(center: Vector2, radius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
+    extern def DrawCircleLines(centerX: int, centerY: int, radius: float, color: Color) -> void
+    extern def DrawCircleLinesV(center: Vector2, radius: float, color: Color) -> void
+    extern def DrawEllipse(centerX: int, centerY: int, radiusH: float, radiusV: float, color: Color) -> void
+    extern def DrawEllipseV(center: Vector2, radiusH: float, radiusV: float, color: Color) -> void
+    extern def DrawEllipseLines(centerX: int, centerY: int, radiusH: float, radiusV: float, color: Color) -> void
+    extern def DrawEllipseLinesV(center: Vector2, radiusH: float, radiusV: float, color: Color) -> void
+    extern def DrawRing(center: Vector2, innerRadius: float, outerRadius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
+    extern def DrawRingLines(center: Vector2, innerRadius: float, outerRadius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
+    extern def DrawRectangle(posX: int, posY: int, width: int, height: int, color: Color) -> void
     extern def DrawRectangleV(position: Vector2, size: Vector2, color: Color) -> void
     extern def DrawRectangleRec(rec: Rectangle, color: Color) -> void
-    extern def DrawRectanglePro(rec: Rectangle, origin: Vector2, rotation: f32, color: Color) -> void
-    extern def DrawRectangleGradientV(posX: i32, posY: i32, width: i32, height: i32, top: Color, bottom: Color) -> void
-    extern def DrawRectangleGradientH(posX: i32, posY: i32, width: i32, height: i32, left: Color, right: Color) -> void
+    extern def DrawRectanglePro(rec: Rectangle, origin: Vector2, rotation: float, color: Color) -> void
+    extern def DrawRectangleGradientV(posX: int, posY: int, width: int, height: int, top: Color, bottom: Color) -> void
+    extern def DrawRectangleGradientH(posX: int, posY: int, width: int, height: int, left: Color, right: Color) -> void
     extern def DrawRectangleGradientEx(rec: Rectangle, topLeft: Color, bottomLeft: Color, bottomRight: Color, topRight: Color) -> void
-    extern def DrawRectangleLines(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
-    extern def DrawRectangleLinesEx(rec: Rectangle, lineThick: f32, color: Color) -> void
-    extern def DrawRectangleRounded(rec: Rectangle, roundness: f32, segments: i32, color: Color) -> void
-    extern def DrawRectangleRoundedLines(rec: Rectangle, roundness: f32, segments: i32, color: Color) -> void
-    extern def DrawRectangleRoundedLinesEx(rec: Rectangle, roundness: f32, segments: i32, lineThick: f32, color: Color) -> void
+    extern def DrawRectangleLines(posX: int, posY: int, width: int, height: int, color: Color) -> void
+    extern def DrawRectangleLinesEx(rec: Rectangle, lineThick: float, color: Color) -> void
+    extern def DrawRectangleRounded(rec: Rectangle, roundness: float, segments: int, color: Color) -> void
+    extern def DrawRectangleRoundedLines(rec: Rectangle, roundness: float, segments: int, color: Color) -> void
+    extern def DrawRectangleRoundedLinesEx(rec: Rectangle, roundness: float, segments: int, lineThick: float, color: Color) -> void
     extern def DrawTriangle(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
     extern def DrawTriangleLines(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
-    extern def DrawTriangleFan(points: const_ptr[Vector2], pointCount: i32, color: Color) -> void
-    extern def DrawTriangleStrip(points: const_ptr[Vector2], pointCount: i32, color: Color) -> void
-    extern def DrawPoly(center: Vector2, sides: i32, radius: f32, rotation: f32, color: Color) -> void
-    extern def DrawPolyLines(center: Vector2, sides: i32, radius: f32, rotation: f32, color: Color) -> void
-    extern def DrawPolyLinesEx(center: Vector2, sides: i32, radius: f32, rotation: f32, lineThick: f32, color: Color) -> void
-    extern def DrawSplineLinear(points: const_ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
-    extern def DrawSplineBasis(points: const_ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
-    extern def DrawSplineCatmullRom(points: const_ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
-    extern def DrawSplineBezierQuadratic(points: const_ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
-    extern def DrawSplineBezierCubic(points: const_ptr[Vector2], pointCount: i32, thick: f32, color: Color) -> void
-    extern def DrawSplineSegmentLinear(p1: Vector2, p2: Vector2, thick: f32, color: Color) -> void
-    extern def DrawSplineSegmentBasis(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, thick: f32, color: Color) -> void
-    extern def DrawSplineSegmentCatmullRom(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, thick: f32, color: Color) -> void
-    extern def DrawSplineSegmentBezierQuadratic(p1: Vector2, c2: Vector2, p3: Vector2, thick: f32, color: Color) -> void
-    extern def DrawSplineSegmentBezierCubic(p1: Vector2, c2: Vector2, c3: Vector2, p4: Vector2, thick: f32, color: Color) -> void
-    extern def GetSplinePointLinear(startPos: Vector2, endPos: Vector2, t: f32) -> Vector2
-    extern def GetSplinePointBasis(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, t: f32) -> Vector2
-    extern def GetSplinePointCatmullRom(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, t: f32) -> Vector2
-    extern def GetSplinePointBezierQuad(p1: Vector2, c2: Vector2, p3: Vector2, t: f32) -> Vector2
-    extern def GetSplinePointBezierCubic(p1: Vector2, c2: Vector2, c3: Vector2, p4: Vector2, t: f32) -> Vector2
+    extern def DrawTriangleFan(points: const_ptr[Vector2], pointCount: int, color: Color) -> void
+    extern def DrawTriangleStrip(points: const_ptr[Vector2], pointCount: int, color: Color) -> void
+    extern def DrawPoly(center: Vector2, sides: int, radius: float, rotation: float, color: Color) -> void
+    extern def DrawPolyLines(center: Vector2, sides: int, radius: float, rotation: float, color: Color) -> void
+    extern def DrawPolyLinesEx(center: Vector2, sides: int, radius: float, rotation: float, lineThick: float, color: Color) -> void
+    extern def DrawSplineLinear(points: const_ptr[Vector2], pointCount: int, thick: float, color: Color) -> void
+    extern def DrawSplineBasis(points: const_ptr[Vector2], pointCount: int, thick: float, color: Color) -> void
+    extern def DrawSplineCatmullRom(points: const_ptr[Vector2], pointCount: int, thick: float, color: Color) -> void
+    extern def DrawSplineBezierQuadratic(points: const_ptr[Vector2], pointCount: int, thick: float, color: Color) -> void
+    extern def DrawSplineBezierCubic(points: const_ptr[Vector2], pointCount: int, thick: float, color: Color) -> void
+    extern def DrawSplineSegmentLinear(p1: Vector2, p2: Vector2, thick: float, color: Color) -> void
+    extern def DrawSplineSegmentBasis(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, thick: float, color: Color) -> void
+    extern def DrawSplineSegmentCatmullRom(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, thick: float, color: Color) -> void
+    extern def DrawSplineSegmentBezierQuadratic(p1: Vector2, c2: Vector2, p3: Vector2, thick: float, color: Color) -> void
+    extern def DrawSplineSegmentBezierCubic(p1: Vector2, c2: Vector2, c3: Vector2, p4: Vector2, thick: float, color: Color) -> void
+    extern def GetSplinePointLinear(startPos: Vector2, endPos: Vector2, t: float) -> Vector2
+    extern def GetSplinePointBasis(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, t: float) -> Vector2
+    extern def GetSplinePointCatmullRom(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, t: float) -> Vector2
+    extern def GetSplinePointBezierQuad(p1: Vector2, c2: Vector2, p3: Vector2, t: float) -> Vector2
+    extern def GetSplinePointBezierCubic(p1: Vector2, c2: Vector2, c3: Vector2, p4: Vector2, t: float) -> Vector2
     extern def CheckCollisionRecs(rec1: Rectangle, rec2: Rectangle) -> bool
-    extern def CheckCollisionCircles(center1: Vector2, radius1: f32, center2: Vector2, radius2: f32) -> bool
-    extern def CheckCollisionCircleRec(center: Vector2, radius: f32, rec: Rectangle) -> bool
-    extern def CheckCollisionCircleLine(center: Vector2, radius: f32, p1: Vector2, p2: Vector2) -> bool
+    extern def CheckCollisionCircles(center1: Vector2, radius1: float, center2: Vector2, radius2: float) -> bool
+    extern def CheckCollisionCircleRec(center: Vector2, radius: float, rec: Rectangle) -> bool
+    extern def CheckCollisionCircleLine(center: Vector2, radius: float, p1: Vector2, p2: Vector2) -> bool
     extern def CheckCollisionPointRec(point: Vector2, rec: Rectangle) -> bool
-    extern def CheckCollisionPointCircle(point: Vector2, center: Vector2, radius: f32) -> bool
+    extern def CheckCollisionPointCircle(point: Vector2, center: Vector2, radius: float) -> bool
     extern def CheckCollisionPointTriangle(point: Vector2, p1: Vector2, p2: Vector2, p3: Vector2) -> bool
-    extern def CheckCollisionPointLine(point: Vector2, p1: Vector2, p2: Vector2, threshold: i32) -> bool
-    extern def CheckCollisionPointPoly(point: Vector2, points: const_ptr[Vector2], pointCount: i32) -> bool
+    extern def CheckCollisionPointLine(point: Vector2, p1: Vector2, p2: Vector2, threshold: int) -> bool
+    extern def CheckCollisionPointPoly(point: Vector2, points: const_ptr[Vector2], pointCount: int) -> bool
     extern def CheckCollisionLines(startPos1: Vector2, endPos1: Vector2, startPos2: Vector2, endPos2: Vector2, collisionPoint: ptr[Vector2]) -> bool
     extern def GetCollisionRec(rec1: Rectangle, rec2: Rectangle) -> Rectangle
     extern def LoadImage(fileName: cstr) -> Image
-    extern def LoadImageRaw(fileName: cstr, width: i32, height: i32, format: i32, headerSize: i32) -> Image
-    extern def LoadImageAnim(fileName: cstr, frames: ptr[i32]) -> Image
-    extern def LoadImageAnimFromMemory(fileType: cstr, fileData: const_ptr[u8], dataSize: i32, frames: ptr[i32]) -> Image
-    extern def LoadImageFromMemory(fileType: cstr, fileData: const_ptr[u8], dataSize: i32) -> Image
+    extern def LoadImageRaw(fileName: cstr, width: int, height: int, format: int, headerSize: int) -> Image
+    extern def LoadImageAnim(fileName: cstr, frames: ptr[int]) -> Image
+    extern def LoadImageAnimFromMemory(fileType: cstr, fileData: const_ptr[ubyte], dataSize: int, frames: ptr[int]) -> Image
+    extern def LoadImageFromMemory(fileType: cstr, fileData: const_ptr[ubyte], dataSize: int) -> Image
     extern def LoadImageFromTexture(texture: Texture) -> Image
     extern def LoadImageFromScreen() -> Image
     extern def IsImageValid(image: Image) -> bool
     extern def UnloadImage(image: Image) -> void
     extern def ExportImage(image: Image, fileName: cstr) -> bool
-    extern def ExportImageToMemory(image: Image, fileType: cstr, fileSize: ptr[i32]) -> ptr[u8]
+    extern def ExportImageToMemory(image: Image, fileType: cstr, fileSize: ptr[int]) -> ptr[ubyte]
     extern def ExportImageAsCode(image: Image, fileName: cstr) -> bool
-    extern def GenImageColor(width: i32, height: i32, color: Color) -> Image
-    extern def GenImageGradientLinear(width: i32, height: i32, direction: i32, start: Color, end: Color) -> Image
-    extern def GenImageGradientRadial(width: i32, height: i32, density: f32, inner: Color, outer: Color) -> Image
-    extern def GenImageGradientSquare(width: i32, height: i32, density: f32, inner: Color, outer: Color) -> Image
-    extern def GenImageChecked(width: i32, height: i32, checksX: i32, checksY: i32, col1: Color, col2: Color) -> Image
-    extern def GenImageWhiteNoise(width: i32, height: i32, factor: f32) -> Image
-    extern def GenImagePerlinNoise(width: i32, height: i32, offsetX: i32, offsetY: i32, scale: f32) -> Image
-    extern def GenImageCellular(width: i32, height: i32, tileSize: i32) -> Image
-    extern def GenImageText(width: i32, height: i32, text: cstr) -> Image
+    extern def GenImageColor(width: int, height: int, color: Color) -> Image
+    extern def GenImageGradientLinear(width: int, height: int, direction: int, start: Color, end: Color) -> Image
+    extern def GenImageGradientRadial(width: int, height: int, density: float, inner: Color, outer: Color) -> Image
+    extern def GenImageGradientSquare(width: int, height: int, density: float, inner: Color, outer: Color) -> Image
+    extern def GenImageChecked(width: int, height: int, checksX: int, checksY: int, col1: Color, col2: Color) -> Image
+    extern def GenImageWhiteNoise(width: int, height: int, factor: float) -> Image
+    extern def GenImagePerlinNoise(width: int, height: int, offsetX: int, offsetY: int, scale: float) -> Image
+    extern def GenImageCellular(width: int, height: int, tileSize: int) -> Image
+    extern def GenImageText(width: int, height: int, text: cstr) -> Image
     extern def ImageCopy(image: Image) -> Image
     extern def ImageFromImage(image: Image, rec: Rectangle) -> Image
-    extern def ImageFromChannel(image: Image, selectedChannel: i32) -> Image
-    extern def ImageText(text: cstr, fontSize: i32, color: Color) -> Image
-    extern def ImageTextEx(font: Font, text: cstr, fontSize: f32, spacing: f32, tint: Color) -> Image
-    extern def ImageFormat(image: ptr[Image], newFormat: i32) -> void
+    extern def ImageFromChannel(image: Image, selectedChannel: int) -> Image
+    extern def ImageText(text: cstr, fontSize: int, color: Color) -> Image
+    extern def ImageTextEx(font: Font, text: cstr, fontSize: float, spacing: float, tint: Color) -> Image
+    extern def ImageFormat(image: ptr[Image], newFormat: int) -> void
     extern def ImageToPOT(image: ptr[Image], fill: Color) -> void
     extern def ImageCrop(image: ptr[Image], crop: Rectangle) -> void
-    extern def ImageAlphaCrop(image: ptr[Image], threshold: f32) -> void
-    extern def ImageAlphaClear(image: ptr[Image], color: Color, threshold: f32) -> void
+    extern def ImageAlphaCrop(image: ptr[Image], threshold: float) -> void
+    extern def ImageAlphaClear(image: ptr[Image], color: Color, threshold: float) -> void
     extern def ImageAlphaMask(image: ptr[Image], alphaMask: Image) -> void
     extern def ImageAlphaPremultiply(image: ptr[Image]) -> void
-    extern def ImageBlurGaussian(image: ptr[Image], blurSize: i32) -> void
-    extern def ImageKernelConvolution(image: ptr[Image], kernel: const_ptr[f32], kernelSize: i32) -> void
-    extern def ImageResize(image: ptr[Image], newWidth: i32, newHeight: i32) -> void
-    extern def ImageResizeNN(image: ptr[Image], newWidth: i32, newHeight: i32) -> void
-    extern def ImageResizeCanvas(image: ptr[Image], newWidth: i32, newHeight: i32, offsetX: i32, offsetY: i32, fill: Color) -> void
+    extern def ImageBlurGaussian(image: ptr[Image], blurSize: int) -> void
+    extern def ImageKernelConvolution(image: ptr[Image], kernel: const_ptr[float], kernelSize: int) -> void
+    extern def ImageResize(image: ptr[Image], newWidth: int, newHeight: int) -> void
+    extern def ImageResizeNN(image: ptr[Image], newWidth: int, newHeight: int) -> void
+    extern def ImageResizeCanvas(image: ptr[Image], newWidth: int, newHeight: int, offsetX: int, offsetY: int, fill: Color) -> void
     extern def ImageMipmaps(image: ptr[Image]) -> void
-    extern def ImageDither(image: ptr[Image], rBpp: i32, gBpp: i32, bBpp: i32, aBpp: i32) -> void
+    extern def ImageDither(image: ptr[Image], rBpp: int, gBpp: int, bBpp: int, aBpp: int) -> void
     extern def ImageFlipVertical(image: ptr[Image]) -> void
     extern def ImageFlipHorizontal(image: ptr[Image]) -> void
-    extern def ImageRotate(image: ptr[Image], degrees: i32) -> void
+    extern def ImageRotate(image: ptr[Image], degrees: int) -> void
     extern def ImageRotateCW(image: ptr[Image]) -> void
     extern def ImageRotateCCW(image: ptr[Image]) -> void
     extern def ImageColorTint(image: ptr[Image], color: Color) -> void
     extern def ImageColorInvert(image: ptr[Image]) -> void
     extern def ImageColorGrayscale(image: ptr[Image]) -> void
-    extern def ImageColorContrast(image: ptr[Image], contrast: f32) -> void
-    extern def ImageColorBrightness(image: ptr[Image], brightness: i32) -> void
+    extern def ImageColorContrast(image: ptr[Image], contrast: float) -> void
+    extern def ImageColorBrightness(image: ptr[Image], brightness: int) -> void
     extern def ImageColorReplace(image: ptr[Image], color: Color, replace: Color) -> void
     extern def LoadImageColors(image: Image) -> ptr[Color]
-    extern def LoadImagePalette(image: Image, maxPaletteSize: i32, colorCount: ptr[i32]) -> ptr[Color]
+    extern def LoadImagePalette(image: Image, maxPaletteSize: int, colorCount: ptr[int]) -> ptr[Color]
     extern def UnloadImageColors(colors: ptr[Color]) -> void
     extern def UnloadImagePalette(colors: ptr[Color]) -> void
-    extern def GetImageAlphaBorder(image: Image, threshold: f32) -> Rectangle
-    extern def GetImageColor(image: Image, x: i32, y: i32) -> Color
+    extern def GetImageAlphaBorder(image: Image, threshold: float) -> Rectangle
+    extern def GetImageColor(image: Image, x: int, y: int) -> Color
     extern def ImageClearBackground(dst: ptr[Image], color: Color) -> void
-    extern def ImageDrawPixel(dst: ptr[Image], posX: i32, posY: i32, color: Color) -> void
+    extern def ImageDrawPixel(dst: ptr[Image], posX: int, posY: int, color: Color) -> void
     extern def ImageDrawPixelV(dst: ptr[Image], position: Vector2, color: Color) -> void
-    extern def ImageDrawLine(dst: ptr[Image], startPosX: i32, startPosY: i32, endPosX: i32, endPosY: i32, color: Color) -> void
+    extern def ImageDrawLine(dst: ptr[Image], startPosX: int, startPosY: int, endPosX: int, endPosY: int, color: Color) -> void
     extern def ImageDrawLineV(dst: ptr[Image], start: Vector2, end: Vector2, color: Color) -> void
-    extern def ImageDrawLineEx(dst: ptr[Image], start: Vector2, end: Vector2, thick: i32, color: Color) -> void
-    extern def ImageDrawCircle(dst: ptr[Image], centerX: i32, centerY: i32, radius: i32, color: Color) -> void
-    extern def ImageDrawCircleV(dst: ptr[Image], center: Vector2, radius: i32, color: Color) -> void
-    extern def ImageDrawCircleLines(dst: ptr[Image], centerX: i32, centerY: i32, radius: i32, color: Color) -> void
-    extern def ImageDrawCircleLinesV(dst: ptr[Image], center: Vector2, radius: i32, color: Color) -> void
-    extern def ImageDrawRectangle(dst: ptr[Image], posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
+    extern def ImageDrawLineEx(dst: ptr[Image], start: Vector2, end: Vector2, thick: int, color: Color) -> void
+    extern def ImageDrawCircle(dst: ptr[Image], centerX: int, centerY: int, radius: int, color: Color) -> void
+    extern def ImageDrawCircleV(dst: ptr[Image], center: Vector2, radius: int, color: Color) -> void
+    extern def ImageDrawCircleLines(dst: ptr[Image], centerX: int, centerY: int, radius: int, color: Color) -> void
+    extern def ImageDrawCircleLinesV(dst: ptr[Image], center: Vector2, radius: int, color: Color) -> void
+    extern def ImageDrawRectangle(dst: ptr[Image], posX: int, posY: int, width: int, height: int, color: Color) -> void
     extern def ImageDrawRectangleV(dst: ptr[Image], position: Vector2, size: Vector2, color: Color) -> void
     extern def ImageDrawRectangleRec(dst: ptr[Image], rec: Rectangle, color: Color) -> void
-    extern def ImageDrawRectangleLines(dst: ptr[Image], rec: Rectangle, thick: i32, color: Color) -> void
+    extern def ImageDrawRectangleLines(dst: ptr[Image], rec: Rectangle, thick: int, color: Color) -> void
     extern def ImageDrawTriangle(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
     extern def ImageDrawTriangleEx(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, c1: Color, c2: Color, c3: Color) -> void
     extern def ImageDrawTriangleLines(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
-    extern def ImageDrawTriangleFan(dst: ptr[Image], points: const_ptr[Vector2], pointCount: i32, color: Color) -> void
-    extern def ImageDrawTriangleStrip(dst: ptr[Image], points: const_ptr[Vector2], pointCount: i32, color: Color) -> void
+    extern def ImageDrawTriangleFan(dst: ptr[Image], points: const_ptr[Vector2], pointCount: int, color: Color) -> void
+    extern def ImageDrawTriangleStrip(dst: ptr[Image], points: const_ptr[Vector2], pointCount: int, color: Color) -> void
     extern def ImageDraw(dst: ptr[Image], src: Image, srcRec: Rectangle, dstRec: Rectangle, tint: Color) -> void
-    extern def ImageDrawText(dst: ptr[Image], text: cstr, posX: i32, posY: i32, fontSize: i32, color: Color) -> void
-    extern def ImageDrawTextEx(dst: ptr[Image], font: Font, text: cstr, position: Vector2, fontSize: f32, spacing: f32, tint: Color) -> void
+    extern def ImageDrawText(dst: ptr[Image], text: cstr, posX: int, posY: int, fontSize: int, color: Color) -> void
+    extern def ImageDrawTextEx(dst: ptr[Image], font: Font, text: cstr, position: Vector2, fontSize: float, spacing: float, tint: Color) -> void
     extern def LoadTexture(fileName: cstr) -> Texture2D
     extern def LoadTextureFromImage(image: Image) -> Texture2D
-    extern def LoadTextureCubemap(image: Image, layout: i32) -> TextureCubemap
-    extern def LoadRenderTexture(width: i32, height: i32) -> RenderTexture2D
+    extern def LoadTextureCubemap(image: Image, layout: int) -> TextureCubemap
+    extern def LoadRenderTexture(width: int, height: int) -> RenderTexture2D
     extern def IsTextureValid(texture: Texture) -> bool
     extern def UnloadTexture(texture: Texture) -> void
     extern def IsRenderTextureValid(target: RenderTexture) -> bool
@@ -992,179 +992,179 @@ extern module std.c.raylib:
     extern def UpdateTexture(texture: Texture, pixels: const_ptr[void]) -> void
     extern def UpdateTextureRec(texture: Texture, rec: Rectangle, pixels: const_ptr[void]) -> void
     extern def GenTextureMipmaps(texture: ptr[Texture2D]) -> void
-    extern def SetTextureFilter(texture: Texture, filter: i32) -> void
-    extern def SetTextureWrap(texture: Texture, wrap: i32) -> void
-    extern def DrawTexture(texture: Texture, posX: i32, posY: i32, tint: Color) -> void
+    extern def SetTextureFilter(texture: Texture, filter: int) -> void
+    extern def SetTextureWrap(texture: Texture, wrap: int) -> void
+    extern def DrawTexture(texture: Texture, posX: int, posY: int, tint: Color) -> void
     extern def DrawTextureV(texture: Texture, position: Vector2, tint: Color) -> void
-    extern def DrawTextureEx(texture: Texture, position: Vector2, rotation: f32, scale: f32, tint: Color) -> void
+    extern def DrawTextureEx(texture: Texture, position: Vector2, rotation: float, scale: float, tint: Color) -> void
     extern def DrawTextureRec(texture: Texture, source: Rectangle, position: Vector2, tint: Color) -> void
-    extern def DrawTexturePro(texture: Texture, source: Rectangle, dest: Rectangle, origin: Vector2, rotation: f32, tint: Color) -> void
-    extern def DrawTextureNPatch(texture: Texture, nPatchInfo: NPatchInfo, dest: Rectangle, origin: Vector2, rotation: f32, tint: Color) -> void
+    extern def DrawTexturePro(texture: Texture, source: Rectangle, dest: Rectangle, origin: Vector2, rotation: float, tint: Color) -> void
+    extern def DrawTextureNPatch(texture: Texture, nPatchInfo: NPatchInfo, dest: Rectangle, origin: Vector2, rotation: float, tint: Color) -> void
     extern def ColorIsEqual(col1: Color, col2: Color) -> bool
-    extern def Fade(color: Color, alpha: f32) -> Color
-    extern def ColorToInt(color: Color) -> i32
+    extern def Fade(color: Color, alpha: float) -> Color
+    extern def ColorToInt(color: Color) -> int
     extern def ColorNormalize(color: Color) -> Vector4
     extern def ColorFromNormalized(normalized: Vector4) -> Color
     extern def ColorToHSV(color: Color) -> Vector3
-    extern def ColorFromHSV(hue: f32, saturation: f32, value: f32) -> Color
+    extern def ColorFromHSV(hue: float, saturation: float, value: float) -> Color
     extern def ColorTint(color: Color, tint: Color) -> Color
-    extern def ColorBrightness(color: Color, factor: f32) -> Color
-    extern def ColorContrast(color: Color, contrast: f32) -> Color
-    extern def ColorAlpha(color: Color, alpha: f32) -> Color
+    extern def ColorBrightness(color: Color, factor: float) -> Color
+    extern def ColorContrast(color: Color, contrast: float) -> Color
+    extern def ColorAlpha(color: Color, alpha: float) -> Color
     extern def ColorAlphaBlend(dst: Color, src: Color, tint: Color) -> Color
-    extern def ColorLerp(color1: Color, color2: Color, factor: f32) -> Color
-    extern def GetColor(hexValue: u32) -> Color
-    extern def GetPixelColor(srcPtr: ptr[void], format: i32) -> Color
-    extern def SetPixelColor(dstPtr: ptr[void], color: Color, format: i32) -> void
-    extern def GetPixelDataSize(width: i32, height: i32, format: i32) -> i32
+    extern def ColorLerp(color1: Color, color2: Color, factor: float) -> Color
+    extern def GetColor(hexValue: uint) -> Color
+    extern def GetPixelColor(srcPtr: ptr[void], format: int) -> Color
+    extern def SetPixelColor(dstPtr: ptr[void], color: Color, format: int) -> void
+    extern def GetPixelDataSize(width: int, height: int, format: int) -> int
     extern def GetFontDefault() -> Font
     extern def LoadFont(fileName: cstr) -> Font
-    extern def LoadFontEx(fileName: cstr, fontSize: i32, codepoints: ptr[i32]?, codepointCount: i32) -> Font
-    extern def LoadFontFromImage(image: Image, key: Color, firstChar: i32) -> Font
-    extern def LoadFontFromMemory(fileType: cstr, fileData: const_ptr[u8], dataSize: i32, fontSize: i32, codepoints: ptr[i32]?, codepointCount: i32) -> Font
+    extern def LoadFontEx(fileName: cstr, fontSize: int, codepoints: ptr[int]?, codepointCount: int) -> Font
+    extern def LoadFontFromImage(image: Image, key: Color, firstChar: int) -> Font
+    extern def LoadFontFromMemory(fileType: cstr, fileData: const_ptr[ubyte], dataSize: int, fontSize: int, codepoints: ptr[int]?, codepointCount: int) -> Font
     extern def IsFontValid(font: Font) -> bool
-    extern def LoadFontData(fileData: const_ptr[u8], dataSize: i32, fontSize: i32, codepoints: ptr[i32]?, codepointCount: i32, kind: i32, glyphCount: ptr[i32]) -> ptr[GlyphInfo]
-    extern def GenImageFontAtlas(glyphs: const_ptr[GlyphInfo], glyphRecs: ptr[ptr[Rectangle]], glyphCount: i32, fontSize: i32, padding: i32, packMethod: i32) -> Image
-    extern def UnloadFontData(glyphs: ptr[GlyphInfo], glyphCount: i32) -> void
+    extern def LoadFontData(fileData: const_ptr[ubyte], dataSize: int, fontSize: int, codepoints: ptr[int]?, codepointCount: int, kind: int, glyphCount: ptr[int]) -> ptr[GlyphInfo]
+    extern def GenImageFontAtlas(glyphs: const_ptr[GlyphInfo], glyphRecs: ptr[ptr[Rectangle]], glyphCount: int, fontSize: int, padding: int, packMethod: int) -> Image
+    extern def UnloadFontData(glyphs: ptr[GlyphInfo], glyphCount: int) -> void
     extern def UnloadFont(font: Font) -> void
     extern def ExportFontAsCode(font: Font, fileName: cstr) -> bool
-    extern def DrawFPS(posX: i32, posY: i32) -> void
-    extern def DrawText(text: cstr, posX: i32, posY: i32, fontSize: i32, color: Color) -> void
-    extern def DrawTextEx(font: Font, text: cstr, position: Vector2, fontSize: f32, spacing: f32, tint: Color) -> void
-    extern def DrawTextPro(font: Font, text: cstr, position: Vector2, origin: Vector2, rotation: f32, fontSize: f32, spacing: f32, tint: Color) -> void
-    extern def DrawTextCodepoint(font: Font, codepoint: i32, position: Vector2, fontSize: f32, tint: Color) -> void
-    extern def DrawTextCodepoints(font: Font, codepoints: const_ptr[i32], codepointCount: i32, position: Vector2, fontSize: f32, spacing: f32, tint: Color) -> void
-    extern def SetTextLineSpacing(spacing: i32) -> void
-    extern def MeasureText(text: cstr, fontSize: i32) -> i32
-    extern def MeasureTextEx(font: Font, text: cstr, fontSize: f32, spacing: f32) -> Vector2
-    extern def MeasureTextCodepoints(font: Font, codepoints: const_ptr[i32], length: i32, fontSize: f32, spacing: f32) -> Vector2
-    extern def GetGlyphIndex(font: Font, codepoint: i32) -> i32
-    extern def GetGlyphInfo(font: Font, codepoint: i32) -> GlyphInfo
-    extern def GetGlyphAtlasRec(font: Font, codepoint: i32) -> Rectangle
-    extern def LoadUTF8(codepoints: const_ptr[i32], length: i32) -> ptr[char]
+    extern def DrawFPS(posX: int, posY: int) -> void
+    extern def DrawText(text: cstr, posX: int, posY: int, fontSize: int, color: Color) -> void
+    extern def DrawTextEx(font: Font, text: cstr, position: Vector2, fontSize: float, spacing: float, tint: Color) -> void
+    extern def DrawTextPro(font: Font, text: cstr, position: Vector2, origin: Vector2, rotation: float, fontSize: float, spacing: float, tint: Color) -> void
+    extern def DrawTextCodepoint(font: Font, codepoint: int, position: Vector2, fontSize: float, tint: Color) -> void
+    extern def DrawTextCodepoints(font: Font, codepoints: const_ptr[int], codepointCount: int, position: Vector2, fontSize: float, spacing: float, tint: Color) -> void
+    extern def SetTextLineSpacing(spacing: int) -> void
+    extern def MeasureText(text: cstr, fontSize: int) -> int
+    extern def MeasureTextEx(font: Font, text: cstr, fontSize: float, spacing: float) -> Vector2
+    extern def MeasureTextCodepoints(font: Font, codepoints: const_ptr[int], length: int, fontSize: float, spacing: float) -> Vector2
+    extern def GetGlyphIndex(font: Font, codepoint: int) -> int
+    extern def GetGlyphInfo(font: Font, codepoint: int) -> GlyphInfo
+    extern def GetGlyphAtlasRec(font: Font, codepoint: int) -> Rectangle
+    extern def LoadUTF8(codepoints: const_ptr[int], length: int) -> ptr[char]
     extern def UnloadUTF8(text: ptr[char]) -> void
-    extern def LoadCodepoints(text: cstr, count: ptr[i32]) -> ptr[i32]
-    extern def UnloadCodepoints(codepoints: ptr[i32]) -> void
-    extern def GetCodepointCount(text: cstr) -> i32
-    extern def GetCodepoint(text: cstr, codepointSize: ptr[i32]) -> i32
-    extern def GetCodepointNext(text: cstr, codepointSize: ptr[i32]) -> i32
-    extern def GetCodepointPrevious(text: cstr, codepointSize: ptr[i32]) -> i32
-    extern def CodepointToUTF8(codepoint: i32, utf8Size: ptr[i32]) -> cstr
-    extern def LoadTextLines(text: cstr, count: ptr[i32]) -> ptr[ptr[char]]
-    extern def UnloadTextLines(text: ptr[ptr[char]], lineCount: i32) -> void
-    extern def TextCopy(dst: ptr[char], src: cstr) -> i32
+    extern def LoadCodepoints(text: cstr, count: ptr[int]) -> ptr[int]
+    extern def UnloadCodepoints(codepoints: ptr[int]) -> void
+    extern def GetCodepointCount(text: cstr) -> int
+    extern def GetCodepoint(text: cstr, codepointSize: ptr[int]) -> int
+    extern def GetCodepointNext(text: cstr, codepointSize: ptr[int]) -> int
+    extern def GetCodepointPrevious(text: cstr, codepointSize: ptr[int]) -> int
+    extern def CodepointToUTF8(codepoint: int, utf8Size: ptr[int]) -> cstr
+    extern def LoadTextLines(text: cstr, count: ptr[int]) -> ptr[ptr[char]]
+    extern def UnloadTextLines(text: ptr[ptr[char]], lineCount: int) -> void
+    extern def TextCopy(dst: ptr[char], src: cstr) -> int
     extern def TextIsEqual(text1: cstr, text2: cstr) -> bool
-    extern def TextLength(text: cstr) -> u32
+    extern def TextLength(text: cstr) -> uint
     extern def TextFormat(text: cstr, ...) -> cstr
-    extern def TextSubtext(text: cstr, position: i32, length: i32) -> cstr
+    extern def TextSubtext(text: cstr, position: int, length: int) -> cstr
     extern def TextRemoveSpaces(text: cstr) -> cstr
     extern def GetTextBetween(text: cstr, begin: cstr, end: cstr) -> ptr[char]
     extern def TextReplace(text: cstr, search: cstr, replacement: cstr) -> ptr[char]
     extern def TextReplaceAlloc(text: cstr, search: cstr, replacement: cstr) -> ptr[char]
     extern def TextReplaceBetween(text: cstr, begin: cstr, end: cstr, replacement: cstr) -> ptr[char]
     extern def TextReplaceBetweenAlloc(text: cstr, begin: cstr, end: cstr, replacement: cstr) -> ptr[char]
-    extern def TextInsert(text: cstr, insert: cstr, position: i32) -> ptr[char]
-    extern def TextInsertAlloc(text: cstr, insert: cstr, position: i32) -> ptr[char]
-    extern def TextJoin(textList: ptr[ptr[char]], count: i32, delimiter: cstr) -> ptr[char]
-    extern def TextSplit(text: cstr, delimiter: char, count: ptr[i32]) -> ptr[ptr[char]]
-    extern def TextAppend(text: ptr[char], append: cstr, position: ptr[i32]) -> void
-    extern def TextFindIndex(text: cstr, search: cstr) -> i32
+    extern def TextInsert(text: cstr, insert: cstr, position: int) -> ptr[char]
+    extern def TextInsertAlloc(text: cstr, insert: cstr, position: int) -> ptr[char]
+    extern def TextJoin(textList: ptr[ptr[char]], count: int, delimiter: cstr) -> ptr[char]
+    extern def TextSplit(text: cstr, delimiter: char, count: ptr[int]) -> ptr[ptr[char]]
+    extern def TextAppend(text: ptr[char], append: cstr, position: ptr[int]) -> void
+    extern def TextFindIndex(text: cstr, search: cstr) -> int
     extern def TextToUpper(text: cstr) -> ptr[char]
     extern def TextToLower(text: cstr) -> ptr[char]
     extern def TextToPascal(text: cstr) -> ptr[char]
     extern def TextToSnake(text: cstr) -> ptr[char]
     extern def TextToCamel(text: cstr) -> ptr[char]
-    extern def TextToInteger(text: cstr) -> i32
-    extern def TextToFloat(text: cstr) -> f32
+    extern def TextToInteger(text: cstr) -> int
+    extern def TextToFloat(text: cstr) -> float
     extern def DrawLine3D(startPos: Vector3, endPos: Vector3, color: Color) -> void
     extern def DrawPoint3D(position: Vector3, color: Color) -> void
-    extern def DrawCircle3D(center: Vector3, radius: f32, rotationAxis: Vector3, rotationAngle: f32, color: Color) -> void
+    extern def DrawCircle3D(center: Vector3, radius: float, rotationAxis: Vector3, rotationAngle: float, color: Color) -> void
     extern def DrawTriangle3D(v1: Vector3, v2: Vector3, v3: Vector3, color: Color) -> void
-    extern def DrawTriangleStrip3D(points: const_ptr[Vector3], pointCount: i32, color: Color) -> void
-    extern def DrawCube(position: Vector3, width: f32, height: f32, length: f32, color: Color) -> void
+    extern def DrawTriangleStrip3D(points: const_ptr[Vector3], pointCount: int, color: Color) -> void
+    extern def DrawCube(position: Vector3, width: float, height: float, length: float, color: Color) -> void
     extern def DrawCubeV(position: Vector3, size: Vector3, color: Color) -> void
-    extern def DrawCubeWires(position: Vector3, width: f32, height: f32, length: f32, color: Color) -> void
+    extern def DrawCubeWires(position: Vector3, width: float, height: float, length: float, color: Color) -> void
     extern def DrawCubeWiresV(position: Vector3, size: Vector3, color: Color) -> void
-    extern def DrawSphere(centerPos: Vector3, radius: f32, color: Color) -> void
-    extern def DrawSphereEx(centerPos: Vector3, radius: f32, rings: i32, slices: i32, color: Color) -> void
-    extern def DrawSphereWires(centerPos: Vector3, radius: f32, rings: i32, slices: i32, color: Color) -> void
-    extern def DrawCylinder(position: Vector3, radiusTop: f32, radiusBottom: f32, height: f32, slices: i32, color: Color) -> void
-    extern def DrawCylinderEx(startPos: Vector3, endPos: Vector3, startRadius: f32, endRadius: f32, sides: i32, color: Color) -> void
-    extern def DrawCylinderWires(position: Vector3, radiusTop: f32, radiusBottom: f32, height: f32, slices: i32, color: Color) -> void
-    extern def DrawCylinderWiresEx(startPos: Vector3, endPos: Vector3, startRadius: f32, endRadius: f32, sides: i32, color: Color) -> void
-    extern def DrawCapsule(startPos: Vector3, endPos: Vector3, radius: f32, slices: i32, rings: i32, color: Color) -> void
-    extern def DrawCapsuleWires(startPos: Vector3, endPos: Vector3, radius: f32, slices: i32, rings: i32, color: Color) -> void
+    extern def DrawSphere(centerPos: Vector3, radius: float, color: Color) -> void
+    extern def DrawSphereEx(centerPos: Vector3, radius: float, rings: int, slices: int, color: Color) -> void
+    extern def DrawSphereWires(centerPos: Vector3, radius: float, rings: int, slices: int, color: Color) -> void
+    extern def DrawCylinder(position: Vector3, radiusTop: float, radiusBottom: float, height: float, slices: int, color: Color) -> void
+    extern def DrawCylinderEx(startPos: Vector3, endPos: Vector3, startRadius: float, endRadius: float, sides: int, color: Color) -> void
+    extern def DrawCylinderWires(position: Vector3, radiusTop: float, radiusBottom: float, height: float, slices: int, color: Color) -> void
+    extern def DrawCylinderWiresEx(startPos: Vector3, endPos: Vector3, startRadius: float, endRadius: float, sides: int, color: Color) -> void
+    extern def DrawCapsule(startPos: Vector3, endPos: Vector3, radius: float, slices: int, rings: int, color: Color) -> void
+    extern def DrawCapsuleWires(startPos: Vector3, endPos: Vector3, radius: float, slices: int, rings: int, color: Color) -> void
     extern def DrawPlane(centerPos: Vector3, size: Vector2, color: Color) -> void
     extern def DrawRay(ray: Ray, color: Color) -> void
-    extern def DrawGrid(slices: i32, spacing: f32) -> void
+    extern def DrawGrid(slices: int, spacing: float) -> void
     extern def LoadModel(fileName: cstr) -> Model
     extern def LoadModelFromMesh(mesh: Mesh) -> Model
     extern def IsModelValid(model: Model) -> bool
     extern def UnloadModel(model: Model) -> void
     extern def GetModelBoundingBox(model: Model) -> BoundingBox
-    extern def DrawModel(model: Model, position: Vector3, scale: f32, tint: Color) -> void
-    extern def DrawModelEx(model: Model, position: Vector3, rotationAxis: Vector3, rotationAngle: f32, scale: Vector3, tint: Color) -> void
-    extern def DrawModelWires(model: Model, position: Vector3, scale: f32, tint: Color) -> void
-    extern def DrawModelWiresEx(model: Model, position: Vector3, rotationAxis: Vector3, rotationAngle: f32, scale: Vector3, tint: Color) -> void
+    extern def DrawModel(model: Model, position: Vector3, scale: float, tint: Color) -> void
+    extern def DrawModelEx(model: Model, position: Vector3, rotationAxis: Vector3, rotationAngle: float, scale: Vector3, tint: Color) -> void
+    extern def DrawModelWires(model: Model, position: Vector3, scale: float, tint: Color) -> void
+    extern def DrawModelWiresEx(model: Model, position: Vector3, rotationAxis: Vector3, rotationAngle: float, scale: Vector3, tint: Color) -> void
     extern def DrawBoundingBox(box: BoundingBox, color: Color) -> void
-    extern def DrawBillboard(camera: Camera3D, texture: Texture, position: Vector3, scale: f32, tint: Color) -> void
+    extern def DrawBillboard(camera: Camera3D, texture: Texture, position: Vector3, scale: float, tint: Color) -> void
     extern def DrawBillboardRec(camera: Camera3D, texture: Texture, source: Rectangle, position: Vector3, size: Vector2, tint: Color) -> void
-    extern def DrawBillboardPro(camera: Camera3D, texture: Texture, source: Rectangle, position: Vector3, up: Vector3, size: Vector2, origin: Vector2, rotation: f32, tint: Color) -> void
+    extern def DrawBillboardPro(camera: Camera3D, texture: Texture, source: Rectangle, position: Vector3, up: Vector3, size: Vector2, origin: Vector2, rotation: float, tint: Color) -> void
     extern def UploadMesh(mesh: ptr[Mesh], dynamic: bool) -> void
-    extern def UpdateMeshBuffer(mesh: Mesh, index: i32, data: const_ptr[void], dataSize: i32, offset: i32) -> void
+    extern def UpdateMeshBuffer(mesh: Mesh, index: int, data: const_ptr[void], dataSize: int, offset: int) -> void
     extern def UnloadMesh(mesh: Mesh) -> void
     extern def DrawMesh(mesh: Mesh, material: Material, transform: Matrix) -> void
-    extern def DrawMeshInstanced(mesh: Mesh, material: Material, transforms: const_ptr[Matrix], instances: i32) -> void
+    extern def DrawMeshInstanced(mesh: Mesh, material: Material, transforms: const_ptr[Matrix], instances: int) -> void
     extern def GetMeshBoundingBox(mesh: Mesh) -> BoundingBox
     extern def GenMeshTangents(mesh: ptr[Mesh]) -> void
     extern def ExportMesh(mesh: Mesh, fileName: cstr) -> bool
     extern def ExportMeshAsCode(mesh: Mesh, fileName: cstr) -> bool
-    extern def GenMeshPoly(sides: i32, radius: f32) -> Mesh
-    extern def GenMeshPlane(width: f32, length: f32, resX: i32, resZ: i32) -> Mesh
-    extern def GenMeshCube(width: f32, height: f32, length: f32) -> Mesh
-    extern def GenMeshSphere(radius: f32, rings: i32, slices: i32) -> Mesh
-    extern def GenMeshHemiSphere(radius: f32, rings: i32, slices: i32) -> Mesh
-    extern def GenMeshCylinder(radius: f32, height: f32, slices: i32) -> Mesh
-    extern def GenMeshCone(radius: f32, height: f32, slices: i32) -> Mesh
-    extern def GenMeshTorus(radius: f32, size: f32, radSeg: i32, sides: i32) -> Mesh
-    extern def GenMeshKnot(radius: f32, size: f32, radSeg: i32, sides: i32) -> Mesh
+    extern def GenMeshPoly(sides: int, radius: float) -> Mesh
+    extern def GenMeshPlane(width: float, length: float, resX: int, resZ: int) -> Mesh
+    extern def GenMeshCube(width: float, height: float, length: float) -> Mesh
+    extern def GenMeshSphere(radius: float, rings: int, slices: int) -> Mesh
+    extern def GenMeshHemiSphere(radius: float, rings: int, slices: int) -> Mesh
+    extern def GenMeshCylinder(radius: float, height: float, slices: int) -> Mesh
+    extern def GenMeshCone(radius: float, height: float, slices: int) -> Mesh
+    extern def GenMeshTorus(radius: float, size: float, radSeg: int, sides: int) -> Mesh
+    extern def GenMeshKnot(radius: float, size: float, radSeg: int, sides: int) -> Mesh
     extern def GenMeshHeightmap(heightmap: Image, size: Vector3) -> Mesh
     extern def GenMeshCubicmap(cubicmap: Image, cubeSize: Vector3) -> Mesh
-    extern def LoadMaterials(fileName: cstr, materialCount: ptr[i32]) -> ptr[Material]
+    extern def LoadMaterials(fileName: cstr, materialCount: ptr[int]) -> ptr[Material]
     extern def LoadMaterialDefault() -> Material
     extern def IsMaterialValid(material: Material) -> bool
     extern def UnloadMaterial(material: Material) -> void
-    extern def SetMaterialTexture(material: ptr[Material], mapType: i32, texture: Texture) -> void
-    extern def SetModelMeshMaterial(model: ptr[Model], meshId: i32, materialId: i32) -> void
-    extern def LoadModelAnimations(fileName: cstr, animCount: ptr[i32]) -> ptr[ModelAnimation]
-    extern def UpdateModelAnimation(model: Model, anim: ModelAnimation, frame: f32) -> void
-    extern def UpdateModelAnimationEx(model: Model, animA: ModelAnimation, frameA: f32, animB: ModelAnimation, frameB: f32, blend: f32) -> void
-    extern def UnloadModelAnimations(animations: ptr[ModelAnimation], animCount: i32) -> void
+    extern def SetMaterialTexture(material: ptr[Material], mapType: int, texture: Texture) -> void
+    extern def SetModelMeshMaterial(model: ptr[Model], meshId: int, materialId: int) -> void
+    extern def LoadModelAnimations(fileName: cstr, animCount: ptr[int]) -> ptr[ModelAnimation]
+    extern def UpdateModelAnimation(model: Model, anim: ModelAnimation, frame: float) -> void
+    extern def UpdateModelAnimationEx(model: Model, animA: ModelAnimation, frameA: float, animB: ModelAnimation, frameB: float, blend: float) -> void
+    extern def UnloadModelAnimations(animations: ptr[ModelAnimation], animCount: int) -> void
     extern def IsModelAnimationValid(model: Model, anim: ModelAnimation) -> bool
-    extern def CheckCollisionSpheres(center1: Vector3, radius1: f32, center2: Vector3, radius2: f32) -> bool
+    extern def CheckCollisionSpheres(center1: Vector3, radius1: float, center2: Vector3, radius2: float) -> bool
     extern def CheckCollisionBoxes(box1: BoundingBox, box2: BoundingBox) -> bool
-    extern def CheckCollisionBoxSphere(box: BoundingBox, center: Vector3, radius: f32) -> bool
-    extern def GetRayCollisionSphere(ray: Ray, center: Vector3, radius: f32) -> RayCollision
+    extern def CheckCollisionBoxSphere(box: BoundingBox, center: Vector3, radius: float) -> bool
+    extern def GetRayCollisionSphere(ray: Ray, center: Vector3, radius: float) -> RayCollision
     extern def GetRayCollisionBox(ray: Ray, box: BoundingBox) -> RayCollision
     extern def GetRayCollisionMesh(ray: Ray, mesh: Mesh, transform: Matrix) -> RayCollision
     extern def GetRayCollisionTriangle(ray: Ray, p1: Vector3, p2: Vector3, p3: Vector3) -> RayCollision
     extern def GetRayCollisionQuad(ray: Ray, p1: Vector3, p2: Vector3, p3: Vector3, p4: Vector3) -> RayCollision
 
-    type AudioCallback = fn(arg0: ptr[void], arg1: u32) -> void
+    type AudioCallback = fn(arg0: ptr[void], arg1: uint) -> void
 
     extern def InitAudioDevice() -> void
     extern def CloseAudioDevice() -> void
     extern def IsAudioDeviceReady() -> bool
-    extern def SetMasterVolume(volume: f32) -> void
-    extern def GetMasterVolume() -> f32
+    extern def SetMasterVolume(volume: float) -> void
+    extern def GetMasterVolume() -> float
     extern def LoadWave(fileName: cstr) -> Wave
-    extern def LoadWaveFromMemory(fileType: cstr, fileData: const_ptr[u8], dataSize: i32) -> Wave
+    extern def LoadWaveFromMemory(fileType: cstr, fileData: const_ptr[ubyte], dataSize: int) -> Wave
     extern def IsWaveValid(wave: Wave) -> bool
     extern def LoadSound(fileName: cstr) -> Sound
     extern def LoadSoundFromWave(wave: Wave) -> Sound
     extern def LoadSoundAlias(source: Sound) -> Sound
     extern def IsSoundValid(sound: Sound) -> bool
-    extern def UpdateSound(sound: Sound, data: const_ptr[void], sampleCount: i32) -> void
+    extern def UpdateSound(sound: Sound, data: const_ptr[void], sampleCount: int) -> void
     extern def UnloadWave(wave: Wave) -> void
     extern def UnloadSound(sound: Sound) -> void
     extern def UnloadSoundAlias(alias: Sound) -> void
@@ -1175,16 +1175,16 @@ extern module std.c.raylib:
     extern def PauseSound(sound: Sound) -> void
     extern def ResumeSound(sound: Sound) -> void
     extern def IsSoundPlaying(sound: Sound) -> bool
-    extern def SetSoundVolume(sound: Sound, volume: f32) -> void
-    extern def SetSoundPitch(sound: Sound, pitch: f32) -> void
-    extern def SetSoundPan(sound: Sound, pan: f32) -> void
+    extern def SetSoundVolume(sound: Sound, volume: float) -> void
+    extern def SetSoundPitch(sound: Sound, pitch: float) -> void
+    extern def SetSoundPan(sound: Sound, pan: float) -> void
     extern def WaveCopy(wave: Wave) -> Wave
-    extern def WaveCrop(wave: ptr[Wave], initFrame: i32, finalFrame: i32) -> void
-    extern def WaveFormat(wave: ptr[Wave], sampleRate: i32, sampleSize: i32, channels: i32) -> void
-    extern def LoadWaveSamples(wave: Wave) -> ptr[f32]
-    extern def UnloadWaveSamples(samples: ptr[f32]) -> void
+    extern def WaveCrop(wave: ptr[Wave], initFrame: int, finalFrame: int) -> void
+    extern def WaveFormat(wave: ptr[Wave], sampleRate: int, sampleSize: int, channels: int) -> void
+    extern def LoadWaveSamples(wave: Wave) -> ptr[float]
+    extern def UnloadWaveSamples(samples: ptr[float]) -> void
     extern def LoadMusicStream(fileName: cstr) -> Music
-    extern def LoadMusicStreamFromMemory(fileType: cstr, data: const_ptr[u8], dataSize: i32) -> Music
+    extern def LoadMusicStreamFromMemory(fileType: cstr, data: const_ptr[ubyte], dataSize: int) -> Music
     extern def IsMusicValid(music: Music) -> bool
     extern def UnloadMusicStream(music: Music) -> void
     extern def PlayMusicStream(music: Music) -> void
@@ -1193,39 +1193,39 @@ extern module std.c.raylib:
     extern def StopMusicStream(music: Music) -> void
     extern def PauseMusicStream(music: Music) -> void
     extern def ResumeMusicStream(music: Music) -> void
-    extern def SeekMusicStream(music: Music, position: f32) -> void
-    extern def SetMusicVolume(music: Music, volume: f32) -> void
-    extern def SetMusicPitch(music: Music, pitch: f32) -> void
-    extern def SetMusicPan(music: Music, pan: f32) -> void
-    extern def GetMusicTimeLength(music: Music) -> f32
-    extern def GetMusicTimePlayed(music: Music) -> f32
-    extern def LoadAudioStream(sampleRate: u32, sampleSize: u32, channels: u32) -> AudioStream
+    extern def SeekMusicStream(music: Music, position: float) -> void
+    extern def SetMusicVolume(music: Music, volume: float) -> void
+    extern def SetMusicPitch(music: Music, pitch: float) -> void
+    extern def SetMusicPan(music: Music, pan: float) -> void
+    extern def GetMusicTimeLength(music: Music) -> float
+    extern def GetMusicTimePlayed(music: Music) -> float
+    extern def LoadAudioStream(sampleRate: uint, sampleSize: uint, channels: uint) -> AudioStream
     extern def IsAudioStreamValid(stream: AudioStream) -> bool
     extern def UnloadAudioStream(stream: AudioStream) -> void
-    extern def UpdateAudioStream(stream: AudioStream, data: const_ptr[void], frameCount: i32) -> void
+    extern def UpdateAudioStream(stream: AudioStream, data: const_ptr[void], frameCount: int) -> void
     extern def IsAudioStreamProcessed(stream: AudioStream) -> bool
     extern def PlayAudioStream(stream: AudioStream) -> void
     extern def PauseAudioStream(stream: AudioStream) -> void
     extern def ResumeAudioStream(stream: AudioStream) -> void
     extern def IsAudioStreamPlaying(stream: AudioStream) -> bool
     extern def StopAudioStream(stream: AudioStream) -> void
-    extern def SetAudioStreamVolume(stream: AudioStream, volume: f32) -> void
-    extern def SetAudioStreamPitch(stream: AudioStream, pitch: f32) -> void
-    extern def SetAudioStreamPan(stream: AudioStream, pan: f32) -> void
-    extern def SetAudioStreamBufferSizeDefault(size: i32) -> void
-    extern def SetAudioStreamCallback(stream: AudioStream, callback: fn(arg0: ptr[void], arg1: u32) -> void) -> void
-    extern def AttachAudioStreamProcessor(stream: AudioStream, processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void
-    extern def DetachAudioStreamProcessor(stream: AudioStream, processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void
-    extern def AttachAudioMixedProcessor(processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void
-    extern def DetachAudioMixedProcessor(processor: fn(arg0: ptr[void], arg1: u32) -> void) -> void
+    extern def SetAudioStreamVolume(stream: AudioStream, volume: float) -> void
+    extern def SetAudioStreamPitch(stream: AudioStream, pitch: float) -> void
+    extern def SetAudioStreamPan(stream: AudioStream, pan: float) -> void
+    extern def SetAudioStreamBufferSizeDefault(size: int) -> void
+    extern def SetAudioStreamCallback(stream: AudioStream, callback: fn(arg0: ptr[void], arg1: uint) -> void) -> void
+    extern def AttachAudioStreamProcessor(stream: AudioStream, processor: fn(arg0: ptr[void], arg1: uint) -> void) -> void
+    extern def DetachAudioStreamProcessor(stream: AudioStream, processor: fn(arg0: ptr[void], arg1: uint) -> void) -> void
+    extern def AttachAudioMixedProcessor(processor: fn(arg0: ptr[void], arg1: uint) -> void) -> void
+    extern def DetachAudioMixedProcessor(processor: fn(arg0: ptr[void], arg1: uint) -> void) -> void
 
-    const RAYLIB_VERSION_MAJOR: i32 = 6
+    const RAYLIB_VERSION_MAJOR: int = 6
 
-    const RAYLIB_VERSION_MINOR: i32 = 0
+    const RAYLIB_VERSION_MINOR: int = 0
 
-    const RAYLIB_VERSION_PATCH: i32 = 0
+    const RAYLIB_VERSION_PATCH: int = 0
 
-    const PI: f32 = 3.14159274
+    const PI: float = 3.14159274
 
     const LIGHTGRAY: Color = Color(r = 200, g = 200, b = 200, a = 255)
 

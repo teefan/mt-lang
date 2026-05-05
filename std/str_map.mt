@@ -4,7 +4,7 @@ import std.hash as hash
 import std.map as map
 
 
-def hash_key(key: str) -> u64:
+def hash_key(key: str) -> ulong:
     return hash.str_value(key)
 
 
@@ -19,7 +19,7 @@ pub def create[V]() -> StrMap[V]:
     return StrMap[V](items = map.create[str, V](hash_key, equal_key))
 
 
-pub def count[V](items: StrMap[V]) -> usize:
+pub def count[V](items: StrMap[V]) -> ptr_uint:
     return map.count[str, V](items.items)
 
 

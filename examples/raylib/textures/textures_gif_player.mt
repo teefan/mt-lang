@@ -2,10 +2,10 @@ module examples.raylib.textures.textures_gif_player
 
 import std.c.raylib as rl
 
-const max_frame_delay: i32 = 20
-const min_frame_delay: i32 = 1
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const max_frame_delay: int = 20
+const min_frame_delay: int = 1
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - gif player"
 const scarfy_run_path: cstr = c"../resources/scarfy_run.gif"
 const total_frames_format: cstr = c"TOTAL GIF FRAMES:  %02i"
@@ -17,7 +17,7 @@ const speed_help_text: cstr = c"PRESS RIGHT/LEFT KEYS to CHANGE SPEED!"
 const credit_text: cstr = c"(c) Scarfy sprite by Eiden Marsal"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -28,9 +28,9 @@ def main() -> i32:
     let tex_scarfy_anim = rl.LoadTextureFromImage(im_scarfy_anim)
     defer rl.UnloadTexture(tex_scarfy_anim)
 
-    var frame_pixels: ptr[u8]
+    var frame_pixels: ptr[ubyte]
     unsafe:
-        frame_pixels = ptr[u8]<-im_scarfy_anim.data
+        frame_pixels = ptr[ubyte]<-im_scarfy_anim.data
 
     var next_frame_data_offset = 0
     var current_anim_frame = 0

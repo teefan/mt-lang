@@ -6,16 +6,16 @@ import std.raylib.math as rm
 import std.span as sp
 
 struct MeshBuilder:
-    vertexCount: i32
-    vertexCapacity: i32
+    vertexCount: int
+    vertexCapacity: int
     vertices: ptr[rl.Vector3]
     uvs: ptr[rl.Vector2]
     hasUvs: bool
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const max_decals: i32 = 256
-const float_max: f32 = 340282346638528859811704183484516925440.0
+const screen_width: int = 800
+const screen_height: int = 450
+const max_decals: int = 256
+const float_max: float = 340282346638528859811704183484516925440.0
 const character_model_path: cstr = c"../resources/models/obj/character.obj"
 const character_texture_path: cstr = c"../resources/models/obj/character_diffuse.png"
 const decal_texture_path: cstr = c"../resources/raylib_logo.png"
@@ -34,29 +34,29 @@ const ellipsis_text: cstr = c"..."
 const window_title: cstr = c"raylib [models] example - decals"
 
 
-def model_mesh(model: rl.Model, index: i32) -> rl.Mesh:
+def model_mesh(model: rl.Model, index: int) -> rl.Mesh:
     unsafe:
         return model.meshes[index]
 
 
-def material_map(material: rl.Material, index: i32) -> rl.MaterialMap:
+def material_map(material: rl.Material, index: int) -> rl.MaterialMap:
     unsafe:
         return material.maps[index]
 
 
-def alloc_vector3(count: i32) -> ptr[rl.Vector3]:
+def alloc_vector3(count: int) -> ptr[rl.Vector3]:
     unsafe:
-        return ptr[rl.Vector3]<-rl.MemAlloc(u32<-count * u32<-sizeof(rl.Vector3))
+        return ptr[rl.Vector3]<-rl.MemAlloc(uint<-count * uint<-sizeof(rl.Vector3))
 
 
-def alloc_vector2(count: i32) -> ptr[rl.Vector2]:
+def alloc_vector2(count: int) -> ptr[rl.Vector2]:
     unsafe:
-        return ptr[rl.Vector2]<-rl.MemAlloc(u32<-count * u32<-sizeof(rl.Vector2))
+        return ptr[rl.Vector2]<-rl.MemAlloc(uint<-count * uint<-sizeof(rl.Vector2))
 
 
-def alloc_f32(count: i32) -> ptr[f32]:
+def alloc_float(count: int) -> ptr[float]:
     unsafe:
-        return ptr[f32]<-rl.MemAlloc(u32<-count * u32<-sizeof(f32))
+        return ptr[float]<-rl.MemAlloc(uint<-count * uint<-sizeof(float))
 
 
 def mesh_has_indices(mesh: rl.Mesh) -> bool:
@@ -64,7 +64,7 @@ def mesh_has_indices(mesh: rl.Mesh) -> bool:
         return mesh.indices != null
 
 
-def mesh_vertex(mesh: rl.Mesh, index: i32) -> rl.Vector3:
+def mesh_vertex(mesh: rl.Mesh, index: int) -> rl.Vector3:
     unsafe:
         return rl.Vector3(
             x = mesh.vertices[index * 3],
@@ -73,11 +73,11 @@ def mesh_vertex(mesh: rl.Mesh, index: i32) -> rl.Vector3:
         )
 
 
-def mesh_index(mesh: rl.Mesh, index: i32) -> i32:
+def mesh_index(mesh: rl.Mesh, index: int) -> int:
     let indices = mesh.indices
     if indices != null:
         unsafe:
-            return i32<-indices[index]
+            return int<-indices[index]
 
     panic("mesh indices missing")
 
@@ -90,7 +90,7 @@ def triangle_vertices(v0: rl.Vector3, v1: rl.Vector3, v2: rl.Vector3) -> array[r
     return vertices
 
 
-def mesh_triangle(mesh: rl.Mesh, triangle_index: i32) -> array[rl.Vector3, 3]:
+def mesh_triangle(mesh: rl.Mesh, triangle_index: int) -> array[rl.Vector3, 3]:
     if not mesh_has_indices(mesh):
         return triangle_vertices(
             mesh_vertex(mesh, triangle_index * 3),
@@ -112,8 +112,8 @@ def add_triangle_to_mesh_builder(mb: ref[MeshBuilder], vertices: array[rl.Vector
         let new_vertices = alloc_vector3(new_vertex_capacity)
 
         if mb.vertexCapacity > 0:
-            let old_vertices = sp.from_ptr[rl.Vector3](mb.vertices, usize<-mb.vertexCount)
-            var new_vertex_view = sp.from_ptr[rl.Vector3](new_vertices, usize<-mb.vertexCount)
+            let old_vertices = sp.from_ptr[rl.Vector3](mb.vertices, ptr_uint<-mb.vertexCount)
+            var new_vertex_view = sp.from_ptr[rl.Vector3](new_vertices, ptr_uint<-mb.vertexCount)
             for index in 0..mb.vertexCount:
                 new_vertex_view[index] = old_vertices[index]
 
@@ -125,7 +125,7 @@ def add_triangle_to_mesh_builder(mb: ref[MeshBuilder], vertices: array[rl.Vector
     let start = mb.vertexCount
     mb.vertexCount += 3
 
-    var vertex_view = sp.from_ptr[rl.Vector3](mb.vertices, usize<-mb.vertexCount)
+    var vertex_view = sp.from_ptr[rl.Vector3](mb.vertices, ptr_uint<-mb.vertexCount)
     for index in 0..3:
         vertex_view[start + index] = vertices[index]
 
@@ -143,12 +143,12 @@ def build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:
     out_mesh.vertexCount = mb.vertexCount
     out_mesh.triangleCount = mb.vertexCount / 3
 
-    out_mesh.vertices = alloc_f32(out_mesh.vertexCount * 3)
+    out_mesh.vertices = alloc_float(out_mesh.vertexCount * 3)
     if mb.hasUvs:
-        out_mesh.texcoords = alloc_f32(out_mesh.vertexCount * 2)
+        out_mesh.texcoords = alloc_float(out_mesh.vertexCount * 2)
 
-    let vertices = sp.from_ptr[rl.Vector3](mb.vertices, usize<-mb.vertexCount)
-    let uvs = if mb.hasUvs: sp.from_ptr[rl.Vector2](mb.uvs, usize<-mb.vertexCount) else: sp.empty[rl.Vector2]()
+    let vertices = sp.from_ptr[rl.Vector3](mb.vertices, ptr_uint<-mb.vertexCount)
+    let uvs = if mb.hasUvs: sp.from_ptr[rl.Vector2](mb.uvs, ptr_uint<-mb.vertexCount) else: sp.empty[rl.Vector2]()
 
     unsafe:
         for index in 0..mb.vertexCount:
@@ -164,20 +164,20 @@ def build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:
     return out_mesh
 
 
-def clip_segment(v0: rl.Vector3, v1: rl.Vector3, plane: rl.Vector3, distance: f32) -> rl.Vector3:
+def clip_segment(v0: rl.Vector3, v1: rl.Vector3, plane: rl.Vector3, distance: float) -> rl.Vector3:
     let d0 = v0.dot(plane) - distance
     let d1 = v1.dot(plane) - distance
     let amount = d0 / (d0 - d1)
     return v0.lerp(v1, amount)
 
 
-def minf(a: f32, b: f32) -> f32:
+def minf(a: float, b: float) -> float:
     if a < b:
         return a
     return b
 
 
-def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, decal_offset: f32) -> rl.Mesh:
+def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: float, decal_offset: float) -> rl.Mesh:
     let inv_proj = projection.invert()
     var mesh_builders = zero[array[MeshBuilder, 2]]
     defer:
@@ -218,7 +218,7 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
         out_mesh.vertexCount = 0
 
         let clip_distance = 0.5 * decal_size
-        let in_vertices = sp.from_ptr[rl.Vector3](in_mesh.vertices, usize<-in_mesh.vertexCount)
+        let in_vertices = sp.from_ptr[rl.Vector3](in_mesh.vertices, ptr_uint<-in_mesh.vertexCount)
 
         var vertex_index = 0
         while vertex_index < in_mesh.vertexCount:
@@ -289,8 +289,8 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: f32, dec
         final_mesh.uvs = alloc_vector2(final_mesh.vertexCount)
         final_mesh.hasUvs = true
 
-        var vertices = sp.from_ptr[rl.Vector3](final_mesh.vertices, usize<-final_mesh.vertexCount)
-        var uvs = sp.from_ptr[rl.Vector2](final_mesh.uvs, usize<-final_mesh.vertexCount)
+        var vertices = sp.from_ptr[rl.Vector3](final_mesh.vertices, ptr_uint<-final_mesh.vertexCount)
+        var uvs = sp.from_ptr[rl.Vector2](final_mesh.uvs, ptr_uint<-final_mesh.vertexCount)
 
         for index in 0..final_mesh.vertexCount:
             uvs[index].x = vertices[index].x / decal_size + 0.5
@@ -317,12 +317,12 @@ def gui_button(rec: rl.Rectangle, label: cstr) -> bool:
 
     let font_size = 10
     let text_width = rl.MeasureText(label, font_size)
-    rl.DrawText(label, i32<-(rec.x + rec.width * 0.5 - f32<-text_width * 0.5), i32<-(rec.y + rec.height * 0.5 - f32<-font_size * 0.5), font_size, rl.DARKGRAY)
+    rl.DrawText(label, int<-(rec.x + rec.width * 0.5 - float<-text_width * 0.5), int<-(rec.y + rec.height * 0.5 - float<-font_size * 0.5), font_size, rl.DARKGRAY)
 
     return pressed
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -340,8 +340,8 @@ def main() -> i32:
 
     let model_texture = rl.LoadTexture(character_texture_path)
     defer rl.UnloadTexture(model_texture)
-    rl.SetTextureFilter(model_texture, i32<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
-    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, model_texture)
+    rl.SetTextureFilter(model_texture, int<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
+    rl.SetMaterialTexture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, model_texture)
 
     let model_bbox = rl.GetMeshBoundingBox(model_mesh(model, 0))
     camera.target = model_bbox.min.lerp(model_bbox.max, 0.5)
@@ -356,7 +356,7 @@ def main() -> i32:
     camera.position = rl.Vector3(x = 0.0, y = model_bbox.max.y * 1.2, z = model_size * 3.0)
 
     let decal_size = model_size * 0.25
-    let decal_offset: f32 = 0.01
+    let decal_offset: float = 0.01
 
     var placement_cube = rl.LoadModelFromMesh(rl.GenMeshCube(decal_size, decal_size, decal_size))
     defer rl.UnloadModel(placement_cube)
@@ -373,10 +373,10 @@ def main() -> i32:
     defer rl.UnloadTexture(decal_texture)
     rl.UnloadImage(decal_image)
 
-    rl.SetTextureFilter(decal_texture, i32<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
+    rl.SetTextureFilter(decal_texture, int<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
     unsafe:
-        decal_material.maps[i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO].texture = decal_texture
-        decal_material.maps[i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO].color = rl.RAYWHITE
+        decal_material.maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO].texture = decal_texture
+        decal_material.maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO].color = rl.RAYWHITE
 
     var show_model = true
     var decal_models = zero[array[rl.Model, 256]]
@@ -412,7 +412,7 @@ def main() -> i32:
         if collision.hit and rl.IsMouseButtonPressed(rl.MouseButton.MOUSE_BUTTON_LEFT) and decal_count < max_decals:
             let origin = collision.point.add(collision.normal.scale(1.0))
             var splat = rm.Matrix.look_at(collision.point, origin, rl.Vector3(x = 0.0, y = 1.0, z = 0.0))
-            splat = splat.multiply(rm.Matrix.rotate_z(rm.deg2rad * f32<-rl.GetRandomValue(-180, 180)))
+            splat = splat.multiply(rm.Matrix.rotate_z(rm.deg2rad * float<-rl.GetRandomValue(-180, 180)))
 
             let decal_mesh = gen_mesh_decal(model, splat, decal_size, decal_offset)
             if decal_mesh.vertexCount > 0:
@@ -448,8 +448,8 @@ def main() -> i32:
         let x1 = x0 + 100.0
         let x2 = x1 + 100.0
 
-        rl.DrawText(vertices_text, i32<-x1, i32<-y_pos, 10, rl.LIME)
-        rl.DrawText(triangles_text, i32<-x2, i32<-y_pos, 10, rl.LIME)
+        rl.DrawText(vertices_text, int<-x1, int<-y_pos, 10, rl.LIME)
+        rl.DrawText(triangles_text, int<-x2, int<-y_pos, 10, rl.LIME)
         y_pos += 15.0
 
         var vertex_count = 0
@@ -459,29 +459,29 @@ def main() -> i32:
             vertex_count += mesh.vertexCount
             triangle_count += mesh.triangleCount
 
-        rl.DrawText(main_model_text, i32<-x0, i32<-y_pos, 10, rl.LIME)
-        rl.DrawText(rl.TextFormat(count_format, vertex_count), i32<-x1, i32<-y_pos, 10, rl.LIME)
-        rl.DrawText(rl.TextFormat(count_format, triangle_count), i32<-x2, i32<-y_pos, 10, rl.LIME)
+        rl.DrawText(main_model_text, int<-x0, int<-y_pos, 10, rl.LIME)
+        rl.DrawText(rl.TextFormat(count_format, vertex_count), int<-x1, int<-y_pos, 10, rl.LIME)
+        rl.DrawText(rl.TextFormat(count_format, triangle_count), int<-x2, int<-y_pos, 10, rl.LIME)
         y_pos += 15.0
 
         for index in 0..decal_count:
             if index == 20:
-                rl.DrawText(ellipsis_text, i32<-x0, i32<-y_pos, 10, rl.LIME)
+                rl.DrawText(ellipsis_text, int<-x0, int<-y_pos, 10, rl.LIME)
                 y_pos += 15.0
 
             if index < 20:
                 let mesh = model_mesh(decal_models[index], 0)
-                rl.DrawText(rl.TextFormat(decal_label_format, index + 1), i32<-x0, i32<-y_pos, 10, rl.LIME)
-                rl.DrawText(rl.TextFormat(count_format, mesh.vertexCount), i32<-x1, i32<-y_pos, 10, rl.LIME)
-                rl.DrawText(rl.TextFormat(count_format, mesh.triangleCount), i32<-x2, i32<-y_pos, 10, rl.LIME)
+                rl.DrawText(rl.TextFormat(decal_label_format, index + 1), int<-x0, int<-y_pos, 10, rl.LIME)
+                rl.DrawText(rl.TextFormat(count_format, mesh.vertexCount), int<-x1, int<-y_pos, 10, rl.LIME)
+                rl.DrawText(rl.TextFormat(count_format, mesh.triangleCount), int<-x2, int<-y_pos, 10, rl.LIME)
                 y_pos += 15.0
 
             vertex_count += model_mesh(decal_models[index], 0).vertexCount
             triangle_count += model_mesh(decal_models[index], 0).triangleCount
 
-        rl.DrawText(total_text, i32<-x0, i32<-y_pos, 10, rl.LIME)
-        rl.DrawText(rl.TextFormat(count_format, vertex_count), i32<-x1, i32<-y_pos, 10, rl.LIME)
-        rl.DrawText(rl.TextFormat(count_format, triangle_count), i32<-x2, i32<-y_pos, 10, rl.LIME)
+        rl.DrawText(total_text, int<-x0, int<-y_pos, 10, rl.LIME)
+        rl.DrawText(rl.TextFormat(count_format, vertex_count), int<-x1, int<-y_pos, 10, rl.LIME)
+        rl.DrawText(rl.TextFormat(count_format, triangle_count), int<-x2, int<-y_pos, 10, rl.LIME)
 
         rl.DrawText(hold_camera_text, 10, 430, 10, rl.GRAY)
         rl.DrawText(credit_text, screen_width - 260, screen_height - 20, 10, rl.GRAY)

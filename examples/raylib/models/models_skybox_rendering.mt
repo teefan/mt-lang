@@ -4,9 +4,9 @@ import std.c.raylib as rl
 import std.c.rlgl as rlgl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const skybox_texture_path: cstr = c"../resources/skybox.png"
 const skybox_hdr_path: cstr = c"../resources/dresden_square_2k.hdr"
 const skybox_shader_vertex_path_format: cstr = c"../resources/shaders/glsl%i/skybox.vs"
@@ -36,14 +36,14 @@ def text_buffer_cstr(text: ref[array[char, 256]]) -> cstr:
     return chars_to_cstr(text_buffer_ptr(text))
 
 
-def shader_location(shader: rl.Shader, location_index: i32) -> i32:
+def shader_location(shader: rl.Shader, location_index: int) -> int:
     unsafe:
         return read(shader.locs + location_index)
 
 
-def file_path_list_path(files: rl.FilePathList, index: i32) -> cstr:
+def file_path_list_path(files: rl.FilePathList, index: int) -> cstr:
     unsafe:
-        return cstr<-read(files.paths + usize<-index)
+        return cstr<-read(files.paths + ptr_uint<-index)
 
 
 def rlgl_matrix(mat: rl.Matrix) -> rlgl.Matrix:
@@ -67,8 +67,8 @@ def rlgl_matrix(mat: rl.Matrix) -> rlgl.Matrix:
     )
 
 
-def set_shader_int(shader: rl.Shader, uniform_name: cstr, value: i32) -> void:
-    var raw_value = zero[array[i32, 1]]
+def set_shader_int(shader: rl.Shader, uniform_name: cstr, value: int) -> void:
+    var raw_value = zero[array[int, 1]]
     raw_value[0] = value
     rl.SetShaderValue(
         shader,
@@ -85,15 +85,15 @@ def set_skybox_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
 
 def set_skybox_cubemap(model: ptr[rl.Model], texture: rl.TextureCubemap) -> void:
     unsafe:
-        model.materials[0].maps[i32<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = texture
+        model.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = texture
 
 
 def skybox_cubemap(model: rl.Model) -> rl.TextureCubemap:
     unsafe:
-        return model.materials[0].maps[i32<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture
+        return model.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture
 
 
-def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: i32, format: i32) -> rl.TextureCubemap:
+def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: int, format: int) -> rl.TextureCubemap:
     var cubemap = zero[rl.TextureCubemap]
 
     rlgl.rlDisableBackfaceCulling()
@@ -105,15 +105,15 @@ def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: i32, fo
     rlgl.rlFramebufferAttach(
         fbo,
         rbo,
-        i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH,
-        i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_RENDERBUFFER,
+        int<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH,
+        int<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_RENDERBUFFER,
         0,
     )
     rlgl.rlFramebufferAttach(
         fbo,
         cubemap.id,
-        i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0,
-        i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_CUBEMAP_POSITIVE_X,
+        int<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0,
+        int<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_CUBEMAP_POSITIVE_X,
         0,
     )
 
@@ -122,10 +122,10 @@ def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: i32, fo
     let projection = rm.Matrix.perspective(
         90.0 * rm.deg2rad,
         1.0,
-        f32<-rlgl.rlGetCullDistanceNear(),
-        f32<-rlgl.rlGetCullDistanceFar(),
+        float<-rlgl.rlGetCullDistanceNear(),
+        float<-rlgl.rlGetCullDistanceFar(),
     )
-    rlgl.rlSetUniformMatrix(shader_location(shader, i32<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_PROJECTION), rlgl_matrix(projection))
+    rlgl.rlSetUniformMatrix(shader_location(shader, int<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_PROJECTION), rlgl_matrix(projection))
 
     var fbo_views = zero[array[rl.Matrix, 6]]
     fbo_views[0] = rm.Matrix.look_at(rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector3(x = 1.0, y = 0.0, z = 0.0), rl.Vector3(x = 0.0, y = -1.0, z = 0.0))
@@ -140,12 +140,12 @@ def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: i32, fo
     rlgl.rlEnableTexture(panorama.id)
 
     for index in 0..6:
-        rlgl.rlSetUniformMatrix(shader_location(shader, i32<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_VIEW), rlgl_matrix(fbo_views[index]))
+        rlgl.rlSetUniformMatrix(shader_location(shader, int<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_VIEW), rlgl_matrix(fbo_views[index]))
         rlgl.rlFramebufferAttach(
             fbo,
             cubemap.id,
-            i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0,
-            i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_CUBEMAP_POSITIVE_X + index,
+            int<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0,
+            int<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_CUBEMAP_POSITIVE_X + index,
             0,
         )
         rlgl.rlEnableFramebuffer(fbo)
@@ -179,17 +179,17 @@ def load_skybox_texture(skybox: ptr[rl.Model], cubemap_shader: rl.Shader, use_hd
                 cubemap_shader,
                 panorama,
                 1024,
-                i32<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
+                int<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
             ),
         )
         rl.UnloadTexture(panorama)
     else:
         let image = rl.LoadImage(file_path)
-        set_skybox_cubemap(skybox, rl.LoadTextureCubemap(image, i32<-rl.CubemapLayout.CUBEMAP_LAYOUT_AUTO_DETECT))
+        set_skybox_cubemap(skybox, rl.LoadTextureCubemap(image, int<-rl.CubemapLayout.CUBEMAP_LAYOUT_AUTO_DETECT))
         rl.UnloadImage(image)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -214,7 +214,7 @@ def main() -> i32:
     defer rl.UnloadShader(skybox_shader)
     set_skybox_shader(ptr_of(skybox), skybox_shader)
 
-    set_shader_int(skybox_shader, environment_map_text, i32<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP)
+    set_shader_int(skybox_shader, environment_map_text, int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP)
     set_shader_int(skybox_shader, do_gamma_text, if use_hdr: 1 else: 0)
     set_shader_int(skybox_shader, vflipped_text, if use_hdr: 1 else: 0)
 

@@ -6,14 +6,14 @@ import src.game_logic as game_logic
 import src.game_render as game_render
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(gt.screen_width(), gt.screen_height(), "Snake Duel")
     defer rl.close_window()
 
     rl.set_target_fps(120)
 
     var game = game_logic.reset_game()
-    var accumulator: f32 = 0.0
+    var accumulator: float = 0.0
 
     while not rl.window_should_close():
         if game.state == gt.state_title() and rl.is_key_pressed(rl.KeyboardKey.KEY_ENTER):

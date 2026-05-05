@@ -5,13 +5,13 @@ import std.string as string
 import std.vec as vec
 
 struct Segment:
-    start: usize
-    len: usize
+    start: ptr_uint
+    len: ptr_uint
 
 
-def byte_at(path: str, index: usize) -> u8:
+def byte_at(path: str, index: ptr_uint) -> ubyte:
     unsafe:
-        return u8<-read(path.data + index)
+        return ubyte<-read(path.data + index)
 
 
 def segment_text(path: str, segment: Segment) -> str:
@@ -26,7 +26,7 @@ def segment_equals(path: str, segment: Segment, value: str) -> bool:
 pub def is_absolute(path: str) -> bool:
     if path.len == 0:
         return false
-    return byte_at(path, 0) == u8<-47
+    return byte_at(path, 0) == ubyte<-47
 
 
 pub def join(left: str, right: str) -> string.String:
@@ -53,12 +53,12 @@ pub def join(left: str, right: str) -> string.String:
 
 pub def module_relative_path(module_name: str) -> string.String:
     var result = string.String.with_capacity(module_name.len + 3)
-    var index: usize = 0
+    var index: ptr_uint = 0
     while index < module_name.len:
         unsafe:
-            let byte = u8<-read(module_name.data + index)
-            if byte == u8<-46:
-                result.push_byte(u8<-47)
+            let byte = ubyte<-read(module_name.data + index)
+            if byte == ubyte<-46:
+                result.push_byte(ubyte<-47)
             else:
                 result.push_byte(byte)
         index += 1
@@ -71,13 +71,13 @@ pub def normalize(path: str) -> string.String:
     let absolute = is_absolute(path)
     var segments = vec.create[Segment]()
 
-    var index: usize = 0
+    var index: ptr_uint = 0
     while index < path.len:
-        while index < path.len and byte_at(path, index) == u8<-47:
+        while index < path.len and byte_at(path, index) == ubyte<-47:
             index += 1
 
         let start = index
-        while index < path.len and byte_at(path, index) != u8<-47:
+        while index < path.len and byte_at(path, index) != ubyte<-47:
             index += 1
 
         let length = index - start
@@ -105,7 +105,7 @@ pub def normalize(path: str) -> string.String:
         if not absolute:
             result.append(".")
     else:
-        var segment_index: usize = 0
+        var segment_index: ptr_uint = 0
         while segment_index < vec.count[Segment](segments):
             if segment_index > 0:
                 result.append("/")
@@ -132,14 +132,14 @@ pub def basename(path: str) -> string.String:
         return string.String.from_str(".")
 
     var stop = path.len
-    while stop > 1 and byte_at(path, stop - 1) == u8<-47:
+    while stop > 1 and byte_at(path, stop - 1) == ubyte<-47:
         stop -= 1
 
-    if stop == 1 and byte_at(path, 0) == u8<-47:
+    if stop == 1 and byte_at(path, 0) == ubyte<-47:
         return string.String.from_str("/")
 
     var start = stop
-    while start > 0 and byte_at(path, start - 1) != u8<-47:
+    while start > 0 and byte_at(path, start - 1) != ubyte<-47:
         start -= 1
 
     unsafe:
@@ -151,17 +151,17 @@ pub def dirname(path: str) -> string.String:
         return string.String.from_str(".")
 
     var stop = path.len
-    while stop > 1 and byte_at(path, stop - 1) == u8<-47:
+    while stop > 1 and byte_at(path, stop - 1) == ubyte<-47:
         stop -= 1
 
     var slash = stop
-    while slash > 0 and byte_at(path, slash - 1) != u8<-47:
+    while slash > 0 and byte_at(path, slash - 1) != ubyte<-47:
         slash -= 1
 
     if slash == 0:
         return string.String.from_str(".")
 
-    while slash > 1 and byte_at(path, slash - 1) == u8<-47:
+    while slash > 1 and byte_at(path, slash - 1) == ubyte<-47:
         slash -= 1
 
     unsafe:

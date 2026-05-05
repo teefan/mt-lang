@@ -2,9 +2,9 @@ module examples.raylib.core.core_2d_camera_split_screen
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 440
-const player_size: i32 = 40
+const screen_width: int = 800
+const screen_height: int = 440
+const player_size: int = 40
 const window_title: cstr = c"raylib [core] example - 2d camera split screen"
 const player_one_text: cstr = c"PLAYER1: W/S/A/D to move"
 const player_two_text: cstr = c"PLAYER2: UP/DOWN/LEFT/RIGHT to move"
@@ -32,7 +32,7 @@ def draw_camera_scene(camera: rl.Camera2D, player1: rl.Rectangle, player2: rl.Re
     rl.EndMode2D()
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -63,7 +63,7 @@ def main() -> i32:
         width = screen_camera1.texture.width,
         height = -screen_camera1.texture.height,
     )
-    let overlay_alpha: f32 = 0.6
+    let overlay_alpha: float = 0.6
 
     rl.SetTargetFPS(60)
 

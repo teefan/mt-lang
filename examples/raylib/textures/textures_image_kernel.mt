@@ -2,15 +2,15 @@ module examples.raylib.textures.textures_image_kernel
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - image kernel"
 const cat_path: cstr = c"../resources/cat.png"
 
 
-def normalize_kernel(kernel: ptr[f32], size: i32) -> void:
+def normalize_kernel(kernel: ptr[float], size: int) -> void:
     unsafe:
-        var sum: f32 = 0.0
+        var sum: float = 0.0
         for index in 0..size:
             sum += read(kernel + index)
 
@@ -19,23 +19,23 @@ def normalize_kernel(kernel: ptr[f32], size: i32) -> void:
                 read(kernel + index) /= sum
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
     var image = rl.LoadImage(cat_path)
 
-    var gaussian_kernel = array[f32, 9](
+    var gaussian_kernel = array[float, 9](
         1.0, 2.0, 1.0,
         2.0, 4.0, 2.0,
         1.0, 2.0, 1.0,
     )
-    var sobel_kernel = array[f32, 9](
+    var sobel_kernel = array[float, 9](
         1.0, 0.0, -1.0,
         2.0, 0.0, -2.0,
         1.0, 0.0, -1.0,
     )
-    var sharpen_kernel = array[f32, 9](
+    var sharpen_kernel = array[float, 9](
         0.0, -1.0, 0.0,
        -1.0, 5.0, -1.0,
         0.0, -1.0, 0.0,

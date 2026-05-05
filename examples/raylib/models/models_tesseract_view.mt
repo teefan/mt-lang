@@ -4,13 +4,13 @@ import std.c.libm as math
 import std.c.raylib as rl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const vertex_count: i32 = 16
+const screen_width: int = 800
+const screen_height: int = 450
+const vertex_count: int = 16
 const window_title: cstr = c"raylib [models] example - tesseract view"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -41,12 +41,12 @@ def main() -> i32:
     tesseract[15] = rl.Vector4(x = -1.0, y = -1.0, z = -1.0, w = -1.0)
 
     var transformed = zero[array[rl.Vector3, 16]]
-    var w_values = zero[array[f32, 16]]
+    var w_values = zero[array[float, 16]]
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        let rotation = rm.deg2rad * 45.0 * f32<-rl.GetTime()
+        let rotation = rm.deg2rad * 45.0 * float<-rl.GetTime()
 
         for index in 0..vertex_count:
             var point = tesseract[index]

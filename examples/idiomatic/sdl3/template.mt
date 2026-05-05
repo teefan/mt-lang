@@ -2,10 +2,10 @@ module examples.idiomatic.sdl3.template
 
 import std.sdl3 as sdl
 
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: str = "examples/template"
-const window_flags: usize = sdl.WINDOW_RESIZABLE
+const window_flags: ptr_uint = sdl.WINDOW_RESIZABLE
 const presentation_mode: sdl.RendererLogicalPresentation = sdl.RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
 
 var window: ptr[sdl.Window]
@@ -28,7 +28,7 @@ def render_frame() -> void:
     sdl.render_present(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     sdl.set_app_metadata("Example Template", "1.0", "com.example.template")
 
     if not sdl.init(sdl.INIT_VIDEO):
@@ -49,5 +49,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return sdl.run_app(argc, argv, app_main)

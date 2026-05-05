@@ -2,19 +2,19 @@ module examples.raylib.shapes.shapes_lines_bezier
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - lines bezier"
 const help_text: cstr = c"MOVE START-END POINTS WITH MOUSE"
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
     var start_point = rl.Vector2(x = 30.0, y = 30.0)
-    var end_point = rl.Vector2(x = f32<-(screen_width - 30), y = f32<-(screen_height - 30))
+    var end_point = rl.Vector2(x = float<-(screen_width - 30), y = float<-(screen_height - 30))
     var move_start_point = false
     var move_end_point = false
 
@@ -40,8 +40,8 @@ def main() -> i32:
             if rl.IsMouseButtonReleased(rl.MouseButton.MOUSE_BUTTON_LEFT):
                 move_end_point = false
 
-        var start_radius: f32 = 8.0
-        var end_radius: f32 = 8.0
+        var start_radius: float = 8.0
+        var end_radius: float = 8.0
         var start_color = rl.BLUE
         var end_color = rl.BLUE
 

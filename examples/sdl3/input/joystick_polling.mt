@@ -2,12 +2,12 @@ module examples.sdl3.input.joystick_polling
 
 import std.c.sdl3 as c
 
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/input/joystick-polling"
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
-const color_count: i32 = 64
-const joystick_size: f32 = 30.0
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
+const color_count: int = 64
+const joystick_size: float = 30.0
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
@@ -19,14 +19,14 @@ def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
-            if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_ADDED:
+            if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_JOYSTICK_ADDED:
                 if joystick == null:
                     joystick = c.SDL_OpenJoystick(event.jdevice.which)
             else:
-                if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_REMOVED:
+                if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_JOYSTICK_REMOVED:
                     if joystick != null:
                         if c.SDL_GetJoystickID(joystick) == event.jdevice.which:
                             c.SDL_CloseJoystick(joystick)
@@ -36,11 +36,11 @@ def pump_events() -> bool:
 
 
 def render_frame() -> void:
-    var winw: i32 = window_width
-    var winh: i32 = window_height
+    var winw: int = window_width
+    var winh: int = window_height
     var text: cstr = c"Plug in a joystick, please."
-    var x: f32 = 0.0
-    var y: f32 = 0.0
+    var x: float = 0.0
+    var y: float = 0.0
 
     if joystick != null:
         text = c.SDL_GetJoystickName(joystick)
@@ -51,12 +51,12 @@ def render_frame() -> void:
 
     if joystick != null:
         var total = c.SDL_GetNumJoystickAxes(joystick)
-        y = (f32<-winh - (f32<-total * joystick_size)) / 2.0
-        x = f32<-winw / 2.0
+        y = (float<-winh - (float<-total * joystick_size)) / 2.0
+        x = float<-winw / 2.0
 
         for index in 0..total:
             let color_index = index % color_count
-            let value = f32<-c.SDL_GetJoystickAxis(joystick, index) / 32767.0
+            let value = float<-c.SDL_GetJoystickAxis(joystick, index) / 32767.0
             let dx = x + (value * x)
             var dst = c.SDL_FRect(x = dx, y = y, w = x - c.SDL_fabsf(dx), h = joystick_size)
             c.SDL_SetRenderDrawColor(renderer, colors[color_index].r, colors[color_index].g, colors[color_index].b, colors[color_index].a)
@@ -64,7 +64,7 @@ def render_frame() -> void:
             y += joystick_size
 
         total = c.SDL_GetNumJoystickButtons(joystick)
-        x = (f32<-winw - (f32<-total * joystick_size)) / 2.0
+        x = (float<-winw - (float<-total * joystick_size)) / 2.0
 
         for index in 0..total:
             let color_index = index % color_count
@@ -81,13 +81,13 @@ def render_frame() -> void:
             x += joystick_size
 
         total = c.SDL_GetNumJoystickHats(joystick)
-        x = ((f32<-winw - (f32<-total * (joystick_size * 2.0))) / 2.0) + (joystick_size / 2.0)
-        y = f32<-winh - joystick_size
+        x = ((float<-winw - (float<-total * (joystick_size * 2.0))) / 2.0) + (joystick_size / 2.0)
+        y = float<-winh - joystick_size
 
         for index in 0..total:
             let color_index = index % color_count
             let third_size = joystick_size / 3.0
-            let hat = u32<-c.SDL_GetJoystickHat(joystick, index)
+            let hat = uint<-c.SDL_GetJoystickHat(joystick, index)
             var cross = zero[array[c.SDL_FRect, 2]]
 
             cross[0].x = x
@@ -121,15 +121,15 @@ def render_frame() -> void:
 
             x += joystick_size * 2.0
 
-    let text_width = f32<-(c.SDL_strlen(text) * usize<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
-    x = (f32<-winw - text_width) / 2.0
-    y = (f32<-winh - f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) / 2.0
+    let text_width = float<-(c.SDL_strlen(text) * ptr_uint<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
+    x = (float<-winw - text_width) / 2.0
+    y = (float<-winh - float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) / 2.0
     c.SDL_SetRenderDrawColor(renderer, 255, 255, 255, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderDebugText(renderer, x, y, text)
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Input Joystick Polling", c"1.0", c"com.example.input-joystick-polling")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_JOYSTICK):
@@ -156,5 +156,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

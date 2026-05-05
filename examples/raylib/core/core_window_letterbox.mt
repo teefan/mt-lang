@@ -3,16 +3,16 @@ module examples.raylib.core.core_window_letterbox
 import std.c.raylib as rl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const game_screen_width: i32 = 640
-const game_screen_height: i32 = 480
-const bar_count: i32 = 10
+const screen_width: int = 800
+const screen_height: int = 450
+const game_screen_width: int = 640
+const game_screen_height: int = 480
+const bar_count: int = 10
 const window_title: cstr = c"raylib [core] example - window letterbox"
 const help_text: cstr = c"If executed inside a window,\nyou can resize the window,\nand see the screen scaling!"
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE | rl.ConfigFlags.FLAG_VSYNC_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -36,8 +36,8 @@ def main() -> i32:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        let width_scale: f32 = f32<-rl.GetScreenWidth() / game_screen_width
-        let height_scale: f32 = f32<-rl.GetScreenHeight() / game_screen_height
+        let width_scale: float = float<-rl.GetScreenWidth() / game_screen_width
+        let height_scale: float = float<-rl.GetScreenHeight() / game_screen_height
         var scale = width_scale
         if height_scale < scale:
             scale = height_scale
@@ -55,8 +55,8 @@ def main() -> i32:
 
         let scaled_game_width = game_screen_width * scale
         let scaled_game_height = game_screen_height * scale
-        let offset_x: f32 = (rl.GetScreenWidth() - scaled_game_width) * 0.5
-        let offset_y: f32 = (rl.GetScreenHeight() - scaled_game_height) * 0.5
+        let offset_x: float = (rl.GetScreenWidth() - scaled_game_width) * 0.5
+        let offset_y: float = (rl.GetScreenHeight() - scaled_game_height) * 0.5
 
         let mouse = rl.GetMousePosition()
         var virtual_mouse = rm.Vector2.zero()
@@ -77,8 +77,8 @@ def main() -> i32:
             color_index += 1
 
         rl.DrawText(help_text, 10, 25, 20, rl.WHITE)
-        rl.DrawText(rl.TextFormat(c"Default Mouse: [%i , %i]", i32<-mouse.x, i32<-mouse.y), 350, 25, 20, rl.GREEN)
-        rl.DrawText(rl.TextFormat(c"Virtual Mouse: [%i , %i]", i32<-virtual_mouse.x, i32<-virtual_mouse.y), 350, 55, 20, rl.YELLOW)
+        rl.DrawText(rl.TextFormat(c"Default Mouse: [%i , %i]", int<-mouse.x, int<-mouse.y), 350, 25, 20, rl.GREEN)
+        rl.DrawText(rl.TextFormat(c"Virtual Mouse: [%i , %i]", int<-virtual_mouse.x, int<-virtual_mouse.y), 350, 55, 20, rl.YELLOW)
 
         rl.EndTextureMode()
 

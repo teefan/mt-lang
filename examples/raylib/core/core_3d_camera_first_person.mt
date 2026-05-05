@@ -2,9 +2,9 @@ module examples.raylib.core.core_3d_camera_first_person
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const max_columns: i32 = 20
+const screen_width: int = 800
+const screen_height: int = 450
+const max_columns: int = 20
 const window_title: cstr = c"raylib [core] example - 3d camera first person"
 const controls_title: cstr = c"Camera controls:"
 const controls_move: cstr = c"- Move keys: W, A, S, D, Space, Left-Ctrl"
@@ -14,7 +14,7 @@ const controls_zoom: cstr = c"- Zoom keys: num-plus, num-minus or mouse scroll"
 const controls_projection: cstr = c"- Camera projection key: P"
 
 
-def camera_mode_text(camera_mode: i32) -> cstr:
+def camera_mode_text(camera_mode: int) -> cstr:
     if camera_mode == rl.CameraMode.CAMERA_FREE:
         return c"Mode: FREE"
     if camera_mode == rl.CameraMode.CAMERA_FIRST_PERSON:
@@ -26,7 +26,7 @@ def camera_mode_text(camera_mode: i32) -> cstr:
     return c"Mode: CUSTOM"
 
 
-def projection_text(projection: i32) -> cstr:
+def projection_text(projection: int) -> cstr:
     if projection == rl.CameraProjection.CAMERA_PERSPECTIVE:
         return c"Projection: PERSPECTIVE"
     if projection == rl.CameraProjection.CAMERA_ORTHOGRAPHIC:
@@ -34,7 +34,7 @@ def projection_text(projection: i32) -> cstr:
     return c"Projection: CUSTOM"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -47,7 +47,7 @@ def main() -> i32:
     )
     var camera_mode = rl.CameraMode.CAMERA_FIRST_PERSON
 
-    var heights = array[f32, 20](
+    var heights = array[float, 20](
         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
     )
@@ -69,7 +69,7 @@ def main() -> i32:
     )
 
     for index in 0..max_columns:
-        heights[index] = f32<-rl.GetRandomValue(1, 12)
+        heights[index] = float<-rl.GetRandomValue(1, 12)
         positions[index] = rl.Vector3(
             x = rl.GetRandomValue(-15, 15),
             y = heights[index] / 2.0,
@@ -82,7 +82,7 @@ def main() -> i32:
             a = 255,
         )
 
-    let overlay_alpha: f32 = 0.5
+    let overlay_alpha: float = 0.5
 
     rl.DisableCursor()
     rl.SetTargetFPS(60)

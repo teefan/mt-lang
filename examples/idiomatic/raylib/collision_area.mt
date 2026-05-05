@@ -2,25 +2,25 @@ module examples.idiomatic.raylib.collision_area
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const screen_upper_limit: i32 = 40
+const screen_width: int = 800
+const screen_height: int = 450
+const screen_upper_limit: int = 40
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Collision Area")
     defer rl.close_window()
 
     var moving_box = rl.Rectangle(
         x = 10.0,
-        y = f32<-screen_height / 2.0 - 50.0,
+        y = float<-screen_height / 2.0 - 50.0,
         width = 200.0,
         height = 100.0,
     )
-    var moving_speed_x: f32 = 4.0
+    var moving_speed_x: float = 4.0
     var mouse_box = rl.Rectangle(
-        x = f32<-screen_width / 2.0 - 30.0,
-        y = f32<-screen_height / 2.0 - 30.0,
+        x = float<-screen_width / 2.0 - 30.0,
+        y = float<-screen_height / 2.0 - 30.0,
         width = 60.0,
         height = 60.0,
     )
@@ -36,15 +36,15 @@ def main() -> i32:
         if not paused:
             moving_box.x += moving_speed_x
 
-        let window_width = f32<-rl.get_screen_width()
-        let window_height = f32<-rl.get_screen_height()
-        let top_limit = f32<-screen_upper_limit
+        let window_width = float<-rl.get_screen_width()
+        let window_height = float<-rl.get_screen_height()
+        let top_limit = float<-screen_upper_limit
 
         if moving_box.x + moving_box.width >= window_width or moving_box.x <= 0.0:
             moving_speed_x = -moving_speed_x
 
-        mouse_box.x = f32<-rl.get_mouse_x() - mouse_box.width / 2.0
-        mouse_box.y = f32<-rl.get_mouse_y() - mouse_box.height / 2.0
+        mouse_box.x = float<-rl.get_mouse_x() - mouse_box.width / 2.0
+        mouse_box.y = float<-rl.get_mouse_y() - mouse_box.height / 2.0
 
         if mouse_box.x + mouse_box.width >= window_width:
             mouse_box.x = window_width - mouse_box.width
@@ -72,8 +72,8 @@ def main() -> i32:
             rl.draw_rectangle_rec(overlap, rl.LIME)
             let label = "COLLISION!"
             rl.draw_text(label, rl.get_screen_width() / 2 - rl.measure_text(label, 20) / 2, screen_upper_limit / 2 - 10, 20, rl.BLACK)
-            let area = i32<-overlap.width * i32<-overlap.height
-            rl.draw_text(rl.text_format_i32("Collision Area: %i", area), rl.get_screen_width() / 2 - 100, screen_upper_limit + 10, 20, rl.BLACK)
+            let area = int<-overlap.width * int<-overlap.height
+            rl.draw_text(rl.text_format_int("Collision Area: %i", area), rl.get_screen_width() / 2 - 100, screen_upper_limit + 10, 20, rl.BLACK)
 
         rl.draw_text("Press SPACE to pause or resume", 20, screen_height - 35, 20, rl.LIGHTGRAY)
         rl.draw_fps(10, 10)

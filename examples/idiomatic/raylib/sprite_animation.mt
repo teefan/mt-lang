@@ -2,14 +2,14 @@ module examples.idiomatic.raylib.sprite_animation
 
 import std.raylib as rl
 
-const max_frame_speed: i32 = 15
-const min_frame_speed: i32 = 1
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const max_frame_speed: int = 15
+const min_frame_speed: int = 1
+const screen_width: int = 800
+const screen_height: int = 450
 const scarfy_path: str = "../../raylib/resources/scarfy.png"
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Sprite Animation")
     defer rl.close_window()
 
@@ -23,8 +23,8 @@ def main() -> i32:
     var frame_rec = rl.Rectangle(
         x = 0.0,
         y = 0.0,
-        width = f32<-frame_width,
-        height = f32<-frame_height,
+        width = float<-frame_width,
+        height = float<-frame_height,
     )
     var current_frame = 0
     var frames_counter = 0
@@ -42,7 +42,7 @@ def main() -> i32:
             if current_frame > 5:
                 current_frame = 0
 
-            frame_rec.x = f32<-(current_frame * frame_width)
+            frame_rec.x = float<-(current_frame * frame_width)
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_RIGHT):
             frames_speed += 1
@@ -61,10 +61,10 @@ def main() -> i32:
 
         rl.draw_texture(scarfy, 15, 40, rl.WHITE)
         rl.draw_rectangle_lines(15, 40, scarfy.width, scarfy.height, rl.LIME)
-        rl.draw_rectangle_lines(15 + i32<-frame_rec.x, 40 + i32<-frame_rec.y, i32<-frame_rec.width, i32<-frame_rec.height, rl.RED)
+        rl.draw_rectangle_lines(15 + int<-frame_rec.x, 40 + int<-frame_rec.y, int<-frame_rec.width, int<-frame_rec.height, rl.RED)
 
         rl.draw_text("FRAME SPEED: ", 165, 210, 10, rl.DARKGRAY)
-        rl.draw_text(rl.text_format_i32("%02i FPS", frames_speed), 575, 210, 10, rl.DARKGRAY)
+        rl.draw_text(rl.text_format_int("%02i FPS", frames_speed), 575, 210, 10, rl.DARKGRAY)
         rl.draw_text("PRESS RIGHT/LEFT KEYS to CHANGE SPEED!", 290, 240, 10, rl.DARKGRAY)
 
         for index in 0..max_frame_speed:

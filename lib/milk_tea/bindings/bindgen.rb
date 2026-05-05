@@ -18,33 +18,33 @@ module MilkTea
       "bool" => "bool",
       "void" => "void",
       "char" => "char",
-      "signed char" => "i8",
-      "unsigned char" => "u8",
-      "short" => "i16",
-      "short int" => "i16",
-      "signed short" => "i16",
-      "signed short int" => "i16",
-      "unsigned short" => "u16",
-      "unsigned short int" => "u16",
-      "int" => "i32",
-      "signed" => "i32",
-      "signed int" => "i32",
-      "unsigned" => "u32",
-      "unsigned int" => "u32",
-      "long" => "isize",
-      "long int" => "isize",
-      "signed long" => "isize",
-      "signed long int" => "isize",
-      "unsigned long" => "usize",
-      "unsigned long int" => "usize",
-      "long long" => "i64",
-      "long long int" => "i64",
-      "signed long long" => "i64",
-      "signed long long int" => "i64",
-      "unsigned long long" => "u64",
-      "unsigned long long int" => "u64",
-      "float" => "f32",
-      "double" => "f64",
+      "signed char" => "byte",
+      "unsigned char" => "ubyte",
+      "short" => "short",
+      "short int" => "short",
+      "signed short" => "short",
+      "signed short int" => "short",
+      "unsigned short" => "ushort",
+      "unsigned short int" => "ushort",
+      "int" => "int",
+      "signed" => "int",
+      "signed int" => "int",
+      "unsigned" => "uint",
+      "unsigned int" => "uint",
+      "long" => "ptr_int",
+      "long int" => "ptr_int",
+      "signed long" => "ptr_int",
+      "signed long int" => "ptr_int",
+      "unsigned long" => "ptr_uint",
+      "unsigned long int" => "ptr_uint",
+      "long long" => "long",
+      "long long int" => "long",
+      "signed long long" => "long",
+      "signed long long int" => "long",
+      "unsigned long long" => "ulong",
+      "unsigned long long int" => "ulong",
+      "float" => "float",
+      "double" => "double",
     }.freeze
 
     def self.generate(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {})
@@ -849,7 +849,7 @@ module MilkTea
       def emit_enum_declaration(kind, name, node)
         members = enum_member_values(node)
         backing_type = if members.empty?
-                         "i32"
+                         "int"
                        else
                          map_c_type(members.first.dig(:node, "type", "qualType"), context: "enum #{name}")
                        end
@@ -936,7 +936,7 @@ module MilkTea
 
       def emit_float_value(value, expected_type)
         literal = value.match?(/[.eE]/) ? value : "#{value}.0"
-        expected_type == "f32" ? literal : literal
+        expected_type == "float" ? literal : literal
       end
 
       def lower_aggregate_init_list(values, aggregate:, expected_type:, context:)
@@ -958,8 +958,8 @@ module MilkTea
 
       def lower_zero_value(expected_type:, context:)
         return "false" if expected_type == "bool"
-        return "0" if %w[char i8 u8 i16 u16 i32 u32 i64 u64 isize usize].include?(expected_type)
-        return "0.0" if %w[f32 f64].include?(expected_type)
+        return "0" if %w[char byte ubyte short ushort int uint long ulong ptr_int ptr_uint].include?(expected_type)
+        return "0.0" if %w[float double].include?(expected_type)
         return "null" if expected_type == "cstr" || expected_type == "cstr?" || expected_type.start_with?("ptr[") || expected_type.start_with?("const_ptr[")
 
         if @aggregate_declarations.key?(expected_type)
@@ -1376,9 +1376,9 @@ module MilkTea
       end
 
       def standard_typedef_primitive(unqualified)
-        return "usize" if unqualified == "size_t"
-        return "isize" if unqualified == "ssize_t" || unqualified == "ptrdiff_t"
-        return "i32" if unqualified == "wchar_t"
+        return "ptr_uint" if unqualified == "size_t"
+        return "ptr_int" if unqualified == "ssize_t" || unqualified == "ptrdiff_t"
+        return "int" if unqualified == "wchar_t"
 
         integer_typedef_primitive(unqualified)
       end
@@ -1389,7 +1389,21 @@ module MilkTea
 
         signed_prefix = match[1]
         width = match[2]
-        signed_prefix ? "u#{width}" : "i#{width}"
+        if signed_prefix
+          {
+            "8" => "ubyte",
+            "16" => "ushort",
+            "32" => "uint",
+            "64" => "ulong",
+          }.fetch(width)
+        else
+          {
+            "8" => "byte",
+            "16" => "short",
+            "32" => "int",
+            "64" => "long",
+          }.fetch(width)
+        end
       end
 
       def pointer_type?(qual_type)
@@ -1419,7 +1433,7 @@ module MilkTea
 
       def long_width_type(signed:)
         width = long_width_bytes
-        mapping = signed ? { 4 => "i32", 8 => "i64" } : { 4 => "u32", 8 => "u64" }
+        mapping = signed ? { 4 => "int", 8 => "long" } : { 4 => "uint", 8 => "ulong" }
         mapping.fetch(width) do
           raise BindgenError, "unsupported C long width #{width} bytes"
         end

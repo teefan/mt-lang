@@ -4,15 +4,15 @@ import std.c.libm as math
 import std.c.raylib as rl
 import std.c.rlgl as rlgl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - 2d camera mouse zoom"
 const mode_select_text: cstr = c"[1][2] Select mouse zoom mode (Wheel or Move)"
 const wheel_zoom_text: cstr = c"Mouse left button drag to move, mouse wheel to zoom"
 const move_zoom_text: cstr = c"Mouse left button drag to move, mouse press and move to zoom"
 
 
-def clamp_zoom(zoom: f32) -> f32:
+def clamp_zoom(zoom: float) -> float:
     if zoom < 0.125:
         return 0.125
     if zoom > 64.0:
@@ -20,7 +20,7 @@ def clamp_zoom(zoom: f32) -> f32:
     return zoom
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -2,15 +2,15 @@ module examples.raylib.core.core_input_keys
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - input keys"
 const help_text: cstr = c"move the ball with arrow keys"
-const ball_radius: f32 = 50.0
-const ball_step: f32 = 2.0
+const ball_radius: float = 50.0
+const ball_step: float = 2.0
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

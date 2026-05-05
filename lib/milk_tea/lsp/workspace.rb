@@ -16,7 +16,8 @@ module MilkTea
       DEFINITION_LINE_PREFIX = /^(?:\s)*(?:(?:pub|foreign)\s+)*(?:def|struct|union|enum|flags|variant|type|const|var|let|methods|opaque)\s+/m
       DEFINITION_NAME_REGEX = /^\s*(?:(?:pub|foreign)\s+)*(?:def|struct|union|enum|flags|variant|type|const|var|let|methods|opaque)\s+([A-Za-z_][A-Za-z0-9_]*)\b/
 
-      def initialize
+      def initialize(error_output: nil)
+        @error_output = error_output
         @open_documents = {}   # uri -> content String from didOpen/didChange
         @indexed_documents = {} # uri -> content String loaded from disk index
         @tokens_cache = {}   # uri -> [Token]
@@ -57,7 +58,7 @@ module MilkTea
         @diagnostics_cache[uri] = { content_hash: hash, diagnostics: diagnostics }
         diagnostics
       rescue StandardError => e
-        warn "LSP diagnostics error #{uri}: #{e.message}"
+        log_error("LSP diagnostics error #{uri}: #{e.message}")
         []
       end
 
@@ -413,7 +414,7 @@ module MilkTea
 
         MilkTea::Lexer.lex(content, path: uri)
       rescue StandardError => e
-        warn "LSP lex error #{uri}: #{e.message}"
+        log_error("LSP lex error #{uri}: #{e.message}")
         nil
       end
 
@@ -423,7 +424,15 @@ module MilkTea
 
         MilkTea::Parser.parse(tokens: tokens, path: uri)
       rescue StandardError => e
-        warn "LSP parse error #{uri}: #{e.message}"
+        log_error("LSP parse error #{uri}: #{e.message}")
+        nil
+      end
+
+      private def log_error(message)
+        return unless @error_output
+
+        @error_output.puts(message)
+      rescue StandardError
         nil
       end
 

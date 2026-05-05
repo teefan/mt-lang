@@ -3,27 +3,27 @@ module examples.raylib.shaders.shaders_depth_rendering
 import std.c.raylib as rl
 import std.c.rlgl as rlgl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
-const depth_texture_format: i32 = 19
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
+const depth_texture_format: int = 19
 const shader_path_format: cstr = c"../resources/shaders/glsl%i/depth_render.fs"
 const depth_uniform_name: cstr = c"depthTexture"
 const flip_uniform_name: cstr = c"flipY"
 const window_title: cstr = c"raylib [shaders] example - depth rendering"
 
 
-def load_render_texture_depth_tex(width: i32, height: i32) -> rl.RenderTexture2D:
+def load_render_texture_depth_tex(width: int, height: int) -> rl.RenderTexture2D:
     var target = zero[rl.RenderTexture2D]
 
     target.id = rlgl.rlLoadFramebuffer()
     if target.id > 0:
         rlgl.rlEnableFramebuffer(target.id)
 
-        target.texture.id = rlgl.rlLoadTexture(null, width, height, i32<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, 1)
+        target.texture.id = rlgl.rlLoadTexture(null, width, height, int<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, 1)
         target.texture.width = width
         target.texture.height = height
-        target.texture.format = i32<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
+        target.texture.format = int<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
         target.texture.mipmaps = 1
 
         target.depth.id = rlgl.rlLoadTextureDepth(width, height, false)
@@ -35,15 +35,15 @@ def load_render_texture_depth_tex(width: i32, height: i32) -> rl.RenderTexture2D
         rlgl.rlFramebufferAttach(
             target.id,
             target.texture.id,
-            i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0,
-            i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
+            int<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0,
+            int<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
             0,
         )
         rlgl.rlFramebufferAttach(
             target.id,
             target.depth.id,
-            i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH,
-            i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
+            int<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH,
+            int<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
             0,
         )
 
@@ -60,7 +60,7 @@ def unload_render_texture_depth_tex(target: rl.RenderTexture2D) -> void:
         rlgl.rlUnloadFramebuffer(target.id)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

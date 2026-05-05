@@ -6,19 +6,19 @@ struct TextureCollection:
     texture: rl.Texture2D
     position: rl.Vector2
 
-const max_texture_collection: i32 = 20
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const max_texture_collection: int = 20
+const screen_width: int = 800
+const screen_height: int = 450
 
 
-def unload_collection(collection: array[TextureCollection, 20], count: i32) -> void:
+def unload_collection(collection: array[TextureCollection, 20], count: int) -> void:
     for index in 0..count:
         if rl.is_texture_valid(collection[index].texture):
             rl.unload_texture(collection[index].texture)
     return
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Clipboard Image")
     defer rl.close_window()
 
@@ -58,9 +58,9 @@ def main() -> i32:
             if rl.is_texture_valid(texture):
                 rl.draw_texture_pro(
                     texture,
-                    rl.Rectangle(x = 0.0, y = 0.0, width = f32<-texture.width, height = f32<-texture.height),
-                    rl.Rectangle(x = position.x, y = position.y, width = f32<-texture.width, height = f32<-texture.height),
-                    rl.Vector2(x = f32<-texture.width * 0.5, y = f32<-texture.height * 0.5),
+                    rl.Rectangle(x = 0.0, y = 0.0, width = float<-texture.width, height = float<-texture.height),
+                    rl.Rectangle(x = position.x, y = position.y, width = float<-texture.width, height = float<-texture.height),
+                    rl.Vector2(x = float<-texture.width * 0.5, y = float<-texture.height * 0.5),
                     0.0,
                     rl.WHITE,
                 )

@@ -3,8 +3,8 @@ module examples.raylib.text.text_inline_styling
 import std.c.libc as libc
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [text] example - inline styling"
 const foreground_text: cstr = c"This changes the [cFF0000FF]foreground color[r] of provided text!!!"
 const background_text: cstr = c"This changes the [bFF00FFFF]background color[r] of provided text!!!"
@@ -13,20 +13,20 @@ const alpha_text: cstr = c"This changes the [c00ff00ff]alpha[r] relative [cfffff
 const creative_format: cstr = c"Let's be [c%02x%02x%02xFF]CREATIVE[r] !!!"
 
 
-def draw_text_styled(font: rl.Font, text: cstr, position: rl.Vector2, font_size: f32, spacing: f32, color: rl.Color) -> void:
+def draw_text_styled(font: rl.Font, text: cstr, position: rl.Vector2, font_size: float, spacing: float, color: rl.Color) -> void:
     var active_font = font
     if active_font.texture.id == 0:
         active_font = rl.GetFontDefault()
 
-    let text_len = i32<-rl.TextLength(text)
+    let text_len = int<-rl.TextLength(text)
     var col_front = color
     var col_back = rl.BLANK
     let back_rec_padding = 4.0
 
-    var text_offset_y: f32 = 0.0
-    var text_offset_x: f32 = 0.0
-    let text_line_spacing: f32 = 0.0
-    let scale_factor = font_size / f32<-active_font.baseSize
+    var text_offset_y: float = 0.0
+    var text_offset_x: float = 0.0
+    let text_line_spacing: float = 0.0
+    let scale_factor = font_size / float<-active_font.baseSize
 
     unsafe:
         let raw_text = ptr[char]<-text
@@ -64,19 +64,19 @@ def draw_text_styled(font: rl.Font, text: cstr, position: rl.Vector2, font_size:
 
                     let color_value = libc.strtoul(cstr<-ptr_of(color_text[0]), null, 16)
                     if color_kind == char<-99:
-                        col_front = rl.GetColor(u32<-color_value)
+                        col_front = rl.GetColor(uint<-color_value)
                     elif color_kind == char<-98:
-                        col_back = rl.GetColor(u32<-color_value)
+                        col_back = rl.GetColor(uint<-color_value)
 
                     index += color_count + 3
                     continue
 
             let glyph_index = rl.GetGlyphIndex(active_font, codepoint)
-            var increase_x: f32 = 0.0
+            var increase_x: float = 0.0
             if active_font.glyphs[glyph_index].advanceX == 0:
-                increase_x = f32<-active_font.recs[glyph_index].width * scale_factor + spacing
+                increase_x = float<-active_font.recs[glyph_index].width * scale_factor + spacing
             else:
-                increase_x += f32<-active_font.glyphs[glyph_index].advanceX * scale_factor + spacing
+                increase_x += float<-active_font.glyphs[glyph_index].advanceX * scale_factor + spacing
 
             if col_back.a > 0:
                 rl.DrawRectangleRec(
@@ -96,9 +96,9 @@ def draw_text_styled(font: rl.Font, text: cstr, position: rl.Vector2, font_size:
             index += codepoint_byte_count
 
 
-def measure_text_styled(font: rl.Font, text: cstr, font_size: f32, spacing: f32) -> rl.Vector2:
+def measure_text_styled(font: rl.Font, text: cstr, font_size: float, spacing: float) -> rl.Vector2:
     let empty_size = rl.Vector2(x = 0.0, y = 0.0)
-    let text_len = i32<-rl.TextLength(text)
+    let text_len = int<-rl.TextLength(text)
     if text_len == 0:
         return empty_size
 
@@ -108,9 +108,9 @@ def measure_text_styled(font: rl.Font, text: cstr, font_size: f32, spacing: f32)
         if active_font.texture.id == 0:
             active_font = rl.GetFontDefault()
 
-        var text_width: f32 = 0.0
+        var text_width: float = 0.0
         let text_height = font_size
-        let scale_factor = font_size / f32<-active_font.baseSize
+        let scale_factor = font_size / float<-active_font.baseSize
         var valid_codepoint_counter = 0
 
         var index = 0
@@ -140,21 +140,21 @@ def measure_text_styled(font: rl.Font, text: cstr, font_size: f32, spacing: f32)
             if codepoint != 10:
                 let glyph_index = rl.GetGlyphIndex(active_font, codepoint)
                 if active_font.glyphs[glyph_index].advanceX > 0:
-                    text_width += f32<-active_font.glyphs[glyph_index].advanceX
+                    text_width += float<-active_font.glyphs[glyph_index].advanceX
                 else:
-                    text_width += f32<-(active_font.recs[glyph_index].width + active_font.glyphs[glyph_index].offsetX)
+                    text_width += float<-(active_font.recs[glyph_index].width + active_font.glyphs[glyph_index].offsetX)
 
                 valid_codepoint_counter += 1
 
             index += codepoint_byte_count
 
         return rl.Vector2(
-            x = text_width * scale_factor + f32<-(valid_codepoint_counter - 1) * spacing,
+            x = text_width * scale_factor + float<-(valid_codepoint_counter - 1) * spacing,
             y = text_height,
         )
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -168,9 +168,9 @@ def main() -> i32:
         frame_counter += 1
 
         if (frame_counter % 20) == 0:
-            col_random.r = u8<-rl.GetRandomValue(0, 255)
-            col_random.g = u8<-rl.GetRandomValue(0, 255)
-            col_random.b = u8<-rl.GetRandomValue(0, 255)
+            col_random.r = ubyte<-rl.GetRandomValue(0, 255)
+            col_random.g = ubyte<-rl.GetRandomValue(0, 255)
+            col_random.b = ubyte<-rl.GetRandomValue(0, 255)
             col_random.a = 255
 
         rl.BeginDrawing()
@@ -183,10 +183,10 @@ def main() -> i32:
         draw_text_styled(rl.GetFontDefault(), both_text, rl.Vector2(x = 100.0, y = 160.0), 20.0, 2.0, rl.BLACK)
         draw_text_styled(rl.GetFontDefault(), alpha_text, rl.Vector2(x = 100.0, y = 200.0), 20.0, 2.0, rl.Color(r = 0, g = 0, b = 0, a = 100))
 
-        let creative_text = rl.TextFormat(creative_format, i32<-col_random.r, i32<-col_random.g, i32<-col_random.b)
+        let creative_text = rl.TextFormat(creative_format, int<-col_random.r, int<-col_random.g, int<-col_random.b)
         draw_text_styled(rl.GetFontDefault(), creative_text, rl.Vector2(x = 100.0, y = 240.0), 40.0, 2.0, rl.BLACK)
 
         text_size = measure_text_styled(rl.GetFontDefault(), creative_text, 40.0, 2.0)
-        rl.DrawRectangleLines(100, 240, i32<-text_size.x, i32<-text_size.y, rl.GREEN)
+        rl.DrawRectangleLines(100, 240, int<-text_size.x, int<-text_size.y, rl.GREEN)
 
     return 0

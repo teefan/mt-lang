@@ -4,12 +4,12 @@ import std.c.raylib as rl
 import std.c.rlgl as rlgl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const start_handle: i32 = 0
-const start_tangent_handle: i32 = 1
-const end_handle: i32 = 2
-const end_tangent_handle: i32 = 3
+const screen_width: int = 800
+const screen_height: int = 450
+const start_handle: int = 0
+const start_tangent_handle: int = 1
+const end_handle: int = 2
+const end_tangent_handle: int = 3
 const window_title: cstr = c"raylib [textures] example - textured curve"
 const road_path: cstr = c"../resources/road.png"
 const help_text: cstr = c"Drag points to move curve, press SPACE to show/hide base curve"
@@ -17,7 +17,7 @@ const width_format: cstr = c"Curve width: %2.0f (Use + and - to adjust)"
 const segments_format: cstr = c"Curve segments: %d (Use LEFT and RIGHT to adjust)"
 
 
-def hovered_handle(mouse: rl.Vector2, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2) -> i32:
+def hovered_handle(mouse: rl.Vector2, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2) -> int:
     if rl.CheckCollisionPointCircle(mouse, curve_start_position, 6.0):
         return start_handle
     if rl.CheckCollisionPointCircle(mouse, curve_start_position_tangent, 6.0):
@@ -29,20 +29,20 @@ def hovered_handle(mouse: rl.Vector2, curve_start_position: rl.Vector2, curve_st
     return -1
 
 
-def draw_textured_curve(tex_road: rl.Texture, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2, curve_width: f32, curve_segments: i32) -> void:
-    let step = 1.0 / f32<-curve_segments
+def draw_textured_curve(tex_road: rl.Texture, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2, curve_width: float, curve_segments: int) -> void:
+    let step = 1.0 / float<-curve_segments
 
     var previous = curve_start_position
     var previous_tangent = rl.Vector2.zero()
-    var previous_v: f32 = 0.0
+    var previous_v: float = 0.0
     var tangent_set = false
 
     for index in 1..curve_segments + 1:
-        let t = step * f32<-index
+        let t = step * float<-index
         let current = rl.GetSplinePointBezierCubic(curve_start_position, curve_start_position_tangent, curve_end_position_tangent, curve_end_position, t)
         let delta = current.subtract(previous)
         let normal = rl.Vector2(x = -delta.y, y = delta.x).normalize()
-        let v = previous_v + delta.length() / f32<-(tex_road.height * 2)
+        let v = previous_v + delta.length() / float<-(tex_road.height * 2)
 
         if not tangent_set:
             previous_tangent = normal
@@ -72,10 +72,10 @@ def draw_textured_curve(tex_road: rl.Texture, curve_start_position: rl.Vector2, 
         previous_tangent = normal
         previous_v = v
 
-    rlgl.rlSetTexture(u32<-0)
+    rlgl.rlSetTexture(uint<-0)
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_VSYNC_HINT | rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -85,7 +85,7 @@ def main() -> i32:
     rl.SetTextureFilter(tex_road, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
 
     var show_curve = false
-    var curve_width: f32 = 50.0
+    var curve_width: float = 50.0
     var curve_segments = 24
     var curve_start_position = rl.Vector2(x = 80.0, y = 100.0)
     var curve_start_position_tangent = rl.Vector2(x = 100.0, y = 300.0)

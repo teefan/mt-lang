@@ -5,9 +5,9 @@ import std.c.rlgl as rlgl
 import std.c.rlights as lights
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const model_path: cstr = c"../resources/models/old_car_new.glb"
 const cel_vertex_path_format: cstr = c"../resources/shaders/glsl%i/cel.vs"
 const cel_fragment_path_format: cstr = c"../resources/shaders/glsl%i/cel.fs"
@@ -32,7 +32,7 @@ def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
         model.materials[0].shader = shader
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -56,12 +56,12 @@ def main() -> i32:
 
     let view_loc = rl.GetShaderLocation(cel_shader, view_pos_uniform_name)
     unsafe:
-        cel_shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
+        cel_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     let default_shader = model_shader(ptr_of(model))
     set_model_shader(ptr_of(model), cel_shader)
 
-    var num_bands: f32 = 10.0
+    var num_bands: float = 10.0
     let num_bands_loc = rl.GetShaderLocation(cel_shader, num_bands_uniform_name)
     rl.SetShaderValue(cel_shader, num_bands_loc, ptr_of(num_bands), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
@@ -73,20 +73,20 @@ def main() -> i32:
     let outline_thickness_loc = rl.GetShaderLocation(outline_shader, outline_thickness_uniform_name)
 
     var light_sources = zero[array[lights.Light, 4]]
-    light_sources[0] = lights.CreateLight(i32<-lights.LightType.LIGHT_DIRECTIONAL, rl.Vector3(x = 50.0, y = 50.0, z = 50.0), rm.Vector3.zero(), rl.WHITE, cel_shader)
+    light_sources[0] = lights.CreateLight(int<-lights.LightType.LIGHT_DIRECTIONAL, rl.Vector3(x = 50.0, y = 50.0, z = 50.0), rm.Vector3.zero(), rl.WHITE, cel_shader)
 
     var cel_enabled = true
     var outline_enabled = true
-    let light_rotation_speed: f32 = 0.3
-    let light_radius: f32 = 5.0
-    var outline_thickness: f32 = 0.005
+    let light_rotation_speed: float = 0.3
+    let light_radius: float = 5.0
+    var outline_thickness: float = 0.005
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
         rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
-        var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
+        var camera_pos = array[float, 3](camera.position.x, camera.position.y, camera.position.z)
         rl.SetShaderValue(cel_shader, view_loc, ptr_of(camera_pos[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_Z):
@@ -105,7 +105,7 @@ def main() -> i32:
             num_bands = rm.clamp(num_bands - 1.0, 2.0, 20.0)
         rl.SetShaderValue(cel_shader, num_bands_loc, ptr_of(num_bands), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
-        let time = f32<-rl.GetTime()
+        let time = float<-rl.GetTime()
         light_sources[0].position = rl.Vector3(
             x = rm.sin(-time * light_rotation_speed) * light_radius,
             y = 5.0,
@@ -123,7 +123,7 @@ def main() -> i32:
         rl.BeginMode3D(camera)
         if outline_enabled:
             rl.SetShaderValue(outline_shader, outline_thickness_loc, ptr_of(outline_thickness), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-            rlgl.rlSetCullFace(i32<-rlgl.rlCullMode.RL_CULL_FACE_FRONT)
+            rlgl.rlSetCullFace(int<-rlgl.rlCullMode.RL_CULL_FACE_FRONT)
             set_model_shader(ptr_of(model), outline_shader)
             rl.DrawModel(model, rm.Vector3.zero(), 0.75, rl.WHITE)
 
@@ -132,7 +132,7 @@ def main() -> i32:
             else:
                 set_model_shader(ptr_of(model), default_shader)
 
-            rlgl.rlSetCullFace(i32<-rlgl.rlCullMode.RL_CULL_FACE_BACK)
+            rlgl.rlSetCullFace(int<-rlgl.rlCullMode.RL_CULL_FACE_BACK)
 
         rl.DrawModel(model, rm.Vector3.zero(), 0.75, rl.WHITE)
         rl.DrawSphereEx(light_sources[0].position, 0.2, 50, 50, rl.YELLOW)

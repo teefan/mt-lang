@@ -3,20 +3,20 @@ module examples.raylib.textures.textures_framebuffer_rendering
 import std.c.raylib as rl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const split_width: i32 = screen_width / 2
+const screen_width: int = 800
+const screen_height: int = 450
+const split_width: int = screen_width / 2
 const window_title: cstr = c"raylib [textures] example - framebuffer rendering"
 const observer_view_text: cstr = c"Observer View"
 const observer_controls_move_text: cstr = c"WASD + Mouse to Move"
 const observer_controls_zoom_text: cstr = c"Scroll to Zoom"
 const observer_controls_reset_text: cstr = c"R to Reset Observer Target"
 const subject_view_text: cstr = c"Subject View"
-const near_plane: f32 = 0.05
-const capture_size: f32 = 128.0
+const near_plane: float = 0.05
+const capture_size: float = 128.0
 
 
-def draw_camera_prism(camera: rl.Camera3D, aspect: f32, color: rl.Color) -> void:
+def draw_camera_prism(camera: rl.Camera3D, aspect: float, color: rl.Color) -> void:
     let length = camera.position.distance(camera.target)
     let plane_ndc = array[rl.Vector3, 4](
         rl.Vector3(x = -1.0, y = -1.0, z = 1.0),
@@ -49,7 +49,7 @@ def draw_camera_prism(camera: rl.Camera3D, aspect: f32, color: rl.Color) -> void
         rl.DrawLine3D(camera.position, corners[index], color)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -69,20 +69,20 @@ def main() -> i32:
     )
 
     let observer_target = rl.LoadRenderTexture(split_width, screen_height)
-    let observer_source = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-observer_target.texture.width, height = -f32<-observer_target.texture.height)
-    let observer_dest = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-split_width, height = f32<-screen_height)
+    let observer_source = rl.Rectangle(x = 0.0, y = 0.0, width = float<-observer_target.texture.width, height = -float<-observer_target.texture.height)
+    let observer_dest = rl.Rectangle(x = 0.0, y = 0.0, width = float<-split_width, height = float<-screen_height)
 
     let subject_target = rl.LoadRenderTexture(split_width, screen_height)
-    let subject_source = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-subject_target.texture.width, height = -f32<-subject_target.texture.height)
-    let subject_dest = rl.Rectangle(x = f32<-split_width, y = 0.0, width = f32<-split_width, height = f32<-screen_height)
-    let texture_aspect_ratio = f32<-subject_target.texture.width / f32<-subject_target.texture.height
+    let subject_source = rl.Rectangle(x = 0.0, y = 0.0, width = float<-subject_target.texture.width, height = -float<-subject_target.texture.height)
+    let subject_dest = rl.Rectangle(x = float<-split_width, y = 0.0, width = float<-split_width, height = float<-screen_height)
+    let texture_aspect_ratio = float<-subject_target.texture.width / float<-subject_target.texture.height
     let crop_source = rl.Rectangle(
-        x = (f32<-subject_target.texture.width - capture_size) / 2.0,
-        y = (f32<-subject_target.texture.height - capture_size) / 2.0,
+        x = (float<-subject_target.texture.width - capture_size) / 2.0,
+        y = (float<-subject_target.texture.height - capture_size) / 2.0,
         width = capture_size,
         height = -capture_size,
     )
-    let crop_dest = rl.Rectangle(x = f32<-split_width + 20.0, y = 20.0, width = capture_size, height = capture_size)
+    let crop_dest = rl.Rectangle(x = float<-split_width + 20.0, y = 20.0, width = capture_size, height = capture_size)
 
     defer:
         rl.UnloadRenderTexture(subject_target)
@@ -120,10 +120,10 @@ def main() -> i32:
         rl.DrawGrid(10, 1.0)
         rl.EndMode3D()
         rl.DrawRectangleLines(
-            i32<-((f32<-subject_target.texture.width - capture_size) / 2.0),
-            i32<-((f32<-subject_target.texture.height - capture_size) / 2.0),
-            i32<-capture_size,
-            i32<-capture_size,
+            int<-((float<-subject_target.texture.width - capture_size) / 2.0),
+            int<-((float<-subject_target.texture.height - capture_size) / 2.0),
+            int<-capture_size,
+            int<-capture_size,
             rl.GREEN,
         )
         rl.DrawText(subject_view_text, 10, subject_target.texture.height - 30, 20, rl.BLACK)

@@ -4,7 +4,7 @@ import std.c.stdio as c
 import std.str as text_ops
 import std.string as string
 
-const float_buffer_capacity: usize = 64
+const float_buffer_capacity: ptr_uint = 64
 
 
 pub def append(output: ref[string.String], text: str) -> void:
@@ -34,10 +34,10 @@ pub def append_bool(output: ref[string.String], bool_value: bool) -> void:
     return
 
 
-def append_formatted_float(output: ref[string.String], format: cstr, number: f64) -> void:
+def append_formatted_float(output: ref[string.String], format: cstr, number: double) -> void:
     var buffer = zero[array[char, 64]]
     let written = c.snprintf(ptr_of(buffer[0]), float_buffer_capacity, format, number)
-    if written < 0 or usize<-written >= float_buffer_capacity:
+    if written < 0 or ptr_uint<-written >= float_buffer_capacity:
         panic("fmt could not format float")
 
     unsafe:
@@ -45,20 +45,20 @@ def append_formatted_float(output: ref[string.String], format: cstr, number: f64
     return
 
 
-pub def append_f32(output: ref[string.String], number: f32) -> void:
-    append_formatted_float(output, c"%g", f64<-number)
+pub def append_float(output: ref[string.String], number: float) -> void:
+    append_formatted_float(output, c"%g", double<-number)
     return
 
 
-pub def append_f64(output: ref[string.String], number: f64) -> void:
+pub def append_double(output: ref[string.String], number: double) -> void:
     append_formatted_float(output, c"%g", number)
     return
 
 
-pub def append_f64_precision(output: ref[string.String], number: f64, precision: i32) -> void:
+pub def append_double_precision(output: ref[string.String], number: double, precision: int) -> void:
     var buffer = zero[array[char, 64]]
     let written = c.snprintf(ptr_of(buffer[0]), float_buffer_capacity, c"%.*f", precision, number)
-    if written < 0 or usize<-written >= float_buffer_capacity:
+    if written < 0 or ptr_uint<-written >= float_buffer_capacity:
         panic("fmt could not format float with precision")
 
     unsafe:
@@ -66,18 +66,18 @@ pub def append_f64_precision(output: ref[string.String], number: f64, precision:
     return
 
 
-pub def append_usize(output: ref[string.String], number: usize) -> void:
+pub def append_ptr_uint(output: ref[string.String], number: ptr_uint) -> void:
     if number == 0:
-        output.push_byte(u8<-48)
+        output.push_byte(ubyte<-48)
         return
 
-    var digits: array[u8, 32]
-    var count: usize = 0
+    var digits: array[ubyte, 32]
+    var count: ptr_uint = 0
     var remaining = number
     while remaining != 0:
-        let digit = remaining % usize<-10
-        digits[count] = u8<-(usize<-48 + digit)
-        remaining = remaining / usize<-10
+        let digit = remaining % ptr_uint<-10
+        digits[count] = ubyte<-(ptr_uint<-48 + digit)
+        remaining = remaining / ptr_uint<-10
         count += 1
 
     while count > 0:
@@ -86,18 +86,18 @@ pub def append_usize(output: ref[string.String], number: usize) -> void:
     return
 
 
-pub def append_u64(output: ref[string.String], number: u64) -> void:
+pub def append_ulong(output: ref[string.String], number: ulong) -> void:
     if number == 0:
-        output.push_byte(u8<-48)
+        output.push_byte(ubyte<-48)
         return
 
-    var digits: array[u8, 32]
-    var count: usize = 0
+    var digits: array[ubyte, 32]
+    var count: ptr_uint = 0
     var remaining = number
     while remaining != 0:
-        let digit = remaining % u64<-10
-        digits[count] = u8<-(u64<-48 + digit)
-        remaining = remaining / u64<-10
+        let digit = remaining % ulong<-10
+        digits[count] = ubyte<-(ulong<-48 + digit)
+        remaining = remaining / ulong<-10
         count += 1
 
     while count > 0:
@@ -106,38 +106,38 @@ pub def append_u64(output: ref[string.String], number: u64) -> void:
     return
 
 
-pub def append_u32(output: ref[string.String], number: u32) -> void:
-    append_usize(output, usize<-number)
+pub def append_uint(output: ref[string.String], number: uint) -> void:
+    append_ptr_uint(output, ptr_uint<-number)
     return
 
 
-pub def append_i64(output: ref[string.String], number: i64) -> void:
+pub def append_long(output: ref[string.String], number: long) -> void:
     if number < 0:
         output.append("-")
-        append_u64(output, u64<-(-(number + 1)) + u64<-1)
+        append_ulong(output, ulong<-(-(number + 1)) + ulong<-1)
         return
 
-    append_u64(output, u64<-number)
+    append_ulong(output, ulong<-number)
     return
 
 
-pub def append_i32(output: ref[string.String], number: i32) -> void:
+pub def append_int(output: ref[string.String], number: int) -> void:
     if number < 0:
         output.append("-")
-        append_usize(output, usize<-(-i64<-number))
+        append_ptr_uint(output, ptr_uint<-(-long<-number))
         return
 
-    append_usize(output, usize<-number)
+    append_ptr_uint(output, ptr_uint<-number)
     return
 
 
-pub def to_string_usize(value: usize) -> string.String:
+pub def to_string_ptr_uint(value: ptr_uint) -> string.String:
     var result = string.String.create()
-    append_usize(ref_of(result), value)
+    append_ptr_uint(ref_of(result), value)
     return result
 
 
-pub def to_string_i32(value: i32) -> string.String:
+pub def to_string_int(value: int) -> string.String:
     var result = string.String.create()
-    append_i32(ref_of(result), value)
+    append_int(ref_of(result), value)
     return result

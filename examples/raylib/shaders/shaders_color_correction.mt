@@ -3,10 +3,10 @@ module examples.raylib.shaders.shaders_color_correction
 import std.c.raylib as rl
 import std.c.raygui as gui
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
-const max_textures: i32 = 4
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
+const max_textures: int = 4
 const shader_path_format: cstr = c"../resources/shaders/glsl%i/color_correction.fs"
 const contrast_format: cstr = c"%.0f"
 const texture_path_one: cstr = c"../resources/parrots.png"
@@ -28,7 +28,7 @@ const reset_button_text: cstr = c"Reset"
 const window_title: cstr = c"raylib [shaders] example - color correction"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -54,9 +54,9 @@ def main() -> i32:
 
     var image_index = 0
     var reset_button_clicked = 0
-    var contrast: f32 = 0.0
-    var saturation: f32 = 0.0
-    var brightness: f32 = 0.0
+    var contrast: float = 0.0
+    var saturation: float = 0.0
+    var brightness: float = 0.0
 
     rl.SetShaderValue(shader, contrast_location, ptr_of(contrast), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
     rl.SetShaderValue(shader, saturation_location, ptr_of(saturation), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)

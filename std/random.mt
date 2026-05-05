@@ -1,51 +1,51 @@
 module std.random
 
 pub struct Random:
-    state: u64
+    state: ulong
 
 
-pub def create(seed: u64) -> Random:
+pub def create(seed: ulong) -> Random:
     var generator = Random(state = 0)
     reseed(ref_of(generator), seed)
     return generator
 
 
-pub def reseed(generator: ref[Random], seed: u64) -> void:
+pub def reseed(generator: ref[Random], seed: ulong) -> void:
     generator.state = seed
     if generator.state == 0:
-        generator.state = u64<-0x9e3779b97f4a7c15
+        generator.state = ulong<-0x9e3779b97f4a7c15
     return
 
 
-pub def next_u64(generator: ref[Random]) -> u64:
+pub def next_ulong(generator: ref[Random]) -> ulong:
     var state = generator.state
-    state = state + u64<-0x9e3779b97f4a7c15
+    state = state + ulong<-0x9e3779b97f4a7c15
     generator.state = state
 
     var mixed = state
-    mixed = (mixed ^ (mixed >> 30)) * u64<-0xbf58476d1ce4e5b9
-    mixed = (mixed ^ (mixed >> 27)) * u64<-0x94d049bb133111eb
+    mixed = (mixed ^ (mixed >> 30)) * ulong<-0xbf58476d1ce4e5b9
+    mixed = (mixed ^ (mixed >> 27)) * ulong<-0x94d049bb133111eb
     return mixed ^ (mixed >> 31)
 
 
-pub def next_u32(generator: ref[Random]) -> u32:
-    return u32<-(next_u64(generator) >> 32)
+pub def next_uint(generator: ref[Random]) -> uint:
+    return uint<-(next_ulong(generator) >> 32)
 
 
 pub def next_bool(generator: ref[Random]) -> bool:
-    return (next_u64(generator) & u64<-1) == u64<-1
+    return (next_ulong(generator) & ulong<-1) == ulong<-1
 
 
-pub def range_usize(generator: ref[Random], upper_bound: usize) -> usize:
+pub def range_ptr_uint(generator: ref[Random], upper_bound: ptr_uint) -> ptr_uint:
     if upper_bound == 0:
-        panic(c"random.range_usize upper_bound must be positive")
+        panic(c"random.range_ptr_uint upper_bound must be positive")
 
-    return usize<-(next_u64(generator) % u64<-upper_bound)
+    return ptr_uint<-(next_ulong(generator) % ulong<-upper_bound)
 
 
-pub def range_i32(generator: ref[Random], min_value: i32, max_value: i32) -> i32:
+pub def range_int(generator: ref[Random], min_value: int, max_value: int) -> int:
     if max_value < min_value:
-        panic(c"random.range_i32 max_value must be >= min_value")
+        panic(c"random.range_int max_value must be >= min_value")
 
-    let width = usize<-(i64<-max_value - i64<-min_value + 1)
-    return min_value + i32<-range_usize(generator, width)
+    let width = ptr_uint<-(long<-max_value - long<-min_value + 1)
+    return min_value + int<-range_ptr_uint(generator, width)

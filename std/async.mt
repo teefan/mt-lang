@@ -4,11 +4,11 @@ import std.libuv.async as impl
 import std.libuv.runtime as rt
 
 
-pub def sleep(timeout: usize) -> Task[i32]:
+pub def sleep(timeout: ptr_uint) -> Task[int]:
     return impl.sleep(timeout)
 
 
-pub def sleep_on(loop: rt.Loop, timeout: usize) -> Task[i32]:
+pub def sleep_on(loop: rt.Loop, timeout: ptr_uint) -> Task[int]:
     return impl.sleep_on(loop, timeout)
 
 

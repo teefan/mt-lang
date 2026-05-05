@@ -2,13 +2,13 @@ module examples.raylib.models.models_heightmap_rendering
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [models] example - heightmap rendering"
 const heightmap_path: cstr = c"../resources/heightmap.png"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -28,7 +28,7 @@ def main() -> i32:
     let model = rl.LoadModelFromMesh(mesh)
     defer rl.UnloadModel(model)
 
-    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+    rl.SetMaterialTexture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let map_position = rl.Vector3(x = -8.0, y = 0.0, z = -8.0)
 

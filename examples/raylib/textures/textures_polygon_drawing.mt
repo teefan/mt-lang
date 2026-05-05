@@ -4,15 +4,15 @@ import std.c.raylib as rl
 import std.c.rlgl as rlgl
 import std.raylib.math as rm
 
-const max_points: i32 = 11
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const max_points: int = 11
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - polygon drawing"
 const title_text: cstr = c"textured polygon"
 const texture_path: cstr = c"../resources/cat.png"
 
 
-def draw_texture_poly(texture: rl.Texture, center: rl.Vector2, points: ptr[rl.Vector2], texcoords: ptr[rl.Vector2], point_count: i32, tint: rl.Color) -> void:
+def draw_texture_poly(texture: rl.Texture, center: rl.Vector2, points: ptr[rl.Vector2], texcoords: ptr[rl.Vector2], point_count: int, tint: rl.Color) -> void:
     unsafe:
         rlgl.rlSetTexture(texture.id)
         rlgl.rlBegin(rlgl.RL_TRIANGLES)
@@ -30,10 +30,10 @@ def draw_texture_poly(texture: rl.Texture, center: rl.Vector2, points: ptr[rl.Ve
             rlgl.rlVertex2f((points + index + 1).x + center.x, (points + index + 1).y + center.y)
 
         rlgl.rlEnd()
-        rlgl.rlSetTexture(u32<-0)
+        rlgl.rlSetTexture(uint<-0)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -63,7 +63,7 @@ def main() -> i32:
     let texture = rl.LoadTexture(texture_path)
     defer rl.UnloadTexture(texture)
 
-    var angle: f32 = 0.0
+    var angle: float = 0.0
 
     rl.SetTargetFPS(60)
 
@@ -81,7 +81,7 @@ def main() -> i32:
 
         draw_texture_poly(
             texture,
-            rl.Vector2(x = f32<-rl.GetScreenWidth() / 2.0, y = f32<-rl.GetScreenHeight() / 2.0),
+            rl.Vector2(x = float<-rl.GetScreenWidth() / 2.0, y = float<-rl.GetScreenHeight() / 2.0),
             ptr_of(positions[0]),
             ptr_of(texcoords[0]),
             max_points,

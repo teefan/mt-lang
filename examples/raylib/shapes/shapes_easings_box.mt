@@ -4,35 +4,35 @@ import std.c.libm as math
 import std.c.raylib as rl
 import std.math as mt_math
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - easings box"
 const reset_text: cstr = c"PRESS [SPACE] TO RESET BOX ANIMATION!"
 
 
-def pow2(exponent: f32) -> f32:
+def pow2(exponent: float) -> float:
     return math.expf(math.logf(2.0) * exponent)
 
 
-def ease_linear_in(t: f32, b: f32, c: f32, d: f32) -> f32:
+def ease_linear_in(t: float, b: float, c: float, d: float) -> float:
     return c * t / d + b
 
 
-def ease_sine_out(t: f32, b: f32, c: f32, d: f32) -> f32:
+def ease_sine_out(t: float, b: float, c: float, d: float) -> float:
     return c * math.sinf(t / d * (mt_math.pi / 2.0)) + b
 
 
-def ease_circ_out(t: f32, b: f32, c: f32, d: f32) -> f32:
+def ease_circ_out(t: float, b: float, c: float, d: float) -> float:
     let normalized = t / d - 1.0
     return c * math.sqrtf(1.0 - normalized * normalized) + b
 
 
-def ease_quad_out(t: f32, b: f32, c: f32, d: f32) -> f32:
+def ease_quad_out(t: float, b: float, c: float, d: float) -> float:
     let normalized = t / d
     return -c * normalized * (normalized - 2.0) + b
 
 
-def ease_bounce_out(t: f32, b: f32, c: f32, d: f32) -> f32:
+def ease_bounce_out(t: float, b: float, c: float, d: float) -> float:
     var normalized = t / d
 
     if normalized < 1.0 / 2.75:
@@ -48,7 +48,7 @@ def ease_bounce_out(t: f32, b: f32, c: f32, d: f32) -> f32:
     return c * (7.5625 * normalized * normalized + 0.984375) + b
 
 
-def ease_elastic_out(t: f32, b: f32, c: f32, d: f32) -> f32:
+def ease_elastic_out(t: float, b: float, c: float, d: float) -> float:
     if t == 0.0:
         return b
 
@@ -63,16 +63,16 @@ def ease_elastic_out(t: f32, b: f32, c: f32, d: f32) -> f32:
     return amplitude * pow2(-10.0 * normalized) * math.sinf((normalized * d - shift) * mt_math.tau / period) + c + b
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
     let center_x = rl.GetScreenWidth() / 2.0
-    let center_y_delta = f32<-(rl.GetScreenHeight() / 2 + 100)
+    let center_y_delta = float<-(rl.GetScreenHeight() / 2 + 100)
 
     var rec = rl.Rectangle(x = center_x, y = -100.0, width = 100.0, height = 100.0)
-    var rotation: f32 = 0.0
-    var alpha: f32 = 1.0
+    var rotation: float = 0.0
+    var alpha: float = 1.0
 
     var state = 0
     var frames_counter = 0
@@ -82,36 +82,36 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         if state == 0:
             frames_counter += 1
-            rec.y = ease_elastic_out(f32<-frames_counter, -100.0, center_y_delta, 120.0)
+            rec.y = ease_elastic_out(float<-frames_counter, -100.0, center_y_delta, 120.0)
 
             if frames_counter >= 120:
                 frames_counter = 0
                 state = 1
         elif state == 1:
             frames_counter += 1
-            rec.height = ease_bounce_out(f32<-frames_counter, 100.0, -90.0, 120.0)
-            rec.width = ease_bounce_out(f32<-frames_counter, 100.0, f32<-rl.GetScreenWidth(), 120.0)
+            rec.height = ease_bounce_out(float<-frames_counter, 100.0, -90.0, 120.0)
+            rec.width = ease_bounce_out(float<-frames_counter, 100.0, float<-rl.GetScreenWidth(), 120.0)
 
             if frames_counter >= 120:
                 frames_counter = 0
                 state = 2
         elif state == 2:
             frames_counter += 1
-            rotation = ease_quad_out(f32<-frames_counter, 0.0, 270.0, 240.0)
+            rotation = ease_quad_out(float<-frames_counter, 0.0, 270.0, 240.0)
 
             if frames_counter >= 240:
                 frames_counter = 0
                 state = 3
         elif state == 3:
             frames_counter += 1
-            rec.height = ease_circ_out(f32<-frames_counter, 10.0, f32<-rl.GetScreenWidth(), 120.0)
+            rec.height = ease_circ_out(float<-frames_counter, 10.0, float<-rl.GetScreenWidth(), 120.0)
 
             if frames_counter >= 120:
                 frames_counter = 0
                 state = 4
         elif state == 4:
             frames_counter += 1
-            alpha = ease_sine_out(f32<-frames_counter, 1.0, -1.0, 160.0)
+            alpha = ease_sine_out(float<-frames_counter, 1.0, -1.0, 160.0)
 
             if frames_counter >= 160:
                 frames_counter = 0

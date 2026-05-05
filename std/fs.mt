@@ -7,7 +7,7 @@ import std.span as sp
 import std.str as text
 import std.string as string
 
-pub enum Error: u8
+pub enum Error: ubyte
     open_failed = 1
     read_failed = 2
     write_failed = 3
@@ -44,7 +44,7 @@ pub def read_bytes(path: str, scratch: ref[arena.Arena]) -> Result[bytes.Buffer,
         if ch == c.EOF:
             done = true
         else:
-            bytes.push(ref_of(result), u8<-ch)
+            bytes.push(ref_of(result), ubyte<-ch)
 
     if c.ferror(file) != 0:
         bytes.release(ref_of(result))
@@ -77,7 +77,7 @@ pub def read_text(path: str, scratch: ref[arena.Arena]) -> Result[string.String,
         return ok(result)
 
 
-pub def write_bytes(path: str, data: span[u8], scratch: ref[arena.Arena]) -> Result[bool, Error]:
+pub def write_bytes(path: str, data: span[ubyte], scratch: ref[arena.Arena]) -> Result[bool, Error]:
     let mark = scratch.mark()
     defer scratch.reset(mark)
 
@@ -86,10 +86,10 @@ pub def write_bytes(path: str, data: span[u8], scratch: ref[arena.Arena]) -> Res
     if file == null:
         return err(Error.open_failed)
 
-    var index: usize = 0
+    var index: ptr_uint = 0
     while index < data.len:
         unsafe:
-            if c.fputc(i32<-read(data.data + index), file) == c.EOF:
+            if c.fputc(int<-read(data.data + index), file) == c.EOF:
                 c.fclose(file)
                 return err(Error.write_failed)
         index += 1
@@ -102,5 +102,5 @@ pub def write_bytes(path: str, data: span[u8], scratch: ref[arena.Arena]) -> Res
 
 pub def write_text(path: str, data: str, scratch: ref[arena.Arena]) -> Result[bool, Error]:
     unsafe:
-        let bytes_view = sp.from_ptr[u8](ptr[u8]<-data.data, data.len)
+        let bytes_view = sp.from_ptr[ubyte](ptr[ubyte]<-data.data, data.len)
         return write_bytes(path, bytes_view, scratch)

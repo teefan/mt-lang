@@ -11,38 +11,38 @@ struct Bullet:
     disabled: bool
     color: rl.Color
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const max_bullets: i32 = 500000
+const screen_width: int = 800
+const screen_height: int = 450
+const max_bullets: int = 500000
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Bullet Hell")
     defer rl.close_window()
 
-    let bullets = heap.must_alloc_zeroed[Bullet](usize<-max_bullets)
+    let bullets = heap.must_alloc_zeroed[Bullet](ptr_uint<-max_bullets)
     defer heap.release(bullets)
-    var bullets_view = sp.from_ptr[Bullet](bullets, usize<-max_bullets)
+    var bullets_view = sp.from_ptr[Bullet](bullets, ptr_uint<-max_bullets)
 
     var bullet_count = 0
     var bullet_disabled_count = 0
     let bullet_radius = 10
-    var bullet_speed: f32 = 3.0
+    var bullet_speed: float = 3.0
     var bullet_rows = 6
     let bullet_colors = array[rl.Color, 2](rl.RED, rl.BLUE)
 
-    var base_direction: f32 = 0.0
+    var base_direction: float = 0.0
     var angle_increment = 5
-    var spawn_cooldown: f32 = 2.0
-    var spawn_cooldown_timer: f32 = spawn_cooldown
-    var magic_circle_rotation: f32 = 0.0
+    var spawn_cooldown: float = 2.0
+    var spawn_cooldown_timer: float = spawn_cooldown
+    var magic_circle_rotation: float = 0.0
 
     let bullet_texture = rl.load_render_texture(24, 24)
     defer rl.unload_render_texture(bullet_texture)
 
     rl.begin_texture_mode(bullet_texture)
-    rl.draw_circle(12, 12, f32<-bullet_radius, rl.WHITE)
-    rl.draw_circle_lines(12, 12, f32<-bullet_radius, rl.BLACK)
+    rl.draw_circle(12, 12, float<-bullet_radius, rl.WHITE)
+    rl.draw_circle_lines(12, 12, float<-bullet_radius, rl.BLACK)
     rl.end_texture_mode()
 
     var draw_in_performance_mode = true
@@ -58,14 +58,14 @@ def main() -> i32:
         if spawn_cooldown_timer < 0.0:
             spawn_cooldown_timer = spawn_cooldown
 
-            let degrees_per_row = 360.0 / f32<-bullet_rows
+            let degrees_per_row = 360.0 / float<-bullet_rows
             for row in 0..bullet_rows:
                 if bullet_count < max_bullets:
                     bullets_view[bullet_count].position = rl.Vector2(x = screen_width / 2.0, y = screen_height / 2.0)
                     bullets_view[bullet_count].disabled = false
                     bullets_view[bullet_count].color = bullet_colors[row % 2]
 
-                    let bullet_direction = base_direction + degrees_per_row * f32<-row
+                    let bullet_direction = base_direction + degrees_per_row * float<-row
                     let radians = bullet_direction * math.deg2rad
                     bullets_view[bullet_count].acceleration = rl.Vector2(
                         x = bullet_speed * math.cos(radians),
@@ -74,14 +74,14 @@ def main() -> i32:
 
                     bullet_count += 1
 
-            base_direction += f32<-angle_increment
+            base_direction += float<-angle_increment
 
         for index in 0..bullet_count:
             if not bullets_view[index].disabled:
                 bullets_view[index].position.x += bullets_view[index].acceleration.x
                 bullets_view[index].position.y += bullets_view[index].acceleration.y
 
-                let out_of_bounds = bullets_view[index].position.x < -f32<-(bullet_radius * 2) or bullets_view[index].position.x > f32<-(screen_width + bullet_radius * 2) or bullets_view[index].position.y < -f32<-(bullet_radius * 2) or bullets_view[index].position.y > f32<-(screen_height + bullet_radius * 2)
+                let out_of_bounds = bullets_view[index].position.x < -float<-(bullet_radius * 2) or bullets_view[index].position.x > float<-(screen_width + bullet_radius * 2) or bullets_view[index].position.y < -float<-(bullet_radius * 2) or bullets_view[index].position.y > float<-(screen_height + bullet_radius * 2)
                 if out_of_bounds:
                     bullets_view[index].disabled = true
                     bullet_disabled_count += 1
@@ -136,15 +136,15 @@ def main() -> i32:
                 if not bullets_view[index].disabled:
                     rl.draw_texture(
                         bullet_texture.texture,
-                        i32<-(bullets_view[index].position.x - f32<-bullet_texture.texture.width * 0.5),
-                        i32<-(bullets_view[index].position.y - f32<-bullet_texture.texture.height * 0.5),
+                        int<-(bullets_view[index].position.x - float<-bullet_texture.texture.width * 0.5),
+                        int<-(bullets_view[index].position.y - float<-bullet_texture.texture.height * 0.5),
                         bullets_view[index].color,
                     )
         else:
             for index in 0..bullet_count:
                 if not bullets_view[index].disabled:
-                    rl.draw_circle_v(bullets_view[index].position, f32<-bullet_radius, bullets_view[index].color)
-                    rl.draw_circle_lines_v(bullets_view[index].position, f32<-bullet_radius, rl.BLACK)
+                    rl.draw_circle_v(bullets_view[index].position, float<-bullet_radius, bullets_view[index].color)
+                    rl.draw_circle_lines_v(bullets_view[index].position, float<-bullet_radius, rl.BLACK)
 
         let overlay_color = rl.Color(r = 0, g = 0, b = 0, a = 200)
         rl.draw_rectangle(10, 10, 280, 150, overlay_color)
@@ -163,11 +163,11 @@ def main() -> i32:
             rl.draw_text("Draw method: DrawCircle(*)", 620, 20, 10, rl.RED)
 
         rl.draw_rectangle(135, 410, 530, 30, overlay_color)
-        rl.draw_text(rl.text_format_i32("FPS: %d", rl.get_fps()), 155, 420, 10, rl.GREEN)
-        rl.draw_text(rl.text_format_i32("Bullets: %d", bullet_count - bullet_disabled_count), 225, 420, 10, rl.GREEN)
-        rl.draw_text(rl.text_format_i32("Rows: %d", bullet_rows), 325, 420, 10, rl.GREEN)
-        rl.draw_text(rl.text_format_f32("Speed: %.2f", bullet_speed), 400, 420, 10, rl.GREEN)
-        rl.draw_text(rl.text_format_i32("Angle: %d", angle_increment), 490, 420, 10, rl.GREEN)
-        rl.draw_text(rl.text_format_f32("Cooldown: %.0f", spawn_cooldown), 565, 420, 10, rl.GREEN)
+        rl.draw_text(rl.text_format_int("FPS: %d", rl.get_fps()), 155, 420, 10, rl.GREEN)
+        rl.draw_text(rl.text_format_int("Bullets: %d", bullet_count - bullet_disabled_count), 225, 420, 10, rl.GREEN)
+        rl.draw_text(rl.text_format_int("Rows: %d", bullet_rows), 325, 420, 10, rl.GREEN)
+        rl.draw_text(rl.text_format_float("Speed: %.2f", bullet_speed), 400, 420, 10, rl.GREEN)
+        rl.draw_text(rl.text_format_int("Angle: %d", angle_increment), 490, 420, 10, rl.GREEN)
+        rl.draw_text(rl.text_format_float("Cooldown: %.0f", spawn_cooldown), 565, 420, 10, rl.GREEN)
 
     return 0

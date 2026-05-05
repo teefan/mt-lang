@@ -2,18 +2,18 @@ module examples.raylib.core.core_scissor_test
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - scissor test"
 const reveal_text: cstr = c"Move the mouse around to reveal this text!"
 const toggle_text: cstr = c"Press S to toggle scissor test"
-const scissor_width: f32 = 300.0
-const scissor_height: f32 = 300.0
-const scissor_half_width: f32 = 150.0
-const scissor_half_height: f32 = 150.0
+const scissor_width: float = 300.0
+const scissor_height: float = 300.0
+const scissor_half_width: float = 150.0
+const scissor_half_height: float = 150.0
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

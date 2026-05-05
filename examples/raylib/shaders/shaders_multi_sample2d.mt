@@ -2,9 +2,9 @@ module examples.raylib.shaders.shaders_multi_sample2d
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const shader_path_format: cstr = c"../resources/shaders/glsl%i/color_mix.fs"
 const texture_uniform_name: cstr = c"texture1"
 const divider_uniform_name: cstr = c"divider"
@@ -12,7 +12,7 @@ const help_text: cstr = c"Use KEY_LEFT/KEY_RIGHT to move texture mixing in shade
 const window_title: cstr = c"raylib [shaders] example - multi sample2d"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -31,7 +31,7 @@ def main() -> i32:
 
     let blue_texture_location = rl.GetShaderLocation(shader, texture_uniform_name)
     let divider_location = rl.GetShaderLocation(shader, divider_uniform_name)
-    var divider_value: f32 = 0.5
+    var divider_value: float = 0.5
 
     rl.SetTargetFPS(60)
 

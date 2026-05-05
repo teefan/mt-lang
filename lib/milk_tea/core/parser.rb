@@ -14,10 +14,7 @@ module MilkTea
   end
 
   class Parser
-    BUILTIN_TYPE_NAMES = %w[
-      bool byte char i8 i16 i32 i64 u8 u16 u32 u64 isize usize f32 f64 void str cstr
-      ptr const_ptr ref span array str_builder Result Task
-    ].freeze
+    BUILTIN_TYPE_NAMES = Types::BUILTIN_TYPE_NAMES
 
     def self.parse(source = nil, path: nil, tokens: nil)
       token_stream = tokens || Lexer.lex(source, path: path)

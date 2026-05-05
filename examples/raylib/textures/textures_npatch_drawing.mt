@@ -2,21 +2,21 @@ module examples.raylib.textures.textures_npatch_drawing
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - npatch drawing"
 const npatch_texture_path: cstr = c"../resources/ninepatch_button.png"
 const help_text: cstr = c"Move the mouse to stretch or shrink the n-patches"
 const texture_label: cstr = c"TEXTURE"
 
 
-def clamp_min(value: f32, minimum: f32) -> f32:
+def clamp_min(value: float, minimum: float) -> float:
     if value < minimum:
         return minimum
     return value
 
 
-def clamp_width(value: f32) -> f32:
+def clamp_width(value: float) -> float:
     if value < 1.0:
         return 1.0
     if value > 300.0:
@@ -24,7 +24,7 @@ def clamp_width(value: f32) -> f32:
     return value
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

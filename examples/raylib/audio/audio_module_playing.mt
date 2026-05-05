@@ -4,14 +4,14 @@ import std.c.raylib as rl
 
 struct CircleWave:
     position: rl.Vector2
-    radius: f32
-    alpha: f32
-    speed: f32
+    radius: float
+    alpha: float
+    speed: float
     color: rl.Color
 
-const max_circles: i32 = 64
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const max_circles: int = 64
+const screen_width: int = 800
+const screen_height: int = 450
 const music_path: cstr = c"../resources/mini1111.xm"
 const restart_text: cstr = c"PRESS SPACE TO RESTART MUSIC"
 const pause_text: cstr = c"PRESS P TO PAUSE/RESUME"
@@ -20,21 +20,21 @@ const speed_format: cstr = c"SPEED: %f"
 const window_title: cstr = c"raylib [audio] example - module playing"
 
 
-def random_circle(circles: ref[array[CircleWave, 64]], index: i32, colors: ref[array[rl.Color, 14]]) -> void:
+def random_circle(circles: ref[array[CircleWave, 64]], index: int, colors: ref[array[rl.Color, 14]]) -> void:
     var items = read(circles)
     var palette = read(colors)
     var circle = items[index]
     circle.alpha = 0.0
-    circle.radius = f32<-rl.GetRandomValue(10, 40)
-    circle.position.x = f32<-rl.GetRandomValue(i32<-circle.radius, i32<-(screen_width - i32<-circle.radius))
-    circle.position.y = f32<-rl.GetRandomValue(i32<-circle.radius, i32<-(screen_height - i32<-circle.radius))
-    circle.speed = f32<-rl.GetRandomValue(1, 100) / 2000.0
+    circle.radius = float<-rl.GetRandomValue(10, 40)
+    circle.position.x = float<-rl.GetRandomValue(int<-circle.radius, int<-(screen_width - int<-circle.radius))
+    circle.position.y = float<-rl.GetRandomValue(int<-circle.radius, int<-(screen_height - int<-circle.radius))
+    circle.speed = float<-rl.GetRandomValue(1, 100) / 2000.0
     circle.color = palette[rl.GetRandomValue(0, 13)]
     items[index] = circle
     read(circles) = items
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -66,8 +66,8 @@ def main() -> i32:
     defer rl.UnloadMusicStream(music)
     music.looping = false
 
-    var pitch: f32 = 1.0
-    var time_played: f32 = 0.0
+    var pitch: float = 1.0
+    var time_played: float = 0.0
     var pause = false
 
     rl.PlayMusicStream(music)
@@ -94,7 +94,7 @@ def main() -> i32:
             pitch += 0.01
 
         rl.SetMusicPitch(music, pitch)
-        time_played = rl.GetMusicTimePlayed(music) / rl.GetMusicTimeLength(music) * f32<-(screen_width - 40)
+        time_played = rl.GetMusicTimePlayed(music) / rl.GetMusicTimeLength(music) * float<-(screen_width - 40)
 
         if not pause:
             for index in 0..max_circles:
@@ -120,7 +120,7 @@ def main() -> i32:
             rl.DrawCircleV(circle.position, circle.radius, rl.Fade(circle.color, circle.alpha))
 
         rl.DrawRectangle(20, screen_height - 32, screen_width - 40, 12, rl.LIGHTGRAY)
-        rl.DrawRectangle(20, screen_height - 32, i32<-time_played, 12, rl.MAROON)
+        rl.DrawRectangle(20, screen_height - 32, int<-time_played, 12, rl.MAROON)
         rl.DrawRectangleLines(20, screen_height - 32, screen_width - 40, 12, rl.GRAY)
 
         rl.DrawRectangle(20, 20, 425, 145, rl.WHITE)

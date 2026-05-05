@@ -2,17 +2,17 @@ module examples.idiomatic.raylib.basic_screen_manager
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 
-enum GameScreen: i32
+enum GameScreen: int
     LOGO = 0
     TITLE = 1
     GAMEPLAY = 2
     ENDING = 3
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Screen Manager")
     defer rl.close_window()
 

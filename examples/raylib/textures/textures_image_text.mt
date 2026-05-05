@@ -2,17 +2,17 @@ module examples.raylib.textures.textures_image_text
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - image text"
 const parrots_path: cstr = c"../resources/parrots.png"
 const font_path: cstr = c"../resources/KAISG.ttf"
 const title_text: cstr = c"[Parrots font drawing]"
 const help_text: cstr = c"PRESS SPACE to SHOW FONT ATLAS USED"
-const font_size: i32 = 64
+const font_size: int = 64
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -20,7 +20,7 @@ def main() -> i32:
     let font = rl.LoadFontEx(font_path, font_size, null, 0)
     defer rl.UnloadFont(font)
 
-    rl.ImageDrawTextEx(ptr_of(parrots), font, title_text, rl.Vector2(x = 20.0, y = 20.0), f32<-font.baseSize, 0.0, rl.RED)
+    rl.ImageDrawTextEx(ptr_of(parrots), font, title_text, rl.Vector2(x = 20.0, y = 20.0), float<-font.baseSize, 0.0, rl.RED)
 
     let texture = rl.LoadTextureFromImage(parrots)
     rl.UnloadImage(parrots)
@@ -44,7 +44,7 @@ def main() -> i32:
 
         if not show_font:
             rl.DrawTextureV(texture, position, rl.WHITE)
-            rl.DrawTextEx(font, title_text, rl.Vector2(x = position.x + 20.0, y = position.y + 300.0), f32<-font.baseSize, 0.0, rl.WHITE)
+            rl.DrawTextEx(font, title_text, rl.Vector2(x = position.x + 20.0, y = position.y + 300.0), float<-font.baseSize, 0.0, rl.WHITE)
         else:
             rl.DrawTexture(font.texture, screen_width / 2 - font.texture.width / 2, 50, rl.BLACK)
 

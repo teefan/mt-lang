@@ -3,17 +3,17 @@ module examples.raylib.core.core_text_file_loading
 import std.c.raylib as rl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const font_size: i32 = 20
-const wrap_width: i32 = screen_width - 20
-const text_top: i32 = 25 + font_size
-const line_gap: i32 = 10
+const screen_width: int = 800
+const screen_height: int = 450
+const font_size: int = 20
+const wrap_width: int = screen_width - 20
+const text_top: int = 25 + font_size
+const line_gap: int = 10
 const window_title: cstr = c"raylib [core] example - text file loading"
 const file_name: cstr = c"../resources/text_file.txt"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -39,7 +39,7 @@ def main() -> i32:
     while wrap_index < line_count:
         unsafe:
             var line = read(lines + wrap_index)
-            let line_length = i32<-rl.TextLength(cstr<-line)
+            let line_length = int<-rl.TextLength(cstr<-line)
             var j = 0
             var last_space = 0
             var last_wrap_start = 0
@@ -69,33 +69,33 @@ def main() -> i32:
         unsafe:
             let line = cstr<-read(lines + line_index)
             let measured_text = if rl.TextIsEqual(line, c""): c" " else: line
-            let size = rl.MeasureTextEx(default_font, measured_text, f32<-font_size, 2.0)
-            text_height += i32<-size.y + line_gap
+            let size = rl.MeasureTextEx(default_font, measured_text, float<-font_size, 2.0)
+            text_height += int<-size.y + line_gap
         line_index += 1
 
     let scroll_range = if text_height > screen_height: text_height - screen_height else: 1
     var scroll_bar = rl.Rectangle(
-        x = f32<-screen_width - 5.0,
-        y = f32<-text_top,
+        x = float<-screen_width - 5.0,
+        y = float<-text_top,
         width = 5.0,
-        height = if text_height > screen_height: f32<-screen_height * 100.0 / f32<-scroll_range else: f32<-(screen_height - text_top),
+        height = if text_height > screen_height: float<-screen_height * 100.0 / float<-scroll_range else: float<-(screen_height - text_top),
     )
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
         let scroll = rl.GetMouseWheelMove()
-        cam.target.y -= scroll * f32<-font_size * 1.5
+        cam.target.y -= scroll * float<-font_size * 1.5
 
         if cam.target.y < 0.0:
             cam.target.y = 0.0
 
-        let max_target_y = if text_height > screen_height: f32<-(text_height - screen_height + text_top) else: 0.0
+        let max_target_y = if text_height > screen_height: float<-(text_height - screen_height + text_top) else: 0.0
         if cam.target.y > max_target_y:
             cam.target.y = max_target_y
 
-        let scroll_ratio: f32 = if text_height > screen_height: rm.clamp((cam.target.y - f32<-text_top) / f32<-scroll_range, 0.0, 1.0) else: 0.0
-        scroll_bar.y = rm.lerp(f32<-text_top, f32<-screen_height - scroll_bar.height, scroll_ratio)
+        let scroll_ratio: float = if text_height > screen_height: rm.clamp((cam.target.y - float<-text_top) / float<-scroll_range, 0.0, 1.0) else: 0.0
+        scroll_bar.y = rm.lerp(float<-text_top, float<-screen_height - scroll_bar.height, scroll_ratio)
 
         rl.BeginDrawing()
 
@@ -108,9 +108,9 @@ def main() -> i32:
             unsafe:
                 let line = cstr<-read(lines + draw_index)
                 let measured_text = if rl.TextIsEqual(line, c""): c" " else: line
-                let size = rl.MeasureTextEx(default_font, measured_text, f32<-font_size, 2.0)
+                let size = rl.MeasureTextEx(default_font, measured_text, float<-font_size, 2.0)
                 rl.DrawText(line, 10, draw_y, font_size, rl.RED)
-                draw_y += i32<-size.y + line_gap
+                draw_y += int<-size.y + line_gap
             draw_index += 1
         rl.EndMode2D()
 

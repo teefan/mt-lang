@@ -7,16 +7,16 @@ struct ControlPoint:
     start: rl.Vector2
     end: rl.Vector2
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const max_spline_points: i32 = 32
-const max_bezier_points: i32 = 94
-const spline_linear: i32 = 0
-const spline_basis: i32 = 1
-const spline_catmull_rom: i32 = 2
-const spline_bezier: i32 = 3
-const control_start: i32 = 0
-const control_end: i32 = 1
+const screen_width: int = 800
+const screen_height: int = 450
+const max_spline_points: int = 32
+const max_bezier_points: int = 94
+const spline_linear: int = 0
+const spline_basis: int = 1
+const spline_catmull_rom: int = 2
+const spline_bezier: int = 3
+const control_start: int = 0
+const control_end: int = 1
 const window_title: cstr = c"raylib [shapes] example - splines drawing"
 const spline_thickness_format: cstr = c"Spline thickness: %i"
 const point_format: cstr = c"[%.0f, %.0f]"
@@ -26,7 +26,7 @@ const show_point_helpers_text: cstr = c"Show point helpers"
 const empty_text: cstr = c""
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -53,7 +53,7 @@ def main() -> i32:
         control_points[index].start = rl.Vector2(x = points[index].x + 50.0, y = points[index].y)
         control_points[index].end = rl.Vector2(x = points[index + 1].x - 50.0, y = points[index + 1].y)
 
-    var spline_thickness: f32 = 8.0
+    var spline_thickness: float = 8.0
     var spline_type_active = spline_linear
     var spline_type_edit_mode = false
     var spline_helpers_active = true
@@ -171,7 +171,7 @@ def main() -> i32:
 
         if spline_helpers_active:
             for index in 0..point_count:
-                var helper_radius: f32 = 8.0
+                var helper_radius: float = 8.0
                 var helper_color = rl.DARKBLUE
                 if focused_point == index:
                     helper_radius = 12.0
@@ -184,12 +184,12 @@ def main() -> i32:
                         if index < point_count - 1:
                             rl.DrawLineV(points[index], points[index + 1], rl.GRAY)
 
-                rl.DrawText(rl.TextFormat(point_format, points[index].x, points[index].y), i32<-points[index].x, i32<-points[index].y + 10, 10, rl.BLACK)
+                rl.DrawText(rl.TextFormat(point_format, points[index].x, points[index].y), int<-points[index].x, int<-points[index].y + 10, 10, rl.BLACK)
 
         if spline_type_edit_mode or selected_point != -1 or selected_control_segment != -1:
             gui.GuiLock()
 
-        gui.GuiLabel(gui.Rectangle(x = 12.0, y = 62.0, width = 140.0, height = 24.0), rl.TextFormat(spline_thickness_format, i32<-spline_thickness))
+        gui.GuiLabel(gui.Rectangle(x = 12.0, y = 62.0, width = 140.0, height = 24.0), rl.TextFormat(spline_thickness_format, int<-spline_thickness))
         gui.GuiSliderBar(gui.Rectangle(x = 12.0, y = 84.0, width = 140.0, height = 16.0), empty_text, empty_text, ptr_of(spline_thickness), 1.0, 40.0)
         gui.GuiCheckBox(gui.Rectangle(x = 12.0, y = 110.0, width = 20.0, height = 20.0), show_point_helpers_text, ptr_of(spline_helpers_active))
 

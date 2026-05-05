@@ -2,24 +2,24 @@ module examples.raylib.textures.textures_cellular_automata
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const image_width: i32 = 800
-const image_height: i32 = 800 / 2
-const draw_rule_start_x: i32 = 585
-const draw_rule_start_y: i32 = 10
-const draw_rule_spacing: i32 = 15
-const draw_rule_group_spacing: i32 = 50
-const draw_rule_size: i32 = 14
-const draw_rule_inner_size: i32 = 10
-const presets_size_x: i32 = 42
-const presets_size_y: i32 = 22
-const lines_updated_per_frame: i32 = 4
-const presets_count: i32 = 10
+const screen_width: int = 800
+const screen_height: int = 450
+const image_width: int = 800
+const image_height: int = 800 / 2
+const draw_rule_start_x: int = 585
+const draw_rule_start_y: int = 10
+const draw_rule_spacing: int = 15
+const draw_rule_group_spacing: int = 50
+const draw_rule_size: int = 14
+const draw_rule_inner_size: int = 10
+const presets_size_x: int = 42
+const presets_size_y: int = 22
+const lines_updated_per_frame: int = 4
+const presets_count: int = 10
 const window_title: cstr = c"raylib [textures] example - cellular automata"
 
 
-def compute_line(image: ref[rl.Image], line: i32, rule: i32) -> void:
+def compute_line(image: ref[rl.Image], line: int, rule: int) -> void:
     for index in 1..image_width - 1:
         let prev_value = (
             if rl.GetImageColor(read(image), index - 1, line - 1).r < 5: 4 else: 0
@@ -32,7 +32,7 @@ def compute_line(image: ref[rl.Image], line: i32, rule: i32) -> void:
         rl.ImageDrawPixel(ptr_of(image), index, line, if curr_value: rl.BLACK else: rl.RAYWHITE)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -44,7 +44,7 @@ def main() -> i32:
         rl.UnloadTexture(texture)
         rl.UnloadImage(image)
 
-    let preset_values = array[i32, 10](18, 30, 60, 86, 102, 124, 126, 150, 182, 225)
+    let preset_values = array[int, 10](18, 30, 60, 86, 102, 124, 126, 150, 182, 225)
     var rule = 30
     var line = 1
 
@@ -57,7 +57,7 @@ def main() -> i32:
         for index in 0..8:
             let cell_x = draw_rule_start_x - draw_rule_group_spacing * index + draw_rule_spacing
             let cell_y = draw_rule_start_y + draw_rule_spacing
-            if mouse.x >= f32<-cell_x and mouse.x <= f32<-(cell_x + draw_rule_size) and mouse.y >= f32<-cell_y and mouse.y <= f32<-(cell_y + draw_rule_size):
+            if mouse.x >= float<-cell_x and mouse.x <= float<-(cell_x + draw_rule_size) and mouse.y >= float<-cell_y and mouse.y <= float<-(cell_y + draw_rule_size):
                 mouse_in_cell = index
                 break
 
@@ -65,7 +65,7 @@ def main() -> i32:
             for index in 0..presets_count:
                 let cell_x = 4 + (presets_size_x + 2) * (index / 2)
                 let cell_y = 2 + (presets_size_y + 2) * (index % 2)
-                if mouse.x >= f32<-cell_x and mouse.x <= f32<-(cell_x + presets_size_x) and mouse.y >= f32<-cell_y and mouse.y <= f32<-(cell_y + presets_size_y):
+                if mouse.x >= float<-cell_x and mouse.x <= float<-(cell_x + presets_size_x) and mouse.y >= float<-cell_y and mouse.y <= float<-(cell_y + presets_size_y):
                     mouse_in_cell = index + 8
                     break
 
@@ -101,7 +101,7 @@ def main() -> i32:
 
             if mouse_in_cell == index + 8:
                 rl.DrawRectangleLinesEx(
-                    rl.Rectangle(x = f32<-(preset_x - 2), y = f32<-(preset_y - 2), width = f32<-(presets_size_x + 4), height = f32<-(presets_size_y + 4)),
+                    rl.Rectangle(x = float<-(preset_x - 2), y = float<-(preset_y - 2), width = float<-(presets_size_x + 4), height = float<-(presets_size_y + 4)),
                     3.0,
                     rl.RED,
                 )
@@ -121,7 +121,7 @@ def main() -> i32:
 
             if mouse_in_cell == index:
                 rl.DrawRectangleLinesEx(
-                    rl.Rectangle(x = f32<-(output_x - 2), y = f32<-(output_y - 2), width = f32<-(draw_rule_size + 4), height = f32<-(draw_rule_size + 4)),
+                    rl.Rectangle(x = float<-(output_x - 2), y = float<-(output_y - 2), width = float<-(draw_rule_size + 4), height = float<-(draw_rule_size + 4)),
                     3.0,
                     rl.RED,
                 )

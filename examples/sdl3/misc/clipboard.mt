@@ -2,10 +2,10 @@ module examples.sdl3.misc.clipboard
 
 import std.c.sdl3 as c
 
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/misc/clipboard"
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
 const copy_button_text: cstr = c"Click here to copy!"
 const paste_button_text: cstr = c"Click here to paste!"
@@ -23,11 +23,11 @@ var current_time: array[char, 64] = zero[array[char, 64]]
 var pasted_str: ptr[char]? = null
 
 
-def text_width(text: cstr) -> f32:
-    return f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(text)
+def text_width(text: cstr) -> float:
+    return float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * float<-c.SDL_strlen(text)
 
 
-def min_usize(left: usize, right: usize) -> usize:
+def min_ptr_uint(left: ptr_uint, right: ptr_uint) -> ptr_uint:
     if left < right:
         return left
 
@@ -85,16 +85,16 @@ def pump_events() -> bool:
     while c.SDL_PollEvent(ptr_of(event)):
         c.SDL_ConvertEventToRenderCoordinates(renderer, ptr_of(event))
 
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
-            if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
+            if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
                 if event.button.button == c.Uint8<-c.SDL_BUTTON_LEFT:
                     let point = c.SDL_FPoint(x = event.button.x, y = event.button.y)
                     copy_pressed = point_in_rect(point, copy_button_rect)
                     paste_pressed = point_in_rect(point, paste_button_rect)
             else:
-                if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_UP:
+                if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_UP:
                     if event.button.button == c.Uint8<-c.SDL_BUTTON_LEFT:
                         let point = c.SDL_FPoint(x = event.button.x, y = event.button.y)
 
@@ -114,10 +114,10 @@ def pump_events() -> bool:
     return true
 
 
-def render_truncated_line(text: ptr[char], x: f32, y: f32, max_chars_per_line: usize) -> void:
+def render_truncated_line(text: ptr[char], x: float, y: float, max_chars_per_line: ptr_uint) -> void:
     unsafe:
-        let line_length = min_usize(c.SDL_strlen(cstr<-text), max_chars_per_line)
-        let end_ptr = ptr[char]<-(text + i32<-line_length)
+        let line_length = min_ptr_uint(c.SDL_strlen(cstr<-text), max_chars_per_line)
+        let end_ptr = ptr[char]<-(text + int<-line_length)
         let saved_char = read(end_ptr)
         read(end_ptr) = char<-0
         c.SDL_RenderDebugText(renderer, x, y, cstr<-text)
@@ -133,8 +133,8 @@ def render_pasted_text() -> void:
     var y = paste_text_rect.y + 5.0
     let w = paste_text_rect.w - 10.0
     let h = paste_text_rect.h
-    let line_height = f32<-(c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + 2)
-    let max_chars_per_line = usize<-(w / f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
+    let line_height = float<-(c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + 2)
+    let max_chars_per_line = ptr_uint<-(w / float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
     var text_ptr: ptr[char]? = initial_text
 
     while true:
@@ -171,11 +171,11 @@ def render_pasted_text() -> void:
 
         y += line_height
 
-        if (h - y) < f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE:
+        if (h - y) < float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE:
             return
 
     let final_line = text_ptr
-    if final_line != null and (h - y) >= f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE:
+    if final_line != null and (h - y) >= float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE:
         render_truncated_line(final_line, x, y, max_chars_per_line)
 
 
@@ -223,7 +223,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Misc Clipboard", c"1.0", c"com.example.misc-clipboard")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -247,7 +247,7 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     current_time_rect.x = 30.0
     current_time_rect.y = 10.0
     current_time_rect.w = 390.0
-    current_time_rect.h = f32<-(c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + 10)
+    current_time_rect.h = float<-(c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + 10)
 
     copy_button_rect.x = current_time_rect.x + current_time_rect.w + 30.0
     copy_button_rect.y = current_time_rect.y
@@ -270,5 +270,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

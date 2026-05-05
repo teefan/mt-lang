@@ -6,23 +6,23 @@ import std.math as mt_math
 import std.mem.heap as heap
 import std.span as sp
 
-enum ParticleType: i32
+enum ParticleType: int
     WATER = 0
     SMOKE = 1
     FIRE = 2
 
 struct Particle:
-    kind: i32
+    kind: int
     position: rl.Vector2
     velocity: rl.Vector2
-    radius: f32
+    radius: float
     color: rl.Color
-    life_time: f32
+    life_time: float
     alive: bool
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const max_particles: i32 = 3000
+const screen_width: int = 800
+const screen_height: int = 450
+const max_particles: int = 3000
 const window_title: cstr = c"raylib [shapes] example - simple particles"
 const controls_text: cstr = c"CONTROLS:"
 const emission_help_text: cstr = c"UP/DOWN: Change Particle Emission Rate"
@@ -31,7 +31,7 @@ const negative_rate_format: cstr = c"Particles every %d frames | Type: %s"
 const positive_rate_format: cstr = c"%d Particles per frame | Type: %s"
 
 
-def particle_type_name(particle_type: i32) -> cstr:
+def particle_type_name(particle_type: int) -> cstr:
     if particle_type == ParticleType.WATER:
         return c"WATER"
     if particle_type == ParticleType.SMOKE:
@@ -39,11 +39,11 @@ def particle_type_name(particle_type: i32) -> cstr:
     return c"FIRE"
 
 
-def next_buffer_index(index: i32) -> i32:
+def next_buffer_index(index: int) -> int:
     return (index + 1) % max_particles
 
 
-def add_to_circular_buffer(head: ref[i32], tail: i32) -> i32:
+def add_to_circular_buffer(head: ref[int], tail: int) -> int:
     if next_buffer_index(read(head)) != tail:
         let particle_index = read(head)
         read(head) = next_buffer_index(read(head))
@@ -51,18 +51,18 @@ def add_to_circular_buffer(head: ref[i32], tail: i32) -> i32:
     return -1
 
 
-def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_position: rl.Vector2, particle_type: i32) -> void:
+def emit_particle(particles: ptr[Particle], head: ref[int], tail: int, emitter_position: rl.Vector2, particle_type: int) -> void:
     let particle_index = add_to_circular_buffer(head, tail)
     if particle_index < 0:
         return
 
-    var particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
+    var particles_view = sp.from_ptr[Particle](particles, ptr_uint<-max_particles)
     particles_view[particle_index].position = emitter_position
     particles_view[particle_index].alive = true
     particles_view[particle_index].life_time = 0.0
     particles_view[particle_index].kind = particle_type
 
-    var speed = f32<-rl.GetRandomValue(0, 9) / 5.0
+    var speed = float<-rl.GetRandomValue(0, 9) / 5.0
     if particle_type == ParticleType.WATER:
         particles_view[particle_index].radius = 5.0
         particles_view[particle_index].color = rl.BLUE
@@ -74,7 +74,7 @@ def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_p
         particles_view[particle_index].color = rl.YELLOW
         speed /= 10.0
 
-    let direction = f32<-rl.GetRandomValue(0, 359) * mt_math.deg2rad
+    let direction = float<-rl.GetRandomValue(0, 359) * mt_math.deg2rad
     particles_view[particle_index].velocity = rl.Vector2(
         x = speed * math.cosf(direction),
         y = speed * math.sinf(direction),
@@ -82,8 +82,8 @@ def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_p
     return
 
 
-def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32, height: i32) -> void:
-    var particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
+def update_particles(particles: ptr[Particle], head: int, tail: int, width: int, height: int) -> void:
+    var particles_view = sp.from_ptr[Particle](particles, ptr_uint<-max_particles)
     var index = tail
     while index != head:
         particles_view[index].life_time += 1.0 / 60.0
@@ -101,7 +101,7 @@ def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32,
             if particles_view[index].color.a < 4:
                 particles_view[index].alive = false
             else:
-                particles_view[index].color.a = u8<-(i32<-particles_view[index].color.a - 4)
+                particles_view[index].color.a = ubyte<-(int<-particles_view[index].color.a - 4)
         else:
             particles_view[index].position.x += particles_view[index].velocity.x + math.cosf(particles_view[index].life_time * 215.0)
             particles_view[index].velocity.y -= 0.05
@@ -109,7 +109,7 @@ def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32,
             particles_view[index].radius -= 0.15
 
             if particles_view[index].color.g > 3:
-                particles_view[index].color.g = u8<-(i32<-particles_view[index].color.g - 3)
+                particles_view[index].color.g = ubyte<-(int<-particles_view[index].color.g - 3)
             else:
                 particles_view[index].color.g = 0
 
@@ -125,15 +125,15 @@ def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32,
     return
 
 
-def update_circular_buffer(particles: ptr[Particle], head: i32, tail: ref[i32]) -> void:
-    let particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
+def update_circular_buffer(particles: ptr[Particle], head: int, tail: ref[int]) -> void:
+    let particles_view = sp.from_ptr[Particle](particles, ptr_uint<-max_particles)
     while read(tail) != head and not particles_view[read(tail)].alive:
         read(tail) = next_buffer_index(read(tail))
     return
 
 
-def draw_particles(particles: ptr[Particle], head: i32, tail: i32) -> void:
-    let particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
+def draw_particles(particles: ptr[Particle], head: int, tail: int) -> void:
+    let particles_view = sp.from_ptr[Particle](particles, ptr_uint<-max_particles)
     var index = tail
     while index != head:
         if particles_view[index].alive:
@@ -142,11 +142,11 @@ def draw_particles(particles: ptr[Particle], head: i32, tail: i32) -> void:
     return
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let particles = heap.must_alloc_zeroed[Particle](usize<-max_particles)
+    let particles = heap.must_alloc_zeroed[Particle](ptr_uint<-max_particles)
     defer heap.release(particles)
 
     var head = 0

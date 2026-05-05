@@ -19,9 +19,9 @@ pub def free_locale_list(locales: ptr[ptr[sdl.Locale]]?) -> void:
     return
 
 
-pub def locale_list(locales: ptr[ptr[sdl.Locale]], count: i32) -> span[ptr[sdl.Locale]?]:
+pub def locale_list(locales: ptr[ptr[sdl.Locale]], count: int) -> span[ptr[sdl.Locale]?]:
     unsafe:
-        return span[ptr[sdl.Locale]?](data = ptr[ptr[sdl.Locale]?]<-locales, len = usize<-count)
+        return span[ptr[sdl.Locale]?](data = ptr[ptr[sdl.Locale]?]<-locales, len = ptr_uint<-count)
 
 
 pub def locale_string(locale: ptr[sdl.Locale]) -> string.String:
@@ -34,5 +34,5 @@ pub def locale_string(locale: ptr[sdl.Locale]) -> string.String:
         return result
 
 
-pub def debug_text_width(text_value: str) -> f32:
-    return f32<-sdl.DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-text_value.len
+pub def debug_text_width(text_value: str) -> float:
+    return float<-sdl.DEBUG_TEXT_FONT_CHARACTER_SIZE * float<-text_value.len

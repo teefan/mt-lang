@@ -6,10 +6,10 @@ import std.c.time as ctime
 import std.math as mt_math
 
 struct ClockHand:
-    value: i32
-    angle: f32
-    length: i32
-    thickness: i32
+    value: int
+    angle: float
+    length: int
+    thickness: int
     color: rl.Color
 
 struct Clock:
@@ -17,24 +17,24 @@ struct Clock:
     minute: ClockHand
     hour: ClockHand
 
-const clock_analog: i32 = 0
-const clock_digital: i32 = 1
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const clock_analog: int = 0
+const clock_digital: int = 1
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - digital clock"
 const time_format: cstr = c"%H:%M:%S"
 const clock_mode_format: cstr = c"Press [SPACE] to switch clock mode: %s"
 
 
-def clock_hand(angle: f32, length: i32, thickness: i32, color: rl.Color) -> ClockHand:
+def clock_hand(angle: float, length: int, thickness: int, color: rl.Color) -> ClockHand:
     return ClockHand(value = 0, angle = angle, length = length, thickness = thickness, color = color)
 
 
-def digit_value(digit: char) -> i32:
-    return i32<-digit - 48
+def digit_value(digit: char) -> int:
+    return int<-digit - 48
 
 
-def parse_two_digits(time_buffer: array[char, 9], index: i32) -> i32:
+def parse_two_digits(time_buffer: array[char, 9], index: int) -> int:
     return digit_value(time_buffer[index]) * 10 + digit_value(time_buffer[index + 1])
 
 
@@ -50,33 +50,33 @@ def update_clock(clock: ref[Clock], time_buffer: ref[array[char, 9]]) -> void:
     clock.minute.value = parse_two_digits(read(time_buffer), 3)
     clock.second.value = parse_two_digits(read(time_buffer), 6)
 
-    clock.hour.angle = f32<-(clock.hour.value % 12) * 180.0 / 6.0
-    clock.hour.angle += f32<-(clock.minute.value % 60) * 30.0 / 60.0
+    clock.hour.angle = float<-(clock.hour.value % 12) * 180.0 / 6.0
+    clock.hour.angle += float<-(clock.minute.value % 60) * 30.0 / 60.0
     clock.hour.angle -= 90.0
 
-    clock.minute.angle = f32<-(clock.minute.value % 60) * 6.0
-    clock.minute.angle += f32<-(clock.second.value % 60) * 6.0 / 60.0
+    clock.minute.angle = float<-(clock.minute.value % 60) * 6.0
+    clock.minute.angle += float<-(clock.second.value % 60) * 6.0 / 60.0
     clock.minute.angle -= 90.0
 
-    clock.second.angle = f32<-(clock.second.value % 60) * 6.0
+    clock.second.angle = float<-(clock.second.value % 60) * 6.0
     clock.second.angle -= 90.0
 
 
 def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
-    rl.DrawCircleV(position, f32<-clock.second.length + 40.0, rl.LIGHTGRAY)
+    rl.DrawCircleV(position, float<-clock.second.length + 40.0, rl.LIGHTGRAY)
     rl.DrawCircleV(position, 12.0, rl.GRAY)
 
     for index in 0..60:
-        let tick_angle = 6.0 * f32<-index - 90.0
+        let tick_angle = 6.0 * float<-index - 90.0
         let inner_offset = if index % 5 != 0: 10.0 else: 6.0
         rl.DrawLineEx(
             rl.Vector2(
-                x = position.x + (f32<-clock.second.length + inner_offset) * math.cosf(mt_math.deg2rad * tick_angle),
-                y = position.y + (f32<-clock.second.length + inner_offset) * math.sinf(mt_math.deg2rad * tick_angle),
+                x = position.x + (float<-clock.second.length + inner_offset) * math.cosf(mt_math.deg2rad * tick_angle),
+                y = position.y + (float<-clock.second.length + inner_offset) * math.sinf(mt_math.deg2rad * tick_angle),
             ),
             rl.Vector2(
-                x = position.x + (f32<-clock.second.length + 20.0) * math.cosf(mt_math.deg2rad * tick_angle),
-                y = position.y + (f32<-clock.second.length + 20.0) * math.sinf(mt_math.deg2rad * tick_angle),
+                x = position.x + (float<-clock.second.length + 20.0) * math.cosf(mt_math.deg2rad * tick_angle),
+                y = position.y + (float<-clock.second.length + 20.0) * math.sinf(mt_math.deg2rad * tick_angle),
             ),
             if index % 5 != 0: 1.0 else: 3.0,
             rl.DARKGRAY,
@@ -102,78 +102,78 @@ def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
     )
 
 
-def draw_display_segment(center: rl.Vector2, length: i32, thick: i32, vertical: bool, color: rl.Color) -> void:
+def draw_display_segment(center: rl.Vector2, length: int, thick: int, vertical: bool, color: rl.Color) -> void:
     if not vertical:
         var segment_points = array[rl.Vector2, 6](
-            rl.Vector2(x = center.x - f32<-length / 2.0 - f32<-thick / 2.0, y = center.y),
-            rl.Vector2(x = center.x - f32<-length / 2.0, y = center.y + f32<-thick / 2.0),
-            rl.Vector2(x = center.x - f32<-length / 2.0, y = center.y - f32<-thick / 2.0),
-            rl.Vector2(x = center.x + f32<-length / 2.0, y = center.y + f32<-thick / 2.0),
-            rl.Vector2(x = center.x + f32<-length / 2.0, y = center.y - f32<-thick / 2.0),
-            rl.Vector2(x = center.x + f32<-length / 2.0 + f32<-thick / 2.0, y = center.y),
+            rl.Vector2(x = center.x - float<-length / 2.0 - float<-thick / 2.0, y = center.y),
+            rl.Vector2(x = center.x - float<-length / 2.0, y = center.y + float<-thick / 2.0),
+            rl.Vector2(x = center.x - float<-length / 2.0, y = center.y - float<-thick / 2.0),
+            rl.Vector2(x = center.x + float<-length / 2.0, y = center.y + float<-thick / 2.0),
+            rl.Vector2(x = center.x + float<-length / 2.0, y = center.y - float<-thick / 2.0),
+            rl.Vector2(x = center.x + float<-length / 2.0 + float<-thick / 2.0, y = center.y),
         )
         rl.DrawTriangleStrip(ptr_of(segment_points[0]), 6, color)
     else:
         var segment_points = array[rl.Vector2, 6](
-            rl.Vector2(x = center.x, y = center.y - f32<-length / 2.0 - f32<-thick / 2.0),
-            rl.Vector2(x = center.x - f32<-thick / 2.0, y = center.y - f32<-length / 2.0),
-            rl.Vector2(x = center.x + f32<-thick / 2.0, y = center.y - f32<-length / 2.0),
-            rl.Vector2(x = center.x - f32<-thick / 2.0, y = center.y + f32<-length / 2.0),
-            rl.Vector2(x = center.x + f32<-thick / 2.0, y = center.y + f32<-length / 2.0),
-            rl.Vector2(x = center.x, y = center.y + f32<-length / 2.0 + f32<-thick / 2.0),
+            rl.Vector2(x = center.x, y = center.y - float<-length / 2.0 - float<-thick / 2.0),
+            rl.Vector2(x = center.x - float<-thick / 2.0, y = center.y - float<-length / 2.0),
+            rl.Vector2(x = center.x + float<-thick / 2.0, y = center.y - float<-length / 2.0),
+            rl.Vector2(x = center.x - float<-thick / 2.0, y = center.y + float<-length / 2.0),
+            rl.Vector2(x = center.x + float<-thick / 2.0, y = center.y + float<-length / 2.0),
+            rl.Vector2(x = center.x, y = center.y + float<-length / 2.0 + float<-thick / 2.0),
         )
         rl.DrawTriangleStrip(ptr_of(segment_points[0]), 6, color)
 
 
-def draw_7s_display(position: rl.Vector2, segments: i32, color_on: rl.Color, color_off: rl.Color) -> void:
+def draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color, color_off: rl.Color) -> void:
     let segment_len = 60
     let segment_thick = 20
-    let offset_y_adjust = f32<-segment_thick * 0.3
+    let offset_y_adjust = float<-segment_thick * 0.3
 
     draw_display_segment(
-        rl.Vector2(x = position.x + f32<-segment_thick + f32<-segment_len / 2.0, y = position.y + f32<-segment_thick),
+        rl.Vector2(x = position.x + float<-segment_thick + float<-segment_len / 2.0, y = position.y + float<-segment_thick),
         segment_len,
         segment_thick,
         false,
         if (segments & 1) != 0: color_on else: color_off,
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + f32<-segment_thick + f32<-segment_len + f32<-segment_thick / 2.0, y = position.y + 2.0 * f32<-segment_thick + f32<-segment_len / 2.0 - offset_y_adjust),
+        rl.Vector2(x = position.x + float<-segment_thick + float<-segment_len + float<-segment_thick / 2.0, y = position.y + 2.0 * float<-segment_thick + float<-segment_len / 2.0 - offset_y_adjust),
         segment_len,
         segment_thick,
         true,
         if (segments & 2) != 0: color_on else: color_off,
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + f32<-segment_thick + f32<-segment_len + f32<-segment_thick / 2.0, y = position.y + 4.0 * f32<-segment_thick + f32<-segment_len + f32<-segment_len / 2.0 - 3.0 * offset_y_adjust),
+        rl.Vector2(x = position.x + float<-segment_thick + float<-segment_len + float<-segment_thick / 2.0, y = position.y + 4.0 * float<-segment_thick + float<-segment_len + float<-segment_len / 2.0 - 3.0 * offset_y_adjust),
         segment_len,
         segment_thick,
         true,
         if (segments & 4) != 0: color_on else: color_off,
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + f32<-segment_thick + f32<-segment_len / 2.0, y = position.y + 5.0 * f32<-segment_thick + 2.0 * f32<-segment_len - 4.0 * offset_y_adjust),
+        rl.Vector2(x = position.x + float<-segment_thick + float<-segment_len / 2.0, y = position.y + 5.0 * float<-segment_thick + 2.0 * float<-segment_len - 4.0 * offset_y_adjust),
         segment_len,
         segment_thick,
         false,
         if (segments & 8) != 0: color_on else: color_off,
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + f32<-segment_thick / 2.0, y = position.y + 4.0 * f32<-segment_thick + f32<-segment_len + f32<-segment_len / 2.0 - 3.0 * offset_y_adjust),
+        rl.Vector2(x = position.x + float<-segment_thick / 2.0, y = position.y + 4.0 * float<-segment_thick + float<-segment_len + float<-segment_len / 2.0 - 3.0 * offset_y_adjust),
         segment_len,
         segment_thick,
         true,
         if (segments & 16) != 0: color_on else: color_off,
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + f32<-segment_thick / 2.0, y = position.y + 2.0 * f32<-segment_thick + f32<-segment_len / 2.0 - offset_y_adjust),
+        rl.Vector2(x = position.x + float<-segment_thick / 2.0, y = position.y + 2.0 * float<-segment_thick + float<-segment_len / 2.0 - offset_y_adjust),
         segment_len,
         segment_thick,
         true,
         if (segments & 32) != 0: color_on else: color_off,
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + f32<-segment_thick + f32<-segment_len / 2.0, y = position.y + 3.0 * f32<-segment_thick + f32<-segment_len - 2.0 * offset_y_adjust),
+        rl.Vector2(x = position.x + float<-segment_thick + float<-segment_len / 2.0, y = position.y + 3.0 * float<-segment_thick + float<-segment_len - 2.0 * offset_y_adjust),
         segment_len,
         segment_thick,
         false,
@@ -181,7 +181,7 @@ def draw_7s_display(position: rl.Vector2, segments: i32, color_on: rl.Color, col
     )
 
 
-def draw_display_value(position: rl.Vector2, value: i32, color_on: rl.Color, color_off: rl.Color) -> void:
+def draw_display_value(position: rl.Vector2, value: int, color_on: rl.Color, color_off: rl.Color) -> void:
     if value == 0:
         draw_7s_display(position, 63, color_on, color_off)
     elif value == 1:
@@ -210,20 +210,20 @@ def draw_clock_digital(clock: Clock, position: rl.Vector2) -> void:
     draw_display_value(position, clock.hour.value / 10, rl.RED, color_off)
     draw_display_value(rl.Vector2(x = position.x + 120.0, y = position.y), clock.hour.value % 10, rl.RED, color_off)
 
-    rl.DrawCircle(i32<-position.x + 240, i32<-position.y + 70, 12.0, if clock.second.value % 2 != 0: rl.RED else: color_off)
-    rl.DrawCircle(i32<-position.x + 240, i32<-position.y + 150, 12.0, if clock.second.value % 2 != 0: rl.RED else: color_off)
+    rl.DrawCircle(int<-position.x + 240, int<-position.y + 70, 12.0, if clock.second.value % 2 != 0: rl.RED else: color_off)
+    rl.DrawCircle(int<-position.x + 240, int<-position.y + 150, 12.0, if clock.second.value % 2 != 0: rl.RED else: color_off)
 
     draw_display_value(rl.Vector2(x = position.x + 260.0, y = position.y), clock.minute.value / 10, rl.RED, color_off)
     draw_display_value(rl.Vector2(x = position.x + 380.0, y = position.y), clock.minute.value % 10, rl.RED, color_off)
 
-    rl.DrawCircle(i32<-position.x + 500, i32<-position.y + 70, 12.0, if clock.second.value % 2 != 0: rl.RED else: color_off)
-    rl.DrawCircle(i32<-position.x + 500, i32<-position.y + 150, 12.0, if clock.second.value % 2 != 0: rl.RED else: color_off)
+    rl.DrawCircle(int<-position.x + 500, int<-position.y + 70, 12.0, if clock.second.value % 2 != 0: rl.RED else: color_off)
+    rl.DrawCircle(int<-position.x + 500, int<-position.y + 150, 12.0, if clock.second.value % 2 != 0: rl.RED else: color_off)
 
     draw_display_value(rl.Vector2(x = position.x + 520.0, y = position.y), clock.second.value / 10, rl.RED, color_off)
     draw_display_value(rl.Vector2(x = position.x + 640.0, y = position.y), clock.second.value % 10, rl.RED, color_off)
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

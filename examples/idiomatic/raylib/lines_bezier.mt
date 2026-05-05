@@ -2,17 +2,17 @@ module examples.idiomatic.raylib.lines_bezier
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 
 
-def main() -> i32:
+def main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(screen_width, screen_height, "Milk Tea Bezier Lines")
     defer rl.close_window()
 
     var start_point = rl.Vector2(x = 30.0, y = 30.0)
-    var end_point = rl.Vector2(x = f32<-(screen_width - 30), y = f32<-(screen_height - 30))
+    var end_point = rl.Vector2(x = float<-(screen_width - 30), y = float<-(screen_height - 30))
     var moving_start = false
     var moving_end = false
 
@@ -38,8 +38,8 @@ def main() -> i32:
             if rl.is_mouse_button_released(rl.MouseButton.MOUSE_BUTTON_LEFT):
                 moving_end = false
 
-        var start_radius: f32 = if start_hovered: 14.0 else: 8.0
-        var end_radius: f32 = if end_hovered: 14.0 else: 8.0
+        var start_radius: float = if start_hovered: 14.0 else: 8.0
+        var end_radius: float = if end_hovered: 14.0 else: 8.0
         var start_color = if moving_start: rl.RED else: rl.BLUE
         var end_color = if moving_end: rl.RED else: rl.BLUE
 
