@@ -114,6 +114,44 @@ class MilkTeaCFGTest < Minitest::Test
     refute_empty result.read_before_assignment
   end
 
+  def test_definite_assignment_treats_format_string_interpolation_as_read
+    body = function_body(<<~MT)
+      module demo.cfg
+
+      def main(flag: bool) -> str:
+          var x: i32
+          if flag:
+              x = 1
+          return f"\#{x}"
+    MT
+
+    graph = MilkTea::CFG::Builder.new(
+      local_decl_without_initializer_writes: false,
+    ).build(body)
+
+    result = MilkTea::CFG::DefiniteAssignment.solve(graph, initially_assigned: Set["flag"])
+
+    assert_includes result.read_before_assignment.map(&:binding_key), "x"
+  end
+
+  def test_assignment_reads_expression_list_values
+    body = function_body(<<~MT)
+      module demo.cfg
+
+      def main(left: i32, right: i32) -> i32:
+          var values = array[i32, 2](0, 0)
+          values[0..1] = (left, right)
+          return left + right
+    MT
+
+    graph = MilkTea::CFG::Builder.new.build(body)
+    assignment_node = graph.each_node.find { |node| node.kind == :assignment }
+
+    refute_nil assignment_node
+    assert_includes assignment_node.reads, "left"
+    assert_includes assignment_node.reads, "right"
+  end
+
   # ── Reachability ─────────────────────────────────────────────────────────
 
   def test_reachability_marks_post_return_as_unreachable
@@ -204,6 +242,27 @@ class MilkTeaCFGTest < Minitest::Test
 
     # All nodes should have in_states populated (no errors)
     assert_equal graph.nodes.count, result.in_states.size
+  end
+
+  def test_nullability_flow_keeps_all_non_null_bindings_for_conjunction
+    body = function_body(<<~MT)
+      module demo.cfg
+
+      def main(x: ptr[i32]?, y: ptr[i32]?) -> i32:
+          if x != null and y != null:
+              if x != null:
+                  return 1
+          return 0
+    MT
+
+    graph = MilkTea::CFG::Builder.new.build(body)
+    result = MilkTea::CFG::NullabilityFlow.solve(graph)
+    outer_if = body.first
+    inner_if = outer_if.branches.first.body.first
+    inner_branch = inner_if.branches.first
+
+    assert_includes result.nonnull_before(inner_branch), "x"
+    assert_includes result.nonnull_before(inner_branch), "y"
   end
 
   # ── ConstantPropagation ──────────────────────────────────────────────────
