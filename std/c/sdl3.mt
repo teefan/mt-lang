@@ -3,6 +3,7 @@ extern module std.c.sdl3:
     link "SDL3"
     include "SDL3/SDL.h"
     include "SDL3/SDL_main.h"
+    include "sdl3_gl_loader_helpers.h"
 
     union SDL_GamepadBinding_input:
         button: int

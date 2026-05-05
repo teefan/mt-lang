@@ -632,6 +632,26 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "char", missing.value.type.arguments.first.value.name.to_s
   end
 
+  def test_parses_heredoc_cstring_literals
+    source = <<~MT
+      module demo.heredoc
+
+      const shader: cstr = c<<-GLSL
+          #version 330
+          void main()
+          {
+          }
+      GLSL
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    shader = ast.declarations[0]
+    assert_instance_of MilkTea::AST::StringLiteral, shader.value
+    assert_equal true, shader.value.cstring
+    assert_equal "#version 330\nvoid main()\n{\n}\n", shader.value.value
+  end
+
   def test_parses_const_pointer_types_and_ro_addr_calls
     source = <<~MT
       module demo.const_pointers

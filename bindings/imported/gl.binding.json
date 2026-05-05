@@ -1,0 +1,39 @@
+{
+  "module_name": "std.gl",
+  "raw_module_name": "std.c.gl",
+  "raw_import_alias": "c",
+  "types": {},
+  "constants": {
+    "exclude": [
+      "GL_2D",
+      "GL_3D",
+      "GL_3D_COLOR",
+      "GL_3D_COLOR_TEXTURE",
+      "GL_4D_COLOR_TEXTURE",
+      "GL_2_BYTES",
+      "GL_3_BYTES",
+      "GL_4_BYTES"
+    ],
+    "strip_prefix": "GL_"
+  },
+  "functions": {
+    "include_prefixes": [
+      "gl"
+    ],
+    "overrides": [
+      {
+        "raw": "mt_gl_reset_loader",
+        "name": "reset_loader"
+      },
+      {
+        "raw": "mt_gl_use_sdl_loader",
+        "name": "use_sdl_loader"
+      },
+      {
+        "raw": "mt_gl_use_glfw_loader",
+        "name": "use_glfw_loader"
+      }
+    ],
+    "strip_prefix": "gl"
+  }
+}

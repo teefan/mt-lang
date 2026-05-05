@@ -351,6 +351,7 @@ Notes:
 - Low-level code may construct `str(data = ..., len = ...)` only inside `unsafe`, and the caller is then responsible for pointer validity, lifetime, and the UTF-8 invariant.
 - A string literal may satisfy an expected `cstr` directly when the compiler has contextual type information, such as a typed local, an `array[cstr, N]` element, or a borrowed C-string argument position, because static storage is known.
 - `c"hello"` produces `cstr` with static storage for raw ABI work and low-level interop.
+- `<<-TAG ... TAG` produces `str` and `c<<-TAG ... TAG` produces `cstr` for multiline block text. The content is dedented by the shared leading spaces of nonblank lines, and the newline before the terminator is preserved.
 
 ### Composite types
 

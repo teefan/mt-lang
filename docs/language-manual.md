@@ -86,6 +86,8 @@ Supported literals:
 - float: `3.14`, `1.2e-3`, `1.1920929E-7`
 - string: `"hello"` (`str`)
 - cstring: `c"hello"` (`cstr`)
+- heredoc string: `<<-TAG ... TAG` (`str`)
+- heredoc cstring: `c<<-TAG ... TAG` (`cstr`)
 - format string: `f"count=#{count}"`
 - booleans: `true`, `false`
 - null: `null`, typed null `null[ptr[char]]`
@@ -520,6 +522,19 @@ Format string syntax:
 ```mt
 f"count=#{count} ok=#{ready}"
 ```
+
+Heredoc syntax:
+
+```mt
+const shader: cstr = c<<-GLSL
+    #version 330
+    void main()
+    {
+    }
+GLSL
+```
+
+`<<-TAG` and `c<<-TAG` read all following lines until a line containing only the terminator tag, optionally surrounded by spaces. Nonblank content lines are dedented by their shared leading spaces. The trailing newline before the terminator is preserved. Multiline format heredocs are not supported.
 
 Format strings have type `str` and are valid anywhere a `str` value is accepted. Interpolated expressions must be one of: `str`, `cstr`, `bool`, a numeric primitive, or an integer-backed enum or flags type. A precision specifier `:.N` is allowed on `float` and `double` interpolations.
 

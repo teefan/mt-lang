@@ -894,6 +894,20 @@ module MilkTea
           policy_path: root.join("bindings/imported/cjson.binding.json"),
         ),
         Binding.new(
+          name: "gl",
+          module_name: "std.gl",
+          binding_path: root.join("std/gl.mt"),
+          raw_module_name: "std.c.gl",
+          policy_path: root.join("bindings/imported/gl.binding.json"),
+        ),
+        Binding.new(
+          name: "glfw",
+          module_name: "std.glfw",
+          binding_path: root.join("std/glfw.mt"),
+          raw_module_name: "std.c.glfw",
+          policy_path: root.join("bindings/imported/glfw.binding.json"),
+        ),
+        Binding.new(
           name: "libuv",
           module_name: "std.libuv",
           binding_path: root.join("std/libuv.mt"),

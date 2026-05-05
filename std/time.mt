@@ -6,15 +6,51 @@ import std.string as string
 
 const format_buffer_capacity: ptr_uint = 128
 const clock_buffer_capacity: ptr_uint = 7
+const nanoseconds_per_second: long = 1000000000
 
 pub enum Error: ubyte
     invalid_time = 1
     output_too_large = 2
 
+pub type ClockId = c.clockid_t
+pub type Timespec = c.timespec
+
+pub const CLOCK_REALTIME: ClockId = c.CLOCK_REALTIME
+pub const CLOCK_MONOTONIC: ClockId = c.CLOCK_MONOTONIC
+
 pub struct ClockTime:
     hour: int
     minute: int
     second: int
+
+
+pub foreign def clock_getres(clock_id: ClockId, resolution: ptr[Timespec]) -> int = c.clock_getres
+pub foreign def clock_gettime(clock_id: ClockId, value: ptr[Timespec]) -> int = c.clock_gettime
+pub foreign def nanosleep(duration: const_ptr[Timespec], remaining: ptr[Timespec]?) -> int = c.nanosleep
+
+
+pub def timespec_to_nanoseconds(value: Timespec) -> long:
+    return long<-value.tv_sec * nanoseconds_per_second + long<-value.tv_nsec
+
+
+pub def timespec_to_seconds(value: Timespec) -> double:
+    return double<-value.tv_sec + double<-value.tv_nsec / double<-nanoseconds_per_second
+
+
+pub def monotonic_time() -> Result[Timespec, int]:
+    var value = zero[Timespec]
+    let status = clock_gettime(CLOCK_MONOTONIC, ptr_of(value))
+    if status != 0:
+        return err(status)
+    return ok(value)
+
+
+pub def realtime_time() -> Result[Timespec, int]:
+    var value = zero[Timespec]
+    let status = clock_gettime(CLOCK_REALTIME, ptr_of(value))
+    if status != 0:
+        return err(status)
+    return ok(value)
 
 
 pub def now_unix_seconds() -> long:

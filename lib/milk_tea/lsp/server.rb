@@ -1851,13 +1851,7 @@ module MilkTea
           semantic_type, modifiers = classify_semantic_token(tokens, index, analysis)
           next unless semantic_type
 
-          entries << {
-            line: tok.line - 1,
-            start_char: tok.column - 1,
-            length: tok.lexeme.length,
-            type: semantic_type,
-            modifiers: modifiers
-          }
+          token_semantic_entries(tok, semantic_type, modifiers).each { |entry| entries << entry }
         end
 
         entries.sort_by { |entry| [entry[:line], entry[:start_char]] }
@@ -1991,6 +1985,20 @@ module MilkTea
         end
 
         [nil, []]
+      end
+
+      def token_semantic_entries(token, semantic_type, modifiers)
+        token.lexeme.split("\n", -1).each_with_index.filter_map do |segment, index|
+          next if segment.empty?
+
+          {
+            line: token.line - 1 + index,
+            start_char: index.zero? ? (token.column - 1) : 0,
+            length: segment.length,
+            type: semantic_type,
+            modifiers: modifiers
+          }
+        end
       end
 
       def classify_name_semantic(name, tokens, index, analysis = nil)
@@ -2558,10 +2566,21 @@ module MilkTea
       end
 
       def token_to_range(token)
+        end_line, end_character = token_end_position(token)
+
         {
           start: { line: token.line - 1, character: token.column - 1 },
-          end:   { line: token.line - 1, character: token.column - 1 + token.lexeme.length }
+          end:   { line: end_line, character: end_character }
         }
+      end
+
+      def token_end_position(token)
+        segments = token.lexeme.split("\n", -1)
+        if segments.length == 1
+          [token.line - 1, token.column - 1 + segments.first.length]
+        else
+          [token.line - 1 + segments.length - 1, segments.last.length]
+        end
       end
 
       def diagnostics_fingerprint(content, diagnostics)

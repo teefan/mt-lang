@@ -7,6 +7,7 @@ GEM
       prism (~> 1.5)
     prism (1.9.0)
     rake (13.4.2)
+    rexml (3.4.4)
 
 PLATFORMS
   ruby
@@ -15,15 +16,17 @@ PLATFORMS
 DEPENDENCIES
   minitest (~> 6.0)
   rake (~> 13.4)
+  rexml (~> 3.4)
 
 CHECKSUMS
   drb (2.2.3) sha256=0b00d6fdb50995fe4a45dea13663493c841112e4068656854646f418fda13373
   minitest (6.0.4) sha256=df1304664589d40f46089247fdc451f866b0ce0d7cae1457a15fc1eb7d48dca1
   prism (1.9.0) sha256=7b530c6a9f92c24300014919c9dcbc055bf4cdf51ec30aed099b06cd6674ef85
   rake (13.4.2) sha256=cb825b2bd5f1f8e91ca37bddb4b9aaf345551b4731da62949be002fa89283701
+  rexml (3.4.4) sha256=19e0a2c3425dfbf2d4fc1189747bdb2f849b6c5e74180401b15734bc97b5d142
 
 RUBY VERSION
-  ruby 4.0.1
+  ruby 4.0.3
 
 BUNDLED WITH
   4.0.3

@@ -229,6 +229,15 @@ class LSPServerTest < Minitest::Test
         return msg.len
   MT
 
+  SOURCE_WITH_HEREDOC_CSTRING = <<~MT
+    const shader: cstr = c<<-GLSL
+        #version 330
+        void main()
+        {
+        }
+    GLSL
+  MT
+
   def test_initialize_advertises_expected_capabilities
     with_server do |client|
       response = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -1613,6 +1622,33 @@ class LSPServerTest < Minitest::Test
         end
         refute_nil interpolation_name_entry
         assert_equal "variable", interpolation_name_entry.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_cover_multiline_heredoc_strings
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_heredoc_test.mt"
+        source = SOURCE_WITH_HEREDOC_CSTRING
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+        string_entries = entries.select { |entry| entry.fetch("tokenType") == "string" }
+        covered_lines = string_entries.map { |entry| entry.fetch("line") }.uniq.sort
+
+        assert_includes covered_lines, 0
+        assert_includes covered_lines, 1
+        assert_includes covered_lines, 2
+        assert_includes covered_lines, 3
+        assert_includes covered_lines, 4
+        assert_includes covered_lines, 5
       end
     end
 

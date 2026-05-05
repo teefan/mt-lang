@@ -130,6 +130,45 @@ class MilkTeaLexerTest < Minitest::Test
     assert_equal "true", format_token.literal[3].fetch(:source)
   end
 
+  def test_lexes_heredoc_strings_and_cstrings
+    source = <<~MT
+      const shader: cstr = c<<-GLSL
+          #version 330
+          void main()
+          {
+          }
+      GLSL
+
+      const text = <<-TEXT
+          alpha
+            beta
+
+      TEXT
+    MT
+
+    tokens = MilkTea::Lexer.lex(source)
+    shader = tokens.find { |token| token.type == :cstring }
+    text = tokens.find { |token| token.type == :string }
+
+    refute_nil shader
+    refute_nil text
+    assert_equal "#version 330\nvoid main()\n{\n}\n", shader.literal
+    assert_equal "alpha\n  beta\n\n", text.literal
+  end
+
+  def test_rejects_unterminated_heredoc_literals
+    source = <<~MT
+      const shader = <<-GLSL
+          #version 330
+    MT
+
+    error = assert_raises(MilkTea::LexError) do
+      MilkTea::Lexer.lex(source)
+    end
+
+    assert_match(/unterminated heredoc literal/, error.message)
+  end
+
   def test_lex_with_trivia_captures_comments_and_blank_lines
     source = <<~MT
       # module banner

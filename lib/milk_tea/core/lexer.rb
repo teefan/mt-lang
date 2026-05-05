@@ -97,13 +97,23 @@ module MilkTea
     end
 
     def lex
+      lines = @source.each_line.to_a
       line_offset = 0
-      @source.each_line.with_index(1) do |raw_line, line_number|
+      line_number = 1
+      line_index = 0
+
+      while line_index < lines.length
+        raw_line = lines[line_index]
         has_newline = raw_line.end_with?("\n")
         # Use byte-indexed scanning so token offsets remain consistent for UTF-8 content.
         line = raw_line.delete_suffix("\n").b
-        lex_line(line, line_number, line_offset, has_newline:)
-        line_offset += raw_line.bytesize
+        consumed_lines = lex_line(lines, line_index, line, line_number, line_offset, has_newline:)
+
+        consumed_lines.times do |delta|
+          line_offset += lines.fetch(line_index + delta).bytesize
+        end
+        line_number += consumed_lines
+        line_index += consumed_lines
       end
 
       raise LexError.new("unclosed grouping delimiter", line: @line_count, column: 1, path: @path) unless @grouping_depth.zero?
@@ -125,7 +135,7 @@ module MilkTea
       @mode == :with_trivia
     end
 
-    def lex_line(line, line_number, line_offset, has_newline:)
+    def lex_line(lines, line_index, line, line_number, line_offset, has_newline:)
       tab_index = line.index("\t")
       if tab_index
         raise LexError.new("tabs are not allowed; use 4 spaces for indentation", line: line_number, column: tab_index + 1, path: @path)
@@ -133,12 +143,12 @@ module MilkTea
 
       if line.strip.empty?
         register_detached_line_trivia(:blank_line, line, line_number, line_offset, has_newline:)
-        return
+        return 1
       end
 
       if line.lstrip.start_with?("#")
         register_detached_line_trivia(:comment, line, line_number, line_offset, has_newline:)
-        return
+        return 1
       end
 
       index = leading_space_count(line)
@@ -202,14 +212,26 @@ module MilkTea
           break
         end
 
+        if char == "c" && heredoc_start?(line, index, cstring: true)
+          return lex_heredoc(lines, line_index, index, line_number, line_offset, cstring: true)
+        end
+
         if char == "c" && line[index + 1] == '"'
           index = lex_string(line, index, line_number, line_offset:, cstring: true)
           next
         end
 
+        if char == "f" && heredoc_start?(line, index, format: true)
+          raise LexError.new("format heredoc literals are not supported", line: line_number, column: index + 1, path: @path)
+        end
+
         if char == "f" && line[index + 1] == '"'
           index = lex_format_string(line, index, line_number, line_offset:)
           next
+        end
+
+        if char == "<" && heredoc_start?(line, index)
+          return lex_heredoc(lines, line_index, index, line_number, line_offset, cstring: false)
         end
 
         if char == '"'
@@ -250,6 +272,8 @@ module MilkTea
           ),
         )
       end
+
+      1
     end
 
     def register_detached_line_trivia(kind, line, line_number, line_offset, has_newline:)
@@ -419,6 +443,62 @@ module MilkTea
       raise LexError.new("unterminated string literal", line: line_number, column: start + 1, path: @path)
     end
 
+    def lex_heredoc(lines, line_index, index, line_number, line_offset, cstring:)
+      line = lines.fetch(line_index).delete_suffix("\n").b
+      prefix_length = cstring ? 4 : 3
+      tag_start = index + prefix_length
+      tag_end = tag_start
+      tag_end += 1 while tag_end < line.length && identifier_part?(line[tag_end])
+      tag = line[tag_start...tag_end]
+      remainder = line[tag_end..] || ""
+
+      unless heredoc_context_allowed?
+        return lex_symbol(line, index, line_number, line_offset:)
+      end
+
+      unless remainder.strip.empty?
+        raise LexError.new("unexpected characters after heredoc tag", line: line_number, column: tag_end + 1, path: @path)
+      end
+
+      content_lines = []
+      terminator_line = nil
+      terminator_line_number = nil
+      terminator_line_offset = nil
+      terminator_has_newline = false
+      scan_line_number = line_number + 1
+      scan_line_offset = line_offset + lines.fetch(line_index).bytesize
+      scan_line_index = line_index + 1
+
+      while scan_line_index < lines.length
+        raw_line = lines.fetch(scan_line_index)
+        raw_text = raw_line.delete_suffix("\n")
+        if heredoc_terminator?(raw_text, tag)
+          terminator_line = raw_text
+          terminator_line_number = scan_line_number
+          terminator_line_offset = scan_line_offset
+          terminator_has_newline = raw_line.end_with?("\n")
+          break
+        end
+
+        content_lines << raw_line
+        scan_line_offset += raw_line.bytesize
+        scan_line_number += 1
+        scan_line_index += 1
+      end
+
+      raise LexError.new("unterminated heredoc literal", line: line_number, column: index + 1, path: @path) if terminator_line.nil?
+
+      start_offset = line_offset + index
+      end_offset = terminator_line_offset + terminator_line.bytesize
+      lexeme = @source.byteslice(start_offset, end_offset - start_offset)
+      value = dedent_heredoc_content(content_lines)
+
+      @tokens << token(cstring ? :cstring : :string, lexeme, value, line_number, index + 1, start_offset:, end_offset:)
+      emit_heredoc_newline(terminator_line, terminator_line_number, terminator_line_offset, terminator_has_newline)
+
+      (scan_line_index - line_index) + 1
+    end
+
     def lex_format_string(line, index, line_number, line_offset:)
       start = index
       index += 2
@@ -464,6 +544,73 @@ module MilkTea
       end
 
       raise LexError.new("unterminated format string literal", line: line_number, column: start + 1, path: @path)
+    end
+
+    def heredoc_start?(line, index, cstring: false, format: false)
+      prefix = if cstring
+                 "c<<-"
+               elsif format
+                 "f<<-"
+               else
+                 "<<-"
+               end
+      line[index, prefix.length] == prefix && identifier_start?(line[index + prefix.length])
+    end
+
+    def heredoc_context_allowed?
+      allowed = %i[
+        newline indent dedent
+        equal plus_equal minus_equal star_equal slash_equal percent_equal
+        amp_equal pipe_equal caret_equal shift_left_equal shift_right_equal
+        lparen lbracket comma colon
+        return defer if elif while match in
+        or and not out inout
+        plus minus star slash percent amp pipe caret shift_left shift_right
+        less less_equal greater greater_equal equal_equal bang_equal
+      ]
+      previous_type = @tokens.last&.type
+      previous_type.nil? || allowed.include?(previous_type)
+    end
+
+    def heredoc_terminator?(line, tag)
+      line.match?(Regexp.new("\\A *#{Regexp.escape(tag)} *\\z"))
+    end
+
+    def dedent_heredoc_content(raw_lines)
+      margin = raw_lines
+               .map { |raw_line| raw_line.delete_suffix("\n") }
+               .reject { |text| text.strip.empty? }
+               .map { |text| leading_space_count(text) }
+               .min || 0
+
+      raw_lines.map do |raw_line|
+        has_newline = raw_line.end_with?("\n")
+        text = raw_line.delete_suffix("\n")
+        text = text.strip.empty? ? "" : text[margin..]
+        text = "" if text.nil?
+        text += "\n" if has_newline
+        text
+      end.join
+    end
+
+    def emit_heredoc_newline(line, line_number, line_offset, has_newline)
+      newline_start = line_offset + line.bytesize
+      newline_end = has_newline ? (newline_start + 1) : newline_start
+
+      if @grouping_depth.zero?
+        @tokens << token(:newline, "\n", nil, line_number, line.bytesize + 1, start_offset: newline_start, end_offset: newline_end)
+      elsif with_trivia? && has_newline
+        append_trailing_or_pending(
+          TriviaToken.new(
+            kind: :newline,
+            text: "\n",
+            line: line_number,
+            column: line.bytesize + 1,
+            start_offset: newline_start,
+            end_offset: newline_end,
+          ),
+        )
+      end
     end
 
     def scan_format_interpolation_end(line, index, line_number, column)

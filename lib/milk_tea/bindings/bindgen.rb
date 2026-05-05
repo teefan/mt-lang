@@ -751,6 +751,12 @@ module MilkTea
         ["#{name}_", nil]
       end
 
+      def bindgen_param_name(name)
+        return [name, nil] unless Token::KEYWORDS.key?(name)
+
+        ["#{name}_", nil]
+      end
+
       def discover_synthetic_aggregate_dependencies(declarations)
         pending = declarations.select { |declaration| %w[struct union].include?(declaration[:kind]) }.map do |declaration|
           [declaration[:name], declaration[:node]]
@@ -882,7 +888,10 @@ module MilkTea
       end
 
       def emit_function_declaration(declaration)
-        params = declaration[:params].map { |param| "#{param[:name]}: #{param[:type]}" }
+        params = declaration[:params].map do |param|
+          emitted_name, = bindgen_param_name(param[:name])
+          "#{emitted_name}: #{param[:type]}"
+        end
         params << "..." if declaration[:variadic]
         ["    extern def #{declaration[:name]}(#{params.join(', ')}) -> #{declaration[:return_type]}"]
       end
