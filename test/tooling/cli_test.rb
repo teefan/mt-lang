@@ -236,6 +236,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_match(/#include "raylib\.h"/, out.string)
     assert_match(/demo_bouncing_ball_Ball_update\(&ball, dt\);/, out.string)
     assert_equal 1, out.string.scan("CloseWindow();").length
+    refute_match(/^#line\s+/m, out.string)
   end
 
   def test_emit_c_command_reports_unsupported_roots
@@ -267,6 +268,7 @@ class MilkTeaCliTest < Minitest::Test
       assert_match(/saved C to .*milk-tea-demo\.c/, out.string)
       assert File.exist?(output_path)
       assert File.exist?(c_path)
+      refute_match(/^#line\s+/m, File.read(c_path))
       assert_includes File.read(compiler_log).lines(chomp: true), "-lraylib"
     end
   end

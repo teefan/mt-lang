@@ -23,12 +23,46 @@ class MilkTeaBuildTest < Minitest::Test
       assert File.exist?(output_path)
       assert File.exist?(c_path)
       assert_match(/#include "raylib\.h"/, File.read(c_path))
+      refute_match(/^#line\s+/m, File.read(c_path))
 
       invocation = File.read(compiler_log).lines(chomp: true)
       assert_includes invocation, "-std=c11"
-      assert_includes invocation, File.expand_path(c_path)
+      refute_includes invocation, File.expand_path(c_path)
       assert_includes invocation, File.expand_path(output_path)
       assert_includes invocation, "-lraylib"
+    end
+  end
+
+  def test_build_without_kept_c_emits_backend_once_for_debug_build
+    Dir.mktmpdir("milk-tea-build-emit-count") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      source_path = File.join(dir, "emit-count.mt")
+      output_path = File.join(dir, "emit-count")
+
+      File.write(source_path, [
+        "module demo.emit_count",
+        "",
+        "def main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      original_emit = MilkTea::CBackend.method(:emit)
+      emit_calls = []
+
+      with_singleton_method_override(MilkTea::CBackend, :emit, lambda do |*args, **kwargs|
+        emit_calls << kwargs.fetch(:emit_line_directives)
+        original_emit.call(*args, **kwargs)
+      end) do
+        result = MilkTea::Build.build(source_path, output_path:, cc: compiler_path)
+
+        assert_equal File.expand_path(output_path), result.output_path
+        assert_nil result.c_path
+        assert File.exist?(output_path)
+      end
+
+      assert_equal [true], emit_calls
     end
   end
 
@@ -380,6 +414,7 @@ class MilkTeaBuildTest < Minitest::Test
       assert_includes result.link_flags, "-lraylib"
       assert_includes result.link_flags, "-lm"
       assert_match(/#include "raygui\.h"/, File.read(c_path))
+      refute_match(/^#line\s+/m, File.read(c_path))
 
       invocation = File.read(compiler_log).lines(chomp: true)
       assert_includes invocation, "-lraylib"
@@ -420,6 +455,7 @@ class MilkTeaBuildTest < Minitest::Test
       assert_equal File.expand_path(compiler_path), result.compiler
       assert_includes result.link_flags, "-lraylib"
       assert_match(/#include "rlights\.h"/, File.read(c_path))
+      refute_match(/^#line\s+/m, File.read(c_path))
 
       invocation = File.read(compiler_log).lines(chomp: true)
       assert_includes invocation, "-lraylib"
@@ -459,6 +495,23 @@ class MilkTeaBuildTest < Minitest::Test
     ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |entry|
       candidate = File.join(entry, compiler)
       File.file?(candidate) && File.executable?(candidate)
+    end
+  end
+
+  def with_singleton_method_override(object, method_name, implementation)
+    singleton_class = class << object; self; end
+    original_name = "__build_test_original_#{method_name}__"
+    original_defined = singleton_class.method_defined?(method_name) || singleton_class.private_method_defined?(method_name)
+    singleton_class.alias_method(original_name, method_name) if original_defined
+    singleton_class.define_method(method_name) do |*args, **kwargs, &block|
+      implementation.call(*args, **kwargs, &block)
+    end
+    yield
+  ensure
+    singleton_class.remove_method(method_name) if singleton_class.method_defined?(method_name)
+    if original_defined
+      singleton_class.alias_method(method_name, original_name)
+      singleton_class.remove_method(original_name)
     end
   end
 end

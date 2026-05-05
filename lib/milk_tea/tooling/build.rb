@@ -91,7 +91,8 @@ module MilkTea
       program = ModuleLoader.new(module_roots: @module_roots).check_program(@source_path)
       prepare_bindings(program)
       ir_program = program.is_a?(IR::Program) ? program : Lowering.lower(program)
-      generated_c = CBackend.emit(ir_program)
+      emit_line_directives = line_directives_required?
+      compiled_c = CBackend.emit(ir_program, emit_line_directives: emit_line_directives)
       debug_map = DebugMap.from_ir(ir_program, binary_path: @output_path)
       compiler_flags = collect_compiler_flags(program)
       link_flags = collect_link_flags(program)
@@ -100,19 +101,22 @@ module MilkTea
       FileUtils.mkdir_p(File.dirname(@output_path))
 
       if @keep_c_path
-        write_c_file(@keep_c_path, generated_c)
-        compile(@keep_c_path, compiler_flags, link_flags)
+        saved_c = if emit_line_directives
+                    CBackend.emit(ir_program, emit_line_directives: false)
+                  else
+                    compiled_c
+                  end
+        write_c_file(@keep_c_path, saved_c)
+        if emit_line_directives
+          compile_generated_c(compiled_c, compiler_flags, link_flags)
+        else
+          compile(@keep_c_path, compiler_flags, link_flags)
+        end
         debug_map.write(debug_map_path)
         return Result.new(output_path: @output_path, c_path: @keep_c_path, compiler: @cc, link_flags:, profile: @profile, platform: @platform)
       end
 
-      Tempfile.create(["milk-tea-build", ".c"]) do |file|
-        file.write(generated_c)
-        file.flush
-        file.close
-
-        compile(file.path, compiler_flags, link_flags)
-      end
+      compile_generated_c(compiled_c, compiler_flags, link_flags)
 
       debug_map.write(debug_map_path)
 
@@ -177,6 +181,16 @@ module MilkTea
     def write_c_file(path, source)
       FileUtils.mkdir_p(File.dirname(path))
       File.write(path, source)
+    end
+
+    def compile_generated_c(source, compiler_flags, link_flags)
+      Tempfile.create(["milk-tea-build", ".c"]) do |file|
+        file.write(source)
+        file.flush
+        file.close
+
+        compile(file.path, compiler_flags, link_flags)
+      end
     end
 
     def ensure_compiler_available!
@@ -254,6 +268,10 @@ module MilkTea
       return ["-g", "-O0"] if @debug || @profile == :debug
 
       ["-O3", "-DNDEBUG"]
+    end
+
+    def line_directives_required?
+      @debug || @profile == :debug
     end
 
     def compiler_available?(compiler)

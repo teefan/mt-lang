@@ -22,6 +22,7 @@ class MilkTeaRunTest < Minitest::Test
       assert_includes result.link_flags, "-lraylib"
       assert File.exist?(output_path)
       assert File.exist?(c_path)
+      refute_match(/^#line\s+/m, File.read(c_path))
       assert_includes File.read(compiler_log).lines(chomp: true), "-lraylib"
     end
   end
