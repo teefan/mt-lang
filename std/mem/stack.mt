@@ -16,6 +16,10 @@ pub def create(capacity_bytes: ptr_uint) -> Stack:
 pub def create_aligned(capacity_bytes: ptr_uint, alignment: ptr_uint) -> Stack:
     return Stack(arena = arena.create_aligned(capacity_bytes, alignment))
 
+
+pub def create_for[T](count: ptr_uint) -> Stack:
+    return Stack(arena = arena.create_for[T](count))
+
 methods Stack:
     pub def mark() -> Mark:
         return this.arena.mark()
@@ -38,19 +42,10 @@ methods Stack:
         return this.arena.alloc_bytes_aligned(size_bytes, alignment)
 
 
+    pub edit def alloc[T](count: ptr_uint) -> ptr[T]?:
+        return this.arena.alloc[T](count)
+
+
     pub edit def release() -> void:
         this.arena.release()
         return
-
-
-pub def alloc[T](space: ref[Stack], count: ptr_uint) -> ptr[T]?:
-    let element_size = ptr_uint<-size_of(T)
-    if heap.mul_overflows(count, element_size):
-        return null
-
-    let memory = space.alloc_bytes_aligned(count * element_size, ptr_uint<-align_of(T))
-    if memory == null:
-        return null
-
-    unsafe:
-        return ptr[T]<-memory

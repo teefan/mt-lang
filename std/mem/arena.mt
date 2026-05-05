@@ -40,6 +40,14 @@ pub def create_aligned(capacity_bytes: ptr_uint, alignment: ptr_uint) -> Arena:
             offset = 0,
         )
 
+
+pub def create_for[T](count: ptr_uint) -> Arena:
+    let element_size = ptr_uint<-size_of(T)
+    if heap.mul_overflows(count, element_size):
+        panic(c"arena.create_for size overflow")
+
+    return create_aligned(count * element_size, ptr_uint<-align_of(T))
+
 methods Arena:
     pub def mark() -> Mark:
         return this.offset
@@ -88,6 +96,19 @@ methods Arena:
             return result
 
 
+    pub edit def alloc[T](count: ptr_uint) -> ptr[T]?:
+        let element_size = ptr_uint<-size_of(T)
+        if heap.mul_overflows(count, element_size):
+            return null
+
+        let memory = this.alloc_bytes_aligned(count * element_size, ptr_uint<-align_of(T))
+        if memory == null:
+            return null
+
+        unsafe:
+            return ptr[T]<-memory
+
+
     pub edit def try_to_cstr(text: str) -> cstr?:
         let memory = this.alloc_bytes(text.len + 1)
         if memory == null:
@@ -125,16 +146,3 @@ methods Arena:
         this.alignment = 0
         this.offset = 0
         return
-
-
-pub def alloc[T](space: ref[Arena], count: ptr_uint) -> ptr[T]?:
-    let element_size = ptr_uint<-size_of(T)
-    if heap.mul_overflows(count, element_size):
-        return null
-
-    let memory = space.alloc_bytes_aligned(count * element_size, ptr_uint<-align_of(T))
-    if memory == null:
-        return null
-
-    unsafe:
-        return ptr[T]<-memory

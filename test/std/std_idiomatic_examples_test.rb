@@ -103,7 +103,7 @@ class MilkTeaStdIdiomaticExamplesTest < Minitest::Test
 
     result = MilkTea::Run.run(example_path("memory_heap"), cc: compiler)
 
-    assert_equal "heap -> alloc[int], resize[int], alloc_bytes_aligned, release\n", result.stdout
+    assert_equal "heap -> alloc[int], resize[int], alloc_aligned[Mat4], release\n", result.stdout
     assert_equal "", result.stderr
     assert_equal 0, result.exit_status
     assert_equal [], result.link_flags
@@ -115,7 +115,7 @@ class MilkTeaStdIdiomaticExamplesTest < Minitest::Test
 
     result = MilkTea::Run.run(example_path("memory_arena"), cc: compiler)
 
-    assert_equal "arena -> create_aligned, alloc[Mat4], mark/reset\n", result.stdout
+    assert_equal "arena -> create_for[Mat4], alloc[Mat4], mark/reset\n", result.stdout
     assert_equal "", result.stderr
     assert_equal 0, result.exit_status
     assert_equal [], result.link_flags
@@ -127,7 +127,7 @@ class MilkTeaStdIdiomaticExamplesTest < Minitest::Test
 
     result = MilkTea::Run.run(example_path("memory_stack"), cc: compiler)
 
-    assert_equal "stack -> create_aligned, nested marks, reset\n", result.stdout
+    assert_equal "stack -> create_for[Mat4], nested marks, reset\n", result.stdout
     assert_equal "", result.stderr
     assert_equal 0, result.exit_status
     assert_equal [], result.link_flags
@@ -139,7 +139,7 @@ class MilkTeaStdIdiomaticExamplesTest < Minitest::Test
 
     result = MilkTea::Run.run(example_path("memory_pool"), cc: compiler)
 
-    assert_equal "pool -> create_for, alloc, release, reuse\n", result.stdout
+    assert_equal "pool -> create_for[Mat4], alloc[Mat4], release, reuse\n", result.stdout
     assert_equal "", result.stderr
     assert_equal 0, result.exit_status
     assert_equal [], result.link_flags

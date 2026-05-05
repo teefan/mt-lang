@@ -163,6 +163,28 @@ pub def must_alloc[T](count: ptr_uint) -> ptr[T]:
         return ptr[T]<-memory
 
 
+pub def alloc_aligned[T](count: ptr_uint) -> ptr[T]?:
+    let element_size = ptr_uint<-size_of(T)
+    if mul_overflows(count, element_size):
+        return null
+
+    let memory = alloc_bytes_aligned(count * element_size, ptr_uint<-align_of(T))
+    if memory == null:
+        return null
+
+    unsafe:
+        return ptr[T]<-memory
+
+
+pub def must_alloc_aligned[T](count: ptr_uint) -> ptr[T]:
+    let memory = alloc_aligned[T](count)
+    if memory == null:
+        panic(c"heap.must_alloc_aligned out of memory")
+
+    unsafe:
+        return ptr[T]<-memory
+
+
 pub def alloc_zeroed[T](count: ptr_uint) -> ptr[T]?:
     let alignment = ptr_uint<-align_of(T)
     if alignment > minimum_alignment():
