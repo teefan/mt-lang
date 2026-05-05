@@ -327,7 +327,7 @@ module MilkTea
       end
 
       program = make_module_loader(path).check_program(path)
-      @out.write(Codegen.generate_c(program))
+      @out.write(Codegen.generate_c(program, emit_line_directives: false))
       0
     end
 
