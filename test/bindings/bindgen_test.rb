@@ -318,6 +318,34 @@ class MilkTeaBindgenTest < Minitest::Test
     end
   end
 
+  def test_generate_renames_keyword_function_params
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-keyword-params") do |dir|
+      header_path = File.join(dir, "sample.h")
+      output_path = File.join(dir, "sample.mt")
+      File.write(header_path, <<~C)
+        int use_keywords(int type, int in, int out);
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+      )
+
+      assert_match(/extern def use_keywords\(type_: int, in_: int, out_: int\) -> int/, generated)
+
+      File.write(output_path, generated)
+      analysis = MilkTea::ModuleLoader.check_file(output_path)
+
+      assert_equal :extern_module, analysis.module_kind
+      assert_includes analysis.functions.keys, "use_keywords"
+    end
+  end
+
   def test_generate_applies_field_type_overrides
     clang = ENV.fetch("CLANG", "clang")
     skip "clang not available: #{clang}" unless executable_available?(clang)

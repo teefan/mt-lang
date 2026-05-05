@@ -1,0 +1,15 @@
+{
+  "module_name": "std.glfw",
+  "raw_module_name": "std.c.glfw",
+  "raw_import_alias": "c",
+  "types": {},
+  "constants": {
+    "strip_prefix": "GLFW_"
+  },
+  "functions": {
+    "include_prefixes": [
+      "glfw"
+    ],
+    "strip_prefix": "glfw"
+  }
+}

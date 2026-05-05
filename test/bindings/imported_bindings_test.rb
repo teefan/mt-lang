@@ -9,7 +9,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "libuv"], registry.map(&:name)
+    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "gl", "glfw", "libuv"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -40,10 +40,60 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_includes registry.fetch("cjson").binding_path, "/std/cjson.mt"
     assert_includes registry.fetch("cjson").policy_path, "/bindings/imported/cjson.binding.json"
 
+    assert_equal "std.gl", registry.fetch("gl").module_name
+    assert_equal "std.c.gl", registry.fetch("gl").raw_module_name
+    assert_includes registry.fetch("gl").binding_path, "/std/gl.mt"
+    assert_includes registry.fetch("gl").policy_path, "/bindings/imported/gl.binding.json"
+
+    assert_equal "std.glfw", registry.fetch("glfw").module_name
+    assert_equal "std.c.glfw", registry.fetch("glfw").raw_module_name
+    assert_includes registry.fetch("glfw").binding_path, "/std/glfw.mt"
+    assert_includes registry.fetch("glfw").policy_path, "/bindings/imported/glfw.binding.json"
+
     assert_equal "std.libuv", registry.fetch("libuv").module_name
     assert_equal "std.c.libuv", registry.fetch("libuv").raw_module_name
     assert_includes registry.fetch("libuv").binding_path, "/std/libuv.mt"
     assert_includes registry.fetch("libuv").policy_path, "/bindings/imported/libuv.binding.json"
+  end
+
+  def test_checked_in_gl_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("gl")
+
+    assert_includes binding.check!, "/std/c/gl.mt"
+
+    source = File.read(binding.binding_path)
+    assert_match(/^module std\.gl$/, source)
+    assert_match(/^import std\.c\.gl as c$/, source)
+    assert_match(/^pub type GLuint = c\.GLuint$/, source)
+    assert_match(/^pub type GLsync = c\.GLsync$/, source)
+    assert_match(/^pub const COLOR_BUFFER_BIT: int = c\.GL_COLOR_BUFFER_BIT$/, source)
+    assert_match(/^pub const TRIANGLES: int = c\.GL_TRIANGLES$/, source)
+    assert_match(/^pub foreign def clear_color\(red: float, green: float, blue: float, alpha: float\) -> void = c\.glClearColor$/, source)
+    assert_match(/^pub foreign def create_shader\(type_: uint\) -> GLuint = c\.glCreateShader$/, source)
+    assert_match(/^pub foreign def use_glfw_loader\(\) -> void = c\.mt_gl_use_glfw_loader$/, source)
+    assert_match(/^pub foreign def use_sdl_loader\(\) -> void = c\.mt_gl_use_sdl_loader$/, source)
+    assert_match(/^pub foreign def reset_loader\(\) -> void = c\.mt_gl_reset_loader$/, source)
+    refute_match(/^pub foreign def gl_clear_color\(/, source)
+    refute_match(/^pub foreign def mt_gl_use_glfw_loader\(/, source)
+  end
+
+  def test_checked_in_glfw_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("glfw")
+
+    assert_includes binding.check!, "/std/c/glfw.mt"
+
+    source = File.read(binding.binding_path)
+    assert_match(/^module std\.glfw$/, source)
+    assert_match(/^import std\.c\.glfw as c$/, source)
+    assert_match(/^pub type GLFWwindow = c\.GLFWwindow$/, source)
+    assert_match(/^pub type GLFWvidmode = c\.GLFWvidmode$/, source)
+    assert_match(/^pub const TRUE: int = c\.GLFW_TRUE$/, source)
+    assert_match(/^pub const KEY_ESCAPE: int = c\.GLFW_KEY_ESCAPE$/, source)
+    assert_match(/^pub foreign def init\(\) -> int = c\.glfwInit$/, source)
+    assert_match(/^pub foreign def create_window\(width: int, height: int, title: cstr, monitor: ptr\[GLFWmonitor\], share: ptr\[GLFWwindow\]\) -> ptr\[GLFWwindow\] = c\.glfwCreateWindow$/, source)
+    assert_match(/^pub foreign def get_time\(\) -> double = c\.glfwGetTime$/, source)
+    assert_match(/^pub foreign def set_window_should_close\(window: ptr\[GLFWwindow\], value: int\) -> void = c\.glfwSetWindowShouldClose$/, source)
+    refute_match(/^pub foreign def glfw_init\(/, source)
   end
 
   def test_checked_in_libuv_binding_matches_policy_and_loads

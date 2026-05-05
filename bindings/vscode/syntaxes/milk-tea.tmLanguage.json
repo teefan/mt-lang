@@ -6,6 +6,8 @@
   "patterns": [
     { "include": "#comment" },
     { "include": "#format-string" },
+    { "include": "#heredoc-cstring" },
+    { "include": "#heredoc-string" },
     { "include": "#string" },
     { "include": "#number" },
     { "include": "#keyword-control" },
@@ -26,6 +28,34 @@
     "comment": {
       "name": "comment.line.number-sign.milk-tea",
       "match": "#.*$"
+    },
+
+    "heredoc-cstring": {
+      "name": "string.unquoted.heredoc.c.milk-tea",
+      "begin": "\\b(c<<-)([A-Za-z_][A-Za-z0-9_]*)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "string.unquoted.heredoc.c.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      }
+    },
+
+    "heredoc-string": {
+      "name": "string.unquoted.heredoc.milk-tea",
+      "begin": "(?<![A-Za-z0-9_])(<<-)([A-Za-z_][A-Za-z0-9_]*)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "string.unquoted.heredoc.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      }
     },
 
     "string": {

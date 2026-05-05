@@ -325,10 +325,24 @@ module MilkTea
         tokens.find do |tok|
           next false if [:newline, :indent, :dedent, :eof].include?(tok.type)
 
-          tok.line == target_line &&
-            tok.column <= target_char &&
-            (tok.column + tok.lexeme.length - 1) >= target_char
+          token_contains_position?(tok, target_line, target_char)
         end
+      end
+
+      def token_contains_position?(token, target_line, target_char)
+        segments = token.lexeme.split("\n", -1)
+        end_line = token.line + segments.length - 1
+        return false if target_line < token.line || target_line > end_line
+
+        if segments.length == 1
+          return token.column <= target_char && target_char < (token.column + segments.first.length)
+        end
+
+        if target_line == token.line
+          return token.column <= target_char && target_char <= (token.column + segments.first.length - 1)
+        end
+
+        target_char <= segments.fetch(target_line - token.line).length
       end
 
       # Returns the receiver name before '.' if the cursor is in a dot-access

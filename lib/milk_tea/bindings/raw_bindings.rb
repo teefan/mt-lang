@@ -114,12 +114,14 @@ module MilkTea
       end
 
       def write!(env: ENV)
+        prepare!(env:, cc: env.fetch("CC", "cc"))
         resolved_header_path = header_path(env:)
         File.write(binding_path, generate(env:, header_path: resolved_header_path))
         resolved_header_path
       end
 
       def check!(env: ENV)
+        prepare!(env:, cc: env.fetch("CC", "cc"))
         resolved_header_path = header_path(env:)
         expected = normalized_output(File.read(binding_path))
         actual = normalized_output(generate(env:, header_path: resolved_header_path))
@@ -211,6 +213,8 @@ module MilkTea
       vendored_raylib = MilkTea::VendoredRaylib.library
       vendored_sdl3 = MilkTea::VendoredSDL3
       vendored_sdl3_library = vendored_sdl3.library
+      vendored_glfw = MilkTea::VendoredGLFW
+      vendored_glfw_library = vendored_glfw.library
       vendored_box2d = MilkTea::VendoredBox2D
       vendored_cjson = MilkTea::VendoredCJSON
 
@@ -400,16 +404,18 @@ module MilkTea
           name: "sdl3",
           module_name: "std.c.sdl3",
           binding_path: root.join("std/c/sdl3.mt"),
-          include_directives: ["SDL3/SDL.h", "SDL3/SDL_main.h"],
+          include_directives: ["SDL3/SDL.h", "SDL3/SDL_main.h", "sdl3_gl_loader_helpers.h"],
           bindgen_defines: ["SDL_MAIN_HANDLED=1"],
           bindgen_include_directives: ["SDL3/SDL_main.h"],
           link_libraries: ["SDL3"],
           vendored_library: vendored_sdl3_library,
           clang_args: vendored_sdl3.include_flags,
           compiler_flags: ["-DSDL_MAIN_HANDLED=1", *vendored_sdl3.include_flags],
+          implementation_defines: ["MT_SDL3_GL_LOADER_HELPERS_IMPLEMENTATION"],
           tracked_header_paths: [
             vendored_sdl3.header_root.join("SDL.h").to_s,
             vendored_sdl3.header_root.join("SDL_main.h").to_s,
+            root.join("std/c/sdl3_gl_loader_helpers.h").to_s,
           ],
           tracked_header_prefixes: [
             vendored_sdl3.header_root.to_s,
@@ -420,6 +426,47 @@ module MilkTea
           header_candidates: [
             vendored_sdl3.header_root.join("SDL.h").to_s,
           ],
+        ),
+        Binding.new(
+          name: "glfw",
+          module_name: "std.c.glfw",
+          binding_path: root.join("std/c/glfw.mt"),
+          include_directives: ["GLFW/glfw3.h", "glfw_gl_loader_helpers.h"],
+          link_libraries: ["glfw3"],
+          implementation_defines: ["MT_GLFW_GL_LOADER_HELPERS_IMPLEMENTATION"],
+          vendored_library: vendored_glfw_library,
+          clang_args: vendored_glfw.include_flags,
+          compiler_flags: vendored_glfw.include_flags,
+          tracked_header_paths: [
+            vendored_glfw.header_root.join("glfw3.h").to_s,
+            root.join("std/c/glfw_gl_loader_helpers.h").to_s,
+          ],
+          tracked_header_prefixes: [
+            vendored_glfw.header_root.to_s,
+          ],
+          declaration_name_prefixes: ["GLFW", "glfw"],
+          header_candidates: [
+            vendored_glfw.header_root.join("glfw3.h").to_s,
+          ],
+        ),
+        Binding.new(
+          name: "gl",
+          module_name: "std.c.gl",
+          binding_path: root.join("std/c/gl.mt"),
+          include_directives: ["gl_registry_helpers.h"],
+          link_libraries: [],
+          compiler_flags: [],
+          implementation_defines: [MilkTea::OpenGLRegistry::IMPLEMENTATION_DEFINE],
+          tracked_header_paths: [
+            MilkTea::OpenGLRegistry.helper_header_path(root:).to_s,
+          ],
+          declaration_name_prefixes: ["GL", "gl", "mt_gl_"],
+          header_candidates: [
+            MilkTea::OpenGLRegistry.helper_header_path(root:).to_s,
+          ],
+          prepare: lambda do |_binding, **|
+            MilkTea::OpenGLRegistry.prepare!(root:)
+          end,
         ),
         Binding.new(
           name: "box2d",

@@ -172,6 +172,23 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_heredoc_literals_like_source
+    source = <<~MT
+      module demo.heredoc
+
+      const shader: cstr = c<<-GLSL
+          #version 330
+          void main()
+          {
+          }
+      GLSL
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_lowered_ir_as_structured_output
     source = [
       "module demo.pretty",

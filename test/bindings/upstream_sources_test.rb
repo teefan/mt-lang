@@ -19,6 +19,17 @@ class MilkTeaUpstreamSourcesTest < Minitest::Test
     assert_equal %w[cJSON.h cJSON.c], cjson.sentinel_paths
   end
 
+  def test_default_sources_include_pinned_opengl_registry_checkout
+    sources = MilkTea::UpstreamSources.default_sources
+    registry = sources.find { |source| source.name == "opengl_registry" }
+
+    refute_nil registry
+    assert_includes registry.checkout_root.to_s, "/third_party/opengl-registry-upstream"
+    assert_equal "https://github.com/KhronosGroup/OpenGL-Registry.git", registry.repository_url
+    assert_equal "9cb90ca4902d588bef3c830fbb1da484893bd5fb", registry.revision
+    assert_equal %w[xml/gl.xml xml/glx.xml xml/wgl.xml], registry.sentinel_paths
+  end
+
   def test_source_bootstrap_clones_missing_checkout_at_pinned_revision
     skip "git not available" unless executable_available?("git")
 
