@@ -23,6 +23,14 @@ export class Logger {
     this.level = level;
   }
 
+  allows(level: LogLevel): boolean {
+    if (this.level === 'off') {
+      return false;
+    }
+
+    return LEVEL_RANK[level] <= LEVEL_RANK[this.level];
+  }
+
   show(preserveFocus = true): void {
     this.channel.show(preserveFocus);
   }

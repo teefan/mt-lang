@@ -1,18 +1,33 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+require "rbconfig"
+
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 
 # --perf          log DAP requests that exceed the slow threshold
 # --perf=verbose  log every DAP request
+preferred_backend_kind = "process"
+adapter_command = nil
+
 ARGV.delete_if do |arg|
   case arg
   when '--perf'          then ENV['MILK_TEA_DAP_PERF'] ||= '1';       true
   when '--perf=verbose'  then ENV['MILK_TEA_DAP_PERF'] = 'verbose';   true
+  when /\A--backend=(.+)\z/
+    preferred_backend_kind = Regexp.last_match(1)
+    true
+  when /\A--adapter-path=(.+)\z/
+    expanded = File.expand_path(Regexp.last_match(1))
+    adapter_command = expanded.end_with?('.rb') ? [RbConfig.ruby, expanded] : [expanded]
+    true
   end
 end
 
 require "milk_tea"
 
-server = MilkTea::DAP::Server.new
+server = MilkTea::DAP::Server.new(
+  preferred_backend_kind: preferred_backend_kind,
+  adapter_command: adapter_command
+)
 server.run

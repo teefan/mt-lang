@@ -22,6 +22,7 @@ export interface MilkTeaConfig {
     enabled: boolean;
     serverPath: string;
     extraArgs: string[];
+    logLevel: LogLevel;
     retry: RetryConfig;
   };
   format: {
@@ -48,6 +49,7 @@ export function getConfig(): MilkTeaConfig {
       enabled:    cfg.get<boolean>('dap.enabled', true),
       serverPath: cfg.get<string>('dap.serverPath', 'mtc-dap'),
       extraArgs:  cfg.get<string[]>('dap.extraArgs', []),
+      logLevel:   cfg.get<LogLevel>('dap.logLevel', 'info'),
       retry: {
         enabled:      cfg.get<boolean>('dap.retry.enabled', true),
         maxAttempts:  cfg.get<number>('dap.retry.maxAttempts', 3),

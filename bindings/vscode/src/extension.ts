@@ -26,7 +26,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const cfg   = getConfig();
   lspLogger   = new Logger(lspChannel, cfg.lsp.logLevel);
-  dapLogger   = new Logger(dapChannel, 'info');
+  dapLogger   = new Logger(dapChannel, cfg.dap.logLevel);
 
   lspLogger.info('Milk Tea extension activating…');
 
@@ -100,9 +100,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             type: 'milk-tea',
             request: 'launch',
             name: 'Debug Milk Tea Program',
+            backend: 'lldb-dap',
             program: '${file}',
             args: [],
             stopOnEntry: false,
+          },
+          {
+            type: 'milk-tea',
+            request: 'attach',
+            name: 'Attach to Process',
+            backend: 'lldb-dap',
+            pid: 12345,
           },
         ];
       },
@@ -114,10 +122,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             type: 'milk-tea',
             request: 'launch',
             name: 'Debug Milk Tea Program',
+            backend: 'lldb-dap',
             program: '${file}',
             args: [],
             stopOnEntry: false,
           };
+        }
+
+        if (config.type === 'milk-tea' && !config.backend) {
+          config.backend = 'lldb-dap';
         }
 
         if (config.type === 'milk-tea' && config.request === 'launch' && !config.program) {
@@ -149,6 +162,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
       // Update log level live — no restart needed.
       lspLogger?.setLevel(newCfg.lsp.logLevel);
+      dapLogger?.setLevel(newCfg.dap.logLevel);
 
       // Sync trace level to running client.
       if (lspClient.isRunning) {

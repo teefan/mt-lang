@@ -4,7 +4,8 @@ module MilkTea
   module DAP
     # Holds mutable state for one DAP session.
     class Session
-      attr_reader :program_path, :runnable_path, :program_args, :thread_id, :exit_code, :backend_kind
+      attr_reader :program_path, :runnable_path, :program_args, :thread_id, :exit_code, :backend_kind,
+          :function_breakpoints, :exception_breakpoints
 
       def initialize
         @next_outgoing_seq = 1
@@ -26,6 +27,8 @@ module MilkTea
         @runtime_exited = false
         @exit_code = nil
         @breakpoints_by_source = {}
+        @function_breakpoints = []
+        @exception_breakpoints = nil
       end
 
       def next_seq
@@ -118,14 +121,28 @@ module MilkTea
 
       def set_breakpoints(source_path, breakpoints)
         normalized = breakpoints.map do |bp|
-          {
-            id: next_breakpoint_id,
-            verified: true,
-            line: bp["line"].to_i
-          }
+          raw = normalize_dap_hash(bp)
+          raw["id"] = next_breakpoint_id
+          raw["verified"] = true
+          raw["line"] = raw["line"].to_i
+          raw
         end
         @breakpoints_by_source[source_path] = normalized
         normalized
+      end
+
+      def set_function_breakpoints(breakpoints)
+        @function_breakpoints = breakpoints.map do |bp|
+          raw = normalize_dap_hash(bp)
+          raw["id"] = next_breakpoint_id
+          raw["verified"] = true
+          raw["name"] = raw["name"].to_s
+          raw
+        end
+      end
+
+      def set_exception_breakpoints(arguments)
+        @exception_breakpoints = normalize_dap_hash(arguments)
       end
 
       def each_breakpoint_source
@@ -135,6 +152,12 @@ module MilkTea
       end
 
       private
+
+      def normalize_dap_hash(value)
+        value.each_with_object({}) do |(key, entry), result|
+          result[key.to_s] = entry
+        end
+      end
 
       def next_breakpoint_id
         id = @next_breakpoint_id

@@ -3,6 +3,7 @@
 require_relative "base"
 require_relative "core"
 
+require_relative "tooling/debug_map"
 require_relative "tooling/build"
 require_relative "tooling/run"
 require_relative "tooling/package_manifest"

@@ -2,6 +2,69 @@ import * as vscode from 'vscode';
 import { getConfig } from './config';
 import type { Logger } from './log';
 
+type DapProtocolMessage = {
+  type?: string;
+  seq?: unknown;
+  command?: unknown;
+  event?: unknown;
+  request_seq?: unknown;
+  success?: unknown;
+  arguments?: unknown;
+  body?: unknown;
+  message?: unknown;
+};
+
+type SessionConfiguration = {
+  request?: string;
+  backend?: string;
+  program?: string;
+  cwd?: string;
+  args?: unknown;
+  stopOnEntry?: boolean;
+  adapterPath?: string;
+  pid?: unknown;
+  processName?: string;
+  waitFor?: boolean;
+  sourceMap?: unknown;
+  env?: Record<string, unknown>;
+  preInitCommands?: unknown;
+  initCommands?: unknown;
+  preRunCommands?: unknown;
+  postRunCommands?: unknown;
+  coreFile?: string;
+};
+
+const IMPORTANT_DAP_COMMANDS = new Set([
+  'initialize',
+  'launch',
+  'attach',
+  'setBreakpoints',
+  'setFunctionBreakpoints',
+  'setExceptionBreakpoints',
+  'configurationDone',
+  'continue',
+  'next',
+  'stepIn',
+  'stepOut',
+  'threads',
+  'stackTrace',
+  'scopes',
+  'variables',
+  'disconnect',
+]);
+
+const IMPORTANT_DAP_EVENTS = new Set([
+  'initialized',
+  'capabilities',
+  'stopped',
+  'continued',
+  'output',
+  'terminated',
+  'exited',
+]);
+
+const REDACTED_KEY_PATTERN = /(token|secret|password|passwd|authorization|api[-_]?key|access[-_]?key)/i;
+
 function delayMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -23,7 +86,15 @@ export class MilkTeaDebugAdapterFactory
     _executable: vscode.DebugAdapterExecutable | undefined,
   ): vscode.ProviderResult<vscode.DebugAdapterDescriptor> {
     const cfg  = getConfig().dap;
-    const args = [...cfg.extraArgs];
+    const sessionCfg = session.configuration as SessionConfiguration;
+    const backend = typeof sessionCfg.backend === 'string' && sessionCfg.backend.trim().length > 0
+      ? sessionCfg.backend.trim()
+      : 'lldb-dap';
+
+    const args = [`--backend=${backend}`, ...cfg.extraArgs];
+    if (typeof sessionCfg.adapterPath === 'string' && sessionCfg.adapterPath.trim().length > 0) {
+      args.unshift(`--adapter-path=${sessionCfg.adapterPath.trim()}`);
+    }
 
     this.log.info(
       `DAP session '${session.name}' starting: ${cfg.serverPath} ${args.join(' ')}`,
@@ -53,18 +124,45 @@ export class MilkTeaDapSessionTracker {
     context.subscriptions.push(
       vscode.debug.registerDebugAdapterTrackerFactory('milk-tea', {
         createDebugAdapterTracker: (session) => ({
+          onWillStartSession: () => {
+            this.log.debug(`DAP tracker attached: '${session.name}' (id=${session.id})`);
+          },
+          onWillReceiveMessage: (message: unknown) => {
+            this.logProtocolMessage(session, 'client->adapter', message);
+          },
           onDidSendMessage: (message: unknown) => {
-            const msg = message as { type?: string; event?: string; body?: { exitCode?: unknown } };
+            const msg = message as DapProtocolMessage;
+            this.logProtocolMessage(session, 'adapter->client', msg);
+
             if (msg?.type !== 'event') {
+              if (msg?.type === 'response' && msg.success === false) {
+                this.log.error(
+                  `DAP response failure for '${session.name}': ${JSON.stringify(this.summarizeProtocolMessage(msg))}`,
+                );
+              }
               return;
             }
 
             if (msg.event === 'exited') {
               this.sessionExited.add(session.id);
-              const rawCode = msg.body?.exitCode;
+              const body = msg.body && typeof msg.body === 'object'
+                ? msg.body as { exitCode?: unknown }
+                : undefined;
+              const rawCode = body?.exitCode;
               const exitCode = typeof rawCode === 'number' ? rawCode : undefined;
               this.sessionExitCodes.set(session.id, exitCode);
             }
+          },
+          onWillStopSession: () => {
+            this.log.debug(`DAP tracker stopping: '${session.name}' (id=${session.id})`);
+          },
+          onError: (error: Error) => {
+            this.log.error(`DAP adapter error for '${session.name}': ${error.message}`);
+          },
+          onExit: (code: number | undefined, signal: string | undefined) => {
+            this.log.warn(
+              `DAP adapter process exited for '${session.name}': code=${typeof code === 'number' ? code : 'undefined'}, signal=${signal ?? 'undefined'}`,
+            );
           },
         }),
       }),
@@ -76,6 +174,9 @@ export class MilkTeaDapSessionTracker {
           this.sessionExited.delete(session.id);
           this.sessionExitCodes.delete(session.id);
           this.log.info(`DAP session started: '${session.name}' (id=${session.id})`);
+          this.log.info(
+            `DAP config for '${session.name}': ${JSON.stringify(this.summarizeSessionConfiguration(session.configuration as SessionConfiguration))}`,
+          );
         }
       }),
       vscode.debug.onDidTerminateDebugSession(async (session) => {
@@ -177,5 +278,199 @@ export class MilkTeaDapSessionTracker {
         this.log.warn(`Could not stop session '${session.name}': ${err}`);
       }
     }
+  }
+
+  private logProtocolMessage(
+    session: vscode.DebugSession,
+    direction: 'client->adapter' | 'adapter->client',
+    message: unknown,
+  ): void {
+    const summary = this.summarizeProtocolMessage(message);
+    if (!summary) {
+      return;
+    }
+
+    if (this.log.allows('trace')) {
+      this.log.trace(`DAP ${direction} '${session.name}': ${JSON.stringify(this.sanitizeForLog(message))}`);
+      return;
+    }
+
+    if (this.log.allows('debug')) {
+      this.log.debug(`DAP ${direction} '${session.name}': ${JSON.stringify(summary)}`);
+      return;
+    }
+
+    if (this.isImportantProtocolMessage(message)) {
+      this.log.info(`DAP ${direction} '${session.name}': ${JSON.stringify(summary)}`);
+    }
+  }
+
+  private isImportantProtocolMessage(message: unknown): boolean {
+    const msg = message as DapProtocolMessage | undefined;
+    if (!msg || typeof msg !== 'object') {
+      return false;
+    }
+
+    if (msg.type === 'request') {
+      return IMPORTANT_DAP_COMMANDS.has(String(msg.command ?? ''));
+    }
+
+    if (msg.type === 'response') {
+      return msg.success === false || IMPORTANT_DAP_COMMANDS.has(String(msg.command ?? ''));
+    }
+
+    if (msg.type === 'event') {
+      return IMPORTANT_DAP_EVENTS.has(String(msg.event ?? ''));
+    }
+
+    return false;
+  }
+
+  private summarizeProtocolMessage(message: unknown): Record<string, unknown> | undefined {
+    const msg = message as DapProtocolMessage | undefined;
+    if (!msg || typeof msg !== 'object') {
+      return undefined;
+    }
+
+    switch (msg.type) {
+      case 'request':
+        return {
+          type: 'request',
+          seq: this.compactValue(msg.seq),
+          command: this.compactValue(msg.command),
+          arguments: this.compactValue(msg.arguments),
+        };
+      case 'response':
+        return {
+          type: 'response',
+          seq: this.compactValue(msg.seq),
+          request_seq: this.compactValue(msg.request_seq),
+          command: this.compactValue(msg.command),
+          success: this.compactValue(msg.success),
+          message: this.compactValue(msg.message),
+          body: this.compactValue(msg.body),
+        };
+      case 'event':
+        return {
+          type: 'event',
+          seq: this.compactValue(msg.seq),
+          event: this.compactValue(msg.event),
+          body: this.compactValue(msg.body),
+        };
+      default:
+        return {
+          type: this.compactValue(msg.type),
+          payload: this.compactValue(msg),
+        };
+    }
+  }
+
+  private summarizeSessionConfiguration(config: SessionConfiguration): Record<string, unknown> {
+    const envKeys = config.env && typeof config.env === 'object'
+      ? Object.keys(config.env).sort()
+      : [];
+    const sourceMapKeys = config.sourceMap && typeof config.sourceMap === 'object'
+      ? Object.keys(config.sourceMap as Record<string, unknown>).sort()
+      : [];
+
+    return {
+      request: config.request ?? undefined,
+      backend: config.backend ?? undefined,
+      program: config.program ?? undefined,
+      cwd: config.cwd ?? undefined,
+      args: this.compactValue(config.args),
+      stopOnEntry: config.stopOnEntry ?? undefined,
+      adapterPath: config.adapterPath ?? undefined,
+      pid: this.compactValue(config.pid),
+      processName: config.processName ?? undefined,
+      waitFor: config.waitFor ?? undefined,
+      coreFile: config.coreFile ?? undefined,
+      sourceMapKeys,
+      envKeys,
+      preInitCommands: this.compactValue(config.preInitCommands),
+      initCommands: this.compactValue(config.initCommands),
+      preRunCommands: this.compactValue(config.preRunCommands),
+      postRunCommands: this.compactValue(config.postRunCommands),
+    };
+  }
+
+  private compactValue(value: unknown, depth = 0): unknown {
+    if (value === null || value === undefined) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      return value.length > 160 ? `${value.slice(0, 160)}...` : value;
+    }
+
+    if (typeof value !== 'object') {
+      return value;
+    }
+
+    if (depth >= 3) {
+      return Array.isArray(value) ? `[Array(${value.length})]` : '[Object]';
+    }
+
+    if (Array.isArray(value)) {
+      const items = value.slice(0, 8).map((entry) => this.compactValue(entry, depth + 1));
+      if (value.length > items.length) {
+        items.push(`... +${value.length - items.length} more`);
+      }
+      return items;
+    }
+
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (key === 'env' && entry && typeof entry === 'object') {
+        result[key] = Object.keys(entry as Record<string, unknown>).sort().map((envKey) => `${envKey}=[REDACTED]`);
+        continue;
+      }
+
+      if (REDACTED_KEY_PATTERN.test(key)) {
+        result[key] = '[REDACTED]';
+        continue;
+      }
+
+      result[key] = this.compactValue(entry, depth + 1);
+    }
+
+    return result;
+  }
+
+  private sanitizeForLog(value: unknown): unknown {
+    if (value === null || value === undefined) {
+      return value;
+    }
+
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return value;
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((entry) => this.sanitizeForLog(entry));
+    }
+
+    if (typeof value === 'object') {
+      const result: Record<string, unknown> = {};
+      for (const [key, entry] of Object.entries(value)) {
+        if (key === 'env' && entry && typeof entry === 'object') {
+          result[key] = Object.fromEntries(
+            Object.keys(entry as Record<string, unknown>).sort().map((envKey) => [envKey, '[REDACTED]']),
+          );
+          continue;
+        }
+
+        if (REDACTED_KEY_PATTERN.test(key)) {
+          result[key] = '[REDACTED]';
+          continue;
+        }
+
+        result[key] = this.sanitizeForLog(entry);
+      }
+
+      return result;
+    }
+
+    return String(value);
   }
 }
