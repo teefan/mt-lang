@@ -8,17 +8,17 @@ align(16) struct Mat4:
 
 
 def main() -> int:
-    let capacity = size_of(Mat4) * ptr_uint<-2
-    var temp = stack.create_aligned(capacity, align_of(Mat4))
+    var temp = stack.create_for[Mat4](2)
     defer temp.release()
+    let capacity = temp.remaining_bytes()
 
     let start = temp.mark()
-    let first = stack.alloc[Mat4](ref_of(temp), 1)
+    let first = temp.alloc[Mat4](1)
     if first == null:
         return 1
 
     let nested = temp.mark()
-    let second = stack.alloc[Mat4](ref_of(temp), 1)
+    let second = temp.alloc[Mat4](1)
     if second == null:
         return 2
     if temp.remaining_bytes() != 0:
@@ -32,7 +32,7 @@ def main() -> int:
     if temp.remaining_bytes() != capacity:
         return 5
 
-    if not io.println("stack -> create_aligned, nested marks, reset"):
+    if not io.println("stack -> create_for[Mat4], nested marks, reset"):
         return 6
 
     return 0

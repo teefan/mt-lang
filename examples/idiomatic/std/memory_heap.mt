@@ -17,15 +17,15 @@ def main() -> int:
         heap.release(items)
         return 2
 
-    let raw = heap.alloc_bytes_aligned(size_of(Mat4), align_of(Mat4))
-    if raw == null:
+    let aligned = heap.alloc_aligned[Mat4](1)
+    if aligned == null:
         heap.release(grown)
         return 3
 
-    heap.release_bytes(raw)
+    heap.release(aligned)
     heap.release(grown)
 
-    if not io.println("heap -> alloc[int], resize[int], alloc_bytes_aligned, release"):
+    if not io.println("heap -> alloc[int], resize[int], alloc_aligned[Mat4], release"):
         return 4
 
     return 0

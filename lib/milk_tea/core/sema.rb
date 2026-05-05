@@ -1822,7 +1822,10 @@ module MilkTea
               return check_zero_call(callable, [], expected_type:) if callable_kind == :zero
             end
 
-            if (function_binding = resolve_specialized_function_binding(expression))
+            if (callable_resolution = resolve_specialized_callable_binding(expression, scopes:))
+              callable_kind, function_binding, = callable_resolution
+              raise_sema_error("specialized method #{describe_expression(expression)} must be called") if callable_kind == :method
+
               return function_binding.type
             end
 
@@ -2519,8 +2522,8 @@ module MilkTea
             return [:zero, resolve_type_ref(type_arg), nil]
           end
 
-          if (function_binding = resolve_specialized_function_binding(callee))
-            return [:function, function_binding, nil]
+          if (callable_resolution = resolve_specialized_callable_binding(callee, scopes:))
+            return callable_resolution
           end
 
           if (type_ref = type_ref_from_specialization(callee))
@@ -4105,19 +4108,52 @@ module MilkTea
         @top_level_functions.fetch(name).type
       end
 
-      def resolve_specialized_function_binding(expression)
+      def resolve_specialized_callable_binding(expression, scopes:)
+        callable_kind = :function
+        receiver = nil
         binding = case expression.callee
                   when AST::Identifier
                     @top_level_functions[expression.callee.name]
                   when AST::MemberAccess
                     if expression.callee.receiver.is_a?(AST::Identifier) && @imports.key?(expression.callee.receiver.name)
-                      @imports.fetch(expression.callee.receiver.name).functions[expression.callee.member]
+                      imported_module = @imports.fetch(expression.callee.receiver.name)
+                      imported_function = imported_module.functions[expression.callee.member]
+                      if imported_function.nil? && imported_module.private_function?(expression.callee.member)
+                        raise_sema_error("#{expression.callee.receiver.name}.#{expression.callee.member} is private to module #{imported_module.name}")
+                      end
+
+                      imported_function
+                    elsif (type_expr = resolve_type_expression(expression.callee.receiver))
+                      associated_function = lookup_method(type_expr, expression.callee.member)
+                      if associated_function&.type&.receiver_type.nil?
+                        associated_function
+                      else
+                        if (imported_module = imported_module_with_private_method(type_expr, expression.callee.member))
+                          raise_sema_error("#{type_expr}.#{expression.callee.member} is private to module #{imported_module.name}")
+                        end
+
+                        nil
+                      end
+                    else
+                      receiver_type = infer_method_receiver_type(expression.callee.receiver, scopes:)
+                      method = lookup_method(receiver_type, expression.callee.member)
+                      if method
+                        callable_kind = :method
+                        receiver = expression.callee.receiver
+                        method
+                      else
+                        if (imported_module = imported_module_with_private_method(receiver_type, expression.callee.member))
+                          raise_sema_error("#{receiver_type}.#{expression.callee.member} is private to module #{imported_module.name}")
+                        end
+
+                        nil
+                      end
                     end
                   end
         return nil unless binding
 
         type_arguments = resolve_specialization_type_arguments(expression)
-        instantiate_function_binding(binding, type_arguments)
+        [callable_kind, instantiate_function_binding(binding, type_arguments), receiver]
       end
 
       def resolve_specialization_type_arguments(expression)

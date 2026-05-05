@@ -28,6 +28,7 @@ module MilkTea
       @known_type_names = {}
       @known_import_aliases = {}
       @known_generic_callable_names = {}
+      @current_type_param_names = []
       seed_known_names
     end
 
@@ -372,9 +373,14 @@ module MilkTea
       name_token = consume_name("expected function name")
       name = name_token.lexeme
       type_params = parse_declaration_type_params
-      params = parse_params
-      return_type = match(:arrow) ? parse_type_ref : nil
-      body = parse_block
+      params = nil
+      return_type = nil
+      body = nil
+      with_type_param_names(type_params.map(&:name)) do
+        params = parse_params
+        return_type = match(:arrow) ? parse_type_ref : nil
+        body = parse_block
+      end
       AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:, visibility:, async:, line:, column: name_token.column)
     end
 
@@ -395,9 +401,14 @@ module MilkTea
       name_token = consume_name("expected function name")
       name = name_token.lexeme
       type_params = parse_declaration_type_params
-      params = parse_params
-      return_type = match(:arrow) ? parse_type_ref : nil
-      body = parse_block
+      params = nil
+      return_type = nil
+      body = nil
+      with_type_param_names(type_params.map(&:name)) do
+        params = parse_params
+        return_type = match(:arrow) ? parse_type_ref : nil
+        body = parse_block
+      end
       AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, line:, column: name_token.column)
     end
 
@@ -421,9 +432,14 @@ module MilkTea
       line = previous.line
       name = consume_name("expected function name").lexeme
       type_params = parse_declaration_type_params
-      params, variadic = parse_params(allow_variadic: true)
-      consume(:arrow, "expected '->' before extern function return type")
-      return_type = parse_type_ref
+      params = nil
+      variadic = false
+      return_type = nil
+      with_type_param_names(type_params.map(&:name)) do
+        params, variadic = parse_params(allow_variadic: true)
+        consume(:arrow, "expected '->' before extern function return type")
+        return_type = parse_type_ref
+      end
       consume_end_of_statement
       AST::ExternFunctionDecl.new(name:, type_params:, params:, return_type:, variadic:, line:)
     end
@@ -432,11 +448,16 @@ module MilkTea
       line = previous.line
       name = consume_name("expected function name").lexeme
       type_params = parse_declaration_type_params
-      params = parse_foreign_params
-      consume(:arrow, "expected '->' before foreign function return type")
-      return_type = parse_type_ref
-      consume(:equal, "expected '=' before foreign function mapping")
-      mapping = parse_expression
+      params = nil
+      return_type = nil
+      mapping = nil
+      with_type_param_names(type_params.map(&:name)) do
+        params = parse_foreign_params
+        consume(:arrow, "expected '->' before foreign function return type")
+        return_type = parse_type_ref
+        consume(:equal, "expected '=' before foreign function mapping")
+        mapping = parse_expression
+      end
       consume_end_of_statement
       AST::ForeignFunctionDecl.new(name:, type_params:, params:, return_type:, mapping:, visibility:, line:)
     end
@@ -1187,6 +1208,7 @@ module MilkTea
       parser.instance_variable_set(:@known_type_names, @known_type_names.dup)
       parser.instance_variable_set(:@known_import_aliases, @known_import_aliases.dup)
       parser.instance_variable_set(:@known_generic_callable_names, @known_generic_callable_names.dup)
+      parser.instance_variable_set(:@current_type_param_names, @current_type_param_names.dup)
 
       expression = parser.send(:parse_expression)
       parser.send(:skip_newlines)
@@ -1271,7 +1293,7 @@ module MilkTea
       when AST::Identifier
         true
       when AST::MemberAccess
-        expression.receiver.is_a?(AST::Identifier)
+        true
       else
         false
       end
@@ -1326,7 +1348,15 @@ module MilkTea
     end
 
     def known_type_like_name?(name)
-      @known_type_names.key?(name) || @known_import_aliases.key?(name)
+      @known_type_names.key?(name) || @known_import_aliases.key?(name) || @current_type_param_names.include?(name)
+    end
+
+    def with_type_param_names(names)
+      saved_names = @current_type_param_names
+      @current_type_param_names = @current_type_param_names + names
+      yield
+    ensure
+      @current_type_param_names = saved_names
     end
 
     def seed_known_names

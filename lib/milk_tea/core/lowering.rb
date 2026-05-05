@@ -5466,8 +5466,11 @@ module MilkTea
           binding = imported_module.functions.fetch(expression.member)
           !binding.type_params.any? && !foreign_function_binding?(binding)
         when AST::Specialization
-          binding = resolve_specialized_function_binding(expression)
-          binding && !foreign_function_binding?(binding)
+          callable_resolution = resolve_specialized_callable_binding(expression, env:)
+          return false unless callable_resolution
+
+          callable_kind, binding, = callable_resolution
+          callable_kind == :function && !foreign_function_binding?(binding)
         else
           false
         end
@@ -5864,7 +5867,10 @@ module MilkTea
           return IR::ZeroInit.new(type:)
         end
 
-        if (function_binding = resolve_specialized_function_binding(expression))
+        if (callable_resolution = resolve_specialized_callable_binding(expression, env:))
+          callable_kind, function_binding, = callable_resolution
+          raise LoweringError, "specialized method must be called" if callable_kind == :method
+
           raise LoweringError, "foreign function #{function_binding.name} cannot be used as a value" if foreign_function_binding?(function_binding)
 
           if function_binding.external
@@ -6002,7 +6008,18 @@ module MilkTea
             return [:zero, nil, nil, Types::Function.new("zero", params: [], return_type: target_type)]
           end
 
-          if (function_binding = resolve_specialized_function_binding(callee))
+          if (callable_resolution = resolve_specialized_callable_binding(callee, env:))
+            callable_kind, function_binding, receiver = callable_resolution
+            if callable_kind == :method
+              return [
+                :method,
+                function_binding_c_name(function_binding, module_name: function_binding.owner.module_name, receiver_type: function_binding.type.receiver_type),
+                receiver,
+                function_binding.type,
+                function_binding,
+              ]
+            end
+
             if function_binding.external
               return [:function, function_binding.name, nil, function_binding.type, function_binding]
             end
@@ -6171,7 +6188,10 @@ module MilkTea
           elsif expression.callee.is_a?(AST::Identifier) && expression.callee.name == "zero"
             _, _, _, function_type = resolve_callee(expression, env, arguments: [])
             function_type.return_type
-          elsif (function_binding = resolve_specialized_function_binding(expression))
+          elsif (callable_resolution = resolve_specialized_callable_binding(expression, env:))
+            callable_kind, function_binding, = callable_resolution
+            raise LoweringError, "specialized method must be called" if callable_kind == :method
+
             function_binding.type
           else
             raise LoweringError, "unsupported specialization"
@@ -6474,19 +6494,37 @@ module MilkTea
         binding.type
       end
 
-      def resolve_specialized_function_binding(expression)
+      def resolve_specialized_callable_binding(expression, env:)
+        callable_kind = :function
+        receiver = nil
         binding = case expression.callee
                   when AST::Identifier
                     @functions[expression.callee.name]
                   when AST::MemberAccess
                     if expression.callee.receiver.is_a?(AST::Identifier) && @imports.key?(expression.callee.receiver.name)
                       @imports.fetch(expression.callee.receiver.name).functions[expression.callee.member]
+                    elsif (type_expr = resolve_type_expression(expression.callee.receiver))
+                      method_entry = @method_definitions[[type_expr, expression.callee.member]]
+                      if method_entry
+                        method_analysis, method_ast = method_entry
+                        method_binding = method_analysis.methods.fetch(type_expr).fetch(method_ast.name)
+                        method_binding if method_binding.type.receiver_type.nil?
+                      end
+                    else
+                      resolved_receiver_type = infer_method_receiver_type(expression.callee.receiver, env:)
+                      method_entry = @method_definitions[[resolved_receiver_type, expression.callee.member]]
+                      if method_entry
+                        method_analysis, method_ast = method_entry
+                        callable_kind = :method
+                        receiver = expression.callee.receiver
+                        method_analysis.methods.fetch(resolved_receiver_type).fetch(method_ast.name)
+                      end
                     end
                   end
         return nil unless binding
 
         type_arguments = resolve_specialization_type_arguments(expression)
-        instantiate_function_binding(binding, type_arguments)
+        [callable_kind, instantiate_function_binding(binding, type_arguments), receiver]
       end
 
       def resolve_specialization_type_arguments(expression)

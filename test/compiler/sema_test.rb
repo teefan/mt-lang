@@ -726,6 +726,55 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_explicit_generic_method_specialization
+    source = <<~MT
+      module demo.generic_method_specialization
+
+      struct Box:
+          value: int
+
+      methods Box:
+          def echo[T](item: T) -> T:
+              return item
+
+      def main() -> int:
+          let box = Box(value = 1)
+          return box.echo[int](41)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_current_type_param_in_nested_generic_method_specialization
+    source = <<~MT
+      module demo.nested_generic_method_specialization
+
+      struct Box:
+          value: int
+
+      struct Stack:
+          box: Box
+
+      methods Box:
+          def echo[T](item: T) -> T:
+              return item
+
+      methods Stack:
+          def forward[T](item: T) -> T:
+              return this.box.echo[T](item)
+
+      def main() -> int:
+          let stack = Stack(box = Box(value = 1))
+          return stack.forward[int](41)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_proc_closure_capture_and_param_calls
     source = <<~MT
       module demo.proc_values

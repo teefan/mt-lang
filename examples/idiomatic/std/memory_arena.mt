@@ -8,13 +8,13 @@ align(16) struct Mat4:
 
 
 def main() -> int:
-    let capacity = size_of(Mat4) * ptr_uint<-2
-    var scratch = arena.create_aligned(capacity, align_of(Mat4))
+    var scratch = arena.create_for[Mat4](2)
     defer scratch.release()
+    let capacity = scratch.remaining_bytes()
 
     let start = scratch.mark()
-    let first = arena.alloc[Mat4](ref_of(scratch), 1)
-    let second = arena.alloc[Mat4](ref_of(scratch), 1)
+    let first = scratch.alloc[Mat4](1)
+    let second = scratch.alloc[Mat4](1)
     if first == null or second == null:
         return 1
     if scratch.remaining_bytes() != 0:
@@ -24,7 +24,7 @@ def main() -> int:
     if scratch.remaining_bytes() != capacity:
         return 3
 
-    if not io.println("arena -> create_aligned, alloc[Mat4], mark/reset"):
+    if not io.println("arena -> create_for[Mat4], alloc[Mat4], mark/reset"):
         return 4
 
     return 0

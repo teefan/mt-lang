@@ -76,13 +76,7 @@ pub def slot_size_for[T]() -> ptr_uint:
 
 
 pub def create_for[T](slot_count: ptr_uint) -> Pool:
-    let size = ptr_uint<-size_of(T)
-    let alignment = ptr_uint<-align_of(T)
-    let mask = alignment - 1
-    if size > heap.ptr_uint_max() - mask:
-        panic(c"pool.create_for slot size overflow")
-
-    return create_aligned((size + mask) & ~mask, slot_count, alignment)
+    return create_aligned(slot_size_for[T](), slot_count, ptr_uint<-align_of(T))
 
 methods Pool:
     pub def remaining_slots() -> ptr_uint:
@@ -108,6 +102,27 @@ methods Pool:
             index = index + 1
 
         return null
+
+
+    pub edit def alloc[T]() -> ptr[T]?:
+        let size = ptr_uint<-size_of(T)
+        let alignment = ptr_uint<-align_of(T)
+        let mask = alignment - 1
+        if size > heap.ptr_uint_max() - mask:
+            return null
+
+        let slot_size = (size + mask) & ~mask
+        if this.slot_alignment < alignment:
+            return null
+        if this.slot_size < slot_size:
+            return null
+
+        let memory = this.alloc_bytes()
+        if memory == null:
+            return null
+
+        unsafe:
+            return ptr[T]<-memory
 
 
     pub edit def release_bytes(slot: ptr[ubyte]?) -> bool:
@@ -138,6 +153,14 @@ methods Pool:
         return false
 
 
+    pub edit def release_slot[T](slot: ptr[T]?) -> bool:
+        if slot == null:
+            return false
+
+        unsafe:
+            return this.release_bytes(ptr[ubyte]<-slot)
+
+
     pub edit def release() -> void:
         heap.release(this.memory)
         heap.release(this.occupancy)
@@ -148,32 +171,3 @@ methods Pool:
         this.slot_count = 0
         this.used_count = 0
         return
-
-
-pub def alloc[T](space: ref[Pool]) -> ptr[T]?:
-    let size = ptr_uint<-size_of(T)
-    let alignment = ptr_uint<-align_of(T)
-    let mask = alignment - 1
-    if size > heap.ptr_uint_max() - mask:
-        return null
-
-    let slot_size = (size + mask) & ~mask
-    if space.slot_alignment < alignment:
-        return null
-    if space.slot_size < slot_size:
-        return null
-
-    let memory = space.alloc_bytes()
-    if memory == null:
-        return null
-
-    unsafe:
-        return ptr[T]<-memory
-
-
-pub def release[T](space: ref[Pool], slot: ptr[T]?) -> bool:
-    if slot == null:
-        return false
-
-    unsafe:
-        return space.release_bytes(ptr[ubyte]<-slot)
