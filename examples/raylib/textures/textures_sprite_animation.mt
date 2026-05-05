@@ -2,10 +2,10 @@ module examples.raylib.textures.textures_sprite_animation
 
 import std.c.raylib as rl
 
-const max_frame_speed: i32 = 15
-const min_frame_speed: i32 = 1
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const max_frame_speed: int = 15
+const min_frame_speed: int = 1
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - sprite animation"
 const scarfy_path: cstr = c"../resources/scarfy.png"
 const frame_speed_label: cstr = c"FRAME SPEED: "
@@ -13,7 +13,7 @@ const help_text: cstr = c"PRESS RIGHT/LEFT KEYS to CHANGE SPEED!"
 const credit_text: cstr = c"(c) Scarfy sprite by Eiden Marsal"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -27,8 +27,8 @@ def main() -> i32:
     var frame_rec = rl.Rectangle(
         x = 0.0,
         y = 0.0,
-        width = f32<-frame_width,
-        height = f32<-frame_height,
+        width = float<-frame_width,
+        height = float<-frame_height,
     )
     var current_frame = 0
     var frames_counter = 0
@@ -46,7 +46,7 @@ def main() -> i32:
             if current_frame > 5:
                 current_frame = 0
 
-            frame_rec.x = f32<-(current_frame * frame_width)
+            frame_rec.x = float<-(current_frame * frame_width)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_RIGHT):
             frames_speed += 1
@@ -64,7 +64,7 @@ def main() -> i32:
 
         rl.DrawTexture(scarfy, 15, 40, rl.WHITE)
         rl.DrawRectangleLines(15, 40, scarfy.width, scarfy.height, rl.LIME)
-        rl.DrawRectangleLines(15 + i32<-frame_rec.x, 40 + i32<-frame_rec.y, i32<-frame_rec.width, i32<-frame_rec.height, rl.RED)
+        rl.DrawRectangleLines(15 + int<-frame_rec.x, 40 + int<-frame_rec.y, int<-frame_rec.width, int<-frame_rec.height, rl.RED)
 
         rl.DrawText(frame_speed_label, 165, 210, 10, rl.DARKGRAY)
         rl.DrawText(rl.TextFormat(c"%02i FPS", frames_speed), 575, 210, 10, rl.DARKGRAY)

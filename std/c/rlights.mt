@@ -6,24 +6,24 @@ extern module std.c.rlights:
     include "rlights.h"
 
     struct Light:
-        kind: i32
+        kind: int
         enabled: bool
         position: rl.Vector3
         target: rl.Vector3
         color: rl.Color
-        attenuation: f32
-        enabledLoc: i32
-        typeLoc: i32
-        positionLoc: i32
-        targetLoc: i32
-        colorLoc: i32
-        attenuationLoc: i32
+        attenuation: float
+        enabledLoc: int
+        typeLoc: int
+        positionLoc: int
+        targetLoc: int
+        colorLoc: int
+        attenuationLoc: int
 
-    flags LightType: i32
+    flags LightType: int
         LIGHT_DIRECTIONAL = 0
         LIGHT_POINT = 1
 
-    extern def CreateLight(kind: i32, position: rl.Vector3, target: rl.Vector3, color: rl.Color, shader: rl.Shader) -> Light
+    extern def CreateLight(kind: int, position: rl.Vector3, target: rl.Vector3, color: rl.Color, shader: rl.Shader) -> Light
     extern def UpdateLightValues(shader: rl.Shader, light: Light) -> void
 
-    const MAX_LIGHTS: i32 = 4
+    const MAX_LIGHTS: int = 4

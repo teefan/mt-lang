@@ -27,9 +27,7 @@ module MilkTea
       ].freeze
 
       KEYWORD_TOKEN_TYPES = Token::KEYWORDS.values.to_set.freeze
-      DEFAULT_LIBRARY_TYPE_NAMES = %w[
-        bool byte char i8 i16 i32 i64 u8 u16 u32 u64 isize usize f32 f64 void str cstr ptr ref str_builder array span
-      ].to_set.freeze
+      DEFAULT_LIBRARY_TYPE_NAMES = Types::BUILTIN_TYPE_NAMES.to_set.freeze
       BUILTIN_FUNCTION_NAMES = %w[ref_of const_ptr_of ptr_of read panic ok err cast reinterpret array span zero range].to_set.freeze
       OPERATOR_TOKEN_TYPES = %i[
         amp colon comma caret dot lparen rparen pipe lbracket rbracket question
@@ -1971,8 +1969,6 @@ module MilkTea
 
       def classify_semantic_token(tokens, index, analysis = nil)
         tok = tokens[index]
-        prev_tok = previous_non_trivia_token(tokens, index)
-        next_tok = next_non_trivia_token(tokens, index + 1)
 
         if tok.type == :identifier
           return classify_name_semantic(tok.lexeme, tokens, index, analysis)
@@ -2182,7 +2178,7 @@ module MilkTea
       end
 
       # Returns true if the token at `index` (accessed via `.`) is a member of a
-      # type name receiver, e.g. `Option.none`, `Outcome[i32, str].ok`.
+      # type name receiver, e.g. `Option.none`, `Outcome[int, str].ok`.
       def type_name_member_access?(tokens, index)
         dot_index = previous_non_trivia_token_index(tokens, index)
         return false unless dot_index && tokens[dot_index].type == :dot
@@ -2574,15 +2570,6 @@ module MilkTea
 
       def next_diagnostic_result_id(uri, fingerprint)
         "#{uri}:#{fingerprint}"
-      end
-
-      def uri_to_path(uri)
-        parsed = URI.parse(uri)
-        return nil unless parsed.scheme == 'file'
-
-        CGI.unescape(parsed.path)
-      rescue URI::InvalidURIError
-        nil
       end
 
       def path_to_uri(path)

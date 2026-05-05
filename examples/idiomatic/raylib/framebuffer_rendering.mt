@@ -3,14 +3,14 @@ module examples.idiomatic.raylib.framebuffer_rendering
 import std.raylib as rl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const split_width: i32 = screen_width / 2
-const near_plane: f32 = 0.05
-const capture_size: f32 = 128.0
+const screen_width: int = 800
+const screen_height: int = 450
+const split_width: int = screen_width / 2
+const near_plane: float = 0.05
+const capture_size: float = 128.0
 
 
-def draw_camera_prism(camera: rl.Camera3D, aspect: f32, color: rl.Color) -> void:
+def draw_camera_prism(camera: rl.Camera3D, aspect: float, color: rl.Color) -> void:
     let length = camera.position.distance(camera.target)
     let plane_ndc = array[rl.Vector3, 4](
         rl.Vector3(x = -1.0, y = -1.0, z = 1.0),
@@ -43,7 +43,7 @@ def draw_camera_prism(camera: rl.Camera3D, aspect: f32, color: rl.Color) -> void
         rl.draw_line_3d(camera.position, corners[index], color)
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Framebuffer Rendering")
     defer rl.close_window()
 
@@ -63,20 +63,20 @@ def main() -> i32:
     )
 
     let observer_target = rl.load_render_texture(split_width, screen_height)
-    let observer_source = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-observer_target.texture.width, height = -f32<-observer_target.texture.height)
-    let observer_dest = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-split_width, height = f32<-screen_height)
+    let observer_source = rl.Rectangle(x = 0.0, y = 0.0, width = float<-observer_target.texture.width, height = -float<-observer_target.texture.height)
+    let observer_dest = rl.Rectangle(x = 0.0, y = 0.0, width = float<-split_width, height = float<-screen_height)
 
     let subject_target = rl.load_render_texture(split_width, screen_height)
-    let subject_source = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-subject_target.texture.width, height = -f32<-subject_target.texture.height)
-    let subject_dest = rl.Rectangle(x = f32<-split_width, y = 0.0, width = f32<-split_width, height = f32<-screen_height)
-    let texture_aspect_ratio = f32<-subject_target.texture.width / f32<-subject_target.texture.height
+    let subject_source = rl.Rectangle(x = 0.0, y = 0.0, width = float<-subject_target.texture.width, height = -float<-subject_target.texture.height)
+    let subject_dest = rl.Rectangle(x = float<-split_width, y = 0.0, width = float<-split_width, height = float<-screen_height)
+    let texture_aspect_ratio = float<-subject_target.texture.width / float<-subject_target.texture.height
     let crop_source = rl.Rectangle(
-        x = (f32<-subject_target.texture.width - capture_size) / 2.0,
-        y = (f32<-subject_target.texture.height - capture_size) / 2.0,
+        x = (float<-subject_target.texture.width - capture_size) / 2.0,
+        y = (float<-subject_target.texture.height - capture_size) / 2.0,
         width = capture_size,
         height = -capture_size,
     )
-    let crop_dest = rl.Rectangle(x = f32<-split_width + 20.0, y = 20.0, width = capture_size, height = capture_size)
+    let crop_dest = rl.Rectangle(x = float<-split_width + 20.0, y = 20.0, width = capture_size, height = capture_size)
 
     defer:
         rl.unload_render_texture(subject_target)
@@ -114,10 +114,10 @@ def main() -> i32:
         rl.draw_grid(10, 1.0)
         rl.end_mode_3d()
         rl.draw_rectangle_lines(
-            i32<-((f32<-subject_target.texture.width - capture_size) / 2.0),
-            i32<-((f32<-subject_target.texture.height - capture_size) / 2.0),
-            i32<-capture_size,
-            i32<-capture_size,
+            int<-((float<-subject_target.texture.width - capture_size) / 2.0),
+            int<-((float<-subject_target.texture.height - capture_size) / 2.0),
+            int<-capture_size,
+            int<-capture_size,
             rl.GREEN,
         )
         rl.draw_text("Subject View", 10, subject_target.texture.height - 30, 20, rl.BLACK)

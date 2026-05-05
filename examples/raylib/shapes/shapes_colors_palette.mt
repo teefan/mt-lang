@@ -2,16 +2,16 @@ module examples.raylib.shapes.shapes_colors_palette
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const max_colors_count: i32 = 21
-const grid_columns: i32 = 7
+const screen_width: int = 800
+const screen_height: int = 450
+const max_colors_count: int = 21
+const grid_columns: int = 7
 const window_title: cstr = c"raylib [shapes] example - colors palette"
 const title_text: cstr = c"raylib colors palette"
 const help_text: cstr = c"press SPACE to see all colors"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -62,13 +62,13 @@ def main() -> i32:
     color_names[20] = c"BEIGE"
 
     var color_rects = zero[array[rl.Rectangle, 21]]
-    var color_state = zero[array[i32, 21]]
+    var color_state = zero[array[int, 21]]
 
     for index in 0..max_colors_count:
         let column = index % grid_columns
         let row = index / grid_columns
-        let column_f: f32 = column
-        let row_f: f32 = row
+        let column_f: float = column
+        let row_f: float = row
 
         color_rects[index] = rl.Rectangle(
             x = 20.0 + 110.0 * column_f,
@@ -101,17 +101,17 @@ def main() -> i32:
 
             if rl.IsKeyDown(rl.KeyboardKey.KEY_SPACE) or color_state[index] != 0:
                 rl.DrawRectangle(
-                    i32<-color_rects[index].x,
-                    i32<-(color_rects[index].y + color_rects[index].height - 26.0),
-                    i32<-color_rects[index].width,
+                    int<-color_rects[index].x,
+                    int<-(color_rects[index].y + color_rects[index].height - 26.0),
+                    int<-color_rects[index].width,
                     20,
                     rl.BLACK,
                 )
                 rl.DrawRectangleLinesEx(color_rects[index], 6.0, rl.Fade(rl.BLACK, 0.3))
                 rl.DrawText(
                     color_names[index],
-                    i32<-(color_rects[index].x + color_rects[index].width - f32<-rl.MeasureText(color_names[index], 10) - 12.0),
-                    i32<-(color_rects[index].y + color_rects[index].height - 20.0),
+                    int<-(color_rects[index].x + color_rects[index].width - float<-rl.MeasureText(color_names[index], 10) - 12.0),
+                    int<-(color_rects[index].y + color_rects[index].height - 20.0),
                     10,
                     colors[index],
                 )

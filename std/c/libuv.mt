@@ -5,19 +5,19 @@ extern module std.c.libuv:
     include "uv.h"
 
     union uv_handle_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_stream_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_tcp_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_udp_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_udp_send_s_u:
@@ -25,47 +25,47 @@ extern module std.c.libuv:
         storage: sys.sockaddr_storage
 
     union uv_tty_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_pipe_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_poll_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_prepare_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_check_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_idle_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_async_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_timer_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_timer_s_node:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_stdio_container_t_data:
         stream: ptr[uv_stream_t]
-        fd: i32
+        fd: int
 
     union uv_process_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_interface_address_s_address:
@@ -77,30 +77,30 @@ extern module std.c.libuv:
         netmask6: sys.sockaddr_in6
 
     union uv_fs_event_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_fs_poll_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     union uv_signal_s_u:
-        fd: i32
+        fd: int
         reserved: array[ptr[void], 4]
 
     struct uv_signal_s_tree_entry:
         rbe_left: ptr[uv_signal_s]
         rbe_right: ptr[uv_signal_s]
         rbe_parent: ptr[uv_signal_s]
-        rbe_color: i32
+        rbe_color: int
 
     union uv_loop_s_active_reqs:
         unused: ptr[void]
-        count: u32
+        count: uint
 
     struct uv_loop_s_timer_heap:
         min: ptr[void]
-        nelts: u32
+        nelts: uint
 
     struct uv__queue:
         next: ptr[uv__queue]
@@ -109,28 +109,28 @@ extern module std.c.libuv:
     opaque uv_loop_t = c"uv_loop_t"
 
     struct uv__io_s:
-        bits: usize
+        bits: ptr_uint
         pending_queue: uv__queue
         watcher_queue: uv__queue
-        pevents: u32
-        events: u32
-        fd: i32
+        pevents: uint
+        events: uint
+        fd: int
 
     struct uv_buf_t:
         base: ptr[char]
-        len: usize
+        len: ptr_uint
 
-    type uv_file = i32
+    type uv_file = int
 
-    type uv_os_sock_t = i32
+    type uv_os_sock_t = int
 
-    type uv_os_fd_t = i32
+    type uv_os_fd_t = int
 
-    type uv_pid_t = i32
+    type uv_pid_t = int
 
-    type uv_once_t = i32
+    type uv_once_t = int
 
-    type uv_thread_t = usize
+    type uv_thread_t = ptr_uint
 
     type uv_mutex_t = sys.pthread_mutex_t
 
@@ -140,19 +140,19 @@ extern module std.c.libuv:
 
     type uv_cond_t = sys.pthread_cond_t
 
-    type uv_key_t = u32
+    type uv_key_t = uint
 
     type uv_barrier_t = sys.pthread_barrier_t
 
-    type uv_gid_t = u32
+    type uv_gid_t = uint
 
-    type uv_uid_t = u32
+    type uv_uid_t = uint
 
     struct uv_lib_t:
         handle: ptr[void]
         errmsg: ptr[char]
 
-    enum uv_errno_t: i32
+    enum uv_errno_t: int
         UV_E2BIG = -7
         UV_EACCES = -13
         UV_EADDRINUSE = -98
@@ -240,7 +240,7 @@ extern module std.c.libuv:
         UV_ENOEXEC = -8
         UV_ERRNO_MAX = -4096
 
-    enum uv_handle_type: i32
+    enum uv_handle_type: int
         UV_UNKNOWN_HANDLE = 0
         UV_ASYNC = 1
         UV_CHECK = 2
@@ -261,7 +261,7 @@ extern module std.c.libuv:
         UV_FILE = 17
         UV_HANDLE_TYPE_MAX = 18
 
-    enum uv_req_type: i32
+    enum uv_req_type: int
         UV_UNKNOWN_REQ = 0
         UV_REQ = 1
         UV_CONNECT = 2
@@ -347,63 +347,63 @@ extern module std.c.libuv:
 
     opaque uv_metrics_t = c"uv_metrics_t"
 
-    flags uv_loop_option: i32
+    flags uv_loop_option: int
         UV_LOOP_BLOCK_SIGNAL = 0
         UV_METRICS_IDLE_TIME = 1
         UV_LOOP_USE_IO_URING_SQPOLL = 2
 
-    flags uv_run_mode: i32
+    flags uv_run_mode: int
         UV_RUN_DEFAULT = 0
         UV_RUN_ONCE = 1
         UV_RUN_NOWAIT = 2
 
-    extern def uv_version() -> u32
+    extern def uv_version() -> uint
     extern def uv_version_string() -> cstr
 
-    type uv_malloc_func = fn(arg0: usize) -> ptr[void]
+    type uv_malloc_func = fn(arg0: ptr_uint) -> ptr[void]
 
-    type uv_realloc_func = fn(arg0: ptr[void], arg1: usize) -> ptr[void]
+    type uv_realloc_func = fn(arg0: ptr[void], arg1: ptr_uint) -> ptr[void]
 
-    type uv_calloc_func = fn(arg0: usize, arg1: usize) -> ptr[void]
+    type uv_calloc_func = fn(arg0: ptr_uint, arg1: ptr_uint) -> ptr[void]
 
     type uv_free_func = fn(arg0: ptr[void]) -> void
 
     extern def uv_library_shutdown() -> void
-    extern def uv_replace_allocator(malloc_func: fn(arg0: usize) -> ptr[void], realloc_func: fn(arg0: ptr[void], arg1: usize) -> ptr[void], calloc_func: fn(arg0: usize, arg1: usize) -> ptr[void], free_func: fn(arg0: ptr[void]) -> void) -> i32
+    extern def uv_replace_allocator(malloc_func: fn(arg0: ptr_uint) -> ptr[void], realloc_func: fn(arg0: ptr[void], arg1: ptr_uint) -> ptr[void], calloc_func: fn(arg0: ptr_uint, arg1: ptr_uint) -> ptr[void], free_func: fn(arg0: ptr[void]) -> void) -> int
     extern def uv_default_loop() -> ptr[uv_loop_t]
-    extern def uv_loop_init(loop: ptr[uv_loop_t]) -> i32
-    extern def uv_loop_close(loop: ptr[uv_loop_t]) -> i32
+    extern def uv_loop_init(loop: ptr[uv_loop_t]) -> int
+    extern def uv_loop_close(loop: ptr[uv_loop_t]) -> int
     extern def uv_loop_new() -> ptr[uv_loop_t]
     extern def uv_loop_delete(arg0: ptr[uv_loop_t]) -> void
-    extern def uv_loop_size() -> usize
-    extern def uv_loop_alive(loop: const_ptr[uv_loop_t]) -> i32
-    extern def uv_loop_configure(loop: ptr[uv_loop_t], option: uv_loop_option, ...) -> i32
-    extern def uv_loop_fork(loop: ptr[uv_loop_t]) -> i32
-    extern def uv_run(arg0: ptr[uv_loop_t], mode: uv_run_mode) -> i32
+    extern def uv_loop_size() -> ptr_uint
+    extern def uv_loop_alive(loop: const_ptr[uv_loop_t]) -> int
+    extern def uv_loop_configure(loop: ptr[uv_loop_t], option: uv_loop_option, ...) -> int
+    extern def uv_loop_fork(loop: ptr[uv_loop_t]) -> int
+    extern def uv_run(arg0: ptr[uv_loop_t], mode: uv_run_mode) -> int
     extern def uv_stop(arg0: ptr[uv_loop_t]) -> void
     extern def uv_ref(arg0: ptr[uv_handle_t]) -> void
     extern def uv_unref(arg0: ptr[uv_handle_t]) -> void
-    extern def uv_has_ref(arg0: const_ptr[uv_handle_t]) -> i32
+    extern def uv_has_ref(arg0: const_ptr[uv_handle_t]) -> int
     extern def uv_update_time(arg0: ptr[uv_loop_t]) -> void
-    extern def uv_now(arg0: const_ptr[uv_loop_t]) -> u64
-    extern def uv_backend_fd(arg0: const_ptr[uv_loop_t]) -> i32
-    extern def uv_backend_timeout(arg0: const_ptr[uv_loop_t]) -> i32
+    extern def uv_now(arg0: const_ptr[uv_loop_t]) -> ulong
+    extern def uv_backend_fd(arg0: const_ptr[uv_loop_t]) -> int
+    extern def uv_backend_timeout(arg0: const_ptr[uv_loop_t]) -> int
 
-    type uv_alloc_cb = fn(arg0: uv_handle_t, arg1: usize, arg2: uv_buf_t) -> void
+    type uv_alloc_cb = fn(arg0: uv_handle_t, arg1: ptr_uint, arg2: uv_buf_t) -> void
 
-    type uv_read_cb = fn(arg0: uv_stream_t, arg1: isize, arg2: uv_buf_t) -> void
+    type uv_read_cb = fn(arg0: uv_stream_t, arg1: ptr_int, arg2: uv_buf_t) -> void
 
-    type uv_write_cb = fn(arg0: uv_write_t, arg1: i32) -> void
+    type uv_write_cb = fn(arg0: uv_write_t, arg1: int) -> void
 
-    type uv_connect_cb = fn(arg0: uv_connect_t, arg1: i32) -> void
+    type uv_connect_cb = fn(arg0: uv_connect_t, arg1: int) -> void
 
-    type uv_shutdown_cb = fn(arg0: uv_shutdown_t, arg1: i32) -> void
+    type uv_shutdown_cb = fn(arg0: uv_shutdown_t, arg1: int) -> void
 
-    type uv_connection_cb = fn(arg0: uv_stream_t, arg1: i32) -> void
+    type uv_connection_cb = fn(arg0: uv_stream_t, arg1: int) -> void
 
     type uv_close_cb = fn(arg0: uv_handle_t) -> void
 
-    type uv_poll_cb = fn(arg0: uv_poll_t, arg1: i32, arg2: i32) -> void
+    type uv_poll_cb = fn(arg0: uv_poll_t, arg1: int, arg2: int) -> void
 
     type uv_timer_cb = fn(arg0: uv_timer_t) -> void
 
@@ -415,7 +415,7 @@ extern module std.c.libuv:
 
     type uv_idle_cb = fn(arg0: uv_idle_t) -> void
 
-    type uv_exit_cb = fn(arg0: uv_process_t, arg1: i64, arg2: i32) -> void
+    type uv_exit_cb = fn(arg0: uv_process_t, arg1: long, arg2: int) -> void
 
     type uv_walk_cb = fn(arg0: uv_handle_t, arg1: ptr[void]) -> void
 
@@ -423,81 +423,81 @@ extern module std.c.libuv:
 
     type uv_work_cb = fn(arg0: uv_work_t) -> void
 
-    type uv_after_work_cb = fn(arg0: uv_work_t, arg1: i32) -> void
+    type uv_after_work_cb = fn(arg0: uv_work_t, arg1: int) -> void
 
-    type uv_getaddrinfo_cb = fn(arg0: uv_getaddrinfo_t, arg1: i32, arg2: ptr[sys.addrinfo]) -> void
+    type uv_getaddrinfo_cb = fn(arg0: uv_getaddrinfo_t, arg1: int, arg2: ptr[sys.addrinfo]) -> void
 
-    type uv_getnameinfo_cb = fn(arg0: uv_getnameinfo_t, arg1: i32, arg2: cstr, arg3: cstr) -> void
+    type uv_getnameinfo_cb = fn(arg0: uv_getnameinfo_t, arg1: int, arg2: cstr, arg3: cstr) -> void
 
-    type uv_random_cb = fn(arg0: uv_random_t, arg1: i32, arg2: ptr[void], arg3: usize) -> void
+    type uv_random_cb = fn(arg0: uv_random_t, arg1: int, arg2: ptr[void], arg3: ptr_uint) -> void
 
-    flags uv_clock_id: i32
+    flags uv_clock_id: int
         UV_CLOCK_MONOTONIC = 0
         UV_CLOCK_REALTIME = 1
 
     struct uv_timespec_t:
-        tv_sec: isize
-        tv_nsec: isize
+        tv_sec: ptr_int
+        tv_nsec: ptr_int
 
     struct uv_timespec64_t:
-        tv_sec: isize
-        tv_nsec: i32
+        tv_sec: ptr_int
+        tv_nsec: int
 
     struct uv_timeval_t:
-        tv_sec: isize
-        tv_usec: isize
+        tv_sec: ptr_int
+        tv_usec: ptr_int
 
     struct uv_timeval64_t:
-        tv_sec: isize
-        tv_usec: i32
+        tv_sec: ptr_int
+        tv_usec: int
 
     struct uv_stat_t:
-        st_dev: usize
-        st_mode: usize
-        st_nlink: usize
-        st_uid: usize
-        st_gid: usize
-        st_rdev: usize
-        st_ino: usize
-        st_size: usize
-        st_blksize: usize
-        st_blocks: usize
-        st_flags: usize
-        st_gen: usize
+        st_dev: ptr_uint
+        st_mode: ptr_uint
+        st_nlink: ptr_uint
+        st_uid: ptr_uint
+        st_gid: ptr_uint
+        st_rdev: ptr_uint
+        st_ino: ptr_uint
+        st_size: ptr_uint
+        st_blksize: ptr_uint
+        st_blocks: ptr_uint
+        st_flags: ptr_uint
+        st_gen: ptr_uint
         st_atim: uv_timespec_t
         st_mtim: uv_timespec_t
         st_ctim: uv_timespec_t
         st_birthtim: uv_timespec_t
 
-    type uv_fs_event_cb = fn(arg0: uv_fs_event_t, arg1: cstr, arg2: i32, arg3: i32) -> void
+    type uv_fs_event_cb = fn(arg0: uv_fs_event_t, arg1: cstr, arg2: int, arg3: int) -> void
 
-    type uv_fs_poll_cb = fn(arg0: uv_fs_poll_t, arg1: i32, arg2: uv_stat_t, arg3: uv_stat_t) -> void
+    type uv_fs_poll_cb = fn(arg0: uv_fs_poll_t, arg1: int, arg2: uv_stat_t, arg3: uv_stat_t) -> void
 
-    type uv_signal_cb = fn(arg0: uv_signal_t, arg1: i32) -> void
+    type uv_signal_cb = fn(arg0: uv_signal_t, arg1: int) -> void
 
-    flags uv_membership: i32
+    flags uv_membership: int
         UV_LEAVE_GROUP = 0
         UV_JOIN_GROUP = 1
 
-    extern def uv_translate_sys_error(sys_errno: i32) -> i32
-    extern def uv_strerror(err: i32) -> cstr
-    extern def uv_strerror_r(err: i32, buf: ptr[char], buflen: usize) -> ptr[char]
-    extern def uv_err_name(err: i32) -> cstr
-    extern def uv_err_name_r(err: i32, buf: ptr[char], buflen: usize) -> ptr[char]
+    extern def uv_translate_sys_error(sys_errno: int) -> int
+    extern def uv_strerror(err: int) -> cstr
+    extern def uv_strerror_r(err: int, buf: ptr[char], buflen: ptr_uint) -> ptr[char]
+    extern def uv_err_name(err: int) -> cstr
+    extern def uv_err_name_r(err: int, buf: ptr[char], buflen: ptr_uint) -> ptr[char]
 
     struct uv_req_s:
         data: ptr[void]
         kind: uv_req_type
         reserved: array[ptr[void], 6]
 
-    extern def uv_shutdown(req: ptr[uv_shutdown_t], handle: ptr[uv_stream_t], cb: fn(arg0: ptr[uv_shutdown_t], arg1: i32) -> void) -> i32
+    extern def uv_shutdown(req: ptr[uv_shutdown_t], handle: ptr[uv_stream_t], cb: fn(arg0: ptr[uv_shutdown_t], arg1: int) -> void) -> int
 
     struct uv_shutdown_s:
         data: ptr[void]
         kind: uv_req_type
         reserved: array[ptr[void], 6]
         handle: ptr[uv_stream_t]
-        cb: fn(arg0: ptr[uv_shutdown_t], arg1: i32) -> void
+        cb: fn(arg0: ptr[uv_shutdown_t], arg1: int) -> void
 
     struct uv_handle_s:
         data: ptr[void]
@@ -507,28 +507,28 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_handle_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
+        flag_bits: uint
 
-    extern def uv_handle_size(kind: uv_handle_type) -> usize
+    extern def uv_handle_size(kind: uv_handle_type) -> ptr_uint
     extern def uv_handle_get_type(handle: const_ptr[uv_handle_t]) -> uv_handle_type
     extern def uv_handle_type_name(kind: uv_handle_type) -> cstr
     extern def uv_handle_get_data(handle: const_ptr[uv_handle_t]) -> ptr[void]
     extern def uv_handle_get_loop(handle: const_ptr[uv_handle_t]) -> ptr[uv_loop_t]
     extern def uv_handle_set_data(handle: ptr[uv_handle_t], data: ptr[void]) -> void
-    extern def uv_req_size(kind: uv_req_type) -> usize
+    extern def uv_req_size(kind: uv_req_type) -> ptr_uint
     extern def uv_req_get_data(req: const_ptr[uv_req_t]) -> ptr[void]
     extern def uv_req_set_data(req: ptr[uv_req_t], data: ptr[void]) -> void
     extern def uv_req_get_type(req: const_ptr[uv_req_t]) -> uv_req_type
     extern def uv_req_type_name(kind: uv_req_type) -> cstr
-    extern def uv_is_active(handle: const_ptr[uv_handle_t]) -> i32
+    extern def uv_is_active(handle: const_ptr[uv_handle_t]) -> int
     extern def uv_walk(loop: ptr[uv_loop_t], walk_cb: fn(arg0: ptr[uv_handle_t], arg1: ptr[void]) -> void, arg: ptr[void]) -> void
     extern def uv_close(handle: ptr[uv_handle_t], close_cb: fn(arg0: ptr[uv_handle_t]) -> void) -> void
-    extern def uv_send_buffer_size(handle: ptr[uv_handle_t], value: ptr[i32]) -> i32
-    extern def uv_recv_buffer_size(handle: ptr[uv_handle_t], value: ptr[i32]) -> i32
-    extern def uv_fileno(handle: const_ptr[uv_handle_t], fd: ptr[uv_os_fd_t]) -> i32
-    extern def uv_buf_init(base: ptr[char], len: u32) -> uv_buf_t
-    extern def uv_pipe(fds: ptr[uv_file], read_flags: i32, write_flags: i32) -> i32
-    extern def uv_socketpair(kind: i32, protocol: i32, socket_vector: ptr[uv_os_sock_t], flags0: i32, flags1: i32) -> i32
+    extern def uv_send_buffer_size(handle: ptr[uv_handle_t], value: ptr[int]) -> int
+    extern def uv_recv_buffer_size(handle: ptr[uv_handle_t], value: ptr[int]) -> int
+    extern def uv_fileno(handle: const_ptr[uv_handle_t], fd: ptr[uv_os_fd_t]) -> int
+    extern def uv_buf_init(base: ptr[char], len: uint) -> uv_buf_t
+    extern def uv_pipe(fds: ptr[uv_file], read_flags: int, write_flags: int) -> int
+    extern def uv_socketpair(kind: int, protocol: int, socket_vector: ptr[uv_os_sock_t], flags0: int, flags1: int) -> int
 
     struct uv_stream_s:
         data: ptr[void]
@@ -538,48 +538,48 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_stream_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
-        write_queue_size: usize
-        alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: usize, arg2: ptr[uv_buf_t]) -> void
-        read_cb: fn(arg0: ptr[uv_stream_t], arg1: isize, arg2: const_ptr[uv_buf_t]) -> void
+        flag_bits: uint
+        write_queue_size: ptr_uint
+        alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: ptr_uint, arg2: ptr[uv_buf_t]) -> void
+        read_cb: fn(arg0: ptr[uv_stream_t], arg1: ptr_int, arg2: const_ptr[uv_buf_t]) -> void
         connect_req: ptr[uv_connect_t]
         shutdown_req: ptr[uv_shutdown_t]
         io_watcher: uv__io_s
         write_queue: uv__queue
         write_completed_queue: uv__queue
-        connection_cb: fn(arg0: ptr[uv_stream_t], arg1: i32) -> void
-        delayed_error: i32
-        accepted_fd: i32
+        connection_cb: fn(arg0: ptr[uv_stream_t], arg1: int) -> void
+        delayed_error: int
+        accepted_fd: int
         queued_fds: ptr[void]
 
-    extern def uv_stream_get_write_queue_size(stream: const_ptr[uv_stream_t]) -> usize
-    extern def uv_listen(stream: ptr[uv_stream_t], backlog: i32, cb: fn(arg0: ptr[uv_stream_t], arg1: i32) -> void) -> i32
-    extern def uv_accept(server: ptr[uv_stream_t], client: ptr[uv_stream_t]) -> i32
-    extern def uv_read_start(arg0: ptr[uv_stream_t], alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: usize, arg2: ptr[uv_buf_t]) -> void, read_cb: fn(arg0: ptr[uv_stream_t], arg1: isize, arg2: const_ptr[uv_buf_t]) -> void) -> i32
-    extern def uv_read_stop(arg0: ptr[uv_stream_t]) -> i32
-    extern def uv_write(req: ptr[uv_write_t], handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf_t], nbufs: u32, cb: fn(arg0: ptr[uv_write_t], arg1: i32) -> void) -> i32
-    extern def uv_write2(req: ptr[uv_write_t], handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf_t], nbufs: u32, send_handle: ptr[uv_stream_t], cb: fn(arg0: ptr[uv_write_t], arg1: i32) -> void) -> i32
-    extern def uv_try_write(handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf_t], nbufs: u32) -> i32
-    extern def uv_try_write2(handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf_t], nbufs: u32, send_handle: ptr[uv_stream_t]) -> i32
+    extern def uv_stream_get_write_queue_size(stream: const_ptr[uv_stream_t]) -> ptr_uint
+    extern def uv_listen(stream: ptr[uv_stream_t], backlog: int, cb: fn(arg0: ptr[uv_stream_t], arg1: int) -> void) -> int
+    extern def uv_accept(server: ptr[uv_stream_t], client: ptr[uv_stream_t]) -> int
+    extern def uv_read_start(arg0: ptr[uv_stream_t], alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: ptr_uint, arg2: ptr[uv_buf_t]) -> void, read_cb: fn(arg0: ptr[uv_stream_t], arg1: ptr_int, arg2: const_ptr[uv_buf_t]) -> void) -> int
+    extern def uv_read_stop(arg0: ptr[uv_stream_t]) -> int
+    extern def uv_write(req: ptr[uv_write_t], handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf_t], nbufs: uint, cb: fn(arg0: ptr[uv_write_t], arg1: int) -> void) -> int
+    extern def uv_write2(req: ptr[uv_write_t], handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf_t], nbufs: uint, send_handle: ptr[uv_stream_t], cb: fn(arg0: ptr[uv_write_t], arg1: int) -> void) -> int
+    extern def uv_try_write(handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf_t], nbufs: uint) -> int
+    extern def uv_try_write2(handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf_t], nbufs: uint, send_handle: ptr[uv_stream_t]) -> int
 
     struct uv_write_s:
         data: ptr[void]
         kind: uv_req_type
         reserved: array[ptr[void], 6]
-        cb: fn(arg0: ptr[uv_write_t], arg1: i32) -> void
+        cb: fn(arg0: ptr[uv_write_t], arg1: int) -> void
         send_handle: ptr[uv_stream_t]
         handle: ptr[uv_stream_t]
         queue: uv__queue
-        write_index: u32
+        write_index: uint
         bufs: ptr[uv_buf_t]
-        nbufs: u32
-        error: i32
+        nbufs: uint
+        error: int
         bufsml: array[uv_buf_t, 4]
 
-    extern def uv_is_readable(handle: const_ptr[uv_stream_t]) -> i32
-    extern def uv_is_writable(handle: const_ptr[uv_stream_t]) -> i32
-    extern def uv_stream_set_blocking(handle: ptr[uv_stream_t], blocking: i32) -> i32
-    extern def uv_is_closing(handle: const_ptr[uv_handle_t]) -> i32
+    extern def uv_is_readable(handle: const_ptr[uv_stream_t]) -> int
+    extern def uv_is_writable(handle: const_ptr[uv_stream_t]) -> int
+    extern def uv_stream_set_blocking(handle: ptr[uv_stream_t], blocking: int) -> int
+    extern def uv_is_closing(handle: const_ptr[uv_handle_t]) -> int
 
     struct uv_tcp_s:
         data: ptr[void]
@@ -589,47 +589,47 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_tcp_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
-        write_queue_size: usize
-        alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: usize, arg2: ptr[uv_buf_t]) -> void
-        read_cb: fn(arg0: ptr[uv_stream_t], arg1: isize, arg2: const_ptr[uv_buf_t]) -> void
+        flag_bits: uint
+        write_queue_size: ptr_uint
+        alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: ptr_uint, arg2: ptr[uv_buf_t]) -> void
+        read_cb: fn(arg0: ptr[uv_stream_t], arg1: ptr_int, arg2: const_ptr[uv_buf_t]) -> void
         connect_req: ptr[uv_connect_t]
         shutdown_req: ptr[uv_shutdown_t]
         io_watcher: uv__io_s
         write_queue: uv__queue
         write_completed_queue: uv__queue
-        connection_cb: fn(arg0: ptr[uv_stream_t], arg1: i32) -> void
-        delayed_error: i32
-        accepted_fd: i32
+        connection_cb: fn(arg0: ptr[uv_stream_t], arg1: int) -> void
+        delayed_error: int
+        accepted_fd: int
         queued_fds: ptr[void]
 
-    extern def uv_tcp_init(arg0: ptr[uv_loop_t], handle: ptr[uv_tcp_t]) -> i32
-    extern def uv_tcp_init_ex(arg0: ptr[uv_loop_t], handle: ptr[uv_tcp_t], flag_bits: u32) -> i32
-    extern def uv_tcp_open(handle: ptr[uv_tcp_t], sock: i32) -> i32
-    extern def uv_tcp_nodelay(handle: ptr[uv_tcp_t], enable: i32) -> i32
-    extern def uv_tcp_keepalive(handle: ptr[uv_tcp_t], enable: i32, delay: u32) -> i32
-    extern def uv_tcp_keepalive_ex(handle: ptr[uv_tcp_t], on: i32, idle: u32, intvl: u32, cnt: u32) -> i32
-    extern def uv_tcp_simultaneous_accepts(handle: ptr[uv_tcp_t], enable: i32) -> i32
+    extern def uv_tcp_init(arg0: ptr[uv_loop_t], handle: ptr[uv_tcp_t]) -> int
+    extern def uv_tcp_init_ex(arg0: ptr[uv_loop_t], handle: ptr[uv_tcp_t], flag_bits: uint) -> int
+    extern def uv_tcp_open(handle: ptr[uv_tcp_t], sock: int) -> int
+    extern def uv_tcp_nodelay(handle: ptr[uv_tcp_t], enable: int) -> int
+    extern def uv_tcp_keepalive(handle: ptr[uv_tcp_t], enable: int, delay: uint) -> int
+    extern def uv_tcp_keepalive_ex(handle: ptr[uv_tcp_t], on: int, idle: uint, intvl: uint, cnt: uint) -> int
+    extern def uv_tcp_simultaneous_accepts(handle: ptr[uv_tcp_t], enable: int) -> int
 
-    flags uv_tcp_flags: i32
+    flags uv_tcp_flags: int
         UV_TCP_IPV6ONLY = 1
         UV_TCP_REUSEPORT = 2
 
-    extern def uv_tcp_bind(handle: ptr[uv_tcp_t], addr: const_ptr[sys.sockaddr], flag_bits: u32) -> i32
-    extern def uv_tcp_getsockname(handle: const_ptr[uv_tcp_t], name: ptr[sys.sockaddr], namelen: ptr[i32]) -> i32
-    extern def uv_tcp_getpeername(handle: const_ptr[uv_tcp_t], name: ptr[sys.sockaddr], namelen: ptr[i32]) -> i32
-    extern def uv_tcp_close_reset(handle: ptr[uv_tcp_t], close_cb: fn(arg0: ptr[uv_handle_t]) -> void) -> i32
-    extern def uv_tcp_connect(req: ptr[uv_connect_t], handle: ptr[uv_tcp_t], addr: const_ptr[sys.sockaddr], cb: fn(arg0: ptr[uv_connect_t], arg1: i32) -> void) -> i32
+    extern def uv_tcp_bind(handle: ptr[uv_tcp_t], addr: const_ptr[sys.sockaddr], flag_bits: uint) -> int
+    extern def uv_tcp_getsockname(handle: const_ptr[uv_tcp_t], name: ptr[sys.sockaddr], namelen: ptr[int]) -> int
+    extern def uv_tcp_getpeername(handle: const_ptr[uv_tcp_t], name: ptr[sys.sockaddr], namelen: ptr[int]) -> int
+    extern def uv_tcp_close_reset(handle: ptr[uv_tcp_t], close_cb: fn(arg0: ptr[uv_handle_t]) -> void) -> int
+    extern def uv_tcp_connect(req: ptr[uv_connect_t], handle: ptr[uv_tcp_t], addr: const_ptr[sys.sockaddr], cb: fn(arg0: ptr[uv_connect_t], arg1: int) -> void) -> int
 
     struct uv_connect_s:
         data: ptr[void]
         kind: uv_req_type
         reserved: array[ptr[void], 6]
-        cb: fn(arg0: ptr[uv_connect_t], arg1: i32) -> void
+        cb: fn(arg0: ptr[uv_connect_t], arg1: int) -> void
         handle: ptr[uv_stream_t]
         queue: uv__queue
 
-    flags uv_udp_flags: i32
+    flags uv_udp_flags: int
         UV_UDP_IPV6ONLY = 1
         UV_UDP_PARTIAL = 2
         UV_UDP_REUSEADDR = 4
@@ -639,9 +639,9 @@ extern module std.c.libuv:
         UV_UDP_REUSEPORT = 64
         UV_UDP_RECVMMSG = 256
 
-    type uv_udp_send_cb = fn(arg0: uv_udp_send_t, arg1: i32) -> void
+    type uv_udp_send_cb = fn(arg0: uv_udp_send_t, arg1: int) -> void
 
-    type uv_udp_recv_cb = fn(arg0: uv_udp_t, arg1: isize, arg2: uv_buf_t, arg3: const_ptr[sys.sockaddr], arg4: u32) -> void
+    type uv_udp_recv_cb = fn(arg0: uv_udp_t, arg1: ptr_int, arg2: uv_buf_t, arg3: const_ptr[sys.sockaddr], arg4: uint) -> void
 
     struct uv_udp_s:
         data: ptr[void]
@@ -651,11 +651,11 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_udp_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
-        send_queue_size: usize
-        send_queue_count: usize
-        alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: usize, arg2: ptr[uv_buf_t]) -> void
-        recv_cb: fn(arg0: ptr[uv_udp_t], arg1: isize, arg2: const_ptr[uv_buf_t], arg3: const_ptr[sys.sockaddr], arg4: u32) -> void
+        flag_bits: uint
+        send_queue_size: ptr_uint
+        send_queue_count: ptr_uint
+        alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: ptr_uint, arg2: ptr[uv_buf_t]) -> void
+        recv_cb: fn(arg0: ptr[uv_udp_t], arg1: ptr_int, arg2: const_ptr[uv_buf_t], arg3: const_ptr[sys.sockaddr], arg4: uint) -> void
         io_watcher: uv__io_s
         write_queue: uv__queue
         write_completed_queue: uv__queue
@@ -665,38 +665,38 @@ extern module std.c.libuv:
         kind: uv_req_type
         reserved: array[ptr[void], 6]
         handle: ptr[uv_udp_t]
-        cb: fn(arg0: ptr[uv_udp_send_t], arg1: i32) -> void
+        cb: fn(arg0: ptr[uv_udp_send_t], arg1: int) -> void
         queue: uv__queue
         u: uv_udp_send_s_u
-        nbufs: u32
+        nbufs: uint
         bufs: ptr[uv_buf_t]
-        status: isize
-        send_cb: fn(arg0: ptr[uv_udp_send_t], arg1: i32) -> void
+        status: ptr_int
+        send_cb: fn(arg0: ptr[uv_udp_send_t], arg1: int) -> void
         bufsml: array[uv_buf_t, 4]
 
-    extern def uv_udp_init(arg0: ptr[uv_loop_t], handle: ptr[uv_udp_t]) -> i32
-    extern def uv_udp_init_ex(arg0: ptr[uv_loop_t], handle: ptr[uv_udp_t], flag_bits: u32) -> i32
-    extern def uv_udp_open(handle: ptr[uv_udp_t], sock: i32) -> i32
-    extern def uv_udp_open_ex(handle: ptr[uv_udp_t], sock: i32, flag_bits: u32) -> i32
-    extern def uv_udp_bind(handle: ptr[uv_udp_t], addr: const_ptr[sys.sockaddr], flag_bits: u32) -> i32
-    extern def uv_udp_connect(handle: ptr[uv_udp_t], addr: const_ptr[sys.sockaddr]) -> i32
-    extern def uv_udp_getpeername(handle: const_ptr[uv_udp_t], name: ptr[sys.sockaddr], namelen: ptr[i32]) -> i32
-    extern def uv_udp_getsockname(handle: const_ptr[uv_udp_t], name: ptr[sys.sockaddr], namelen: ptr[i32]) -> i32
-    extern def uv_udp_set_membership(handle: ptr[uv_udp_t], multicast_addr: cstr, interface_addr: cstr, membership: uv_membership) -> i32
-    extern def uv_udp_set_source_membership(handle: ptr[uv_udp_t], multicast_addr: cstr, interface_addr: cstr, source_addr: cstr, membership: uv_membership) -> i32
-    extern def uv_udp_set_multicast_loop(handle: ptr[uv_udp_t], on: i32) -> i32
-    extern def uv_udp_set_multicast_ttl(handle: ptr[uv_udp_t], ttl: i32) -> i32
-    extern def uv_udp_set_multicast_interface(handle: ptr[uv_udp_t], interface_addr: cstr) -> i32
-    extern def uv_udp_set_broadcast(handle: ptr[uv_udp_t], on: i32) -> i32
-    extern def uv_udp_set_ttl(handle: ptr[uv_udp_t], ttl: i32) -> i32
-    extern def uv_udp_send(req: ptr[uv_udp_send_t], handle: ptr[uv_udp_t], bufs: const_ptr[uv_buf_t], nbufs: u32, addr: const_ptr[sys.sockaddr], send_cb: fn(arg0: ptr[uv_udp_send_t], arg1: i32) -> void) -> i32
-    extern def uv_udp_try_send(handle: ptr[uv_udp_t], bufs: const_ptr[uv_buf_t], nbufs: u32, addr: const_ptr[sys.sockaddr]) -> i32
-    extern def uv_udp_try_send2(handle: ptr[uv_udp_t], count: u32, bufs: ptr[ptr[uv_buf_t]], nbufs: ptr[u32], addrs: ptr[ptr[sys.sockaddr]], flag_bits: u32) -> i32
-    extern def uv_udp_recv_start(handle: ptr[uv_udp_t], alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: usize, arg2: ptr[uv_buf_t]) -> void, recv_cb: fn(arg0: ptr[uv_udp_t], arg1: isize, arg2: const_ptr[uv_buf_t], arg3: const_ptr[sys.sockaddr], arg4: u32) -> void) -> i32
-    extern def uv_udp_using_recvmmsg(handle: const_ptr[uv_udp_t]) -> i32
-    extern def uv_udp_recv_stop(handle: ptr[uv_udp_t]) -> i32
-    extern def uv_udp_get_send_queue_size(handle: const_ptr[uv_udp_t]) -> usize
-    extern def uv_udp_get_send_queue_count(handle: const_ptr[uv_udp_t]) -> usize
+    extern def uv_udp_init(arg0: ptr[uv_loop_t], handle: ptr[uv_udp_t]) -> int
+    extern def uv_udp_init_ex(arg0: ptr[uv_loop_t], handle: ptr[uv_udp_t], flag_bits: uint) -> int
+    extern def uv_udp_open(handle: ptr[uv_udp_t], sock: int) -> int
+    extern def uv_udp_open_ex(handle: ptr[uv_udp_t], sock: int, flag_bits: uint) -> int
+    extern def uv_udp_bind(handle: ptr[uv_udp_t], addr: const_ptr[sys.sockaddr], flag_bits: uint) -> int
+    extern def uv_udp_connect(handle: ptr[uv_udp_t], addr: const_ptr[sys.sockaddr]) -> int
+    extern def uv_udp_getpeername(handle: const_ptr[uv_udp_t], name: ptr[sys.sockaddr], namelen: ptr[int]) -> int
+    extern def uv_udp_getsockname(handle: const_ptr[uv_udp_t], name: ptr[sys.sockaddr], namelen: ptr[int]) -> int
+    extern def uv_udp_set_membership(handle: ptr[uv_udp_t], multicast_addr: cstr, interface_addr: cstr, membership: uv_membership) -> int
+    extern def uv_udp_set_source_membership(handle: ptr[uv_udp_t], multicast_addr: cstr, interface_addr: cstr, source_addr: cstr, membership: uv_membership) -> int
+    extern def uv_udp_set_multicast_loop(handle: ptr[uv_udp_t], on: int) -> int
+    extern def uv_udp_set_multicast_ttl(handle: ptr[uv_udp_t], ttl: int) -> int
+    extern def uv_udp_set_multicast_interface(handle: ptr[uv_udp_t], interface_addr: cstr) -> int
+    extern def uv_udp_set_broadcast(handle: ptr[uv_udp_t], on: int) -> int
+    extern def uv_udp_set_ttl(handle: ptr[uv_udp_t], ttl: int) -> int
+    extern def uv_udp_send(req: ptr[uv_udp_send_t], handle: ptr[uv_udp_t], bufs: const_ptr[uv_buf_t], nbufs: uint, addr: const_ptr[sys.sockaddr], send_cb: fn(arg0: ptr[uv_udp_send_t], arg1: int) -> void) -> int
+    extern def uv_udp_try_send(handle: ptr[uv_udp_t], bufs: const_ptr[uv_buf_t], nbufs: uint, addr: const_ptr[sys.sockaddr]) -> int
+    extern def uv_udp_try_send2(handle: ptr[uv_udp_t], count: uint, bufs: ptr[ptr[uv_buf_t]], nbufs: ptr[uint], addrs: ptr[ptr[sys.sockaddr]], flag_bits: uint) -> int
+    extern def uv_udp_recv_start(handle: ptr[uv_udp_t], alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: ptr_uint, arg2: ptr[uv_buf_t]) -> void, recv_cb: fn(arg0: ptr[uv_udp_t], arg1: ptr_int, arg2: const_ptr[uv_buf_t], arg3: const_ptr[sys.sockaddr], arg4: uint) -> void) -> int
+    extern def uv_udp_using_recvmmsg(handle: const_ptr[uv_udp_t]) -> int
+    extern def uv_udp_recv_stop(handle: ptr[uv_udp_t]) -> int
+    extern def uv_udp_get_send_queue_size(handle: const_ptr[uv_udp_t]) -> ptr_uint
+    extern def uv_udp_get_send_queue_count(handle: const_ptr[uv_udp_t]) -> ptr_uint
 
     struct uv_tty_s:
         data: ptr[void]
@@ -706,39 +706,39 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_tty_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
-        write_queue_size: usize
-        alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: usize, arg2: ptr[uv_buf_t]) -> void
-        read_cb: fn(arg0: ptr[uv_stream_t], arg1: isize, arg2: const_ptr[uv_buf_t]) -> void
+        flag_bits: uint
+        write_queue_size: ptr_uint
+        alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: ptr_uint, arg2: ptr[uv_buf_t]) -> void
+        read_cb: fn(arg0: ptr[uv_stream_t], arg1: ptr_int, arg2: const_ptr[uv_buf_t]) -> void
         connect_req: ptr[uv_connect_t]
         shutdown_req: ptr[uv_shutdown_t]
         io_watcher: uv__io_s
         write_queue: uv__queue
         write_completed_queue: uv__queue
-        connection_cb: fn(arg0: ptr[uv_stream_t], arg1: i32) -> void
-        delayed_error: i32
-        accepted_fd: i32
+        connection_cb: fn(arg0: ptr[uv_stream_t], arg1: int) -> void
+        delayed_error: int
+        accepted_fd: int
         queued_fds: ptr[void]
         orig_termios: sys.termios
-        mode: i32
+        mode: int
 
-    enum uv_tty_mode_t: i32
+    enum uv_tty_mode_t: int
         UV_TTY_MODE_NORMAL = 0
         UV_TTY_MODE_RAW = 1
         UV_TTY_MODE_IO = 2
         UV_TTY_MODE_RAW_VT = 3
 
-    flags uv_tty_vtermstate_t: i32
+    flags uv_tty_vtermstate_t: int
         UV_TTY_SUPPORTED = 0
         UV_TTY_UNSUPPORTED = 1
 
-    extern def uv_tty_init(arg0: ptr[uv_loop_t], arg1: ptr[uv_tty_t], fd: i32, readable: i32) -> i32
-    extern def uv_tty_set_mode(arg0: ptr[uv_tty_t], mode: uv_tty_mode_t) -> i32
-    extern def uv_tty_reset_mode() -> i32
-    extern def uv_tty_get_winsize(arg0: ptr[uv_tty_t], width: ptr[i32], height: ptr[i32]) -> i32
+    extern def uv_tty_init(arg0: ptr[uv_loop_t], arg1: ptr[uv_tty_t], fd: int, readable: int) -> int
+    extern def uv_tty_set_mode(arg0: ptr[uv_tty_t], mode: uv_tty_mode_t) -> int
+    extern def uv_tty_reset_mode() -> int
+    extern def uv_tty_get_winsize(arg0: ptr[uv_tty_t], width: ptr[int], height: ptr[int]) -> int
     extern def uv_tty_set_vterm_state(state: uv_tty_vtermstate_t) -> void
-    extern def uv_tty_get_vterm_state(state: ptr[uv_tty_vtermstate_t]) -> i32
-    extern def uv_guess_handle(file: i32) -> uv_handle_type
+    extern def uv_tty_get_vterm_state(state: ptr[uv_tty_vtermstate_t]) -> int
+    extern def uv_guess_handle(file: int) -> uv_handle_type
 
     struct uv_pipe_s:
         data: ptr[void]
@@ -748,34 +748,34 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_pipe_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
-        write_queue_size: usize
-        alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: usize, arg2: ptr[uv_buf_t]) -> void
-        read_cb: fn(arg0: ptr[uv_stream_t], arg1: isize, arg2: const_ptr[uv_buf_t]) -> void
+        flag_bits: uint
+        write_queue_size: ptr_uint
+        alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: ptr_uint, arg2: ptr[uv_buf_t]) -> void
+        read_cb: fn(arg0: ptr[uv_stream_t], arg1: ptr_int, arg2: const_ptr[uv_buf_t]) -> void
         connect_req: ptr[uv_connect_t]
         shutdown_req: ptr[uv_shutdown_t]
         io_watcher: uv__io_s
         write_queue: uv__queue
         write_completed_queue: uv__queue
-        connection_cb: fn(arg0: ptr[uv_stream_t], arg1: i32) -> void
-        delayed_error: i32
-        accepted_fd: i32
+        connection_cb: fn(arg0: ptr[uv_stream_t], arg1: int) -> void
+        delayed_error: int
+        accepted_fd: int
         queued_fds: ptr[void]
-        ipc: i32
+        ipc: int
         pipe_fname: cstr
 
-    extern def uv_pipe_init(arg0: ptr[uv_loop_t], handle: ptr[uv_pipe_t], ipc: i32) -> i32
-    extern def uv_pipe_open(arg0: ptr[uv_pipe_t], file: i32) -> i32
-    extern def uv_pipe_bind(handle: ptr[uv_pipe_t], name: cstr) -> i32
-    extern def uv_pipe_bind2(handle: ptr[uv_pipe_t], name: cstr, namelen: usize, flag_bits: u32) -> i32
-    extern def uv_pipe_connect(req: ptr[uv_connect_t], handle: ptr[uv_pipe_t], name: cstr, cb: fn(arg0: ptr[uv_connect_t], arg1: i32) -> void) -> void
-    extern def uv_pipe_connect2(req: ptr[uv_connect_t], handle: ptr[uv_pipe_t], name: cstr, namelen: usize, flag_bits: u32, cb: fn(arg0: ptr[uv_connect_t], arg1: i32) -> void) -> i32
-    extern def uv_pipe_getsockname(handle: const_ptr[uv_pipe_t], buffer: ptr[char], size: ptr[usize]) -> i32
-    extern def uv_pipe_getpeername(handle: const_ptr[uv_pipe_t], buffer: ptr[char], size: ptr[usize]) -> i32
-    extern def uv_pipe_pending_instances(handle: ptr[uv_pipe_t], count: i32) -> void
-    extern def uv_pipe_pending_count(handle: ptr[uv_pipe_t]) -> i32
+    extern def uv_pipe_init(arg0: ptr[uv_loop_t], handle: ptr[uv_pipe_t], ipc: int) -> int
+    extern def uv_pipe_open(arg0: ptr[uv_pipe_t], file: int) -> int
+    extern def uv_pipe_bind(handle: ptr[uv_pipe_t], name: cstr) -> int
+    extern def uv_pipe_bind2(handle: ptr[uv_pipe_t], name: cstr, namelen: ptr_uint, flag_bits: uint) -> int
+    extern def uv_pipe_connect(req: ptr[uv_connect_t], handle: ptr[uv_pipe_t], name: cstr, cb: fn(arg0: ptr[uv_connect_t], arg1: int) -> void) -> void
+    extern def uv_pipe_connect2(req: ptr[uv_connect_t], handle: ptr[uv_pipe_t], name: cstr, namelen: ptr_uint, flag_bits: uint, cb: fn(arg0: ptr[uv_connect_t], arg1: int) -> void) -> int
+    extern def uv_pipe_getsockname(handle: const_ptr[uv_pipe_t], buffer: ptr[char], size: ptr[ptr_uint]) -> int
+    extern def uv_pipe_getpeername(handle: const_ptr[uv_pipe_t], buffer: ptr[char], size: ptr[ptr_uint]) -> int
+    extern def uv_pipe_pending_instances(handle: ptr[uv_pipe_t], count: int) -> void
+    extern def uv_pipe_pending_count(handle: ptr[uv_pipe_t]) -> int
     extern def uv_pipe_pending_type(handle: ptr[uv_pipe_t]) -> uv_handle_type
-    extern def uv_pipe_chmod(handle: ptr[uv_pipe_t], flag_bits: i32) -> i32
+    extern def uv_pipe_chmod(handle: ptr[uv_pipe_t], flag_bits: int) -> int
 
     struct uv_poll_s:
         data: ptr[void]
@@ -785,20 +785,20 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_poll_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
-        poll_cb: fn(arg0: ptr[uv_poll_t], arg1: i32, arg2: i32) -> void
+        flag_bits: uint
+        poll_cb: fn(arg0: ptr[uv_poll_t], arg1: int, arg2: int) -> void
         io_watcher: uv__io_s
 
-    flags uv_poll_event: i32
+    flags uv_poll_event: int
         UV_READABLE = 1
         UV_WRITABLE = 2
         UV_DISCONNECT = 4
         UV_PRIORITIZED = 8
 
-    extern def uv_poll_init(loop: ptr[uv_loop_t], handle: ptr[uv_poll_t], fd: i32) -> i32
-    extern def uv_poll_init_socket(loop: ptr[uv_loop_t], handle: ptr[uv_poll_t], socket: i32) -> i32
-    extern def uv_poll_start(handle: ptr[uv_poll_t], events: i32, cb: fn(arg0: ptr[uv_poll_t], arg1: i32, arg2: i32) -> void) -> i32
-    extern def uv_poll_stop(handle: ptr[uv_poll_t]) -> i32
+    extern def uv_poll_init(loop: ptr[uv_loop_t], handle: ptr[uv_poll_t], fd: int) -> int
+    extern def uv_poll_init_socket(loop: ptr[uv_loop_t], handle: ptr[uv_poll_t], socket: int) -> int
+    extern def uv_poll_start(handle: ptr[uv_poll_t], events: int, cb: fn(arg0: ptr[uv_poll_t], arg1: int, arg2: int) -> void) -> int
+    extern def uv_poll_stop(handle: ptr[uv_poll_t]) -> int
 
     struct uv_prepare_s:
         data: ptr[void]
@@ -808,13 +808,13 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_prepare_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
+        flag_bits: uint
         prepare_cb: fn(arg0: ptr[uv_prepare_t]) -> void
         queue: uv__queue
 
-    extern def uv_prepare_init(arg0: ptr[uv_loop_t], prepare: ptr[uv_prepare_t]) -> i32
-    extern def uv_prepare_start(prepare: ptr[uv_prepare_t], cb: fn(arg0: ptr[uv_prepare_t]) -> void) -> i32
-    extern def uv_prepare_stop(prepare: ptr[uv_prepare_t]) -> i32
+    extern def uv_prepare_init(arg0: ptr[uv_loop_t], prepare: ptr[uv_prepare_t]) -> int
+    extern def uv_prepare_start(prepare: ptr[uv_prepare_t], cb: fn(arg0: ptr[uv_prepare_t]) -> void) -> int
+    extern def uv_prepare_stop(prepare: ptr[uv_prepare_t]) -> int
 
     struct uv_check_s:
         data: ptr[void]
@@ -824,13 +824,13 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_check_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
+        flag_bits: uint
         check_cb: fn(arg0: ptr[uv_check_t]) -> void
         queue: uv__queue
 
-    extern def uv_check_init(arg0: ptr[uv_loop_t], check: ptr[uv_check_t]) -> i32
-    extern def uv_check_start(check: ptr[uv_check_t], cb: fn(arg0: ptr[uv_check_t]) -> void) -> i32
-    extern def uv_check_stop(check: ptr[uv_check_t]) -> i32
+    extern def uv_check_init(arg0: ptr[uv_loop_t], check: ptr[uv_check_t]) -> int
+    extern def uv_check_start(check: ptr[uv_check_t], cb: fn(arg0: ptr[uv_check_t]) -> void) -> int
+    extern def uv_check_stop(check: ptr[uv_check_t]) -> int
 
     struct uv_idle_s:
         data: ptr[void]
@@ -840,13 +840,13 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_idle_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
+        flag_bits: uint
         idle_cb: fn(arg0: ptr[uv_idle_t]) -> void
         queue: uv__queue
 
-    extern def uv_idle_init(arg0: ptr[uv_loop_t], idle: ptr[uv_idle_t]) -> i32
-    extern def uv_idle_start(idle: ptr[uv_idle_t], cb: fn(arg0: ptr[uv_idle_t]) -> void) -> i32
-    extern def uv_idle_stop(idle: ptr[uv_idle_t]) -> i32
+    extern def uv_idle_init(arg0: ptr[uv_loop_t], idle: ptr[uv_idle_t]) -> int
+    extern def uv_idle_start(idle: ptr[uv_idle_t], cb: fn(arg0: ptr[uv_idle_t]) -> void) -> int
+    extern def uv_idle_stop(idle: ptr[uv_idle_t]) -> int
 
     struct uv_async_s:
         data: ptr[void]
@@ -856,13 +856,13 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_async_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
+        flag_bits: uint
         async_cb: fn(arg0: ptr[uv_async_t]) -> void
         queue: uv__queue
-        pending: i32
+        pending: int
 
-    extern def uv_async_init(arg0: ptr[uv_loop_t], handle: ptr[uv_async_t], async_cb: fn(arg0: ptr[uv_async_t]) -> void) -> i32
-    extern def uv_async_send(handle: ptr[uv_async_t]) -> i32
+    extern def uv_async_init(arg0: ptr[uv_loop_t], handle: ptr[uv_async_t], async_cb: fn(arg0: ptr[uv_async_t]) -> void) -> int
+    extern def uv_async_send(handle: ptr[uv_async_t]) -> int
 
     struct uv_timer_s:
         data: ptr[void]
@@ -872,20 +872,20 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_timer_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
+        flag_bits: uint
         timer_cb: fn(arg0: ptr[uv_timer_t]) -> void
         node: uv_timer_s_node
-        timeout: usize
-        repeat: usize
-        start_id: usize
+        timeout: ptr_uint
+        repeat: ptr_uint
+        start_id: ptr_uint
 
-    extern def uv_timer_init(arg0: ptr[uv_loop_t], handle: ptr[uv_timer_t]) -> i32
-    extern def uv_timer_start(handle: ptr[uv_timer_t], cb: fn(arg0: ptr[uv_timer_t]) -> void, timeout: usize, repeat: usize) -> i32
-    extern def uv_timer_stop(handle: ptr[uv_timer_t]) -> i32
-    extern def uv_timer_again(handle: ptr[uv_timer_t]) -> i32
-    extern def uv_timer_set_repeat(handle: ptr[uv_timer_t], repeat: usize) -> void
-    extern def uv_timer_get_repeat(handle: const_ptr[uv_timer_t]) -> u64
-    extern def uv_timer_get_due_in(handle: const_ptr[uv_timer_t]) -> u64
+    extern def uv_timer_init(arg0: ptr[uv_loop_t], handle: ptr[uv_timer_t]) -> int
+    extern def uv_timer_start(handle: ptr[uv_timer_t], cb: fn(arg0: ptr[uv_timer_t]) -> void, timeout: ptr_uint, repeat: ptr_uint) -> int
+    extern def uv_timer_stop(handle: ptr[uv_timer_t]) -> int
+    extern def uv_timer_again(handle: ptr[uv_timer_t]) -> int
+    extern def uv_timer_set_repeat(handle: ptr[uv_timer_t], repeat: ptr_uint) -> void
+    extern def uv_timer_get_repeat(handle: const_ptr[uv_timer_t]) -> ulong
+    extern def uv_timer_get_due_in(handle: const_ptr[uv_timer_t]) -> ulong
 
     struct uv_getaddrinfo_s:
         data: ptr[void]
@@ -893,14 +893,14 @@ extern module std.c.libuv:
         reserved: array[ptr[void], 6]
         loop: ptr[uv_loop_t]
         work_req: sys.uv__work
-        cb: fn(arg0: ptr[uv_getaddrinfo_t], arg1: i32, arg2: ptr[sys.addrinfo]) -> void
+        cb: fn(arg0: ptr[uv_getaddrinfo_t], arg1: int, arg2: ptr[sys.addrinfo]) -> void
         hints: ptr[sys.addrinfo]
         hostname: ptr[char]
         service: ptr[char]
         addrinfo: ptr[sys.addrinfo]
-        retcode: i32
+        retcode: int
 
-    extern def uv_getaddrinfo(loop: ptr[uv_loop_t], req: ptr[uv_getaddrinfo_t], getaddrinfo_cb: fn(arg0: ptr[uv_getaddrinfo_t], arg1: i32, arg2: ptr[sys.addrinfo]) -> void, node: cstr, service: cstr, hints: const_ptr[sys.addrinfo]) -> i32
+    extern def uv_getaddrinfo(loop: ptr[uv_loop_t], req: ptr[uv_getaddrinfo_t], getaddrinfo_cb: fn(arg0: ptr[uv_getaddrinfo_t], arg1: int, arg2: ptr[sys.addrinfo]) -> void, node: cstr, service: cstr, hints: const_ptr[sys.addrinfo]) -> int
     extern def uv_freeaddrinfo(ai: ptr[sys.addrinfo]) -> void
 
     struct uv_getnameinfo_s:
@@ -909,16 +909,16 @@ extern module std.c.libuv:
         reserved: array[ptr[void], 6]
         loop: ptr[uv_loop_t]
         work_req: sys.uv__work
-        getnameinfo_cb: fn(arg0: ptr[uv_getnameinfo_t], arg1: i32, arg2: cstr, arg3: cstr) -> void
+        getnameinfo_cb: fn(arg0: ptr[uv_getnameinfo_t], arg1: int, arg2: cstr, arg3: cstr) -> void
         storage: sys.sockaddr_storage
-        flag_bits: i32
+        flag_bits: int
         host: array[char, 1025]
         service: array[char, 32]
-        retcode: i32
+        retcode: int
 
-    extern def uv_getnameinfo(loop: ptr[uv_loop_t], req: ptr[uv_getnameinfo_t], getnameinfo_cb: fn(arg0: ptr[uv_getnameinfo_t], arg1: i32, arg2: cstr, arg3: cstr) -> void, addr: const_ptr[sys.sockaddr], flag_bits: i32) -> i32
+    extern def uv_getnameinfo(loop: ptr[uv_loop_t], req: ptr[uv_getnameinfo_t], getnameinfo_cb: fn(arg0: ptr[uv_getnameinfo_t], arg1: int, arg2: cstr, arg3: cstr) -> void, addr: const_ptr[sys.sockaddr], flag_bits: int) -> int
 
-    flags uv_stdio_flags: i32
+    flags uv_stdio_flags: int
         UV_IGNORE = 0
         UV_CREATE_PIPE = 1
         UV_INHERIT_FD = 2
@@ -933,18 +933,18 @@ extern module std.c.libuv:
         data: uv_stdio_container_t_data
 
     struct uv_process_options_t:
-        exit_cb: fn(arg0: ptr[uv_process_t], arg1: i64, arg2: i32) -> void
+        exit_cb: fn(arg0: ptr[uv_process_t], arg1: long, arg2: int) -> void
         file: cstr
         args: ptr[ptr[char]]
         env: ptr[ptr[char]]
         cwd: cstr
-        flag_bits: u32
-        stdio_count: i32
+        flag_bits: uint
+        stdio_count: int
         stdio: ptr[uv_stdio_container_t]
-        uid: u32
-        gid: u32
+        uid: uint
+        gid: uint
 
-    flags uv_process_flags: i32
+    flags uv_process_flags: int
         UV_PROCESS_SETUID = 1
         UV_PROCESS_SETGID = 2
         UV_PROCESS_WINDOWS_VERBATIM_ARGUMENTS = 4
@@ -962,15 +962,15 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_process_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
-        exit_cb: fn(arg0: ptr[uv_process_t], arg1: i64, arg2: i32) -> void
-        pid: i32
+        flag_bits: uint
+        exit_cb: fn(arg0: ptr[uv_process_t], arg1: long, arg2: int) -> void
+        pid: int
         queue: uv__queue
-        status: i32
+        status: int
 
-    extern def uv_spawn(loop: ptr[uv_loop_t], handle: ptr[uv_process_t], options: const_ptr[uv_process_options_t]) -> i32
-    extern def uv_process_kill(arg0: ptr[uv_process_t], signum: i32) -> i32
-    extern def uv_kill(pid: i32, signum: i32) -> i32
+    extern def uv_spawn(loop: ptr[uv_loop_t], handle: ptr[uv_process_t], options: const_ptr[uv_process_options_t]) -> int
+    extern def uv_process_kill(arg0: ptr[uv_process_t], signum: int) -> int
+    extern def uv_kill(pid: int, signum: int) -> int
     extern def uv_process_get_pid(arg0: const_ptr[uv_process_t]) -> uv_pid_t
 
     struct uv_work_s:
@@ -979,41 +979,41 @@ extern module std.c.libuv:
         reserved: array[ptr[void], 6]
         loop: ptr[uv_loop_t]
         work_cb: fn(arg0: ptr[uv_work_t]) -> void
-        after_work_cb: fn(arg0: ptr[uv_work_t], arg1: i32) -> void
+        after_work_cb: fn(arg0: ptr[uv_work_t], arg1: int) -> void
         work_req: sys.uv__work
 
-    extern def uv_queue_work(loop: ptr[uv_loop_t], req: ptr[uv_work_t], work_cb: fn(arg0: ptr[uv_work_t]) -> void, after_work_cb: fn(arg0: ptr[uv_work_t], arg1: i32) -> void) -> i32
-    extern def uv_cancel(req: ptr[uv_req_t]) -> i32
+    extern def uv_queue_work(loop: ptr[uv_loop_t], req: ptr[uv_work_t], work_cb: fn(arg0: ptr[uv_work_t]) -> void, after_work_cb: fn(arg0: ptr[uv_work_t], arg1: int) -> void) -> int
+    extern def uv_cancel(req: ptr[uv_req_t]) -> int
 
     struct uv_cpu_times_s:
-        user: usize
-        nice: usize
-        sys: usize
-        idle: usize
-        irq: usize
+        user: ptr_uint
+        nice: ptr_uint
+        sys: ptr_uint
+        idle: ptr_uint
+        irq: ptr_uint
 
     struct uv_cpu_info_s:
         model: cstr
-        speed: i32
+        speed: int
         cpu_times: uv_cpu_times_s
 
     struct uv_interface_address_s:
         name: ptr[char]
         phys_addr: array[char, 6]
-        is_internal: i32
+        is_internal: int
         address: uv_interface_address_s_address
         netmask: uv_interface_address_s_netmask
 
     struct uv_passwd_s:
         username: ptr[char]
-        uid: usize
-        gid: usize
+        uid: ptr_uint
+        gid: ptr_uint
         shell: ptr[char]
         homedir: ptr[char]
 
     struct uv_group_s:
         groupname: ptr[char]
-        gid: usize
+        gid: ptr_uint
         members: ptr[ptr[char]]
 
     struct uv_utsname_s:
@@ -1023,17 +1023,17 @@ extern module std.c.libuv:
         machine: array[char, 256]
 
     struct uv_statfs_s:
-        f_type: usize
-        f_bsize: usize
-        f_blocks: usize
-        f_bfree: usize
-        f_bavail: usize
-        f_files: usize
-        f_ffree: usize
-        f_frsize: usize
-        f_spare: array[u64, 3]
+        f_type: ptr_uint
+        f_bsize: ptr_uint
+        f_blocks: ptr_uint
+        f_bfree: ptr_uint
+        f_bavail: ptr_uint
+        f_files: ptr_uint
+        f_ffree: ptr_uint
+        f_frsize: ptr_uint
+        f_spare: array[ulong, 3]
 
-    enum uv_dirent_type_t: i32
+    enum uv_dirent_type_t: int
         UV_DIRENT_UNKNOWN = 0
         UV_DIRENT_FILE = 1
         UV_DIRENT_DIR = 2
@@ -1047,76 +1047,76 @@ extern module std.c.libuv:
         name: cstr
         kind: uv_dirent_type_t
 
-    extern def uv_setup_args(argc: i32, argv: ptr[ptr[char]]) -> ptr[ptr[char]]
-    extern def uv_get_process_title(buffer: ptr[char], size: usize) -> i32
-    extern def uv_set_process_title(title: cstr) -> i32
-    extern def uv_resident_set_memory(rss: ptr[usize]) -> i32
-    extern def uv_uptime(uptime: ptr[f64]) -> i32
-    extern def uv_get_osfhandle(fd: i32) -> uv_os_fd_t
-    extern def uv_open_osfhandle(os_fd: i32) -> i32
+    extern def uv_setup_args(argc: int, argv: ptr[ptr[char]]) -> ptr[ptr[char]]
+    extern def uv_get_process_title(buffer: ptr[char], size: ptr_uint) -> int
+    extern def uv_set_process_title(title: cstr) -> int
+    extern def uv_resident_set_memory(rss: ptr[ptr_uint]) -> int
+    extern def uv_uptime(uptime: ptr[double]) -> int
+    extern def uv_get_osfhandle(fd: int) -> uv_os_fd_t
+    extern def uv_open_osfhandle(os_fd: int) -> int
 
     struct uv_rusage_t:
         ru_utime: uv_timeval_t
         ru_stime: uv_timeval_t
-        ru_maxrss: usize
-        ru_ixrss: usize
-        ru_idrss: usize
-        ru_isrss: usize
-        ru_minflt: usize
-        ru_majflt: usize
-        ru_nswap: usize
-        ru_inblock: usize
-        ru_oublock: usize
-        ru_msgsnd: usize
-        ru_msgrcv: usize
-        ru_nsignals: usize
-        ru_nvcsw: usize
-        ru_nivcsw: usize
+        ru_maxrss: ptr_uint
+        ru_ixrss: ptr_uint
+        ru_idrss: ptr_uint
+        ru_isrss: ptr_uint
+        ru_minflt: ptr_uint
+        ru_majflt: ptr_uint
+        ru_nswap: ptr_uint
+        ru_inblock: ptr_uint
+        ru_oublock: ptr_uint
+        ru_msgsnd: ptr_uint
+        ru_msgrcv: ptr_uint
+        ru_nsignals: ptr_uint
+        ru_nvcsw: ptr_uint
+        ru_nivcsw: ptr_uint
 
-    extern def uv_getrusage(rusage: ptr[uv_rusage_t]) -> i32
-    extern def uv_getrusage_thread(rusage: ptr[uv_rusage_t]) -> i32
-    extern def uv_os_homedir(buffer: ptr[char], size: ptr[usize]) -> i32
-    extern def uv_os_tmpdir(buffer: ptr[char], size: ptr[usize]) -> i32
-    extern def uv_os_get_passwd(pwd: ptr[uv_passwd_t]) -> i32
+    extern def uv_getrusage(rusage: ptr[uv_rusage_t]) -> int
+    extern def uv_getrusage_thread(rusage: ptr[uv_rusage_t]) -> int
+    extern def uv_os_homedir(buffer: ptr[char], size: ptr[ptr_uint]) -> int
+    extern def uv_os_tmpdir(buffer: ptr[char], size: ptr[ptr_uint]) -> int
+    extern def uv_os_get_passwd(pwd: ptr[uv_passwd_t]) -> int
     extern def uv_os_free_passwd(pwd: ptr[uv_passwd_t]) -> void
-    extern def uv_os_get_passwd2(pwd: ptr[uv_passwd_t], uid: u32) -> i32
-    extern def uv_os_get_group(grp: ptr[uv_group_t], gid: u32) -> i32
+    extern def uv_os_get_passwd2(pwd: ptr[uv_passwd_t], uid: uint) -> int
+    extern def uv_os_get_group(grp: ptr[uv_group_t], gid: uint) -> int
     extern def uv_os_free_group(grp: ptr[uv_group_t]) -> void
     extern def uv_os_getpid() -> uv_pid_t
     extern def uv_os_getppid() -> uv_pid_t
-    extern def uv_os_getpriority(pid: i32, priority: ptr[i32]) -> i32
-    extern def uv_os_setpriority(pid: i32, priority: i32) -> i32
-    extern def uv_thread_getpriority(tid: usize, priority: ptr[i32]) -> i32
-    extern def uv_thread_setpriority(tid: usize, priority: i32) -> i32
-    extern def uv_available_parallelism() -> u32
-    extern def uv_cpu_info(cpu_infos: ptr[ptr[uv_cpu_info_t]], count: ptr[i32]) -> i32
-    extern def uv_free_cpu_info(cpu_infos: ptr[uv_cpu_info_t], count: i32) -> void
-    extern def uv_cpumask_size() -> i32
-    extern def uv_interface_addresses(addresses: ptr[ptr[uv_interface_address_t]], count: ptr[i32]) -> i32
-    extern def uv_free_interface_addresses(addresses: ptr[uv_interface_address_t], count: i32) -> void
+    extern def uv_os_getpriority(pid: int, priority: ptr[int]) -> int
+    extern def uv_os_setpriority(pid: int, priority: int) -> int
+    extern def uv_thread_getpriority(tid: ptr_uint, priority: ptr[int]) -> int
+    extern def uv_thread_setpriority(tid: ptr_uint, priority: int) -> int
+    extern def uv_available_parallelism() -> uint
+    extern def uv_cpu_info(cpu_infos: ptr[ptr[uv_cpu_info_t]], count: ptr[int]) -> int
+    extern def uv_free_cpu_info(cpu_infos: ptr[uv_cpu_info_t], count: int) -> void
+    extern def uv_cpumask_size() -> int
+    extern def uv_interface_addresses(addresses: ptr[ptr[uv_interface_address_t]], count: ptr[int]) -> int
+    extern def uv_free_interface_addresses(addresses: ptr[uv_interface_address_t], count: int) -> void
 
     struct uv_env_item_s:
         name: ptr[char]
         value: ptr[char]
 
-    extern def uv_os_environ(envitems: ptr[ptr[uv_env_item_t]], count: ptr[i32]) -> i32
-    extern def uv_os_free_environ(envitems: ptr[uv_env_item_t], count: i32) -> void
-    extern def uv_os_getenv(name: cstr, buffer: ptr[char], size: ptr[usize]) -> i32
-    extern def uv_os_setenv(name: cstr, value: cstr) -> i32
-    extern def uv_os_unsetenv(name: cstr) -> i32
-    extern def uv_os_gethostname(buffer: ptr[char], size: ptr[usize]) -> i32
-    extern def uv_os_uname(buffer: ptr[uv_utsname_t]) -> i32
+    extern def uv_os_environ(envitems: ptr[ptr[uv_env_item_t]], count: ptr[int]) -> int
+    extern def uv_os_free_environ(envitems: ptr[uv_env_item_t], count: int) -> void
+    extern def uv_os_getenv(name: cstr, buffer: ptr[char], size: ptr[ptr_uint]) -> int
+    extern def uv_os_setenv(name: cstr, value: cstr) -> int
+    extern def uv_os_unsetenv(name: cstr) -> int
+    extern def uv_os_gethostname(buffer: ptr[char], size: ptr[ptr_uint]) -> int
+    extern def uv_os_uname(buffer: ptr[uv_utsname_t]) -> int
 
     struct uv_metrics_s:
-        loop_count: usize
-        events: usize
-        events_waiting: usize
-        reserved: array[ptr[u64], 13]
+        loop_count: ptr_uint
+        events: ptr_uint
+        events_waiting: ptr_uint
+        reserved: array[ptr[ulong], 13]
 
-    extern def uv_metrics_info(loop: ptr[uv_loop_t], metrics: ptr[uv_metrics_t]) -> i32
-    extern def uv_metrics_idle_time(loop: ptr[uv_loop_t]) -> u64
+    extern def uv_metrics_info(loop: ptr[uv_loop_t], metrics: ptr[uv_metrics_t]) -> int
+    extern def uv_metrics_idle_time(loop: ptr[uv_loop_t]) -> ulong
 
-    enum uv_fs_type: i32
+    enum uv_fs_type: int
         UV_FS_UNKNOWN = -1
         UV_FS_CUSTOM = 0
         UV_FS_OPEN = 1
@@ -1158,7 +1158,7 @@ extern module std.c.libuv:
 
     struct uv_dir_s:
         dirents: ptr[uv_dirent_t]
-        nentries: usize
+        nentries: ptr_uint
         reserved: array[ptr[void], 4]
         dir: ptr[sys.DIR]
 
@@ -1169,70 +1169,70 @@ extern module std.c.libuv:
         fs_type: uv_fs_type
         loop: ptr[uv_loop_t]
         cb: fn(arg0: ptr[uv_fs_t]) -> void
-        result: isize
+        result: ptr_int
         ptr: ptr[void]
         path: cstr
         statbuf: uv_stat_t
         new_path: cstr
-        file: i32
-        flag_bits: i32
-        mode: u32
-        nbufs: u32
+        file: int
+        flag_bits: int
+        mode: uint
+        nbufs: uint
         bufs: ptr[uv_buf_t]
-        off: isize
-        uid: u32
-        gid: u32
-        atime: f64
-        mtime: f64
+        off: ptr_int
+        uid: uint
+        gid: uint
+        atime: double
+        mtime: double
         work_req: sys.uv__work
         bufsml: array[uv_buf_t, 4]
 
     extern def uv_fs_get_type(arg0: const_ptr[uv_fs_t]) -> uv_fs_type
-    extern def uv_fs_get_result(arg0: const_ptr[uv_fs_t]) -> isize
-    extern def uv_fs_get_system_error(arg0: const_ptr[uv_fs_t]) -> i32
+    extern def uv_fs_get_result(arg0: const_ptr[uv_fs_t]) -> ptr_int
+    extern def uv_fs_get_system_error(arg0: const_ptr[uv_fs_t]) -> int
     extern def uv_fs_get_ptr(arg0: const_ptr[uv_fs_t]) -> ptr[void]
     extern def uv_fs_get_path(arg0: const_ptr[uv_fs_t]) -> cstr
     extern def uv_fs_get_statbuf(arg0: ptr[uv_fs_t]) -> ptr[uv_stat_t]
     extern def uv_fs_req_cleanup(req: ptr[uv_fs_t]) -> void
-    extern def uv_fs_close(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_open(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, flag_bits: i32, mode: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_read(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, bufs: const_ptr[uv_buf_t], nbufs: u32, offset: isize, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_unlink(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_write(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, bufs: const_ptr[uv_buf_t], nbufs: u32, offset: isize, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_copyfile(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, flag_bits: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_mkdir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, mode: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_mkdtemp(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], tpl: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_mkstemp(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], tpl: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_rmdir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_scandir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, flag_bits: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_scandir_next(req: ptr[uv_fs_t], ent: ptr[uv_dirent_t]) -> i32
-    extern def uv_fs_opendir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_readdir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], dir: ptr[uv_dir_t], cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_closedir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], dir: ptr[uv_dir_t], cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_stat(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_fstat(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_rename(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_fsync(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_fdatasync(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_ftruncate(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, offset: isize, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_sendfile(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], out_fd: i32, in_fd: i32, in_offset: isize, length: usize, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_access(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, mode: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_chmod(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, mode: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_utime(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, atime: f64, mtime: f64, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_futime(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, atime: f64, mtime: f64, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_lutime(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, atime: f64, mtime: f64, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_lstat(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_link(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_symlink(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, flag_bits: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_readlink(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_realpath(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_fchmod(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, mode: i32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_chown(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, uid: u32, gid: u32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_fchown(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: i32, uid: u32, gid: u32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_lchown(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, uid: u32, gid: u32, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
-    extern def uv_fs_statfs(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> i32
+    extern def uv_fs_close(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_open(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, flag_bits: int, mode: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_read(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, bufs: const_ptr[uv_buf_t], nbufs: uint, offset: ptr_int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_unlink(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_write(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, bufs: const_ptr[uv_buf_t], nbufs: uint, offset: ptr_int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_copyfile(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, flag_bits: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_mkdir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, mode: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_mkdtemp(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], tpl: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_mkstemp(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], tpl: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_rmdir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_scandir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, flag_bits: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_scandir_next(req: ptr[uv_fs_t], ent: ptr[uv_dirent_t]) -> int
+    extern def uv_fs_opendir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_readdir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], dir: ptr[uv_dir_t], cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_closedir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], dir: ptr[uv_dir_t], cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_stat(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_fstat(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_rename(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_fsync(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_fdatasync(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_ftruncate(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, offset: ptr_int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_sendfile(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], out_fd: int, in_fd: int, in_offset: ptr_int, length: ptr_uint, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_access(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, mode: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_chmod(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, mode: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_utime(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, atime: double, mtime: double, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_futime(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, atime: double, mtime: double, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_lutime(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, atime: double, mtime: double, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_lstat(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_link(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_symlink(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, flag_bits: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_readlink(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_realpath(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_fchmod(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, mode: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_chown(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, uid: uint, gid: uint, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_fchown(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, uid: uint, gid: uint, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_lchown(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, uid: uint, gid: uint, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    extern def uv_fs_statfs(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
 
-    flags uv_fs_event: i32
+    flags uv_fs_event: int
         UV_RENAME = 1
         UV_CHANGE = 2
 
@@ -1244,11 +1244,11 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_fs_event_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
+        flag_bits: uint
         path: ptr[char]
-        cb: fn(arg0: ptr[uv_fs_event_t], arg1: cstr, arg2: i32, arg3: i32) -> void
+        cb: fn(arg0: ptr[uv_fs_event_t], arg1: cstr, arg2: int, arg3: int) -> void
         watchers: uv__queue
-        wd: i32
+        wd: int
 
     struct uv_fs_poll_s:
         data: ptr[void]
@@ -1258,13 +1258,13 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_fs_poll_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
+        flag_bits: uint
         poll_ctx: ptr[void]
 
-    extern def uv_fs_poll_init(loop: ptr[uv_loop_t], handle: ptr[uv_fs_poll_t]) -> i32
-    extern def uv_fs_poll_start(handle: ptr[uv_fs_poll_t], poll_cb: fn(arg0: ptr[uv_fs_poll_t], arg1: i32, arg2: const_ptr[uv_stat_t], arg3: const_ptr[uv_stat_t]) -> void, path: cstr, interval: u32) -> i32
-    extern def uv_fs_poll_stop(handle: ptr[uv_fs_poll_t]) -> i32
-    extern def uv_fs_poll_getpath(handle: ptr[uv_fs_poll_t], buffer: ptr[char], size: ptr[usize]) -> i32
+    extern def uv_fs_poll_init(loop: ptr[uv_loop_t], handle: ptr[uv_fs_poll_t]) -> int
+    extern def uv_fs_poll_start(handle: ptr[uv_fs_poll_t], poll_cb: fn(arg0: ptr[uv_fs_poll_t], arg1: int, arg2: const_ptr[uv_stat_t], arg3: const_ptr[uv_stat_t]) -> void, path: cstr, interval: uint) -> int
+    extern def uv_fs_poll_stop(handle: ptr[uv_fs_poll_t]) -> int
+    extern def uv_fs_poll_getpath(handle: ptr[uv_fs_poll_t], buffer: ptr[char], size: ptr[ptr_uint]) -> int
 
     struct uv_signal_s:
         data: ptr[void]
@@ -1274,122 +1274,122 @@ extern module std.c.libuv:
         handle_queue: uv__queue
         u: uv_signal_s_u
         next_closing: ptr[uv_handle_t]
-        flag_bits: u32
-        signal_cb: fn(arg0: ptr[uv_signal_t], arg1: i32) -> void
-        signum: i32
+        flag_bits: uint
+        signal_cb: fn(arg0: ptr[uv_signal_t], arg1: int) -> void
+        signum: int
         tree_entry: uv_signal_s_tree_entry
-        caught_signals: u32
-        dispatched_signals: u32
+        caught_signals: uint
+        dispatched_signals: uint
 
-    extern def uv_signal_init(loop: ptr[uv_loop_t], handle: ptr[uv_signal_t]) -> i32
-    extern def uv_signal_start(handle: ptr[uv_signal_t], signal_cb: fn(arg0: ptr[uv_signal_t], arg1: i32) -> void, signum: i32) -> i32
-    extern def uv_signal_start_oneshot(handle: ptr[uv_signal_t], signal_cb: fn(arg0: ptr[uv_signal_t], arg1: i32) -> void, signum: i32) -> i32
-    extern def uv_signal_stop(handle: ptr[uv_signal_t]) -> i32
-    extern def uv_loadavg(avg: ptr[f64]) -> void
+    extern def uv_signal_init(loop: ptr[uv_loop_t], handle: ptr[uv_signal_t]) -> int
+    extern def uv_signal_start(handle: ptr[uv_signal_t], signal_cb: fn(arg0: ptr[uv_signal_t], arg1: int) -> void, signum: int) -> int
+    extern def uv_signal_start_oneshot(handle: ptr[uv_signal_t], signal_cb: fn(arg0: ptr[uv_signal_t], arg1: int) -> void, signum: int) -> int
+    extern def uv_signal_stop(handle: ptr[uv_signal_t]) -> int
+    extern def uv_loadavg(avg: ptr[double]) -> void
 
-    flags uv_fs_event_flags: i32
+    flags uv_fs_event_flags: int
         UV_FS_EVENT_WATCH_ENTRY = 1
         UV_FS_EVENT_STAT = 2
         UV_FS_EVENT_RECURSIVE = 4
 
-    extern def uv_fs_event_init(loop: ptr[uv_loop_t], handle: ptr[uv_fs_event_t]) -> i32
-    extern def uv_fs_event_start(handle: ptr[uv_fs_event_t], cb: fn(arg0: ptr[uv_fs_event_t], arg1: cstr, arg2: i32, arg3: i32) -> void, path: cstr, flag_bits: u32) -> i32
-    extern def uv_fs_event_stop(handle: ptr[uv_fs_event_t]) -> i32
-    extern def uv_fs_event_getpath(handle: ptr[uv_fs_event_t], buffer: ptr[char], size: ptr[usize]) -> i32
-    extern def uv_ip4_addr(ip: cstr, port: i32, addr: ptr[sys.sockaddr_in]) -> i32
-    extern def uv_ip6_addr(ip: cstr, port: i32, addr: ptr[sys.sockaddr_in6]) -> i32
-    extern def uv_ip4_name(src: const_ptr[sys.sockaddr_in], dst: ptr[char], size: usize) -> i32
-    extern def uv_ip6_name(src: const_ptr[sys.sockaddr_in6], dst: ptr[char], size: usize) -> i32
-    extern def uv_ip_name(src: const_ptr[sys.sockaddr], dst: ptr[char], size: usize) -> i32
-    extern def uv_inet_ntop(af: i32, src: const_ptr[void], dst: ptr[char], size: usize) -> i32
-    extern def uv_inet_pton(af: i32, src: cstr, dst: ptr[void]) -> i32
+    extern def uv_fs_event_init(loop: ptr[uv_loop_t], handle: ptr[uv_fs_event_t]) -> int
+    extern def uv_fs_event_start(handle: ptr[uv_fs_event_t], cb: fn(arg0: ptr[uv_fs_event_t], arg1: cstr, arg2: int, arg3: int) -> void, path: cstr, flag_bits: uint) -> int
+    extern def uv_fs_event_stop(handle: ptr[uv_fs_event_t]) -> int
+    extern def uv_fs_event_getpath(handle: ptr[uv_fs_event_t], buffer: ptr[char], size: ptr[ptr_uint]) -> int
+    extern def uv_ip4_addr(ip: cstr, port: int, addr: ptr[sys.sockaddr_in]) -> int
+    extern def uv_ip6_addr(ip: cstr, port: int, addr: ptr[sys.sockaddr_in6]) -> int
+    extern def uv_ip4_name(src: const_ptr[sys.sockaddr_in], dst: ptr[char], size: ptr_uint) -> int
+    extern def uv_ip6_name(src: const_ptr[sys.sockaddr_in6], dst: ptr[char], size: ptr_uint) -> int
+    extern def uv_ip_name(src: const_ptr[sys.sockaddr], dst: ptr[char], size: ptr_uint) -> int
+    extern def uv_inet_ntop(af: int, src: const_ptr[void], dst: ptr[char], size: ptr_uint) -> int
+    extern def uv_inet_pton(af: int, src: cstr, dst: ptr[void]) -> int
 
     struct uv_random_s:
         data: ptr[void]
         kind: uv_req_type
         reserved: array[ptr[void], 6]
         loop: ptr[uv_loop_t]
-        status: i32
+        status: int
         buf: ptr[void]
-        buflen: usize
-        cb: fn(arg0: ptr[uv_random_t], arg1: i32, arg2: ptr[void], arg3: usize) -> void
+        buflen: ptr_uint
+        cb: fn(arg0: ptr[uv_random_t], arg1: int, arg2: ptr[void], arg3: ptr_uint) -> void
         work_req: sys.uv__work
 
-    extern def uv_random(loop: ptr[uv_loop_t], req: ptr[uv_random_t], buf: ptr[void], buflen: usize, flag_bits: u32, cb: fn(arg0: ptr[uv_random_t], arg1: i32, arg2: ptr[void], arg3: usize) -> void) -> i32
-    extern def uv_if_indextoname(ifindex: u32, buffer: ptr[char], size: ptr[usize]) -> i32
-    extern def uv_if_indextoiid(ifindex: u32, buffer: ptr[char], size: ptr[usize]) -> i32
-    extern def uv_exepath(buffer: ptr[char], size: ptr[usize]) -> i32
-    extern def uv_cwd(buffer: ptr[char], size: ptr[usize]) -> i32
-    extern def uv_chdir(dir: cstr) -> i32
-    extern def uv_get_free_memory() -> u64
-    extern def uv_get_total_memory() -> u64
-    extern def uv_get_constrained_memory() -> u64
-    extern def uv_get_available_memory() -> u64
-    extern def uv_clock_gettime(clock_id: uv_clock_id, ts: ptr[uv_timespec64_t]) -> i32
-    extern def uv_hrtime() -> u64
-    extern def uv_sleep(msec: u32) -> void
+    extern def uv_random(loop: ptr[uv_loop_t], req: ptr[uv_random_t], buf: ptr[void], buflen: ptr_uint, flag_bits: uint, cb: fn(arg0: ptr[uv_random_t], arg1: int, arg2: ptr[void], arg3: ptr_uint) -> void) -> int
+    extern def uv_if_indextoname(ifindex: uint, buffer: ptr[char], size: ptr[ptr_uint]) -> int
+    extern def uv_if_indextoiid(ifindex: uint, buffer: ptr[char], size: ptr[ptr_uint]) -> int
+    extern def uv_exepath(buffer: ptr[char], size: ptr[ptr_uint]) -> int
+    extern def uv_cwd(buffer: ptr[char], size: ptr[ptr_uint]) -> int
+    extern def uv_chdir(dir: cstr) -> int
+    extern def uv_get_free_memory() -> ulong
+    extern def uv_get_total_memory() -> ulong
+    extern def uv_get_constrained_memory() -> ulong
+    extern def uv_get_available_memory() -> ulong
+    extern def uv_clock_gettime(clock_id: uv_clock_id, ts: ptr[uv_timespec64_t]) -> int
+    extern def uv_hrtime() -> ulong
+    extern def uv_sleep(msec: uint) -> void
     extern def uv_disable_stdio_inheritance() -> void
-    extern def uv_dlopen(filename: cstr, lib: ptr[uv_lib_t]) -> i32
+    extern def uv_dlopen(filename: cstr, lib: ptr[uv_lib_t]) -> int
     extern def uv_dlclose(lib: ptr[uv_lib_t]) -> void
-    extern def uv_dlsym(lib: ptr[uv_lib_t], name: cstr, ptr: ptr[ptr[void]]) -> i32
+    extern def uv_dlsym(lib: ptr[uv_lib_t], name: cstr, ptr: ptr[ptr[void]]) -> int
     extern def uv_dlerror(lib: const_ptr[uv_lib_t]) -> cstr
-    extern def uv_mutex_init(handle: ptr[uv_mutex_t]) -> i32
-    extern def uv_mutex_init_recursive(handle: ptr[uv_mutex_t]) -> i32
+    extern def uv_mutex_init(handle: ptr[uv_mutex_t]) -> int
+    extern def uv_mutex_init_recursive(handle: ptr[uv_mutex_t]) -> int
     extern def uv_mutex_destroy(handle: ptr[uv_mutex_t]) -> void
     extern def uv_mutex_lock(handle: ptr[uv_mutex_t]) -> void
-    extern def uv_mutex_trylock(handle: ptr[uv_mutex_t]) -> i32
+    extern def uv_mutex_trylock(handle: ptr[uv_mutex_t]) -> int
     extern def uv_mutex_unlock(handle: ptr[uv_mutex_t]) -> void
-    extern def uv_rwlock_init(rwlock: ptr[uv_rwlock_t]) -> i32
+    extern def uv_rwlock_init(rwlock: ptr[uv_rwlock_t]) -> int
     extern def uv_rwlock_destroy(rwlock: ptr[uv_rwlock_t]) -> void
     extern def uv_rwlock_rdlock(rwlock: ptr[uv_rwlock_t]) -> void
-    extern def uv_rwlock_tryrdlock(rwlock: ptr[uv_rwlock_t]) -> i32
+    extern def uv_rwlock_tryrdlock(rwlock: ptr[uv_rwlock_t]) -> int
     extern def uv_rwlock_rdunlock(rwlock: ptr[uv_rwlock_t]) -> void
     extern def uv_rwlock_wrlock(rwlock: ptr[uv_rwlock_t]) -> void
-    extern def uv_rwlock_trywrlock(rwlock: ptr[uv_rwlock_t]) -> i32
+    extern def uv_rwlock_trywrlock(rwlock: ptr[uv_rwlock_t]) -> int
     extern def uv_rwlock_wrunlock(rwlock: ptr[uv_rwlock_t]) -> void
-    extern def uv_sem_init(sem: ptr[uv_sem_t], value: u32) -> i32
+    extern def uv_sem_init(sem: ptr[uv_sem_t], value: uint) -> int
     extern def uv_sem_destroy(sem: ptr[uv_sem_t]) -> void
     extern def uv_sem_post(sem: ptr[uv_sem_t]) -> void
     extern def uv_sem_wait(sem: ptr[uv_sem_t]) -> void
-    extern def uv_sem_trywait(sem: ptr[uv_sem_t]) -> i32
-    extern def uv_cond_init(cond: ptr[uv_cond_t]) -> i32
+    extern def uv_sem_trywait(sem: ptr[uv_sem_t]) -> int
+    extern def uv_cond_init(cond: ptr[uv_cond_t]) -> int
     extern def uv_cond_destroy(cond: ptr[uv_cond_t]) -> void
     extern def uv_cond_signal(cond: ptr[uv_cond_t]) -> void
     extern def uv_cond_broadcast(cond: ptr[uv_cond_t]) -> void
-    extern def uv_barrier_init(barrier: ptr[uv_barrier_t], count: u32) -> i32
+    extern def uv_barrier_init(barrier: ptr[uv_barrier_t], count: uint) -> int
     extern def uv_barrier_destroy(barrier: ptr[uv_barrier_t]) -> void
-    extern def uv_barrier_wait(barrier: ptr[uv_barrier_t]) -> i32
+    extern def uv_barrier_wait(barrier: ptr[uv_barrier_t]) -> int
     extern def uv_cond_wait(cond: ptr[uv_cond_t], mutex: ptr[uv_mutex_t]) -> void
-    extern def uv_cond_timedwait(cond: ptr[uv_cond_t], mutex: ptr[uv_mutex_t], timeout: usize) -> i32
+    extern def uv_cond_timedwait(cond: ptr[uv_cond_t], mutex: ptr[uv_mutex_t], timeout: ptr_uint) -> int
     extern def uv_once(guard: ptr[uv_once_t], callback: fn() -> void) -> void
-    extern def uv_key_create(key: ptr[uv_key_t]) -> i32
+    extern def uv_key_create(key: ptr[uv_key_t]) -> int
     extern def uv_key_delete(key: ptr[uv_key_t]) -> void
     extern def uv_key_get(key: ptr[uv_key_t]) -> ptr[void]
     extern def uv_key_set(key: ptr[uv_key_t], value: ptr[void]) -> void
-    extern def uv_gettimeofday(tv: ptr[uv_timeval64_t]) -> i32
+    extern def uv_gettimeofday(tv: ptr[uv_timeval64_t]) -> int
 
     type uv_thread_cb = fn(arg0: ptr[void]) -> void
 
-    extern def uv_thread_create(tid: ptr[uv_thread_t], entry: fn(arg0: ptr[void]) -> void, arg: ptr[void]) -> i32
-    extern def uv_thread_detach(tid: ptr[uv_thread_t]) -> i32
+    extern def uv_thread_create(tid: ptr[uv_thread_t], entry: fn(arg0: ptr[void]) -> void, arg: ptr[void]) -> int
+    extern def uv_thread_detach(tid: ptr[uv_thread_t]) -> int
 
-    flags uv_thread_create_flags: i32
+    flags uv_thread_create_flags: int
         UV_THREAD_NO_FLAGS = 0
         UV_THREAD_HAS_STACK_SIZE = 1
 
     struct uv_thread_options_t:
-        flag_bits: u32
-        stack_size: usize
+        flag_bits: uint
+        stack_size: ptr_uint
 
-    extern def uv_thread_create_ex(tid: ptr[uv_thread_t], params: const_ptr[uv_thread_options_t], entry: fn(arg0: ptr[void]) -> void, arg: ptr[void]) -> i32
-    extern def uv_thread_setaffinity(tid: ptr[uv_thread_t], cpumask: ptr[char], oldmask: ptr[char], mask_size: usize) -> i32
-    extern def uv_thread_getaffinity(tid: ptr[uv_thread_t], cpumask: ptr[char], mask_size: usize) -> i32
-    extern def uv_thread_getcpu() -> i32
+    extern def uv_thread_create_ex(tid: ptr[uv_thread_t], params: const_ptr[uv_thread_options_t], entry: fn(arg0: ptr[void]) -> void, arg: ptr[void]) -> int
+    extern def uv_thread_setaffinity(tid: ptr[uv_thread_t], cpumask: ptr[char], oldmask: ptr[char], mask_size: ptr_uint) -> int
+    extern def uv_thread_getaffinity(tid: ptr[uv_thread_t], cpumask: ptr[char], mask_size: ptr_uint) -> int
+    extern def uv_thread_getcpu() -> int
     extern def uv_thread_self() -> uv_thread_t
-    extern def uv_thread_join(tid: ptr[uv_thread_t]) -> i32
-    extern def uv_thread_equal(t1: const_ptr[uv_thread_t], t2: const_ptr[uv_thread_t]) -> i32
-    extern def uv_thread_setname(name: cstr) -> i32
-    extern def uv_thread_getname(tid: ptr[uv_thread_t], name: ptr[char], size: usize) -> i32
+    extern def uv_thread_join(tid: ptr[uv_thread_t]) -> int
+    extern def uv_thread_equal(t1: const_ptr[uv_thread_t], t2: const_ptr[uv_thread_t]) -> int
+    extern def uv_thread_setname(name: cstr) -> int
+    extern def uv_thread_getname(tid: ptr[uv_thread_t], name: ptr[char], size: ptr_uint) -> int
 
     union uv_any_handle:
         async_h: uv_async_s
@@ -1423,18 +1423,18 @@ extern module std.c.libuv:
 
     struct uv_loop_s:
         data: ptr[void]
-        active_handles: u32
+        active_handles: uint
         handle_queue: uv__queue
         active_reqs: uv_loop_s_active_reqs
         internal_fields: ptr[void]
-        stop_flag: u32
-        flag_bits: usize
-        backend_fd: i32
+        stop_flag: uint
+        flag_bits: ptr_uint
+        backend_fd: int
         pending_queue: uv__queue
         watcher_queue: uv__queue
         watchers: ptr[ptr[uv__io_s]]
-        nwatchers: u32
-        nfds: u32
+        nwatchers: uint
+        nfds: uint
         wq: uv__queue
         wq_mutex: sys.pthread_mutex_t
         wq_async: uv_async_s
@@ -1447,43 +1447,43 @@ extern module std.c.libuv:
         async_handles: uv__queue
         async_unused: fn() -> void
         async_io_watcher: uv__io_s
-        async_wfd: i32
+        async_wfd: int
         timer_heap: uv_loop_s_timer_heap
-        timer_counter: usize
-        time: usize
-        signal_pipefd: array[i32, 2]
+        timer_counter: ptr_uint
+        time: ptr_uint
+        signal_pipefd: array[int, 2]
         signal_io_watcher: uv__io_s
         child_watcher: uv_signal_s
-        emfile_fd: i32
+        emfile_fd: int
         inotify_read_watcher: uv__io_s
         inotify_watchers: ptr[void]
-        inotify_fd: i32
+        inotify_fd: int
 
     extern def uv_loop_get_data(arg0: const_ptr[uv_loop_t]) -> ptr[void]
     extern def uv_loop_set_data(arg0: ptr[uv_loop_t], data: ptr[void]) -> void
-    extern def uv_utf16_length_as_wtf8(utf16: const_ptr[u16], utf16_len: isize) -> usize
-    extern def uv_utf16_to_wtf8(utf16: const_ptr[u16], utf16_len: isize, wtf8_ptr: ptr[ptr[char]], wtf8_len_ptr: ptr[usize]) -> i32
-    extern def uv_wtf8_length_as_utf16(wtf8: cstr) -> isize
-    extern def uv_wtf8_to_utf16(wtf8: cstr, utf16: ptr[u16], utf16_len: usize) -> void
+    extern def uv_utf16_length_as_wtf8(utf16: const_ptr[ushort], utf16_len: ptr_int) -> ptr_uint
+    extern def uv_utf16_to_wtf8(utf16: const_ptr[ushort], utf16_len: ptr_int, wtf8_ptr: ptr[ptr[char]], wtf8_len_ptr: ptr[ptr_uint]) -> int
+    extern def uv_wtf8_length_as_utf16(wtf8: cstr) -> ptr_int
+    extern def uv_wtf8_to_utf16(wtf8: cstr, utf16: ptr[ushort], utf16_len: ptr_uint) -> void
 
-    const UV_PRIORITY_LOW: i32 = 19
+    const UV_PRIORITY_LOW: int = 19
 
-    const UV_PRIORITY_BELOW_NORMAL: i32 = 10
+    const UV_PRIORITY_BELOW_NORMAL: int = 10
 
-    const UV_PRIORITY_NORMAL: i32 = 0
+    const UV_PRIORITY_NORMAL: int = 0
 
-    const UV_PRIORITY_ABOVE_NORMAL: i32 = -7
+    const UV_PRIORITY_ABOVE_NORMAL: int = -7
 
-    const UV_PRIORITY_HIGH: i32 = -14
+    const UV_PRIORITY_HIGH: int = -14
 
-    const UV_PRIORITY_HIGHEST: i32 = -20
+    const UV_PRIORITY_HIGHEST: int = -20
 
-    const UV_FS_COPYFILE_EXCL: i32 = 1
+    const UV_FS_COPYFILE_EXCL: int = 1
 
-    const UV_FS_COPYFILE_FICLONE: i32 = 2
+    const UV_FS_COPYFILE_FICLONE: int = 2
 
-    const UV_FS_COPYFILE_FICLONE_FORCE: i32 = 4
+    const UV_FS_COPYFILE_FICLONE_FORCE: int = 4
 
-    const UV_FS_SYMLINK_DIR: i32 = 1
+    const UV_FS_SYMLINK_DIR: int = 1
 
-    const UV_FS_SYMLINK_JUNCTION: i32 = 2
+    const UV_FS_SYMLINK_JUNCTION: int = 2

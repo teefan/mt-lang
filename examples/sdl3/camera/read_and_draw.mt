@@ -2,30 +2,30 @@ module examples.sdl3.camera.read_and_draw
 
 import std.c.sdl3 as c
 
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/camera/read-and-draw"
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 var camera: ptr[c.SDL_Camera]? = null
 var texture: ptr[c.SDL_Texture]? = null
-var exit_status: i32 = 0
+var exit_status: int = 0
 
 
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
-            if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_CAMERA_DEVICE_APPROVED:
+            if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_CAMERA_DEVICE_APPROVED:
                 c.SDL_Log(c"Camera use approved by user!")
             else:
-                if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_CAMERA_DEVICE_DENIED:
+                if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_CAMERA_DEVICE_DENIED:
                     c.SDL_Log(c"Camera use denied by user!")
                     exit_status = 1
                     return false
@@ -72,9 +72,9 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     var devices: ptr[c.SDL_CameraID]? = null
-    var device_count: i32 = 0
+    var device_count: int = 0
 
     c.SDL_SetAppMetadata(c"Example Camera Read and Draw", c"1.0", c"com.example.camera-read-and-draw")
 
@@ -119,5 +119,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return exit_status
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

@@ -2,14 +2,14 @@ module examples.raylib.core.core_highdpi_demo
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const cell_size: i32 = 50
+const screen_width: int = 800
+const screen_height: int = 450
+const cell_size: int = 50
 const window_title: cstr = c"raylib [core] example - highdpi demo"
 const sample_text: cstr = c"Can you see this?"
 
 
-def draw_text_center(text: cstr, x: i32, y: i32, font_size: i32, color: rl.Color) -> void:
+def draw_text_center(text: cstr, x: int, y: int, font_size: int, color: rl.Color) -> void:
     let font = rl.GetFontDefault()
     let size = rl.MeasureTextEx(font, text, font_size, 3.0)
     rl.DrawTextEx(
@@ -25,7 +25,7 @@ def draw_text_center(text: cstr, x: i32, y: i32, font_size: i32, color: rl.Color
     )
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_WINDOW_HIGHDPI | rl.ConfigFlags.FLAG_WINDOW_RESIZABLE)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -39,7 +39,7 @@ def main() -> i32:
     let pixel_grid_bottom = pixel_grid_top + 80
     let pixel_grid_label_y = pixel_grid_bottom + 30
     let pixel_grid_desc_y = pixel_grid_label_y + 30
-    var cell_size_px: f32 = f32<-cell_size
+    var cell_size_px: float = float<-cell_size
 
     rl.SetTargetFPS(60)
 
@@ -50,7 +50,7 @@ def main() -> i32:
 
         let current_monitor = rl.GetCurrentMonitor()
         let dpi_scale = rl.GetWindowScaleDPI()
-        cell_size_px = f32<-cell_size / dpi_scale.x
+        cell_size_px = float<-cell_size / dpi_scale.x
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
@@ -80,7 +80,7 @@ def main() -> i32:
         var last_text_x = -min_text_space
         var pixel_x = cell_size
         while pixel_x < rl.GetRenderWidth():
-            let x: i32 = i32<-(f32<-pixel_x / dpi_scale.x)
+            let x: int = int<-(float<-pixel_x / dpi_scale.x)
             if odd:
                 rl.DrawRectangle(
                     x,

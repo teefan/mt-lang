@@ -4,9 +4,9 @@ import std.raylib as rl
 import std.raylib.math as rm
 import std.rlgl as rlgl
 
-const max_points: i32 = 11
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const max_points: int = 11
+const screen_width: int = 800
+const screen_height: int = 450
 const texture_path: str = "../../raylib/resources/cat.png"
 
 
@@ -26,10 +26,10 @@ def draw_texture_poly(texture: rl.Texture2D, center: rl.Vector2, points: array[r
         rlgl.vertex_2f(points[index + 1].x + center.x, points[index + 1].y + center.y)
 
     rlgl.end()
-    rlgl.set_texture(u32<-0)
+    rlgl.set_texture(uint<-0)
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Polygon Drawing")
     defer rl.close_window()
 
@@ -59,7 +59,7 @@ def main() -> i32:
     let texture = rl.load_texture(texture_path)
     defer rl.unload_texture(texture)
 
-    var angle: f32 = 0.0
+    var angle: float = 0.0
 
     rl.set_target_fps(60)
 
@@ -77,7 +77,7 @@ def main() -> i32:
 
         draw_texture_poly(
             texture,
-            rl.Vector2(x = f32<-rl.get_screen_width() / 2.0, y = f32<-rl.get_screen_height() / 2.0),
+            rl.Vector2(x = float<-rl.get_screen_width() / 2.0, y = float<-rl.get_screen_height() / 2.0),
             positions,
             texcoords,
             rl.WHITE,

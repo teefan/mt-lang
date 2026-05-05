@@ -4,9 +4,9 @@ import std.c.raylib as rl
 import std.c.rlgl as rlgl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const model_path: cstr = c"../resources/models/gltf/greenman.glb"
 const shader_vertex_path_format: cstr = c"../resources/shaders/glsl%i/skinning.vs"
 const shader_fragment_path_format: cstr = c"../resources/shaders/glsl%i/skinning.fs"
@@ -23,32 +23,32 @@ def chars_to_cstr(text: ptr[char]) -> cstr:
         return cstr<-text
 
 
-def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
+def model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
     unsafe:
         return read(anims + index)
 
 
-def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
+def model_animation_name(anims: ptr[rl.ModelAnimation], index: int) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of((anims + index).name[0]))
 
 
-def model_animation_pose(anim: rl.ModelAnimation, frame: i32) -> rl.ModelAnimPose:
+def model_animation_pose(anim: rl.ModelAnimation, frame: int) -> rl.ModelAnimPose:
     unsafe:
         return read(anim.keyframePoses + frame)
 
 
-def pose_transform(pose: rl.ModelAnimPose, index: i32) -> rl.Transform:
+def pose_transform(pose: rl.ModelAnimPose, index: int) -> rl.Transform:
     unsafe:
         return read(pose + index)
 
 
-def bind_pose_transform(skeleton: rl.ModelSkeleton, index: i32) -> rl.Transform:
+def bind_pose_transform(skeleton: rl.ModelSkeleton, index: int) -> rl.Transform:
     unsafe:
         return read(skeleton.bindPose + index)
 
 
-def skeleton_bone_name(skeleton: rl.ModelSkeleton, index: i32) -> cstr:
+def skeleton_bone_name(skeleton: rl.ModelSkeleton, index: int) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of((skeleton.bones + index).name[0]))
 
@@ -58,37 +58,37 @@ def model_value(model: ptr[rl.Model]) -> rl.Model:
         return read(model)
 
 
-def model_mesh(model: rl.Model, index: i32) -> rl.Mesh:
+def model_mesh(model: rl.Model, index: int) -> rl.Mesh:
     unsafe:
         return model.meshes[index]
 
 
-def model_bone_matrix(model: rl.Model, index: i32) -> rl.Matrix:
+def model_bone_matrix(model: rl.Model, index: int) -> rl.Matrix:
     unsafe:
         return read(model.boneMatrices + index)
 
 
-def set_model_bone_matrix(model: rl.Model, index: i32, matrix: rl.Matrix) -> void:
+def set_model_bone_matrix(model: rl.Model, index: int, matrix: rl.Matrix) -> void:
     unsafe:
         read(model.boneMatrices + index) = matrix
 
 
-def read_f32(values: ptr[f32], index: i32) -> f32:
+def read_float(values: ptr[float], index: int) -> float:
     unsafe:
         return read(values + index)
 
 
-def write_f32(values: ptr[f32], index: i32, value: f32) -> void:
+def write_float(values: ptr[float], index: int, value: float) -> void:
     unsafe:
         read(values + index) = value
 
 
-def read_u8(values: ptr[u8], index: i32) -> u8:
+def read_ubyte(values: ptr[ubyte], index: int) -> ubyte:
     unsafe:
         return read(values + index)
 
 
-def mesh_vbo_id(mesh: rl.Mesh, index: i32) -> u32:
+def mesh_vbo_id(mesh: rl.Mesh, index: int) -> uint:
     unsafe:
         return read(mesh.vboId + index)
 
@@ -123,7 +123,7 @@ def is_upper_body_bone(bone_name: cstr) -> bool:
     return false
 
 
-def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation, frame0: i32, anim1: rl.ModelAnimation, frame1: i32, blend: f32, upper_body_blend: bool) -> void:
+def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation, frame0: int, anim1: rl.ModelAnimation, frame1: int, blend: float, upper_body_blend: bool) -> void:
     let current_model = model_value(model)
     let pose0 = model_animation_pose(anim0, frame0)
     let pose1 = model_animation_pose(anim1, frame1)
@@ -135,7 +135,7 @@ def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation,
             if is_upper_body_bone(skeleton_bone_name(current_model.skeleton, bone_index)):
                 bone_blend_factor = clamped_blend
             else:
-                bone_blend_factor = f32<-1.0 - clamped_blend
+                bone_blend_factor = float<-1.0 - clamped_blend
 
         let bind_transform = bind_pose_transform(current_model.skeleton, bone_index)
         let anim_transform0 = pose_transform(pose0, bone_index)
@@ -165,40 +165,40 @@ def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation,
         var v_counter = 0
         var buffer_update_required = false
         while v_counter < vertex_values_count:
-            write_f32(mesh.animVertices, v_counter, 0.0)
-            write_f32(mesh.animVertices, v_counter + 1, 0.0)
-            write_f32(mesh.animVertices, v_counter + 2, 0.0)
-            write_f32(mesh.animNormals, v_counter, 0.0)
-            write_f32(mesh.animNormals, v_counter + 1, 0.0)
-            write_f32(mesh.animNormals, v_counter + 2, 0.0)
+            write_float(mesh.animVertices, v_counter, 0.0)
+            write_float(mesh.animVertices, v_counter + 1, 0.0)
+            write_float(mesh.animVertices, v_counter + 2, 0.0)
+            write_float(mesh.animNormals, v_counter, 0.0)
+            write_float(mesh.animNormals, v_counter + 1, 0.0)
+            write_float(mesh.animNormals, v_counter + 2, 0.0)
 
             for _ in 0..4:
-                let bone_weight = read_f32(mesh.boneWeights, bone_counter)
-                let bone_index = i32<-read_u8(mesh.boneIndices, bone_counter)
+                let bone_weight = read_float(mesh.boneWeights, bone_counter)
+                let bone_index = int<-read_ubyte(mesh.boneIndices, bone_counter)
 
                 if bone_weight != 0.0:
                     let bone_matrix = model_bone_matrix(current_model, bone_index)
                     let anim_vertex = rl.Vector3(
-                        x = read_f32(mesh.vertices, v_counter),
-                        y = read_f32(mesh.vertices, v_counter + 1),
-                        z = read_f32(mesh.vertices, v_counter + 2),
+                        x = read_float(mesh.vertices, v_counter),
+                        y = read_float(mesh.vertices, v_counter + 1),
+                        z = read_float(mesh.vertices, v_counter + 2),
                     ).transform(bone_matrix)
 
-                    write_f32(mesh.animVertices, v_counter, read_f32(mesh.animVertices, v_counter) + anim_vertex.x * bone_weight)
-                    write_f32(mesh.animVertices, v_counter + 1, read_f32(mesh.animVertices, v_counter + 1) + anim_vertex.y * bone_weight)
-                    write_f32(mesh.animVertices, v_counter + 2, read_f32(mesh.animVertices, v_counter + 2) + anim_vertex.z * bone_weight)
+                    write_float(mesh.animVertices, v_counter, read_float(mesh.animVertices, v_counter) + anim_vertex.x * bone_weight)
+                    write_float(mesh.animVertices, v_counter + 1, read_float(mesh.animVertices, v_counter + 1) + anim_vertex.y * bone_weight)
+                    write_float(mesh.animVertices, v_counter + 2, read_float(mesh.animVertices, v_counter + 2) + anim_vertex.z * bone_weight)
                     buffer_update_required = true
 
                     let normal_matrix = bone_matrix.invert().transpose()
                     let anim_normal = rl.Vector3(
-                        x = read_f32(mesh.normals, v_counter),
-                        y = read_f32(mesh.normals, v_counter + 1),
-                        z = read_f32(mesh.normals, v_counter + 2),
+                        x = read_float(mesh.normals, v_counter),
+                        y = read_float(mesh.normals, v_counter + 1),
+                        z = read_float(mesh.normals, v_counter + 2),
                     ).transform(normal_matrix)
 
-                    write_f32(mesh.animNormals, v_counter, read_f32(mesh.animNormals, v_counter) + anim_normal.x * bone_weight)
-                    write_f32(mesh.animNormals, v_counter + 1, read_f32(mesh.animNormals, v_counter + 1) + anim_normal.y * bone_weight)
-                    write_f32(mesh.animNormals, v_counter + 2, read_f32(mesh.animNormals, v_counter + 2) + anim_normal.z * bone_weight)
+                    write_float(mesh.animNormals, v_counter, read_float(mesh.animNormals, v_counter) + anim_normal.x * bone_weight)
+                    write_float(mesh.animNormals, v_counter + 1, read_float(mesh.animNormals, v_counter + 1) + anim_normal.y * bone_weight)
+                    write_float(mesh.animNormals, v_counter + 2, read_float(mesh.animNormals, v_counter + 2) + anim_normal.z * bone_weight)
 
                 bone_counter += 1
 
@@ -206,20 +206,20 @@ def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation,
 
         if buffer_update_required:
             rlgl.rlUpdateVertexBuffer(
-                mesh_vbo_id(mesh, i32<-rl.ShaderLocationIndex.SHADER_LOC_VERTEX_POSITION),
+                mesh_vbo_id(mesh, int<-rl.ShaderLocationIndex.SHADER_LOC_VERTEX_POSITION),
                 mesh.animVertices,
                 mesh.vertexCount * 3 * 4,
                 0,
             )
             rlgl.rlUpdateVertexBuffer(
-                mesh_vbo_id(mesh, i32<-rl.ShaderLocationIndex.SHADER_LOC_VERTEX_NORMAL),
+                mesh_vbo_id(mesh, int<-rl.ShaderLocationIndex.SHADER_LOC_VERTEX_NORMAL),
                 mesh.animNormals,
                 mesh.vertexCount * 3 * 4,
                 0,
             )
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -273,7 +273,7 @@ def main() -> i32:
         anim_current_frame0 = (anim_current_frame0 + 1) % anim0.keyframeCount
         anim_current_frame1 = (anim_current_frame1 + 1) % anim1.keyframeCount
 
-        let blend_factor = if upper_body_blend: f32<-1.0 else: f32<-0.5
+        let blend_factor = if upper_body_blend: float<-1.0 else: float<-0.5
         update_model_animation_bones(ptr_of(model), anim0, anim_current_frame0, anim1, anim_current_frame1, blend_factor, upper_body_blend)
 
         rl.BeginDrawing()

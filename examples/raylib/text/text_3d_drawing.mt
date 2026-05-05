@@ -4,10 +4,10 @@ import std.c.libm as math
 import std.c.raylib as rl
 import std.c.rlgl as rlgl
 
-const letter_boundary_size: f32 = 0.25
-const text_max_layers: i32 = 32
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const letter_boundary_size: float = 0.25
+const text_max_layers: int = 32
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [text] example - 3d drawing"
 const alpha_discard_shader_path: cstr = c"../resources/shaders/glsl330/alpha_discard.fs"
 const initial_text: cstr = c"Hello ~~World~~ in 3D!"
@@ -31,17 +31,17 @@ def text_buffer_cstr(text: ref[array[char, 64]]) -> cstr:
     return chars_to_cstr(text_buffer_ptr(text))
 
 
-def font_glyph(font: rl.Font, index: i32) -> rl.GlyphInfo:
+def font_glyph(font: rl.Font, index: int) -> rl.GlyphInfo:
     unsafe:
         return read(font.glyphs + index)
 
 
-def font_rec(font: rl.Font, index: i32) -> rl.Rectangle:
+def font_rec(font: rl.Font, index: int) -> rl.Rectangle:
     unsafe:
         return read(font.recs + index)
 
 
-def text_codepoint_at(text: cstr, index: i32, byte_count: ptr[i32]) -> i32:
+def text_codepoint_at(text: cstr, index: int, byte_count: ptr[int]) -> int:
     unsafe:
         return rl.GetCodepoint(cstr<-(ptr[char]<-text + index), byte_count)
 
@@ -51,7 +51,7 @@ def wave_text_config_value(config: ptr[WaveTextConfig]) -> WaveTextConfig:
         return read(config)
 
 
-def wrap_hue(hue_value: f32) -> f32:
+def wrap_hue(hue_value: float) -> float:
     var hue = hue_value
     while hue >= 360.0:
         hue -= 360.0
@@ -60,38 +60,38 @@ def wrap_hue(hue_value: f32) -> f32:
     return hue
 
 
-def generate_random_color(s: f32, v: f32) -> rl.Color:
-    let phi = f32<-0.618033988749895
-    let seed = f32<-rl.GetRandomValue(0, 360)
+def generate_random_color(s: float, v: float) -> rl.Color:
+    let phi = float<-0.618033988749895
+    let seed = float<-rl.GetRandomValue(0, 360)
     let hue = wrap_hue(seed + seed * phi)
     return rl.ColorFromHSV(hue, s, v)
 
 
-def draw_text_codepoint_3d(font: rl.Font, codepoint: i32, position: rl.Vector3, font_size: f32, backface: bool, tint: rl.Color, show_letter_boundary: bool) -> void:
+def draw_text_codepoint_3d(font: rl.Font, codepoint: int, position: rl.Vector3, font_size: float, backface: bool, tint: rl.Color, show_letter_boundary: bool) -> void:
     let glyph_index = rl.GetGlyphIndex(font, codepoint)
     let glyph = font_glyph(font, glyph_index)
     let rec = font_rec(font, glyph_index)
-    let scale = font_size / f32<-font.baseSize
+    let scale = font_size / float<-font.baseSize
 
     var glyph_position = position
-    glyph_position.x += f32<-(glyph.offsetX - font.glyphPadding) * scale
-    glyph_position.z += f32<-(glyph.offsetY - font.glyphPadding) * scale
+    glyph_position.x += float<-(glyph.offsetX - font.glyphPadding) * scale
+    glyph_position.z += float<-(glyph.offsetY - font.glyphPadding) * scale
 
     let src_rec = rl.Rectangle(
-        x = rec.x - f32<-font.glyphPadding,
-        y = rec.y - f32<-font.glyphPadding,
-        width = rec.width + 2.0 * f32<-font.glyphPadding,
-        height = rec.height + 2.0 * f32<-font.glyphPadding,
+        x = rec.x - float<-font.glyphPadding,
+        y = rec.y - float<-font.glyphPadding,
+        width = rec.width + 2.0 * float<-font.glyphPadding,
+        height = rec.height + 2.0 * float<-font.glyphPadding,
     )
 
-    let width = (rec.width + 2.0 * f32<-font.glyphPadding) * scale
-    let height = (rec.height + 2.0 * f32<-font.glyphPadding) * scale
+    let width = (rec.width + 2.0 * float<-font.glyphPadding) * scale
+    let height = (rec.height + 2.0 * float<-font.glyphPadding) * scale
 
     if font.texture.id > 0:
-        let tx = src_rec.x / f32<-font.texture.width
-        let ty = src_rec.y / f32<-font.texture.height
-        let tw = (src_rec.x + src_rec.width) / f32<-font.texture.width
-        let th = (src_rec.y + src_rec.height) / f32<-font.texture.height
+        let tx = src_rec.x / float<-font.texture.width
+        let ty = src_rec.y / float<-font.texture.height
+        let tw = (src_rec.x + src_rec.width) / float<-font.texture.width
+        let th = (src_rec.y + src_rec.height) / float<-font.texture.height
 
         if show_letter_boundary:
             rl.DrawCubeWiresV(
@@ -136,12 +136,12 @@ def draw_text_codepoint_3d(font: rl.Font, codepoint: i32, position: rl.Vector3, 
         rlgl.rlSetTexture(0)
 
 
-def draw_text_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size: f32, font_spacing: f32, line_spacing: f32, backface: bool, tint: rl.Color, show_letter_boundary: bool) -> void:
-    let length = i32<-rl.TextLength(text)
-    let scale = font_size / f32<-font.baseSize
+def draw_text_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size: float, font_spacing: float, line_spacing: float, backface: bool, tint: rl.Color, show_letter_boundary: bool) -> void:
+    let length = int<-rl.TextLength(text)
+    let scale = font_size / float<-font.baseSize
 
-    var text_offset_y = f32<-0.0
-    var text_offset_x = f32<-0.0
+    var text_offset_y = float<-0.0
+    var text_offset_x = float<-0.0
     var index = 0
     while index < length:
         var codepoint_byte_count = 0
@@ -155,7 +155,7 @@ def draw_text_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size: f32
 
         if codepoint == 10:
             text_offset_y += font_size + line_spacing
-            text_offset_x = f32<-0.0
+            text_offset_x = float<-0.0
         else:
             if codepoint != 32 and codepoint != 9:
                 draw_text_codepoint_3d(
@@ -171,18 +171,18 @@ def draw_text_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size: f32
             if glyph.advanceX == 0:
                 text_offset_x += rec.width * scale + font_spacing
             else:
-                text_offset_x += f32<-glyph.advanceX * scale + font_spacing
+                text_offset_x += float<-glyph.advanceX * scale + font_spacing
 
         index += codepoint_byte_count
 
 
-def draw_text_wave_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size: f32, font_spacing: f32, line_spacing: f32, backface: bool, config: ptr[WaveTextConfig], time: f32, tint: rl.Color, show_letter_boundary: bool) -> void:
-    let length = i32<-rl.TextLength(text)
-    let scale = font_size / f32<-font.baseSize
+def draw_text_wave_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size: float, font_spacing: float, line_spacing: float, backface: bool, config: ptr[WaveTextConfig], time: float, tint: rl.Color, show_letter_boundary: bool) -> void:
+    let length = int<-rl.TextLength(text)
+    let scale = font_size / float<-font.baseSize
     let wave_config = wave_text_config_value(config)
 
-    var text_offset_y = f32<-0.0
-    var text_offset_x = f32<-0.0
+    var text_offset_y = float<-0.0
+    var text_offset_x = float<-0.0
     var wave = false
     var index = 0
     var glyph_position = 0
@@ -198,7 +198,7 @@ def draw_text_wave_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size
 
         if codepoint == 10:
             text_offset_y += font_size + line_spacing
-            text_offset_x = f32<-0.0
+            text_offset_x = float<-0.0
             glyph_position = 0
         elif codepoint == 126:
             var next_byte_count = 0
@@ -210,9 +210,9 @@ def draw_text_wave_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size
             if codepoint != 32 and codepoint != 9:
                 var glyph_origin = position
                 if wave:
-                    glyph_origin.x += math.sinf(time * wave_config.wave_speed.x - f32<-glyph_position * wave_config.wave_offset.x) * wave_config.wave_range.x
-                    glyph_origin.y += math.sinf(time * wave_config.wave_speed.y - f32<-glyph_position * wave_config.wave_offset.y) * wave_config.wave_range.y
-                    glyph_origin.z += math.sinf(time * wave_config.wave_speed.z - f32<-glyph_position * wave_config.wave_offset.z) * wave_config.wave_range.z
+                    glyph_origin.x += math.sinf(time * wave_config.wave_speed.x - float<-glyph_position * wave_config.wave_offset.x) * wave_config.wave_range.x
+                    glyph_origin.y += math.sinf(time * wave_config.wave_speed.y - float<-glyph_position * wave_config.wave_offset.y) * wave_config.wave_range.y
+                    glyph_origin.z += math.sinf(time * wave_config.wave_speed.z - float<-glyph_position * wave_config.wave_offset.z) * wave_config.wave_range.z
 
                 draw_text_codepoint_3d(
                     font,
@@ -227,22 +227,22 @@ def draw_text_wave_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size
             if glyph.advanceX == 0:
                 text_offset_x += rec.width * scale + font_spacing
             else:
-                text_offset_x += f32<-glyph.advanceX * scale + font_spacing
+                text_offset_x += float<-glyph.advanceX * scale + font_spacing
 
             glyph_position += 1
 
         index += codepoint_byte_count
 
 
-def measure_text_wave_3d(font: rl.Font, text: cstr, font_size: f32, font_spacing: f32, line_spacing: f32) -> rl.Vector3:
-    let length = i32<-rl.TextLength(text)
-    let scale = font_size / f32<-font.baseSize
+def measure_text_wave_3d(font: rl.Font, text: cstr, font_size: float, font_spacing: float, line_spacing: float) -> rl.Vector3:
+    let length = int<-rl.TextLength(text)
+    let scale = font_size / float<-font.baseSize
 
     var temp_len = 0
     var len_counter = 0
-    var temp_text_width = f32<-0.0
+    var temp_text_width = float<-0.0
     var text_height = scale
-    var text_width = f32<-0.0
+    var text_width = float<-0.0
     var index = 0
     while index < length:
         var next_bytes = 0
@@ -262,20 +262,20 @@ def measure_text_wave_3d(font: rl.Font, text: cstr, font_size: f32, font_spacing
                 else:
                     len_counter += 1
                     if glyph.advanceX != 0:
-                        text_width += f32<-glyph.advanceX * scale
+                        text_width += float<-glyph.advanceX * scale
                     else:
-                        text_width += (rec.width + f32<-glyph.offsetX) * scale
+                        text_width += (rec.width + float<-glyph.offsetX) * scale
             else:
                 len_counter += 1
                 if glyph.advanceX != 0:
-                    text_width += f32<-glyph.advanceX * scale
+                    text_width += float<-glyph.advanceX * scale
                 else:
-                    text_width += (rec.width + f32<-glyph.offsetX) * scale
+                    text_width += (rec.width + float<-glyph.offsetX) * scale
         else:
             if temp_text_width < text_width:
                 temp_text_width = text_width
             len_counter = 0
-            text_width = f32<-0.0
+            text_width = float<-0.0
             text_height += font_size + line_spacing
 
         if temp_len < len_counter:
@@ -287,13 +287,13 @@ def measure_text_wave_3d(font: rl.Font, text: cstr, font_size: f32, font_spacing
         temp_text_width = text_width
 
     return rl.Vector3(
-        x = temp_text_width + f32<-(temp_len - 1) * font_spacing,
+        x = temp_text_width + float<-(temp_len - 1) * font_spacing,
         y = 0.25,
         z = text_height,
     )
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT | rl.ConfigFlags.FLAG_VSYNC_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -308,17 +308,17 @@ def main() -> i32:
     camera.target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
     camera.up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
     camera.fovy = 45.0
-    camera.projection = i32<-rl.CameraProjection.CAMERA_PERSPECTIVE
+    camera.projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
 
-    var camera_mode = i32<-rl.CameraMode.CAMERA_ORBITAL
+    var camera_mode = int<-rl.CameraMode.CAMERA_ORBITAL
 
     let cube_position = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
     let cube_size = rl.Vector3(x = 2.0, y = 2.0, z = 2.0)
 
     var font = rl.GetFontDefault()
-    var font_size = f32<-0.8
-    var font_spacing = f32<-0.05
-    var line_spacing = f32<-(-0.1)
+    var font_size = float<-0.8
+    var font_spacing = float<-0.05
+    var line_spacing = float<-(-0.1)
 
     var text = zero[array[char, 64]]
     rl.TextCopy(text_buffer_ptr(ref_of(text)), initial_text)
@@ -326,7 +326,7 @@ def main() -> i32:
     var text_box = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
     var layers = 1
     var quads = 0
-    var layer_distance = f32<-0.01
+    var layer_distance = float<-0.01
 
     var wave_config = WaveTextConfig(
         wave_range = rl.Vector3(x = 0.45, y = 0.45, z = 0.45),
@@ -334,7 +334,7 @@ def main() -> i32:
         wave_offset = rl.Vector3(x = 0.35, y = 0.35, z = 0.35),
     )
 
-    var time = f32<-0.0
+    var time = float<-0.0
     var light = rl.MAROON
     var dark = rl.RED
     var alpha_discard = zero[rl.Shader]
@@ -356,11 +356,11 @@ def main() -> i32:
                     let dropped_path = cstr<-read(dropped_files.paths)
                     if rl.IsFileExtension(dropped_path, c".ttf"):
                         rl.UnloadFont(font)
-                        font = rl.LoadFontEx(dropped_path, i32<-font_size, null, 0)
+                        font = rl.LoadFontEx(dropped_path, int<-font_size, null, 0)
                     elif rl.IsFileExtension(dropped_path, c".fnt"):
                         rl.UnloadFont(font)
                         font = rl.LoadFont(dropped_path)
-                        font_size = f32<-font.baseSize
+                        font_size = float<-font.baseSize
             rl.UnloadDroppedFiles(dropped_files)
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_F1):
@@ -373,14 +373,14 @@ def main() -> i32:
             camera.target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
             camera.up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
             camera.fovy = 45.0
-            camera.projection = i32<-rl.CameraProjection.CAMERA_PERSPECTIVE
+            camera.projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
 
             if spin:
                 camera.position = rl.Vector3(x = -10.0, y = 15.0, z = -10.0)
-                camera_mode = i32<-rl.CameraMode.CAMERA_ORBITAL
+                camera_mode = int<-rl.CameraMode.CAMERA_ORBITAL
             else:
                 camera.position = rl.Vector3(x = 10.0, y = 10.0, z = -10.0)
-                camera_mode = i32<-rl.CameraMode.CAMERA_FREE
+                camera_mode = int<-rl.CameraMode.CAMERA_FREE
 
         if rl.IsMouseButtonPressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
             let ray = rl.GetScreenToWorldRay(rl.GetMousePosition(), camera)
@@ -424,11 +424,11 @@ def main() -> i32:
                 var color_index = 0
                 while color_index < text_max_layers:
                     multi[color_index] = generate_random_color(0.5, 0.8)
-                    multi[color_index].a = u8<-rl.GetRandomValue(0, 255)
+                    multi[color_index].a = ubyte<-rl.GetRandomValue(0, 255)
                     color_index += 1
 
         let ch = rl.GetCharPressed()
-        let text_len = i32<-rl.TextLength(text_buffer_cstr(ref_of(text)))
+        let text_len = int<-rl.TextLength(text_buffer_cstr(ref_of(text)))
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_BACKSPACE):
             if text_len > 0:
                 text[text_len - 1] = char<-0
@@ -470,7 +470,7 @@ def main() -> i32:
             draw_text_wave_3d(
                 font,
                 text_buffer_cstr(ref_of(text)),
-                rl.Vector3(x = -text_box.x / 2.0, y = layer_distance * f32<-layer_index, z = -4.5),
+                rl.Vector3(x = -text_box.x / 2.0, y = layer_distance * float<-layer_index, z = -4.5),
                 font_size,
                 font_spacing,
                 line_spacing,
@@ -495,42 +495,42 @@ def main() -> i32:
         var position = rl.Vector3(x = 0.0, y = 0.01, z = 2.0)
 
         let size_opt = rl.TextFormat(c"< SIZE: %2.1f >", font_size)
-        quads += i32<-rl.TextLength(size_opt)
+        quads += int<-rl.TextLength(size_opt)
         var measure = rl.MeasureTextEx(rl.GetFontDefault(), size_opt, 0.8, 0.1)
         position.x = -measure.x / 2.0
         draw_text_3d(rl.GetFontDefault(), size_opt, position, 0.8, 0.1, 0.0, false, rl.BLUE, false)
         position.z += 0.5 + measure.y
 
         let spacing_opt = rl.TextFormat(c"< SPACING: %2.1f >", font_spacing)
-        quads += i32<-rl.TextLength(spacing_opt)
+        quads += int<-rl.TextLength(spacing_opt)
         measure = rl.MeasureTextEx(rl.GetFontDefault(), spacing_opt, 0.8, 0.1)
         position.x = -measure.x / 2.0
         draw_text_3d(rl.GetFontDefault(), spacing_opt, position, 0.8, 0.1, 0.0, false, rl.BLUE, false)
         position.z += 0.5 + measure.y
 
         let line_opt = rl.TextFormat(c"< LINE: %2.1f >", line_spacing)
-        quads += i32<-rl.TextLength(line_opt)
+        quads += int<-rl.TextLength(line_opt)
         measure = rl.MeasureTextEx(rl.GetFontDefault(), line_opt, 0.8, 0.1)
         position.x = -measure.x / 2.0
         draw_text_3d(rl.GetFontDefault(), line_opt, position, 0.8, 0.1, 0.0, false, rl.BLUE, false)
         position.z += 0.5 + measure.y
 
         let lbox_opt = rl.TextFormat(c"< LBOX: %3s >", (if saved_letter_boundary: c"ON" else: c"OFF"))
-        quads += i32<-rl.TextLength(lbox_opt)
+        quads += int<-rl.TextLength(lbox_opt)
         measure = rl.MeasureTextEx(rl.GetFontDefault(), lbox_opt, 0.8, 0.1)
         position.x = -measure.x / 2.0
         draw_text_3d(rl.GetFontDefault(), lbox_opt, position, 0.8, 0.1, 0.0, false, rl.RED, false)
         position.z += 0.5 + measure.y
 
         let tbox_opt = rl.TextFormat(c"< TBOX: %3s >", (if show_text_boundary: c"ON" else: c"OFF"))
-        quads += i32<-rl.TextLength(tbox_opt)
+        quads += int<-rl.TextLength(tbox_opt)
         measure = rl.MeasureTextEx(rl.GetFontDefault(), tbox_opt, 0.8, 0.1)
         position.x = -measure.x / 2.0
         draw_text_3d(rl.GetFontDefault(), tbox_opt, position, 0.8, 0.1, 0.0, false, rl.RED, false)
         position.z += 0.5 + measure.y
 
         let layer_distance_opt = rl.TextFormat(c"< LAYER DISTANCE: %.3f >", layer_distance)
-        quads += i32<-rl.TextLength(layer_distance_opt)
+        quads += int<-rl.TextLength(layer_distance_opt)
         measure = rl.MeasureTextEx(rl.GetFontDefault(), layer_distance_opt, 0.8, 0.1)
         position.x = -measure.x / 2.0
         draw_text_3d(rl.GetFontDefault(), layer_distance_opt, position, 0.8, 0.1, 0.0, false, rl.DARKPURPLE, false)
@@ -585,7 +585,7 @@ def main() -> i32:
 
         rl.DrawText(c"Drag & drop a font file to change the font!\nType something, see what happens!\n\nPress [F3] to toggle the camera", 10, 35, 10, rl.BLACK)
 
-        quads += i32<-rl.TextLength(text_buffer_cstr(ref_of(text))) * 2 * layers
+        quads += int<-rl.TextLength(text_buffer_cstr(ref_of(text))) * 2 * layers
         let stats = rl.TextFormat(c"%2i layer(s) | %s camera | %4i quads (%4i verts)", layers, (if spin: c"ORBITAL" else: c"FREE"), quads, quads * 4)
         var width = rl.MeasureText(stats, 10)
         rl.DrawText(stats, screen_width - 20 - width, 10, 10, rl.DARKGREEN)

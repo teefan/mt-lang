@@ -5,8 +5,8 @@ import std.c.raylib as rl
 import std.c.rlgl as rlgl
 import std.math as mt_math
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - rectangle advanced"
 
 
@@ -18,14 +18,14 @@ def emit_vertex(point: rl.Vector2) -> void:
     rlgl.rlVertex2f(point.x, point.y)
 
 
-def emit_arc_vertex(center: rl.Vector2, angle: f32, radius: f32) -> void:
+def emit_arc_vertex(center: rl.Vector2, angle: float, radius: float) -> void:
     rlgl.rlVertex2f(
         center.x + math.cosf(mt_math.deg2rad * angle) * radius,
         center.y + math.sinf(mt_math.deg2rad * angle) * radius,
     )
 
 
-def draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: f32, roundness_right: f32, segments: i32, left: rl.Color, right: rl.Color) -> void:
+def draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: float, roundness_right: float, segments: int, left: rl.Color, right: rl.Color) -> void:
     let not_rounded = roundness_left <= 0.0 and roundness_right <= 0.0
     if not_rounded or rec.width < 1.0 or rec.height < 1.0:
         rl.DrawRectangleGradientEx(rec, left, left, right, right)
@@ -49,7 +49,7 @@ def draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: f32, ro
     if radius_left <= 0.0 and radius_right <= 0.0:
         return
 
-    let step_length = 90.0 / f32<-segments
+    let step_length = 90.0 / float<-segments
 
     let points = array[rl.Vector2, 12](
         rl.Vector2(x = rec.x + radius_left, y = rec.y),
@@ -66,13 +66,13 @@ def draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: f32, ro
         rl.Vector2(x = rec.x + radius_left, y = rec.y + rec.height - radius_left),
     )
     let centers = array[rl.Vector2, 4](points[8], points[9], points[10], points[11])
-    let angles = array[f32, 4](180.0, 270.0, 0.0, 90.0)
+    let angles = array[float, 4](180.0, 270.0, 0.0, 90.0)
 
     rlgl.rlBegin(rlgl.RL_TRIANGLES)
 
     for corner_index in 0..4:
         var color = rl.Color(r = 0, g = 0, b = 0, a = 0)
-        var radius: f32 = 0.0
+        var radius: float = 0.0
         if corner_index == 0:
             color = left
             radius = radius_left
@@ -148,7 +148,7 @@ def draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: f32, ro
     rlgl.rlEnd()
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

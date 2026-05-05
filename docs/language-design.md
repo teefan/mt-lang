@@ -101,20 +101,20 @@ module game.main
 import std.math as math
 import std.raylib as rl
 
-const screen_width: i32 = 1280
-const screen_height: i32 = 720
+const screen_width: int = 1280
+const screen_height: int = 720
 
 struct Player:
 	position: rl.Vector2
 	velocity: rl.Vector2
-	radius: f32
+	radius: float
 
 methods Player:
-	edit def update(dt: f32):
+	edit def update(dt: float):
 		this.position.x += this.velocity.x * dt
 		this.position.y += this.velocity.y * dt
 
-def main() -> i32:
+def main() -> int:
 	rl.init_window(screen_width, screen_height, "Milk Tea")
 	defer rl.close_window()
 
@@ -158,20 +158,20 @@ module demo.physics
 
 import std.math
 
-const gravity: f32 = 9.81
+const gravity: float = 9.81
 
-type EntityId = u32
+type EntityId = uint
 
 struct Body:
 	id: EntityId
-	mass: f32
-	velocity: f32
+	mass: float
+	velocity: float
 
-enum BodyKind: u8
+enum BodyKind: ubyte
 	dynamic = 1
 	static = 2
 
-flags DrawFlags: u32
+flags DrawFlags: uint
 	visible = 1 << 0
 	selected = 1 << 1
 ```
@@ -185,17 +185,17 @@ flags DrawFlags: u32
 - For pointer-like absence, use a nullable type plus `null`. `zero[ptr[T]]` remains available for low-level zero-initialized pointer storage, but the compiler rejects it when the surrounding expected type is already a nullable pointer-like type. In those contexts, write `null`.
 
 ```mt
-let width: i32 = 1280
-var score: i32 = 0
+let width: int = 1280
+var score: int = 0
 var name_input: str_builder[64]
-const max_players: i32 = 4
+const max_players: int = 4
 ```
 
 Local type inference is allowed when the initializer makes the type obvious:
 
 ```mt
-let dt = rl.GetFrameTime()      # inferred as f32
-var player_count = 0            # inferred as i32
+let dt = rl.GetFrameTime()      # inferred as float
+var player_count = 0            # inferred as int
 ```
 
 Public items should always spell their types out.
@@ -203,7 +203,7 @@ Public items should always spell their types out.
 ### Functions
 
 ```mt
-def clamp(value: f32, min_value: f32, max_value: f32) -> f32:
+def clamp(value: float, min_value: float, max_value: float) -> float:
 	if value < min_value:
 		return min_value
 	elif value > max_value:
@@ -221,14 +221,14 @@ Methods are syntax sugar over namespaced functions. They do not imply objects, i
 ```mt
 struct Camera:
 	position: Vec2
-	zoom: f32
+	zoom: float
 
 methods Camera:
 	edit def move_by(delta: Vec2):
 		this.position.x += delta.x
 		this.position.y += delta.y
 
-	def world_scale() -> f32:
+	def world_scale() -> float:
 		return this.zoom
 
 	static def origin() -> Camera:
@@ -317,7 +317,7 @@ def load_texture(path: str) -> Result[Texture, LoadError]:
 ```mt
 unsafe:
 	let p = pixels + offset
-	let pixel = read(ptr[u32]<-p)
+	let pixel = read(ptr[uint]<-p)
 ```
 
 The point is not to forbid sharp tools. The point is to mark them.
@@ -332,10 +332,10 @@ The type system must stay simple, explicit, and close to C.
 - `bool`
 - `byte`
 - `char`
-- `i8`, `i16`, `i32`, `i64`
-- `u8`, `u16`, `u32`, `u64`
-- `isize`, `usize`
-- `f32`, `f64`
+- `byte`, `short`, `int`, `long`
+- `ubyte`, `ushort`, `uint`, `ulong`
+- `ptr_int`, `ptr_uint`
+- `float`, `double`
 - `void`
 - `str`
 - `cstr`
@@ -365,12 +365,12 @@ fn(A, B) -> R    # function pointer type
 Examples:
 
 ```mt
-let pixels: span[u8]
+let pixels: span[ubyte]
 let name_input: str_builder[64]
 let labels: array[str, 8]
 let texture_ptr: ptr[Texture]
-let normal_table: array[f32, 256]
-let callback: fn(ptr[void], i32) -> void
+let normal_table: array[float, 256]
+let callback: fn(ptr[void], int) -> void
 ```
 
 Notes:
@@ -417,8 +417,8 @@ Structs are plain data. Field order is preserved.
 
 ```mt
 struct Vec2:
-	x: f32
-	y: f32
+	x: float
+	y: float
 ```
 
 #### Enums
@@ -426,7 +426,7 @@ struct Vec2:
 Enums always have an explicit backing type.
 
 ```mt
-enum WeaponKind: u8
+enum WeaponKind: ubyte
 	sword = 1
 	bow = 2
 	wand = 3
@@ -437,7 +437,7 @@ enum WeaponKind: u8
 Flags are named bitmasks with a fixed integer backing type.
 
 ```mt
-flags WindowFlags: u32
+flags WindowFlags: uint
 	fullscreen = 1 << 0
 	vsync = 1 << 1
 	borderless = 1 << 2
@@ -449,8 +449,8 @@ Unions are allowed for FFI and low-level storage.
 
 ```mt
 union Value:
-	i: i32
-	f: f32
+	i: int
+	f: float
 	raw: ptr[void]
 ```
 
@@ -463,11 +463,11 @@ Variants are tagged unions. Each arm optionally carries named payload fields.
 ```mt
 variant Token:
 	ident(text: str)
-	number(value: i32)
+	number(value: int)
 	eof
 ```
 
-Arm constructors follow the same field-assignment form as struct literals. No-payload arms are bare member expressions. Match on a variant uses `as name` to bind a payload arm's fields. Generic variants are supported through specializations like `Box[i32].some(value = 1)`.
+Arm constructors follow the same field-assignment form as struct literals. No-payload arms are bare member expressions. Match on a variant uses `as name` to bind a payload arm's fields. Generic variants are supported through specializations like `Box[int].some(value = 1)`.
 
 #### Opaque types
 
@@ -481,7 +481,7 @@ opaque ma_engine
 #### Type aliases
 
 ```mt
-type Seconds = f32
+type Seconds = float
 type FileHandle = ptr[libc.FILE]
 ```
 
@@ -508,21 +508,21 @@ Example:
 ```mt
 struct Slice[T]:
 	data: ptr[T]
-	len: usize
+	len: ptr_uint
 
 def first[T](items: Slice[T]) -> ptr[T]?:
 	if items.len == 0:
 		return null
 	return items.data
 
-def capacity_of[N](buffer: str_builder[N]) -> usize:
+def capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
 	return buffer.capacity()
 
-def explicit_capacity(buffer: str_builder[32]) -> usize:
+def explicit_capacity(buffer: str_builder[32]) -> ptr_uint:
 	return capacity_of[32](buffer)
 ```
 
-Explicit specialization arguments may be type references like `bytes_for[i32](4)` or numeric literals like `capacity_of[32](buffer)` when the generic parameter is used in a literal slot such as `str_builder[N]` or `array[T, N]`.
+Explicit specialization arguments may be type references like `bytes_for[int](4)` or numeric literals like `capacity_of[32](buffer)` when the generic parameter is used in a literal slot such as `str_builder[N]` or `array[T, N]`.
 
 ## Expressions and conversions
 
@@ -542,8 +542,8 @@ No user-defined operator overloading.
 Conversions are explicit. Use `T<-expr` for ordinary conversions.
 
 ```mt
-let count64 = u64<-count32
-let value = f32<-raw
+let count64 = ulong<-count32
+let value = float<-raw
 let newline = char<-10
 ```
 
@@ -551,7 +551,7 @@ For bit reinterpretation, use a separate form inside `unsafe`:
 
 ```mt
 unsafe:
-	let bits = reinterpret[u32](value)
+	let bits = reinterpret[uint](value)
 ```
 
 Binary arithmetic and numeric comparison operators may promote primitive operands to a common type locally.
@@ -569,7 +569,7 @@ let newline = char<-10
 unsafe:
 	buffer[0] = 65
 	buffer[1] = newline
-	let code = i32<-buffer[0]
+	let code = int<-buffer[0]
 ```
 
 ### Literals
@@ -583,14 +583,14 @@ unsafe:
 c"hello"
 ```
 
-Integer literals are untyped until context resolves them, defaulting to `i32`.
-Float literals default to `f64` when unconstrained.
+Integer literals are untyped until context resolves them, defaulting to `int`.
+Float literals default to `double` when unconstrained.
 
 Typed contexts may adopt the expected numeric type for a literal directly. This is limited to literal typing, not general implicit conversion.
 
 There is one additional narrow boundary rule for float-heavy code: a primitive integer expression may flow into an expected float type for an explicitly typed local declaration, an `=` assignment to a float-typed lvalue, or a return expression from a float-returning function.
 
-This is still a boundary cast, not a general usual-arithmetic-conversions model. It does not widen ordinary function arguments, aggregate field initializers, public constant initialization, or arbitrary expression typing. Integer arithmetic stays integer arithmetic until that final boundary cast, so `let ratio: f32 = hits / total` still performs integer division before the result is converted.
+This is still a boundary cast, not a general usual-arithmetic-conversions model. It does not widen ordinary function arguments, aggregate field initializers, public constant initialization, or arbitrary expression typing. Integer arithmetic stays integer arithmetic until that final boundary cast, so `let ratio: float = hits / total` still performs integer division before the result is converted.
 
 Examples of typed contexts:
 
@@ -599,7 +599,7 @@ Examples of typed contexts:
 - a struct field initializer with a known field type
 - a return expression with a known return type
 
-This keeps `f32`-heavy game code readable while preserving the rule that ordinary expressions do not silently convert between numeric types.
+This keeps `float`-heavy game code readable while preserving the rule that ordinary expressions do not silently convert between numeric types.
 
 ### Composite literals
 
@@ -618,8 +618,8 @@ let player = Player(
 
 let origin = Player()
 
-let palette = array[u32, 4](0xff0000ff, 0x00ff00ff, 0x0000ffff, 0xffffffff)
-let grayscale = array[u32, 4](0x111111ff, 0x555555ff)
+let palette = array[uint, 4](0xff0000ff, 0x00ff00ff, 0x0000ffff, 0xffffffff)
+let grayscale = array[uint, 4](0x111111ff, 0x555555ff)
 ```
 
 This keeps data construction obvious and maps cleanly to C initializers.
@@ -701,7 +701,7 @@ Rules for raw pointers:
 - `const_ptr[T]` is the read-only raw-pointer surface and lowers to C `const T*`. `const_ptr[void]` is valid and represents C `const void *`.
 - `ptr.field` and `ptr.method()` access pointee fields and methods through a raw pointer and require `unsafe`.
 - pointer arithmetic and pointer indexing remain `unsafe`.
-- raw pointer offsets and indices may use ordinary integer expressions directly; code does not need a pre-emptive cast to `usize` just to write `ptr[i]` or `ptr + offset`.
+- raw pointer offsets and indices may use ordinary integer expressions directly; code does not need a pre-emptive cast to `ptr_uint` just to write `ptr[i]` or `ptr + offset`.
 - pointer comparison is explicit and never treated as boolean truthiness.
 - `ptr[char]` is the ordinary representation for mutable C text and byte-oriented FFI buffers; writing control bytes such as NUL or newline uses `char` values, typically spelled with `char<-0` and `char<-10`.
 - imported foreign declarations may project ABI-identical pointer forms at the boundary. A raw `ptr[void]` parameter may surface as `ptr[T]?` or an opaque handle type when the imported declaration says so. Reinterpretation inside user code still requires an explicit `T<-value` cast and, when dereferenced, `unsafe`.
@@ -727,7 +727,7 @@ Raw pointers are necessary. Spans are the readable everyday view.
 ```mt
 span[T] is conceptually:
 	data: ptr[T]
-	len: usize
+	len: ptr_uint
 ```
 
 `span[T]` should be built into the language surface as a standard view type because it is the right default for arrays, buffers, decoded file content, vertex streams, and audio samples.
@@ -745,7 +745,7 @@ Implemented core modules:
 - `std.option` is a plain generic optional-value container for APIs where a nullable pointer would be the wrong surface.
 - `std.ascii` provides byte-level classification and conversion helpers for lexers and parsers.
 - `std.vec` is the owned heap-backed `Vec[T]`. It grows explicitly, releases explicitly, and exposes borrowed `span[T]` views.
-- `std.bytes` is an owned byte buffer on top of `Vec[u8]`. It is a low-level substrate, not the default application-facing text tool.
+- `std.bytes` is an owned byte buffer on top of `Vec[ubyte]`. It is a low-level substrate, not the default application-facing text tool.
 - `std.string.String` is the normal growable owned UTF-8 text surface. Its public API should mirror the mutable-text shape of `str_builder[N]`: method-style `append`, `assign`, `clear`, `as_str`, `to_cstr`, and explicit constructors, not a parallel module-function vocabulary. Byte-level appends exist as low-level escape hatches.
 - `std.str` provides borrowed string helpers: UTF-8 validation, byte lookup, prefix/suffix/equality, ASCII trimming, and byte search.
 - `std.path`, `std.fs`, and `std.io` provide pure path helpers, byte/text file read/write, stdout printing, and stderr diagnostics.
@@ -765,20 +765,20 @@ Hash collections use explicit function pointers instead of traits:
 import std.hash as hash
 import std.map as map
 
-def hash_i32(value: i32) -> u64:
-	return hash.i32_value(value)
+def hash_int(value: int) -> ulong:
+	return hash.int_value(value)
 
-def equal_i32(left: i32, right: i32) -> bool:
-	return hash.i32_equal(left, right)
+def equal_int(left: int, right: int) -> bool:
+	return hash.int_equal(left, right)
 
-def example() -> i32:
-	var scores = map.create[i32, i32](hash_i32, equal_i32)
-	defer map.release[i32, i32](ref_of(scores))
+def example() -> int:
+	var scores = map.create[int, int](hash_int, equal_int)
+	defer map.release[int, int](ref_of(scores))
 
-	map.put[i32, i32](ref_of(scores), 7, 42)
+	map.put[int, int](ref_of(scores), 7, 42)
 
 	var value = 0
-	if map.get_into[i32, i32](scores, 7, ref_of(value)):
+	if map.get_into[int, int](scores, 7, ref_of(value)):
 		return value
 	return 0
 ```
@@ -814,7 +814,7 @@ Preferred strategy:
 Example:
 
 ```mt
-enum LoadError: u8
+enum LoadError: ubyte
 	file_not_found = 1
 	invalid_format = 2
 
@@ -878,20 +878,20 @@ extern module std.c.raylib:
 	include "raylib.h"
 
 	struct Vector2:
-		x: f32
-		y: f32
+		x: float
+		y: float
 
 	struct Color:
-		r: u8
-		g: u8
-		b: u8
-		a: u8
+		r: ubyte
+		g: ubyte
+		b: ubyte
+		a: ubyte
 
-	extern def InitWindow(width: i32, height: i32, title: cstr) -> void
+	extern def InitWindow(width: int, height: int, title: cstr) -> void
 	extern def WindowShouldClose() -> bool
 	extern def BeginDrawing() -> void
 	extern def EndDrawing() -> void
-	extern def DrawCircleV(center: Vector2, radius: f32, color: Color) -> void
+	extern def DrawCircleV(center: Vector2, radius: float, color: Color) -> void
 ```
 
 Capabilities required by the FFI surface:
@@ -941,18 +941,18 @@ pub type Color = c.Color
 pub const BLACK: Color = c.BLACK
 pub const GOLD: Color = c.GOLD
 
-pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
+pub foreign def init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow
 pub foreign def close_window() -> void = c.CloseWindow
 pub foreign def window_should_close() -> bool = c.WindowShouldClose
-pub foreign def get_frame_time() -> f32 = c.GetFrameTime
+pub foreign def get_frame_time() -> float = c.GetFrameTime
 
 pub foreign def load_texture(path: str as cstr) -> Texture = c.LoadTexture
-pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
-pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, i32<-data.len)
-pub foreign def set_shader_value[T](shader: Shader, loc_index: i32, in value: T as const_ptr[void], uniform_type: i32) -> void = c.SetShaderValue
+pub foreign def load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
+pub foreign def save_file_data(file_name: str as cstr, data: span[ubyte]) -> bool = c.SaveFileData(file_name, data.data, int<-data.len)
+pub foreign def set_shader_value[T](shader: Shader, loc_index: int, in value: T as const_ptr[void], uniform_type: int) -> void = c.SetShaderValue
 
-pub foreign def mem_alloc[T](count: usize) -> ptr[T]? = c.MemAlloc(count * u32<-sizeof(T))
-pub foreign def mem_realloc[T](memory: ptr[T]?, count: usize) -> ptr[T]? = c.MemRealloc(memory, count * u32<-sizeof(T))
+pub foreign def mem_alloc[T](count: ptr_uint) -> ptr[T]? = c.MemAlloc(count * uint<-sizeof(T))
+pub foreign def mem_realloc[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]? = c.MemRealloc(memory, count * uint<-sizeof(T))
 pub foreign def mem_free[T](memory: ptr[T]?) -> void = c.MemFree(memory)
 ```
 
@@ -1134,7 +1134,7 @@ rl.init_window(screen_width, screen_height, "Milk Tea")
 let texture = rl.load_texture(path)
 let file_data = rl.load_file_data("storage.data", out data_size)
 let success = rl.save_file_data("storage.data", bytes)
-let ints = rl.mem_alloc[i32](16)
+let ints = rl.mem_alloc[int](16)
 ```
 
 `str as cstr` and `span[str]` foreign boundaries use ordinary imported-call syntax. When the boundary needs synthesized temporary C-compatible storage or other statement-shaped setup, lowering hoists that work into visible temporary locals and branch-local control flow as needed, so nested call arguments, arithmetic, `if ...: ... else: ...` expressions, and short-circuit boolean expressions still read like ordinary Milk Tea while generated C stays explicit about the temporary storage.
@@ -1166,7 +1166,7 @@ This keeps the important distinction intact:
 Callbacks must map directly to C function pointers.
 
 ```mt
-type LogCallback = fn(level: i32, message: cstr, user_data: ptr[void]) -> void
+type LogCallback = fn(level: int, message: cstr, user_data: ptr[void]) -> void
 ```
 
 Capturing closures should not be lowered to hidden heap objects. If user state is needed, pass it explicitly as `user_data`.
@@ -1177,11 +1177,11 @@ The language must expose a small set of layout controls for interop and SIMD-fri
 
 ```mt
 packed struct FileHeader:
-	magic: array[u8, 4]
-	version: u16
+	magic: array[ubyte, 4]
+	version: ushort
 
 align(16) struct Mat4:
-	m: array[f32, 16]
+	m: array[float, 16]
 ```
 
 Required controls:
@@ -1219,7 +1219,7 @@ struct Player:
 	velocity: Vec2
 
 methods Player:
-	edit def update(dt: f32):
+	edit def update(dt: float):
 		this.position.x += this.velocity.x * dt
 		this.position.y += this.velocity.y * dt
 ```

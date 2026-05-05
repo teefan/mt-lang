@@ -3,20 +3,20 @@ module examples.raylib.core.core_undo_redo
 import std.c.raylib as rl
 
 struct Point:
-    x: i32
-    y: i32
+    x: int
+    y: int
 
 struct PlayerState:
     cell: Point
     color: rl.Color
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - undo redo"
-const max_undo_states: i32 = 26
-const grid_cell_size: i32 = 24
-const max_grid_cells_x: i32 = 30
-const max_grid_cells_y: i32 = 13
+const max_undo_states: int = 26
+const grid_cell_size: int = 24
+const max_grid_cells_x: int = 30
+const max_grid_cells_y: int = 13
 
 
 def player_states_equal(left: PlayerState, right: PlayerState) -> bool:
@@ -64,8 +64,8 @@ def clamp_player(player: ref[PlayerState]) -> void:
 
 def draw_recorded_cell(state: PlayerState, grid_position: rl.Vector2, color: rl.Color) -> void:
     rl.DrawRectangle(
-        i32<-grid_position.x + state.cell.x * grid_cell_size,
-        i32<-grid_position.y + state.cell.y * grid_cell_size,
+        int<-grid_position.x + state.cell.x * grid_cell_size,
+        int<-grid_position.y + state.cell.y * grid_cell_size,
         grid_cell_size,
         grid_cell_size,
         color,
@@ -73,7 +73,7 @@ def draw_recorded_cell(state: PlayerState, grid_position: rl.Vector2, color: rl.
     return
 
 
-def draw_recorded_cells_range(states: array[PlayerState, 26], start_index: i32, end_index: i32, grid_position: rl.Vector2) -> void:
+def draw_recorded_cells_range(states: array[PlayerState, 26], start_index: int, end_index: int, grid_position: rl.Vector2) -> void:
     var index = start_index
     while index < end_index:
         draw_recorded_cell(states[index], grid_position, rl.LIGHTGRAY)
@@ -81,7 +81,7 @@ def draw_recorded_cells_range(states: array[PlayerState, 26], start_index: i32, 
     return
 
 
-def draw_recorded_cells(states: array[PlayerState, 26], first_undo_index: i32, last_undo_index: i32, current_undo_index: i32, grid_position: rl.Vector2) -> void:
+def draw_recorded_cells(states: array[PlayerState, 26], first_undo_index: int, last_undo_index: int, current_undo_index: int, grid_position: rl.Vector2) -> void:
     if last_undo_index > first_undo_index:
         draw_recorded_cells_range(states, first_undo_index, current_undo_index, grid_position)
     elif first_undo_index > last_undo_index:
@@ -97,10 +97,10 @@ def draw_grid(grid_position: rl.Vector2) -> void:
     var y = 0
     while y <= max_grid_cells_y:
         rl.DrawLine(
-            i32<-grid_position.x,
-            i32<-grid_position.y + y * grid_cell_size,
-            i32<-grid_position.x + max_grid_cells_x * grid_cell_size,
-            i32<-grid_position.y + y * grid_cell_size,
+            int<-grid_position.x,
+            int<-grid_position.y + y * grid_cell_size,
+            int<-grid_position.x + max_grid_cells_x * grid_cell_size,
+            int<-grid_position.y + y * grid_cell_size,
             rl.GRAY,
         )
         y += 1
@@ -108,34 +108,34 @@ def draw_grid(grid_position: rl.Vector2) -> void:
     var x = 0
     while x <= max_grid_cells_x:
         rl.DrawLine(
-            i32<-grid_position.x + x * grid_cell_size,
-            i32<-grid_position.y,
-            i32<-grid_position.x + x * grid_cell_size,
-            i32<-grid_position.y + max_grid_cells_y * grid_cell_size,
+            int<-grid_position.x + x * grid_cell_size,
+            int<-grid_position.y,
+            int<-grid_position.x + x * grid_cell_size,
+            int<-grid_position.y + max_grid_cells_y * grid_cell_size,
             rl.GRAY,
         )
         x += 1
     return
 
 
-def draw_undo_slots_range(position: rl.Vector2, slot_size: i32, start_index: i32, end_index: i32, fill_color: rl.Color, line_color: rl.Color) -> void:
+def draw_undo_slots_range(position: rl.Vector2, slot_size: int, start_index: int, end_index: int, fill_color: rl.Color, line_color: rl.Color) -> void:
     var index = start_index
     while index < end_index:
-        rl.DrawRectangle(i32<-position.x + slot_size * index, i32<-position.y, slot_size, slot_size, fill_color)
-        rl.DrawRectangleLines(i32<-position.x + slot_size * index, i32<-position.y, slot_size, slot_size, line_color)
+        rl.DrawRectangle(int<-position.x + slot_size * index, int<-position.y, slot_size, slot_size, fill_color)
+        rl.DrawRectangleLines(int<-position.x + slot_size * index, int<-position.y, slot_size, slot_size, line_color)
         index += 1
     return
 
 
-def draw_undo_buffer(position: rl.Vector2, first_undo_index: i32, last_undo_index: i32, current_undo_index: i32, slot_size: i32) -> void:
-    rl.DrawRectangle(i32<-position.x + 8 + slot_size * current_undo_index, i32<-position.y - 10, 8, 8, rl.RED)
-    rl.DrawRectangleLines(i32<-position.x + 2 + slot_size * first_undo_index, i32<-position.y + 27, 8, 8, rl.BLACK)
-    rl.DrawRectangle(i32<-position.x + 14 + slot_size * last_undo_index, i32<-position.y + 27, 8, 8, rl.BLACK)
+def draw_undo_buffer(position: rl.Vector2, first_undo_index: int, last_undo_index: int, current_undo_index: int, slot_size: int) -> void:
+    rl.DrawRectangle(int<-position.x + 8 + slot_size * current_undo_index, int<-position.y - 10, 8, 8, rl.RED)
+    rl.DrawRectangleLines(int<-position.x + 2 + slot_size * first_undo_index, int<-position.y + 27, 8, 8, rl.BLACK)
+    rl.DrawRectangle(int<-position.x + 14 + slot_size * last_undo_index, int<-position.y + 27, 8, 8, rl.BLACK)
 
     var index = 0
     while index < max_undo_states:
-        rl.DrawRectangle(i32<-position.x + slot_size * index, i32<-position.y, slot_size, slot_size, rl.LIGHTGRAY)
-        rl.DrawRectangleLines(i32<-position.x + slot_size * index, i32<-position.y, slot_size, slot_size, rl.GRAY)
+        rl.DrawRectangle(int<-position.x + slot_size * index, int<-position.y, slot_size, slot_size, rl.LIGHTGRAY)
+        rl.DrawRectangleLines(int<-position.x + slot_size * index, int<-position.y, slot_size, slot_size, rl.GRAY)
         index += 1
 
     if first_undo_index <= last_undo_index:
@@ -150,12 +150,12 @@ def draw_undo_buffer(position: rl.Vector2, first_undo_index: i32, last_undo_inde
         draw_undo_slots_range(position, slot_size, first_undo_index, max_undo_states, rl.GREEN, rl.LIME)
         draw_undo_slots_range(position, slot_size, 0, current_undo_index, rl.GREEN, rl.LIME)
 
-    rl.DrawRectangle(i32<-position.x + slot_size * current_undo_index, i32<-position.y, slot_size, slot_size, rl.GOLD)
-    rl.DrawRectangleLines(i32<-position.x + slot_size * current_undo_index, i32<-position.y, slot_size, slot_size, rl.ORANGE)
+    rl.DrawRectangle(int<-position.x + slot_size * current_undo_index, int<-position.y, slot_size, slot_size, rl.GOLD)
+    rl.DrawRectangleLines(int<-position.x + slot_size * current_undo_index, int<-position.y, slot_size, slot_size, rl.ORANGE)
     return
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -239,14 +239,14 @@ def main() -> i32:
         draw_grid(grid_position)
 
         rl.DrawRectangle(
-            i32<-grid_position.x + player.cell.x * grid_cell_size,
-            i32<-grid_position.y + player.cell.y * grid_cell_size,
+            int<-grid_position.x + player.cell.x * grid_cell_size,
+            int<-grid_position.y + player.cell.y * grid_cell_size,
             grid_cell_size + 1,
             grid_cell_size + 1,
             player.color,
         )
 
-        rl.DrawText(c"UNDO STATES:", i32<-undo_info_pos.x - 85, i32<-undo_info_pos.y + 9, 10, rl.DARKGRAY)
+        rl.DrawText(c"UNDO STATES:", int<-undo_info_pos.x - 85, int<-undo_info_pos.y + 9, 10, rl.DARKGRAY)
         draw_undo_buffer(undo_info_pos, first_undo_index, last_undo_index, current_undo_index, 24)
 
     return 0

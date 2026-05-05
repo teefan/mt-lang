@@ -2,16 +2,16 @@ module std.mem.arena
 
 import std.mem.heap as heap
 
-pub type Mark = usize
+pub type Mark = ptr_uint
 
 pub struct Arena:
-    memory: ptr[byte]?
-    capacity: usize
-    offset: usize
+    memory: ptr[ubyte]?
+    capacity: ptr_uint
+    offset: ptr_uint
 
 
-pub def create(capacity_bytes: usize) -> Arena:
-    let memory = heap.alloc[byte](capacity_bytes)
+pub def create(capacity_bytes: ptr_uint) -> Arena:
+    let memory = heap.alloc[ubyte](capacity_bytes)
     if memory == null and capacity_bytes != 0:
         panic(c"arena.create out of memory")
 
@@ -31,15 +31,15 @@ methods Arena:
         return
 
 
-    pub def remaining_bytes() -> usize:
+    pub def remaining_bytes() -> ptr_uint:
         return this.capacity - this.offset
 
 
-    pub edit def alloc_bytes(size_bytes: usize) -> ptr[byte]?:
+    pub edit def alloc_bytes(size_bytes: ptr_uint) -> ptr[ubyte]?:
         return this.alloc_bytes_aligned(size_bytes, 1)
 
 
-    pub edit def alloc_bytes_aligned(size_bytes: usize, alignment: usize) -> ptr[byte]?:
+    pub edit def alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[ubyte]?:
         let backing = this.memory
         if backing == null:
             return null
@@ -49,7 +49,7 @@ methods Arena:
             return null
 
         let mask = alignment - 1
-        if this.offset > heap.usize_max() - mask:
+        if this.offset > heap.ptr_uint_max() - mask:
             return null
 
         let aligned_offset = (this.offset + mask) & ~mask
@@ -71,7 +71,7 @@ methods Arena:
 
         unsafe:
             let buffer = ptr[char]<-memory
-            var index: usize = 0
+            var index: ptr_uint = 0
             while index < text.len:
                 read(buffer + index) = read(text.data + index)
                 index += 1
@@ -86,7 +86,7 @@ methods Arena:
 
         unsafe:
             let buffer = ptr[char]<-memory
-            var index: usize = 0
+            var index: ptr_uint = 0
             while index < text.len:
                 read(buffer + index) = read(text.data + index)
                 index += 1
@@ -102,12 +102,12 @@ methods Arena:
         return
 
 
-pub def alloc[T](space: ref[Arena], count: usize) -> ptr[T]?:
-    let element_size = usize<-sizeof(T)
+pub def alloc[T](space: ref[Arena], count: ptr_uint) -> ptr[T]?:
+    let element_size = ptr_uint<-sizeof(T)
     if heap.mul_overflows(count, element_size):
         return null
 
-    let memory = space.alloc_bytes_aligned(count * element_size, usize<-alignof(T))
+    let memory = space.alloc_bytes_aligned(count * element_size, ptr_uint<-alignof(T))
     if memory == null:
         return null
 

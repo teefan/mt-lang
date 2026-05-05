@@ -3,9 +3,9 @@ module examples.raylib.core.core_clipboard_text
 import std.c.raylib as rl
 import std.c.raygui as gui
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const input_buffer_size: i32 = 256
+const screen_width: int = 800
+const screen_height: int = 450
+const input_buffer_size: int = 256
 const window_title: cstr = c"raylib [core] example - clipboard text"
 const shortcut_text: cstr = c"[CTRL+X] - CUT | [CTRL+C] COPY | [CTRL+V] | PASTE"
 const instruction_text: cstr = c"Use the BUTTONS or KEY SHORTCUTS:"
@@ -13,7 +13,7 @@ const clipboard_label_text: cstr = c"Clipboard current text data:"
 const clipboard_help_text: cstr = c"Try copying text from other applications and pasting here!"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

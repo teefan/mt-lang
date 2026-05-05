@@ -11,7 +11,7 @@ methods String:
         return String(buffer = bytes.create())
 
 
-    pub static def with_capacity(capacity: usize) -> String:
+    pub static def with_capacity(capacity: ptr_uint) -> String:
         return String(buffer = bytes.with_capacity(capacity))
 
 
@@ -21,11 +21,11 @@ methods String:
         return result
 
 
-    pub def count() -> usize:
+    pub def count() -> ptr_uint:
         return bytes.count(this.buffer)
 
 
-    pub def capacity() -> usize:
+    pub def capacity() -> ptr_uint:
         return bytes.capacity(this.buffer)
 
 
@@ -43,21 +43,21 @@ methods String:
         return
 
 
-    pub edit def reserve(min_capacity: usize) -> void:
+    pub edit def reserve(min_capacity: ptr_uint) -> void:
         bytes.reserve(ref_of(this.buffer), min_capacity)
         return
 
 
-    pub edit def push_byte(byte: u8) -> void:
+    pub edit def push_byte(byte: ubyte) -> void:
         bytes.push(ref_of(this.buffer), byte)
         return
 
 
     pub edit def append(suffix: str) -> void:
-        var index: usize = 0
+        var index: ptr_uint = 0
         while index < suffix.len:
             unsafe:
-                this.push_byte(u8<-read(suffix.data + index))
+                this.push_byte(ubyte<-read(suffix.data + index))
             index += 1
         return
 

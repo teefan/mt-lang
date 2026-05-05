@@ -3,18 +3,18 @@ module examples.idiomatic.raylib.easings_ball
 import std.easing as ease
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Easings Ball")
     defer rl.close_window()
 
     var ball_position_x = -100
     var ball_radius = 20
-    var ball_alpha: f32 = 0.0
-    let ball_position_delta = f32<-(screen_width / 2 + 100)
+    var ball_alpha: float = 0.0
+    let ball_position_delta = float<-(screen_width / 2 + 100)
 
     var state = 0
     var frames_counter = 0
@@ -24,21 +24,21 @@ def main() -> i32:
     while not rl.window_should_close():
         if state == 0:
             frames_counter += 1
-            ball_position_x = i32<-ease.elastic_out(f32<-frames_counter, -100.0, ball_position_delta, 120.0)
+            ball_position_x = int<-ease.elastic_out(float<-frames_counter, -100.0, ball_position_delta, 120.0)
 
             if frames_counter >= 120:
                 frames_counter = 0
                 state = 1
         elif state == 1:
             frames_counter += 1
-            ball_radius = i32<-ease.elastic_in(f32<-frames_counter, 20.0, 500.0, 200.0)
+            ball_radius = int<-ease.elastic_in(float<-frames_counter, 20.0, 500.0, 200.0)
 
             if frames_counter >= 200:
                 frames_counter = 0
                 state = 2
         elif state == 2:
             frames_counter += 1
-            ball_alpha = ease.cubic_out(f32<-frames_counter, 0.0, 1.0, 200.0)
+            ball_alpha = ease.cubic_out(float<-frames_counter, 0.0, 1.0, 200.0)
 
             if frames_counter >= 200:
                 frames_counter = 0
@@ -61,7 +61,7 @@ def main() -> i32:
         if state >= 2:
             rl.draw_rectangle(0, 0, screen_width, screen_height, rl.GREEN)
 
-        rl.draw_circle(ball_position_x, 200, f32<-ball_radius, rl.fade(rl.RED, 1.0 - ball_alpha))
+        rl.draw_circle(ball_position_x, 200, float<-ball_radius, rl.fade(rl.RED, 1.0 - ball_alpha))
 
         if state == 3:
             rl.draw_text("PRESS [ENTER] TO PLAY AGAIN!", 240, 200, 20, rl.BLACK)

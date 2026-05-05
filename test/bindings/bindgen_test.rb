@@ -103,47 +103,47 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_match(/struct Vec2:/, generated)
       assert_match(/struct Counters:/, generated)
       assert_match(/struct Material:/, generated)
-      assert_match(/value: i32/, generated)
-      assert_match(/capacity: usize/, generated)
-      assert_match(/params: array\[f32, 4\]/, generated)
+      assert_match(/value: int/, generated)
+      assert_match(/capacity: ptr_uint/, generated)
+      assert_match(/params: array\[float, 4\]/, generated)
       assert_match(/name: array\[char, 32\]/, generated)
-      assert_match(/type LogCallback = fn\(arg0: i32, arg1: cstr\) -> void/, generated)
+      assert_match(/type LogCallback = fn\(arg0: int, arg1: cstr\) -> void/, generated)
       assert_match(/opaque va_list = c"va_list"/, generated)
-      assert_match(/type TraceCallback = fn\(arg0: i32, arg1: va_list\) -> void/, generated)
+      assert_match(/type TraceCallback = fn\(arg0: int, arg1: va_list\) -> void/, generated)
       assert_match(/const HOME: Vec2 = Vec2\(x = 1.0, y = 2.0\)/, generated)
-      assert_match(/const PIXEL_RATIO: i32 = 2/, generated)
+      assert_match(/const PIXEL_RATIO: int = 2/, generated)
       refute_match(/const GREETING:/, generated)
       refute_match(/const DYNAMIC_SIZE:/, generated)
       refute_match(/const INACTIVE_LIMIT:/, generated)
-      assert_match(/const MAGIC: i32 = 7/, generated)
-      assert_match(/const WINDOW_FLAG: usize = 32/, generated)
-      assert_match(/const SCALE: f32 = 2.5/, generated)
+      assert_match(/const MAGIC: int = 7/, generated)
+      assert_match(/const WINDOW_FLAG: ptr_uint = 32/, generated)
+      assert_match(/const SCALE: float = 2.5/, generated)
       assert_match(/const ORIGIN: Vec2 = Vec2\(x = 0.0, y = 0.0\)/, generated)
       assert_match(/const TITLE: cstr = c"Milk"/, generated)
-      assert_match(/enum Mode: i32/, generated)
-      assert_match(/flags WindowFlags: i32/, generated)
-      assert_match(/flags TraceLevel: i32/, generated)
+      assert_match(/enum Mode: int/, generated)
+      assert_match(/flags WindowFlags: int/, generated)
+      assert_match(/flags TraceLevel: int/, generated)
       assert_match(/TRACE_ALL = 0/, generated)
       assert_match(/TRACE_LOG = 1/, generated)
       assert_match(/TRACE_DEBUG = 2/, generated)
       assert_match(/opaque Hidden = c"struct Hidden"/, generated)
-      assert_match(/type Flags = u32/, generated)
-      assert_match(/type HiddenU32 = u32/, generated)
-      assert_match(/type PublicU32 = u32/, generated)
+      assert_match(/type Flags = uint/, generated)
+      assert_match(/type HiddenU32 = uint/, generated)
+      assert_match(/type PublicU32 = uint/, generated)
       refute_match(/type ComplexValue =/, generated)
       refute_match(/extern def measure_long_double/, generated)
-      assert_match(/extern def add\(a: i32, b: i32\) -> i32/, generated)
-      assert_equal 1, generated.scan("extern def add(a: i32, b: i32) -> i32").length
-      assert_match(/extern def fill_buffer\(value: u32, count: usize\) -> usize/, generated)
-      assert_match(/extern def widen\(value: i32\) -> i32/, generated)
+      assert_match(/extern def add\(a: int, b: int\) -> int/, generated)
+      assert_equal 1, generated.scan("extern def add(a: int, b: int) -> int").length
+      assert_match(/extern def fill_buffer\(value: uint, count: ptr_uint\) -> ptr_uint/, generated)
+      assert_match(/extern def widen\(value: int\) -> int/, generated)
       assert_match(/extern def name_of\(mode: Mode\) -> cstr/, generated)
-      assert_match(/extern def logf\(format: cstr, \.\.\.\) -> i32/, generated)
-      assert_match(/extern def set_callback\(callback: fn\(arg0: i32, arg1: cstr\) -> void\) -> void/, generated)
-      assert_match(/extern def set_trace_callback\(callback: fn\(arg0: i32, arg1: cstr, arg2: va_list\) -> void\) -> void/, generated)
+      assert_match(/extern def logf\(format: cstr, \.\.\.\) -> int/, generated)
+      assert_match(/extern def set_callback\(callback: fn\(arg0: int, arg1: cstr\) -> void\) -> void/, generated)
+      assert_match(/extern def set_trace_callback\(callback: fn\(arg0: int, arg1: cstr, arg2: va_list\) -> void\) -> void/, generated)
       assert_match(/extern def take_hidden\(hidden: ptr\[Hidden\]\) -> void/, generated)
       assert_match(/extern def inspect_pointer\(data: const_ptr\[void\]\) -> void/, generated)
       assert_match(/extern def read_vec\(vec: const_ptr\[Vec2\]\) -> void/, generated)
-      assert_match(/extern def consume_strings\(values: ptr\[ptr\[char\]\], tokens: const_ptr\[ptr\[char\]\]\) -> i32/, generated)
+      assert_match(/extern def consume_strings\(values: ptr\[ptr\[char\]\], tokens: const_ptr\[ptr\[char\]\]\) -> int/, generated)
 
       File.write(output_path, generated)
       analysis = MilkTea::ModuleLoader.check_file(output_path)
@@ -181,11 +181,11 @@ class MilkTeaBindgenTest < Minitest::Test
         include_directives: ["sample.h"],
         clang:,
         function_param_type_overrides: {
-          "load_font_ex" => { "codepoints" => "ptr[i32]?" },
+          "load_font_ex" => { "codepoints" => "ptr[int]?" },
         },
       )
 
-      assert_match(/extern def load_font_ex\(codepoints: ptr\[i32\]\?, codepointCount: i32\) -> i32/, generated)
+      assert_match(/extern def load_font_ex\(codepoints: ptr\[int\]\?, codepointCount: int\) -> int/, generated)
     end
   end
 
@@ -215,7 +215,7 @@ class MilkTeaBindgenTest < Minitest::Test
         clang:,
       )
 
-      assert_match(/const EMPTY: Cache = Cache\(count = 0, indexA = array\[u8, 3\]\(0, 0, 0\), indexB = array\[u8, 3\]\(0, 0, 0\)\)/, generated)
+      assert_match(/const EMPTY: Cache = Cache\(count = 0, indexA = array\[ubyte, 3\]\(0, 0, 0\), indexB = array\[ubyte, 3\]\(0, 0, 0\)\)/, generated)
 
       File.write(output_path, generated)
       analysis = MilkTea::ModuleLoader.check_file(output_path)
@@ -281,7 +281,7 @@ class MilkTeaBindgenTest < Minitest::Test
         clang:,
       )
 
-      assert_match(/type FrictionCallback = fn\(arg0: f32, arg1: u64, arg2: f32, arg3: u64\) -> f32/, generated)
+      assert_match(/type FrictionCallback = fn\(arg0: float, arg1: ulong, arg2: float, arg3: ulong\) -> float/, generated)
       assert_match(/struct WorldDef:\n\s+friction_callback: ptr\[FrictionCallback\]/, generated)
 
       File.write(output_path, generated)
@@ -314,7 +314,7 @@ class MilkTeaBindgenTest < Minitest::Test
         },
       )
 
-      assert_match(/extern def allocate\(count: i32\) -> ptr\[void\]\?/, generated)
+      assert_match(/extern def allocate\(count: int\) -> ptr\[void\]\?/, generated)
     end
   end
 
@@ -337,12 +337,12 @@ class MilkTeaBindgenTest < Minitest::Test
         include_directives: ["sample.h"],
         clang:,
         field_type_overrides: {
-          "Mesh" => { "indices" => "ptr[u16]?" },
+          "Mesh" => { "indices" => "ptr[ushort]?" },
         },
       )
 
-      assert_match(/indices: ptr\[u16\]\?/, generated)
-      assert_match(/vertices: ptr\[f32\]/, generated)
+      assert_match(/indices: ptr\[ushort\]\?/, generated)
+      assert_match(/vertices: ptr\[float\]/, generated)
     end
   end
 
@@ -409,9 +409,9 @@ class MilkTeaBindgenTest < Minitest::Test
         clang_args: ["-I#{dir}"],
       )
 
-      assert_match(/type SampleFlags = u32/, generated)
-      assert_match(/const SAMPLE_INIT_VIDEO: u32 = 32/, generated)
-      assert_match(/const SAMPLE_EPSILON: f32 = 1\.25\d*E-4/, generated)
+      assert_match(/type SampleFlags = uint/, generated)
+      assert_match(/const SAMPLE_INIT_VIDEO: uint = 32/, generated)
+      assert_match(/const SAMPLE_EPSILON: float = 1\.25\d*E-4/, generated)
       refute_match(/const SAMPLE_OLD_ALIAS:/, generated)
     end
   end
@@ -444,8 +444,8 @@ class MilkTeaBindgenTest < Minitest::Test
         clang_args: ["-I#{dir}"],
       )
 
-      assert_match(/type SampleFlags = u32/, generated)
-      assert_match(/extern def SampleRun\(argc: i32, argv: ptr\[ptr\[char\]\], main_fn: fn\(arg0: i32, arg1: ptr\[ptr\[char\]\]\) -> i32\) -> i32/, generated)
+      assert_match(/type SampleFlags = uint/, generated)
+      assert_match(/extern def SampleRun\(argc: int, argv: ptr\[ptr\[char\]\], main_fn: fn\(arg0: int, arg1: ptr\[ptr\[char\]\]\) -> int\) -> int/, generated)
     end
   end
 

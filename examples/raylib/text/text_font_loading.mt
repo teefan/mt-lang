@@ -2,8 +2,8 @@ module examples.raylib.text.text_font_loading
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [text] example - font loading"
 const msg: cstr = c"!#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHI\nJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmn\nopqrstuvwxyz{|}~¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓ\nÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷\nøùúûüýþÿ"
 const font_bm_path: cstr = c"../resources/pixantiqua.fnt"
@@ -13,7 +13,7 @@ const bm_text: cstr = c"Using BMFont (Angelcode) imported"
 const ttf_text: cstr = c"Using TTF font generated"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -40,10 +40,10 @@ def main() -> i32:
         rl.DrawText(hold_space_text, 20, 20, 20, rl.LIGHTGRAY)
 
         if not use_ttf:
-            rl.DrawTextEx(font_bm, msg, rl.Vector2(x = 20.0, y = 100.0), f32<-font_bm.baseSize, 2.0, rl.MAROON)
+            rl.DrawTextEx(font_bm, msg, rl.Vector2(x = 20.0, y = 100.0), float<-font_bm.baseSize, 2.0, rl.MAROON)
             rl.DrawText(bm_text, 20, rl.GetScreenHeight() - 30, 20, rl.GRAY)
         else:
-            rl.DrawTextEx(font_ttf, msg, rl.Vector2(x = 20.0, y = 100.0), f32<-font_ttf.baseSize, 2.0, rl.LIME)
+            rl.DrawTextEx(font_ttf, msg, rl.Vector2(x = 20.0, y = 100.0), float<-font_ttf.baseSize, 2.0, rl.LIME)
             rl.DrawText(ttf_text, 20, rl.GetScreenHeight() - 30, 20, rl.GRAY)
 
     return 0

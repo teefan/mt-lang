@@ -2,12 +2,12 @@ module examples.raylib.shaders.shaders_julia_set
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
-const zoom_speed: f32 = 1.01
-const offset_speed_mul: f32 = 2.0
-const starting_zoom: f32 = 0.75
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
+const zoom_speed: float = 1.01
+const offset_speed_mul: float = 2.0
+const starting_zoom: float = 0.75
 const shader_path_format: cstr = c"../resources/shaders/glsl%i/julia_set.fs"
 const c_uniform_name: cstr = c"c"
 const zoom_uniform_name: cstr = c"zoom"
@@ -21,7 +21,7 @@ const help_reset_text: cstr = c"Press KEY_R to recenter the camera"
 const window_title: cstr = c"raylib [shaders] example - julia set"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -31,18 +31,18 @@ def main() -> i32:
     let target = rl.LoadRenderTexture(rl.GetScreenWidth(), rl.GetScreenHeight())
     defer rl.UnloadRenderTexture(target)
 
-    let points_of_interest = array[array[f32, 2], 6](
-        array[f32, 2](-0.348827, 0.607167),
-        array[f32, 2](-0.786268, 0.169728),
-        array[f32, 2](-0.8, 0.156),
-        array[f32, 2](0.285, 0.0),
-        array[f32, 2](-0.835, -0.2321),
-        array[f32, 2](-0.70176, -0.3842),
+    let points_of_interest = array[array[float, 2], 6](
+        array[float, 2](-0.348827, 0.607167),
+        array[float, 2](-0.786268, 0.169728),
+        array[float, 2](-0.8, 0.156),
+        array[float, 2](0.285, 0.0),
+        array[float, 2](-0.835, -0.2321),
+        array[float, 2](-0.70176, -0.3842),
     )
 
-    var c_values = array[f32, 2](points_of_interest[0][0], points_of_interest[0][1])
-    var offset = array[f32, 2](0.0, 0.0)
-    var zoom: f32 = starting_zoom
+    var c_values = array[float, 2](points_of_interest[0][0], points_of_interest[0][1])
+    var offset = array[float, 2](0.0, 0.0)
+    var zoom: float = starting_zoom
 
     let c_loc = rl.GetShaderLocation(shader, c_uniform_name)
     let zoom_loc = rl.GetShaderLocation(shader, zoom_uniform_name)
@@ -102,8 +102,8 @@ def main() -> i32:
 
             let mouse_pos = rl.GetMousePosition()
             let offset_velocity = rl.Vector2(
-                x = (mouse_pos.x / f32<-screen_width - 0.5) * offset_speed_mul / zoom,
-                y = (mouse_pos.y / f32<-screen_height - 0.5) * offset_speed_mul / zoom,
+                x = (mouse_pos.x / float<-screen_width - 0.5) * offset_speed_mul / zoom,
+                y = (mouse_pos.y / float<-screen_height - 0.5) * offset_speed_mul / zoom,
             )
 
             offset[0] += rl.GetFrameTime() * offset_velocity.x
@@ -112,7 +112,7 @@ def main() -> i32:
             rl.SetShaderValue(shader, zoom_loc, ptr_of(zoom), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
             rl.SetShaderValue(shader, offset_loc, ptr_of(offset[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
-        let dc = rl.GetFrameTime() * f32<-increment_speed * 0.0005
+        let dc = rl.GetFrameTime() * float<-increment_speed * 0.0005
         c_values[0] += dc
         c_values[1] += dc
         rl.SetShaderValue(shader, c_loc, ptr_of(c_values[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)

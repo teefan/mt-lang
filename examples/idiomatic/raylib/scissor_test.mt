@@ -2,15 +2,15 @@ module examples.idiomatic.raylib.scissor_test
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const scissor_width: i32 = 300
-const scissor_height: i32 = 300
-const scissor_half_width: i32 = 150
-const scissor_half_height: i32 = 150
+const screen_width: int = 800
+const screen_height: int = 450
+const scissor_width: int = 300
+const scissor_height: int = 300
+const scissor_half_width: int = 150
+const scissor_half_height: int = 150
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Scissor Test")
     defer rl.close_window()
 

@@ -4,17 +4,17 @@ import std.fmt as fmt
 import std.c.unistd as unistd
 import std.string as string
 
-const stdout_fd: i32 = 1
-const stderr_fd: i32 = 2
+const stdout_fd: int = 1
+const stderr_fd: int = 2
 
 
-def write_fd(fd: i32, text: str) -> bool:
+def write_fd(fd: int, text: str) -> bool:
     if text.len == 0:
         return true
 
     unsafe:
         let written = unistd.write(fd, ptr[void]<-text.data, text.len)
-        return written == i64<-text.len
+        return written == long<-text.len
 
 
 pub def write(text: str) -> bool:

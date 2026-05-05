@@ -5,19 +5,19 @@ import std.raylib as rl
 import std.raylib.math as math
 import std.rlgl as rlgl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const points_min: i32 = 3
-const points_max: i32 = 256
+const screen_width: int = 800
+const screen_height: int = 450
+const points_min: int = 3
+const points_max: int = 256
 
 
-def angle_fraction(center: rl.Vector2, circle_position: rl.Vector2, point_scale: f32) -> f32:
+def angle_fraction(center: rl.Vector2, circle_position: rl.Vector2, point_scale: float) -> float:
     let reference = rl.Vector2(x = 0.0, y = -point_scale)
     let relative = center.subtract(circle_position)
     return (reference.angle(relative) / rl.PI + 1.0) / 2.0
 
 
-def clamp_handle_position(center: rl.Vector2, circle_position: rl.Vector2, point_scale: f32) -> rl.Vector2:
+def clamp_handle_position(center: rl.Vector2, circle_position: rl.Vector2, point_scale: float) -> rl.Vector2:
     let distance = center.distance(circle_position) / point_scale
     if distance <= 1.0:
         return circle_position
@@ -29,26 +29,26 @@ def clamp_handle_position(center: rl.Vector2, circle_position: rl.Vector2, point
     ).add(center)
 
 
-def main() -> i32:
+def main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(screen_width, screen_height, "Milk Tea rlgl Color Wheel")
     defer rl.close_window()
 
-    var triangle_count: i32 = 64
-    var point_scale: f32 = 150.0
-    var value: f32 = 1.0
+    var triangle_count: int = 64
+    var point_scale: float = 150.0
+    var value: float = 1.0
 
     let center = rl.Vector2(x = screen_width / 2.0, y = screen_height / 2.0)
     var circle_position = center
     var color = rl.Color(r = 255, g = 255, b = 255, a = 255)
     var slider_clicked = false
     var setting_color = false
-    var render_type: i32 = rlgl.RL_TRIANGLES
+    var render_type: int = rlgl.RL_TRIANGLES
 
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        triangle_count += i32<-rl.get_mouse_wheel_move()
+        triangle_count += int<-rl.get_mouse_wheel_move()
         if triangle_count < points_min:
             triangle_count = points_min
         if triangle_count > points_max:
@@ -60,12 +60,12 @@ def main() -> i32:
 
         if rl.is_key_down(rl.KeyboardKey.KEY_LEFT_CONTROL) and rl.is_key_down(rl.KeyboardKey.KEY_C):
             if rl.is_key_pressed(rl.KeyboardKey.KEY_C):
-                rl.set_clipboard_text(rl.text_format_i32_i32_i32("#%02X%02X%02X", i32<-color.r, i32<-color.g, i32<-color.b))
+                rl.set_clipboard_text(rl.text_format_int_int_int("#%02X%02X%02X", int<-color.r, int<-color.g, int<-color.b))
 
         if rl.is_key_down(rl.KeyboardKey.KEY_UP):
             point_scale *= 1.025
-            if point_scale > f32<-screen_height / 2.0:
-                point_scale = f32<-screen_height / 2.0
+            if point_scale > float<-screen_height / 2.0:
+                point_scale = float<-screen_height / 2.0
             else:
                 circle_position = circle_position.subtract(center).multiply(rl.Vector2(x = 1.025, y = 1.025)).add(center)
 
@@ -108,7 +108,7 @@ def main() -> i32:
             let saturation = math.clamp(distance, 0.0, 1.0)
             let value_actual = math.clamp(distance, 0.0, 1.0)
             color = rl.color_lerp(
-                rl.Color(r = u8<-(value * 255.0), g = u8<-(value * 255.0), b = u8<-(value * 255.0), a = 255),
+                rl.Color(r = ubyte<-(value * 255.0), g = ubyte<-(value * 255.0), b = ubyte<-(value * 255.0), a = 255),
                 rl.color_from_hsv(angle_360, saturation, 1.0),
                 value_actual,
             )
@@ -120,9 +120,9 @@ def main() -> i32:
 
         rlgl.begin(render_type)
         for index in 0..triangle_count:
-            let angle_offset = (rl.PI * 2.0) / f32<-triangle_count
-            let angle = angle_offset * f32<-index
-            let angle_offset_calculated = (f32<-index + 1.0) * angle_offset
+            let angle_offset = (rl.PI * 2.0) / float<-triangle_count
+            let angle = angle_offset * float<-index
+            let angle_offset_calculated = (float<-index + 1.0) * angle_offset
             let scale = rl.Vector2(x = point_scale, y = point_scale)
 
             let offset = rl.Vector2(x = math.sin(angle), y = -math.cos(angle)).multiply(scale)
@@ -166,12 +166,12 @@ def main() -> i32:
         rl.draw_rectangle_lines_ex(rl.Rectangle(x = 8.0, y = 8.0, width = 64.0, height = 64.0), 2.0, rl.color_lerp(color, rl.BLACK, 0.5))
 
         rl.draw_text(
-            rl.text_format_i32_i32_i32_i32(
+            rl.text_format_int_int_int_int(
                 "%02X%02X%02X (%d)",
-                i32<-color.r,
-                i32<-color.g,
-                i32<-color.b,
-                i32<-color.a,
+                int<-color.r,
+                int<-color.g,
+                int<-color.b,
+                int<-color.a,
             ),
             8,
             80,
@@ -186,7 +186,7 @@ def main() -> i32:
             copy_offset = 4
 
         rl.draw_text("press ctrl+c to copy!", 8, 425 - copy_offset, 20, copy_color)
-        rl.draw_text(rl.text_format_i32("triangle count: %d", triangle_count), 8, 395, 20, rl.DARKGRAY)
+        rl.draw_text(rl.text_format_int("triangle count: %d", triangle_count), 8, 395, 20, rl.DARKGRAY)
 
         gui.slider_bar(slider_rectangle, "value: ", "", inout value, 0.0, 1.0)
         rl.draw_fps(80, 8)

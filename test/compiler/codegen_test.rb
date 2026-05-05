@@ -23,16 +23,16 @@ class MilkTeaCodegenTest < Minitest::Test
       source = [
         "module demo.codegen_surface",
         "",
-        "enum State: i32",
+        "enum State: int",
         "    idle = 0",
         "    running = 1",
         "",
-        "flags WindowFlags: u32",
+        "flags WindowFlags: uint",
         "    visible = 1 << 0",
         "    resizable = 1 << 1",
         "",
         "union Payload:",
-        "    count: i32",
+        "    count: int",
         "    enabled: bool",
         "",
         "const DEFAULT_STATE: State = State.idle",
@@ -43,7 +43,7 @@ class MilkTeaCodegenTest < Minitest::Test
         "        return State.running",
         "    return DEFAULT_STATE",
         "",
-        "def main() -> i32:",
+        "def main() -> int:",
         "    let current = pick_state(true)",
         "    if current == State.running:",
         "        return 1",
@@ -74,8 +74,8 @@ class MilkTeaCodegenTest < Minitest::Test
       File.write(File.join(dir, "std", "math.mt"), [
         "module std.math",
         "",
-        "pub const TEN: i32 = 10",
-        "pub const UNUSED: i32 = 99",
+        "pub const TEN: int = 10",
+        "pub const UNUSED: int = 99",
         "",
         "pub def clamp[T](value: T, min_value: T, max_value: T) -> T:",
         "    if value < min_value:",
@@ -92,7 +92,7 @@ class MilkTeaCodegenTest < Minitest::Test
         "",
         "import std.math as math",
         "",
-        "def main() -> i32:",
+        "def main() -> int:",
         "    return math.clamp(42, 0, math.TEN)",
         "",
       ].join("\n"))
@@ -102,8 +102,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
       assert_match(/static const int32_t std_math_TEN = 10;/, generated)
       refute_match(/static const int32_t std_math_UNUSED = 99;/, generated)
-      assert_match(/static int32_t std_math_clamp_i32\(int32_t value, int32_t min_value, int32_t max_value\)/, generated)
-      assert_match(/return std_math_clamp_i32\(42, 0, std_math_TEN\);/, generated)
+      assert_match(/static int32_t std_math_clamp_int\(int32_t value, int32_t min_value, int32_t max_value\)/, generated)
+      assert_match(/return std_math_clamp_int\(42, 0, std_math_TEN\);/, generated)
     end
   end
 
@@ -114,16 +114,16 @@ class MilkTeaCodegenTest < Minitest::Test
       import std.c.sample as c
 
       def is_quit(event: c.Event) -> bool:
-          return event.type_ == u32<-(i32<-c.EventType.QUIT)
+          return event.type_ == uint<-(int<-c.EventType.QUIT)
     MT
 
     imported = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            enum EventType: i32
+            enum EventType: int
                 QUIT = 256
             union Event:
-                type_: u32
+                type_: uint
       MT
     }
 
@@ -137,13 +137,13 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.pointer_surface",
       "",
-      "extern def allocate(size: usize) -> ptr[void]",
+      "extern def allocate(size: ptr_uint) -> ptr[void]",
       "extern def release(memory: ptr[void]) -> void",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    let memory = allocate(16)",
       "    unsafe:",
-      "        let advanced = ptr[byte]<-memory + 4",
+      "        let advanced = ptr[ubyte]<-memory + 4",
       "    release(memory)",
       "    return 0",
       "",
@@ -159,36 +159,36 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.span_surface",
       "",
-      "def first(items: span[i32]) -> i32:",
+      "def first(items: span[int]) -> int:",
       "    if items.len == 0:",
       "        return 0",
       "    unsafe:",
       "        return read(items.data)",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var value = 7",
-      "    let items = span[i32](data = ptr_of(value), len = 1)",
+      "    let items = span[int](data = ptr_of(value), len = 1)",
       "    return first(items)",
       "",
     ].join("\n")
 
     generated = generate_c_from_source(source)
 
-    assert_match(/typedef struct mt_span_i32/, generated)
+    assert_match(/typedef struct mt_span_int/, generated)
     assert_match(/int32_t \*data;/, generated)
     assert_match(/uintptr_t len;/, generated)
-    assert_match(/static int32_t demo_span_surface_first\(mt_span_i32 items\)/, generated)
+    assert_match(/static int32_t demo_span_surface_first\(mt_span_int items\)/, generated)
     assert_match(/if \(items\.len == 0\)/, generated)
     assert_match(/return \*items\.data;/, generated)
-    assert_match(/mt_span_i32 items = \(mt_span_i32\)\{ \.data = &value, \.len = 1 \};/, generated)
+    assert_match(/mt_span_int items = \(mt_span_int\)\{ \.data = &value, \.len = 1 \};/, generated)
   end
 
   def test_generate_c_emits_line_directives_for_user_statements
     source = <<~MT
       module demo.line_directives
 
-      def main() -> i32:
-          let x: i32 = 1
+      def main() -> int:
+          let x: int = 1
           return x
     MT
 
@@ -204,16 +204,16 @@ class MilkTeaCodegenTest < Minitest::Test
       import std.async as aio
 
       struct Counter:
-          value: i32
+          value: int
 
       methods Counter:
-          async def read() -> i32:
+          async def read() -> int:
               return this.value
 
           async edit def bump() -> void:
               this.value += 1
 
-      async def main() -> i32:
+      async def main() -> int:
           var counter = Counter(value = 1)
           await counter.bump()
           return await counter.read()
@@ -232,7 +232,7 @@ class MilkTeaCodegenTest < Minitest::Test
       module demo.generic_methods_codegen
 
       struct Box:
-          value: i32
+          value: int
 
       methods Box:
           def echo[T](input: T) -> T:
@@ -241,7 +241,7 @@ class MilkTeaCodegenTest < Minitest::Test
           static def make[T](input: T) -> T:
               return input
 
-      def main() -> i32:
+      def main() -> int:
           let box = Box(value = 1)
           let a = box.echo(3)
           let b = Box.make(4)
@@ -250,10 +250,10 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/demo_generic_methods_codegen_Box_echo_i32/, generated)
-    assert_match(/demo_generic_methods_codegen_Box_make_i32/, generated)
-    assert_match(/demo_generic_methods_codegen_Box_echo_i32\(box, 3\)/, generated)
-    assert_match(/demo_generic_methods_codegen_Box_make_i32\(4\)/, generated)
+    assert_match(/demo_generic_methods_codegen_Box_echo_int/, generated)
+    assert_match(/demo_generic_methods_codegen_Box_make_int/, generated)
+    assert_match(/demo_generic_methods_codegen_Box_echo_int\(box, 3\)/, generated)
+    assert_match(/demo_generic_methods_codegen_Box_make_int\(4\)/, generated)
   end
 
   def test_generate_c_for_async_with_control_flow
@@ -262,13 +262,13 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.async as aio
 
-      async def sum_range(limit: i32) -> i32:
-          var total: i32 = 0
+      async def sum_range(limit: int) -> int:
+          var total: int = 0
           for i in 0..limit:
               total += i
           return total
 
-      async def clamp_sum(limit: i32) -> i32:
+      async def clamp_sum(limit: int) -> int:
           let total = await sum_range(limit)
           if total > 100:
               return 100
@@ -277,7 +277,7 @@ class MilkTeaCodegenTest < Minitest::Test
           else:
               return total
 
-      async def main() -> i32:
+      async def main() -> int:
           return await clamp_sum(20)
     MT
 
@@ -295,10 +295,10 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.async as aio
 
-        async def child() -> i32:
+        async def child() -> int:
             return 42
 
-        async def parent() -> i32:
+        async def parent() -> int:
             if true:
                 return await child()
             return 0
@@ -319,10 +319,10 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.async as aio
 
-        async def tick() -> i32:
+        async def tick() -> int:
             return 1
 
-        async def accumulate(limit: i32) -> i32:
+        async def accumulate(limit: int) -> int:
             var total = 0
             var i = 0
             while i < limit:
@@ -348,7 +348,7 @@ class MilkTeaCodegenTest < Minitest::Test
         async def ready() -> bool:
             return true
 
-        async def parent() -> i32:
+        async def parent() -> int:
             if await ready():
                 return 1
             return 0
@@ -373,7 +373,7 @@ class MilkTeaCodegenTest < Minitest::Test
         async def f() -> bool:
             return false
 
-        async def parent() -> i32:
+        async def parent() -> int:
             if await t() and await t():
                 return 1
             if await f() or await t():
@@ -394,10 +394,10 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.async as aio
 
-        async def child() -> i32:
+        async def child() -> int:
             return 7
 
-        async def parent(flag: bool) -> i32:
+        async def parent(flag: bool) -> int:
             return if flag: await child() else: 0
       MT
 
@@ -414,7 +414,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.raylib as rl
 
-      def main(path: str, data: span[u8]) -> i32:
+      def main(path: str, data: span[ubyte]) -> int:
           var data_size = 0
           let loaded = rl.load_file_data(path, out data_size)
           let saved = rl.save_file_data(path, data)
@@ -428,16 +428,16 @@ class MilkTeaCodegenTest < Minitest::Test
         extern module std.c.raylib:
             include "raylib.h"
 
-            extern def LoadFileData(file_name: cstr, data_size: ptr[i32]) -> ptr[u8]?
-            extern def SaveFileData(file_name: cstr, data: ptr[u8], bytes: i32) -> bool
+            extern def LoadFileData(file_name: cstr, data_size: ptr[int]) -> ptr[ubyte]?
+            extern def SaveFileData(file_name: cstr, data: ptr[ubyte], bytes: int) -> bool
       MT
       "std/raylib.mt" => <<~MT,
         module std.raylib
 
         import std.c.raylib as c
 
-        pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
-        pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, i32<-data.len)
+        pub foreign def load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
+        pub foreign def save_file_data(file_name: str as cstr, data: span[ubyte]) -> bool = c.SaveFileData(file_name, data.data, int<-data.len)
       MT
     }
 
@@ -459,7 +459,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.sample as sample
 
-      def main(path: str) -> i32:
+      def main(path: str) -> int:
           let first = sample.load(path)
           var second = 0
           second = sample.load(path)
@@ -469,14 +469,14 @@ class MilkTeaCodegenTest < Minitest::Test
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            extern def Load(path: cstr) -> i32
+            extern def Load(path: cstr) -> int
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def load(path: str as cstr) -> i32 = c.Load
+        pub foreign def load(path: str as cstr) -> int = c.Load
       MT
     }
 
@@ -495,9 +495,9 @@ class MilkTeaCodegenTest < Minitest::Test
       import std.fmt as fmt
       import std.string as string
 
-      def main(value: u8, delta: i16, ticks: u64, raw: cstr) -> i32:
+      def main(value: ubyte, delta: short, ticks: ulong, raw: cstr) -> int:
           let text = fmt.string(f"value=\#{value} delta=\#{delta} ticks=\#{ticks} raw=\#{raw} ok=\#{true}")
-          return i32<-text.count()
+          return int<-text.count()
     MT
 
     generated = generate_c_from_source(source)
@@ -506,9 +506,9 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/std_string_String text = demo_format_codegen__fmt_1\(\(\(uint32_t\) value\), \(\(int32_t\) delta\), ticks, raw, true\);/, generated)
     assert_match(/std_string_String_with_capacity\(29\)/, generated)
     assert_match(/std_fmt_append\(/, generated)
-    assert_match(/std_fmt_append_u32\(/, generated)
-    assert_match(/std_fmt_append_i32\(/, generated)
-    assert_match(/std_fmt_append_u64\(/, generated)
+    assert_match(/std_fmt_append_uint\(/, generated)
+    assert_match(/std_fmt_append_int\(/, generated)
+    assert_match(/std_fmt_append_ulong\(/, generated)
     assert_match(/std_fmt_append_cstr\(/, generated)
     assert_match(/std_fmt_append_bool\(/, generated)
     refute_match(/std_fmt_append\(&text/, generated)
@@ -518,14 +518,14 @@ class MilkTeaCodegenTest < Minitest::Test
     source = <<~MT
       module demo.format_expr_codegen
 
-      def sink(text: str) -> usize:
+      def sink(text: str) -> ptr_uint:
           return text.len
 
-      def main(value: u8, delta: i16) -> i32:
+      def main(value: ubyte, delta: short) -> int:
           let text = f"value=\#{value} delta=\#{delta}"
           if sink(f"ok=\#{true}") == 0:
               return 1
-          return i32<-text.len
+          return int<-text.len
     MT
 
     generated = generate_c_from_source(source)
@@ -542,11 +542,11 @@ class MilkTeaCodegenTest < Minitest::Test
     source = <<~MT
       module demo.format_dedup_codegen
 
-      def first(value: u8) -> usize:
+      def first(value: ubyte) -> ptr_uint:
           let text = f"value=\#{value} ok=\#{true}"
           return text.len
 
-      def second(value: u8) -> usize:
+      def second(value: ubyte) -> ptr_uint:
           let text = f"value=\#{value} ok=\#{true}"
           return text.len
     MT
@@ -562,7 +562,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = <<~MT
       module demo.format_expr_escape
 
-      def main(value: i32) -> str:
+      def main(value: int) -> str:
           return f"value=\#{value}"
     MT
 
@@ -581,21 +581,21 @@ class MilkTeaCodegenTest < Minitest::Test
 
       const PATH: str = "demo.txt"
 
-      def main() -> i32:
+      def main() -> int:
           return sample.load(PATH)
     MT
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            extern def Load(path: cstr) -> i32
+            extern def Load(path: cstr) -> int
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def load(path: str as cstr) -> i32 = c.Load
+        pub foreign def load(path: str as cstr) -> int = c.Load
       MT
     }
 
@@ -645,8 +645,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
       def main() -> void:
           let value = 7
-          let pointer: const_ptr[i32] = const_ptr_of(value)
-          let copy: const_ptr[i32] = pointer
+          let pointer: const_ptr[int] = const_ptr_of(value)
+          let copy: const_ptr[int] = pointer
     MT
 
     generated = generate_c_from_program_source(source)
@@ -659,7 +659,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = <<~MT
       module demo.main
 
-      def main() -> i32:
+      def main() -> int:
           let double = 7
           return double + 1
     MT
@@ -676,7 +676,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.raylib as rl
 
-      def main() -> i32:
+      def main() -> int:
           rl.init_window(800, 450, "Demo")
           defer rl.close_window()
           return 0
@@ -703,14 +703,14 @@ class MilkTeaCodegenTest < Minitest::Test
         extern module std.c.raylib:
             include "raylib.h"
 
-            extern def InitWindow(width: i32, height: i32, title: cstr) -> void
+            extern def InitWindow(width: int, height: int, title: cstr) -> void
       MT
       "std/raylib.mt" => <<~MT,
         module std.raylib
 
         import std.c.raylib as c
 
-        pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
+        pub foreign def init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow
       MT
     }
 
@@ -728,7 +728,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.sample as sample
 
-      def main() -> i32:
+      def main() -> int:
           var labels = array[str, 3]("Play", "Options", "Quit")
           var active = 1
           return sample.use_names(labels, inout active)
@@ -737,14 +737,14 @@ class MilkTeaCodegenTest < Minitest::Test
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            extern def UseNames(names: ptr[cstr], count: i32, active: ptr[i32]) -> i32
+            extern def UseNames(names: ptr[cstr], count: int, active: ptr[int]) -> int
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def use_names(names: span[str] as span[cstr], inout active: i32) -> i32 = c.UseNames(names.data, i32<-names.len, active)
+        pub foreign def use_names(names: span[str] as span[cstr], inout active: int) -> int = c.UseNames(names.data, int<-names.len, active)
       MT
     }
 
@@ -767,7 +767,7 @@ class MilkTeaCodegenTest < Minitest::Test
       def middle() -> str:
           return "Options"
 
-      def main() -> i32:
+      def main() -> int:
           var labels = array[str, 3]("Play", middle(), "Quit")
           var active = 1
           return sample.use_names(labels, inout active)
@@ -776,14 +776,14 @@ class MilkTeaCodegenTest < Minitest::Test
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            extern def UseNames(names: ptr[ptr[char]], count: i32, active: ptr[i32]) -> i32
+            extern def UseNames(names: ptr[ptr[char]], count: int, active: ptr[int]) -> int
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def use_names(names: span[str] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, i32<-names.len, active)
+        pub foreign def use_names(names: span[str] as span[ptr[char]], inout active: int) -> int = c.UseNames(names.data, int<-names.len, active)
       MT
     }
 
@@ -805,7 +805,7 @@ class MilkTeaCodegenTest < Minitest::Test
       def middle() -> str:
           return "Options"
 
-      def main() -> i32:
+      def main() -> int:
           var labels = array[str, 3]("Play", middle(), "Quit")
           var active = 1
           sample.use_names(labels, inout active)
@@ -815,14 +815,14 @@ class MilkTeaCodegenTest < Minitest::Test
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            extern def UseNames(names: ptr[ptr[char]], count: i32, active: ptr[i32]) -> i32
+            extern def UseNames(names: ptr[ptr[char]], count: int, active: ptr[int]) -> int
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def use_names(names: span[str] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, i32<-names.len, active)
+        pub foreign def use_names(names: span[str] as span[ptr[char]], inout active: int) -> int = c.UseNames(names.data, int<-names.len, active)
       MT
     }
 
@@ -843,10 +843,10 @@ class MilkTeaCodegenTest < Minitest::Test
       def middle() -> str:
           return "34"
 
-      def keep(value: i32) -> i32:
+      def keep(value: int) -> int:
           return value
 
-      def main() -> i32:
+      def main() -> int:
           var labels = array[str, 3]("12", middle(), "56")
           let counted = keep(sample.count_names(labels))
           let doubled = keep(sample.pair_sum(1 + 2))
@@ -856,16 +856,16 @@ class MilkTeaCodegenTest < Minitest::Test
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            extern def CountNames(names: ptr[ptr[char]], count: i32) -> i32
-            extern def PairSum(left: i32, right: i32) -> i32
+            extern def CountNames(names: ptr[ptr[char]], count: int) -> int
+            extern def PairSum(left: int, right: int) -> int
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, i32<-names.len)
-        pub foreign def pair_sum(value: i32) -> i32 = c.PairSum(value, value)
+        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> int = c.CountNames(names.data, int<-names.len)
+        pub foreign def pair_sum(value: int) -> int = c.PairSum(value, value)
       MT
     }
 
@@ -917,7 +917,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.sample as sample
 
-      def main() -> i32:
+      def main() -> int:
           var labels = array[cstr, 3]("Play", "Options", "Quit")
           var active = 1
           return sample.use_names(labels, inout active)
@@ -926,14 +926,14 @@ class MilkTeaCodegenTest < Minitest::Test
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            extern def UseNames(names: ptr[ptr[char]], count: i32, active: ptr[i32]) -> i32
+            extern def UseNames(names: ptr[ptr[char]], count: int, active: ptr[int]) -> int
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def use_names(names: span[cstr] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, i32<-names.len, active)
+        pub foreign def use_names(names: span[cstr] as span[ptr[char]], inout active: int) -> int = c.UseNames(names.data, int<-names.len, active)
       MT
     }
 
@@ -982,9 +982,9 @@ class MilkTeaCodegenTest < Minitest::Test
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
             struct Camera:
-                id: i32
+                id: int
 
-            enum CameraMode: i32
+            enum CameraMode: int
                 CAMERA_FREE = 1
 
             extern def UpdateCamera(camera: ptr[Camera], mode: CameraMode) -> void
@@ -1013,7 +1013,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.sample as sample
 
-      def main(center: f32) -> void:
+      def main(center: float) -> void:
           sample.draw_triangle(
               sample.Vector2(x = center, y = 80.0),
               sample.Vector2(x = center - 60.0, y = 150.0),
@@ -1026,14 +1026,14 @@ class MilkTeaCodegenTest < Minitest::Test
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
             struct Vector2:
-                x: f32
-                y: f32
+                x: float
+                y: float
 
             struct Color:
-                r: u8
-                g: u8
-                b: u8
-                a: u8
+                r: ubyte
+                g: ubyte
+                b: ubyte
+                a: ubyte
 
             const VIOLET: Color = Color(r = 200, g = 122, b = 255, a = 255)
 
@@ -1065,11 +1065,11 @@ class MilkTeaCodegenTest < Minitest::Test
       import std.sample as sample
 
       struct Bunny:
-          x: i32
-          y: i32
-          color: i32
+          x: int
+          y: int
+          color: int
 
-      def main(items: span[Bunny], count: i32) -> void:
+      def main(items: span[Bunny], count: int) -> void:
           for index in 0..count:
               sample.draw(items[index].x, items[index].y, items[index].color)
     MT
@@ -1077,14 +1077,14 @@ class MilkTeaCodegenTest < Minitest::Test
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            extern def Draw(x: i32, y: i32, color: i32) -> void
+            extern def Draw(x: int, y: int, color: int) -> void
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def draw(x: i32, y: i32, color: i32) -> void = c.Draw
+        pub foreign def draw(x: int, y: int, color: int) -> void = c.Draw
       MT
     }
 
@@ -1111,14 +1111,14 @@ class MilkTeaCodegenTest < Minitest::Test
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
             struct Color:
-                r: u8
-                g: u8
-                b: u8
-                a: u8
+                r: ubyte
+                g: ubyte
+                b: ubyte
+                a: ubyte
 
             const RED: Color = Color(r = 255, g = 0, b = 0, a = 255)
 
-            extern def Fade(color: Color, alpha: f32) -> Color
+            extern def Fade(color: Color, alpha: float) -> Color
             extern def UseColor(color: Color) -> void
       MT
       "std/sample.mt" => <<~MT,
@@ -1129,7 +1129,7 @@ class MilkTeaCodegenTest < Minitest::Test
         pub type Color = c.Color
         pub const RED: Color = c.RED
 
-        pub foreign def fade(color: Color, alpha: f32) -> Color = c.Fade
+        pub foreign def fade(color: Color, alpha: float) -> Color = c.Fade
         pub foreign def use_color(color: Color) -> void = c.UseColor
       MT
     }
@@ -1146,33 +1146,33 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.sample as sample
 
-      def main(area: i32) -> void:
+      def main(area: int) -> void:
           let label = "COLLISION!"
           sample.draw_text(label, sample.screen_width() / 2 - sample.measure_text(label, 20) / 2, 10, 20, sample.BLACK)
-          sample.draw_text(sample.text_format_i32("Collision Area: %i", area), sample.screen_width() / 2 - 100, 20, 20, sample.BLACK)
+          sample.draw_text(sample.text_format_int("Collision Area: %i", area), sample.screen_width() / 2 - 100, 20, 20, sample.BLACK)
     MT
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            const BLACK: i32 = 0
+            const BLACK: int = 0
 
-            extern def DrawText(text: cstr, pos_x: i32, pos_y: i32, font_size: i32, color: i32) -> void
-            extern def MeasureText(text: cstr, font_size: i32) -> i32
-            extern def GetScreenWidth() -> i32
-            extern def TextFormat(format: cstr, value: i32) -> cstr
+            extern def DrawText(text: cstr, pos_x: int, pos_y: int, font_size: int, color: int) -> void
+            extern def MeasureText(text: cstr, font_size: int) -> int
+            extern def GetScreenWidth() -> int
+            extern def TextFormat(format: cstr, value: int) -> cstr
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub const BLACK: i32 = c.BLACK
+        pub const BLACK: int = c.BLACK
 
-        pub foreign def draw_text(text: str as cstr, pos_x: i32, pos_y: i32, font_size: i32, color: i32) -> void = c.DrawText
-        pub foreign def measure_text(text: str as cstr, font_size: i32) -> i32 = c.MeasureText
-        pub foreign def screen_width() -> i32 = c.GetScreenWidth
-        pub foreign def text_format_i32(format: str as cstr, value: i32) -> cstr = c.TextFormat(format, value)
+        pub foreign def draw_text(text: str as cstr, pos_x: int, pos_y: int, font_size: int, color: int) -> void = c.DrawText
+        pub foreign def measure_text(text: str as cstr, font_size: int) -> int = c.MeasureText
+        pub foreign def screen_width() -> int = c.GetScreenWidth
+        pub foreign def text_format_int(format: str as cstr, value: int) -> cstr = c.TextFormat(format, value)
       MT
     }
 
@@ -1189,11 +1189,11 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.mem as mem
 
-      def first_byte() -> byte:
+      def first_byte() -> ubyte:
           unsafe:
               return mem.allocate_bytes(16)[0]
 
-      def main(buffer: ptr[char]) -> byte:
+      def main(buffer: ptr[char]) -> ubyte:
           mem.release_bytes(mem.allocate_bytes(8))
           mem.set_label(buffer)
           return first_byte()
@@ -1204,7 +1204,7 @@ class MilkTeaCodegenTest < Minitest::Test
         extern module std.c.mem:
             include "mem.h"
 
-            extern def AllocateBytes(size: usize) -> ptr[void]
+            extern def AllocateBytes(size: ptr_uint) -> ptr[void]
             extern def ReleaseBytes(memory: ptr[void]) -> void
             extern def SetLabel(label: cstr) -> void
       MT
@@ -1213,8 +1213,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.c.mem as c
 
-        pub foreign def allocate_bytes(size: usize) -> ptr[byte] = c.AllocateBytes
-        pub foreign def release_bytes(memory: ptr[byte]) -> void = c.ReleaseBytes
+        pub foreign def allocate_bytes(size: ptr_uint) -> ptr[ubyte] = c.AllocateBytes
+        pub foreign def release_bytes(memory: ptr[ubyte]) -> void = c.ReleaseBytes
         pub foreign def set_label(label: ptr[char]) -> void = c.SetLabel
       MT
     }
@@ -1245,12 +1245,12 @@ class MilkTeaCodegenTest < Minitest::Test
       "std/c/shared.mt" => <<~MT,
         extern module std.c.shared:
             struct Matrix:
-                m0: f32
+                m0: float
       MT
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
             struct Matrix:
-                m0: f32
+                m0: float
 
             extern def SetMatrix(matrix: Matrix) -> void
             extern def SetMatrixPtr(matrix: ptr[Matrix]) -> void
@@ -1292,7 +1292,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.window as win
 
-      def main() -> i32:
+      def main() -> int:
           let window = win.create()
           if window != null:
               win.destroy(window)
@@ -1333,7 +1333,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.window as win
 
-      def main() -> i32:
+      def main() -> int:
           let window = win.create()
           if window != null:
               win.destroy(window)
@@ -1374,32 +1374,32 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.span_index_surface",
       "",
-      "def bump(items: span[i32]) -> i32:",
+      "def bump(items: span[int]) -> int:",
       "    let first = items[0]",
       "    items[0] = first + 2",
       "    return items[0]",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var value = 7",
-      "    let items = span[i32](data = ptr_of(value), len = 1)",
+      "    let items = span[int](data = ptr_of(value), len = 1)",
       "    return bump(items)",
       "",
     ].join("\n")
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static inline int32_t \*mt_checked_span_index_span_i32\(mt_span_i32 span, uintptr_t index\)/, generated)
+    assert_match(/static inline int32_t \*mt_checked_span_index_span_int\(mt_span_int span, uintptr_t index\)/, generated)
     assert_match(/if \(index >= span\.len\) mt_panic\("span index out of bounds"\);/, generated)
-    assert_match(/int32_t first = \(\*mt_checked_span_index_span_i32\(items, 0\)\);/, generated)
-    assert_match(/\(\*mt_checked_span_index_span_i32\(items, 0\)\) = first \+ 2;/, generated)
-    assert_match(/return \(\*mt_checked_span_index_span_i32\(items, 0\)\);/, generated)
+    assert_match(/int32_t first = \(\*mt_checked_span_index_span_int\(items, 0\)\);/, generated)
+    assert_match(/\(\*mt_checked_span_index_span_int\(items, 0\)\) = first \+ 2;/, generated)
+    assert_match(/return \(\*mt_checked_span_index_span_int\(items, 0\)\);/, generated)
   end
 
   def test_generate_c_for_mixed_numeric_binary_operations_inserts_explicit_casts
     source = [
       "module demo.numeric_codegen",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    let sum = 1 + 2.5",
       "    if 3 < 3.5 and sum > 3.0:",
       "        return 1",
@@ -1417,10 +1417,10 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.prefix_cast_codegen",
       "",
-      "def main(value: f32, a: i32, b: i32) -> i32:",
-      "    let left = i32<-value",
-      "    let right = u8<-(a - b)",
-      "    return left + i32<-right",
+      "def main(value: float, a: int, b: int) -> int:",
+      "    let left = int<-value",
+      "    let right = ubyte<-(a - b)",
+      "    return left + int<-right",
       "",
     ].join("\n")
 
@@ -1434,7 +1434,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.if_expr_codegen",
       "",
-      "def main(ready: bool) -> i32:",
+      "def main(ready: bool) -> int:",
       "    let score = if ready: 1 else: 0",
       "    return if ready: score else: score + 1",
       "",
@@ -1450,9 +1450,9 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.variadic_codegen",
       "",
-      "extern def printf(format: cstr, ...) -> i32",
+      "extern def printf(format: cstr, ...) -> int",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    return printf(c\"value=%d %s\\n\", 7, c\"ok\")",
       "",
     ].join("\n")
@@ -1469,7 +1469,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.c.demo as demo
 
-        def main() -> i32:
+        def main() -> int:
             let channel = 200
             var color = demo.Color(r = channel, g = 0, b = 0, a = 255)
             color.g = channel
@@ -1480,12 +1480,12 @@ class MilkTeaCodegenTest < Minitest::Test
         "std/c/demo.mt" => <<~MT,
           extern module std.c.demo:
               struct Color:
-                  r: u8
-                  g: u8
-                  b: u8
-                  a: u8
+                  r: ubyte
+                  g: ubyte
+                  b: ubyte
+                  a: ubyte
 
-              extern def set_scale(value: f32) -> void
+              extern def set_scale(value: float) -> void
         MT
       },
     )
@@ -1500,10 +1500,10 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.contextual_int_to_float_codegen",
       "",
       "struct Point:",
-      "    x: f32",
+      "    x: float",
       "",
-      "def project(value: i32) -> f32:",
-      "    var total: f32 = value",
+      "def project(value: int) -> float:",
+      "    var total: float = value",
       "    total = value + 1",
       "    var point = Point(x = 0.0)",
       "    point.x = value + 2",
@@ -1525,35 +1525,35 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "struct Slice[T]:",
       "    data: ptr[T]",
-      "    len: usize",
+      "    len: ptr_uint",
       "",
       "struct Holder:",
-      "    items: Slice[i32]",
+      "    items: Slice[int]",
       "",
-      "def first(items: Slice[i32]) -> i32:",
+      "def first(items: Slice[int]) -> int:",
       "    if items.len == 0:",
       "        return 0",
       "    unsafe:",
       "        return read(items.data)",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var value = 7",
-      "    let holder = Holder(items = Slice[i32](data = ptr_of(value), len = 1))",
+      "    let holder = Holder(items = Slice[int](data = ptr_of(value), len = 1))",
       "    return first(holder.items)",
       "",
     ].join("\n")
 
     generated = generate_c_from_source(source)
 
-    assert_match(/typedef struct demo_generic_surface_Slice_i32 demo_generic_surface_Slice_i32;/, generated)
+    assert_match(/typedef struct demo_generic_surface_Slice_int demo_generic_surface_Slice_int;/, generated)
     assert_match(/typedef struct demo_generic_surface_Holder demo_generic_surface_Holder;/, generated)
-    assert_match(/struct demo_generic_surface_Slice_i32 \{/, generated)
+    assert_match(/struct demo_generic_surface_Slice_int \{/, generated)
     assert_match(/int32_t \*data;/, generated)
     assert_match(/uintptr_t len;/, generated)
     assert_match(/struct demo_generic_surface_Holder \{/, generated)
-    assert_match(/demo_generic_surface_Slice_i32 items;/, generated)
-    assert_match(/static int32_t demo_generic_surface_first\(demo_generic_surface_Slice_i32 items\)/, generated)
-    assert_match(/demo_generic_surface_Holder holder = \(demo_generic_surface_Holder\)\{ \.items = \(demo_generic_surface_Slice_i32\)\{ \.data = &value, \.len = 1 \} \};/, generated)
+    assert_match(/demo_generic_surface_Slice_int items;/, generated)
+    assert_match(/static int32_t demo_generic_surface_first\(demo_generic_surface_Slice_int items\)/, generated)
+    assert_match(/demo_generic_surface_Holder holder = \(demo_generic_surface_Holder\)\{ \.items = \(demo_generic_surface_Slice_int\)\{ \.data = &value, \.len = 1 \} \};/, generated)
   end
 
   def test_generate_c_for_generic_functions_with_inferred_type_arguments
@@ -1562,7 +1562,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "struct Slice[T]:",
       "    data: ptr[T]",
-      "    len: usize",
+      "    len: ptr_uint",
       "",
       "def head[T](items: Slice[T]) -> ptr[T]:",
       "    return items.data",
@@ -1572,9 +1572,9 @@ class MilkTeaCodegenTest < Minitest::Test
       "        return a",
       "    return b",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var value = 7",
-      "    let items = Slice[i32](data = ptr_of(value), len = 1)",
+      "    let items = Slice[int](data = ptr_of(value), len = 1)",
       "    let smallest = min(9, 4)",
       "    unsafe:",
       "        return read(head(items)) + smallest",
@@ -1583,30 +1583,30 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static int32_t \*demo_generic_functions_head_i32\(demo_generic_functions_Slice_i32 items\)/, generated)
-    assert_match(/static int32_t demo_generic_functions_min_i32\(int32_t a, int32_t b\)/, generated)
-    assert_match(/int32_t smallest = demo_generic_functions_min_i32\(9, 4\);/, generated)
-    assert_match(/return \(\*demo_generic_functions_head_i32\(items\)\) \+ smallest;/, generated)
+    assert_match(/static int32_t \*demo_generic_functions_head_int\(demo_generic_functions_Slice_int items\)/, generated)
+    assert_match(/static int32_t demo_generic_functions_min_int\(int32_t a, int32_t b\)/, generated)
+    assert_match(/int32_t smallest = demo_generic_functions_min_int\(9, 4\);/, generated)
+    assert_match(/return \(\*demo_generic_functions_head_int\(items\)\) \+ smallest;/, generated)
   end
 
   def test_generate_c_for_generic_functions_with_explicit_type_arguments_and_layout_queries
     source = [
       "module demo.generic_layout",
       "",
-      "def bytes_for[T](count: usize) -> usize:",
+      "def bytes_for[T](count: ptr_uint) -> ptr_uint:",
       "    return count * sizeof(T)",
       "",
-      "def main() -> i32:",
-      "    let total = bytes_for[i32](4)",
-      "    return i32<-total",
+      "def main() -> int:",
+      "    let total = bytes_for[int](4)",
+      "    return int<-total",
       "",
     ].join("\n")
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static uintptr_t demo_generic_layout_bytes_for_i32\(uintptr_t count\)/, generated)
+    assert_match(/static uintptr_t demo_generic_layout_bytes_for_int\(uintptr_t count\)/, generated)
     assert_match(/return count \* sizeof\(int32_t\);/, generated)
-    assert_match(/uintptr_t total = demo_generic_layout_bytes_for_i32\(4\);/, generated)
+    assert_match(/uintptr_t total = demo_generic_layout_bytes_for_int\(4\);/, generated)
   end
 
   def test_generate_c_for_async_await_of_task_locals_without_redundant_await_slots
@@ -1615,7 +1615,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "import std.async as aio",
       "",
-      "async def child() -> i32:",
+      "async def child() -> int:",
       "    let task = aio.sleep(1)",
       "    return await task + 1",
       "",
@@ -1623,8 +1623,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/mt_task_i32 local_task;/, generated)
-    refute_match(/mt_task_i32 await_0;/, generated)
+    assert_match(/mt_task_int local_task;/, generated)
+    refute_match(/mt_task_int await_0;/, generated)
     refute_match(/__mt_frame->await_0 = __mt_frame->local_task;/, generated)
     assert_match(/if \(!__mt_frame->local_task\.ready\(__mt_frame->local_task\.frame\)\)/, generated)
     assert_match(/__mt_frame->local___mt_async_tmp_1 = __mt_frame->local_task\.take_result\(__mt_frame->local_task\.frame\);/, generated)
@@ -1636,12 +1636,12 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.generic_builder",
       "",
-      "def capacity_of[N](buffer: str_builder[N]) -> usize:",
+      "def capacity_of[N](buffer: str_builder[N]) -> ptr_uint:",
       "    return buffer.capacity()",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var buffer: str_builder[32]",
-      "    return i32<-(capacity_of(buffer) + capacity_of(buffer))",
+      "    return int<-(capacity_of(buffer) + capacity_of(buffer))",
       "",
     ].join("\n")
 
@@ -1656,12 +1656,12 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.generic_builder_explicit",
       "",
-      "def capacity_of[N](buffer: str_builder[N]) -> usize:",
+      "def capacity_of[N](buffer: str_builder[N]) -> ptr_uint:",
       "    return buffer.capacity()",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var buffer: str_builder[32]",
-      "    return i32<-capacity_of[32](buffer)",
+      "    return int<-capacity_of[32](buffer)",
       "",
     ].join("\n")
 
@@ -1676,15 +1676,15 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.generic_builder_named_const",
       "",
-      "const BASE: i32 = 28",
-      "const CAPACITY: i32 = BASE + 4",
+      "const BASE: int = 28",
+      "const CAPACITY: int = BASE + 4",
       "",
-      "def capacity_of[N](buffer: str_builder[N]) -> usize:",
+      "def capacity_of[N](buffer: str_builder[N]) -> ptr_uint:",
       "    return buffer.capacity()",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var buffer: str_builder[CAPACITY]",
-      "    return i32<-capacity_of[CAPACITY](buffer)",
+      "    return int<-capacity_of[CAPACITY](buffer)",
       "",
     ].join("\n")
 
@@ -1699,15 +1699,15 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.result_surface",
       "",
-      "enum LoadError: u8",
+      "enum LoadError: ubyte",
       "    invalid_format = 1",
       "",
-      "def load(available: bool) -> Result[i32, LoadError]:",
+      "def load(available: bool) -> Result[int, LoadError]:",
       "    if available:",
       "        return ok(7)",
       "    return err(LoadError.invalid_format)",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    let loaded = load(false)",
       "    if loaded.is_ok:",
       "        return loaded.value",
@@ -1719,20 +1719,20 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/typedef struct mt_result_i32_demo_result_surface_LoadError mt_result_i32_demo_result_surface_LoadError;/, generated)
-    assert_match(/struct mt_result_i32_demo_result_surface_LoadError \{/, generated)
+    assert_match(/typedef struct mt_result_int_demo_result_surface_LoadError mt_result_int_demo_result_surface_LoadError;/, generated)
+    assert_match(/struct mt_result_int_demo_result_surface_LoadError \{/, generated)
     assert_match(/bool is_ok;/, generated)
     assert_match(/int32_t value;/, generated)
     assert_match(/demo_result_surface_LoadError error;/, generated)
-    assert_match(/return \(mt_result_i32_demo_result_surface_LoadError\)\{ \.is_ok = true, \.value = 7 \};/, generated)
-    assert_match(/return \(mt_result_i32_demo_result_surface_LoadError\)\{ \.is_ok = false, \.error = demo_result_surface_LoadError_invalid_format \};/, generated)
+    assert_match(/return \(mt_result_int_demo_result_surface_LoadError\)\{ \.is_ok = true, \.value = 7 \};/, generated)
+    assert_match(/return \(mt_result_int_demo_result_surface_LoadError\)\{ \.is_ok = false, \.error = demo_result_surface_LoadError_invalid_format \};/, generated)
   end
 
   def test_generate_c_for_builtin_panic_helper
     source = [
       "module demo.panic_surface",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    panic(\"bad state\")",
       "    return 0",
       "",
@@ -1756,7 +1756,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "import std.fs as fs",
       "import std.raylib as rl",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    return 0",
       "",
     ].join("\n")
@@ -1774,18 +1774,18 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.match_surface",
       "",
-      "enum EventKind: u8",
+      "enum EventKind: ubyte",
       "    quit = 1",
       "    resize = 2",
       "",
-      "def dispatch(kind: EventKind) -> i32:",
+      "def dispatch(kind: EventKind) -> int:",
       "    match kind:",
       "        EventKind.quit:",
       "            return 0",
       "        EventKind.resize:",
       "            return 1",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    return dispatch(EventKind.resize)",
       "",
     ].join("\n")
@@ -1803,7 +1803,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.for_surface",
       "",
-      "def sum(items: array[i32, 4]) -> i32:",
+      "def sum(items: array[int, 4]) -> int:",
       "    var total = 0",
       "    for item in items:",
       "        total += item",
@@ -1811,8 +1811,8 @@ class MilkTeaCodegenTest < Minitest::Test
       "        total += i",
       "    return total",
       "",
-      "def main() -> i32:",
-      "    return sum(array[i32, 4](1, 2, 3, 4))",
+      "def main() -> int:",
+      "    return sum(array[int, 4](1, 2, 3, 4))",
       "",
     ].join("\n")
 
@@ -1829,13 +1829,13 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.dot_dot_range",
       "",
-      "def sum(n: i32) -> i32:",
+      "def sum(n: int) -> int:",
       "    var total = 0",
       "    for i in 0..n:",
       "        total += i",
       "    return total",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    return sum(4)",
       "",
     ].join("\n")
@@ -1851,7 +1851,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.dot_dot_range_const",
       "",
-      "def sum_to_ten() -> i32:",
+      "def sum_to_ten() -> int:",
       "    var total = 0",
       "    for i in 0..10:",
       "        total += i",
@@ -1870,7 +1870,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.range_index_assign",
       "",
-      "def fill3(buf: ptr[f32]) -> void:",
+      "def fill3(buf: ptr[float]) -> void:",
       "    unsafe:",
       "        buf[0..3] = (1.0, 2.0, 3.0)",
       "",
@@ -1887,7 +1887,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.for_stop_surface",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var stop = 4",
       "    var total = 0",
       "    for i in 0..stop:",
@@ -1907,16 +1907,16 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.loop_control_surface",
       "",
-      "enum Step: u8",
+      "enum Step: ubyte",
       "    skip = 1",
       "    keep = 2",
       "    stop = 3",
       "",
-      "def add(target: ptr[i32], amount: i32) -> void:",
+      "def add(target: ptr[int], amount: int) -> void:",
       "    unsafe:",
       "        read(target) += amount",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var total = 0",
       "    for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):",
       "        defer add(ptr_of(total), 1)",
@@ -1944,7 +1944,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.simple_loop_surface",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var i = 0",
       "    while i < 3:",
       "        i += 1",
@@ -1966,7 +1966,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.structured_break_surface",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var total = 0",
       "    while total < 10:",
       "        total += 1",
@@ -1988,7 +1988,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.structured_continue_surface",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var total = 0",
       "    var i = 0",
       "    while i < 5:",
@@ -2011,7 +2011,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.structured_for_continue_surface",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var total = 0",
       "    for i in 0..5:",
       "        if i == 2:",
@@ -2034,12 +2034,12 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.layout_surface",
       "",
       "struct Header:",
-      "    magic: array[u8, 4]",
-      "    version: u16",
+      "    magic: array[ubyte, 4]",
+      "    version: ushort",
       "",
       "static_assert(sizeof(Header) == 6, \"Header size should stay stable\")",
       "",
-      "def main() -> usize:",
+      "def main() -> ptr_uint:",
       "    return offsetof(Header, version) + alignof(Header)",
       "",
     ].join("\n")
@@ -2057,7 +2057,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "const greeting: str = \"hello\"",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    panic(greeting)",
       "    return 0",
       "",
@@ -2081,15 +2081,15 @@ class MilkTeaCodegenTest < Minitest::Test
       "import std.str",
       "import std.mem.arena as arena",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var scratch = arena.create(64)",
       "    defer scratch.release()",
       "    let text = \"hello world\"",
       "    let part = text.slice(6, 5)",
       "    let copied = part.to_cstr(ref_of(scratch))",
       "    panic(copied)",
-      "    if part.len == usize<-5:",
-      "        return i32<-part.len",
+      "    if part.len == ptr_uint<-5:",
+      "        return int<-part.len",
       "    return 0",
       "",
     ].join("\n")
@@ -2112,7 +2112,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = <<~MT
       module demo.bad_str_constructor
 
-      def main(data: ptr[char], len: usize) -> str:
+      def main(data: ptr[char], len: ptr_uint) -> str:
           return str(data = data, len = len)
     MT
 
@@ -2128,16 +2128,16 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.layout_modifiers_surface",
       "",
       "packed struct Header:",
-      "    tag: u8",
-      "    value: u32",
+      "    tag: ubyte",
+      "    value: uint",
       "",
       "align(16) struct Mat4:",
-      "    data: array[f32, 16]",
+      "    data: array[float, 16]",
       "",
       "static_assert(sizeof(Header) == 5, \"Header should stay packed\")",
       "static_assert(alignof(Mat4) == 16, \"Mat4 alignment drifted\")",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    return 0",
       "",
     ].join("\n")
@@ -2157,9 +2157,9 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.pointer_surface",
       "",
       "struct Counter:",
-      "    value: i32",
+      "    value: int",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var counter = Counter(value = 3)",
       "    let counter_ptr = ptr_of(counter)",
       "    unsafe:",
@@ -2180,9 +2180,9 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.pointer_surface_auto_member",
       "",
       "struct Counter:",
-      "    value: i32",
+      "    value: int",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var counter = Counter(value = 3)",
       "    let counter_ptr = ptr_of(counter)",
       "    unsafe:",
@@ -2203,16 +2203,16 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.pointer_method_surface",
       "",
       "struct Counter:",
-      "    value: i32",
+      "    value: int",
       "",
       "methods Counter:",
-      "    edit def add(delta: i32):",
+      "    edit def add(delta: int):",
       "        this.value += delta",
       "",
-      "    def read() -> i32:",
+      "    def read() -> int:",
       "        return this.value",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var counter = Counter(value = 3)",
       "    let counter_ptr = ptr_of(counter)",
       "    unsafe:",
@@ -2234,11 +2234,11 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.compound_assignments_surface",
       "",
-      "flags Bits: u32",
+      "flags Bits: uint",
       "    a = 1 << 0",
       "    b = 1 << 1",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var value = 12",
       "    value %= 5",
       "    value <<= 1",
@@ -2266,20 +2266,20 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.ref_surface",
       "",
       "struct Counter:",
-      "    value: i32",
+      "    value: int",
       "",
       "methods Counter:",
-      "    edit def add(delta: i32):",
+      "    edit def add(delta: int):",
       "        this.value += delta",
       "",
-      "    def read() -> i32:",
+      "    def read() -> int:",
       "        return this.value",
       "",
-      "def increment(counter: ref[Counter], amount: i32) -> void:",
+      "def increment(counter: ref[Counter], amount: int) -> void:",
       "    counter.add(amount)",
       "    counter.value += 1",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var counter = Counter(value = 3)",
       "    let handle = ref_of(counter)",
       "    increment(handle, 4)",
@@ -2316,7 +2316,7 @@ class MilkTeaCodegenTest < Minitest::Test
         "module demo.math",
         "",
         "pub struct RawVec:",
-        "    x: i32",
+        "    x: int",
         "",
         "pub type Vec = RawVec",
         "",
@@ -2332,7 +2332,7 @@ class MilkTeaCodegenTest < Minitest::Test
         "",
         "import demo.math as math",
         "",
-        "def main() -> i32:",
+        "def main() -> int:",
         "    let value = math.Vec.zero()",
         "    return value.x",
         "",
@@ -2352,13 +2352,13 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.array_surface",
       "",
       "struct Palette:",
-      "    colors: array[u32, 4]",
+      "    colors: array[uint, 4]",
       "",
-      "const DEFAULT: array[u32, 4] = array[u32, 4](11, 22, 33, 44)",
+      "const DEFAULT: array[uint, 4] = array[uint, 4](11, 22, 33, 44)",
       "",
-      "def main() -> i32:",
-      "    var palette = array[u32, 4](1, 2, 3, 4)",
-      "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
+      "def main() -> int:",
+      "    var palette = array[uint, 4](1, 2, 3, 4)",
+      "    var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))",
       "    unsafe:",
       "        if read(ptr_of(palette[0])) != 1:",
       "            return 1",
@@ -2382,10 +2382,10 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.ptr_array_addr",
       "",
       "struct Palette:",
-      "    colors: array[u32, 4]",
+      "    colors: array[uint, 4]",
       "",
-      "def main() -> u32:",
-      "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
+      "def main() -> uint:",
+      "    var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))",
       "    unsafe:",
       "        let base = ptr_of(holder)",
       "        let first = ptr_of(read(base).colors[0])",
@@ -2397,9 +2397,9 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_source(source)
 
     assert_match(/demo_ptr_array_addr_Palette \*base = &holder;/, generated)
-    assert_match(/uint32_t \*first = mt_checked_index_array_u32_4\(&\(\(\*base\)\.colors\), 0\);/, generated)
+    assert_match(/uint32_t \*first = mt_checked_index_array_uint_4\(&\(\(\*base\)\.colors\), 0\);/, generated)
     assert_match(/\*first = 9;/, generated)
-    assert_match(/return \(\*mt_checked_index_array_u32_4\(&\(holder\.colors\), 0\)\);/, generated)
+    assert_match(/return \(\*mt_checked_index_array_uint_4\(&\(holder\.colors\), 0\)\);/, generated)
   end
 
   def test_generate_c_hoists_repeated_checked_index_helper_within_expression_statement
@@ -2407,19 +2407,19 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.checked_index_alias_surface",
       "",
       "struct Point:",
-      "    x: i32",
-      "    y: i32",
+      "    x: int",
+      "    y: int",
       "",
-      "def use(a: i32, b: i32, c: i32, d: i32) -> void:",
+      "def use(a: int, b: int, c: int, d: int) -> void:",
       "    return",
       "",
-      "def next(cursor: ptr[i32]) -> i32:",
+      "def next(cursor: ptr[int]) -> int:",
       "    unsafe:",
       "        let value = read(cursor)",
       "        read(cursor) += 1",
       "        return value",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var points = array[Point, 2](Point(x = 1, y = 2), Point(x = 3, y = 4))",
       "    var index = 1",
       "    use(points[index].x, points[index].y, points[index].x + points[index].y, points[index].x)",
@@ -2441,11 +2441,11 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.array_index_surface",
       "",
       "struct Palette:",
-      "    colors: array[u32, 4]",
+      "    colors: array[uint, 4]",
       "",
-      "def main() -> i32:",
-      "    var palette = array[u32, 4](1, 2, 3, 4)",
-      "    var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))",
+      "def main() -> int:",
+      "    var palette = array[uint, 4](1, 2, 3, 4)",
+      "    var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))",
       "    palette[1] = 9",
       "    holder.colors[2] = 10",
       "    if palette[0] != 1:",
@@ -2458,11 +2458,11 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static inline uint32_t \*mt_checked_index_array_u32_4\(uint32_t \(\*array\)\[4\], uintptr_t index\)/, generated)
+    assert_match(/static inline uint32_t \*mt_checked_index_array_uint_4\(uint32_t \(\*array\)\[4\], uintptr_t index\)/, generated)
     assert_match(/if \(index >= 4\) mt_panic\("array index out of bounds"\);/, generated)
-    assert_match(/\(\*mt_checked_index_array_u32_4\(\&\(palette\), 1\)\) = 9;/, generated)
-    assert_match(/\(\*mt_checked_index_array_u32_4\(\&\(holder\.colors\), 2\)\) = 10;/, generated)
-    assert_match(/if \(\(\(\*mt_checked_index_array_u32_4\(\&\(palette\), 0\)\)\) != 1\)/, generated)
+    assert_match(/\(\*mt_checked_index_array_uint_4\(\&\(palette\), 1\)\) = 9;/, generated)
+    assert_match(/\(\*mt_checked_index_array_uint_4\(\&\(holder\.colors\), 2\)\) = 10;/, generated)
+    assert_match(/if \(\(\(\*mt_checked_index_array_uint_4\(\&\(palette\), 0\)\)\) != 1\)/, generated)
   end
 
   def test_generate_c_for_zero_initialization
@@ -2470,10 +2470,10 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.zero_surface",
       "",
       "struct Palette:",
-      "    colors: array[u32, 4]",
+      "    colors: array[uint, 4]",
       "",
-      "def main() -> i32:",
-      "    var palette = zero[array[u32, 4]]",
+      "def main() -> int:",
+      "    var palette = zero[array[uint, 4]]",
       "    var holder = zero[Palette]",
       "    return 0",
       "",
@@ -2490,14 +2490,14 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.partial_surface",
       "",
       "struct Point:",
-      "    x: i32",
-      "    y: i32",
+      "    x: int",
+      "    y: int",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var origin = Point()",
       "    var point = Point(x = 5)",
-      "    var palette = array[u32, 4](1, 2)",
-      "    return origin.x + point.x + i32<-palette[1]",
+      "    var palette = array[uint, 4](1, 2)",
+      "    return origin.x + point.x + int<-palette[1]",
       "",
     ].join("\n")
 
@@ -2512,15 +2512,15 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.array_copy_surface",
       "",
-      "def mutate(values: array[i32, 4]) -> i32:",
+      "def mutate(values: array[int, 4]) -> int:",
       "    var local = values",
       "    unsafe:",
       "        local[1] = 9",
       "        return local[1]",
       "",
-      "def main() -> i32:",
-      "    var lhs = array[i32, 4](1, 2, 3, 4)",
-      "    let rhs = array[i32, 4](5, 6, 7, 8)",
+      "def main() -> int:",
+      "    var lhs = array[int, 4](1, 2, 3, 4)",
+      "    let rhs = array[int, 4](5, 6, 7, 8)",
       "    lhs = rhs",
       "    let changed = mutate(lhs)",
       "    unsafe:",
@@ -2533,39 +2533,39 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_source(source)
 
     assert_match(/int32_t values_input\[4\]/, generated)
-    assert_match(/static inline int32_t \*mt_checked_index_array_i32_4\(int32_t \(\*array\)\[4\], uintptr_t index\)/, generated)
+    assert_match(/static inline int32_t \*mt_checked_index_array_int_4\(int32_t \(\*array\)\[4\], uintptr_t index\)/, generated)
     assert_match(/int32_t values\[4\];\n  memcpy\(values, values_input, sizeof\(values\)\);/, generated)
     assert_match(/int32_t local\[4\];\n  memcpy\(local, values, sizeof\(local\)\);/, generated)
     assert_match(/memcpy\(lhs, rhs, sizeof\(lhs\)\);/, generated)
-    assert_match(/return \(\*mt_checked_index_array_i32_4\(\&\(local\), 1\)\);/, generated)
-    assert_match(/if \(\(\(\*mt_checked_index_array_i32_4\(\&\(lhs\), 1\)\)\) != 6\)/, generated)
+    assert_match(/return \(\*mt_checked_index_array_int_4\(\&\(local\), 1\)\);/, generated)
+    assert_match(/if \(\(\(\*mt_checked_index_array_int_4\(\&\(lhs\), 1\)\)\) != 6\)/, generated)
   end
 
   def test_generate_c_for_local_array_returns
     source = [
       "module demo.array_return_surface",
       "",
-      "def make() -> array[i32, 4]:",
-      "    return array[i32, 4](1, 2, 3, 4)",
+      "def make() -> array[int, 4]:",
+      "    return array[int, 4](1, 2, 3, 4)",
       "",
-      "def clone(values: array[i32, 4]) -> array[i32, 4]:",
+      "def clone(values: array[int, 4]) -> array[int, 4]:",
       "    return values",
       "",
-      "def read(values: array[i32, 4]) -> i32:",
+      "def read(values: array[int, 4]) -> int:",
       "    unsafe:",
       "        return values[1]",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    return read(clone(make()))",
       "",
     ].join("\n")
 
     generated = generate_c_from_source(source)
 
-    assert_match(/typedef struct mt_array_return_array_i32_4/, generated)
-    assert_match(/static mt_array_return_array_i32_4 demo_array_return_surface_make\(void\)/, generated)
-    assert_match(/return \(mt_array_return_array_i32_4\)\{ \.value = \{ 1, 2, 3, 4 \} \};/, generated)
-    assert_match(/mt_array_return_array_i32_4 __mt_return_value;/, generated)
+    assert_match(/typedef struct mt_array_return_array_int_4/, generated)
+    assert_match(/static mt_array_return_array_int_4 demo_array_return_surface_make\(void\)/, generated)
+    assert_match(/return \(mt_array_return_array_int_4\)\{ \.value = \{ 1, 2, 3, 4 \} \};/, generated)
+    assert_match(/mt_array_return_array_int_4 __mt_return_value;/, generated)
     assert_match(/memcpy\(__mt_return_value\.value, values, sizeof\(__mt_return_value\.value\)\);/, generated)
     assert_match(/return demo_array_return_surface_read\(demo_array_return_surface_clone\(demo_array_return_surface_make\(\)\.value\)\.value\);/, generated)
   end
@@ -2574,20 +2574,20 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.reinterpret_surface",
       "",
-      "def main() -> u32:",
-      "    let value: f32 = 1.0",
+      "def main() -> uint:",
+      "    let value: float = 1.0",
       "    unsafe:",
-      "        let bits = reinterpret[u32](value)",
+      "        let bits = reinterpret[uint](value)",
       "        return bits",
       "",
     ].join("\n")
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static inline uint32_t mt_reinterpret_u32_from_f32\(float value\)/, generated)
+    assert_match(/static inline uint32_t mt_reinterpret_uint_from_float\(float value\)/, generated)
     assert_match(/_Static_assert\(sizeof\(uint32_t\) == sizeof\(float\), "reinterpret requires equal sizes"\);/, generated)
     assert_match(/memcpy\(&result, &value, sizeof\(result\)\);/, generated)
-    assert_match(/uint32_t bits = mt_reinterpret_u32_from_f32\(value\);/, generated)
+    assert_match(/uint32_t bits = mt_reinterpret_uint_from_float\(value\);/, generated)
   end
 
   def test_generate_c_for_unsafe_pointer_to_cstr_abi_casts
@@ -2617,7 +2617,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.const_pointer_call_surface",
       "",
-      "def inspect(values: const_ptr[i32]) -> void:",
+      "def inspect(values: const_ptr[int]) -> void:",
       "    return",
       "",
       "def main() -> void:",
@@ -2636,13 +2636,13 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.char_array_surface",
       "",
-      "def view(items: span[char]) -> usize:",
+      "def view(items: span[char]) -> ptr_uint:",
       "    return items.len",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var buffer = zero[array[char, 32]]",
       "    buffer[0] = 65",
-      "    return i32<-view(buffer)",
+      "    return int<-view(buffer)",
       "",
     ].join("\n")
 
@@ -2657,7 +2657,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.char_array_zero_local",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var buffer: array[char, 16]",
       "    return 0",
       "",
@@ -2672,11 +2672,11 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.char_array_methods",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var buffer = zero[array[char, 16]]",
       "    let view = buffer.as_str()",
       "    let label = buffer.as_cstr()",
-      "    return i32<-view.len",
+      "    return int<-view.len",
       "",
     ].join("\n")
 
@@ -2691,10 +2691,10 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.str_builder_surface",
       "",
-      "def view(items: span[char]) -> usize:",
+      "def view(items: span[char]) -> ptr_uint:",
       "    return items.len",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var buffer: str_builder[32]",
       "    buffer.assign(\"hi\")",
       "    buffer.append(\"!\")",
@@ -2702,7 +2702,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    let label = buffer.as_cstr()",
       "    let raw = view(buffer)",
       "    buffer.clear()",
-      "    return i32<-(buffer.capacity() + text.len + raw)",
+      "    return int<-(buffer.capacity() + text.len + raw)",
       "",
     ].join("\n")
 
@@ -2744,14 +2744,14 @@ class MilkTeaCodegenTest < Minitest::Test
         extern module std.c.ui:
             include "ui.h"
 
-            extern def TextBox(text: ptr[char], text_size: i32) -> void
+            extern def TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
         module std.ui
 
         import std.c.ui as c
 
-        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, i32<-text_public.len)
+        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, int<-text_public.len)
       MT
     }
 
@@ -2777,14 +2777,14 @@ class MilkTeaCodegenTest < Minitest::Test
         extern module std.c.ui:
             include "ui.h"
 
-            extern def TextBox(text: ptr[char], text_size: i32) -> void
+            extern def TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
         module std.ui
 
         import std.c.ui as c
 
-        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, i32<-(text_public.capacity() + 1))
+        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
       MT
     }
 
@@ -2809,14 +2809,14 @@ class MilkTeaCodegenTest < Minitest::Test
         extern module std.c.ui:
             include "ui.h"
 
-            extern def TextBox(text: ptr[char], text_size: i32) -> void
+            extern def TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
         module std.ui
 
         import std.c.ui as c
 
-        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, i32<-(text_public.capacity() + 1))
+        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
       MT
     }
 
@@ -2831,7 +2831,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.c.ui as c
 
-      pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, i32<-(text_public.capacity() + 1))
+      pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
 
       def main() -> void:
           var buffer: str_builder[32]
@@ -2843,7 +2843,7 @@ class MilkTeaCodegenTest < Minitest::Test
         extern module std.c.ui:
             include "ui.h"
 
-            extern def TextBox(text: ptr[char], text_size: i32) -> void
+            extern def TextBox(text: ptr[char], text_size: int) -> void
       MT
     }
 
@@ -2954,14 +2954,14 @@ class MilkTeaCodegenTest < Minitest::Test
         extern module std.c.ui:
             include "ui.h"
 
-            extern def TextBox(text: ptr[char], text_size: i32) -> void
+            extern def TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
         module std.ui
 
         import std.c.ui as c
 
-        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, i32<-text_public.len)
+        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, int<-text_public.len)
       MT
     }
 
@@ -2992,7 +2992,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.char_buffer_surface",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var ptr: ptr[char] = zero[ptr[char]]",
       "    unsafe:",
       "        ptr[0] = 65",
@@ -3007,11 +3007,11 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/ptr\[1\] = \(\(char\) 66\);/, generated)
   end
 
-  def test_generate_c_for_unsafe_pointer_offsets_without_usize_casts
+  def test_generate_c_for_unsafe_pointer_offsets_without_ptr_uint_casts
     source = [
       "module demo.pointer_offset_surface",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var ptr: ptr[char] = zero[ptr[char]]",
       "    let offset = 1",
       "    unsafe:",
@@ -3032,14 +3032,14 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.ref_value_args",
       "",
       "struct Counter:",
-      "    value: i32",
+      "    value: int",
       "",
       "extern def consume(counter: Counter) -> void",
       "",
-      "def project(counter: Counter) -> i32:",
+      "def project(counter: Counter) -> int:",
       "    return counter.value",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var counter = Counter(value = 7)",
       "    let handle = ref_of(counter)",
       "    consume(read(handle))",
@@ -3057,8 +3057,8 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.float_literal_inference",
       "",
-      "def main() -> i32:",
-      "    let value: f32 = 4.0",
+      "def main() -> int:",
+      "    let value: float = 4.0",
       "    let inverse = 1.0 / value",
       "    let scaled = -2.0 / value",
       "    if inverse > scaled:",
@@ -3078,21 +3078,21 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.callable_values",
       "",
       "struct Entry:",
-      "    callback: fn(value: f32) -> f32",
+      "    callback: fn(value: float) -> float",
       "",
-      "def identity(value: i32) -> i32:",
+      "def identity(value: int) -> int:",
       "    return value",
       "",
-      "def ease(value: f32) -> f32:",
+      "def ease(value: float) -> float:",
       "    return value + 2.0",
       "",
-      "def main() -> i32:",
-      "    let callbacks = array[fn(value: i32) -> i32, 1](identity)",
+      "def main() -> int:",
+      "    let callbacks = array[fn(value: int) -> int, 1](identity)",
       "    let entry = Entry(callback = ease)",
-      "    let callback: fn(value: f32) -> f32 = entry.callback",
+      "    let callback: fn(value: float) -> float = entry.callback",
       "    let left = callbacks[0](1)",
       "    let right = callback(1.0)",
-      "    return left + i32<-right",
+      "    return left + int<-right",
       "",
     ].join("\n")
 
@@ -3111,10 +3111,10 @@ class MilkTeaCodegenTest < Minitest::Test
       "import std.ease as ease",
       "",
       "struct Entry:",
-      "    callback: fn(value: i32) -> i32",
+      "    callback: fn(value: int) -> int",
       "",
-      "def main() -> i32:",
-      "    let callbacks = array[fn(value: i32) -> i32, 1](ease.double)",
+      "def main() -> int:",
+      "    let callbacks = array[fn(value: int) -> int, 1](ease.double)",
       "    let entry = Entry(callback = ease.double)",
       "    return callbacks[0](3) + entry.callback(4)",
       "",
@@ -3124,7 +3124,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "std/ease.mt" => [
         "module std.ease",
         "",
-        "pub def double(value: i32) -> i32:",
+        "pub def double(value: int) -> int:",
         "    return value * 2",
         "",
       ].join("\n"),
@@ -3141,12 +3141,12 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.proc_codegen",
       "",
-      "def apply(callback: proc(value: i32) -> i32, value: i32) -> i32:",
+      "def apply(callback: proc(value: int) -> int, value: int) -> int:",
       "    return callback(value)",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    let offset = 4",
-      "    let callback = proc(value: i32) -> i32:",
+      "    let callback = proc(value: int) -> int:",
       "        return value * 2 + offset",
       "    return apply(callback, 3)",
       "",
@@ -3154,7 +3154,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/typedef struct mt_proc_proc_i32_i32/, generated)
+    assert_match(/typedef struct mt_proc_proc_int_int/, generated)
     assert_match(/typedef struct demo_proc_codegen__proc_1__env/, generated)
     assert_match(/malloc\(sizeof\(demo_proc_codegen__proc_1__env\)\)/, generated)
     assert_match(/\.invoke = demo_proc_codegen__proc_1__invoke/, generated)
@@ -3168,16 +3168,16 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.proc_surface",
       "",
       "struct Holder:",
-      "    callback: proc(value: i32) -> i32",
+      "    callback: proc(value: int) -> int",
       "",
-      "def factory(offset: i32) -> proc(value: i32) -> i32:",
-      "    return proc(value: i32) -> i32:",
+      "def factory(offset: int) -> proc(value: int) -> int:",
+      "    return proc(value: int) -> int:",
       "        return value + offset",
       "",
-      "def call(holder: Holder, value: i32) -> i32:",
+      "def call(holder: Holder, value: int) -> int:",
       "    return holder.callback(value)",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    let cb = factory(2)",
       "    let holder = Holder(callback = cb)",
       "    return call(holder, 40)",
@@ -3196,7 +3196,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.async_proc_lifecycle",
       "",
-      "async def run(callback: proc(value: i32) -> i32) -> i32:",
+      "async def run(callback: proc(value: int) -> int) -> int:",
       "    return callback(1)",
       "",
     ].join("\n")
@@ -3214,8 +3214,8 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.async_proc_local",
       "",
-      "async def run(offset: i32) -> i32:",
-      "    let callback = proc(value: i32) -> i32:",
+      "async def run(offset: int) -> int:",
+      "    let callback = proc(value: int) -> int:",
       "        return value + offset",
       "    return callback(1)",
       "",
@@ -3234,12 +3234,12 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.proc_assign_lifecycle",
       "",
       "struct Holder:",
-      "    callback: proc(value: i32) -> i32",
+      "    callback: proc(value: int) -> int",
       "",
-      "def main() -> i32:",
-      "    let ca = proc(value: i32) -> i32:",
+      "def main() -> int:",
+      "    let ca = proc(value: int) -> int:",
       "        return value + 1",
-      "    let cb = proc(value: i32) -> i32:",
+      "    let cb = proc(value: int) -> int:",
       "        return value + 2",
       "    let a = Holder(callback = ca)",
       "    var b = Holder(callback = cb)",
@@ -3266,13 +3266,13 @@ class MilkTeaCodegenTest < Minitest::Test
       "module demo.proc_field_assign",
       "",
       "struct Holder:",
-      "    callback: proc(value: i32) -> i32",
+      "    callback: proc(value: int) -> int",
       "",
-      "def main() -> i32:",
-      "    let ca = proc(value: i32) -> i32:",
+      "def main() -> int:",
+      "    let ca = proc(value: int) -> int:",
       "        return value + 1",
       "    var h = Holder(callback = ca)",
-      "    let cb = proc(value: i32) -> i32:",
+      "    let cb = proc(value: int) -> int:",
       "        return value + 2",
       "    h.callback = cb",
       "    return h.callback(1)",
@@ -3292,10 +3292,10 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.proc_var_reassign",
       "",
-      "def main() -> i32:",
-      "    var callback = proc(value: i32) -> i32:",
+      "def main() -> int:",
+      "    var callback = proc(value: int) -> int:",
       "        return value + 1",
-      "    callback = proc(value: i32) -> i32:",
+      "    callback = proc(value: int) -> int:",
       "        return value + 2",
       "    return callback(0)",
       "",
@@ -3312,18 +3312,18 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.global_state",
       "",
-      "const BASE: i32 = 1",
+      "const BASE: int = 1",
       "",
-      "def identity(value: i32) -> i32:",
+      "def identity(value: int) -> int:",
       "    return value",
       "",
-      "var counter: i32 = BASE",
-      "var scratch: array[u8, 4]",
-      "var callbacks: array[fn(value: i32) -> i32, 1] = array[fn(value: i32) -> i32, 1](identity)",
+      "var counter: int = BASE",
+      "var scratch: array[ubyte, 4]",
+      "var callbacks: array[fn(value: int) -> int, 1] = array[fn(value: int) -> int, 1](identity)",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    counter = callbacks[0](counter)",
-      "    return counter + i32<-scratch[0]",
+      "    return counter + int<-scratch[0]",
       "",
     ].join("\n")
 
@@ -3339,7 +3339,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.int_match",
       "",
-      "def dispatch(key: i32) -> i32:",
+      "def dispatch(key: int) -> int:",
       "    match key:",
       "        65:",
       "            return 1",
@@ -3348,7 +3348,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "        _:",
       "            return 0",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    return dispatch(65)",
       "",
     ].join("\n")
@@ -3369,19 +3369,19 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "module demo.enum_wild",
       "",
-      "enum EventKind: u8",
+      "enum EventKind: ubyte",
       "    quit = 1",
       "    resize = 2",
       "    key = 3",
       "",
-      "def dispatch(kind: EventKind) -> i32:",
+      "def dispatch(kind: EventKind) -> int:",
       "    match kind:",
       "        EventKind.quit:",
       "            return 0",
       "        _:",
       "            return 1",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    return dispatch(EventKind.quit)",
       "",
     ].join("\n")
@@ -3401,10 +3401,10 @@ class MilkTeaCodegenTest < Minitest::Test
 
       variant Token:
           ident(text: str)
-          number(value: i32)
+          number(value: int)
           eof
 
-      def kind_of(tok: Token) -> i32:
+      def kind_of(tok: Token) -> int:
           match tok:
               Token.ident:
                   return 0
@@ -3443,13 +3443,13 @@ class MilkTeaCodegenTest < Minitest::Test
       module demo.variant_ctor_codegen
 
       variant Event:
-          click(x: i32, y: i32)
+          click(x: int, y: int)
           quit
 
       def make_quit() -> Event:
           return Event.quit
 
-      def make_click(x: i32, y: i32) -> Event:
+      def make_click(x: int, y: int) -> Event:
           return Event.click(x= x, y= y)
     MT
 
@@ -3467,10 +3467,10 @@ class MilkTeaCodegenTest < Minitest::Test
       module demo.variant_as_binding
 
       variant Shape:
-          circle(radius: f64)
+          circle(radius: double)
           point
 
-      def area(s: Shape) -> f64:
+      def area(s: Shape) -> double:
           match s:
               Shape.circle as c:
                   return c.radius * c.radius
@@ -3494,27 +3494,27 @@ class MilkTeaCodegenTest < Minitest::Test
           some(value: T)
           none
 
-      def unwrap_or_zero(value: Option[i32]) -> i32:
+      def unwrap_or_zero(value: Option[int]) -> int:
           match value:
               Option.some as payload:
                   return payload.value
               Option.none:
                   return 0
 
-      def main() -> i32:
-          let value: Option[i32] = Option[i32].some(value= 7)
+      def main() -> int:
+          let value: Option[int] = Option[int].some(value= 7)
           return unwrap_or_zero(value)
     MT
 
     generated = generate_c_from_source(source)
 
-    assert_match(/typedef int32_t demo_generic_variant_codegen_Option_i32_kind;/, generated)
-    assert_match(/struct demo_generic_variant_codegen_Option_i32_some \{/, generated)
-    assert_match(/struct demo_generic_variant_codegen_Option_i32 \{/, generated)
-    assert_match(/demo_generic_variant_codegen_Option_i32_kind kind;/, generated)
-    assert_match(/case demo_generic_variant_codegen_Option_i32_kind_some:/, generated)
-    assert_match(/case demo_generic_variant_codegen_Option_i32_kind_none:/, generated)
-    assert_match(/demo_generic_variant_codegen_Option_i32_some payload = .*\.data\.some;/, generated)
+    assert_match(/typedef int32_t demo_generic_variant_codegen_Option_int_kind;/, generated)
+    assert_match(/struct demo_generic_variant_codegen_Option_int_some \{/, generated)
+    assert_match(/struct demo_generic_variant_codegen_Option_int \{/, generated)
+    assert_match(/demo_generic_variant_codegen_Option_int_kind kind;/, generated)
+    assert_match(/case demo_generic_variant_codegen_Option_int_kind_some:/, generated)
+    assert_match(/case demo_generic_variant_codegen_Option_int_kind_none:/, generated)
+    assert_match(/demo_generic_variant_codegen_Option_int_some payload = .*\.data\.some;/, generated)
   end
 
   def test_generate_c_for_union_with_proc_field
@@ -3522,10 +3522,10 @@ class MilkTeaCodegenTest < Minitest::Test
       module demo.union_proc_codegen
 
       union CallbackOrValue:
-          callback: proc() -> i32
-          value: i32
+          callback: proc() -> int
+          value: int
 
-      def main() -> i32:
+      def main() -> int:
           return 0
     MT
 
@@ -3536,13 +3536,13 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/mt_proc_.* callback;/, generated)
   end
 
-  def test_generate_c_format_precision_spec_calls_append_f64_precision
+  def test_generate_c_format_precision_spec_calls_append_double_precision
     source = <<~MT
       module demo.fmt_spec
 
       import std.io as io
 
-      def main(pi: f64, small: f32) -> i32:
+      def main(pi: double, small: float) -> int:
           io.println(f"pi=\#{pi:.2}")
           io.println(f"small=\#{small:.5}")
           return 0
@@ -3550,7 +3550,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/std_fmt_append_f64_precision\(/, generated)
+    assert_match(/std_fmt_append_double_precision\(/, generated)
     assert_match(/,\s*2\s*\)/, generated)
     assert_match(/,\s*5\s*\)/, generated)
   end

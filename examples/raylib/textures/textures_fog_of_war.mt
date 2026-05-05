@@ -4,22 +4,22 @@ import std.c.raylib as rl
 import std.mem.heap as heap
 
 struct Map:
-    tiles_x: i32
-    tiles_y: i32
-    tile_ids: ptr[u8]
-    tile_fog: ptr[u8]
+    tiles_x: int
+    tiles_y: int
+    tile_ids: ptr[ubyte]
+    tile_fog: ptr[ubyte]
 
-const map_tile_size: i32 = 32
-const player_size: i32 = 16
-const player_tile_visibility: i32 = 2
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const map_tile_size: int = 32
+const player_size: int = 16
+const player_tile_visibility: int = 2
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - fog of war"
 const current_tile_format: cstr = c"Current tile: [%i,%i]"
 const help_text: cstr = c"ARROW KEYS to move"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -37,15 +37,15 @@ def main() -> i32:
 
     unsafe:
         let tile_count = map.tiles_x * map.tiles_y
-        map.tile_ids = heap.must_alloc_zeroed[u8](usize<-tile_count)
-        map.tile_fog = heap.must_alloc_zeroed[u8](usize<-tile_count)
+        map.tile_ids = heap.must_alloc_zeroed[ubyte](ptr_uint<-tile_count)
+        map.tile_fog = heap.must_alloc_zeroed[ubyte](ptr_uint<-tile_count)
 
         defer:
             heap.release(map.tile_fog)
             heap.release(map.tile_ids)
 
         for index in 0..tile_count:
-            read(map.tile_ids + index) = u8<-rl.GetRandomValue(0, 1)
+            read(map.tile_ids + index) = ubyte<-rl.GetRandomValue(0, 1)
 
         rl.SetTargetFPS(60)
 
@@ -61,20 +61,20 @@ def main() -> i32:
 
             if player_position.x < 0.0:
                 player_position.x = 0.0
-            elif player_position.x + player_size > f32<-(map.tiles_x * map_tile_size):
-                player_position.x = f32<-(map.tiles_x * map_tile_size - player_size)
+            elif player_position.x + player_size > float<-(map.tiles_x * map_tile_size):
+                player_position.x = float<-(map.tiles_x * map_tile_size - player_size)
 
             if player_position.y < 0.0:
                 player_position.y = 0.0
-            elif player_position.y + player_size > f32<-(map.tiles_y * map_tile_size):
-                player_position.y = f32<-(map.tiles_y * map_tile_size - player_size)
+            elif player_position.y + player_size > float<-(map.tiles_y * map_tile_size):
+                player_position.y = float<-(map.tiles_y * map_tile_size - player_size)
 
             for index in 0..tile_count:
                 if read(map.tile_fog + index) == 1:
                     read(map.tile_fog + index) = 2
 
-            player_tile_x = i32<-((player_position.x + f32<-map_tile_size / 2.0) / f32<-map_tile_size)
-            player_tile_y = i32<-((player_position.y + f32<-map_tile_size / 2.0) / f32<-map_tile_size)
+            player_tile_x = int<-((player_position.x + float<-map_tile_size / 2.0) / float<-map_tile_size)
+            player_tile_y = int<-((player_position.y + float<-map_tile_size / 2.0) / float<-map_tile_size)
 
             for y in player_tile_y - player_tile_visibility..player_tile_y + player_tile_visibility:
                 for x in player_tile_x - player_tile_visibility..player_tile_x + player_tile_visibility:
@@ -102,11 +102,11 @@ def main() -> i32:
                     rl.DrawRectangle(x * map_tile_size, y * map_tile_size, map_tile_size, map_tile_size, tile_color)
                     rl.DrawRectangleLines(x * map_tile_size, y * map_tile_size, map_tile_size, map_tile_size, rl.Fade(rl.DARKBLUE, 0.5))
 
-            rl.DrawRectangleV(player_position, rl.Vector2(x = f32<-player_size, y = f32<-player_size), rl.RED)
+            rl.DrawRectangleV(player_position, rl.Vector2(x = float<-player_size, y = float<-player_size), rl.RED)
             rl.DrawTexturePro(
                 fog_of_war.texture,
-                rl.Rectangle(x = 0.0, y = 0.0, width = f32<-fog_of_war.texture.width, height = -f32<-fog_of_war.texture.height),
-                rl.Rectangle(x = 0.0, y = 0.0, width = f32<-(map.tiles_x * map_tile_size), height = f32<-(map.tiles_y * map_tile_size)),
+                rl.Rectangle(x = 0.0, y = 0.0, width = float<-fog_of_war.texture.width, height = -float<-fog_of_war.texture.height),
+                rl.Rectangle(x = 0.0, y = 0.0, width = float<-(map.tiles_x * map_tile_size), height = float<-(map.tiles_y * map_tile_size)),
                 rl.Vector2(x = 0.0, y = 0.0),
                 0.0,
                 rl.WHITE,

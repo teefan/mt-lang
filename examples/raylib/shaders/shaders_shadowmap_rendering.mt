@@ -4,11 +4,11 @@ import std.c.raylib as rl
 import std.c.rlgl as rlgl
 import std.raylib.math as rm
 
-const glsl_version: i32 = 330
-const shadowmap_resolution: i32 = 1024
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const depth_texture_format: i32 = 19
+const glsl_version: int = 330
+const shadowmap_resolution: int = 1024
+const screen_width: int = 800
+const screen_height: int = 450
+const depth_texture_format: int = 19
 const window_title: cstr = c"raylib [shaders] example - shadowmap rendering"
 const shadowmap_vertex_shader_path_format: cstr = c"../resources/shaders/glsl%i/shadowmap.vs"
 const shadowmap_fragment_shader_path_format: cstr = c"../resources/shaders/glsl%i/shadowmap.fs"
@@ -57,7 +57,7 @@ def set_all_model_shaders(model: ptr[rl.Model], shader: rl.Shader) -> void:
             model.materials[index].shader = shader
 
 
-def load_shadowmap_render_texture(width: i32, height: i32) -> rl.RenderTexture2D:
+def load_shadowmap_render_texture(width: int, height: int) -> rl.RenderTexture2D:
     var target = zero[rl.RenderTexture2D]
     target.id = rlgl.rlLoadFramebuffer()
     target.texture.width = width
@@ -75,8 +75,8 @@ def load_shadowmap_render_texture(width: i32, height: i32) -> rl.RenderTexture2D
         rlgl.rlFramebufferAttach(
             target.id,
             target.depth.id,
-            i32<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH,
-            i32<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
+            int<-rlgl.rlFramebufferAttachType.RL_ATTACHMENT_DEPTH,
+            int<-rlgl.rlFramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
             0,
         )
 
@@ -97,7 +97,7 @@ def draw_scene(cube: rl.Model, robot: rl.Model) -> void:
     rl.DrawModelEx(robot, rl.Vector3(x = 0.0, y = 0.5, z = 0.0), rl.Vector3(x = 0.0, y = 1.0, z = 0.0), 0.0, rl.Vector3(x = 1.0, y = 1.0, z = 1.0), rl.RED)
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -118,7 +118,7 @@ def main() -> i32:
 
     let view_loc = rl.GetShaderLocation(shadow_shader, view_pos_uniform_name)
     unsafe:
-        shadow_shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
+        shadow_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     var light_dir = rl.Vector3(x = 0.35, y = -1.0, z = -0.35).normalize()
     let light_dir_loc = rl.GetShaderLocation(shadow_shader, light_dir_uniform_name)
@@ -128,7 +128,7 @@ def main() -> i32:
     rl.SetShaderValue(shadow_shader, light_col_loc, ptr_of(light_color_normalized), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     let ambient_loc = rl.GetShaderLocation(shadow_shader, ambient_uniform_name)
-    var ambient = array[f32, 4](0.1, 0.1, 0.1, 1.0)
+    var ambient = array[float, 4](0.1, 0.1, 0.1, 1.0)
     rl.SetShaderValue(shadow_shader, ambient_loc, ptr_of(ambient[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
     let light_vp_loc = rl.GetShaderLocation(shadow_shader, light_vp_uniform_name)
     let shadow_map_loc = rl.GetShaderLocation(shadow_shader, shadow_map_uniform_name)
@@ -178,9 +178,9 @@ def main() -> i32:
 
         frame_counter += 1
         frame_counter %= anim.keyframeCount
-        rl.UpdateModelAnimation(robot, anim, f32<-frame_counter)
+        rl.UpdateModelAnimation(robot, anim, float<-frame_counter)
 
-        let camera_speed: f32 = 0.05
+        let camera_speed: float = 0.05
         if rl.IsKeyDown(rl.KeyboardKey.KEY_LEFT):
             if light_dir.x < 0.6:
                 light_dir.x += camera_speed * 60.0 * delta_time
@@ -217,7 +217,7 @@ def main() -> i32:
         rlgl.rlEnableShader(shadow_shader.id)
         rlgl.rlActiveTextureSlot(texture_active_slot)
         rlgl.rlEnableTexture(shadow_map.depth.id)
-        rlgl.rlSetUniform(shadow_map_loc, ptr_of(texture_active_slot), i32<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT, 1)
+        rlgl.rlSetUniform(shadow_map_loc, ptr_of(texture_active_slot), int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT, 1)
 
         rl.BeginMode3D(camera)
         draw_scene(cube, robot)

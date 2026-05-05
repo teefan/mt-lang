@@ -8,19 +8,19 @@ struct Line:
     start: rl.Vector2
     finish: rl.Vector2
 
-const max_draw_lines: i32 = 8192
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const max_draw_lines: int = 8192
+const screen_width: int = 800
+const screen_height: int = 450
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Kaleidoscope")
     defer rl.close_window()
 
     var lines = zero[array[Line, 8192]]
-    let symmetry: i32 = 6
-    let angle = 360.0 / f32<-symmetry
-    let thickness: f32 = 3.0
+    let symmetry: int = 6
+    let angle = 360.0 / float<-symmetry
+    let thickness: float = 3.0
     let reset_button_rec = rl.Rectangle(x = screen_width - 55.0, y = 5.0, width = 50.0, height = 25.0)
     let back_button_rec = rl.Rectangle(x = screen_width - 55.0, y = screen_height - 30.0, width = 25.0, height = 25.0)
     let next_button_rec = rl.Rectangle(x = screen_width - 30.0, y = screen_height - 30.0, width = 25.0, height = 25.0)
@@ -103,7 +103,7 @@ def main() -> i32:
         gui.enable()
         reset_button_clicked = gui.button(reset_button_rec, "Reset") != 0
 
-        rl.draw_text(rl.text_format_i32_i32("LINES: %i/%i", current_line_counter, max_draw_lines), 10, screen_height - 30, 20, rl.MAROON)
+        rl.draw_text(rl.text_format_int_int("LINES: %i/%i", current_line_counter, max_draw_lines), 10, screen_height - 30, 20, rl.MAROON)
         rl.draw_fps(10, 10)
 
     return 0

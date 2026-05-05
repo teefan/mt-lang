@@ -3,15 +3,15 @@ module examples.idiomatic.raylib.magnifying_glass
 import std.raylib as rl
 import std.rlgl as rlgl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glass_size: i32 = 256
-const glass_radius: f32 = 128.0
+const screen_width: int = 800
+const screen_height: int = 450
+const glass_size: int = 256
+const glass_radius: float = 128.0
 const bunny_path: str = "../../raylib/resources/raybunny.png"
 const parrots_path: str = "../../raylib/resources/parrots.png"
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Magnifying Glass")
     defer rl.close_window()
 
@@ -71,15 +71,15 @@ def main() -> i32:
 
         rl.draw_texture_rec(
             magnified_world.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-glass_size, height = -f32<-glass_size),
+            rl.Rectangle(x = 0.0, y = 0.0, width = float<-glass_size, height = -float<-glass_size),
             rl.Vector2(x = mouse_pos.x - glass_radius, y = mouse_pos.y - glass_radius),
             rl.WHITE,
         )
 
         rl.draw_ring(mouse_pos, 126.0, 130.0, 0.0, 360.0, 64, rl.BLACK)
 
-        let rx = mouse_pos.x / f32<-screen_width
-        let ry = mouse_pos.y / f32<-screen_width
-        rl.draw_circle(i32<-(mouse_pos.x - 64.0 * rx) - 32, i32<-(mouse_pos.y - 64.0 * ry) - 32, 4.0, rl.color_alpha(rl.WHITE, 0.5))
+        let rx = mouse_pos.x / float<-screen_width
+        let ry = mouse_pos.y / float<-screen_width
+        rl.draw_circle(int<-(mouse_pos.x - 64.0 * rx) - 32, int<-(mouse_pos.y - 64.0 * ry) - 32, 4.0, rl.color_alpha(rl.WHITE, 0.5))
 
     return 0

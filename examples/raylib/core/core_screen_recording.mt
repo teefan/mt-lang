@@ -4,26 +4,26 @@ import std.c.libm as math
 import std.c.msf_gif as gif
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - screen recording"
-const gif_record_framerate: i32 = 5
-const max_sinewave_points: i32 = 256
+const gif_record_framerate: int = 5
+const max_sinewave_points: int = 256
 
 
-def half_screen_height() -> f32:
+def half_screen_height() -> float:
     return 0.5 * screen_height
 
 
-def horizontal_step() -> f32:
-    return f32<-rl.GetScreenWidth() / f32<-180
+def horizontal_step() -> float:
+    return float<-rl.GetScreenWidth() / float<-180
 
 
-def sine_factor() -> f32:
+def sine_factor() -> float:
     return (2.0 * rl.PI / 1.5)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -32,12 +32,12 @@ def main() -> i32:
     var gif_state = zero[gif.MsfGifState]
 
     var circle_position = rl.Vector2(x = 0.0, y = half_screen_height())
-    var time_counter: f32 = 0.0
+    var time_counter: float = 0.0
     var sine_points = zero[array[rl.Vector2, 256]]
     var point_index = 0
     while point_index < max_sinewave_points:
-        sine_points[point_index].x = f32<-point_index * horizontal_step()
-        sine_points[point_index].y = half_screen_height() + 150.0 * math.sinf(sine_factor() * (1.0 / 60.0) * f32<-point_index)
+        sine_points[point_index].x = float<-point_index * horizontal_step()
+        sine_points[point_index].y = half_screen_height() + 150.0 * math.sinf(sine_factor() * (1.0 / 60.0) * float<-point_index)
         point_index += 1
 
     rl.SetTargetFPS(60)
@@ -55,7 +55,7 @@ def main() -> i32:
             if gif_recording:
                 gif_recording = false
                 let result = gif.msf_gif_end(ptr_of(gif_state))
-                rl.SaveFileData(rl.TextFormat(c"%s/screenrecording.gif", rl.GetApplicationDirectory()), result.data, i32<-result.dataSize)
+                rl.SaveFileData(rl.TextFormat(c"%s/screenrecording.gif", rl.GetApplicationDirectory()), result.data, int<-result.dataSize)
                 gif.msf_gif_free(result)
                 rl.TraceLog(rl.TraceLogLevel.LOG_INFO, c"Finish animated GIF recording")
             else:
@@ -71,8 +71,8 @@ def main() -> i32:
                 unsafe:
                     gif.msf_gif_frame(
                         ptr_of(gif_state),
-                        ptr[u8]<-image_screen.data,
-                        i32<-((1.0 / 60.0) * gif_record_framerate) / 10,
+                        ptr[ubyte]<-image_screen.data,
+                        int<-((1.0 / 60.0) * gif_record_framerate) / 10,
                         16,
                         image_screen.width * 4,
                     )

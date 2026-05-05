@@ -2,13 +2,13 @@ module examples.idiomatic.raylib.input_multitouch
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const max_touch_points: i32 = 10
-const touch_radius: f32 = 34.0
+const screen_width: int = 800
+const screen_height: int = 450
+const max_touch_points: int = 10
+const touch_radius: float = 34.0
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Multitouch")
     defer rl.close_window()
 

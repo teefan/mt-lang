@@ -3,13 +3,13 @@ module examples.sdl3.renderer.cliprect
 import std.c.sdl3 as c
 
 const sample_texture_path: cstr = c"../resources/sample.png"
-const window_width: i32 = 640
-const window_height: i32 = 480
-const cliprect_size: i32 = 250
-const cliprect_speed: f32 = 200.0
+const window_width: int = 640
+const window_height: int = 480
+const cliprect_size: int = 250
+const cliprect_speed: float = 200.0
 const window_title: cstr = c"examples/renderer/cliprect"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
@@ -23,7 +23,7 @@ def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
@@ -31,35 +31,35 @@ def pump_events() -> bool:
 
 def render_frame() -> void:
     let now = c.SDL_GetTicks()
-    let elapsed = f32<-(now - last_time) / 1000.0
+    let elapsed = float<-(now - last_time) / 1000.0
     let distance = elapsed * cliprect_speed
     var cliprect = c.SDL_Rect(
-        x = i32<-c.SDL_roundf(cliprect_position.x),
-        y = i32<-c.SDL_roundf(cliprect_position.y),
+        x = int<-c.SDL_roundf(cliprect_position.x),
+        y = int<-c.SDL_roundf(cliprect_position.y),
         w = cliprect_size,
         h = cliprect_size,
     )
 
     cliprect_position.x += distance * cliprect_direction.x
-    if cliprect_position.x < -f32<-cliprect_size:
-        cliprect_position.x = -f32<-cliprect_size
+    if cliprect_position.x < -float<-cliprect_size:
+        cliprect_position.x = -float<-cliprect_size
         cliprect_direction.x = 1.0
     else:
-        if cliprect_position.x >= f32<-window_width:
-            cliprect_position.x = f32<-(window_width - 1)
+        if cliprect_position.x >= float<-window_width:
+            cliprect_position.x = float<-(window_width - 1)
             cliprect_direction.x = -1.0
 
     cliprect_position.y += distance * cliprect_direction.y
-    if cliprect_position.y < -f32<-cliprect_size:
-        cliprect_position.y = -f32<-cliprect_size
+    if cliprect_position.y < -float<-cliprect_size:
+        cliprect_position.y = -float<-cliprect_size
         cliprect_direction.y = 1.0
     else:
-        if cliprect_position.y >= f32<-window_height:
-            cliprect_position.y = f32<-(window_height - 1)
+        if cliprect_position.y >= float<-window_height:
+            cliprect_position.y = float<-(window_height - 1)
             cliprect_direction.y = -1.0
 
-    cliprect.x = i32<-c.SDL_roundf(cliprect_position.x)
-    cliprect.y = i32<-c.SDL_roundf(cliprect_position.y)
+    cliprect.x = int<-c.SDL_roundf(cliprect_position.x)
+    cliprect.y = int<-c.SDL_roundf(cliprect_position.y)
     c.SDL_SetRenderClipRect(renderer, ptr_of(cliprect))
 
     last_time = now
@@ -70,7 +70,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Renderer Clipping Rectangle", c"1.0", c"com.example.renderer-cliprect")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -106,5 +106,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

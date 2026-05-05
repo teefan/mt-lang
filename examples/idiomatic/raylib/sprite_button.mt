@@ -2,14 +2,14 @@ module examples.idiomatic.raylib.sprite_button
 
 import std.raylib as rl
 
-const num_frames: i32 = 3
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const num_frames: int = 3
+const screen_width: int = 800
+const screen_height: int = 450
 const button_fx_path: str = "../../raylib/resources/buttonfx.wav"
 const button_path: str = "../../raylib/resources/button.png"
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Sprite Button")
     defer rl.close_window()
 
@@ -23,12 +23,12 @@ def main() -> i32:
         rl.unload_texture(button)
         rl.unload_sound(fx_button)
 
-    let frame_height = f32<-button.height / f32<-num_frames
-    var source_rec = rl.Rectangle(x = 0.0, y = 0.0, width = f32<-button.width, height = frame_height)
+    let frame_height = float<-button.height / float<-num_frames
+    var source_rec = rl.Rectangle(x = 0.0, y = 0.0, width = float<-button.width, height = frame_height)
     let btn_bounds = rl.Rectangle(
-        x = f32<-screen_width / 2.0 - f32<-button.width / 2.0,
-        y = f32<-screen_height / 2.0 - f32<-button.height / f32<-num_frames / 2.0,
-        width = f32<-button.width,
+        x = float<-screen_width / 2.0 - float<-button.width / 2.0,
+        y = float<-screen_height / 2.0 - float<-button.height / float<-num_frames / 2.0,
+        width = float<-button.width,
         height = frame_height,
     )
 
@@ -55,7 +55,7 @@ def main() -> i32:
         if btn_action:
             rl.play_sound(fx_button)
 
-        source_rec.y = f32<-btn_state * frame_height
+        source_rec.y = float<-btn_state * frame_height
 
         rl.begin_drawing()
         defer rl.end_drawing()

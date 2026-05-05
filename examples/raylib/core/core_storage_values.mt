@@ -2,39 +2,39 @@ module examples.raylib.core.core_storage_values
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const storage_data_file: cstr = c"storage.data"
 const window_title: cstr = c"raylib [core] example - storage values"
-const score_position: usize = 0
-const hiscore_position: usize = 1
+const score_position: ptr_uint = 0
+const hiscore_position: ptr_uint = 1
 
 
-def storage_size_bytes(position: usize) -> i32:
-    return i32<-((position + 1) * usize<-sizeof(i32))
+def storage_size_bytes(position: ptr_uint) -> int:
+    return int<-((position + 1) * ptr_uint<-sizeof(int))
 
 
-def save_storage_value(position: usize, stored_value: i32) -> bool:
+def save_storage_value(position: ptr_uint, stored_value: int) -> bool:
     var data_size = 0
-    let loaded_file_data: ptr[u8]? = rl.LoadFileData(storage_data_file, ptr_of(data_size))
+    let loaded_file_data: ptr[ubyte]? = rl.LoadFileData(storage_data_file, ptr_of(data_size))
     let required_size = storage_size_bytes(position)
 
     if loaded_file_data != null:
         unsafe:
-            let file_data = ptr[u8]<-loaded_file_data
+            let file_data = ptr[ubyte]<-loaded_file_data
             var writable_file_data = file_data
             var writable_size = data_size
             var can_store_value = data_size >= required_size
 
             if data_size < required_size:
-                let resized_file_data: ptr[u8]? = ptr[u8]?<-rl.MemRealloc(ptr[void]<-file_data, u32<-required_size)
+                let resized_file_data: ptr[ubyte]? = ptr[ubyte]?<-rl.MemRealloc(ptr[void]<-file_data, uint<-required_size)
                 if resized_file_data != null:
-                    writable_file_data = ptr[u8]<-resized_file_data
+                    writable_file_data = ptr[ubyte]<-resized_file_data
                     writable_size = required_size
                     can_store_value = true
 
             if can_store_value:
-                let data_ptr = ptr[i32]<-writable_file_data
+                let data_ptr = ptr[int]<-writable_file_data
                 read(data_ptr + position) = stored_value
 
             let success = rl.SaveFileData(storage_data_file, ptr[void]<-writable_file_data, writable_size)
@@ -42,33 +42,33 @@ def save_storage_value(position: usize, stored_value: i32) -> bool:
             return success
 
     unsafe:
-        let new_file_data = ptr[i32]<-rl.MemAlloc(u32<-required_size)
+        let new_file_data = ptr[int]<-rl.MemAlloc(uint<-required_size)
         read(new_file_data + position) = stored_value
         let success = rl.SaveFileData(storage_data_file, ptr[void]<-new_file_data, required_size)
         rl.MemFree(ptr[void]<-new_file_data)
         return success
 
 
-def load_storage_value(position: usize) -> i32:
+def load_storage_value(position: ptr_uint) -> int:
     var data_size = 0
-    let loaded_file_data: ptr[u8]? = rl.LoadFileData(storage_data_file, ptr_of(data_size))
+    let loaded_file_data: ptr[ubyte]? = rl.LoadFileData(storage_data_file, ptr_of(data_size))
     if loaded_file_data == null:
         return 0
 
     let required_size = storage_size_bytes(position)
     unsafe:
-        let file_data = ptr[u8]<-loaded_file_data
+        let file_data = ptr[ubyte]<-loaded_file_data
         if data_size < required_size:
             rl.UnloadFileData(file_data)
             return 0
 
-        let data_ptr = ptr[i32]<-file_data
+        let data_ptr = ptr[int]<-file_data
         let stored_value = read(data_ptr + position)
         rl.UnloadFileData(file_data)
         return stored_value
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

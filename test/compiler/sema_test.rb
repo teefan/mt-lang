@@ -17,7 +17,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad
 
-      def main() -> i32:
+      def main() -> int:
           if 1:
               return 0
           return 0
@@ -34,7 +34,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.null_flow
 
-      def read(handle: ptr[i32]?) -> i32:
+      def read(handle: ptr[int]?) -> int:
           if handle == null:
               return 0
           unsafe:
@@ -50,7 +50,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.null_flow
 
-      def read(handle: ptr[i32]?) -> i32:
+      def read(handle: ptr[int]?) -> int:
           unsafe:
               if handle != null and read(handle) > 0:
                   return read(handle)
@@ -66,11 +66,11 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.null_flow
 
-      def open_handle() -> ptr[i32]?:
-          return null[ptr[i32]]
+      def open_handle() -> ptr[int]?:
+          return null[ptr[int]]
 
-      def main() -> i32:
-          var handle: ptr[i32]? = null[ptr[i32]]
+      def main() -> int:
+          var handle: ptr[int]? = null[ptr[int]]
           if handle == null:
               handle = open_handle()
           return 0
@@ -85,10 +85,10 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.null_flow
 
-      def main(input: ptr[i32]?) -> ptr[i32]?:
+      def main(input: ptr[int]?) -> ptr[int]?:
           var handle = input
           if handle != null:
-              handle = null[ptr[i32]]
+              handle = null[ptr[int]]
           return handle
     MT
 
@@ -101,7 +101,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.if_expr
 
-      def main(ready: bool) -> i32:
+      def main(ready: bool) -> int:
           return if ready: 1 else: 0
     MT
 
@@ -114,18 +114,18 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_flow
 
-      async def child() -> i32:
+      async def child() -> int:
           return 41
 
-      async def parent() -> i32:
+      async def parent() -> int:
           let value = await child()
           return value + 1
     MT
 
     result = check_program_source(source)
 
-    assert_equal "Task[i32]", result.root_analysis.functions.fetch("child").type.return_type.to_s
-    assert_equal "Task[i32]", result.root_analysis.functions.fetch("parent").type.return_type.to_s
+    assert_equal "Task[int]", result.root_analysis.functions.fetch("child").type.return_type.to_s
+    assert_equal "Task[int]", result.root_analysis.functions.fetch("parent").type.return_type.to_s
   end
 
   def test_type_checks_async_main_with_std_async_import
@@ -134,21 +134,21 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.async as aio
 
-      async def main() -> i32:
+      async def main() -> int:
           let waited = await aio.sleep(1)
           return waited + 42
     MT
 
     result = check_program_source(source)
 
-    assert_equal "Task[i32]", result.root_analysis.functions.fetch("main").type.return_type.to_s
+    assert_equal "Task[int]", result.root_analysis.functions.fetch("main").type.return_type.to_s
   end
 
   def test_rejects_async_main_without_async_runtime_import
     source = <<~MT
       module demo.async_main
 
-      async def main() -> i32:
+      async def main() -> int:
           return 42
     MT
 
@@ -173,17 +173,17 @@ class MilkTeaSemaTest < Minitest::Test
       check_program_source(source)
     end
 
-    assert_match(/async main must return i32 or void/, error.message)
+    assert_match(/async main must return int or void/, error.message)
   end
 
   def test_rejects_await_outside_async_functions
     source = <<~MT
       module demo.async_flow
 
-      async def child() -> i32:
+      async def child() -> int:
           return 41
 
-      def parent() -> i32:
+      def parent() -> int:
           return await child()
     MT
 
@@ -200,16 +200,16 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.async as aio
 
-      async def child() -> i32:
+      async def child() -> int:
           return 41
 
-      async def main() -> i32:
+      async def main() -> int:
           return await child() + await aio.sleep(1) + 1
     MT
 
     result = check_program_source(source)
 
-    assert_equal "Task[i32]", result.root_analysis.functions.fetch("main").type.return_type.to_s
+    assert_equal "Task[int]", result.root_analysis.functions.fetch("main").type.return_type.to_s
   end
 
   def test_type_checks_async_methods
@@ -219,16 +219,16 @@ class MilkTeaSemaTest < Minitest::Test
       import std.async as aio
 
       struct Counter:
-          value: i32
+          value: int
 
       methods Counter:
-          async def read() -> i32:
+          async def read() -> int:
               return this.value
 
           async edit def bump() -> void:
               this.value += 1
 
-      async def main() -> i32:
+      async def main() -> int:
           var counter = Counter(value = 1)
           await counter.bump()
           return await counter.read()
@@ -240,7 +240,7 @@ class MilkTeaSemaTest < Minitest::Test
     read_method = result.root_analysis.methods.fetch(counter_type).fetch("read")
     bump_method = result.root_analysis.methods.fetch(counter_type).fetch("bump")
 
-    assert_equal "Task[i32]", read_method.type.return_type.to_s
+    assert_equal "Task[int]", read_method.type.return_type.to_s
     assert_equal "Task[void]", bump_method.type.return_type.to_s
     assert_equal true, result.root_analysis.functions.key?("main")
   end
@@ -249,13 +249,13 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.proc_coercion
 
-      def apply(callback: proc(value: i32) -> i32, value: i32) -> i32:
+      def apply(callback: proc(value: int) -> int, value: int) -> int:
           return callback(value)
 
-      def double(value: i32) -> i32:
+      def double(value: int) -> int:
           return value * 2
 
-      def main() -> i32:
+      def main() -> int:
           return apply(double, 21)
     MT
 
@@ -268,10 +268,10 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_flow
 
-      async def child() -> i32:
+      async def child() -> int:
           return 41
 
-      async def parent(flag: bool) -> i32:
+      async def parent(flag: bool) -> int:
           return if flag: await child() else: 0
     MT
 
@@ -285,7 +285,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.async as aio
 
-      async def parent(flag: bool) -> i32:
+      async def parent(flag: bool) -> int:
           if flag:
               return 1
           return 0
@@ -302,10 +302,10 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.async as aio
 
-      async def child() -> i32:
+      async def child() -> int:
           return 1
 
-      async def parent() -> i32:
+      async def parent() -> int:
           if true:
               return await child()
           return 0
@@ -324,7 +324,7 @@ class MilkTeaSemaTest < Minitest::Test
       async def child() -> bool:
           return true
 
-      async def parent() -> i32:
+      async def parent() -> int:
           if await child():
               return 1
           return 0
@@ -343,7 +343,7 @@ class MilkTeaSemaTest < Minitest::Test
       async def ready() -> bool:
           return false
 
-      async def parent() -> i32:
+      async def parent() -> int:
           while await ready():
               return 1
           return 0
@@ -359,14 +359,14 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.async as aio
 
-      enum Mode: i32
+      enum Mode: int
           a = 0
           b = 1
 
       async def mode() -> Mode:
           return Mode.a
 
-      async def parent() -> i32:
+      async def parent() -> int:
           match await mode():
               Mode.a:
                   return 1
@@ -384,10 +384,10 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.async as aio
 
-      async def upper() -> i32:
+      async def upper() -> int:
           return 3
 
-      async def parent() -> i32:
+      async def parent() -> int:
           var total = 0
           for i in 0..await upper():
               total += i
@@ -410,7 +410,7 @@ class MilkTeaSemaTest < Minitest::Test
       async def f() -> bool:
           return false
 
-      async def parent() -> i32:
+      async def parent() -> int:
           if await t() and await t():
               return 1
           if await f() or await t():
@@ -428,11 +428,11 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.async as aio
 
-      async def idx() -> i32:
+      async def idx() -> int:
           return 0
 
-      async def parent() -> i32:
-          var values = array[i32, 1](0)
+      async def parent() -> int:
+          var values = array[int, 1](0)
           values[await idx()] = 7
           return values[0]
     MT
@@ -447,10 +447,10 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.async as aio
 
-      async def child() -> i32:
+      async def child() -> int:
           return 1
 
-      async def parent() -> i32:
+      async def parent() -> int:
           var count = 0
           var i = 0
           while i < 3:
@@ -470,10 +470,10 @@ class MilkTeaSemaTest < Minitest::Test
       import std.fmt as fmt
       import std.string as string
 
-      def main(count: u8, delta: i16, ticks: u64) -> i32:
+      def main(count: ubyte, delta: short, ticks: ulong) -> int:
           var text = fmt.string(f"count=\#{count} delta=\#{delta} ticks=\#{ticks} ok=\#{true}")
           defer text.release()
-          return i32<-text.count()
+          return int<-text.count()
     MT
 
     result = check_program_source(source)
@@ -485,14 +485,14 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.format
 
-      def length(text: str) -> usize:
+      def length(text: str) -> ptr_uint:
           return text.len
 
-      def main(count: i32) -> i32:
+      def main(count: int) -> int:
           let text = f"count=\#{count}"
           if length(f"ok=\#{true}") == 0:
               return 1
-          return i32<-text.len
+          return int<-text.len
     MT
 
     result = check_program_source(source)
@@ -506,7 +506,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.io as io
 
-      def main(pi: f64, small: f32) -> i32:
+      def main(pi: double, small: float) -> int:
           io.println(f"pi=\#{pi:.2}")
           io.println(f"small=\#{small:.4}")
           return 0
@@ -523,7 +523,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.io as io
 
-      def main(count: i32) -> i32:
+      def main(count: int) -> int:
           io.println(f"count=\#{count:.2}")
           return 0
     MT
@@ -532,14 +532,14 @@ class MilkTeaSemaTest < Minitest::Test
       check_program_source(source)
     end
 
-    assert_match(/precision.*f32.*f64|f32.*f64.*precision|format spec.*f32.*f64/i, error.message)
+    assert_match(/precision.*float.*double|float.*double.*precision|format spec.*float.*double/i, error.message)
   end
 
   def test_rejects_wrong_return_type
     source = <<~MT
       module demo.bad
 
-      def main() -> i32:
+      def main() -> int:
           return true
     MT
 
@@ -555,9 +555,9 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.bad
 
       struct Ball:
-          radius: f32
+          radius: float
 
-      def main() -> i32:
+      def main() -> int:
           var ball = Ball(size = 20.0)
           return 0
     MT
@@ -573,8 +573,8 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad
 
-      const width: i32 = 1
-      const width: i32 = 2
+      const width: int = 1
+      const width: int = 2
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -588,24 +588,24 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.ffi
 
-      enum State: u8
+      enum State: ubyte
           idle = 0
           moving = 1
 
-      flags WindowFlags: u32
+      flags WindowFlags: uint
           visible = 1 << 0
           fullscreen = 1 << 1
 
       union Number:
-          i: i32
-          f: f32
+          i: int
+          f: float
 
       opaque SDL_Window
-      type Seconds = f32
+      type Seconds = float
       extern def get_ticks() -> Seconds
       extern def open_window(title: cstr) -> SDL_Window?
 
-      def main() -> i32:
+      def main() -> int:
           let state: State = State.idle
           let window_flags: WindowFlags = WindowFlags.visible
           let ticks: Seconds = get_ticks()
@@ -630,13 +630,13 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.callbacks
 
-      type LogCallback = fn(level: i32, message: cstr) -> void
+      type LogCallback = fn(level: int, message: cstr) -> void
       extern def set_callback(callback: LogCallback) -> void
 
-      def on_log(level: i32, message: cstr) -> void:
+      def on_log(level: int, message: cstr) -> void:
           return
 
-      def main() -> i32:
+      def main() -> int:
           set_callback(on_log)
           return 0
     MT
@@ -653,21 +653,21 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.callable_values
 
       struct Entry:
-          callback: fn(value: f32) -> f32
+          callback: fn(value: float) -> float
 
-      def identity(value: i32) -> i32:
+      def identity(value: int) -> int:
           return value
 
-      def ease(value: f32) -> f32:
+      def ease(value: float) -> float:
           return value + 2.0
 
-      def main() -> i32:
-          let callbacks = array[fn(value: i32) -> i32, 1](identity)
+      def main() -> int:
+          let callbacks = array[fn(value: int) -> int, 1](identity)
           let entry = Entry(callback = ease)
-          let callback: fn(value: f32) -> f32 = entry.callback
+          let callback: fn(value: float) -> float = entry.callback
           let left = callbacks[0](1)
           let right = callback(1.0)
-          return left + i32<-right
+          return left + int<-right
     MT
 
     result = check_source(source)
@@ -683,10 +683,10 @@ class MilkTeaSemaTest < Minitest::Test
       import std.ease as ease
 
       struct Entry:
-          callback: fn(value: i32) -> i32
+          callback: fn(value: int) -> int
 
-      def main() -> i32:
-          let callbacks = array[fn(value: i32) -> i32, 1](ease.double)
+      def main() -> int:
+          let callbacks = array[fn(value: int) -> int, 1](ease.double)
           let entry = Entry(callback = ease.double)
           return callbacks[0](3) + entry.callback(4)
     MT
@@ -695,7 +695,7 @@ class MilkTeaSemaTest < Minitest::Test
       "std/ease.mt" => <<~MT,
         module std.ease
 
-        pub def double(value: i32) -> i32:
+        pub def double(value: int) -> int:
             return value * 2
       MT
     }
@@ -710,13 +710,13 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.generic_callable_values
 
-      def apply[T](callback: fn(value: i32) -> T, value: i32) -> T:
+      def apply[T](callback: fn(value: int) -> T, value: int) -> T:
           return callback(value)
 
-      def double(value: i32) -> i32:
+      def double(value: int) -> int:
           return value * 2
 
-      def main() -> i32:
+      def main() -> int:
           return apply(double, 21)
     MT
 
@@ -730,19 +730,19 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.proc_values
 
-      def apply(callback: proc(value: i32) -> i32, value: i32) -> i32:
+      def apply(callback: proc(value: int) -> int, value: int) -> int:
           return callback(value)
 
-      def main() -> i32:
+      def main() -> int:
           let offset = 4
-          let callback = proc(value: i32) -> i32:
+          let callback = proc(value: int) -> int:
               return value * 2 + offset
           return apply(callback, 3)
     MT
 
     result = check_source(source)
 
-    assert_equal "proc(i32) -> i32", result.functions.fetch("apply").type.params.fetch(0).type.to_s
+    assert_equal "proc(int) -> int", result.functions.fetch("apply").type.params.fetch(0).type.to_s
     assert_equal true, result.functions.key?("main")
   end
 
@@ -751,14 +751,14 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.proc_field
 
       struct Holder:
-          callback: proc(value: i32) -> i32
+          callback: proc(value: int) -> int
 
-      def call(holder: Holder, value: i32) -> i32:
+      def call(holder: Holder, value: int) -> int:
           return holder.callback(value)
 
-      def main() -> i32:
+      def main() -> int:
           let offset = 3
-          let callback = proc(value: i32) -> i32:
+          let callback = proc(value: int) -> int:
               return value + offset
           let holder = Holder(callback = callback)
           return call(holder, 4)
@@ -774,11 +774,11 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.proc_return
 
-      def factory(offset: i32) -> proc(value: i32) -> i32:
-          return proc(value: i32) -> i32:
+      def factory(offset: int) -> proc(value: int) -> int:
+          return proc(value: int) -> int:
               return value + offset
 
-      def main() -> i32:
+      def main() -> int:
           let callback = factory(2)
           return callback(40)
     MT
@@ -794,12 +794,12 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.proc_assign
 
       struct Holder:
-          callback: proc(value: i32) -> i32
+          callback: proc(value: int) -> int
 
-      def main() -> i32:
-          let ca = proc(value: i32) -> i32:
+      def main() -> int:
+          let ca = proc(value: int) -> int:
               return value + 1
-          let cb = proc(value: i32) -> i32:
+          let cb = proc(value: int) -> int:
               return value + 2
           let a = Holder(callback = ca)
           var b = Holder(callback = cb)
@@ -817,13 +817,13 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.proc_field_assign
 
       struct Holder:
-          callback: proc(value: i32) -> i32
+          callback: proc(value: int) -> int
 
-      def main() -> i32:
-          let ca = proc(value: i32) -> i32:
+      def main() -> int:
+          let ca = proc(value: int) -> int:
               return value + 1
           var h = Holder(callback = ca)
-          let cb = proc(value: i32) -> i32:
+          let cb = proc(value: int) -> int:
               return value + 2
           h.callback = cb
           return h.callback(1)
@@ -838,10 +838,10 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.proc_var_reassign
 
-      def main() -> i32:
-          var callback = proc(value: i32) -> i32:
+      def main() -> int:
+          var callback = proc(value: int) -> int:
               return value + 1
-          callback = proc(value: i32) -> i32:
+          callback = proc(value: int) -> int:
               return value + 2
           return callback(0)
     MT
@@ -855,7 +855,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_proc_param
 
-      async def run(callback: proc(value: i32) -> i32) -> i32:
+      async def run(callback: proc(value: int) -> int) -> int:
           return callback(1)
     MT
 
@@ -868,8 +868,8 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_proc_expr
 
-      async def run() -> i32:
-          let callback = proc(value: i32) -> i32:
+      async def run() -> int:
+          let callback = proc(value: int) -> int:
               return value + 1
           return callback(1)
     MT
@@ -885,7 +885,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.raylib as rl
 
-      def main(path: str, data: span[u8]) -> i32:
+      def main(path: str, data: span[ubyte]) -> int:
           var data_size = 0
           rl.init_window(800, 450, "Demo")
           let loaded = rl.load_file_data(path, out data_size)
@@ -900,18 +900,18 @@ class MilkTeaSemaTest < Minitest::Test
         extern module std.c.raylib:
             include "raylib.h"
 
-            extern def InitWindow(width: i32, height: i32, title: cstr) -> void
-            extern def LoadFileData(file_name: cstr, data_size: ptr[i32]) -> ptr[u8]?
-            extern def SaveFileData(file_name: cstr, data: ptr[u8], bytes: i32) -> bool
+            extern def InitWindow(width: int, height: int, title: cstr) -> void
+            extern def LoadFileData(file_name: cstr, data_size: ptr[int]) -> ptr[ubyte]?
+            extern def SaveFileData(file_name: cstr, data: ptr[ubyte], bytes: int) -> bool
       MT
       "std/raylib.mt" => <<~MT,
         module std.raylib
 
         import std.c.raylib as c
 
-        pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
-        pub foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
-        pub foreign def save_file_data(file_name: str as cstr, data: span[u8]) -> bool = c.SaveFileData(file_name, data.data, i32<-data.len)
+        pub foreign def init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow
+        pub foreign def load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
+        pub foreign def save_file_data(file_name: str as cstr, data: span[ubyte]) -> bool = c.SaveFileData(file_name, data.data, int<-data.len)
       MT
     }
 
@@ -937,14 +937,14 @@ class MilkTeaSemaTest < Minitest::Test
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            extern def UseNames(names: ptr[cstr], count: i32, active: ptr[i32]) -> i32
+            extern def UseNames(names: ptr[cstr], count: int, active: ptr[int]) -> int
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def use_names(names: span[str] as span[cstr], inout active: i32) -> i32 = c.UseNames(names.data, i32<-names.len, active)
+        pub foreign def use_names(names: span[str] as span[cstr], inout active: int) -> int = c.UseNames(names.data, int<-names.len, active)
       MT
     }
 
@@ -970,14 +970,14 @@ class MilkTeaSemaTest < Minitest::Test
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            extern def UseNames(names: ptr[ptr[char]], count: i32, active: ptr[i32]) -> i32
+            extern def UseNames(names: ptr[ptr[char]], count: int, active: ptr[int]) -> int
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def use_names(names: span[str] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, i32<-names.len, active)
+        pub foreign def use_names(names: span[str] as span[ptr[char]], inout active: int) -> int = c.UseNames(names.data, int<-names.len, active)
       MT
     }
 
@@ -994,7 +994,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.sample as sample
 
-      def main() -> i32:
+      def main() -> int:
           var labels = array[str, 3]("12", "34", "56")
           return sample.count_names(labels)
     MT
@@ -1002,14 +1002,14 @@ class MilkTeaSemaTest < Minitest::Test
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            extern def CountNames(names: ptr[ptr[char]], count: i32) -> i32
+            extern def CountNames(names: ptr[ptr[char]], count: int) -> int
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, i32<-names.len)
+        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> int = c.CountNames(names.data, int<-names.len)
       MT
     }
 
@@ -1026,10 +1026,10 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.sample as sample
 
-      def keep(value: i32) -> i32:
+      def keep(value: int) -> int:
           return value
 
-      def main() -> i32:
+      def main() -> int:
           var labels = array[str, 3]("12", "34", "56")
           return keep(sample.count_names(labels))
     MT
@@ -1037,14 +1037,14 @@ class MilkTeaSemaTest < Minitest::Test
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            extern def CountNames(names: ptr[ptr[char]], count: i32) -> i32
+            extern def CountNames(names: ptr[ptr[char]], count: int) -> int
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, i32<-names.len)
+        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> int = c.CountNames(names.data, int<-names.len)
       MT
     }
 
@@ -1061,24 +1061,24 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.sample as sample
 
-      def keep(value: i32) -> i32:
+      def keep(value: int) -> int:
           return value
 
-      def main() -> i32:
+      def main() -> int:
           return keep(sample.pair_sum(1 + 2))
     MT
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            extern def PairSum(left: i32, right: i32) -> i32
+            extern def PairSum(left: int, right: int) -> int
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def pair_sum(value: i32) -> i32 = c.PairSum(value, value)
+        pub foreign def pair_sum(value: int) -> int = c.PairSum(value, value)
       MT
     }
 
@@ -1095,7 +1095,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.sample as sample
 
-      def main() -> i32:
+      def main() -> int:
           var labels = array[str, 3]("12", "34", "56")
           let total = if true: sample.count_names(labels) else: 0
           if false and sample.pair_sum(1 + 2) > 0:
@@ -1106,16 +1106,16 @@ class MilkTeaSemaTest < Minitest::Test
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            extern def CountNames(names: ptr[ptr[char]], count: i32) -> i32
-            extern def PairSum(left: i32, right: i32) -> i32
+            extern def CountNames(names: ptr[ptr[char]], count: int) -> int
+            extern def PairSum(left: int, right: int) -> int
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> i32 = c.CountNames(names.data, i32<-names.len)
-        pub foreign def pair_sum(value: i32) -> i32 = c.PairSum(value, value)
+        pub foreign def count_names(names: span[str] as span[ptr[char]]) -> int = c.CountNames(names.data, int<-names.len)
+        pub foreign def pair_sum(value: int) -> int = c.PairSum(value, value)
       MT
     }
 
@@ -1172,14 +1172,14 @@ class MilkTeaSemaTest < Minitest::Test
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
-            extern def UseNames(names: ptr[ptr[char]], count: i32, active: ptr[i32]) -> i32
+            extern def UseNames(names: ptr[ptr[char]], count: int, active: ptr[int]) -> int
       MT
       "std/sample.mt" => <<~MT,
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def use_names(names: span[cstr] as span[ptr[char]], inout active: i32) -> i32 = c.UseNames(names.data, i32<-names.len, active)
+        pub foreign def use_names(names: span[cstr] as span[ptr[char]], inout active: int) -> int = c.UseNames(names.data, int<-names.len, active)
       MT
     }
 
@@ -1205,14 +1205,14 @@ class MilkTeaSemaTest < Minitest::Test
         extern module std.c.raylib:
             include "raylib.h"
 
-            extern def InitWindow(width: i32, height: i32, title: cstr) -> void
+            extern def InitWindow(width: int, height: int, title: cstr) -> void
       MT
       "std/raylib.mt" => <<~MT,
         module std.raylib
 
         import std.c.raylib as c
 
-        pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
+        pub foreign def init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow
       MT
     }
 
@@ -1239,14 +1239,14 @@ class MilkTeaSemaTest < Minitest::Test
         extern module std.c.raylib:
             include "raylib.h"
 
-            extern def InitWindow(width: i32, height: i32, title: cstr) -> void
+            extern def InitWindow(width: int, height: int, title: cstr) -> void
       MT
       "std/raylib.mt" => <<~MT,
         module std.raylib
 
         import std.c.raylib as c
 
-        pub foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
+        pub foreign def init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow
       MT
     }
 
@@ -1275,7 +1275,7 @@ class MilkTeaSemaTest < Minitest::Test
         extern module std.c.mem:
             include "mem.h"
 
-            extern def AllocateBytes(size: usize) -> ptr[void]
+            extern def AllocateBytes(size: ptr_uint) -> ptr[void]
             extern def ReleaseBytes(memory: ptr[void]) -> void
             extern def SetLabel(label: cstr) -> void
             extern def GetLabel() -> ptr[char]
@@ -1285,8 +1285,8 @@ class MilkTeaSemaTest < Minitest::Test
 
         import std.c.mem as c
 
-        pub foreign def allocate_bytes(size: usize) -> ptr[byte] = c.AllocateBytes
-        pub foreign def release_bytes(memory: ptr[byte]) -> void = c.ReleaseBytes
+        pub foreign def allocate_bytes(size: ptr_uint) -> ptr[ubyte] = c.AllocateBytes
+        pub foreign def release_bytes(memory: ptr[ubyte]) -> void = c.ReleaseBytes
         pub foreign def set_label(label: ptr[char]) -> void = c.SetLabel
         pub foreign def get_label() -> cstr = c.GetLabel
       MT
@@ -1305,7 +1305,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.window as win
 
-      def main() -> i32:
+      def main() -> int:
           let window = win.create()
           if window != null:
               win.destroy(window)
@@ -1346,7 +1346,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.window as win
 
-      def main() -> i32:
+      def main() -> int:
           let window = win.create()
           if window != null:
               win.destroy(window)
@@ -1386,7 +1386,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.ok
 
-      extern def load_font_ex(codepoints: ptr[i32]?) -> void
+      extern def load_font_ex(codepoints: ptr[int]?) -> void
 
       def main() -> void:
           load_font_ex(null)
@@ -1404,7 +1404,7 @@ class MilkTeaSemaTest < Minitest::Test
       extern def update_texture(pixels: ptr[void]) -> void
 
       def main() -> void:
-          var pixels = zero[array[i32, 4]]
+          var pixels = zero[array[int, 4]]
           let data = ptr_of(pixels[0])
           update_texture(data)
     MT
@@ -1605,10 +1605,10 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad
 
-      def write(value: i32) -> i32:
+      def write(value: int) -> int:
           return value
 
-      def main() -> i32:
+      def main() -> int:
           var number = 1
           return write(out number)
     MT
@@ -1624,39 +1624,39 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.numeric_conversions
 
-      def sum() -> f64:
+      def sum() -> double:
           return 1 + 2.5
 
       def before_limit() -> bool:
           return 3 < 3.5
 
-      def main() -> i32:
+      def main() -> int:
           if before_limit():
-              return i32<-sum()
+              return int<-sum()
           return 0
     MT
 
     result = check_source(source)
 
-    assert_equal "f64", result.functions.fetch("sum").type.return_type.to_s
+    assert_equal "double", result.functions.fetch("sum").type.return_type.to_s
     assert_equal "bool", result.functions.fetch("before_limit").type.return_type.to_s
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_type_checks_left_biased_float_literals_against_f32_operands
+  def test_type_checks_left_biased_float_literals_against_float_operands
     source = <<~MT
       module demo.float_literal_alignment
 
       struct Pair:
-          x: f32
-          y: f32
+          x: float
+          y: float
 
-      def inverse(value: f32) -> f32:
+      def inverse(value: float) -> float:
           let scaled = 1.0 / value
           return scaled
 
-      def main() -> i32:
-          let denom: f32 = 4.0
+      def main() -> int:
+          let denom: float = 4.0
           let pair = Pair(x = 1.0 / denom, y = -2.0 / denom)
           if inverse(denom) < pair.x:
               return 1
@@ -1665,7 +1665,7 @@ class MilkTeaSemaTest < Minitest::Test
 
     result = check_source(source)
 
-    assert_equal "f32", result.functions.fetch("inverse").type.return_type.to_s
+    assert_equal "float", result.functions.fetch("inverse").type.return_type.to_s
     assert_equal true, result.functions.key?("main")
   end
 
@@ -1673,9 +1673,9 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad
 
-      def main() -> i32:
-          let left: i32 = 1
-          let right: u32 = 2
+      def main() -> int:
+          let left: int = 1
+          let right: uint = 2
           let sum = left + right
           return sum
     MT
@@ -1691,15 +1691,15 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.spans
 
-      def first(items: span[i32]) -> i32:
+      def first(items: span[int]) -> int:
           if items.len == 0:
               return 0
           unsafe:
               return read(items.data)
 
-      def main() -> i32:
+      def main() -> int:
           var value = 7
-          let items = span[i32](data = ptr_of(value), len = 1)
+          let items = span[int](data = ptr_of(value), len = 1)
           return first(items)
     MT
 
@@ -1707,21 +1707,21 @@ class MilkTeaSemaTest < Minitest::Test
 
     assert_equal true, result.functions.key?("first")
     assert_equal true, result.functions.key?("main")
-    assert_equal "span[i32]", result.functions.fetch("first").type.params.first.type.to_s
+    assert_equal "span[int]", result.functions.fetch("first").type.params.first.type.to_s
   end
 
   def test_type_checks_safe_span_indexing_and_element_assignment
     source = <<~MT
       module demo.spans
 
-      def bump(items: span[i32]) -> i32:
+      def bump(items: span[int]) -> int:
           let first = items[0]
           items[0] = first + 2
           return items[0]
 
-      def main() -> i32:
+      def main() -> int:
           var value = 7
-          let items = span[i32](data = ptr_of(value), len = 1)
+          let items = span[int](data = ptr_of(value), len = 1)
           return bump(items)
     MT
 
@@ -1737,20 +1737,20 @@ class MilkTeaSemaTest < Minitest::Test
       "",
       "struct Slice[T]:",
       "    data: ptr[T]",
-      "    len: usize",
+      "    len: ptr_uint",
       "",
       "struct Holder:",
-      "    items: Slice[i32]",
+      "    items: Slice[int]",
       "",
-      "def first(items: Slice[i32]) -> i32:",
+      "def first(items: Slice[int]) -> int:",
       "    if items.len == 0:",
       "        return 0",
       "    unsafe:",
       "        return read(items.data)",
       "",
-      "def main() -> i32:",
+      "def main() -> int:",
       "    var value = 7",
-      "    let holder = Holder(items = Slice[i32](data = ptr_of(value), len = 1))",
+      "    let holder = Holder(items = Slice[int](data = ptr_of(value), len = 1))",
       "    return first(holder.items)",
       "",
     ].join("\n")
@@ -1759,7 +1759,7 @@ class MilkTeaSemaTest < Minitest::Test
 
     assert_equal true, result.types.key?("Slice")
     assert_equal true, result.types.key?("Holder")
-    assert_equal "demo.generics.Slice[i32]", result.functions.fetch("first").type.params.first.type.to_s
+    assert_equal "demo.generics.Slice[int]", result.functions.fetch("first").type.params.first.type.to_s
   end
 
   def test_type_checks_generic_functions_with_inferred_type_arguments
@@ -1768,7 +1768,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       struct Slice[T]:
           data: ptr[T]
-          len: usize
+          len: ptr_uint
 
       def head[T](items: Slice[T]) -> ptr[T]:
           return items.data
@@ -1778,9 +1778,9 @@ class MilkTeaSemaTest < Minitest::Test
               return a
           return b
 
-      def main() -> i32:
+      def main() -> int:
           var value = 7
-          let items = Slice[i32](data = ptr_of(value), len = 1)
+          let items = Slice[int](data = ptr_of(value), len = 1)
           let smallest = min(9, 4)
           unsafe:
               return read(head(items)) + smallest
@@ -1797,11 +1797,11 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.generic_layout
 
-      def bytes_for[T](count: usize) -> usize:
+      def bytes_for[T](count: ptr_uint) -> ptr_uint:
           return count * sizeof(T)
 
-      def main() -> i32:
-          return i32<-bytes_for[i32](4)
+      def main() -> int:
+          return int<-bytes_for[int](4)
     MT
 
     result = check_source(source)
@@ -1814,12 +1814,12 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.generic_builder
 
-      def capacity_of[N](buffer: str_builder[N]) -> usize:
+      def capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
           return buffer.capacity()
 
-      def main() -> i32:
+      def main() -> int:
           var buffer: str_builder[32]
-          return i32<-(capacity_of(buffer) + capacity_of(buffer))
+          return int<-(capacity_of(buffer) + capacity_of(buffer))
     MT
 
     result = check_source(source)
@@ -1832,12 +1832,12 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.generic_builder_explicit
 
-      def capacity_of[N](buffer: str_builder[N]) -> usize:
+      def capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
           return buffer.capacity()
 
-      def main() -> i32:
+      def main() -> int:
           var buffer: str_builder[32]
-          return i32<-capacity_of[32](buffer)
+          return int<-capacity_of[32](buffer)
     MT
 
     result = check_source(source)
@@ -1851,7 +1851,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.generic_methods
 
       struct Box:
-          value: i32
+          value: int
 
       methods Box:
           def echo[T](input: T) -> T:
@@ -1860,7 +1860,7 @@ class MilkTeaSemaTest < Minitest::Test
           static def make[T](input: T) -> T:
               return input
 
-      def main() -> i32:
+      def main() -> int:
           let box = Box(value = 1)
           let a = box.echo(3)
           let b = Box.make(4)
@@ -1882,16 +1882,16 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.named_const_type_args
 
-      const BASE: i32 = 28
-      const CAPACITY: i32 = BASE + 4
+      const BASE: int = 28
+      const CAPACITY: int = BASE + 4
 
-      def capacity_of[N](buffer: str_builder[N]) -> usize:
+      def capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
           return buffer.capacity()
 
-      def main() -> i32:
+      def main() -> int:
           var buffer: str_builder[CAPACITY]
-          var values = zero[array[i32, CAPACITY]]
-          values[0] = i32<-capacity_of[CAPACITY](buffer)
+          var values = zero[array[int, CAPACITY]]
+          values[0] = int<-capacity_of[CAPACITY](buffer)
           return values[0]
     MT
 
@@ -1906,17 +1906,17 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.result
 
-      enum LoadError: u8
+      enum LoadError: ubyte
           file_not_found = 1
           invalid_format = 2
 
-      def load(available: bool) -> Result[i32, LoadError]:
+      def load(available: bool) -> Result[int, LoadError]:
           if available:
               return ok(7)
           return err(LoadError.invalid_format)
 
-      def main() -> i32:
-          let cached: Result[i32, LoadError] = ok(5)
+      def main() -> int:
+          let cached: Result[int, LoadError] = ok(5)
           let missing = load(false)
           if cached.is_ok and missing.error == LoadError.invalid_format:
               return cached.value
@@ -1925,7 +1925,7 @@ class MilkTeaSemaTest < Minitest::Test
 
     result = check_source(source)
 
-    assert_equal "Result[i32, demo.result.LoadError]", result.functions.fetch("load").type.return_type.to_s
+    assert_equal "Result[int, demo.result.LoadError]", result.functions.fetch("load").type.return_type.to_s
     assert_equal true, result.functions.key?("main")
   end
 
@@ -1933,7 +1933,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.panic
 
-      def main() -> i32:
+      def main() -> int:
           panic("bad state")
           return 0
     MT
@@ -1987,7 +1987,7 @@ class MilkTeaSemaTest < Minitest::Test
       import std.str
       import std.mem.arena as arena
 
-      def main() -> i32:
+      def main() -> int:
           var scratch = arena.create(64)
           defer scratch.release()
 
@@ -1995,8 +1995,8 @@ class MilkTeaSemaTest < Minitest::Test
           let part = text.slice(6, 5)
           let copied = part.to_cstr(ref_of(scratch))
 
-          if text.len == usize<-11 and part.len == usize<-5:
-              return i32<-part.len
+          if text.len == ptr_uint<-11 and part.len == ptr_uint<-5:
+              return int<-part.len
           panic(copied)
           return 0
     MT
@@ -2010,7 +2010,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad_str_constructor
 
-      def main(data: ptr[char], len: usize) -> str:
+      def main(data: ptr[char], len: ptr_uint) -> str:
           return str(data = data, len = len)
     MT
 
@@ -2025,18 +2025,18 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.match
 
-      enum EventKind: u8
+      enum EventKind: ubyte
           quit = 1
           resize = 2
 
-      def dispatch(kind: EventKind) -> i32:
+      def dispatch(kind: EventKind) -> int:
           match kind:
               EventKind.quit:
                   return 0
               EventKind.resize:
                   return 1
 
-      def main() -> i32:
+      def main() -> int:
           return dispatch(EventKind.resize)
     MT
 
@@ -2050,12 +2050,12 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.for_loops
 
-      def scan(items: span[i32]) -> i32:
+      def scan(items: span[int]) -> int:
           for i in 0..items.len:
-              let index: usize = i
+              let index: ptr_uint = i
 
           for item in items:
-              let value: i32 = item
+              let value: int = item
 
           return 0
     MT
@@ -2069,16 +2069,16 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.loop_control
 
-      enum Step: u8
+      enum Step: ubyte
           skip = 1
           keep = 2
           stop = 3
 
-      def add(target: ptr[i32], amount: i32) -> void:
+      def add(target: ptr[int], amount: int) -> void:
           unsafe:
               read(target) += amount
 
-      def main() -> i32:
+      def main() -> int:
           var total = 0
           for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):
               defer add(ptr_of(total), 1)
@@ -2101,7 +2101,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.defer_loop
 
-      def main() -> i32:
+      def main() -> int:
           for outer in 0..1:
               defer:
                   while true:
@@ -2118,7 +2118,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.defer_return
 
-      def main() -> i32:
+      def main() -> int:
           defer:
               return 1
           return 0
@@ -2135,7 +2135,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.defer_continue
 
-      def main() -> i32:
+      def main() -> int:
           for outer in 0..1:
               defer:
                   continue
@@ -2154,12 +2154,12 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.layout
 
       struct Header:
-          magic: array[u8, 4]
-          version: u16
+          magic: array[ubyte, 4]
+          version: ushort
 
       static_assert(sizeof(Header) == 6, "Header size should stay stable")
 
-      def main() -> usize:
+      def main() -> ptr_uint:
           return offsetof(Header, version) + alignof(Header)
     MT
 
@@ -2173,9 +2173,9 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.layout
 
       struct Header:
-          version: u16
+          version: ushort
 
-      def main() -> usize:
+      def main() -> ptr_uint:
           return offsetof(Header, missing)
     MT
 
@@ -2192,7 +2192,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       const MESSAGE: cstr = c"layout must hold"
 
-      def main() -> i32:
+      def main() -> int:
           static_assert(true, MESSAGE)
           return 0
     MT
@@ -2209,17 +2209,17 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.layout
 
       packed struct Header:
-          tag: u8
-          value: u32
+          tag: ubyte
+          value: uint
 
       align(16) struct Mat4:
-          data: array[f32, 16]
+          data: array[float, 16]
 
       static_assert(sizeof(Header) == 5, "Header should stay packed")
       static_assert(offsetof(Header, value) == 1, "Header.value offset drifted")
       static_assert(alignof(Mat4) == 16, "Mat4 alignment drifted")
 
-      def main() -> i32:
+      def main() -> int:
           return 0
     MT
 
@@ -2232,10 +2232,10 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bits
 
-      def main() -> u32:
-          let value: f32 = 1.0
+      def main() -> uint:
+          let value: float = 1.0
           unsafe:
-              let bits = reinterpret[u32](value)
+              let bits = reinterpret[uint](value)
               return bits
     MT
 
@@ -2248,9 +2248,9 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bits
 
-      def main() -> u32:
-          let value: f32 = 1.0
-          return reinterpret[u32](value)
+      def main() -> uint:
+          let value: float = 1.0
+          return reinterpret[uint](value)
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -2264,11 +2264,11 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bits
 
-      def main() -> i32:
-          let values = array[u8, 4](1, 2, 3, 4)
+      def main() -> int:
+          let values = array[ubyte, 4](1, 2, 3, 4)
           unsafe:
-              let bits = reinterpret[u32](values)
-              return i32<-bits
+              let bits = reinterpret[uint](values)
+              return int<-bits
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -2282,16 +2282,16 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.cast_values
 
-      enum State: u8
+      enum State: ubyte
           idle = 0
 
-      flags Gesture: i32
+      flags Gesture: int
           tap = 1
 
-      def main() -> i32:
-          let state = i32<-State.idle
-          let gesture = u32<-Gesture.tap
-          return state + i32<-gesture
+      def main() -> int:
+          let state = int<-State.idle
+          let gesture = uint<-Gesture.tap
+          return state + int<-gesture
     MT
 
     result = check_source(source)
@@ -2303,18 +2303,18 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.call_values
 
-      enum State: i8
+      enum State: ubyte
           idle = 0
 
-      flags Gesture: i32
+      flags Gesture: int
           tap = 1
 
-      extern def takes_u32(value: u32) -> i32
-      extern def takes_u8(value: u8) -> i32
+      extern def takes_uint(value: uint) -> int
+      extern def takes_ubyte(value: ubyte) -> int
 
-      def main() -> i32:
-          takes_u32(Gesture.tap)
-          takes_u8(State.idle)
+      def main() -> int:
+          takes_uint(Gesture.tap)
+          takes_ubyte(State.idle)
           return 0
     MT
 
@@ -2328,17 +2328,17 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.literal_float_context
 
       struct Point:
-          x: f32
-          y: f32
+          x: float
+          y: float
 
-      def takes_f32(value: f32) -> void:
+      def takes_float(value: float) -> void:
           return
 
-      def main() -> i32:
-          let baseline: f32 = 0
+      def main() -> int:
+          let baseline: float = 0
           let point = Point(x = 0, y = 1)
-          takes_f32(0)
-          return i32<-(baseline + point.x)
+          takes_float(0)
+          return int<-(baseline + point.x)
     MT
 
     result = check_source(source)
@@ -2351,23 +2351,23 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.non_external_numeric_strict
 
       struct Point:
-          x: f32
+          x: float
 
-      def takes_f32(value: f32) -> void:
+      def takes_float(value: float) -> void:
           return
 
-      def main() -> i32:
+      def main() -> int:
           let value = 7
-          takes_f32(value)
+          takes_float(value)
           let point = Point(x = value)
-          return i32<-point.x
+          return int<-point.x
     MT
 
     error = assert_raises(MilkTea::SemaError) do
       check_source(source)
     end
 
-    assert_match(/argument value to takes_f32 expects f32, got i32/, error.message)
+    assert_match(/argument value to takes_float expects float, got int/, error.message)
   end
 
   def test_type_checks_contextual_integer_to_float_for_local_assignment_and_return
@@ -2375,19 +2375,19 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.contextual_int_to_float
 
       struct Point:
-          x: f32
+          x: float
 
-      def project(value: i32) -> f32:
-          var total: f32 = value
+      def project(value: int) -> float:
+          var total: float = value
           total = value + 1
           var point = Point(x = 0.0)
           point.x = value + 2
           return value + 3
 
-      def main() -> i32:
+      def main() -> int:
           let value = 4
-          let baseline: f32 = value
-          return i32<-(project(value) + baseline)
+          let baseline: float = value
+          return int<-(project(value) + baseline)
     MT
 
     result = check_source(source)
@@ -2402,7 +2402,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import std.c.demo as demo
 
-        def main() -> i32:
+        def main() -> int:
             let channel = 200
             var color = demo.Color(r = channel, g = 0, b = 0, a = 255)
             color.g = channel
@@ -2413,12 +2413,12 @@ class MilkTeaSemaTest < Minitest::Test
         "std/c/demo.mt" => <<~MT,
           extern module std.c.demo:
               struct Color:
-                  r: u8
-                  g: u8
-                  b: u8
-                  a: u8
+                  r: ubyte
+                  g: ubyte
+                  b: ubyte
+                  a: ubyte
 
-              extern def set_scale(value: f32) -> void
+              extern def set_scale(value: float) -> void
         MT
       },
     )
@@ -2432,7 +2432,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       import demo.lib as lib
 
-      def main() -> i32:
+      def main() -> int:
           let counter = lib.Counter(value = lib.answer)
           return counter.read()
     MT
@@ -2441,16 +2441,16 @@ class MilkTeaSemaTest < Minitest::Test
       "demo/lib.mt" => <<~MT,
         module demo.lib
 
-        pub const answer: i32 = 7
+        pub const answer: int = 7
 
         pub struct Counter:
-            value: i32
+            value: int
 
         methods Counter:
-            pub def read() -> i32:
+            pub def read() -> int:
                 return this.value
 
-            def double() -> i32:
+            def double() -> int:
                 return this.value * 2
       MT
     }
@@ -2466,7 +2466,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       import demo.lib as lib
 
-      def main() -> i32:
+      def main() -> int:
           return lib.hidden
     MT
 
@@ -2474,7 +2474,7 @@ class MilkTeaSemaTest < Minitest::Test
       "demo/lib.mt" => <<~MT,
         module demo.lib
 
-        const hidden: i32 = 7
+        const hidden: int = 7
       MT
     }
 
@@ -2491,7 +2491,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       import demo.lib as lib
 
-      def main() -> i32:
+      def main() -> int:
           let counter = lib.Counter(value = 1)
           counter.double()
           return 0
@@ -2502,10 +2502,10 @@ class MilkTeaSemaTest < Minitest::Test
         module demo.lib
 
         pub struct Counter:
-            value: i32
+            value: int
 
         methods Counter:
-            def double() -> i32:
+            def double() -> int:
                 return this.value * 2
       MT
     }
@@ -2523,7 +2523,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       import demo.lib as lib
 
-      def main() -> i32:
+      def main() -> int:
           let hidden = lib.Hidden(value = 7)
           return hidden.value
     MT
@@ -2533,7 +2533,7 @@ class MilkTeaSemaTest < Minitest::Test
         module demo.lib
 
         struct Hidden:
-            value: i32
+            value: int
       MT
     }
 
@@ -2548,14 +2548,14 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.call_values
 
-      flags Gesture: i32
+      flags Gesture: int
           tap = 1
 
-      def takes_u32(value: u32) -> i32:
+      def takes_uint(value: uint) -> int:
           return 0
 
-      def main() -> i32:
-          takes_u32(Gesture.tap)
+      def main() -> int:
+          takes_uint(Gesture.tap)
           return 0
     MT
 
@@ -2563,16 +2563,16 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/argument value to takes_u32 expects u32, got .*Gesture/, error.message)
+    assert_match(/argument value to takes_uint expects uint, got .*Gesture/, error.message)
   end
 
   def test_type_checks_variadic_extern_calls
     source = <<~MT
       module demo.printf
 
-      extern def printf(format: cstr, ...) -> i32
+      extern def printf(format: cstr, ...) -> int
 
-      def main() -> i32:
+      def main() -> int:
           let count = printf(c"value=%d ratio=%.1f\\n", 7, 2.5)
           return count
     MT
@@ -2586,9 +2586,9 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.printf
 
-      extern def printf(format: cstr, ...) -> i32
+      extern def printf(format: cstr, ...) -> int
 
-      def main() -> i32:
+      def main() -> int:
           return printf()
     MT
 
@@ -2603,19 +2603,19 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad
 
-      flags Gesture: i32
+      flags Gesture: int
           tap = 1
 
-      def main() -> i32:
-          let gesture: u32 = Gesture.tap
-          return i32<-gesture
+      def main() -> int:
+          let gesture: uint = Gesture.tap
+          return int<-gesture
     MT
 
     error = assert_raises(MilkTea::SemaError) do
       check_source(source)
     end
 
-    assert_match(/cannot assign .*Gesture to gesture: expected u32/, error.message)
+    assert_match(/cannot assign .*Gesture to gesture: expected uint/, error.message)
   end
 
   def test_rejects_non_power_of_two_alignment
@@ -2623,7 +2623,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.layout
 
       align(3) struct Mat4:
-          data: array[f32, 16]
+          data: array[float, 16]
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -2637,7 +2637,7 @@ class MilkTeaSemaTest < Minitest::Test
     break_source = <<~MT
       module demo.bad
 
-      def main() -> i32:
+      def main() -> int:
           break
     MT
 
@@ -2649,7 +2649,7 @@ class MilkTeaSemaTest < Minitest::Test
     continue_source = <<~MT
       module demo.bad
 
-      def main() -> i32:
+      def main() -> int:
           continue
     MT
 
@@ -2663,7 +2663,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.for_loops
 
-      def main() -> i32:
+      def main() -> int:
           for value in 3:
               let copy = value
           return 0
@@ -2680,7 +2680,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.for_loops
 
-      def sum(count: i32) -> i32:
+      def sum(count: int) -> int:
           var total = 0
           for i in 0..count:
               total += i
@@ -2691,12 +2691,12 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("sum")
   end
 
-  def test_type_checks_dot_dot_range_with_usize_bounds
+  def test_type_checks_dot_dot_range_with_ptr_uint_bounds
     source = <<~MT
       module demo.for_loops
 
-      def sum_n(n: usize) -> usize:
-          var total: usize = 0
+      def sum_n(n: ptr_uint) -> ptr_uint:
+          var total: ptr_uint = 0
           for i in 0..n:
               total += i
           return total
@@ -2726,12 +2726,12 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.for_loops
 
-      def main(n: usize) -> void:
+      def main(n: ptr_uint) -> void:
           for i in 0..n:
-              let x: usize = i
+              let x: ptr_uint = i
     MT
 
-    # This should succeed: literal 0 adapts to usize
+    # This should succeed: literal 0 adapts to ptr_uint
     result = check_source(source)
     assert_equal true, result.functions.key?("main")
   end
@@ -2740,7 +2740,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.range_assign
 
-      def fill(buf: ptr[f32]) -> void:
+      def fill(buf: ptr[float]) -> void:
           unsafe:
               buf[0..3] = (1.0, 2.0, 3.0)
     MT
@@ -2753,7 +2753,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.range_assign
 
-      def fill(buf: ptr[f32], n: usize) -> void:
+      def fill(buf: ptr[float], n: ptr_uint) -> void:
           unsafe:
               buf[0..n] = (1.0, 2.0, 3.0)
     MT
@@ -2769,7 +2769,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.range_assign
 
-      def fill(buf: ptr[f32]) -> void:
+      def fill(buf: ptr[float]) -> void:
           unsafe:
               buf[0..3] = (1.0, 2.0)
     MT
@@ -2785,11 +2785,11 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.match
 
-      enum EventKind: u8
+      enum EventKind: ubyte
           quit = 1
           resize = 2
 
-      def dispatch(kind: EventKind) -> i32:
+      def dispatch(kind: EventKind) -> int:
           match kind:
               EventKind.quit:
                   return 0
@@ -2807,7 +2807,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.panic
 
-      def main() -> i32:
+      def main() -> int:
           panic(123)
           return 0
     MT
@@ -2816,20 +2816,20 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/panic expects str or cstr, got i32/, error.message)
+    assert_match(/panic expects str or cstr, got int/, error.message)
   end
 
   def test_rejects_mismatched_callback_arguments
     source = <<~MT
       module demo.callbacks
 
-      type LogCallback = fn(level: i32, message: cstr) -> void
+      type LogCallback = fn(level: int, message: cstr) -> void
       extern def set_callback(callback: LogCallback) -> void
 
-      def wrong(level: i32) -> void:
+      def wrong(level: int) -> void:
           return
 
-      def main() -> i32:
+      def main() -> int:
           set_callback(wrong)
           return 0
     MT
@@ -2846,9 +2846,9 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.keywords
 
       struct Event:
-          kind: i32
+          kind: int
 
-      def main(event: Event) -> i32:
+      def main(event: Event) -> int:
           let copy = Event(kind = event.kind)
           return copy.kind
     MT
@@ -2863,12 +2863,12 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.unsafe_surface
 
-      extern def allocate(size: usize) -> ptr[void]
+      extern def allocate(size: ptr_uint) -> ptr[void]
 
-      def main() -> i32:
+      def main() -> int:
           let memory = allocate(16)
           unsafe:
-              let advanced = ptr[byte]<-memory + 4
+              let advanced = ptr[ubyte]<-memory + 4
           return 0
     MT
 
@@ -2881,12 +2881,12 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.pointer_offsets
 
-      extern def allocate(size: usize) -> ptr[void]
+      extern def allocate(size: ptr_uint) -> ptr[void]
 
-      def main() -> i32:
+      def main() -> int:
           let memory = allocate(16)
           unsafe:
-              let bytes = ptr[byte]<-memory
+              let bytes = ptr[ubyte]<-memory
               let offset = 4
               let advanced = bytes + offset
               let first = advanced[offset - 4]
@@ -2903,11 +2903,11 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.compound_assignments
 
-      flags Bits: u32
+      flags Bits: uint
           a = 1 << 0
           b = 1 << 1
 
-      def main() -> i32:
+      def main() -> int:
           var value = 12
           value %= 5
           value <<= 1
@@ -2929,9 +2929,9 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.pointer_surface
 
       struct Counter:
-          value: i32
+          value: int
 
-      def main() -> i32:
+      def main() -> int:
           var counter = Counter(value = 3)
           let counter_ptr = ptr_of(counter)
           unsafe:
@@ -2950,9 +2950,9 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.pointer_surface
 
       struct Counter:
-          value: i32
+          value: int
 
-      def main() -> i32:
+      def main() -> int:
           var counter = Counter(value = 3)
           let counter_ptr = ptr_of(counter)
           unsafe:
@@ -2971,16 +2971,16 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.pointer_methods
 
       struct Counter:
-          value: i32
+          value: int
 
       methods Counter:
-          edit def add(delta: i32):
+          edit def add(delta: int):
               this.value += delta
 
-          def read() -> i32:
+          def read() -> int:
               return this.value
 
-      def main() -> i32:
+      def main() -> int:
           var counter = Counter(value = 3)
           let counter_ptr = ptr_of(counter)
           unsafe:
@@ -2999,7 +2999,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.associated
 
       struct Vec:
-          x: i32
+          x: int
 
       methods Vec:
           static def zero() -> Vec:
@@ -3008,7 +3008,7 @@ class MilkTeaSemaTest < Minitest::Test
           def add(other: Vec) -> Vec:
               return Vec(x = this.x + other.x)
 
-      def main() -> i32:
+      def main() -> int:
           let left = Vec.zero()
           let total = left.add(Vec.zero())
           return total.x
@@ -3028,13 +3028,13 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.arrays
 
       struct Palette:
-          colors: array[u32, 4]
+          colors: array[uint, 4]
 
-      const DEFAULT: array[u32, 4] = array[u32, 4](11, 22, 33, 44)
+      const DEFAULT: array[uint, 4] = array[uint, 4](11, 22, 33, 44)
 
-      def main() -> i32:
-          let palette = array[u32, 4](1, 2, 3, 4)
-          let holder = Palette(colors = array[u32, 4](5, 6, 7, 8))
+      def main() -> int:
+          let palette = array[uint, 4](1, 2, 3, 4)
+          let holder = Palette(colors = array[uint, 4](5, 6, 7, 8))
           return 0
     MT
 
@@ -3049,15 +3049,15 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.arrays
 
-      def mutate(values: array[i32, 4]) -> i32:
+      def mutate(values: array[int, 4]) -> int:
           var local = values
           unsafe:
               local[1] = 9
               return local[1]
 
-      def main() -> i32:
-          var lhs = array[i32, 4](1, 2, 3, 4)
-          let rhs = array[i32, 4](5, 6, 7, 8)
+      def main() -> int:
+          var lhs = array[int, 4](1, 2, 3, 4)
+          let rhs = array[int, 4](5, 6, 7, 8)
           lhs = rhs
           return mutate(lhs)
     MT
@@ -3072,17 +3072,17 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.array_returns
 
-      def make() -> array[i32, 4]:
-          return array[i32, 4](1, 2, 3, 4)
+      def make() -> array[int, 4]:
+          return array[int, 4](1, 2, 3, 4)
 
-      def clone(values: array[i32, 4]) -> array[i32, 4]:
+      def clone(values: array[int, 4]) -> array[int, 4]:
           return values
 
-      def read(values: array[i32, 4]) -> i32:
+      def read(values: array[int, 4]) -> int:
           unsafe:
               return values[1]
 
-      def main() -> i32:
+      def main() -> int:
           return read(clone(make()))
     MT
 
@@ -3098,10 +3098,10 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.zero
 
       struct Palette:
-          colors: array[u32, 4]
+          colors: array[uint, 4]
 
-      def main() -> i32:
-          let palette = zero[array[u32, 4]]
+      def main() -> int:
+          let palette = zero[array[uint, 4]]
           let holder = zero[Palette]
           return 0
     MT
@@ -3117,19 +3117,19 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.partial_init
 
       struct Point:
-          x: i32
-          y: i32
+          x: int
+          y: int
 
       struct Holder:
           point: Point
-          colors: array[u32, 4]
+          colors: array[uint, 4]
 
-      def main() -> i32:
+      def main() -> int:
           let origin = Point()
           let point = Point(x = 5)
-          let colors = array[u32, 4](1, 2)
+          let colors = array[uint, 4](1, 2)
           let holder = Holder(point = point)
-          return origin.x + point.x + i32<-colors[1] + holder.point.x
+          return origin.x + point.x + int<-colors[1] + holder.point.x
     MT
 
     result = check_source(source)
@@ -3143,8 +3143,8 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.too_many_array_elements
 
-      def main() -> i32:
-          let values = array[i32, 2](1, 2, 3)
+      def main() -> int:
+          let values = array[int, 2](1, 2, 3)
           return 0
     MT
 
@@ -3159,7 +3159,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.zero_bad
 
-      def main() -> i32:
+      def main() -> int:
           let value = zero[void]
           return 0
     MT
@@ -3175,7 +3175,7 @@ class MilkTeaSemaTest < Minitest::Test
     param_source = <<~MT
       module demo.bad_params
 
-      extern def take(values: array[i32, 4]) -> i32
+      extern def take(values: array[int, 4]) -> int
     MT
 
     param_error = assert_raises(MilkTea::SemaError) do
@@ -3187,7 +3187,7 @@ class MilkTeaSemaTest < Minitest::Test
     return_source = <<~MT
       module demo.bad_return
 
-      extern def make() -> array[i32, 4]
+      extern def make() -> array[int, 4]
     MT
 
     return_error = assert_raises(MilkTea::SemaError) do
@@ -3202,11 +3202,11 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.arrays
 
       struct Palette:
-          colors: array[u32, 4]
+          colors: array[uint, 4]
 
-      def main() -> i32:
-          var palette = array[u32, 4](1, 2, 3, 4)
-          var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))
+      def main() -> int:
+          var palette = array[uint, 4](1, 2, 3, 4)
+          var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))
           palette[1] = 9
           holder.colors[2] = 10
           let first = palette[0]
@@ -3224,10 +3224,10 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.ptr_arrays
 
       struct Palette:
-          colors: array[u32, 4]
+          colors: array[uint, 4]
 
-      def main() -> u32:
-          var holder = Palette(colors = array[u32, 4](5, 6, 7, 8))
+      def main() -> uint:
+          var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))
           unsafe:
               let base = ptr_of(holder)
               let first = ptr_of(read(base).colors[0])
@@ -3244,10 +3244,10 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad
 
-      def read(data: ptr[u32]) -> u32:
+      def read(data: ptr[uint]) -> uint:
           return data[0]
 
-      def main() -> i32:
+      def main() -> int:
           return 0
     MT
 
@@ -3263,9 +3263,9 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.bad
 
       struct Counter:
-          value: i32
+          value: int
 
-      def main() -> i32:
+      def main() -> int:
           var counter = Counter(value = 3)
           let counter_ptr = ptr_of(counter)
           return read(counter_ptr).value
@@ -3283,9 +3283,9 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.bad
 
       struct Counter:
-          value: i32
+          value: int
 
-      def main() -> i32:
+      def main() -> int:
           var counter = Counter(value = 3)
           let counter_ptr = ptr_of(counter)
           counter_ptr.value = 7
@@ -3304,13 +3304,13 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.bad
 
       struct Counter:
-          value: i32
+          value: int
 
       methods Counter:
-          def read() -> i32:
+          def read() -> int:
               return this.value
 
-      def main() -> i32:
+      def main() -> int:
           var counter = Counter(value = 3)
           let counter_ptr = ptr_of(counter)
           return counter_ptr.read()
@@ -3328,13 +3328,13 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.bad
 
       struct Counter:
-          value: i32
+          value: int
 
       methods Counter:
-          edit def add(delta: i32):
+          edit def add(delta: int):
               this.value += delta
 
-      def main() -> i32:
+      def main() -> int:
           var counter = Counter(value = 3)
           let counter_ptr = const_ptr_of(counter)
           unsafe:
@@ -3353,8 +3353,8 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad
 
-      def main() -> i32:
-          let value = array[i32, 4](1, 2, 3, 4)[0]
+      def main() -> int:
+          let value = array[int, 4](1, 2, 3, 4)[0]
           return value
     MT
 
@@ -3370,9 +3370,9 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.good
 
       struct Item:
-          value: i32
+          value: int
 
-      def project(items: ref[array[Item, 4]]) -> i32:
+      def project(items: ref[array[Item, 4]]) -> int:
           return read(items)[0].value
 
       def write(items: ref[array[Item, 4]]) -> void:
@@ -3390,7 +3390,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad
 
-      def main() -> i32:
+      def main() -> int:
           let value = read(1)
           return value
     MT
@@ -3399,7 +3399,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/read expects ref\[\.\.\.\] or ptr\[\.\.\.\], got i32/, error.message)
+    assert_match(/read expects ref\[\.\.\.\] or ptr\[\.\.\.\], got int/, error.message)
   end
 
   def test_rejects_read_on_raw_pointer_outside_unsafe
@@ -3407,9 +3407,9 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.bad
 
       struct Counter:
-          value: i32
+          value: int
 
-      def main() -> i32:
+      def main() -> int:
           var counter = Counter(value = 3)
           let counter_ptr = ptr_of(counter)
           return read(counter_ptr).value
@@ -3426,11 +3426,11 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad
 
-      extern def allocate(size: usize) -> ptr[void]
+      extern def allocate(size: ptr_uint) -> ptr[void]
 
-      def main() -> i32:
+      def main() -> int:
           let memory = allocate(16)
-          let bytes = ptr[byte]<-memory
+          let bytes = ptr[ubyte]<-memory
           return 0
     MT
 
@@ -3445,11 +3445,11 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad
 
-      extern def allocate(size: usize) -> ptr[void]
+      extern def allocate(size: ptr_uint) -> ptr[void]
 
-      def main() -> i32:
+      def main() -> int:
           let memory = allocate(16)
-          let advanced = ptr[byte]<-memory + 4
+          let advanced = ptr[ubyte]<-memory + 4
           return 0
     MT
 
@@ -3485,7 +3485,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.const_pointer_call
 
-      extern def inspect(values: const_ptr[i32]) -> void
+      extern def inspect(values: const_ptr[int]) -> void
 
       def main() -> void:
           let value = 7
@@ -3579,7 +3579,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad_const_pointer
 
-      extern def write(values: ptr[i32]) -> void
+      extern def write(values: ptr[int]) -> void
 
       def main() -> void:
           let value = 7
@@ -3590,21 +3590,21 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/expects ptr\[i32\], got const_ptr\[i32\]/, error.message)
+    assert_match(/expects ptr\[int\], got const_ptr\[int\]/, error.message)
   end
 
   def test_type_checks_array_char_as_span_char_and_safe_index_source
     source = <<~MT
       module demo.char_array_surface
 
-      def view(items: span[char]) -> usize:
+      def view(items: span[char]) -> ptr_uint:
           return items.len
 
-      def main() -> i32:
+      def main() -> int:
           var buffer = zero[array[char, 32]]
           buffer[0] = 65
           let used = view(buffer)
-          return i32<-used
+          return int<-used
     MT
 
     result = check_source(source)
@@ -3616,7 +3616,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.char_array_zero_locals
 
-      def main() -> i32:
+      def main() -> int:
           var buffer: array[char, 32]
           buffer[0] = 65
           return 0
@@ -3632,7 +3632,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.bad_local
 
       def main() -> void:
-          let callback: fn(value: i32) -> void
+          let callback: fn(value: int) -> void
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -3646,11 +3646,11 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.char_array_methods
 
-      def main() -> i32:
+      def main() -> int:
           var buffer = zero[array[char, 16]]
           let view = buffer.as_str()
           let label = buffer.as_cstr()
-          return i32<-view.len
+          return int<-view.len
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -3794,10 +3794,10 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.const_pointer_arrays
 
       struct Vec2:
-          x: f32
-          y: f32
+          x: float
+          y: float
 
-      extern def draw(points: const_ptr[Vec2], count: i32) -> void
+      extern def draw(points: const_ptr[Vec2], count: int) -> void
 
       def main() -> void:
           let points = array[Vec2, 2](
@@ -3828,14 +3828,14 @@ class MilkTeaSemaTest < Minitest::Test
         extern module std.c.ui:
             include "ui.h"
 
-            extern def TextBox(text: ptr[char], text_size: i32) -> void
+            extern def TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
         module std.ui
 
         import std.c.ui as c
 
-        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, i32<-text_public.len)
+        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, int<-text_public.len)
       MT
     }
 
@@ -3848,10 +3848,10 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.str_builder_surface
 
-      def view(items: span[char]) -> usize:
+      def view(items: span[char]) -> ptr_uint:
           return items.len
 
-      def main() -> i32:
+      def main() -> int:
           var buffer: str_builder[32]
           buffer.assign("hi")
           buffer.append("!")
@@ -3861,7 +3861,7 @@ class MilkTeaSemaTest < Minitest::Test
           if text.len == 0:
               return 1
           buffer.clear()
-          return i32<-(raw + buffer.capacity())
+          return int<-(raw + buffer.capacity())
     MT
 
     result = check_source(source)
@@ -3885,14 +3885,14 @@ class MilkTeaSemaTest < Minitest::Test
         extern module std.c.ui:
             include "ui.h"
 
-            extern def TextBox(text: ptr[char], text_size: i32) -> void
+            extern def TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
         module std.ui
 
         import std.c.ui as c
 
-        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, i32<-text_public.len)
+        pub foreign def text_box(text: span[char] as ptr[char]) -> void = c.TextBox(text, int<-text_public.len)
       MT
     }
 
@@ -3917,14 +3917,14 @@ class MilkTeaSemaTest < Minitest::Test
         extern module std.c.ui:
             include "ui.h"
 
-            extern def TextBox(text: ptr[char], text_size: i32) -> void
+            extern def TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
         module std.ui
 
         import std.c.ui as c
 
-        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, i32<-(text_public.capacity() + 1))
+        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
       MT
     }
 
@@ -3949,14 +3949,14 @@ class MilkTeaSemaTest < Minitest::Test
         extern module std.c.ui:
             include "ui.h"
 
-            extern def TextBox(text: ptr[char], text_size: i32) -> void
+            extern def TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
         module std.ui
 
         import std.c.ui as c
 
-        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, i32<-(text_public.capacity() + 1))
+        pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
       MT
     }
 
@@ -3971,7 +3971,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.c.ui as c
 
-      pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, i32<-(text_public.capacity() + 1))
+      pub foreign def text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
 
       def main() -> void:
           var buffer: str_builder[32]
@@ -3983,7 +3983,7 @@ class MilkTeaSemaTest < Minitest::Test
         extern module std.c.ui:
             include "ui.h"
 
-            extern def TextBox(text: ptr[char], text_size: i32) -> void
+            extern def TextBox(text: ptr[char], text_size: int) -> void
       MT
     }
 
@@ -3996,7 +3996,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.char_buffer_writes
 
-      def main() -> i32:
+      def main() -> int:
           let first = 65
           var ptr: ptr[char] = zero[ptr[char]]
           unsafe:
@@ -4077,7 +4077,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad_char_numeric
 
-      def main() -> i32:
+      def main() -> int:
           let value = char<-65
           return value + 1
     MT
@@ -4086,7 +4086,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/operator \+ requires compatible numeric types, got char and i32/, error.message)
+    assert_match(/operator \+ requires compatible numeric types, got char and int/, error.message)
   end
 
   def test_type_checks_typed_null_pointer_literals_and_unsafe_cstr_casts
@@ -4111,14 +4111,14 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.bad_typed_null
 
       def main() -> void:
-          let maybe_buffer: ptr[char]? = null[i32]
+          let maybe_buffer: ptr[char]? = null[int]
     MT
 
     error = assert_raises(MilkTea::SemaError) do
       check_source(source)
     end
 
-    assert_match(/typed null requires pointer-like type, got i32/, error.message)
+    assert_match(/typed null requires pointer-like type, got int/, error.message)
   end
 
   def test_rejects_inference_from_typed_null_literals
@@ -4141,20 +4141,20 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.refs
 
       struct Counter:
-          value: i32
+          value: int
 
       methods Counter:
-          edit def add(delta: i32):
+          edit def add(delta: int):
               this.value += delta
 
-          def read() -> i32:
+          def read() -> int:
               return this.value
 
-      def increment(counter: ref[Counter], amount: i32) -> void:
+      def increment(counter: ref[Counter], amount: int) -> void:
           counter.add(amount)
           counter.value += 1
 
-      def main() -> i32:
+      def main() -> int:
           var counter = Counter(value = 3)
           let handle = ref_of(counter)
           increment(handle, 4)
@@ -4176,7 +4176,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad
 
-      def main() -> i32:
+      def main() -> int:
           let value = 1
           let handle = ref_of(value)
           return 0
@@ -4194,7 +4194,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.bad_field
 
       struct Holder:
-          value: ref[i32]
+          value: ref[int]
     MT
 
     field_error = assert_raises(MilkTea::SemaError) do
@@ -4206,7 +4206,7 @@ class MilkTeaSemaTest < Minitest::Test
     extern_source = <<~MT
       module demo.bad_param
 
-      extern def take(value: ref[i32]) -> void
+      extern def take(value: ref[int]) -> void
     MT
 
     extern_error = assert_raises(MilkTea::SemaError) do
@@ -4218,7 +4218,7 @@ class MilkTeaSemaTest < Minitest::Test
     return_source = <<~MT
       module demo.bad_return
 
-      def leak(value: ref[i32]) -> ref[i32]:
+      def leak(value: ref[int]) -> ref[int]:
           return value
     MT
 
@@ -4234,14 +4234,14 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.ref_value_args
 
       struct Counter:
-          value: i32
+          value: int
 
       extern def consume(counter: Counter) -> void
 
-      def project(counter: Counter) -> i32:
+      def project(counter: Counter) -> int:
           return counter.value
 
-      def main() -> i32:
+      def main() -> int:
           var counter = Counter(value = 7)
           let handle = ref_of(counter)
           consume(read(handle))
@@ -4258,10 +4258,10 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad
 
-      def main() -> i32:
+      def main() -> int:
           var value = 1
           let handle = ref_of(value)
-          let raw = ptr[i32]<-handle
+          let raw = ptr[int]<-handle
           return 0
     MT
 
@@ -4277,9 +4277,9 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.good
 
       struct Counter:
-          value: i32
+          value: int
 
-      def main() -> i32:
+      def main() -> int:
           var counter = Counter(value = 3)
           let handle = ref_of(counter)
           let value_ref = ref_of(handle.value)
@@ -4296,7 +4296,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad
 
-      flags BadFlags: f32
+      flags BadFlags: float
           visible = 1
     MT
 
@@ -4311,10 +4311,10 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad
 
-      enum State: u8
+      enum State: ubyte
           idle = 0
 
-      def main() -> i32:
+      def main() -> int:
           let state: State = State.moving
           return 0
     MT
@@ -4341,13 +4341,13 @@ class MilkTeaSemaTest < Minitest::Test
       "std/c/shared.mt" => <<~MT,
         extern module std.c.shared:
             struct Matrix:
-                m0: f32
+                m0: float
       MT
       "std/c/sample.mt" => <<~MT,
         extern module std.c.sample:
             struct Matrix:
-                m0: f32
-                m1: f32
+                m0: float
+                m1: float
 
             extern def SetMatrix(matrix: Matrix) -> void
       MT
@@ -4426,17 +4426,17 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.module_vars
 
-      def identity(value: i32) -> i32:
+      def identity(value: int) -> int:
           return value
 
-      var counter: i32 = 1
-      var scratch: array[u8, 4]
-      var callbacks: array[fn(value: i32) -> i32, 1] = array[fn(value: i32) -> i32, 1](identity)
+      var counter: int = 1
+      var scratch: array[ubyte, 4]
+      var callbacks: array[fn(value: int) -> int, 1] = array[fn(value: int) -> int, 1](identity)
 
-      def main() -> i32:
+      def main() -> int:
           counter = callbacks[0](counter + 1)
           scratch[0] = 7
-          return counter + i32<-scratch[0]
+          return counter + int<-scratch[0]
     MT
 
     result = check_source(source)
@@ -4446,14 +4446,14 @@ class MilkTeaSemaTest < Minitest::Test
 
     assert_equal true, counter.mutable
     assert_equal :var, counter.kind
-    assert_equal "i32", counter.type.to_s
+    assert_equal "int", counter.type.to_s
     assert_equal true, scratch.mutable
-    assert_equal "array[u8, 4]", scratch.type.to_s
+    assert_equal "array[ubyte, 4]", scratch.type.to_s
     assert_equal true, callbacks.mutable
     assert_equal "array", callbacks.type.name
     assert_instance_of MilkTea::Types::Function, callbacks.type.arguments[0]
-    assert_equal "i32", callbacks.type.arguments[0].return_type.to_s
-    assert_equal "i32", callbacks.type.arguments[0].params.first.type.to_s
+    assert_equal "int", callbacks.type.arguments[0].return_type.to_s
+    assert_equal "int", callbacks.type.arguments[0].params.first.type.to_s
     assert_equal 1, callbacks.type.arguments[1].value
     assert_equal true, result.functions.key?("main")
   end
@@ -4462,10 +4462,10 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.bad_module_var
 
-      def seed() -> i32:
+      def seed() -> int:
           return 41
 
-      var counter: i32 = seed()
+      var counter: int = seed()
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -4479,7 +4479,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.int_match
 
-      def dispatch(key: i32) -> i32:
+      def dispatch(key: int) -> int:
           match key:
               65:
                   return 1
@@ -4488,7 +4488,7 @@ class MilkTeaSemaTest < Minitest::Test
               _:
                   return 0
 
-      def main() -> i32:
+      def main() -> int:
           return dispatch(65)
     MT
 
@@ -4501,14 +4501,14 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.int_match_bad
 
-      def dispatch(key: i32) -> i32:
+      def dispatch(key: int) -> int:
           match key:
               65:
                   return 1
               27:
                   return 2
 
-      def main() -> i32:
+      def main() -> int:
           return dispatch(65)
     MT
 
@@ -4523,16 +4523,16 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.int_match_bad_pattern
 
-      var x: i32 = 65
+      var x: int = 65
 
-      def dispatch(key: i32) -> i32:
+      def dispatch(key: int) -> int:
           match key:
               x:
                   return 1
               _:
                   return 0
 
-      def main() -> i32:
+      def main() -> int:
           return dispatch(65)
     MT
 
@@ -4547,7 +4547,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.dup_wild
 
-      def dispatch(key: i32) -> i32:
+      def dispatch(key: int) -> int:
           match key:
               65:
                   return 1
@@ -4556,7 +4556,7 @@ class MilkTeaSemaTest < Minitest::Test
               _:
                   return 99
 
-      def main() -> i32:
+      def main() -> int:
           return dispatch(65)
     MT
 
@@ -4571,19 +4571,19 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.enum_wild
 
-      enum EventKind: u8
+      enum EventKind: ubyte
           quit = 1
           resize = 2
           key = 3
 
-      def dispatch(kind: EventKind) -> i32:
+      def dispatch(kind: EventKind) -> int:
           match kind:
               EventKind.quit:
                   return 0
               _:
                   return 1
 
-      def main() -> i32:
+      def main() -> int:
           return dispatch(EventKind.quit)
     MT
 
@@ -4596,7 +4596,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.dup_int
 
-      def dispatch(key: i32) -> i32:
+      def dispatch(key: int) -> int:
           match key:
               65:
                   return 1
@@ -4605,7 +4605,7 @@ class MilkTeaSemaTest < Minitest::Test
               _:
                   return 0
 
-      def main() -> i32:
+      def main() -> int:
           return dispatch(65)
     MT
 
@@ -4616,11 +4616,11 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/duplicate match arm value/, error.message)
   end
 
-  def test_type_checks_integer_match_u8_scrutinee
+  def test_type_checks_integer_match_ubyte_scrutinee
     source = <<~MT
       module demo.u8_match
 
-      def dispatch(code: u8) -> i32:
+      def dispatch(code: ubyte) -> int:
           match code:
               0:
                   return 0
@@ -4629,7 +4629,7 @@ class MilkTeaSemaTest < Minitest::Test
               _:
                   return 99
 
-      def main() -> i32:
+      def main() -> int:
           return dispatch(1)
     MT
 
@@ -4643,11 +4643,11 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.variant_match
 
       variant Shape:
-          circle(radius: f64)
-          rect(w: f64, h: f64)
+          circle(radius: double)
+          rect(w: double, h: double)
           point
 
-      def area(s: Shape) -> f64:
+      def area(s: Shape) -> double:
           var result = 0.0
           match s:
               Shape.circle as c:
@@ -4658,7 +4658,7 @@ class MilkTeaSemaTest < Minitest::Test
                   result = 0.0
           return result
 
-      def main() -> i32:
+      def main() -> int:
           let c: Shape = Shape.circle(radius= 1.0)
           let p: Shape = Shape.point
           return 0
@@ -4676,7 +4676,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       variant Token:
           ident(text: str)
-          number(value: i32)
+          number(value: int)
           eof
 
       def is_done(t: Token) -> bool:
@@ -4686,7 +4686,7 @@ class MilkTeaSemaTest < Minitest::Test
               _:
                   return false
 
-      def main() -> i32:
+      def main() -> int:
           let tok: Token = Token.ident(text= "hello")
           if is_done(tok):
               return 1
@@ -4704,11 +4704,11 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.variant_non_exhaustive
 
       variant Shape:
-          circle(radius: f64)
-          rect(w: f64, h: f64)
+          circle(radius: double)
+          rect(w: double, h: double)
           point
 
-      def area(s: Shape) -> f64:
+      def area(s: Shape) -> double:
           match s:
               Shape.circle as c:
                   return c.radius
@@ -4724,9 +4724,9 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.variant_fields
 
       variant Shape:
-          circle(radius: f64)
+          circle(radius: double)
 
-      def main() -> i32:
+      def main() -> int:
           let c: Shape = Shape.circle()
           return 0
     MT
@@ -4741,7 +4741,7 @@ class MilkTeaSemaTest < Minitest::Test
       variant Shape:
           point
 
-      def main() -> i32:
+      def main() -> int:
           let s: Shape = Shape.point
           match s:
               Shape.point as p:
@@ -4759,15 +4759,15 @@ class MilkTeaSemaTest < Minitest::Test
           some(value: T)
           none
 
-      def unwrap_or_zero(value: Box[i32]) -> i32:
+      def unwrap_or_zero(value: Box[int]) -> int:
           match value:
               Box.some as payload:
                   return payload.value
               Box.none:
                   return 0
 
-      def main() -> i32:
-          let value: Box[i32] = Box[i32].some(value= 42)
+      def main() -> int:
+          let value: Box[int] = Box[int].some(value= 42)
           return unwrap_or_zero(value)
     MT
 
@@ -4782,10 +4782,10 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.union_proc
 
       union CallbackOrValue:
-          callback: proc() -> i32
-          value: i32
+          callback: proc() -> int
+          value: int
 
-      def main() -> i32:
+      def main() -> int:
           return 0
     MT
 

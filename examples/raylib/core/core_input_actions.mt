@@ -2,15 +2,15 @@ module examples.raylib.core.core_input_actions
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - input actions"
 const default_set_text: cstr = c"Current input set: WASD (default)"
 const cursor_set_text: cstr = c"Current input set: Arrow keys"
 const help_text: cstr = c"Use TAB key to toggles Actions keyset"
-const gamepad_index: i32 = 0
+const gamepad_index: int = 0
 
-enum ActionType: i32
+enum ActionType: int
     ACTION_UP = 1
     ACTION_DOWN = 2
     ACTION_LEFT = 3
@@ -84,7 +84,7 @@ def is_action_down(action: ActionType, action_set: bool) -> bool:
     return rl.IsKeyDown(rl.KeyboardKey.KEY_SPACE) or rl.IsGamepadButtonDown(gamepad_index, rl.GamepadButton.GAMEPAD_BUTTON_RIGHT_FACE_DOWN)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

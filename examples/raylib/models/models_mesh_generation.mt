@@ -2,14 +2,14 @@ module examples.raylib.models.models_mesh_generation
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const num_models: i32 = 9
+const screen_width: int = 800
+const screen_height: int = 450
+const num_models: int = 9
 const window_title: cstr = c"raylib [models] example - mesh generation"
 const cycle_prompt: cstr = c"MOUSE LEFT BUTTON to CYCLE PROCEDURAL MODELS"
 
 
-def model_label(model_index: i32) -> cstr:
+def model_label(model_index: int) -> cstr:
     if model_index == 0:
         return c"PLANE"
     if model_index == 1:
@@ -31,7 +31,7 @@ def model_label(model_index: i32) -> cstr:
     return c""
 
 
-def model_label_x(model_index: i32) -> i32:
+def model_label_x(model_index: int) -> int:
     if model_index == 3:
         return 640
     if model_index == 8:
@@ -45,12 +45,12 @@ def custom_mesh() -> rl.Mesh:
     mesh.vertexCount = mesh.triangleCount * 3
 
     unsafe:
-        let vertex_count = u32<-(mesh.vertexCount * 3)
-        let texcoord_count = u32<-(mesh.vertexCount * 2)
+        let vertex_count = uint<-(mesh.vertexCount * 3)
+        let texcoord_count = uint<-(mesh.vertexCount * 2)
 
-        mesh.vertices = ptr[f32]<-rl.MemAlloc(vertex_count * u32<-sizeof(f32))
-        mesh.texcoords = ptr[f32]<-rl.MemAlloc(texcoord_count * u32<-sizeof(f32))
-        mesh.normals = ptr[f32]<-rl.MemAlloc(vertex_count * u32<-sizeof(f32))
+        mesh.vertices = ptr[float]<-rl.MemAlloc(vertex_count * uint<-sizeof(float))
+        mesh.texcoords = ptr[float]<-rl.MemAlloc(texcoord_count * uint<-sizeof(float))
+        mesh.normals = ptr[float]<-rl.MemAlloc(vertex_count * uint<-sizeof(float))
 
         mesh.vertices[0] = 0.0
         mesh.vertices[1] = 0.0
@@ -83,7 +83,7 @@ def custom_mesh() -> rl.Mesh:
     return mesh
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -107,7 +107,7 @@ def main() -> i32:
             rl.UnloadModel(models[index])
 
     for index in 0..num_models:
-        rl.SetMaterialTexture(models[index].materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+        rl.SetMaterialTexture(models[index].materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     var camera = rl.Camera3D(
         position = rl.Vector3(x = 5.0, y = 5.0, z = 5.0),

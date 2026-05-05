@@ -2,10 +2,10 @@ module examples.sdl3.misc.locale
 
 import std.c.sdl3 as c
 
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/misc/locale"
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
 
 var window: ptr[c.SDL_Window]
@@ -16,7 +16,7 @@ def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
@@ -25,7 +25,7 @@ def pump_events() -> bool:
 def render_frame() -> void:
     let frame = c.SDL_FRect(x = 0.0, y = 0.0, w = 640.0, h = 480.0)
     var msgbuf = zero[array[char, 128]]
-    var count: i32 = 0
+    var count: int = 0
     let locales_memory = c.SDL_GetPreferredLocales(ptr_of(count))
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
@@ -34,7 +34,7 @@ def render_frame() -> void:
 
     if locales_memory == null:
         let error_text = c.SDL_GetError()
-        let x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(error_text))) / 2.0)
+        let x = frame.x + ((frame.w - (float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * float<-c.SDL_strlen(error_text))) / 2.0)
         c.SDL_RenderDebugText(renderer, x, frame.y, error_text)
     else:
         unsafe:
@@ -43,10 +43,10 @@ def render_frame() -> void:
 
             c.SDL_snprintf(ptr_of(msgbuf[0]), 128, c"Locales, in order of preference (%d total):", count)
 
-            let header_x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msg))) / 2.0)
+            let header_x = frame.x + ((frame.w - (float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * float<-c.SDL_strlen(msg))) / 2.0)
             c.SDL_RenderDebugText(renderer, header_x, frame.y, msg)
 
-            var index: i32 = 0
+            var index: int = 0
             while true:
                 let locale = read(locales + index)
                 if locale == null:
@@ -59,8 +59,8 @@ def render_frame() -> void:
 
                 c.SDL_snprintf(ptr_of(msgbuf[0]), 128, c" - %s%s%s", locale_ptr.language, separator, country)
 
-                let x = frame.x + ((frame.w - (f32<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * f32<-c.SDL_strlen(msg))) / 2.0)
-                let y = frame.y + (f32<-(c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2) * f32<-(index + 1))
+                let x = frame.x + ((frame.w - (float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * float<-c.SDL_strlen(msg))) / 2.0)
+                let y = frame.y + (float<-(c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2) * float<-(index + 1))
                 c.SDL_RenderDebugText(renderer, x, y, msg)
 
                 index += 1
@@ -70,7 +70,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Misc Locale", c"1.0", c"com.example.misc-locale")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -91,5 +91,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

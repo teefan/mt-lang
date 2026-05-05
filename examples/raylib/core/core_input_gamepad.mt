@@ -2,8 +2,8 @@ module examples.raylib.core.core_input_gamepad
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - input gamepad"
 const xbox_alias_1: cstr = c"xbox"
 const xbox_alias_2: cstr = c"x-box"
@@ -11,12 +11,12 @@ const ps_alias_1: cstr = c"playstation"
 const ps_alias_2: cstr = c"sony"
 const ps3_texture_path: cstr = c"../resources/ps3.png"
 const xbox_texture_path: cstr = c"../resources/xbox.png"
-const left_stick_deadzone_x: f32 = 0.1
-const left_stick_deadzone_y: f32 = 0.1
-const right_stick_deadzone_x: f32 = 0.1
-const right_stick_deadzone_y: f32 = 0.1
-const left_trigger_deadzone: f32 = -0.9
-const right_trigger_deadzone: f32 = -0.9
+const left_stick_deadzone_x: float = 0.1
+const left_stick_deadzone_y: float = 0.1
+const right_stick_deadzone_x: float = 0.1
+const right_stick_deadzone_y: float = 0.1
+const left_trigger_deadzone: float = -0.9
+const right_trigger_deadzone: float = -0.9
 
 
 def gamepad_name_matches(gamepad_name: cstr, alias_one: cstr, alias_two: cstr) -> bool:
@@ -26,24 +26,24 @@ def gamepad_name_matches(gamepad_name: cstr, alias_one: cstr, alias_two: cstr) -
         return rl.TextFindIndex(lower_gamepad_name_cstr, alias_one) > -1 or rl.TextFindIndex(lower_gamepad_name_cstr, alias_two) > -1
 
 
-def draw_stick(center_x: i32, center_y: i32, outer_radius: f32, inner_radius: f32, stick_x: f32, stick_y: f32, pressed: bool) -> void:
+def draw_stick(center_x: int, center_y: int, outer_radius: float, inner_radius: float, stick_x: float, stick_y: float, pressed: bool) -> void:
     var stick_color = rl.BLACK
     if pressed:
         stick_color = rl.RED
 
     rl.DrawCircle(center_x, center_y, outer_radius, rl.BLACK)
     rl.DrawCircle(center_x, center_y, inner_radius, rl.LIGHTGRAY)
-    rl.DrawCircle(center_x + i32<-(stick_x * 20.0), center_y + i32<-(stick_y * 20.0), 25.0, stick_color)
+    rl.DrawCircle(center_x + int<-(stick_x * 20.0), center_y + int<-(stick_y * 20.0), 25.0, stick_color)
     return
 
 
-def draw_trigger_bar(pos_x: i32, pos_y: i32, trigger_value: f32) -> void:
+def draw_trigger_bar(pos_x: int, pos_y: int, trigger_value: float) -> void:
     rl.DrawRectangle(pos_x, pos_y, 15, 70, rl.GRAY)
-    rl.DrawRectangle(pos_x, pos_y, 15, i32<-(((1.0 + trigger_value) / 2.0) * 70.0), rl.RED)
+    rl.DrawRectangle(pos_x, pos_y, 15, int<-(((1.0 + trigger_value) / 2.0) * 70.0), rl.RED)
     return
 
 
-def draw_xbox_gamepad(gamepad: i32, texture: rl.Texture2D, left_stick_x: f32, left_stick_y: f32, right_stick_x: f32, right_stick_y: f32, left_trigger: f32, right_trigger: f32) -> void:
+def draw_xbox_gamepad(gamepad: int, texture: rl.Texture2D, left_stick_x: float, left_stick_y: float, right_stick_x: float, right_stick_y: float, left_trigger: float, right_trigger: float) -> void:
     rl.DrawTexture(texture, 0, 0, rl.DARKGRAY)
 
     if rl.IsGamepadButtonDown(gamepad, rl.GamepadButton.GAMEPAD_BUTTON_MIDDLE):
@@ -85,7 +85,7 @@ def draw_xbox_gamepad(gamepad: i32, texture: rl.Texture2D, left_stick_x: f32, le
     return
 
 
-def draw_ps_gamepad(gamepad: i32, texture: rl.Texture2D, left_stick_x: f32, left_stick_y: f32, right_stick_x: f32, right_stick_y: f32, left_trigger: f32, right_trigger: f32) -> void:
+def draw_ps_gamepad(gamepad: int, texture: rl.Texture2D, left_stick_x: float, left_stick_y: float, right_stick_x: float, right_stick_y: float, left_trigger: float, right_trigger: float) -> void:
     rl.DrawTexture(texture, 0, 0, rl.DARKGRAY)
 
     if rl.IsGamepadButtonDown(gamepad, rl.GamepadButton.GAMEPAD_BUTTON_MIDDLE):
@@ -127,7 +127,7 @@ def draw_ps_gamepad(gamepad: i32, texture: rl.Texture2D, left_stick_x: f32, left
     return
 
 
-def draw_generic_gamepad(gamepad: i32, left_stick_x: f32, left_stick_y: f32, right_stick_x: f32, right_stick_y: f32, left_trigger: f32, right_trigger: f32) -> void:
+def draw_generic_gamepad(gamepad: int, left_stick_x: float, left_stick_y: float, right_stick_x: float, right_stick_y: float, left_trigger: float, right_trigger: float) -> void:
     rl.DrawRectangleRounded(rl.Rectangle(x = 175.0, y = 110.0, width = 460.0, height = 220.0), 0.3, 16, rl.DARKGRAY)
 
     rl.DrawCircle(365, 170, 12.0, rl.RAYWHITE)
@@ -181,14 +181,14 @@ def draw_generic_gamepad(gamepad: i32, left_stick_x: f32, left_stick_y: f32, rig
     return
 
 
-def draw_axis_values(gamepad: i32, axis_count: i32) -> void:
+def draw_axis_values(gamepad: int, axis_count: int) -> void:
     rl.DrawText(rl.TextFormat(c"DETECTED AXIS [%i]:", axis_count), 10, 50, 10, rl.MAROON)
     for axis_index in 0..axis_count:
         rl.DrawText(rl.TextFormat(c"AXIS %i: %.02f", axis_index, rl.GetGamepadAxisMovement(gamepad, axis_index)), 20, 70 + 20 * axis_index, 10, rl.DARKGRAY)
     return
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -214,7 +214,7 @@ def main() -> i32:
 
         vibrate_button = rl.Rectangle(
             x = 10.0,
-            y = 90.0 + f32<-(20 * axis_count),
+            y = 90.0 + float<-(20 * axis_count),
             width = 75.0,
             height = 24.0,
         )
@@ -260,10 +260,10 @@ def main() -> i32:
             draw_axis_values(gamepad, axis_count)
 
             rl.DrawRectangleRec(vibrate_button, rl.SKYBLUE)
-            rl.DrawText(c"VIBRATE", i32<-(vibrate_button.x + 14.0), i32<-(vibrate_button.y + 1.0), 10, rl.DARKGRAY)
+            rl.DrawText(c"VIBRATE", int<-(vibrate_button.x + 14.0), int<-(vibrate_button.y + 1.0), 10, rl.DARKGRAY)
 
             let detected_button = rl.GetGamepadButtonPressed()
-            if detected_button != i32<-rl.GamepadButton.GAMEPAD_BUTTON_UNKNOWN:
+            if detected_button != int<-rl.GamepadButton.GAMEPAD_BUTTON_UNKNOWN:
                 rl.DrawText(rl.TextFormat(c"DETECTED BUTTON: %i", detected_button), 10, 430, 10, rl.RED)
             else:
                 rl.DrawText(c"DETECTED BUTTON: NONE", 10, 430, 10, rl.GRAY)

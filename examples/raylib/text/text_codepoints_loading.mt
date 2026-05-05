@@ -3,8 +3,8 @@ module examples.raylib.text.text_codepoints_loading
 import std.c.raylib as rl
 import std.mem.heap as heap
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [text] example - codepoints loading"
 const text: cstr = c"いろはにほへと　ちりぬるを\nわかよたれそ　つねならむ\nうゐのおくやま　けふこえて\nあさきゆめみし　ゑひもせす"
 const font_path: cstr = c"../resources/DotGothic16-Regular.ttf"
@@ -13,8 +13,8 @@ const atlas_codepoints_format: cstr = c"Total codepoints required for font atlas
 const toggle_atlas_text: cstr = c"Press SPACE to toggle font atlas view!"
 
 
-def codepoint_remove_duplicates(codepoints: ptr[i32], codepoint_count: i32, codepoints_result_count: ptr[i32]) -> ptr[i32]:
-    let codepoints_no_dups = heap.must_alloc_zeroed[i32](usize<-codepoint_count)
+def codepoint_remove_duplicates(codepoints: ptr[int], codepoint_count: int, codepoints_result_count: ptr[int]) -> ptr[int]:
+    let codepoints_no_dups = heap.must_alloc_zeroed[int](ptr_uint<-codepoint_count)
     var codepoints_no_dups_count = codepoint_count
 
     unsafe:
@@ -38,7 +38,7 @@ def codepoint_remove_duplicates(codepoints: ptr[i32], codepoint_count: i32, code
     return codepoints_no_dups
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

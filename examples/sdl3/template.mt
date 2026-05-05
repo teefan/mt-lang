@@ -2,10 +2,10 @@ module examples.sdl3.template
 
 import std.c.sdl3 as c
 
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/template"
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
 
 var window: ptr[c.SDL_Window]
@@ -16,7 +16,7 @@ def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
@@ -28,7 +28,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Template", c"1.0", c"com.example.template")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -49,5 +49,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

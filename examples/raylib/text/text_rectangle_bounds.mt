@@ -2,8 +2,8 @@ module examples.raylib.text.text_rectangle_bounds
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [text] example - rectangle bounds"
 const text: cstr = c"Text cannot escape\tthis container\t...word wrap also works when active so here's a long text for testing.\n\nLorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Nec ullamcorper sit amet risus nullam eget felis eget."
 const word_wrap_label: cstr = c"Word Wrap: "
@@ -12,20 +12,20 @@ const word_wrap_off: cstr = c"OFF"
 const toggle_wrap_text: cstr = c"Press [SPACE] to toggle word wrap"
 const resize_help_text: cstr = c"Click hold & drag the    to resize the container"
 
-const measure_state: i32 = 0
-const draw_state: i32 = 1
+const measure_state: int = 0
+const draw_state: int = 1
 
 
-def draw_text_boxed(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: f32, spacing: f32, word_wrap: bool, tint: rl.Color) -> void:
+def draw_text_boxed(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: float, spacing: float, word_wrap: bool, tint: rl.Color) -> void:
     draw_text_boxed_selectable(font, text, rec, font_size, spacing, word_wrap, tint, 0, 0, rl.WHITE, rl.WHITE)
 
 
-def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: f32, spacing: f32, word_wrap: bool, tint: rl.Color, select_start: i32, select_length: i32, select_tint: rl.Color, select_back_tint: rl.Color) -> void:
-    let length = i32<-rl.TextLength(text)
+def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: float, spacing: float, word_wrap: bool, tint: rl.Color, select_start: int, select_length: int, select_tint: rl.Color, select_back_tint: rl.Color) -> void:
+    let length = int<-rl.TextLength(text)
 
-    var text_offset_y: f32 = 0.0
-    var text_offset_x: f32 = 0.0
-    let scale_factor = font_size / f32<-font.baseSize
+    var text_offset_y: float = 0.0
+    var text_offset_x: float = 0.0
+    let scale_factor = font_size / float<-font.baseSize
 
     var state = if word_wrap: measure_state else: draw_state
     var start_line = -1
@@ -48,12 +48,12 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
 
             i += codepoint_byte_count - 1
 
-            var glyph_width: f32 = 0.0
+            var glyph_width: float = 0.0
             if codepoint != 10:
                 if font.glyphs[glyph_index].advanceX == 0:
                     glyph_width = font.recs[glyph_index].width * scale_factor
                 else:
-                    glyph_width = f32<-font.glyphs[glyph_index].advanceX * scale_factor
+                    glyph_width = float<-font.glyphs[glyph_index].advanceX * scale_factor
 
                 if i + 1 < length:
                     glyph_width += spacing
@@ -87,14 +87,14 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
             else:
                 if codepoint == 10:
                     if not word_wrap:
-                        text_offset_y += (f32<-font.baseSize + f32<-font.baseSize / 2.0) * scale_factor
+                        text_offset_y += (float<-font.baseSize + float<-font.baseSize / 2.0) * scale_factor
                         text_offset_x = 0.0
                 else:
                     if not word_wrap and (text_offset_x + glyph_width) > rec.width:
-                        text_offset_y += (f32<-font.baseSize + f32<-font.baseSize / 2.0) * scale_factor
+                        text_offset_y += (float<-font.baseSize + float<-font.baseSize / 2.0) * scale_factor
                         text_offset_x = 0.0
 
-                    if (text_offset_y + f32<-font.baseSize * scale_factor) > rec.height:
+                    if (text_offset_y + float<-font.baseSize * scale_factor) > rec.height:
                         break
 
                     var is_glyph_selected = false
@@ -104,7 +104,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
                                 x = rec.x + text_offset_x - 1.0,
                                 y = rec.y + text_offset_y,
                                 width = glyph_width,
-                                height = f32<-font.baseSize * scale_factor,
+                                height = float<-font.baseSize * scale_factor,
                             ),
                             select_back_tint,
                         )
@@ -120,7 +120,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
                         )
 
                 if word_wrap and i == end_line:
-                    text_offset_y += (f32<-font.baseSize + f32<-font.baseSize / 2.0) * scale_factor
+                    text_offset_y += (float<-font.baseSize + float<-font.baseSize / 2.0) * scale_factor
                     text_offset_x = 0.0
                     start_line = end_line
                     end_line = -1
@@ -137,7 +137,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
             k += 1
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -147,8 +147,8 @@ def main() -> i32:
     var container = rl.Rectangle(
         x = 25.0,
         y = 25.0,
-        width = f32<-screen_width - 50.0,
-        height = f32<-screen_height - 250.0,
+        width = float<-screen_width - 50.0,
+        height = float<-screen_height - 250.0,
     )
     var resizer = rl.Rectangle(
         x = container.x + container.width - 17.0,
@@ -157,10 +157,10 @@ def main() -> i32:
         height = 14.0,
     )
 
-    let min_width: f32 = 60.0
-    let min_height: f32 = 60.0
-    let max_width: f32 = f32<-screen_width - 50.0
-    let max_height: f32 = f32<-screen_height - 160.0
+    let min_width: float = 60.0
+    let min_height: float = 60.0
+    let max_width: float = float<-screen_width - 50.0
+    let max_height: float = float<-screen_height - 160.0
 
     var last_mouse = rl.Vector2(x = 0.0, y = 0.0)
     var border_color = rl.MAROON
@@ -226,7 +226,7 @@ def main() -> i32:
 
         rl.DrawRectangleRec(resizer, border_color)
         rl.DrawRectangle(0, screen_height - 54, screen_width, 54, rl.GRAY)
-        rl.DrawRectangleRec(rl.Rectangle(x = 382.0, y = f32<-screen_height - 34.0, width = 12.0, height = 12.0), rl.MAROON)
+        rl.DrawRectangleRec(rl.Rectangle(x = 382.0, y = float<-screen_height - 34.0, width = 12.0, height = 12.0), rl.MAROON)
 
         rl.DrawText(word_wrap_label, 313, screen_height - 115, 20, rl.BLACK)
         if word_wrap:

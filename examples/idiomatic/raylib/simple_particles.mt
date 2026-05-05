@@ -5,26 +5,26 @@ import std.raylib as rl
 import std.raylib.math as math
 import std.span as sp
 
-enum ParticleType: i32
+enum ParticleType: int
     WATER = 0
     SMOKE = 1
     FIRE = 2
 
 struct Particle:
-    kind: i32
+    kind: int
     position: rl.Vector2
     velocity: rl.Vector2
-    radius: f32
+    radius: float
     color: rl.Color
-    life_time: f32
+    life_time: float
     alive: bool
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const max_particles: i32 = 3000
+const screen_width: int = 800
+const screen_height: int = 450
+const max_particles: int = 3000
 
 
-def particle_type_name(particle_type: i32) -> str:
+def particle_type_name(particle_type: int) -> str:
     if particle_type == ParticleType.WATER:
         return "WATER"
     if particle_type == ParticleType.SMOKE:
@@ -32,11 +32,11 @@ def particle_type_name(particle_type: i32) -> str:
     return "FIRE"
 
 
-def next_buffer_index(index: i32) -> i32:
+def next_buffer_index(index: int) -> int:
     return (index + 1) % max_particles
 
 
-def add_to_circular_buffer(head: ref[i32], tail: i32) -> i32:
+def add_to_circular_buffer(head: ref[int], tail: int) -> int:
     if next_buffer_index(read(head)) != tail:
         let particle_index = read(head)
         read(head) = next_buffer_index(read(head))
@@ -44,18 +44,18 @@ def add_to_circular_buffer(head: ref[i32], tail: i32) -> i32:
     return -1
 
 
-def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_position: rl.Vector2, particle_type: i32) -> void:
+def emit_particle(particles: ptr[Particle], head: ref[int], tail: int, emitter_position: rl.Vector2, particle_type: int) -> void:
     let particle_index = add_to_circular_buffer(head, tail)
     if particle_index < 0:
         return
 
-    var particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
+    var particles_view = sp.from_ptr[Particle](particles, ptr_uint<-max_particles)
     particles_view[particle_index].position = emitter_position
     particles_view[particle_index].alive = true
     particles_view[particle_index].life_time = 0.0
     particles_view[particle_index].kind = particle_type
 
-    var speed = f32<-rl.get_random_value(0, 9) / 5.0
+    var speed = float<-rl.get_random_value(0, 9) / 5.0
     if particle_type == ParticleType.WATER:
         particles_view[particle_index].radius = 5.0
         particles_view[particle_index].color = rl.BLUE
@@ -67,7 +67,7 @@ def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_p
         particles_view[particle_index].color = rl.YELLOW
         speed /= 10.0
 
-    let direction = f32<-rl.get_random_value(0, 359) * math.deg2rad
+    let direction = float<-rl.get_random_value(0, 359) * math.deg2rad
     particles_view[particle_index].velocity = rl.Vector2(
         x = speed * math.cos(direction),
         y = speed * math.sin(direction),
@@ -75,8 +75,8 @@ def emit_particle(particles: ptr[Particle], head: ref[i32], tail: i32, emitter_p
     return
 
 
-def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32, height: i32) -> void:
-    var particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
+def update_particles(particles: ptr[Particle], head: int, tail: int, width: int, height: int) -> void:
+    var particles_view = sp.from_ptr[Particle](particles, ptr_uint<-max_particles)
     var index = tail
     while index != head:
         particles_view[index].life_time += 1.0 / 60.0
@@ -94,7 +94,7 @@ def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32,
             if particles_view[index].color.a < 4:
                 particles_view[index].alive = false
             else:
-                particles_view[index].color.a = u8<-(i32<-particles_view[index].color.a - 4)
+                particles_view[index].color.a = ubyte<-(int<-particles_view[index].color.a - 4)
         else:
             particles_view[index].position.x += particles_view[index].velocity.x + math.cos(particles_view[index].life_time * 215.0)
             particles_view[index].velocity.y -= 0.05
@@ -102,7 +102,7 @@ def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32,
             particles_view[index].radius -= 0.15
 
             if particles_view[index].color.g > 3:
-                particles_view[index].color.g = u8<-(i32<-particles_view[index].color.g - 3)
+                particles_view[index].color.g = ubyte<-(int<-particles_view[index].color.g - 3)
             else:
                 particles_view[index].color.g = 0
 
@@ -118,15 +118,15 @@ def update_particles(particles: ptr[Particle], head: i32, tail: i32, width: i32,
     return
 
 
-def update_circular_buffer(particles: ptr[Particle], head: i32, tail: ref[i32]) -> void:
-    let particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
+def update_circular_buffer(particles: ptr[Particle], head: int, tail: ref[int]) -> void:
+    let particles_view = sp.from_ptr[Particle](particles, ptr_uint<-max_particles)
     while read(tail) != head and not particles_view[read(tail)].alive:
         read(tail) = next_buffer_index(read(tail))
     return
 
 
-def draw_particles(particles: ptr[Particle], head: i32, tail: i32) -> void:
-    let particles_view = sp.from_ptr[Particle](particles, usize<-max_particles)
+def draw_particles(particles: ptr[Particle], head: int, tail: int) -> void:
+    let particles_view = sp.from_ptr[Particle](particles, ptr_uint<-max_particles)
     var index = tail
     while index != head:
         if particles_view[index].alive:
@@ -135,11 +135,11 @@ def draw_particles(particles: ptr[Particle], head: i32, tail: i32) -> void:
     return
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Simple Particles")
     defer rl.close_window()
 
-    let particles = heap.must_alloc_zeroed[Particle](usize<-max_particles)
+    let particles = heap.must_alloc_zeroed[Particle](ptr_uint<-max_particles)
     defer heap.release(particles)
 
     var head = 0
@@ -197,9 +197,9 @@ def main() -> i32:
         rl.draw_text("LEFT/RIGHT: Change Particle Type (Water, Smoke, Fire)", 15, 55, 10, rl.BLACK)
 
         if emission_rate < 0:
-            rl.draw_text(rl.text_format_i32_cstr("Particles every %d frames | Type: %s", -emission_rate, particle_type_name(current_type)), 15, 95, 10, rl.DARKGRAY)
+            rl.draw_text(rl.text_format_int_cstr("Particles every %d frames | Type: %s", -emission_rate, particle_type_name(current_type)), 15, 95, 10, rl.DARKGRAY)
         else:
-            rl.draw_text(rl.text_format_i32_cstr("%d Particles per frame | Type: %s", emission_rate + 1, particle_type_name(current_type)), 15, 95, 10, rl.DARKGRAY)
+            rl.draw_text(rl.text_format_int_cstr("%d Particles per frame | Type: %s", emission_rate + 1, particle_type_name(current_type)), 15, 95, 10, rl.DARKGRAY)
 
         rl.draw_fps(screen_width - 80, 10)
 

@@ -2,11 +2,11 @@ module examples.idiomatic.raylib.input_gestures
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 
 
-def gesture_label(gesture: i32) -> str:
+def gesture_label(gesture: int) -> str:
     if gesture == rl.Gesture.GESTURE_TAP:
         return "GESTURE TAP"
     if gesture == rl.Gesture.GESTURE_DOUBLETAP:
@@ -30,7 +30,7 @@ def gesture_label(gesture: i32) -> str:
     return "GESTURE NONE"
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Gestures")
     defer rl.close_window()
 

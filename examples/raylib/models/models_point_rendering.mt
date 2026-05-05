@@ -5,34 +5,34 @@ import std.c.rlgl as rlgl
 import std.raylib.math as rm
 import std.c.libm as libm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const max_points: i32 = 10000000
-const min_points: i32 = 1000
-const random_resolution: i32 = 1000000
-const pi: f32 = 180.0 * rm.deg2rad
-const two_pi: f32 = 360.0 * rm.deg2rad
+const screen_width: int = 800
+const screen_height: int = 450
+const max_points: int = 10000000
+const min_points: int = 1000
+const random_resolution: int = 1000000
+const pi: float = 180.0 * rm.deg2rad
+const two_pi: float = 360.0 * rm.deg2rad
 const window_title: cstr = c"raylib [models] example - point rendering"
 const point_count_format: cstr = c"Point Count: %d"
 const using_draw_model_points_text: cstr = c"Using: DrawModelPoints()"
 const using_draw_point3d_text: cstr = c"Using: DrawPoint3D()"
 
 
-def random_unit() -> f32:
-    return f32<-rl.GetRandomValue(0, random_resolution) / f32<-random_resolution
+def random_unit() -> float:
+    return float<-rl.GetRandomValue(0, random_resolution) / float<-random_resolution
 
 
-def gen_mesh_points(num_points: i32) -> rl.Mesh:
+def gen_mesh_points(num_points: int) -> rl.Mesh:
     var mesh = zero[rl.Mesh]
     mesh.triangleCount = 1
     mesh.vertexCount = num_points
 
     unsafe:
-        let vertex_count = u32<-(num_points * 3)
-        let color_count = u32<-(num_points * 4)
+        let vertex_count = uint<-(num_points * 3)
+        let color_count = uint<-(num_points * 4)
 
-        mesh.vertices = ptr[f32]<-rl.MemAlloc(vertex_count * u32<-sizeof(f32))
-        mesh.colors = ptr[u8]<-rl.MemAlloc(color_count * u32<-sizeof(u8))
+        mesh.vertices = ptr[float]<-rl.MemAlloc(vertex_count * uint<-sizeof(float))
+        mesh.colors = ptr[ubyte]<-rl.MemAlloc(color_count * uint<-sizeof(ubyte))
 
         for index in 0..num_points:
             let theta = pi * random_unit()
@@ -53,7 +53,7 @@ def gen_mesh_points(num_points: i32) -> rl.Mesh:
     return mesh
 
 
-def draw_model_points(model: rl.Model, position: rl.Vector3, scale: f32, tint: rl.Color) -> void:
+def draw_model_points(model: rl.Model, position: rl.Vector3, scale: float, tint: rl.Color) -> void:
     rlgl.rlEnablePointMode()
     rlgl.rlDisableBackfaceCulling()
     rl.DrawModel(model, position, scale, tint)
@@ -61,7 +61,7 @@ def draw_model_points(model: rl.Model, position: rl.Vector3, scale: f32, tint: r
     rlgl.rlDisablePointMode()
 
 
-def mesh_point(mesh: rl.Mesh, index: i32) -> rl.Vector3:
+def mesh_point(mesh: rl.Mesh, index: int) -> rl.Vector3:
     unsafe:
         return rl.Vector3(
             x = mesh.vertices[index * 3],
@@ -70,7 +70,7 @@ def mesh_point(mesh: rl.Mesh, index: i32) -> rl.Vector3:
         )
 
 
-def mesh_color(mesh: rl.Mesh, index: i32) -> rl.Color:
+def mesh_color(mesh: rl.Mesh, index: int) -> rl.Color:
     unsafe:
         return rl.Color(
             r = mesh.colors[index * 4],
@@ -80,7 +80,7 @@ def mesh_color(mesh: rl.Mesh, index: i32) -> rl.Color:
         )
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -2,35 +2,35 @@ module examples.sdl3.demo.woodeneye_008
 
 import std.c.sdl3 as c
 
-const map_box_scale: i32 = 16
-const map_box_edges_len: i32 = 12 + (map_box_scale * 2)
-const max_player_count: i32 = 4
-const circle_draw_sides: i32 = 32
-const circle_draw_sides_len: i32 = circle_draw_sides + 1
-const window_width: i32 = 640
-const window_height: i32 = 480
+const map_box_scale: int = 16
+const map_box_edges_len: int = 12 + (map_box_scale * 2)
+const max_player_count: int = 4
+const circle_draw_sides: int = 32
+const circle_draw_sides_len: int = circle_draw_sides + 1
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/demo/woodeneye-008"
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
-const mouse_turn_step: i32 = 524288
-const pitch_min: i32 = -1073741824
-const pitch_max: i32 = 1073741824
-const initial_pitch: i32 = -134217728
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
+const mouse_turn_step: int = 524288
+const pitch_min: int = -1073741824
+const pitch_max: int = 1073741824
+const initial_pitch: int = -134217728
 const frame_ns: c.Uint64 = 999999
 
 struct Player:
     mouse: c.SDL_MouseID
     keyboard: c.SDL_KeyboardID
-    pos: array[f64, 3]
-    vel: array[f64, 3]
-    yaw: i64
-    pitch: i32
-    radius: f32
-    height: f32
-    color: array[u8, 3]
-    wasd: u8
+    pos: array[double, 3]
+    vel: array[double, 3]
+    yaw: long
+    pitch: int
+    radius: float
+    height: float
+    color: array[ubyte, 3]
+    wasd: ubyte
 
-const initial_yaws: array[i64, 4] = array[i64, 4](536870912, 2684354560, 1610612736, 3758096384)
-const box_edge_map: array[i32, 24] = array[i32, 24](
+const initial_yaws: array[long, 4] = array[long, 4](536870912, 2684354560, 1610612736, 3758096384)
+const box_edge_map: array[int, 24] = array[int, 24](
     0, 1, 1, 3, 3, 2, 2, 0,
     7, 6, 6, 4, 4, 5, 5, 7,
     6, 2, 3, 7, 0, 4, 5, 1,
@@ -38,34 +38,34 @@ const box_edge_map: array[i32, 24] = array[i32, 24](
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
-var player_count: i32 = 1
+var player_count: int = 1
 var players: array[Player, 4] = zero[array[Player, 4]]
-var edges: array[array[f32, 6], 44] = zero[array[array[f32, 6], 44]]
+var edges: array[array[float, 6], 44] = zero[array[array[float, 6], 44]]
 var displayed_fps: c.Uint64 = 0
 var frames_accumulated: c.Uint64 = 0
 var fps_last_tick: c.Uint64 = 0
 var past_tick: c.Uint64 = 0
 
 
-def min_f64(lhs: f64, rhs: f64) -> f64:
+def min_double(lhs: double, rhs: double) -> double:
     if lhs < rhs:
         return lhs
 
     return rhs
 
 
-def max_f64(lhs: f64, rhs: f64) -> f64:
+def max_double(lhs: double, rhs: double) -> double:
     if lhs > rhs:
         return lhs
 
     return rhs
 
 
-def clamp_f64(value: f64, min_value: f64, max_value: f64) -> f64:
-    return max_f64(min_value, min_f64(max_value, value))
+def clamp_double(value: double, min_value: double, max_value: double) -> double:
+    return max_double(min_value, min_double(max_value, value))
 
 
-def clamp_i32(value: i32, min_value: i32, max_value: i32) -> i32:
+def clamp_int(value: int, min_value: int, max_value: int) -> int:
     if value < min_value:
         return min_value
     if value > max_value:
@@ -74,7 +74,7 @@ def clamp_i32(value: i32, min_value: i32, max_value: i32) -> i32:
     return value
 
 
-def whose_mouse(mouse: c.SDL_MouseID) -> i32:
+def whose_mouse(mouse: c.SDL_MouseID) -> int:
     for index in 0..player_count:
         if players[index].mouse == mouse:
             return index
@@ -82,7 +82,7 @@ def whose_mouse(mouse: c.SDL_MouseID) -> i32:
     return -1
 
 
-def whose_keyboard(keyboard: c.SDL_KeyboardID) -> i32:
+def whose_keyboard(keyboard: c.SDL_KeyboardID) -> int:
     for index in 0..player_count:
         if players[index].keyboard == keyboard:
             return index
@@ -90,7 +90,7 @@ def whose_keyboard(keyboard: c.SDL_KeyboardID) -> i32:
     return -1
 
 
-def set_player_color(index: i32) -> void:
+def set_player_color(index: int) -> void:
     if index == 0:
         players[index].color[0] = 0
         players[index].color[1] = 255
@@ -114,13 +114,13 @@ def set_player_color(index: i32) -> void:
     players[index].color[2] = 255
 
 
-def respawn_player(index: i32) -> void:
-    players[index].pos[0] = f64<-(map_box_scale * (c.SDL_rand(256) - 128)) / 256.0
-    players[index].pos[1] = f64<-(map_box_scale * (c.SDL_rand(256) - 128)) / 256.0
-    players[index].pos[2] = f64<-(map_box_scale * (c.SDL_rand(256) - 128)) / 256.0
+def respawn_player(index: int) -> void:
+    players[index].pos[0] = double<-(map_box_scale * (c.SDL_rand(256) - 128)) / 256.0
+    players[index].pos[1] = double<-(map_box_scale * (c.SDL_rand(256) - 128)) / 256.0
+    players[index].pos[2] = double<-(map_box_scale * (c.SDL_rand(256) - 128)) / 256.0
 
 
-def initialize_player(index: i32) -> void:
+def initialize_player(index: int) -> void:
     let x_sign = if (index & 1) != 0: -1.0 else: 1.0
     let z_sign = if (index & 2) != 0: -1.0 else: 1.0
 
@@ -146,7 +146,7 @@ def init_players() -> void:
 
 
 def init_edges() -> void:
-    let bound = f32<-map_box_scale
+    let bound = float<-map_box_scale
 
     for index in 0..12:
         for axis in 0..3:
@@ -154,7 +154,7 @@ def init_edges() -> void:
             edges[index][axis + 3] = if (box_edge_map[index * 2 + 1] & (1 << axis)) != 0: bound else: -bound
 
     for index in 0..map_box_scale:
-        let distance = f32<-(index * 2) - bound
+        let distance = float<-(index * 2) - bound
 
         for endpoint in 0..2:
             edges[index + 12][endpoint * 3] = if endpoint != 0: bound else: -bound
@@ -165,12 +165,12 @@ def init_edges() -> void:
             edges[index + 12 + map_box_scale][endpoint * 3 + 2] = if endpoint != 0: bound else: -bound
 
 
-def shoot(shooter: i32) -> void:
+def shoot(shooter: int) -> void:
     let x0 = players[shooter].pos[0]
     let y0 = players[shooter].pos[1]
     let z0 = players[shooter].pos[2]
-    let yaw_rad = f64<-players[shooter].yaw * c.SDL_PI_D / 2147483648.0
-    let pitch_rad = f64<-players[shooter].pitch * c.SDL_PI_D / 2147483648.0
+    let yaw_rad = double<-players[shooter].yaw * c.SDL_PI_D / 2147483648.0
+    let pitch_rad = double<-players[shooter].pitch * c.SDL_PI_D / 2147483648.0
     let cos_yaw = c.SDL_cos(yaw_rad)
     let sin_yaw = c.SDL_sin(yaw_rad)
     let cos_pitch = c.SDL_cos(pitch_rad)
@@ -186,8 +186,8 @@ def shoot(shooter: i32) -> void:
         var hit = 0
 
         for circle_index in 0..2:
-            let radius = f64<-players[index].radius
-            let height = f64<-players[index].height
+            let radius = double<-players[index].radius
+            let height = double<-players[index].height
             let dx = players[index].pos[0] - x0
             let y_offset = if circle_index == 0: 0.0 else: radius - height
             let dy = players[index].pos[1] - y0 + y_offset
@@ -207,10 +207,10 @@ def shoot(shooter: i32) -> void:
 
 def update_players(dt_ns: c.Uint64) -> void:
     for index in 0..player_count:
-        let time = f64<-dt_ns * 1.0e-9
+        let time = double<-dt_ns * 1.0e-9
         let drag = c.SDL_exp(-time * 6.0)
         let diff = 1.0 - drag
-        let yaw_rad = f64<-players[index].yaw * c.SDL_PI_D / 2147483648.0
+        let yaw_rad = double<-players[index].yaw * c.SDL_PI_D / 2147483648.0
         let cosine = c.SDL_cos(yaw_rad)
         let sine = c.SDL_sin(yaw_rad)
         let wasd = players[index].wasd
@@ -225,10 +225,10 @@ def update_players(dt_ns: c.Uint64) -> void:
         let new_pos_x = players[index].pos[0] + (((time - (diff / 6.0)) * acc_x) / 6.0) + ((diff * vel_x) / 6.0)
         let new_pos_y = players[index].pos[1] + (-0.5 * 25.0 * time * time) + (vel_y * time)
         let new_pos_z = players[index].pos[2] + (((time - (diff / 6.0)) * acc_z) / 6.0) + ((diff * vel_z) / 6.0)
-        let bound = f64<-map_box_scale - f64<-players[index].radius
-        let clamped_x = clamp_f64(new_pos_x, -bound, bound)
-        let clamped_y = clamp_f64(new_pos_y, f64<-players[index].height - f64<-map_box_scale, bound)
-        let clamped_z = clamp_f64(new_pos_z, -bound, bound)
+        let bound = double<-map_box_scale - double<-players[index].radius
+        let clamped_x = clamp_double(new_pos_x, -bound, bound)
+        let clamped_y = clamp_double(new_pos_y, double<-players[index].height - double<-map_box_scale, bound)
+        let clamped_z = clamp_double(new_pos_z, -bound, bound)
 
         players[index].vel[0] = vel_x - (vel_x * diff) + ((diff * acc_x) / 6.0)
         players[index].vel[1] = vel_y - (25.0 * time)
@@ -246,18 +246,18 @@ def update_players(dt_ns: c.Uint64) -> void:
         players[index].pos[2] = clamped_z
 
 
-def draw_circle(radius: f32, x: f32, y: f32) -> void:
+def draw_circle(radius: float, x: float, y: float) -> void:
     var points = zero[array[c.SDL_FPoint, 33]]
 
     for index in 0..circle_draw_sides_len:
-        let angle = (2.0 * c.SDL_PI_F * f32<-index) / f32<-circle_draw_sides
+        let angle = (2.0 * c.SDL_PI_F * float<-index) / float<-circle_draw_sides
         points[index].x = x + (radius * c.SDL_cosf(angle))
         points[index].y = y + (radius * c.SDL_sinf(angle))
 
     c.SDL_RenderLines(renderer, ptr_of(points[0]), circle_draw_sides_len)
 
 
-def draw_clipped_segment(ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32, x: f32, y: f32, z: f32, w: f32) -> void:
+def draw_clipped_segment(ax: float, ay: float, az: float, bx: float, by: float, bz: float, x: float, y: float, z: float, w: float) -> void:
     var start_x = ax
     var start_y = ay
     var start_z = az
@@ -291,8 +291,8 @@ def draw_clipped_segment(ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32, x
 
 
 def render_frame() -> void:
-    var output_width: i32 = 0
-    var output_height: i32 = 0
+    var output_width: int = 0
+    var output_height: int = 0
 
     if not c.SDL_GetRenderOutputSize(renderer, ptr_of(output_width), ptr_of(output_height)):
         return
@@ -303,17 +303,17 @@ def render_frame() -> void:
     if player_count > 0:
         let part_hor = if player_count > 2: 2 else: 1
         let part_ver = if player_count > 1: 2 else: 1
-        let size_hor = f32<-output_width / f32<-part_hor
-        let size_ver = f32<-output_height / f32<-part_ver
+        let size_hor = float<-output_width / float<-part_hor
+        let size_ver = float<-output_height / float<-part_ver
 
         for player_index in 0..player_count:
-            let hor_origin = (f32<-(player_index % part_hor) + 0.5) * size_hor
-            let ver_origin = (f32<-(player_index / part_hor) + 0.5) * size_ver
-            let cam_origin = f32<-(0.5 * c.SDL_sqrt(f64<-((size_hor * size_hor) + (size_ver * size_ver))))
-            let hor_offset = f32<-(player_index % part_hor) * size_hor
-            let ver_offset = f32<-(player_index / part_hor) * size_ver
-            let yaw_rad = f64<-players[player_index].yaw * c.SDL_PI_D / 2147483648.0
-            let pitch_rad = f64<-players[player_index].pitch * c.SDL_PI_D / 2147483648.0
+            let hor_origin = (float<-(player_index % part_hor) + 0.5) * size_hor
+            let ver_origin = (float<-(player_index / part_hor) + 0.5) * size_ver
+            let cam_origin = float<-(0.5 * c.SDL_sqrt(double<-((size_hor * size_hor) + (size_ver * size_ver))))
+            let hor_offset = float<-(player_index % part_hor) * size_hor
+            let ver_offset = float<-(player_index / part_hor) * size_ver
+            let yaw_rad = double<-players[player_index].yaw * c.SDL_PI_D / 2147483648.0
+            let pitch_rad = double<-players[player_index].pitch * c.SDL_PI_D / 2147483648.0
             let cos_yaw = c.SDL_cos(yaw_rad)
             let sin_yaw = c.SDL_sin(yaw_rad)
             let cos_pitch = c.SDL_cos(pitch_rad)
@@ -321,8 +321,8 @@ def render_frame() -> void:
             let px = players[player_index].pos[0]
             let py = players[player_index].pos[1]
             let pz = players[player_index].pos[2]
-            var clip_rect = c.SDL_Rect(x = i32<-hor_offset, y = i32<-ver_offset, w = i32<-size_hor, h = i32<-size_ver)
-            var mat = array[f64, 9](
+            var clip_rect = c.SDL_Rect(x = int<-hor_offset, y = int<-ver_offset, w = int<-size_hor, h = int<-size_ver)
+            var mat = array[double, 9](
                 cos_yaw, 0.0, -sin_yaw,
                 sin_yaw * sin_pitch, cos_pitch, cos_yaw * sin_pitch,
                 sin_yaw * cos_pitch, -sin_pitch, cos_yaw * cos_pitch,
@@ -333,12 +333,12 @@ def render_frame() -> void:
 
             for edge_index in 0..map_box_edges_len:
                 let line = edges[edge_index]
-                let line_ax = f64<-line[0]
-                let line_ay = f64<-line[1]
-                let line_az = f64<-line[2]
-                let line_bx = f64<-line[3]
-                let line_by = f64<-line[4]
-                let line_bz = f64<-line[5]
+                let line_ax = double<-line[0]
+                let line_ay = double<-line[1]
+                let line_az = double<-line[2]
+                let line_bx = double<-line[3]
+                let line_by = double<-line[4]
+                let line_bz = double<-line[5]
                 let ax = mat[0] * (line_ax - px) + mat[1] * (line_ay - py) + mat[2] * (line_az - pz)
                 let ay = mat[3] * (line_ax - px) + mat[4] * (line_ay - py) + mat[5] * (line_az - pz)
                 let az = mat[6] * (line_ax - px) + mat[7] * (line_ay - py) + mat[8] * (line_az - pz)
@@ -346,7 +346,7 @@ def render_frame() -> void:
                 let by = mat[3] * (line_bx - px) + mat[4] * (line_by - py) + mat[5] * (line_bz - pz)
                 let bz = mat[6] * (line_bx - px) + mat[7] * (line_by - py) + mat[8] * (line_bz - pz)
 
-                draw_clipped_segment(f32<-ax, f32<-ay, f32<-az, f32<-bx, f32<-by, f32<-bz, hor_origin, ver_origin, cam_origin, 1.0)
+                draw_clipped_segment(float<-ax, float<-ay, float<-az, float<-bx, float<-by, float<-bz, hor_origin, ver_origin, cam_origin, 1.0)
 
             for target_index in 0..player_count:
                 if player_index == target_index:
@@ -356,16 +356,16 @@ def render_frame() -> void:
 
                 for circle_index in 0..2:
                     let rx = players[target_index].pos[0] - px
-                    let ry = players[target_index].pos[1] - py + (f64<-(players[target_index].radius - players[target_index].height) * f64<-circle_index)
+                    let ry = players[target_index].pos[1] - py + (double<-(players[target_index].radius - players[target_index].height) * double<-circle_index)
                     let rz = players[target_index].pos[2] - pz
                     let dx = mat[0] * rx + mat[1] * ry + mat[2] * rz
                     let dy = mat[3] * rx + mat[4] * ry + mat[5] * rz
                     let dz = mat[6] * rx + mat[7] * ry + mat[8] * rz
 
                     if dz < 0.0:
-                        let effective_radius = f32<-(f64<-players[target_index].radius * f64<-cam_origin / dz)
-                        let draw_x = hor_origin - f32<-(f64<-cam_origin * dx / dz)
-                        let draw_y = ver_origin + f32<-(f64<-cam_origin * dy / dz)
+                        let effective_radius = float<-(double<-players[target_index].radius * double<-cam_origin / dz)
+                        let draw_x = hor_origin - float<-(double<-cam_origin * dx / dz)
+                        let draw_y = ver_origin + float<-(double<-cam_origin * dy / dz)
                         draw_circle(effective_radius, draw_x, draw_y)
 
             c.SDL_SetRenderDrawColor(renderer, 255, 255, 255, c.SDL_ALPHA_OPAQUE)
@@ -378,8 +378,8 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def set_wasd_bit(player_index: i32, scancode: c.SDL_Scancode, pressed: bool) -> void:
-    var mask: u8 = 0
+def set_wasd_bit(player_index: int, scancode: c.SDL_Scancode, pressed: bool) -> void:
+    var mask: ubyte = 0
 
     if scancode == c.SDL_Scancode.SDL_SCANCODE_W:
         mask = 1
@@ -402,35 +402,35 @@ def set_wasd_bit(player_index: i32, scancode: c.SDL_Scancode, pressed: bool) -> 
     if pressed:
         players[player_index].wasd |= mask
     else:
-        players[player_index].wasd &= u8<-~mask
+        players[player_index].wasd &= ubyte<-~mask
 
 
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_MOUSE_REMOVED:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_MOUSE_REMOVED:
             for index in 0..player_count:
                 if players[index].mouse == event.mdevice.which:
                     players[index].mouse = 0
             continue
 
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_KEYBOARD_REMOVED:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_KEYBOARD_REMOVED:
             for index in 0..player_count:
                 if players[index].keyboard == event.kdevice.which:
                     players[index].keyboard = 0
             continue
 
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_MOUSE_MOTION:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_MOUSE_MOTION:
             let mouse_id = event.motion.which
             let player_index = whose_mouse(mouse_id)
 
             if player_index >= 0:
-                players[player_index].yaw -= i64<-(i32<-event.motion.xrel * mouse_turn_step)
-                players[player_index].pitch = clamp_i32(players[player_index].pitch - (i32<-event.motion.yrel * mouse_turn_step), pitch_min, pitch_max)
+                players[player_index].yaw -= long<-(int<-event.motion.xrel * mouse_turn_step)
+                players[player_index].pitch = clamp_int(players[player_index].pitch - (int<-event.motion.yrel * mouse_turn_step), pitch_min, pitch_max)
             else:
                 if mouse_id != 0:
                     for index in 0..max_player_count:
@@ -441,13 +441,13 @@ def pump_events() -> bool:
                             break
             continue
 
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_MOUSE_BUTTON_DOWN:
             let player_index = whose_mouse(event.button.which)
             if player_index >= 0:
                 shoot(player_index)
             continue
 
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_KEY_DOWN:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_KEY_DOWN:
             let player_index = whose_keyboard(event.key.which)
 
             if player_index >= 0:
@@ -462,7 +462,7 @@ def pump_events() -> bool:
                             break
             continue
 
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_KEY_UP:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_KEY_UP:
             if event.key.scancode == c.SDL_Scancode.SDL_SCANCODE_ESCAPE:
                 return false
 
@@ -473,7 +473,7 @@ def pump_events() -> bool:
     return true
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example splitscreen shooter game", c"1.0", c"com.example.woodeneye-008")
     c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.url", c"https://examples.libsdl.org/SDL3/demo/02-woodeneye-008/")
     c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.creator", c"SDL team")
@@ -523,5 +523,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

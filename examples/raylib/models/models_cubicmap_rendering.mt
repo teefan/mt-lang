@@ -2,8 +2,8 @@ module examples.raylib.models.models_cubicmap_rendering
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [models] example - cubicmap rendering"
 const cubicmap_path: cstr = c"../resources/cubicmap.png"
 const atlas_path: cstr = c"../resources/cubicmap_atlas.png"
@@ -11,7 +11,7 @@ const cubicmap_caption_top: cstr = c"cubicmap image used to"
 const cubicmap_caption_bottom: cstr = c"generate map 3d model"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -36,7 +36,7 @@ def main() -> i32:
     let texture = rl.LoadTexture(atlas_path)
     defer rl.UnloadTexture(texture)
 
-    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+    rl.SetMaterialTexture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let map_position = rl.Vector3(x = -16.0, y = 0.0, z = -8.0)
     var pause = false
@@ -60,7 +60,7 @@ def main() -> i32:
         rl.EndMode3D()
 
         let cubicmap_position = rl.Vector2(
-            x = f32<-screen_width - f32<-cubicmap.width * 4.0 - 20.0,
+            x = float<-screen_width - float<-cubicmap.width * 4.0 - 20.0,
             y = 20.0,
         )
         rl.DrawTextureEx(cubicmap, cubicmap_position, 0.0, 4.0, rl.WHITE)

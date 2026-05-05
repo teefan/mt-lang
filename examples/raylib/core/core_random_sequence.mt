@@ -8,15 +8,15 @@ struct ColorRect:
     color: rl.Color
     rect: rl.Rectangle
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - random sequence"
-const initial_rect_count: i32 = 20
-const sequence_height_factor: f32 = 0.75
-const min_rect_count: i32 = 4
+const initial_rect_count: int = 20
+const sequence_height_factor: float = 0.75
+const min_rect_count: int = 4
 
 
-def remap(value: f32, input_start: f32, input_end: f32, output_start: f32, output_end: f32) -> f32:
+def remap(value: float, input_start: float, input_end: float, output_start: float, output_end: float) -> float:
     if input_end == input_start:
         return output_start
     let normalized = (value - input_start) / (input_end - input_start)
@@ -32,8 +32,8 @@ def generate_random_color() -> rl.Color:
     )
 
 
-def alloc_color_rects(rect_count: i32) -> ptr[ColorRect]:
-    return heap.must_alloc_zeroed[ColorRect](usize<-rect_count)
+def alloc_color_rects(rect_count: int) -> ptr[ColorRect]:
+    return heap.must_alloc_zeroed[ColorRect](ptr_uint<-rect_count)
 
 
 def release_color_rects(rectangles: ptr[ColorRect]) -> void:
@@ -41,17 +41,17 @@ def release_color_rects(rectangles: ptr[ColorRect]) -> void:
     return
 
 
-def generate_random_color_rect_sequence(rect_count: i32, rect_width: f32, width: f32, height: f32) -> ptr[ColorRect]:
+def generate_random_color_rect_sequence(rect_count: int, rect_width: float, width: float, height: float) -> ptr[ColorRect]:
     let rectangles = alloc_color_rects(rect_count)
     let sequence = rl.LoadRandomSequence(rect_count, 0, rect_count - 1)
-    var rectangles_view = sp.from_ptr[ColorRect](rectangles, usize<-rect_count)
-    let sequence_view = sp.from_ptr[i32](sequence, usize<-rect_count)
+    var rectangles_view = sp.from_ptr[ColorRect](rectangles, ptr_uint<-rect_count)
+    let sequence_view = sp.from_ptr[int](sequence, ptr_uint<-rect_count)
     let rect_sequence_width = rect_count * rect_width
     let start_x = (width - rect_sequence_width) * 0.5
 
     var index = 0
     while index < rect_count:
-        let rect_height = i32<-remap(f32<-sequence_view[index], 0.0, f32<-(rect_count - 1), 0.0, height)
+        let rect_height = int<-remap(float<-sequence_view[index], 0.0, float<-(rect_count - 1), 0.0, height)
         rectangles_view[index].color = generate_random_color()
         rectangles_view[index].rect = rl.Rectangle(
             x = start_x + index * rect_width,
@@ -76,10 +76,10 @@ def swap_color_rect_values(left: ref[ColorRect], right: ref[ColorRect]) -> void:
     return
 
 
-def shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: i32) -> void:
+def shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: int) -> void:
     let sequence = rl.LoadRandomSequence(rect_count, 0, rect_count - 1)
-    var rectangles_view = sp.from_ptr[ColorRect](rectangles, usize<-rect_count)
-    let sequence_view = sp.from_ptr[i32](sequence, usize<-rect_count)
+    var rectangles_view = sp.from_ptr[ColorRect](rectangles, ptr_uint<-rect_count)
+    let sequence_view = sp.from_ptr[int](sequence, ptr_uint<-rect_count)
 
     var index = 0
     while index < rect_count:
@@ -91,13 +91,13 @@ def shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: i32) -> 
     return
 
 
-def draw_help_text(height: i32) -> void:
+def draw_help_text(height: int) -> void:
     rl.DrawText(c"Press SPACE to shuffle the current sequence", 10, height - 96, 20, rl.BLACK)
     rl.DrawText(c"Press UP to add a rectangle and generate a new sequence", 10, height - 64, 20, rl.BLACK)
     rl.DrawText(c"Press DOWN to remove a rectangle and generate a new sequence", 10, height - 32, 20, rl.BLACK)
 
 
-def rect_count_text(rect_count: i32) -> cstr:
+def rect_count_text(rect_count: int) -> cstr:
     if rect_count == 4:
         return c"Count: 4 rectangles"
     if rect_count == 5:
@@ -137,17 +137,17 @@ def rect_count_text(rect_count: i32) -> cstr:
     return c"Count: 22 rectangles"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
     var rect_count = initial_rect_count
-    var rect_size = f32<-screen_width / f32<-rect_count
+    var rect_size = float<-screen_width / float<-rect_count
     var rectangles = generate_random_color_rect_sequence(
         rect_count,
         rect_size,
-        f32<-screen_width,
-        sequence_height_factor * f32<-screen_height,
+        float<-screen_width,
+        sequence_height_factor * float<-screen_height,
     )
     defer release_color_rects(rectangles)
 
@@ -159,31 +159,31 @@ def main() -> i32:
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_UP):
             rect_count += 1
-            rect_size = f32<-screen_width / f32<-rect_count
+            rect_size = float<-screen_width / float<-rect_count
             release_color_rects(rectangles)
             rectangles = generate_random_color_rect_sequence(
                 rect_count,
                 rect_size,
-                f32<-screen_width,
-                sequence_height_factor * f32<-screen_height,
+                float<-screen_width,
+                sequence_height_factor * float<-screen_height,
             )
 
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_DOWN) and rect_count >= min_rect_count:
             rect_count -= 1
-            rect_size = f32<-screen_width / f32<-rect_count
+            rect_size = float<-screen_width / float<-rect_count
             release_color_rects(rectangles)
             rectangles = generate_random_color_rect_sequence(
                 rect_count,
                 rect_size,
-                f32<-screen_width,
-                sequence_height_factor * f32<-screen_height,
+                float<-screen_width,
+                sequence_height_factor * float<-screen_height,
             )
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
 
         rl.ClearBackground(rl.RAYWHITE)
-        let rectangles_view = sp.from_ptr[ColorRect](rectangles, usize<-rect_count)
+        let rectangles_view = sp.from_ptr[ColorRect](rectangles, ptr_uint<-rect_count)
 
         var index = 0
         while index < rect_count:

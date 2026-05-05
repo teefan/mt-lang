@@ -72,9 +72,7 @@ module MilkTea
       end
     end
 
-    BUILTIN_TYPE_NAMES = %w[
-      bool byte char i8 i16 i32 i64 u8 u16 u32 u64 isize usize f32 f64 void str cstr
-    ].freeze
+    BUILTIN_TYPE_NAMES = Types::BUILTIN_PRIMITIVE_NAMES
 
     def self.check(ast, imported_modules: {})
       Checker.new(ast, imported_modules:).check
@@ -570,8 +568,8 @@ module MilkTea
         body_return_type = decl.return_type ? resolve_type_ref(decl.return_type, type_params:) : @types.fetch("void")
         validate_return_ref_type!(body_return_type, function_name: decl.name)
         validate_return_proc_type!(body_return_type, function_name: decl.name)
-        if decl.name == "main" && async_function && body_return_type != @types.fetch("i32") && body_return_type != @types.fetch("void")
-          raise_sema_error("async main must return i32 or void")
+        if decl.name == "main" && async_function && body_return_type != @types.fetch("int") && body_return_type != @types.fetch("void")
+          raise_sema_error("async main must return int or void")
         end
         if foreign && public_params.any? { |param| param.passing_mode == :consuming } && body_return_type != @types.fetch("void")
           raise_sema_error("foreign function #{decl.name} with consuming parameters must return void")
@@ -1431,7 +1429,7 @@ module MilkTea
           require_mutable_pointer: true,
           allow_span_param_identifier: true,
         )
-        element_type = infer_index_result_type(receiver_type, @types.fetch("usize"))
+        element_type = infer_index_result_type(receiver_type, @types.fetch("ptr_uint"))
 
         statement.value.elements.each_with_index do |elem, i|
           validate_consuming_foreign_expression!(elem, scopes:, root_allowed: false)
@@ -1785,13 +1783,13 @@ module MilkTea
             infer_float_literal(expression, expected_type)
           when AST::SizeofExpr
             infer_layout_query_type(expression.type, context: "sizeof")
-            @types.fetch("usize")
+            @types.fetch("ptr_uint")
           when AST::AlignofExpr
             infer_layout_query_type(expression.type, context: "alignof")
-            @types.fetch("usize")
+            @types.fetch("ptr_uint")
           when AST::OffsetofExpr
             infer_offsetof_type(expression.type, expression.field)
-            @types.fetch("usize")
+            @types.fetch("ptr_uint")
           when AST::StringLiteral
             @types.fetch(expression.cstring ? "cstr" : "str")
           when AST::FormatString
@@ -1843,19 +1841,19 @@ module MilkTea
         if expected_type.is_a?(Types::Primitive) && expected_type.integer?
           expected_type
         else
-          @types.fetch("i32")
+          @types.fetch("int")
         end
       end
 
       def infer_float_literal(expression, expected_type)
-        if expression.lexeme.end_with?("f32")
-          @types.fetch("f32")
-        elsif expression.lexeme.end_with?("f64")
-          @types.fetch("f64")
+        if expression.lexeme.end_with?("float")
+          @types.fetch("float")
+        elsif expression.lexeme.end_with?("double")
+          @types.fetch("double")
         elsif expected_type.is_a?(Types::Primitive) && expected_type.float?
           expected_type
         else
-          @types.fetch("f64")
+          @types.fetch("double")
         end
       end
 
@@ -2598,7 +2596,7 @@ module MilkTea
 
           if part.format_spec
             unless value_type.is_a?(Types::Primitive) && value_type.float?
-              raise_sema_error("format spec ':.N' is only valid for f32 and f64, got #{value_type}")
+              raise_sema_error("format spec ':.N' is only valid for float and double, got #{value_type}")
             end
           else
             next if format_string_interpolation_supported?(value_type)
@@ -2910,7 +2908,7 @@ module MilkTea
 
           @types.fetch("void")
         when :str_builder_len, :str_builder_capacity
-          @types.fetch("usize")
+          @types.fetch("ptr_uint")
         when :str_builder_as_str
           raise_sema_error("#{receiver_type}.as_str requires a safe stored receiver") unless safe_reference_source_expression?(receiver, scopes:)
 

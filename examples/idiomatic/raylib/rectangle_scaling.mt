@@ -2,12 +2,12 @@ module examples.idiomatic.raylib.rectangle_scaling
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const handle_size: f32 = 12.0
+const screen_width: int = 800
+const screen_height: int = 450
+const handle_size: float = 12.0
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Rectangle Scaling")
     defer rl.close_window()
 
@@ -42,8 +42,8 @@ def main() -> i32:
             if rectangle.height < handle_size:
                 rectangle.height = handle_size
 
-            let window_width = f32<-rl.get_screen_width()
-            let window_height = f32<-rl.get_screen_height()
+            let window_width = float<-rl.get_screen_width()
+            let window_height = float<-rl.get_screen_height()
             if rectangle.width > window_width - rectangle.x:
                 rectangle.width = window_width - rectangle.x
             if rectangle.height > window_height - rectangle.y:

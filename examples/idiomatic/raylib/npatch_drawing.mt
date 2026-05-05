@@ -2,18 +2,18 @@ module examples.idiomatic.raylib.npatch_drawing
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const npatch_texture_path: str = "../../raylib/resources/ninepatch_button.png"
 
 
-def clamp_min(value: f32, minimum: f32) -> f32:
+def clamp_min(value: float, minimum: float) -> float:
     if value < minimum:
         return minimum
     return value
 
 
-def clamp_width(value: f32) -> f32:
+def clamp_width(value: float) -> float:
     if value < 1.0:
         return 1.0
     if value > 300.0:
@@ -21,7 +21,7 @@ def clamp_width(value: f32) -> f32:
     return value
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea N-Patch Drawing")
     defer rl.close_window()
 

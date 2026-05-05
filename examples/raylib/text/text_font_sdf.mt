@@ -2,8 +2,8 @@ module examples.raylib.text.text_font_sdf
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [text] example - font sdf"
 const msg: cstr = c"Signed Distance Fields"
 const font_path: cstr = c"../resources/anonymous_pro_bold.ttf"
@@ -16,7 +16,7 @@ const scale_help_text: cstr = c"Use MOUSE WHEEL to SCALE TEXT!"
 const hold_space_text: cstr = c"HOLD SPACE to USE SDF FONT VERSION!"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -48,9 +48,9 @@ def main() -> i32:
 
     rl.SetTextureFilter(font_sdf.texture, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
 
-    var font_position = rl.Vector2(x = 40.0, y = f32<-screen_height / 2.0 - 50.0)
+    var font_position = rl.Vector2(x = 40.0, y = float<-screen_height / 2.0 - 50.0)
     var text_size = rl.Vector2(x = 0.0, y = 0.0)
-    var font_size: f32 = 16.0
+    var font_size: float = 16.0
     var current_font = 0
 
     rl.SetTargetFPS(60)
@@ -71,8 +71,8 @@ def main() -> i32:
         else:
             text_size = rl.MeasureTextEx(font_sdf, msg, font_size, 0.0)
 
-        font_position.x = f32<-rl.GetScreenWidth() / 2.0 - text_size.x / 2.0
-        font_position.y = f32<-rl.GetScreenHeight() / 2.0 - text_size.y / 2.0 + 80.0
+        font_position.x = float<-rl.GetScreenWidth() / 2.0 - text_size.x / 2.0
+        font_position.y = float<-rl.GetScreenHeight() / 2.0 - text_size.y / 2.0 + 80.0
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

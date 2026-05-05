@@ -4,7 +4,7 @@ import std.fmt as fmt
 import std.io as io
 import std.string as string
 
-pub enum Level: u8
+pub enum Level: ubyte
     debug = 1
     info = 2
     warn = 3

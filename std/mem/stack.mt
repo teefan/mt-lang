@@ -9,7 +9,7 @@ pub struct Stack:
     arena: arena.Arena
 
 
-pub def create(capacity_bytes: usize) -> Stack:
+pub def create(capacity_bytes: ptr_uint) -> Stack:
     return Stack(arena = arena.create(capacity_bytes))
 
 methods Stack:
@@ -22,15 +22,15 @@ methods Stack:
         return
 
 
-    pub def remaining_bytes() -> usize:
+    pub def remaining_bytes() -> ptr_uint:
         return this.arena.remaining_bytes()
 
 
-    pub edit def alloc_bytes(size_bytes: usize) -> ptr[byte]?:
+    pub edit def alloc_bytes(size_bytes: ptr_uint) -> ptr[ubyte]?:
         return this.arena.alloc_bytes(size_bytes)
 
 
-    pub edit def alloc_bytes_aligned(size_bytes: usize, alignment: usize) -> ptr[byte]?:
+    pub edit def alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[ubyte]?:
         return this.arena.alloc_bytes_aligned(size_bytes, alignment)
 
 
@@ -39,12 +39,12 @@ methods Stack:
         return
 
 
-pub def alloc[T](space: ref[Stack], count: usize) -> ptr[T]?:
-    let element_size = usize<-sizeof(T)
+pub def alloc[T](space: ref[Stack], count: ptr_uint) -> ptr[T]?:
+    let element_size = ptr_uint<-sizeof(T)
     if heap.mul_overflows(count, element_size):
         return null
 
-    let memory = space.alloc_bytes_aligned(count * element_size, usize<-alignof(T))
+    let memory = space.alloc_bytes_aligned(count * element_size, ptr_uint<-alignof(T))
     if memory == null:
         return null
 

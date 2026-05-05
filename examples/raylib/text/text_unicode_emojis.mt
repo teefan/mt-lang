@@ -2,12 +2,12 @@ module examples.raylib.text.text_unicode_emojis
 
 import std.c.raylib as rl
 
-const emoji_per_width: i32 = 8
-const emoji_per_height: i32 = 4
-const emoji_count: i32 = 32
-const message_count: i32 = 47
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const emoji_per_width: int = 8
+const emoji_per_height: int = 4
+const emoji_count: int = 32
+const message_count: int = 47
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [text] example - unicode emojis"
 const dejavu_font_path: cstr = c"../resources/dejavu.fnt"
 const noto_cjk_font_path: cstr = c"../resources/noto_cjk.fnt"
@@ -20,12 +20,12 @@ const korean_text: cstr = c"Korean"
 const japanese_text: cstr = c"Japanese"
 const emoji_codepoints: cstr = c"\xF0\x9F\x8C\x80\x00\xF0\x9F\x98\x80\x00\xF0\x9F\x98\x82\x00\xF0\x9F\xA4\xA3\x00\xF0\x9F\x98\x83\x00\xF0\x9F\x98\x86\x00\xF0\x9F\x98\x89\x00\xF0\x9F\x98\x8B\x00\xF0\x9F\x98\x8E\x00\xF0\x9F\x98\x8D\x00\xF0\x9F\x98\x98\x00\xF0\x9F\x98\x97\x00\xF0\x9F\x98\x99\x00\xF0\x9F\x98\x9A\x00\xF0\x9F\x99\x82\x00\xF0\x9F\xA4\x97\x00\xF0\x9F\xA4\xA9\x00\xF0\x9F\xA4\x94\x00\xF0\x9F\xA4\xA8\x00\xF0\x9F\x98\x90\x00\xF0\x9F\x98\x91\x00\xF0\x9F\x98\xB6\x00\xF0\x9F\x99\x84\x00\xF0\x9F\x98\x8F\x00\xF0\x9F\x98\xA3\x00\xF0\x9F\x98\xA5\x00\xF0\x9F\x98\xAE\x00\xF0\x9F\xA4\x90\x00\xF0\x9F\x98\xAF\x00\xF0\x9F\x98\xAA\x00\xF0\x9F\x98\xAB\x00\xF0\x9F\x98\xB4\x00\xF0\x9F\x98\x8C\x00\xF0\x9F\x98\x9B\x00\xF0\x9F\x98\x9D\x00\xF0\x9F\xA4\xA4\x00\xF0\x9F\x98\x92\x00\xF0\x9F\x98\x95\x00\xF0\x9F\x99\x83\x00\xF0\x9F\xA4\x91\x00\xF0\x9F\x98\xB2\x00\xF0\x9F\x99\x81\x00\xF0\x9F\x98\x96\x00\xF0\x9F\x98\x9E\x00\xF0\x9F\x98\x9F\x00\xF0\x9F\x98\xA4\x00\xF0\x9F\x98\xA2\x00\xF0\x9F\x98\xAD\x00\xF0\x9F\x98\xA6\x00\xF0\x9F\x98\xA9\x00\xF0\x9F\xA4\xAF\x00\xF0\x9F\x98\xAC\x00\xF0\x9F\x98\xB0\x00\xF0\x9F\x98\xB1\x00\xF0\x9F\x98\xB3\x00\xF0\x9F\xA4\xAA\x00\xF0\x9F\x98\xB5\x00\xF0\x9F\x98\xA1\x00\xF0\x9F\x98\xA0\x00\xF0\x9F\xA4\xAC\x00\xF0\x9F\x98\xB7\x00\xF0\x9F\xA4\x92\x00\xF0\x9F\xA4\x95\x00\xF0\x9F\xA4\xA2\x00\xF0\x9F\xA4\xAE\x00\xF0\x9F\xA4\xA7\x00\xF0\x9F\x98\x87\x00\xF0\x9F\xA4\xA0\x00\xF0\x9F\xA4\xAB\x00\xF0\x9F\xA4\xAD\x00\xF0\x9F\xA7\x90\x00\xF0\x9F\xA4\x93\x00\xF0\x9F\x98\x88\x00\xF0\x9F\x91\xBF\x00\xF0\x9F\x91\xB9\x00\xF0\x9F\x91\xBA\x00\xF0\x9F\x92\x80\x00\xF0\x9F\x91\xBB\x00\xF0\x9F\x91\xBD\x00\xF0\x9F\x91\xBE\x00\xF0\x9F\xA4\x96\x00\xF0\x9F\x92\xA9\x00\xF0\x9F\x98\xBA\x00\xF0\x9F\x98\xB8\x00\xF0\x9F\x98\xB9\x00\xF0\x9F\x98\xBB\x00\xF0\x9F\x98\xBD\x00\xF0\x9F\x99\x80\x00\xF0\x9F\x98\xBF\x00\xF0\x9F\x8C\xBE\x00\xF0\x9F\x8C\xBF\x00\xF0\x9F\x8D\x80\x00\xF0\x9F\x8D\x83\x00\xF0\x9F\x8D\x87\x00\xF0\x9F\x8D\x93\x00\xF0\x9F\xA5\x9D\x00\xF0\x9F\x8D\x85\x00\xF0\x9F\xA5\xA5\x00\xF0\x9F\xA5\x91\x00\xF0\x9F\x8D\x86\x00\xF0\x9F\xA5\x94\x00\xF0\x9F\xA5\x95\x00\xF0\x9F\x8C\xBD\x00\xF0\x9F\x8C\xB6\x00\xF0\x9F\xA5\x92\x00\xF0\x9F\xA5\xA6\x00\xF0\x9F\x8D\x84\x00\xF0\x9F\xA5\x9C\x00\xF0\x9F\x8C\xB0\x00\xF0\x9F\x8D\x9E\x00\xF0\x9F\xA5\x90\x00\xF0\x9F\xA5\x96\x00\xF0\x9F\xA5\xA8\x00\xF0\x9F\xA5\x9E\x00\xF0\x9F\xA7\x80\x00\xF0\x9F\x8D\x96\x00\xF0\x9F\x8D\x97\x00\xF0\x9F\xA5\xA9\x00\xF0\x9F\xA5\x93\x00\xF0\x9F\x8D\x94\x00\xF0\x9F\x8D\x9F\x00\xF0\x9F\x8D\x95\x00\xF0\x9F\x8C\xAD\x00\xF0\x9F\xA5\xAA\x00\xF0\x9F\x8C\xAE\x00\xF0\x9F\x8C\xAF\x00\xF0\x9F\xA5\x99\x00\xF0\x9F\xA5\x9A\x00\xF0\x9F\x8D\xB3\x00\xF0\x9F\xA5\x98\x00\xF0\x9F\x8D\xB2\x00\xF0\x9F\xA5\xA3\x00\xF0\x9F\xA5\x97\x00\xF0\x9F\x8D\xBF\x00\xF0\x9F\xA5\xAB\x00\xF0\x9F\x8D\xB1\x00\xF0\x9F\x8D\x98\x00\xF0\x9F\x8D\x9D\x00\xF0\x9F\x8D\xA0\x00\xF0\x9F\x8D\xA2\x00\xF0\x9F\x8D\xA5\x00\xF0\x9F\x8D\xA1\x00\xF0\x9F\xA5\x9F\x00\xF0\x9F\xA5\xA1\x00\xF0\x9F\x8D\xA6\x00\xF0\x9F\x8D\xAA\x00\xF0\x9F\x8E\x82\x00\xF0\x9F\x8D\xB0\x00\xF0\x9F\xA5\xA7\x00\xF0\x9F\x8D\xAB\x00\xF0\x9F\x8D\xAF\x00\xF0\x9F\x8D\xBC\x00\xF0\x9F\xA5\x9B\x00\xF0\x9F\x8D\xB5\x00\xF0\x9F\x8D\xB6\x00\xF0\x9F\x8D\xBE\x00\xF0\x9F\x8D\xB7\x00\xF0\x9F\x8D\xBB\x00\xF0\x9F\xA5\x82\x00\xF0\x9F\xA5\x83\x00\xF0\x9F\xA5\xA4\x00\xF0\x9F\xA5\xA2\x00\xF0\x9F\x91\x81\x00\xF0\x9F\x91\x85\x00\xF0\x9F\x91\x84\x00\xF0\x9F\x92\x8B\x00\xF0\x9F\x92\x98\x00\xF0\x9F\x92\x93\x00\xF0\x9F\x92\x97\x00\xF0\x9F\x92\x99\x00\xF0\x9F\x92\x9B\x00\xF0\x9F\xA7\xA1\x00\xF0\x9F\x92\x9C\x00\xF0\x9F\x96\xA4\x00\xF0\x9F\x92\x9D\x00\xF0\x9F\x92\x9F\x00\xF0\x9F\x92\x8C\x00\xF0\x9F\x92\xA4\x00\xF0\x9F\x92\xA2\x00\xF0\x9F\x92\xA3\x00"
 
-const measure_state: i32 = 0
-const draw_state: i32 = 1
+const measure_state: int = 0
+const draw_state: int = 1
 
 struct EmojiSlot:
-    index: i32
-    message: i32
+    index: int
+    message: int
     color: rl.Color
 
 struct EmojiMessage:
@@ -38,12 +38,12 @@ def chars_to_cstr(text: ptr[char]) -> cstr:
         return cstr<-text
 
 
-def emoji_text_at(offset: i32) -> cstr:
+def emoji_text_at(offset: int) -> cstr:
     unsafe:
         return cstr<-(ptr[char]<-emoji_codepoints + offset)
 
 
-def randomize_emoji(emojis: ptr[EmojiSlot], hovered: ref[i32], selected: ref[i32], total_messages: i32) -> void:
+def randomize_emoji(emojis: ptr[EmojiSlot], hovered: ref[int], selected: ref[int], total_messages: int) -> void:
     read(hovered) = -1
     read(selected) = -1
 
@@ -53,21 +53,21 @@ def randomize_emoji(emojis: ptr[EmojiSlot], hovered: ref[i32], selected: ref[i32
         var index = 0
         while index < emoji_count:
             (emojis + index).index = rl.GetRandomValue(0, 179) * 5
-            (emojis + index).color = rl.Fade(rl.ColorFromHSV(f32<-((start * (index + 1)) % 360), 0.6, 0.85), 0.8)
+            (emojis + index).color = rl.Fade(rl.ColorFromHSV(float<-((start * (index + 1)) % 360), 0.6, 0.85), 0.8)
             (emojis + index).message = rl.GetRandomValue(0, total_messages - 1)
             index += 1
 
 
-def draw_text_boxed(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: f32, spacing: f32, word_wrap: bool, tint: rl.Color) -> void:
+def draw_text_boxed(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: float, spacing: float, word_wrap: bool, tint: rl.Color) -> void:
     draw_text_boxed_selectable(font, text, rec, font_size, spacing, word_wrap, tint, 0, 0, rl.WHITE, rl.WHITE)
 
 
-def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: f32, spacing: f32, word_wrap: bool, tint: rl.Color, select_start: i32, select_length: i32, select_tint: rl.Color, select_back_tint: rl.Color) -> void:
-    let length = i32<-rl.TextLength(text)
+def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: float, spacing: float, word_wrap: bool, tint: rl.Color, select_start: int, select_length: int, select_tint: rl.Color, select_back_tint: rl.Color) -> void:
+    let length = int<-rl.TextLength(text)
 
-    var text_offset_y: f32 = 0.0
-    var text_offset_x: f32 = 0.0
-    let scale_factor = font_size / f32<-font.baseSize
+    var text_offset_y: float = 0.0
+    var text_offset_x: float = 0.0
+    let scale_factor = font_size / float<-font.baseSize
 
     var state = if word_wrap: measure_state else: draw_state
     var start_line = -1
@@ -90,12 +90,12 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
 
             i += codepoint_byte_count - 1
 
-            var glyph_width: f32 = 0.0
+            var glyph_width: float = 0.0
             if codepoint != 10:
                 if font.glyphs[glyph_index].advanceX == 0:
                     glyph_width = font.recs[glyph_index].width * scale_factor
                 else:
-                    glyph_width = f32<-font.glyphs[glyph_index].advanceX * scale_factor
+                    glyph_width = float<-font.glyphs[glyph_index].advanceX * scale_factor
 
                 if i + 1 < length:
                     glyph_width += spacing
@@ -129,14 +129,14 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
             else:
                 if codepoint == 10:
                     if not word_wrap:
-                        text_offset_y += (f32<-font.baseSize + f32<-font.baseSize / 2.0) * scale_factor
+                        text_offset_y += (float<-font.baseSize + float<-font.baseSize / 2.0) * scale_factor
                         text_offset_x = 0.0
                 else:
                     if not word_wrap and (text_offset_x + glyph_width) > rec.width:
-                        text_offset_y += (f32<-font.baseSize + f32<-font.baseSize / 2.0) * scale_factor
+                        text_offset_y += (float<-font.baseSize + float<-font.baseSize / 2.0) * scale_factor
                         text_offset_x = 0.0
 
-                    if (text_offset_y + f32<-font.baseSize * scale_factor) > rec.height:
+                    if (text_offset_y + float<-font.baseSize * scale_factor) > rec.height:
                         break
 
                     var is_glyph_selected = false
@@ -146,7 +146,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
                                 x = rec.x + text_offset_x - 1.0,
                                 y = rec.y + text_offset_y,
                                 width = glyph_width,
-                                height = f32<-font.baseSize * scale_factor,
+                                height = float<-font.baseSize * scale_factor,
                             ),
                             select_back_tint,
                         )
@@ -162,7 +162,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
                         )
 
                 if word_wrap and i == end_line:
-                    text_offset_y += (f32<-font.baseSize + f32<-font.baseSize / 2.0) * scale_factor
+                    text_offset_y += (float<-font.baseSize + float<-font.baseSize / 2.0) * scale_factor
                     text_offset_x = 0.0
                     start_line = end_line
                     end_line = -1
@@ -179,7 +179,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
             k += 1
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT | rl.ConfigFlags.FLAG_VSYNC_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -271,20 +271,20 @@ def main() -> i32:
         var index = 0
         while index < emoji_count:
             let txt = emoji_text_at(emojis[index].index)
-            let emoji_rect = rl.Rectangle(x = position.x, y = position.y, width = f32<-font_emoji.baseSize, height = f32<-font_emoji.baseSize)
+            let emoji_rect = rl.Rectangle(x = position.x, y = position.y, width = float<-font_emoji.baseSize, height = float<-font_emoji.baseSize)
 
             if not rl.CheckCollisionPointRec(mouse, emoji_rect):
-                rl.DrawTextEx(font_emoji, txt, position, f32<-font_emoji.baseSize, 1.0, if selected == index: emojis[index].color else: rl.Fade(rl.LIGHTGRAY, 0.4))
+                rl.DrawTextEx(font_emoji, txt, position, float<-font_emoji.baseSize, 1.0, if selected == index: emojis[index].color else: rl.Fade(rl.LIGHTGRAY, 0.4))
             else:
-                rl.DrawTextEx(font_emoji, txt, position, f32<-font_emoji.baseSize, 1.0, emojis[index].color)
+                rl.DrawTextEx(font_emoji, txt, position, float<-font_emoji.baseSize, 1.0, emojis[index].color)
                 hovered = index
                 hovered_pos = position
 
             if index != 0 and (index % emoji_per_width) == 0:
-                position.y += f32<-font_emoji.baseSize + 24.25
+                position.y += float<-font_emoji.baseSize + 24.25
                 position.x = 28.8
             else:
-                position.x += f32<-font_emoji.baseSize + 28.8
+                position.x += float<-font_emoji.baseSize + 28.8
 
             index += 1
 
@@ -294,7 +294,7 @@ def main() -> i32:
             if rl.TextIsEqual(messages[message_index].language, chinese_text) or rl.TextIsEqual(messages[message_index].language, korean_text) or rl.TextIsEqual(messages[message_index].language, japanese_text):
                 message_font = font_asian
 
-            var sz = rl.MeasureTextEx(message_font, messages[message_index].text, f32<-message_font.baseSize, 1.0)
+            var sz = rl.MeasureTextEx(message_font, messages[message_index].text, float<-message_font.baseSize, 1.0)
             if sz.x > 300.0:
                 sz.y *= sz.x / 300.0
                 sz.x = 300.0
@@ -307,8 +307,8 @@ def main() -> i32:
             var msg_rect = rl.Rectangle(
                 x = selected_pos.x - 38.8,
                 y = selected_pos.y,
-                width = f32<-(2 * horizontal_padding) + sz.x,
-                height = f32<-(2 * vertical_padding) + sz.y,
+                width = float<-(2 * horizontal_padding) + sz.x,
+                height = float<-(2 * vertical_padding) + sz.y,
             )
             msg_rect.y -= msg_rect.height
 
@@ -328,25 +328,25 @@ def main() -> i32:
                 a = b
                 b = tmp
 
-            if msg_rect.x + msg_rect.width > f32<-screen_width:
-                msg_rect.x -= (msg_rect.x + msg_rect.width) - f32<-screen_width + 10.0
+            if msg_rect.x + msg_rect.width > float<-screen_width:
+                msg_rect.x -= (msg_rect.x + msg_rect.width) - float<-screen_width + 10.0
 
             rl.DrawRectangleRec(msg_rect, emojis[selected].color)
             rl.DrawTriangle(a, b, c, emojis[selected].color)
 
             let text_rect = rl.Rectangle(
-                x = msg_rect.x + f32<-horizontal_padding / 2.0,
-                y = msg_rect.y + f32<-vertical_padding / 2.0,
-                width = msg_rect.width - f32<-horizontal_padding,
+                x = msg_rect.x + float<-horizontal_padding / 2.0,
+                y = msg_rect.y + float<-vertical_padding / 2.0,
+                width = msg_rect.width - float<-horizontal_padding,
                 height = msg_rect.height,
             )
-            draw_text_boxed(message_font, messages[message_index].text, text_rect, f32<-message_font.baseSize, 1.0, true, rl.WHITE)
+            draw_text_boxed(message_font, messages[message_index].text, text_rect, float<-message_font.baseSize, 1.0, true, rl.WHITE)
 
-            let byte_count = i32<-rl.TextLength(messages[message_index].text)
+            let byte_count = int<-rl.TextLength(messages[message_index].text)
             let codepoint_count = rl.GetCodepointCount(messages[message_index].text)
             let info = rl.TextFormat(info_format, messages[message_index].language, codepoint_count, byte_count)
             sz = rl.MeasureTextEx(rl.GetFontDefault(), info, 10.0, 1.0)
-            rl.DrawText(info, i32<-(text_rect.x + text_rect.width - sz.x), i32<-(msg_rect.y + msg_rect.height - sz.y - 2.0), 10, rl.RAYWHITE)
+            rl.DrawText(info, int<-(text_rect.x + text_rect.width - sz.x), int<-(msg_rect.y + msg_rect.height - sz.y - 2.0), 10, rl.RAYWHITE)
 
         rl.DrawText(main_info_text, (screen_width - 650) / 2, screen_height - 40, 20, rl.GRAY)
         rl.DrawText(sub_info_text, (screen_width - 484) / 2, screen_height - 16, 10, rl.GRAY)

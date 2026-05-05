@@ -2,24 +2,24 @@ module examples.raylib.models.models_basic_voxel
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const world_size: i32 = 8
-const voxel_count: i32 = world_size * world_size * world_size
+const screen_width: int = 800
+const screen_height: int = 450
+const world_size: int = 8
+const voxel_count: int = world_size * world_size * world_size
 const window_title: cstr = c"raylib [models] example - basic voxel"
 const remove_text: cstr = c"Left-click a voxel to remove it!"
 const move_text: cstr = c"WASD to move, mouse to look around"
 
 
-def voxel_index(x: i32, y: i32, z: i32) -> i32:
+def voxel_index(x: int, y: int, z: int) -> int:
     return x * world_size * world_size + y * world_size + z
 
 
-def voxel_position(x: i32, y: i32, z: i32) -> rl.Vector3:
-    return rl.Vector3(x = f32<-x, y = f32<-y, z = f32<-z)
+def voxel_position(x: int, y: int, z: int) -> rl.Vector3:
+    return rl.Vector3(x = float<-x, y = float<-y, z = float<-z)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -46,11 +46,11 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_FIRST_PERSON)
 
-        if rl.IsMouseButtonPressed(i32<-rl.MouseButton.MOUSE_BUTTON_LEFT):
+        if rl.IsMouseButtonPressed(int<-rl.MouseButton.MOUSE_BUTTON_LEFT):
             let screen_center = rl.Vector2(x = rl.GetScreenWidth() / 2.0, y = rl.GetScreenHeight() / 2.0)
             let ray = rl.GetScreenToWorldRay(screen_center, camera)
 
-            var closest_distance: f32 = 99999.0
+            var closest_distance: float = 99999.0
             var closest_x = -1
             var closest_y = -1
             var closest_z = -1

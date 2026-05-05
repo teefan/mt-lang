@@ -3,28 +3,28 @@ module examples.raylib.shapes.shapes_easings_rectangles
 import std.c.libm as math
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const recs_width: i32 = 50
-const recs_height: i32 = 50
-const max_recs_x: i32 = screen_width / recs_width
-const max_recs_y: i32 = screen_height / recs_height
-const rec_count: i32 = max_recs_x * max_recs_y
-const play_time_in_frames: i32 = 240
+const screen_width: int = 800
+const screen_height: int = 450
+const recs_width: int = 50
+const recs_height: int = 50
+const max_recs_x: int = screen_width / recs_width
+const max_recs_y: int = screen_height / recs_height
+const rec_count: int = max_recs_x * max_recs_y
+const play_time_in_frames: int = 240
 const window_title: cstr = c"raylib [shapes] example - easings rectangles"
 const replay_text: cstr = c"PRESS [SPACE] TO PLAY AGAIN!"
 
 
-def ease_linear_in(t: f32, b: f32, c: f32, d: f32) -> f32:
+def ease_linear_in(t: float, b: float, c: float, d: float) -> float:
     return c * t / d + b
 
 
-def ease_circ_out(t: f32, b: f32, c: f32, d: f32) -> f32:
+def ease_circ_out(t: float, b: float, c: float, d: float) -> float:
     let normalized = t / d - 1.0
     return c * math.sqrtf(1.0 - normalized * normalized) + b
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -38,7 +38,7 @@ def main() -> i32:
             recs[index].width = recs_width
             recs[index].height = recs_height
 
-    var rotation: f32 = 0.0
+    var rotation: float = 0.0
     var frames_counter = 0
     var state = 0
 
@@ -49,8 +49,8 @@ def main() -> i32:
             frames_counter += 1
 
             for index in 0..rec_count:
-                recs[index].height = ease_circ_out(f32<-frames_counter, f32<-recs_height, -f32<-recs_height, f32<-play_time_in_frames)
-                recs[index].width = ease_circ_out(f32<-frames_counter, f32<-recs_width, -f32<-recs_width, f32<-play_time_in_frames)
+                recs[index].height = ease_circ_out(float<-frames_counter, float<-recs_height, -float<-recs_height, float<-play_time_in_frames)
+                recs[index].width = ease_circ_out(float<-frames_counter, float<-recs_width, -float<-recs_width, float<-play_time_in_frames)
 
                 if recs[index].height < 0.0:
                     recs[index].height = 0.0
@@ -60,7 +60,7 @@ def main() -> i32:
                 if recs[index].height == 0.0 and recs[index].width == 0.0:
                     state = 1
 
-                rotation = ease_linear_in(f32<-frames_counter, 0.0, 360.0, f32<-play_time_in_frames)
+                rotation = ease_linear_in(float<-frames_counter, 0.0, 360.0, float<-play_time_in_frames)
         elif state == 1 and rl.IsKeyPressed(rl.KeyboardKey.KEY_SPACE):
             frames_counter = 0
 

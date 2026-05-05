@@ -2,13 +2,13 @@ module examples.raylib.core.core_vr_simulator
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - vr simulator"
 const distortion_shader_path: cstr = c"../resources/shaders/glsl330/distortion.fs"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -20,8 +20,8 @@ def main() -> i32:
         eyeToScreenDistance = 0.041,
         lensSeparationDistance = 0.07,
         interpupillaryDistance = 0.07,
-        lensDistortionValues = array[f32, 4](1.0, 0.22, 0.24, 0.0),
-        chromaAbCorrection = array[f32, 4](0.996, -0.004, 1.014, 0.0),
+        lensDistortionValues = array[float, 4](1.0, 0.22, 0.24, 0.0),
+        chromaAbCorrection = array[float, 4](0.996, -0.004, 1.014, 0.0),
     )
     var config = rl.LoadVrStereoConfig(device)
     defer rl.UnloadVrStereoConfig(config)

@@ -3,11 +3,11 @@ module examples.idiomatic.raylib.following_eyes
 import std.raylib as rl
 import std.raylib.math as math
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 
 
-def clamp_to_circle(point: rl.Vector2, center: rl.Vector2, radius: f32) -> rl.Vector2:
+def clamp_to_circle(point: rl.Vector2, center: rl.Vector2, radius: float) -> rl.Vector2:
     if rl.check_collision_point_circle(point, center, radius):
         return point
 
@@ -20,15 +20,15 @@ def clamp_to_circle(point: rl.Vector2, center: rl.Vector2, radius: f32) -> rl.Ve
     )
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Following Eyes")
     defer rl.close_window()
 
-    let center_y = f32<-screen_height / 2.0
-    let left_eye = rl.Vector2(x = f32<-screen_width / 2.0 - 100.0, y = center_y)
-    let right_eye = rl.Vector2(x = f32<-screen_width / 2.0 + 100.0, y = center_y)
-    let sclera_radius: f32 = 80.0
-    let iris_radius: f32 = 24.0
+    let center_y = float<-screen_height / 2.0
+    let left_eye = rl.Vector2(x = float<-screen_width / 2.0 - 100.0, y = center_y)
+    let right_eye = rl.Vector2(x = float<-screen_width / 2.0 + 100.0, y = center_y)
+    let sclera_radius: float = 80.0
+    let iris_radius: float = 24.0
     let iris_limit = sclera_radius - iris_radius
 
     rl.set_target_fps(60)

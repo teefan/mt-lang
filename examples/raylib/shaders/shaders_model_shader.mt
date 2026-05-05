@@ -2,9 +2,9 @@ module examples.raylib.shaders.shaders_model_shader
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const model_path: cstr = c"../resources/models/watermill.obj"
 const texture_path: cstr = c"../resources/models/watermill_diffuse.png"
 const shader_path_format: cstr = c"../resources/shaders/glsl%i/grayscale.fs"
@@ -17,7 +17,7 @@ def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
         model.materials[0].shader = shader
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
 
     rl.InitWindow(screen_width, screen_height, window_title)
@@ -41,7 +41,7 @@ def main() -> i32:
     defer rl.UnloadShader(shader)
 
     set_model_shader(ptr_of(model), shader)
-    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+    rl.SetMaterialTexture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 

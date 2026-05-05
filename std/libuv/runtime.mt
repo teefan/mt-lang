@@ -29,11 +29,11 @@ pub def noop_close(handle: ptr[uv.uv_handle_t]) -> void:
     return
 
 
-pub def succeeded(status: i32) -> bool:
+pub def succeeded(status: int) -> bool:
     return status >= 0
 
 
-pub def failed(status: i32) -> bool:
+pub def failed(status: int) -> bool:
     return status < 0
 
 
@@ -55,7 +55,7 @@ def release_ipv4_address(address: ref[IPv4Address]) -> void:
     return
 
 
-def create_ipv4_address(ip: str, port: i32, scratch: ref[arena.Arena]) -> Result[IPv4Address, i32]:
+def create_ipv4_address(ip: str, port: int, scratch: ref[arena.Arena]) -> Result[IPv4Address, int]:
     let storage = heap.must_alloc_zeroed_bytes(1, helper.mt_libuv_sockaddr_in_size())
     unsafe:
         let raw_addr = ptr[sys.sockaddr_in]<-storage
@@ -76,12 +76,12 @@ def ipv4_const_sockaddr(address: IPv4Address) -> const_ptr[sys.sockaddr]:
         return const_ptr[sys.sockaddr]<-address.raw
 
 
-def byte_buffer(data: span[u8]) -> uv.uv_buf_t:
+def byte_buffer(data: span[ubyte]) -> uv.uv_buf_t:
     unsafe:
-        return uv.buf_init(ptr[char]<-data.data, u32<-data.len)
+        return uv.buf_init(ptr[char]<-data.data, uint<-data.len)
 
 
-pub def create_loop() -> Result[Loop, i32]:
+pub def create_loop() -> Result[Loop, int]:
     let storage = heap.must_alloc_zeroed_bytes(1, uv.loop_size())
     unsafe:
         let raw_loop = ptr[uv.uv_loop_t]<-storage
@@ -96,19 +96,19 @@ pub def loop_ptr(loop: Loop) -> ptr[uv.uv_loop_t]:
     return loop.raw
 
 
-pub def loop_run(loop: Loop, mode: uv.uv_run_mode) -> i32:
+pub def loop_run(loop: Loop, mode: uv.uv_run_mode) -> int:
     return uv.run(loop.raw, mode)
 
 
-pub def loop_run_default(loop: Loop) -> i32:
+pub def loop_run_default(loop: Loop) -> int:
     return uv.run(loop.raw, c.uv_run_mode.UV_RUN_DEFAULT)
 
 
-pub def loop_run_once(loop: Loop) -> i32:
+pub def loop_run_once(loop: Loop) -> int:
     return uv.run(loop.raw, c.uv_run_mode.UV_RUN_ONCE)
 
 
-pub def loop_run_nowait(loop: Loop) -> i32:
+pub def loop_run_nowait(loop: Loop) -> int:
     return uv.run(loop.raw, c.uv_run_mode.UV_RUN_NOWAIT)
 
 
@@ -117,7 +117,7 @@ pub def loop_stop(loop: Loop) -> void:
     return
 
 
-pub def loop_release(loop: ref[Loop]) -> i32:
+pub def loop_release(loop: ref[Loop]) -> int:
     let status = uv.loop_close(loop.raw)
     if failed(status):
         return status
@@ -169,7 +169,7 @@ pub def request_release[T](request: ref[Request[T]]) -> void:
     return
 
 
-pub def create_timer(loop: Loop) -> Result[Handle[uv.uv_timer_t], i32]:
+pub def create_timer(loop: Loop) -> Result[Handle[uv.uv_timer_t], int]:
     var timer = alloc_handle[uv.uv_timer_t](c.uv_handle_type.UV_TIMER)
     let status = uv.timer_init(loop.raw, timer.raw)
     if failed(status):
@@ -178,15 +178,15 @@ pub def create_timer(loop: Loop) -> Result[Handle[uv.uv_timer_t], i32]:
     return ok(timer)
 
 
-pub def timer_start_once(timer: Handle[uv.uv_timer_t], timeout: usize, callback: fn(arg0: ptr[uv.uv_timer_t]) -> void) -> i32:
+pub def timer_start_once(timer: Handle[uv.uv_timer_t], timeout: ptr_uint, callback: fn(arg0: ptr[uv.uv_timer_t]) -> void) -> int:
     return uv.timer_start(timer.raw, callback, timeout, 0)
 
 
-pub def timer_start_repeat(timer: Handle[uv.uv_timer_t], timeout: usize, repeat: usize, callback: fn(arg0: ptr[uv.uv_timer_t]) -> void) -> i32:
+pub def timer_start_repeat(timer: Handle[uv.uv_timer_t], timeout: ptr_uint, repeat: ptr_uint, callback: fn(arg0: ptr[uv.uv_timer_t]) -> void) -> int:
     return uv.timer_start(timer.raw, callback, timeout, repeat)
 
 
-pub def timer_stop(timer: Handle[uv.uv_timer_t]) -> i32:
+pub def timer_stop(timer: Handle[uv.uv_timer_t]) -> int:
     return uv.timer_stop(timer.raw)
 
 
@@ -194,11 +194,11 @@ pub def create_work_request() -> Request[uv.uv_work_t]:
     return alloc_request[uv.uv_work_t](c.uv_req_type.UV_WORK)
 
 
-pub def queue_work(loop: Loop, request: Request[uv.uv_work_t], work_cb: fn(arg0: ptr[uv.uv_work_t]) -> void, after_work_cb: fn(arg0: ptr[uv.uv_work_t], arg1: i32) -> void) -> i32:
+pub def queue_work(loop: Loop, request: Request[uv.uv_work_t], work_cb: fn(arg0: ptr[uv.uv_work_t]) -> void, after_work_cb: fn(arg0: ptr[uv.uv_work_t], arg1: int) -> void) -> int:
     return uv.queue_work(loop.raw, request.raw, work_cb, after_work_cb)
 
 
-pub def create_tcp(loop: Loop) -> Result[Handle[uv.uv_tcp_t], i32]:
+pub def create_tcp(loop: Loop) -> Result[Handle[uv.uv_tcp_t], int]:
     var tcp = alloc_handle[uv.uv_tcp_t](c.uv_handle_type.UV_TCP)
     let status = uv.tcp_init(loop.raw, tcp.raw)
     if failed(status):
@@ -216,15 +216,15 @@ pub def tcp_stream(tcp: Handle[uv.uv_tcp_t]) -> ptr[uv.uv_stream_t]:
         return ptr[uv.uv_stream_t]<-tcp.raw
 
 
-pub def tcp_listen(tcp: Handle[uv.uv_tcp_t], backlog: i32, callback: fn(arg0: ptr[uv.uv_stream_t], arg1: i32) -> void) -> i32:
+pub def tcp_listen(tcp: Handle[uv.uv_tcp_t], backlog: int, callback: fn(arg0: ptr[uv.uv_stream_t], arg1: int) -> void) -> int:
     return uv.listen(tcp_stream(tcp), backlog, callback)
 
 
-pub def tcp_accept(server: Handle[uv.uv_tcp_t], client: Handle[uv.uv_tcp_t]) -> i32:
+pub def tcp_accept(server: Handle[uv.uv_tcp_t], client: Handle[uv.uv_tcp_t]) -> int:
     return uv.accept(tcp_stream(server), tcp_stream(client))
 
 
-pub def tcp_bind_ipv4(tcp: Handle[uv.uv_tcp_t], ip: str, port: i32, flag_bits: u32, scratch: ref[arena.Arena]) -> i32:
+pub def tcp_bind_ipv4(tcp: Handle[uv.uv_tcp_t], ip: str, port: int, flag_bits: uint, scratch: ref[arena.Arena]) -> int:
     let address = create_ipv4_address(ip, port, scratch)
     if not address.is_ok:
         return address.error
@@ -235,11 +235,11 @@ pub def tcp_bind_ipv4(tcp: Handle[uv.uv_tcp_t], ip: str, port: i32, flag_bits: u
     return status
 
 
-pub def tcp_local_port(tcp: Handle[uv.uv_tcp_t]) -> Result[i32, i32]:
+pub def tcp_local_port(tcp: Handle[uv.uv_tcp_t]) -> Result[int, int]:
     let storage = heap.must_alloc_zeroed_bytes(1, helper.mt_libuv_sockaddr_in_size())
     unsafe:
         let raw_addr = ptr[sys.sockaddr_in]<-storage
-        var name_len: i32 = i32<-helper.mt_libuv_sockaddr_in_size()
+        var name_len: int = int<-helper.mt_libuv_sockaddr_in_size()
         let status = uv.tcp_getsockname(tcp.raw, ptr[sys.sockaddr]<-raw_addr, ptr_of(name_len))
         if failed(status):
             heap.release_bytes(storage)
@@ -250,7 +250,7 @@ pub def tcp_local_port(tcp: Handle[uv.uv_tcp_t]) -> Result[i32, i32]:
         return ok(port)
 
 
-pub def tcp_connect_ipv4(request: Request[uv.uv_connect_t], tcp: Handle[uv.uv_tcp_t], ip: str, port: i32, callback: fn(arg0: ptr[uv.uv_connect_t], arg1: i32) -> void, scratch: ref[arena.Arena]) -> i32:
+pub def tcp_connect_ipv4(request: Request[uv.uv_connect_t], tcp: Handle[uv.uv_tcp_t], ip: str, port: int, callback: fn(arg0: ptr[uv.uv_connect_t], arg1: int) -> void, scratch: ref[arena.Arena]) -> int:
     let address = create_ipv4_address(ip, port, scratch)
     if not address.is_ok:
         return address.error
@@ -270,7 +270,7 @@ pub def fs_cleanup(request: Request[uv.uv_fs_t]) -> void:
     return
 
 
-pub def fs_result(request: Request[uv.uv_fs_t]) -> isize:
+pub def fs_result(request: Request[uv.uv_fs_t]) -> ptr_int:
     return uv.fs_get_result(request.raw)
 
 
@@ -278,27 +278,27 @@ pub def fs_path(request: Request[uv.uv_fs_t]) -> str:
     return text.cstr_as_str(uv.fs_get_path(request.raw))
 
 
-pub def fs_mkstemp(loop: Loop, request: Request[uv.uv_fs_t], tpl: str, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void, scratch: ref[arena.Arena]) -> i32:
+pub def fs_mkstemp(loop: Loop, request: Request[uv.uv_fs_t], tpl: str, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void, scratch: ref[arena.Arena]) -> int:
     return uv.fs_mkstemp(loop.raw, request.raw, scratch.to_cstr(tpl), callback)
 
 
-pub def fs_open(loop: Loop, request: Request[uv.uv_fs_t], path: str, flag_bits: i32, mode: i32, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void, scratch: ref[arena.Arena]) -> i32:
+pub def fs_open(loop: Loop, request: Request[uv.uv_fs_t], path: str, flag_bits: int, mode: int, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void, scratch: ref[arena.Arena]) -> int:
     return uv.fs_open(loop.raw, request.raw, scratch.to_cstr(path), flag_bits, mode, callback)
 
 
-pub def fs_write(loop: Loop, request: Request[uv.uv_fs_t], file: i32, data: span[u8], offset: isize, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> i32:
+pub def fs_write(loop: Loop, request: Request[uv.uv_fs_t], file: int, data: span[ubyte], offset: ptr_int, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> int:
     var buffer = byte_buffer(data)
     return uv.fs_write(loop.raw, request.raw, file, ptr_of(buffer), 1, offset, callback)
 
 
-pub def fs_read(loop: Loop, request: Request[uv.uv_fs_t], file: i32, data: span[u8], offset: isize, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> i32:
+pub def fs_read(loop: Loop, request: Request[uv.uv_fs_t], file: int, data: span[ubyte], offset: ptr_int, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> int:
     var buffer = byte_buffer(data)
     return uv.fs_read(loop.raw, request.raw, file, ptr_of(buffer), 1, offset, callback)
 
 
-pub def fs_close(loop: Loop, request: Request[uv.uv_fs_t], file: i32, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> i32:
+pub def fs_close(loop: Loop, request: Request[uv.uv_fs_t], file: int, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> int:
     return uv.fs_close(loop.raw, request.raw, file, callback)
 
 
-pub def fs_unlink(loop: Loop, request: Request[uv.uv_fs_t], path: str, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void, scratch: ref[arena.Arena]) -> i32:
+pub def fs_unlink(loop: Loop, request: Request[uv.uv_fs_t], path: str, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void, scratch: ref[arena.Arena]) -> int:
     return uv.fs_unlink(loop.raw, request.raw, scratch.to_cstr(path), callback)

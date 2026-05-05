@@ -2,14 +2,14 @@ module examples.raylib.shapes.shapes_logo_raylib
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - logo raylib"
 const raylib_text: cstr = c"raylib"
 const texture_text: cstr = c"this is NOT a texture!"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -3,11 +3,11 @@ module examples.idiomatic.raylib.window_letterbox
 import std.raylib as rl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const game_screen_width: i32 = 640
-const game_screen_height: i32 = 480
-const bar_count: i32 = 10
+const screen_width: int = 800
+const screen_height: int = 450
+const game_screen_width: int = 640
+const game_screen_height: int = 480
+const bar_count: int = 10
 
 
 def random_bar_color() -> rl.Color:
@@ -28,7 +28,7 @@ def fresh_colors() -> array[rl.Color, 10]:
     return colors
 
 
-def main() -> i32:
+def main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE | rl.ConfigFlags.FLAG_VSYNC_HINT)
     rl.init_window(screen_width, screen_height, "Milk Tea Letterbox")
     defer rl.close_window()
@@ -43,8 +43,8 @@ def main() -> i32:
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        let width_scale: f32 = f32<-rl.get_screen_width() / game_screen_width
-        let height_scale: f32 = f32<-rl.get_screen_height() / game_screen_height
+        let width_scale: float = float<-rl.get_screen_width() / game_screen_width
+        let height_scale: float = float<-rl.get_screen_height() / game_screen_height
         var scale = width_scale
         if height_scale < scale:
             scale = height_scale
@@ -54,8 +54,8 @@ def main() -> i32:
 
         let scaled_game_width = game_screen_width * scale
         let scaled_game_height = game_screen_height * scale
-        let offset_x: f32 = (rl.get_screen_width() - scaled_game_width) * 0.5
-        let offset_y: f32 = (rl.get_screen_height() - scaled_game_height) * 0.5
+        let offset_x: float = (rl.get_screen_width() - scaled_game_width) * 0.5
+        let offset_y: float = (rl.get_screen_height() - scaled_game_height) * 0.5
 
         let mouse = rl.get_mouse_position()
         var virtual_mouse = rm.Vector2.zero()
@@ -76,8 +76,8 @@ def main() -> i32:
             color_index += 1
 
         rl.draw_text("If executed inside a window,\nyou can resize the window,\nand see the screen scaling!", 10, 25, 20, rl.WHITE)
-        rl.draw_text(rl.text_format_i32_i32("Default Mouse: [%i , %i]", i32<-mouse.x, i32<-mouse.y), 350, 25, 20, rl.GREEN)
-        rl.draw_text(rl.text_format_i32_i32("Virtual Mouse: [%i , %i]", i32<-virtual_mouse.x, i32<-virtual_mouse.y), 350, 55, 20, rl.YELLOW)
+        rl.draw_text(rl.text_format_int_int("Default Mouse: [%i , %i]", int<-mouse.x, int<-mouse.y), 350, 25, 20, rl.GREEN)
+        rl.draw_text(rl.text_format_int_int("Virtual Mouse: [%i , %i]", int<-virtual_mouse.x, int<-virtual_mouse.y), 350, 55, 20, rl.YELLOW)
 
         rl.end_texture_mode()
 

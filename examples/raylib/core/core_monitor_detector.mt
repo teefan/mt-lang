@@ -2,14 +2,14 @@ module examples.raylib.core.core_monitor_detector
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - monitor detector"
 const help_text: cstr = c"Press [Enter] to move window to next monitor available"
 const current_label: cstr = c"CURRENT"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -30,10 +30,10 @@ def main() -> i32:
             let height = rl.GetMonitorHeight(index)
 
             if position.x < monitor_offset_x:
-                monitor_offset_x = -i32<-position.x
+                monitor_offset_x = -int<-position.x
 
-            let right_edge = i32<-position.x + width
-            let bottom_edge = i32<-position.y + height
+            let right_edge = int<-position.x + width
+            let bottom_edge = int<-position.y + height
             if max_width < right_edge:
                 max_width = right_edge
             if max_height < bottom_edge:
@@ -49,11 +49,11 @@ def main() -> i32:
         else:
             current_monitor_index = rl.GetCurrentMonitor()
 
-        var monitor_scale: f32 = 0.6
+        var monitor_scale: float = 0.6
         if max_height > max_width + monitor_offset_x:
-            monitor_scale *= f32<-screen_height / max_height
+            monitor_scale *= float<-screen_height / max_height
         else:
-            monitor_scale *= f32<-screen_width / (max_width + monitor_offset_x)
+            monitor_scale *= float<-screen_width / (max_width + monitor_offset_x)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

@@ -1,6 +1,6 @@
 extern module std.c.unistd:
     include "unistd.h"
 
-    type ssize_t = i64
+    type ssize_t = long
 
-    extern def write(fd: i32, buf: ptr[void], count: usize) -> ssize_t
+    extern def write(fd: int, buf: ptr[void], count: ptr_uint) -> ssize_t

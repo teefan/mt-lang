@@ -9,15 +9,15 @@ struct Ball:
     position: rl.Vector2
     speed: rl.Vector2
     prev_position: rl.Vector2
-    radius: f32
-    friction: f32
-    elasticity: f32
+    radius: float
+    friction: float
+    elasticity: float
     color: rl.Color
     grabbed: bool
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const max_balls: i32 = 5000
+const screen_width: int = 800
+const screen_height: int = 450
+const max_balls: int = 5000
 const window_title: cstr = c"raylib [shapes] example - ball physics"
 const help_text_1: cstr = c"grab a ball by pressing with the mouse and throw it by releasing"
 const help_text_2: cstr = c"right click to create new balls (keep left control pressed to create a lot)"
@@ -27,7 +27,7 @@ const ball_count_format: cstr = c"BALL COUNT: %d"
 const gravity_format: cstr = c"GRAVITY: %.2f"
 
 
-def ball_at(position: rl.Vector2, speed: rl.Vector2, radius: f32, color: rl.Color) -> Ball:
+def ball_at(position: rl.Vector2, speed: rl.Vector2, radius: float, color: rl.Color) -> Ball:
     return Ball(
         position = position,
         speed = speed,
@@ -40,21 +40,21 @@ def ball_at(position: rl.Vector2, speed: rl.Vector2, radius: f32, color: rl.Colo
     )
 
 
-def distance(left: rl.Vector2, right: rl.Vector2) -> f32:
+def distance(left: rl.Vector2, right: rl.Vector2) -> float:
     let dx = left.x - right.x
     let dy = left.y - right.y
     return math.sqrtf(dx * dx + dy * dy)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let balls = heap.must_alloc_zeroed[Ball](usize<-max_balls)
+    let balls = heap.must_alloc_zeroed[Ball](ptr_uint<-max_balls)
     defer heap.release(balls)
 
     var ball_count = 1
-    var balls_view = sp.from_ptr[Ball](balls, usize<-ball_count)
+    var balls_view = sp.from_ptr[Ball](balls, ptr_uint<-ball_count)
     balls_view[0] = ball_at(
         rl.Vector2(x = rl.GetScreenWidth() / 2.0, y = rl.GetScreenHeight() / 2.0),
         rl.Vector2(x = 200.0, y = 200.0),
@@ -64,14 +64,14 @@ def main() -> i32:
 
     var grabbed_index = -1
     var press_offset = rl.Vector2(x = 0.0, y = 0.0)
-    var gravity: f32 = 100.0
+    var gravity: float = 100.0
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
         let delta = rl.GetFrameTime()
         let mouse_pos = rl.GetMousePosition()
-        balls_view = sp.from_ptr[Ball](balls, usize<-ball_count)
+        balls_view = sp.from_ptr[Ball](balls, ptr_uint<-ball_count)
 
         if rl.IsMouseButtonPressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
             var index = ball_count
@@ -94,14 +94,14 @@ def main() -> i32:
             if ball_count < max_balls:
                 let new_index = ball_count
                 ball_count += 1
-                balls_view = sp.from_ptr[Ball](balls, usize<-ball_count)
+                balls_view = sp.from_ptr[Ball](balls, ptr_uint<-ball_count)
                 balls_view[new_index] = ball_at(
                     mouse_pos,
                     rl.Vector2(
-                        x = f32<-rl.GetRandomValue(-300, 300),
-                        y = f32<-rl.GetRandomValue(-300, 300),
+                        x = float<-rl.GetRandomValue(-300, 300),
+                        y = float<-rl.GetRandomValue(-300, 300),
                     ),
-                    20.0 + f32<-rl.GetRandomValue(0, 30),
+                    20.0 + float<-rl.GetRandomValue(0, 30),
                     rl.Color(
                         r = rl.GetRandomValue(0, 255),
                         g = rl.GetRandomValue(0, 255),
@@ -114,8 +114,8 @@ def main() -> i32:
             for index in 0..ball_count:
                 if not balls_view[index].grabbed:
                     balls_view[index].speed = rl.Vector2(
-                        x = f32<-rl.GetRandomValue(-2000, 2000),
-                        y = f32<-rl.GetRandomValue(-2000, 2000),
+                        x = float<-rl.GetRandomValue(-2000, 2000),
+                        y = float<-rl.GetRandomValue(-2000, 2000),
                     )
 
         gravity += rl.GetMouseWheelMove() * 5.0

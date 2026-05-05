@@ -217,7 +217,7 @@ class DAPServerTest < Minitest::Test
       when "scopes"
         { "success" => true, "body" => { "scopes" => [{ "name" => "Locals", "variablesReference" => 99, "expensive" => false }] } }
       when "variables"
-        { "success" => true, "body" => { "variables" => [{ "name" => "x", "value" => "42", "type" => "i32", "variablesReference" => 0 }] } }
+        { "success" => true, "body" => { "variables" => [{ "name" => "x", "value" => "42", "type" => "int", "variablesReference" => 0 }] } }
       when "setExceptionBreakpoints"
         { "success" => true, "body" => {} }
       when "evaluate"
@@ -287,7 +287,7 @@ class DAPServerTest < Minitest::Test
           "success" => true,
           "body" => {
             "value" => arguments["value"],
-            "type" => "i32",
+            "type" => "int",
             "variablesReference" => 0
           }
         }
@@ -385,9 +385,9 @@ class DAPServerTest < Minitest::Test
           "success" => true,
           "body" => {
             "variables" => [
-              { "name" => "int_", "value" => "42", "type" => "i32", "variablesReference" => 0 },
-              { "name" => "left", "value" => "1", "type" => "i32", "variablesReference" => 0 },
-              { "name" => "__mt_for_index_1", "value" => "0", "type" => "usize", "variablesReference" => 0 }
+              { "name" => "int_", "value" => "42", "type" => "int", "variablesReference" => 0 },
+              { "name" => "left", "value" => "1", "type" => "int", "variablesReference" => 0 },
+              { "name" => "__mt_for_index_1", "value" => "0", "type" => "ptr_uint", "variablesReference" => 0 }
             ]
           }
         }
@@ -418,7 +418,7 @@ class DAPServerTest < Minitest::Test
           "success" => true,
           "body" => {
             "result" => arguments["expression"],
-            "type" => "i32",
+            "type" => "int",
             "variablesReference" => 0,
           }
         }
@@ -427,7 +427,7 @@ class DAPServerTest < Minitest::Test
           "success" => true,
           "body" => {
             "value" => arguments["value"],
-            "type" => "i32",
+            "type" => "int",
             "variablesReference" => 0,
           }
         }
@@ -436,7 +436,7 @@ class DAPServerTest < Minitest::Test
           "success" => true,
           "body" => {
             "value" => arguments["value"],
-            "type" => "i32",
+            "type" => "int",
             "variablesReference" => 0,
           }
         }
@@ -2239,11 +2239,11 @@ class DAPServerTest < Minitest::Test
       File.write(source_path, [
         "module demo.real_debug",
         "",
-        "def add(left: i32) -> i32:",
+        "def add(left: int) -> int:",
         "    let int = left + 1",
         "    return int",
         "",
-        "def main() -> i32:",
+        "def main() -> int:",
         "    return add(41)",
         "",
       ].join("\n"))
@@ -2335,13 +2335,13 @@ class DAPServerTest < Minitest::Test
       File.write(source_path, [
         "module demo.watch",
         "",
-        "def add(left: i32) -> i32:",
+        "def add(left: int) -> int:",
         "    var watched = left",
         "    watched += 1",
         "    watched += 1",
         "    return watched",
         "",
-        "def main() -> i32:",
+        "def main() -> int:",
         "    return add(40)",
         "",
       ].join("\n"))
@@ -2451,17 +2451,17 @@ class DAPServerTest < Minitest::Test
       File.write(source_path, [
         "module demo.steps",
         "",
-        "def inner(value: i32) -> i32:",
+        "def inner(value: int) -> int:",
         "    let lifted = value + 1",
         "    return lifted",
         "",
-        "def outer(value: i32) -> i32:",
+        "def outer(value: int) -> int:",
         "    let seed = value",
         "    let inside = inner(seed)",
         "    let marker = inside + 1",
         "    return marker",
         "",
-        "def main() -> i32:",
+        "def main() -> int:",
         "    return outer(40)",
         "",
       ].join("\n"))
@@ -2585,7 +2585,7 @@ class DAPServerTest < Minitest::Test
       File.write(source_path, [
         "module demo.controls",
         "",
-        "def main() -> i32:",
+        "def main() -> int:",
         "    var total = 0",
         "    while total < 2000000000:",
         "        total += 1",
@@ -2822,7 +2822,7 @@ class DAPServerTest < Minitest::Test
           when "scopes"
             write_response.call(request, { scopes: [{ name: "Locals", variablesReference: 11, expensive: false }] })
           when "variables"
-            write_response.call(request, { variables: [{ name: "a", value: "1", type: "i32", variablesReference: 0 }] })
+            write_response.call(request, { variables: [{ name: "a", value: "1", type: "int", variablesReference: 0 }] })
           when "setExceptionBreakpoints"
             write_response.call(request, {})
           when "evaluate"

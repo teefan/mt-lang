@@ -2,12 +2,12 @@ module examples.idiomatic.raylib.image_channel
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const fudesumi_path: str = "../../raylib/resources/fudesumi.png"
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Image Channel")
     defer rl.close_window()
 
@@ -52,14 +52,14 @@ def main() -> i32:
     let fudesumi_rec = rl.Rectangle(
         x = 0.0,
         y = 0.0,
-        width = f32<-fudesumi_texture.width,
-        height = f32<-fudesumi_texture.height,
+        width = float<-fudesumi_texture.width,
+        height = float<-fudesumi_texture.height,
     )
     let fudesumi_pos = rl.Rectangle(
         x = 50.0,
         y = 10.0,
-        width = f32<-fudesumi_texture.width * 0.8,
-        height = f32<-fudesumi_texture.height * 0.8,
+        width = float<-fudesumi_texture.width * 0.8,
+        height = float<-fudesumi_texture.height * 0.8,
     )
     let red_pos = rl.Rectangle(x = 410.0, y = 10.0, width = fudesumi_pos.width / 2.0, height = fudesumi_pos.height / 2.0)
     let green_pos = rl.Rectangle(x = 600.0, y = 10.0, width = fudesumi_pos.width / 2.0, height = fudesumi_pos.height / 2.0)

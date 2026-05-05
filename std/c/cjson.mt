@@ -7,37 +7,37 @@ extern module std.c.cjson:
         next: ptr[cJSON]
         prev: ptr[cJSON]
         child: ptr[cJSON]
-        kind: i32
+        kind: int
         valuestring: ptr[char]
-        valueint: i32
-        valuedouble: f64
+        valueint: int
+        valuedouble: double
         string: ptr[char]
 
     struct cJSON_Hooks:
-        malloc_fn: fn(arg0: usize) -> ptr[void]
+        malloc_fn: fn(arg0: ptr_uint) -> ptr[void]
         free_fn: fn(arg0: ptr[void]) -> void
 
-    type cJSON_bool = i32
+    type cJSON_bool = int
 
     extern def cJSON_Version() -> cstr
     extern def cJSON_InitHooks(hooks: ptr[cJSON_Hooks]) -> void
     extern def cJSON_Parse(value: cstr) -> ptr[cJSON]?
-    extern def cJSON_ParseWithLength(value: cstr, buffer_length: usize) -> ptr[cJSON]?
-    extern def cJSON_ParseWithOpts(value: cstr, return_parse_end: ptr[cstr], require_null_terminated: i32) -> ptr[cJSON]?
-    extern def cJSON_ParseWithLengthOpts(value: cstr, buffer_length: usize, return_parse_end: ptr[cstr], require_null_terminated: i32) -> ptr[cJSON]?
+    extern def cJSON_ParseWithLength(value: cstr, buffer_length: ptr_uint) -> ptr[cJSON]?
+    extern def cJSON_ParseWithOpts(value: cstr, return_parse_end: ptr[cstr], require_null_terminated: int) -> ptr[cJSON]?
+    extern def cJSON_ParseWithLengthOpts(value: cstr, buffer_length: ptr_uint, return_parse_end: ptr[cstr], require_null_terminated: int) -> ptr[cJSON]?
     extern def cJSON_Print(item: const_ptr[cJSON]) -> ptr[char]?
     extern def cJSON_PrintUnformatted(item: const_ptr[cJSON]) -> ptr[char]?
-    extern def cJSON_PrintBuffered(item: const_ptr[cJSON], prebuffer: i32, fmt: i32) -> ptr[char]?
-    extern def cJSON_PrintPreallocated(item: ptr[cJSON], buffer: ptr[char], length: i32, format: i32) -> cJSON_bool
+    extern def cJSON_PrintBuffered(item: const_ptr[cJSON], prebuffer: int, fmt: int) -> ptr[char]?
+    extern def cJSON_PrintPreallocated(item: ptr[cJSON], buffer: ptr[char], length: int, format: int) -> cJSON_bool
     extern def cJSON_Delete(item: ptr[cJSON]) -> void
-    extern def cJSON_GetArraySize(array: const_ptr[cJSON]) -> i32
-    extern def cJSON_GetArrayItem(array: const_ptr[cJSON], index: i32) -> ptr[cJSON]?
+    extern def cJSON_GetArraySize(array: const_ptr[cJSON]) -> int
+    extern def cJSON_GetArrayItem(array: const_ptr[cJSON], index: int) -> ptr[cJSON]?
     extern def cJSON_GetObjectItem(object: const_ptr[cJSON], string: cstr) -> ptr[cJSON]?
     extern def cJSON_GetObjectItemCaseSensitive(object: const_ptr[cJSON], string: cstr) -> ptr[cJSON]?
     extern def cJSON_HasObjectItem(object: const_ptr[cJSON], string: cstr) -> cJSON_bool
     extern def cJSON_GetErrorPtr() -> cstr?
     extern def cJSON_GetStringValue(item: const_ptr[cJSON]) -> cstr?
-    extern def cJSON_GetNumberValue(item: const_ptr[cJSON]) -> f64
+    extern def cJSON_GetNumberValue(item: const_ptr[cJSON]) -> double
     extern def cJSON_IsInvalid(item: const_ptr[cJSON]) -> cJSON_bool
     extern def cJSON_IsFalse(item: const_ptr[cJSON]) -> cJSON_bool
     extern def cJSON_IsTrue(item: const_ptr[cJSON]) -> cJSON_bool
@@ -51,8 +51,8 @@ extern module std.c.cjson:
     extern def cJSON_CreateNull() -> ptr[cJSON]?
     extern def cJSON_CreateTrue() -> ptr[cJSON]?
     extern def cJSON_CreateFalse() -> ptr[cJSON]?
-    extern def cJSON_CreateBool(boolean: i32) -> ptr[cJSON]?
-    extern def cJSON_CreateNumber(num: f64) -> ptr[cJSON]?
+    extern def cJSON_CreateBool(boolean: int) -> ptr[cJSON]?
+    extern def cJSON_CreateNumber(num: double) -> ptr[cJSON]?
     extern def cJSON_CreateString(string: cstr) -> ptr[cJSON]?
     extern def cJSON_CreateRaw(raw: cstr) -> ptr[cJSON]?
     extern def cJSON_CreateArray() -> ptr[cJSON]?
@@ -60,50 +60,50 @@ extern module std.c.cjson:
     extern def cJSON_CreateStringReference(string: cstr) -> ptr[cJSON]?
     extern def cJSON_CreateObjectReference(child: const_ptr[cJSON]) -> ptr[cJSON]?
     extern def cJSON_CreateArrayReference(child: const_ptr[cJSON]) -> ptr[cJSON]?
-    extern def cJSON_CreateIntArray(numbers: const_ptr[i32], count: i32) -> ptr[cJSON]
-    extern def cJSON_CreateFloatArray(numbers: const_ptr[f32], count: i32) -> ptr[cJSON]
-    extern def cJSON_CreateDoubleArray(numbers: const_ptr[f64], count: i32) -> ptr[cJSON]
-    extern def cJSON_CreateStringArray(strings: const_ptr[cstr], count: i32) -> ptr[cJSON]
+    extern def cJSON_CreateIntArray(numbers: const_ptr[int], count: int) -> ptr[cJSON]
+    extern def cJSON_CreateFloatArray(numbers: const_ptr[float], count: int) -> ptr[cJSON]
+    extern def cJSON_CreateDoubleArray(numbers: const_ptr[double], count: int) -> ptr[cJSON]
+    extern def cJSON_CreateStringArray(strings: const_ptr[cstr], count: int) -> ptr[cJSON]
     extern def cJSON_AddItemToArray(array: ptr[cJSON], item: ptr[cJSON]) -> cJSON_bool
     extern def cJSON_AddItemToObject(object: ptr[cJSON], string: cstr, item: ptr[cJSON]) -> cJSON_bool
     extern def cJSON_AddItemToObjectCS(object: ptr[cJSON], string: cstr, item: ptr[cJSON]) -> cJSON_bool
     extern def cJSON_AddItemReferenceToArray(array: ptr[cJSON], item: ptr[cJSON]) -> cJSON_bool
     extern def cJSON_AddItemReferenceToObject(object: ptr[cJSON], string: cstr, item: ptr[cJSON]) -> cJSON_bool
     extern def cJSON_DetachItemViaPointer(parent: ptr[cJSON], item: ptr[cJSON]) -> ptr[cJSON]?
-    extern def cJSON_DetachItemFromArray(array: ptr[cJSON], which: i32) -> ptr[cJSON]?
-    extern def cJSON_DeleteItemFromArray(array: ptr[cJSON], which: i32) -> void
+    extern def cJSON_DetachItemFromArray(array: ptr[cJSON], which: int) -> ptr[cJSON]?
+    extern def cJSON_DeleteItemFromArray(array: ptr[cJSON], which: int) -> void
     extern def cJSON_DetachItemFromObject(object: ptr[cJSON], string: cstr) -> ptr[cJSON]?
     extern def cJSON_DetachItemFromObjectCaseSensitive(object: ptr[cJSON], string: cstr) -> ptr[cJSON]?
     extern def cJSON_DeleteItemFromObject(object: ptr[cJSON], string: cstr) -> void
     extern def cJSON_DeleteItemFromObjectCaseSensitive(object: ptr[cJSON], string: cstr) -> void
-    extern def cJSON_InsertItemInArray(array: ptr[cJSON], which: i32, newitem: ptr[cJSON]) -> cJSON_bool
+    extern def cJSON_InsertItemInArray(array: ptr[cJSON], which: int, newitem: ptr[cJSON]) -> cJSON_bool
     extern def cJSON_ReplaceItemViaPointer(parent: ptr[cJSON], item: ptr[cJSON], replacement: ptr[cJSON]) -> cJSON_bool
-    extern def cJSON_ReplaceItemInArray(array: ptr[cJSON], which: i32, newitem: ptr[cJSON]) -> cJSON_bool
+    extern def cJSON_ReplaceItemInArray(array: ptr[cJSON], which: int, newitem: ptr[cJSON]) -> cJSON_bool
     extern def cJSON_ReplaceItemInObject(object: ptr[cJSON], string: cstr, newitem: ptr[cJSON]) -> cJSON_bool
     extern def cJSON_ReplaceItemInObjectCaseSensitive(object: ptr[cJSON], string: cstr, newitem: ptr[cJSON]) -> cJSON_bool
-    extern def cJSON_Duplicate(item: const_ptr[cJSON], recurse: i32) -> ptr[cJSON]
-    extern def cJSON_Compare(a: const_ptr[cJSON], b: const_ptr[cJSON], case_sensitive: i32) -> cJSON_bool
+    extern def cJSON_Duplicate(item: const_ptr[cJSON], recurse: int) -> ptr[cJSON]
+    extern def cJSON_Compare(a: const_ptr[cJSON], b: const_ptr[cJSON], case_sensitive: int) -> cJSON_bool
     extern def cJSON_Minify(json: ptr[char]) -> void
     extern def cJSON_AddNullToObject(object: ptr[cJSON], name: cstr) -> ptr[cJSON]
     extern def cJSON_AddTrueToObject(object: ptr[cJSON], name: cstr) -> ptr[cJSON]
     extern def cJSON_AddFalseToObject(object: ptr[cJSON], name: cstr) -> ptr[cJSON]
-    extern def cJSON_AddBoolToObject(object: ptr[cJSON], name: cstr, boolean: i32) -> ptr[cJSON]
-    extern def cJSON_AddNumberToObject(object: ptr[cJSON], name: cstr, number: f64) -> ptr[cJSON]
+    extern def cJSON_AddBoolToObject(object: ptr[cJSON], name: cstr, boolean: int) -> ptr[cJSON]
+    extern def cJSON_AddNumberToObject(object: ptr[cJSON], name: cstr, number: double) -> ptr[cJSON]
     extern def cJSON_AddStringToObject(object: ptr[cJSON], name: cstr, string: cstr) -> ptr[cJSON]
     extern def cJSON_AddRawToObject(object: ptr[cJSON], name: cstr, raw: cstr) -> ptr[cJSON]
     extern def cJSON_AddObjectToObject(object: ptr[cJSON], name: cstr) -> ptr[cJSON]
     extern def cJSON_AddArrayToObject(object: ptr[cJSON], name: cstr) -> ptr[cJSON]
-    extern def cJSON_SetNumberHelper(object: ptr[cJSON], number: f64) -> f64
+    extern def cJSON_SetNumberHelper(object: ptr[cJSON], number: double) -> double
     extern def cJSON_SetValuestring(object: ptr[cJSON], valuestring: cstr) -> ptr[char]
-    extern def cJSON_malloc(size: usize) -> ptr[void]
+    extern def cJSON_malloc(size: ptr_uint) -> ptr[void]
     extern def cJSON_free(object: ptr[void]) -> void
 
-    const CJSON_VERSION_MAJOR: i32 = 1
+    const CJSON_VERSION_MAJOR: int = 1
 
-    const CJSON_VERSION_MINOR: i32 = 7
+    const CJSON_VERSION_MINOR: int = 7
 
-    const CJSON_VERSION_PATCH: i32 = 19
+    const CJSON_VERSION_PATCH: int = 19
 
-    const CJSON_NESTING_LIMIT: i32 = 1000
+    const CJSON_NESTING_LIMIT: int = 1000
 
-    const CJSON_CIRCULAR_LIMIT: i32 = 10000
+    const CJSON_CIRCULAR_LIMIT: int = 10000

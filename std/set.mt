@@ -6,11 +6,11 @@ pub struct HashSet[T]:
     items: map.HashMap[T, bool]
 
 
-pub def create[T](hash_fn: fn(key: T) -> u64, equals_fn: fn(left: T, right: T) -> bool) -> HashSet[T]:
+pub def create[T](hash_fn: fn(key: T) -> ulong, equals_fn: fn(left: T, right: T) -> bool) -> HashSet[T]:
     return HashSet[T](items = map.create[T, bool](hash_fn, equals_fn))
 
 
-pub def count[T](items: HashSet[T]) -> usize:
+pub def count[T](items: HashSet[T]) -> ptr_uint:
     return map.count[T, bool](items.items)
 
 

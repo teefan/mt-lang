@@ -2,9 +2,9 @@ module examples.raylib.models.models_animation_gpu_skinning
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const model_path: cstr = c"../resources/models/gltf/greenman.glb"
 const current_animation_format: cstr = c"Current animation: %s"
 const controls_text: cstr = c"Use the LEFT/RIGHT keys to switch animation"
@@ -18,17 +18,17 @@ def chars_to_cstr(text: ptr[char]) -> cstr:
         return cstr<-text
 
 
-def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
+def model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
     unsafe:
         return read(anims + index)
 
 
-def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
+def model_animation_name(anims: ptr[rl.ModelAnimation], index: int) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of((anims + index).name[0]))
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -72,7 +72,7 @@ def main() -> i32:
 
         let anim = model_animation(anims, anim_index)
         anim_current_frame = (anim_current_frame + 1) % anim.keyframeCount
-        rl.UpdateModelAnimation(model, anim, f32<-anim_current_frame)
+        rl.UpdateModelAnimation(model, anim, float<-anim_current_frame)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

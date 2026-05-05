@@ -2,14 +2,14 @@ module examples.raylib.textures.textures_image_loading
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - image loading"
 const image_path: cstr = c"../resources/raylib_logo.png"
 const message_text: cstr = c"this IS a texture loaded from an image!"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -3,17 +3,17 @@ module examples.idiomatic.raylib.easings_rectangles
 import std.easing as ease
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const recs_width: i32 = 50
-const recs_height: i32 = 50
-const max_recs_x: i32 = screen_width / recs_width
-const max_recs_y: i32 = screen_height / recs_height
-const rec_count: i32 = max_recs_x * max_recs_y
-const play_time_in_frames: i32 = 240
+const screen_width: int = 800
+const screen_height: int = 450
+const recs_width: int = 50
+const recs_height: int = 50
+const max_recs_x: int = screen_width / recs_width
+const max_recs_y: int = screen_height / recs_height
+const rec_count: int = max_recs_x * max_recs_y
+const play_time_in_frames: int = 240
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Easings Rectangles")
     defer rl.close_window()
 
@@ -27,7 +27,7 @@ def main() -> i32:
             recs[index].width = recs_width
             recs[index].height = recs_height
 
-    var rotation: f32 = 0.0
+    var rotation: float = 0.0
     var frames_counter = 0
     var state = 0
 
@@ -38,8 +38,8 @@ def main() -> i32:
             frames_counter += 1
 
             for index in 0..rec_count:
-                recs[index].height = ease.circ_out(f32<-frames_counter, f32<-recs_height, -f32<-recs_height, f32<-play_time_in_frames)
-                recs[index].width = ease.circ_out(f32<-frames_counter, f32<-recs_width, -f32<-recs_width, f32<-play_time_in_frames)
+                recs[index].height = ease.circ_out(float<-frames_counter, float<-recs_height, -float<-recs_height, float<-play_time_in_frames)
+                recs[index].width = ease.circ_out(float<-frames_counter, float<-recs_width, -float<-recs_width, float<-play_time_in_frames)
 
                 if recs[index].height < 0.0:
                     recs[index].height = 0.0
@@ -49,7 +49,7 @@ def main() -> i32:
                 if recs[index].height == 0.0 and recs[index].width == 0.0:
                     state = 1
 
-                rotation = ease.linear_in(f32<-frames_counter, 0.0, 360.0, f32<-play_time_in_frames)
+                rotation = ease.linear_in(float<-frames_counter, 0.0, 360.0, float<-play_time_in_frames)
         elif state == 1 and rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE):
             frames_counter = 0
 

@@ -2,9 +2,9 @@ module examples.raylib.shaders.shaders_ascii_rendering
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const fudesumi_path: cstr = c"../resources/fudesumi.png"
 const raysan_path: cstr = c"../resources/raysan.png"
 const shader_path_format: cstr = c"../resources/shaders/glsl%i/ascii.fs"
@@ -14,7 +14,7 @@ const title_format: cstr = c"Ascii effect - FontSize:%2.0f - [Left] -1 [Right] +
 const window_title: cstr = c"raylib [shaders] example - ascii rendering"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -30,12 +30,12 @@ def main() -> i32:
     let resolution_location = rl.GetShaderLocation(shader, resolution_uniform_name)
     let font_size_location = rl.GetShaderLocation(shader, font_size_uniform_name)
 
-    var font_size: f32 = 9.0
-    var resolution = array[f32, 2](f32<-screen_width, f32<-screen_height)
+    var font_size: float = 9.0
+    var resolution = array[float, 2](float<-screen_width, float<-screen_height)
     rl.SetShaderValue(shader, resolution_location, ptr_of(resolution[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
-    var circle_position = rl.Vector2(x = 40.0, y = f32<-screen_height * 0.5)
-    var circle_speed: f32 = 1.0
+    var circle_position = rl.Vector2(x = 40.0, y = float<-screen_height * 0.5)
+    var circle_speed: float = 1.0
 
     let target = rl.LoadRenderTexture(screen_width, screen_height)
     defer rl.UnloadRenderTexture(target)
@@ -68,7 +68,7 @@ def main() -> i32:
         rl.BeginShaderMode(shader)
         rl.DrawTextureRec(
             target.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-target.texture.width, height = -f32<-target.texture.height),
+            rl.Rectangle(x = 0.0, y = 0.0, width = float<-target.texture.width, height = -float<-target.texture.height),
             rl.Vector2(x = 0.0, y = 0.0),
             rl.WHITE,
         )

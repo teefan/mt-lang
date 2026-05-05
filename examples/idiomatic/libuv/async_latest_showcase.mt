@@ -2,7 +2,7 @@ module examples.idiomatic.libuv.async_latest_showcase
 
 import std.async as aio
 
-enum Mode: i32
+enum Mode: int
     a = 0
     b = 1
 
@@ -11,15 +11,15 @@ async def choose_mode(flag: bool) -> Mode:
     return if flag: Mode.a else: Mode.b
 
 
-async def limit() -> i32:
+async def limit() -> int:
     return 3
 
 
-async def idx() -> i32:
+async def idx() -> int:
     return 0
 
 
-async def cond(value: i32) -> bool:
+async def cond(value: int) -> bool:
     return value < 2
 
 
@@ -31,17 +31,17 @@ async def falsy() -> bool:
     return false
 
 
-async def score_a() -> i32:
+async def score_a() -> int:
     return 10
 
 
-async def score_b() -> i32:
+async def score_b() -> int:
     return 20
 
 
-async def showcase() -> i32:
+async def showcase() -> int:
     var total = 0
-    var slots = array[i32, 1](0)
+    var slots = array[int, 1](0)
 
     if await truthy():
         total += 1
@@ -73,7 +73,7 @@ async def showcase() -> i32:
     return total
 
 
-async def main() -> i32:
+async def main() -> int:
     let delay = aio.sleep(1)
     let value = showcase()
     return await delay + await value

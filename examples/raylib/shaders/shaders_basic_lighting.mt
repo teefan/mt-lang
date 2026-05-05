@@ -4,9 +4,9 @@ import std.c.raylib as rl
 import std.c.rlights as lights
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const shader_vertex_path_format: cstr = c"../resources/shaders/glsl%i/lighting.vs"
 const shader_fragment_path_format: cstr = c"../resources/shaders/glsl%i/lighting.fs"
 const view_pos_uniform_name: cstr = c"viewPos"
@@ -15,7 +15,7 @@ const help_text: cstr = c"Use keys [Y][R][G][B] to toggle lights"
 const window_title: cstr = c"raylib [shaders] example - basic lighting"
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -36,24 +36,24 @@ def main() -> i32:
 
     let view_loc = rl.GetShaderLocation(shader, view_pos_uniform_name)
     unsafe:
-        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
+        shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     let ambient_loc = rl.GetShaderLocation(shader, ambient_uniform_name)
-    var ambient = array[f32, 4](0.1, 0.1, 0.1, 1.0)
+    var ambient = array[float, 4](0.1, 0.1, 0.1, 1.0)
     rl.SetShaderValue(shader, ambient_loc, ptr_of(ambient[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     var light_sources = zero[array[lights.Light, 4]]
-    light_sources[0] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.YELLOW, shader)
-    light_sources[1] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = 2.0), rm.Vector3.zero(), rl.RED, shader)
-    light_sources[2] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = 2.0), rm.Vector3.zero(), rl.GREEN, shader)
-    light_sources[3] = lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.BLUE, shader)
+    light_sources[0] = lights.CreateLight(int<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.YELLOW, shader)
+    light_sources[1] = lights.CreateLight(int<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = 2.0), rm.Vector3.zero(), rl.RED, shader)
+    light_sources[2] = lights.CreateLight(int<-lights.LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = 2.0), rm.Vector3.zero(), rl.GREEN, shader)
+    light_sources[3] = lights.CreateLight(int<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = -2.0), rm.Vector3.zero(), rl.BLUE, shader)
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
         rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
-        var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
+        var camera_pos = array[float, 3](camera.position.x, camera.position.y, camera.position.z)
         rl.SetShaderValue(
             shader,
             view_loc,

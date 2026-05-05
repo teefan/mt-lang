@@ -2,30 +2,30 @@ module examples.raylib.core.core_delta_time
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - delta time"
 const help_text: cstr = c"Use the scroll wheel to change the fps limit, r to reset"
 const delta_text: cstr = c"FUNC: x += GetFrameTime()*speed"
 const frame_text: cstr = c"FUNC: x += speed"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
     var current_fps = 60
     var delta_circle = rl.Vector2(x = 0.0, y = 0.33333334 * screen_height)
     var frame_circle = rl.Vector2(x = 0.0, y = 0.6666667 * screen_height)
-    let speed: f32 = 10.0
-    let circle_radius: f32 = 32.0
+    let speed: float = 10.0
+    let circle_radius: float = 32.0
 
     rl.SetTargetFPS(current_fps)
 
     while not rl.WindowShouldClose():
         let mouse_wheel = rl.GetMouseWheelMove()
         if mouse_wheel != 0.0:
-            current_fps += i32<-mouse_wheel
+            current_fps += int<-mouse_wheel
             if current_fps < 0:
                 current_fps = 0
             rl.SetTargetFPS(current_fps)

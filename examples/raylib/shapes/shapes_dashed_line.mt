@@ -2,9 +2,9 @@ module examples.raylib.shapes.shapes_dashed_line
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const line_color_count: i32 = 8
+const screen_width: int = 800
+const screen_height: int = 450
+const line_color_count: int = 8
 const window_title: cstr = c"raylib [shapes] example - dashed line"
 const controls_text: cstr = c"CONTROLS:"
 const dash_help_text: cstr = c"UP/DOWN: Change Dash Length"
@@ -13,14 +13,14 @@ const color_help_text: cstr = c"C: Cycle Color"
 const status_format: cstr = c"Dash: %.0f | Space: %.0f"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
     let line_start_position = rl.Vector2(x = 20.0, y = 50.0)
     var line_end_position = rl.Vector2(x = 780.0, y = 400.0)
-    var dash_length: f32 = 25.0
-    var blank_length: f32 = 15.0
+    var dash_length: float = 25.0
+    var blank_length: float = 15.0
 
     var line_colors = zero[array[rl.Color, 8]]
     line_colors[0] = rl.RED
@@ -55,7 +55,7 @@ def main() -> i32:
         defer rl.EndDrawing()
 
         rl.ClearBackground(rl.RAYWHITE)
-        rl.DrawLineDashed(line_start_position, line_end_position, i32<-dash_length, i32<-blank_length, line_colors[color_index])
+        rl.DrawLineDashed(line_start_position, line_end_position, int<-dash_length, int<-blank_length, line_colors[color_index])
 
         rl.DrawRectangle(5, 5, 265, 95, rl.Fade(rl.SKYBLUE, 0.5))
         rl.DrawRectangleLines(5, 5, 265, 95, rl.BLUE)

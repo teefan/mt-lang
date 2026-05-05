@@ -2,8 +2,8 @@ module examples.raylib.core.core_basic_screen_manager
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - basic screen manager"
 const logo_screen_text: cstr = c"LOGO SCREEN"
 const logo_wait_text: cstr = c"WAIT for 2 SECONDS..."
@@ -14,14 +14,14 @@ const gameplay_help_text: cstr = c"PRESS ENTER or TAP to JUMP to ENDING SCREEN"
 const ending_screen_text: cstr = c"ENDING SCREEN"
 const ending_help_text: cstr = c"PRESS ENTER or TAP to RETURN to TITLE SCREEN"
 
-enum GameScreen: i32
+enum GameScreen: int
     LOGO = 0
     TITLE = 1
     GAMEPLAY = 2
     ENDING = 3
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -3,8 +3,8 @@ module examples.raylib.models.models_yaw_pitch_roll
 import std.c.raylib as rl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [models] example - yaw pitch roll"
 const model_path: cstr = c"../resources/models/obj/plane.obj"
 const texture_path: cstr = c"../resources/models/obj/plane_diffuse.png"
@@ -14,7 +14,7 @@ const yaw_controls_text: cstr = c"Yaw controlled with: KEY_A / KEY_S"
 const credit_text: cstr = c"(c) WWI Plane Model created by GiaHanLam"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -33,11 +33,11 @@ def main() -> i32:
     defer rl.UnloadTexture(texture)
 
     rl.SetTextureWrap(texture, rl.TextureWrap.TEXTURE_WRAP_REPEAT)
-    rl.SetMaterialTexture(model.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+    rl.SetMaterialTexture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
-    var pitch: f32 = 0.0
-    var roll: f32 = 0.0
-    var yaw: f32 = 0.0
+    var pitch: float = 0.0
+    var roll: float = 0.0
+    var yaw: float = 0.0
 
     rl.SetTargetFPS(60)
 

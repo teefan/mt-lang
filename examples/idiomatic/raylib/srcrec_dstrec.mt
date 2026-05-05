@@ -2,12 +2,12 @@ module examples.idiomatic.raylib.srcrec_dstrec
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const scarfy_path: str = "../../raylib/resources/scarfy.png"
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Texture Source/Dest")
     defer rl.close_window()
 
@@ -20,17 +20,17 @@ def main() -> i32:
     let source_rec = rl.Rectangle(
         x = 0.0,
         y = 0.0,
-        width = f32<-frame_width,
-        height = f32<-frame_height,
+        width = float<-frame_width,
+        height = float<-frame_height,
     )
     let dest_rec = rl.Rectangle(
-        x = f32<-screen_width / 2.0,
-        y = f32<-screen_height / 2.0,
-        width = f32<-frame_width * 2.0,
-        height = f32<-frame_height * 2.0,
+        x = float<-screen_width / 2.0,
+        y = float<-screen_height / 2.0,
+        width = float<-frame_width * 2.0,
+        height = float<-frame_height * 2.0,
     )
-    let origin = rl.Vector2(x = f32<-frame_width, y = f32<-frame_height)
-    var rotation: f32 = 0.0
+    let origin = rl.Vector2(x = float<-frame_width, y = float<-frame_height)
+    var rotation: float = 0.0
 
     rl.set_target_fps(60)
 
@@ -43,8 +43,8 @@ def main() -> i32:
         rl.clear_background(rl.RAYWHITE)
         rl.draw_texture_pro(scarfy, source_rec, dest_rec, origin, rotation, rl.WHITE)
 
-        rl.draw_line(i32<-dest_rec.x, 0, i32<-dest_rec.x, screen_height, rl.GRAY)
-        rl.draw_line(0, i32<-dest_rec.y, screen_width, i32<-dest_rec.y, rl.GRAY)
+        rl.draw_line(int<-dest_rec.x, 0, int<-dest_rec.x, screen_height, rl.GRAY)
+        rl.draw_line(0, int<-dest_rec.y, screen_width, int<-dest_rec.y, rl.GRAY)
         rl.draw_text("(c) Scarfy sprite by Eiden Marsal", screen_width - 200, screen_height - 20, 10, rl.GRAY)
 
     return 0

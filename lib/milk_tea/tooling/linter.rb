@@ -407,6 +407,8 @@ module MilkTea
         case stmt
         when AST::ReturnStmt
           true
+        when AST::ExpressionStmt
+          terminating_expression?(stmt.expression)
         when AST::IfStmt
           # Only exhaustive if there is an else branch AND every branch returns
           stmt.else_body && !stmt.else_body.empty? &&
@@ -419,6 +421,28 @@ module MilkTea
         else
           false
         end
+      end
+    end
+
+    def terminating_expression?(expression)
+      case expression
+      when AST::Call
+        terminating_callee?(expression.callee)
+      when AST::Specialization
+        terminating_callee?(expression.callee)
+      else
+        false
+      end
+    end
+
+    def terminating_callee?(callee)
+      case callee
+      when AST::Identifier
+        callee.name == "panic"
+      when AST::Specialization
+        terminating_callee?(callee.callee)
+      else
+        false
       end
     end
 

@@ -215,14 +215,14 @@ module MilkTea
       vendored_cjson = MilkTea::VendoredCJSON
 
       raylib_field_type_overrides = {
-        "Mesh" => { "indices" => "ptr[u16]?" },
+        "Mesh" => { "indices" => "ptr[ushort]?" },
       }.freeze
 
       raylib_function_param_overrides = {
         "LoadAutomationEventList" => { "fileName" => "cstr?" },
-        "LoadFontEx" => { "codepoints" => "ptr[i32]?" },
-        "LoadFontFromMemory" => { "codepoints" => "ptr[i32]?" },
-        "LoadFontData" => { "codepoints" => "ptr[i32]?" },
+        "LoadFontEx" => { "codepoints" => "ptr[int]?" },
+        "LoadFontFromMemory" => { "codepoints" => "ptr[int]?" },
+        "LoadFontData" => { "codepoints" => "ptr[int]?" },
         "LoadShader" => {
           "vsFileName" => "cstr?",
           "fsFileName" => "cstr?",
@@ -239,7 +239,7 @@ module MilkTea
         "SDL_CreateAudioStream" => { "dst_spec" => "const_ptr[SDL_AudioSpec]?" },
         "SDL_OpenAudioDeviceStream" => { "userdata" => "ptr[void]?" },
         "SDL_PutAudioStreamPlanarData" => { "channel_buffers" => "const_ptr[const_ptr[void]?]" },
-        "SDL_StepUTF8" => { "pslen" => "ptr[usize]?" },
+        "SDL_StepUTF8" => { "pslen" => "ptr[ptr_uint]?" },
         "SDL_MapRGB" => { "palette" => "const_ptr[SDL_Palette]?" },
         "SDL_MapRGBA" => { "palette" => "const_ptr[SDL_Palette]?" },
         "SDL_FillSurfaceRect" => { "rect" => "const_ptr[SDL_Rect]?" },
@@ -257,7 +257,7 @@ module MilkTea
         "SDL_RenderTextureAffine" => { "srcrect" => "const_ptr[SDL_FRect]?" },
         "SDL_RenderGeometry" => {
           "texture" => "ptr[SDL_Texture]?",
-          "indices" => "const_ptr[i32]?",
+          "indices" => "const_ptr[int]?",
         },
         "SDL_RenderReadPixels" => { "rect" => "const_ptr[SDL_Rect]?" },
       }.freeze

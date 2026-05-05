@@ -4,28 +4,28 @@ import std.c.raylib as rl
 import std.c.stdio as stdio
 import std.c.time as ctime
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - custom logging"
 const prompt_text: cstr = c"Check out the console output to see the custom logger in action!"
 const time_format: cstr = c"%Y-%m-%d %H:%M:%S"
 
-foreign def vprintf_raylib_args(format: cstr, args: rl.va_list as stdio.va_list) -> i32 = stdio.vprintf
+foreign def vprintf_raylib_args(format: cstr, args: rl.va_list as stdio.va_list) -> int = stdio.vprintf
 
 
-def log_level_prefix(level: i32) -> cstr:
-    if level == i32<-rl.TraceLogLevel.LOG_INFO:
+def log_level_prefix(level: int) -> cstr:
+    if level == int<-rl.TraceLogLevel.LOG_INFO:
         return c"[INFO] : "
-    if level == i32<-rl.TraceLogLevel.LOG_ERROR:
+    if level == int<-rl.TraceLogLevel.LOG_ERROR:
         return c"[ERROR]: "
-    if level == i32<-rl.TraceLogLevel.LOG_WARNING:
+    if level == int<-rl.TraceLogLevel.LOG_WARNING:
         return c"[WARN] : "
-    if level == i32<-rl.TraceLogLevel.LOG_DEBUG:
+    if level == int<-rl.TraceLogLevel.LOG_DEBUG:
         return c"[DEBUG]: "
     return c""
 
 
-def custom_trace_log(level: i32, text: cstr, args: rl.va_list) -> void:
+def custom_trace_log(level: int, text: cstr, args: rl.va_list) -> void:
     var time_str = zero[array[char, 64]]
     var now: ctime.time_t = 0
     now = ctime.time(ptr_of(now))
@@ -41,7 +41,7 @@ def custom_trace_log(level: i32, text: cstr, args: rl.va_list) -> void:
     stdio.printf(c"\n")
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetTraceLogCallback(custom_trace_log)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

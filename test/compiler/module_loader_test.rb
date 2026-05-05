@@ -44,7 +44,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
       import std.c.missing as missing
 
-      def main() -> i32:
+      def main() -> int:
           return 0
     MT
 
@@ -68,7 +68,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
         import demo.lib as lib
 
-        def main() -> i32:
+        def main() -> int:
             let counter = lib.Counter(value = lib.answer)
             return counter.read()
       MT
@@ -76,26 +76,26 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       File.write(lib_path, <<~MT)
         module demo.lib
 
-        pub const answer: i32 = 7
-        const hidden: i32 = 9
+        pub const answer: int = 7
+        const hidden: int = 9
 
         pub struct Counter:
-            value: i32
+            value: int
 
         struct Hidden:
-            value: i32
+            value: int
 
         methods Counter:
-            pub def read() -> i32:
+            pub def read() -> int:
                 return this.value
 
-            def bump() -> i32:
+            def bump() -> int:
                 return this.value + 1
 
         pub def make_counter() -> Counter:
             return Counter(value = answer)
 
-        def hidden_fn() -> i32:
+        def hidden_fn() -> int:
             return hidden
       MT
 
@@ -120,8 +120,8 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       File.write(dep_path, <<~MT)
         extern module std.c.dep:
             struct Vec:
-                x: f32
-                y: f32
+                x: float
+                y: float
       MT
 
       File.write(helper_path, <<~MT)

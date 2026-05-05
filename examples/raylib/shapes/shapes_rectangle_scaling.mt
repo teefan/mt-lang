@@ -2,14 +2,14 @@ module examples.raylib.shapes.shapes_rectangle_scaling
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const mouse_scale_mark_size: f32 = 12.0
+const screen_width: int = 800
+const screen_height: int = 450
+const mouse_scale_mark_size: float = 12.0
 const window_title: cstr = c"raylib [shapes] example - rectangle scaling"
 const help_text: cstr = c"Scale rectangle dragging from bottom-right corner!"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -48,8 +48,8 @@ def main() -> i32:
             if rec.height < mouse_scale_mark_size:
                 rec.height = mouse_scale_mark_size
 
-            let screen_width_f = f32<-rl.GetScreenWidth()
-            let screen_height_f = f32<-rl.GetScreenHeight()
+            let screen_width_f = float<-rl.GetScreenWidth()
+            let screen_height_f = float<-rl.GetScreenHeight()
 
             if rec.width > screen_width_f - rec.x:
                 rec.width = screen_width_f - rec.x

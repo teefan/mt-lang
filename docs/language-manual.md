@@ -18,7 +18,7 @@ module demo.main
 
 import std.io as io
 
-def main() -> i32:
+def main() -> int:
     return 0
 ```
 
@@ -30,12 +30,12 @@ extern module std.c.raylib:
     link "raylib"
 
     struct Color:
-        r: u8
-        g: u8
-        b: u8
-        a: u8
+        r: ubyte
+        g: ubyte
+        b: ubyte
+        a: ubyte
 
-    extern def InitWindow(width: i32, height: i32, title: cstr) -> void
+    extern def InitWindow(width: int, height: int, title: cstr) -> void
 ```
 
 Rules:
@@ -138,9 +138,9 @@ Top-level declarations:
 ### 3.2 Constants and variables
 
 ```mt
-const WIDTH: i32 = 1280
-var counter: i32 = 0
-var scratch: array[u8, 256]
+const WIDTH: int = 1280
+var counter: int = 0
+var scratch: array[ubyte, 256]
 ```
 
 Rules:
@@ -156,26 +156,26 @@ Rules:
 ### 3.3 Type aliases
 
 ```mt
-type Seconds = f32
-type Callback = fn(level: i32, message: cstr) -> void
+type Seconds = float
+type Callback = fn(level: int, message: cstr) -> void
 ```
 
 ### 3.4 Struct, union, enum, flags, opaque
 
 ```mt
 struct Vec2:
-    x: f32
-    y: f32
+    x: float
+    y: float
 
 union Number:
-    i: i32
-    f: f32
+    i: int
+    f: float
 
-enum State: u8
+enum State: ubyte
     idle = 0
     running = 1
 
-flags Mask: u32
+flags Mask: uint
     a = 1 << 0
     b = 1 << 1
 
@@ -183,11 +183,11 @@ opaque SDL_Window
 
 variant Token:
     ident(text: str)
-    number(value: i32)
+    number(value: int)
     eof
 ```
 
-`variant` is a tagged union. Each arm may optionally carry named payload fields. Generic variants are supported via type arguments, for example `Box[i32]`.
+`variant` is a tagged union. Each arm may optionally carry named payload fields. Generic variants are supported via type arguments, for example `Box[int]`.
 
 Arm constructors:
 
@@ -198,10 +198,10 @@ Layout modifiers for structs:
 
 ```mt
 packed struct Header:
-    tag: u8
+    tag: ubyte
 
 align(16) struct Mat4:
-    data: array[f32, 16]
+    data: array[float, 16]
 ```
 
 `align(...)` must be a positive power of two.
@@ -210,7 +210,7 @@ align(16) struct Mat4:
 
 ```mt
 methods Counter:
-    def read() -> i32:
+    def read() -> int:
         return this.value
 
     edit def bump() -> void:
@@ -234,7 +234,7 @@ Method capabilities:
 ### 3.6 Functions
 
 ```mt
-def add(a: i32, b: i32) -> i32:
+def add(a: int, b: int) -> int:
     return a + b
 ```
 
@@ -249,7 +249,7 @@ Rules:
 ### 3.7 Extern functions
 
 ```mt
-extern def printf(format: cstr, ...) -> i32
+extern def printf(format: cstr, ...) -> int
 ```
 
 Rules:
@@ -263,8 +263,8 @@ Rules:
 ### 3.8 Foreign functions
 
 ```mt
-foreign def init_window(width: i32, height: i32, title: str as cstr) -> void = c.InitWindow
-foreign def load_file_data(file_name: str as cstr, out data_size: i32) -> ptr[u8]? = c.LoadFileData
+foreign def init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow
+foreign def load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
 foreign def close_window(consuming window: Window) -> void = c.CloseWindow
 ```
 
@@ -314,7 +314,7 @@ Scrutinee types supported:
 
 - Enum: arm patterns must be members of that enum.
 - Variant: arm patterns must be arms of that variant; a payload arm may bind its fields with `as name`.
-- Integer (`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `isize`, `usize`): arm patterns must be integer literals.
+- Integer (`byte`, `short`, `int`, `long`, `ubyte`, `ushort`, `uint`, `ulong`, `ptr_int`, `ptr_uint`): arm patterns must be integer literals.
 
 `_` is a wildcard arm that matches any value not covered by preceding arms. It maps to a C `default:` case.
 
@@ -434,10 +434,10 @@ Unsafe context is required for raw-pointer-level operations such as:
 - `bool`
 - `byte`
 - `char`
-- `i8` `i16` `i32` `i64`
-- `u8` `u16` `u32` `u64`
-- `isize` `usize`
-- `f32` `f64`
+- `byte` `short` `int` `long`
+- `ubyte` `ushort` `uint` `ulong`
+- `ptr_int` `ptr_uint`
+- `float` `double`
 - `void`
 - `str`
 - `cstr`
@@ -521,7 +521,7 @@ Format string syntax:
 f"count=#{count} ok=#{ready}"
 ```
 
-Format strings have type `str` and are valid anywhere a `str` value is accepted. Interpolated expressions must be one of: `str`, `cstr`, `bool`, a numeric primitive, or an integer-backed enum or flags type. A precision specifier `:.N` is allowed on `f32` and `f64` interpolations.
+Format strings have type `str` and are valid anywhere a `str` value is accepted. Interpolated expressions must be one of: `str`, `cstr`, `bool`, a numeric primitive, or an integer-backed enum or flags type. A precision specifier `:.N` is allowed on `float` and `double` interpolations.
 
 The following standard library functions receive special lowering for format strings — they build the formatted output directly without an intermediate allocation:
 
@@ -546,10 +546,10 @@ The following standard library functions receive special lowering for format str
 ## 10. Async Semantics
 
 ```mt
-async def child() -> i32:
+async def child() -> int:
     return 41
 
-async def parent() -> i32:
+async def parent() -> int:
     let v = await child()
     return v + 1
 ```
@@ -559,7 +559,7 @@ Rules:
 - async function return type is lifted to `Task[T]`
 - `await` is only allowed inside async functions
 - `async main` requires importing `std.async` or `std.libuv.async`
-- `async main` pre-lift return type must be `i32` or `void`
+- `async main` pre-lift return type must be `int` or `void`
 
 Current async limitations:
 
@@ -635,16 +635,16 @@ module demo.main
 import std.fmt as fmt
 
 struct Counter:
-    value: i32
+    value: int
 
 methods Counter:
     edit def bump() -> void:
         this.value += 1
 
-    def read() -> i32:
+    def read() -> int:
         return this.value
 
-def main() -> i32:
+def main() -> int:
     var c = Counter(value = 0)
 
     for i in 0..3:

@@ -2,12 +2,12 @@ module examples.raylib.shaders.shaders_palette_switch
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
-const max_palettes: i32 = 3
-const colors_per_palette: i32 = 8
-const palette_value_count: i32 = 24
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
+const max_palettes: int = 3
+const colors_per_palette: int = 8
+const palette_value_count: int = 24
 const shader_path_format: cstr = c"../resources/shaders/glsl%i/palette_switch.fs"
 const palette_uniform_name: cstr = c"palette"
 const selector_text: cstr = c"< >"
@@ -15,7 +15,7 @@ const current_palette_text: cstr = c"CURRENT PALETTE:"
 const window_title: cstr = c"raylib [shaders] example - palette switch"
 
 
-def set_palette_uniform(shader: rl.Shader, location: i32, palette: array[i32, palette_value_count]) -> void:
+def set_palette_uniform(shader: rl.Shader, location: int, palette: array[int, palette_value_count]) -> void:
     var palette_data = palette
     rl.SetShaderValueV(
         shader,
@@ -26,7 +26,7 @@ def set_palette_uniform(shader: rl.Shader, location: i32, palette: array[i32, pa
     )
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -36,8 +36,8 @@ def main() -> i32:
     let palette_location = rl.GetShaderLocation(shader, palette_uniform_name)
     let line_height = screen_height / colors_per_palette
 
-    let palettes = array[array[i32, palette_value_count], max_palettes](
-        array[i32, palette_value_count](
+    let palettes = array[array[int, palette_value_count], max_palettes](
+        array[int, palette_value_count](
             0, 0, 0,
             255, 0, 0,
             0, 255, 0,
@@ -47,7 +47,7 @@ def main() -> i32:
             255, 255, 0,
             255, 255, 255,
         ),
-        array[i32, palette_value_count](
+        array[int, palette_value_count](
             4, 12, 6,
             17, 35, 24,
             30, 58, 41,
@@ -57,7 +57,7 @@ def main() -> i32:
             190, 220, 127,
             238, 255, 204,
         ),
-        array[i32, palette_value_count](
+        array[int, palette_value_count](
             21, 25, 26,
             138, 76, 88,
             217, 98, 117,

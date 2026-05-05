@@ -8,9 +8,9 @@ struct Line:
     start: rl.Vector2
     finish: rl.Vector2
 
-const max_draw_lines: i32 = 8192
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const max_draw_lines: int = 8192
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - kaleidoscope"
 const back_button_text: cstr = c"<"
 const next_button_text: cstr = c">"
@@ -18,15 +18,15 @@ const reset_button_text: cstr = c"Reset"
 const lines_format: cstr = c"LINES: %i/%i"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
     var lines = zero[array[Line, 8192]]
 
-    var symmetry: i32 = 6
-    let angle = 360.0 / f32<-symmetry
-    let thickness: f32 = 3.0
+    var symmetry: int = 6
+    let angle = 360.0 / float<-symmetry
+    let thickness: float = 3.0
     let reset_button_rec = rl.Rectangle(x = screen_width - 55.0, y = 5.0, width = 50.0, height = 25.0)
     let back_button_rec = rl.Rectangle(x = screen_width - 55.0, y = screen_height - 30.0, width = 25.0, height = 25.0)
     let next_button_rec = rl.Rectangle(x = screen_width - 30.0, y = screen_height - 30.0, width = 25.0, height = 25.0)

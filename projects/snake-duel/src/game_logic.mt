@@ -9,7 +9,7 @@ def same_cell(lhs: gt.Vec2i, rhs: gt.Vec2i) -> bool:
     return lhs.x == rhs.x and lhs.y == rhs.y
 
 
-def snake_contains_cell(snake: gt.Snake, cell: gt.Vec2i, from_index: i32) -> bool:
+def snake_contains_cell(snake: gt.Snake, cell: gt.Vec2i, from_index: int) -> bool:
     var index = from_index
     while index < snake.length:
         if same_cell(snake.body[index], cell):
@@ -19,11 +19,11 @@ def snake_contains_cell(snake: gt.Snake, cell: gt.Vec2i, from_index: i32) -> boo
     return false
 
 
-def can_turn(current_x: i32, current_y: i32, next_x: i32, next_y: i32) -> bool:
+def can_turn(current_x: int, current_y: int, next_x: int, next_y: int) -> bool:
     return not (next_x == -current_x and next_y == -current_y)
 
 
-def make_snake(head_x: i32, head_y: i32, dx: i32, dy: i32, color: rl.Color) -> gt.Snake:
+def make_snake(head_x: int, head_y: int, dx: int, dy: int, color: rl.Color) -> gt.Snake:
     var snake = zero[gt.Snake]
     snake.length = 3
     snake.dir_x = dx
@@ -107,7 +107,7 @@ pub def update_player_direction(player: gt.Snake) -> gt.Snake:
     return next
 
 
-def ai_update_direction(enemy: gt.Snake, player: gt.Snake, food: gt.Vec2i, tick: i32) -> gt.Snake:
+def ai_update_direction(enemy: gt.Snake, player: gt.Snake, food: gt.Vec2i, tick: int) -> gt.Snake:
     var next = enemy
     let raw_dx = game_ai.choose_dx(next.body[0].x, food.x, tick)
     let raw_dy = game_ai.choose_dy(next.body[0].y, food.y, tick)

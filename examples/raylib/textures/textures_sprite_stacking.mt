@@ -3,27 +3,27 @@ module examples.raylib.textures.textures_sprite_stacking
 import std.c.raylib as rl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const stack_count: i32 = 122
+const screen_width: int = 800
+const screen_height: int = 450
+const stack_count: int = 122
 const window_title: cstr = c"raylib [textures] example - sprite stacking"
 const booth_path: cstr = c"../resources/booth.png"
 const help_text: cstr = c"A/D to spin\nmouse wheel to change separation (aka 'angle')"
 const credit_text: cstr = c"redbooth model (c) kluchek under cc 4.0"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
     let booth = rl.LoadTexture(booth_path)
     defer rl.UnloadTexture(booth)
 
-    let stack_scale: f32 = 3.0
-    let speed_change: f32 = 0.25
-    var stack_spacing: f32 = 2.0
-    var rotation_speed: f32 = 30.0
-    var rotation: f32 = 0.0
+    let stack_scale: float = 3.0
+    let speed_change: float = 0.25
+    var stack_spacing: float = 2.0
+    var rotation_speed: float = 30.0
+    var rotation: float = 0.0
 
     rl.SetTargetFPS(60)
 
@@ -41,17 +41,17 @@ def main() -> i32:
         rl.BeginDrawing()
         rl.ClearBackground(rl.RAYWHITE)
 
-        let frame_width = f32<-booth.width
-        let frame_height = f32<-booth.height / f32<-stack_count
+        let frame_width = float<-booth.width
+        let frame_height = float<-booth.height / float<-stack_count
         let scaled_width = frame_width * stack_scale
         let scaled_height = frame_height * stack_scale
 
         var index = stack_count - 1
         while index >= 0:
-            let source = rl.Rectangle(x = 0.0, y = f32<-index * frame_height, width = frame_width, height = frame_height)
+            let source = rl.Rectangle(x = 0.0, y = float<-index * frame_height, width = frame_width, height = frame_height)
             let dest = rl.Rectangle(
-                x = f32<-screen_width / 2.0,
-                y = f32<-screen_height / 2.0 + f32<-index * stack_spacing - stack_spacing * f32<-stack_count / 2.0,
+                x = float<-screen_width / 2.0,
+                y = float<-screen_height / 2.0 + float<-index * stack_spacing - stack_spacing * float<-stack_count / 2.0,
                 width = scaled_width,
                 height = scaled_height,
             )

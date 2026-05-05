@@ -2,16 +2,16 @@ module examples.raylib.textures.textures_sprite_explosion
 
 import std.c.raylib as rl
 
-const num_frames_per_line: i32 = 5
-const num_lines: i32 = 5
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const num_frames_per_line: int = 5
+const num_lines: int = 5
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - sprite explosion"
 const boom_path: cstr = c"../resources/boom.wav"
 const explosion_path: cstr = c"../resources/explosion.png"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -25,8 +25,8 @@ def main() -> i32:
         rl.UnloadTexture(explosion)
         rl.UnloadSound(fx_boom)
 
-    let frame_width = f32<-explosion.width / f32<-num_frames_per_line
-    let frame_height = f32<-explosion.height / f32<-num_lines
+    let frame_width = float<-explosion.width / float<-num_frames_per_line
+    let frame_height = float<-explosion.height / float<-num_lines
 
     var current_frame = 0
     var current_line = 0
@@ -63,8 +63,8 @@ def main() -> i32:
 
                 frames_counter = 0
 
-        frame_rec.x = frame_width * f32<-current_frame
-        frame_rec.y = frame_height * f32<-current_line
+        frame_rec.x = frame_width * float<-current_frame
+        frame_rec.y = frame_height * float<-current_line
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

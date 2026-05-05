@@ -762,7 +762,7 @@ module MilkTea
 
     def emit_checked_array_index_helper(type)
       helper_name = checked_array_index_helper_name(type)
-      params = [c_declaration(type, '(*array)'), c_declaration(Types::Primitive.new('usize'), 'index')].join(', ')
+      params = [c_declaration(type, '(*array)'), c_declaration(Types::Primitive.new('ptr_uint'), 'index')].join(', ')
       [
         "static inline #{c_function_declaration(pointer_to(array_element_type(type)), helper_name, params)} {",
         "#{INDENT}if (index >= #{array_length(type)}) mt_panic(\"array index out of bounds\");",
@@ -773,7 +773,7 @@ module MilkTea
 
     def emit_checked_span_index_helper(type)
       helper_name = checked_span_index_helper_name(type)
-      params = [c_declaration(type, 'span'), c_declaration(Types::Primitive.new('usize'), 'index')].join(', ')
+      params = [c_declaration(type, 'span'), c_declaration(Types::Primitive.new('ptr_uint'), 'index')].join(', ')
       [
         "static inline #{c_function_declaration(pointer_to(type.element_type), helper_name, params)} {",
         "#{INDENT}if (index >= span.len) mt_panic(\"span index out of bounds\");",
@@ -1665,7 +1665,7 @@ module MilkTea
                 else
                   value.to_s
                 end
-      expression.type.name == "f32" ? "#{literal}f" : literal
+      expression.type.name == "float" ? "#{literal}f" : literal
     end
 
     def wrap_expression(expression)
@@ -2220,7 +2220,7 @@ module MilkTea
           c_name: str_builder_type_name(type),
           fields: [
             IR::Field.new(name: "data", type: Types::GenericInstance.new("array", [Types::Primitive.new("char"), Types::LiteralTypeArg.new(str_builder_storage_capacity(type))])),
-            IR::Field.new(name: "len", type: Types::Primitive.new("usize")),
+            IR::Field.new(name: "len", type: Types::Primitive.new("ptr_uint")),
             IR::Field.new(name: "dirty", type: Types::Primitive.new("bool")),
           ],
           packed: false,
@@ -3390,7 +3390,7 @@ module MilkTea
       [
         "typedef struct #{span_type} {",
         "#{INDENT}#{c_declaration(pointer_to(type.element_type), 'data')};",
-        "#{INDENT}#{c_declaration(Types::Primitive.new('usize'), 'len')};",
+        "#{INDENT}#{c_declaration(Types::Primitive.new('ptr_uint'), 'len')};",
         "} #{span_type};",
       ]
     end
@@ -3449,20 +3449,19 @@ module MilkTea
     def primitive_c_type(name)
       {
         "bool" => "bool",
-        "byte" => "uint8_t",
+        "byte" => "int8_t",
+        "ubyte" => "uint8_t",
         "char" => "char",
-        "i8" => "int8_t",
-        "i16" => "int16_t",
-        "i32" => "int32_t",
-        "i64" => "int64_t",
-        "u8" => "uint8_t",
-        "u16" => "uint16_t",
-        "u32" => "uint32_t",
-        "u64" => "uint64_t",
-        "isize" => "intptr_t",
-        "usize" => "uintptr_t",
-        "f32" => "float",
-        "f64" => "double",
+        "short" => "int16_t",
+        "ushort" => "uint16_t",
+        "int" => "int32_t",
+        "uint" => "uint32_t",
+        "long" => "int64_t",
+        "ulong" => "uint64_t",
+        "ptr_int" => "intptr_t",
+        "ptr_uint" => "uintptr_t",
+        "float" => "float",
+        "double" => "double",
         "void" => "void",
         "cstr" => "const char*",
       }.fetch(name)

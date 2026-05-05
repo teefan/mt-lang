@@ -3,53 +3,53 @@ module examples.sdl3.renderer.geometry
 import std.c.sdl3 as c
 
 const sample_texture_path: cstr = c"../resources/sample.png"
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/renderer/geometry"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 var texture: ptr[c.SDL_Texture]
-var texture_width: i32 = 0
-var texture_height: i32 = 0
+var texture_width: int = 0
+var texture_height: int = 0
 
 
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
 
 
 def render_frame() -> void:
-    let now = i32<-c.SDL_GetTicks()
+    let now = int<-c.SDL_GetTicks()
     let direction = if (now % 2000) >= 1000: 1.0 else: -1.0
-    let scale = (f32<-((now % 1000) - 500) / 500.0) * direction
+    let scale = (float<-((now % 1000) - 500) / 500.0) * direction
     let size = 200.0 + (200.0 * scale)
 
     var vertices = zero[array[c.SDL_Vertex, 4]]
-    var indices = array[i32, 6](0, 1, 2, 1, 2, 3)
+    var indices = array[int, 6](0, 1, 2, 1, 2, 3)
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)
 
-    vertices[0].position.x = f32<-window_width / 2.0
-    vertices[0].position.y = (f32<-window_height - size) / 2.0
+    vertices[0].position.x = float<-window_width / 2.0
+    vertices[0].position.y = (float<-window_height - size) / 2.0
     vertices[0].color.r = 1.0
     vertices[0].color.a = 1.0
 
-    vertices[1].position.x = (f32<-window_width + size) / 2.0
-    vertices[1].position.y = (f32<-window_height + size) / 2.0
+    vertices[1].position.x = (float<-window_width + size) / 2.0
+    vertices[1].position.y = (float<-window_height + size) / 2.0
     vertices[1].color.g = 1.0
     vertices[1].color.a = 1.0
 
-    vertices[2].position.x = (f32<-window_width - size) / 2.0
-    vertices[2].position.y = (f32<-window_height + size) / 2.0
+    vertices[2].position.x = (float<-window_width - size) / 2.0
+    vertices[2].position.y = (float<-window_height + size) / 2.0
     vertices[2].color.b = 1.0
     vertices[2].color.a = 1.0
 
@@ -100,7 +100,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Renderer Geometry", c"1.0", c"com.example.renderer-geometry")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -136,5 +136,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

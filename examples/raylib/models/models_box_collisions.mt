@@ -2,8 +2,8 @@ module examples.raylib.models.models_box_collisions
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [models] example - box collisions"
 const collision_help_text: cstr = c"Move player with arrow keys to collide"
 
@@ -16,7 +16,7 @@ def centered_box(position: rl.Vector3, size: rl.Vector3) -> rl.BoundingBox:
     )
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -35,7 +35,7 @@ def main() -> i32:
     let enemy_box_pos = rl.Vector3(x = -4.0, y = 1.0, z = 0.0)
     let enemy_box_size = rl.Vector3(x = 2.0, y = 2.0, z = 2.0)
     let enemy_sphere_pos = rl.Vector3(x = 4.0, y = 0.0, z = 0.0)
-    let enemy_sphere_size: f32 = 1.5
+    let enemy_sphere_size: float = 1.5
 
     var collision = false
 

@@ -3,8 +3,8 @@ module examples.raylib.text.text_unicode_ranges
 import std.c.raylib as rl
 import std.mem.heap as heap
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [text] example - unicode ranges"
 const font_path: cstr = c"../resources/NotoSansTC-Regular.ttf"
 const add_codepoints_text: cstr = c"ADD CODEPOINTS: [1][2][3][4]"
@@ -19,11 +19,11 @@ const glyph_count_format: cstr = c"CODEPOINTS GLYPHS LOADED: %i"
 const attribution_text: cstr = c"Font: Noto Sans TC. License: SIL Open Font License 1.1"
 
 
-def add_codepoint_range(font: rl.Font, font_path: cstr, start: i32, stop: i32) -> rl.Font:
+def add_codepoint_range(font: rl.Font, font_path: cstr, start: int, stop: int) -> rl.Font:
     let range_size = stop - start + 1
     let current_range_size = font.glyphCount
     let updated_codepoint_count = current_range_size + range_size
-    let updated_codepoints = heap.must_alloc_zeroed[i32](usize<-updated_codepoint_count)
+    let updated_codepoints = heap.must_alloc_zeroed[int](ptr_uint<-updated_codepoint_count)
     defer heap.release(updated_codepoints)
 
     unsafe:
@@ -37,7 +37,7 @@ def add_codepoint_range(font: rl.Font, font_path: cstr, start: i32, stop: i32) -
     return rl.LoadFontEx(font_path, 32, updated_codepoints, updated_codepoint_count)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -105,20 +105,20 @@ def main() -> i32:
         rl.DrawTextEx(font, chinese_text, rl.Vector2(x = 50.0, y = 270.0), 32.0, 1.0, rl.DARKGRAY)
         rl.DrawTextEx(font, japanese_text, rl.Vector2(x = 50.0, y = 320.0), 32.0, 1.0, rl.DARKGRAY)
 
-        let atlas_scale = 380.0 / f32<-font.texture.width
+        let atlas_scale = 380.0 / float<-font.texture.width
         rl.DrawRectangleRec(
             rl.Rectangle(
                 x = 400.0,
                 y = 16.0,
-                width = f32<-font.texture.width * atlas_scale,
-                height = f32<-font.texture.height * atlas_scale,
+                width = float<-font.texture.width * atlas_scale,
+                height = float<-font.texture.height * atlas_scale,
             ),
             rl.BLACK,
         )
         rl.DrawTexturePro(
             font.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-font.texture.width, height = f32<-font.texture.height),
-            rl.Rectangle(x = 400.0, y = 16.0, width = f32<-font.texture.width * atlas_scale, height = f32<-font.texture.height * atlas_scale),
+            rl.Rectangle(x = 0.0, y = 0.0, width = float<-font.texture.width, height = float<-font.texture.height),
+            rl.Rectangle(x = 400.0, y = 16.0, width = float<-font.texture.width * atlas_scale, height = float<-font.texture.height * atlas_scale),
             rl.Vector2(x = 0.0, y = 0.0),
             0.0,
             rl.WHITE,

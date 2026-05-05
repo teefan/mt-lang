@@ -2,14 +2,14 @@ module examples.idiomatic.raylib.image_drawing
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const cat_path: str = "../../raylib/resources/cat.png"
 const parrots_path: str = "../../raylib/resources/parrots.png"
 const font_path: str = "../../raylib/resources/custom_jupiter_crash.png"
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Image Drawing")
     defer rl.close_window()
 
@@ -23,11 +23,11 @@ def main() -> i32:
     rl.image_draw(
         inout parrots,
         cat,
-        rl.Rectangle(x = 0.0, y = 0.0, width = f32<-cat.width, height = f32<-cat.height),
-        rl.Rectangle(x = 30.0, y = 40.0, width = f32<-cat.width * 1.5, height = f32<-cat.height * 1.5),
+        rl.Rectangle(x = 0.0, y = 0.0, width = float<-cat.width, height = float<-cat.height),
+        rl.Rectangle(x = 30.0, y = 40.0, width = float<-cat.width * 1.5, height = float<-cat.height * 1.5),
         rl.WHITE,
     )
-    rl.image_crop(inout parrots, rl.Rectangle(x = 0.0, y = 50.0, width = f32<-parrots.width, height = f32<-parrots.height - 100.0))
+    rl.image_crop(inout parrots, rl.Rectangle(x = 0.0, y = 50.0, width = float<-parrots.width, height = float<-parrots.height - 100.0))
 
     rl.image_draw_pixel(inout parrots, 10, 10, rl.RAYWHITE)
     rl.image_draw_circle_lines(inout parrots, 10, 10, 5, rl.RAYWHITE)
@@ -36,7 +36,7 @@ def main() -> i32:
     rl.unload_image(cat)
 
     let font = rl.load_font(font_path)
-    rl.image_draw_text_ex(inout parrots, font, "PARROTS & CAT", rl.Vector2(x = 300.0, y = 230.0), f32<-font.baseSize, -2.0, rl.WHITE)
+    rl.image_draw_text_ex(inout parrots, font, "PARROTS & CAT", rl.Vector2(x = 300.0, y = 230.0), float<-font.baseSize, -2.0, rl.WHITE)
     rl.unload_font(font)
 
     let texture = rl.load_texture_from_image(parrots)

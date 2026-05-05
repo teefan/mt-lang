@@ -2,14 +2,14 @@ module examples.raylib.core.core_keyboard_testbed
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const key_rec_spacing: i32 = 4
+const screen_width: int = 800
+const screen_height: int = 450
+const key_rec_spacing: int = 4
 const window_title: cstr = c"raylib [core] example - keyboard testbed"
 const keyboard_layout_text: cstr = c"KEYBOARD LAYOUT: ENG-US"
 
 
-def key_text(key: i32) -> cstr:
+def key_text(key: int) -> cstr:
     if key == rl.KeyboardKey.KEY_APOSTROPHE:
         return c"'"
     if key == rl.KeyboardKey.KEY_COMMA:
@@ -177,7 +177,7 @@ def key_text(key: i32) -> cstr:
     return c""
 
 
-def draw_keyboard_key(bounds: rl.Rectangle, key: i32) -> void:
+def draw_keyboard_key(bounds: rl.Rectangle, key: int) -> void:
     if key == rl.KeyboardKey.KEY_NULL:
         rl.DrawRectangleLinesEx(bounds, 2.0, rl.LIGHTGRAY)
     else:
@@ -194,13 +194,13 @@ def draw_keyboard_key(bounds: rl.Rectangle, key: i32) -> void:
         rl.DrawRectangleLinesEx(bounds, 3.0, rl.RED)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
     rl.SetExitKey(rl.KeyboardKey.KEY_NULL)
 
-    let line01_widths = array[i32, 15](45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 62, 45)
-    let line01_keys = array[i32, 15](
+    let line01_widths = array[int, 15](45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 62, 45)
+    let line01_keys = array[int, 15](
         rl.KeyboardKey.KEY_ESCAPE, rl.KeyboardKey.KEY_F1, rl.KeyboardKey.KEY_F2,
         rl.KeyboardKey.KEY_F3, rl.KeyboardKey.KEY_F4, rl.KeyboardKey.KEY_F5,
         rl.KeyboardKey.KEY_F6, rl.KeyboardKey.KEY_F7, rl.KeyboardKey.KEY_F8,
@@ -208,8 +208,8 @@ def main() -> i32:
         rl.KeyboardKey.KEY_F12, rl.KeyboardKey.KEY_PRINT_SCREEN, rl.KeyboardKey.KEY_PAUSE,
     )
 
-    let line02_widths = array[i32, 15](25, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 82, 45)
-    let line02_keys = array[i32, 15](
+    let line02_widths = array[int, 15](25, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 82, 45)
+    let line02_keys = array[int, 15](
         rl.KeyboardKey.KEY_GRAVE, rl.KeyboardKey.KEY_ONE, rl.KeyboardKey.KEY_TWO,
         rl.KeyboardKey.KEY_THREE, rl.KeyboardKey.KEY_FOUR, rl.KeyboardKey.KEY_FIVE,
         rl.KeyboardKey.KEY_SIX, rl.KeyboardKey.KEY_SEVEN, rl.KeyboardKey.KEY_EIGHT,
@@ -217,8 +217,8 @@ def main() -> i32:
         rl.KeyboardKey.KEY_EQUAL, rl.KeyboardKey.KEY_BACKSPACE, rl.KeyboardKey.KEY_DELETE,
     )
 
-    let line03_widths = array[i32, 15](50, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 57, 45)
-    let line03_keys = array[i32, 15](
+    let line03_widths = array[int, 15](50, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 57, 45)
+    let line03_keys = array[int, 15](
         rl.KeyboardKey.KEY_TAB, rl.KeyboardKey.KEY_Q, rl.KeyboardKey.KEY_W,
         rl.KeyboardKey.KEY_E, rl.KeyboardKey.KEY_R, rl.KeyboardKey.KEY_T,
         rl.KeyboardKey.KEY_Y, rl.KeyboardKey.KEY_U, rl.KeyboardKey.KEY_I,
@@ -226,8 +226,8 @@ def main() -> i32:
         rl.KeyboardKey.KEY_RIGHT_BRACKET, rl.KeyboardKey.KEY_BACKSLASH, rl.KeyboardKey.KEY_INSERT,
     )
 
-    let line04_widths = array[i32, 14](68, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 88, 45)
-    let line04_keys = array[i32, 14](
+    let line04_widths = array[int, 14](68, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 88, 45)
+    let line04_keys = array[int, 14](
         rl.KeyboardKey.KEY_CAPS_LOCK, rl.KeyboardKey.KEY_A, rl.KeyboardKey.KEY_S,
         rl.KeyboardKey.KEY_D, rl.KeyboardKey.KEY_F, rl.KeyboardKey.KEY_G,
         rl.KeyboardKey.KEY_H, rl.KeyboardKey.KEY_J, rl.KeyboardKey.KEY_K,
@@ -235,8 +235,8 @@ def main() -> i32:
         rl.KeyboardKey.KEY_ENTER, rl.KeyboardKey.KEY_PAGE_UP,
     )
 
-    let line05_widths = array[i32, 14](80, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 76, 45, 45)
-    let line05_keys = array[i32, 14](
+    let line05_widths = array[int, 14](80, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 76, 45, 45)
+    let line05_keys = array[int, 14](
         rl.KeyboardKey.KEY_LEFT_SHIFT, rl.KeyboardKey.KEY_Z, rl.KeyboardKey.KEY_X,
         rl.KeyboardKey.KEY_C, rl.KeyboardKey.KEY_V, rl.KeyboardKey.KEY_B,
         rl.KeyboardKey.KEY_N, rl.KeyboardKey.KEY_M, rl.KeyboardKey.KEY_COMMA,
@@ -244,8 +244,8 @@ def main() -> i32:
         rl.KeyboardKey.KEY_UP, rl.KeyboardKey.KEY_PAGE_DOWN,
     )
 
-    let line06_widths = array[i32, 11](80, 45, 45, 208, 45, 45, 45, 60, 45, 45, 45)
-    let line06_keys = array[i32, 11](
+    let line06_widths = array[int, 11](80, 45, 45, 208, 45, 45, 45, 60, 45, 45, 45)
+    let line06_keys = array[int, 11](
         rl.KeyboardKey.KEY_LEFT_CONTROL, rl.KeyboardKey.KEY_LEFT_SUPER, rl.KeyboardKey.KEY_LEFT_ALT,
         rl.KeyboardKey.KEY_SPACE, rl.KeyboardKey.KEY_RIGHT_ALT, 162,
         rl.KeyboardKey.KEY_NULL, rl.KeyboardKey.KEY_RIGHT_CONTROL, rl.KeyboardKey.KEY_LEFT,

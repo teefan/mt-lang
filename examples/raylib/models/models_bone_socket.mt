@@ -3,12 +3,12 @@ module examples.raylib.models.models_bone_socket
 import std.c.raylib as rl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const bone_sockets: i32 = 3
-const bone_socket_hat: i32 = 0
-const bone_socket_hand_r: i32 = 1
-const bone_socket_hand_l: i32 = 2
+const screen_width: int = 800
+const screen_height: int = 450
+const bone_sockets: int = 3
+const bone_socket_hat: int = 0
+const bone_socket_hand_r: int = 1
+const bone_socket_hand_l: int = 2
 const character_model_path: cstr = c"../resources/models/gltf/greenman.glb"
 const hat_model_path: cstr = c"../resources/models/gltf/greenman_hat.glb"
 const sword_model_path: cstr = c"../resources/models/gltf/greenman_sword.glb"
@@ -27,32 +27,32 @@ def chars_to_cstr(text: ptr[char]) -> cstr:
         return cstr<-text
 
 
-def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
+def model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
     unsafe:
         return read(anims + index)
 
 
-def model_animation_pose(anim: rl.ModelAnimation, frame: i32) -> rl.ModelAnimPose:
+def model_animation_pose(anim: rl.ModelAnimation, frame: int) -> rl.ModelAnimPose:
     unsafe:
         return read(anim.keyframePoses + frame)
 
 
-def pose_transform(pose: rl.ModelAnimPose, index: i32) -> rl.Transform:
+def pose_transform(pose: rl.ModelAnimPose, index: int) -> rl.Transform:
     unsafe:
         return read(pose + index)
 
 
-def skeleton_bone_name(skeleton: rl.ModelSkeleton, index: i32) -> cstr:
+def skeleton_bone_name(skeleton: rl.ModelSkeleton, index: int) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of((skeleton.bones + index).name[0]))
 
 
-def bind_pose_transform(skeleton: rl.ModelSkeleton, index: i32) -> rl.Transform:
+def bind_pose_transform(skeleton: rl.ModelSkeleton, index: int) -> rl.Transform:
     unsafe:
         return read(skeleton.bindPose + index)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -84,7 +84,7 @@ def main() -> i32:
     var anim_index = 0
     var anim_current_frame = 0
 
-    var bone_socket_index = array[i32, bone_sockets](-1, -1, -1)
+    var bone_socket_index = array[int, bone_sockets](-1, -1, -1)
     for index in 0..character_model.skeleton.boneCount:
         let name = skeleton_bone_name(character_model.skeleton, index)
         if rl.TextIsEqual(name, hat_socket_name):
@@ -124,7 +124,7 @@ def main() -> i32:
 
         let anim = model_animation(model_animations, anim_index)
         anim_current_frame = (anim_current_frame + 1) % anim.keyframeCount
-        rl.UpdateModelAnimation(character_model, anim, f32<-anim_current_frame)
+        rl.UpdateModelAnimation(character_model, anim, float<-anim_current_frame)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()
@@ -132,9 +132,9 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
         rl.BeginMode3D(camera)
 
-        let character_rotate = rm.Quaternion.from_axis_angle(rl.Vector3(x = 0.0, y = 1.0, z = 0.0), f32<-angle * rm.deg2rad)
+        let character_rotate = rm.Quaternion.from_axis_angle(rl.Vector3(x = 0.0, y = 1.0, z = 0.0), float<-angle * rm.deg2rad)
         character_model.transform = character_rotate.to_matrix().multiply(rm.Matrix.translate(position.x, position.y, position.z))
-        rl.UpdateModelAnimation(character_model, anim, f32<-anim_current_frame)
+        rl.UpdateModelAnimation(character_model, anim, float<-anim_current_frame)
 
         unsafe:
             rl.DrawMesh(character_model.meshes[0], character_model.materials[1], character_model.transform)

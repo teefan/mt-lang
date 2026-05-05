@@ -3,8 +3,8 @@ module examples.raylib.shapes.shapes_rlgl_triangle
 import std.c.raylib as rl
 import std.c.rlgl as rlgl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - rlgl triangle"
 const lines_mode_text: cstr = c"SPACE: Toggle lines mode"
 const culling_text: cstr = c"LEFT-RIGHT: Toggle backface culling"
@@ -12,7 +12,7 @@ const mouse_text: cstr = c"MOUSE: Click and drag vertex points"
 const reset_text: cstr = c"R: Reset triangle to start positions"
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -30,7 +30,7 @@ def main() -> i32:
 
     var triangle_index = -1
     var lines_mode = false
-    let handle_radius: f32 = 8.0
+    let handle_radius: float = 8.0
 
     rl.SetTargetFPS(60)
 

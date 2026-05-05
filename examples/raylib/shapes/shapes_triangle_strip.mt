@@ -5,31 +5,31 @@ import std.c.raygui as gui
 import std.c.raylib as rl
 import std.raylib.math as mt_math
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - triangle strip"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
     var points = zero[array[rl.Vector2, 122]]
     let center = rl.Vector2(x = screen_width / 2.0 - 125.0, y = screen_height / 2.0)
-    var segments: f32 = 6.0
-    var inside_radius: f32 = 100.0
-    var outside_radius: f32 = 150.0
+    var segments: float = 6.0
+    var inside_radius: float = 100.0
+    var outside_radius: float = 150.0
     var outline = true
 
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        let point_count = i32<-segments
-        let angle_step = 360.0 / f32<-point_count * mt_math.deg2rad
+        let point_count = int<-segments
+        let angle_step = 360.0 / float<-point_count * mt_math.deg2rad
 
         for index in 0..point_count:
             let point_index = index * 2
-            let angle1 = f32<-index * angle_step
+            let angle1 = float<-index * angle_step
             points[point_index] = rl.Vector2(
                 x = center.x + math.cosf(angle1) * inside_radius,
                 y = center.y + math.sinf(angle1) * inside_radius,
@@ -55,7 +55,7 @@ def main() -> i32:
             let c = points[index * 2 + 2]
             let d = points[index * 2 + 3]
 
-            let angle1 = f32<-index * angle_step
+            let angle1 = float<-index * angle_step
             rl.DrawTriangle(c, b, a, rl.ColorFromHSV(angle1 * mt_math.rad2deg, 1.0, 1.0))
             rl.DrawTriangle(d, b, c, rl.ColorFromHSV((angle1 + angle_step / 2.0) * mt_math.rad2deg, 1.0, 1.0))
 

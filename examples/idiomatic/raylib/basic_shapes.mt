@@ -2,19 +2,19 @@ module examples.idiomatic.raylib.basic_shapes
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Basic Shapes")
     defer rl.close_window()
 
-    var rotation: f32 = 0.0
+    var rotation: float = 0.0
     let circle_x = screen_width / 5
-    let circle_center_x: f32 = circle_x
+    let circle_center_x: float = circle_x
     let rect_center_x = screen_width / 4 * 2
-    let poly_center_x: f32 = screen_width * 3 / 4
+    let poly_center_x: float = screen_width * 3 / 4
 
     rl.set_target_fps(60)
 

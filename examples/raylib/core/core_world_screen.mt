@@ -2,14 +2,14 @@ module examples.raylib.core.core_world_screen
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - world screen"
 const enemy_text: cstr = c"Enemy: 100/100"
 const help_text: cstr = c"Text 2d should be always on top of the cube"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -49,7 +49,7 @@ def main() -> i32:
             20,
             rl.BLACK,
         )
-        rl.DrawText(rl.TextFormat(c"Cube position in screen space coordinates: [%i, %i]", i32<-cube_screen_position.x, i32<-cube_screen_position.y), 10, 10, 20, rl.LIME)
+        rl.DrawText(rl.TextFormat(c"Cube position in screen space coordinates: [%i, %i]", int<-cube_screen_position.x, int<-cube_screen_position.y), 10, 10, 20, rl.LIME)
         rl.DrawText(help_text, 10, 40, 20, rl.GRAY)
 
     return 0

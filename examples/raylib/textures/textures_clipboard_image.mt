@@ -6,15 +6,15 @@ struct TextureCollection:
     texture: rl.Texture2D
     position: rl.Vector2
 
-const max_texture_collection: i32 = 20
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const max_texture_collection: int = 20
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - clipboard image"
 const help_text: cstr = c"Clipboard Image - Ctrl+V to Paste and R to Reset "
 const clipboard_error_text: cstr = c"IMAGE: Could not retrieve image from clipboard"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -51,9 +51,9 @@ def main() -> i32:
             if rl.IsTextureValid(texture):
                 rl.DrawTexturePro(
                     texture,
-                    rl.Rectangle(x = 0.0, y = 0.0, width = f32<-texture.width, height = f32<-texture.height),
-                    rl.Rectangle(x = position.x, y = position.y, width = f32<-texture.width, height = f32<-texture.height),
-                    rl.Vector2(x = f32<-texture.width * 0.5, y = f32<-texture.height * 0.5),
+                    rl.Rectangle(x = 0.0, y = 0.0, width = float<-texture.width, height = float<-texture.height),
+                    rl.Rectangle(x = position.x, y = position.y, width = float<-texture.width, height = float<-texture.height),
+                    rl.Vector2(x = float<-texture.width * 0.5, y = float<-texture.height * 0.5),
                     0.0,
                     rl.WHITE,
                 )

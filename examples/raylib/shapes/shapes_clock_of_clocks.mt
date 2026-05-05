@@ -4,14 +4,14 @@ import std.c.raylib as rl
 import std.c.time as ctime
 import std.raylib.math as mt_math
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const digit_count: i32 = 6
-const cells_per_digit: i32 = 24
-const total_cells: i32 = 144
-const hour_mode_24: i32 = 24
-const hour_mode_12: i32 = 12
-const hands_move_duration: f32 = 0.5
+const screen_width: int = 800
+const screen_height: int = 450
+const digit_count: int = 6
+const cells_per_digit: int = 24
+const total_cells: int = 144
+const hour_mode_24: int = 24
+const hour_mode_12: int = 12
+const hands_move_duration: float = 0.5
 const window_title: cstr = c"raylib [shapes] example - clock of clocks"
 const mode_format: cstr = c"%d-h mode, space to change"
 const time_format_24: cstr = c"%H%M%S"
@@ -26,7 +26,7 @@ def blank_digit_angles() -> array[rl.Vector2, 24]:
     return result
 
 
-def digit_angles_for(digit: i32) -> array[rl.Vector2, 24]:
+def digit_angles_for(digit: int) -> array[rl.Vector2, 24]:
     let tl = rl.Vector2(x = 0.0, y = 90.0)
     let tr = rl.Vector2(x = 90.0, y = 180.0)
     let br = rl.Vector2(x = 180.0, y = 270.0)
@@ -129,11 +129,11 @@ def digit_angles_for(digit: i32) -> array[rl.Vector2, 24]:
     return blank_digit_angles()
 
 
-def digit_value(time_buffer: array[char, 7], index: i32) -> i32:
-    return i32<-time_buffer[index] - 48
+def digit_value(time_buffer: array[char, 7], index: int) -> int:
+    return int<-time_buffer[index] - 48
 
 
-def load_time_digits(time_buffer: ref[array[char, 7]], hour_mode: i32) -> void:
+def load_time_digits(time_buffer: ref[array[char, 7]], hour_mode: int) -> void:
     var now: ctime.time_t = 0
     now = ctime.time(ptr_of(now))
     let tm_info = ctime.localtime(ptr_of(now))
@@ -143,11 +143,11 @@ def load_time_digits(time_buffer: ref[array[char, 7]], hour_mode: i32) -> void:
         ctime.strftime(ptr_of(read(time_buffer)[0]), 7, format, tm_info)
 
 
-def angle_slot(digit: i32, cell: i32) -> i32:
+def angle_slot(digit: int, cell: int) -> int:
     return digit * cells_per_digit + cell
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -155,16 +155,16 @@ def main() -> i32:
     let bg_color = rl.ColorLerp(rl.DARKBLUE, rl.BLACK, 0.75)
     let hands_color = rl.ColorLerp(rl.YELLOW, rl.RAYWHITE, 0.25)
 
-    let clock_face_size: f32 = 24.0
-    let clock_face_spacing: f32 = 8.0
-    let section_spacing: f32 = 16.0
+    let clock_face_size: float = 24.0
+    let clock_face_spacing: float = 8.0
+    let section_spacing: float = 16.0
 
     var previous_second = -1
     var previous_hour_mode = -1
     var current_angles = zero[array[rl.Vector2, 144]]
     var src_angles = zero[array[rl.Vector2, 144]]
     var dst_angles = zero[array[rl.Vector2, 144]]
-    var hands_move_timer: f32 = 0.0
+    var hands_move_timer: float = 0.0
     var hour_mode = hour_mode_24
     var time_buffer = zero[array[char, 7]]
 
@@ -186,7 +186,7 @@ def main() -> i32:
 
             for digit in 0..digit_count:
                 var digit_angles = blank_digit_angles()
-                if digit == 0 and hour_mode == hour_mode_12 and i32<-time_buffer[0] == 48:
+                if digit == 0 and hour_mode == hour_mode_12 and int<-time_buffer[0] == 48:
                     digit_angles = blank_digit_angles()
                 else:
                     digit_angles = digit_angles_for(digit_value(time_buffer, digit))
@@ -220,13 +220,13 @@ def main() -> i32:
         rl.ClearBackground(bg_color)
         rl.DrawText(rl.TextFormat(mode_format, hour_mode), 10, 30, 20, rl.RAYWHITE)
 
-        var x_offset: f32 = 4.0
+        var x_offset: float = 4.0
         for digit in 0..digit_count:
             for row in 0..6:
                 for col in 0..4:
                     let center = rl.Vector2(
-                        x = x_offset + f32<-col * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
-                        y = 100.0 + f32<-row * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
+                        x = x_offset + float<-col * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
+                        y = 100.0 + float<-row * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
                     )
                     let slot = angle_slot(digit, row * 4 + col)
 

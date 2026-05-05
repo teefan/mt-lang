@@ -2,14 +2,14 @@ module examples.raylib.shapes.shapes_logo_raylib_anim
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - logo raylib anim"
 const raylib_text: cstr = c"raylib"
 const replay_text: cstr = c"[R] REPLAY"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -26,7 +26,7 @@ def main() -> i32:
     var right_side_rec_height = 16
 
     var state = 0
-    var alpha: f32 = 1.0
+    var alpha: float = 1.0
 
     rl.SetTargetFPS(60)
 

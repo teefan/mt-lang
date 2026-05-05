@@ -2,21 +2,21 @@ module examples.raylib.shapes.shapes_basic_shapes
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - basic shapes"
 const help_text: cstr = c"some basic shapes available on raylib"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    var rotation: f32 = 0.0
+    var rotation: float = 0.0
     let circle_x = screen_width / 5
-    let circle_center_x: f32 = circle_x
+    let circle_center_x: float = circle_x
     let rect_center_x = screen_width / 4 * 2
-    let poly_center_x: f32 = screen_width * 3 / 4
+    let poly_center_x: float = screen_width * 3 / 4
 
     rl.SetTargetFPS(60)
 

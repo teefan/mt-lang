@@ -3,11 +3,11 @@ module examples.idiomatic.raygui.text_builders_showcase
 import std.raylib as rl
 import std.raygui as gui
 
-const screen_width: i32 = 920
-const screen_height: i32 = 540
+const screen_width: int = 920
+const screen_height: int = 540
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Raygui Text Builders")
     defer rl.close_window()
 
@@ -18,11 +18,11 @@ def main() -> i32:
     var editor_active = false
     var value_text: str_builder[32]
     var value_active = false
-    var value: f32 = 48.0
+    var value: float = 48.0
     var show_dialog = false
     var dialog_text: str_builder[64]
     var secret_view = false
-    var last_dialog_result: i32 = -1
+    var last_dialog_result: int = -1
 
     editor_text.assign("Milk Tea")
     value_text.assign("48.0")
@@ -56,7 +56,7 @@ def main() -> i32:
             dialog_text.assign(editor_text.as_str())
             show_dialog = true
 
-        let swatch_width = 80 + i32<-value * 2
+        let swatch_width = 80 + int<-value * 2
         rl.draw_rectangle(40, 412, swatch_width, 28, rl.SKYBLUE)
         rl.draw_rectangle_lines(40, 412, 280, 28, rl.DARKGRAY)
         rl.draw_text("value preview", 40, 448, 18, rl.DARKGRAY)

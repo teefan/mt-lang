@@ -4,15 +4,15 @@ import std.c.libm as math
 import std.c.raylib as rl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [models] example - directional billboard"
 const skillbot_path: cstr = c"../resources/skillbot.png"
 const animation_format: cstr = c"animation: %d"
 const direction_frame_format: cstr = c"direction frame: %.0f"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -27,7 +27,7 @@ def main() -> i32:
     let skillbot = rl.LoadTexture(skillbot_path)
     defer rl.UnloadTexture(skillbot)
 
-    var anim_timer: f32 = 0.0
+    var anim_timer: float = 0.0
     var anim = 0
 
     rl.SetTargetFPS(60)
@@ -60,7 +60,7 @@ def main() -> i32:
             camera,
             skillbot,
             rl.Rectangle(
-                x = f32<-anim * 24.0,
+                x = float<-anim * 24.0,
                 y = dir * 24.0,
                 width = 24.0,
                 height = 24.0,

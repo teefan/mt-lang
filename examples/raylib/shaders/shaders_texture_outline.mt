@@ -2,9 +2,9 @@ module examples.raylib.shaders.shaders_texture_outline
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const texture_path: cstr = c"../resources/fudesumi.png"
 const shader_path_format: cstr = c"../resources/shaders/glsl%i/outline.fs"
 const outline_size_uniform_name: cstr = c"outlineSize"
@@ -16,7 +16,7 @@ const outline_format: cstr = c"Outline size: %i px"
 const window_title: cstr = c"raylib [shaders] example - texture outline"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -26,9 +26,9 @@ def main() -> i32:
     let shader = rl.LoadShader(zero[cstr?], rl.TextFormat(shader_path_format, glsl_version))
     defer rl.UnloadShader(shader)
 
-    var outline_size: f32 = 2.0
-    var outline_color = array[f32, 4](1.0, 0.0, 0.0, 1.0)
-    var texture_size = array[f32, 2](f32<-texture.width, f32<-texture.height)
+    var outline_size: float = 2.0
+    var outline_color = array[float, 4](1.0, 0.0, 0.0, 1.0)
+    var texture_size = array[float, 2](float<-texture.width, float<-texture.height)
 
     let outline_size_loc = rl.GetShaderLocation(shader, outline_size_uniform_name)
     let outline_color_loc = rl.GetShaderLocation(shader, outline_color_uniform_name)
@@ -58,7 +58,7 @@ def main() -> i32:
 
         rl.DrawText(title_text, 10, 10, 20, rl.GRAY)
         rl.DrawText(help_text, 10, 72, 20, rl.GRAY)
-        rl.DrawText(rl.TextFormat(outline_format, i32<-outline_size), 10, 120, 20, rl.MAROON)
+        rl.DrawText(rl.TextFormat(outline_format, int<-outline_size), 10, 120, 20, rl.MAROON)
         rl.DrawFPS(710, 10)
 
     return 0

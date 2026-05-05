@@ -2,27 +2,27 @@ module examples.sdl3.renderer.points
 
 import std.c.sdl3 as c
 
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/renderer/points"
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
-const point_count: i32 = 500
-const min_pixels_per_second: f32 = 30.0
-const max_pixels_per_second: f32 = 60.0
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
+const point_count: int = 500
+const min_pixels_per_second: float = 30.0
+const max_pixels_per_second: float = 60.0
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
-var last_time: usize = 0
+var last_time: ptr_uint = 0
 var points: array[c.SDL_FPoint, 500] = zero[array[c.SDL_FPoint, 500]]
-var point_speeds: array[f32, 500] = zero[array[f32, 500]]
+var point_speeds: array[float, 500] = zero[array[float, 500]]
 
 
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
     return true
@@ -30,9 +30,9 @@ def pump_events() -> bool:
 
 def render_frame() -> void:
     let now = c.SDL_GetTicks()
-    let elapsed = f32<-(now - last_time) / 1000.0
-    let width_f = f32<-window_width
-    let height_f = f32<-window_height
+    let elapsed = float<-(now - last_time) / 1000.0
+    let width_f = float<-window_width
+    let height_f = float<-window_height
 
     for index in 0..point_count:
         let distance = elapsed * point_speeds[index]
@@ -58,7 +58,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Renderer Points", c"1.0", c"com.example.renderer-points")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -74,8 +74,8 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
         return 1
 
     for index in 0..point_count:
-        points[index].x = c.SDL_randf() * f32<-window_width
-        points[index].y = c.SDL_randf() * f32<-window_height
+        points[index].x = c.SDL_randf() * float<-window_width
+        points[index].y = c.SDL_randf() * float<-window_height
         point_speeds[index] = min_pixels_per_second + (c.SDL_randf() * (max_pixels_per_second - min_pixels_per_second))
 
     last_time = c.SDL_GetTicks()
@@ -86,5 +86,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

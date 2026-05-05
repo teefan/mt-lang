@@ -43,7 +43,7 @@
         "name": "parse_with_length",
         "params": [
           { "name": "value", "type": "str", "boundary_type": "cstr" },
-          { "name": "buffer_length", "type": "usize" }
+          { "name": "buffer_length", "type": "ptr_uint" }
         ],
         "return_type": "ptr[JSON]?"
       },

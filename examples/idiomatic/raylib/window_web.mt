@@ -2,8 +2,8 @@ module examples.idiomatic.raylib.window_web
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 
 
 def draw_frame() -> void:
@@ -15,7 +15,7 @@ def draw_frame() -> void:
     return
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Web Window")
     defer rl.close_window()
 

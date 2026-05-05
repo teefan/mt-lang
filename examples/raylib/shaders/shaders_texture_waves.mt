@@ -2,9 +2,9 @@ module examples.raylib.shaders.shaders_texture_waves
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const texture_path: cstr = c"../resources/space.png"
 const shader_path_format: cstr = c"../resources/shaders/glsl%i/wave.fs"
 const size_uniform_name: cstr = c"size"
@@ -18,7 +18,7 @@ const speed_y_uniform_name: cstr = c"speedY"
 const window_title: cstr = c"raylib [shaders] example - texture waves"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -36,14 +36,14 @@ def main() -> i32:
     let speed_x_loc = rl.GetShaderLocation(shader, speed_x_uniform_name)
     let speed_y_loc = rl.GetShaderLocation(shader, speed_y_uniform_name)
 
-    var freq_x: f32 = 25.0
-    var freq_y: f32 = 25.0
-    var amp_x: f32 = 5.0
-    var amp_y: f32 = 5.0
-    var speed_x: f32 = 8.0
-    var speed_y: f32 = 8.0
-    var screen_size = array[f32, 2](f32<-rl.GetScreenWidth(), f32<-rl.GetScreenHeight())
-    var seconds: f32 = 0.0
+    var freq_x: float = 25.0
+    var freq_y: float = 25.0
+    var amp_x: float = 5.0
+    var amp_y: float = 5.0
+    var speed_x: float = 8.0
+    var speed_y: float = 8.0
+    var screen_size = array[float, 2](float<-rl.GetScreenWidth(), float<-rl.GetScreenHeight())
+    var seconds: float = 0.0
 
     rl.SetShaderValue(shader, rl.GetShaderLocation(shader, size_uniform_name), ptr_of(screen_size[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
     rl.SetShaderValue(shader, freq_x_loc, ptr_of(freq_x), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)

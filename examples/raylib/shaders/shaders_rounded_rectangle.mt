@@ -4,23 +4,23 @@ import std.c.raylib as rl
 
 struct RoundedRectangle:
     corner_radius: rl.Vector4
-    shadow_radius: f32
+    shadow_radius: float
     shadow_offset: rl.Vector2
-    shadow_scale: f32
-    border_thickness: f32
-    rectangle_loc: i32
-    radius_loc: i32
-    color_loc: i32
-    shadow_radius_loc: i32
-    shadow_offset_loc: i32
-    shadow_scale_loc: i32
-    shadow_color_loc: i32
-    border_thickness_loc: i32
-    border_color_loc: i32
+    shadow_scale: float
+    border_thickness: float
+    rectangle_loc: int
+    radius_loc: int
+    color_loc: int
+    shadow_radius_loc: int
+    shadow_offset_loc: int
+    shadow_scale_loc: int
+    shadow_color_loc: int
+    border_thickness_loc: int
+    border_color_loc: int
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const vertex_shader_path_format: cstr = c"../resources/shaders/glsl%i/base.vs"
 const fragment_shader_path_format: cstr = c"../resources/shaders/glsl%i/rounded_rectangle.fs"
 const rectangle_uniform_name: cstr = c"rectangle"
@@ -40,39 +40,39 @@ const credit_text: cstr = c"(c) Rounded rectangle SDF by Inigo Quilez. MIT Licen
 const window_title: cstr = c"raylib [shaders] example - rounded rectangle"
 
 
-def normalized_color(color: rl.Color) -> array[f32, 4]:
-    return array[f32, 4](
-        f32<-color.r / 255.0,
-        f32<-color.g / 255.0,
-        f32<-color.b / 255.0,
-        f32<-color.a / 255.0,
+def normalized_color(color: rl.Color) -> array[float, 4]:
+    return array[float, 4](
+        float<-color.r / 255.0,
+        float<-color.g / 255.0,
+        float<-color.b / 255.0,
+        float<-color.a / 255.0,
     )
 
 
-def rectangle_components(rectangle: rl.Rectangle) -> array[f32, 4]:
-    return array[f32, 4](rectangle.x, rectangle.y, rectangle.width, rectangle.height)
+def rectangle_components(rectangle: rl.Rectangle) -> array[float, 4]:
+    return array[float, 4](rectangle.x, rectangle.y, rectangle.width, rectangle.height)
 
 
-def vector4_components(vector: rl.Vector4) -> array[f32, 4]:
-    return array[f32, 4](vector.x, vector.y, vector.z, vector.w)
+def vector4_components(vector: rl.Vector4) -> array[float, 4]:
+    return array[float, 4](vector.x, vector.y, vector.z, vector.w)
 
 
-def vector2_components(vector: rl.Vector2) -> array[f32, 2]:
-    return array[f32, 2](vector.x, vector.y)
+def vector2_components(vector: rl.Vector2) -> array[float, 2]:
+    return array[float, 2](vector.x, vector.y)
 
 
-def set_vec4_uniform(shader: rl.Shader, location: i32, x: f32, y: f32, z: f32, w: f32) -> void:
-    var values = array[f32, 4](x, y, z, w)
+def set_vec4_uniform(shader: rl.Shader, location: int, x: float, y: float, z: float, w: float) -> void:
+    var values = array[float, 4](x, y, z, w)
     rl.SetShaderValue(shader, location, ptr_of(values[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
 
-def set_vec2_uniform(shader: rl.Shader, location: i32, x: f32, y: f32) -> void:
-    var values = array[f32, 2](x, y)
+def set_vec2_uniform(shader: rl.Shader, location: int, x: float, y: float) -> void:
+    var values = array[float, 2](x, y)
     rl.SetShaderValue(shader, location, ptr_of(values[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
 
-def set_float_uniform(shader: rl.Shader, location: i32, value: f32) -> void:
-    var storage: f32 = value
+def set_float_uniform(shader: rl.Shader, location: int, value: float) -> void:
+    var storage: float = value
     rl.SetShaderValue(shader, location, ptr_of(storage), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
 
@@ -81,7 +81,7 @@ def set_rectangle_uniform(shader: rl.Shader, rounded_rectangle: RoundedRectangle
     set_vec4_uniform(shader, rounded_rectangle.rectangle_loc, rectangle_values[0], rectangle_values[1], rectangle_values[2], rectangle_values[3])
 
 
-def set_color_uniform(shader: rl.Shader, location: i32, color: rl.Color) -> void:
+def set_color_uniform(shader: rl.Shader, location: int, color: rl.Color) -> void:
     let color_values = normalized_color(color)
     set_vec4_uniform(shader, location, color_values[0], color_values[1], color_values[2], color_values[3])
 
@@ -100,7 +100,7 @@ def update_rounded_rectangle(rounded_rectangle: RoundedRectangle, shader: rl.Sha
     set_float_uniform(shader, rounded_rectangle.border_thickness_loc, border_thickness)
 
 
-def create_rounded_rectangle(corner_radius: rl.Vector4, shadow_radius: f32, shadow_offset: rl.Vector2, shadow_scale: f32, border_thickness: f32, shader: rl.Shader) -> RoundedRectangle:
+def create_rounded_rectangle(corner_radius: rl.Vector4, shadow_radius: float, shadow_offset: rl.Vector2, shadow_scale: float, border_thickness: float, shader: rl.Shader) -> RoundedRectangle:
     let rounded_rectangle = RoundedRectangle(
         corner_radius = corner_radius,
         shadow_radius = shadow_radius,
@@ -125,7 +125,7 @@ def create_rounded_rectangle(corner_radius: rl.Vector4, shadow_radius: f32, shad
 def flipped_rectangle(rectangle: rl.Rectangle) -> rl.Rectangle:
     return rl.Rectangle(
         x = rectangle.x,
-        y = f32<-screen_height - rectangle.y - rectangle.height,
+        y = float<-screen_height - rectangle.y - rectangle.height,
         width = rectangle.width,
         height = rectangle.height,
     )
@@ -142,7 +142,7 @@ def draw_shader_pass(shader: rl.Shader, rounded_rectangle: RoundedRectangle, rec
     rl.EndShaderMode()
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -175,23 +175,23 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
 
         let first_rectangle = rl.Rectangle(x = 50.0, y = 70.0, width = 110.0, height = 60.0)
-        rl.DrawRectangleLines(i32<-first_rectangle.x - 20, i32<-first_rectangle.y - 20, i32<-first_rectangle.width + 40, i32<-first_rectangle.height + 40, rl.DARKGRAY)
-        rl.DrawText(rounded_rectangle_text, i32<-first_rectangle.x - 20, i32<-first_rectangle.y - 35, 10, rl.DARKGRAY)
+        rl.DrawRectangleLines(int<-first_rectangle.x - 20, int<-first_rectangle.y - 20, int<-first_rectangle.width + 40, int<-first_rectangle.height + 40, rl.DARKGRAY)
+        rl.DrawText(rounded_rectangle_text, int<-first_rectangle.x - 20, int<-first_rectangle.y - 35, 10, rl.DARKGRAY)
         draw_shader_pass(shader, rounded_rectangle, first_rectangle, rectangle_color, transparent, transparent)
 
         let second_rectangle = rl.Rectangle(x = 50.0, y = 200.0, width = 110.0, height = 60.0)
-        rl.DrawRectangleLines(i32<-second_rectangle.x - 20, i32<-second_rectangle.y - 20, i32<-second_rectangle.width + 40, i32<-second_rectangle.height + 40, rl.DARKGRAY)
-        rl.DrawText(rounded_shadow_text, i32<-second_rectangle.x - 20, i32<-second_rectangle.y - 35, 10, rl.DARKGRAY)
+        rl.DrawRectangleLines(int<-second_rectangle.x - 20, int<-second_rectangle.y - 20, int<-second_rectangle.width + 40, int<-second_rectangle.height + 40, rl.DARKGRAY)
+        rl.DrawText(rounded_shadow_text, int<-second_rectangle.x - 20, int<-second_rectangle.y - 35, 10, rl.DARKGRAY)
         draw_shader_pass(shader, rounded_rectangle, second_rectangle, transparent, shadow_color, transparent)
 
         let third_rectangle = rl.Rectangle(x = 50.0, y = 330.0, width = 110.0, height = 60.0)
-        rl.DrawRectangleLines(i32<-third_rectangle.x - 20, i32<-third_rectangle.y - 20, i32<-third_rectangle.width + 40, i32<-third_rectangle.height + 40, rl.DARKGRAY)
-        rl.DrawText(rounded_border_text, i32<-third_rectangle.x - 20, i32<-third_rectangle.y - 35, 10, rl.DARKGRAY)
+        rl.DrawRectangleLines(int<-third_rectangle.x - 20, int<-third_rectangle.y - 20, int<-third_rectangle.width + 40, int<-third_rectangle.height + 40, rl.DARKGRAY)
+        rl.DrawText(rounded_border_text, int<-third_rectangle.x - 20, int<-third_rectangle.y - 35, 10, rl.DARKGRAY)
         draw_shader_pass(shader, rounded_rectangle, third_rectangle, transparent, transparent, border_color)
 
         let fourth_rectangle = rl.Rectangle(x = 240.0, y = 80.0, width = 500.0, height = 300.0)
-        rl.DrawRectangleLines(i32<-fourth_rectangle.x - 30, i32<-fourth_rectangle.y - 30, i32<-fourth_rectangle.width + 60, i32<-fourth_rectangle.height + 60, rl.DARKGRAY)
-        rl.DrawText(rounded_combined_text, i32<-fourth_rectangle.x - 30, i32<-fourth_rectangle.y - 45, 10, rl.DARKGRAY)
+        rl.DrawRectangleLines(int<-fourth_rectangle.x - 30, int<-fourth_rectangle.y - 30, int<-fourth_rectangle.width + 60, int<-fourth_rectangle.height + 60, rl.DARKGRAY)
+        rl.DrawText(rounded_combined_text, int<-fourth_rectangle.x - 30, int<-fourth_rectangle.y - 45, 10, rl.DARKGRAY)
         draw_shader_pass(shader, rounded_rectangle, fourth_rectangle, rectangle_color, shadow_color, border_color)
 
         rl.DrawText(credit_text, screen_width - 300, screen_height - 20, 10, rl.BLACK)

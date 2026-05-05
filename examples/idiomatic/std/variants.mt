@@ -3,15 +3,15 @@ module examples.idiomatic.std.variants
 import std.io as io
 
 variant Event:
-    click(x: i32, y: i32)
-    key(code: i32, pressed: bool)
-    resized(width: i32, height: i32)
+    click(x: int, y: int)
+    key(code: int, pressed: bool)
+    resized(width: int, height: int)
     quit
 
 # Payload construction with named arguments.
 
 
-def make_click(x: i32, y: i32) -> Event:
+def make_click(x: int, y: int) -> Event:
     return Event.click(x= x, y= y)
 
 # No-payload arm construction as a plain value.
@@ -23,7 +23,7 @@ def make_quit() -> Event:
 # Exhaustive matching over every arm.
 
 
-def event_code(event: Event) -> i32:
+def event_code(event: Event) -> int:
     match event:
         Event.click as click_event:
             return click_event.x + click_event.y
@@ -48,7 +48,7 @@ def is_terminal(event: Event) -> bool:
             return false
 
 
-def main() -> i32:
+def main() -> int:
     let click = make_click(7, 9)
     let key_down: Event = Event.key(code= 65, pressed= true)
     let key_up: Event = Event.key(code= 65, pressed= false)

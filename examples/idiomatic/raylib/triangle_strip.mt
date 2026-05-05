@@ -4,30 +4,30 @@ import std.raygui as gui
 import std.raylib as rl
 import std.raylib.math as math
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Triangle Strip")
     defer rl.close_window()
 
     var points = zero[array[rl.Vector2, 122]]
-    let center = rl.Vector2(x = f32<-screen_width / 2.0 - 125.0, y = f32<-screen_height / 2.0)
-    var segments: f32 = 6.0
-    var inside_radius: f32 = 100.0
-    var outside_radius: f32 = 150.0
+    let center = rl.Vector2(x = float<-screen_width / 2.0 - 125.0, y = float<-screen_height / 2.0)
+    var segments: float = 6.0
+    var inside_radius: float = 100.0
+    var outside_radius: float = 150.0
     var outline = true
 
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        let point_count = i32<-segments
-        let angle_step = 360.0 / f32<-point_count * math.deg2rad
+        let point_count = int<-segments
+        let angle_step = 360.0 / float<-point_count * math.deg2rad
 
         for index in 0..point_count:
             let point_index = index * 2
-            let inner_angle = f32<-index * angle_step
+            let inner_angle = float<-index * angle_step
             points[point_index] = rl.Vector2(
                 x = center.x + math.cos(inner_angle) * inside_radius,
                 y = center.y + math.sin(inner_angle) * inside_radius,
@@ -52,7 +52,7 @@ def main() -> i32:
             let b = points[index * 2 + 1]
             let c = points[index * 2 + 2]
             let d = points[index * 2 + 3]
-            let inner_angle = f32<-index * angle_step
+            let inner_angle = float<-index * angle_step
 
             rl.draw_triangle(c, b, a, rl.color_from_hsv(inner_angle * math.rad2deg, 1.0, 1.0))
             rl.draw_triangle(d, b, c, rl.color_from_hsv((inner_angle + angle_step / 2.0) * math.rad2deg, 1.0, 1.0))
@@ -63,7 +63,7 @@ def main() -> i32:
 
         rl.draw_line(580, 0, 580, rl.get_screen_height(), rl.Color(r = 218, g = 218, b = 218, a = 255))
         rl.draw_rectangle(580, 0, rl.get_screen_width(), rl.get_screen_height(), rl.Color(r = 232, g = 232, b = 232, a = 255))
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0), "Segments", rl.text_format_f32("%.0f", segments), inout segments, 6.0, 60.0)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0), "Segments", rl.text_format_float("%.0f", segments), inout segments, 6.0, 60.0)
         gui.check_box(rl.Rectangle(x = 640.0, y = 70.0, width = 20.0, height = 20.0), "Outline", inout outline)
         rl.draw_fps(10, 10)
 

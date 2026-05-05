@@ -2,11 +2,11 @@ module examples.idiomatic.raylib.logo_raylib
 
 import std.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Raylib Logo")
     defer rl.close_window()
 

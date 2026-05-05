@@ -525,7 +525,6 @@ module MilkTea
         end
 
         body_params.each_with_index do |param_binding, index|
-          param = decl.params[index]
           type = param_binding.type
 
           c_name = c_local_name(param_binding.name)
@@ -670,18 +669,18 @@ module MilkTea
             IR::LocalDecl.new(
               name: status_name,
               c_name: status_name,
-              type: @types.fetch("i32"),
+              type: @types.fetch("int"),
               value: IR::Call.new(
                 callee: module_function_c_name("std.libuv.runtime", "loop_run_default"),
                 arguments: [loop_expr],
-                type: @types.fetch("i32"),
+                type: @types.fetch("int"),
               ),
             ),
             IR::IfStmt.new(
               condition: IR::Binary.new(
                 operator: "!=",
-                left: IR::Name.new(name: status_name, type: @types.fetch("i32"), pointer: false),
-                right: IR::IntegerLiteral.new(value: 0, type: @types.fetch("i32")),
+                left: IR::Name.new(name: status_name, type: @types.fetch("int"), pointer: false),
+                right: IR::IntegerLiteral.new(value: 0, type: @types.fetch("int")),
                 type: @types.fetch("bool"),
               ),
               then_body: [
@@ -698,15 +697,15 @@ module MilkTea
           ],
         )
 
-        if async_info[:result_type] == @types.fetch("i32")
+        if async_info[:result_type] == @types.fetch("int")
           body << IR::LocalDecl.new(
             name: result_name,
             c_name: result_name,
-            type: @types.fetch("i32"),
+            type: @types.fetch("int"),
             value: IR::Call.new(
               callee: IR::Member.new(receiver: task_expr, member: "take_result", type: task_type.field("take_result")),
               arguments: [IR::Member.new(receiver: task_expr, member: "frame", type: task_type.field("frame"))],
-              type: @types.fetch("i32"),
+              type: @types.fetch("int"),
             ),
           )
         else
@@ -741,14 +740,14 @@ module MilkTea
           ),
         )
         body << IR::ReturnStmt.new(
-          value: async_info[:result_type] == @types.fetch("i32") ? IR::Name.new(name: result_name, type: @types.fetch("i32"), pointer: false) : IR::IntegerLiteral.new(value: 0, type: @types.fetch("i32")),
+          value: async_info[:result_type] == @types.fetch("int") ? IR::Name.new(name: result_name, type: @types.fetch("int"), pointer: false) : IR::IntegerLiteral.new(value: 0, type: @types.fetch("int")),
         )
 
         IR::Function.new(
           name: binding.name,
           c_name: "main",
           params: [],
-          return_type: @types.fetch("i32"),
+          return_type: @types.fetch("int"),
           body: body,
           entry_point: true,
         )
@@ -929,7 +928,7 @@ module MilkTea
 
       def build_async_frame_type(frame_c_name, async_info)
         fields = {
-          "state" => @types.fetch("i32"),
+          "state" => @types.fetch("int"),
           "ready" => @types.fetch("bool"),
           "waiter_frame" => async_info[:void_ptr],
           "waiter" => async_info[:wake_type],
@@ -967,7 +966,7 @@ module MilkTea
             target_type: frame_pointer_type,
             expression: IR::Call.new(
               callee: "mt_async_alloc",
-              arguments: [IR::SizeofExpr.new(target_type: frame_type, type: @types.fetch("usize"))],
+              arguments: [IR::SizeofExpr.new(target_type: frame_type, type: @types.fetch("ptr_uint"))],
               type: async_info[:void_ptr],
             ),
             type: frame_pointer_type,
@@ -1027,11 +1026,11 @@ module MilkTea
 
         cases = (0..async_info[:await_fields].length).map do |state|
           IR::SwitchCase.new(
-            value: IR::IntegerLiteral.new(value: state, type: @types.fetch("i32")),
+            value: IR::IntegerLiteral.new(value: state, type: @types.fetch("int")),
             body: [IR::GotoStmt.new(label: async_state_label(resume_c_name, state))],
           )
         end
-        body << IR::SwitchStmt.new(expression: async_frame_field_expression(frame_expr, "state", @types.fetch("i32")), cases:)
+        body << IR::SwitchStmt.new(expression: async_frame_field_expression(frame_expr, "state", @types.fetch("int")), cases:)
         body << IR::ReturnStmt.new(value: nil)
         body << IR::LabelStmt.new(name: async_state_label(resume_c_name, 0))
 
@@ -1850,7 +1849,7 @@ module MilkTea
         iterable_c_name = fresh_c_temp_name(env, "for_items")
         index_c_name = fresh_c_temp_name(env, "for_index")
         iterable_ref = IR::Name.new(name: iterable_c_name, type: iterable_type, pointer: false)
-        index_ref = IR::Name.new(name: index_c_name, type: @types.fetch("usize"), pointer: false)
+        index_ref = IR::Name.new(name: index_c_name, type: @types.fetch("ptr_uint"), pointer: false)
 
         # Loop variable stored in frame so it survives suspension
         loop_var_field = async_info[:local_fields].fetch(statement.name)
@@ -1863,9 +1862,9 @@ module MilkTea
                        IR::Index.new(receiver: data_ref, index: index_ref, type: element_type)
                      end
         stop_value = if array_type?(iterable_type)
-                       IR::IntegerLiteral.new(value: array_length(iterable_type), type: @types.fetch("usize"))
+                       IR::IntegerLiteral.new(value: array_length(iterable_type), type: @types.fetch("ptr_uint"))
                      else
-                       IR::Member.new(receiver: iterable_ref, member: "len", type: @types.fetch("usize"))
+                       IR::Member.new(receiver: iterable_ref, member: "len", type: @types.fetch("ptr_uint"))
                      end
 
         inner_env = duplicate_env(env)
@@ -1884,9 +1883,9 @@ module MilkTea
           *iterable_setup,
           IR::LocalDecl.new(name: iterable_c_name, c_name: iterable_c_name, type: iterable_type, value: lower_expression(prepared_iterable, env:, expected_type: iterable_type)),
           IR::ForStmt.new(
-            init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("usize"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize"))),
+            init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
             condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
-            post: IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("usize"))),
+            post: IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
             body: [assign_item] + body_stmts,
           ),
         ]
@@ -2116,7 +2115,7 @@ module MilkTea
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
         iterable_ref = IR::Name.new(name: iterable_c_name, type: iterable_type, pointer: false)
-        index_ref = IR::Name.new(name: index_c_name, type: @types.fetch("usize"), pointer: false)
+        index_ref = IR::Name.new(name: index_c_name, type: @types.fetch("ptr_uint"), pointer: false)
 
         item_value = if array_type?(iterable_type)
                        IR::Index.new(receiver: iterable_ref, index: index_ref, type: element_type)
@@ -2125,9 +2124,9 @@ module MilkTea
                        IR::Index.new(receiver: data_ref, index: index_ref, type: element_type)
                      end
         stop_value = if array_type?(iterable_type)
-                       IR::IntegerLiteral.new(value: array_length(iterable_type), type: @types.fetch("usize"))
+                       IR::IntegerLiteral.new(value: array_length(iterable_type), type: @types.fetch("ptr_uint"))
                      else
-                       IR::Member.new(receiver: iterable_ref, member: "len", type: @types.fetch("usize"))
+                       IR::Member.new(receiver: iterable_ref, member: "len", type: @types.fetch("ptr_uint"))
                      end
 
         while_env = duplicate_env(env)
@@ -2146,9 +2145,9 @@ module MilkTea
         body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
 
         for_statement = IR::ForStmt.new(
-          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("usize"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize"))),
+          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
           condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
-          post: IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("usize"))),
+          post: IR::Assignment.new(target: index_ref, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
           body:,
         )
 
@@ -2316,9 +2315,9 @@ module MilkTea
           condition: IR::Unary.new(operator: "not", operand: ready_call, type: @types.fetch("bool")),
           then_body: [
             IR::Assignment.new(
-              target: async_frame_field_expression(frame_expr, "state", @types.fetch("i32")),
+              target: async_frame_field_expression(frame_expr, "state", @types.fetch("int")),
               operator: "=",
-              value: IR::IntegerLiteral.new(value: await_info[:state], type: @types.fetch("i32")),
+              value: IR::IntegerLiteral.new(value: await_info[:state], type: @types.fetch("int")),
             ),
             IR::ExpressionStmt.new(expression: set_waiter_call),
             IR::ReturnStmt.new(value: nil),
@@ -2627,7 +2626,7 @@ module MilkTea
 
             if scrutinee_type.is_a?(Types::Variant)
               outer_c = c_type_name(scrutinee_type)
-              kind_type = @types.fetch("i32")
+              kind_type = @types.fetch("int")
               kind_expr = IR::Member.new(receiver: expression, member: "kind", type: kind_type)
               cases = statement.arms.map do |arm|
                 arm_local_env = duplicate_env(local_env)
@@ -2792,12 +2791,12 @@ module MilkTea
                       IR::NullLiteral.new(type: proc_env_pointer_type)
                     else
                       env_struct_type = Types::Struct.new("#{@module_prefix}__proc_#{proc_id}__env").define_fields(
-                        { "__mt_ref_count" => @types.fetch("usize") }.merge(captures.each_with_object({}) { |capture, fields| fields[capture[:field_name]] = capture[:type] }),
+                        { "__mt_ref_count" => @types.fetch("ptr_uint") }.merge(captures.each_with_object({}) { |capture, fields| fields[capture[:field_name]] = capture[:type] }),
                       )
                       @synthetic_structs << IR::StructDecl.new(
                         name: env_struct_type.name,
                         c_name: env_struct_type.name,
-                        fields: [IR::Field.new(name: "__mt_ref_count", type: @types.fetch("usize")), *captures.map { |capture| IR::Field.new(name: capture[:field_name], type: capture[:type]) }],
+                        fields: [IR::Field.new(name: "__mt_ref_count", type: @types.fetch("ptr_uint")), *captures.map { |capture| IR::Field.new(name: capture[:field_name], type: capture[:type]) }],
                         packed: false,
                         alignment: nil,
                       )
@@ -2806,7 +2805,7 @@ module MilkTea
                       env_name = fresh_c_temp_name(env, "#{local_name}_env")
                       raw_allocation = IR::Call.new(
                         callee: "malloc",
-                        arguments: [IR::SizeofExpr.new(target_type: env_struct_type, type: @types.fetch("usize"))],
+                        arguments: [IR::SizeofExpr.new(target_type: env_struct_type, type: @types.fetch("ptr_uint"))],
                         type: proc_env_pointer_type,
                       )
                       setup << IR::LocalDecl.new(
@@ -2817,9 +2816,9 @@ module MilkTea
                       )
                       env_pointer = IR::Name.new(name: env_name, type: env_pointer_type, pointer: false)
                       setup << IR::Assignment.new(
-                        target: IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @types.fetch("usize")),
+                        target: IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @types.fetch("ptr_uint")),
                         operator: "=",
-                        value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("usize")),
+                        value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint")),
                       )
                       captures.each do |capture|
                         setup << IR::Assignment.new(
@@ -2910,7 +2909,7 @@ module MilkTea
 
         env_pointer_type = pointer_to(env_struct_type)
         env_pointer = IR::Name.new(name: "__mt_proc_env_ptr", type: env_pointer_type, pointer: false)
-        ref_count = IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @types.fetch("usize"))
+        ref_count = IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @types.fetch("ptr_uint"))
         IR::Function.new(
           name: release_c_name,
           c_name: release_c_name,
@@ -2923,9 +2922,9 @@ module MilkTea
               type: env_pointer_type,
               value: IR::Cast.new(target_type: env_pointer_type, expression: IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false), type: env_pointer_type),
             ),
-            IR::Assignment.new(target: ref_count, operator: "-=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("usize"))),
+            IR::Assignment.new(target: ref_count, operator: "-=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
             IR::IfStmt.new(
-              condition: IR::Binary.new(operator: "==", left: ref_count, right: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize")), type: @types.fetch("bool")),
+              condition: IR::Binary.new(operator: "==", left: ref_count, right: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")), type: @types.fetch("bool")),
               then_body: [
                 IR::ExpressionStmt.new(
                   expression: IR::Call.new(
@@ -2948,7 +2947,7 @@ module MilkTea
 
         env_pointer_type = pointer_to(env_struct_type)
         env_pointer = IR::Name.new(name: "__mt_proc_env_ptr", type: env_pointer_type, pointer: false)
-        ref_count = IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @types.fetch("usize"))
+        ref_count = IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @types.fetch("ptr_uint"))
         IR::Function.new(
           name: retain_c_name,
           c_name: retain_c_name,
@@ -2961,7 +2960,7 @@ module MilkTea
               type: env_pointer_type,
               value: IR::Cast.new(target_type: env_pointer_type, expression: IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false), type: env_pointer_type),
             ),
-            IR::Assignment.new(target: ref_count, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("usize"))),
+            IR::Assignment.new(target: ref_count, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
             IR::ReturnStmt.new(value: nil),
           ],
           entry_point: false,
@@ -3347,7 +3346,7 @@ module MilkTea
         continue_label = fresh_c_temp_name(env, "loop_continue")
         break_label = fresh_c_temp_name(env, "loop_break")
         iterable_ref = IR::Name.new(name: iterable_c_name, type: iterable_type, pointer: false)
-        index_ref = IR::Name.new(name: index_c_name, type: @types.fetch("usize"), pointer: false)
+        index_ref = IR::Name.new(name: index_c_name, type: @types.fetch("ptr_uint"), pointer: false)
 
         item_value = if array_type?(iterable_type)
                        IR::Index.new(receiver: iterable_ref, index: index_ref, type: element_type)
@@ -3357,9 +3356,9 @@ module MilkTea
                      end
 
         stop_value = if array_type?(iterable_type)
-                       IR::IntegerLiteral.new(value: array_length(iterable_type), type: @types.fetch("usize"))
+                       IR::IntegerLiteral.new(value: array_length(iterable_type), type: @types.fetch("ptr_uint"))
                      else
-                       IR::Member.new(receiver: iterable_ref, member: "len", type: @types.fetch("usize"))
+                       IR::Member.new(receiver: iterable_ref, member: "len", type: @types.fetch("ptr_uint"))
                      end
 
         while_env = duplicate_env(env)
@@ -3381,12 +3380,12 @@ module MilkTea
         body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
 
         for_statement = IR::ForStmt.new(
-          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("usize"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize"))),
+          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
           condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
           post: IR::Assignment.new(
             target: index_ref,
             operator: "+=",
-            value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("usize")),
+            value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint")),
           ),
           body:,
         )
@@ -3404,15 +3403,14 @@ module MilkTea
       def lower_range_index_assignment(statement, env:)
         range = statement.target.index
         start_val = range.start_expr.value
-        end_val = range.end_expr.value
         receiver_type = infer_expression_type(statement.target.receiver, env:)
-        element_type = infer_index_result_type(receiver_type, @types.fetch("usize"))
+        element_type = infer_index_result_type(receiver_type, @types.fetch("ptr_uint"))
 
         receiver_setup, prepared_receiver = prepare_expression_for_inline_lowering(statement.target.receiver, env:, expected_type: receiver_type)
         statements = receiver_setup.dup
 
         statement.value.elements.each_with_index do |elem, i|
-          index_ir = IR::IntegerLiteral.new(value: start_val + i, type: @types.fetch("usize"))
+          index_ir = IR::IntegerLiteral.new(value: start_val + i, type: @types.fetch("ptr_uint"))
           target_ir = IR::Index.new(
             receiver: lower_expression(prepared_receiver, env:, expected_type: receiver_type),
             index: index_ir,
@@ -3648,7 +3646,7 @@ module MilkTea
 
           if part.format_spec && part.format_spec[:kind] == :precision
             precision = part.format_spec[:value]
-            append_argument_type = @types.fetch("f64")
+            append_argument_type = @types.fetch("double")
             helper_params << IR::Param.new(name: parameter_name, c_name: parameter_c_name, type: append_argument_type, pointer: false)
             helper_arguments << cast_expression(
               lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
@@ -3656,7 +3654,7 @@ module MilkTea
             )
             helper_parts << {
               kind: :precision_expression,
-              append_function_name: "append_f64_precision",
+              append_function_name: "append_double_precision",
               parameter_c_name: parameter_c_name,
               parameter_type: append_argument_type,
               precision: precision,
@@ -3716,7 +3714,7 @@ module MilkTea
                       else
                         IR::Call.new(
                           callee: std_string_with_capacity_c_name,
-                          arguments: [IR::IntegerLiteral.new(value: literal_capacity, type: @types.fetch("usize"))],
+                          arguments: [IR::IntegerLiteral.new(value: literal_capacity, type: @types.fetch("ptr_uint"))],
                           type: string_type,
                         )
                       end
@@ -3744,7 +3742,7 @@ module MilkTea
                 arguments: [
                   result_ref,
                   IR::Name.new(name: part[:parameter_c_name], type: part[:parameter_type], pointer: false),
-                  IR::IntegerLiteral.new(value: part[:precision], type: @types.fetch("i32")),
+                  IR::IntegerLiteral.new(value: part[:precision], type: @types.fetch("int")),
                 ],
                 type: @types.fetch("void"),
               ),
@@ -3820,15 +3818,15 @@ module MilkTea
         return ["append", @types.fetch("str")] if type == @types.fetch("str")
         return ["append_cstr", @types.fetch("cstr")] if type == @types.fetch("cstr")
         return ["append_bool", @types.fetch("bool")] if type == @types.fetch("bool")
-        return ["append_f32", @types.fetch("f32")] if type == @types.fetch("f32")
-        return ["append_f64", @types.fetch("f64")] if type == @types.fetch("f64")
+        return ["append_float", @types.fetch("float")] if type == @types.fetch("float")
+        return ["append_double", @types.fetch("double")] if type == @types.fetch("double")
 
         if type.is_a?(Types::Primitive) && type.integer?
-          return ["append_i32", @types.fetch("i32")] if %w[i8 i16 i32].include?(type.name)
-          return ["append_u32", @types.fetch("u32")] if %w[u8 u16 u32].include?(type.name)
-          return ["append_usize", @types.fetch("usize")] if type.name == "usize"
-          return ["append_i64", @types.fetch("i64")] if %w[i64 isize].include?(type.name)
-          return ["append_u64", @types.fetch("u64")] if type.name == "u64"
+          return ["append_int", @types.fetch("int")] if %w[byte short int].include?(type.name)
+          return ["append_uint", @types.fetch("uint")] if %w[ubyte ushort uint].include?(type.name)
+          return ["append_ptr_uint", @types.fetch("ptr_uint")] if type.name == "ptr_uint"
+          return ["append_long", @types.fetch("long")] if %w[long ptr_int].include?(type.name)
+          return ["append_ulong", @types.fetch("ulong")] if type.name == "ulong"
         end
 
         if type.is_a?(Types::EnumBase) && type.backing_type.is_a?(Types::Primitive) && type.backing_type.integer?
@@ -4184,7 +4182,7 @@ module MilkTea
             callee: "mt_str_builder_clear",
             arguments: [
               lower_str_builder_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("usize")),
+              IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("ptr_uint")),
               lower_str_builder_len_pointer(receiver, env:),
               lower_str_builder_dirty_pointer(receiver, env:),
             ],
@@ -4197,7 +4195,7 @@ module MilkTea
             arguments: [
               lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: @types.fetch("str")),
               lower_str_builder_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("usize")),
+              IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("ptr_uint")),
               lower_str_builder_len_pointer(receiver, env:),
               lower_str_builder_dirty_pointer(receiver, env:),
             ],
@@ -4210,7 +4208,7 @@ module MilkTea
             arguments: [
               lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: @types.fetch("str")),
               lower_str_builder_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("usize")),
+              IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("ptr_uint")),
               lower_str_builder_len_pointer(receiver, env:),
               lower_str_builder_dirty_pointer(receiver, env:),
             ],
@@ -4222,7 +4220,7 @@ module MilkTea
             callee: "mt_str_builder_len",
             arguments: [
               lower_str_builder_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("usize")),
+              IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("ptr_uint")),
               lower_str_builder_len_pointer(receiver, env:),
               lower_str_builder_dirty_pointer(receiver, env:),
             ],
@@ -4244,11 +4242,11 @@ module MilkTea
                   callee: "mt_str_builder_len",
                   arguments: [
                     data_pointer,
-                    IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("usize")),
+                    IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("ptr_uint")),
                     lower_str_builder_len_pointer(receiver, env:),
                     lower_str_builder_dirty_pointer(receiver, env:),
                   ],
-                  type: @types.fetch("usize"),
+                  type: @types.fetch("ptr_uint"),
                 ),
               ),
             ],
@@ -4259,7 +4257,7 @@ module MilkTea
             callee: "mt_str_builder_as_cstr",
             arguments: [
               lower_str_builder_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("usize")),
+              IR::IntegerLiteral.new(value: str_builder_capacity(receiver_type), type: @types.fetch("ptr_uint")),
               lower_str_builder_len_pointer(receiver, env:),
               lower_str_builder_dirty_pointer(receiver, env:),
             ],
@@ -4695,7 +4693,7 @@ module MilkTea
         converted_data = foreign_identity_projection_expression(data_expression, pointer_to(boundary_element_type))
         raise LoweringError, "unsupported foreign boundary mapping #{public_type} as #{boundary_type}" unless converted_data
 
-        len_expression = IR::Member.new(receiver: lowered_value, member: "len", type: @types.fetch("usize"))
+        len_expression = IR::Member.new(receiver: lowered_value, member: "len", type: @types.fetch("ptr_uint"))
         IR::AggregateLiteral.new(
           type: boundary_type,
           fields: [
@@ -4764,7 +4762,7 @@ module MilkTea
             callee: "mt_str_builder_prepare_write",
             arguments: [
               lower_str_builder_data_pointer(argument.value, env:),
-              IR::IntegerLiteral.new(value: str_builder_capacity(public_type), type: @types.fetch("usize")),
+              IR::IntegerLiteral.new(value: str_builder_capacity(public_type), type: @types.fetch("ptr_uint")),
               lower_str_builder_dirty_pointer(argument.value, env:),
             ],
             type: parameter.boundary_type,
@@ -5257,7 +5255,7 @@ module MilkTea
         boundary_type = parameter.boundary_type
         items_type = pointer_to(pointer_to(@types.fetch("char")))
         data_type = pointer_to(@types.fetch("char"))
-        len_type = @types.fetch("usize")
+        len_type = @types.fetch("ptr_uint")
         lowered_value = lower_contextual_expression(argument_value, env:, expected_type: public_type)
         items_name = fresh_c_temp_name(env, "foreign_cstr_items")
         data_name = fresh_c_temp_name(env, "foreign_cstr_data")
@@ -5327,7 +5325,7 @@ module MilkTea
         boundary_type = parameter.boundary_type
         boundary_element_type = boundary_type.element_type
         len = array_length(actual_type)
-        len_type = @types.fetch("usize")
+        len_type = @types.fetch("ptr_uint")
 
         if len.zero?
           return IR::AggregateLiteral.new(
@@ -5565,7 +5563,7 @@ module MilkTea
               value: IR::AddressOf.new(
                 expression: IR::Index.new(
                   receiver: expression,
-                  index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize")),
+                  index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
                   type: target_type.element_type,
                 ),
                 type: pointer_to(target_type.element_type),
@@ -5573,7 +5571,7 @@ module MilkTea
             ),
             IR::AggregateField.new(
               name: "len",
-              value: IR::IntegerLiteral.new(value: array_length(expression.type), type: @types.fetch("usize")),
+              value: IR::IntegerLiteral.new(value: array_length(expression.type), type: @types.fetch("ptr_uint")),
             ),
           ],
         )
@@ -5589,7 +5587,7 @@ module MilkTea
                 callee: "mt_str_builder_prepare_write",
                 arguments: [
                   lower_str_builder_data_pointer_from_lowered(expression),
-                  IR::IntegerLiteral.new(value: str_builder_capacity(expression.type), type: @types.fetch("usize")),
+                  IR::IntegerLiteral.new(value: str_builder_capacity(expression.type), type: @types.fetch("ptr_uint")),
                   lower_str_builder_dirty_pointer_from_lowered(expression),
                 ],
                 type: pointer_to(target_type.element_type),
@@ -5597,7 +5595,7 @@ module MilkTea
             ),
             IR::AggregateField.new(
               name: "len",
-              value: IR::IntegerLiteral.new(value: str_builder_storage_capacity(expression.type), type: @types.fetch("usize")),
+              value: IR::IntegerLiteral.new(value: str_builder_storage_capacity(expression.type), type: @types.fetch("ptr_uint")),
             ),
           ],
         )
@@ -5981,7 +5979,7 @@ module MilkTea
         when AST::Specialization
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "cast"
             target_type = resolve_type_ref(callee.arguments.fetch(0).value)
-            return [:cast, nil, nil, Types::Function.new("cast", params: [Types::Parameter.new("value", @types.fetch("i32"))], return_type: target_type)]
+            return [:cast, nil, nil, Types::Function.new("cast", params: [Types::Parameter.new("value", @types.fetch("int"))], return_type: target_type)]
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "reinterpret"
@@ -6037,16 +6035,16 @@ module MilkTea
           if expected_type.is_a?(Types::Primitive) && expected_type.integer?
             expected_type
           else
-            @types.fetch("i32")
+            @types.fetch("int")
           end
         when AST::FloatLiteral
           if expected_type.is_a?(Types::Primitive) && expected_type.float?
             expected_type
           else
-            @types.fetch("f64")
+            @types.fetch("double")
           end
         when AST::SizeofExpr, AST::AlignofExpr, AST::OffsetofExpr
-          @types.fetch("usize")
+          @types.fetch("ptr_uint")
         when AST::StringLiteral
           @types.fetch(expression.cstring ? "cstr" : "str")
         when AST::FormatString
@@ -6955,7 +6953,7 @@ module MilkTea
                               when :str_builder_assign, :str_builder_append
                                 [@types.fetch("void"), [Types::Parameter.new("value", @types.fetch("str"))]]
                               when :str_builder_len, :str_builder_capacity
-                                [@types.fetch("usize"), []]
+                                [@types.fetch("ptr_uint"), []]
                               when :str_builder_as_str
                                 [@types.fetch("str"), []]
                               when :str_builder_as_cstr
@@ -6979,7 +6977,7 @@ module MilkTea
         IR::AddressOf.new(
           expression: IR::Index.new(
             receiver: lowered_receiver,
-            index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize")),
+            index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
             type: @types.fetch("char"),
           ),
           type: pointer_to(@types.fetch("char")),
@@ -7001,7 +6999,7 @@ module MilkTea
                 [@types.fetch("char"), Types::LiteralTypeArg.new(str_builder_storage_capacity(lowered_receiver.type))],
               ),
             ),
-            index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("usize")),
+            index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
             type: @types.fetch("char"),
           ),
           type: pointer_to(@types.fetch("char")),
@@ -7014,8 +7012,8 @@ module MilkTea
 
       def lower_str_builder_len_pointer_from_lowered(lowered_receiver)
         IR::AddressOf.new(
-          expression: IR::Member.new(receiver: lowered_receiver, member: "len", type: @types.fetch("usize")),
-          type: pointer_to(@types.fetch("usize")),
+          expression: IR::Member.new(receiver: lowered_receiver, member: "len", type: @types.fetch("ptr_uint")),
+          type: pointer_to(@types.fetch("ptr_uint")),
         )
       end
 

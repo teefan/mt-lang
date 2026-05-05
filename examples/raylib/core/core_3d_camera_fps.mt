@@ -4,23 +4,23 @@ import std.c.raylib as rl
 import std.math as math
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [core] example - 3d camera fps"
-const gravity: f32 = 32.0
-const max_speed: f32 = 20.0
-const crouch_speed: f32 = 5.0
-const jump_force: f32 = 12.0
-const max_accel: f32 = 150.0
-const friction: f32 = 0.86
-const air_drag: f32 = 0.98
-const control: f32 = 15.0
-const crouch_height: f32 = 0.0
-const stand_height: f32 = 1.0
-const bottom_height: f32 = 0.5
-const step_rotation: f32 = 0.01
-const bob_side: f32 = 0.1
-const bob_up: f32 = 0.15
+const gravity: float = 32.0
+const max_speed: float = 20.0
+const crouch_speed: float = 5.0
+const jump_force: float = 12.0
+const max_accel: float = 150.0
+const friction: float = 0.86
+const air_drag: float = 0.98
+const control: float = 15.0
+const crouch_height: float = 0.0
+const stand_height: float = 1.0
+const bottom_height: float = 0.5
+const step_rotation: float = 0.01
+const bob_side: float = 0.1
+const bob_up: float = 0.15
 
 struct Body:
     position: rl.Vector3
@@ -30,13 +30,13 @@ struct Body:
 
 struct FpsState:
     look_rotation: rl.Vector2
-    head_timer: f32
-    walk_lerp: f32
-    head_lerp: f32
+    head_timer: float
+    walk_lerp: float
+    head_lerp: float
     lean: rl.Vector2
 
 methods Body:
-    edit def update(rot: f32, side: i32, forward: i32, jump_pressed: bool, crouch_hold: bool) -> void:
+    edit def update(rot: float, side: int, forward: int, jump_pressed: bool, crouch_hold: bool) -> void:
         var input = rl.Vector2(x = side, y = -forward)
         if side != 0 and forward != 0:
             input = input.normalize()
@@ -121,7 +121,7 @@ methods FpsState:
 
 def draw_level() -> void:
     let floor_extent = 25
-    let tile_size: f32 = 5.0
+    let tile_size: float = 5.0
     let tile_color_one = rl.Color(r = 150, g = 200, b = 200, a = 255)
 
     var y = -floor_extent
@@ -158,7 +158,7 @@ def draw_level() -> void:
     rl.DrawSphere(rl.Vector3(x = 300.0, y = 300.0, z = 0.0), 100.0, rl.RED)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -229,8 +229,8 @@ def main() -> i32:
             state.walk_lerp = rm.lerp(state.walk_lerp, 0.0, 10.0 * delta)
             camera.fovy = rm.lerp(camera.fovy, 60.0, 5.0 * delta)
 
-        state.lean.x = rm.lerp(state.lean.x, f32<-sideway * 0.02, 10.0 * delta)
-        state.lean.y = rm.lerp(state.lean.y, f32<-forward * 0.015, 10.0 * delta)
+        state.lean.x = rm.lerp(state.lean.x, float<-sideway * 0.02, 10.0 * delta)
+        state.lean.y = rm.lerp(state.lean.y, float<-forward * 0.015, 10.0 * delta)
 
         state.update_camera(ref_of(camera), player)
 

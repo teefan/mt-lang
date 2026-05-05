@@ -2,24 +2,24 @@ module examples.raylib.textures.textures_image_processing
 
 import std.c.raylib as rl
 
-const num_processes: i32 = 9
-const process_none: i32 = 0
-const process_color_grayscale: i32 = 1
-const process_color_tint: i32 = 2
-const process_color_invert: i32 = 3
-const process_color_contrast: i32 = 4
-const process_color_brightness: i32 = 5
-const process_gaussian_blur: i32 = 6
-const process_flip_vertical: i32 = 7
-const process_flip_horizontal: i32 = 8
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const num_processes: int = 9
+const process_none: int = 0
+const process_color_grayscale: int = 1
+const process_color_tint: int = 2
+const process_color_invert: int = 3
+const process_color_contrast: int = 4
+const process_color_brightness: int = 5
+const process_gaussian_blur: int = 6
+const process_flip_vertical: int = 7
+const process_flip_horizontal: int = 8
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - image processing"
 const parrots_path: cstr = c"../resources/parrots.png"
 const title_text: cstr = c"IMAGE PROCESSING:"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -47,7 +47,7 @@ def main() -> i32:
 
     var toggle_rects = zero[array[rl.Rectangle, num_processes]]
     for index in 0..num_processes:
-        toggle_rects[index] = rl.Rectangle(x = 40.0, y = f32<-(50 + 32 * index), width = 150.0, height = 30.0)
+        toggle_rects[index] = rl.Rectangle(x = 40.0, y = float<-(50 + 32 * index), width = 150.0, height = 30.0)
 
     var current_process = process_none
     var texture_reload = false
@@ -117,16 +117,16 @@ def main() -> i32:
 
             rl.DrawRectangleRec(toggle_rects[index], fill_color)
             rl.DrawRectangleLines(
-                i32<-toggle_rects[index].x,
-                i32<-toggle_rects[index].y,
-                i32<-toggle_rects[index].width,
-                i32<-toggle_rects[index].height,
+                int<-toggle_rects[index].x,
+                int<-toggle_rects[index].y,
+                int<-toggle_rects[index].width,
+                int<-toggle_rects[index].height,
                 stroke_color,
             )
             rl.DrawText(
                 process_text[index],
-                i32<-(toggle_rects[index].x + toggle_rects[index].width / 2.0 - f32<-rl.MeasureText(process_text[index], 10) / 2.0),
-                i32<-toggle_rects[index].y + 11,
+                int<-(toggle_rects[index].x + toggle_rects[index].width / 2.0 - float<-rl.MeasureText(process_text[index], 10) / 2.0),
+                int<-toggle_rects[index].y + 11,
                 10,
                 text_color,
             )

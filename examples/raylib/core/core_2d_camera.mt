@@ -3,9 +3,9 @@ module examples.raylib.core.core_2d_camera
 import std.c.libm as math
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const building_count: i32 = 100
+const screen_width: int = 800
+const screen_height: int = 450
+const building_count: int = 100
 const window_title: cstr = c"raylib [core] example - 2d camera"
 const screen_area_text: cstr = c"SCREEN AREA"
 const controls_title: cstr = c"Free 2D camera controls:"
@@ -15,7 +15,7 @@ const controls_rotate: cstr = c"- A / S to Rotate"
 const controls_reset: cstr = c"- R to reset Zoom and Rotation"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -47,7 +47,7 @@ def main() -> i32:
         rotation = 0.0,
         zoom = 1.0,
     )
-    let overlay_alpha: f32 = 0.5
+    let overlay_alpha: float = 0.5
 
     rl.SetTargetFPS(60)
 

@@ -3,8 +3,8 @@ module examples.raylib.shapes.shapes_ellipse_collision
 import std.c.libm as math
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - collision ellipses"
 const ellipses_collide_text: cstr = c"ELLIPSES COLLIDE"
 const no_collision_text: cstr = c"NO COLLISION"
@@ -15,13 +15,13 @@ const mouse_inside_b_text: cstr = c"Mouse inside ellipse B"
 const switch_control_text: cstr = c"Press [A] or [B] to switch control"
 
 
-def check_collision_point_ellipse(point: rl.Vector2, center: rl.Vector2, radius_x: f32, radius_y: f32) -> bool:
+def check_collision_point_ellipse(point: rl.Vector2, center: rl.Vector2, radius_x: float, radius_y: float) -> bool:
     let dx = (point.x - center.x) / radius_x
     let dy = (point.y - center.y) / radius_y
     return dx * dx + dy * dy <= 1.0
 
 
-def check_collision_ellipses(center1: rl.Vector2, radius_x1: f32, radius_y1: f32, center2: rl.Vector2, radius_x2: f32, radius_y2: f32) -> bool:
+def check_collision_ellipses(center1: rl.Vector2, radius_x1: float, radius_y1: float, center2: rl.Vector2, radius_x2: float, radius_y2: float) -> bool:
     let dx = center2.x - center1.x
     let dy = center2.y - center1.y
     let distance = math.sqrtf(dx * dx + dy * dy)
@@ -38,19 +38,19 @@ def check_collision_ellipses(center1: rl.Vector2, radius_x1: f32, radius_y1: f32
     return distance <= r1 + r2
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
     var ellipse_a_center = rl.Vector2(x = screen_width / 4.0, y = screen_height / 2.0)
-    var ellipse_a_radius_x: f32 = 120.0
-    var ellipse_a_radius_y: f32 = 70.0
+    var ellipse_a_radius_x: float = 120.0
+    var ellipse_a_radius_y: float = 70.0
 
     var ellipse_b_center = rl.Vector2(x = screen_width * 3.0 / 4.0, y = screen_height / 2.0)
-    var ellipse_b_radius_x: f32 = 90.0
-    var ellipse_b_radius_y: f32 = 140.0
+    var ellipse_b_radius_x: float = 90.0
+    var ellipse_b_radius_y: float = 140.0
 
-    var controlled: i32 = 0
+    var controlled: int = 0
 
     rl.SetTargetFPS(60)
 
@@ -84,22 +84,22 @@ def main() -> i32:
         rl.ClearBackground(rl.RAYWHITE)
 
         rl.DrawEllipse(
-            i32<-ellipse_a_center.x,
-            i32<-ellipse_a_center.y,
+            int<-ellipse_a_center.x,
+            int<-ellipse_a_center.y,
             ellipse_a_radius_x,
             ellipse_a_radius_y,
             if ellipses_collide: rl.RED else: rl.BLUE,
         )
         rl.DrawEllipse(
-            i32<-ellipse_b_center.x,
-            i32<-ellipse_b_center.y,
+            int<-ellipse_b_center.x,
+            int<-ellipse_b_center.y,
             ellipse_b_radius_x,
             ellipse_b_radius_y,
             if ellipses_collide: rl.RED else: rl.GREEN,
         )
 
-        rl.DrawEllipseLines(i32<-ellipse_a_center.x, i32<-ellipse_a_center.y, ellipse_a_radius_x, ellipse_a_radius_y, rl.WHITE)
-        rl.DrawEllipseLines(i32<-ellipse_b_center.x, i32<-ellipse_b_center.y, ellipse_b_radius_x, ellipse_b_radius_y, rl.WHITE)
+        rl.DrawEllipseLines(int<-ellipse_a_center.x, int<-ellipse_a_center.y, ellipse_a_radius_x, ellipse_a_radius_y, rl.WHITE)
+        rl.DrawEllipseLines(int<-ellipse_b_center.x, int<-ellipse_b_center.y, ellipse_b_radius_x, ellipse_b_radius_y, rl.WHITE)
 
         rl.DrawCircleV(ellipse_a_center, 4.0, rl.WHITE)
         rl.DrawCircleV(ellipse_b_center, 4.0, rl.WHITE)

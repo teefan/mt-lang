@@ -3,11 +3,11 @@ module examples.idiomatic.raygui.dynamic_string_lists_showcase
 import std.raylib as rl
 import std.raygui as gui
 
-const screen_width: i32 = 940
-const screen_height: i32 = 560
+const screen_width: int = 940
+const screen_height: int = 560
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Raygui Dynamic String Lists")
     defer rl.close_window()
 
@@ -16,11 +16,11 @@ def main() -> i32:
 
     var compact_labels = false
     var emphasize_focus = true
-    var slider_value: f32 = 48.0
-    var tab_active: i32 = 0
-    var list_scroll: i32 = 0
-    var list_active: i32 = 1
-    var list_focus: i32 = -1
+    var slider_value: float = 48.0
+    var tab_active: int = 0
+    var list_scroll: int = 0
+    var list_active: int = 1
+    var list_focus: int = -1
 
     while not rl.window_should_close():
         rl.begin_drawing()
@@ -92,7 +92,7 @@ def main() -> i32:
         gui.label(rl.Rectangle(x = 632.0, y = 274.0, width = 240.0, height = 24.0), "No scratch arena, no explicit cstring list storage, no raw imports")
         gui.label(rl.Rectangle(x = 632.0, y = 310.0, width = 240.0, height = 24.0), "The imported raygui surface owns the ABI conversion work")
 
-        rl.draw_rectangle(632, 356, i32<-slider_value * 2, 24, rl.SKYBLUE)
+        rl.draw_rectangle(632, 356, int<-slider_value * 2, 24, rl.SKYBLUE)
         rl.draw_rectangle_lines(632, 356, 200, 24, rl.DARKGRAY)
         rl.draw_text("live intensity preview", 632, 390, 18, rl.DARKGRAY)
 

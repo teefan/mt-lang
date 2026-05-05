@@ -7,8 +7,8 @@ import std.libuv.runtime as rt
 import std.mem.arena as arena
 import std.raylib as rl
 
-const screen_width: i32 = 960
-const screen_height: i32 = 540
+const screen_width: int = 960
+const screen_height: int = 540
 const logo_path: str = "../../raylib/resources/raylib_logo.png"
 const sound_path: str = "../../raylib/resources/sound.wav"
 
@@ -38,7 +38,7 @@ def texture_from_png_bytes(data: bytes.Buffer) -> rl.Texture2D:
     defer scratch.release()
 
     let view = bytes.as_span(data)
-    let image = rl.load_image_from_memory(scratch.to_cstr(".png"), view.data, i32<-view.len)
+    let image = rl.load_image_from_memory(scratch.to_cstr(".png"), view.data, int<-view.len)
     if not rl.is_image_valid(image):
         panic("raylib could not decode png bytes")
 
@@ -54,7 +54,7 @@ def sound_from_wav_bytes(data: bytes.Buffer) -> rl.Sound:
     defer scratch.release()
 
     let view = bytes.as_span(data)
-    let wave = rl.load_wave_from_memory(scratch.to_cstr(".wav"), view.data, i32<-view.len)
+    let wave = rl.load_wave_from_memory(scratch.to_cstr(".wav"), view.data, int<-view.len)
     if not rl.is_wave_valid(wave):
         panic("raylib could not decode wav bytes")
 
@@ -65,7 +65,7 @@ def sound_from_wav_bytes(data: bytes.Buffer) -> rl.Sound:
     return sound
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Async Asset Loading")
     defer rl.close_window()
 

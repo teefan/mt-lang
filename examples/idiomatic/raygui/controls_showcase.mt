@@ -3,11 +3,11 @@ module examples.idiomatic.raygui.controls_showcase
 import std.raylib as rl
 import std.raygui as gui
 
-const screen_width: i32 = 960
-const screen_height: i32 = 560
+const screen_width: int = 960
+const screen_height: int = 560
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Raygui Controls Showcase")
     defer rl.close_window()
 
@@ -16,14 +16,14 @@ def main() -> i32:
 
     var toggle_enabled = true
     var checked = false
-    var tab_active: i32 = 0
+    var tab_active: int = 0
     var tab_labels = array[str, 3]("Layout", "Palette", "About")
-    var combo_active: i32 = 1
-    var slider_value: f32 = 42.0
-    var progress_value: f32 = 42.0
-    var list_scroll: i32 = 0
-    var list_active: i32 = 2
-    var list_focus: i32 = -1
+    var combo_active: int = 1
+    var slider_value: float = 42.0
+    var progress_value: float = 42.0
+    var list_scroll: int = 0
+    var list_active: int = 2
+    var list_focus: int = -1
     var accent = rl.Color(r = 110, g = 170, b = 255, a = 255)
     var mouse_cell = rl.Vector2(x = -1.0, y = -1.0)
 
@@ -112,8 +112,8 @@ def main() -> i32:
 
         if mouse_cell.x >= 0.0:
             if mouse_cell.y >= 0.0:
-                let marker_x = 660 + i32<-(mouse_cell.x * 24.0) + 12
-                let marker_y = 214 + i32<-(mouse_cell.y * 24.0) + 12
+                let marker_x = 660 + int<-(mouse_cell.x * 24.0) + 12
+                let marker_y = 214 + int<-(mouse_cell.y * 24.0) + 12
                 rl.draw_circle(marker_x, marker_y, 5.0, accent)
 
     return 0

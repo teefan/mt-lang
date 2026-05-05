@@ -3,24 +3,24 @@ module examples.raylib.core.core_compute_hash
 import std.c.raygui as gui
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const input_buffer_size: i32 = 96
-const output_text_size: i32 = 120
+const screen_width: int = 800
+const screen_height: int = 450
+const input_buffer_size: int = 96
+const output_text_size: int = 120
 const window_title: cstr = c"raylib [core] example - compute hash"
 const default_input_text: cstr = c"The quick brown fox jumps over the lazy dog."
 
 
-def readonly_text_box(bounds: gui.Rectangle, text: cstr, text_size: i32) -> void:
+def readonly_text_box(bounds: gui.Rectangle, text: cstr, text_size: int) -> void:
     unsafe:
         gui.GuiTextBox(bounds, ptr[char]<-text, text_size, false)
 
 
-def hash_crc32_text(hash_crc32: u32) -> cstr:
+def hash_crc32_text(hash_crc32: uint) -> cstr:
     return rl.TextFormat(c"%08X", hash_crc32)
 
 
-def hash_md5_text(hash_md5: ptr[u32]?) -> cstr:
+def hash_md5_text(hash_md5: ptr[uint]?) -> cstr:
     if hash_md5 == null:
         return c"00000000000000000000000000000000"
 
@@ -34,7 +34,7 @@ def hash_md5_text(hash_md5: ptr[u32]?) -> cstr:
         )
 
 
-def hash_sha1_text(hash_sha1: ptr[u32]?) -> cstr:
+def hash_sha1_text(hash_sha1: ptr[uint]?) -> cstr:
     if hash_sha1 == null:
         return c"0000000000000000000000000000000000000000"
 
@@ -49,7 +49,7 @@ def hash_sha1_text(hash_sha1: ptr[u32]?) -> cstr:
         )
 
 
-def hash_sha256_text(hash_sha256: ptr[u32]?) -> cstr:
+def hash_sha256_text(hash_sha256: ptr[uint]?) -> cstr:
     if hash_sha256 == null:
         return c"0000000000000000000000000000000000000000000000000000000000000000"
 
@@ -75,7 +75,7 @@ def base64_display_text(base64_text: ptr[char]?) -> cstr:
         return cstr<-base64_text
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -85,10 +85,10 @@ def main() -> i32:
 
     var text_box_edit_mode = false
     var btn_compute_hashes = false
-    var hash_crc32: u32 = 0
-    var hash_md5: ptr[u32]? = null
-    var hash_sha1: ptr[u32]? = null
-    var hash_sha256: ptr[u32]? = null
+    var hash_crc32: uint = 0
+    var hash_md5: ptr[uint]? = null
+    var hash_sha1: ptr[uint]? = null
+    var hash_sha256: ptr[uint]? = null
     var base64_text: ptr[char]? = null
     var base64_text_size = 0
 
@@ -97,12 +97,12 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         if btn_compute_hashes:
             unsafe:
-                let text_input_len = i32<-rl.TextLength(cstr<-text_input_ptr)
+                let text_input_len = int<-rl.TextLength(cstr<-text_input_ptr)
                 if base64_text != null:
                     let owned_base64_text = ptr[char]<-base64_text
                     rl.MemFree(ptr[void]<-owned_base64_text)
 
-                let input_bytes = ptr[u8]<-text_input_ptr
+                let input_bytes = ptr[ubyte]<-text_input_ptr
                 base64_text = rl.EncodeDataBase64(input_bytes, text_input_len, ptr_of(base64_text_size))
                 hash_crc32 = rl.ComputeCRC32(input_bytes, text_input_len)
                 hash_md5 = rl.ComputeMD5(input_bytes, text_input_len)

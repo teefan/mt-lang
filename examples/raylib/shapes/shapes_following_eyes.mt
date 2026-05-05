@@ -3,28 +3,28 @@ module examples.raylib.shapes.shapes_following_eyes
 import std.c.libm as math
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - following eyes"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
     let sclera_left_position = rl.Vector2(x = rl.GetScreenWidth() / 2.0 - 100.0, y = rl.GetScreenHeight() / 2.0)
     let sclera_right_position = rl.Vector2(x = rl.GetScreenWidth() / 2.0 + 100.0, y = rl.GetScreenHeight() / 2.0)
-    let sclera_radius: f32 = 80.0
+    let sclera_radius: float = 80.0
 
     var iris_left_position = sclera_left_position
     var iris_right_position = sclera_right_position
-    let iris_radius: f32 = 24.0
+    let iris_radius: float = 24.0
 
-    var angle: f32 = 0.0
-    var dx: f32 = 0.0
-    var dy: f32 = 0.0
-    var dxx: f32 = 0.0
-    var dyy: f32 = 0.0
+    var angle: float = 0.0
+    var dx: float = 0.0
+    var dy: float = 0.0
+    var dxx: float = 0.0
+    var dyy: float = 0.0
 
     rl.SetTargetFPS(60)
 

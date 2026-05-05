@@ -2,8 +2,8 @@ module examples.raylib.text.text_font_filters
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [text] example - font filters"
 const font_path: cstr = c"../resources/KAISG.ttf"
 const msg: cstr = c"Loaded Font"
@@ -20,7 +20,7 @@ const trilinear_text: cstr = c"TRILINEAR"
 const ttf_ext: cstr = c".ttf"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -29,8 +29,8 @@ def main() -> i32:
 
     rl.GenTextureMipmaps(ptr_of(font.texture))
 
-    var font_size = f32<-font.baseSize
-    var font_position = rl.Vector2(x = 40.0, y = f32<-screen_height / 2.0 - 80.0)
+    var font_size = float<-font.baseSize
+    var font_position = rl.Vector2(x = 40.0, y = float<-screen_height / 2.0 - 80.0)
     var text_size = rl.Vector2(x = 0.0, y = 0.0)
 
     rl.SetTextureFilter(font.texture, rl.TextureFilter.TEXTURE_FILTER_POINT)
@@ -65,7 +65,7 @@ def main() -> i32:
                     let dropped_path = cstr<-read(dropped_files.paths)
                     if rl.IsFileExtension(dropped_path, ttf_ext):
                         rl.UnloadFont(font)
-                        font = rl.LoadFontEx(dropped_path, i32<-font_size, null, 0)
+                        font = rl.LoadFontEx(dropped_path, int<-font_size, null, 0)
             rl.UnloadDroppedFiles(dropped_files)
 
         rl.BeginDrawing()

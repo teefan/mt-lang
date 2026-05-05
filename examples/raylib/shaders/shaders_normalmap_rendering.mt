@@ -3,9 +3,9 @@ module examples.raylib.shaders.shaders_normalmap_rendering
 import std.c.raylib as rl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const model_path: cstr = c"../resources/models/plane.glb"
 const diffuse_texture_path: cstr = c"../resources/tiles_diffuse.png"
 const normal_texture_path: cstr = c"../resources/tiles_normal.png"
@@ -28,7 +28,7 @@ def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
         model.materials[0].shader = shader
 
 
-def rotate_y(angle: f32) -> rl.Matrix:
+def rotate_y(angle: float) -> rl.Matrix:
     let cosy = rm.cos(angle)
     let siny = rm.sin(angle)
     return rl.Matrix(
@@ -51,7 +51,7 @@ def rotate_y(angle: f32) -> rl.Matrix:
     )
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -73,8 +73,8 @@ def main() -> i32:
     let normal_map_loc = rl.GetShaderLocation(shader, normal_map_uniform_name)
     let view_loc = rl.GetShaderLocation(shader, view_pos_uniform_name)
     unsafe:
-        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_MAP_NORMAL] = normal_map_loc
-        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
+        shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MAP_NORMAL] = normal_map_loc
+        shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     let light_pos_loc = rl.GetShaderLocation(shader, light_pos_uniform_name)
 
@@ -91,13 +91,13 @@ def main() -> i32:
     rl.GenTextureMipmaps(ptr_of(normal_texture))
     rl.SetTextureFilter(diffuse_texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
     rl.SetTextureFilter(normal_texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
-    rl.SetMaterialTexture(plane.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, diffuse_texture)
-    rl.SetMaterialTexture(plane.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_NORMAL, normal_texture)
+    rl.SetMaterialTexture(plane.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, diffuse_texture)
+    rl.SetMaterialTexture(plane.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_NORMAL, normal_texture)
 
     var light_position = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
-    let light_speed: f32 = 3.0
-    let specular_rate: f32 = 40.0
-    var specular_exponent: f32 = 8.0
+    let light_speed: float = 3.0
+    let specular_rate: float = 40.0
+    var specular_exponent: float = 8.0
     let specular_exponent_loc = rl.GetShaderLocation(shader, specular_exponent_uniform_name)
 
     var use_normal_map = 1
@@ -128,12 +128,12 @@ def main() -> i32:
         if rl.IsKeyPressed(rl.KeyboardKey.KEY_N):
             use_normal_map = 1 - use_normal_map
 
-        plane.transform = rotate_y(f32<-rl.GetTime() * 0.5)
+        plane.transform = rotate_y(float<-rl.GetTime() * 0.5)
 
-        var light_pos = array[f32, 3](light_position.x, light_position.y, light_position.z)
+        var light_pos = array[float, 3](light_position.x, light_position.y, light_position.z)
         rl.SetShaderValue(shader, light_pos_loc, ptr_of(light_pos[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
-        var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
+        var camera_pos = array[float, 3](camera.position.x, camera.position.y, camera.position.z)
         rl.SetShaderValue(shader, view_loc, ptr_of(camera_pos[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         rl.SetShaderValue(shader, specular_exponent_loc, ptr_of(specular_exponent), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)

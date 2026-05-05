@@ -3,17 +3,17 @@ module examples.sdl3.demo.snake
 import std.c.sdl3 as c
 
 const step_rate_in_milliseconds: c.Uint64 = 125
-const snake_block_size_in_pixels: i32 = 24
-const snake_block_size_in_pixels_f: f32 = 24.0
-const snake_game_width: i32 = 24
-const snake_game_height: i32 = 18
-const snake_matrix_size: i32 = snake_game_width * snake_game_height
-const window_width: i32 = snake_block_size_in_pixels * snake_game_width
-const window_height: i32 = snake_block_size_in_pixels * snake_game_height
-const window_flags: u64 = u64<-c.SDL_WINDOW_RESIZABLE
+const snake_block_size_in_pixels: int = 24
+const snake_block_size_in_pixels_f: float = 24.0
+const snake_game_width: int = 24
+const snake_game_height: int = 18
+const snake_matrix_size: int = snake_game_width * snake_game_height
+const window_width: int = snake_block_size_in_pixels * snake_game_width
+const window_height: int = snake_block_size_in_pixels * snake_game_height
+const window_flags: ulong = ulong<-c.SDL_WINDOW_RESIZABLE
 const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
 
-enum SnakeCell: i32
+enum SnakeCell: int
     SNAKE_CELL_NOTHING = 0
     SNAKE_CELL_SRIGHT = 1
     SNAKE_CELL_SUP = 2
@@ -21,7 +21,7 @@ enum SnakeCell: i32
     SNAKE_CELL_SDOWN = 4
     SNAKE_CELL_FOOD = 5
 
-enum SnakeDirection: i32
+enum SnakeDirection: int
     SNAKE_DIR_RIGHT = 0
     SNAKE_DIR_UP = 1
     SNAKE_DIR_LEFT = 2
@@ -29,12 +29,12 @@ enum SnakeDirection: i32
 
 struct SnakeContext:
     cells: array[SnakeCell, 432]
-    head_xpos: i32
-    head_ypos: i32
-    tail_xpos: i32
-    tail_ypos: i32
+    head_xpos: int
+    head_ypos: int
+    tail_xpos: int
+    tail_ypos: int
     next_dir: SnakeDirection
-    inhibit_tail_step: i32
+    inhibit_tail_step: int
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
@@ -43,15 +43,15 @@ var snake_ctx: SnakeContext = zero[SnakeContext]
 var last_step: c.Uint64 = 0
 
 
-def cell_index(x: i32, y: i32) -> i32:
+def cell_index(x: int, y: int) -> int:
     return x + (y * snake_game_width)
 
 
-def snake_cell_at(x: i32, y: i32) -> SnakeCell:
+def snake_cell_at(x: int, y: int) -> SnakeCell:
     return snake_ctx.cells[cell_index(x, y)]
 
 
-def put_cell_at(x: i32, y: i32, cell_type: SnakeCell) -> void:
+def put_cell_at(x: int, y: int, cell_type: SnakeCell) -> void:
     snake_ctx.cells[cell_index(x, y)] = cell_type
 
 
@@ -65,7 +65,7 @@ def direction_cell(direction: SnakeDirection) -> SnakeCell:
     return SnakeCell.SNAKE_CELL_SDOWN
 
 
-def wrap_coordinate(value: i32, max_value: i32) -> i32:
+def wrap_coordinate(value: int, max_value: int) -> int:
     if value < 0:
         return max_value - 1
     if value >= max_value:
@@ -73,10 +73,10 @@ def wrap_coordinate(value: i32, max_value: i32) -> i32:
     return value
 
 
-def set_rect_xy(rect: ptr[c.SDL_FRect], x: i32, y: i32) -> void:
+def set_rect_xy(rect: ptr[c.SDL_FRect], x: int, y: int) -> void:
     unsafe:
-        rect.x = f32<-(x * snake_block_size_in_pixels)
-        rect.y = f32<-(y * snake_block_size_in_pixels)
+        rect.x = float<-(x * snake_block_size_in_pixels)
+        rect.y = float<-(y * snake_block_size_in_pixels)
 
 
 def are_cells_full() -> bool:
@@ -221,7 +221,7 @@ def handle_key_event(key_code: c.SDL_Scancode) -> bool:
     return true
 
 
-def handle_hat_event(hat: u8) -> void:
+def handle_hat_event(hat: ubyte) -> void:
     if hat == c.SDL_HAT_RIGHT:
         snake_redir(SnakeDirection.SNAKE_DIR_RIGHT)
     else:
@@ -239,23 +239,23 @@ def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
         else:
-            if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_ADDED:
+            if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_JOYSTICK_ADDED:
                 if joystick == null:
                     joystick = c.SDL_OpenJoystick(event.jdevice.which)
             else:
-                if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_REMOVED:
+                if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_JOYSTICK_REMOVED:
                     if joystick != null:
                         if c.SDL_GetJoystickID(joystick) == event.jdevice.which:
                             c.SDL_CloseJoystick(joystick)
                             joystick = null
                 else:
-                    if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_JOYSTICK_HAT_MOTION:
+                    if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_JOYSTICK_HAT_MOTION:
                         handle_hat_event(event.jhat.value)
                     else:
-                        if event.type_ == u32<-  c.SDL_EventType.SDL_EVENT_KEY_DOWN:
+                        if event.type_ == uint<-  c.SDL_EventType.SDL_EVENT_KEY_DOWN:
                             if not handle_key_event(event.key.scancode):
                                 return false
 
@@ -295,7 +295,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     if not c.SDL_SetAppMetadata(c"Example Snake game", c"1.0", c"com.example.Snake"):
         return 1
 
@@ -331,5 +331,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

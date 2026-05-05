@@ -2,14 +2,14 @@ module examples.raylib.shaders.shaders_eratosthenes_sieve
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const shader_path_format: cstr = c"../resources/shaders/glsl%i/eratosthenes.fs"
 const window_title: cstr = c"raylib [shaders] example - eratosthenes sieve"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -35,7 +35,7 @@ def main() -> i32:
         rl.BeginShaderMode(shader)
         rl.DrawTextureRec(
             target.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = f32<-target.texture.width, height = -f32<-target.texture.height),
+            rl.Rectangle(x = 0.0, y = 0.0, width = float<-target.texture.width, height = -float<-target.texture.height),
             rl.Vector2(x = 0.0, y = 0.0),
             rl.WHITE,
         )

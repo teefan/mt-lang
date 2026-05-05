@@ -3,9 +3,9 @@ module examples.raylib.models.models_animation_timing
 import std.c.raygui as gui
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const max_anim_names: i32 = 64
+const screen_width: int = 800
+const screen_height: int = 450
+const max_anim_names: int = 64
 const empty_text: cstr = c""
 const anim_speed_format: cstr = c"x%.1f"
 const current_frame_format: cstr = c"CURRENT FRAME: %.2f / %i"
@@ -19,22 +19,22 @@ def chars_to_cstr(text: ptr[char]) -> cstr:
         return cstr<-text
 
 
-def model_animation(anims: ptr[rl.ModelAnimation], index: i32) -> rl.ModelAnimation:
+def model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
     unsafe:
         return read(anims + index)
 
 
-def model_animation_name(anims: ptr[rl.ModelAnimation], index: i32) -> cstr:
+def model_animation_name(anims: ptr[rl.ModelAnimation], index: int) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of((anims + index).name[0]))
 
 
-def text_join(text_list: ptr[cstr], count: i32, delimiter: cstr) -> cstr:
+def text_join(text_list: ptr[cstr], count: int, delimiter: cstr) -> cstr:
     unsafe:
         return cstr<-rl.TextJoin(ptr[ptr[char]]<-text_list, count, delimiter)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -56,8 +56,8 @@ def main() -> i32:
     defer rl.UnloadModelAnimations(anims, anim_count)
 
     var anim_index = 10
-    var anim_current_frame: f32 = 0.0
-    var anim_frame_speed: f32 = 0.5
+    var anim_current_frame: float = 0.0
+    var anim_frame_speed: float = 0.5
     var anim_pause = false
 
     var anim_names = zero[array[cstr, max_anim_names]]
@@ -65,7 +65,7 @@ def main() -> i32:
         anim_names[index] = model_animation_name(anims, index)
 
     var dropdown_edit_mode = false
-    var anim_frame_progress: f32 = 0.0
+    var anim_frame_progress: float = 0.0
 
     rl.SetTargetFPS(60)
 
@@ -78,7 +78,7 @@ def main() -> i32:
         if not anim_pause and anim_index < anim_count:
             let anim = model_animation(anims, anim_index)
             anim_current_frame += anim_frame_speed
-            if anim_current_frame >= f32<-anim.keyframeCount:
+            if anim_current_frame >= float<-anim.keyframeCount:
                 anim_current_frame = 0.0
             rl.UpdateModelAnimation(model, anim, anim_current_frame)
 
@@ -93,7 +93,7 @@ def main() -> i32:
         rl.DrawGrid(10, 1.0)
         rl.EndMode3D()
 
-        gui.GuiSetStyle(gui.GuiControl.DROPDOWNBOX, i32<-gui.GuiDropdownBoxProperty.DROPDOWN_ITEMS_SPACING, 1)
+        gui.GuiSetStyle(gui.GuiControl.DROPDOWNBOX, int<-gui.GuiDropdownBoxProperty.DROPDOWN_ITEMS_SPACING, 1)
         if gui.GuiDropdownBox(
             gui.Rectangle(x = 10.0, y = 10.0, width = 140.0, height = 24.0),
             text_join(ptr_of(anim_names[0]), anim_count, c";"),
@@ -122,11 +122,11 @@ def main() -> i32:
             empty_text,
             ptr_of(anim_frame_progress),
             0.0,
-            f32<-anim.keyframeCount,
+            float<-anim.keyframeCount,
         )
 
         for index in 0..anim.keyframeCount:
-            let timeline_x = 10 + i32<-((f32<-(rl.GetScreenWidth() - 20) / f32<-anim.keyframeCount) * f32<-index)
+            let timeline_x = 10 + int<-((float<-(rl.GetScreenWidth() - 20) / float<-anim.keyframeCount) * float<-index)
             rl.DrawRectangle(timeline_x, rl.GetScreenHeight() - 40, 1, 24, rl.BLUE)
 
     return 0

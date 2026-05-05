@@ -2,28 +2,28 @@ module examples.sdl3.pen.drawing_lines
 
 import std.c.sdl3 as c
 
-const window_width: i32 = 640
-const window_height: i32 = 480
+const window_width: int = 640
+const window_height: int = 480
 const window_title: cstr = c"examples/pen/drawing-lines"
 
 var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 var render_target: ptr[c.SDL_Texture]
-var pressure: f32 = 0.0
-var previous_touch_x: f32 = -1.0
-var previous_touch_y: f32 = -1.0
-var tilt_x: f32 = 0.0
-var tilt_y: f32 = 0.0
+var pressure: float = 0.0
+var previous_touch_x: float = -1.0
+var previous_touch_y: float = -1.0
+var tilt_x: float = 0.0
+var tilt_y: float = 0.0
 
 
 def pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_QUIT:
             return false
 
-        if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_PEN_MOTION:
+        if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_PEN_MOTION:
             if pressure > 0.0:
                 if previous_touch_x >= 0.0:
                     c.SDL_SetRenderTarget(renderer, render_target)
@@ -36,7 +36,7 @@ def pump_events() -> bool:
                 previous_touch_x = -1.0
                 previous_touch_y = -1.0
         else:
-            if event.type_ == u32<-c.SDL_EventType.SDL_EVENT_PEN_AXIS:
+            if event.type_ == uint<-c.SDL_EventType.SDL_EVENT_PEN_AXIS:
                 if event.paxis.axis == c.SDL_PenAxis.SDL_PEN_AXIS_PRESSURE:
                     pressure = event.paxis.value
                 else:
@@ -64,9 +64,9 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
-    var output_width: i32 = 0
-    var output_height: i32 = 0
+def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+    var output_width: int = 0
+    var output_height: int = 0
 
     c.SDL_SetAppMetadata(c"Example Pen Drawing Lines", c"1.0", c"com.example.pen-drawing-lines")
 
@@ -107,5 +107,5 @@ def app_main(argc: i32, argv: ptr[ptr[char]]) -> i32:
     return 0
 
 
-def main(argc: i32, argv: ptr[ptr[char]]) -> i32:
+def main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

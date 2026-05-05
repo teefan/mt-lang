@@ -4,9 +4,9 @@ import std.c.raylib as rl
 import std.c.rlights as lights
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const texture_path: cstr = c"../resources/texel_checker.png"
 const shader_vertex_path_format: cstr = c"../resources/shaders/glsl%i/lighting.vs"
 const shader_fragment_path_format: cstr = c"../resources/shaders/glsl%i/fog.fs"
@@ -24,7 +24,7 @@ def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
         model.materials[0].shader = shader
 
 
-def rotate_x(angle: f32) -> rl.Matrix:
+def rotate_x(angle: float) -> rl.Matrix:
     let cosx = rm.cos(angle)
     let sinx = rm.sin(angle)
     return rl.Matrix(
@@ -47,7 +47,7 @@ def rotate_x(angle: f32) -> rl.Matrix:
     )
 
 
-def main() -> i32:
+def main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
@@ -69,9 +69,9 @@ def main() -> i32:
 
     let texture = rl.LoadTexture(texture_path)
     defer rl.UnloadTexture(texture)
-    rl.SetMaterialTexture(model_a.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
-    rl.SetMaterialTexture(model_b.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
-    rl.SetMaterialTexture(model_c.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+    rl.SetMaterialTexture(model_a.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+    rl.SetMaterialTexture(model_b.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
+    rl.SetMaterialTexture(model_c.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     var shader = rl.LoadShader(
         rl.TextFormat(shader_vertex_path_format, glsl_version),
@@ -82,20 +82,20 @@ def main() -> i32:
     let matrix_model_loc = rl.GetShaderLocation(shader, matrix_model_uniform_name)
     let view_loc = rl.GetShaderLocation(shader, view_pos_uniform_name)
     unsafe:
-        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_MODEL] = matrix_model_loc
-        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
+        shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_MODEL] = matrix_model_loc
+        shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     let ambient_loc = rl.GetShaderLocation(shader, ambient_uniform_name)
-    var ambient = array[f32, 4](0.2, 0.2, 0.2, 1.0)
+    var ambient = array[float, 4](0.2, 0.2, 0.2, 1.0)
     rl.SetShaderValue(shader, ambient_loc, ptr_of(ambient[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     let fog_color_value = rl.ColorNormalize(rl.GRAY)
     let fog_color_loc = rl.GetShaderLocation(shader, fog_color_uniform_name)
-    var fog_color = array[f32, 4](fog_color_value.x, fog_color_value.y, fog_color_value.z, fog_color_value.w)
+    var fog_color = array[float, 4](fog_color_value.x, fog_color_value.y, fog_color_value.z, fog_color_value.w)
     rl.SetShaderValue(shader, fog_color_loc, ptr_of(fog_color[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
-    var fog_density: f32 = 0.15
-    let fog_density_step: f32 = 0.001
+    var fog_density: float = 0.15
+    let fog_density_step: float = 0.001
     let fog_density_loc = rl.GetShaderLocation(shader, fog_density_uniform_name)
     rl.SetShaderValue(shader, fog_density_loc, ptr_of(fog_density), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
@@ -103,7 +103,7 @@ def main() -> i32:
     set_model_shader(ptr_of(model_b), shader)
     set_model_shader(ptr_of(model_c), shader)
 
-    lights.CreateLight(i32<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 0.0, y = 2.0, z = 6.0), rm.Vector3.zero(), rl.WHITE, shader)
+    lights.CreateLight(int<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 0.0, y = 2.0, z = 6.0), rm.Vector3.zero(), rl.WHITE, shader)
 
     rl.SetTargetFPS(60)
 
@@ -125,7 +125,7 @@ def main() -> i32:
         model_a.transform = model_a.transform.multiply(rotate_x(-0.025))
         model_a.transform = model_a.transform.multiply(rm.Matrix.rotate_z(0.012))
 
-        var camera_pos = array[f32, 3](camera.position.x, camera.position.y, camera.position.z)
+        var camera_pos = array[float, 3](camera.position.x, camera.position.y, camera.position.z)
         rl.SetShaderValue(shader, view_loc, ptr_of(camera_pos[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         rl.BeginDrawing()
@@ -140,7 +140,7 @@ def main() -> i32:
 
         var torus_x = -20
         while torus_x < 20:
-            rl.DrawModel(model_a, rl.Vector3(x = f32<-torus_x, y = 0.0, z = 2.0), 1.0, rl.WHITE)
+            rl.DrawModel(model_a, rl.Vector3(x = float<-torus_x, y = 0.0, z = 2.0), 1.0, rl.WHITE)
             torus_x += 2
         rl.EndMode3D()
 

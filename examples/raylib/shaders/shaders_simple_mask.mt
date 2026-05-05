@@ -3,9 +3,9 @@ module examples.raylib.shaders.shaders_simple_mask
 import std.c.raylib as rl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
-const glsl_version: i32 = 330
+const screen_width: int = 800
+const screen_height: int = 450
+const glsl_version: int = 330
 const shader_path_format: cstr = c"../resources/shaders/glsl%i/mask.fs"
 const diffuse_texture_path: cstr = c"../resources/plasma.png"
 const mask_texture_path: cstr = c"../resources/mask.png"
@@ -20,7 +20,7 @@ def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
         model.materials[0].shader = shader
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -49,16 +49,16 @@ def main() -> i32:
 
     let tex_diffuse = rl.LoadTexture(diffuse_texture_path)
     defer rl.UnloadTexture(tex_diffuse)
-    rl.SetMaterialTexture(model1.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, tex_diffuse)
-    rl.SetMaterialTexture(model2.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, tex_diffuse)
+    rl.SetMaterialTexture(model1.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, tex_diffuse)
+    rl.SetMaterialTexture(model2.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, tex_diffuse)
 
     let tex_mask = rl.LoadTexture(mask_texture_path)
     defer rl.UnloadTexture(tex_mask)
-    rl.SetMaterialTexture(model1.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_EMISSION, tex_mask)
-    rl.SetMaterialTexture(model2.materials, i32<-rl.MaterialMapIndex.MATERIAL_MAP_EMISSION, tex_mask)
+    rl.SetMaterialTexture(model1.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_EMISSION, tex_mask)
+    rl.SetMaterialTexture(model2.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_EMISSION, tex_mask)
 
     unsafe:
-        shader.locs[i32<-rl.ShaderLocationIndex.SHADER_LOC_MAP_EMISSION] = rl.GetShaderLocation(shader, mask_uniform_name)
+        shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MAP_EMISSION] = rl.GetShaderLocation(shader, mask_uniform_name)
 
     let shader_frame = rl.GetShaderLocation(shader, frame_uniform_name)
     set_model_shader(ptr_of(model1), shader)

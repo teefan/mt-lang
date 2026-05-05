@@ -2,8 +2,8 @@ module examples.raylib.text.text_format_text
 
 import std.c.raylib as rl
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [text] example - format text"
 const score_format: cstr = c"Score: %08i"
 const hiscore_format: cstr = c"HiScore: %08i"
@@ -11,7 +11,7 @@ const lives_format: cstr = c"Lives: %02i"
 const elapsed_time_format: cstr = c"Elapsed Time: %02.02f ms"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

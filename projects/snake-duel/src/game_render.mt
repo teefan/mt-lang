@@ -4,7 +4,7 @@ import std.raylib as rl
 import src.game_types as gt
 
 
-def cell_to_px(value: i32) -> i32:
+def cell_to_px(value: int) -> int:
     return value * gt.cell_size()
 
 
@@ -33,7 +33,7 @@ pub def draw_board(game: gt.Game):
 
 pub def draw_hud(game: gt.Game):
     rl.draw_rectangle(0, gt.grid_height() * gt.cell_size(), gt.screen_width(), gt.hud_height(), rl.Color(r = 10, g = 12, b = 16, a = 255))
-    rl.draw_text(rl.text_format_i32_i32("P1 %d   AI %d", game.player.score, game.enemy.score), 16, (gt.grid_height() * gt.cell_size()) + 14, 28, rl.RAYWHITE)
+    rl.draw_text(rl.text_format_int_int("P1 %d   AI %d", game.player.score, game.enemy.score), 16, (gt.grid_height() * gt.cell_size()) + 14, 28, rl.RAYWHITE)
 
     if game.state == gt.state_title():
         rl.draw_text("SNAKE DUEL", (gt.screen_width() / 2) - 120, (gt.screen_height() / 2) - 80, 44, rl.GOLD)

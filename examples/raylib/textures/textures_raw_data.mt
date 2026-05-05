@@ -2,13 +2,13 @@ module examples.raylib.textures.textures_raw_data
 
 import std.c.raylib as rl
 
-const raw_width: i32 = 384
-const raw_height: i32 = 512
-const checked_width: i32 = 960
-const checked_height: i32 = 480
-const check_size: i32 = 32
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const raw_width: int = 384
+const raw_height: int = 512
+const checked_width: int = 960
+const checked_height: int = 480
+const check_size: int = 32
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [textures] example - raw data"
 const raw_image_path: cstr = c"../resources/fudesumi.raw"
 const title_line_one: cstr = c"CHECKED TEXTURE "
@@ -17,7 +17,7 @@ const title_line_three: cstr = c"and RAW IMAGE LOADING"
 const credit_text: cstr = c"(c) Fudesumi sprite by Eiden Marsal"
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -27,8 +27,8 @@ def main() -> i32:
 
     var checked = zero[rl.Texture2D]
     unsafe:
-        let pixel_count = u32<-(checked_width * checked_height)
-        let allocation_size = pixel_count * u32<-sizeof(rl.Color)
+        let pixel_count = uint<-(checked_width * checked_height)
+        let allocation_size = pixel_count * uint<-sizeof(rl.Color)
         let pixels = ptr[rl.Color]<-rl.MemAlloc(allocation_size)
 
         for pos_y in 0..checked_height:

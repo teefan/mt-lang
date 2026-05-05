@@ -2,11 +2,11 @@ module examples.raylib.text.text_strings_management
 
 import std.c.raylib as rl
 
-const max_text_length: i32 = 100
-const max_text_particles: i32 = 100
-const font_size: i32 = 30
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const max_text_length: int = 100
+const max_text_particles: int = 100
+const font_size: int = 30
+const screen_width: int = 800
+const screen_height: int = 450
 const window_title: cstr = c"raylib [text] example - strings management"
 const base_text: cstr = c"raylib => fun videogames programming!"
 const snake_source: cstr = c"raylib_fun_videogames_programming"
@@ -27,10 +27,10 @@ struct TextParticle:
     rect: rl.Rectangle
     vel: rl.Vector2
     ppos: rl.Vector2
-    padding: f32
-    border_width: f32
-    friction: f32
-    elasticity: f32
+    padding: float
+    border_width: float
+    friction: float
+    elasticity: float
     color: rl.Color
     grabbed: bool
 
@@ -51,17 +51,17 @@ def text_particle_text(tp: ptr[TextParticle]) -> cstr:
 
 def random_color() -> rl.Color:
     return rl.Color(
-        r = u8<-rl.GetRandomValue(0, 255),
-        g = u8<-rl.GetRandomValue(0, 255),
-        b = u8<-rl.GetRandomValue(0, 255),
+        r = ubyte<-rl.GetRandomValue(0, 255),
+        g = ubyte<-rl.GetRandomValue(0, 255),
+        b = ubyte<-rl.GetRandomValue(0, 255),
         a = 255,
     )
 
 
-def create_text_particle(text: cstr, x: f32, y: f32, color: rl.Color) -> TextParticle:
+def create_text_particle(text: cstr, x: float, y: float, color: rl.Color) -> TextParticle:
     var tp = zero[TextParticle]
     tp.rect = rl.Rectangle(x = x, y = y, width = 30.0, height = 30.0)
-    tp.vel = rl.Vector2(x = f32<-rl.GetRandomValue(-200, 200), y = f32<-rl.GetRandomValue(-200, 200))
+    tp.vel = rl.Vector2(x = float<-rl.GetRandomValue(-200, 200), y = float<-rl.GetRandomValue(-200, 200))
     tp.ppos = rl.Vector2(x = 0.0, y = 0.0)
     tp.padding = 5.0
     tp.border_width = 5.0
@@ -71,31 +71,31 @@ def create_text_particle(text: cstr, x: f32, y: f32, color: rl.Color) -> TextPar
     tp.grabbed = false
 
     rl.TextCopy(ptr_of(tp.text[0]), text)
-    tp.rect.width = f32<-rl.MeasureText(chars_to_cstr(ptr_of(tp.text[0])), font_size) + tp.padding * 2.0
-    tp.rect.height = f32<-font_size + tp.padding * 2.0
+    tp.rect.width = float<-rl.MeasureText(chars_to_cstr(ptr_of(tp.text[0])), font_size) + tp.padding * 2.0
+    tp.rect.height = float<-font_size + tp.padding * 2.0
 
     return tp
 
 
-def prepare_first_text_particle(text: cstr, tps: ptr[TextParticle], particle_count: ptr[i32]) -> void:
+def prepare_first_text_particle(text: cstr, tps: ptr[TextParticle], particle_count: ptr[int]) -> void:
     unsafe:
         read(tps) = create_text_particle(
             text,
-            f32<-rl.GetScreenWidth() / 2.0,
-            f32<-rl.GetScreenHeight() / 2.0,
+            float<-rl.GetScreenWidth() / 2.0,
+            float<-rl.GetScreenHeight() / 2.0,
             rl.RAYWHITE,
         )
         read(particle_count) = 1
 
 
-def append_particle(tps: ptr[TextParticle], particle_count: ptr[i32], particle: TextParticle) -> void:
+def append_particle(tps: ptr[TextParticle], particle_count: ptr[int], particle: TextParticle) -> void:
     unsafe:
         let next_index = read(particle_count)
         read(tps + next_index) = particle
         read(particle_count) = next_index + 1
 
 
-def reallocate_text_particles(tps: ptr[TextParticle], particle_pos: i32, particle_count: ptr[i32]) -> void:
+def reallocate_text_particles(tps: ptr[TextParticle], particle_pos: int, particle_count: ptr[int]) -> void:
     unsafe:
         var index = particle_pos + 1
         while index < read(particle_count):
@@ -105,20 +105,20 @@ def reallocate_text_particles(tps: ptr[TextParticle], particle_pos: i32, particl
         read(particle_count) = read(particle_count) - 1
 
 
-def slice_text_particle(tp: ptr[TextParticle], particle_pos: i32, slice_length: i32, tps: ptr[TextParticle], particle_count: ptr[i32]) -> void:
-    let length = i32<-rl.TextLength(text_particle_text(tp))
+def slice_text_particle(tp: ptr[TextParticle], particle_pos: int, slice_length: int, tps: ptr[TextParticle], particle_count: ptr[int]) -> void:
+    let length = int<-rl.TextLength(text_particle_text(tp))
 
     unsafe:
         if slice_length > 0 and length > 1 and (read(particle_count) + length) < max_text_particles:
             var index = 0
             while index < length:
-                let piece_text = if slice_length == 1: rl.TextFormat(char_format, i32<-read(text_particle_text_ptr(tp) + index)) else: rl.TextSubtext(text_particle_text(tp), index, slice_length)
+                let piece_text = if slice_length == 1: rl.TextFormat(char_format, int<-read(text_particle_text_ptr(tp) + index)) else: rl.TextSubtext(text_particle_text(tp), index, slice_length)
                 append_particle(
                     tps,
                     particle_count,
                     create_text_particle(
                         piece_text,
-                        tp.rect.x + f32<-index * tp.rect.width / f32<-length,
+                        tp.rect.x + float<-index * tp.rect.width / float<-length,
                         tp.rect.y,
                         random_color(),
                     ),
@@ -128,13 +128,13 @@ def slice_text_particle(tp: ptr[TextParticle], particle_pos: i32, slice_length: 
             reallocate_text_particles(tps, particle_pos, particle_count)
 
 
-def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps: ptr[TextParticle], particle_count: ptr[i32]) -> void:
+def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps: ptr[TextParticle], particle_count: ptr[int]) -> void:
     var token_count = 0
     let tokens = rl.TextSplit(text_particle_text(tp), char_to_slice, ptr_of(token_count))
 
     unsafe:
         if token_count > 1:
-            let text_length = i32<-rl.TextLength(text_particle_text(tp))
+            let text_length = int<-rl.TextLength(text_particle_text(tp))
             var index = 0
             while index < text_length:
                 if read(text_particle_text_ptr(tp) + index) == char_to_slice:
@@ -142,7 +142,7 @@ def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps:
                         tps,
                         particle_count,
                         create_text_particle(
-                            rl.TextFormat(char_format, i32<-char_to_slice),
+                            rl.TextFormat(char_format, int<-char_to_slice),
                             tp.rect.x,
                             tp.rect.y,
                             random_color(),
@@ -153,13 +153,13 @@ def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps:
             index = 0
             while index < token_count:
                 let token = chars_to_cstr(read(tokens + index))
-                let token_length = i32<-rl.TextLength(token)
+                let token_length = int<-rl.TextLength(token)
                 append_particle(
                     tps,
                     particle_count,
                     create_text_particle(
                         rl.TextFormat(copy_format, token),
-                        tp.rect.x + f32<-index * tp.rect.width / f32<-token_length,
+                        tp.rect.x + float<-index * tp.rect.width / float<-token_length,
                         tp.rect.y,
                         random_color(),
                     ),
@@ -169,11 +169,11 @@ def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps:
             reallocate_text_particles(tps, 0, particle_count)
 
 
-def shatter_text_particle(tp: ptr[TextParticle], particle_pos: i32, tps: ptr[TextParticle], particle_count: ptr[i32]) -> void:
+def shatter_text_particle(tp: ptr[TextParticle], particle_pos: int, tps: ptr[TextParticle], particle_count: ptr[int]) -> void:
     slice_text_particle(tp, particle_pos, 1, tps, particle_count)
 
 
-def glue_text_particles(grabbed_index: i32, target_index: i32, tps: ptr[TextParticle], particle_count: ptr[i32]) -> i32:
+def glue_text_particles(grabbed_index: int, target_index: int, tps: ptr[TextParticle], particle_count: ptr[int]) -> int:
     unsafe:
         if grabbed_index >= 0 and target_index >= 0 and grabbed_index < read(particle_count) and target_index < read(particle_count):
             let grabbed = tps + grabbed_index
@@ -201,7 +201,7 @@ def glue_text_particles(grabbed_index: i32, target_index: i32, tps: ptr[TextPart
     return grabbed_index
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -241,7 +241,7 @@ def main() -> i32:
                     if rl.IsKeyDown(rl.KeyboardKey.KEY_LEFT_SHIFT):
                         shatter_text_particle(ptr_of(text_particles[index]), index, ptr_of(text_particles[0]), ptr_of(particle_count))
                     else:
-                        slice_text_particle(ptr_of(text_particles[index]), index, i32<-rl.TextLength(text_particle_text(ptr_of(text_particles[index]))) / 2, ptr_of(text_particles[0]), ptr_of(particle_count))
+                        slice_text_particle(ptr_of(text_particles[index]), index, int<-rl.TextLength(text_particle_text(ptr_of(text_particles[index]))) / 2, ptr_of(text_particles[0]), ptr_of(particle_count))
                     break
                 index -= 1
 
@@ -250,8 +250,8 @@ def main() -> i32:
             while index < particle_count:
                 if not text_particles[index].grabbed:
                     text_particles[index].vel = rl.Vector2(
-                        x = f32<-rl.GetRandomValue(-2000, 2000),
-                        y = f32<-rl.GetRandomValue(-2000, 2000),
+                        x = float<-rl.GetRandomValue(-2000, 2000),
+                        y = float<-rl.GetRandomValue(-2000, 2000),
                     )
                 index += 1
 
@@ -284,15 +284,15 @@ def main() -> i32:
                 text_particles[index].rect.x += text_particles[index].vel.x * delta
                 text_particles[index].rect.y += text_particles[index].vel.y * delta
 
-                if text_particles[index].rect.x + text_particles[index].rect.width >= f32<-screen_width:
-                    text_particles[index].rect.x = f32<-screen_width - text_particles[index].rect.width
+                if text_particles[index].rect.x + text_particles[index].rect.width >= float<-screen_width:
+                    text_particles[index].rect.x = float<-screen_width - text_particles[index].rect.width
                     text_particles[index].vel.x = -text_particles[index].vel.x * text_particles[index].elasticity
                 elif text_particles[index].rect.x <= 0.0:
                     text_particles[index].rect.x = 0.0
                     text_particles[index].vel.x = -text_particles[index].vel.x * text_particles[index].elasticity
 
-                if text_particles[index].rect.y + text_particles[index].rect.height >= f32<-screen_height:
-                    text_particles[index].rect.y = f32<-screen_height - text_particles[index].rect.height
+                if text_particles[index].rect.y + text_particles[index].rect.height >= float<-screen_height:
+                    text_particles[index].rect.y = float<-screen_height - text_particles[index].rect.height
                     text_particles[index].vel.y = -text_particles[index].vel.y * text_particles[index].elasticity
                 elif text_particles[index].rect.y <= 0.0:
                     text_particles[index].rect.y = 0.0
@@ -336,8 +336,8 @@ def main() -> i32:
             rl.DrawRectangleRec(text_particles[index].rect, text_particles[index].color)
             rl.DrawText(
                 text_particle_text(ptr_of(text_particles[index])),
-                i32<-(text_particles[index].rect.x + text_particles[index].padding),
-                i32<-(text_particles[index].rect.y + text_particles[index].padding),
+                int<-(text_particles[index].rect.x + text_particles[index].padding),
+                int<-(text_particles[index].rect.y + text_particles[index].padding),
                 font_size,
                 rl.BLACK,
             )

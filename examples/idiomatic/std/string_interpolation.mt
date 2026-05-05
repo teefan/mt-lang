@@ -7,15 +7,15 @@ import std.string as string
 # Demonstrates a declared `str` initialized from interpolation.
 
 
-def print_declared_header(user: str, count: i32) -> bool:
+def print_declared_header(user: str, count: int) -> bool:
     let header: str = f"declared-str -> user=#{user} count=#{count}"
     return io.println(header)
 
 
-def main() -> i32:
+def main() -> int:
     let user: str = "milk-tea"
-    let count: i32 = 3
-    let ratio: f64 = 0.625
+    let count: int = 3
+    let ratio: double = 0.625
 
     # Direct interpolation to io.println.
     if not io.println(f"direct -> user=#{user} count=#{count} ratio=#{ratio} ok=#{count > 0}"):

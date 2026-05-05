@@ -2,12 +2,12 @@ module examples.idiomatic.raylib.sprite_fonts
 
 import std.raylib as rl
 
-const max_fonts: i32 = 8
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const max_fonts: int = 8
+const screen_width: int = 800
+const screen_height: int = 450
 
 
-def main() -> i32:
+def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Sprite Fonts")
     defer rl.close_window()
 
@@ -31,7 +31,7 @@ def main() -> i32:
         "ALPHA_BETA FONT designed by Brian Kent (AEnigma)",
         "JUPITER_CRASH FONT designed by Brian Kent (AEnigma)",
     )
-    let spacings = array[i32, max_fonts](2, 4, 8, 4, 3, 4, 4, 1)
+    let spacings = array[int, max_fonts](2, 4, 8, 4, 3, 4, 4, 1)
     let colors = array[rl.Color, max_fonts](rl.MAROON, rl.ORANGE, rl.DARKGREEN, rl.DARKBLUE, rl.DARKPURPLE, rl.LIME, rl.GOLD, rl.RED)
 
     var fonts = zero[array[rl.Font, max_fonts]]
@@ -39,9 +39,9 @@ def main() -> i32:
 
     for index in 0..max_fonts:
         fonts[index] = rl.load_font(font_paths[index])
-        let size = rl.measure_text_ex(fonts[index], messages[index], f32<-fonts[index].baseSize * 2.0, f32<-spacings[index])
-        positions[index].x = f32<-screen_width / 2.0 - size.x / 2.0
-        positions[index].y = 60.0 + f32<-fonts[index].baseSize + 45.0 * f32<-index
+        let size = rl.measure_text_ex(fonts[index], messages[index], float<-fonts[index].baseSize * 2.0, float<-spacings[index])
+        positions[index].x = float<-screen_width / 2.0 - size.x / 2.0
+        positions[index].y = 60.0 + float<-fonts[index].baseSize + 45.0 * float<-index
 
     positions[3].y += 8.0
     positions[4].y += 2.0
@@ -62,6 +62,6 @@ def main() -> i32:
         rl.draw_line(220, 50, 600, 50, rl.DARKGRAY)
 
         for index in 0..max_fonts:
-            rl.draw_text_ex(fonts[index], messages[index], positions[index], f32<-fonts[index].baseSize * 2.0, f32<-spacings[index], colors[index])
+            rl.draw_text_ex(fonts[index], messages[index], positions[index], float<-fonts[index].baseSize * 2.0, float<-spacings[index], colors[index])
 
     return 0

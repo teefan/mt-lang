@@ -3,13 +3,13 @@ module examples.raylib.audio.audio_sound_positioning
 import std.c.raylib as rl
 import std.raylib.math as rm
 
-const screen_width: i32 = 800
-const screen_height: i32 = 450
+const screen_width: int = 800
+const screen_height: int = 450
 const sound_path: cstr = c"../resources/coin.wav"
 const window_title: cstr = c"raylib [audio] example - sound positioning"
 
 
-def set_sound_position(listener: rl.Camera3D, sound: rl.Sound, position: rl.Vector3, max_dist: f32) -> void:
+def set_sound_position(listener: rl.Camera3D, sound: rl.Sound, position: rl.Vector3, max_dist: float) -> void:
     let direction = position.subtract(listener.position)
     let distance = direction.length()
 
@@ -30,7 +30,7 @@ def set_sound_position(listener: rl.Camera3D, sound: rl.Sound, position: rl.Vect
     rl.SetSoundPan(sound, pan)
 
 
-def main() -> i32:
+def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
@@ -54,7 +54,7 @@ def main() -> i32:
     while not rl.WindowShouldClose():
         rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_FREE)
 
-        let th = f32<-rl.GetTime()
+        let th = float<-rl.GetTime()
         let sphere_pos = rl.Vector3(
             x = 5.0 * rm.cos(th),
             y = 0.0,

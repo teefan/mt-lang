@@ -1,9 +1,9 @@
 module std.math
 
-pub const pi: f32 = 3.14159274
-pub const tau: f32 = 6.28318548
-pub const deg2rad: f32 = pi / 180.0
-pub const rad2deg: f32 = 180.0 / pi
+pub const pi: float = 3.14159274
+pub const tau: float = 6.28318548
+pub const deg2rad: float = pi / 180.0
+pub const rad2deg: float = 180.0 / pi
 
 
 pub def min[T](a: T, b: T) -> T:
@@ -33,5 +33,5 @@ pub def clamp[T](value: T, min_value: T, max_value: T) -> T:
     return value
 
 
-pub def lerp(start: f32, finish: f32, t: f32) -> f32:
+pub def lerp(start: float, finish: float, t: float) -> float:
     return start + (finish - start) * t
