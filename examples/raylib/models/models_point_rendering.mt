@@ -31,8 +31,8 @@ def gen_mesh_points(num_points: int) -> rl.Mesh:
         let vertex_count = uint<-(num_points * 3)
         let color_count = uint<-(num_points * 4)
 
-        mesh.vertices = ptr[float]<-rl.MemAlloc(vertex_count * uint<-sizeof(float))
-        mesh.colors = ptr[ubyte]<-rl.MemAlloc(color_count * uint<-sizeof(ubyte))
+        mesh.vertices = ptr[float]<-rl.MemAlloc(vertex_count * uint<-size_of(float))
+        mesh.colors = ptr[ubyte]<-rl.MemAlloc(color_count * uint<-size_of(ubyte))
 
         for index in 0..num_points:
             let theta = pi * random_unit()

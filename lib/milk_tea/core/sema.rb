@@ -1782,10 +1782,10 @@ module MilkTea
           when AST::FloatLiteral
             infer_float_literal(expression, expected_type)
           when AST::SizeofExpr
-            infer_layout_query_type(expression.type, context: "sizeof")
+            infer_layout_query_type(expression.type, context: "size_of")
             @types.fetch("ptr_uint")
           when AST::AlignofExpr
-            infer_layout_query_type(expression.type, context: "alignof")
+            infer_layout_query_type(expression.type, context: "align_of")
             @types.fetch("ptr_uint")
           when AST::OffsetofExpr
             infer_offsetof_type(expression.type, expression.field)
@@ -3776,7 +3776,7 @@ module MilkTea
       def infer_offsetof_type(type_ref, field_name)
         type = resolve_type_ref(type_ref)
         unless layout_aggregate_type?(type)
-          raise_sema_error("offsetof requires a struct, union, span, Result, or str type, got #{type}")
+          raise_sema_error("offset_of requires a struct, union, span, Result, or str type, got #{type}")
         end
 
         field_type = type.field(field_name)

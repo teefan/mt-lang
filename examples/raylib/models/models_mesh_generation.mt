@@ -48,9 +48,9 @@ def custom_mesh() -> rl.Mesh:
         let vertex_count = uint<-(mesh.vertexCount * 3)
         let texcoord_count = uint<-(mesh.vertexCount * 2)
 
-        mesh.vertices = ptr[float]<-rl.MemAlloc(vertex_count * uint<-sizeof(float))
-        mesh.texcoords = ptr[float]<-rl.MemAlloc(texcoord_count * uint<-sizeof(float))
-        mesh.normals = ptr[float]<-rl.MemAlloc(vertex_count * uint<-sizeof(float))
+        mesh.vertices = ptr[float]<-rl.MemAlloc(vertex_count * uint<-size_of(float))
+        mesh.texcoords = ptr[float]<-rl.MemAlloc(texcoord_count * uint<-size_of(float))
+        mesh.normals = ptr[float]<-rl.MemAlloc(vertex_count * uint<-size_of(float))
 
         mesh.vertices[0] = 0.0
         mesh.vertices[1] = 0.0

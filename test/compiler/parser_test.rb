@@ -488,10 +488,10 @@ class MilkTeaParserTest < Minitest::Test
           magic: array[ubyte, 4]
           version: ushort
 
-      static_assert(sizeof(Header) >= 6, "Header must include version")
+      static_assert(size_of(Header) >= 6, "Header must include version")
 
       def main() -> ptr_uint:
-          return offsetof(Header, version) + alignof(Header)
+          return offset_of(Header, version) + align_of(Header)
     MT
 
     ast = MilkTea::Parser.parse(source)

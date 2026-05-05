@@ -865,11 +865,11 @@ class MilkTeaRunTest < Minitest::Test
         "    magic: array[ubyte, 4]",
         "    version: ushort",
         "",
-        "static_assert(sizeof(Header) == 6, \"Header size should stay stable\")",
-        "static_assert(offsetof(Header, version) == 4, \"Header.version offset drifted\")",
+        "static_assert(size_of(Header) == 6, \"Header size should stay stable\")",
+        "static_assert(offset_of(Header, version) == 4, \"Header.version offset drifted\")",
         "",
         "def main() -> int:",
-        "    return int<-(sizeof(Header) + alignof(Header) + offsetof(Header, version))",
+        "    return int<-(size_of(Header) + align_of(Header) + offset_of(Header, version))",
         "",
       ].join("\n"))
 
@@ -902,12 +902,12 @@ class MilkTeaRunTest < Minitest::Test
         "align(16) struct Mat4:",
         "    data: array[float, 16]",
         "",
-        "static_assert(sizeof(Header) == 5, \"Header should stay packed\")",
-        "static_assert(offsetof(Header, value) == 1, \"Header.value offset drifted\")",
-        "static_assert(alignof(Mat4) == 16, \"Mat4 alignment drifted\")",
+        "static_assert(size_of(Header) == 5, \"Header should stay packed\")",
+        "static_assert(offset_of(Header, value) == 1, \"Header.value offset drifted\")",
+        "static_assert(align_of(Mat4) == 16, \"Mat4 alignment drifted\")",
         "",
         "def main() -> int:",
-        "    return int<-(sizeof(Header) + offsetof(Header, value) + alignof(Mat4))",
+        "    return int<-(size_of(Header) + offset_of(Header, value) + align_of(Mat4))",
         "",
       ].join("\n"))
 

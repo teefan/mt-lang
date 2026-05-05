@@ -26,7 +26,7 @@ def min_int(lhs: int, rhs: int) -> int:
 
 
 def feed_audio_stream_more(userdata: ptr[void], astream: ptr[c.SDL_AudioStream], additional_amount: int, total_amount: int) -> void:
-    var remaining_samples = additional_amount / int<-sizeof(float)
+    var remaining_samples = additional_amount / int<-size_of(float)
 
     while remaining_samples > 0:
         var samples = zero[array[float, 128]]
@@ -38,7 +38,7 @@ def feed_audio_stream_more(userdata: ptr[void], astream: ptr[c.SDL_AudioStream],
             current_sine_sample += 1
 
         current_sine_sample %= audio_sample_rate
-        c.SDL_PutAudioStreamData(astream, ptr_of(samples[0]), total * int<-sizeof(float))
+        c.SDL_PutAudioStreamData(astream, ptr_of(samples[0]), total * int<-size_of(float))
         remaining_samples -= total
 
 

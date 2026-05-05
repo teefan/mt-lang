@@ -110,7 +110,7 @@
 
     "keyword-operator": {
       "name": "keyword.operator.word.milk-tea",
-      "match": "\\b(and|or|not|as|in|sizeof|alignof|offsetof|consuming|inout|out)\\b"
+      "match": "\\b(and|or|not|as|in|size_of|align_of|offset_of|consuming|inout|out)\\b"
     },
 
     "keyword-modifier": {

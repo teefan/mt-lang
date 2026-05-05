@@ -32,7 +32,7 @@ def allocate_delay_buffer() -> void:
     delay_write_index = 0
 
     unsafe:
-        delay_buffer = ptr[float]?<-rl.MemAlloc(delay_buffer_size * uint<-sizeof(float))
+        delay_buffer = ptr[float]?<-rl.MemAlloc(delay_buffer_size * uint<-size_of(float))
         if delay_buffer != null:
             let samples = ptr[float]<-delay_buffer
             for index in 0..int<-delay_buffer_size:

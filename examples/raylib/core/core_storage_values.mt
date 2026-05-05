@@ -11,7 +11,7 @@ const hiscore_position: ptr_uint = 1
 
 
 def storage_size_bytes(position: ptr_uint) -> int:
-    return int<-((position + 1) * ptr_uint<-sizeof(int))
+    return int<-((position + 1) * ptr_uint<-size_of(int))
 
 
 def save_storage_value(position: ptr_uint, stored_value: int) -> bool:

@@ -28,7 +28,7 @@ def main() -> int:
     var checked = zero[rl.Texture2D]
     unsafe:
         let pixel_count = uint<-(checked_width * checked_height)
-        let allocation_size = pixel_count * uint<-sizeof(rl.Color)
+        let allocation_size = pixel_count * uint<-size_of(rl.Color)
         let pixels = ptr[rl.Color]<-rl.MemAlloc(allocation_size)
 
         for pos_y in 0..checked_height:

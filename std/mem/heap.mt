@@ -62,7 +62,7 @@ pub def release_bytes(memory: ptr[void]?) -> void:
 
 
 pub def alloc[T](count: ptr_uint) -> ptr[T]?:
-    let element_size = ptr_uint<-sizeof(T)
+    let element_size = ptr_uint<-size_of(T)
     if mul_overflows(count, element_size):
         return null
 
@@ -84,7 +84,7 @@ pub def must_alloc[T](count: ptr_uint) -> ptr[T]:
 
 
 pub def alloc_zeroed[T](count: ptr_uint) -> ptr[T]?:
-    let memory = alloc_zeroed_bytes(count, ptr_uint<-sizeof(T))
+    let memory = alloc_zeroed_bytes(count, ptr_uint<-size_of(T))
     if memory == null:
         return null
 
@@ -102,7 +102,7 @@ pub def must_alloc_zeroed[T](count: ptr_uint) -> ptr[T]:
 
 
 pub def resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]?:
-    let element_size = ptr_uint<-sizeof(T)
+    let element_size = ptr_uint<-size_of(T)
     if mul_overflows(count, element_size):
         return null
 

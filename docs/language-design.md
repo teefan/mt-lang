@@ -951,8 +951,8 @@ pub foreign def load_file_data(file_name: str as cstr, out data_size: int) -> pt
 pub foreign def save_file_data(file_name: str as cstr, data: span[ubyte]) -> bool = c.SaveFileData(file_name, data.data, int<-data.len)
 pub foreign def set_shader_value[T](shader: Shader, loc_index: int, in value: T as const_ptr[void], uniform_type: int) -> void = c.SetShaderValue
 
-pub foreign def mem_alloc[T](count: ptr_uint) -> ptr[T]? = c.MemAlloc(count * uint<-sizeof(T))
-pub foreign def mem_realloc[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]? = c.MemRealloc(memory, count * uint<-sizeof(T))
+pub foreign def mem_alloc[T](count: ptr_uint) -> ptr[T]? = c.MemAlloc(count * uint<-size_of(T))
+pub foreign def mem_realloc[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]? = c.MemRealloc(memory, count * uint<-size_of(T))
 pub foreign def mem_free[T](memory: ptr[T]?) -> void = c.MemFree(memory)
 ```
 
@@ -971,14 +971,14 @@ Chosen v1 form:
 - the left side is the public Milk Tea signature
 - the right side is either a raw symbol name or a declarative raw call expression
 - `= c.Symbol` is shorthand for positional lowering when surface parameters map directly to the raw ABI after boundary conversion
-- `= c.Symbol(...)` is required when one surface parameter fans out into multiple raw arguments, when argument order changes, or when the raw API needs size arithmetic such as `count * sizeof(T)`
+- `= c.Symbol(...)` is required when one surface parameter fans out into multiple raw arguments, when argument order changes, or when the raw API needs size arithmetic such as `count * size_of(T)`
 
 The right side is deliberately not a normal function body. It is a restricted lowering clause. It may use:
 
 - the referenced raw foreign symbol
 - imported parameters
 - field access such as `data.data` and `data.len`
-- `T<-expr`, `sizeof`, `alignof`, literals, `null`, and simple arithmetic
+- `T<-expr`, `size_of`, `align_of`, literals, `null`, and simple arithmetic
 
 It may not use:
 
@@ -1039,7 +1039,7 @@ Declarative RHS mapping rules:
 - the RHS must be a raw call expression whose callee is an imported raw extern function
 - raw call arity must match the raw target signature, respecting raw varargs rules
 - the checker analyzes each raw argument expression in an environment containing the public parameters
-- allowed RHS expression forms are: parameter identifiers, member access, index access, literals, `null`, `sizeof`, `alignof`, `offsetof`, explicit `T<-expr` casts, and simple arithmetic or comparisons built from those forms
+- allowed RHS expression forms are: parameter identifiers, member access, index access, literals, `null`, `size_of`, `align_of`, `offset_of`, explicit `T<-expr` casts, and simple arithmetic or comparisons built from those forms
 - disallowed RHS forms are: control flow, local declarations, assignment, `unsafe`, `defer`, heap allocation, and arbitrary non-builtin function calls
 - every public parameter must be consumed by the RHS according to its mode
 
@@ -1095,7 +1095,7 @@ Declarative RHS mapping lowering:
 - the lowering clause is expanded by substituting lowered public arguments into the restricted RHS expression tree
 - the expanded raw call becomes the emitted call target and raw argument list
 - field access such as `data.data` and `data.len` lowers exactly as the corresponding member access on the public argument value
-- builtin forms such as `T<-expr`, `sizeof`, `alignof`, and `offsetof` lower exactly as they do elsewhere in the language
+- builtin forms such as `T<-expr`, `size_of`, `align_of`, and `offset_of` lower exactly as they do elsewhere in the language
 
 Automatic text marshalling lowering:
 
@@ -1188,9 +1188,9 @@ Required controls:
 
 - `packed struct`
 - `align(n)`
-- `sizeof(T)`
-- `alignof(T)`
-- `offsetof(T, field)`
+- `size_of(T)`
+- `align_of(T)`
+- `offset_of(T, field)`
 - `static_assert(condition, message)`
 
 These are not niche. They are mandatory for FFI and engine code.

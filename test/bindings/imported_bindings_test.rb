@@ -708,7 +708,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
                 { name: "count", type: "ptr_uint" },
               ],
               return_type: "ptr[T]?",
-              mapping: "c.MemAlloc(count * uint<-sizeof(T))",
+              mapping: "c.MemAlloc(count * uint<-size_of(T))",
             },
           ],
         },
@@ -739,7 +739,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         pub foreign def load_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadData
         pub foreign def save_data(file_name: str as cstr, data: span[ubyte]) -> bool = c.SaveData(file_name, data.data, int<-data.len)
         pub foreign def release_data(consuming data: ptr[ubyte]) -> void = c.ReleaseData
-        pub foreign def mem_alloc[T](count: ptr_uint) -> ptr[T]? = c.MemAlloc(count * uint<-sizeof(T))
+        pub foreign def mem_alloc[T](count: ptr_uint) -> ptr[T]? = c.MemAlloc(count * uint<-size_of(T))
       MT
 
       generated = binding.generate(module_roots: [dir])

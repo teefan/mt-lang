@@ -214,7 +214,7 @@
           }
         ],
         "return_type": "ptr[T]?",
-        "mapping": "c.MemAlloc(count * uint<-sizeof(T))"
+        "mapping": "c.MemAlloc(count * uint<-size_of(T))"
       },
       {
         "raw": "MemRealloc",
@@ -232,7 +232,7 @@
           }
         ],
         "return_type": "ptr[T]?",
-        "mapping": "c.MemRealloc(memory, count * uint<-sizeof(T))"
+        "mapping": "c.MemRealloc(memory, count * uint<-size_of(T))"
       },
       {
         "raw": "MemFree",
