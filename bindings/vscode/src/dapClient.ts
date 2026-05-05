@@ -20,6 +20,7 @@ type SessionConfiguration = {
   program?: string;
   cwd?: string;
   args?: unknown;
+  noDebug?: boolean;
   stopOnEntry?: boolean;
   adapterPath?: string;
   pid?: unknown;
@@ -114,6 +115,7 @@ export class MilkTeaDapSessionTracker {
   private readonly sessionExitCodes = new Map<string, number | undefined>();
   private readonly retryAttemptsByKey = new Map<string, number>();
   private readonly explicitStops = new Set<string>();
+  private readonly sessionShutdownExpected = new Set<string>();
   private readonly log: Logger;
 
   constructor(log: Logger) {
@@ -128,6 +130,7 @@ export class MilkTeaDapSessionTracker {
             this.log.debug(`DAP tracker attached: '${session.name}' (id=${session.id})`);
           },
           onWillReceiveMessage: (message: unknown) => {
+            this.noteExpectedShutdownFromClientMessage(session, message);
             this.logProtocolMessage(session, 'client->adapter', message);
           },
           onDidSendMessage: (message: unknown) => {
@@ -144,6 +147,7 @@ export class MilkTeaDapSessionTracker {
             }
 
             if (msg.event === 'exited') {
+              this.sessionShutdownExpected.add(session.id);
               this.sessionExited.add(session.id);
               const body = msg.body && typeof msg.body === 'object'
                 ? msg.body as { exitCode?: unknown }
@@ -151,15 +155,27 @@ export class MilkTeaDapSessionTracker {
               const rawCode = body?.exitCode;
               const exitCode = typeof rawCode === 'number' ? rawCode : undefined;
               this.sessionExitCodes.set(session.id, exitCode);
+            } else if (msg.event === 'terminated') {
+              this.sessionShutdownExpected.add(session.id);
             }
           },
           onWillStopSession: () => {
             this.log.debug(`DAP tracker stopping: '${session.name}' (id=${session.id})`);
           },
           onError: (error: Error) => {
+            if (this.shouldSuppressAdapterShutdownNoise(session.id, error.message)) {
+              this.log.debug(`Suppressing benign DAP adapter error for '${session.name}': ${error.message}`);
+              return;
+            }
             this.log.error(`DAP adapter error for '${session.name}': ${error.message}`);
           },
           onExit: (code: number | undefined, signal: string | undefined) => {
+            if (this.shouldSuppressAdapterShutdownNoise(session.id)) {
+              this.log.debug(
+                `Suppressing benign DAP adapter exit for '${session.name}': code=${typeof code === 'number' ? code : 'undefined'}, signal=${signal ?? 'undefined'}`,
+              );
+              return;
+            }
             this.log.warn(
               `DAP adapter process exited for '${session.name}': code=${typeof code === 'number' ? code : 'undefined'}, signal=${signal ?? 'undefined'}`,
             );
@@ -171,6 +187,7 @@ export class MilkTeaDapSessionTracker {
         if (session.type === 'milk-tea') {
           this.sessions.add(session);
           this.sessionStarts.set(session.id, Date.now());
+          this.sessionShutdownExpected.delete(session.id);
           this.sessionExited.delete(session.id);
           this.sessionExitCodes.delete(session.id);
           this.log.info(`DAP session started: '${session.name}' (id=${session.id})`);
@@ -183,6 +200,7 @@ export class MilkTeaDapSessionTracker {
         if (this.sessions.delete(session)) {
           const startMs = this.sessionStarts.get(session.id) ?? Date.now();
           this.sessionStarts.delete(session.id);
+          this.sessionShutdownExpected.delete(session.id);
           const sawExitedEvent = this.sessionExited.delete(session.id);
           const exitCode = this.sessionExitCodes.get(session.id);
           this.sessionExitCodes.delete(session.id);
@@ -273,6 +291,7 @@ export class MilkTeaDapSessionTracker {
     for (const session of [...this.sessions]) {
       try {
         this.explicitStops.add(session.id);
+        this.sessionShutdownExpected.add(session.id);
         await vscode.debug.stopDebugging(session);
       } catch (err) {
         this.log.warn(`Could not stop session '${session.name}': ${err}`);
@@ -324,6 +343,33 @@ export class MilkTeaDapSessionTracker {
     }
 
     return false;
+  }
+
+  private noteExpectedShutdownFromClientMessage(
+    session: vscode.DebugSession,
+    message: unknown,
+  ): void {
+    const msg = message as DapProtocolMessage | undefined;
+    if (!msg || typeof msg !== 'object' || msg.type !== 'request') {
+      return;
+    }
+
+    const command = String(msg.command ?? '');
+    if (command === 'terminate' || command === 'disconnect') {
+      this.sessionShutdownExpected.add(session.id);
+    }
+  }
+
+  private shouldSuppressAdapterShutdownNoise(sessionId: string, message?: string): boolean {
+    if (!this.sessionShutdownExpected.has(sessionId) && !this.sessionExited.has(sessionId)) {
+      return false;
+    }
+
+    if (message === undefined) {
+      return true;
+    }
+
+    return message.trim().toLowerCase() === 'read error';
   }
 
   private summarizeProtocolMessage(message: unknown): Record<string, unknown> | undefined {
@@ -379,6 +425,7 @@ export class MilkTeaDapSessionTracker {
       program: config.program ?? undefined,
       cwd: config.cwd ?? undefined,
       args: this.compactValue(config.args),
+      noDebug: config.noDebug ?? undefined,
       stopOnEntry: config.stopOnEntry ?? undefined,
       adapterPath: config.adapterPath ?? undefined,
       pid: this.compactValue(config.pid),
@@ -392,6 +439,20 @@ export class MilkTeaDapSessionTracker {
       preRunCommands: this.compactValue(config.preRunCommands),
       postRunCommands: this.compactValue(config.postRunCommands),
     };
+  }
+
+  private isSensitiveKey(key: string): boolean {
+    return REDACTED_KEY_PATTERN.test(key);
+  }
+
+  private compactRedactedEnv(entry: Record<string, unknown>): string[] {
+    return Object.keys(entry).sort().map((envKey) => `${envKey}=[REDACTED]`);
+  }
+
+  private sanitizeRedactedEnv(entry: Record<string, unknown>): Record<string, string> {
+    return Object.fromEntries(
+      Object.keys(entry).sort().map((envKey) => [envKey, '[REDACTED]']),
+    );
   }
 
   private compactValue(value: unknown, depth = 0): unknown {
@@ -422,11 +483,11 @@ export class MilkTeaDapSessionTracker {
     const result: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
       if (key === 'env' && entry && typeof entry === 'object') {
-        result[key] = Object.keys(entry as Record<string, unknown>).sort().map((envKey) => `${envKey}=[REDACTED]`);
+        result[key] = this.compactRedactedEnv(entry as Record<string, unknown>);
         continue;
       }
 
-      if (REDACTED_KEY_PATTERN.test(key)) {
+      if (this.isSensitiveKey(key)) {
         result[key] = '[REDACTED]';
         continue;
       }
@@ -454,13 +515,11 @@ export class MilkTeaDapSessionTracker {
       const result: Record<string, unknown> = {};
       for (const [key, entry] of Object.entries(value)) {
         if (key === 'env' && entry && typeof entry === 'object') {
-          result[key] = Object.fromEntries(
-            Object.keys(entry as Record<string, unknown>).sort().map((envKey) => [envKey, '[REDACTED]']),
-          );
+          result[key] = this.sanitizeRedactedEnv(entry as Record<string, unknown>);
           continue;
         }
 
-        if (REDACTED_KEY_PATTERN.test(key)) {
+        if (this.isSensitiveKey(key)) {
           result[key] = '[REDACTED]';
           continue;
         }

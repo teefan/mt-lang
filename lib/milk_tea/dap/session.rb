@@ -4,7 +4,7 @@ module MilkTea
   module DAP
     # Holds mutable state for one DAP session.
     class Session
-      attr_reader :program_path, :runnable_path, :program_args, :thread_id, :exit_code, :backend_kind,
+      attr_reader :program_path, :runnable_path, :program_args, :thread_id, :backend_kind,
           :function_breakpoints, :exception_breakpoints
 
       def initialize
@@ -16,7 +16,6 @@ module MilkTea
         @launched = false
         @terminated = false
         @should_exit = false
-        @start_requested = false
         @entry_stop_emitted = false
         @program_path = nil
         @runnable_path = nil
@@ -24,8 +23,6 @@ module MilkTea
         @backend_kind = "process"
         @stop_on_entry = true
         @runtime_started = false
-        @runtime_exited = false
-        @exit_code = nil
         @breakpoints_by_source = {}
         @function_breakpoints = []
         @exception_breakpoints = nil
@@ -54,16 +51,11 @@ module MilkTea
       end
 
       def request_start!(program_path:, runnable_path:, program_args: [], stop_on_entry: true, backend_kind: "process")
-        @start_requested = true
         @program_path = program_path
         @runnable_path = runnable_path
         @program_args = Array(program_args).map(&:to_s)
         @backend_kind = backend_kind
         @stop_on_entry = stop_on_entry
-      end
-
-      def start_requested?
-        @start_requested
       end
 
       def launch!
@@ -92,15 +84,6 @@ module MilkTea
 
       def runtime_started?
         @runtime_started
-      end
-
-      def mark_runtime_exited!(exit_code)
-        @runtime_exited = true
-        @exit_code = exit_code
-      end
-
-      def runtime_exited?
-        @runtime_exited
       end
 
       def terminate!

@@ -330,6 +330,27 @@ class DAPServerTest < Minitest::Test
     end
   end
 
+  class DuplicateContinuedBridgeBackend < FakeBridgeBackend
+    def request(command, arguments, timeout: 5)
+      if command == "continue"
+        _timeout = timeout
+        @requests << [command, arguments]
+
+        2.times do
+          @on_event.call({
+            "type" => "event",
+            "event" => "continued",
+            "body" => { "threadId" => 77, "allThreadsContinued" => true }
+          })
+        end
+
+        return({ "success" => true, "body" => { "allThreadsContinued" => true } })
+      end
+
+      super
+    end
+  end
+
   class TerminateUnsupportedBridgeBackend < FakeBridgeBackend
     def request(command, arguments, timeout: 5)
       if command == "terminate"
@@ -817,6 +838,37 @@ class DAPServerTest < Minitest::Test
     end
   end
 
+  def test_launch_with_no_debug_forces_process_backend_and_skips_entry_stop
+    incoming = [
+      { "seq" => 1, "type" => "request", "command" => "initialize", "arguments" => { "adapterID" => "milk-tea" } },
+      { "seq" => 2, "type" => "request", "command" => "launch", "arguments" => { "backend" => "lldb-dap", "program" => "/usr/bin/true", "stopOnEntry" => true, "noDebug" => true } },
+      { "seq" => 3, "type" => "request", "command" => "configurationDone", "arguments" => {} }
+    ]
+    protocol = InMemoryProtocol.new(incoming)
+    backend_started = false
+
+    server = MilkTea::DAP::Server.new(
+      protocol: protocol,
+      backend_factory: lambda do |_adapter_command, on_event|
+        backend_started = true
+        FakeBridgeBackend.new(on_event)
+      end
+    )
+
+    server.run
+
+    launch_response = find_response(protocol.written, 2)
+    assert_equal true, launch_response["success"] || launch_response[:success]
+
+    conf_response = find_response(protocol.written, 3)
+    assert_equal true, conf_response["success"] || conf_response[:success]
+
+    process_events = find_events(protocol.written, "process")
+    assert_equal 1, process_events.length
+    assert_equal [], find_events(protocol.written, "stopped")
+    assert_equal false, backend_started
+  end
+
   def test_initialize_merges_backend_capabilities_when_server_prefers_lldb_backend
     incoming = [
       { "seq" => 1, "type" => "request", "command" => "initialize", "arguments" => { "adapterID" => "milk-tea" } }
@@ -1059,6 +1111,34 @@ class DAPServerTest < Minitest::Test
     backend_commands = backend.requests.map(&:first)
     assert_includes backend_commands, "terminate"
     assert_includes backend_commands, "disconnect"
+  end
+
+  def test_lldb_backend_suppresses_duplicate_continued_events
+    incoming = [
+      { "seq" => 1, "type" => "request", "command" => "initialize", "arguments" => { "adapterID" => "milk-tea" } },
+      { "seq" => 2, "type" => "request", "command" => "launch", "arguments" => { "backend" => "lldb-dap", "program" => "/usr/bin/true", "stopOnEntry" => true } },
+      { "seq" => 3, "type" => "request", "command" => "configurationDone", "arguments" => {} },
+      { "seq" => 4, "type" => "request", "command" => "continue", "arguments" => { "threadId" => 77 } }
+    ]
+    protocol = InMemoryProtocol.new(incoming)
+
+    server = MilkTea::DAP::Server.new(
+      protocol: protocol,
+      backend_factory: lambda do |_adapter_command, on_event|
+        DuplicateContinuedBridgeBackend.new(on_event)
+      end
+    )
+
+    server.run
+
+    continue_response = find_response(protocol.written, 4)
+    assert_equal true, continue_response["success"] || continue_response[:success]
+
+    continued_events = find_events(protocol.written, "continued")
+    assert_equal 1, continued_events.length
+    continued_body = continued_events.first["body"] || continued_events.first[:body]
+    assert_equal 77, continued_body["threadId"] || continued_body[:threadId]
+    assert_equal true, continued_body["allThreadsContinued"] || continued_body[:allThreadsContinued]
   end
 
   def test_lldb_backend_rewrites_frames_and_locals_from_debug_map_sidecar
@@ -1931,6 +2011,59 @@ class DAPServerTest < Minitest::Test
                 }
               })
               { "success" => true, "body" => {} }
+            when "stackTrace"
+              {
+                "success" => true,
+                "body" => {
+                  "stackFrames" => [
+                    {
+                      "id" => 0,
+                      "name" => "___lldb_unnamed_symbol_9ef00",
+                      "line" => 15,
+                      "column" => 1,
+                      "instructionPointerReference" => "0x7FFFF7A9EF32",
+                      "source" => {
+                        "name" => "___lldb_unnamed_symbol_9ef00",
+                        "path" => "/usr/lib/libc.so.6`___lldb_unnamed_symbol_9ef00"
+                      }
+                    },
+                    {
+                      "id" => 1,
+                      "name" => "SyncRendering",
+                      "line" => 1244,
+                      "column" => 12,
+                      "instructionPointerReference" => "0x7FFFF034C2DA",
+                      "source" => {
+                        "name" => "wayland-surface.c",
+                        "path" => "/usr/src/debug/egl-wayland2/egl-wayland2/src/wayland/wayland-surface.c"
+                      }
+                    },
+                    {
+                      "id" => 2,
+                      "name" => "eplWlSwapBuffers",
+                      "line" => 1366,
+                      "column" => 10,
+                      "instructionPointerReference" => "0x7FFFF034C2AD",
+                      "source" => {
+                        "name" => "wayland-surface.c",
+                        "path" => "/usr/src/debug/egl-wayland2/egl-wayland2/src/wayland/wayland-surface.c"
+                      }
+                    },
+                    {
+                      "id" => 3,
+                      "name" => "main",
+                      "line" => 53,
+                      "column" => 5,
+                      "instructionPointerReference" => "0x555555559CED",
+                      "source" => {
+                        "name" => "milk-tea-demo.mt",
+                        "path" => "/home/teefan/Projects/Ruby/mt-lang/examples/milk-tea-demo.mt"
+                      }
+                    }
+                  ],
+                  "totalFrames" => 4
+                }
+              }
             when "disconnect"
               @on_event.call({ "type" => "event", "event" => "terminated" })
               @on_event.call({ "type" => "event", "event" => "exited", "body" => { "exitCode" => 0 } })
@@ -1962,6 +2095,18 @@ class DAPServerTest < Minitest::Test
 
     pause_request = backend.requests.find { |command, _arguments| command == "pause" }
     refute_nil pause_request
+
+    stack_trace_request = backend.requests.find { |command, arguments| command == "stackTrace" && arguments["threadId"] == 77 }
+    refute_nil stack_trace_request
+
+    output_events = find_events(protocol.written, "output")
+    pause_output = output_events.find do |event|
+      body = event["body"] || event[:body]
+      output = (body["output"] || body[:output]).to_s
+      output.include?("[milk-tea dap] pause focus thread=77: SyncRendering @ /usr/src/debug/egl-wayland2/egl-wayland2/src/wayland/wayland-surface.c:1244 <- eplWlSwapBuffers @ /usr/src/debug/egl-wayland2/egl-wayland2/src/wayland/wayland-surface.c:1366 <- main @ /home/teefan/Projects/Ruby/mt-lang/examples/milk-tea-demo.mt:53") &&
+        output.include?("raw=___lldb_unnamed_symbol_9ef00 @ ___lldb_unnamed_symbol_9ef00:15 ip=0x7FFFF7A9EF32")
+    end
+    refute_nil pause_output
   end
 
   def test_lldb_backend_reverse_run_in_terminal_request_is_forwarded_to_client
