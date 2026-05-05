@@ -113,6 +113,48 @@ class MilkTeaStdMemPoolTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_pool_alignment_contracts
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_mem_pool_alignment",
+      "",
+      "import std.mem.pool as pool",
+      "",
+      "align(16) struct Mat4:",
+      "    data: array[float, 16]",
+      "",
+      "def main() -> int:",
+      "    var raw = pool.create(6, 2)",
+      "    defer raw.release()",
+      "",
+      "    if pool.alloc[int](ref_of(raw)) != null:",
+      "        return 1",
+      "",
+      "    let small = pool.alloc[short](ref_of(raw))",
+      "    if small == null:",
+      "        return 2",
+      "",
+      "    var aligned = pool.create_for[Mat4](1)",
+      "    defer aligned.release()",
+      "",
+      "    let matrix = pool.alloc[Mat4](ref_of(aligned))",
+      "    if matrix == null:",
+      "        return 3",
+      "",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   private
 
   def run_program(source, compiler:)

@@ -43,7 +43,7 @@ class MilkTeaStdIdiomaticExamplesTest < Minitest::Test
 
     result = MilkTea::Run.run(example_path("anonymous_functions"), cc: compiler)
 
-    assert_equal "anonymous functions and closures\ndouble(3) = 6\nadd_offset(3) = 8\n", result.stdout
+    assert_equal "anonymous functions and closures\ntimes_two(3) = 6\nadd_offset(3) = 8\n", result.stdout
     assert_equal "", result.stderr
     assert_equal 0, result.exit_status
     assert_equal [], result.link_flags
@@ -92,6 +92,54 @@ class MilkTeaStdIdiomaticExamplesTest < Minitest::Test
     result = MilkTea::Run.run(example_path("format_specifiers"), cc: compiler)
 
     assert_equal "pi:.0 -> 3\npi:.2 -> 3.14\npi:.5 -> 3.14159\nratio:.4 -> 0.3333\nsmall:.6 -> 0.001230\nmixed -> euler=2.718\n", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+  def test_memory_heap_example_runs
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    result = MilkTea::Run.run(example_path("memory_heap"), cc: compiler)
+
+    assert_equal "heap -> alloc[int], resize[int], alloc_bytes_aligned, release\n", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+  def test_memory_arena_example_runs
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    result = MilkTea::Run.run(example_path("memory_arena"), cc: compiler)
+
+    assert_equal "arena -> create_aligned, alloc[Mat4], mark/reset\n", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+  def test_memory_stack_example_runs
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    result = MilkTea::Run.run(example_path("memory_stack"), cc: compiler)
+
+    assert_equal "stack -> create_aligned, nested marks, reset\n", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+  def test_memory_pool_example_runs
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    result = MilkTea::Run.run(example_path("memory_pool"), cc: compiler)
+
+    assert_equal "pool -> create_for, alloc, release, reuse\n", result.stdout
     assert_equal "", result.stderr
     assert_equal 0, result.exit_status
     assert_equal [], result.link_flags

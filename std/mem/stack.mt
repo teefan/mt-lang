@@ -10,7 +10,11 @@ pub struct Stack:
 
 
 pub def create(capacity_bytes: ptr_uint) -> Stack:
-    return Stack(arena = arena.create(capacity_bytes))
+    return create_aligned(capacity_bytes, 1)
+
+
+pub def create_aligned(capacity_bytes: ptr_uint, alignment: ptr_uint) -> Stack:
+    return Stack(arena = arena.create_aligned(capacity_bytes, alignment))
 
 methods Stack:
     pub def mark() -> Mark:

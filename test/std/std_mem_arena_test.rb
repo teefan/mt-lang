@@ -101,6 +101,72 @@ class MilkTeaStdMemArenaTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_aligned_arena_allocation_helper
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_mem_arena_aligned",
+      "",
+      "import std.mem.arena as arena",
+      "",
+      "align(16) struct Mat4:",
+      "    data: array[float, 16]",
+      "",
+      "def main() -> int:",
+      "    var scratch = arena.create_aligned(ptr_uint<-size_of(Mat4), ptr_uint<-align_of(Mat4))",
+      "    defer scratch.release()",
+      "",
+      "    let matrix = arena.alloc[Mat4](ref_of(scratch), 1)",
+      "    if matrix == null:",
+      "        return 1",
+      "",
+      "    let exhausted = arena.alloc[Mat4](ref_of(scratch), 1)",
+      "    if exhausted != null:",
+      "        return 2",
+      "",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+  def test_host_runtime_rejects_invalid_arena_mark
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_mem_arena_invalid_mark",
+      "",
+      "import std.mem.arena as arena",
+      "",
+      "def main() -> int:",
+      "    var scratch = arena.create(32)",
+      "    defer scratch.release()",
+      "",
+      "    let first = scratch.alloc_bytes(8)",
+      "    if first == null:",
+      "        return 1",
+      "",
+      "    scratch.reset(16)",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal 134, result.exit_status
+    assert_match(/arena\.reset invalid mark/, result.stderr)
+    assert_equal [], result.link_flags
+  end
+
   private
 
   def run_program(source, compiler:)

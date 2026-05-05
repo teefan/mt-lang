@@ -2,20 +2,41 @@ module std.mem.pool
 
 import std.mem.heap as heap
 
+
+def slot_alignment(slot_size_bytes: ptr_uint, base_alignment: ptr_uint) -> ptr_uint:
+    if slot_size_bytes == 0:
+        return base_alignment
+
+    var alignment = base_alignment
+    while alignment > 1 and (slot_size_bytes & (alignment - 1)) != 0:
+        alignment = alignment / 2
+
+    return alignment
+
 pub struct Pool:
     memory: ptr[ubyte]?
     occupancy: ptr[bool]?
     slot_size: ptr_uint
+    slot_alignment: ptr_uint
     slot_count: ptr_uint
     used_count: ptr_uint
 
 
 pub def create(slot_size_bytes: ptr_uint, slot_count: ptr_uint) -> Pool:
+    return create_aligned(slot_size_bytes, slot_count, 1)
+
+
+pub def create_aligned(slot_size_bytes: ptr_uint, slot_count: ptr_uint, alignment: ptr_uint) -> Pool:
+    let normalized_alignment = heap.normalize_alignment(alignment)
+    if normalized_alignment == 0:
+        panic(c"pool.create_aligned requires a power-of-two alignment")
+
     if slot_size_bytes == 0 or slot_count == 0:
         return Pool(
             memory = null,
             occupancy = null,
             slot_size = slot_size_bytes,
+            slot_alignment = slot_alignment(slot_size_bytes, normalized_alignment),
             slot_count = 0,
             used_count = 0,
         )
@@ -24,22 +45,24 @@ pub def create(slot_size_bytes: ptr_uint, slot_count: ptr_uint) -> Pool:
         panic(c"pool.create size overflow")
 
     let total_size = slot_size_bytes * slot_count
-    let memory = heap.alloc[ubyte](total_size)
+    let memory = heap.alloc_bytes_aligned(total_size, normalized_alignment)
     if memory == null:
-        panic(c"pool.create out of memory")
+        panic(c"pool.create_aligned out of memory")
 
     let occupancy = heap.alloc_zeroed[bool](slot_count)
     if occupancy == null:
-        heap.release(memory)
+        heap.release_bytes(memory)
         panic(c"pool.create occupancy out of memory")
 
-    return Pool(
-        memory = memory,
-        occupancy = occupancy,
-        slot_size = slot_size_bytes,
-        slot_count = slot_count,
-        used_count = 0,
-    )
+    unsafe:
+        return Pool(
+            memory = ptr[ubyte]<-memory,
+            occupancy = occupancy,
+            slot_size = slot_size_bytes,
+            slot_alignment = slot_alignment(slot_size_bytes, normalized_alignment),
+            slot_count = slot_count,
+            used_count = 0,
+        )
 
 
 pub def slot_size_for[T]() -> ptr_uint:
@@ -59,7 +82,7 @@ pub def create_for[T](slot_count: ptr_uint) -> Pool:
     if size > heap.ptr_uint_max() - mask:
         panic(c"pool.create_for slot size overflow")
 
-    return create((size + mask) & ~mask, slot_count)
+    return create_aligned((size + mask) & ~mask, slot_count, alignment)
 
 methods Pool:
     pub def remaining_slots() -> ptr_uint:
@@ -121,6 +144,7 @@ methods Pool:
         this.memory = null
         this.occupancy = null
         this.slot_size = 0
+        this.slot_alignment = 0
         this.slot_count = 0
         this.used_count = 0
         return
@@ -134,6 +158,8 @@ pub def alloc[T](space: ref[Pool]) -> ptr[T]?:
         return null
 
     let slot_size = (size + mask) & ~mask
+    if space.slot_alignment < alignment:
+        return null
     if space.slot_size < slot_size:
         return null
 
