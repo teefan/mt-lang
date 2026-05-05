@@ -214,6 +214,11 @@
         "category": "Milk Tea"
       }
     ],
+    "breakpoints": [
+      {
+        "language": "milk-tea"
+      }
+    ],
     "debuggers": [
       {
         "type": "milk-tea",
@@ -244,6 +249,11 @@
                 "type": "string",
                 "description": "Absolute path to the Milk Tea source file (.mt) to compile and debug.",
                 "default": "${file}"
+              },
+              "noDebug": {
+                "type": "boolean",
+                "default": false,
+                "description": "Run without attaching the debugger. VS Code sets this automatically for Ctrl+F5."
               },
               "args": {
                 "type": "array",

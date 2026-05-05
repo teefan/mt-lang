@@ -1,3 +1,4 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConfig }                from './config';
 import { Logger }                   from './log';
@@ -11,6 +12,65 @@ import { MilkTeaDebugAdapterFactory, MilkTeaDapSessionTracker } from './dapClien
 let lspLogger:    Logger | undefined;
 let dapLogger:    Logger | undefined;
 let traceChannel: vscode.OutputChannel | undefined;
+let lastMilkTeaProgramPath: string | undefined;
+
+function milkTeaProgramPathFromEditor(editor: vscode.TextEditor | undefined): string | undefined {
+  if (!editor) {
+    return undefined;
+  }
+
+  const { document } = editor;
+  if (document.languageId !== 'milk-tea' || document.uri.scheme !== 'file') {
+    return undefined;
+  }
+
+  return document.uri.fsPath;
+}
+
+function updateLastMilkTeaProgramPath(editor: vscode.TextEditor | undefined): void {
+  const programPath = milkTeaProgramPathFromEditor(editor);
+  if (programPath) {
+    lastMilkTeaProgramPath = programPath;
+  }
+}
+
+function resolveMilkTeaProgramPath(): string | undefined {
+  const activePath = milkTeaProgramPathFromEditor(vscode.window.activeTextEditor);
+  if (activePath) {
+    lastMilkTeaProgramPath = activePath;
+    return activePath;
+  }
+
+  for (const editor of vscode.window.visibleTextEditors) {
+    const programPath = milkTeaProgramPathFromEditor(editor);
+    if (programPath) {
+      lastMilkTeaProgramPath = programPath;
+      return programPath;
+    }
+  }
+
+  return lastMilkTeaProgramPath;
+}
+
+function resolveMilkTeaWorkingDirectory(
+  folder: vscode.WorkspaceFolder | undefined,
+  programPath: string | undefined,
+): string | undefined {
+  if (folder?.uri.scheme === 'file') {
+    return folder.uri.fsPath;
+  }
+
+  if (programPath) {
+    const owningFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(programPath));
+    if (owningFolder?.uri.scheme === 'file') {
+      return owningFolder.uri.fsPath;
+    }
+
+    return path.dirname(programPath);
+  }
+
+  return vscode.workspace.workspaceFolders?.find((candidate) => candidate.uri.scheme === 'file')?.uri.fsPath;
+}
 
 // ---------------------------------------------------------------------------
 // activate
@@ -29,6 +89,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   dapLogger   = new Logger(dapChannel, cfg.dap.logLevel);
 
   lspLogger.info('Milk Tea extension activating…');
+  updateLastMilkTeaProgramPath(vscode.window.activeTextEditor);
 
   // ── LSP client ─────────────────────────────────────────────────────────
   const lspClient = new MilkTeaLspClient(lspLogger, traceChannel);
@@ -93,18 +154,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   if (cfg.dap.enabled) {
     const dapFactory = new MilkTeaDebugAdapterFactory(dapLogger);
+    const defaultLaunchConfiguration = (noDebug = false) => ({
+      type: 'milk-tea',
+      request: 'launch',
+      name: noDebug ? 'Run Milk Tea Program' : 'Debug Milk Tea Program',
+      backend: noDebug ? 'process' : 'lldb-dap',
+      program: '${file}',
+      cwd: '${workspaceFolder}',
+      args: [],
+      noDebug,
+      stopOnEntry: false,
+    });
+
     const dapConfigProvider: vscode.DebugConfigurationProvider = {
       provideDebugConfigurations(_folder) {
         return [
-          {
-            type: 'milk-tea',
-            request: 'launch',
-            name: 'Debug Milk Tea Program',
-            backend: 'lldb-dap',
-            program: '${file}',
-            args: [],
-            stopOnEntry: false,
-          },
+          defaultLaunchConfiguration(false),
+          defaultLaunchConfiguration(true),
           {
             type: 'milk-tea',
             request: 'attach',
@@ -115,32 +181,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ];
       },
 
-      resolveDebugConfiguration(_folder, config) {
+      resolveDebugConfiguration(folder, config) {
+        let resolvedConfig = config;
+
         // Allow F5 to work without a launch.json by supplying sane defaults.
         if (!config.type && !config.request && !config.name) {
-          return {
-            type: 'milk-tea',
-            request: 'launch',
-            name: 'Debug Milk Tea Program',
-            backend: 'lldb-dap',
-            program: '${file}',
-            args: [],
-            stopOnEntry: false,
-          };
+          resolvedConfig = defaultLaunchConfiguration(config.noDebug === true);
         }
 
-        if (config.type === 'milk-tea' && !config.backend) {
-          config.backend = 'lldb-dap';
+        if (resolvedConfig.type === 'milk-tea' && resolvedConfig.request === 'launch' && resolvedConfig.noDebug === true) {
+          resolvedConfig.backend = 'process';
+          resolvedConfig.stopOnEntry = false;
+        } else if (resolvedConfig.type === 'milk-tea' && !resolvedConfig.backend) {
+          resolvedConfig.backend = 'lldb-dap';
         }
 
-        if (config.type === 'milk-tea' && config.request === 'launch' && !config.program) {
-          return {
-            ...config,
-            program: '${file}',
-          };
+        if (resolvedConfig.type === 'milk-tea' && resolvedConfig.request === 'launch') {
+          let nextConfig = resolvedConfig;
+          let programPath = typeof nextConfig.program === 'string' ? nextConfig.program : undefined;
+          const needsDefaultProgram = !programPath || programPath === '${file}';
+          if (needsDefaultProgram) {
+            programPath = resolveMilkTeaProgramPath();
+            if (!programPath) {
+              void vscode.window.showErrorMessage(
+                'Milk Tea: no active .mt source file is available to launch. Focus a Milk Tea editor and try again.',
+              );
+              return undefined;
+            }
+
+            nextConfig = {
+              ...nextConfig,
+              program: programPath,
+            };
+          }
+
+          const needsDefaultCwd = !nextConfig.cwd || nextConfig.cwd === '${workspaceFolder}';
+          if (needsDefaultCwd) {
+            const cwd = resolveMilkTeaWorkingDirectory(folder, programPath);
+            if (cwd) {
+              nextConfig = {
+                ...nextConfig,
+                cwd,
+              };
+            }
+          }
+
+          return nextConfig;
         }
 
-        return config;
+        return resolvedConfig;
       },
     };
 
@@ -155,6 +244,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // ── Watch for config changes ────────────────────────────────────────────
   context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      updateLastMilkTeaProgramPath(editor);
+    }),
     vscode.workspace.onDidChangeConfiguration(async (event) => {
       if (!event.affectsConfiguration('milkTea')) { return; }
 

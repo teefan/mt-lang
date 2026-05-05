@@ -74,6 +74,17 @@ module MilkTea
         return [path, File.dirname(path)]
       end
 
+      current = File.dirname(path)
+      loop do
+        manifest_path = File.join(current, "package.toml")
+        return [manifest_path, current] if File.file?(manifest_path)
+
+        parent = File.dirname(current)
+        break if parent == current
+
+        current = parent
+      end
+
       [nil, nil]
     end
 

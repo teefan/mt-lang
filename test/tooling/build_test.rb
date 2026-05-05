@@ -199,6 +199,58 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
+  def test_build_source_file_inside_package_uses_nearest_package_manifest
+    Dir.mktmpdir("milk-tea-build-package-entry") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      package_root = File.join(dir, "snake-duel")
+      src_dir = File.join(package_root, "src")
+      FileUtils.mkdir_p(src_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+
+        [profile]
+        default = "debug"
+
+        [platform]
+        default = "linux"
+      TOML
+
+      File.write(File.join(src_dir, "game_types.mt"), [
+        "module src.game_types",
+        "",
+        "pub def value() -> i32:",
+        "    return 41",
+        "",
+      ].join("\n"))
+
+      source_path = File.join(src_dir, "main.mt")
+      File.write(source_path, [
+        "module projects.snake_duel",
+        "",
+        "import std.option as option",
+        "import src.game_types as gt",
+        "",
+        "def main() -> i32:",
+        "    return gt.value() + 1",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Build.build(source_path, cc: compiler_path)
+      expected_output = File.join(package_root, "build", "bin", "linux", "debug", "snake_duel")
+
+      assert_equal File.expand_path(expected_output), result.output_path
+      assert_equal :debug, result.profile
+      assert_equal :linux, result.platform
+      assert File.exist?(expected_output)
+
+      invocation = File.read(compiler_log).lines(chomp: true)
+      assert_includes invocation, File.expand_path(expected_output)
+    end
+  end
+
   def test_build_with_host_compiler_uses_distinct_loop_labels_across_sibling_nested_blocks
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

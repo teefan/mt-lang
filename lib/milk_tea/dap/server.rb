@@ -23,10 +23,11 @@ module MilkTea
         @pending_client_responses = {}
         @incoming_messages = Queue.new
         @reader_thread = nil
+        @background_threads = []
+        @background_threads_mutex = Mutex.new
         @runtime_mutex = Mutex.new
         @runtime_pid = nil
         @runtime_paused = false
-        @runtime_thread = nil
         @tmp_dirs = []
         @lldb_backend = nil
         @backend_initialized = false
@@ -38,6 +39,7 @@ module MilkTea
         @backend_auto_continue_after_configuration = false
         @backend_stopped_thread_id = nil
         @backend_pause_requested = false
+        @last_forwarded_continued_signature = nil
         @backend_configuration_mutex = Mutex.new
         @backend_configuration_condition = ConditionVariable.new
         @backend_configuration_ready = false
@@ -59,6 +61,7 @@ module MilkTea
         end
       ensure
         @backend_start_thread&.join(0.2)
+        join_background_threads
         @reader_thread&.join(0.2)
       end
 
@@ -437,7 +440,6 @@ module MilkTea
         write_response(message, {})
         return if @session.runtime_started?
 
-        @session.mark_runtime_exited!(0)
         @session.terminate!
         write_event("terminated")
         write_event("exited", { exitCode: 0 })
@@ -447,6 +449,7 @@ module MilkTea
 
       def handle_disconnect(message)
         if using_lldb_backend?
+          join_background_threads
           backend_response = backend_request("disconnect", message["arguments"] || {})
           write_backend_response(message, backend_response)
           stop_lldb_backend
@@ -563,8 +566,13 @@ module MilkTea
           return
         end
 
-        stop_on_entry = args.key?("stopOnEntry") ? !!args["stopOnEntry"] : true
-        backend_kind = resolved_backend_kind(args["backend"])
+        no_debug = message["command"] == "launch" && args["noDebug"] == true
+        stop_on_entry = no_debug ? false : (args.key?("stopOnEntry") ? !!args["stopOnEntry"] : true)
+        backend_kind = if no_debug
+                         "process"
+                       else
+                         resolved_backend_kind(args["backend"])
+                       end
         unless backend_kind
           write_error_response(message, "unsupported backend: #{args['backend']}")
           return
@@ -580,6 +588,7 @@ module MilkTea
         @session.launch!
         @backend_auto_continue_after_configuration = using_lldb_backend? && message["command"] == "launch" && !stop_on_entry
         @backend_stopped_thread_id = nil if using_lldb_backend?
+        @last_forwarded_continued_signature = nil
         load_debug_map(resolved[:runnable_path])
 
         if using_lldb_backend?
@@ -699,6 +708,7 @@ module MilkTea
       end
 
       def request_backend_terminate(arguments)
+        join_background_threads
         terminate_response = backend_request("terminate", arguments)
         return terminate_response if terminate_response["success"]
         return terminate_response unless backend_terminate_unsupported?(terminate_response)
@@ -783,21 +793,29 @@ module MilkTea
         end
 
         if event == "stopped"
+          pause_requested = @backend_pause_requested
           body = rewrite_backend_stopped_event_body(body)
+          emit_pause_diagnostic_async(body) if pause_requested
           @backend_stopped_thread_id = body && body["threadId"]
           @backend_pause_requested = false
-        elsif event == "continued" || event == "terminated" || event == "exited"
+          @last_forwarded_continued_signature = nil
+        elsif event == "continued"
+          signature = continued_event_signature(body)
+          return if signature && signature == @last_forwarded_continued_signature
+
           @backend_stopped_thread_id = nil
           @backend_pause_requested = false
+          @last_forwarded_continued_signature = signature
+        elsif event == "terminated" || event == "exited"
+          @backend_stopped_thread_id = nil
+          @backend_pause_requested = false
+          @last_forwarded_continued_signature = nil
         end
 
         write_event(event, body)
 
         return unless event == "terminated" || event == "exited"
 
-        if event == "exited"
-          @session.mark_runtime_exited!(body && body["exitCode"] || 0)
-        end
         @session.terminate!
       end
 
@@ -852,13 +870,132 @@ module MilkTea
         response
       end
 
+      def emit_pause_diagnostic_async(body)
+        return unless body.is_a?(Hash)
+
+        thread_id = normalize_reference_key(dap_value(body, "threadId"))
+        return if thread_id.nil?
+
+        track_background_thread(Thread.new(thread_id) do |diagnostic_thread_id|
+          stack_response = backend_request("stackTrace", {
+            "threadId" => diagnostic_thread_id,
+            "startFrame" => 0,
+            "levels" => 8
+          })
+
+          write_event("output", {
+            category: "console",
+            output: "#{pause_diagnostic_output(diagnostic_thread_id, stack_response)}\n"
+          })
+        rescue StandardError => e
+          write_event("output", {
+            category: "console",
+            output: "[milk-tea dap] pause top frame unavailable thread=#{diagnostic_thread_id}: #{e.message}\n"
+          })
+        end)
+      end
+
+      def pause_diagnostic_output(thread_id, stack_response)
+        unless stack_response["success"]
+          return "[milk-tea dap] pause focus unavailable thread=#{thread_id}: #{backend_error_message(stack_response)}"
+        end
+
+        frames = stack_response.dig("body", "stackFrames")
+        frames = frames.select { |candidate| candidate.is_a?(Hash) } if frames.is_a?(Array)
+        return "[milk-tea dap] pause focus unavailable thread=#{thread_id}: no stack frames" if !frames.is_a?(Array) || frames.empty?
+
+        raw_frame = frames.first
+        informative_index = frames.index { |frame| informative_pause_frame?(frame) }
+
+        unless informative_index
+          return "[milk-tea dap] pause top frame thread=#{thread_id}: #{pause_frame_summary(raw_frame, include_ip: true)}"
+        end
+
+        focus_frames = frames.drop(informative_index).first(3)
+        focus = focus_frames.map { |frame| pause_frame_summary(frame) }.join(" <- ")
+        raw_suffix = informative_index.zero? ? "" : " raw=#{pause_frame_summary(raw_frame, include_ip: true)}"
+
+        "[milk-tea dap] pause focus thread=#{thread_id}: #{focus}#{raw_suffix}"
+      end
+
+      def informative_pause_frame?(frame)
+        name = dap_value(frame, "name").to_s
+        return false if name.empty?
+        return false if name.match?(/\A___lldb_unnamed_symbol_/)
+        return false if %w[clock_nanosleep __nanosleep nanosleep].include?(name)
+
+        source = dap_value(frame, "source")
+        source_path = source.is_a?(Hash) ? dap_value(source, "path").to_s : ""
+
+        return true if source_path.start_with?("/usr/src/debug/")
+        return true if !source_path.empty? && !source_path.start_with?("/usr/lib/") && !source_path.start_with?("/lib/")
+
+        true
+      end
+
+      def pause_frame_summary(frame, include_ip: false)
+        frame_name = dap_value(frame, "name").to_s
+        frame_name = "(anonymous)" if frame_name.empty?
+
+        instruction_pointer = dap_value(frame, "instructionPointerReference").to_s
+        source = dap_value(frame, "source")
+        source_path = source.is_a?(Hash) ? dap_value(source, "path").to_s : ""
+        source_name = source.is_a?(Hash) ? dap_value(source, "name").to_s : ""
+        line = dap_value(frame, "line")
+
+        location_source = if !source_path.empty? && !source_path.include?("`")
+                            source_path
+                          elsif !source_name.empty?
+                            source_name
+                          elsif !source_path.empty?
+                            source_path
+                          else
+                            instruction_pointer
+                          end
+
+        location = if location_source.to_s.empty?
+                     "(unknown)"
+                   elsif line.to_i.positive? && !location_source.include?(":#{line}")
+                     "#{location_source}:#{line}"
+                   else
+                     location_source
+                   end
+
+        if include_ip && !instruction_pointer.empty? && location != instruction_pointer
+          "#{frame_name} @ #{location} ip=#{instruction_pointer}"
+        else
+          "#{frame_name} @ #{location}"
+        end
+      end
+
+      def track_background_thread(thread)
+        @background_threads_mutex.synchronize do
+          @background_threads << thread
+        end
+        thread
+      end
+
+      def join_background_threads(timeout: 0.5)
+        threads = @background_threads_mutex.synchronize do
+          threads = @background_threads
+          @background_threads = []
+          threads
+        end
+
+        threads.each do |thread|
+          thread.join(timeout)
+        rescue StandardError
+          nil
+        end
+      end
+
       def sync_breakpoints_to_backend
         return if @breakpoints_synced_to_backend
 
         @session.each_breakpoint_source do |source_path, breakpoints|
           response = backend_request("setBreakpoints", {
             "source" => { "path" => source_path },
-            "breakpoints" => breakpoints.map { |bp| backend_source_breakpoint(bp) }
+            "breakpoints" => breakpoints.map { |bp| filter_breakpoint_for_backend(bp) }
           })
           next unless response["success"]
 
@@ -892,7 +1029,7 @@ module MilkTea
         return if @session.function_breakpoints.empty?
 
         backend_request("setFunctionBreakpoints", {
-          "breakpoints" => @session.function_breakpoints.map { |bp| backend_function_breakpoint(bp) }
+          "breakpoints" => @session.function_breakpoints.map { |bp| filter_breakpoint_for_backend(bp) }
         })
         @function_breakpoints_synced_to_backend = true
       end
@@ -961,15 +1098,7 @@ module MilkTea
         }.merge(client_arguments)
       end
 
-      def backend_source_breakpoint(breakpoint)
-        breakpoint.each_with_object({}) do |(key, value), result|
-          next if key.to_s == "id" || key.to_s == "verified"
-
-          result[key.to_s] = value
-        end
-      end
-
-      def backend_function_breakpoint(breakpoint)
+      def filter_breakpoint_for_backend(breakpoint)
         breakpoint.each_with_object({}) do |(key, value), result|
           next if key.to_s == "id" || key.to_s == "verified"
 
@@ -1379,6 +1508,15 @@ module MilkTea
         { "threadId" => thread_id }
       end
 
+      def continued_event_signature(body)
+        return nil unless body.is_a?(Hash)
+
+        [
+          normalize_reference_key(dap_value(body, "threadId")),
+          dap_value(body, "allThreadsContinued") == true,
+        ]
+      end
+
       def rewrite_backend_stopped_event_body(body)
         return body unless @backend_pause_requested
         return body unless body.is_a?(Hash)
@@ -1461,7 +1599,7 @@ module MilkTea
         command = [runnable_path, *@session.program_args]
         chdir = File.dirname(File.expand_path(@session.program_path || runnable_path))
 
-        @runtime_thread = Thread.new do
+        Thread.new do
           Open3.popen3(*command, chdir:) do |stdin, stdout, stderr, wait_thr|
             stdin.close
             @runtime_mutex.synchronize { @runtime_pid = wait_thr.pid }
@@ -1483,7 +1621,6 @@ module MilkTea
 
             status = wait_thr.value
             exit_code = status.exited? ? status.exitstatus : 1
-            @session.mark_runtime_exited!(exit_code)
             @session.terminate!
 
             write_event("terminated")
@@ -1491,7 +1628,6 @@ module MilkTea
             @session.request_exit!
           end
         rescue StandardError => e
-          @session.mark_runtime_exited!(1)
           @session.terminate!
           write_event("output", { category: "stderr", output: "DAP runtime error: #{e.message}\n" })
           write_event("terminated")
