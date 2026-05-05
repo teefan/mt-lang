@@ -32,7 +32,7 @@ def main() -> int:
     var mesh = rl.GenMeshPlane(float<-map_size, float<-map_size, 1, 1)
 
     unsafe:
-        mesh.texcoords2 = ptr[float]<-rl.MemAlloc(uint<-(mesh.vertexCount * 2) * uint<-sizeof(float))
+        mesh.texcoords2 = ptr[float]<-rl.MemAlloc(uint<-(mesh.vertexCount * 2) * uint<-size_of(float))
         mesh.texcoords2[0] = 0.0
         mesh.texcoords2[1] = 0.0
         mesh.texcoords2[2] = 1.0
@@ -42,7 +42,7 @@ def main() -> int:
         mesh.texcoords2[6] = 1.0
         mesh.texcoords2[7] = 1.0
 
-        mesh.vboId[int<-rl.ShaderLocationIndex.SHADER_LOC_VERTEX_TEXCOORD02] = rlgl.rlLoadVertexBuffer(ptr[void]<-mesh.texcoords2, mesh.vertexCount * 2 * int<-sizeof(float), false)
+        mesh.vboId[int<-rl.ShaderLocationIndex.SHADER_LOC_VERTEX_TEXCOORD02] = rlgl.rlLoadVertexBuffer(ptr[void]<-mesh.texcoords2, mesh.vertexCount * 2 * int<-size_of(float), false)
         rlgl.rlEnableVertexArray(mesh.vaoId)
         rlgl.rlSetVertexAttribute(5, 2, rlgl.RL_FLOAT, false, 0, 0)
         rlgl.rlEnableVertexAttribute(5)

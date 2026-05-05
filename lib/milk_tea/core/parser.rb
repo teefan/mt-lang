@@ -1026,11 +1026,11 @@ module MilkTea
     end
 
     def parse_primary
-      if match(:sizeof)
+      if match(:size_of)
         parse_sizeof_expr
-      elsif match(:alignof)
+      elsif match(:align_of)
         parse_alignof_expr
-      elsif match(:offsetof)
+      elsif match(:offset_of)
         parse_offsetof_expr
       elsif match(:proc)
         parse_proc_expr
@@ -1101,25 +1101,25 @@ module MilkTea
     end
 
     def parse_sizeof_expr
-      consume(:lparen, "expected '(' after sizeof")
+      consume(:lparen, "expected '(' after size_of")
       type = parse_type_ref
-      consume(:rparen, "expected ')' after sizeof type")
+      consume(:rparen, "expected ')' after size_of type")
       AST::SizeofExpr.new(type:)
     end
 
     def parse_alignof_expr
-      consume(:lparen, "expected '(' after alignof")
+      consume(:lparen, "expected '(' after align_of")
       type = parse_type_ref
-      consume(:rparen, "expected ')' after alignof type")
+      consume(:rparen, "expected ')' after align_of type")
       AST::AlignofExpr.new(type:)
     end
 
     def parse_offsetof_expr
-      consume(:lparen, "expected '(' after offsetof")
+      consume(:lparen, "expected '(' after offset_of")
       type = parse_type_ref
-      consume(:comma, "expected ',' after offsetof type")
-      field = consume_name("expected field name in offsetof").lexeme
-      consume(:rparen, "expected ')' after offsetof field")
+      consume(:comma, "expected ',' after offset_of type")
+      field = consume_name("expected field name in offset_of").lexeme
+      consume(:rparen, "expected ')' after offset_of field")
       AST::OffsetofExpr.new(type:, field:)
     end
 

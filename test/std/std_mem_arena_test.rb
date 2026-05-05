@@ -71,7 +71,7 @@ class MilkTeaStdMemArenaTest < Minitest::Test
       "    right: int",
       "",
       "def main() -> int:",
-      "    var scratch = arena.create(ptr_uint<-sizeof(Pair))",
+      "    var scratch = arena.create(ptr_uint<-size_of(Pair))",
       "    defer scratch.release()",
       "",
       "    let pair = arena.alloc[Pair](ref_of(scratch), 1)",

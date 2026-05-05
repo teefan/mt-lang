@@ -46,17 +46,17 @@ def material_map(material: rl.Material, index: int) -> rl.MaterialMap:
 
 def alloc_vector3(count: int) -> ptr[rl.Vector3]:
     unsafe:
-        return ptr[rl.Vector3]<-rl.MemAlloc(uint<-count * uint<-sizeof(rl.Vector3))
+        return ptr[rl.Vector3]<-rl.MemAlloc(uint<-count * uint<-size_of(rl.Vector3))
 
 
 def alloc_vector2(count: int) -> ptr[rl.Vector2]:
     unsafe:
-        return ptr[rl.Vector2]<-rl.MemAlloc(uint<-count * uint<-sizeof(rl.Vector2))
+        return ptr[rl.Vector2]<-rl.MemAlloc(uint<-count * uint<-size_of(rl.Vector2))
 
 
 def alloc_float(count: int) -> ptr[float]:
     unsafe:
-        return ptr[float]<-rl.MemAlloc(uint<-count * uint<-sizeof(float))
+        return ptr[float]<-rl.MemAlloc(uint<-count * uint<-size_of(float))
 
 
 def mesh_has_indices(mesh: rl.Mesh) -> bool:

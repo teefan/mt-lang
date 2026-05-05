@@ -393,9 +393,9 @@ Unsafe context is required for raw-pointer-level operations such as:
 - identifier
 - literals
 - parenthesized expression
-- `sizeof(T)`
-- `alignof(T)`
-- `offsetof(T, field)`
+- `size_of(T)`
+- `align_of(T)`
+- `offset_of(T, field)`
 - `proc(...) -> T: ...`
 - `if cond: a else: b`
 

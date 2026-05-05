@@ -51,13 +51,13 @@ def main() -> int:
     let gol_transfert_program = rlgl.load_shader_program_compute(gol_transfert_shader)
     rl.UnloadFileText(gol_transfert_code)
 
-    let ssbo_a = rlgl.load_shader_buffer(uint<-(gol_width * gol_width * int<-sizeof(uint)), null, rlgl.RL_DYNAMIC_COPY)
+    let ssbo_a = rlgl.load_shader_buffer(uint<-(gol_width * gol_width * int<-size_of(uint)), null, rlgl.RL_DYNAMIC_COPY)
     defer rlgl.unload_shader_buffer(ssbo_a)
     var current_ssbo = ssbo_a
-    let ssbo_b = rlgl.load_shader_buffer(uint<-(gol_width * gol_width * int<-sizeof(uint)), null, rlgl.RL_DYNAMIC_COPY)
+    let ssbo_b = rlgl.load_shader_buffer(uint<-(gol_width * gol_width * int<-size_of(uint)), null, rlgl.RL_DYNAMIC_COPY)
     defer rlgl.unload_shader_buffer(ssbo_b)
     var next_ssbo = ssbo_b
-    let ssbo_transfert = rlgl.load_shader_buffer(uint<-sizeof(GolUpdateSSBO), null, rlgl.RL_DYNAMIC_COPY)
+    let ssbo_transfert = rlgl.load_shader_buffer(uint<-size_of(GolUpdateSSBO), null, rlgl.RL_DYNAMIC_COPY)
     defer rlgl.unload_shader_buffer(ssbo_transfert)
 
     var transfert_buffer = zero[GolUpdateSSBO]
@@ -87,7 +87,7 @@ def main() -> int:
                 transfert_buffer.commands[command_index].enabled = uint<-0
             transfert_buffer.count += uint<-1
         elif transfert_buffer.count > 0:
-            rlgl.update_shader_buffer(ssbo_transfert, ptr_of(transfert_buffer), uint<-sizeof(GolUpdateSSBO), 0)
+            rlgl.update_shader_buffer(ssbo_transfert, ptr_of(transfert_buffer), uint<-size_of(GolUpdateSSBO), 0)
 
             rlgl.enable_shader(gol_transfert_program)
             rlgl.bind_shader_buffer(current_ssbo, 1)

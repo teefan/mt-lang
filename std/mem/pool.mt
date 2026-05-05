@@ -43,8 +43,8 @@ pub def create(slot_size_bytes: ptr_uint, slot_count: ptr_uint) -> Pool:
 
 
 pub def slot_size_for[T]() -> ptr_uint:
-    let size = ptr_uint<-sizeof(T)
-    let alignment = ptr_uint<-alignof(T)
+    let size = ptr_uint<-size_of(T)
+    let alignment = ptr_uint<-align_of(T)
     let mask = alignment - 1
     if size > heap.ptr_uint_max() - mask:
         panic(c"pool.slot_size_for overflow")
@@ -53,8 +53,8 @@ pub def slot_size_for[T]() -> ptr_uint:
 
 
 pub def create_for[T](slot_count: ptr_uint) -> Pool:
-    let size = ptr_uint<-sizeof(T)
-    let alignment = ptr_uint<-alignof(T)
+    let size = ptr_uint<-size_of(T)
+    let alignment = ptr_uint<-align_of(T)
     let mask = alignment - 1
     if size > heap.ptr_uint_max() - mask:
         panic(c"pool.create_for slot size overflow")
@@ -127,8 +127,8 @@ methods Pool:
 
 
 pub def alloc[T](space: ref[Pool]) -> ptr[T]?:
-    let size = ptr_uint<-sizeof(T)
-    let alignment = ptr_uint<-alignof(T)
+    let size = ptr_uint<-size_of(T)
+    let alignment = ptr_uint<-align_of(T)
     let mask = alignment - 1
     if size > heap.ptr_uint_max() - mask:
         return null

@@ -40,11 +40,11 @@ methods Stack:
 
 
 pub def alloc[T](space: ref[Stack], count: ptr_uint) -> ptr[T]?:
-    let element_size = ptr_uint<-sizeof(T)
+    let element_size = ptr_uint<-size_of(T)
     if heap.mul_overflows(count, element_size):
         return null
 
-    let memory = space.alloc_bytes_aligned(count * element_size, ptr_uint<-alignof(T))
+    let memory = space.alloc_bytes_aligned(count * element_size, ptr_uint<-align_of(T))
     if memory == null:
         return null
 

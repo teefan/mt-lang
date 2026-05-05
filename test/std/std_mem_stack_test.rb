@@ -62,7 +62,7 @@ class MilkTeaStdMemStackTest < Minitest::Test
       "    right: int",
       "",
       "def main() -> int:",
-      "    var temp = stack.create(ptr_uint<-sizeof(Pair))",
+      "    var temp = stack.create(ptr_uint<-size_of(Pair))",
       "    defer temp.release()",
       "",
       "    let pair = stack.alloc[Pair](ref_of(temp), 1)",

@@ -1798,7 +1798,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.generic_layout
 
       def bytes_for[T](count: ptr_uint) -> ptr_uint:
-          return count * sizeof(T)
+          return count * size_of(T)
 
       def main() -> int:
           return int<-bytes_for[int](4)
@@ -2157,10 +2157,10 @@ class MilkTeaSemaTest < Minitest::Test
           magic: array[ubyte, 4]
           version: ushort
 
-      static_assert(sizeof(Header) == 6, "Header size should stay stable")
+      static_assert(size_of(Header) == 6, "Header size should stay stable")
 
       def main() -> ptr_uint:
-          return offsetof(Header, version) + alignof(Header)
+          return offset_of(Header, version) + align_of(Header)
     MT
 
     result = check_source(source)
@@ -2176,7 +2176,7 @@ class MilkTeaSemaTest < Minitest::Test
           version: ushort
 
       def main() -> ptr_uint:
-          return offsetof(Header, missing)
+          return offset_of(Header, missing)
     MT
 
     error = assert_raises(MilkTea::SemaError) do
@@ -2215,9 +2215,9 @@ class MilkTeaSemaTest < Minitest::Test
       align(16) struct Mat4:
           data: array[float, 16]
 
-      static_assert(sizeof(Header) == 5, "Header should stay packed")
-      static_assert(offsetof(Header, value) == 1, "Header.value offset drifted")
-      static_assert(alignof(Mat4) == 16, "Mat4 alignment drifted")
+      static_assert(size_of(Header) == 5, "Header should stay packed")
+      static_assert(offset_of(Header, value) == 1, "Header.value offset drifted")
+      static_assert(align_of(Mat4) == 16, "Mat4 alignment drifted")
 
       def main() -> int:
           return 0

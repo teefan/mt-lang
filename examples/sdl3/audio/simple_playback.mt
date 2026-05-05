@@ -10,7 +10,7 @@ const presentation_mode: c.SDL_RendererLogicalPresentation = c.SDL_RendererLogic
 const default_playback_device: uint = uint<-0xFFFFFFFF
 const audio_sample_rate: int = 8000
 const tone_frequency: int = 440
-const minimum_audio: int = (audio_sample_rate * int<-sizeof(float)) / 2
+const minimum_audio: int = (audio_sample_rate * int<-size_of(float)) / 2
 const sample_chunk_size: int = 512
 
 var window: ptr[c.SDL_Window]
@@ -42,7 +42,7 @@ def render_frame() -> void:
                 current_sine_sample += 1
 
             current_sine_sample %= audio_sample_rate
-            c.SDL_PutAudioStreamData(active_stream, ptr_of(samples[0]), sample_chunk_size * int<-sizeof(float))
+            c.SDL_PutAudioStreamData(active_stream, ptr_of(samples[0]), sample_chunk_size * int<-size_of(float))
 
     c.SDL_RenderClear(renderer)
     c.SDL_RenderPresent(renderer)

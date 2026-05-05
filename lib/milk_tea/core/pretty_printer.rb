@@ -525,11 +525,11 @@ module MilkTea
           else_expression = render_expression(expression.else_expression, IF_EXPRESSION_PRECEDENCE)
           wrap("if #{condition}: #{then_expression} else: #{else_expression}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
         when AST::SizeofExpr
-          "sizeof(#{render_type(expression.type)})"
+          "size_of(#{render_type(expression.type)})"
         when AST::AlignofExpr
-          "alignof(#{render_type(expression.type)})"
+          "align_of(#{render_type(expression.type)})"
         when AST::OffsetofExpr
-          "offsetof(#{render_type(expression.type)}, #{expression.field})"
+          "offset_of(#{render_type(expression.type)}, #{expression.field})"
         when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral
           expression.lexeme
         when AST::FormatString
@@ -774,11 +774,11 @@ module MilkTea
         when IR::ReinterpretExpr
           "reinterpret[#{expression.target_type} <- #{expression.source_type}](#{render_expression(expression.expression)})"
         when IR::SizeofExpr
-          "sizeof(#{expression.target_type})"
+          "size_of(#{expression.target_type})"
         when IR::AlignofExpr
-          "alignof(#{expression.target_type})"
+          "align_of(#{expression.target_type})"
         when IR::OffsetofExpr
-          "offsetof(#{expression.target_type}, #{expression.field})"
+          "offset_of(#{expression.target_type}, #{expression.field})"
         when IR::IntegerLiteral, IR::FloatLiteral
           expression.value.to_s
         when IR::StringLiteral

@@ -18,7 +18,7 @@ const window_title: cstr = c"raylib [shaders] example - mesh instancing"
 
 def alloc_transforms(count: int) -> ptr[rl.Matrix]:
     unsafe:
-        return ptr[rl.Matrix]<-rl.MemAlloc(uint<-count * uint<-sizeof(rl.Matrix))
+        return ptr[rl.Matrix]<-rl.MemAlloc(uint<-count * uint<-size_of(rl.Matrix))
 
 
 def free_transforms(transforms: ptr[rl.Matrix]) -> void:
