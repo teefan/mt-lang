@@ -92,6 +92,42 @@ class MilkTeaStdMemStackTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_aligned_stack_allocation_helper
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_mem_stack_aligned",
+      "",
+      "import std.mem.stack as stack",
+      "",
+      "align(16) struct Mat4:",
+      "    data: array[float, 16]",
+      "",
+      "def main() -> int:",
+      "    var temp = stack.create_aligned(ptr_uint<-size_of(Mat4), ptr_uint<-align_of(Mat4))",
+      "    defer temp.release()",
+      "",
+      "    let matrix = stack.alloc[Mat4](ref_of(temp), 1)",
+      "    if matrix == null:",
+      "        return 1",
+      "",
+      "    let exhausted = stack.alloc[Mat4](ref_of(temp), 1)",
+      "    if exhausted != null:",
+      "        return 2",
+      "",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   private
 
   def run_program(source, compiler:)

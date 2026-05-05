@@ -3,6 +3,67 @@
 require_relative "../test_helper"
 
 class MilkTeaLinterTest < Minitest::Test
+  def test_warns_on_local_named_after_builtin_type
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main() -> int:
+          let double = 1
+          return double
+    MT
+
+    assert_equal 1, warnings.length
+    warning = warnings.first
+    assert_equal "builtin-type-name", warning.code
+    assert_equal 4, warning.line
+    assert_match(/local 'double' reuses builtin type name 'double'/, warning.message)
+  end
+
+  def test_warns_on_parameter_named_after_builtin_type
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-param"])
+      module demo.lint
+
+      def main(int: int) -> int:
+          return int
+    MT
+
+    assert_equal 1, warnings.length
+    warning = warnings.first
+    assert_equal "builtin-type-name", warning.code
+    assert_equal 3, warning.line
+    assert_match(/parameter 'int' reuses builtin type name 'int'/, warning.message)
+  end
+
+  def test_warns_on_function_named_after_builtin_type
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def double(value: int) -> int:
+          return value * 2
+
+      def main() -> int:
+          return double(3)
+    MT
+
+    assert_equal 1, warnings.length
+    warning = warnings.first
+    assert_equal "builtin-type-name", warning.code
+    assert_equal 3, warning.line
+    assert_match(/function 'double' reuses builtin type name 'double'/, warning.message)
+  end
+
+  def test_does_not_warn_on_byte_local_name
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main() -> int:
+          let byte = 1
+          return byte
+    MT
+
+    assert_equal [], warnings
+  end
+
   def test_reports_unused_local_with_line_number
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint

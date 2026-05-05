@@ -7,19 +7,38 @@ pub type Mark = ptr_uint
 pub struct Arena:
     memory: ptr[ubyte]?
     capacity: ptr_uint
+    alignment: ptr_uint
     offset: ptr_uint
 
 
 pub def create(capacity_bytes: ptr_uint) -> Arena:
-    let memory = heap.alloc[ubyte](capacity_bytes)
-    if memory == null and capacity_bytes != 0:
-        panic(c"arena.create out of memory")
+    return create_aligned(capacity_bytes, 1)
 
-    return Arena(
-        memory = memory,
-        capacity = capacity_bytes,
-        offset = 0,
-    )
+
+pub def create_aligned(capacity_bytes: ptr_uint, alignment: ptr_uint) -> Arena:
+    let normalized_alignment = heap.normalize_alignment(alignment)
+    if normalized_alignment == 0:
+        panic(c"arena.create_aligned requires a power-of-two alignment")
+
+    let memory = heap.alloc_bytes_aligned(capacity_bytes, normalized_alignment)
+    if memory == null:
+        if capacity_bytes != 0:
+            panic(c"arena.create_aligned out of memory")
+
+        return Arena(
+            memory = null,
+            capacity = 0,
+            alignment = normalized_alignment,
+            offset = 0,
+        )
+
+    unsafe:
+        return Arena(
+            memory = ptr[ubyte]<-memory,
+            capacity = capacity_bytes,
+            alignment = normalized_alignment,
+            offset = 0,
+        )
 
 methods Arena:
     pub def mark() -> Mark:
@@ -27,6 +46,9 @@ methods Arena:
 
 
     pub edit def reset(mark: Mark) -> void:
+        if mark > this.offset:
+            panic(c"arena.reset invalid mark")
+
         this.offset = mark
         return
 
@@ -46,6 +68,8 @@ methods Arena:
         if alignment == 0:
             return null
         if (alignment & (alignment - 1)) != 0:
+            return null
+        if alignment > this.alignment:
             return null
 
         let mask = alignment - 1
@@ -97,8 +121,9 @@ methods Arena:
     pub edit def release() -> void:
         heap.release(this.memory)
         this.memory = null
-        this.offset = 0
         this.capacity = 0
+        this.alignment = 0
+        this.offset = 0
         return
 
 

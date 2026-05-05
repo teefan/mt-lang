@@ -252,11 +252,11 @@ class MilkTeaSemaTest < Minitest::Test
       def apply(callback: proc(value: int) -> int, value: int) -> int:
           return callback(value)
 
-      def double(value: int) -> int:
+      def times_two(value: int) -> int:
           return value * 2
 
       def main() -> int:
-          return apply(double, 21)
+          return apply(times_two, 21)
     MT
 
     result = check_program_source(source)
@@ -686,8 +686,8 @@ class MilkTeaSemaTest < Minitest::Test
           callback: fn(value: int) -> int
 
       def main() -> int:
-          let callbacks = array[fn(value: int) -> int, 1](ease.double)
-          let entry = Entry(callback = ease.double)
+          let callbacks = array[fn(value: int) -> int, 1](ease.times_two)
+          let entry = Entry(callback = ease.times_two)
           return callbacks[0](3) + entry.callback(4)
     MT
 
@@ -695,7 +695,7 @@ class MilkTeaSemaTest < Minitest::Test
       "std/ease.mt" => <<~MT,
         module std.ease
 
-        pub def double(value: int) -> int:
+        pub def times_two(value: int) -> int:
             return value * 2
       MT
     }
@@ -713,11 +713,11 @@ class MilkTeaSemaTest < Minitest::Test
       def apply[T](callback: fn(value: int) -> T, value: int) -> T:
           return callback(value)
 
-      def double(value: int) -> int:
+      def times_two(value: int) -> int:
           return value * 2
 
       def main() -> int:
-          return apply(double, 21)
+          return apply(times_two, 21)
     MT
 
     result = check_source(source)
@@ -2438,21 +2438,21 @@ class MilkTeaSemaTest < Minitest::Test
     MT
 
     imported = {
-      "demo/lib.mt" => <<~MT,
-        module demo.lib
-
-        pub const answer: int = 7
-
-        pub struct Counter:
-            value: int
-
-        methods Counter:
-            pub def read() -> int:
-                return this.value
-
-            def double() -> int:
-                return this.value * 2
-      MT
+      "demo/lib.mt" => [
+        "module demo.lib",
+        "",
+        "pub const answer: int = 7",
+        "",
+        "pub struct Counter:",
+        "    value: int",
+        "",
+        "methods Counter:",
+        "    pub def read() -> int:",
+        "        return this.value",
+        "",
+        "    def times_two() -> int:",
+        "        return this.value * 2",
+      ].join("\n"),
     }
 
     result = check_program_source(source, imported).root_analysis
@@ -2493,7 +2493,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> int:
           let counter = lib.Counter(value = 1)
-          counter.double()
+          counter.times_two()
           return 0
     MT
 
@@ -2505,7 +2505,7 @@ class MilkTeaSemaTest < Minitest::Test
             value: int
 
         methods Counter:
-            def double() -> int:
+            def times_two() -> int:
                 return this.value * 2
       MT
     }
@@ -2514,7 +2514,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_program_source(source, imported)
     end
 
-    assert_match(/demo\.lib\.Counter\.double is private to module demo\.lib/, error.message)
+    assert_match(/demo\.lib\.Counter\.times_two is private to module demo\.lib/, error.message)
   end
 
   def test_rejects_import_of_private_type_constructor

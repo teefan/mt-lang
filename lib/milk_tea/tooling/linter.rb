@@ -4,6 +4,10 @@ require "set"
 
 module MilkTea
   class Linter
+    BUILTIN_TYPE_STYLE_NAMES = %w[
+      bool short ushort int uint long ulong ptr_int ptr_uint float double void str cstr
+    ].to_set.freeze
+
     # severity: :error | :warning | :hint
     Warning = Data.define(:path, :line, :column, :length, :code, :message, :severity, :symbol_name) do
       def initialize(path:, line:, column: nil, length: nil, code:, message:, severity: :warning, symbol_name: nil) = super
@@ -199,9 +203,19 @@ module MilkTea
       source_file.declarations.each do |declaration|
         case declaration
         when AST::FunctionDef, AST::MethodDef
+          warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration.column, kind_label: "function")
           visit_function(declaration)
         when AST::MethodsBlock
-          declaration.methods.each { |m| visit_function(m) }
+          declaration.methods.each do |method|
+            warn_builtin_type_style_name(method.name, line: method.line, column: method.column, kind_label: "function")
+            visit_function(method)
+          end
+        when AST::ExternFunctionDecl, AST::ForeignFunctionDecl
+          warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration.column, kind_label: "function")
+        when AST::ConstDecl
+          warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration.column, kind_label: "constant")
+        when AST::VarDecl
+          warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration.column, kind_label: "module variable")
         end
       end
     end
@@ -711,6 +725,8 @@ module MilkTea
     def declare_local(name, line, column: nil, var: false)
       return if ignored_binding_name?(name)
 
+      warn_builtin_type_style_name(name, line:, column:, kind_label: "local")
+
       # shadow: check whether any outer scope already has a binding for this name
       if @scopes.length > 1
         @scopes[0..-2].each do |outer_scope|
@@ -736,11 +752,28 @@ module MilkTea
     def declare_param(name, line: nil, column: nil)
       return if ignored_binding_name?(name)
 
+      warn_builtin_type_style_name(name, line:, column:, kind_label: "parameter")
+
       @scopes.last[name] = Binding.new(
         name:, line:, column:, used: false,
         binding_kind: :param,
         allow_prefer_let: false,
         mutated: false
+      )
+    end
+
+    def warn_builtin_type_style_name(name, line:, column:, kind_label:)
+      return unless BUILTIN_TYPE_STYLE_NAMES.include?(name)
+
+      @warnings << Warning.new(
+        path: @path,
+        line:,
+        column:,
+        length: name.length,
+        code: "builtin-type-name",
+        message: "#{kind_label} '#{name}' reuses builtin type name '#{name}'; choose a less ambiguous name",
+        severity: :warning,
+        symbol_name: name,
       )
     end
 

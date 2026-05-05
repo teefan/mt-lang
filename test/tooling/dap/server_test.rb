@@ -2240,8 +2240,8 @@ class DAPServerTest < Minitest::Test
         "module demo.real_debug",
         "",
         "def add(left: int) -> int:",
-        "    let int = left + 1",
-        "    return int",
+        "    let next_value = left + 1",
+        "    return next_value",
         "",
         "def main() -> int:",
         "    return add(41)",
@@ -2314,7 +2314,7 @@ class DAPServerTest < Minitest::Test
         assert_equal true, variables_response["success"]
         variable_names = variables_response.fetch("body").fetch("variables").map { |variable| variable["name"] }
         assert_includes variable_names, "left"
-        assert_includes variable_names, "int"
+        assert_includes variable_names, "next_value"
 
         disconnect_request_seq = client.start_request("disconnect", {})
         disconnect_response, disconnect_events = client.wait_for_response(disconnect_request_seq, timeout: 30)

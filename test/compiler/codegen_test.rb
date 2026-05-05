@@ -660,14 +660,14 @@ class MilkTeaCodegenTest < Minitest::Test
       module demo.main
 
       def main() -> int:
-          let double = 7
-          return double + 1
+          let times_two = 7
+          return times_two + 1
     MT
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/int32_t double_ = 7;/, generated)
-    assert_match(/return double_ \+ 1;/, generated)
+    assert_match(/int32_t times_two = 7;/, generated)
+    assert_match(/return times_two \+ 1;/, generated)
   end
 
   def test_generate_c_for_deferred_literal_return_without_spill_temp
@@ -3114,8 +3114,8 @@ class MilkTeaCodegenTest < Minitest::Test
       "    callback: fn(value: int) -> int",
       "",
       "def main() -> int:",
-      "    let callbacks = array[fn(value: int) -> int, 1](ease.double)",
-      "    let entry = Entry(callback = ease.double)",
+      "    let callbacks = array[fn(value: int) -> int, 1](ease.times_two)",
+      "    let entry = Entry(callback = ease.times_two)",
       "    return callbacks[0](3) + entry.callback(4)",
       "",
     ].join("\n")
@@ -3124,7 +3124,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "std/ease.mt" => [
         "module std.ease",
         "",
-        "pub def double(value: int) -> int:",
+        "pub def times_two(value: int) -> int:",
         "    return value * 2",
         "",
       ].join("\n"),
@@ -3132,8 +3132,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(source, imported_sources)
 
-    assert_match(/int32_t \(\*callbacks\[1\]\)\(int32_t value\) = \{ std_ease_double \};/, generated)
-    assert_match(/\.callback = std_ease_double/, generated)
+    assert_match(/int32_t \(\*callbacks\[1\]\)\(int32_t value\) = \{ std_ease_times_two \};/, generated)
+    assert_match(/\.callback = std_ease_times_two/, generated)
     assert_match(/return \(\(\*mt_checked_index_array_fn_1\(&\(callbacks\), 0\)\)\)\(3\) \+ entry\.callback\(4\);/, generated)
   end
 

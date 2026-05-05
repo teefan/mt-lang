@@ -8,7 +8,7 @@ def apply(callback: proc(value: int) -> int, value: int) -> int:
 
 
 def main() -> int:
-    let double = proc(value: int) -> int:
+    let times_two = proc(value: int) -> int:
         return value * 2
 
     let offset = 5
@@ -17,7 +17,7 @@ def main() -> int:
 
     if not io.println("anonymous functions and closures"):
         return 1
-    if not io.println(f"double(3) = #{apply(double, 3)}"):
+    if not io.println(f"times_two(3) = #{apply(times_two, 3)}"):
         return 2
     if not io.println(f"add_offset(3) = #{apply(add_offset, 3)}"):
         return 3
