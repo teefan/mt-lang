@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "json"
+require "pathname"
 
 module MilkTea
   class DebugMap
@@ -19,14 +20,15 @@ module MilkTea
     end
 
     Function = Data.define(:name, :c_name, :source_path, :line, :params, :locals) do
-      def to_h
+      def to_h(base_dir: nil)
         payload = {
           "name" => name,
           "cName" => c_name,
           "params" => params.map(&:to_h),
           "locals" => locals.map(&:to_h),
         }
-        payload["sourcePath"] = source_path if source_path
+        serialized_source_path = DebugMap.path_for_payload(source_path, base_dir)
+        payload["sourcePath"] = serialized_source_path if serialized_source_path
         payload["line"] = line if line
         payload
       end
@@ -48,12 +50,14 @@ module MilkTea
     end
 
     def self.load(path)
-      payload = JSON.parse(File.read(path))
+      resolved_path = File.expand_path(path)
+      base_dir = File.dirname(resolved_path)
+      payload = JSON.parse(File.read(resolved_path))
       functions = Array(payload["functions"]).map do |function|
         Function.new(
           name: function.fetch("name"),
           c_name: function.fetch("cName"),
-          source_path: function["sourcePath"],
+          source_path: path_from_payload(function["sourcePath"], base_dir),
           line: function["line"],
           params: load_entries(function["params"]),
           locals: load_entries(function["locals"])
@@ -61,8 +65,8 @@ module MilkTea
       end
 
       new(
-        binary_path: payload["binaryPath"],
-        program_source_path: payload["programSourcePath"],
+        binary_path: path_from_payload(payload["binaryPath"], base_dir),
+        program_source_path: path_from_payload(payload["programSourcePath"], base_dir),
         functions:
       )
     end
@@ -93,8 +97,10 @@ module MilkTea
     end
 
     def write(path)
-      FileUtils.mkdir_p(File.dirname(path))
-      File.write(path, JSON.pretty_generate(to_h) + "\n")
+      resolved_path = File.expand_path(path)
+      base_dir = File.dirname(resolved_path)
+      FileUtils.mkdir_p(base_dir)
+      File.write(resolved_path, JSON.pretty_generate(to_h(base_dir:)) + "\n")
     end
 
     def function_for_c_name(c_name)
@@ -121,14 +127,41 @@ module MilkTea
       nil
     end
 
-    def to_h
+    def to_h(base_dir: nil)
       payload = {
         "version" => VERSION,
-        "functions" => functions.map(&:to_h),
+        "functions" => functions.map { |function| function.to_h(base_dir:) },
       }
-      payload["binaryPath"] = binary_path if binary_path
-      payload["programSourcePath"] = program_source_path if program_source_path
+      serialized_binary_path = self.class.path_for_payload(binary_path, base_dir)
+      payload["binaryPath"] = serialized_binary_path if serialized_binary_path
+      serialized_program_source_path = self.class.path_for_payload(program_source_path, base_dir)
+      payload["programSourcePath"] = serialized_program_source_path if serialized_program_source_path
       payload
+    end
+
+    def self.path_for_payload(path, base_dir)
+      return nil unless path
+      return path.tr("\\", "/") unless base_dir
+
+      expanded_path = File.expand_path(path)
+      begin
+        Pathname.new(expanded_path).relative_path_from(Pathname.new(base_dir)).to_s.tr("\\", "/")
+      rescue ArgumentError
+        expanded_path.tr("\\", "/")
+      end
+    end
+
+    def self.path_from_payload(path, base_dir)
+      return nil unless path
+      return path if path.empty?
+      return path if absolute_path_string?(path)
+      return path unless base_dir
+
+      File.expand_path(path, base_dir)
+    end
+
+    def self.absolute_path_string?(path)
+      path.start_with?("/") || path.start_with?("\\\\") || path.match?(/\A[A-Za-z]:[\\\/]/)
     end
 
     class << self

@@ -99,17 +99,22 @@ class MilkTeaBuildTest < Minitest::Test
       assert File.exist?(debug_map_path)
 
       payload = JSON.parse(File.read(debug_map_path))
-      assert_equal File.expand_path(output_path), payload["binaryPath"]
-      assert_equal File.expand_path(source_path), payload["programSourcePath"]
+      assert_equal "debug-map", payload["binaryPath"]
+      assert_equal "debug-map.mt", payload["programSourcePath"]
 
       add_function = payload.fetch("functions").find { |function| function["cName"] == "demo_debug_map_add" }
       refute_nil add_function
       assert_equal "add", add_function["name"]
-      assert_equal File.expand_path(source_path), add_function["sourcePath"]
+      assert_equal "debug-map.mt", add_function["sourcePath"]
       assert_equal %w[a b], add_function.fetch("params").map { |param| param["name"] }
       assert_equal %w[a b], add_function.fetch("params").map { |param| param["cName"] }
       assert_equal ["total"], add_function.fetch("locals").map { |entry| entry["name"] }
       assert_equal ["total"], add_function.fetch("locals").map { |entry| entry["cName"] }
+
+      loaded = MilkTea::DebugMap.load(debug_map_path)
+      assert_equal File.expand_path(output_path), loaded.binary_path
+      assert_equal File.expand_path(source_path), loaded.program_source_path
+      assert_equal File.expand_path(source_path), loaded.function_for_c_name("demo_debug_map_add").source_path
     end
   end
 
