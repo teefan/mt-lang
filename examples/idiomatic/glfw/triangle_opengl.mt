@@ -2,7 +2,8 @@ module examples.idiomatic.glfw.triangle_opengl
 
 import std.glfw as glfw
 import std.gl as gl
-import std.c.libm as math
+import std.gl.util as gl_util
+import std.libm as math
 
 type Mat4 = array[float, 16]
 
@@ -93,19 +94,7 @@ def mat4_mul(lhs: Mat4, rhs: Mat4) -> Mat4:
     return result
 
 
-def build_shader(shader_type: gl.GLenum, source_text: cstr) -> gl.GLuint:
-    let shader = gl.create_shader(uint<-shader_type)
-    var sources = zero[array[const_ptr[gl.GLchar], 1]]
-    var source_ptrs = zero[const_ptr[const_ptr[gl.GLchar]]]
-    unsafe:
-        sources[0] = const_ptr[gl.GLchar]<-source_text
-        source_ptrs = const_ptr[const_ptr[gl.GLchar]]<-ptr_of(sources[0])
-    gl.shader_source(shader, 1, source_ptrs, zero[const_ptr[gl.GLint]])
-    gl.compile_shader(shader)
-    return shader
-
-
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+def main() -> int:
     if glfw.init() == 0:
         return 1
     defer glfw.terminate()
@@ -115,7 +104,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
 
     let window = glfw.create_window(window_width, window_height, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         return 1
     defer glfw.destroy_window(window)
 
@@ -127,34 +116,24 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     var position_buffer: gl.GLuint = 0
     gl.gen_buffers(1, ptr_of(position_buffer))
     gl.bind_buffer(uint<-gl.ARRAY_BUFFER, position_buffer)
-    unsafe:
-        gl.buffer_data(uint<-gl.ARRAY_BUFFER, ptr_int<-(6 * int<-size_of(float)), const_ptr[void]<-ptr_of(positions[0]), uint<-gl.STATIC_DRAW)
+    gl_util.buffer_data(uint<-gl.ARRAY_BUFFER, positions, uint<-gl.STATIC_DRAW)
 
     var color_buffer: gl.GLuint = 0
     gl.gen_buffers(1, ptr_of(color_buffer))
     gl.bind_buffer(uint<-gl.ARRAY_BUFFER, color_buffer)
-    unsafe:
-        gl.buffer_data(uint<-gl.ARRAY_BUFFER, ptr_int<-(9 * int<-size_of(float)), const_ptr[void]<-ptr_of(colors[0]), uint<-gl.STATIC_DRAW)
+    gl_util.buffer_data(uint<-gl.ARRAY_BUFFER, colors, uint<-gl.STATIC_DRAW)
 
-    let vertex_shader = build_shader(uint<-gl.VERTEX_SHADER, vertex_shader_text)
-    let fragment_shader = build_shader(uint<-gl.FRAGMENT_SHADER, fragment_shader_text)
+    let vertex_shader = gl_util.build_shader(uint<-gl.VERTEX_SHADER, vertex_shader_text)
+    let fragment_shader = gl_util.build_shader(uint<-gl.FRAGMENT_SHADER, fragment_shader_text)
 
     let program = gl.create_program()
     gl.attach_shader(program, vertex_shader)
     gl.attach_shader(program, fragment_shader)
     gl.link_program(program)
 
-    var mvp_name = zero[const_ptr[gl.GLchar]]
-    var vpos_name = zero[const_ptr[gl.GLchar]]
-    var vcol_name = zero[const_ptr[gl.GLchar]]
-    unsafe:
-        mvp_name = const_ptr[gl.GLchar]<-c"MVP"
-        vpos_name = const_ptr[gl.GLchar]<-c"vPos"
-        vcol_name = const_ptr[gl.GLchar]<-c"vCol"
-
-    let mvp_location = gl.get_uniform_location(program, mvp_name)
-    let vpos_location = gl.get_attrib_location(program, vpos_name)
-    let vcol_location = gl.get_attrib_location(program, vcol_name)
+    let mvp_location = gl_util.uniform_location(program, c"MVP")
+    let vpos_location = gl_util.attrib_location(program, c"vPos")
+    let vcol_location = gl_util.attrib_location(program, c"vCol")
 
     var vertex_array: gl.GLuint = 0
     gl.gen_vertex_arrays(1, ptr_of(vertex_array))
@@ -181,8 +160,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
         gl.viewport(0, 0, width, height)
         gl.clear(uint<-gl.COLOR_BUFFER_BIT)
         gl.use_program(program)
-        unsafe:
-            gl.uniform_matrix_4fv(mvp_location, 1, ubyte<-gl.FALSE, const_ptr[gl.GLfloat]<-ptr_of(mvp[0]))
+        gl_util.uniform_matrix_4(mvp_location, ubyte<-gl.FALSE, mvp)
         gl.bind_vertex_array(vertex_array)
         gl.draw_arrays(uint<-gl.TRIANGLES, 0, 3)
 

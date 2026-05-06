@@ -214,13 +214,16 @@ module MilkTea
     end
 
     def self.default_bindings(root: MilkTea.root)
-      vendored_raylib = MilkTea::VendoredRaylib.library
+      vendored_raylib = MilkTea::VendoredRaylib
+      vendored_raylib_library = vendored_raylib.library(root:)
       vendored_sdl3 = MilkTea::VendoredSDL3
-      vendored_sdl3_library = vendored_sdl3.library
+      vendored_sdl3_library = vendored_sdl3.library(root:)
       vendored_glfw = MilkTea::VendoredGLFW
-      vendored_glfw_library = vendored_glfw.library
+      vendored_glfw_library = vendored_glfw.library(root:)
       vendored_box2d = MilkTea::VendoredBox2D
+      vendored_box2d_library = vendored_box2d.library(root:)
       vendored_cjson = MilkTea::VendoredCJSON
+      vendored_cjson_library = vendored_cjson.library(root:)
 
       raylib_field_type_overrides = {
         "Mesh" => { "indices" => "ptr[ushort]?" },
@@ -276,6 +279,8 @@ module MilkTea
         "SDL_CreateTexture" => "ptr[SDL_Texture]?",
         "SDL_CreateTextureFromSurface" => "ptr[SDL_Texture]?",
         "SDL_CreateAudioStream" => "ptr[SDL_AudioStream]?",
+        "SDL_GL_GetProcAddress" => "SDL_FunctionPointer?",
+        "SDL_EGL_GetProcAddress" => "SDL_FunctionPointer?",
         "SDL_strdup" => "ptr[char]?",
         "SDL_LoadFile" => "ptr[void]?",
         "SDL_strchr" => "ptr[char]?",
@@ -289,12 +294,44 @@ module MilkTea
         "SDL_AcquireCameraFrame" => "ptr[SDL_Surface]?",
         "SDL_OpenJoystick" => "ptr[SDL_Joystick]?",
         "SDL_GetJoystickFromID" => "ptr[SDL_Joystick]?",
+        "SDL_GetJoystickNameForID" => "cstr?",
+        "SDL_GetJoystickName" => "cstr?",
         "SDL_OpenGamepad" => "ptr[SDL_Gamepad]?",
         "SDL_GetGamepadFromID" => "ptr[SDL_Gamepad]?",
+        "SDL_GetGamepadNameForID" => "cstr?",
+        "SDL_GetGamepadName" => "cstr?",
         "SDL_GetGamepadMapping" => "ptr[char]?",
         "SDL_GetGamepadMappingForGUID" => "ptr[char]?",
         "SDL_GetGamepadMappingForID" => "ptr[char]?",
         "SDL_RenderReadPixels" => "ptr[SDL_Surface]?",
+      }.freeze
+
+      glfw_function_return_overrides = {
+        "glfwSetErrorCallback" => "GLFWerrorfun?",
+        "glfwGetMonitors" => "ptr[ptr[GLFWmonitor]]?",
+        "glfwGetPrimaryMonitor" => "ptr[GLFWmonitor]?",
+        "glfwGetMonitorName" => "cstr?",
+        "glfwGetMonitorUserPointer" => "ptr[void]?",
+        "glfwGetVideoModes" => "const_ptr[GLFWvidmode]?",
+        "glfwGetVideoMode" => "const_ptr[GLFWvidmode]?",
+        "glfwCreateWindow" => "ptr[GLFWwindow]?",
+        "glfwGetWindowMonitor" => "ptr[GLFWmonitor]?",
+        "glfwGetWindowUserPointer" => "ptr[void]?",
+        "glfwGetKeyName" => "cstr?",
+        "glfwCreateCursor" => "ptr[GLFWcursor]?",
+        "glfwCreateStandardCursor" => "ptr[GLFWcursor]?",
+        "glfwGetJoystickAxes" => "const_ptr[float]?",
+        "glfwGetJoystickButtons" => "const_ptr[ubyte]?",
+        "glfwGetJoystickHats" => "const_ptr[ubyte]?",
+        "glfwGetJoystickName" => "cstr?",
+        "glfwGetJoystickGUID" => "cstr?",
+        "glfwGetJoystickUserPointer" => "ptr[void]?",
+        "glfwSetJoystickCallback" => "GLFWjoystickfun?",
+        "glfwGetGamepadName" => "cstr?",
+        "glfwGetClipboardString" => "cstr?",
+        "glfwGetCurrentContext" => "ptr[GLFWwindow]?",
+        "glfwGetProcAddress" => "GLFWglproc?",
+        "glfwGetRequiredInstanceExtensions" => "ptr[cstr]?",
       }.freeze
 
       [
@@ -304,10 +341,10 @@ module MilkTea
           binding_path: root.join("std/c/raylib.mt"),
           include_directives: ["raylib.h"],
           link_libraries: ["raylib"],
-          vendored_library: vendored_raylib,
+          vendored_library: vendored_raylib_library,
           compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
           header_candidates: [
-            vendored_raylib.source_root.join("raylib.h").to_s,
+            vendored_raylib.source_root(root:).join("raylib.h").to_s,
           ],
           field_type_overrides: raylib_field_type_overrides,
           function_param_type_overrides: raylib_function_param_overrides,
@@ -318,7 +355,7 @@ module MilkTea
           binding_path: root.join("std/c/raygui.mt"),
           include_directives: ["raygui.h"],
           link_libraries: ["raylib", "m"],
-          vendored_library: vendored_raylib,
+          vendored_library: vendored_raylib_library,
           compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
           implementation_defines: ["RAYGUI_IMPLEMENTATION"],
           header_candidates: [
@@ -333,7 +370,7 @@ module MilkTea
           include_directives: ["raylib.h", "rlights.h"],
           module_imports: [{ module_name: "std.c.raylib", alias: "rl" }],
           link_libraries: ["raylib"],
-          vendored_library: vendored_raylib,
+          vendored_library: vendored_raylib_library,
           clang_args: ["-I#{root.join('third_party/raylib-upstream/src')}", "-include", "raylib.h"],
           compiler_flags: ["-I#{root.join('third_party/raylib-upstream/src')}", "-DGRAPHICS_API_OPENGL_43"],
           implementation_defines: ["RLIGHTS_IMPLEMENTATION"],
@@ -352,12 +389,15 @@ module MilkTea
           binding_path: root.join("std/c/rlgl.mt"),
           include_directives: ["rlgl.h"],
           link_libraries: ["raylib"],
-          vendored_library: vendored_raylib,
+          vendored_library: vendored_raylib_library,
           compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
           function_param_type_overrides: {
             "rlLoadTexture" => { "data" => "const_ptr[void]?" },
             "rlLoadTextureCubemap" => { "data" => "const_ptr[void]?" },
             "rlLoadShaderBuffer" => { "data" => "const_ptr[void]?" },
+          },
+          function_return_type_overrides: {
+            "rlGetProcAddress" => "ptr[void]?",
           },
           header_candidates: [
             root.join("third_party/raylib-upstream/src/rlgl.h").to_s,
@@ -378,6 +418,7 @@ module MilkTea
           module_name: "std.c.libc",
           binding_path: root.join("std/c/libc.mt"),
           include_directives: ["stdlib.h"],
+          compiler_flags: ["-D_GNU_SOURCE"],
           env_var: "LIBC_HEADER",
           function_param_type_overrides: {
             "strtod" => { "__endptr" => "ptr[ptr[char]]?" },
@@ -412,21 +453,24 @@ module MilkTea
           bindgen_defines: ["SDL_MAIN_HANDLED=1"],
           bindgen_include_directives: ["SDL3/SDL_main.h"],
           link_libraries: ["SDL3"],
+          prepare: lambda do |_binding, **|
+            vendored_sdl3.source(root:).bootstrap!
+          end,
           vendored_library: vendored_sdl3_library,
-          clang_args: vendored_sdl3.include_flags,
-          compiler_flags: ["-DSDL_MAIN_HANDLED=1", "-DMT_LANG_GL_REGISTRY_HAVE_SDL3", *vendored_sdl3.include_flags],
+          clang_args: vendored_sdl3.include_flags(root:),
+          compiler_flags: ["-DSDL_MAIN_HANDLED=1", "-DMT_LANG_GL_REGISTRY_HAVE_SDL3", *vendored_sdl3.include_flags(root:)],
           tracked_header_paths: [
-            vendored_sdl3.header_root.join("SDL.h").to_s,
-            vendored_sdl3.header_root.join("SDL_main.h").to_s,
+            vendored_sdl3.header_root(root:).join("SDL.h").to_s,
+            vendored_sdl3.header_root(root:).join("SDL_main.h").to_s,
           ],
           tracked_header_prefixes: [
-            vendored_sdl3.header_root.to_s,
+            vendored_sdl3.header_root(root:).to_s,
           ],
           declaration_name_prefixes: ["SDL_", "Sint", "Uint"],
           function_param_type_overrides: sdl3_function_param_overrides,
           function_return_type_overrides: sdl3_function_return_overrides,
           header_candidates: [
-            vendored_sdl3.header_root.join("SDL.h").to_s,
+            vendored_sdl3.header_root(root:).join("SDL.h").to_s,
           ],
         ),
         Binding.new(
@@ -436,17 +480,18 @@ module MilkTea
           include_directives: ["GLFW/glfw3.h"],
           link_libraries: ["glfw3"],
           vendored_library: vendored_glfw_library,
-          clang_args: vendored_glfw.include_flags,
-          compiler_flags: ["-DMT_LANG_GL_REGISTRY_HAVE_GLFW", *vendored_glfw.include_flags],
+          clang_args: vendored_glfw.include_flags(root:),
+          compiler_flags: ["-DMT_LANG_GL_REGISTRY_HAVE_GLFW", *vendored_glfw.include_flags(root:)],
           tracked_header_paths: [
-            vendored_glfw.header_root.join("glfw3.h").to_s,
+            vendored_glfw.header_root(root:).join("glfw3.h").to_s,
           ],
           tracked_header_prefixes: [
-            vendored_glfw.header_root.to_s,
+            vendored_glfw.header_root(root:).to_s,
           ],
           declaration_name_prefixes: ["GLFW", "glfw"],
+          function_return_type_overrides: glfw_function_return_overrides,
           header_candidates: [
-            vendored_glfw.header_root.join("glfw3.h").to_s,
+            vendored_glfw.header_root(root:).join("glfw3.h").to_s,
           ],
         ),
         Binding.new(
@@ -474,18 +519,18 @@ module MilkTea
           binding_path: root.join("std/c/box2d.mt"),
           include_directives: ["box2d/box2d.h"],
           link_libraries: ["box2d"],
-          vendored_library: vendored_box2d.library,
-          clang_args: vendored_box2d.include_flags,
-          compiler_flags: vendored_box2d.include_flags,
+          vendored_library: vendored_box2d_library,
+          clang_args: vendored_box2d.include_flags(root:),
+          compiler_flags: vendored_box2d.include_flags(root:),
           tracked_header_paths: [
-            vendored_box2d.header_root.join("box2d.h").to_s,
+            vendored_box2d.header_root(root:).join("box2d.h").to_s,
           ],
           tracked_header_prefixes: [
-            vendored_box2d.header_root.to_s,
+            vendored_box2d.header_root(root:).to_s,
           ],
           declaration_name_prefixes: ["b2", "B2_"],
           header_candidates: [
-            vendored_box2d.header_root.join("box2d.h").to_s,
+            vendored_box2d.header_root(root:).join("box2d.h").to_s,
           ],
         ),
         Binding.new(
@@ -494,7 +539,7 @@ module MilkTea
           binding_path: root.join("std/c/cjson.mt"),
           include_directives: ["cJSON.h"],
           link_libraries: ["cjson"],
-          vendored_library: vendored_cjson.library,
+          vendored_library: vendored_cjson_library,
           declaration_name_prefixes: ["cJSON", "CJSON_"],
           function_return_type_overrides: {
             "cJSON_Parse" => "ptr[cJSON]?",

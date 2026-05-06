@@ -82,13 +82,13 @@ def key_callback(window: ptr[glfw.GLFWwindow], key: int, scancode: int, action: 
         glfw.set_window_icon(window, 0, zero[const_ptr[glfw.GLFWimage]])
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+def main() -> int:
     if glfw.init() == 0:
         return 1
     defer glfw.terminate()
 
     let window = glfw.create_window(window_width, window_height, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         return 1
     defer glfw.destroy_window(window)
 

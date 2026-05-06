@@ -1,22 +1,18 @@
 module examples.idiomatic.steamworks.persona_name
 
-import std.c.libc as libc
 import std.io as io
+import std.libc as libc
 import std.steamworks as steam
 import std.str as text
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
-    if argc < 2:
+def main(args: span[str]) -> int:
+    if args.len == 0:
         if not io.write_error_line("Usage: persona_name APP_ID"):
             return 1
         return 2
 
-    var raw_app_id: cstr = c""
-    unsafe:
-        raw_app_id = cstr<-read(argv + ptr_uint<-1)
-
-    let parsed_app_id = libc.atoi(raw_app_id)
+    let parsed_app_id = libc.parse_int(args[0])
     if parsed_app_id <= 0:
         if not io.write_error_line("APP_ID must be a positive integer"):
             return 3

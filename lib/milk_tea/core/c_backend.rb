@@ -67,6 +67,11 @@ module MilkTea
         lines << ""
       end
 
+      if uses_entrypoint_argv_helpers?
+        lines.concat(emit_entrypoint_argv_helpers)
+        lines << ""
+      end
+
       if uses_foreign_temp_cstr_helpers?
         lines.concat(emit_foreign_temp_cstr_helpers)
         lines << ""
@@ -406,6 +411,10 @@ module MilkTea
       emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_foreign_str_to_cstr_temp mt_free_foreign_cstr_temp mt_foreign_strs_to_cstrs_temp mt_free_foreign_cstrs_temp]) }
     end
 
+    def uses_entrypoint_argv_helpers?
+      emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_entry_argv_to_span_str mt_free_entry_argv_strs]) }
+    end
+
     def uses_text_buffer_helpers?
       emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_clear mt_str_builder_assign mt_str_builder_append mt_str_builder_prepare_write]) }
     end
@@ -600,6 +609,42 @@ module MilkTea
           "static void mt_free_foreign_cstrs_temp(char** items, char* data) {",
           "#{INDENT}free(items);",
           "#{INDENT}free(data);",
+          "}",
+        ])
+      end
+
+      lines
+    end
+
+    def emit_entrypoint_argv_helpers
+      lines = []
+
+      if emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_entry_argv_to_span_str]) }
+        lines.concat([
+          "static mt_span_str mt_entry_argv_to_span_str(int32_t argc, char** argv, mt_str** items_out) {",
+          "#{INDENT}uintptr_t len = argc > 1 ? (uintptr_t)(argc - 1) : 0;",
+          "#{INDENT}mt_str* items = NULL;",
+          "#{INDENT}uintptr_t index = 0;",
+          "#{INDENT}if (len > 0) {",
+          "#{INDENT * 2}items = (mt_str*)malloc(len * sizeof(mt_str));",
+          "#{INDENT * 2}if (items == NULL) abort();",
+          "#{INDENT}}",
+          "#{INDENT}while (index < len) {",
+          "#{INDENT * 2}char* value = argv[index + 1];",
+          "#{INDENT * 2}items[index] = (mt_str){ .data = value, .len = (uintptr_t)strlen(value) };",
+          "#{INDENT * 2}index++;",
+          "#{INDENT}}",
+          "#{INDENT}*items_out = items;",
+          "#{INDENT}return (mt_span_str){ .data = items, .len = len };",
+          "}",
+        ])
+      end
+
+      if emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_free_entry_argv_strs]) }
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static void mt_free_entry_argv_strs(mt_str* items) {",
+          "#{INDENT}free(items);",
           "}",
         ])
       end

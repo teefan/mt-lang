@@ -91,6 +91,7 @@ module MilkTea
       program = ModuleLoader.new(module_roots: @module_roots).check_program(@source_path)
       prepare_bindings(program)
       ir_program = program.is_a?(IR::Program) ? program : Lowering.lower(program)
+      ensure_program_has_entrypoint!(program, ir_program)
       emit_line_directives = line_directives_required?
       compiled_c = CBackend.emit(ir_program, emit_line_directives: emit_line_directives)
       debug_map = DebugMap.from_ir(ir_program, binary_path: @output_path)
@@ -131,6 +132,17 @@ module MilkTea
       else
         @output_path
       end
+    end
+
+    def ensure_program_has_entrypoint!(program, ir_program)
+      return if ir_program.functions.any?(&:entry_point)
+      return if program.is_a?(IR::Program)
+
+      if program.root_analysis.functions.key?("main")
+        raise BuildError, "root main is not a valid executable entrypoint; expected `def main() -> int|void`, `def main(argc: int, argv: ptr[cstr]) -> int|void`, `def main(argc: int, argv: ptr[ptr[char]]) -> int|void`, or `def main(args: span[str]) -> int|void`"
+      end
+
+      raise BuildError, "no executable entrypoint found; define `main` with one of the supported executable signatures"
     end
 
     def package_manifest_required_for?(path)

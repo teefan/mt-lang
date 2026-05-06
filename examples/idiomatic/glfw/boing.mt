@@ -2,8 +2,8 @@ module examples.idiomatic.glfw.boing
 
 import std.glfw as glfw
 import std.gl as gl
-import std.c.libm as math
-import std.c.libc as libc
+import std.libm as math
+import std.libc as libc
 
 type Vec3 = array[float, 3]
 type Mat4 = array[float, 16]
@@ -110,7 +110,7 @@ def truncate_deg(deg: float) -> float:
 
 
 def deg2rad(deg: float) -> float:
-    return deg / 360.0 * (2.0 * math.M_PI_F)
+    return deg / 360.0 * (2.0 * math.PI_F)
 
 
 def sin_deg(deg: float) -> float:
@@ -187,14 +187,14 @@ def key_callback(window: ptr[glfw.GLFWwindow], key: int, scancode: int, action: 
         return
 
     if ((key == glfw.KEY_ENTER and mods == glfw.MOD_ALT) or (key == glfw.KEY_F11 and mods == glfw.MOD_ALT)):
-        if glfw.get_window_monitor(window) != zero[ptr[glfw.GLFWmonitor]]:
+        if glfw.get_window_monitor(window) != null:
             glfw.set_window_monitor(window, zero[ptr[glfw.GLFWmonitor]], windowed_xpos, windowed_ypos, windowed_width, windowed_height, 0)
             return
 
         let monitor = glfw.get_primary_monitor()
-        if monitor != zero[ptr[glfw.GLFWmonitor]]:
+        if monitor != null:
             let mode_ptr = glfw.get_video_mode(monitor)
-            if mode_ptr != zero[const_ptr[glfw.GLFWvidmode]]:
+            if mode_ptr != null:
                 var mode = zero[glfw.GLFWvidmode]
                 unsafe:
                     mode = read(mode_ptr)
@@ -387,13 +387,13 @@ def draw_grid() -> void:
     gl.pop_matrix()
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+def main() -> int:
     if glfw.init() == 0:
         return 1
     defer glfw.terminate()
 
     let window = glfw.create_window(window_width, window_height, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         return 1
     defer glfw.destroy_window(window)
 

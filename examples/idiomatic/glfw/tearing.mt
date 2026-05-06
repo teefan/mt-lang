@@ -2,7 +2,8 @@ module examples.idiomatic.glfw.tearing
 
 import std.glfw as glfw
 import std.gl as gl
-import std.c.libm as math
+import std.gl.util as gl_util
+import std.libm as math
 import std.fmt as fmt
 import std.mem.arena as arena
 import std.string as string
@@ -96,18 +97,6 @@ def mat4_mul(lhs: Mat4, rhs: Mat4) -> Mat4:
     return result
 
 
-def build_shader(shader_type: gl.GLenum, source_text: cstr) -> gl.GLuint:
-    let shader = gl.create_shader(uint<-shader_type)
-    var sources = zero[array[const_ptr[gl.GLchar], 1]]
-    var source_ptrs = zero[const_ptr[const_ptr[gl.GLchar]]]
-    unsafe:
-        sources[0] = const_ptr[gl.GLchar]<-source_text
-        source_ptrs = const_ptr[const_ptr[gl.GLchar]]<-ptr_of(sources[0])
-    gl.shader_source(shader, 1, source_ptrs, zero[const_ptr[gl.GLint]])
-    gl.compile_shader(shader)
-    return shader
-
-
 def update_window_title(window: ptr[glfw.GLFWwindow]) -> void:
     var title: string.String = fmt.string("Tearing detector (interval ")
     defer title.release()
@@ -152,14 +141,14 @@ def key_callback(window: ptr[glfw.GLFWwindow], key: int, scancode: int, action: 
         return
 
     if ((key == glfw.KEY_ENTER and mods == glfw.MOD_ALT) or (key == glfw.KEY_F11 and mods == glfw.MOD_ALT)):
-        if glfw.get_window_monitor(window) != zero[ptr[glfw.GLFWmonitor]]:
+        if glfw.get_window_monitor(window) != null:
             glfw.set_window_monitor(window, zero[ptr[glfw.GLFWmonitor]], windowed_xpos, windowed_ypos, windowed_width, windowed_height, 0)
             return
 
         let monitor = glfw.get_primary_monitor()
-        if monitor != zero[ptr[glfw.GLFWmonitor]]:
+        if monitor != null:
             let mode_ptr = glfw.get_video_mode(monitor)
-            if mode_ptr != zero[const_ptr[glfw.GLFWvidmode]]:
+            if mode_ptr != null:
                 var mode = zero[glfw.GLFWvidmode]
                 unsafe:
                     mode = read(mode_ptr)
@@ -168,7 +157,7 @@ def key_callback(window: ptr[glfw.GLFWwindow], key: int, scancode: int, action: 
                 glfw.set_window_monitor(window, monitor, 0, 0, mode.width, mode.height, mode.refreshRate)
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+def main() -> int:
     glfw.set_error_callback(error_callback)
 
     if glfw.init() == 0:
@@ -179,7 +168,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 0)
 
     let window = glfw.create_window(window_width, window_height, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         return 1
     defer glfw.destroy_window(window)
 
@@ -193,25 +182,18 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     var vertex_buffer: gl.GLuint = 0
     gl.gen_buffers(1, ptr_of(vertex_buffer))
     gl.bind_buffer(uint<-gl.ARRAY_BUFFER, vertex_buffer)
-    unsafe:
-        gl.buffer_data(uint<-gl.ARRAY_BUFFER, ptr_int<-(8 * int<-size_of(float)), const_ptr[void]<-ptr_of(vertices[0]), uint<-gl.STATIC_DRAW)
+    gl_util.buffer_data(uint<-gl.ARRAY_BUFFER, vertices, uint<-gl.STATIC_DRAW)
 
-    let vertex_shader = build_shader(uint<-gl.VERTEX_SHADER, vertex_shader_text)
-    let fragment_shader = build_shader(uint<-gl.FRAGMENT_SHADER, fragment_shader_text)
+    let vertex_shader = gl_util.build_shader(uint<-gl.VERTEX_SHADER, vertex_shader_text)
+    let fragment_shader = gl_util.build_shader(uint<-gl.FRAGMENT_SHADER, fragment_shader_text)
 
     let program = gl.create_program()
     gl.attach_shader(program, vertex_shader)
     gl.attach_shader(program, fragment_shader)
     gl.link_program(program)
 
-    var mvp_name = zero[const_ptr[gl.GLchar]]
-    var vpos_name = zero[const_ptr[gl.GLchar]]
-    unsafe:
-        mvp_name = const_ptr[gl.GLchar]<-c"MVP"
-        vpos_name = const_ptr[gl.GLchar]<-c"vPos"
-
-    let mvp_location = gl.get_uniform_location(program, mvp_name)
-    let vpos_location = gl.get_attrib_location(program, vpos_name)
+    let mvp_location = gl_util.uniform_location(program, c"MVP")
+    let vpos_location = gl_util.attrib_location(program, c"vPos")
     gl.enable_vertex_attrib_array(uint<-vpos_location)
     gl.vertex_attrib_pointer(uint<-vpos_location, 2, uint<-gl.FLOAT, ubyte<-gl.FALSE, 2 * int<-size_of(float), zero[const_ptr[void]])
 
@@ -231,8 +213,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
         var mvp = mat4_mul(projection, model)
 
         gl.use_program(program)
-        unsafe:
-            gl.uniform_matrix_4fv(mvp_location, 1, ubyte<-gl.FALSE, const_ptr[gl.GLfloat]<-ptr_of(mvp[0]))
+        gl_util.uniform_matrix_4(mvp_location, ubyte<-gl.FALSE, mvp)
         gl.draw_arrays(uint<-gl.TRIANGLE_FAN, 0, 4)
 
         glfw.swap_buffers(window)

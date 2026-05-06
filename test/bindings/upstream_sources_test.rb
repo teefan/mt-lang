@@ -30,6 +30,17 @@ class MilkTeaUpstreamSourcesTest < Minitest::Test
     assert_equal %w[xml/gl.xml xml/glx.xml xml/wgl.xml], registry.sentinel_paths
   end
 
+  def test_default_sources_include_complete_pinned_sdl3_checkout
+    sources = MilkTea::UpstreamSources.default_sources
+    sdl3 = sources.find { |source| source.name == "sdl3" }
+
+    refute_nil sdl3
+    assert_includes sdl3.checkout_root.to_s, "/third_party/sdl3-upstream"
+    assert_equal "https://github.com/libsdl-org/SDL.git", sdl3.repository_url
+    assert_equal "41f079491a0e79b22441fd32a7c8ad91db237744", sdl3.revision
+    assert_equal %w[CMakeLists.txt include/SDL3/SDL.h include/SDL3/SDL_main.h], sdl3.sentinel_paths
+  end
+
   def test_source_bootstrap_clones_missing_checkout_at_pinned_revision
     skip "git not available" unless executable_available?("git")
 
@@ -39,8 +50,10 @@ class MilkTeaUpstreamSourcesTest < Minitest::Test
 
       FileUtils.mkdir_p(origin)
       run_git!(dir: origin, args: ["init", "--initial-branch=main"])
+      File.write(File.join(origin, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.16)\n")
       FileUtils.mkdir_p(File.join(origin, "include", "SDL3"))
       File.write(File.join(origin, "include", "SDL3", "SDL.h"), "#define SDL_MAJOR_VERSION 3\n")
+      File.write(File.join(origin, "include", "SDL3", "SDL_main.h"), "#define SDL_MAIN_HANDLED 1\n")
       run_git!(dir: origin, args: ["add", "."])
       run_git!(dir: origin, args: ["commit", "-m", "initial"])
 
@@ -50,14 +63,16 @@ class MilkTeaUpstreamSourcesTest < Minitest::Test
         checkout_root:,
         repository_url: origin,
         revision:,
-        sentinel_paths: ["include/SDL3/SDL.h"],
+        sentinel_paths: ["CMakeLists.txt", "include/SDL3/SDL.h", "include/SDL3/SDL_main.h"],
       )
 
       result = source.bootstrap!
 
       assert_equal :bootstrapped, result.status
       assert_equal checkout_root.to_s, result.path
+      assert File.exist?(checkout_root.join("CMakeLists.txt"))
       assert File.exist?(checkout_root.join("include/SDL3/SDL.h"))
+      assert File.exist?(checkout_root.join("include/SDL3/SDL_main.h"))
       assert_equal revision, capture_git(dir: checkout_root.to_s, args: ["rev-parse", "HEAD"])
     end
   end

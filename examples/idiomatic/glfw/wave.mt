@@ -2,7 +2,7 @@ module examples.idiomatic.glfw.wave
 
 import std.glfw as glfw
 import std.gl as gl
-import std.c.libm as math
+import std.libm as math
 
 struct Vertex:
     x: float
@@ -88,7 +88,7 @@ def init_grid() -> void:
             let dy = float<-(y - grid_height / 2)
             let distance = math.sqrtf(dx * dx + dy * dy)
             if distance < 0.1 * float<-(grid_width / 2):
-                let phase = distance * (math.M_PI_F / float<-(grid_width * 4))
+                let phase = distance * (math.PI_F / float<-(grid_width * 4))
                 pressure[x][y] = -math.cosf(phase) * 100.0
             else:
                 pressure[x][y] = 0.0
@@ -254,13 +254,13 @@ def framebuffer_size_callback(window: ptr[glfw.GLFWwindow], width: int, height: 
     set_projection(width, height)
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+def main() -> int:
     if glfw.init() == 0:
         return 1
     defer glfw.terminate()
 
     let window = glfw.create_window(640, 480, c"Wave Simulation", zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         return 1
     defer glfw.destroy_window(window)
 

@@ -1,6 +1,6 @@
 module std.raylib.math
 
-import std.c.libm as libm
+import std.libm as libm
 import std.c.raylib as rl
 import std.math as math
 

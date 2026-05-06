@@ -2,7 +2,7 @@ module examples.idiomatic.glfw.splitview
 
 import std.glfw as glfw
 import std.gl as gl
-import std.c.libm as math
+import std.libm as math
 
 type Vec3 = array[float, 3]
 type Mat4 = array[float, 16]
@@ -88,7 +88,7 @@ def draw_torus() -> void:
         torus_list = gl.gen_lists(1)
         gl.new_list(torus_list, uint<-gl.COMPILE_AND_EXECUTE)
 
-        let two_pi = 2.0 * math.M_PI_F
+        let two_pi = 2.0 * math.PI_F
         var i = 0
         while i < torus_minor_res:
             gl.begin(uint<-gl.QUAD_STRIP)
@@ -252,7 +252,7 @@ def draw_all_views() -> void:
     gl.front_face(uint<-gl.CW)
 
     gl.matrix_mode(uint<-gl.PROJECTION)
-    load_matrix(mat4_perspective(65.0 * math.M_PI_F / 180.0, aspect, 1.0, 50.0))
+    load_matrix(mat4_perspective(65.0 * math.PI_F / 180.0, aspect, 1.0, 50.0))
 
     gl.viewport(width / 2, height / 2, width / 2, height / 2)
     gl.scissor(width / 2, height / 2, width / 2, height / 2)
@@ -360,7 +360,7 @@ def key_callback(window: ptr[glfw.GLFWwindow], key: int, scancode: int, action: 
         glfw.set_window_should_close(window, glfw.TRUE)
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+def main() -> int:
     if glfw.init() == 0:
         return 1
     defer glfw.terminate()
@@ -368,7 +368,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     glfw.window_hint(glfw.SAMPLES, 4)
 
     let window = glfw.create_window(window_width, window_height, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         return 1
     defer glfw.destroy_window(window)
 

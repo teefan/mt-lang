@@ -20,7 +20,7 @@ def init_window(index: int, xpos: int, ypos: int, size: int) -> bool:
     glfw.window_hint(glfw.POSITION_Y, ypos + size * (1 + (index >> 1)))
 
     let window = glfw.create_window(size, size, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         return false
 
     windows[index] = window
@@ -35,7 +35,7 @@ def should_close(window: ptr[glfw.GLFWwindow]) -> bool:
     return glfw.window_should_close(window) != 0 or glfw.get_key(window, glfw.KEY_ESCAPE) == glfw.PRESS
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+def main() -> int:
     if glfw.init() == 0:
         return 1
     defer glfw.terminate()
@@ -43,7 +43,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     glfw.window_hint(glfw.DECORATED, glfw.FALSE)
 
     let primary_monitor = glfw.get_primary_monitor()
-    if primary_monitor == zero[ptr[glfw.GLFWmonitor]]:
+    if primary_monitor == null:
         return 1
 
     var xpos = 0

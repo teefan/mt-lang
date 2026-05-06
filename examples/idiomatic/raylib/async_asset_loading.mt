@@ -14,20 +14,14 @@ const sound_path: str = "../../raylib/resources/sound.wav"
 
 
 def load_logo_bytes() -> bytes.Buffer:
-    var scratch = arena.create(96)
-    defer scratch.release()
-
-    let loaded = fs.read_bytes(logo_path, ref_of(scratch))
+    let loaded = fs.read_bytes(logo_path)
     if not loaded.is_ok:
         panic("could not read raylib logo bytes")
     return loaded.value
 
 
 def load_sound_bytes() -> bytes.Buffer:
-    var scratch = arena.create(96)
-    defer scratch.release()
-
-    let loaded = fs.read_bytes(sound_path, ref_of(scratch))
+    let loaded = fs.read_bytes(sound_path)
     if not loaded.is_ok:
         panic("could not read raylib sound bytes")
     return loaded.value
@@ -87,9 +81,9 @@ def main() -> int:
     var played_ready_sound = false
 
     defer:
-        if logo_loaded:
+        if rl.is_texture_valid(logo):
             rl.unload_texture(logo)
-        if sound_loaded:
+        if rl.is_sound_valid(ping):
             rl.unload_sound(ping)
         if rt.loop_release(ref_of(loop)) != 0:
             panic("libuv loop release failed")

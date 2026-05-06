@@ -5,6 +5,23 @@ import std.str as text
 import std.string as string
 
 
+def run_app_no_args_uninitialized() -> int:
+    panic(c"std.sdl3.runtime.run_app_no_args callback not initialized")
+
+
+var run_app_no_args_slot: array[fn() -> int, 1] = array[fn() -> int, 1](run_app_no_args_uninitialized)
+
+
+def run_app_no_args_trampoline(argc: int, argv: ptr[ptr[char]]) -> int:
+    let callback = run_app_no_args_slot[0]
+    return callback()
+
+
+pub def run_app_no_args(argc: int, argv: ptr[ptr[char]], main_function: fn() -> int) -> int:
+    run_app_no_args_slot[0] = main_function
+    return sdl.run_app(argc, argv, run_app_no_args_trampoline)
+
+
 pub def free_chars(text_ptr: ptr[char]?) -> void:
     if text_ptr != null:
         unsafe:

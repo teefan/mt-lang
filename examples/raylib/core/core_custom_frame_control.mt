@@ -9,7 +9,7 @@ const window_title: cstr = c"raylib [core] example - custom frame control"
 const instructions_text: cstr = c"Circle is moving at a constant 200 pixels/sec,\nindependently of the frame rate."
 const pause_text: cstr = c"PRESS SPACE to PAUSE MOVEMENT"
 const target_text: cstr = c"PRESS UP | DOWN to CHANGE TARGET FPS"
-const custom_frame_control_env: cstr = c"MILK_TEA_RAYLIB_ENABLE_CUSTOM_FRAME_CONTROL"
+const custom_frame_control_env: str = "MILK_TEA_RAYLIB_ENABLE_CUSTOM_FRAME_CONTROL"
 
 
 def main() -> int:

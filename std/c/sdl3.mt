@@ -273,7 +273,7 @@ extern module std.c.sdl3:
 
     struct SDL_AsyncIOOutcome:
         asyncio: ptr[SDL_AsyncIO]
-        kind: SDL_AsyncIOTaskType
+        type_: SDL_AsyncIOTaskType
         result: SDL_AsyncIOResult
         buffer: ptr[void]
         offset: ptr_uint
@@ -383,7 +383,7 @@ extern module std.c.sdl3:
 
     type SDL_ThreadFunction = fn(arg0: ptr[void]) -> int
 
-    extern def SDL_CreateThreadRuntime(func: fn(arg0: ptr[void]) -> int, name: cstr, data: ptr[void], pfnBeginThread: fn() -> void, pfnEndThread: fn() -> void) -> ptr[SDL_Thread]
+    extern def SDL_CreateThreadRuntime(fn_: fn(arg0: ptr[void]) -> int, name: cstr, data: ptr[void], pfnBeginThread: fn() -> void, pfnEndThread: fn() -> void) -> ptr[SDL_Thread]
     extern def SDL_CreateThreadWithPropertiesRuntime(props: uint, pfnBeginThread: fn() -> void, pfnEndThread: fn() -> void) -> ptr[SDL_Thread]
     extern def SDL_GetThreadName(thread: ptr[SDL_Thread]) -> cstr
     extern def SDL_GetCurrentThreadID() -> SDL_ThreadID
@@ -510,7 +510,7 @@ extern module std.c.sdl3:
     extern def SDL_ReadU64BE(src: ptr[SDL_IOStream], value: ptr[Uint64]) -> bool
     extern def SDL_ReadS64BE(src: ptr[SDL_IOStream], value: ptr[Sint64]) -> bool
     extern def SDL_WriteU8(dst: ptr[SDL_IOStream], value: ubyte) -> bool
-    extern def SDL_WriteS8(dst: ptr[SDL_IOStream], value: ubyte) -> bool
+    extern def SDL_WriteS8(dst: ptr[SDL_IOStream], value: byte) -> bool
     extern def SDL_WriteU16LE(dst: ptr[SDL_IOStream], value: ushort) -> bool
     extern def SDL_WriteS16LE(dst: ptr[SDL_IOStream], value: short) -> bool
     extern def SDL_WriteU16BE(dst: ptr[SDL_IOStream], value: ushort) -> bool
@@ -943,7 +943,7 @@ extern module std.c.sdl3:
         SDL_FLIP_HORIZONTAL_AND_VERTICAL = 3
 
     struct SDL_Surface:
-        flag_bits: uint
+        flags_: uint
         format: SDL_PixelFormat
         w: int
         h: int
@@ -1205,8 +1205,8 @@ extern module std.c.sdl3:
     extern def SDL_GetWindowICCProfile(window: ptr[SDL_Window], size: ptr[ptr_uint]) -> ptr[void]
     extern def SDL_GetWindowPixelFormat(window: ptr[SDL_Window]) -> SDL_PixelFormat
     extern def SDL_GetWindows(count: ptr[int]) -> ptr[ptr[SDL_Window]]
-    extern def SDL_CreateWindow(title: cstr, w: int, h: int, flag_bits: ptr_uint) -> ptr[SDL_Window]
-    extern def SDL_CreatePopupWindow(parent: ptr[SDL_Window], offset_x: int, offset_y: int, w: int, h: int, flag_bits: ptr_uint) -> ptr[SDL_Window]
+    extern def SDL_CreateWindow(title: cstr, w: int, h: int, flags_: ptr_uint) -> ptr[SDL_Window]
+    extern def SDL_CreatePopupWindow(parent: ptr[SDL_Window], offset_x: int, offset_y: int, w: int, h: int, flags_: ptr_uint) -> ptr[SDL_Window]
     extern def SDL_CreateWindowWithProperties(props: uint) -> ptr[SDL_Window]
     extern def SDL_GetWindowID(window: ptr[SDL_Window]) -> SDL_WindowID
     extern def SDL_GetWindowFromID(id: uint) -> ptr[SDL_Window]
@@ -1288,8 +1288,8 @@ extern module std.c.sdl3:
     extern def SDL_EnableScreenSaver() -> bool
     extern def SDL_DisableScreenSaver() -> bool
     extern def SDL_GL_LoadLibrary(path: cstr) -> bool
-    extern def SDL_GL_GetProcAddress(proc_name: cstr) -> SDL_FunctionPointer
-    extern def SDL_EGL_GetProcAddress(proc_name: cstr) -> SDL_FunctionPointer
+    extern def SDL_GL_GetProcAddress(proc_: cstr) -> SDL_FunctionPointer?
+    extern def SDL_EGL_GetProcAddress(proc_: cstr) -> SDL_FunctionPointer?
     extern def SDL_GL_UnloadLibrary() -> void
     extern def SDL_GL_ExtensionSupported(extension: cstr) -> bool
     extern def SDL_GL_ResetAttributes() -> void
@@ -1323,7 +1323,7 @@ extern module std.c.sdl3:
         SDL_FILEDIALOG_SAVEFILE = 1
         SDL_FILEDIALOG_OPENFOLDER = 2
 
-    extern def SDL_ShowFileDialogWithProperties(kind: SDL_FileDialogType, callback: fn(arg0: ptr[void], arg1: const_ptr[cstr], arg2: int) -> void, userdata: ptr[void], props: uint) -> void
+    extern def SDL_ShowFileDialogWithProperties(type_: SDL_FileDialogType, callback: fn(arg0: ptr[void], arg1: const_ptr[cstr], arg2: int) -> void, userdata: ptr[void], props: uint) -> void
 
     struct SDL_GUID:
         data: array[Uint8, 16]
@@ -1397,7 +1397,7 @@ extern module std.c.sdl3:
     extern def SDL_UnlockJoysticks() -> void
     extern def SDL_HasJoystick() -> bool
     extern def SDL_GetJoysticks(count: ptr[int]) -> ptr[SDL_JoystickID]
-    extern def SDL_GetJoystickNameForID(instance_id: uint) -> cstr
+    extern def SDL_GetJoystickNameForID(instance_id: uint) -> cstr?
     extern def SDL_GetJoystickPathForID(instance_id: uint) -> cstr
     extern def SDL_GetJoystickPlayerIndexForID(instance_id: uint) -> int
     extern def SDL_GetJoystickGUIDForID(instance_id: uint) -> SDL_GUID
@@ -1414,12 +1414,12 @@ extern module std.c.sdl3:
         padding: array[Uint16, 3]
 
     struct SDL_VirtualJoystickSensorDesc:
-        kind: SDL_SensorType
+        type_: SDL_SensorType
         rate: float
 
     struct SDL_VirtualJoystickDesc:
         version: uint
-        kind: ushort
+        type_: ushort
         padding: ushort
         vendor_id: ushort
         product_id: ushort
@@ -1453,9 +1453,9 @@ extern module std.c.sdl3:
     extern def SDL_SetJoystickVirtualButton(joystick: ptr[SDL_Joystick], button: int, down: bool) -> bool
     extern def SDL_SetJoystickVirtualHat(joystick: ptr[SDL_Joystick], hat: int, value: ubyte) -> bool
     extern def SDL_SetJoystickVirtualTouchpad(joystick: ptr[SDL_Joystick], touchpad: int, finger: int, down: bool, x: float, y: float, pressure: float) -> bool
-    extern def SDL_SendJoystickVirtualSensorData(joystick: ptr[SDL_Joystick], kind: SDL_SensorType, sensor_timestamp: ptr_uint, data: const_ptr[float], num_values: int) -> bool
+    extern def SDL_SendJoystickVirtualSensorData(joystick: ptr[SDL_Joystick], type_: SDL_SensorType, sensor_timestamp: ptr_uint, data: const_ptr[float], num_values: int) -> bool
     extern def SDL_GetJoystickProperties(joystick: ptr[SDL_Joystick]) -> SDL_PropertiesID
-    extern def SDL_GetJoystickName(joystick: ptr[SDL_Joystick]) -> cstr
+    extern def SDL_GetJoystickName(joystick: ptr[SDL_Joystick]) -> cstr?
     extern def SDL_GetJoystickPath(joystick: ptr[SDL_Joystick]) -> cstr
     extern def SDL_GetJoystickPlayerIndex(joystick: ptr[SDL_Joystick]) -> int
     extern def SDL_SetJoystickPlayerIndex(joystick: ptr[SDL_Joystick], player_index: int) -> bool
@@ -1580,7 +1580,7 @@ extern module std.c.sdl3:
     extern def SDL_HasGamepad() -> bool
     extern def SDL_GetGamepads(count: ptr[int]) -> ptr[SDL_JoystickID]
     extern def SDL_IsGamepad(instance_id: uint) -> bool
-    extern def SDL_GetGamepadNameForID(instance_id: uint) -> cstr
+    extern def SDL_GetGamepadNameForID(instance_id: uint) -> cstr?
     extern def SDL_GetGamepadPathForID(instance_id: uint) -> cstr
     extern def SDL_GetGamepadPlayerIndexForID(instance_id: uint) -> int
     extern def SDL_GetGamepadGUIDForID(instance_id: uint) -> SDL_GUID
@@ -1595,7 +1595,7 @@ extern module std.c.sdl3:
     extern def SDL_GetGamepadFromPlayerIndex(player_index: int) -> ptr[SDL_Gamepad]
     extern def SDL_GetGamepadProperties(gamepad: ptr[SDL_Gamepad]) -> SDL_PropertiesID
     extern def SDL_GetGamepadID(gamepad: ptr[SDL_Gamepad]) -> SDL_JoystickID
-    extern def SDL_GetGamepadName(gamepad: ptr[SDL_Gamepad]) -> cstr
+    extern def SDL_GetGamepadName(gamepad: ptr[SDL_Gamepad]) -> cstr?
     extern def SDL_GetGamepadPath(gamepad: ptr[SDL_Gamepad]) -> cstr
     extern def SDL_GetGamepadType(gamepad: ptr[SDL_Gamepad]) -> SDL_GamepadType
     extern def SDL_GetRealGamepadType(gamepad: ptr[SDL_Gamepad]) -> SDL_GamepadType
@@ -1616,7 +1616,7 @@ extern module std.c.sdl3:
     extern def SDL_GetGamepadBindings(gamepad: ptr[SDL_Gamepad], count: ptr[int]) -> ptr[ptr[SDL_GamepadBinding]]
     extern def SDL_UpdateGamepads() -> void
     extern def SDL_GetGamepadTypeFromString(str: cstr) -> SDL_GamepadType
-    extern def SDL_GetGamepadStringForType(kind: SDL_GamepadType) -> cstr
+    extern def SDL_GetGamepadStringForType(type_: SDL_GamepadType) -> cstr
     extern def SDL_GetGamepadAxisFromString(str: cstr) -> SDL_GamepadAxis
     extern def SDL_GetGamepadStringForAxis(axis: SDL_GamepadAxis) -> cstr
     extern def SDL_GamepadHasAxis(gamepad: ptr[SDL_Gamepad], axis: SDL_GamepadAxis) -> bool
@@ -1625,16 +1625,16 @@ extern module std.c.sdl3:
     extern def SDL_GetGamepadStringForButton(button: SDL_GamepadButton) -> cstr
     extern def SDL_GamepadHasButton(gamepad: ptr[SDL_Gamepad], button: SDL_GamepadButton) -> bool
     extern def SDL_GetGamepadButton(gamepad: ptr[SDL_Gamepad], button: SDL_GamepadButton) -> bool
-    extern def SDL_GetGamepadButtonLabelForType(kind: SDL_GamepadType, button: SDL_GamepadButton) -> SDL_GamepadButtonLabel
+    extern def SDL_GetGamepadButtonLabelForType(type_: SDL_GamepadType, button: SDL_GamepadButton) -> SDL_GamepadButtonLabel
     extern def SDL_GetGamepadButtonLabel(gamepad: ptr[SDL_Gamepad], button: SDL_GamepadButton) -> SDL_GamepadButtonLabel
     extern def SDL_GetNumGamepadTouchpads(gamepad: ptr[SDL_Gamepad]) -> int
     extern def SDL_GetNumGamepadTouchpadFingers(gamepad: ptr[SDL_Gamepad], touchpad: int) -> int
     extern def SDL_GetGamepadTouchpadFinger(gamepad: ptr[SDL_Gamepad], touchpad: int, finger: int, down: ptr[bool], x: ptr[float], y: ptr[float], pressure: ptr[float]) -> bool
-    extern def SDL_GamepadHasSensor(gamepad: ptr[SDL_Gamepad], kind: SDL_SensorType) -> bool
-    extern def SDL_SetGamepadSensorEnabled(gamepad: ptr[SDL_Gamepad], kind: SDL_SensorType, enabled: bool) -> bool
-    extern def SDL_GamepadSensorEnabled(gamepad: ptr[SDL_Gamepad], kind: SDL_SensorType) -> bool
-    extern def SDL_GetGamepadSensorDataRate(gamepad: ptr[SDL_Gamepad], kind: SDL_SensorType) -> float
-    extern def SDL_GetGamepadSensorData(gamepad: ptr[SDL_Gamepad], kind: SDL_SensorType, data: ptr[float], num_values: int) -> bool
+    extern def SDL_GamepadHasSensor(gamepad: ptr[SDL_Gamepad], type_: SDL_SensorType) -> bool
+    extern def SDL_SetGamepadSensorEnabled(gamepad: ptr[SDL_Gamepad], type_: SDL_SensorType, enabled: bool) -> bool
+    extern def SDL_GamepadSensorEnabled(gamepad: ptr[SDL_Gamepad], type_: SDL_SensorType) -> bool
+    extern def SDL_GetGamepadSensorDataRate(gamepad: ptr[SDL_Gamepad], type_: SDL_SensorType) -> float
+    extern def SDL_GetGamepadSensorData(gamepad: ptr[SDL_Gamepad], type_: SDL_SensorType, data: ptr[float], num_values: int) -> bool
     extern def SDL_RumbleGamepad(gamepad: ptr[SDL_Gamepad], low_frequency_rumble: ushort, high_frequency_rumble: ushort, duration_ms: uint) -> bool
     extern def SDL_RumbleGamepadTriggers(gamepad: ptr[SDL_Gamepad], left_rumble: ushort, right_rumble: ushort, duration_ms: uint) -> bool
     extern def SDL_SetGamepadLED(gamepad: ptr[SDL_Gamepad], red: ubyte, green: ubyte, blue: ubyte) -> bool
@@ -2171,12 +2171,12 @@ extern module std.c.sdl3:
         SDL_EVENT_ENUM_PADDING = 2147483647
 
     struct SDL_CommonEvent:
-        kind: uint
+        type_: uint
         reserved: uint
         timestamp: ptr_uint
 
     struct SDL_DisplayEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         displayID: uint
@@ -2184,7 +2184,7 @@ extern module std.c.sdl3:
         data2: int
 
     struct SDL_WindowEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
@@ -2192,13 +2192,13 @@ extern module std.c.sdl3:
         data2: int
 
     struct SDL_KeyboardDeviceEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
 
     struct SDL_KeyboardEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
@@ -2211,7 +2211,7 @@ extern module std.c.sdl3:
         repeat: bool
 
     struct SDL_TextEditingEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
@@ -2220,7 +2220,7 @@ extern module std.c.sdl3:
         length: int
 
     struct SDL_TextEditingCandidatesEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
@@ -2233,20 +2233,20 @@ extern module std.c.sdl3:
         padding3: ubyte
 
     struct SDL_TextInputEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
         text: cstr
 
     struct SDL_MouseDeviceEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
 
     struct SDL_MouseMotionEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
@@ -2258,7 +2258,7 @@ extern module std.c.sdl3:
         yrel: float
 
     struct SDL_MouseButtonEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
@@ -2271,7 +2271,7 @@ extern module std.c.sdl3:
         y: float
 
     struct SDL_MouseWheelEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
@@ -2285,7 +2285,7 @@ extern module std.c.sdl3:
         integer_y: int
 
     struct SDL_JoyAxisEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
@@ -2297,7 +2297,7 @@ extern module std.c.sdl3:
         padding4: ushort
 
     struct SDL_JoyBallEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
@@ -2309,7 +2309,7 @@ extern module std.c.sdl3:
         yrel: short
 
     struct SDL_JoyHatEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
@@ -2319,7 +2319,7 @@ extern module std.c.sdl3:
         padding2: ubyte
 
     struct SDL_JoyButtonEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
@@ -2329,13 +2329,13 @@ extern module std.c.sdl3:
         padding2: ubyte
 
     struct SDL_JoyDeviceEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
 
     struct SDL_JoyBatteryEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
@@ -2343,7 +2343,7 @@ extern module std.c.sdl3:
         percent: int
 
     struct SDL_GamepadAxisEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
@@ -2355,7 +2355,7 @@ extern module std.c.sdl3:
         padding4: ushort
 
     struct SDL_GamepadButtonEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
@@ -2365,13 +2365,13 @@ extern module std.c.sdl3:
         padding2: ubyte
 
     struct SDL_GamepadDeviceEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
 
     struct SDL_GamepadTouchpadEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
@@ -2382,7 +2382,7 @@ extern module std.c.sdl3:
         pressure: float
 
     struct SDL_GamepadSensorEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
@@ -2391,7 +2391,7 @@ extern module std.c.sdl3:
         sensor_timestamp: ptr_uint
 
     struct SDL_AudioDeviceEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
@@ -2401,19 +2401,19 @@ extern module std.c.sdl3:
         padding3: ubyte
 
     struct SDL_CameraDeviceEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
 
     struct SDL_RenderEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
 
     struct SDL_TouchFingerEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         touchID: ptr_uint
@@ -2426,21 +2426,21 @@ extern module std.c.sdl3:
         windowID: uint
 
     struct SDL_PinchFingerEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         scale: float
         windowID: uint
 
     struct SDL_PenProximityEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
         which: uint
 
     struct SDL_PenMotionEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
@@ -2450,7 +2450,7 @@ extern module std.c.sdl3:
         y: float
 
     struct SDL_PenTouchEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
@@ -2462,7 +2462,7 @@ extern module std.c.sdl3:
         down: bool
 
     struct SDL_PenButtonEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
@@ -2474,7 +2474,7 @@ extern module std.c.sdl3:
         down: bool
 
     struct SDL_PenAxisEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
@@ -2486,7 +2486,7 @@ extern module std.c.sdl3:
         value: float
 
     struct SDL_DropEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
@@ -2496,7 +2496,7 @@ extern module std.c.sdl3:
         data: cstr
 
     struct SDL_ClipboardEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         owner: bool
@@ -2504,7 +2504,7 @@ extern module std.c.sdl3:
         mime_types: ptr[cstr]
 
     struct SDL_SensorEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
         which: uint
@@ -2512,12 +2512,12 @@ extern module std.c.sdl3:
         sensor_timestamp: ptr_uint
 
     struct SDL_QuitEvent:
-        kind: SDL_EventType
+        type_: SDL_EventType
         reserved: uint
         timestamp: ptr_uint
 
     struct SDL_UserEvent:
-        kind: uint
+        type_: uint
         reserved: uint
         timestamp: ptr_uint
         windowID: uint
@@ -2532,7 +2532,7 @@ extern module std.c.sdl3:
         window: SDL_WindowEvent
         kdevice: SDL_KeyboardDeviceEvent
         key: SDL_KeyboardEvent
-        text_edit: SDL_TextEditingEvent
+        edit_: SDL_TextEditingEvent
         edit_candidates: SDL_TextEditingCandidatesEvent
         text: SDL_TextInputEvent
         mdevice: SDL_MouseDeviceEvent
@@ -2575,9 +2575,9 @@ extern module std.c.sdl3:
         SDL_GETEVENT = 2
 
     extern def SDL_PeepEvents(events: ptr[SDL_Event], numevents: int, action: SDL_EventAction, minType: uint, maxType: uint) -> int
-    extern def SDL_HasEvent(kind: uint) -> bool
+    extern def SDL_HasEvent(type_: uint) -> bool
     extern def SDL_HasEvents(minType: uint, maxType: uint) -> bool
-    extern def SDL_FlushEvent(kind: uint) -> void
+    extern def SDL_FlushEvent(type_: uint) -> void
     extern def SDL_FlushEvents(minType: uint, maxType: uint) -> void
     extern def SDL_PollEvent(event: ptr[SDL_Event]) -> bool
     extern def SDL_WaitEvent(event: ptr[SDL_Event]) -> bool
@@ -2591,8 +2591,8 @@ extern module std.c.sdl3:
     extern def SDL_AddEventWatch(filter: fn(arg0: ptr[void], arg1: ptr[SDL_Event]) -> bool, userdata: ptr[void]) -> bool
     extern def SDL_RemoveEventWatch(filter: fn(arg0: ptr[void], arg1: ptr[SDL_Event]) -> bool, userdata: ptr[void]) -> void
     extern def SDL_FilterEvents(filter: fn(arg0: ptr[void], arg1: ptr[SDL_Event]) -> bool, userdata: ptr[void]) -> void
-    extern def SDL_SetEventEnabled(kind: uint, enabled: bool) -> void
-    extern def SDL_EventEnabled(kind: uint) -> bool
+    extern def SDL_SetEventEnabled(type_: uint, enabled: bool) -> void
+    extern def SDL_EventEnabled(type_: uint) -> bool
     extern def SDL_RegisterEvents(numevents: int) -> Uint32
     extern def SDL_GetWindowFromEvent(event: const_ptr[SDL_Event]) -> ptr[SDL_Window]
     extern def SDL_GetEventDescription(event: const_ptr[SDL_Event], buf: ptr[char], buflen: int) -> int
@@ -2622,7 +2622,7 @@ extern module std.c.sdl3:
         SDL_PATHTYPE_OTHER = 3
 
     struct SDL_PathInfo:
-        kind: SDL_PathType
+        type_: SDL_PathType
         size: ptr_uint
         create_time: ptr_int
         modify_time: ptr_int
@@ -2644,7 +2644,7 @@ extern module std.c.sdl3:
     extern def SDL_RenamePath(oldpath: cstr, newpath: cstr) -> bool
     extern def SDL_CopyFile(oldpath: cstr, newpath: cstr) -> bool
     extern def SDL_GetPathInfo(path: cstr, info: ptr[SDL_PathInfo]) -> bool
-    extern def SDL_GlobDirectory(path: cstr, pattern: cstr, flag_bits: uint, count: ptr[int]) -> ptr[ptr[char]]
+    extern def SDL_GlobDirectory(path: cstr, pattern: cstr, flags_: uint, count: ptr[int]) -> ptr[ptr[char]]
     extern def SDL_GetCurrentDirectory() -> ptr[char]
 
     opaque SDL_GPUDevice = c"SDL_GPUDevice"
@@ -3088,7 +3088,7 @@ extern module std.c.sdl3:
         props: uint
 
     struct SDL_GPUTextureCreateInfo:
-        kind: SDL_GPUTextureType
+        type_: SDL_GPUTextureType
         format: SDL_GPUTextureFormat
         usage: uint
         width: uint
@@ -3344,7 +3344,7 @@ extern module std.c.sdl3:
     extern def SDL_QueryGPUFence(device: ptr[SDL_GPUDevice], fence: ptr[SDL_GPUFence]) -> bool
     extern def SDL_ReleaseGPUFence(device: ptr[SDL_GPUDevice], fence: ptr[SDL_GPUFence]) -> void
     extern def SDL_GPUTextureFormatTexelBlockSize(format: SDL_GPUTextureFormat) -> Uint32
-    extern def SDL_GPUTextureSupportsFormat(device: ptr[SDL_GPUDevice], format: SDL_GPUTextureFormat, kind: SDL_GPUTextureType, usage: uint) -> bool
+    extern def SDL_GPUTextureSupportsFormat(device: ptr[SDL_GPUDevice], format: SDL_GPUTextureFormat, type_: SDL_GPUTextureType, usage: uint) -> bool
     extern def SDL_GPUTextureSupportsSampleCount(device: ptr[SDL_GPUDevice], format: SDL_GPUTextureFormat, sample_count: SDL_GPUSampleCount) -> bool
     extern def SDL_CalculateGPUTextureFormatSize(format: SDL_GPUTextureFormat, width: uint, height: uint, depth_or_layer_count: uint) -> Uint32
     extern def SDL_GetPixelFormatFromGPUTextureFormat(format: SDL_GPUTextureFormat) -> SDL_PixelFormat
@@ -3356,11 +3356,11 @@ extern module std.c.sdl3:
     type SDL_HapticEffectID = int
 
     struct SDL_HapticDirection:
-        kind: ubyte
+        type_: ubyte
         dir: array[Sint32, 3]
 
     struct SDL_HapticConstant:
-        kind: ushort
+        type_: ushort
         direction: SDL_HapticDirection
         length: uint
         delay: ushort
@@ -3373,7 +3373,7 @@ extern module std.c.sdl3:
         fade_level: ushort
 
     struct SDL_HapticPeriodic:
-        kind: ushort
+        type_: ushort
         direction: SDL_HapticDirection
         length: uint
         delay: ushort
@@ -3389,7 +3389,7 @@ extern module std.c.sdl3:
         fade_level: ushort
 
     struct SDL_HapticCondition:
-        kind: ushort
+        type_: ushort
         direction: SDL_HapticDirection
         length: uint
         delay: ushort
@@ -3403,7 +3403,7 @@ extern module std.c.sdl3:
         center: array[Sint16, 3]
 
     struct SDL_HapticRamp:
-        kind: ushort
+        type_: ushort
         direction: SDL_HapticDirection
         length: uint
         delay: ushort
@@ -3417,13 +3417,13 @@ extern module std.c.sdl3:
         fade_level: ushort
 
     struct SDL_HapticLeftRight:
-        kind: ushort
+        type_: ushort
         length: uint
         large_magnitude: ushort
         small_magnitude: ushort
 
     struct SDL_HapticCustom:
-        kind: ushort
+        type_: ushort
         direction: SDL_HapticDirection
         length: uint
         delay: ushort
@@ -3439,7 +3439,7 @@ extern module std.c.sdl3:
         fade_level: ushort
 
     union SDL_HapticEffect:
-        kind: ushort
+        type_: ushort
         constant: SDL_HapticConstant
         periodic: SDL_HapticPeriodic
         condition: SDL_HapticCondition
@@ -3560,10 +3560,10 @@ extern module std.c.sdl3:
     type SDL_AppEvent_func = fn(arg0: ptr[void], arg1: SDL_Event) -> SDL_AppResult
     type SDL_AppQuit_func = fn(arg0: ptr[void], arg1: SDL_AppResult) -> void
 
-    extern def SDL_Init(flag_bits: uint) -> bool
-    extern def SDL_InitSubSystem(flag_bits: uint) -> bool
-    extern def SDL_QuitSubSystem(flag_bits: uint) -> void
-    extern def SDL_WasInit(flag_bits: uint) -> SDL_InitFlags
+    extern def SDL_Init(flags_: uint) -> bool
+    extern def SDL_InitSubSystem(flags_: uint) -> bool
+    extern def SDL_QuitSubSystem(flags_: uint) -> void
+    extern def SDL_WasInit(flags_: uint) -> SDL_InitFlags
     extern def SDL_Quit() -> void
     extern def SDL_IsMainThread() -> bool
 
@@ -3645,7 +3645,7 @@ extern module std.c.sdl3:
     type SDL_MessageBoxButtonFlags = uint
 
     struct SDL_MessageBoxButtonData:
-        flag_bits: uint
+        flags_: uint
         buttonID: int
         text: cstr
 
@@ -3666,7 +3666,7 @@ extern module std.c.sdl3:
         colors: array[SDL_MessageBoxColor, 5]
 
     struct SDL_MessageBoxData:
-        flag_bits: uint
+        flags_: uint
         window: ptr[SDL_Window]
         title: cstr
         message: cstr
@@ -3675,7 +3675,7 @@ extern module std.c.sdl3:
         colorScheme: const_ptr[SDL_MessageBoxColorScheme]
 
     extern def SDL_ShowMessageBox(messageboxdata: const_ptr[SDL_MessageBoxData], buttonid: ptr[int]) -> bool
-    extern def SDL_ShowSimpleMessageBox(flag_bits: uint, title: cstr, message: cstr, window: ptr[SDL_Window]) -> bool
+    extern def SDL_ShowSimpleMessageBox(flags_: uint, title: cstr, message: cstr, window: ptr[SDL_Window]) -> bool
 
     type SDL_MetalView = ptr[void]
 
@@ -3886,7 +3886,7 @@ extern module std.c.sdl3:
     extern def SDL_CopyStorageFile(storage: ptr[SDL_Storage], oldpath: cstr, newpath: cstr) -> bool
     extern def SDL_GetStoragePathInfo(storage: ptr[SDL_Storage], path: cstr, info: ptr[SDL_PathInfo]) -> bool
     extern def SDL_GetStorageSpaceRemaining(storage: ptr[SDL_Storage]) -> Uint64
-    extern def SDL_GlobStorageDirectory(storage: ptr[SDL_Storage], path: cstr, pattern: cstr, flag_bits: uint, count: ptr[int]) -> ptr[ptr[char]]
+    extern def SDL_GlobStorageDirectory(storage: ptr[SDL_Storage], path: cstr, pattern: cstr, flags_: uint, count: ptr[int]) -> ptr[ptr[char]]
     extern def SDL_SetLinuxThreadPriority(threadID: ptr_int, priority: int) -> bool
     extern def SDL_SetLinuxThreadPriorityAndPolicy(threadID: ptr_int, sdlPriority: int, schedPolicy: int) -> bool
     extern def SDL_IsPhone() -> bool
@@ -3972,7 +3972,7 @@ extern module std.c.sdl3:
     extern def SDL_GetTraySubmenu(entry: ptr[SDL_TrayEntry]) -> ptr[SDL_TrayMenu]
     extern def SDL_GetTrayEntries(menu: ptr[SDL_TrayMenu], count: ptr[int]) -> ptr[const_ptr[SDL_TrayEntry]]
     extern def SDL_RemoveTrayEntry(entry: ptr[SDL_TrayEntry]) -> void
-    extern def SDL_InsertTrayEntryAt(menu: ptr[SDL_TrayMenu], pos: int, label: cstr, flag_bits: uint) -> ptr[SDL_TrayEntry]
+    extern def SDL_InsertTrayEntryAt(menu: ptr[SDL_TrayMenu], pos: int, label: cstr, flags_: uint) -> ptr[SDL_TrayEntry]
     extern def SDL_SetTrayEntryLabel(entry: ptr[SDL_TrayEntry], label: cstr) -> void
     extern def SDL_GetTrayEntryLabel(entry: ptr[SDL_TrayEntry]) -> cstr
     extern def SDL_SetTrayEntryChecked(entry: ptr[SDL_TrayEntry], checked: bool) -> void

@@ -2,6 +2,7 @@ module examples.idiomatic.glfw.sharing
 
 import std.glfw as glfw
 import std.gl as gl
+import std.gl.util as gl_util
 
 type Mat4 = array[float, 16]
 
@@ -63,18 +64,6 @@ def mat4_ortho(left: float, right: float, bottom: float, top: float, near: float
     )
 
 
-def build_shader(shader_type: gl.GLenum, source_text: cstr) -> gl.GLuint:
-    let shader = gl.create_shader(uint<-shader_type)
-    var sources = zero[array[const_ptr[gl.GLchar], 1]]
-    var source_ptrs = zero[const_ptr[const_ptr[gl.GLchar]]]
-    unsafe:
-        sources[0] = const_ptr[gl.GLchar]<-source_text
-        source_ptrs = const_ptr[const_ptr[gl.GLchar]]<-ptr_of(sources[0])
-    gl.shader_source(shader, 1, source_ptrs, zero[const_ptr[gl.GLint]])
-    gl.compile_shader(shader)
-    return shader
-
-
 def fill_texture_pixels() -> void:
     var y = 0
     while y < texture_size:
@@ -100,7 +89,7 @@ def should_close(window: ptr[glfw.GLFWwindow]) -> bool:
     return glfw.window_should_close(window) != 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+def main() -> int:
     glfw.set_error_callback(error_callback)
 
     if glfw.init() == 0:
@@ -111,7 +100,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 0)
 
     let first_window = glfw.create_window(400, 400, first_window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if first_window == zero[ptr[glfw.GLFWwindow]]:
+    if first_window == null:
         return 1
     defer glfw.destroy_window(first_window)
     windows[0] = first_window
@@ -130,38 +119,27 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     gl.tex_parameteri(uint<-gl.TEXTURE_2D, uint<-gl.TEXTURE_MIN_FILTER, int<-gl.NEAREST)
     gl.tex_parameteri(uint<-gl.TEXTURE_2D, uint<-gl.TEXTURE_MAG_FILTER, int<-gl.NEAREST)
 
-    let vertex_shader = build_shader(uint<-gl.VERTEX_SHADER, vertex_shader_text)
-    let fragment_shader = build_shader(uint<-gl.FRAGMENT_SHADER, fragment_shader_text)
+    let vertex_shader = gl_util.build_shader(uint<-gl.VERTEX_SHADER, vertex_shader_text)
+    let fragment_shader = gl_util.build_shader(uint<-gl.FRAGMENT_SHADER, fragment_shader_text)
 
     let program = gl.create_program()
     gl.attach_shader(program, vertex_shader)
     gl.attach_shader(program, fragment_shader)
     gl.link_program(program)
 
-    var mvp_name = zero[const_ptr[gl.GLchar]]
-    var color_name = zero[const_ptr[gl.GLchar]]
-    var texture_name = zero[const_ptr[gl.GLchar]]
-    var vpos_name = zero[const_ptr[gl.GLchar]]
-    unsafe:
-        mvp_name = const_ptr[gl.GLchar]<-c"MVP"
-        color_name = const_ptr[gl.GLchar]<-c"color"
-        texture_name = const_ptr[gl.GLchar]<-c"texture"
-        vpos_name = const_ptr[gl.GLchar]<-c"vPos"
-
-    let mvp_location = gl.get_uniform_location(program, mvp_name)
-    let color_location = gl.get_uniform_location(program, color_name)
-    let texture_location = gl.get_uniform_location(program, texture_name)
-    let vpos_location = gl.get_attrib_location(program, vpos_name)
+    let mvp_location = gl_util.uniform_location(program, c"MVP")
+    let color_location = gl_util.uniform_location(program, c"color")
+    let texture_location = gl_util.uniform_location(program, c"texture")
+    let vpos_location = gl_util.attrib_location(program, c"vPos")
 
     var vertex_buffer: gl.GLuint = 0
     gl.gen_buffers(1, ptr_of(vertex_buffer))
     gl.bind_buffer(uint<-gl.ARRAY_BUFFER, vertex_buffer)
-    unsafe:
-        gl.buffer_data(uint<-gl.ARRAY_BUFFER, ptr_int<-(8 * int<-size_of(float)), const_ptr[void]<-ptr_of(quad_vertices[0]), uint<-gl.STATIC_DRAW)
+    gl_util.buffer_data(uint<-gl.ARRAY_BUFFER, quad_vertices, uint<-gl.STATIC_DRAW)
     configure_context(program, texture, vertex_buffer, vpos_location, texture_location)
 
     let second_window = glfw.create_window(400, 400, second_window_title, zero[ptr[glfw.GLFWmonitor]], first_window)
-    if second_window == zero[ptr[glfw.GLFWwindow]]:
+    if second_window == null:
         return 1
     defer glfw.destroy_window(second_window)
     windows[1] = second_window
@@ -196,8 +174,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
 
             gl.viewport(0, 0, framebuffer_width, framebuffer_height)
             gl.clear(uint<-gl.COLOR_BUFFER_BIT)
-            unsafe:
-                gl.uniform_matrix_4fv(mvp_location, 1, ubyte<-gl.FALSE, const_ptr[gl.GLfloat]<-ptr_of(mvp[0]))
+            gl_util.uniform_matrix_4(mvp_location, ubyte<-gl.FALSE, mvp)
             gl.uniform_3f(color_location, tint_colors[index * 3], tint_colors[index * 3 + 1], tint_colors[index * 3 + 2])
             gl.draw_arrays(uint<-gl.TRIANGLE_FAN, 0, 4)
 

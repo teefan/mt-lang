@@ -3,6 +3,7 @@ module std.str
 import std.ascii as ascii
 import std.mem.arena as arena
 import std.option as option
+import std.span as sp
 
 
 pub def cstr_len(text: cstr) -> ptr_uint:
@@ -22,6 +23,27 @@ pub def cstr_as_str(text: cstr) -> str:
 pub def chars_as_str(text: ptr[char]) -> str:
     unsafe:
         return str(data = text, len = cstr_len(cstr<-text))
+
+
+pub def nullable_cstr_as_str(text: cstr?) -> option.Option[str]:
+    if text == null:
+        return option.none[str]()
+
+    return option.some[str](cstr_as_str(cstr<-text))
+
+
+pub def as_byte_span(text: str) -> span[ubyte]:
+    unsafe:
+        return sp.from_ptr[ubyte](ptr[ubyte]<-text.data, text.len)
+
+
+pub def utf8_byte_span_as_str(bytes: span[ubyte]) -> option.Option[str]:
+    unsafe:
+        let borrowed = str(data = ptr[char]<-bytes.data, len = bytes.len)
+        if not is_valid_utf8(borrowed):
+            return option.none[str]()
+
+        return option.some[str](borrowed)
 
 
 pub def utf8_continuation_byte(byte: ubyte) -> bool:

@@ -69,6 +69,7 @@ module MilkTea
           repository_url: "https://github.com/libsdl-org/SDL.git",
           revision: "41f079491a0e79b22441fd32a7c8ad91db237744",
           sentinel_paths: %w[
+            CMakeLists.txt
             include/SDL3/SDL.h
             include/SDL3/SDL_main.h
           ],

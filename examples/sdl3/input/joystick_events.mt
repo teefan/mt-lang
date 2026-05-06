@@ -119,8 +119,11 @@ def add_added_message(which: uint, joystick: ptr[c.SDL_Joystick]?) -> void:
         unsafe:
             c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(message), c"Joystick #%u add, but not opened: %s", which, c.SDL_GetError())
     else:
+        let joystick_name = c.SDL_GetJoystickName(joystick)
+        let display_name = if joystick_name != null: joystick_name else: c"<unnamed>"
+
         unsafe:
-            c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(message), c"Joystick #%u ('%s') added", which, c.SDL_GetJoystickName(joystick))
+            c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(message), c"Joystick #%u ('%s') added", which, display_name)
 
     append_message(which, message)
 

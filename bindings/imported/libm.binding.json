@@ -1,0 +1,242 @@
+{
+  "module_name": "std.libm",
+  "raw_module_name": "std.c.libm",
+  "raw_import_alias": "c",
+  "types": [],
+  "constants": {
+    "overrides": [
+      { "raw": "M_E", "name": "E", "type": "double" },
+      { "raw": "M_LOG2E", "name": "LOG2_E", "type": "double" },
+      { "raw": "M_LOG10E", "name": "LOG10_E", "type": "double" },
+      { "raw": "M_LN2", "name": "LN_2", "type": "double" },
+      { "raw": "M_LN10", "name": "LN_10", "type": "double" },
+      { "raw": "M_PI", "name": "PI", "type": "double" },
+      { "raw": "M_PI_2", "name": "PI_OVER_2", "type": "double" },
+      { "raw": "M_PI_4", "name": "PI_OVER_4", "type": "double" },
+      { "raw": "M_1_PI", "name": "ONE_OVER_PI", "type": "double" },
+      { "raw": "M_2_PI", "name": "TWO_OVER_PI", "type": "double" },
+      { "raw": "M_2_SQRTPI", "name": "TWO_OVER_SQRT_PI", "type": "double" },
+      { "raw": "M_SQRT2", "name": "SQRT_2", "type": "double" },
+      { "raw": "M_SQRT1_2", "name": "SQRT_HALF", "type": "double" },
+      { "raw": "M_E_F", "name": "E_F", "type": "float" },
+      { "raw": "M_PI_F", "name": "PI_F", "type": "float" },
+      { "raw": "M_TAU_F", "name": "TAU_F", "type": "float" }
+    ]
+  },
+  "functions": {
+    "overrides": [
+      {
+        "raw": "sqrt",
+        "name": "sqrt",
+        "params": [
+          { "name": "x", "type": "double" }
+        ],
+        "return_type": "double"
+      },
+      {
+        "raw": "sqrtf",
+        "name": "sqrtf",
+        "params": [
+          { "name": "x", "type": "float" }
+        ],
+        "return_type": "float"
+      },
+      {
+        "raw": "exp",
+        "name": "exp",
+        "params": [
+          { "name": "x", "type": "double" }
+        ],
+        "return_type": "double"
+      },
+      {
+        "raw": "expf",
+        "name": "expf",
+        "params": [
+          { "name": "x", "type": "float" }
+        ],
+        "return_type": "float"
+      },
+      {
+        "raw": "log",
+        "name": "log",
+        "params": [
+          { "name": "x", "type": "double" }
+        ],
+        "return_type": "double"
+      },
+      {
+        "raw": "logf",
+        "name": "logf",
+        "params": [
+          { "name": "x", "type": "float" }
+        ],
+        "return_type": "float"
+      },
+      {
+        "raw": "sin",
+        "name": "sin",
+        "params": [
+          { "name": "x", "type": "double" }
+        ],
+        "return_type": "double"
+      },
+      {
+        "raw": "sinf",
+        "name": "sinf",
+        "params": [
+          { "name": "x", "type": "float" }
+        ],
+        "return_type": "float"
+      },
+      {
+        "raw": "cos",
+        "name": "cos",
+        "params": [
+          { "name": "x", "type": "double" }
+        ],
+        "return_type": "double"
+      },
+      {
+        "raw": "cosf",
+        "name": "cosf",
+        "params": [
+          { "name": "x", "type": "float" }
+        ],
+        "return_type": "float"
+      },
+      {
+        "raw": "trunc",
+        "name": "trunc",
+        "params": [
+          { "name": "x", "type": "double" }
+        ],
+        "return_type": "double"
+      },
+      {
+        "raw": "truncf",
+        "name": "truncf",
+        "params": [
+          { "name": "x", "type": "float" }
+        ],
+        "return_type": "float"
+      },
+      {
+        "raw": "ceil",
+        "name": "ceil",
+        "params": [
+          { "name": "x", "type": "double" }
+        ],
+        "return_type": "double"
+      },
+      {
+        "raw": "ceilf",
+        "name": "ceilf",
+        "params": [
+          { "name": "x", "type": "float" }
+        ],
+        "return_type": "float"
+      },
+      {
+        "raw": "floor",
+        "name": "floor",
+        "params": [
+          { "name": "x", "type": "double" }
+        ],
+        "return_type": "double"
+      },
+      {
+        "raw": "floorf",
+        "name": "floorf",
+        "params": [
+          { "name": "x", "type": "float" }
+        ],
+        "return_type": "float"
+      },
+      {
+        "raw": "pow",
+        "name": "pow",
+        "params": [
+          { "name": "x", "type": "double" },
+          { "name": "y", "type": "double" }
+        ],
+        "return_type": "double"
+      },
+      {
+        "raw": "powf",
+        "name": "powf",
+        "params": [
+          { "name": "x", "type": "float" },
+          { "name": "y", "type": "float" }
+        ],
+        "return_type": "float"
+      },
+      {
+        "raw": "tan",
+        "name": "tan",
+        "params": [
+          { "name": "x", "type": "double" }
+        ],
+        "return_type": "double"
+      },
+      {
+        "raw": "tanf",
+        "name": "tanf",
+        "params": [
+          { "name": "x", "type": "float" }
+        ],
+        "return_type": "float"
+      },
+      {
+        "raw": "atan2",
+        "name": "atan2",
+        "params": [
+          { "name": "y", "type": "double" },
+          { "name": "x", "type": "double" }
+        ],
+        "return_type": "double"
+      },
+      {
+        "raw": "atan2f",
+        "name": "atan2f",
+        "params": [
+          { "name": "y", "type": "float" },
+          { "name": "x", "type": "float" }
+        ],
+        "return_type": "float"
+      },
+      {
+        "raw": "acos",
+        "name": "acos",
+        "params": [
+          { "name": "x", "type": "double" }
+        ],
+        "return_type": "double"
+      },
+      {
+        "raw": "acosf",
+        "name": "acosf",
+        "params": [
+          { "name": "x", "type": "float" }
+        ],
+        "return_type": "float"
+      },
+      {
+        "raw": "fabs",
+        "name": "fabs",
+        "params": [
+          { "name": "x", "type": "double" }
+        ],
+        "return_type": "double"
+      },
+      {
+        "raw": "fabsf",
+        "name": "fabsf",
+        "params": [
+          { "name": "x", "type": "float" }
+        ],
+        "return_type": "float"
+      }
+    ]
+  }
+}

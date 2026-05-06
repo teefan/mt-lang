@@ -43,7 +43,9 @@ def render_frame() -> void:
     var y: float = 0.0
 
     if joystick != null:
-        text = c.SDL_GetJoystickName(joystick)
+        let joystick_name = c.SDL_GetJoystickName(joystick)
+        if joystick_name != null:
+            text = joystick_name
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)

@@ -2,7 +2,8 @@ module examples.idiomatic.glfw.clipboard
 
 import std.glfw as glfw
 import std.gl as gl
-import std.c.stdio as stdio
+import std.io as io
+import std.str as text
 
 const window_width: int = 200
 const window_height: int = 200
@@ -10,7 +11,7 @@ const window_title: cstr = c"Clipboard Test"
 const clipboard_text: cstr = c"Hello GLFW World!"
 
 
-def error_callback(error: int, description: cstr) -> void:
+def error_callback(_error: int, _description: cstr) -> void:
     return
 
 
@@ -20,7 +21,7 @@ def modifier_key() -> int:
     return glfw.MOD_CONTROL
 
 
-def key_callback(window: ptr[glfw.GLFWwindow], key: int, scancode: int, action: int, mods: int) -> void:
+def key_callback(window: ptr[glfw.GLFWwindow], key: int, _scancode: int, action: int, mods: int) -> void:
     if action != glfw.PRESS:
         return
 
@@ -30,19 +31,19 @@ def key_callback(window: ptr[glfw.GLFWwindow], key: int, scancode: int, action: 
 
     if key == glfw.KEY_C and mods == modifier_key():
         glfw.set_clipboard_string(zero[ptr[glfw.GLFWwindow]], clipboard_text)
-        stdio.printf(c"Setting clipboard to \"%s\"\n", clipboard_text)
+        io.println(f"Setting clipboard to \"#{text.cstr_as_str(clipboard_text)}\"")
         return
 
     if key == glfw.KEY_V and mods == modifier_key():
-        let text = glfw.get_clipboard_string(zero[ptr[glfw.GLFWwindow]])
-        unsafe:
-            if ptr[char]<-text != zero[ptr[char]]:
-                stdio.printf(c"Clipboard contains \"%s\"\n", text)
-            else:
-                stdio.printf(c"Clipboard does not contain a string\n")
+        let clipboard = glfw.get_clipboard_string(zero[ptr[glfw.GLFWwindow]])
+        if clipboard == null:
+            io.println("Clipboard does not contain a string")
+            return
+
+        io.println(f"Clipboard contains \"#{text.cstr_as_str(cstr<-clipboard)}\"")
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+def main() -> int:
     glfw.set_error_callback(error_callback)
 
     if glfw.init() == 0:
@@ -50,7 +51,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     defer glfw.terminate()
 
     let window = glfw.create_window(window_width, window_height, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         return 1
     defer glfw.destroy_window(window)
 

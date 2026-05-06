@@ -35,11 +35,10 @@ def key_callback(window: ptr[glfw.GLFWwindow], key: int, scancode: int, action: 
 
     if key == glfw.GLFW_KEY_V and mods == modifier_key():
         let text = glfw.glfwGetClipboardString(zero[ptr[glfw.GLFWwindow]])
-        unsafe:
-            if ptr[char]<-text != zero[ptr[char]]:
-                stdio.printf(c"Clipboard contains \"%s\"\n", text)
-            else:
-                stdio.printf(c"Clipboard does not contain a string\n")
+        if text != null:
+            stdio.printf(c"Clipboard contains \"%s\"\n", text)
+        else:
+            stdio.printf(c"Clipboard does not contain a string\n")
 
 
 def main(argc: int, argv: ptr[ptr[char]]) -> int:
@@ -50,7 +49,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     defer glfw.glfwTerminate()
 
     let window = glfw.glfwCreateWindow(window_width, window_height, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         return 1
     defer glfw.glfwDestroyWindow(window)
 

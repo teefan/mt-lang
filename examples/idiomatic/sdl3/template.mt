@@ -1,6 +1,7 @@
 module examples.idiomatic.sdl3.template
 
 import std.sdl3 as sdl
+import std.sdl3.runtime as sdl_rt
 
 const window_width: int = 640
 const window_height: int = 480
@@ -28,7 +29,7 @@ def render_frame() -> void:
     sdl.render_present(renderer)
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+def app_main() -> int:
     sdl.set_app_metadata("Example Template", "1.0", "com.example.template")
 
     if not sdl.init(sdl.INIT_VIDEO):
@@ -50,4 +51,4 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
 
 
 def main(argc: int, argv: ptr[ptr[char]]) -> int:
-    return sdl.run_app(argc, argv, app_main)
+    return sdl_rt.run_app_no_args(argc, argv, app_main)

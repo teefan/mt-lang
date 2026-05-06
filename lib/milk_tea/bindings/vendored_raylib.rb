@@ -29,38 +29,40 @@ module MilkTea
 
     module_function
 
-    def library
-      @library ||= VendoredCLibrary::Archive.new(
+    def library(root: MilkTea.root)
+      resolved_root = Pathname.new(File.expand_path(root.to_s))
+      @libraries ||= {}
+      @libraries[resolved_root.to_s] ||= VendoredCLibrary::Archive.new(
         name: "raylib",
-        source_root: source_root,
-        build_root: build_root,
+        source_root: source_root(root: resolved_root),
+        build_root: build_root(root: resolved_root),
         archive_name: "libraylib.a",
         sources: SOURCES,
-        include_roots: [source_root],
+        include_roots: [source_root(root: resolved_root)],
         defines: DEFINES,
         system_link_flags: SYSTEM_LINK_FLAGS,
         cc_env_var: "RAYLIB_CC",
       )
     end
 
-    def source_root
-      MilkTea.root.join("third_party/raylib-upstream/src")
+    def source_root(root: MilkTea.root)
+      Pathname.new(File.expand_path(root.to_s)).join("third_party/raylib-upstream/src")
     end
 
-    def build_root
-      MilkTea.root.join("tmp/vendored-raylib-opengl43")
+    def build_root(root: MilkTea.root)
+      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-raylib-opengl43")
     end
 
-    def archive_path
-      build_root.join("libraylib.a")
+    def archive_path(root: MilkTea.root)
+      build_root(root:).join("libraylib.a")
     end
 
-    def link_flags
-      library.link_flags
+    def link_flags(root: MilkTea.root)
+      library(root:).link_flags
     end
 
-    def prepare!(**kwargs)
-      library.prepare!(**kwargs)
+    def prepare!(root: MilkTea.root, **kwargs)
+      library(root:).prepare!(**kwargs)
     end
   end
 end
