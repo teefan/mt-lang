@@ -1969,7 +1969,7 @@ module MilkTea
         end
 
         if [:string, :cstring].include?(tok.type)
-          return [nil, []] if embedded_glsl_heredoc_token?(tok)
+          return [nil, []] if embedded_heredoc_token?(tok)
 
           return [:string, []]
         end
@@ -1989,10 +1989,13 @@ module MilkTea
         [nil, []]
       end
 
-      def embedded_glsl_heredoc_token?(token)
+      def embedded_heredoc_token?(token)
         return false unless [:string, :cstring].include?(token.type)
 
-        token.lexeme.match?(/\A(?:c)?<<-(?:GLSL|VERT|FRAG|COMP)[ \t]*\n/)
+        tag = token.lexeme[/\A(?:c)?<<-([A-Za-z_][A-Za-z0-9_]*)[ \t]*\n/, 1]
+        return false if tag.nil?
+
+        %w[GLSL VERT FRAG COMP JSON JSONC SQL].include?(tag)
       end
 
       def token_semantic_entries(token, semantic_type, modifiers)

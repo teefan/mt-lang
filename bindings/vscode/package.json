@@ -45,6 +45,24 @@
         "aliases": [
           "Milk Tea Embedded GLSL"
         ]
+      },
+      {
+        "id": "milk-tea-json",
+        "aliases": [
+          "Milk Tea Embedded JSON"
+        ]
+      },
+      {
+        "id": "milk-tea-jsonc",
+        "aliases": [
+          "Milk Tea Embedded JSONC"
+        ]
+      },
+      {
+        "id": "milk-tea-sql",
+        "aliases": [
+          "Milk Tea Embedded SQL"
+        ]
       }
     ],
     "grammars": [
@@ -53,16 +71,37 @@
         "scopeName": "source.milk-tea",
         "path": "./syntaxes/milk-tea.tmLanguage.json",
         "embeddedLanguages": {
-          "meta.embedded.block.glsl.milk-tea": "milk-tea-glsl"
+          "meta.embedded.block.glsl.milk-tea": "milk-tea-glsl",
+          "meta.embedded.block.json.milk-tea": "milk-tea-json",
+          "meta.embedded.block.jsonc.milk-tea": "milk-tea-jsonc",
+          "meta.embedded.block.sql.milk-tea": "milk-tea-sql"
         },
         "tokenTypes": {
-          "meta.embedded.block.glsl.milk-tea": "other"
+          "meta.embedded.block.glsl.milk-tea": "other",
+          "meta.embedded.block.json.milk-tea": "other",
+          "meta.embedded.block.jsonc.milk-tea": "other",
+          "meta.embedded.block.sql.milk-tea": "other"
         }
       },
       {
         "language": "milk-tea-glsl",
         "scopeName": "source.glsl",
         "path": "./syntaxes/glsl.tmLanguage.json"
+      },
+      {
+        "language": "milk-tea-json",
+        "scopeName": "source.json",
+        "path": "./syntaxes/json.tmLanguage.json"
+      },
+      {
+        "language": "milk-tea-jsonc",
+        "scopeName": "source.jsonc",
+        "path": "./syntaxes/jsonc.tmLanguage.json"
+      },
+      {
+        "language": "milk-tea-sql",
+        "scopeName": "source.sql",
+        "path": "./syntaxes/sql.tmLanguage.json"
       }
     ],
     "configuration": {

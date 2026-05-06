@@ -8,6 +8,12 @@
     { "include": "#format-string" },
     { "include": "#glsl-heredoc-cstring" },
     { "include": "#glsl-heredoc-string" },
+    { "include": "#json-heredoc-cstring" },
+    { "include": "#json-heredoc-string" },
+    { "include": "#jsonc-heredoc-cstring" },
+    { "include": "#jsonc-heredoc-string" },
+    { "include": "#sql-heredoc-cstring" },
+    { "include": "#sql-heredoc-string" },
     { "include": "#heredoc-cstring" },
     { "include": "#heredoc-string" },
     { "include": "#string" },
@@ -63,6 +69,108 @@
       },
       "patterns": [
         { "include": "source.glsl" }
+      ]
+    },
+
+    "json-heredoc-cstring": {
+      "name": "meta.embedded.block.json.milk-tea",
+      "begin": "\\b(c<<-)(JSON)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "meta.embedded.block.json.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
+      "patterns": [
+        { "include": "source.json" }
+      ]
+    },
+
+    "json-heredoc-string": {
+      "name": "meta.embedded.block.json.milk-tea",
+      "begin": "(?<![A-Za-z0-9_])(<<-)(JSON)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "meta.embedded.block.json.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
+      "patterns": [
+        { "include": "source.json" }
+      ]
+    },
+
+    "jsonc-heredoc-cstring": {
+      "name": "meta.embedded.block.jsonc.milk-tea",
+      "begin": "\\b(c<<-)(JSONC)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "meta.embedded.block.jsonc.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
+      "patterns": [
+        { "include": "source.jsonc" }
+      ]
+    },
+
+    "jsonc-heredoc-string": {
+      "name": "meta.embedded.block.jsonc.milk-tea",
+      "begin": "(?<![A-Za-z0-9_])(<<-)(JSONC)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "meta.embedded.block.jsonc.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
+      "patterns": [
+        { "include": "source.jsonc" }
+      ]
+    },
+
+    "sql-heredoc-cstring": {
+      "name": "meta.embedded.block.sql.milk-tea",
+      "begin": "\\b(c<<-)(SQL)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "meta.embedded.block.sql.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
+      "patterns": [
+        { "include": "source.sql" }
+      ]
+    },
+
+    "sql-heredoc-string": {
+      "name": "meta.embedded.block.sql.milk-tea",
+      "begin": "(?<![A-Za-z0-9_])(<<-)(SQL)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "meta.embedded.block.sql.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
+      "patterns": [
+        { "include": "source.sql" }
       ]
     },
 

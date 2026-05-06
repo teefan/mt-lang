@@ -156,6 +156,40 @@ class MilkTeaLexerTest < Minitest::Test
     assert_equal "alpha\n  beta\n\n", text.literal
   end
 
+  def test_lexes_multiline_adjacent_strings_and_cstrings
+    source = <<~MT
+      const title = "The quick brown fox"
+          " jumps over the lazy dog."
+
+      const c_title: cstr = c"alpha"
+          c" beta"
+          c" gamma"
+    MT
+
+    tokens = MilkTea::Lexer.lex(source)
+    title = tokens.find { |token| token.type == :string }
+    c_title = tokens.find { |token| token.type == :cstring }
+
+    refute_nil title
+    refute_nil c_title
+    assert_equal "The quick brown fox jumps over the lazy dog.", title.literal
+    assert_equal "alpha beta gamma", c_title.literal
+  end
+
+  def test_does_not_merge_non_indented_next_line_strings
+    source = <<~MT
+      const title = "one"
+      "two"
+    MT
+
+    tokens = MilkTea::Lexer.lex(source)
+    strings = tokens.select { |token| token.type == :string }
+
+    assert_equal 2, strings.length
+    assert_equal "one", strings[0].literal
+    assert_equal "two", strings[1].literal
+  end
+
   def test_rejects_unterminated_heredoc_literals
     source = <<~MT
       const shader = <<-GLSL
