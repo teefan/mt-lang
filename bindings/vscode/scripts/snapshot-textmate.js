@@ -1244,6 +1244,22 @@ async function main() {
   const tokenColorRuleIndex = buildTokenColorRuleIndex(rawTheme);
   const grammarRaw = fs.readFileSync(grammarPath, 'utf8');
   const grammarJson = loadJson(grammarPath);
+  const extensionRoot = path.resolve(__dirname, '..');
+  const extensionPackagePath = path.join(extensionRoot, 'package.json');
+  const contributedGrammars = new Map();
+  if (fs.existsSync(extensionPackagePath)) {
+    const extensionPackage = loadJson(extensionPackagePath);
+    for (const entry of extensionPackage.contributes?.grammars || []) {
+      if (!entry.scopeName || !entry.path) {
+        continue;
+      }
+      contributedGrammars.set(entry.scopeName, {
+        path: path.resolve(extensionRoot, entry.path),
+        raw: null,
+      });
+    }
+  }
+  contributedGrammars.set(grammarJson.scopeName, { path: grammarPath, raw: grammarRaw });
   const source = fs.readFileSync(inputPath, 'utf8');
   const lines = source.split(/\r?\n/);
 
@@ -1262,10 +1278,15 @@ async function main() {
     onigLib,
     theme: rawTheme,
     loadGrammar: async (scopeName) => {
-      if (scopeName !== grammarJson.scopeName) {
+      const entry = contributedGrammars.get(scopeName);
+      if (!entry) {
         return null;
       }
-      return parseRawGrammar(grammarRaw, grammarPath);
+
+      if (entry.raw == null) {
+        entry.raw = fs.readFileSync(entry.path, 'utf8');
+      }
+      return parseRawGrammar(entry.raw, entry.path);
     }
   });
 

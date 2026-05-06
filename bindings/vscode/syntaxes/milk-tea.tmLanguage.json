@@ -6,6 +6,8 @@
   "patterns": [
     { "include": "#comment" },
     { "include": "#format-string" },
+    { "include": "#glsl-heredoc-cstring" },
+    { "include": "#glsl-heredoc-string" },
     { "include": "#heredoc-cstring" },
     { "include": "#heredoc-string" },
     { "include": "#string" },
@@ -28,6 +30,40 @@
     "comment": {
       "name": "comment.line.number-sign.milk-tea",
       "match": "#.*$"
+    },
+
+    "glsl-heredoc-cstring": {
+      "name": "meta.embedded.block.glsl.milk-tea",
+      "begin": "\\b(c<<-)((?:GLSL|VERT|FRAG|COMP))\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "meta.embedded.block.glsl.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
+      "patterns": [
+        { "include": "source.glsl" }
+      ]
+    },
+
+    "glsl-heredoc-string": {
+      "name": "meta.embedded.block.glsl.milk-tea",
+      "begin": "(?<![A-Za-z0-9_])(<<-)((?:GLSL|VERT|FRAG|COMP))\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "meta.embedded.block.glsl.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
+      "patterns": [
+        { "include": "source.glsl" }
+      ]
     },
 
     "heredoc-cstring": {

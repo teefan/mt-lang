@@ -39,13 +39,30 @@
           "light": "./icons/milk-tea-light.svg",
           "dark": "./icons/milk-tea-dark.svg"
         }
+      },
+      {
+        "id": "milk-tea-glsl",
+        "aliases": [
+          "Milk Tea Embedded GLSL"
+        ]
       }
     ],
     "grammars": [
       {
         "language": "milk-tea",
         "scopeName": "source.milk-tea",
-        "path": "./syntaxes/milk-tea.tmLanguage.json"
+        "path": "./syntaxes/milk-tea.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.block.glsl.milk-tea": "milk-tea-glsl"
+        },
+        "tokenTypes": {
+          "meta.embedded.block.glsl.milk-tea": "other"
+        }
+      },
+      {
+        "language": "milk-tea-glsl",
+        "scopeName": "source.glsl",
+        "path": "./syntaxes/glsl.tmLanguage.json"
       }
     ],
     "configuration": {
