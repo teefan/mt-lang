@@ -3,7 +3,6 @@ extern module std.c.sdl3:
     link "SDL3"
     include "SDL3/SDL.h"
     include "SDL3/SDL_main.h"
-    include "sdl3_gl_loader_helpers.h"
 
     union SDL_GamepadBinding_input:
         button: int
@@ -29,23 +28,14 @@ extern module std.c.sdl3:
         axis_max: int
 
     opaque va_list = c"va_list"
-
     type Sint8 = byte
-
     type Uint8 = ubyte
-
     type Sint16 = short
-
     type Uint16 = ushort
-
     type Sint32 = int
-
     type Uint32 = uint
-
     type Sint64 = ptr_int
-
     type Uint64 = ptr_uint
-
     type SDL_Time = ptr_int
 
     struct SDL_alignment_test:
@@ -61,11 +51,8 @@ extern module std.c.sdl3:
     extern def SDL_free(mem: ptr[void]) -> void
 
     type SDL_malloc_func = fn(arg0: ptr_uint) -> ptr[void]
-
     type SDL_calloc_func = fn(arg0: ptr_uint, arg1: ptr_uint) -> ptr[void]
-
     type SDL_realloc_func = fn(arg0: ptr[void], arg1: ptr_uint) -> ptr[void]
-
     type SDL_free_func = fn(arg0: ptr[void]) -> void
 
     extern def SDL_GetOriginalMemoryFunctions(malloc_func: ptr[SDL_malloc_func], calloc_func: ptr[SDL_calloc_func], realloc_func: ptr[SDL_realloc_func], free_func: ptr[SDL_free_func]) -> void
@@ -237,7 +224,6 @@ extern module std.c.sdl3:
     extern def SDL_tanf(x: float) -> float
 
     opaque SDL_iconv_data_t = c"struct SDL_iconv_data_t"
-
     type SDL_iconv_t = ptr[SDL_iconv_data_t]
 
     extern def SDL_iconv_open(tocode: cstr, fromcode: cstr) -> SDL_iconv_t
@@ -380,9 +366,7 @@ extern module std.c.sdl3:
     extern def SDL_DestroyProperties(props: uint) -> void
 
     opaque SDL_Thread = c"SDL_Thread"
-
     type SDL_ThreadID = ptr_uint
-
     type SDL_TLSID = SDL_AtomicInt
 
     enum SDL_ThreadPriority: int
@@ -1035,7 +1019,6 @@ extern module std.c.sdl3:
     extern def SDL_WriteSurfacePixelFloat(surface: ptr[SDL_Surface], x: int, y: int, r: float, g: float, b: float, a: float) -> bool
 
     type SDL_CameraID = uint
-
     opaque SDL_Camera = c"SDL_Camera"
 
     struct SDL_CameraSpec:
@@ -1079,7 +1062,6 @@ extern module std.c.sdl3:
     extern def SDL_HasPrimarySelectionText() -> bool
 
     type SDL_ClipboardDataCallback = fn(arg0: ptr[void], arg1: cstr, arg2: ptr[ptr_uint]) -> const_ptr[void]
-
     type SDL_ClipboardCleanupCallback = fn(arg0: ptr[void]) -> void
 
     extern def SDL_SetClipboardData(callback: fn(arg0: ptr[void], arg1: cstr, arg2: ptr[ptr_uint]) -> const_ptr[void], cleanup: fn(arg0: ptr[void]) -> void, userdata: ptr[void], mime_types: const_ptr[cstr], num_mime_types: ptr_uint) -> bool
@@ -1108,7 +1090,6 @@ extern module std.c.sdl3:
     extern def SDL_GetSystemPageSize() -> int
 
     type SDL_DisplayID = uint
-
     type SDL_WindowID = uint
 
     flags SDL_SystemTheme: int
@@ -1137,7 +1118,6 @@ extern module std.c.sdl3:
         SDL_ORIENTATION_PORTRAIT_FLIPPED = 4
 
     opaque SDL_Window = c"SDL_Window"
-
     type SDL_WindowFlags = ptr_uint
 
     flags SDL_FlashOperation: int
@@ -1154,21 +1134,13 @@ extern module std.c.sdl3:
         SDL_PROGRESS_STATE_ERROR = 4
 
     opaque SDL_GLContextState = c"struct SDL_GLContextState"
-
     type SDL_GLContext = ptr[SDL_GLContextState]
-
     type SDL_EGLDisplay = ptr[void]
-
     type SDL_EGLConfig = ptr[void]
-
     type SDL_EGLSurface = ptr[void]
-
     type SDL_EGLAttrib = ptr_int
-
     type SDL_EGLint = int
-
     type SDL_EGLAttribArrayCallback = fn(arg0: ptr[void]) -> SDL_EGLAttrib
-
     type SDL_EGLIntArrayCallback = fn(arg0: ptr[void], arg1: SDL_EGLDisplay, arg2: SDL_EGLConfig) -> SDL_EGLint
 
     enum SDL_GLAttr: int
@@ -1202,11 +1174,8 @@ extern module std.c.sdl3:
         SDL_GL_EGL_PLATFORM = 27
 
     type SDL_GLProfile = uint
-
     type SDL_GLContextFlag = uint
-
     type SDL_GLContextReleaseFlag = uint
-
     type SDL_GLContextResetNotification = uint
 
     extern def SDL_GetNumVideoDrivers() -> int
@@ -1373,7 +1342,6 @@ extern module std.c.sdl3:
     extern def SDL_GetPowerInfo(seconds: ptr[int], percent: ptr[int]) -> SDL_PowerState
 
     opaque SDL_Sensor = c"SDL_Sensor"
-
     type SDL_SensorID = uint
 
     enum SDL_SensorType: int
@@ -1403,7 +1371,6 @@ extern module std.c.sdl3:
     extern def SDL_UpdateSensors() -> void
 
     opaque SDL_Joystick = c"SDL_Joystick"
-
     type SDL_JoystickID = uint
 
     enum SDL_JoystickType: int
@@ -1928,9 +1895,7 @@ extern module std.c.sdl3:
         SDL_SCANCODE_COUNT = 512
 
     type SDL_Keycode = uint
-
     type SDL_Keymod = ushort
-
     type SDL_KeyboardID = uint
 
     extern def SDL_HasKeyboard() -> bool
@@ -1977,7 +1942,6 @@ extern module std.c.sdl3:
     extern def SDL_ScreenKeyboardShown(window: ptr[SDL_Window]) -> bool
 
     type SDL_MouseID = uint
-
     opaque SDL_Cursor = c"SDL_Cursor"
 
     enum SDL_SystemCursor: int
@@ -2012,7 +1976,6 @@ extern module std.c.sdl3:
         duration: uint
 
     type SDL_MouseButtonFlags = uint
-
     type SDL_MouseMotionTransformCallback = fn(arg0: ptr[void], arg1: Uint64, arg2: SDL_Window, arg3: SDL_MouseID, arg4: ptr[float], arg5: ptr[float]) -> void
 
     extern def SDL_HasMouse() -> bool
@@ -2041,7 +2004,6 @@ extern module std.c.sdl3:
     extern def SDL_CursorVisible() -> bool
 
     type SDL_TouchID = ptr_uint
-
     type SDL_FingerID = ptr_uint
 
     enum SDL_TouchDeviceType: int
@@ -2062,7 +2024,6 @@ extern module std.c.sdl3:
     extern def SDL_GetTouchFingers(touchID: ptr_uint, count: ptr[int]) -> ptr[ptr[SDL_Finger]]
 
     type SDL_PenID = uint
-
     type SDL_PenInputFlags = uint
 
     enum SDL_PenAxis: int
@@ -2687,29 +2648,17 @@ extern module std.c.sdl3:
     extern def SDL_GetCurrentDirectory() -> ptr[char]
 
     opaque SDL_GPUDevice = c"SDL_GPUDevice"
-
     opaque SDL_GPUBuffer = c"SDL_GPUBuffer"
-
     opaque SDL_GPUTransferBuffer = c"SDL_GPUTransferBuffer"
-
     opaque SDL_GPUTexture = c"SDL_GPUTexture"
-
     opaque SDL_GPUSampler = c"SDL_GPUSampler"
-
     opaque SDL_GPUShader = c"SDL_GPUShader"
-
     opaque SDL_GPUComputePipeline = c"SDL_GPUComputePipeline"
-
     opaque SDL_GPUGraphicsPipeline = c"SDL_GPUGraphicsPipeline"
-
     opaque SDL_GPUCommandBuffer = c"SDL_GPUCommandBuffer"
-
     opaque SDL_GPURenderPass = c"SDL_GPURenderPass"
-
     opaque SDL_GPUComputePass = c"SDL_GPUComputePass"
-
     opaque SDL_GPUCopyPass = c"SDL_GPUCopyPass"
-
     opaque SDL_GPUFence = c"SDL_GPUFence"
 
     enum SDL_GPUPrimitiveType: int
@@ -3402,11 +3351,8 @@ extern module std.c.sdl3:
     extern def SDL_GetGPUTextureFormatFromPixelFormat(format: SDL_PixelFormat) -> SDL_GPUTextureFormat
 
     opaque SDL_Haptic = c"SDL_Haptic"
-
     type SDL_HapticEffectType = ushort
-
     type SDL_HapticDirectionType = ubyte
-
     type SDL_HapticEffectID = int
 
     struct SDL_HapticDirection:
@@ -3610,11 +3556,8 @@ extern module std.c.sdl3:
         SDL_APP_FAILURE = 2
 
     type SDL_AppInit_func = fn(arg0: ptr[ptr[void]], arg1: int, arg2: ptr[ptr[char]]) -> SDL_AppResult
-
     type SDL_AppIterate_func = fn(arg0: ptr[void]) -> SDL_AppResult
-
     type SDL_AppEvent_func = fn(arg0: ptr[void], arg1: SDL_Event) -> SDL_AppResult
-
     type SDL_AppQuit_func = fn(arg0: ptr[void], arg1: SDL_AppResult) -> void
 
     extern def SDL_Init(flag_bits: uint) -> bool
@@ -3699,7 +3642,6 @@ extern module std.c.sdl3:
     extern def SDL_SetLogOutputFunction(callback: fn(arg0: ptr[void], arg1: int, arg2: SDL_LogPriority, arg3: cstr) -> void, userdata: ptr[void]) -> void
 
     type SDL_MessageBoxFlags = uint
-
     type SDL_MessageBoxButtonFlags = uint
 
     struct SDL_MessageBoxButtonData:
@@ -4004,7 +3946,6 @@ extern module std.c.sdl3:
     extern def SDL_DelayPrecise(ns: ptr_uint) -> void
 
     type SDL_TimerID = uint
-
     type SDL_TimerCallback = fn(arg0: ptr[void], arg1: SDL_TimerID, arg2: Uint32) -> Uint32
 
     extern def SDL_AddTimer(interval: uint, callback: fn(arg0: ptr[void], arg1: SDL_TimerID, arg2: Uint32) -> Uint32, userdata: ptr[void]) -> SDL_TimerID
@@ -4015,15 +3956,10 @@ extern module std.c.sdl3:
     extern def SDL_RemoveTimer(id: uint) -> bool
 
     opaque SDL_Tray = c"SDL_Tray"
-
     opaque SDL_TrayMenu = c"SDL_TrayMenu"
-
     opaque SDL_TrayEntry = c"SDL_TrayEntry"
-
     type SDL_TrayEntryFlags = uint
-
     type SDL_TrayCallback = fn(arg0: ptr[void], arg1: SDL_TrayEntry) -> void
-
     type SDL_TrayClickCallback = fn(arg0: ptr[void], arg1: SDL_Tray) -> bool
 
     extern def SDL_CreateTray(icon: ptr[SDL_Surface], tooltip: cstr) -> ptr[SDL_Tray]
@@ -4062,277 +3998,140 @@ extern module std.c.sdl3:
     extern def SDL_GDKSuspendComplete() -> void
 
     const SDL_PLATFORM_LINUX: int = 1
-
     const SDL_PLATFORM_UNIX: int = 1
-
     const SDL_MAX_SINT64: ptr_int = 9223372036854775807
-
     const SDL_MIN_SINT64: ptr_int = ~9223372036854775807
-
     const SDL_MAX_UINT64: ptr_uint = 18446744073709551615
-
     const SDL_MIN_UINT64: ptr_uint = 0
-
     const SDL_FLT_EPSILON: float = 1.1920929E-7
-
     const SDL_INVALID_UNICODE_CODEPOINT: int = 65533
-
     const SDL_PI_D: double = 3.1415926535897931
-
     const SDL_PI_F: float = 3.14159274
-
     const SDL_ASSERT_LEVEL: int = 2
-
     const SDL_NULL_WHILE_LOOP_CONDITION: int = 0
-
     const SDL_LIL_ENDIAN: int = 1234
-
     const SDL_BIG_ENDIAN: int = 4321
-
     const SDL_AUDIO_MASK_BITSIZE: uint = 255
-
     const SDL_BLENDMODE_NONE: uint = 0
-
     const SDL_BLENDMODE_BLEND: uint = 1
-
     const SDL_BLENDMODE_BLEND_PREMULTIPLIED: uint = 16
-
     const SDL_BLENDMODE_ADD: uint = 2
-
     const SDL_BLENDMODE_ADD_PREMULTIPLIED: uint = 32
-
     const SDL_BLENDMODE_MOD: uint = 4
-
     const SDL_BLENDMODE_MUL: uint = 8
-
     const SDL_BLENDMODE_INVALID: uint = 2147483647
-
     const SDL_ALPHA_OPAQUE: int = 255
-
     const SDL_ALPHA_OPAQUE_FLOAT: float = 1.0
-
     const SDL_ALPHA_TRANSPARENT: int = 0
-
     const SDL_ALPHA_TRANSPARENT_FLOAT: float = 0.0
-
     const SDL_SURFACE_PREALLOCATED: uint = 1
-
     const SDL_SURFACE_LOCK_NEEDED: uint = 2
-
     const SDL_SURFACE_LOCKED: uint = 4
-
     const SDL_SURFACE_SIMD_ALIGNED: uint = 8
-
     const SDL_CACHELINE_SIZE: int = 128
-
     const SDL_WINDOW_FULLSCREEN: ptr_uint = 1
-
     const SDL_WINDOW_OPENGL: ptr_uint = 2
-
     const SDL_WINDOW_OCCLUDED: ptr_uint = 4
-
     const SDL_WINDOW_HIDDEN: ptr_uint = 8
-
     const SDL_WINDOW_BORDERLESS: ptr_uint = 16
-
     const SDL_WINDOW_RESIZABLE: ptr_uint = 32
-
     const SDL_WINDOW_MINIMIZED: ptr_uint = 64
-
     const SDL_WINDOW_MAXIMIZED: ptr_uint = 128
-
     const SDL_WINDOW_MOUSE_GRABBED: ptr_uint = 256
-
     const SDL_WINDOW_INPUT_FOCUS: ptr_uint = 512
-
     const SDL_WINDOW_MOUSE_FOCUS: ptr_uint = 1024
-
     const SDL_WINDOW_EXTERNAL: ptr_uint = 2048
-
     const SDL_WINDOW_MODAL: ptr_uint = 4096
-
     const SDL_WINDOW_HIGH_PIXEL_DENSITY: ptr_uint = 8192
-
     const SDL_WINDOW_MOUSE_CAPTURE: ptr_uint = 16384
-
     const SDL_WINDOW_MOUSE_RELATIVE_MODE: ptr_uint = 32768
-
     const SDL_WINDOW_ALWAYS_ON_TOP: ptr_uint = 65536
-
     const SDL_WINDOW_UTILITY: ptr_uint = 131072
-
     const SDL_WINDOW_TOOLTIP: ptr_uint = 262144
-
     const SDL_WINDOW_POPUP_MENU: ptr_uint = 524288
-
     const SDL_WINDOW_KEYBOARD_GRABBED: ptr_uint = 1048576
-
     const SDL_WINDOW_FILL_DOCUMENT: ptr_uint = 2097152
-
     const SDL_WINDOW_VULKAN: ptr_uint = 268435456
-
     const SDL_WINDOW_METAL: ptr_uint = 536870912
-
     const SDL_WINDOW_TRANSPARENT: ptr_uint = 1073741824
-
     const SDL_WINDOW_NOT_FOCUSABLE: ptr_uint = 2147483648
-
     const SDL_WINDOWPOS_UNDEFINED_MASK: uint = 536805376
-
     const SDL_WINDOWPOS_CENTERED_MASK: uint = 805240832
-
     const SDL_GL_CONTEXT_PROFILE_CORE: int = 1
-
     const SDL_GL_CONTEXT_PROFILE_COMPATIBILITY: int = 2
-
     const SDL_GL_CONTEXT_PROFILE_ES: int = 4
-
     const SDL_GL_CONTEXT_DEBUG_FLAG: int = 1
-
     const SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG: int = 2
-
     const SDL_GL_CONTEXT_ROBUST_ACCESS_FLAG: int = 4
-
     const SDL_GL_CONTEXT_RESET_ISOLATION_FLAG: int = 8
-
     const SDL_GL_CONTEXT_RELEASE_BEHAVIOR_NONE: int = 0
-
     const SDL_GL_CONTEXT_RELEASE_BEHAVIOR_FLUSH: int = 1
-
     const SDL_GL_CONTEXT_RESET_NO_NOTIFICATION: int = 0
-
     const SDL_GL_CONTEXT_RESET_LOSE_CONTEXT: int = 1
-
     const SDL_WINDOW_SURFACE_VSYNC_DISABLED: int = 0
-
     const SDL_WINDOW_SURFACE_VSYNC_ADAPTIVE: int = -1
-
     const SDL_ELF_NOTE_DLOPEN_TYPE: uint = 1081871370
-
     const SDL_STANDARD_GRAVITY: float = 9.80665016
-
     const SDL_JOYSTICK_AXIS_MAX: int = 32767
-
     const SDL_JOYSTICK_AXIS_MIN: int = -32768
-
     const SDL_HAT_CENTERED: uint = 0
-
     const SDL_HAT_UP: uint = 1
-
     const SDL_HAT_RIGHT: uint = 2
-
     const SDL_HAT_DOWN: uint = 4
-
     const SDL_HAT_LEFT: uint = 8
-
     const SDL_KMOD_NONE: uint = 0
-
     const SDL_KMOD_LSHIFT: uint = 1
-
     const SDL_KMOD_RSHIFT: uint = 2
-
     const SDL_KMOD_LEVEL5: uint = 4
-
     const SDL_KMOD_LCTRL: uint = 64
-
     const SDL_KMOD_RCTRL: uint = 128
-
     const SDL_KMOD_LALT: uint = 256
-
     const SDL_KMOD_RALT: uint = 512
-
     const SDL_KMOD_LGUI: uint = 1024
-
     const SDL_KMOD_RGUI: uint = 2048
-
     const SDL_KMOD_NUM: uint = 4096
-
     const SDL_KMOD_CAPS: uint = 8192
-
     const SDL_KMOD_MODE: uint = 16384
-
     const SDL_KMOD_SCROLL: uint = 32768
-
     const SDL_BUTTON_LEFT: int = 1
-
     const SDL_BUTTON_MIDDLE: int = 2
-
     const SDL_BUTTON_RIGHT: int = 3
-
     const SDL_BUTTON_X1: int = 4
-
     const SDL_BUTTON_X2: int = 5
-
     const SDL_GPU_SHADERFORMAT_INVALID: int = 0
-
     const SDL_HAPTIC_INFINITY: uint = 4294967295
-
     const SDL_HAPTIC_POLAR: int = 0
-
     const SDL_HAPTIC_CARTESIAN: int = 1
-
     const SDL_HAPTIC_SPHERICAL: int = 2
-
     const SDL_HAPTIC_STEERING_AXIS: int = 3
-
     const SDL_INIT_AUDIO: uint = 16
-
     const SDL_INIT_VIDEO: uint = 32
-
     const SDL_INIT_JOYSTICK: uint = 512
-
     const SDL_INIT_HAPTIC: uint = 4096
-
     const SDL_INIT_GAMEPAD: uint = 8192
-
     const SDL_INIT_EVENTS: uint = 16384
-
     const SDL_INIT_SENSOR: uint = 32768
-
     const SDL_INIT_CAMERA: uint = 65536
-
     const SDL_MESSAGEBOX_ERROR: uint = 16
-
     const SDL_MESSAGEBOX_WARNING: uint = 32
-
     const SDL_MESSAGEBOX_INFORMATION: uint = 64
-
     const SDL_MESSAGEBOX_BUTTONS_LEFT_TO_RIGHT: uint = 128
-
     const SDL_MESSAGEBOX_BUTTONS_RIGHT_TO_LEFT: uint = 256
-
     const SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT: uint = 1
-
     const SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT: uint = 2
-
     const SDL_RENDERER_VSYNC_DISABLED: int = 0
-
     const SDL_RENDERER_VSYNC_ADAPTIVE: int = -1
-
     const SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE: int = 8
-
     const SDL_MS_PER_SECOND: int = 1000
-
     const SDL_US_PER_SECOND: int = 1000000
-
     const SDL_NS_PER_SECOND: long = 1000000000
-
     const SDL_NS_PER_MS: int = 1000000
-
     const SDL_NS_PER_US: int = 1000
-
     const SDL_TRAYENTRY_BUTTON: uint = 1
-
     const SDL_TRAYENTRY_CHECKBOX: uint = 2
-
     const SDL_TRAYENTRY_SUBMENU: uint = 4
-
     const SDL_TRAYENTRY_DISABLED: uint = 2147483648
-
     const SDL_TRAYENTRY_CHECKED: uint = 1073741824
-
     const SDL_MAJOR_VERSION: int = 3
-
     const SDL_MINOR_VERSION: int = 5
-
     const SDL_MICRO_VERSION: int = 0

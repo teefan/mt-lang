@@ -67,7 +67,6 @@ extern module std.c.raylib:
         format: int
 
     type Texture2D = Texture
-
     type TextureCubemap = Texture
 
     struct RenderTexture:
@@ -202,7 +201,6 @@ extern module std.c.raylib:
         data: ptr[void]
 
     opaque rAudioBuffer = c"rAudioBuffer"
-
     opaque rAudioProcessor = c"rAudioProcessor"
 
     struct AudioStream:
@@ -606,13 +604,9 @@ extern module std.c.raylib:
         NPATCH_THREE_PATCH_HORIZONTAL = 2
 
     type TraceLogCallback = fn(arg0: int, arg1: cstr, arg2: va_list) -> void
-
     type LoadFileDataCallback = fn(arg0: cstr, arg1: ptr[int]) -> ptr[ubyte]
-
     type SaveFileDataCallback = fn(arg0: cstr, arg1: ptr[void], arg2: int) -> bool
-
     type LoadFileTextCallback = fn(arg0: cstr) -> ptr[char]
-
     type SaveFileTextCallback = fn(arg0: cstr, arg1: cstr) -> bool
 
     extern def InitWindow(width: int, height: int, title: cstr) -> void
@@ -1220,61 +1214,32 @@ extern module std.c.raylib:
     extern def DetachAudioMixedProcessor(processor: fn(arg0: ptr[void], arg1: uint) -> void) -> void
 
     const RAYLIB_VERSION_MAJOR: int = 6
-
     const RAYLIB_VERSION_MINOR: int = 0
-
     const RAYLIB_VERSION_PATCH: int = 0
-
     const PI: float = 3.14159274
-
     const LIGHTGRAY: Color = Color(r = 200, g = 200, b = 200, a = 255)
-
     const GRAY: Color = Color(r = 130, g = 130, b = 130, a = 255)
-
     const DARKGRAY: Color = Color(r = 80, g = 80, b = 80, a = 255)
-
     const YELLOW: Color = Color(r = 253, g = 249, b = 0, a = 255)
-
     const GOLD: Color = Color(r = 255, g = 203, b = 0, a = 255)
-
     const ORANGE: Color = Color(r = 255, g = 161, b = 0, a = 255)
-
     const PINK: Color = Color(r = 255, g = 109, b = 194, a = 255)
-
     const RED: Color = Color(r = 230, g = 41, b = 55, a = 255)
-
     const MAROON: Color = Color(r = 190, g = 33, b = 55, a = 255)
-
     const GREEN: Color = Color(r = 0, g = 228, b = 48, a = 255)
-
     const LIME: Color = Color(r = 0, g = 158, b = 47, a = 255)
-
     const DARKGREEN: Color = Color(r = 0, g = 117, b = 44, a = 255)
-
     const SKYBLUE: Color = Color(r = 102, g = 191, b = 255, a = 255)
-
     const BLUE: Color = Color(r = 0, g = 121, b = 241, a = 255)
-
     const DARKBLUE: Color = Color(r = 0, g = 82, b = 172, a = 255)
-
     const PURPLE: Color = Color(r = 200, g = 122, b = 255, a = 255)
-
     const VIOLET: Color = Color(r = 135, g = 60, b = 190, a = 255)
-
     const DARKPURPLE: Color = Color(r = 112, g = 31, b = 126, a = 255)
-
     const BEIGE: Color = Color(r = 211, g = 176, b = 131, a = 255)
-
     const BROWN: Color = Color(r = 127, g = 106, b = 79, a = 255)
-
     const DARKBROWN: Color = Color(r = 76, g = 63, b = 47, a = 255)
-
     const WHITE: Color = Color(r = 255, g = 255, b = 255, a = 255)
-
     const BLACK: Color = Color(r = 0, g = 0, b = 0, a = 255)
-
     const BLANK: Color = Color(r = 0, g = 0, b = 0, a = 0)
-
     const MAGENTA: Color = Color(r = 255, g = 0, b = 255, a = 255)
-
     const RAYWHITE: Color = Color(r = 245, g = 245, b = 245, a = 255)

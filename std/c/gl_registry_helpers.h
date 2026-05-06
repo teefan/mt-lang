@@ -2955,7 +2955,12 @@ void MTLANG_GL_APIENTRY glWindowPos3iv(const GLint *v);
 void MTLANG_GL_APIENTRY glWindowPos3s(GLshort x, GLshort y, GLshort z);
 void MTLANG_GL_APIENTRY glWindowPos3sv(const GLshort *v);
 #ifdef MT_LANG_GL_REGISTRY_HELPERS_IMPLEMENTATION
+#if defined(MT_LANG_GL_REGISTRY_HAVE_GLFW)
 #include <GLFW/glfw3.h>
+#endif
+#if defined(MT_LANG_GL_REGISTRY_HAVE_SDL3)
+#include <SDL3/SDL.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 typedef void (MTLANG_GL_APIENTRY *mtlang_gl_proc_glAccum)(GLenum op, GLfloat value);
@@ -6141,6 +6146,26 @@ static mtlang_gl_proc_glWindowPos3sv mtlang_gl_ptr_glWindowPos3sv;
               mtlang_gl_loader = loader;
               mtlang_gl_reset_cache();
           }
+
+            void mt_gl_use_glfw_loader(void)
+            {
+            #if defined(MT_LANG_GL_REGISTRY_HAVE_GLFW)
+              mt_gl_set_loader_proc((mtlang_gl_loader_proc) glfwGetProcAddress);
+            #else
+                fprintf(stderr, "OpenGL GLFW loader support is unavailable in this build\n");
+              abort();
+            #endif
+            }
+
+            void mt_gl_use_sdl_loader(void)
+            {
+            #if defined(MT_LANG_GL_REGISTRY_HAVE_SDL3)
+              mt_gl_set_loader_proc((mtlang_gl_loader_proc) SDL_GL_GetProcAddress);
+            #else
+                fprintf(stderr, "OpenGL SDL3 loader support is unavailable in this build\n");
+              abort();
+            #endif
+            }
 void MTLANG_GL_APIENTRY glAccum(GLenum op, GLfloat value)
 {
     if (mtlang_gl_ptr_glAccum == NULL)

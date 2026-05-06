@@ -57,7 +57,7 @@ module MilkTea
       @module_roots << manifest.root_dir unless @module_roots.include?(manifest.root_dir)
       @debug = debug
     rescue PackageManifestError => e
-      raise BuildError, e.message if File.directory?(path)
+      raise BuildError, e.message if package_manifest_required_for?(path)
 
       @package_build = false
       @source_path = File.expand_path(path)
@@ -131,6 +131,24 @@ module MilkTea
       else
         @output_path
       end
+    end
+
+    def package_manifest_required_for?(path)
+      expanded_path = File.expand_path(path)
+      return true if File.directory?(expanded_path)
+      return true if File.basename(expanded_path) == "package.toml"
+
+      current = File.dirname(expanded_path)
+      loop do
+        return true if File.file?(File.join(current, "package.toml"))
+
+        parent = File.dirname(current)
+        break if parent == current
+
+        current = parent
+      end
+
+      false
     end
 
     def default_source_output_path(source_path)

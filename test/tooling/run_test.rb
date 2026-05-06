@@ -99,6 +99,40 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_source_file_inside_package_surfaces_invalid_manifest
+    Dir.mktmpdir("milk-tea-run-invalid-package-manifest") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_script_compiler(dir, compiler_log, stdout: "", stderr: "", exit_status: 0)
+      package_root = File.join(dir, "snake-duel")
+      src_dir = File.join(package_root, "src")
+      FileUtils.mkdir_p(src_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+
+        [build]
+        entry =
+      TOML
+
+      source_path = File.join(src_dir, "main.mt")
+      File.write(source_path, [
+        "module projects.snake_duel",
+        "",
+        "def main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      error = assert_raises(MilkTea::BuildError) do
+        MilkTea::Run.run(source_path, cc: compiler_path)
+      end
+
+      assert_match(/invalid package\.toml/, error.message)
+      refute File.exist?(compiler_log)
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_importing_std_math
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

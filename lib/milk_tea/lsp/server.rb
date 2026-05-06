@@ -188,7 +188,7 @@ module MilkTea
           result = handler.call(params)
           elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round(1)
           if perf_logging? && (perf_verbose? || elapsed_ms > PERF_LOG_THRESHOLD_MS)
-            detail = perf_verbose? ? " #{summarize_lsp_params(method_name, params)}" : ""
+            detail = perf_log_context(method_name, params, verbose: perf_verbose?)
             warn "[LSP perf] req #{method_name} #{elapsed_ms}ms id=#{id}#{detail}"
           end
           Protocol.write_response(id, result)
@@ -210,7 +210,7 @@ module MilkTea
           handler.call(params)
           elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round(1)
           if perf_logging? && (perf_verbose? || elapsed_ms > PERF_LOG_THRESHOLD_MS)
-            detail = perf_verbose? ? " #{summarize_lsp_params(method_name, params)}" : ""
+            detail = perf_log_context(method_name, params, verbose: perf_verbose?)
             warn "[LSP perf] ntf #{method_name} #{elapsed_ms}ms#{detail}"
           end
         rescue StandardError => e
@@ -247,6 +247,27 @@ module MilkTea
 
         id_detail = @current_request_id ? " id=#{@current_request_id}" : ''
         warn "[LSP perf] breakdown #{method_name} #{elapsed_ms_value}ms#{id_detail} #{detail}"
+      end
+
+      def perf_log_context(method_name, params, verbose: false)
+        return "" unless params.is_a?(Hash)
+
+        summary = summarize_lsp_params(method_name, params)
+        return summary.empty? ? "" : " #{summary}" if verbose
+
+        text_document = hget(params, 'textDocument')
+        uri = text_document.is_a?(Hash) ? hget(text_document, 'uri') : nil
+        bits = []
+        bits << "uri=#{shorten_uri(uri) || uri}" if uri
+
+        if method_name == 'textDocument/didChange'
+          changes = hget(params, 'contentChanges')
+          bits << "changes=#{changes.length}" if changes.respond_to?(:length)
+        end
+
+        bits.empty? ? "" : " #{bits.join(' ')}"
+      rescue StandardError
+        ""
       end
 
       def summarize_lsp_params(method_name, params)
@@ -428,12 +449,30 @@ module MilkTea
       # ── Text document sync ───────────────────────────────────────────────────
 
       def handle_did_open(params)
+        total_start = monotonic_time
         uri     = params['textDocument']['uri']
         content = params['textDocument']['text']
-        @workspace.open_document(uri, content)
+        open_start = monotonic_time
+        open_stats = @workspace.open_document(uri, content)
+        open_ms = elapsed_ms(open_start)
         @semantic_tokens_cache.delete(uri)
         @fixall_cache.delete(uri)
+        diagnostics_start = monotonic_time
         schedule_diagnostics(uri)
+
+        elapsed = elapsed_ms(total_start)
+        short_uri = shorten_uri(uri) || uri
+        analysis_detail = if open_stats[:eager_analysis]
+                            mode = open_stats[:analysis_mode] || :unknown
+                            "on(#{mode})"
+                          else
+                            "skipped(#{open_stats[:skip_reason] || 'none'})"
+                          end
+        log_perf_breakdown(
+          'textDocument/didOpen',
+          elapsed,
+          "uri=#{short_uri} bytes=#{open_stats[:bytes]} lines=#{open_stats[:lines]} imports=#{open_stats[:import_count]} shared_modules=#{open_stats[:shared_module_cache_size]} eager_analysis=#{analysis_detail} stages_ms=open:#{open_ms},analysis:#{open_stats[:analysis_ms] || 0.0},diagnostics_enqueue:#{elapsed_ms(diagnostics_start)}"
+        )
         nil
       end
 
@@ -478,7 +517,9 @@ module MilkTea
         @workspace.update_document(uri, text) if text
         @semantic_tokens_cache.delete(uri)
         @fixall_cache.delete(uri)
+        affected_uris = @workspace.refresh_open_document_dependency_caches(uri)
         schedule_diagnostics(uri)
+        affected_uris.each { |affected_uri| schedule_diagnostics(affected_uri, force: true) }
         nil
       end
 
@@ -1389,25 +1430,28 @@ module MilkTea
 
       def handle_did_change_watched_files(params)
         changes = params['changes'] || []
+        affected_uris = Set.new
         changes.each do |change|
           uri = change['uri']
           type = change['type']
           next unless uri
 
-          @workspace.apply_watched_file_change(uri, type)
+          affected_uris.merge(@workspace.apply_watched_file_change(uri, type))
         end
+
+        affected_uris.each { |affected_uri| schedule_diagnostics(affected_uri, force: true) }
         nil
       end
 
       # ── Diagnostics ──────────────────────────────────────────────────────────
 
-      def schedule_diagnostics(uri)
+      def schedule_diagnostics(uri, force: false)
         content = @workspace.get_content(uri)
         content_digest = Digest::SHA256.hexdigest(content)
         enqueue = false
 
         @diagnostics_mutex.synchronize do
-          if @diagnostics_last_scheduled_hash[uri] == content_digest
+          if !force && @diagnostics_last_scheduled_hash[uri] == content_digest
             @diagnostics_perf[:skipped_unchanged] += 1 if perf_logging?
             return
           end
@@ -1520,8 +1564,8 @@ module MilkTea
         end
       end
 
-      def collect_diagnostics_for_content(uri, content)
-        Diagnostics.collect(uri, content)
+      def collect_diagnostics_for_content(uri, _content)
+        @workspace.collect_diagnostics(uri)
       rescue StandardError => e
         warn "LSP diagnostics error #{uri}: #{e.message}"
         []

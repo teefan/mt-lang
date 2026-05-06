@@ -348,169 +348,86 @@ extern module std.c.rlgl:
     extern def rlLoadDrawQuad() -> void
 
     const RL_DEFAULT_BATCH_BUFFER_ELEMENTS: int = 8192
-
     const RL_DEFAULT_BATCH_BUFFERS: int = 1
-
     const RL_DEFAULT_BATCH_DRAWCALLS: int = 256
-
     const RL_DEFAULT_BATCH_MAX_TEXTURE_UNITS: int = 4
-
     const RL_MAX_MATRIX_STACK_SIZE: int = 32
-
     const RL_MAX_SHADER_LOCATIONS: int = 32
-
     const RL_CULL_DISTANCE_NEAR: double = 0.050000000000000003
-
     const RL_CULL_DISTANCE_FAR: double = 4000.0
-
     const RL_TEXTURE_WRAP_S: int = 10242
-
     const RL_TEXTURE_WRAP_T: int = 10243
-
     const RL_TEXTURE_MAG_FILTER: int = 10240
-
     const RL_TEXTURE_MIN_FILTER: int = 10241
-
     const RL_TEXTURE_FILTER_NEAREST: int = 9728
-
     const RL_TEXTURE_FILTER_LINEAR: int = 9729
-
     const RL_TEXTURE_FILTER_MIP_NEAREST: int = 9984
-
     const RL_TEXTURE_FILTER_NEAREST_MIP_LINEAR: int = 9986
-
     const RL_TEXTURE_FILTER_LINEAR_MIP_NEAREST: int = 9985
-
     const RL_TEXTURE_FILTER_MIP_LINEAR: int = 9987
-
     const RL_TEXTURE_FILTER_ANISOTROPIC: int = 12288
-
     const RL_TEXTURE_MIPMAP_BIAS_RATIO: int = 16384
-
     const RL_TEXTURE_WRAP_REPEAT: int = 10497
-
     const RL_TEXTURE_WRAP_CLAMP: int = 33071
-
     const RL_TEXTURE_WRAP_MIRROR_REPEAT: int = 33648
-
     const RL_TEXTURE_WRAP_MIRROR_CLAMP: int = 34626
-
     const RL_MODELVIEW: int = 5888
-
     const RL_PROJECTION: int = 5889
-
     const RL_TEXTURE: int = 5890
-
     const RL_LINES: int = 1
-
     const RL_TRIANGLES: int = 4
-
     const RL_QUADS: int = 7
-
     const RL_UNSIGNED_BYTE: int = 5121
-
     const RL_FLOAT: int = 5126
-
     const RL_STREAM_DRAW: int = 35040
-
     const RL_STREAM_READ: int = 35041
-
     const RL_STREAM_COPY: int = 35042
-
     const RL_STATIC_DRAW: int = 35044
-
     const RL_STATIC_READ: int = 35045
-
     const RL_STATIC_COPY: int = 35046
-
     const RL_DYNAMIC_DRAW: int = 35048
-
     const RL_DYNAMIC_READ: int = 35049
-
     const RL_DYNAMIC_COPY: int = 35050
-
     const RL_FRAGMENT_SHADER: int = 35632
-
     const RL_VERTEX_SHADER: int = 35633
-
     const RL_COMPUTE_SHADER: int = 37305
-
     const RL_ZERO: int = 0
-
     const RL_ONE: int = 1
-
     const RL_SRC_COLOR: int = 768
-
     const RL_ONE_MINUS_SRC_COLOR: int = 769
-
     const RL_SRC_ALPHA: int = 770
-
     const RL_ONE_MINUS_SRC_ALPHA: int = 771
-
     const RL_DST_ALPHA: int = 772
-
     const RL_ONE_MINUS_DST_ALPHA: int = 773
-
     const RL_DST_COLOR: int = 774
-
     const RL_ONE_MINUS_DST_COLOR: int = 775
-
     const RL_SRC_ALPHA_SATURATE: int = 776
-
     const RL_CONSTANT_COLOR: int = 32769
-
     const RL_ONE_MINUS_CONSTANT_COLOR: int = 32770
-
     const RL_CONSTANT_ALPHA: int = 32771
-
     const RL_ONE_MINUS_CONSTANT_ALPHA: int = 32772
-
     const RL_FUNC_ADD: int = 32774
-
     const RL_MIN: int = 32775
-
     const RL_MAX: int = 32776
-
     const RL_FUNC_SUBTRACT: int = 32778
-
     const RL_FUNC_REVERSE_SUBTRACT: int = 32779
-
     const RL_BLEND_EQUATION: int = 32777
-
     const RL_BLEND_EQUATION_RGB: int = 32777
-
     const RL_BLEND_EQUATION_ALPHA: int = 34877
-
     const RL_BLEND_DST_RGB: int = 32968
-
     const RL_BLEND_SRC_RGB: int = 32969
-
     const RL_BLEND_DST_ALPHA: int = 32970
-
     const RL_BLEND_SRC_ALPHA: int = 32971
-
     const RL_BLEND_COLOR: int = 32773
-
     const RL_READ_FRAMEBUFFER: int = 36008
-
     const RL_DRAW_FRAMEBUFFER: int = 36009
-
     const RL_DEFAULT_SHADER_ATTRIB_LOCATION_POSITION: int = 0
-
     const RL_DEFAULT_SHADER_ATTRIB_LOCATION_TEXCOORD: int = 1
-
     const RL_DEFAULT_SHADER_ATTRIB_LOCATION_NORMAL: int = 2
-
     const RL_DEFAULT_SHADER_ATTRIB_LOCATION_COLOR: int = 3
-
     const RL_DEFAULT_SHADER_ATTRIB_LOCATION_TANGENT: int = 4
-
     const RL_DEFAULT_SHADER_ATTRIB_LOCATION_TEXCOORD2: int = 5
-
     const RL_DEFAULT_SHADER_ATTRIB_LOCATION_INDICES: int = 6
-
     const RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEINDICES: int = 7
-
     const RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEWEIGHTS: int = 8
-
     const RL_DEFAULT_SHADER_ATTRIB_LOCATION_INSTANCETRANSFORM: int = 9

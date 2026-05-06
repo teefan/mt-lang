@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "../tooling/formatter"
 
 module MilkTea
   module ImportedBindings
@@ -175,7 +176,7 @@ module MilkTea
           lines.concat(section_lines)
         end
 
-        lines.join("\n") + "\n"
+        Formatter.format_source(lines.join("\n") + "\n", path: generated_module_path, mode: :tidy)
       end
 
       private
@@ -247,6 +248,10 @@ module MilkTea
             alias: import.alias_name,
           }
         end
+      end
+
+      def generated_module_path
+        "#{@module_name.tr('.', '/')}" + ".mt"
       end
 
       def merge_import_specs(*groups)

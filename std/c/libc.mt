@@ -31,55 +31,30 @@ extern module std.c.libc:
     extern def a64l(__s: cstr) -> ptr_int
 
     type u_short = ushort
-
     type u_int = uint
-
     type u_long = ptr_uint
-
     type quad_t = ptr_int
-
     type u_quad_t = ptr_uint
-
     type loff_t = ptr_int
-
     type ino_t = ptr_uint
-
     type dev_t = ptr_uint
-
     type gid_t = uint
-
     type mode_t = uint
-
     type nlink_t = ptr_uint
-
     type uid_t = uint
-
     type off_t = ptr_int
-
     type pid_t = int
-
     type id_t = uint
-
     type ssize_t = ptr_int
-
     type daddr_t = int
-
     type caddr_t = ptr[char]
-
     type key_t = int
-
     type u_int16_t = ushort
-
     type u_int32_t = uint
-
     type u_int64_t = ptr_uint
-
     type register_t = ptr_int
-
     type blkcnt_t = ptr_int
-
     type fsblkcnt_t = ptr_uint
-
     type fsfilcnt_t = ptr_uint
 
     extern def random() -> ptr_int
@@ -184,7 +159,5 @@ extern module std.c.libc:
     extern def getloadavg(__loadavg: ptr[double], __nelem: int) -> int
 
     const RAND_MAX: int = 2147483647
-
     const EXIT_FAILURE: int = 1
-
     const EXIT_SUCCESS: int = 0

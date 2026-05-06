@@ -205,4 +205,39 @@ class MilkTeaFormatterTest < Minitest::Test
     assert_includes formatted, "const text: cstr = c\"いろはにほへと　ちりぬるを\\nわかよたれそ\""
     assert_includes formatted, "\nconst path: cstr = c\"../resources/DotGothic16-Regular.ttf\""
   end
+
+  def test_canonical_groups_extern_module_simple_declarations_by_kind
+    source = <<~MT
+      extern module std.c.sample:
+          include "sample.h"
+
+          opaque Handle = c"struct Handle"
+
+          type Flags = uint
+
+          const MAGIC: int = 7
+
+          const LIMIT: int = 8
+
+          extern def init() -> int
+
+          extern def close() -> void
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "sample.mt", mode: :canonical)
+
+    assert_equal <<~MT, formatted
+      extern module std.c.sample:
+          include "sample.h"
+
+          opaque Handle = c"struct Handle"
+          type Flags = uint
+
+          const MAGIC: int = 7
+          const LIMIT: int = 8
+
+          extern def init() -> int
+          extern def close() -> void
+    MT
+  end
 end

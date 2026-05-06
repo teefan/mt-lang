@@ -301,7 +301,12 @@ module MilkTea
           emit_loader_api,
           emit_public_command_declarations(commands),
           "#ifdef #{IMPLEMENTATION_DEFINE}",
+          "#if defined(MT_LANG_GL_REGISTRY_HAVE_GLFW)",
           "#include <GLFW/glfw3.h>",
+          "#endif",
+          "#if defined(MT_LANG_GL_REGISTRY_HAVE_SDL3)",
+          "#include <SDL3/SDL.h>",
+          "#endif",
           "#include <stdio.h>",
           "#include <stdlib.h>",
           "",
@@ -415,6 +420,26 @@ module MilkTea
               mtlang_gl_loader = loader;
               mtlang_gl_reset_cache();
           }
+
+            void mt_gl_use_glfw_loader(void)
+            {
+            #if defined(MT_LANG_GL_REGISTRY_HAVE_GLFW)
+              mt_gl_set_loader_proc((mtlang_gl_loader_proc) glfwGetProcAddress);
+            #else
+                fprintf(stderr, "OpenGL GLFW loader support is unavailable in this build\\n");
+              abort();
+            #endif
+            }
+
+            void mt_gl_use_sdl_loader(void)
+            {
+            #if defined(MT_LANG_GL_REGISTRY_HAVE_SDL3)
+              mt_gl_set_loader_proc((mtlang_gl_loader_proc) SDL_GL_GetProcAddress);
+            #else
+                fprintf(stderr, "OpenGL SDL3 loader support is unavailable in this build\\n");
+              abort();
+            #endif
+            }
         C
       end
 

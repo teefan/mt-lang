@@ -37,6 +37,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "std.c.sdl3", registry.fetch("sdl3").module_name
     assert_equal ["SDL3"], registry.fetch("sdl3").link_libraries
     assert_includes registry.fetch("sdl3").compiler_flags, "-DSDL_MAIN_HANDLED=1"
+    assert_includes registry.fetch("sdl3").compiler_flags, "-DMT_LANG_GL_REGISTRY_HAVE_SDL3"
     assert_includes registry.fetch("sdl3").compiler_flags, "-I#{MilkTea::VendoredSDL3.include_root}"
     assert_includes registry.fetch("sdl3").header_candidates.first, "third_party/sdl3-upstream/include/SDL3/SDL.h"
     assert_equal ["SDL_MAIN_HANDLED=1"], registry.fetch("sdl3").bindgen_defines
@@ -89,6 +90,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "ptr[SDL_Surface]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_RenderReadPixels")
     assert_equal "std.c.glfw", registry.fetch("glfw").module_name
     assert_equal ["glfw3"], registry.fetch("glfw").link_libraries
+    assert_includes registry.fetch("glfw").compiler_flags, "-DMT_LANG_GL_REGISTRY_HAVE_GLFW"
     assert_includes registry.fetch("glfw").compiler_flags, "-I#{MilkTea::VendoredGLFW.include_root}"
     assert_includes registry.fetch("glfw").header_candidates.first, "third_party/glfw-upstream/include/GLFW/glfw3.h"
     assert_includes registry.fetch("glfw").tracked_header_paths.first, "third_party/glfw-upstream/include/GLFW/glfw3.h"
@@ -96,9 +98,9 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_includes registry.fetch("glfw").link_flags, "-L#{MilkTea::VendoredGLFW.archive_path.dirname}"
     assert_equal ["GLFW", "glfw"], registry.fetch("glfw").declaration_name_prefixes
     assert_equal "std.c.gl", registry.fetch("gl").module_name
-    assert_equal ["glfw3"], registry.fetch("gl").link_libraries
+    assert_equal [], registry.fetch("gl").link_libraries
     assert_equal [MilkTea::OpenGLRegistry::IMPLEMENTATION_DEFINE], registry.fetch("gl").implementation_defines
-    assert_includes registry.fetch("gl").compiler_flags, "-I#{MilkTea::VendoredGLFW.include_root}"
+    assert_equal [], registry.fetch("gl").compiler_flags
     assert_includes registry.fetch("gl").header_candidates.first, "/std/c/gl_registry_helpers.h"
     assert_includes registry.fetch("gl").tracked_header_paths.first, "/std/c/gl_registry_helpers.h"
     assert_equal ["GL", "gl", "mt_gl_"], registry.fetch("gl").declaration_name_prefixes

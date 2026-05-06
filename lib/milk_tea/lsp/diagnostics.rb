@@ -33,6 +33,9 @@ module MilkTea
         # Lint warnings (severity: 2 = Warning)
         begin
           Linter.lint_source(content, path: uri).each { |w| diagnostics << format_warning(w, content: content) }
+        rescue MilkTea::LexError, MilkTea::ParseError
+          # Best-effort only while the user is mid-edit; lex/parse failures are
+          # already reported by the main diagnostics path.
         rescue StandardError => e
           warn "Error collecting lint diagnostics: #{e.message}"
         end
