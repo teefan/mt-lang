@@ -229,13 +229,31 @@ class LSPServerTest < Minitest::Test
         return msg.len
   MT
 
-  SOURCE_WITH_HEREDOC_CSTRING = <<~MT
+  SOURCE_WITH_PLAIN_HEREDOC_CSTRING = <<~MT
+    const text: cstr = c<<-TEXT
+        alpha
+        beta
+    TEXT
+  MT
+
+  SOURCE_WITH_GLSL_HEREDOC_CSTRING = <<~MT
     const shader: cstr = c<<-GLSL
         #version 330
         void main()
         {
         }
     GLSL
+  MT
+
+  SOURCE_WITH_VERT_HEREDOC_CSTRING = <<~MT
+    const shader: cstr = c<<-VERT
+        #version 330
+        layout (location = 0) in vec3 vertex_position;
+        void main()
+        {
+            gl_Position = vec4(vertex_position, 1.0);
+        }
+    VERT
   MT
 
   def test_initialize_advertises_expected_capabilities
@@ -1629,7 +1647,7 @@ class LSPServerTest < Minitest::Test
       with_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_heredoc_test.mt"
-        source = SOURCE_WITH_HEREDOC_CSTRING
+        source = SOURCE_WITH_PLAIN_HEREDOC_CSTRING
         client.send_notification("textDocument/didOpen", {
           "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
         })
@@ -1647,8 +1665,46 @@ class LSPServerTest < Minitest::Test
         assert_includes covered_lines, 1
         assert_includes covered_lines, 2
         assert_includes covered_lines, 3
-        assert_includes covered_lines, 4
-        assert_includes covered_lines, 5
+      end
+    end
+
+    def test_semantic_tokens_do_not_override_glsl_heredoc_body
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_glsl_heredoc_test.mt"
+        source = SOURCE_WITH_GLSL_HEREDOC_CSTRING
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        refute entries.any? { |entry| entry.fetch("tokenType") == "string" }
+      end
+    end
+
+    def test_semantic_tokens_do_not_override_alt_shader_tag_heredoc_body
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_vert_heredoc_test.mt"
+        source = SOURCE_WITH_VERT_HEREDOC_CSTRING
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        refute entries.any? { |entry| entry.fetch("tokenType") == "string" }
       end
     end
 
