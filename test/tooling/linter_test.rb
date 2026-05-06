@@ -1561,6 +1561,74 @@ class MilkTeaLinterRedundantNullCheckTest < Minitest::Test
   end
 end
 
+# ── redundant-unsafe ─────────────────────────────────────────────────────
+
+class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
+  private def lint_with_sema(source, path: "demo.mt", **kwargs)
+    ast = MilkTea::Parser.parse(source, path: path)
+    analysis = MilkTea::Sema.check(ast, imported_modules: {})
+    MilkTea::Linter.lint_source(source, path: path, sema_analysis: analysis, **kwargs)
+  end
+
+  def test_warns_on_redundant_unsafe_block
+    warnings = lint_with_sema(<<~MT, path: "demo.mt", ignore: Set["unused-local"])
+      module demo.lint
+
+      def main(value: int) -> int:
+          unsafe:
+              let copy = value + 1
+          return value
+    MT
+
+    warning = warnings.find { |w| w.code == "redundant-unsafe" }
+    assert warning, "expected redundant-unsafe warning"
+    assert_equal 4, warning.line
+    assert_equal :hint, warning.severity
+  end
+
+  def test_does_not_warn_when_unsafe_block_dereferences_raw_pointer
+    warnings = lint_with_sema(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main(value: ptr[int]) -> int:
+          unsafe:
+              return read(value)
+    MT
+
+    refute warnings.any? { |w| w.code == "redundant-unsafe" }
+  end
+
+  def test_warns_on_outer_unsafe_when_only_nested_unsafe_is_needed
+    warnings = lint_with_sema(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def main(value: ptr[int]) -> int:
+          unsafe:
+              unsafe:
+                  return read(value)
+    MT
+
+    redundant = warnings.select { |w| w.code == "redundant-unsafe" }
+    assert_equal 1, redundant.length
+    assert_equal 4, redundant.first.line
+  end
+
+  def test_fix_source_removes_redundant_unsafe_block
+    source = <<~MT
+      module demo.lint
+
+      def main(value: int) -> int:
+          unsafe:
+              let copy = value + 1
+          return value
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
+    refute_match(/unsafe:/, fixed)
+    assert_match(/\n    let copy = value \+ 1\n/, fixed)
+  end
+end
+
 # ── loop-single-iteration ──────────────────────────────────────────────────
 
 class MilkTeaLinterLoopSingleIterationTest < Minitest::Test

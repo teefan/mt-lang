@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
+require "cgi/escape"
 require "set"
+require "uri"
 
 module MilkTea
   class Linter
@@ -79,10 +81,10 @@ module MilkTea
     end
 
     # Apply auto-fixable rules to source text.
-    # Handles: prefer-let, redundant-else.
+    # Handles: prefer-let, redundant-else, redundant-unsafe.
     # Returns the fixed source (may be identical if nothing was fixable).
-    def self.fix_source(source, path: nil)
-      warnings = lint_source(source, path:)
+    def self.fix_source(source, path: nil, sema_analysis: nil)
+      warnings = lint_source(source, path:, sema_analysis: sema_analysis || best_effort_sema_analysis(source, path:))
       lines = source.lines
 
       # prefer-let: simple var→let substitution on the declaration line
@@ -126,6 +128,36 @@ module MilkTea
         lines.delete_at(else_idx)
       end
 
+      # redundant-unsafe: delete the `unsafe:` line and dedent the block body.
+      redundant_unsafe_fixes = warnings.select { |w| w.code == "redundant-unsafe" && w.line }
+      redundant_unsafe_fixes.sort_by(&:line).reverse_each do |w|
+        unsafe_idx = w.line - 1
+        next unless lines[unsafe_idx]&.match?(/\A\s*unsafe:\s*\z/)
+
+        unsafe_indent = lines[unsafe_idx].match(/\A(\s*)/)[1]
+        body_indent = unsafe_indent + "    "
+        first_body_idx = unsafe_idx + 1
+        next if first_body_idx >= lines.length
+
+        body_end_idx = first_body_idx - 1
+        (first_body_idx...lines.length).each do |i|
+          line = lines[i]
+          if line.chomp.empty? || line.start_with?(body_indent)
+            body_end_idx = i
+          else
+            break
+          end
+        end
+
+        next if body_end_idx < first_body_idx
+
+        (first_body_idx..body_end_idx).each do |i|
+          lines[i] = lines[i].sub(/\A    /, "") if lines[i]
+        end
+
+        lines.delete_at(unsafe_idx)
+      end
+
       # unused-import: delete the import line entirely.
       # Process in reverse order to keep indices stable after deletions.
       import_fixes = warnings.select { |w| w.code == "unused-import" && w.line }
@@ -147,6 +179,33 @@ module MilkTea
       end
 
       lines.join
+    end
+
+    def self.best_effort_sema_analysis(source, path: nil)
+      ast = Parser.parse(source, path:)
+      imported_modules = {}
+
+      resolved_path = resolve_lint_path(path)
+      if resolved_path && File.file?(resolved_path)
+        loader = ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(resolved_path))
+        imported_modules = loader.imported_modules_for_ast(ast)
+      end
+
+      Sema.check_collecting_errors(ast, imported_modules: imported_modules)[:analysis]
+    rescue StandardError
+      nil
+    end
+
+    def self.resolve_lint_path(path)
+      return nil unless path.is_a?(String) && !path.empty?
+
+      if path.start_with?("file://")
+        CGI.unescape(URI.parse(path).path)
+      else
+        File.expand_path(path)
+      end
+    rescue StandardError
+      nil
     end
 
     # Parse `# lint: ignore` / `# lint: ignore(rule1, rule2)` comments.
@@ -377,6 +436,7 @@ module MilkTea
         emit_borrow_warnings(function.body)
         emit_constant_condition_warnings(function.body)
         emit_redundant_null_check_warnings(function.body)
+        emit_redundant_unsafe_warnings(function.body)
         emit_loop_single_iteration_warnings(function.body)
       end
       check_missing_return(function)
@@ -650,6 +710,7 @@ module MilkTea
           emit_borrow_warnings(expression.body)
           emit_constant_condition_warnings(expression.body)
           emit_redundant_null_check_warnings(expression.body)
+          emit_redundant_unsafe_warnings(expression.body)
           emit_loop_single_iteration_warnings(expression.body)
         end
       when AST::AwaitExpr
@@ -1222,6 +1283,44 @@ module MilkTea
         cond.left
       elsif cond.left.is_a?(AST::NullLiteral) && cond.right.is_a?(AST::Identifier)
         cond.right
+      end
+    end
+
+    # ── redundant-unsafe ───────────────────────────────────────────────
+
+    def emit_redundant_unsafe_warnings(stmts)
+      return if stmts.nil? || stmts.empty?
+
+      required_unsafe_lines = @sema_analysis&.required_unsafe_lines
+      return unless required_unsafe_lines
+
+      walk_stmts_for_redundant_unsafe(stmts, required_unsafe_lines)
+    end
+
+    def walk_stmts_for_redundant_unsafe(stmts, required_unsafe_lines)
+      stmts.each do |stmt|
+        case stmt
+        when AST::UnsafeStmt
+          if stmt.line && !required_unsafe_lines.include?(stmt.line)
+            @warnings << Warning.new(
+              path: @path,
+              line: stmt.line,
+              code: "redundant-unsafe",
+              message: "unsafe block does not contain any operation that requires unsafe",
+              severity: :hint
+            )
+          end
+          walk_stmts_for_redundant_unsafe(stmt.body, required_unsafe_lines) if stmt.body
+        when AST::IfStmt
+          stmt.branches.each { |branch| walk_stmts_for_redundant_unsafe(branch.body, required_unsafe_lines) }
+          walk_stmts_for_redundant_unsafe(stmt.else_body, required_unsafe_lines) if stmt.else_body
+        when AST::MatchStmt
+          stmt.arms.each { |arm| walk_stmts_for_redundant_unsafe(arm.body, required_unsafe_lines) }
+        when AST::ForStmt, AST::WhileStmt
+          walk_stmts_for_redundant_unsafe(stmt.body, required_unsafe_lines)
+        when AST::DeferStmt
+          walk_stmts_for_redundant_unsafe(stmt.body, required_unsafe_lines) if stmt.body
+        end
       end
     end
 

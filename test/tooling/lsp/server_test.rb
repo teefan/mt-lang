@@ -1925,6 +1925,46 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_code_action_quickfix_redundant_unsafe
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_quickfix_redundant_unsafe.mt"
+      source = <<~MT
+        module demo.lint
+
+        def main(value: int) -> int:
+            unsafe:
+                let copy = value + 1
+            return value
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      redundant_diag = {
+        "source" => "milk-tea",
+        "code"   => "redundant-unsafe",
+        "range"  => { "start" => { "line" => 3, "character" => 4 }, "end" => { "line" => 3, "character" => 10 } },
+        "message" => "unsafe block does not contain any operation that requires unsafe"
+      }
+
+      response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => { "start" => { "line" => 3, "character" => 0 }, "end" => { "line" => 3, "character" => 0 } },
+        "context" => { "diagnostics" => [redundant_diag] }
+      })
+
+      actions = response.fetch("result")
+      quickfix = actions.find { |a| a["kind"] == "quickFix" && a["title"] == "Remove redundant unsafe" }
+      assert quickfix, "expected a quickFix action for redundant-unsafe"
+      edit_changes = quickfix.dig("edit", "changes", uri)
+      assert_kind_of Array, edit_changes
+      new_text = edit_changes.first["newText"]
+      refute_match(/unsafe:/, new_text)
+      assert_match(/let copy = value \+ 1/, new_text)
+    end
+  end
+
   def test_initialize_advertises_quickfix_code_action_kind
     with_server do |client|
       response = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })

@@ -9,6 +9,7 @@ module MilkTea
     class Diagnostics
       def self.collect(uri, content, shared_module_cache: nil)
         diagnostics = []
+        sema_analysis = nil
 
         # Parse
         begin
@@ -18,6 +19,7 @@ module MilkTea
           # Semantic analysis — collect errors from all functions, not just first.
           begin
             result = Sema.check_collecting_errors(ast, imported_modules: imported_modules)
+            sema_analysis = result[:analysis]
             result[:errors].each { |e| diagnostics << format_error(e) }
           rescue StandardError => e
             warn "Error collecting diagnostics: #{e.message}"
@@ -32,7 +34,7 @@ module MilkTea
 
         # Lint warnings (severity: 2 = Warning)
         begin
-          Linter.lint_source(content, path: uri).each { |w| diagnostics << format_warning(w, content: content) }
+          Linter.lint_source(content, path: uri, sema_analysis: sema_analysis).each { |w| diagnostics << format_warning(w, content: content) }
         rescue MilkTea::LexError, MilkTea::ParseError
           # Best-effort only while the user is mid-edit; lex/parse failures are
           # already reported by the main diagnostics path.

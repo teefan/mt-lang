@@ -973,6 +973,47 @@ module MilkTea
               }
             }
 
+          when 'redundant-unsafe'
+            next if source_line.empty?
+            next unless source_line.match?(/\A\s*unsafe:\s*\z/)
+
+            lines = content.lines
+            unsafe_idx = diag_line - 1
+            first_body_idx = unsafe_idx + 1
+            next if first_body_idx >= lines.length
+
+            unsafe_indent = lines[unsafe_idx].match(/\A(\s*)/)[1]
+            body_indent = unsafe_indent + '    '
+
+            body_end_idx = first_body_idx - 1
+            (first_body_idx...lines.length).each do |i|
+              line = lines[i]
+              if line.chomp.empty? || line.start_with?(body_indent)
+                body_end_idx = i
+              else
+                break
+              end
+            end
+            next if body_end_idx < first_body_idx
+
+            new_body = lines[first_body_idx..body_end_idx].map { |line| line.sub(/\A    /, '') }.join
+            actions << {
+              title: 'Remove redundant unsafe',
+              kind: 'quickFix',
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  uri => [{
+                    range: {
+                      start: { line: unsafe_idx,       character: 0 },
+                      end:   { line: body_end_idx + 1, character: 0 }
+                    },
+                    newText: new_body
+                  }]
+                }
+              }
+            }
+
           when 'shadow'
             # Offer to rename to _ prefix; editor will invoke textDocument/rename.
             # This action just annotates — the actual rename is a client-side refactor.

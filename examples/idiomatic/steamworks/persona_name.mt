@@ -7,15 +7,14 @@ import std.str as text
 
 
 def main(argc: int, argv: ptr[ptr[char]]) -> int:
-    var raw_app_id: cstr = c""
-    unsafe:
-        if argc > 1:
-            raw_app_id = cstr<-read(argv + ptr_uint<-1)
-
     if argc < 2:
         if not io.write_error_line("Usage: persona_name APP_ID"):
             return 1
         return 2
+
+    var raw_app_id: cstr = c""
+    unsafe:
+        raw_app_id = cstr<-read(argv + ptr_uint<-1)
 
     let parsed_app_id = libc.atoi(raw_app_id)
     if parsed_app_id <= 0:

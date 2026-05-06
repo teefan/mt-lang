@@ -264,7 +264,16 @@ module MilkTea
       end
 
       all_warnings = paths.flat_map do |p|
-        Linter.lint_source(read_source_file(p), path: p, select:, ignore:)
+        source = read_source_file(p)
+        analysis = begin
+          ast = Parser.parse(source, path: p)
+          imported_modules = make_module_loader(p).imported_modules_for_ast(ast)
+          Sema.check_collecting_errors(ast, imported_modules: imported_modules)[:analysis]
+        rescue MilkTea::LexError, MilkTea::ParseError, SemaError, ModuleLoadError
+          nil
+        end
+
+        Linter.lint_source(source, path: p, select:, ignore:, sema_analysis: analysis)
       end
 
       if output_format == :json
