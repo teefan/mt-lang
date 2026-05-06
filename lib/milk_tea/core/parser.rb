@@ -749,7 +749,8 @@ module MilkTea
     end
 
     def parse_unsafe_stmt
-      AST::UnsafeStmt.new(body: parse_block, line: previous.line)
+      line = previous.line
+      AST::UnsafeStmt.new(body: parse_block, line: line)
     end
 
     def parse_static_assert

@@ -23,7 +23,7 @@ module MilkTea
   end
 
   class Sema
-    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :values, :functions, :methods, :local_completion_frames, :binding_resolution)
+    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :values, :functions, :methods, :local_completion_frames, :binding_resolution, :required_unsafe_lines)
     LocalCompletionFrame = Data.define(:start_line, :end_line, :function_name, :receiver_type, :snapshots)
     LocalCompletionSnapshot = Data.define(:line, :column, :bindings)
     BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids)
@@ -122,6 +122,8 @@ module MilkTea
         @declaration_binding_ids = {}
         @preassigned_local_binding_ids = {}
         @nullability_flow_result = nil
+        @unsafe_statement_lines = []
+        @required_unsafe_lines = []
       end
 
       def check
@@ -151,6 +153,7 @@ module MilkTea
           methods: snapshot_methods,
           local_completion_frames: @local_completion_frames.dup.freeze,
           binding_resolution: binding_resolution_snapshot,
+          required_unsafe_lines: @required_unsafe_lines.uniq.freeze,
         )
       end
 
@@ -203,6 +206,7 @@ module MilkTea
           methods: snapshot_methods,
           local_completion_frames: @local_completion_frames.dup.freeze,
           binding_resolution: binding_resolution_snapshot,
+          required_unsafe_lines: @required_unsafe_lines.uniq.freeze,
         )
 
         { analysis: analysis, errors: errors.uniq { |e| [e.message, e.line] } }
@@ -1251,8 +1255,13 @@ module MilkTea
           when AST::MatchStmt
             check_match_stmt(statement, scopes:, return_type:, allow_return:)
           when AST::UnsafeStmt
-            with_unsafe do
-              check_block(statement.body, scopes:, return_type:, allow_return:)
+            @unsafe_statement_lines << statement.line
+            begin
+              with_unsafe do
+                check_block(statement.body, scopes:, return_type:, allow_return:)
+              end
+            ensure
+              @unsafe_statement_lines.pop
             end
           when AST::StaticAssert
             check_static_assert(statement, scopes:)
@@ -1704,7 +1713,7 @@ module MilkTea
 
           return referenced_type(binding.type) if allow_ref_identifier && ref_type?(binding.type)
           if allow_pointer_identifier && pointer_type?(binding.type)
-            raise_sema_error("raw pointer dereference requires unsafe") unless unsafe_context?
+            require_unsafe!("raw pointer dereference requires unsafe")
             raise_sema_error("cannot assign through read-only raw pointer #{binding.type}") if require_mutable_pointer && const_pointer_type?(binding.type)
 
             return binding.type
@@ -1753,7 +1762,7 @@ module MilkTea
 
           raise_sema_error("invalid assignment target")
         when AST::BinaryOp
-          raise_sema_error("raw pointer arithmetic as lvalue receiver requires unsafe") unless unsafe_context?
+          require_unsafe!("raw pointer arithmetic as lvalue receiver requires unsafe")
           type = infer_expression(expression, scopes:)
           raise_sema_error("binary op lvalue receiver must be a pointer") unless pointer_type?(type)
           raise_sema_error("cannot assign through read-only raw pointer #{type}") if require_mutable_pointer && const_pointer_type?(type)
@@ -2721,7 +2730,7 @@ module MilkTea
         display_name = aggregate_display_name(struct_type)
 
         if struct_type.is_a?(Types::StringView)
-          raise_sema_error("str construction requires unsafe") unless unsafe_context?
+          require_unsafe!("str construction requires unsafe")
         end
 
         raise_sema_error("aggregate construction for #{display_name} requires named arguments") unless arguments.all?(&:name)
@@ -2805,19 +2814,15 @@ module MilkTea
         end
 
         if pointer_cast?(source_type, target_type)
-          unless unsafe_context?
-            expression = arguments.first.value
-            raise SemaError.new("pointer cast requires unsafe", line: source_line(expression), column: source_column(expression))
-          end
+          expression = arguments.first.value
+          require_unsafe!("pointer cast requires unsafe", line: source_line(expression), column: source_column(expression))
 
           return target_type
         end
 
         if ref_to_pointer_cast?(source_type, target_type)
-          unless unsafe_context?
-            expression = arguments.first.value
-            raise SemaError.new("ref to pointer cast requires unsafe", line: source_line(expression), column: source_column(expression))
-          end
+          expression = arguments.first.value
+          require_unsafe!("ref to pointer cast requires unsafe", line: source_line(expression), column: source_column(expression))
 
           return target_type
         end
@@ -2855,7 +2860,7 @@ module MilkTea
       def check_reinterpret_call(target_type, arguments, scopes:)
         raise_sema_error("reinterpret requires exactly one argument") unless arguments.length == 1
         raise_sema_error("reinterpret does not support named arguments") if arguments.first.name
-        raise_sema_error("reinterpret requires unsafe") unless unsafe_context?
+        require_unsafe!("reinterpret requires unsafe")
 
         source_type = infer_expression(arguments.first.value, scopes:)
         unless reinterpretable_type?(source_type) && reinterpretable_type?(target_type)
@@ -3508,6 +3513,26 @@ module MilkTea
         @unsafe_depth -= 1
       end
 
+      def mark_current_unsafe_required!
+        current_line = @unsafe_statement_lines.last
+        return unless current_line
+
+        @required_unsafe_lines << current_line
+      end
+
+      def require_unsafe!(message, line: nil, column: nil)
+        if unsafe_context?
+          mark_current_unsafe_required!
+          return
+        end
+
+        if line || column
+          raise SemaError.new(message, line:, column:)
+        end
+
+        raise_sema_error(message)
+      end
+
       def with_foreign_mapping_context
         @foreign_mapping_depth += 1
         yield
@@ -3703,13 +3728,13 @@ module MilkTea
 
       def pointer_arithmetic_result(operator, left_type, right_type)
         if pointer_type?(left_type) && integer_type?(right_type)
-          raise_sema_error("pointer arithmetic requires unsafe") unless unsafe_context?
+          require_unsafe!("pointer arithmetic requires unsafe")
 
           return left_type if operator == "+" || operator == "-"
         end
 
         if operator == "+" && integer_type?(left_type) && pointer_type?(right_type)
-          raise_sema_error("pointer arithmetic requires unsafe") unless unsafe_context?
+          require_unsafe!("pointer arithmetic requires unsafe")
 
           return right_type
         end
@@ -4028,7 +4053,7 @@ module MilkTea
         end
 
         if pointer_type?(receiver_type)
-          raise_sema_error("pointer indexing requires unsafe") unless unsafe_context?
+          require_unsafe!("pointer indexing requires unsafe")
 
           return pointee_type(receiver_type)
         end
@@ -4793,7 +4818,7 @@ module MilkTea
 
         pointee = pointee_type(handle_type)
         if pointee
-          raise_sema_error("raw pointer dereference requires unsafe") unless unsafe_context?
+          require_unsafe!("raw pointer dereference requires unsafe")
 
           return pointee
         end
@@ -4815,7 +4840,7 @@ module MilkTea
         return referenced_type(receiver_type) if ref_type?(receiver_type)
         return receiver_type unless pointer_type?(receiver_type)
 
-        raise_sema_error("raw pointer dereference requires unsafe") unless unsafe_context?
+        require_unsafe!("raw pointer dereference requires unsafe")
         if require_mutable_pointer && const_pointer_type?(receiver_type)
           raise_sema_error("cannot assign through read-only raw pointer #{receiver_type}")
         end
@@ -4827,7 +4852,7 @@ module MilkTea
         return referenced_type(receiver_type) if ref_type?(receiver_type)
         return receiver_type unless pointer_type?(receiver_type)
 
-        raise_sema_error("raw pointer dereference requires unsafe") unless unsafe_context?
+        require_unsafe!("raw pointer dereference requires unsafe")
 
         pointee_type(receiver_type)
       end
