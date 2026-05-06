@@ -652,6 +652,22 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "#version 330\nvoid main()\n{\n}\n", shader.value.value
   end
 
+  def test_parses_multiline_adjacent_cstring_literals
+    source = <<~MT
+      module demo.adjacent
+
+      const title: cstr = c"Milk Tea keeps this text readable"
+          c" while storing a single logical line."
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    declaration = ast.declarations[0]
+
+    assert_instance_of MilkTea::AST::StringLiteral, declaration.value
+    assert_equal true, declaration.value.cstring
+    assert_equal "Milk Tea keeps this text readable while storing a single logical line.", declaration.value.value
+  end
+
   def test_parses_const_pointer_types_and_ro_addr_calls
     source = <<~MT
       module demo.const_pointers

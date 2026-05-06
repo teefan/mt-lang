@@ -189,6 +189,19 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_multiline_adjacent_string_literals_like_source
+    source = <<~MT
+      module demo.adjacent
+
+      const title = "Milk Tea keeps this text readable"
+          " while storing a single logical line."
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_lowered_ir_as_structured_output
     source = [
       "module demo.pretty",

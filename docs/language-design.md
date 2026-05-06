@@ -352,6 +352,9 @@ Notes:
 - A string literal may satisfy an expected `cstr` directly when the compiler has contextual type information, such as a typed local, an `array[cstr, N]` element, or a borrowed C-string argument position, because static storage is known.
 - `c"hello"` produces `cstr` with static storage for raw ABI work and low-level interop.
 - `<<-TAG ... TAG` produces `str` and `c<<-TAG ... TAG` produces `cstr` for multiline block text. The content is dedented by the shared leading spaces of nonblank lines, and the newline before the terminator is preserved.
+- `"..."` and `c"..."` may continue across following indented lines when each continued line begins with the same literal kind and no trailing tokens. The segments concatenate exactly with no implicit separator, so long single-line text can wrap without introducing another literal form.
+- The VS Code extension may attach embedded grammars to specific heredoc tags such as `GLSL`, `VERT`, `FRAG`, `COMP`, `JSON`, `JSONC`, and `SQL`, but that is editor-only highlighting. It does not change runtime semantics, and SQL values should still use bound parameters rather than text interpolation.
+- Runtime JSONC support lives in `std.jsonc` as a normalize-to-JSON step that strips comments and trailing commas before feeding strict JSON tooling; `parse(...)` wraps that path over `std.cjson.parse`.
 
 ### Composite types
 

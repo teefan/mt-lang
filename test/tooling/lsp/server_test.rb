@@ -256,6 +256,33 @@ class LSPServerTest < Minitest::Test
     VERT
   MT
 
+  SOURCE_WITH_JSON_HEREDOC_CSTRING = <<~MT
+    const payload: cstr = c<<-JSON
+        {
+            "name": "milk-tea",
+            "count": 3,
+            "ready": true
+        }
+    JSON
+  MT
+
+  SOURCE_WITH_JSONC_HEREDOC_CSTRING = <<~MT
+    const payload: cstr = c<<-JSONC
+        {
+            // comment
+            "name": "milk-tea"
+        }
+    JSONC
+  MT
+
+  SOURCE_WITH_SQL_HEREDOC_CSTRING = <<~MT
+    const query: cstr = c<<-SQL
+        select id, name
+        from saves
+        where slot = :slot and profile_id = ?1;
+    SQL
+  MT
+
   def test_initialize_advertises_expected_capabilities
     with_server do |client|
       response = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -1549,6 +1576,8 @@ class LSPServerTest < Minitest::Test
         assert_equal "function", member_entry.fetch("tokenType")
       end
     end
+  end
+
 
     def test_semantic_tokens_classify_str_builder_and_value_receiver_methods
       with_server do |client|
@@ -1669,43 +1698,38 @@ class LSPServerTest < Minitest::Test
     end
 
     def test_semantic_tokens_do_not_override_glsl_heredoc_body
-      with_server do |client|
-        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
-        uri = "file:///tmp/lsp_semantic_glsl_heredoc_test.mt"
-        source = SOURCE_WITH_GLSL_HEREDOC_CSTRING
-        client.send_notification("textDocument/didOpen", {
-          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
-        })
-
-        response = client.send_request("textDocument/semanticTokens/full", {
-          "textDocument" => { "uri" => uri }
-        })
-
-        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
-        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
-
-        refute entries.any? { |entry| entry.fetch("tokenType") == "string" }
-      end
+      assert_embedded_heredoc_body_has_no_string_semantic_tokens(
+        SOURCE_WITH_GLSL_HEREDOC_CSTRING,
+        "file:///tmp/lsp_semantic_glsl_heredoc_test.mt"
+      )
     end
 
     def test_semantic_tokens_do_not_override_alt_shader_tag_heredoc_body
-      with_server do |client|
-        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
-        uri = "file:///tmp/lsp_semantic_vert_heredoc_test.mt"
-        source = SOURCE_WITH_VERT_HEREDOC_CSTRING
-        client.send_notification("textDocument/didOpen", {
-          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
-        })
+      assert_embedded_heredoc_body_has_no_string_semantic_tokens(
+        SOURCE_WITH_VERT_HEREDOC_CSTRING,
+        "file:///tmp/lsp_semantic_vert_heredoc_test.mt"
+      )
+    end
 
-        response = client.send_request("textDocument/semanticTokens/full", {
-          "textDocument" => { "uri" => uri }
-        })
+    def test_semantic_tokens_do_not_override_json_heredoc_body
+      assert_embedded_heredoc_body_has_no_string_semantic_tokens(
+        SOURCE_WITH_JSON_HEREDOC_CSTRING,
+        "file:///tmp/lsp_semantic_json_heredoc_test.mt"
+      )
+    end
 
-        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
-        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+    def test_semantic_tokens_do_not_override_jsonc_heredoc_body
+      assert_embedded_heredoc_body_has_no_string_semantic_tokens(
+        SOURCE_WITH_JSONC_HEREDOC_CSTRING,
+        "file:///tmp/lsp_semantic_jsonc_heredoc_test.mt"
+      )
+    end
 
-        refute entries.any? { |entry| entry.fetch("tokenType") == "string" }
-      end
+    def test_semantic_tokens_do_not_override_sql_heredoc_body
+      assert_embedded_heredoc_body_has_no_string_semantic_tokens(
+        SOURCE_WITH_SQL_HEREDOC_CSTRING,
+        "file:///tmp/lsp_semantic_sql_heredoc_test.mt"
+      )
     end
 
     def test_semantic_tokens_full_stays_within_latency_budget
@@ -1731,7 +1755,6 @@ class LSPServerTest < Minitest::Test
                         "semanticTokens/full took #{format("%.2f", elapsed_ms)}ms (budget #{SEMANTIC_TOKENS_LATENCY_BUDGET_MS}ms)"
       end
     end
-  end
 
   private
 
@@ -1852,6 +1875,24 @@ class LSPServerTest < Minitest::Test
     response = yield
     finished = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     [(finished - started) * 1000.0, response]
+  end
+
+  def assert_embedded_heredoc_body_has_no_string_semantic_tokens(source, uri)
+    with_server do |client|
+      init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/semanticTokens/full", {
+        "textDocument" => { "uri" => uri }
+      })
+
+      legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+      entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+      refute entries.any? { |entry| entry.fetch("tokenType") == "string" }
+    end
   end
 
   def semantic_entry_for_lexeme(source, entries, lexeme)

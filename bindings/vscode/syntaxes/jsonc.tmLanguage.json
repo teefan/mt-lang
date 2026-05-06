@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Vendored JSONC",
+  "scopeName": "source.jsonc",
+  "patterns": [
+    { "include": "#comment-line" },
+    { "include": "#comment-block" },
+    { "include": "source.json" }
+  ],
+  "repository": {
+    "comment-line": {
+      "name": "comment.line.double-slash.jsonc",
+      "match": "//.*$"
+    },
+    "comment-block": {
+      "name": "comment.block.jsonc",
+      "begin": "/\\*",
+      "end": "\\*/"
+    }
+  }
+}
