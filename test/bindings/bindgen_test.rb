@@ -120,6 +120,7 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_match(/const SCALE: float = 2.5/, generated)
       assert_match(/const ORIGIN: Vec2 = Vec2\(x = 0.0, y = 0.0\)/, generated)
       assert_match(/const TITLE: cstr = c"Milk"/, generated)
+      assert_match(/const MAGIC: int = 7\n    const WINDOW_FLAG: ptr_uint = 32\n    const SCALE: float = 2.5\n    const ORIGIN: Vec2 = Vec2\(x = 0.0, y = 0.0\)\n    const TITLE: cstr = c"Milk"/, generated)
       assert_match(/enum Mode: int/, generated)
       assert_match(/flags WindowFlags: int/, generated)
       assert_match(/flags TraceLevel: int/, generated)
@@ -134,6 +135,7 @@ class MilkTeaBindgenTest < Minitest::Test
       refute_match(/extern def measure_long_double/, generated)
       assert_match(/extern def add\(a: int, b: int\) -> int/, generated)
       assert_equal 1, generated.scan("extern def add(a: int, b: int) -> int").length
+      assert_match(/extern def add\(a: int, b: int\) -> int\n    extern def fill_buffer\(value: uint, count: ptr_uint\) -> ptr_uint/, generated)
       assert_match(/extern def fill_buffer\(value: uint, count: ptr_uint\) -> ptr_uint/, generated)
       assert_match(/extern def widen\(value: int\) -> int/, generated)
       assert_match(/extern def name_of\(mode: Mode\) -> cstr/, generated)

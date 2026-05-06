@@ -310,7 +310,6 @@ def load_texture(path: str) -> Result[Texture, LoadError]:
 - raw pointer dereference and field access through raw pointers
 - raw pointer arithmetic
 - unchecked casts and bit reinterpretation
-- reading inactive union fields
 - pointer indexing
 - raw ABI work that is not covered by a declared foreign import contract
 
@@ -458,7 +457,7 @@ union Value:
 	raw: ptr[void]
 ```
 
-Reading a union field other than the last written field requires `unsafe`.
+Unions are untagged storage. The current implementation does not track an active field, so switching views is a low-level operation by design rather than a checked safe surface.
 
 #### Variants
 

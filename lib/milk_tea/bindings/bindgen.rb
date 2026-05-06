@@ -4,6 +4,7 @@ require "json"
 require "open3"
 require "tempfile"
 require_relative "../core/token"
+require_relative "../tooling/formatter"
 
 module MilkTea
   module Bindgen
@@ -116,7 +117,7 @@ module MilkTea
         declarations.concat(function_declarations)
         declarations.sort_by! { |declaration| declaration[:index] }
 
-        emit_module(declarations)
+        format_generated_source(emit_module(declarations))
       end
 
       private
@@ -706,11 +707,18 @@ module MilkTea
         lines.concat(directives)
 
         declarations.each do |declaration|
-          lines << ""
           lines.concat(emit_declaration(declaration))
         end
 
         lines.join("\n") + "\n"
+      end
+
+      def format_generated_source(source)
+        Formatter.format_source(source, path: generated_module_path, mode: :canonical)
+      end
+
+      def generated_module_path
+        "#{@module_name.tr('.', '/')}" + ".mt"
       end
 
       def emit_declaration(declaration)

@@ -68,7 +68,6 @@ extern module std.c.raygui:
         format: int
 
     type Texture2D = Texture
-
     type TextureCubemap = Texture
 
     struct RenderTexture:
@@ -198,7 +197,6 @@ extern module std.c.raygui:
         data: ptr[void]
 
     opaque rAudioBuffer = c"rAudioBuffer"
-
     opaque rAudioProcessor = c"rAudioProcessor"
 
     struct AudioStream:
@@ -598,13 +596,9 @@ extern module std.c.raygui:
         NPATCH_THREE_PATCH_HORIZONTAL = 2
 
     type TraceLogCallback = fn(arg0: int, arg1: cstr, arg2: va_list) -> void
-
     type LoadFileDataCallback = fn(arg0: cstr, arg1: ptr[int]) -> ptr[ubyte]
-
     type SaveFileDataCallback = fn(arg0: cstr, arg1: ptr[void], arg2: int) -> bool
-
     type LoadFileTextCallback = fn(arg0: cstr) -> ptr[char]
-
     type SaveFileTextCallback = fn(arg0: cstr, arg1: ptr[char]) -> bool
 
     extern def InitWindow(width: int, height: int, title: cstr) -> void
@@ -1634,11 +1628,7 @@ extern module std.c.raygui:
         ICON_255 = 255
 
     const RAYGUI_VERSION_MAJOR: int = 4
-
     const RAYGUI_VERSION_MINOR: int = 5
-
     const RAYGUI_VERSION_PATCH: int = 0
-
     const SCROLLBAR_LEFT_SIDE: int = 0
-
     const SCROLLBAR_RIGHT_SIDE: int = 1

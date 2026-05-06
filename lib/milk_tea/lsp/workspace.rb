@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'cgi/escape'
+require 'digest'
 require 'set'
 require 'thread'
 require 'uri'
@@ -41,6 +42,11 @@ module MilkTea
         @definition_warmup_queue = Queue.new
         @definition_warmup_enqueued = Set.new
         @definition_warmup_thread = nil
+        @analysis_warmup_queue = Queue.new
+        @analysis_warmup_pending = {}
+        @analysis_warmup_enqueued = Set.new
+        @analysis_warmup_mutex = Mutex.new
+        @analysis_warmup_thread = nil
       end
 
       def shared_module_cache
@@ -68,9 +74,7 @@ module MilkTea
         @open_documents[uri] = content
         invalidate_cache(uri)
         enqueue_definition_warmup(uri)
-        # Eagerly warm analysis cache so the last-good snapshot is available for
-        # subsequent incomplete edits (e.g., user typing "p." mid-expression).
-        get_analysis(uri) unless large_document_content?(content)
+        warm_document_analysis(uri, content)
       end
 
       def close_document(uri)
@@ -84,8 +88,7 @@ module MilkTea
         @open_documents[uri] = content
         invalidate_cache(uri)
         enqueue_definition_warmup(uri)
-        # Re-warm last-good analysis whenever content changes (e.g. after save).
-        get_analysis(uri) unless large_document_content?(content)
+        warm_document_analysis(uri, content)
       end
 
       # Apply one incremental change (LSP textDocumentSync == 2).
@@ -130,6 +133,7 @@ module MilkTea
       end
 
       def shutdown
+        stop_analysis_warmup
         stop_definition_warmup
       end
 
@@ -238,22 +242,28 @@ module MilkTea
       # Apply a workspace/didChangeWatchedFiles change to the indexed snapshot.
       # Open documents are source-of-truth and are left untouched.
       def apply_watched_file_change(uri, change_type)
-        return if @open_documents.key?(uri)
+        return [] if @open_documents.key?(uri)
 
         if change_type.to_i == 3 # Deleted
           @indexed_documents.delete(uri)
           invalidate_cache(uri)
-          return
+          return refresh_import_dependent_caches(changed_uri: uri)
         end
 
         path = uri_to_path(uri)
-        return unless path && File.file?(path)
+        return [] unless path && File.file?(path)
 
         @indexed_documents[uri] = File.read(path)
         invalidate_cache(uri)
         enqueue_definition_warmup(uri)
+        refresh_import_dependent_caches(changed_uri: uri)
       rescue StandardError => e
         warn "LSP watched-file update error #{uri}: #{e.message}"
+        []
+      end
+
+      def refresh_open_document_dependency_caches(changed_uri)
+        refresh_import_dependent_caches(changed_uri: changed_uri)
       end
 
       # Scan text up to the cursor to find the innermost open function call context.
@@ -420,6 +430,14 @@ module MilkTea
         end
       end
 
+      def refresh_import_dependent_caches(changed_uri: nil)
+        @shared_module_cache.clear
+        @analysis_cache.clear
+        @diagnostics_cache.clear
+        @last_good_analysis_cache.clear
+        @open_documents.keys.reject { |open_uri| open_uri == changed_uri }
+      end
+
       # ── Compilation helpers ─────────────────────────────────────────────────
 
       def lex_document(uri)
@@ -451,9 +469,173 @@ module MilkTea
       end
 
       def large_document_content?(content)
-        return false unless content
+        !large_document_content_reason(content).nil?
+      end
 
-        content.bytesize > 200_000 || content.count("\n") > 1200
+      def large_document_content_reason(content)
+        return nil unless content
+
+        return 'large-bytes' if content.bytesize > 200_000
+        return 'large-lines' if content.count("\n") > 1200
+
+        nil
+      end
+
+      def background_analysis_skip_reason?(skip_reason)
+        %w[std-path import-heavy].include?(skip_reason)
+      end
+
+      def eager_analysis_skip_reason(uri, content)
+        large_reason = large_document_content_reason(content)
+        return [large_reason, 0] if large_reason
+
+        path = uri_to_path(uri)
+        return [nil, 0] unless path && File.file?(path)
+
+        ast = get_ast(uri)
+        import_count = ast.respond_to?(:imports) ? ast.imports.length : 0
+
+        return ['std-path', import_count] if path.include?('/std/')
+
+        import_heavy = import_count >= 2 && (content.bytesize >= 4_000 || content.count("\n") >= 120)
+        return ['import-heavy', import_count] if import_heavy
+
+        [nil, import_count]
+      end
+
+      def warm_document_analysis(uri, content)
+        stats = {
+          bytes: content.bytesize,
+          lines: content.count("\n") + 1,
+          eager_analysis: false,
+          analysis_mode: nil,
+          analysis_ms: nil,
+          skip_reason: nil,
+          import_count: 0,
+          shared_module_cache_size: @shared_module_cache.length,
+        }
+
+        skip_reason, import_count = eager_analysis_skip_reason(uri, content)
+        stats[:import_count] = import_count
+        if skip_reason
+          stats[:skip_reason] = skip_reason
+          enqueue_analysis_warmup(uri, content) if background_analysis_skip_reason?(skip_reason)
+          return stats
+        end
+
+        analysis_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        analysis_path = uri_to_path(uri)
+        get_analysis(uri)
+        stats[:eager_analysis] = true
+        stats[:analysis_mode] = analysis_path && File.file?(analysis_path) ? :module_loader : :memory
+        stats[:analysis_ms] = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - analysis_start) * 1000).round(1)
+        stats[:shared_module_cache_size] = @shared_module_cache.length
+        stats
+      end
+
+      def analysis_warmup_digest(content)
+        Digest::SHA256.hexdigest(content)
+      end
+
+      def start_analysis_warmup
+        return if @analysis_warmup_thread&.alive?
+
+        @analysis_warmup_thread = Thread.new do
+          Thread.current.name = 'mt-lsp-analysis-warmup' if Thread.current.respond_to?(:name=)
+
+          loop do
+            uri = @analysis_warmup_queue.pop
+            break if uri == :__stop__
+
+            process_analysis_warmup(uri)
+          end
+        rescue StandardError => e
+          warn "LSP analysis warmup error: #{e.message}"
+        end
+      end
+
+      def stop_analysis_warmup
+        worker = @analysis_warmup_thread
+        return unless worker
+
+        @analysis_warmup_queue << :__stop__
+        worker.join(0.25)
+        @analysis_warmup_thread = nil
+      rescue StandardError => e
+        warn "LSP analysis warmup shutdown error: #{e.message}"
+      end
+
+      def enqueue_analysis_warmup(uri, content = nil)
+        return if uri.nil?
+
+        start_analysis_warmup unless @analysis_warmup_thread&.alive?
+
+        digest = analysis_warmup_digest(content || get_content(uri))
+        should_enqueue = false
+        @analysis_warmup_mutex.synchronize do
+          @analysis_warmup_pending[uri] = digest
+          unless @analysis_warmup_enqueued.include?(uri)
+            @analysis_warmup_enqueued << uri
+            should_enqueue = true
+          end
+        end
+
+        @analysis_warmup_queue << uri if should_enqueue
+      end
+
+      def process_analysis_warmup(uri)
+        loop do
+          digest = nil
+          @analysis_warmup_mutex.synchronize do
+            digest = @analysis_warmup_pending.delete(uri)
+          end
+          break unless digest
+
+          warm_analysis_for_uri(uri, expected_digest: digest)
+        end
+      ensure
+        requeue = false
+        @analysis_warmup_mutex.synchronize do
+          @analysis_warmup_enqueued.delete(uri)
+          if @analysis_warmup_pending.key?(uri)
+            @analysis_warmup_enqueued << uri
+            requeue = true
+          end
+        end
+
+        @analysis_warmup_queue << uri if requeue
+      end
+
+      def warm_analysis_for_uri(uri, expected_digest:)
+        content = get_content(uri)
+        return false unless analysis_warmup_digest(content) == expected_digest
+
+        analysis = compute_analysis_for_content(uri, content)
+        return false unless analysis
+        return false unless analysis_warmup_digest(get_content(uri)) == expected_digest
+
+        @analysis_cache[uri] = analysis
+        @last_good_analysis_cache[uri] = analysis
+        true
+      rescue StandardError => e
+        warn "LSP background analysis warmup error #{uri}: #{e.message}"
+        false
+      end
+
+      def compute_analysis_for_content(uri, content)
+        path = uri_to_path(uri)
+        if path && File.file?(path)
+          loader = MilkTea::ModuleLoader.new(
+            module_roots: MilkTea::ModuleRoots.roots_for_path(path),
+            shared_cache: @shared_module_cache,
+          )
+          loader.check_file(path)
+        else
+          ast = MilkTea::Parser.parse(content, path: uri)
+          MilkTea::Sema.check(ast)
+        end
+      rescue MilkTea::SemaError, ModuleLoadError
+        nil
       end
 
       def analyze_document(uri)
@@ -476,6 +658,8 @@ module MilkTea
                  end
         @last_good_analysis_cache[uri] = result
         result
+      rescue MilkTea::SemaError, ModuleLoadError
+        @last_good_analysis_cache[uri]
       rescue StandardError => e
         warn "LSP sema error #{uri}: #{e.message}"
         @last_good_analysis_cache[uri]

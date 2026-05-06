@@ -103,6 +103,26 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_extern_module_groups_simple_declarations_by_kind
+    source = <<~MT
+      extern module std.c.sample:
+          include "sample.h"
+
+          opaque Handle = c"struct Handle"
+          type Flags = uint
+
+          const MAGIC: int = 7
+          const LIMIT: int = 8
+
+          extern def init() -> int
+          extern def close() -> void
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_foreign_declarations_and_calls_like_source
     source = <<~MT
       module std.raylib
@@ -193,7 +213,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     source = <<~MT
       module demo.adjacent
 
-      const title = "Milk Tea keeps this text readable"
+      const title: str = "Milk Tea keeps this text readable"
           " while storing a single logical line."
     MT
 

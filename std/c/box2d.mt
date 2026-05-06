@@ -4,13 +4,9 @@ extern module std.c.box2d:
     include "box2d/box2d.h"
 
     opaque b2TreeNode = c"struct b2TreeNode"
-
     type b2AllocFcn = fn(arg0: uint, arg1: int) -> ptr[void]
-
     type b2FreeFcn = fn(arg0: ptr[void], arg1: uint) -> void
-
     type b2AssertFcn = fn(arg0: cstr, arg1: cstr, arg2: int) -> int
-
     type b2LogFcn = fn(arg0: cstr) -> void
 
     extern def b2SetAllocator(allocFcn: ptr[b2AllocFcn], freeFcn: ptr[b2FreeFcn]) -> void
@@ -60,11 +56,8 @@ extern module std.c.box2d:
         offset: float
 
     const b2Vec2_zero: b2Vec2 = b2Vec2(x = 0.0, y = 0.0)
-
     const b2Rot_identity: b2Rot = b2Rot(c = 1.0, s = 0.0)
-
     const b2Transform_identity: b2Transform = b2Transform(p = b2Vec2(x = 0.0, y = 0.0), q = b2Rot(c = 1.0, s = 0.0))
-
     const b2Mat22_zero: b2Mat22 = b2Mat22(cx = b2Vec2(x = 0.0, y = 0.0), cy = b2Vec2(x = 0.0, y = 0.0))
 
     extern def b2IsValidFloat(a: float) -> bool
@@ -390,25 +383,16 @@ extern module std.c.box2d:
         generation: uint
 
     const b2_nullWorldId: b2WorldId = b2WorldId(index1 = 0, generation = 0)
-
     const b2_nullBodyId: b2BodyId = b2BodyId(index1 = 0, world0 = 0, generation = 0)
-
     const b2_nullShapeId: b2ShapeId = b2ShapeId(index1 = 0, world0 = 0, generation = 0)
-
     const b2_nullChainId: b2ChainId = b2ChainId(index1 = 0, world0 = 0, generation = 0)
-
     const b2_nullJointId: b2JointId = b2JointId(index1 = 0, world0 = 0, generation = 0)
-
     const b2_nullContactId: b2ContactId = b2ContactId(index1 = 0, world0 = 0, padding = 0, generation = 0)
 
     type b2TaskCallback = fn(arg0: ptr[void]) -> void
-
     type b2EnqueueTaskCallback = fn(arg0: b2TaskCallback, arg1: ptr[void], arg2: ptr[void]) -> ptr[void]
-
     type b2FinishTaskCallback = fn(arg0: ptr[void], arg1: ptr[void]) -> void
-
     type b2FrictionCallback = fn(arg0: float, arg1: ulong, arg2: float, arg3: ulong) -> float
-
     type b2RestitutionCallback = fn(arg0: float, arg1: ulong, arg2: float, arg3: ulong) -> float
 
     struct b2RayResult:
@@ -767,13 +751,9 @@ extern module std.c.box2d:
         manifold: b2Manifold
 
     type b2CustomFilterFcn = fn(arg0: b2ShapeId, arg1: b2ShapeId, arg2: ptr[void]) -> bool
-
     type b2PreSolveFcn = fn(arg0: b2ShapeId, arg1: b2ShapeId, arg2: b2Vec2, arg3: b2Vec2, arg4: ptr[void]) -> bool
-
     type b2OverlapResultFcn = fn(arg0: b2ShapeId, arg1: ptr[void]) -> bool
-
     type b2CastResultFcn = fn(arg0: b2ShapeId, arg1: b2Vec2, arg2: b2Vec2, arg3: float, arg4: ptr[void]) -> float
-
     type b2PlaneResultFcn = fn(arg0: b2ShapeId, arg1: b2PlaneResult, arg2: ptr[void]) -> bool
 
     enum b2HexColor: int
@@ -1284,11 +1264,7 @@ extern module std.c.box2d:
     extern def b2Contact_GetData(contactId: b2ContactId) -> b2ContactData
 
     const B2_ENABLE_VALIDATION: int = 0
-
     const B2_HASH_INIT: int = 5381
-
     const B2_PI: float = 3.14159274
-
     const B2_MAX_POLYGON_VERTICES: int = 8
-
     const B2_DEFAULT_CATEGORY_BITS: int = 1

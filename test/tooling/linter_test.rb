@@ -52,6 +52,24 @@ class MilkTeaLinterTest < Minitest::Test
     assert_match(/function 'double' reuses builtin type name 'double'/, warning.message)
   end
 
+  def test_builtin_type_name_lint_handles_declarations_without_column_metadata
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      const float: int = 1
+      var double: int = 2
+    MT
+    warnings += MilkTea::Linter.lint_source(<<~MT, path: "extern.mt")
+      extern module std.c.double:
+          extern def int() -> void
+    MT
+
+    assert_equal ["builtin-type-name", "builtin-type-name", "builtin-type-name"], warnings.map(&:code)
+    assert_equal [3, 4, 2], warnings.map(&:line)
+    assert_equal ["float", "double", "int"], warnings.map(&:symbol_name)
+    assert_equal [nil, nil, nil], warnings.map(&:column)
+  end
+
   def test_does_not_warn_on_byte_local_name
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
@@ -629,6 +647,32 @@ class MilkTeaLinterTest < Minitest::Test
     MT
 
     refute_any(warnings, "missing-return")
+  end
+
+  def test_missing_return_no_warn_for_while_true_without_break
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def spin(flag: bool) -> int:
+          while true:
+              if flag:
+                  continue
+    MT
+
+    refute_any(warnings, "missing-return")
+  end
+
+  def test_missing_return_warns_for_while_true_with_break
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def spin(flag: bool) -> int:
+          while true:
+              if flag:
+                  break
+    MT
+
+    assert_any(warnings, "missing-return")
   end
 
   # ── lint: ignore inline suppression ────────────────────────────────────

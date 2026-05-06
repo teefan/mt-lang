@@ -754,6 +754,23 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_perf_log_context_includes_short_uri_for_threshold_logs
+    server = MilkTea::LSP::Server.new
+    root_path = File.join(Dir.tmpdir, "milk-tea-lsp-perf")
+    source_path = File.join(root_path, "demo", "slow.mt")
+    FileUtils.mkdir_p(File.dirname(source_path))
+
+    server.instance_variable_set(:@root_uri, path_to_uri(root_path))
+
+    detail = server.send(:perf_log_context, 'textDocument/didOpen', {
+      "textDocument" => { "uri" => path_to_uri(source_path) }
+    }, verbose: false)
+
+    assert_equal " uri=demo/slow.mt", detail
+  ensure
+    server&.send(:handle_shutdown, nil)
+  end
+
   def test_document_symbol_captures_opaque_declarations
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -1222,6 +1239,76 @@ class LSPServerTest < Minitest::Test
         new_symbols = client.send_request("workspace/symbol", { "query" => "new_name" })
         new_names = new_symbols.fetch("result").map { |s| s["name"] }
         assert_includes new_names, "new_name"
+      end
+    end
+  end
+
+  def test_document_diagnostic_refreshes_after_imported_module_watched_change
+    Dir.mktmpdir("milk-tea-lsp-watch-diagnostics") do |dir|
+      Dir.mkdir(File.join(dir, "std"))
+
+      lib_path = File.join(dir, "mathx.mt")
+      main_path = File.join(dir, "main.mt")
+
+      File.write(lib_path, <<~MT)
+        module mathx
+
+        pub def greet() -> int:
+            return 1
+      MT
+      main_source = <<~MT
+        module main
+
+        import mathx as mx
+
+        def main() -> int:
+            return mx.greet()
+      MT
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      lib_uri = path_to_uri(lib_path)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        first = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        first_result = first.fetch("result")
+        assert_equal "full", first_result["kind"]
+        assert_equal [], first_result["items"]
+
+        File.write(lib_path, <<~MT)
+          module mathx
+
+          pub def greet() -> str:
+              return "oops"
+        MT
+
+        client.send_notification("workspace/didChangeWatchedFiles", {
+          "changes" => [{ "uri" => lib_uri, "type" => 2 }]
+        })
+
+        second = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri },
+          "previousResultId" => first_result["resultId"]
+        })
+        second_result = second.fetch("result")
+
+        assert_equal "full", second_result["kind"]
+        refute_equal first_result["resultId"], second_result["resultId"]
+        assert_operator second_result.fetch("items").length, :>=, 1
       end
     end
   end

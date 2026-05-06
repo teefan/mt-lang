@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require_relative "../core"
+require_relative "cst_formatter"
+
 module MilkTea
   class FormatterError < StandardError; end
 

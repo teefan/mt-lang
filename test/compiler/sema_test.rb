@@ -3624,6 +3624,101 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/argument value to inspect must use in/, error.message)
   end
 
+  def test_rejects_foreign_in_parameter_without_const_ptr_boundary
+    root_source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main() -> void:
+          let value = 7
+          sample.inspect(in value)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def Inspect(value: ptr[void]) -> void
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def inspect[T](in value: T as ptr[void]) -> void = c.Inspect
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(root_source, imported_sources)
+    end
+
+    assert_match(/in parameter value of inspect must lower to const_ptr\[\.\.\.\]/, error.message)
+  end
+
+  def test_rejects_incompatible_foreign_in_parameter_mapping
+    root_source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main() -> void:
+          let value = 7
+          sample.inspect(in value)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def Inspect(value: const_ptr[float]) -> void
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def inspect(in value: int as const_ptr[float]) -> void = c.Inspect
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(root_source, imported_sources)
+    end
+
+    assert_match(/in parameter value of inspect cannot map int as const_ptr\[float\]/, error.message)
+  end
+
+  def test_rejects_consuming_foreign_parameter_with_non_pointer_public_type
+    root_source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      def main() -> void:
+          sample.release(1)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        extern module std.c.sample:
+            extern def Release(value: int) -> void
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def release(consuming value: int) -> void = c.Release
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(root_source, imported_sources)
+    end
+
+    assert_match(/consuming parameter value of release must use a non-null opaque or ptr\[\.\.\.\] type/, error.message)
+  end
+
   def test_rejects_const_pointer_for_writable_pointer_parameters
     source = <<~MT
       module demo.bad_const_pointer

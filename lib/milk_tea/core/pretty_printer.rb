@@ -118,9 +118,23 @@ module MilkTea
           if @comment_map.key?(l)
             @comment_map.delete(l)&.each { |text| line(text) }
           elsif @blank_line_set.delete(l)
+            next if suppress_blank_line_trivia?
+
             blank_line
           end
         end
+      end
+
+      def suppress_blank_line_trivia?
+        @suppress_blank_line_trivia == true
+      end
+
+      def with_blank_line_trivia_suppressed
+        previous = @suppress_blank_line_trivia
+        @suppress_blank_line_trivia = true
+        yield
+      ensure
+        @suppress_blank_line_trivia = previous
       end
 
       def emit_source_file(source_file)
@@ -137,7 +151,11 @@ module MilkTea
         end
 
         if source_file.module_kind == :extern_module
-          with_indent { emit_module_body(source_file) }
+          with_indent do
+            with_blank_line_trivia_suppressed do
+              emit_module_body(source_file)
+            end
+          end
         else
           blank_line unless source_file.imports.empty? && source_file.directives.empty? && source_file.declarations.empty?
           emit_module_body(source_file)
@@ -171,7 +189,7 @@ module MilkTea
         source_file.declarations.each_with_index do |declaration, index|
           emit_declaration(declaration)
           next_decl = source_file.declarations[index + 1]
-          if next_decl && (block_declaration?(declaration) || block_declaration?(next_decl))
+          if next_decl && declaration_separator_required?(declaration, next_decl)
             blank_line
           end
         end
@@ -195,6 +213,41 @@ module MilkTea
 
       def block_declaration?(declaration)
         BLOCK_DECLARATION_TYPES.any? { |t| declaration.is_a?(t) }
+      end
+
+      def declaration_separator_required?(declaration, next_decl)
+        if @current_module_kind == :extern_module
+          return extern_module_separator_required?(declaration, next_decl)
+        end
+
+        block_declaration?(declaration) || block_declaration?(next_decl)
+      end
+
+      def extern_module_separator_required?(declaration, next_decl)
+        return true if extern_module_block_declaration?(declaration) || extern_module_block_declaration?(next_decl)
+
+        extern_module_declaration_group(declaration) != extern_module_declaration_group(next_decl)
+      end
+
+      def extern_module_block_declaration?(declaration)
+        declaration.is_a?(AST::StructDecl) ||
+          declaration.is_a?(AST::UnionDecl) ||
+          declaration.is_a?(AST::EnumDecl) ||
+          declaration.is_a?(AST::FlagsDecl) ||
+          declaration.is_a?(AST::VariantDecl)
+      end
+
+      def extern_module_declaration_group(declaration)
+        case declaration
+        when AST::OpaqueDecl, AST::TypeAliasDecl
+          :types
+        when AST::ConstDecl, AST::VarDecl
+          :values
+        when AST::ExternFunctionDecl, AST::ForeignFunctionDecl
+          :functions
+        else
+          declaration.class.name
+        end
       end
 
       def emit_declaration(declaration)

@@ -211,11 +211,11 @@ module MilkTea
             visit_function(method)
           end
         when AST::ExternFunctionDecl, AST::ForeignFunctionDecl
-          warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration.column, kind_label: "function")
+          warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration_column(declaration), kind_label: "function")
         when AST::ConstDecl
-          warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration.column, kind_label: "constant")
+          warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration_column(declaration), kind_label: "constant")
         when AST::VarDecl
-          warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration.column, kind_label: "module variable")
+          warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration_column(declaration), kind_label: "module variable")
         end
       end
     end
@@ -428,6 +428,8 @@ module MilkTea
           stmt.else_body && !stmt.else_body.empty? &&
             stmt.branches.all? { |b| always_returns?(b.body) } &&
             always_returns?(stmt.else_body)
+        when AST::WhileStmt
+          infinite_while_without_break?(stmt)
         when AST::MatchStmt
           stmt.arms.any? && stmt.arms.all? { |arm| always_returns?(arm.body) }
         when AST::UnsafeStmt
@@ -435,6 +437,22 @@ module MilkTea
         else
           false
         end
+      end
+    end
+
+    def infinite_while_without_break?(stmt)
+      stmt.condition.is_a?(AST::BooleanLiteral) &&
+        stmt.condition.value == true &&
+        !loop_body_can_break?(stmt.body)
+    end
+
+    def loop_body_can_break?(body)
+      return false if body.nil? || body.empty?
+
+      graph = CFG::Builder.new.build_loop_body(body)
+      reachability = CFG::Reachability.solve(graph)
+      graph.each_node.any? do |node|
+        node.kind == :break_exit && reachability.reachable_ids.include?(node.id)
       end
     end
 
@@ -784,6 +802,10 @@ module MilkTea
 
     def param_column(param)
       param.respond_to?(:column) ? param.column : nil
+    end
+
+    def declaration_column(declaration)
+      declaration.respond_to?(:column) ? declaration.column : nil
     end
 
     def expression_column(expr)

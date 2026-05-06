@@ -99,11 +99,7 @@ extern module std.c.cjson:
     extern def cJSON_free(object: ptr[void]) -> void
 
     const CJSON_VERSION_MAJOR: int = 1
-
     const CJSON_VERSION_MINOR: int = 7
-
     const CJSON_VERSION_PATCH: int = 19
-
     const CJSON_NESTING_LIMIT: int = 1000
-
     const CJSON_CIRCULAR_LIMIT: int = 10000
