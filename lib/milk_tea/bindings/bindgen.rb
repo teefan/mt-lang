@@ -48,7 +48,7 @@ module MilkTea
       "double" => "double",
     }.freeze
 
-    def self.generate(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {})
+    def self.generate(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, allow_static_inline_functions: false)
       Generator.new(
         module_name:,
         header_path:,
@@ -66,11 +66,12 @@ module MilkTea
         function_param_type_overrides:,
         function_return_type_overrides:,
         field_type_overrides:,
+        allow_static_inline_functions:,
       ).generate
     end
 
     class Generator
-      def initialize(module_name:, header_path:, tracked_header_paths:, tracked_header_prefixes:, declaration_name_prefixes:, link_libraries:, include_directives:, bindgen_defines:, bindgen_include_directives:, module_imports:, clang:, clang_args:, type_overrides:, function_param_type_overrides:, function_return_type_overrides:, field_type_overrides:)
+      def initialize(module_name:, header_path:, tracked_header_paths:, tracked_header_prefixes:, declaration_name_prefixes:, link_libraries:, include_directives:, bindgen_defines:, bindgen_include_directives:, module_imports:, clang:, clang_args:, type_overrides:, function_param_type_overrides:, function_return_type_overrides:, field_type_overrides:, allow_static_inline_functions:)
         @module_name = module_name
         @header_path = File.expand_path(header_path)
         @tracked_header_paths = ([header_path] + tracked_header_paths).map { |path| File.expand_path(path) }.uniq.freeze
@@ -87,6 +88,7 @@ module MilkTea
         @function_param_type_overrides = normalize_function_param_type_overrides(function_param_type_overrides)
         @function_return_type_overrides = normalize_function_return_type_overrides(function_return_type_overrides)
         @field_type_overrides = normalize_field_type_overrides(field_type_overrides)
+        @allow_static_inline_functions = allow_static_inline_functions
         @record_aliases = {}
         @enum_aliases = {}
         @record_visible_names = {}
@@ -543,8 +545,9 @@ module MilkTea
 
         nodes.each_with_index do |node, index|
           next unless node["kind"] == "FunctionDecl"
-          next if node["storageClass"] == "static"
-          next if Array(node["inner"]).any? { |child| child["kind"] == "CompoundStmt" }
+          has_body = Array(node["inner"]).any? { |child| child["kind"] == "CompoundStmt" }
+          next if node["storageClass"] == "static" && !@allow_static_inline_functions
+          next if has_body && !(node["storageClass"] == "static" && @allow_static_inline_functions)
           next unless allowed_declaration_name?(node["name"])
 
           params = Array(node["inner"]).select { |child| child["kind"] == "ParmVarDecl" }.each_with_index.map do |param, param_index|
@@ -747,7 +750,7 @@ module MilkTea
         fields = Array(node["inner"]).select { |child| child["kind"] == "FieldDecl" }
         fields.each do |field|
           field_type = aggregate_field_type(field, owner_name: name, aggregate_node: node)
-          mt_name, = bindgen_field_name(field["name"])
+          mt_name, = bindgen_field_name(aggregate_field_name(field, aggregate_node: node))
           lines << "        #{mt_name}: #{field_type}"
         end
         lines
@@ -782,7 +785,7 @@ module MilkTea
             anonymous_record = anonymous_record_decl_for_field(field, aggregate_node)
             next unless anonymous_record
 
-            synthetic_name = "#{owner_name}_#{field["name"]}"
+            synthetic_name = synthetic_aggregate_name(owner_name, field, aggregate_node)
             unless @synthetic_declarations.any? { |declaration| declaration[:name] == synthetic_name }
               @synthetic_declarations << { kind: anonymous_record.fetch("tagUsed"), name: synthetic_name, node: anonymous_record }
               @aggregate_declarations[synthetic_name] = anonymous_record
@@ -817,7 +820,7 @@ module MilkTea
             anonymous_record = anonymous_record_decl_for_field(field, aggregate_node)
             next unless anonymous_record
 
-            pending << ["#{owner_name}_#{field["name"]}", anonymous_record]
+            pending << [synthetic_aggregate_name(owner_name, field, aggregate_node), anonymous_record]
           end
         end
       end
@@ -827,19 +830,38 @@ module MilkTea
         return override if override
 
         anonymous_record = anonymous_record_decl_for_field(field, aggregate_node)
-        return "#{owner_name}_#{field["name"]}" if anonymous_record
+        return synthetic_aggregate_name(owner_name, field, aggregate_node) if anonymous_record
 
         map_type_node(field, context: "field #{owner_name}.#{field["name"]}")
       end
 
+      def aggregate_field_name(field, aggregate_node:)
+        name = field["name"]
+        return name if name && !name.empty?
+
+        anonymous_record = anonymous_record_decl_for_field(field, aggregate_node)
+        return name unless anonymous_record
+
+        field_index = Array(aggregate_node["inner"]).select { |child| child["kind"] == "FieldDecl" }.index { |child| child["id"] == field["id"] } || 0
+        "anonymous_#{anonymous_record.fetch("tagUsed")}_#{field_index}"
+      end
+
+      def synthetic_aggregate_name(owner_name, field, aggregate_node)
+        "#{owner_name}_#{aggregate_field_name(field, aggregate_node:)}"
+      end
+
       def anonymous_record_decl_for_field(field, aggregate_node)
         qual_type = type_qual_type(field)
-        return unless qual_type&.match?(/\A(?:struct|union) \(unnamed at /)
+        return unless qual_type
+
+        tag_match = qual_type.match(/\A(struct|union)\b/)
+        return unless tag_match
+        return unless qual_type.include?("(unnamed at ") || qual_type.include?("(anonymous at ")
 
         field_begin = source_location_key(field.dig("range", "begin"))
         return unless field_begin
 
-        expected_tag = qual_type.split.first
+        expected_tag = tag_match[1]
         Array(aggregate_node["inner"]).find do |child|
           next false unless child["kind"] == "RecordDecl"
           next false unless child["tagUsed"] == expected_tag
@@ -853,8 +875,6 @@ module MilkTea
 
         [
           location["offset"],
-          location["line"],
-          location["col"],
           location.dig("includedFrom", "file"),
           location["file"],
         ]

@@ -7,7 +7,7 @@ module MilkTea
     class Binding
       attr_reader :name, :module_name, :binding_path, :include_directives, :bindgen_defines, :bindgen_include_directives, :module_imports, :link_libraries, :header_candidates, :tracked_header_paths, :tracked_header_prefixes, :declaration_name_prefixes, :env_var, :clang_args, :compiler_flags, :implementation_defines, :type_overrides, :function_param_type_overrides, :function_return_type_overrides, :field_type_overrides, :vendored_library
 
-      def initialize(name:, module_name:, binding_path:, header_candidates:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], link_libraries: [], link_flags: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, vendored_library: nil, prepare: nil)
+      def initialize(name:, module_name:, binding_path:, header_candidates:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], link_libraries: [], link_flags: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, vendored_library: nil, prepare: nil, generator: nil, allow_static_inline_functions: false)
         @name = name.to_s
         @module_name = module_name
         @binding_path = File.expand_path(binding_path.to_s)
@@ -32,6 +32,8 @@ module MilkTea
         @field_type_overrides = normalize_field_type_overrides(field_type_overrides)
         @vendored_library = vendored_library
         @prepare = prepare
+        @generator = generator
+        @allow_static_inline_functions = allow_static_inline_functions
       end
 
       def task_name
@@ -78,6 +80,7 @@ module MilkTea
 
       def generate(env: ENV, header_path: nil)
         resolved_header_path = header_path || self.header_path(env:)
+        return @generator.call(self, env:, header_path: resolved_header_path) if @generator
 
         bindgen_kwargs = {
           module_name:,
@@ -97,6 +100,7 @@ module MilkTea
         bindgen_kwargs[:tracked_header_paths] = tracked_header_paths unless tracked_header_paths.empty?
         bindgen_kwargs[:tracked_header_prefixes] = tracked_header_prefixes unless tracked_header_prefixes.empty?
         bindgen_kwargs[:declaration_name_prefixes] = declaration_name_prefixes unless declaration_name_prefixes.empty?
+        bindgen_kwargs[:allow_static_inline_functions] = true if @allow_static_inline_functions
 
         MilkTea::Bindgen.generate(**bindgen_kwargs)
       end
@@ -138,8 +142,8 @@ module MilkTea
       end
 
       def prepare!(env: ENV, cc: ENV.fetch("CC", "cc"))
-        vendored_library&.prepare!(env:, cc:)
         @prepare&.call(self, env:, cc:)
+        vendored_library&.prepare!(env:, cc:)
       end
 
       private
@@ -525,6 +529,24 @@ module MilkTea
           header_candidates: [
             vendored_cjson.source_root.join("cJSON.h").to_s,
           ],
+        ),
+        Binding.new(
+          name: "steamworks",
+          module_name: "std.c.steamworks",
+          binding_path: root.join("std/c/steamworks.mt"),
+          include_directives: ["steamworks.h"],
+          link_libraries: MilkTea::Steamworks.default_link_libraries,
+          allow_static_inline_functions: true,
+          vendored_library: MilkTea::VendoredSteamworks.library(root:),
+          tracked_header_paths: [
+            MilkTea::Steamworks.helper_header_path(root:).to_s,
+          ],
+          header_candidates: [
+            MilkTea::Steamworks.helper_header_path(root:).to_s,
+          ],
+          prepare: lambda do |_binding, env:, **|
+            MilkTea::Steamworks.prepare!(root:, env:)
+          end,
         ),
         Binding.new(
           name: "libuv",

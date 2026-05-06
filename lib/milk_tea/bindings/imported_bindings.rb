@@ -360,7 +360,7 @@ module MilkTea
                   raise Error, "variadic raw function #{raw_name} in #{@raw_module_name} requires an explicit mapping override"
                 end
 
-                render_overridden_foreign_function(entry, raw_declaration, strip_prefix: spec[:strip_prefix])
+                render_overridden_foreign_function(entry, raw_declaration, spec:)
               end
 
               generated_signatures.each do |public_name, _signature|
@@ -381,10 +381,10 @@ module MilkTea
 
           generated_signatures = if overrides.key?(raw_name)
                                    overrides.fetch(raw_name).map do |entry|
-                                     render_overridden_foreign_function(entry, raw_declaration, strip_prefix: spec[:strip_prefix])
+                                     render_overridden_foreign_function(entry, raw_declaration, spec:)
                                    end
                                  else
-                                   [render_pass_through_foreign_function(raw_declaration, strip_prefix: spec[:strip_prefix])]
+                                   [render_pass_through_foreign_function(raw_declaration, spec:)]
                                  end
 
           generated_signatures.each do |public_name, _signature|
@@ -405,6 +405,7 @@ module MilkTea
             include_prefixes: [],
             exclude: [],
             overrides: [],
+            rename_rules: [],
             strip_prefix: nil,
           }
           spec[:shared_from] = [] if context == "type"
@@ -415,12 +416,13 @@ module MilkTea
             include_prefixes: [],
             exclude: [],
             overrides: [],
+            rename_rules: [],
             strip_prefix: nil,
           }
           spec[:shared_from] = [] if context == "type"
           spec
         when Hash
-          allowed_keys = %w[include include_prefixes exclude overrides strip_prefix]
+          allowed_keys = %w[include include_prefixes exclude overrides rename_rules strip_prefix]
           allowed_keys << "shared_from" if context == "type"
           validate_allowed_keys!(value, allowed_keys, context: "#{context} section")
           spec = {
@@ -428,6 +430,7 @@ module MilkTea
             include_prefixes: normalize_prefix_list(value["include_prefixes"], context:),
             exclude: normalize_name_list(value["exclude"], context:, label: "exclude"),
             overrides: normalize_alias_overrides(value["overrides"], context:),
+            rename_rules: normalize_rename_rules(value["rename_rules"], context:),
             strip_prefix: normalize_strip_prefix(value["strip_prefix"], context:),
           }
           spec[:shared_from] = normalize_name_list(value["shared_from"], context: "type import alias", label: "shared_from") if context == "type"
@@ -445,6 +448,7 @@ module MilkTea
             include_prefixes: [],
             exclude: [],
             overrides: [],
+            rename_rules: [],
             strip_prefix: nil,
           }
         when Array
@@ -454,6 +458,7 @@ module MilkTea
               include_prefixes: [],
               exclude: [],
               overrides: [],
+              rename_rules: [],
               strip_prefix: nil,
             }
           else
@@ -462,16 +467,18 @@ module MilkTea
               include_prefixes: [],
               exclude: [],
               overrides: normalize_function_overrides(value),
+              rename_rules: [],
               strip_prefix: nil,
             }
           end
         when Hash
-          validate_allowed_keys!(value, %w[include include_prefixes exclude overrides strip_prefix], context: "function section")
+          validate_allowed_keys!(value, %w[include include_prefixes exclude overrides rename_rules strip_prefix], context: "function section")
           {
             include: default_include(value, context: "function"),
             include_prefixes: normalize_prefix_list(value["include_prefixes"], context: "function"),
             exclude: normalize_name_list(value["exclude"], context: "function", label: "exclude"),
             overrides: normalize_function_overrides(value["overrides"]),
+            rename_rules: normalize_rename_rules(value["rename_rules"], context: "function"),
             strip_prefix: normalize_strip_prefix(value["strip_prefix"], context: "function"),
           }
         else
@@ -496,6 +503,35 @@ module MilkTea
         raise Error, "#{context} strip_prefix in #{@policy_path} cannot be empty" if value.empty?
 
         value
+      end
+
+      def normalize_rename_rules(value, context:)
+        return [] if value.nil?
+        raise Error, "#{context} rename_rules in #{@policy_path} must be an array" unless value.is_a?(Array)
+
+        value.map do |entry|
+          raise Error, "#{context} rename_rules in #{@policy_path} must be objects" unless entry.is_a?(Hash)
+
+          validate_allowed_keys!(entry, %w[kind match replace_with], context: "#{context} rename rule")
+
+          kind = entry.fetch("kind")
+          unless %w[prefix replace].include?(kind)
+            raise Error, "#{context} rename rule kind in #{@policy_path} must be prefix or replace"
+          end
+
+          match = entry.fetch("match")
+          raise Error, "#{context} rename rule match in #{@policy_path} must be a string" unless match.is_a?(String)
+          raise Error, "#{context} rename rule match in #{@policy_path} cannot be empty" if match.empty?
+
+          replace_with = entry.fetch("replace_with", "")
+          raise Error, "#{context} rename rule replace_with in #{@policy_path} must be a string" unless replace_with.is_a?(String)
+
+          {
+            kind: kind.to_sym,
+            match:,
+            replace_with:,
+          }
+        end
       end
 
       def normalize_include(value, context:)
@@ -677,7 +713,36 @@ module MilkTea
       def alias_public_name(raw_name, spec:, override:)
         return override["name"] if override && override.key?("name")
 
-        strip_prefix(raw_name, spec[:strip_prefix], context: "generated name")
+        default_public_name(raw_name, spec:, context: "generated name")
+      end
+
+      def default_public_name(raw_name, spec:, context:)
+        transformed = apply_rename_rules(raw_name, spec[:rename_rules], context:)
+        transformed = strip_prefix(transformed, spec[:strip_prefix], context:) if spec[:strip_prefix]
+        raise Error, "#{context} in #{@policy_path} cannot be empty" if transformed.empty?
+
+        transformed
+      end
+
+      def apply_rename_rules(name, rules, context:)
+        transformed = name
+
+        rules.each do |rule|
+          case rule[:kind]
+          when :prefix
+            next unless transformed.start_with?(rule[:match])
+
+            transformed = rule[:replace_with] + transformed.delete_prefix(rule[:match])
+          when :replace
+            transformed = transformed.gsub(rule[:match], rule[:replace_with])
+          else
+            raise Error, "unsupported #{context} rename rule #{rule[:kind]} in #{@policy_path}"
+          end
+        end
+
+        raise Error, "#{context} in #{@policy_path} cannot be empty" if transformed.empty?
+
+        transformed
       end
 
       def strip_prefix(name, prefix, context:)
@@ -703,9 +768,9 @@ module MilkTea
         overrides
       end
 
-      def render_overridden_foreign_function(entry, raw_declaration, strip_prefix:)
+      def render_overridden_foreign_function(entry, raw_declaration, spec:)
         raw_name = raw_declaration.name
-        function_name = entry["name"] || foreign_function_name(raw_name, strip_prefix:)
+        function_name = entry["name"] || foreign_function_name(raw_name, spec:)
         type_params = if entry.key?("type_params")
                         normalize_name_list(entry["type_params"], context: "function type parameter", label: "function type parameter")
                       else
@@ -722,8 +787,8 @@ module MilkTea
         [function_name, build_foreign_signature(function_name, type_params:, params:, return_type:, mapping:)]
       end
 
-      def render_pass_through_foreign_function(raw_declaration, strip_prefix:)
-        function_name = foreign_function_name(raw_declaration.name, strip_prefix:)
+      def render_pass_through_foreign_function(raw_declaration, spec:)
+        function_name = foreign_function_name(raw_declaration.name, spec:)
         params = raw_declaration.params.map { |param| render_raw_foreign_param(param) }
         return_type = render_type(raw_declaration.return_type)
         mapping = "#{@import_alias}.#{raw_declaration.name}"
@@ -731,8 +796,8 @@ module MilkTea
         [function_name, build_foreign_signature(function_name, type_params: raw_type_param_names(raw_declaration), params:, return_type:, mapping:)]
       end
 
-      def foreign_function_name(raw_name, strip_prefix:)
-        snake_case(strip_prefix(raw_name, strip_prefix, context: "generated function name"))
+      def foreign_function_name(raw_name, spec:)
+        snake_case(default_public_name(raw_name, spec:, context: "generated function name"))
       end
 
       def build_foreign_signature(name, type_params:, params:, return_type:, mapping:)
@@ -897,6 +962,13 @@ module MilkTea
           binding_path: root.join("std/cjson.mt"),
           raw_module_name: "std.c.cjson",
           policy_path: root.join("bindings/imported/cjson.binding.json"),
+        ),
+        Binding.new(
+          name: "steamworks",
+          module_name: "std.steamworks",
+          binding_path: root.join("std/steamworks.mt"),
+          raw_module_name: "std.c.steamworks",
+          policy_path: root.join("bindings/imported/steamworks.binding.json"),
         ),
         Binding.new(
           name: "gl",
