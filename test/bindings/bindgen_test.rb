@@ -261,6 +261,43 @@ class MilkTeaBindgenTest < Minitest::Test
     end
   end
 
+  def test_generate_names_anonymous_union_fields
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-anonymous-union") do |dir|
+      header_path = File.join(dir, "sample.h")
+      output_path = File.join(dir, "sample.mt")
+      File.write(header_path, <<~C)
+        typedef struct Holder {
+          int tag;
+          union {
+            int left;
+            float right;
+          };
+        } Holder;
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+      )
+
+      assert_match(/union Holder_anonymous_union_(\d+):\n\s+left: int\n\s+right: float/m, generated)
+      assert_match(/struct Holder:\n\s+tag: int\n\s+anonymous_union_(\d+): Holder_anonymous_union_\1/m, generated)
+
+      File.write(output_path, generated)
+      analysis = MilkTea::ModuleLoader.check_file(output_path)
+
+      assert_equal :extern_module, analysis.module_kind
+      assert_equal "std.c.sample", analysis.module_name
+      assert_includes analysis.types.keys, "Holder"
+      assert analysis.types.keys.any? { |name| name.start_with?("Holder_anonymous_union_") }
+    end
+  end
+
   def test_generate_supports_function_type_typedefs
     clang = ENV.fetch("CLANG", "clang")
     skip "clang not available: #{clang}" unless executable_available?(clang)

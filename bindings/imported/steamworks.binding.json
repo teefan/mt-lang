@@ -1,0 +1,49 @@
+{
+  "module_name": "std.steamworks",
+  "raw_module_name": "std.c.steamworks",
+  "raw_import_alias": "c",
+  "types": {
+    "rename_rules": [
+      {
+        "kind": "prefix",
+        "match": "ISteam"
+      },
+      {
+        "kind": "prefix",
+        "match": "ESteam",
+        "replace_with": "E"
+      },
+      {
+        "kind": "prefix",
+        "match": "Steam"
+      }
+    ]
+  },
+  "constants": {},
+  "functions": {
+    "rename_rules": [
+      {
+        "kind": "prefix",
+        "match": "SteamAPI_ISteam"
+      },
+      {
+        "kind": "prefix",
+        "match": "SteamAPI_Steam"
+      },
+      {
+        "kind": "prefix",
+        "match": "SteamAPI_"
+      },
+      {
+        "kind": "prefix",
+        "match": "SteamInternal_",
+        "replace_with": "Internal_"
+      },
+      {
+        "kind": "replace",
+        "match": "_SteamAPI_",
+        "replace_with": "_"
+      }
+    ]
+  }
+}

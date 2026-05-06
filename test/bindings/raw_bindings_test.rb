@@ -8,7 +8,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raygui rlights rlgl msf_gif libc sdl3 glfw gl box2d cjson libuv libuv_runtime], registry.map(&:name)
+    assert_equal %w[raylib raygui rlights rlgl msf_gif libc sdl3 glfw gl box2d cjson steamworks libuv libuv_runtime], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -122,6 +122,11 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "ptr[cJSON]?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_Parse")
     assert_equal "ptr[char]?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_Print")
     assert_equal "cstr?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_GetErrorPtr")
+    assert_equal "std.c.steamworks", registry.fetch("steamworks").module_name
+    assert_equal MilkTea::Steamworks.default_link_libraries, registry.fetch("steamworks").link_libraries
+    assert_includes registry.fetch("steamworks").header_candidates.first, "/std/c/steamworks.h"
+    assert_includes registry.fetch("steamworks").tracked_header_paths.first, "/std/c/steamworks.h"
+    assert_includes registry.fetch("steamworks").link_flags.first, "/tmp/vendored-steamworks"
     assert_equal "std.c.libuv", registry.fetch("libuv").module_name
     assert_equal ["uv"], registry.fetch("libuv").link_libraries
     assert_equal ["-D_GNU_SOURCE"], registry.fetch("libuv").compiler_flags
@@ -194,6 +199,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
         link_libraries: ["sample"],
         env_var: "SAMPLE_HEADER",
         clang_args: ["-I#{dir}"],
+        allow_static_inline_functions: true,
         function_param_type_overrides: { "sample_function" => { "data" => "ptr[ubyte]?" } },
         field_type_overrides: { "Sample" => { "data" => "ptr[ubyte]?" } },
       )
@@ -217,10 +223,49 @@ class MilkTeaRawBindingsTest < Minitest::Test
           module_imports: [],
           clang: "clang-custom",
           clang_args: ["-I#{dir}"],
+          allow_static_inline_functions: true,
           type_overrides: {},
           function_param_type_overrides: { "sample_function" => { "data" => "ptr[ubyte]?" } },
           function_return_type_overrides: {},
           field_type_overrides: { "Sample" => { "data" => "ptr[ubyte]?" } },
+        },
+        observed,
+      )
+    end
+  end
+
+  def test_generate_can_delegate_to_custom_generator
+    Dir.mktmpdir("milk-tea-raw-binding-custom-generate") do |dir|
+      header_path = File.join(dir, "sample.h")
+      File.write(header_path, "")
+
+      observed = nil
+      binding = MilkTea::RawBindings::Binding.new(
+        name: "sample",
+        module_name: "std.c.sample",
+        binding_path: File.join(dir, "sample.mt"),
+        header_candidates: [header_path],
+        generator: lambda { |resolved_binding, env:, header_path:|
+          observed = {
+            binding_name: resolved_binding.name,
+            module_name: resolved_binding.module_name,
+            header_path:,
+            marker: env.fetch("MARKER"),
+          }
+          "generated"
+        },
+      )
+
+      with_singleton_method_override(MilkTea::Bindgen, :generate, ->(**) { flunk("expected custom generator to bypass Bindgen.generate") }) do
+        assert_equal "generated", binding.generate(env: { "MARKER" => "ok" })
+      end
+
+      assert_equal(
+        {
+          binding_name: "sample",
+          module_name: "std.c.sample",
+          header_path:,
+          marker: "ok",
         },
         observed,
       )
@@ -295,6 +340,30 @@ class MilkTeaRawBindingsTest < Minitest::Test
     binding.prepare!(env: { "MARKER" => "ok" }, cc: "clang")
 
     assert_equal [["ok", "clang"]], invoked
+  end
+
+  def test_prepare_hook_runs_before_vendored_library_prepare
+    invoked = []
+    vendored_library = Object.new
+    vendored_library.define_singleton_method(:link_flags) { [] }
+    vendored_library.define_singleton_method(:prepare!) do |env:, cc:|
+      invoked << [:vendored, env.fetch("MARKER"), cc]
+    end
+
+    binding = MilkTea::RawBindings::Binding.new(
+      name: "sample",
+      module_name: "std.c.sample",
+      binding_path: "/tmp/sample.mt",
+      header_candidates: ["/tmp/sample.h"],
+      vendored_library:,
+      prepare: lambda { |_binding, env:, cc:|
+        invoked << [:binding, env.fetch("MARKER"), cc]
+      },
+    )
+
+    binding.prepare!(env: { "MARKER" => "ok" }, cc: "clang")
+
+    assert_equal [[:binding, "ok", "clang"], [:vendored, "ok", "clang"]], invoked
   end
 
   def test_write_and_check_prepare_vendored_libraries_before_resolving_headers

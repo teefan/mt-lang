@@ -113,6 +113,20 @@ module MilkTea
             cJSON.c
           ],
         ),
+        Source.new(
+          name: "steamworks_sdk",
+          checkout_root: root.join("third_party/steamworks-sdk-upstream"),
+          repository_url: "https://github.com/rlabrecque/steamworkssdk.git",
+          revision: "be6107f4b75bf996531415c53a6488a33a2a1be3",
+          sentinel_paths: %w[
+            public/steam/steam_api.h
+            public/steam/steam_api_common.h
+            public/steam/steam_api_internal.h
+            public/steam/steam_api_flat.h
+            public/steam/steam_api.json
+            public/steam/steam_gameserver.h
+          ],
+        ),
       ]
     end
 

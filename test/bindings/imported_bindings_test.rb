@@ -9,7 +9,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "gl", "glfw", "libuv"], registry.map(&:name)
+    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "steamworks", "gl", "glfw", "libuv"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -39,6 +39,11 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_equal "std.c.cjson", registry.fetch("cjson").raw_module_name
     assert_includes registry.fetch("cjson").binding_path, "/std/cjson.mt"
     assert_includes registry.fetch("cjson").policy_path, "/bindings/imported/cjson.binding.json"
+
+    assert_equal "std.steamworks", registry.fetch("steamworks").module_name
+    assert_equal "std.c.steamworks", registry.fetch("steamworks").raw_module_name
+    assert_includes registry.fetch("steamworks").binding_path, "/std/steamworks.mt"
+    assert_includes registry.fetch("steamworks").policy_path, "/bindings/imported/steamworks.binding.json"
 
     assert_equal "std.gl", registry.fetch("gl").module_name
     assert_equal "std.c.gl", registry.fetch("gl").raw_module_name
@@ -384,12 +389,35 @@ class MilkTeaImportedBindingsTest < Minitest::Test
 
   def test_imported_bindings_outside_raylib_and_rlgl_do_not_expose_raw_ptr_void
     offending_bindings = MilkTea::ImportedBindings.default_registry.reject do |binding|
-      %w[raylib rlgl sdl3 box2d cjson libuv].include?(binding.name)
+      %w[raylib rlgl sdl3 box2d cjson libuv steamworks].include?(binding.name)
     end.filter_map do |binding|
       binding.name if File.read(binding.binding_path).match?(/\bptr\[void\]\b/)
     end
 
     assert_empty offending_bindings, "unexpected raw ptr[void] surfaces in imported bindings: #{offending_bindings.join(", ")}"
+  end
+
+  def test_checked_in_steamworks_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("steamworks")
+
+    assert_includes binding.check!, "/std/c/steamworks.mt"
+
+    source = File.read(binding.binding_path)
+    assert_match(/^module std\.steamworks$/, source)
+    assert_match(/^import std\.c\.steamworks as c$/, source)
+    assert_match(/^pub type AppId_t = c\.AppId_t$/, source)
+    assert_match(/^pub type Friends = c\.ISteamFriends$/, source)
+    assert_match(/^pub type ErrMsg = c\.SteamErrMsg$/, source)
+    assert_match(/^pub type EAPIInitResult = c\.ESteamAPIInitResult$/, source)
+    assert_match(/^pub const k_flMaxTimelineEventDuration: float = c\.k_flMaxTimelineEventDuration$/, source)
+    assert_match(/^pub foreign def restart_app_if_necessary\(un_own_app_id: uint\) -> bool = c\.SteamAPI_RestartAppIfNecessary$/, source)
+    assert_match(/^pub foreign def init\(\) -> bool = c\.SteamAPI_Init$/, source)
+    assert_match(/^pub foreign def shutdown\(\) -> void = c\.SteamAPI_Shutdown$/, source)
+    assert_match(/^pub foreign def friends\(\) -> ptr\[Friends\] = c\.SteamAPI_SteamFriends$/, source)
+    assert_match(/^pub foreign def friends_get_persona_name\(self: ptr\[Friends\]\) -> cstr = c\.SteamAPI_ISteamFriends_GetPersonaName$/, source)
+    assert_match(/^pub foreign def internal_context_init\(p_context_init_data: ptr\[void\]\) -> ptr\[void\] = c\.SteamInternal_ContextInit$/, source)
+    refute_match(/^pub foreign def steam_api_init\(/, source)
+    refute_match(/^pub foreign def steam_api_i_steam_friends_get_persona_name\(/, source)
   end
 
   def test_generate_supports_imports_type_alias_overrides_and_prefix_stripping
@@ -679,6 +707,90 @@ class MilkTeaImportedBindingsTest < Minitest::Test
       generated = binding.generate(module_roots: [dir])
       assert_equal expected, generated
       refute_match(/^pub foreign def init_window\(/, generated)
+    end
+  end
+
+  def test_generate_supports_ordered_rename_rules
+    Dir.mktmpdir("milk-tea-imported-binding-rename-rules") do |dir|
+      raw_path = File.join(dir, "std", "c", "sample.mt")
+      binding_path = File.join(dir, "std", "sample.mt")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
+      FileUtils.mkdir_p(File.dirname(raw_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
+
+      File.write(raw_path, <<~MT)
+        extern module std.c.sample:
+            opaque ISteamFriends = c"ISteamFriends"
+            opaque ISteamNetworkingMessages = c"ISteamNetworkingMessages"
+
+            type SteamErrMsg = int
+            flags ESteamAPIInitResult: int
+                ESteamAPIInitResult_OK = 0
+
+            const k_flMaxTimelineEventDuration: float = 12.0
+
+            extern def SteamAPI_Init() -> bool
+            extern def SteamAPI_SteamFriends() -> ptr[ISteamFriends]
+            extern def SteamAPI_ISteamFriends_GetPersonaName(self: ptr[ISteamFriends]) -> cstr
+            extern def SteamAPI_SteamNetworkingMessages_SteamAPI_v002() -> ptr[ISteamNetworkingMessages]
+            extern def SteamInternal_ContextInit(pContextInitData: ptr[void]) -> ptr[void]
+            extern def SteamGameServer_RunCallbacks() -> void
+      MT
+
+      File.write(policy_path, JSON.pretty_generate({
+        module_name: "std.sample",
+        raw_module_name: "std.c.sample",
+        raw_import_alias: "c",
+        types: {
+          rename_rules: [
+            { kind: "prefix", match: "ISteam" },
+            { kind: "prefix", match: "ESteam", replace_with: "E" },
+            { kind: "prefix", match: "Steam" },
+          ],
+        },
+        constants: {},
+        functions: {
+          rename_rules: [
+            { kind: "prefix", match: "SteamAPI_ISteam" },
+            { kind: "prefix", match: "SteamAPI_Steam" },
+            { kind: "prefix", match: "SteamAPI_" },
+            { kind: "prefix", match: "SteamInternal_", replace_with: "Internal_" },
+            { kind: "replace", match: "_SteamAPI_", replace_with: "_" },
+          ],
+        },
+      }))
+
+      binding = MilkTea::ImportedBindings::Binding.new(
+        name: "sample",
+        module_name: "std.sample",
+        binding_path:,
+        raw_module_name: "std.c.sample",
+        policy_path:,
+      )
+
+      expected = <<~MT
+        # generated by mtc imported-bindings from std.c.sample using sample.binding.json
+        module std.sample
+
+        import std.c.sample as c
+
+        pub type Friends = c.ISteamFriends
+        pub type NetworkingMessages = c.ISteamNetworkingMessages
+        pub type ErrMsg = c.SteamErrMsg
+        pub type EAPIInitResult = c.ESteamAPIInitResult
+
+        pub const k_flMaxTimelineEventDuration: float = c.k_flMaxTimelineEventDuration
+
+        pub foreign def init() -> bool = c.SteamAPI_Init
+        pub foreign def friends() -> ptr[Friends] = c.SteamAPI_SteamFriends
+        pub foreign def friends_get_persona_name(self: ptr[Friends]) -> cstr = c.SteamAPI_ISteamFriends_GetPersonaName
+        pub foreign def networking_messages_v_002() -> ptr[NetworkingMessages] = c.SteamAPI_SteamNetworkingMessages_SteamAPI_v002
+        pub foreign def internal_context_init(p_context_init_data: ptr[void]) -> ptr[void] = c.SteamInternal_ContextInit
+        pub foreign def steam_game_server_run_callbacks() -> void = c.SteamGameServer_RunCallbacks
+      MT
+
+      generated = binding.generate(module_roots: [dir])
+      assert_equal expected, generated
     end
   end
 
