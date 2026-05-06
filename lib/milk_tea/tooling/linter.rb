@@ -1309,31 +1309,31 @@ module MilkTea
       end
     end
 
-    def collect_borrows_from_expr(expr, names)
+    def collect_borrows_from_expr(expr, names, inside_call_argument: false)
       case expr
       when nil then nil
       when AST::Call
-        if expr.callee.is_a?(AST::Identifier) && BORROW_CALL_NAMES.include?(expr.callee.name)
+        if !inside_call_argument && expr.callee.is_a?(AST::Identifier) && BORROW_CALL_NAMES.include?(expr.callee.name)
           arg = expr.arguments.first
           if arg&.value.is_a?(AST::Identifier)
             names << arg.value.name
           end
         else
           collect_borrows_from_expr(expr.callee, names)
-          expr.arguments.each { |a| collect_borrows_from_expr(a.value, names) }
+          expr.arguments.each { |a| collect_borrows_from_expr(a.value, names, inside_call_argument: true) }
         end
-      when AST::UnaryOp  then collect_borrows_from_expr(expr.operand, names)
+      when AST::UnaryOp  then collect_borrows_from_expr(expr.operand, names, inside_call_argument:)
       when AST::BinaryOp
-        collect_borrows_from_expr(expr.left, names)
-        collect_borrows_from_expr(expr.right, names)
+        collect_borrows_from_expr(expr.left, names, inside_call_argument:)
+        collect_borrows_from_expr(expr.right, names, inside_call_argument:)
       when AST::IfExpr
-        collect_borrows_from_expr(expr.condition, names)
-        collect_borrows_from_expr(expr.then_expression, names)
-        collect_borrows_from_expr(expr.else_expression, names)
-      when AST::MemberAccess  then collect_borrows_from_expr(expr.receiver, names)
+        collect_borrows_from_expr(expr.condition, names, inside_call_argument:)
+        collect_borrows_from_expr(expr.then_expression, names, inside_call_argument:)
+        collect_borrows_from_expr(expr.else_expression, names, inside_call_argument:)
+      when AST::MemberAccess  then collect_borrows_from_expr(expr.receiver, names, inside_call_argument:)
       when AST::IndexAccess
-        collect_borrows_from_expr(expr.receiver, names)
-        collect_borrows_from_expr(expr.index, names)
+        collect_borrows_from_expr(expr.receiver, names, inside_call_argument:)
+        collect_borrows_from_expr(expr.index, names, inside_call_argument:)
       end
     end
 

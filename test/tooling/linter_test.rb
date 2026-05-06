@@ -320,6 +320,24 @@ class MilkTeaLinterTest < Minitest::Test
     assert_empty borrow
   end
 
+  def test_no_borrow_warn_for_temporary_ptr_of_call_argument_then_write
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      def consume(_value: ptr[int]) -> void:
+          return
+
+      def foo(n: int) -> int:
+          var x: int = n
+          consume(ptr_of(x))
+          x = 42
+          return x
+    MT
+
+    borrow = warnings.select { |w| w.code == "borrow-and-mutate" }
+    assert_empty borrow
+  end
+
   # ── unused-import ────────────────────────────────────────────────────
 
   def test_reports_unused_import
