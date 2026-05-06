@@ -152,6 +152,135 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
+  def test_build_with_host_compiler_supports_imported_libm_binding
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-build-imported-libm") do |dir|
+      source_path = File.join(dir, "imported-libm.mt")
+      output_path = File.join(dir, "imported-libm")
+
+      File.write(source_path, [
+        "module demo.imported_libm",
+        "",
+        "import std.libm as libm",
+        "",
+        "def main() -> int:",
+        "    if libm.sqrtf(25.0) != 5.0:",
+        "        return 1",
+        "    if libm.PI_F <= 3.14:",
+        "        return 2",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Build.build(source_path, output_path:, cc: compiler)
+
+      assert_equal File.expand_path(output_path), result.output_path
+      assert_includes result.link_flags, "-lm"
+      assert File.exist?(output_path)
+      assert File.executable?(output_path)
+
+      stdout, stderr, status = Open3.capture3(output_path)
+      assert_equal "", stdout
+      assert_equal "", stderr
+      assert_equal 0, status.exitstatus
+    end
+  end
+
+  def test_build_with_host_compiler_supports_safe_span_str_main_args
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-build-main-span-args") do |dir|
+      source_path = File.join(dir, "main-span-args.mt")
+      output_path = File.join(dir, "main-span-args")
+
+      File.write(source_path, [
+        "module demo.main_span_args",
+        "",
+        "import std.io as io",
+        "",
+        "def main(args: span[str]) -> int:",
+        "    if args.len != 2:",
+        "        return 9",
+        "    if not io.println(f\"a=\#{args[0]}\"):",
+        "        return 7",
+        "    if not io.println(f\"b=\#{args[1]}\"):",
+        "        return 8",
+        "    return int<-args[0].len + int<-args[1].len",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Build.build(source_path, output_path:, cc: compiler)
+
+      assert_equal File.expand_path(output_path), result.output_path
+      assert File.exist?(output_path)
+      assert File.executable?(output_path)
+
+      stdout, stderr, status = Open3.capture3(output_path, "alpha", "beta")
+      assert_equal "a=alpha\nb=beta\n", stdout
+      assert_equal "", stderr
+      assert_equal 9, status.exitstatus
+    end
+  end
+
+  def test_build_with_host_compiler_supports_async_safe_span_str_main_args
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-build-async-main-span-args") do |dir|
+      source_path = File.join(dir, "async-main-span-args.mt")
+      output_path = File.join(dir, "async-main-span-args")
+
+      File.write(source_path, [
+        "module demo.async_main_span_args",
+        "",
+        "import std.libuv.async",
+        "",
+        "async def main(args: span[str]) -> int:",
+        "    if args.len != 2:",
+        "        return 9",
+        "    return int<-args[0].len + int<-args[1].len",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Build.build(source_path, output_path:, cc: compiler)
+
+      assert_equal File.expand_path(output_path), result.output_path
+      assert File.exist?(output_path)
+      assert File.executable?(output_path)
+
+      stdout, stderr, status = Open3.capture3(output_path, "alpha", "beta")
+      assert_equal "", stdout
+      assert_equal "", stderr
+      assert_equal 9, status.exitstatus
+    end
+  end
+
+  def test_build_rejects_invalid_root_main_signature_before_compiling
+    Dir.mktmpdir("milk-tea-build-invalid-main-signature") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      source_path = File.join(dir, "invalid-main.mt")
+
+      File.write(source_path, [
+        "module demo.invalid_main",
+        "",
+        "def main(args: array[str, 2]) -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      error = assert_raises(MilkTea::BuildError) do
+        MilkTea::Build.build(source_path, cc: compiler_path)
+      end
+
+      assert_match(/root main is not a valid executable entrypoint/, error.message)
+      refute File.exist?(compiler_log)
+    end
+  end
+
   def test_build_with_host_compiler_supports_variadic_extern_calls
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

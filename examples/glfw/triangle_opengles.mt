@@ -119,10 +119,10 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     glfw.glfwWindowHint(glfw.GLFW_CONTEXT_CREATION_API, glfw.GLFW_EGL_CONTEXT_API)
 
     var window = glfw.glfwCreateWindow(window_width, window_height, window_title_egl, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         glfw.glfwWindowHint(glfw.GLFW_CONTEXT_CREATION_API, glfw.GLFW_NATIVE_CONTEXT_API)
         window = glfw.glfwCreateWindow(window_width, window_height, window_title_native, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-        if window == zero[ptr[glfw.GLFWwindow]]:
+        if window == null:
             return 1
 
     defer glfw.glfwDestroyWindow(window)

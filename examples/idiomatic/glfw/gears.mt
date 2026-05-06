@@ -2,7 +2,7 @@ module examples.idiomatic.glfw.gears
 
 import std.glfw as glfw
 import std.gl as gl
-import std.c.libm as math
+import std.libm as math
 
 const window_width: int = 300
 const window_height: int = 300
@@ -20,7 +20,7 @@ def gear(inner_radius: float, outer_radius: float, width: float, teeth: int, too
     let r0 = inner_radius
     let r1 = outer_radius - tooth_depth * 0.5
     let r2 = outer_radius + tooth_depth * 0.5
-    let da = 2.0 * math.M_PI_F / float<-teeth / 4.0
+    let da = 2.0 * math.PI_F / float<-teeth / 4.0
 
     gl.shade_model(uint<-gl.FLAT)
     gl.normal_3f(0.0, 0.0, 1.0)
@@ -28,7 +28,7 @@ def gear(inner_radius: float, outer_radius: float, width: float, teeth: int, too
     gl.begin(uint<-gl.QUAD_STRIP)
     var index = 0
     while index <= teeth:
-        let gear_angle = float<-index * 2.0 * math.M_PI_F / float<-teeth
+        let gear_angle = float<-index * 2.0 * math.PI_F / float<-teeth
         let cos_angle = math.cosf(gear_angle)
         let sin_angle = math.sinf(gear_angle)
         gl.vertex_3f(r0 * cos_angle, r0 * sin_angle, width * 0.5)
@@ -45,7 +45,7 @@ def gear(inner_radius: float, outer_radius: float, width: float, teeth: int, too
     gl.begin(uint<-gl.QUADS)
     index = 0
     while index < teeth:
-        let gear_angle = float<-index * 2.0 * math.M_PI_F / float<-teeth
+        let gear_angle = float<-index * 2.0 * math.PI_F / float<-teeth
         gl.vertex_3f(r1 * math.cosf(gear_angle), r1 * math.sinf(gear_angle), width * 0.5)
         gl.vertex_3f(r2 * math.cosf(gear_angle + da), r2 * math.sinf(gear_angle + da), width * 0.5)
         gl.vertex_3f(r2 * math.cosf(gear_angle + 2.0 * da), r2 * math.sinf(gear_angle + 2.0 * da), width * 0.5)
@@ -57,7 +57,7 @@ def gear(inner_radius: float, outer_radius: float, width: float, teeth: int, too
     gl.begin(uint<-gl.QUAD_STRIP)
     index = 0
     while index <= teeth:
-        let gear_angle = float<-index * 2.0 * math.M_PI_F / float<-teeth
+        let gear_angle = float<-index * 2.0 * math.PI_F / float<-teeth
         let cos_angle = math.cosf(gear_angle)
         let sin_angle = math.sinf(gear_angle)
         gl.vertex_3f(r1 * cos_angle, r1 * sin_angle, -width * 0.5)
@@ -74,7 +74,7 @@ def gear(inner_radius: float, outer_radius: float, width: float, teeth: int, too
     gl.begin(uint<-gl.QUADS)
     index = 0
     while index < teeth:
-        let gear_angle = float<-index * 2.0 * math.M_PI_F / float<-teeth
+        let gear_angle = float<-index * 2.0 * math.PI_F / float<-teeth
         gl.vertex_3f(r1 * math.cosf(gear_angle + 3.0 * da), r1 * math.sinf(gear_angle + 3.0 * da), -width * 0.5)
         gl.vertex_3f(r2 * math.cosf(gear_angle + 2.0 * da), r2 * math.sinf(gear_angle + 2.0 * da), -width * 0.5)
         gl.vertex_3f(r2 * math.cosf(gear_angle + da), r2 * math.sinf(gear_angle + da), -width * 0.5)
@@ -85,7 +85,7 @@ def gear(inner_radius: float, outer_radius: float, width: float, teeth: int, too
     gl.begin(uint<-gl.QUAD_STRIP)
     index = 0
     while index < teeth:
-        let gear_angle = float<-index * 2.0 * math.M_PI_F / float<-teeth
+        let gear_angle = float<-index * 2.0 * math.PI_F / float<-teeth
         let cos_angle = math.cosf(gear_angle)
         let sin_angle = math.sinf(gear_angle)
         let tooth_angle_a = gear_angle + da
@@ -125,7 +125,7 @@ def gear(inner_radius: float, outer_radius: float, width: float, teeth: int, too
     gl.begin(uint<-gl.QUAD_STRIP)
     index = 0
     while index <= teeth:
-        let gear_angle = float<-index * 2.0 * math.M_PI_F / float<-teeth
+        let gear_angle = float<-index * 2.0 * math.PI_F / float<-teeth
         let cos_angle = math.cosf(gear_angle)
         let sin_angle = math.sinf(gear_angle)
         gl.normal_3f(-cos_angle, -sin_angle, 0.0)
@@ -251,7 +251,7 @@ def init() -> void:
     gl.enable(uint<-gl.NORMALIZE)
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+def main() -> int:
     if glfw.init() == 0:
         return 1
     defer glfw.terminate()
@@ -260,7 +260,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     glfw.window_hint(glfw.TRANSPARENT_FRAMEBUFFER, glfw.TRUE)
 
     let window = glfw.create_window(window_width, window_height, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         return 1
     defer glfw.destroy_window(window)
 

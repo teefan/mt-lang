@@ -82,23 +82,24 @@ def key_callback(window: ptr[glfw.GLFWwindow], key: int, scancode: int, action: 
         return
 
     if (key == glfw.GLFW_KEY_F11 or key == glfw.GLFW_KEY_ENTER) and mods == glfw.GLFW_MOD_ALT:
-        if glfw.glfwGetWindowMonitor(window) != zero[ptr[glfw.GLFWmonitor]]:
+        if glfw.glfwGetWindowMonitor(window) != null:
             glfw.glfwSetWindowMonitor(window, zero[ptr[glfw.GLFWmonitor]], windowed_xpos, windowed_ypos, windowed_width, windowed_height, 0)
             return
 
         let monitor = glfw.glfwGetPrimaryMonitor()
-        if monitor == zero[ptr[glfw.GLFWmonitor]]:
+        if monitor == null:
             return
 
         let mode_ptr = glfw.glfwGetVideoMode(monitor)
-        if mode_ptr == zero[const_ptr[glfw.GLFWvidmode]]:
+        if mode_ptr != null:
+            unsafe:
+                let mode = read(mode_ptr)
+                glfw.glfwGetWindowPos(window, ptr_of(windowed_xpos), ptr_of(windowed_ypos))
+                glfw.glfwGetWindowSize(window, ptr_of(windowed_width), ptr_of(windowed_height))
+                glfw.glfwSetWindowMonitor(window, monitor, 0, 0, mode.width, mode.height, mode.refreshRate)
             return
 
-        unsafe:
-            let mode = read(mode_ptr)
-            glfw.glfwGetWindowPos(window, ptr_of(windowed_xpos), ptr_of(windowed_ypos))
-            glfw.glfwGetWindowSize(window, ptr_of(windowed_width), ptr_of(windowed_height))
-            glfw.glfwSetWindowMonitor(window, monitor, 0, 0, mode.width, mode.height, mode.refreshRate)
+        return
 
 
 def window_size_callback(window: ptr[glfw.GLFWwindow], width: int, height: int) -> void:
@@ -132,27 +133,27 @@ def window_refresh_callback(window: ptr[glfw.GLFWwindow]) -> void:
     glfw.glfwSwapBuffers(window)
 
 
-def create_window(monitor: ptr[glfw.GLFWmonitor]) -> ptr[glfw.GLFWwindow]:
+def create_window(monitor: ptr[glfw.GLFWmonitor]) -> ptr[glfw.GLFWwindow]?:
     var width = windowed_width
     var height = windowed_height
 
     if monitor != zero[ptr[glfw.GLFWmonitor]]:
         let mode_ptr = glfw.glfwGetVideoMode(monitor)
-        if mode_ptr == zero[const_ptr[glfw.GLFWvidmode]]:
-            return zero[ptr[glfw.GLFWwindow]]
-
-        unsafe:
-            let mode = read(mode_ptr)
-            glfw.glfwWindowHint(glfw.GLFW_REFRESH_RATE, mode.refreshRate)
-            glfw.glfwWindowHint(glfw.GLFW_RED_BITS, mode.redBits)
-            glfw.glfwWindowHint(glfw.GLFW_GREEN_BITS, mode.greenBits)
-            glfw.glfwWindowHint(glfw.GLFW_BLUE_BITS, mode.blueBits)
-            width = mode.width
-            height = mode.height
+        if mode_ptr != null:
+            unsafe:
+                let mode = read(mode_ptr)
+                glfw.glfwWindowHint(glfw.GLFW_REFRESH_RATE, mode.refreshRate)
+                glfw.glfwWindowHint(glfw.GLFW_RED_BITS, mode.redBits)
+                glfw.glfwWindowHint(glfw.GLFW_GREEN_BITS, mode.greenBits)
+                glfw.glfwWindowHint(glfw.GLFW_BLUE_BITS, mode.blueBits)
+                width = mode.width
+                height = mode.height
+        else:
+            return null
 
     let window = glfw.glfwCreateWindow(width, height, c"Iconify", monitor, zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
-        return zero[ptr[glfw.GLFWwindow]]
+    if window == null:
+        return null
 
     glfw.glfwMakeContextCurrent(window)
     gl.mt_gl_use_glfw_loader()
@@ -201,7 +202,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     if fullscreen != 0 and all_monitors != 0:
         var monitor_count = 0
         let monitors = glfw.glfwGetMonitors(ptr_of(monitor_count))
-        if monitors == zero[ptr[ptr[glfw.GLFWmonitor]]] or monitor_count <= 0:
+        if monitors == null or monitor_count <= 0:
             return 1
         window_count = monitor_count
 
@@ -217,22 +218,32 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     if fullscreen != 0 and all_monitors != 0:
         var monitor_count = 0
         let monitors = glfw.glfwGetMonitors(ptr_of(monitor_count))
-        if monitors == zero[ptr[ptr[glfw.GLFWmonitor]]]:
+        if monitors != null:
+            unsafe:
+                var index = 0
+                while index < monitor_count:
+                    let window = create_window(read(monitors + ptr_uint<-index))
+                    if window == null:
+                        return 1
+                    read(windows + ptr_uint<-index) = window
+                    index += 1
+        else:
             return 1
-
-        unsafe:
-            var index = 0
-            while index < monitor_count:
-                read(windows + ptr_uint<-index) = create_window(read(monitors + ptr_uint<-index))
-                if read(windows + ptr_uint<-index) == zero[ptr[glfw.GLFWwindow]]:
-                    return 1
-                index += 1
     else:
-        let monitor = if fullscreen != 0: glfw.glfwGetPrimaryMonitor() else: zero[ptr[glfw.GLFWmonitor]]
         unsafe:
-            read(windows) = create_window(monitor)
-            if read(windows) == zero[ptr[glfw.GLFWwindow]]:
-                return 1
+            if fullscreen != 0:
+                let monitor = glfw.glfwGetPrimaryMonitor()
+                if monitor == null:
+                    return 1
+                let window = create_window(monitor)
+                if window == null:
+                    return 1
+                read(windows) = window
+            else:
+                let window = create_window(zero[ptr[glfw.GLFWmonitor]])
+                if window == null:
+                    return 1
+                read(windows) = window
 
     unsafe:
         var index = 0

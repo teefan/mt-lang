@@ -1,6 +1,6 @@
 module std.easing
 
-import std.c.libm as libm
+import std.libm as libm
 import std.math as math
 
 

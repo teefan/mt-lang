@@ -267,7 +267,7 @@ extern module std.c.rlgl:
     extern def rlglInit(width: int, height: int) -> void
     extern def rlglClose() -> void
     extern def rlLoadExtensions(loader: ptr[void]) -> void
-    extern def rlGetProcAddress(procName: cstr) -> ptr[void]
+    extern def rlGetProcAddress(procName: cstr) -> ptr[void]?
     extern def rlGetVersion() -> int
     extern def rlSetFramebufferWidth(width: int) -> void
     extern def rlGetFramebufferWidth() -> int
@@ -290,7 +290,7 @@ extern module std.c.rlgl:
     extern def rlUpdateVertexBufferElements(id: uint, data: const_ptr[void], dataSize: int, offset: int) -> void
     extern def rlUnloadVertexArray(vaoId: uint) -> void
     extern def rlUnloadVertexBuffer(vboId: uint) -> void
-    extern def rlSetVertexAttribute(index: uint, compSize: int, kind: int, normalized: bool, stride: int, offset: int) -> void
+    extern def rlSetVertexAttribute(index: uint, compSize: int, type_: int, normalized: bool, stride: int, offset: int) -> void
     extern def rlSetVertexAttributeDivisor(index: uint, divisor: int) -> void
     extern def rlSetVertexAttributeDefault(locIndex: int, value: const_ptr[void], attribType: int, count: int) -> void
     extern def rlDrawVertexArray(offset: int, count: int) -> void
@@ -313,7 +313,7 @@ extern module std.c.rlgl:
     extern def rlUnloadFramebuffer(id: uint) -> void
     extern def rlCopyFramebuffer(x: int, y: int, width: int, height: int, format: int, pixels: ptr[void]) -> void
     extern def rlResizeFramebuffer(width: int, height: int) -> void
-    extern def rlLoadShader(code: cstr, kind: int) -> uint
+    extern def rlLoadShader(code: cstr, type_: int) -> uint
     extern def rlLoadShaderProgram(vsCode: cstr, fsCode: cstr) -> uint
     extern def rlLoadShaderProgramEx(vsId: uint, fsId: uint) -> uint
     extern def rlLoadShaderProgramCompute(csId: uint) -> uint

@@ -4,7 +4,6 @@ import std.c.libuv as c
 import std.c.libuv_runtime as helper
 import std.c.libuv_system as sys
 import std.libuv as uv
-import std.mem.arena as arena
 import std.mem.heap as heap
 import std.str as text
 
@@ -23,6 +22,12 @@ pub struct Request[T]:
 struct IPv4Address:
     raw: ptr[sys.sockaddr_in]
     storage: ptr[void]?
+
+
+foreign def ip_4_addr_str(ip: str as cstr, port: int, addr: ptr[sys.sockaddr_in]) -> int = c.uv_ip4_addr
+foreign def fs_mkstemp_str(loop: ptr[uv.uv_loop_t], request: ptr[uv.uv_fs_t], tpl: str as cstr, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> int = c.uv_fs_mkstemp
+foreign def fs_open_str(loop: ptr[uv.uv_loop_t], request: ptr[uv.uv_fs_t], path: str as cstr, flag_bits: int, mode: int, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> int = c.uv_fs_open
+foreign def fs_unlink_str(loop: ptr[uv.uv_loop_t], request: ptr[uv.uv_fs_t], path: str as cstr, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> int = c.uv_fs_unlink
 
 
 pub def noop_close(handle: ptr[uv.uv_handle_t]) -> void:
@@ -55,11 +60,11 @@ def release_ipv4_address(address: ref[IPv4Address]) -> void:
     return
 
 
-def create_ipv4_address(ip: str, port: int, scratch: ref[arena.Arena]) -> Result[IPv4Address, int]:
+def create_ipv4_address(ip: str, port: int) -> Result[IPv4Address, int]:
     let storage = heap.must_alloc_zeroed_bytes(1, helper.mt_libuv_sockaddr_in_size())
     unsafe:
         let raw_addr = ptr[sys.sockaddr_in]<-storage
-        let status = uv.ip_4_addr(scratch.to_cstr(ip), port, raw_addr)
+        let status = ip_4_addr_str(ip, port, raw_addr)
         if failed(status):
             heap.release_bytes(storage)
             return err(status)
@@ -224,8 +229,8 @@ pub def tcp_accept(server: Handle[uv.uv_tcp_t], client: Handle[uv.uv_tcp_t]) -> 
     return uv.accept(tcp_stream(server), tcp_stream(client))
 
 
-pub def tcp_bind_ipv4(tcp: Handle[uv.uv_tcp_t], ip: str, port: int, flag_bits: uint, scratch: ref[arena.Arena]) -> int:
-    let address = create_ipv4_address(ip, port, scratch)
+pub def tcp_bind_ipv4(tcp: Handle[uv.uv_tcp_t], ip: str, port: int, flag_bits: uint) -> int:
+    let address = create_ipv4_address(ip, port)
     if not address.is_ok:
         return address.error
 
@@ -250,8 +255,8 @@ pub def tcp_local_port(tcp: Handle[uv.uv_tcp_t]) -> Result[int, int]:
         return ok(port)
 
 
-pub def tcp_connect_ipv4(request: Request[uv.uv_connect_t], tcp: Handle[uv.uv_tcp_t], ip: str, port: int, callback: fn(arg0: ptr[uv.uv_connect_t], arg1: int) -> void, scratch: ref[arena.Arena]) -> int:
-    let address = create_ipv4_address(ip, port, scratch)
+pub def tcp_connect_ipv4(request: Request[uv.uv_connect_t], tcp: Handle[uv.uv_tcp_t], ip: str, port: int, callback: fn(arg0: ptr[uv.uv_connect_t], arg1: int) -> void) -> int:
+    let address = create_ipv4_address(ip, port)
     if not address.is_ok:
         return address.error
 
@@ -278,12 +283,12 @@ pub def fs_path(request: Request[uv.uv_fs_t]) -> str:
     return text.cstr_as_str(uv.fs_get_path(request.raw))
 
 
-pub def fs_mkstemp(loop: Loop, request: Request[uv.uv_fs_t], tpl: str, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void, scratch: ref[arena.Arena]) -> int:
-    return uv.fs_mkstemp(loop.raw, request.raw, scratch.to_cstr(tpl), callback)
+pub def fs_mkstemp(loop: Loop, request: Request[uv.uv_fs_t], tpl: str, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> int:
+    return fs_mkstemp_str(loop.raw, request.raw, tpl, callback)
 
 
-pub def fs_open(loop: Loop, request: Request[uv.uv_fs_t], path: str, flag_bits: int, mode: int, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void, scratch: ref[arena.Arena]) -> int:
-    return uv.fs_open(loop.raw, request.raw, scratch.to_cstr(path), flag_bits, mode, callback)
+pub def fs_open(loop: Loop, request: Request[uv.uv_fs_t], path: str, flag_bits: int, mode: int, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> int:
+    return fs_open_str(loop.raw, request.raw, path, flag_bits, mode, callback)
 
 
 pub def fs_write(loop: Loop, request: Request[uv.uv_fs_t], file: int, data: span[ubyte], offset: ptr_int, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> int:
@@ -300,5 +305,5 @@ pub def fs_close(loop: Loop, request: Request[uv.uv_fs_t], file: int, callback: 
     return uv.fs_close(loop.raw, request.raw, file, callback)
 
 
-pub def fs_unlink(loop: Loop, request: Request[uv.uv_fs_t], path: str, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void, scratch: ref[arena.Arena]) -> int:
-    return uv.fs_unlink(loop.raw, request.raw, scratch.to_cstr(path), callback)
+pub def fs_unlink(loop: Loop, request: Request[uv.uv_fs_t], path: str, callback: fn(arg0: ptr[uv.uv_fs_t]) -> void) -> int:
+    return fs_unlink_str(loop.raw, request.raw, path, callback)

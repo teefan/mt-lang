@@ -1,0 +1,285 @@
+{
+  "module_name": "std.libc",
+  "raw_module_name": "std.c.libc",
+  "raw_import_alias": "c",
+  "types": {
+    "exclude": [
+      "__compar_fn_t"
+    ],
+    "overrides": [
+      { "raw": "div_t", "name": "IntDiv" },
+      { "raw": "ldiv_t", "name": "PtrIntDiv" },
+      { "raw": "lldiv_t", "name": "LongDiv" }
+    ]
+  },
+  "constants": {},
+  "functions": {
+    "exclude": [
+      "__ctype_get_mb_cur_max",
+      "putenv",
+      "mktemp",
+      "strtoq",
+      "strtouq"
+    ],
+    "overrides": [
+      {
+        "raw": "atof",
+        "name": "parse_double",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "double"
+      },
+      {
+        "raw": "atoi",
+        "name": "parse_int",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "atol",
+        "name": "parse_ptr_int",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "ptr_int"
+      },
+      {
+        "raw": "atoll",
+        "name": "parse_long",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "long"
+      },
+      {
+        "raw": "strtof",
+        "name": "parse_float_with_end",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "end_ptr", "type": "ptr[ptr[char]]?" }
+        ],
+        "return_type": "float"
+      },
+      {
+        "raw": "strtod",
+        "name": "parse_double_with_end",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "end_ptr", "type": "ptr[ptr[char]]?" }
+        ],
+        "return_type": "double"
+      },
+      {
+        "raw": "strtol",
+        "name": "parse_ptr_int_with_end",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "end_ptr", "type": "ptr[ptr[char]]?" },
+          { "name": "base", "type": "int" }
+        ],
+        "return_type": "ptr_int"
+      },
+      {
+        "raw": "strtoul",
+        "name": "parse_ptr_uint_with_end",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "end_ptr", "type": "ptr[ptr[char]]?" },
+          { "name": "base", "type": "int" }
+        ],
+        "return_type": "ptr_uint"
+      },
+      {
+        "raw": "strtoll",
+        "name": "parse_long_with_end",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "end_ptr", "type": "ptr[ptr[char]]?" },
+          { "name": "base", "type": "int" }
+        ],
+        "return_type": "long"
+      },
+      {
+        "raw": "strtoull",
+        "name": "parse_ulong_with_end",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "end_ptr", "type": "ptr[ptr[char]]?" },
+          { "name": "base", "type": "int" }
+        ],
+        "return_type": "ulong"
+      },
+      {
+        "raw": "l64a",
+        "name": "format_base_64_ptr_int",
+        "params": [
+          { "name": "value", "type": "ptr_int" }
+        ],
+        "return_type": "ptr[char]"
+      },
+      {
+        "raw": "a64l",
+        "name": "parse_base_64_ptr_int",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "ptr_int"
+      },
+      {
+        "raw": "labs",
+        "name": "abs_ptr_int",
+        "params": [
+          { "name": "value", "type": "ptr_int" }
+        ],
+        "return_type": "ptr_int"
+      },
+      {
+        "raw": "llabs",
+        "name": "abs_long",
+        "params": [
+          { "name": "value", "type": "long" }
+        ],
+        "return_type": "long"
+      },
+      {
+        "raw": "div",
+        "name": "div_int",
+        "params": [
+          { "name": "numerator", "type": "int" },
+          { "name": "denominator", "type": "int" }
+        ],
+        "return_type": "IntDiv"
+      },
+      {
+        "raw": "ldiv",
+        "name": "div_ptr_int",
+        "params": [
+          { "name": "numerator", "type": "ptr_int" },
+          { "name": "denominator", "type": "ptr_int" }
+        ],
+        "return_type": "PtrIntDiv"
+      },
+      {
+        "raw": "lldiv",
+        "name": "div_long",
+        "params": [
+          { "name": "numerator", "type": "long" },
+          { "name": "denominator", "type": "long" }
+        ],
+        "return_type": "LongDiv"
+      },
+      {
+        "raw": "getenv",
+        "name": "get_env",
+        "params": [
+          { "name": "name", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "cstr?"
+      },
+      {
+        "raw": "setenv",
+        "name": "set_env",
+        "params": [
+          { "name": "name", "type": "str", "boundary_type": "cstr" },
+          { "name": "value", "type": "str", "boundary_type": "cstr" },
+          { "name": "replace", "type": "int" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "unsetenv",
+        "name": "unset_env",
+        "params": [
+          { "name": "name", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "mkstemp",
+        "name": "mkstemp",
+        "type_params": ["N"],
+        "params": [
+          { "name": "template", "type": "str_builder[N]", "boundary_type": "ptr[char]" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "mkstemps",
+        "name": "mkstemps",
+        "type_params": ["N"],
+        "params": [
+          { "name": "template", "type": "str_builder[N]", "boundary_type": "ptr[char]" },
+          { "name": "suffix_length", "type": "int" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "mkdtemp",
+        "name": "mkdtemp",
+        "type_params": ["N"],
+        "params": [
+          { "name": "template", "type": "str_builder[N]", "boundary_type": "ptr[char]" }
+        ],
+        "return_type": "cstr?"
+      },
+      {
+        "raw": "system",
+        "name": "system",
+        "params": [
+          { "name": "command", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "realpath",
+        "name": "realpath",
+        "type_params": ["N"],
+        "params": [
+          { "name": "name", "type": "str", "boundary_type": "cstr" },
+          { "name": "resolved", "type": "str_builder[N]", "boundary_type": "ptr[char]" }
+        ],
+        "return_type": "cstr?"
+      },
+      {
+        "raw": "mblen",
+        "name": "multibyte_length",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "length", "type": "ptr_uint" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "mbtowc",
+        "name": "multibyte_to_wide_char",
+        "params": [
+          { "name": "wide_char", "type": "ptr[int]" },
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "length", "type": "ptr_uint" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "mbstowcs",
+        "name": "multibyte_string_to_wide_chars",
+        "params": [
+          { "name": "wide_chars", "type": "ptr[int]" },
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "length", "type": "ptr_uint" }
+        ],
+        "return_type": "ptr_uint"
+      },
+      {
+        "raw": "rpmatch",
+        "name": "response_match",
+        "params": [
+          { "name": "response", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "int"
+      }
+    ]
+  }
+}

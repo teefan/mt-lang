@@ -20,7 +20,7 @@ def init_window(index: int, xpos: int, ypos: int, size: int) -> bool:
     glfw.glfwWindowHint(glfw.GLFW_POSITION_Y, ypos + size * (1 + (index >> 1)))
 
     let window = glfw.glfwCreateWindow(size, size, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         return false
 
     windows[index] = window
@@ -43,7 +43,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     glfw.glfwWindowHint(glfw.GLFW_DECORATED, glfw.GLFW_FALSE)
 
     let primary_monitor = glfw.glfwGetPrimaryMonitor()
-    if primary_monitor == zero[ptr[glfw.GLFWmonitor]]:
+    if primary_monitor == null:
         return 1
 
     var xpos = 0

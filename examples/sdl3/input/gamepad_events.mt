@@ -87,8 +87,11 @@ def add_added_message(which: uint, gamepad: ptr[c.SDL_Gamepad]?) -> void:
         append_message(which, message)
         return
 
+    let gamepad_name = c.SDL_GetGamepadName(gamepad)
+    let display_name = if gamepad_name != null: gamepad_name else: c"<unnamed>"
+
     unsafe:
-        c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(message), c"Gamepad #%u ('%s') added", which, c.SDL_GetGamepadName(gamepad))
+        c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(message), c"Gamepad #%u ('%s') added", which, display_name)
 
     append_message(which, message)
 

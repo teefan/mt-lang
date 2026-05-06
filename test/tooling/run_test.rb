@@ -1028,6 +1028,40 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_std_libc_parse_int_str_boundary
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-std-libc") do |dir|
+      source_path = File.join(dir, "std_libc.mt")
+
+      File.write(source_path, [
+        "module demo.std_libc_runtime",
+        "",
+        "import std.libc as libc",
+        "import std.str",
+        "",
+        "def main() -> int:",
+        "    let text = \"12345!\"",
+        "    let part = text.slice(0, 5)",
+        "    if libc.parse_int(part) == 12345:",
+        "        return int<-part.len",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 5, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_defer_block_cleanup_order
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

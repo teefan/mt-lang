@@ -15,54 +15,56 @@ module MilkTea
 
     module_function
 
-    def library
-      @library ||= VendoredCLibrary::CMake.new(
+    def library(root: MilkTea.root)
+      resolved_root = Pathname.new(File.expand_path(root.to_s))
+      @libraries ||= {}
+      @libraries[resolved_root.to_s] ||= VendoredCLibrary::CMake.new(
         name: "glfw",
-        source_root: source_root,
-        build_root: build_root,
-        install_root: install_root,
-        archive_path: archive_path,
-        include_roots: [include_root],
+        source_root: source_root(root: resolved_root),
+        build_root: build_root(root: resolved_root),
+        install_root: install_root(root: resolved_root),
+        archive_path: archive_path(root: resolved_root),
+        include_roots: [include_root(root: resolved_root)],
         configure_args: CONFIGURE_ARGS,
         pkg_config_name: "glfw3",
         cc_env_var: "GLFW_CC",
       )
     end
 
-    def source_root
-      MilkTea.root.join("third_party/glfw-upstream")
+    def source_root(root: MilkTea.root)
+      Pathname.new(File.expand_path(root.to_s)).join("third_party/glfw-upstream")
     end
 
-    def include_root
-      source_root.join("include")
+    def include_root(root: MilkTea.root)
+      source_root(root:).join("include")
     end
 
-    def header_root
-      include_root.join("GLFW")
+    def header_root(root: MilkTea.root)
+      include_root(root:).join("GLFW")
     end
 
-    def build_root
-      MilkTea.root.join("tmp/vendored-glfw")
+    def build_root(root: MilkTea.root)
+      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-glfw")
     end
 
-    def install_root
-      MilkTea.root.join("tmp/vendored-glfw-prefix")
+    def install_root(root: MilkTea.root)
+      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-glfw-prefix")
     end
 
-    def archive_path
-      install_root.join("lib/libglfw3.a")
+    def archive_path(root: MilkTea.root)
+      install_root(root:).join("lib/libglfw3.a")
     end
 
-    def include_flags
-      library.include_flags
+    def include_flags(root: MilkTea.root)
+      library(root:).include_flags
     end
 
-    def link_flags
-      library.link_flags
+    def link_flags(root: MilkTea.root)
+      library(root:).link_flags
     end
 
-    def prepare!(**kwargs)
-      library.prepare!(**kwargs)
+    def prepare!(root: MilkTea.root, **kwargs)
+      library(root:).prepare!(**kwargs)
     end
   end
 end

@@ -847,7 +847,7 @@ module MilkTea
       def render_type(type)
         case type
         when AST::TypeRef
-          text = +(rendered_type_name(type.name.to_s))
+          text = rendered_type_name(type.name.to_s).dup
           unless type.arguments.empty?
             rendered_arguments = type.arguments.map { |argument| render_type_argument(argument.value) }
             text << "[#{rendered_arguments.join(', ')}]"
@@ -990,6 +990,20 @@ module MilkTea
           binding_path: root.join("std/libuv.mt"),
           raw_module_name: "std.c.libuv",
           policy_path: root.join("bindings/imported/libuv.binding.json"),
+        ),
+        Binding.new(
+          name: "libc",
+          module_name: "std.libc",
+          binding_path: root.join("std/libc.mt"),
+          raw_module_name: "std.c.libc",
+          policy_path: root.join("bindings/imported/libc.binding.json"),
+        ),
+        Binding.new(
+          name: "libm",
+          module_name: "std.libm",
+          binding_path: root.join("std/libm.mt"),
+          raw_module_name: "std.c.libm",
+          policy_path: root.join("bindings/imported/libm.binding.json"),
         ),
       ]
     end

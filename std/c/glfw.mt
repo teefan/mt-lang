@@ -68,28 +68,28 @@ extern module std.c.glfw:
     extern def glfwGetVersion(major: ptr[int], minor: ptr[int], rev: ptr[int]) -> void
     extern def glfwGetVersionString() -> cstr
     extern def glfwGetError(description: ptr[cstr]) -> int
-    extern def glfwSetErrorCallback(callback: fn(arg0: int, arg1: cstr) -> void) -> GLFWerrorfun
+    extern def glfwSetErrorCallback(callback: fn(arg0: int, arg1: cstr) -> void) -> GLFWerrorfun?
     extern def glfwGetPlatform() -> int
     extern def glfwPlatformSupported(platform: int) -> int
-    extern def glfwGetMonitors(count: ptr[int]) -> ptr[ptr[GLFWmonitor]]
-    extern def glfwGetPrimaryMonitor() -> ptr[GLFWmonitor]
+    extern def glfwGetMonitors(count: ptr[int]) -> ptr[ptr[GLFWmonitor]]?
+    extern def glfwGetPrimaryMonitor() -> ptr[GLFWmonitor]?
     extern def glfwGetMonitorPos(monitor: ptr[GLFWmonitor], xpos: ptr[int], ypos: ptr[int]) -> void
     extern def glfwGetMonitorWorkarea(monitor: ptr[GLFWmonitor], xpos: ptr[int], ypos: ptr[int], width: ptr[int], height: ptr[int]) -> void
     extern def glfwGetMonitorPhysicalSize(monitor: ptr[GLFWmonitor], widthMM: ptr[int], heightMM: ptr[int]) -> void
     extern def glfwGetMonitorContentScale(monitor: ptr[GLFWmonitor], xscale: ptr[float], yscale: ptr[float]) -> void
-    extern def glfwGetMonitorName(monitor: ptr[GLFWmonitor]) -> cstr
+    extern def glfwGetMonitorName(monitor: ptr[GLFWmonitor]) -> cstr?
     extern def glfwSetMonitorUserPointer(monitor: ptr[GLFWmonitor], pointer: ptr[void]) -> void
-    extern def glfwGetMonitorUserPointer(monitor: ptr[GLFWmonitor]) -> ptr[void]
+    extern def glfwGetMonitorUserPointer(monitor: ptr[GLFWmonitor]) -> ptr[void]?
     extern def glfwSetMonitorCallback(callback: fn(arg0: ptr[GLFWmonitor], arg1: int) -> void) -> GLFWmonitorfun
-    extern def glfwGetVideoModes(monitor: ptr[GLFWmonitor], count: ptr[int]) -> const_ptr[GLFWvidmode]
-    extern def glfwGetVideoMode(monitor: ptr[GLFWmonitor]) -> const_ptr[GLFWvidmode]
+    extern def glfwGetVideoModes(monitor: ptr[GLFWmonitor], count: ptr[int]) -> const_ptr[GLFWvidmode]?
+    extern def glfwGetVideoMode(monitor: ptr[GLFWmonitor]) -> const_ptr[GLFWvidmode]?
     extern def glfwSetGamma(monitor: ptr[GLFWmonitor], gamma: float) -> void
     extern def glfwGetGammaRamp(monitor: ptr[GLFWmonitor]) -> const_ptr[GLFWgammaramp]
     extern def glfwSetGammaRamp(monitor: ptr[GLFWmonitor], ramp: const_ptr[GLFWgammaramp]) -> void
     extern def glfwDefaultWindowHints() -> void
     extern def glfwWindowHint(hint: int, value: int) -> void
     extern def glfwWindowHintString(hint: int, value: cstr) -> void
-    extern def glfwCreateWindow(width: int, height: int, title: cstr, monitor: ptr[GLFWmonitor], share: ptr[GLFWwindow]) -> ptr[GLFWwindow]
+    extern def glfwCreateWindow(width: int, height: int, title: cstr, monitor: ptr[GLFWmonitor], share: ptr[GLFWwindow]) -> ptr[GLFWwindow]?
     extern def glfwDestroyWindow(window: ptr[GLFWwindow]) -> void
     extern def glfwWindowShouldClose(window: ptr[GLFWwindow]) -> int
     extern def glfwSetWindowShouldClose(window: ptr[GLFWwindow], value: int) -> void
@@ -114,12 +114,12 @@ extern module std.c.glfw:
     extern def glfwHideWindow(window: ptr[GLFWwindow]) -> void
     extern def glfwFocusWindow(window: ptr[GLFWwindow]) -> void
     extern def glfwRequestWindowAttention(window: ptr[GLFWwindow]) -> void
-    extern def glfwGetWindowMonitor(window: ptr[GLFWwindow]) -> ptr[GLFWmonitor]
+    extern def glfwGetWindowMonitor(window: ptr[GLFWwindow]) -> ptr[GLFWmonitor]?
     extern def glfwSetWindowMonitor(window: ptr[GLFWwindow], monitor: ptr[GLFWmonitor], xpos: int, ypos: int, width: int, height: int, refreshRate: int) -> void
     extern def glfwGetWindowAttrib(window: ptr[GLFWwindow], attrib: int) -> int
     extern def glfwSetWindowAttrib(window: ptr[GLFWwindow], attrib: int, value: int) -> void
     extern def glfwSetWindowUserPointer(window: ptr[GLFWwindow], pointer: ptr[void]) -> void
-    extern def glfwGetWindowUserPointer(window: ptr[GLFWwindow]) -> ptr[void]
+    extern def glfwGetWindowUserPointer(window: ptr[GLFWwindow]) -> ptr[void]?
     extern def glfwSetWindowPosCallback(window: ptr[GLFWwindow], callback: fn(arg0: ptr[GLFWwindow], arg1: int, arg2: int) -> void) -> GLFWwindowposfun
     extern def glfwSetWindowSizeCallback(window: ptr[GLFWwindow], callback: fn(arg0: ptr[GLFWwindow], arg1: int, arg2: int) -> void) -> GLFWwindowsizefun
     extern def glfwSetWindowCloseCallback(window: ptr[GLFWwindow], callback: fn(arg0: ptr[GLFWwindow]) -> void) -> GLFWwindowclosefun
@@ -136,14 +136,14 @@ extern module std.c.glfw:
     extern def glfwGetInputMode(window: ptr[GLFWwindow], mode: int) -> int
     extern def glfwSetInputMode(window: ptr[GLFWwindow], mode: int, value: int) -> void
     extern def glfwRawMouseMotionSupported() -> int
-    extern def glfwGetKeyName(key: int, scancode: int) -> cstr
+    extern def glfwGetKeyName(key: int, scancode: int) -> cstr?
     extern def glfwGetKeyScancode(key: int) -> int
     extern def glfwGetKey(window: ptr[GLFWwindow], key: int) -> int
     extern def glfwGetMouseButton(window: ptr[GLFWwindow], button: int) -> int
     extern def glfwGetCursorPos(window: ptr[GLFWwindow], xpos: ptr[double], ypos: ptr[double]) -> void
     extern def glfwSetCursorPos(window: ptr[GLFWwindow], xpos: double, ypos: double) -> void
-    extern def glfwCreateCursor(image: const_ptr[GLFWimage], xhot: int, yhot: int) -> ptr[GLFWcursor]
-    extern def glfwCreateStandardCursor(shape: int) -> ptr[GLFWcursor]
+    extern def glfwCreateCursor(image: const_ptr[GLFWimage], xhot: int, yhot: int) -> ptr[GLFWcursor]?
+    extern def glfwCreateStandardCursor(shape: int) -> ptr[GLFWcursor]?
     extern def glfwDestroyCursor(cursor: ptr[GLFWcursor]) -> void
     extern def glfwSetCursor(window: ptr[GLFWwindow], cursor: ptr[GLFWcursor]) -> void
     extern def glfwSetKeyCallback(window: ptr[GLFWwindow], callback: fn(arg0: ptr[GLFWwindow], arg1: int, arg2: int, arg3: int, arg4: int) -> void) -> GLFWkeyfun
@@ -155,32 +155,32 @@ extern module std.c.glfw:
     extern def glfwSetScrollCallback(window: ptr[GLFWwindow], callback: fn(arg0: ptr[GLFWwindow], arg1: double, arg2: double) -> void) -> GLFWscrollfun
     extern def glfwSetDropCallback(window: ptr[GLFWwindow], callback: fn(arg0: ptr[GLFWwindow], arg1: int, arg2: ptr[cstr]) -> void) -> GLFWdropfun
     extern def glfwJoystickPresent(jid: int) -> int
-    extern def glfwGetJoystickAxes(jid: int, count: ptr[int]) -> const_ptr[float]
-    extern def glfwGetJoystickButtons(jid: int, count: ptr[int]) -> const_ptr[ubyte]
-    extern def glfwGetJoystickHats(jid: int, count: ptr[int]) -> const_ptr[ubyte]
-    extern def glfwGetJoystickName(jid: int) -> cstr
-    extern def glfwGetJoystickGUID(jid: int) -> cstr
+    extern def glfwGetJoystickAxes(jid: int, count: ptr[int]) -> const_ptr[float]?
+    extern def glfwGetJoystickButtons(jid: int, count: ptr[int]) -> const_ptr[ubyte]?
+    extern def glfwGetJoystickHats(jid: int, count: ptr[int]) -> const_ptr[ubyte]?
+    extern def glfwGetJoystickName(jid: int) -> cstr?
+    extern def glfwGetJoystickGUID(jid: int) -> cstr?
     extern def glfwSetJoystickUserPointer(jid: int, pointer: ptr[void]) -> void
-    extern def glfwGetJoystickUserPointer(jid: int) -> ptr[void]
+    extern def glfwGetJoystickUserPointer(jid: int) -> ptr[void]?
     extern def glfwJoystickIsGamepad(jid: int) -> int
-    extern def glfwSetJoystickCallback(callback: fn(arg0: int, arg1: int) -> void) -> GLFWjoystickfun
+    extern def glfwSetJoystickCallback(callback: fn(arg0: int, arg1: int) -> void) -> GLFWjoystickfun?
     extern def glfwUpdateGamepadMappings(string: cstr) -> int
-    extern def glfwGetGamepadName(jid: int) -> cstr
+    extern def glfwGetGamepadName(jid: int) -> cstr?
     extern def glfwGetGamepadState(jid: int, state: ptr[GLFWgamepadstate]) -> int
     extern def glfwSetClipboardString(window: ptr[GLFWwindow], string: cstr) -> void
-    extern def glfwGetClipboardString(window: ptr[GLFWwindow]) -> cstr
+    extern def glfwGetClipboardString(window: ptr[GLFWwindow]) -> cstr?
     extern def glfwGetTime() -> double
     extern def glfwSetTime(time: double) -> void
     extern def glfwGetTimerValue() -> ulong
     extern def glfwGetTimerFrequency() -> ulong
     extern def glfwMakeContextCurrent(window: ptr[GLFWwindow]) -> void
-    extern def glfwGetCurrentContext() -> ptr[GLFWwindow]
+    extern def glfwGetCurrentContext() -> ptr[GLFWwindow]?
     extern def glfwSwapBuffers(window: ptr[GLFWwindow]) -> void
     extern def glfwSwapInterval(interval: int) -> void
     extern def glfwExtensionSupported(extension: cstr) -> int
-    extern def glfwGetProcAddress(procname: cstr) -> GLFWglproc
+    extern def glfwGetProcAddress(procname: cstr) -> GLFWglproc?
     extern def glfwVulkanSupported() -> int
-    extern def glfwGetRequiredInstanceExtensions(count: ptr[uint]) -> ptr[cstr]
+    extern def glfwGetRequiredInstanceExtensions(count: ptr[uint]) -> ptr[cstr]?
 
     const GLFW_VERSION_MAJOR: int = 3
     const GLFW_VERSION_MINOR: int = 5

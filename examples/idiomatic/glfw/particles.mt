@@ -2,8 +2,8 @@ module examples.idiomatic.glfw.particles
 
 import std.glfw as glfw
 import std.gl as gl
-import std.c.libm as math
-import std.c.libc as libc
+import std.libm as math
+import std.libc as libc
 
 type Mat4 = array[float, 16]
 
@@ -153,7 +153,7 @@ def init_particle(index: int, t: double) -> void:
     particles[index].z = fountain_height
 
     particles[index].vz = 0.7 + (0.3 / 4096.0) * float<-(libc.rand() & 4095)
-    let xy_angle = (2.0 * math.M_PI_F / 4096.0) * float<-(libc.rand() & 4095)
+    let xy_angle = (2.0 * math.PI_F / 4096.0) * float<-(libc.rand() & 4095)
     particles[index].vx = 0.4 * math.cosf(xy_angle)
     particles[index].vy = 0.4 * math.sinf(xy_angle)
 
@@ -338,7 +338,7 @@ def draw_fountain() -> void:
             gl.begin(uint<-gl.TRIANGLE_STRIP)
             var m = 0
             while m <= fountain_sweep_steps:
-                let angle = float<-m * (2.0 * math.M_PI_F / float<-fountain_sweep_steps)
+                let angle = float<-m * (2.0 * math.PI_F / float<-fountain_sweep_steps)
                 let x = math.cosf(angle)
                 let y = math.sinf(angle)
 
@@ -458,7 +458,7 @@ def setup_lights() -> void:
 
 
 def draw_scene(t: double) -> void:
-    let projection = mat4_perspective(65.0 * math.M_PI_F / 180.0, aspect_ratio, 1.0, 60.0)
+    let projection = mat4_perspective(65.0 * math.PI_F / 180.0, aspect_ratio, 1.0, 60.0)
     var fog_color = array[float, 4](0.1, 0.1, 0.1, 1.0)
 
     gl.clear_color(0.1, 0.1, 0.1, 1.0)
@@ -476,9 +476,9 @@ def draw_scene(t: double) -> void:
     gl.rotated(-double<-angle_y, 0.0, 1.0, 0.0)
     gl.rotated(-angle_z, 0.0, 0.0, 1.0)
 
-    let xpos = 15.0 * math.sinf((math.M_PI_F / 180.0) * float<-angle_z) + 2.0 * math.sinf((math.M_PI_F / 180.0) * float<-(3.1 * t))
-    let ypos = -15.0 * math.cosf((math.M_PI_F / 180.0) * float<-angle_z) + 2.0 * math.cosf((math.M_PI_F / 180.0) * float<-(2.9 * t))
-    let zpos = 4.0 + 2.0 * math.cosf((math.M_PI_F / 180.0) * float<-(4.9 * t))
+    let xpos = 15.0 * math.sinf((math.PI_F / 180.0) * float<-angle_z) + 2.0 * math.sinf((math.PI_F / 180.0) * float<-(3.1 * t))
+    let ypos = -15.0 * math.cosf((math.PI_F / 180.0) * float<-angle_z) + 2.0 * math.cosf((math.PI_F / 180.0) * float<-(2.9 * t))
+    let zpos = 4.0 + 2.0 * math.cosf((math.PI_F / 180.0) * float<-(4.9 * t))
     gl.translated(-double<-xpos, -double<-ypos, -double<-zpos)
 
     gl.front_face(uint<-gl.CCW)
@@ -529,13 +529,13 @@ def key_callback(window: ptr[glfw.GLFWwindow], key: int, scancode: int, action: 
             gl.polygon_mode(uint<-gl.FRONT_AND_BACK, uint<-gl.FILL)
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+def main() -> int:
     if glfw.init() == 0:
         return 1
     defer glfw.terminate()
 
     let window = glfw.create_window(window_width, window_height, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         return 1
     defer glfw.destroy_window(window)
 

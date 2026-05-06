@@ -189,7 +189,7 @@ pub foreign def set_blend_factors_separate(gl_src_rgb: int, gl_dst_rgb: int, gl_
 pub foreign def gl_init(width: int, height: int) -> void = c.rlglInit
 pub foreign def gl_close() -> void = c.rlglClose
 pub foreign def load_extensions(loader: ptr[void]) -> void = c.rlLoadExtensions
-pub foreign def get_proc_address(proc_name: cstr) -> ptr[void] = c.rlGetProcAddress
+pub foreign def get_proc_address(proc_name: cstr) -> ptr[void]? = c.rlGetProcAddress
 pub foreign def get_version() -> int = c.rlGetVersion
 pub foreign def set_framebuffer_width(width: int) -> void = c.rlSetFramebufferWidth
 pub foreign def get_framebuffer_width() -> int = c.rlGetFramebufferWidth
@@ -212,7 +212,7 @@ pub foreign def update_vertex_buffer[T](buffer_id: uint, data: ptr[T] as const_p
 pub foreign def update_vertex_buffer_elements[T](id: uint, data: ptr[T] as const_ptr[void], data_size: int, offset: int) -> void = c.rlUpdateVertexBufferElements
 pub foreign def unload_vertex_array(vao_id: uint) -> void = c.rlUnloadVertexArray
 pub foreign def unload_vertex_buffer(vbo_id: uint) -> void = c.rlUnloadVertexBuffer
-pub foreign def set_vertex_attribute(index: uint, comp_size: int, kind: int, normalized: bool, stride: int, offset: int) -> void = c.rlSetVertexAttribute
+pub foreign def set_vertex_attribute(index: uint, comp_size: int, type_: int, normalized: bool, stride: int, offset: int) -> void = c.rlSetVertexAttribute
 pub foreign def set_vertex_attribute_divisor(index: uint, divisor: int) -> void = c.rlSetVertexAttributeDivisor
 pub foreign def set_vertex_attribute_default[T](loc_index: int, value: ptr[T] as const_ptr[void], attrib_type: int, count: int) -> void = c.rlSetVertexAttributeDefault
 pub foreign def draw_vertex_array(offset: int, count: int) -> void = c.rlDrawVertexArray
@@ -235,7 +235,7 @@ pub foreign def framebuffer_complete(id: uint) -> bool = c.rlFramebufferComplete
 pub foreign def unload_framebuffer(id: uint) -> void = c.rlUnloadFramebuffer
 pub foreign def copy_framebuffer(x: int, y: int, width: int, height: int, format: int, pixels: ptr[void]) -> void = c.rlCopyFramebuffer
 pub foreign def resize_framebuffer(width: int, height: int) -> void = c.rlResizeFramebuffer
-pub foreign def load_shader(code: cstr, kind: int) -> uint = c.rlLoadShader
+pub foreign def load_shader(code: cstr, type_: int) -> uint = c.rlLoadShader
 pub foreign def load_shader_program(vs_code: cstr, fs_code: cstr) -> uint = c.rlLoadShaderProgram
 pub foreign def load_shader_program_ex(vs_id: uint, fs_id: uint) -> uint = c.rlLoadShaderProgramEx
 pub foreign def load_shader_program_compute(cs_id: uint) -> uint = c.rlLoadShaderProgramCompute

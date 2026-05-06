@@ -451,6 +451,10 @@ module MilkTea
 
                 lowered << lower_function_decl(binding)
                 lowered_function_c_names[c_name] = true
+                if (entrypoint = build_root_main_entrypoint(binding))
+                  lowered << entrypoint
+                  lowered_function_c_names[entrypoint.c_name] = true
+                end
                 changed = true
               end
             when AST::MethodsBlock
@@ -554,7 +558,7 @@ module MilkTea
           params:,
           return_type:,
           body:,
-          entry_point: receiver_type.nil? && decl.name == "main" && binding.type_arguments.empty?,
+          entry_point: false,
         )
       ensure
         @current_type_substitutions = previous_type_substitutions
@@ -587,7 +591,7 @@ module MilkTea
         @synthetic_functions << build_async_release_function(frame_type, release_c_name, async_info)
         @synthetic_functions << build_async_take_result_function(frame_type, take_result_c_name, async_info)
 
-        if decl.name == "main" && binding.type_arguments.empty?
+        if root_main_entrypoint_signature(binding)
           @synthetic_functions << build_async_constructor_function(
             binding,
             decl,
@@ -622,6 +626,10 @@ module MilkTea
         libuv_async = analysis_for_module("std.libuv.async")
         loop_type = analysis_for_module("std.libuv.runtime").types.fetch("Loop")
         task_type = async_info[:task_type]
+        signature = root_main_entrypoint_signature(binding)
+        raise LoweringError, "async main entrypoint requires a supported signature" unless signature
+
+        params, setup_statements, constructor_arguments, cleanup_statements = build_root_main_entrypoint_bridge(signature)
         body = []
 
         loop_name = "__mt_loop"
@@ -632,6 +640,7 @@ module MilkTea
         loop_expr = IR::Name.new(name: loop_name, type: loop_type, pointer: false)
         task_expr = IR::Name.new(name: task_name, type: task_type, pointer: false)
 
+        body.concat(setup_statements)
         body << IR::LocalDecl.new(
           name: loop_name,
           c_name: loop_name,
@@ -653,7 +662,7 @@ module MilkTea
           name: task_name,
           c_name: task_name,
           type: task_type,
-          value: IR::Call.new(callee: constructor_c_name, arguments: [], type: task_type),
+          value: IR::Call.new(callee: constructor_c_name, arguments: constructor_arguments, type: task_type),
         )
         body << IR::WhileStmt.new(
           condition: IR::Unary.new(
@@ -739,6 +748,7 @@ module MilkTea
             type: @types.fetch("void"),
           ),
         )
+        body.concat(cleanup_statements)
         body << IR::ReturnStmt.new(
           value: async_info[:result_type] == @types.fetch("int") ? IR::Name.new(name: result_name, type: @types.fetch("int"), pointer: false) : IR::IntegerLiteral.new(value: 0, type: @types.fetch("int")),
         )
@@ -746,11 +756,167 @@ module MilkTea
         IR::Function.new(
           name: binding.name,
           c_name: "main",
-          params: [],
+          params:,
           return_type: @types.fetch("int"),
           body: body,
           entry_point: true,
         )
+      end
+
+      def build_root_main_entrypoint(binding)
+        return nil if binding.async
+
+        signature = root_main_entrypoint_signature(binding)
+        return nil unless signature
+
+        params, setup_statements, call_arguments, cleanup_statements = build_root_main_entrypoint_bridge(signature)
+        return_type = binding.body_return_type
+        body = []
+        call = IR::Call.new(
+          callee: function_binding_c_name(binding, module_name: @module_name),
+          arguments: call_arguments,
+          type: return_type,
+        )
+
+        body.concat(setup_statements)
+        if return_type == @types.fetch("void")
+          body << IR::ExpressionStmt.new(expression: call)
+          body.concat(cleanup_statements)
+          body << IR::ReturnStmt.new(value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("int")))
+        else
+          result_name = "__mt_result"
+          body << IR::LocalDecl.new(
+            name: result_name,
+            c_name: result_name,
+            type: @types.fetch("int"),
+            value: call,
+          )
+          body.concat(cleanup_statements)
+          body << IR::ReturnStmt.new(value: IR::Name.new(name: result_name, type: @types.fetch("int"), pointer: false))
+        end
+
+        IR::Function.new(
+          name: binding.name,
+          c_name: "main",
+          params:,
+          return_type: @types.fetch("int"),
+          body:,
+          entry_point: true,
+        )
+      end
+
+      def build_root_main_entrypoint_bridge(signature)
+        argc_type = @types.fetch("int")
+        raw_argv_type = pointer_to(pointer_to(@types.fetch("char")))
+        argc_name = "argc"
+        argv_name = "argv"
+
+        case signature[:kind]
+        when :none
+          [[], [], [], []]
+        when :raw_char_ptr_ptr
+          argc_expr = IR::Name.new(name: argc_name, type: argc_type, pointer: false)
+          argv_expr = IR::Name.new(name: argv_name, type: raw_argv_type, pointer: false)
+          [
+            [
+              IR::Param.new(name: argc_name, c_name: argc_name, type: argc_type, pointer: false),
+              IR::Param.new(name: argv_name, c_name: argv_name, type: raw_argv_type, pointer: false),
+            ],
+            [],
+            [argc_expr, argv_expr],
+            [],
+          ]
+        when :raw_cstr_ptr
+          argc_expr = IR::Name.new(name: argc_name, type: argc_type, pointer: false)
+          argv_expr = IR::Cast.new(
+            target_type: signature[:argv_type],
+            expression: IR::Name.new(name: argv_name, type: raw_argv_type, pointer: false),
+            type: signature[:argv_type],
+          )
+          [
+            [
+              IR::Param.new(name: argc_name, c_name: argc_name, type: argc_type, pointer: false),
+              IR::Param.new(name: argv_name, c_name: argv_name, type: raw_argv_type, pointer: false),
+            ],
+            [],
+            [argc_expr, argv_expr],
+            [],
+          ]
+        when :span_str
+          items_type = pointer_to(@types.fetch("str"))
+          items_name = "__mt_args_items"
+          args_name = "__mt_args"
+          items_expr = IR::Name.new(name: items_name, type: items_type, pointer: false)
+          args_expr = IR::Name.new(name: args_name, type: signature[:args_type], pointer: false)
+          argc_expr = IR::Name.new(name: argc_name, type: argc_type, pointer: false)
+          argv_expr = IR::Name.new(name: argv_name, type: raw_argv_type, pointer: false)
+
+          setup = [
+            IR::LocalDecl.new(
+              name: items_name,
+              c_name: items_name,
+              type: items_type,
+              value: IR::NullLiteral.new(type: items_type),
+            ),
+            IR::LocalDecl.new(
+              name: args_name,
+              c_name: args_name,
+              type: signature[:args_type],
+              value: IR::Call.new(
+                callee: "mt_entry_argv_to_span_str",
+                arguments: [
+                  argc_expr,
+                  argv_expr,
+                  IR::AddressOf.new(expression: items_expr, type: pointer_to(items_type)),
+                ],
+                type: signature[:args_type],
+              ),
+            ),
+          ]
+          cleanup = [
+            IR::ExpressionStmt.new(
+              expression: IR::Call.new(callee: "mt_free_entry_argv_strs", arguments: [items_expr], type: @types.fetch("void")),
+            ),
+          ]
+
+          [
+            [
+              IR::Param.new(name: argc_name, c_name: argc_name, type: argc_type, pointer: false),
+              IR::Param.new(name: argv_name, c_name: argv_name, type: raw_argv_type, pointer: false),
+            ],
+            setup,
+            [args_expr],
+            cleanup,
+          ]
+        else
+          raise LoweringError, "unsupported root main entrypoint bridge #{signature[:kind]}"
+        end
+      end
+
+      def root_main_entrypoint_signature(binding)
+        return nil unless @analysis == @program.root_analysis
+        return nil unless binding.type.receiver_type.nil?
+        return nil unless binding.name == "main"
+        return nil unless binding.type_arguments.empty?
+
+        return_type = binding.body_return_type
+        return nil unless return_type == @types.fetch("int") || return_type == @types.fetch("void")
+
+        params = binding.type.params
+        return { kind: :none } if params.empty?
+
+        if params.length == 1 && params.first.type.is_a?(Types::Span) && params.first.type.element_type == @types.fetch("str")
+          return { kind: :span_str, args_type: params.first.type }
+        end
+
+        return nil unless params.length == 2
+        return nil unless params[0].type == @types.fetch("int")
+
+        argv_type = params[1].type
+        return { kind: :raw_cstr_ptr, argv_type: } if argv_type == pointer_to(@types.fetch("cstr"))
+        return { kind: :raw_char_ptr_ptr, argv_type: } if argv_type == pointer_to(pointer_to(@types.fetch("char")))
+
+        nil
       end
 
       def analyze_async_function(binding, statements)
@@ -7841,7 +8007,7 @@ module MilkTea
 
       def function_binding_c_name(binding, module_name:, receiver_type: nil)
         if receiver_type.nil? && binding.name == "main" && binding.type_arguments.empty?
-          return binding.async ? module_function_c_name(module_name, "__async_main") : "main"
+          return binding.async ? module_function_c_name(module_name, "__async_main") : module_function_c_name(module_name, "main")
         end
         if receiver_type
           base = "#{c_type_name(receiver_type)}_#{binding.name}"

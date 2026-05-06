@@ -59,24 +59,24 @@ class MilkTeaStdMathTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
-  def test_host_runtime_executes_std_c_libm_double_surface
+  def test_host_runtime_executes_std_libm_double_surface
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
       "module demo.std_c_libm",
       "",
-      "import std.c.libm as math",
+      "import std.libm as math",
       "",
       "def main() -> int:",
-      "    let sine = math.sin(math.M_PI * 0.5)",
+      "    let sine = math.sin(math.PI * 0.5)",
       "    if sine < 0.999 or sine > 1.001:",
       "        return 10",
       "    if math.sqrt(81.0) != 9.0:",
       "        return 11",
       "    if math.floor(2.75) != 2.0:",
       "        return 12",
-      "    if math.M_PI_F < 3.14 or math.M_PI_F > 3.15:",
+      "    if math.PI_F < 3.14 or math.PI_F > 3.15:",
       "        return 13",
       "    return 0",
       "",

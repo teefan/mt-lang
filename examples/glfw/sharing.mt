@@ -111,7 +111,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     glfw.glfwWindowHint(glfw.GLFW_CONTEXT_VERSION_MINOR, 0)
 
     let first_window = glfw.glfwCreateWindow(400, 400, first_window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if first_window == zero[ptr[glfw.GLFWwindow]]:
+    if first_window == null:
         return 1
     defer glfw.glfwDestroyWindow(first_window)
     windows[0] = first_window
@@ -161,7 +161,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     configure_context(program, texture, vertex_buffer, vpos_location, texture_location)
 
     let second_window = glfw.glfwCreateWindow(400, 400, second_window_title, zero[ptr[glfw.GLFWmonitor]], first_window)
-    if second_window == zero[ptr[glfw.GLFWwindow]]:
+    if second_window == null:
         return 1
     defer glfw.glfwDestroyWindow(second_window)
     windows[1] = second_window

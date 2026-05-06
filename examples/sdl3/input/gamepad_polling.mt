@@ -83,7 +83,9 @@ def render_frame() -> void:
     let now = c.SDL_GetTicks()
 
     if gamepad != null:
-        text = c.SDL_GetGamepadName(gamepad)
+        let gamepad_name = c.SDL_GetGamepadName(gamepad)
+        if gamepad_name != null:
+            text = gamepad_name
 
     c.SDL_SetRenderDrawColor(renderer, 255, 255, 255, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderClear(renderer)

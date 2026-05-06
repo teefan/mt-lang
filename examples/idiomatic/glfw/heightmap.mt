@@ -2,8 +2,9 @@ module examples.idiomatic.glfw.heightmap
 
 import std.glfw as glfw
 import std.gl as gl
-import std.c.libm as math
-import std.c.libc as libc
+import std.gl.util as gl_util
+import std.libm as math
+import std.libc as libc
 
 type Mat4 = array[float, 16]
 
@@ -64,22 +65,10 @@ def mat4_identity() -> Mat4:
     )
 
 
-def make_shader(shader_type: gl.GLenum, source_text: cstr) -> gl.GLuint:
-    let shader = gl.create_shader(uint<-shader_type)
-    var sources = zero[array[const_ptr[gl.GLchar], 1]]
-    var source_ptrs = zero[const_ptr[const_ptr[gl.GLchar]]]
-    unsafe:
-        sources[0] = const_ptr[gl.GLchar]<-source_text
-        source_ptrs = const_ptr[const_ptr[gl.GLchar]]<-ptr_of(sources[0])
-    gl.shader_source(shader, 1, source_ptrs, zero[const_ptr[gl.GLint]])
-    gl.compile_shader(shader)
-    return shader
-
-
 def make_shader_program(vs_text: cstr, fs_text: cstr) -> gl.GLuint:
     let program = gl.create_program()
-    let vertex_shader = make_shader(uint<-gl.VERTEX_SHADER, vs_text)
-    let fragment_shader = make_shader(uint<-gl.FRAGMENT_SHADER, fs_text)
+    let vertex_shader = gl_util.build_shader(uint<-gl.VERTEX_SHADER, vs_text)
+    let fragment_shader = gl_util.build_shader(uint<-gl.FRAGMENT_SHADER, fs_text)
     gl.attach_shader(program, vertex_shader)
     gl.attach_shader(program, fragment_shader)
     gl.link_program(program)
@@ -157,7 +146,7 @@ def update_map(num_iter: int) -> void:
             let dz = center_z - map_vertices[2][index]
             let pd = 2.0 * math.sqrtf(dx * dx + dz * dz) / circle_size
             if math.fabsf(pd) <= 1.0:
-                let new_height = displacement + math.cosf(pd * math.M_PI_F) * displacement
+                let new_height = displacement + math.cosf(pd * math.PI_F) * displacement
                 map_vertices[1][index] += new_height
             index += 1
 
@@ -165,64 +154,28 @@ def update_map(num_iter: int) -> void:
 
 
 def make_mesh(program: uint) -> void:
-    var line_index_data = zero[const_ptr[void]]
-    var x_data = zero[const_ptr[void]]
-    var y_data = zero[const_ptr[void]]
-    var z_data = zero[const_ptr[void]]
-    var x_name = zero[const_ptr[gl.GLchar]]
-    var y_name = zero[const_ptr[gl.GLchar]]
-    var z_name = zero[const_ptr[gl.GLchar]]
-    unsafe:
-        line_index_data = const_ptr[void]<-ptr_of(map_line_indices[0])
-        x_data = const_ptr[void]<-ptr_of(map_vertices[0][0])
-        y_data = const_ptr[void]<-ptr_of(map_vertices[1][0])
-        z_data = const_ptr[void]<-ptr_of(map_vertices[2][0])
-        x_name = const_ptr[gl.GLchar]<-c"x"
-        y_name = const_ptr[gl.GLchar]<-c"y"
-        z_name = const_ptr[gl.GLchar]<-c"z"
-
     gl.gen_vertex_arrays(1, ptr_of(mesh))
     gl.gen_buffers(4, ptr_of(mesh_vbo[0]))
     gl.bind_vertex_array(mesh)
 
     gl.bind_buffer(uint<-gl.ELEMENT_ARRAY_BUFFER, mesh_vbo[3])
-    gl.buffer_data(
-        uint<-gl.ELEMENT_ARRAY_BUFFER,
-        ptr_int<-(2 * map_num_lines * int<-size_of(uint)),
-        line_index_data,
-        uint<-gl.STATIC_DRAW,
-    )
+    gl_util.buffer_data(uint<-gl.ELEMENT_ARRAY_BUFFER, map_line_indices, uint<-gl.STATIC_DRAW)
 
-    var attrloc = gl.get_attrib_location(program, x_name)
+    var attrloc = gl_util.attrib_location(program, c"x")
     gl.bind_buffer(uint<-gl.ARRAY_BUFFER, mesh_vbo[0])
-    gl.buffer_data(
-        uint<-gl.ARRAY_BUFFER,
-        ptr_int<-(map_num_total_vertices * int<-size_of(float)),
-        x_data,
-        uint<-gl.STATIC_DRAW,
-    )
+    gl_util.buffer_data(uint<-gl.ARRAY_BUFFER, map_vertices[0], uint<-gl.STATIC_DRAW)
     gl.enable_vertex_attrib_array(uint<-attrloc)
     gl.vertex_attrib_pointer(uint<-attrloc, 1, uint<-gl.FLOAT, ubyte<-gl.FALSE, 0, zero[const_ptr[void]])
 
-    attrloc = gl.get_attrib_location(program, z_name)
+    attrloc = gl_util.attrib_location(program, c"z")
     gl.bind_buffer(uint<-gl.ARRAY_BUFFER, mesh_vbo[2])
-    gl.buffer_data(
-        uint<-gl.ARRAY_BUFFER,
-        ptr_int<-(map_num_total_vertices * int<-size_of(float)),
-        z_data,
-        uint<-gl.STATIC_DRAW,
-    )
+    gl_util.buffer_data(uint<-gl.ARRAY_BUFFER, map_vertices[2], uint<-gl.STATIC_DRAW)
     gl.enable_vertex_attrib_array(uint<-attrloc)
     gl.vertex_attrib_pointer(uint<-attrloc, 1, uint<-gl.FLOAT, ubyte<-gl.FALSE, 0, zero[const_ptr[void]])
 
-    attrloc = gl.get_attrib_location(program, y_name)
+    attrloc = gl_util.attrib_location(program, c"y")
     gl.bind_buffer(uint<-gl.ARRAY_BUFFER, mesh_vbo[1])
-    gl.buffer_data(
-        uint<-gl.ARRAY_BUFFER,
-        ptr_int<-(map_num_total_vertices * int<-size_of(float)),
-        y_data,
-        uint<-gl.DYNAMIC_DRAW,
-    )
+    gl_util.buffer_data(uint<-gl.ARRAY_BUFFER, map_vertices[1], uint<-gl.DYNAMIC_DRAW)
     gl.enable_vertex_attrib_array(uint<-attrloc)
     gl.vertex_attrib_pointer(uint<-attrloc, 1, uint<-gl.FLOAT, ubyte<-gl.FALSE, 0, zero[const_ptr[void]])
 
@@ -247,7 +200,7 @@ def key_callback(window: ptr[glfw.GLFWwindow], key: int, scancode: int, action: 
         glfw.set_window_should_close(window, glfw.TRUE)
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+def main() -> int:
     if glfw.init() == 0:
         return 1
     defer glfw.terminate()
@@ -259,7 +212,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
 
     let window = glfw.create_window(window_width, window_height, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         return 1
     defer glfw.destroy_window(window)
 
@@ -274,13 +227,8 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     defer gl.delete_program(shader_program)
 
     gl.use_program(shader_program)
-    var project_name = zero[const_ptr[gl.GLchar]]
-    var modelview_name = zero[const_ptr[gl.GLchar]]
-    unsafe:
-        project_name = const_ptr[gl.GLchar]<-c"project"
-        modelview_name = const_ptr[gl.GLchar]<-c"modelview"
-    let uloc_project = gl.get_uniform_location(shader_program, project_name)
-    let uloc_modelview = gl.get_uniform_location(shader_program, modelview_name)
+    let uloc_project = gl_util.uniform_location(shader_program, c"project")
+    let uloc_modelview = gl_util.uniform_location(shader_program, c"modelview")
 
     var projection_matrix = mat4_identity()
     var modelview_matrix = mat4_identity()
@@ -290,12 +238,12 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     projection_matrix[10] = (z_far + z_near) / (z_near - z_far)
     projection_matrix[11] = -1.0
     projection_matrix[14] = 2.0 * (z_far * z_near) / (z_near - z_far)
-    gl.uniform_matrix_4fv(uloc_project, 1, ubyte<-gl.FALSE, const_ptr_of(projection_matrix[0]))
+    gl_util.uniform_matrix_4(uloc_project, ubyte<-gl.FALSE, projection_matrix)
 
     modelview_matrix[12] = -5.0
     modelview_matrix[13] = -5.0
     modelview_matrix[14] = -20.0
-    gl.uniform_matrix_4fv(uloc_modelview, 1, ubyte<-gl.FALSE, const_ptr_of(modelview_matrix[0]))
+    gl_util.uniform_matrix_4(uloc_modelview, ubyte<-gl.FALSE, modelview_matrix)
 
     init_map()
     make_mesh(shader_program)

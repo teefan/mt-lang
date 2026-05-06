@@ -14,37 +14,39 @@ module MilkTea
 
     module_function
 
-    def library
-      @library ||= VendoredCLibrary::Archive.new(
+    def library(root: MilkTea.root)
+      resolved_root = Pathname.new(File.expand_path(root.to_s))
+      @libraries ||= {}
+      @libraries[resolved_root.to_s] ||= VendoredCLibrary::Archive.new(
         name: "cjson",
-        source_root: source_root,
-        build_root: build_root,
+        source_root: source_root(root: resolved_root),
+        build_root: build_root(root: resolved_root),
         archive_name: "libcjson.a",
         sources: SOURCES,
-        include_roots: [source_root],
+        include_roots: [source_root(root: resolved_root)],
         system_link_flags: SYSTEM_LINK_FLAGS,
         cc_env_var: "CJSON_CC",
       )
     end
 
-    def source_root
-      MilkTea.root.join("third_party/cjson-upstream")
+    def source_root(root: MilkTea.root)
+      Pathname.new(File.expand_path(root.to_s)).join("third_party/cjson-upstream")
     end
 
-    def build_root
-      MilkTea.root.join("tmp/vendored-cjson")
+    def build_root(root: MilkTea.root)
+      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-cjson")
     end
 
-    def archive_path
-      build_root.join("libcjson.a")
+    def archive_path(root: MilkTea.root)
+      build_root(root:).join("libcjson.a")
     end
 
-    def link_flags
-      library.link_flags
+    def link_flags(root: MilkTea.root)
+      library(root:).link_flags
     end
 
-    def prepare!(**kwargs)
-      library.prepare!(**kwargs)
+    def prepare!(root: MilkTea.root, **kwargs)
+      library(root:).prepare!(**kwargs)
     end
   end
 end

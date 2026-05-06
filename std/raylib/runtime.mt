@@ -1,8 +1,6 @@
 module std.raylib.runtime
 
-import std.c.libc as libc
+import std.libc as libc
 
-
-pub def env_flag(name: cstr) -> bool:
-    let value: ptr[char]? = libc.getenv(name)
-    return value != null
+pub def env_flag(name: str) -> bool:
+    return libc.get_env(name) != null

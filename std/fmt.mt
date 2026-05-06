@@ -40,8 +40,7 @@ def append_formatted_float(output: ref[string.String], format: cstr, number: dou
     if written < 0 or ptr_uint<-written >= float_buffer_capacity:
         panic("fmt could not format float")
 
-    unsafe:
-        append_cstr(output, cstr<-ptr_of(buffer[0]))
+    output.append(text_ops.chars_as_str(ptr_of(buffer[0])))
     return
 
 
@@ -61,8 +60,7 @@ pub def append_double_precision(output: ref[string.String], number: double, prec
     if written < 0 or ptr_uint<-written >= float_buffer_capacity:
         panic("fmt could not format float with precision")
 
-    unsafe:
-        append_cstr(output, cstr<-ptr_of(buffer[0]))
+    output.append(text_ops.chars_as_str(ptr_of(buffer[0])))
     return
 
 

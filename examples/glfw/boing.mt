@@ -187,14 +187,14 @@ def key_callback(window: ptr[glfw.GLFWwindow], key: int, scancode: int, action: 
         return
 
     if ((key == glfw.GLFW_KEY_ENTER and mods == glfw.GLFW_MOD_ALT) or (key == glfw.GLFW_KEY_F11 and mods == glfw.GLFW_MOD_ALT)):
-        if glfw.glfwGetWindowMonitor(window) != zero[ptr[glfw.GLFWmonitor]]:
+        if glfw.glfwGetWindowMonitor(window) != null:
             glfw.glfwSetWindowMonitor(window, zero[ptr[glfw.GLFWmonitor]], windowed_xpos, windowed_ypos, windowed_width, windowed_height, 0)
             return
 
         let monitor = glfw.glfwGetPrimaryMonitor()
-        if monitor != zero[ptr[glfw.GLFWmonitor]]:
+        if monitor != null:
             let mode_ptr = glfw.glfwGetVideoMode(monitor)
-            if mode_ptr != zero[const_ptr[glfw.GLFWvidmode]]:
+            if mode_ptr != null:
                 var mode = zero[glfw.GLFWvidmode]
                 unsafe:
                     mode = read(mode_ptr)
@@ -393,7 +393,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     defer glfw.glfwTerminate()
 
     let window = glfw.glfwCreateWindow(window_width, window_height, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         return 1
     defer glfw.glfwDestroyWindow(window)
 

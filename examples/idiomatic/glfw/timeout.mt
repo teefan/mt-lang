@@ -2,8 +2,8 @@ module examples.idiomatic.glfw.timeout
 
 import std.glfw as glfw
 import std.gl as gl
-import std.c.libc as libc
-import std.c.libm as math
+import std.libc as libc
+import std.libm as math
 
 const window_width: int = 640
 const window_height: int = 480
@@ -34,7 +34,7 @@ def nrand() -> float:
     return float<-libc.rand() / float<-libc.RAND_MAX
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+def main() -> int:
     glfw.set_error_callback(error_callback)
 
     if glfw.init() == 0:
@@ -44,7 +44,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     libc.srand(uint<-glfw.get_timer_value())
 
     let window = glfw.create_window(window_width, window_height, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
-    if window == zero[ptr[glfw.GLFWwindow]]:
+    if window == null:
         return 1
     defer glfw.destroy_window(window)
 

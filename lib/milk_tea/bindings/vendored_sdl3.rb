@@ -3,6 +3,7 @@
 module MilkTea
   module VendoredSDL3
     Error = VendoredCLibrary::Error
+    SOURCE_NAME = "sdl3"
 
     CONFIGURE_ARGS = %w[
       -DCMAKE_BUILD_TYPE=Release
@@ -16,54 +17,62 @@ module MilkTea
 
     module_function
 
-    def library
-      @library ||= VendoredCLibrary::CMake.new(
+    def source(root: MilkTea.root)
+      UpstreamSources.default_sources(root:).find { |entry| entry.name == SOURCE_NAME } ||
+        raise(Error, "missing upstream source definition for #{SOURCE_NAME}")
+    end
+
+    def library(root: MilkTea.root)
+      resolved_root = Pathname.new(File.expand_path(root.to_s))
+      @libraries ||= {}
+      @libraries[resolved_root.to_s] ||= VendoredCLibrary::CMake.new(
         name: "sdl3",
-        source_root: source_root,
-        build_root: build_root,
-        install_root: install_root,
-        archive_path: archive_path,
-        include_roots: [include_root],
+        source_root: source_root(root: resolved_root),
+        build_root: build_root(root: resolved_root),
+        install_root: install_root(root: resolved_root),
+        archive_path: archive_path(root: resolved_root),
+        include_roots: [include_root(root: resolved_root)],
         configure_args: CONFIGURE_ARGS,
         pkg_config_name: "sdl3",
         cc_env_var: "SDL3_CC",
       )
     end
 
-    def source_root
-      MilkTea.root.join("third_party/sdl3-upstream")
+    def source_root(root: MilkTea.root)
+      source(root:).checkout_root
     end
 
-    def include_root
-      source_root.join("include")
+    def include_root(root: MilkTea.root)
+      source_root(root:).join("include")
     end
 
-    def header_root
-      include_root.join("SDL3")
+    def header_root(root: MilkTea.root)
+      include_root(root:).join("SDL3")
     end
 
-    def build_root
-      MilkTea.root.join("tmp/vendored-sdl3")
+    def build_root(root: MilkTea.root)
+      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-sdl3")
     end
 
-    def install_root
-      MilkTea.root.join("tmp/vendored-sdl3-prefix")
+    def install_root(root: MilkTea.root)
+      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-sdl3-prefix")
     end
 
-    def archive_path
-      install_root.join("lib/libSDL3.a")
+    def archive_path(root: MilkTea.root)
+      install_root(root:).join("lib/libSDL3.a")
     end
 
-    def include_flags
-      library.include_flags
+    def include_flags(root: MilkTea.root)
+      library(root:).include_flags
     end
 
-    def link_flags
-      library.link_flags
+    def link_flags(root: MilkTea.root)
+      library(root:).link_flags
     end
 
-    def prepare!(**kwargs)
-      library.prepare!(**kwargs)
+    def prepare!(root: MilkTea.root, **kwargs)
+      source(root:).bootstrap!
+      library(root:).prepare!(**kwargs)
     end
   end
 end

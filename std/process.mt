@@ -1,7 +1,6 @@
 module std.process
 
-import std.c.libc as libc
-import std.mem.arena as arena
+import std.libc as libc
 import std.option as option
 import std.str as text_ops
 
@@ -20,21 +19,12 @@ pub def arg(argc: int, argv: ptr[cstr], index: ptr_uint) -> option.Option[str]:
         return option.some[str](text_ops.cstr_as_str(read(argv + index)))
 
 
-pub def env(name: str, scratch: ref[arena.Arena]) -> option.Option[str]:
-    let mark = scratch.mark()
-    defer scratch.reset(mark)
-
-    let c_name = scratch.to_cstr(name)
-    let value_ptr: ptr[char]? = libc.getenv(c_name)
-    if value_ptr == null:
-        return option.none[str]()
-
-    unsafe:
-        return option.some[str](text_ops.cstr_as_str(cstr<-value_ptr))
+pub def env(name: str) -> option.Option[str]:
+    return text_ops.nullable_cstr_as_str(libc.get_env(name))
 
 
-pub def env_exists(name: str, scratch: ref[arena.Arena]) -> bool:
-    return option.is_some[str](env(name, scratch))
+pub def env_exists(name: str) -> bool:
+    return option.is_some[str](env(name))
 
 
 pub def exit(status: int) -> void:
