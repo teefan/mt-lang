@@ -2,6 +2,7 @@ module examples.raylib.models.models_animation_timing
 
 import std.c.raygui as gui
 import std.c.raylib as rl
+import std.raylib.runtime as rlr
 
 const screen_width: int = 800
 const screen_height: int = 450
@@ -52,7 +53,7 @@ def main() -> int:
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 
     var anim_count = 0
-    let anims = rl.LoadModelAnimations(model_path, ptr_of(anim_count))
+    let anims = rlr.require_ptr[rl.ModelAnimation](rl.LoadModelAnimations(model_path, ptr_of(anim_count)), "could not load model animations")
     defer rl.UnloadModelAnimations(anims, anim_count)
 
     var anim_index = 10

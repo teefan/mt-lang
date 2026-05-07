@@ -1,6 +1,7 @@
 module examples.raylib.textures.textures_image_processing
 
 import std.c.raylib as rl
+import std.raylib.runtime as rlr
 
 const num_processes: int = 9
 const process_none: int = 0
@@ -98,7 +99,7 @@ def main() -> int:
             elif current_process == process_flip_horizontal:
                 rl.ImageFlipHorizontal(ptr_of(image_copy))
 
-            let pixels = rl.LoadImageColors(image_copy)
+            let pixels = rlr.require_ptr[rl.Color](rl.LoadImageColors(image_copy), "could not load image colors")
             rl.UpdateTexture(texture, pixels)
             rl.UnloadImageColors(pixels)
 

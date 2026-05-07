@@ -22,6 +22,14 @@ pub def run_app_no_args(argc: int, argv: ptr[ptr[char]], main_function: fn() -> 
     return sdl.run_app(argc, argv, run_app_no_args_trampoline)
 
 
+pub def require_ptr[T](value: ptr[T]?, message: str) -> ptr[T]:
+    if value == null:
+        panic(message)
+
+    unsafe:
+        return ptr[T]<-value
+
+
 pub def free_chars(text_ptr: ptr[char]?) -> void:
     if text_ptr != null:
         unsafe:

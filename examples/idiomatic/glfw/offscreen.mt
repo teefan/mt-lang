@@ -64,7 +64,7 @@ def main() -> int:
     glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 0)
     glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
 
-    let window = glfw.create_window(window_width, window_height, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
+    let window = glfw.create_window(window_width, window_height, window_title, null, null)
     if window == null:
         return 1
     defer glfw.destroy_window(window)

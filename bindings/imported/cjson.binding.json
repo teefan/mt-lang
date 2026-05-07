@@ -73,7 +73,7 @@
           { "name": "name", "type": "str", "boundary_type": "cstr" },
           { "name": "string", "type": "str", "boundary_type": "cstr" }
         ],
-        "return_type": "ptr[JSON]"
+        "return_type": "ptr[JSON]?"
       },
       {
         "raw": "cJSON_AddRawToObject",
@@ -83,7 +83,7 @@
           { "name": "name", "type": "str", "boundary_type": "cstr" },
           { "name": "raw", "type": "str", "boundary_type": "cstr" }
         ],
-        "return_type": "ptr[JSON]"
+        "return_type": "ptr[JSON]?"
       }
     ]
   }

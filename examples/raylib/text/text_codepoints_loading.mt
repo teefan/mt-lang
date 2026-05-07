@@ -2,6 +2,7 @@ module examples.raylib.text.text_codepoints_loading
 
 import std.c.raylib as rl
 import std.mem.heap as heap
+import std.raylib.runtime as rlr
 
 const screen_width: int = 800
 const screen_height: int = 450
@@ -43,7 +44,7 @@ def main() -> int:
     defer rl.CloseWindow()
 
     var codepoint_count = 0
-    let codepoints = rl.LoadCodepoints(text, ptr_of(codepoint_count))
+    let codepoints = rlr.require_ptr[int](rl.LoadCodepoints(text, ptr_of(codepoint_count)), "could not load codepoints")
     defer rl.UnloadCodepoints(codepoints)
 
     var codepoints_no_dups_count = 0

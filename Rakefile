@@ -78,7 +78,9 @@ namespace :bindgen do
     desc "Regenerate #{binding.binding_path} from the installed #{binding.header_label}"
     task binding.name.to_sym do
       header_path = binding.write!
+      report_path = binding.write_nullable_policy_report!(env: ENV, header_path: header_path)
       puts "generated #{header_path} -> #{binding.binding_path}"
+      puts "nullable report #{header_path} -> #{report_path}"
     end
 
     namespace :check do

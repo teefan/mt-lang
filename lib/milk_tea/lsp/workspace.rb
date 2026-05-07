@@ -11,16 +11,26 @@ module MilkTea
     # Manages open documents, AST cache, token cache, semantic analysis cache, and symbol index.
     # Supports incremental document edits and workspace-wide indexing.
     class Workspace
+      DOCUMENT_SOURCES = %w[active-editor visible-editor background-document].freeze
+
       # Token types that introduce a named definition, in order of precedence
       DEFINITION_KEYWORDS = %i[def struct union enum flags variant type const var let methods opaque].freeze
       DOC_COMMENT_PREFIX = '##'
       DEFINITION_LINE_PREFIX = /^(?:\s)*(?:(?:pub|foreign)\s+)*(?:def|struct|union|enum|flags|variant|type|const|var|let|methods|opaque)\s+/m
       DEFINITION_NAME_REGEX = /^\s*(?:(?:pub|foreign)\s+)*(?:def|struct|union|enum|flags|variant|type|const|var|let|methods|opaque)\s+([A-Za-z_][A-Za-z0-9_]*)\b/
+      IMPORT_HEAVY_ALWAYS_IMPORT_COUNT = 4
+      IMPORT_HEAVY_IMPORT_COUNT = 2
+      IMPORT_HEAVY_BYTES_THRESHOLD = 1_500
+      IMPORT_HEAVY_LINES_THRESHOLD = 50
+      SINGLE_IMPORT_HEAVY_BYTES_THRESHOLD = 6_000
+      SINGLE_IMPORT_HEAVY_LINES_THRESHOLD = 150
 
-      def initialize(error_output: nil)
+      def initialize(error_output: nil, enable_background_analysis_warmup: true)
         @error_output = error_output
+        @enable_background_analysis_warmup = enable_background_analysis_warmup
         @open_documents = {}   # uri -> content String from didOpen/didChange
         @indexed_documents = {} # uri -> content String loaded from disk index
+        @document_sources = {} # uri -> source string from the editor client
         @tokens_cache = {}   # uri -> [Token]
         @ast_cache = {}      # uri -> AST::SourceFile (nil on parse failure)
         @analysis_cache = {} # uri -> Sema::Analysis (nil on analysis failure)
@@ -53,6 +63,31 @@ module MilkTea
         @shared_module_cache
       end
 
+      def background_analysis_warmup_enabled?
+        @enable_background_analysis_warmup
+      end
+
+      def set_document_source(uri, source)
+        normalized = source.to_s
+        raise ArgumentError, "invalid document source #{source.inspect}" unless DOCUMENT_SOURCES.include?(normalized)
+
+        previous = @document_sources[uri]
+        @document_sources[uri] = normalized
+        previous
+      end
+
+      def document_source(uri)
+        @document_sources[uri]
+      end
+
+      def background_document?(uri)
+        @document_sources[uri] == 'background-document'
+      end
+
+      def analysis_skip_reason(uri, content)
+        eager_analysis_skip_reason(uri, content).first
+      end
+
       # Return cached diagnostics for +uri+, re-collecting only when content changes.
       def collect_diagnostics(uri)
         content = get_content(uri)
@@ -60,7 +95,11 @@ module MilkTea
         entry = @diagnostics_cache[uri]
         return entry[:diagnostics] if entry && entry[:content_hash] == hash
 
-        diagnostics = Diagnostics.collect(uri, content, shared_module_cache: @shared_module_cache)
+        result = Diagnostics.collect(uri, content, shared_module_cache: @shared_module_cache)
+        diagnostics = result[:diagnostics]
+        analysis = result[:analysis]
+        @analysis_cache[uri] = analysis if analysis
+        @last_good_analysis_cache[uri] = analysis if analysis
         @diagnostics_cache[uri] = { content_hash: hash, diagnostics: diagnostics }
         diagnostics
       rescue StandardError => e
@@ -73,13 +112,14 @@ module MilkTea
       def open_document(uri, content)
         @open_documents[uri] = content
         invalidate_cache(uri)
-        enqueue_definition_warmup(uri)
+        enqueue_definition_warmup(uri) unless background_document?(uri)
         warm_document_analysis(uri, content)
       end
 
       def close_document(uri)
         # Keep indexed snapshot available for workspace-level features.
         @open_documents.delete(uri)
+        @document_sources.delete(uri)
         @last_good_analysis_cache.delete(uri)
         invalidate_cache(uri)
       end
@@ -87,7 +127,7 @@ module MilkTea
       def update_document(uri, content)
         @open_documents[uri] = content
         invalidate_cache(uri)
-        enqueue_definition_warmup(uri)
+        enqueue_definition_warmup(uri) unless background_document?(uri)
         warm_document_analysis(uri, content)
       end
 
@@ -111,7 +151,7 @@ module MilkTea
 
         @open_documents[uri] = new_content
         invalidate_cache(uri)
-        enqueue_definition_warmup(uri)
+        enqueue_definition_warmup(uri) unless background_document?(uri)
       end
 
       # Index all .mt files under root_uri so they are available for workspace-wide queries.
@@ -126,10 +166,7 @@ module MilkTea
           rescue StandardError
             nil
           end
-          enqueue_definition_warmup(file_uri)
         end
-
-        start_definition_warmup
       end
 
       def shutdown
@@ -485,19 +522,34 @@ module MilkTea
         %w[std-path import-heavy].include?(skip_reason)
       end
 
+      def ast_for_content(uri, content)
+        return get_ast(uri) if get_content(uri) == content
+
+        MilkTea::Parser.parse(content, path: uri)
+      rescue StandardError
+        nil
+      end
+
       def eager_analysis_skip_reason(uri, content)
+        return ['background-document', 0] if background_document?(uri)
+
         large_reason = large_document_content_reason(content)
         return [large_reason, 0] if large_reason
 
         path = uri_to_path(uri)
         return [nil, 0] unless path && File.file?(path)
 
-        ast = get_ast(uri)
+        ast = ast_for_content(uri, content)
         import_count = ast.respond_to?(:imports) ? ast.imports.length : 0
+        line_count = content.count("\n") + 1
 
         return ['std-path', import_count] if path.include?('/std/')
 
-        import_heavy = import_count >= 2 && (content.bytesize >= 4_000 || content.count("\n") >= 120)
+        import_heavy = import_count >= IMPORT_HEAVY_ALWAYS_IMPORT_COUNT ||
+                       (import_count >= IMPORT_HEAVY_IMPORT_COUNT &&
+                        (content.bytesize >= IMPORT_HEAVY_BYTES_THRESHOLD || line_count >= IMPORT_HEAVY_LINES_THRESHOLD)) ||
+                       (import_count >= 1 &&
+                        (content.bytesize >= SINGLE_IMPORT_HEAVY_BYTES_THRESHOLD || line_count >= SINGLE_IMPORT_HEAVY_LINES_THRESHOLD))
         return ['import-heavy', import_count] if import_heavy
 
         [nil, import_count]
@@ -519,7 +571,7 @@ module MilkTea
         stats[:import_count] = import_count
         if skip_reason
           stats[:skip_reason] = skip_reason
-          enqueue_analysis_warmup(uri, content) if background_analysis_skip_reason?(skip_reason)
+          enqueue_analysis_warmup(uri, content) if @enable_background_analysis_warmup && background_analysis_skip_reason?(skip_reason)
           return stats
         end
 
@@ -538,6 +590,7 @@ module MilkTea
       end
 
       def start_analysis_warmup
+        return unless @enable_background_analysis_warmup
         return if @analysis_warmup_thread&.alive?
 
         @analysis_warmup_thread = Thread.new do
@@ -555,6 +608,7 @@ module MilkTea
       end
 
       def stop_analysis_warmup
+        return unless @enable_background_analysis_warmup
         worker = @analysis_warmup_thread
         return unless worker
 
@@ -566,6 +620,7 @@ module MilkTea
       end
 
       def enqueue_analysis_warmup(uri, content = nil)
+        return unless @enable_background_analysis_warmup
         return if uri.nil?
 
         start_analysis_warmup unless @analysis_warmup_thread&.alive?

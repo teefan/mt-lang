@@ -10,6 +10,7 @@ module MilkTea
   module Bindgen
     MACRO_CONST_PREFIX = "__mt_bindgen_macro_"
     QUALIFIERS = %w[const volatile restrict].freeze
+    NULLABILITY_QUALIFIERS = %w[_Nullable _Nonnull _Null_unspecified _Nullable_result].freeze
     NON_VALUE_MACRO_TOKENS = %w[
       extern static inline typedef struct union enum do if else for while return sizeof
       __attribute__ __attribute __declspec
@@ -49,6 +50,28 @@ module MilkTea
     }.freeze
 
     def self.generate(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, allow_static_inline_functions: false)
+      generate_with_report(
+        module_name:,
+        header_path:,
+        tracked_header_paths:,
+        tracked_header_prefixes:,
+        declaration_name_prefixes:,
+        link_libraries:,
+        include_directives:,
+        bindgen_defines:,
+        bindgen_include_directives:,
+        module_imports:,
+        clang:,
+        clang_args:,
+        type_overrides:,
+        function_param_type_overrides:,
+        function_return_type_overrides:,
+        field_type_overrides:,
+        allow_static_inline_functions:,
+      ).fetch(:source)
+    end
+
+    def self.generate_with_report(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, allow_static_inline_functions: false)
       Generator.new(
         module_name:,
         header_path:,
@@ -67,7 +90,7 @@ module MilkTea
         function_return_type_overrides:,
         field_type_overrides:,
         allow_static_inline_functions:,
-      ).generate
+      ).generate_with_report
     end
 
     class Generator
@@ -93,12 +116,17 @@ module MilkTea
         @enum_aliases = {}
         @record_visible_names = {}
         @enum_visible_names = {}
+        @referenceable_record_declarations = {}
+        @referenceable_record_declarations_by_id = {}
         @aggregate_declarations = {}
         @synthetic_declarations = []
+        @manual_nullable_param_overrides = []
+        @manual_nullable_return_overrides = []
       end
 
       def generate
         ast = dump_ast
+        index_referenceable_record_declarations(ast)
         top_level_nodes = extract_top_level_header_nodes(ast)
         @visible_typedef_names = top_level_nodes.filter_map do |node|
           node["name"] if node["kind"] == "TypedefDecl" && allowed_declaration_name?(node["name"])
@@ -122,7 +150,34 @@ module MilkTea
         format_generated_source(emit_module(declarations))
       end
 
+      def generate_with_report
+        source = generate
+        {
+          source:,
+          nullable_policy_report: nullable_policy_report,
+        }
+      end
+
       private
+
+      def nullable_policy_report
+        parameter_entries = @manual_nullable_param_overrides.sort_by { |entry| [entry[:function], entry[:parameter]] }
+        return_entries = @manual_nullable_return_overrides.sort_by { |entry| entry[:function] }
+
+        {
+          module_name: @module_name,
+          header_path: @header_path,
+          summary: {
+            parameters: parameter_entries.length,
+            return_types: return_entries.length,
+            total: parameter_entries.length + return_entries.length,
+          },
+          manual_nullable_policy: {
+            parameters: parameter_entries,
+            return_types: return_entries,
+          },
+        }
+      end
 
       def dump_ast
         Tempfile.create(["milk-tea-bindgen", ".c"]) do |translation_unit|
@@ -181,9 +236,41 @@ module MilkTea
       end
 
       def extract_top_level_header_nodes(ast)
-        Array(ast["inner"]).select do |node|
-          node.is_a?(Hash) && interesting_top_level_kind?(node["kind"]) && node_from_header?(node)
+        seen_ids = {}
+
+        Array(ast["inner"]).flat_map do |node|
+          next [] unless node.is_a?(Hash)
+
+          nodes = []
+          nodes << node if interesting_top_level_kind?(node["kind"]) && node_from_header?(node)
+          nodes.concat(typedef_owned_tag_nodes(node)) if node["kind"] == "TypedefDecl"
+          nodes
+        end.filter do |node|
+          node_id = node["id"] || node.object_id
+          next false if seen_ids.key?(node_id)
+
+          seen_ids[node_id] = true
         end
+      end
+
+      def typedef_owned_tag_nodes(node)
+        Array(node["inner"]).flat_map do |child|
+          typedef_owned_tag_nodes_from(child)
+        end
+      end
+
+      def typedef_owned_tag_nodes_from(node)
+        return [] unless node.is_a?(Hash)
+
+        nodes = []
+        if %w[RecordDecl EnumDecl].include?(node["kind"]) && node_from_header?(node)
+          nodes << node
+        end
+
+        Array(node["inner"]).each do |child|
+          nodes.concat(typedef_owned_tag_nodes_from(child))
+        end
+        nodes
       end
 
       def interesting_top_level_kind?(kind)
@@ -257,6 +344,30 @@ module MilkTea
             @enum_aliases[target[:id]] = node["name"]
           end
         end
+      end
+
+      def index_referenceable_record_declarations(ast)
+        indexed = {}
+        indexed_by_id = {}
+        queue = Array(ast["inner"]).dup
+
+        until queue.empty?
+          node = queue.shift
+          next unless node.is_a?(Hash)
+
+          if node["kind"] == "RecordDecl" && %w[struct union].include?(node["tagUsed"]) && node["name"]
+            existing = indexed[node["name"]]
+            if existing.nil? || (!record_complete_definition?(existing) && record_complete_definition?(node))
+              indexed[node["name"]] = node
+            end
+            indexed_by_id[node["id"]] = node if node["id"]
+          end
+
+          queue.concat(Array(node["inner"]))
+        end
+
+        @referenceable_record_declarations = indexed
+        @referenceable_record_declarations_by_id = indexed_by_id
       end
 
       def macro_probe_declarations
@@ -427,19 +538,32 @@ module MilkTea
         selected = {}
 
         nodes.each_with_index do |node, index|
-          next unless node["kind"] == "RecordDecl"
-          next unless %w[struct union].include?(node["tagUsed"])
+          record_node, visible_name = case node["kind"]
+          when "RecordDecl"
+            [node, @record_aliases[node["id"]] || node["name"]]
+          when "TypedefDecl"
+            target = typedef_target(node)
+            next unless target&.fetch(:kind, nil) == "RecordDecl"
 
-          visible_name = @record_aliases[node["id"]] || node["name"]
+            record_node = @referenceable_record_declarations_by_id[target[:id]] || @referenceable_record_declarations[target[:name]]
+            next unless record_node
+
+            [record_node, node["name"]]
+          else
+            next
+          end
+
+          next unless %w[struct union].include?(record_node["tagUsed"])
+
           next unless visible_name
           next unless allowed_declaration_name?(visible_name)
 
           candidate = {
             index:,
-            kind: node["completeDefinition"] ? node["tagUsed"] : "opaque",
+            kind: record_complete_definition?(record_node) ? record_node["tagUsed"] : "opaque",
             name: visible_name,
-            c_name: opaque_c_name(node),
-            node:,
+            c_name: opaque_c_name(record_node),
+            node: record_node,
           }
 
           existing = selected[visible_name]
@@ -456,6 +580,12 @@ module MilkTea
           @aggregate_declarations[declaration[:name]] = declaration[:node] if %w[struct union].include?(declaration[:kind])
         end
         selected.values
+      end
+
+      def record_complete_definition?(node)
+        return true if node["completeDefinition"]
+
+        Array(node["inner"]).any? { |child| child["kind"] == "FieldDecl" }
       end
 
       def select_enum_declarations(nodes)
@@ -552,13 +682,17 @@ module MilkTea
 
           params = Array(node["inner"]).select { |child| child["kind"] == "ParmVarDecl" }.each_with_index.map do |param, param_index|
             param_name = param["name"] || "arg#{param_index}"
+            override_type = function_param_type_override(node["name"], param_name)
+            record_nullable_param_override(node["name"], param_name, param, override_type) if override_type
             {
               name: param_name,
-              type: function_param_type_override(node["name"], param_name) || map_type_node(param, context: "parameter #{param_name} of #{node["name"]}"),
+              type: override_type || map_type_node(param, context: "parameter #{param_name} of #{node["name"]}"),
             }
           end
 
-          return_type = function_return_type_override(node["name"]) || map_c_type(function_return_type(node), context: "return type of #{node["name"]}")
+          override_return_type = function_return_type_override(node["name"])
+          record_nullable_return_override(node, override_return_type) if override_return_type
+          return_type = override_return_type || map_c_type(function_return_type(node), context: "return type of #{node["name"]}")
           declaration = {
             index:,
             kind: "function",
@@ -673,7 +807,10 @@ module MilkTea
       end
 
       def type_qual_type(node)
-        node.dig("type", "desugaredQualType") || node.dig("type", "qualType")
+        qual_type = node.dig("type", "qualType")
+        return qual_type if qual_type.to_s.match?(/_Nullable|_Nonnull|_Null_unspecified|_Nullable_result/)
+
+        node.dig("type", "desugaredQualType") || qual_type
       end
 
       def enum_kind(node)
@@ -1135,46 +1272,61 @@ module MilkTea
       def map_c_type(qual_type, context:)
         normalized = normalize_c_type(qual_type)
         raise BindgenError, "missing C type for #{context}" if normalized.empty?
-        return map_array_type(normalized, context:) if array_type?(normalized)
-        return map_function_pointer_type(normalized, context:) if function_pointer_type?(normalized)
+        normalized, nullability = extract_top_level_nullability(normalized)
+        mapped_type = if array_type?(normalized)
+                        map_array_type(normalized, context:)
+                      elsif function_pointer_type?(normalized)
+                        map_function_pointer_type(normalized, context:)
+                      else
+                        pointer_candidate = strip_pointer_suffix_qualifiers(normalized)
+                        if pointer_type?(pointer_candidate)
+                          if va_list_pointer?(pointer_candidate)
+                            synthesize_typedef_dependency("va_list")
+                            "va_list"
+                          elsif c_string_pointer?(pointer_candidate)
+                            "cstr"
+                          else
+                            pointee = pointer_candidate.sub(/\s*\*\z/, "")
+                            pointer_name = top_level_const_qualified?(pointee) ? "const_ptr" : "ptr"
+                            "#{pointer_name}[#{map_c_type(pointee, context:)}]"
+                          end
+                        else
+                          unqualified = strip_qualifiers(normalized)
+                          if unqualified == "__va_list_tag" || unqualified == "struct __va_list_tag"
+                            synthesize_typedef_dependency("__va_list_tag")
+                            "__va_list_tag"
+                          elsif standard_typedef_primitive(unqualified)
+                            standard_typedef_primitive(unqualified)
+                          elsif PRIMITIVE_TYPE_MAP.key?(unqualified)
+                            PRIMITIVE_TYPE_MAP.fetch(unqualified)
+                          elsif @type_overrides.key?(unqualified)
+                            @type_overrides.fetch(unqualified)
+                          elsif unqualified.start_with?("long") || unqualified.start_with?("unsigned long") || unqualified.start_with?("signed long")
+                            map_long_type(unqualified, context:)
+                          elsif unqualified.start_with?("struct ") || unqualified.start_with?("union ") || unqualified.start_with?("enum ")
+                            tag_name = unqualified.split.last
+                            @type_overrides.fetch(tag_name) do
+                              if unqualified.start_with?("struct ")
+                                record_name_for(unqualified)
+                              elsif unqualified.start_with?("union ")
+                                record_name_for(unqualified)
+                              else
+                                enum_name_for(unqualified)
+                              end
+                            end
+                          elsif unqualified.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
+                            if known_generated_type_name?(unqualified, @visible_typedef_names)
+                              unqualified
+                            else
+                              raise BindgenError, "unknown referenced C type #{unqualified.inspect} for #{context}"
+                            end
+                          else
+                            raise BindgenError, "unsupported C type #{qual_type.inspect} for #{context}"
+                          end
+                        end
+                      end
 
-        pointer_candidate = strip_pointer_suffix_qualifiers(normalized)
-        if pointer_type?(pointer_candidate)
-          if va_list_pointer?(pointer_candidate)
-            synthesize_typedef_dependency("va_list")
-            return "va_list"
-          end
-
-          return "cstr" if c_string_pointer?(pointer_candidate)
-
-          pointee = pointer_candidate.sub(/\s*\*\z/, "")
-          pointer_name = top_level_const_qualified?(pointee) ? "const_ptr" : "ptr"
-          return "#{pointer_name}[#{map_c_type(pointee, context:)}]"
-        end
-
-        unqualified = strip_qualifiers(normalized)
-        if unqualified == "__va_list_tag" || unqualified == "struct __va_list_tag"
-          synthesize_typedef_dependency("__va_list_tag")
-          return "__va_list_tag"
-        end
-        return standard_typedef_primitive(unqualified) if standard_typedef_primitive(unqualified)
-        return PRIMITIVE_TYPE_MAP.fetch(unqualified) if PRIMITIVE_TYPE_MAP.key?(unqualified)
-        return @type_overrides.fetch(unqualified) if @type_overrides.key?(unqualified)
-        return map_long_type(unqualified, context:) if unqualified.start_with?("long") || unqualified.start_with?("unsigned long") || unqualified.start_with?("signed long")
-        if unqualified.start_with?("struct ") || unqualified.start_with?("union ") || unqualified.start_with?("enum ")
-          tag_name = unqualified.split.last
-          return @type_overrides.fetch(tag_name) if @type_overrides.key?(tag_name)
-        end
-        return record_name_for(unqualified) if unqualified.start_with?("struct ")
-        return record_name_for(unqualified) if unqualified.start_with?("union ")
-        return enum_name_for(unqualified) if unqualified.start_with?("enum ")
-        if unqualified.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
-          return unqualified if known_generated_type_name?(unqualified, @visible_typedef_names)
-
-          raise BindgenError, "unknown referenced C type #{unqualified.inspect} for #{context}"
-        end
-
-        raise BindgenError, "unsupported C type #{qual_type.inspect} for #{context}"
+        apply_nullability(mapped_type, nullability)
       end
 
       def array_type?(qual_type)
@@ -1196,17 +1348,17 @@ module MilkTea
       end
 
       def function_pointer_type?(qual_type)
-        qual_type.match?(/\A.+\(\s*\*\s*\)\s*\(.*\)\z/)
+        qual_type.match?(/\A.+\(\s*\*\s*(?:_Nullable|_Nonnull|_Null_unspecified|_Nullable_result)?\s*\)\s*\(.*\)\z/)
       end
 
       def map_function_pointer_typedef(node, context:)
         function_proto = extract_function_proto(node)
         raise BindgenError, "unsupported function pointer type #{node.dig("type", "qualType").inspect} for #{context}" unless function_proto
 
-        map_function_proto_node(function_proto, context:)
+        map_function_proto_node(function_proto, context:, nullability: function_pointer_surface_nullability(type_qual_type(node)))
       end
 
-      def map_function_proto_node(function_proto, context:)
+      def map_function_proto_node(function_proto, context:, nullability: nil)
         inner_types = Array(function_proto["inner"])
         raise BindgenError, "unsupported function pointer type #{function_proto.inspect} for #{context}" if inner_types.empty?
 
@@ -1219,15 +1371,15 @@ module MilkTea
                      "arg#{index}: #{map_type_node(param_type, context: "parameter #{index} of #{context}")}"
                    end
                  end
-        "fn(#{params.join(', ')}) -> #{return_type}"
+        apply_nullability("fn(#{params.join(', ')}) -> #{return_type}", nullability)
       end
 
       def map_function_pointer_type(qual_type, context:)
-        match = qual_type.match(/\A(.+?)\s*\(\s*\*\s*\)\s*\((.*)\)\z/)
+        match = qual_type.match(/\A(.+?)\s*\(\s*\*\s*((?:_Nullable|_Nonnull|_Null_unspecified|_Nullable_result)?)\s*\)\s*\((.*)\)\z/)
         raise BindgenError, "unsupported function pointer type #{qual_type.inspect} for #{context}" unless match
 
         return_type = map_c_type(match[1], context: "return type of #{context}")
-        param_list = split_top_level_csv(match[2])
+        param_list = split_top_level_csv(match[3])
         params = if param_list.empty? || (param_list.length == 1 && strip_qualifiers(param_list.first) == "void")
                    []
                  else
@@ -1235,7 +1387,7 @@ module MilkTea
                      "arg#{index}: #{map_c_type(param_type, context: "parameter #{index} of #{context}")}"
                    end
                  end
-        "fn(#{params.join(', ')}) -> #{return_type}"
+        apply_nullability("fn(#{params.join(', ')}) -> #{return_type}", nullability_for_token(match[2]))
       end
 
       def split_top_level_csv(source)
@@ -1285,7 +1437,7 @@ module MilkTea
         alias_name = typedef_name_from_type_node(node)
         return @type_overrides.fetch(alias_name) if alias_name && @type_overrides.key?(alias_name)
 
-        if alias_name && preserve_typedef_name?(alias_name)
+        if alias_name && preserve_typedef_name?(alias_name) && direct_typedef_surface?(node, alias_name)
           synthesize_typedef_dependency(alias_name)
           return alias_name
         end
@@ -1293,7 +1445,7 @@ module MilkTea
         qual_type = type_qual_type(node)
         if function_pointer_type?(qual_type)
           function_proto = extract_function_proto(node)
-          return map_function_proto_node(function_proto, context:) if function_proto
+          return map_function_proto_node(function_proto, context:, nullability: function_pointer_surface_nullability(qual_type)) if function_proto
         end
 
         map_c_type(qual_type, context:)
@@ -1301,6 +1453,11 @@ module MilkTea
 
       def preserve_typedef_name?(name)
         name == "va_list" || @visible_typedef_names.include?(name)
+      end
+
+      def direct_typedef_surface?(node, alias_name)
+        spelled_type = normalize_c_type(node.dig("type", "qualType"))
+        strip_qualifiers(spelled_type) == alias_name
       end
 
       def unresolved_alias_target?(mapped_type, alias_names)
@@ -1370,6 +1527,87 @@ module MilkTea
 
       def normalize_c_type(qual_type)
         qual_type.to_s.gsub(/\s+/, " ").strip
+      end
+
+      def extract_top_level_nullability(qual_type)
+        result = qual_type
+        nullability = nil
+        qualifier_pattern = NULLABILITY_QUALIFIERS.join("|")
+
+        loop do
+          match = result.match(/\s*(#{qualifier_pattern})\z/)
+          break unless match
+
+          nullability ||= nullability_for_token(match[1])
+          result = result[0...match.begin(0)].rstrip
+        end
+
+        [result, nullability]
+      end
+
+      def function_pointer_surface_nullability(qual_type)
+        match = normalize_c_type(qual_type).match(/\(\s*\*\s*(_Nullable|_Nonnull|_Null_unspecified|_Nullable_result)?\s*\)\s*\(/)
+        nullability_for_token(match && match[1])
+      end
+
+      def nullability_for_token(token)
+        return :nullable if token == "_Nullable" || token == "_Nullable_result"
+        return :nonnull if token == "_Nonnull"
+        return :unspecified if token == "_Null_unspecified"
+
+        nil
+      end
+
+      def apply_nullability(mapped_type, nullability)
+        return mapped_type unless nullability == :nullable
+        return mapped_type if mapped_type.end_with?("?")
+
+        "#{mapped_type}?"
+      end
+
+      def nullable_policy_type?(type)
+        type.include?("?")
+      end
+
+      def record_nullable_param_override(function_name, param_name, param_node, override_type)
+        return unless nullable_policy_type?(override_type)
+
+        auto_type, auto_error = infer_bindgen_type do
+          map_type_node(param_node, context: "parameter #{param_name} of #{function_name}")
+        end
+        return if auto_error.nil? && auto_type == override_type
+
+        @manual_nullable_param_overrides << {
+          function: function_name,
+          parameter: param_name,
+          override_type: override_type,
+          auto_type: auto_type,
+          c_type: type_qual_type(param_node),
+          auto_error: auto_error,
+        }.compact
+      end
+
+      def record_nullable_return_override(node, override_type)
+        return unless nullable_policy_type?(override_type)
+
+        auto_type, auto_error = infer_bindgen_type do
+          map_c_type(function_return_type(node), context: "return type of #{node["name"]}")
+        end
+        return if auto_error.nil? && auto_type == override_type
+
+        @manual_nullable_return_overrides << {
+          function: node["name"],
+          override_type: override_type,
+          auto_type: auto_type,
+          c_type: function_return_type(node),
+          auto_error: auto_error,
+        }.compact
+      end
+
+      def infer_bindgen_type
+        [yield, nil]
+      rescue BindgenError => e
+        [nil, e.message]
       end
 
       def strip_pointer_suffix_qualifiers(qual_type)
@@ -1492,7 +1730,7 @@ module MilkTea
       end
 
       def record_name_for(unqualified)
-        synthesize_opaque_record_dependency(unqualified)
+        synthesize_record_dependency(unqualified)
         tag_name = unqualified.split.last
         @record_visible_names[tag_name] || tag_name
       end
@@ -1502,16 +1740,32 @@ module MilkTea
         @enum_visible_names[tag_name] || tag_name
       end
 
-      def synthesize_opaque_record_dependency(unqualified)
+      def synthesize_record_dependency(unqualified)
         kind, tag_name = unqualified.split(" ", 2)
         return unless %w[struct union].include?(kind)
         return if tag_name.nil? || tag_name.empty?
         return if @record_visible_names.key?(tag_name) || @record_visible_names.value?(tag_name)
-        return if @synthetic_declarations.any? { |declaration| declaration[:name] == tag_name }
+
+        record_node = @referenceable_record_declarations[tag_name]
+        visible_name = record_node ? (@record_aliases[record_node["id"]] || tag_name) : tag_name
+        return if @synthetic_declarations.any? { |declaration| declaration[:name] == visible_name }
+
+        @record_visible_names[tag_name] = visible_name
+        @record_visible_names[visible_name] = visible_name
+
+        if record_node && record_complete_definition?(record_node)
+          @synthetic_declarations << {
+            kind: record_node.fetch("tagUsed"),
+            name: visible_name,
+            node: record_node,
+          }
+          @aggregate_declarations[visible_name] = record_node
+          return
+        end
 
         @synthetic_declarations << {
           kind: "opaque",
-          name: tag_name,
+          name: visible_name,
           c_name: "#{kind} #{tag_name}",
         }
       end

@@ -7,7 +7,7 @@ extern module std.c.cjson:
         next: ptr[cJSON]
         prev: ptr[cJSON]
         child: ptr[cJSON]
-        kind: int
+        type_: int
         valuestring: ptr[char]
         valueint: int
         valuedouble: double
@@ -84,15 +84,15 @@ extern module std.c.cjson:
     extern def cJSON_Duplicate(item: const_ptr[cJSON], recurse: int) -> ptr[cJSON]
     extern def cJSON_Compare(a: const_ptr[cJSON], b: const_ptr[cJSON], case_sensitive: int) -> cJSON_bool
     extern def cJSON_Minify(json: ptr[char]) -> void
-    extern def cJSON_AddNullToObject(object: ptr[cJSON], name: cstr) -> ptr[cJSON]
-    extern def cJSON_AddTrueToObject(object: ptr[cJSON], name: cstr) -> ptr[cJSON]
-    extern def cJSON_AddFalseToObject(object: ptr[cJSON], name: cstr) -> ptr[cJSON]
-    extern def cJSON_AddBoolToObject(object: ptr[cJSON], name: cstr, boolean: int) -> ptr[cJSON]
-    extern def cJSON_AddNumberToObject(object: ptr[cJSON], name: cstr, number: double) -> ptr[cJSON]
-    extern def cJSON_AddStringToObject(object: ptr[cJSON], name: cstr, string: cstr) -> ptr[cJSON]
-    extern def cJSON_AddRawToObject(object: ptr[cJSON], name: cstr, raw: cstr) -> ptr[cJSON]
-    extern def cJSON_AddObjectToObject(object: ptr[cJSON], name: cstr) -> ptr[cJSON]
-    extern def cJSON_AddArrayToObject(object: ptr[cJSON], name: cstr) -> ptr[cJSON]
+    extern def cJSON_AddNullToObject(object: ptr[cJSON], name: cstr) -> ptr[cJSON]?
+    extern def cJSON_AddTrueToObject(object: ptr[cJSON], name: cstr) -> ptr[cJSON]?
+    extern def cJSON_AddFalseToObject(object: ptr[cJSON], name: cstr) -> ptr[cJSON]?
+    extern def cJSON_AddBoolToObject(object: ptr[cJSON], name: cstr, boolean: int) -> ptr[cJSON]?
+    extern def cJSON_AddNumberToObject(object: ptr[cJSON], name: cstr, number: double) -> ptr[cJSON]?
+    extern def cJSON_AddStringToObject(object: ptr[cJSON], name: cstr, string: cstr) -> ptr[cJSON]?
+    extern def cJSON_AddRawToObject(object: ptr[cJSON], name: cstr, raw: cstr) -> ptr[cJSON]?
+    extern def cJSON_AddObjectToObject(object: ptr[cJSON], name: cstr) -> ptr[cJSON]?
+    extern def cJSON_AddArrayToObject(object: ptr[cJSON], name: cstr) -> ptr[cJSON]?
     extern def cJSON_SetNumberHelper(object: ptr[cJSON], number: double) -> double
     extern def cJSON_SetValuestring(object: ptr[cJSON], valuestring: cstr) -> ptr[char]
     extern def cJSON_malloc(size: ptr_uint) -> ptr[void]

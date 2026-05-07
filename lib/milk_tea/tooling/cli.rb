@@ -491,13 +491,25 @@ module MilkTea
       return 1 unless options
 
       output_path = options.delete(:output_path)
-      source = Bindgen.generate(module_name:, header_path:, **options)
+      nullable_report_path = options.delete(:nullable_report_path)
+      if nullable_report_path
+        require "json"
+        result = Bindgen.generate_with_report(module_name:, header_path:, **options)
+        source = result.fetch(:source)
+        report_path = File.expand_path(nullable_report_path)
+        FileUtils.mkdir_p(File.dirname(report_path))
+        File.write(report_path, JSON.pretty_generate(result.fetch(:nullable_policy_report)))
+      else
+        source = Bindgen.generate(module_name:, header_path:, **options)
+      end
       if output_path
         FileUtils.mkdir_p(File.dirname(File.expand_path(output_path)))
         File.write(output_path, source)
         @out.puts("generated #{header_path} -> #{output_path}")
+        @out.puts("nullable report #{header_path} -> #{report_path}") if nullable_report_path
       else
         @out.write(source)
+        @err.puts("wrote nullable report #{report_path}") if nullable_report_path
       end
       0
     end
@@ -597,6 +609,7 @@ module MilkTea
     def parse_bindgen_options
       options = {
         output_path: nil,
+        nullable_report_path: nil,
         link_libraries: [],
         include_directives: [],
         clang: ENV.fetch("CLANG", "clang"),
@@ -631,6 +644,11 @@ module MilkTea
           return missing_option_value(option) unless value
 
           options[:clang_args] << value
+        when "--nullable-report"
+          value = @argv.shift
+          return missing_option_value(option) unless value
+
+          options[:nullable_report_path] = value
         else
           @err.puts("unknown bindgen option #{option}")
           print_usage(@err)
@@ -789,6 +807,7 @@ module MilkTea
 
           Options:
             -o, --output OUTPUT    Write the generated module to this file.
+            --nullable-report PATH Write the remaining manual nullable policy report to this file.
             --link LIB             Link against this library (repeatable).
             --include HEADER       Extra #include directive (repeatable).
             --clang PATH           Clang binary to use (default: $CLANG or clang).

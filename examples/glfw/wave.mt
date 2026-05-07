@@ -259,7 +259,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
         return 1
     defer glfw.glfwTerminate()
 
-    let window = glfw.glfwCreateWindow(640, 480, c"Wave Simulation", zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
+    let window = glfw.glfwCreateWindow(640, 480, c"Wave Simulation", null, null)
     if window == null:
         return 1
     defer glfw.glfwDestroyWindow(window)

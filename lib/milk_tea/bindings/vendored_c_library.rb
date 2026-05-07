@@ -102,12 +102,16 @@ module MilkTea
         object_paths = sources.map do |source|
           build_object(source, cc: resolved_cc, cxx: resolved_cxx, force_rebuild: signature_changed)
         end
-        return archive_path.to_s if !signature_changed && archive_up_to_date?(object_paths)
+        if !signature_changed && archive_up_to_date?(object_paths)
+          ensure_archive_index(ar: resolved_ar)
+          return archive_path.to_s
+        end
 
         stdout, stderr, status = Open3.capture3(resolved_ar, "rcs", archive_path.to_s, *object_paths)
         unless status.success?
           raise Error, command_error("failed to archive vendored #{name}", stdout, stderr)
         end
+        ensure_archive_index(ar: resolved_ar)
 
         write_signature(build_root, signature)
         archive_path.to_s
@@ -160,6 +164,13 @@ module MilkTea
           [cxx, @cxx_flags]
         else
           [cc, []]
+        end
+      end
+
+      def ensure_archive_index(ar:)
+        stdout, stderr, status = Open3.capture3(ar, "s", archive_path.to_s)
+        unless status.success?
+          raise Error, command_error("failed to index vendored #{name} archive", stdout, stderr)
         end
       end
 

@@ -635,7 +635,7 @@
             "mode": "out"
           }
         ],
-        "return_type": "ptr[int]"
+        "return_type": "ptr[int]?"
       },
       {
         "raw": "GetCodepointCount",

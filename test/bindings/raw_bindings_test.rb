@@ -17,10 +17,14 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal({ "codepoints" => "ptr[int]?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadFontEx"))
     assert_equal({ "vsFileName" => "cstr?", "fsFileName" => "cstr?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadShader"))
     assert_equal({ "vsCode" => "cstr?", "fsCode" => "cstr?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadShaderFromMemory"))
+    assert_equal "ptr[ubyte]?", registry.fetch("raylib").function_return_type_overrides.fetch("LoadFileData")
+    assert_equal "ptr[void]?", registry.fetch("raylib").function_return_type_overrides.fetch("MemAlloc")
+    assert_equal "ptr[Material]?", registry.fetch("raylib").function_return_type_overrides.fetch("LoadMaterials")
     assert_equal ["RAYGUI_IMPLEMENTATION"], registry.fetch("raygui").implementation_defines
     assert_equal ["raylib", "m"], registry.fetch("raygui").link_libraries
     assert_includes registry.fetch("raygui").header_candidates.first, "third_party/raylib-upstream/examples/shapes/raygui.h"
     assert_equal({ "codepoints" => "ptr[int]?" }, registry.fetch("raygui").function_param_type_overrides.fetch("LoadFontData"))
+    assert_equal "ptr[ptr[char]]?", registry.fetch("raygui").function_return_type_overrides.fetch("GuiLoadIcons")
     assert_equal "std.c.rlights", registry.fetch("rlights").module_name
     assert_equal ["RLIGHTS_IMPLEMENTATION"], registry.fetch("rlights").implementation_defines
     assert_equal ["raylib"], registry.fetch("rlights").link_libraries
@@ -45,7 +49,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal ["SDL3/SDL_main.h"], registry.fetch("sdl3").bindgen_include_directives
     assert_includes registry.fetch("sdl3").link_flags, "-L#{MilkTea::VendoredSDL3.archive_path.dirname}"
     assert_equal ["SDL_", "Sint", "Uint"], registry.fetch("sdl3").declaration_name_prefixes
-    assert_equal({ "reserved" => "ptr[void]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_RunApp"))
+    assert_equal({ "reserved" => "ptr[void]?", "argv" => "ptr[ptr[char]]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_RunApp"))
     assert_equal({ "spec" => "const_ptr[SDL_AudioSpec]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_OpenAudioDevice"))
     assert_equal({ "dst_spec" => "const_ptr[SDL_AudioSpec]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_CreateAudioStream"))
     assert_equal({ "userdata" => "ptr[void]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_OpenAudioDeviceStream"))
@@ -60,16 +64,26 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal({ "rect" => "const_ptr[SDL_Rect]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_SetRenderClipRect"))
     assert_equal({ "spec" => "const_ptr[SDL_CameraSpec]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_OpenCamera"))
     assert_equal({ "texture" => "ptr[SDL_Texture]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_SetRenderTarget"))
+    assert_equal({ "name" => "cstr?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_CreateRenderer"))
+    assert_equal({ "device" => "ptr[SDL_GPUDevice]?", "window" => "ptr[SDL_Window]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_CreateGPURenderer"))
+    assert_equal({ "w" => "ptr[int]?", "h" => "ptr[int]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_GetWindowSize"))
+    assert_equal({ "swapchain_texture_width" => "ptr[uint]?", "swapchain_texture_height" => "ptr[uint]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_AcquireGPUSwapchainTexture"))
     assert_equal({ "rect" => "const_ptr[SDL_Rect]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_RenderReadPixels"))
     assert_equal({ "srcrect" => "const_ptr[SDL_FRect]?", "dstrect" => "const_ptr[SDL_FRect]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_RenderTexture"))
-    assert_equal({ "srcrect" => "const_ptr[SDL_FRect]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_RenderTextureRotated"))
-    assert_equal({ "srcrect" => "const_ptr[SDL_FRect]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_RenderTextureAffine"))
+    assert_equal({ "srcrect" => "const_ptr[SDL_FRect]?", "dstrect" => "const_ptr[SDL_FRect]?", "center" => "const_ptr[SDL_FPoint]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_RenderTextureRotated"))
+    assert_equal({ "srcrect" => "const_ptr[SDL_FRect]?", "origin" => "const_ptr[SDL_FPoint]?", "right" => "const_ptr[SDL_FPoint]?", "down" => "const_ptr[SDL_FPoint]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_RenderTextureAffine"))
     assert_equal({ "texture" => "ptr[SDL_Texture]?", "indices" => "const_ptr[int]?" }, registry.fetch("sdl3").function_param_type_overrides.fetch("SDL_RenderGeometry"))
     assert_equal "ptr[SDL_Surface]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_LoadPNG")
     assert_equal "ptr[SDL_Surface]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_ConvertSurface")
     assert_equal "ptr[SDL_Texture]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_CreateTexture")
     assert_equal "ptr[SDL_Texture]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_CreateTextureFromSurface")
     assert_equal "ptr[SDL_AudioStream]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_CreateAudioStream")
+    assert_equal "ptr[SDL_Window]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_CreateWindow")
+    assert_equal "ptr[SDL_Renderer]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_CreateRenderer")
+    assert_equal "ptr[SDL_Surface]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_CreateSurface")
+    assert_equal "ptr[SDL_IOStream]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_OpenIO")
+    assert_equal "ptr[SDL_Haptic]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_OpenHaptic")
+    assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetHint")
     assert_equal "SDL_FunctionPointer?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GL_GetProcAddress")
     assert_equal "SDL_FunctionPointer?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_EGL_GetProcAddress")
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_strdup")
@@ -77,20 +91,53 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_strchr")
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetClipboardText")
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetPrimarySelectionText")
+    assert_equal "GLFWmonitorfun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetMonitorCallback")
     assert_equal "ptr[ptr[SDL_Locale]]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetPreferredLocales")
     assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetBasePath")
+    assert_equal "ptr[SDL_DisplayID]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetDisplays")
+    assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetDisplayName")
+    assert_equal "ptr[ptr[SDL_DisplayMode]]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetFullscreenDisplayModes")
+    assert_equal "const_ptr[SDL_DisplayMode]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetDesktopDisplayMode")
+    assert_equal "const_ptr[SDL_DisplayMode]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetCurrentDisplayMode")
+    assert_equal "ptr[void]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetWindowICCProfile")
+    assert_equal "ptr[ptr[SDL_Window]]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetWindows")
+    assert_equal "ptr[SDL_SharedObject]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_LoadObject")
+    assert_equal "SDL_FunctionPointer?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_LoadFunction")
+    assert_equal "ptr[SDL_Window]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GL_GetCurrentWindow")
+    assert_equal "SDL_GLContext?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GL_GetCurrentContext")
     assert_equal "ptr[SDL_AudioStream]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_OpenAudioDeviceStream")
+    assert_equal "ptr[SDL_KeyboardID]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetKeyboards")
+    assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetKeyboardNameForID")
+    assert_equal "ptr[SDL_MouseID]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetMice")
+    assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetMouseNameForID")
+    assert_equal "ptr[SDL_TouchID]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetTouchDevices")
+    assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetTouchDeviceName")
+    assert_equal "ptr[ptr[SDL_Finger]]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetTouchFingers")
+    assert_equal "ptr[SDL_SensorID]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetSensors")
+    assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetSensorNameForID")
+    assert_equal "ptr[SDL_Sensor]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_OpenSensor")
+    assert_equal "ptr[SDL_Sensor]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetSensorFromID")
+    assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetSensorName")
     assert_equal "ptr[SDL_CameraID]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetCameras")
     assert_equal "ptr[SDL_Camera]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_OpenCamera")
     assert_equal "ptr[SDL_Surface]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_AcquireCameraFrame")
+    assert_equal "ptr[SDL_JoystickID]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetJoysticks")
     assert_equal "ptr[SDL_Joystick]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_OpenJoystick")
     assert_equal "ptr[SDL_Joystick]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetJoystickFromID")
     assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetJoystickNameForID")
     assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetJoystickName")
+    assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetJoystickPathForID")
+    assert_equal "ptr[SDL_Joystick]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetJoystickFromPlayerIndex")
+    assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetJoystickPath")
+    assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetJoystickSerial")
+    assert_equal "ptr[ptr[char]]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetGamepadMappings")
+    assert_equal "ptr[SDL_JoystickID]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetGamepads")
     assert_equal "ptr[SDL_Gamepad]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_OpenGamepad")
     assert_equal "ptr[SDL_Gamepad]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetGamepadFromID")
     assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetGamepadNameForID")
     assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetGamepadName")
+    assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetGamepadPathForID")
+    assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetGamepadPath")
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetGamepadMapping")
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetGamepadMappingForGUID")
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetGamepadMappingForID")
@@ -104,18 +151,65 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_includes registry.fetch("glfw").tracked_header_prefixes.first, "third_party/glfw-upstream/include/GLFW"
     assert_includes registry.fetch("glfw").link_flags, "-L#{MilkTea::VendoredGLFW.archive_path.dirname}"
     assert_equal ["GLFW", "glfw"], registry.fetch("glfw").declaration_name_prefixes
+    assert_equal "ptr[cstr]?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwGetError").fetch("description")
+    assert_equal "GLFWerrorfun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetErrorCallback").fetch("callback")
+    assert_equal "GLFWmonitorfun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetMonitorCallback").fetch("callback")
+    assert_equal "ptr[GLFWmonitor]?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwCreateWindow").fetch("monitor")
+    assert_equal "ptr[GLFWwindow]?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwCreateWindow").fetch("share")
+    assert_equal "GLFWwindowposfun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetWindowPosCallback").fetch("callback")
+    assert_equal "GLFWwindowsizefun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetWindowSizeCallback").fetch("callback")
+    assert_equal "GLFWwindowclosefun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetWindowCloseCallback").fetch("callback")
+    assert_equal "GLFWwindowrefreshfun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetWindowRefreshCallback").fetch("callback")
+    assert_equal "GLFWwindowfocusfun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetWindowFocusCallback").fetch("callback")
+    assert_equal "GLFWwindowiconifyfun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetWindowIconifyCallback").fetch("callback")
+    assert_equal "GLFWwindowmaximizefun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetWindowMaximizeCallback").fetch("callback")
+    assert_equal "GLFWframebuffersizefun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetFramebufferSizeCallback").fetch("callback")
+    assert_equal "GLFWwindowcontentscalefun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetWindowContentScaleCallback").fetch("callback")
+    assert_equal "ptr[double]?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwGetCursorPos").fetch("xpos")
+    assert_equal "ptr[double]?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwGetCursorPos").fetch("ypos")
+    assert_equal "ptr[GLFWcursor]?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetCursor").fetch("cursor")
+    assert_equal "GLFWkeyfun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetKeyCallback").fetch("callback")
+    assert_equal "GLFWcharfun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetCharCallback").fetch("callback")
+    assert_equal "GLFWcharmodsfun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetCharModsCallback").fetch("callback")
+    assert_equal "GLFWmousebuttonfun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetMouseButtonCallback").fetch("callback")
+    assert_equal "GLFWcursorposfun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetCursorPosCallback").fetch("callback")
+    assert_equal "GLFWcursorenterfun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetCursorEnterCallback").fetch("callback")
+    assert_equal "GLFWscrollfun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetScrollCallback").fetch("callback")
+    assert_equal "GLFWdropfun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetDropCallback").fetch("callback")
+    assert_equal "GLFWjoystickfun?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwSetJoystickCallback").fetch("callback")
+    assert_equal "ptr[GLFWwindow]?", registry.fetch("glfw").function_param_type_overrides.fetch("glfwMakeContextCurrent").fetch("window")
     assert_equal "GLFWerrorfun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetErrorCallback")
     assert_equal "ptr[ptr[GLFWmonitor]]?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwGetMonitors")
     assert_equal "ptr[GLFWmonitor]?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwGetPrimaryMonitor")
     assert_equal "cstr?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwGetMonitorName")
+    assert_equal "GLFWmonitorfun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetMonitorCallback")
     assert_equal "const_ptr[GLFWvidmode]?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwGetVideoModes")
     assert_equal "const_ptr[GLFWvidmode]?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwGetVideoMode")
+    assert_equal "const_ptr[GLFWgammaramp]?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwGetGammaRamp")
     assert_equal "ptr[GLFWwindow]?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwCreateWindow")
+    assert_equal "cstr?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwGetWindowTitle")
     assert_equal "ptr[GLFWmonitor]?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwGetWindowMonitor")
     assert_equal "ptr[void]?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwGetWindowUserPointer")
+    assert_equal "GLFWwindowposfun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetWindowPosCallback")
+    assert_equal "GLFWwindowsizefun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetWindowSizeCallback")
+    assert_equal "GLFWwindowclosefun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetWindowCloseCallback")
+    assert_equal "GLFWwindowrefreshfun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetWindowRefreshCallback")
+    assert_equal "GLFWwindowfocusfun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetWindowFocusCallback")
+    assert_equal "GLFWwindowiconifyfun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetWindowIconifyCallback")
+    assert_equal "GLFWwindowmaximizefun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetWindowMaximizeCallback")
+    assert_equal "GLFWframebuffersizefun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetFramebufferSizeCallback")
+    assert_equal "GLFWwindowcontentscalefun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetWindowContentScaleCallback")
     assert_equal "cstr?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwGetKeyName")
     assert_equal "ptr[GLFWcursor]?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwCreateCursor")
     assert_equal "ptr[GLFWcursor]?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwCreateStandardCursor")
+    assert_equal "GLFWkeyfun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetKeyCallback")
+    assert_equal "GLFWcharfun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetCharCallback")
+    assert_equal "GLFWcharmodsfun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetCharModsCallback")
+    assert_equal "GLFWmousebuttonfun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetMouseButtonCallback")
+    assert_equal "GLFWcursorposfun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetCursorPosCallback")
+    assert_equal "GLFWcursorenterfun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetCursorEnterCallback")
+    assert_equal "GLFWscrollfun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetScrollCallback")
+    assert_equal "GLFWdropfun?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwSetDropCallback")
     assert_equal "const_ptr[float]?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwGetJoystickAxes")
     assert_equal "const_ptr[ubyte]?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwGetJoystickButtons")
     assert_equal "const_ptr[ubyte]?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwGetJoystickHats")
@@ -153,6 +247,8 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "ptr[cJSON]?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_Parse")
     assert_equal "ptr[char]?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_Print")
     assert_equal "cstr?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_GetErrorPtr")
+    assert_equal "ptr[cJSON]?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_AddNullToObject")
+    assert_equal "ptr[cJSON]?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_AddStringToObject")
     assert_equal "std.c.steamworks", registry.fetch("steamworks").module_name
     assert_equal MilkTea::Steamworks.default_link_libraries, registry.fetch("steamworks").link_libraries
     assert_includes registry.fetch("steamworks").header_candidates.first, "/std/c/steamworks.h"
@@ -504,27 +600,53 @@ class MilkTeaRawBindingsTest < Minitest::Test
       assert_includes binding.check!, "/third_party/glfw-upstream/include/GLFW/glfw3.h"
 
       source = File.read(binding.binding_path)
-      assert_includes source, "extern def glfwSetErrorCallback(callback: fn(arg0: int, arg1: cstr) -> void) -> GLFWerrorfun?"
+      assert_includes source, "type GLFWwindowposfun = fn(arg0: ptr[GLFWwindow], arg1: int, arg2: int) -> void"
+      assert_includes source, "type GLFWkeyfun = fn(arg0: ptr[GLFWwindow], arg1: int, arg2: int, arg3: int, arg4: int) -> void"
+      assert_includes source, "extern def glfwGetError(description: ptr[cstr]?) -> int"
+      assert_includes source, "extern def glfwSetErrorCallback(callback: GLFWerrorfun?) -> GLFWerrorfun?"
       assert_includes source, "extern def glfwGetMonitors(count: ptr[int]) -> ptr[ptr[GLFWmonitor]]?"
       assert_includes source, "extern def glfwGetPrimaryMonitor() -> ptr[GLFWmonitor]?"
       assert_includes source, "extern def glfwGetMonitorName(monitor: ptr[GLFWmonitor]) -> cstr?"
+      assert_includes source, "extern def glfwSetMonitorCallback(callback: GLFWmonitorfun?) -> GLFWmonitorfun?"
       assert_includes source, "extern def glfwGetVideoModes(monitor: ptr[GLFWmonitor], count: ptr[int]) -> const_ptr[GLFWvidmode]?"
       assert_includes source, "extern def glfwGetVideoMode(monitor: ptr[GLFWmonitor]) -> const_ptr[GLFWvidmode]?"
-      assert_includes source, "extern def glfwCreateWindow(width: int, height: int, title: cstr, monitor: ptr[GLFWmonitor], share: ptr[GLFWwindow]) -> ptr[GLFWwindow]?"
+      assert_includes source, "extern def glfwGetGammaRamp(monitor: ptr[GLFWmonitor]) -> const_ptr[GLFWgammaramp]?"
+      assert_includes source, "extern def glfwCreateWindow(width: int, height: int, title: cstr, monitor: ptr[GLFWmonitor]?, share: ptr[GLFWwindow]?) -> ptr[GLFWwindow]?"
+      assert_includes source, "extern def glfwGetWindowTitle(window: ptr[GLFWwindow]) -> cstr?"
       assert_includes source, "extern def glfwGetWindowMonitor(window: ptr[GLFWwindow]) -> ptr[GLFWmonitor]?"
       assert_includes source, "extern def glfwGetWindowUserPointer(window: ptr[GLFWwindow]) -> ptr[void]?"
+      assert_includes source, "extern def glfwSetWindowPosCallback(window: ptr[GLFWwindow], callback: GLFWwindowposfun?) -> GLFWwindowposfun?"
+      assert_includes source, "extern def glfwSetWindowSizeCallback(window: ptr[GLFWwindow], callback: GLFWwindowsizefun?) -> GLFWwindowsizefun?"
+      assert_includes source, "extern def glfwSetWindowCloseCallback(window: ptr[GLFWwindow], callback: GLFWwindowclosefun?) -> GLFWwindowclosefun?"
+      assert_includes source, "extern def glfwSetWindowRefreshCallback(window: ptr[GLFWwindow], callback: GLFWwindowrefreshfun?) -> GLFWwindowrefreshfun?"
+      assert_includes source, "extern def glfwSetWindowFocusCallback(window: ptr[GLFWwindow], callback: GLFWwindowfocusfun?) -> GLFWwindowfocusfun?"
+      assert_includes source, "extern def glfwSetWindowIconifyCallback(window: ptr[GLFWwindow], callback: GLFWwindowiconifyfun?) -> GLFWwindowiconifyfun?"
+      assert_includes source, "extern def glfwSetWindowMaximizeCallback(window: ptr[GLFWwindow], callback: GLFWwindowmaximizefun?) -> GLFWwindowmaximizefun?"
+      assert_includes source, "extern def glfwSetFramebufferSizeCallback(window: ptr[GLFWwindow], callback: GLFWframebuffersizefun?) -> GLFWframebuffersizefun?"
+      assert_includes source, "extern def glfwSetWindowContentScaleCallback(window: ptr[GLFWwindow], callback: GLFWwindowcontentscalefun?) -> GLFWwindowcontentscalefun?"
       assert_includes source, "extern def glfwGetKeyName(key: int, scancode: int) -> cstr?"
+      assert_includes source, "extern def glfwGetCursorPos(window: ptr[GLFWwindow], xpos: ptr[double]?, ypos: ptr[double]?) -> void"
       assert_includes source, "extern def glfwCreateCursor(image: const_ptr[GLFWimage], xhot: int, yhot: int) -> ptr[GLFWcursor]?"
       assert_includes source, "extern def glfwCreateStandardCursor(shape: int) -> ptr[GLFWcursor]?"
+      assert_includes source, "extern def glfwSetCursor(window: ptr[GLFWwindow], cursor: ptr[GLFWcursor]?) -> void"
+      assert_includes source, "extern def glfwSetKeyCallback(window: ptr[GLFWwindow], callback: GLFWkeyfun?) -> GLFWkeyfun?"
+      assert_includes source, "extern def glfwSetCharCallback(window: ptr[GLFWwindow], callback: GLFWcharfun?) -> GLFWcharfun?"
+      assert_includes source, "extern def glfwSetCharModsCallback(window: ptr[GLFWwindow], callback: GLFWcharmodsfun?) -> GLFWcharmodsfun?"
+      assert_includes source, "extern def glfwSetMouseButtonCallback(window: ptr[GLFWwindow], callback: GLFWmousebuttonfun?) -> GLFWmousebuttonfun?"
+      assert_includes source, "extern def glfwSetCursorPosCallback(window: ptr[GLFWwindow], callback: GLFWcursorposfun?) -> GLFWcursorposfun?"
+      assert_includes source, "extern def glfwSetCursorEnterCallback(window: ptr[GLFWwindow], callback: GLFWcursorenterfun?) -> GLFWcursorenterfun?"
+      assert_includes source, "extern def glfwSetScrollCallback(window: ptr[GLFWwindow], callback: GLFWscrollfun?) -> GLFWscrollfun?"
+      assert_includes source, "extern def glfwSetDropCallback(window: ptr[GLFWwindow], callback: GLFWdropfun?) -> GLFWdropfun?"
       assert_includes source, "extern def glfwGetJoystickAxes(jid: int, count: ptr[int]) -> const_ptr[float]?"
       assert_includes source, "extern def glfwGetJoystickButtons(jid: int, count: ptr[int]) -> const_ptr[ubyte]?"
       assert_includes source, "extern def glfwGetJoystickHats(jid: int, count: ptr[int]) -> const_ptr[ubyte]?"
       assert_includes source, "extern def glfwGetJoystickName(jid: int) -> cstr?"
       assert_includes source, "extern def glfwGetJoystickGUID(jid: int) -> cstr?"
       assert_includes source, "extern def glfwGetJoystickUserPointer(jid: int) -> ptr[void]?"
-      assert_includes source, "extern def glfwSetJoystickCallback(callback: fn(arg0: int, arg1: int) -> void) -> GLFWjoystickfun?"
+      assert_includes source, "extern def glfwSetJoystickCallback(callback: GLFWjoystickfun?) -> GLFWjoystickfun?"
       assert_includes source, "extern def glfwGetGamepadName(jid: int) -> cstr?"
       assert_includes source, "extern def glfwGetClipboardString(window: ptr[GLFWwindow]) -> cstr?"
+      assert_includes source, "extern def glfwMakeContextCurrent(window: ptr[GLFWwindow]?) -> void"
       assert_includes source, "extern def glfwGetCurrentContext() -> ptr[GLFWwindow]?"
       assert_includes source, "extern def glfwGetProcAddress(procname: cstr) -> GLFWglproc?"
       assert_includes source, "extern def glfwGetRequiredInstanceExtensions(count: ptr[uint]) -> ptr[cstr]?"

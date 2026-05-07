@@ -32,7 +32,12 @@ def render_frame() -> void:
     var surface: ptr[c.SDL_Surface]
     if c.SDL_LockTextureToSurface(texture, null, ptr_of(surface)):
         unsafe:
-            let format_details = c.SDL_GetPixelFormatDetails(surface.format)
+            let maybe_format_details = c.SDL_GetPixelFormatDetails(surface.format)
+            if maybe_format_details == null:
+                c.SDL_UnlockTexture(texture)
+                return
+
+            let format_details = const_ptr[c.SDL_PixelFormatDetails]<-maybe_format_details
             let black = c.SDL_MapRGB(format_details, null, 0, 0, 0)
             let green = c.SDL_MapRGB(format_details, null, 0, 255, 0)
             var strip = c.SDL_Rect(x = 0, y = 0, w = texture_size, h = texture_size / 10)

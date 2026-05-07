@@ -3,6 +3,7 @@ module examples.raylib.models.models_animation_blend_custom
 import std.c.raylib as rl
 import std.c.rlgl as rlgl
 import std.raylib.math as rm
+import std.raylib.runtime as rlr
 
 const screen_width: int = 800
 const screen_height: int = 450
@@ -244,7 +245,7 @@ def main() -> int:
         model.materials[1].shader = skinning_shader
 
     var anim_count = 0
-    let anims = rl.LoadModelAnimations(model_path, ptr_of(anim_count))
+    let anims = rlr.require_ptr[rl.ModelAnimation](rl.LoadModelAnimations(model_path, ptr_of(anim_count)), "could not load model animations")
     defer rl.UnloadModelAnimations(anims, anim_count)
 
     var anim_index0 = 2

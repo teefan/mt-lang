@@ -70,7 +70,7 @@ module MilkTea
       end
 
       def initialize
-        @workspace = Workspace.new
+        @workspace = Workspace.new(enable_background_analysis_warmup: false)
         @format_mode = :tidy
         @handlers = {}
         @diagnostic_report_cache = {}
@@ -127,6 +127,7 @@ module MilkTea
         @handlers['exit']        = method(:handle_exit)
 
         # Text document sync
+        @handlers['milkTea/documentContext'] = method(:handle_document_context)
         @handlers['textDocument/didOpen']   = method(:handle_did_open)
         @handlers['textDocument/didChange'] = method(:handle_did_change)
         @handlers['textDocument/didClose']  = method(:handle_did_close)
@@ -452,13 +453,14 @@ module MilkTea
         total_start = monotonic_time
         uri     = params['textDocument']['uri']
         content = params['textDocument']['text']
+        source = @workspace.document_source(uri) || 'unknown'
         open_start = monotonic_time
         open_stats = @workspace.open_document(uri, content)
         open_ms = elapsed_ms(open_start)
         @semantic_tokens_cache.delete(uri)
         @fixall_cache.delete(uri)
         diagnostics_start = monotonic_time
-        schedule_diagnostics(uri)
+        schedule_diagnostics(uri) unless @workspace.background_document?(uri)
 
         elapsed = elapsed_ms(total_start)
         short_uri = shorten_uri(uri) || uri
@@ -471,7 +473,7 @@ module MilkTea
         log_perf_breakdown(
           'textDocument/didOpen',
           elapsed,
-          "uri=#{short_uri} bytes=#{open_stats[:bytes]} lines=#{open_stats[:lines]} imports=#{open_stats[:import_count]} shared_modules=#{open_stats[:shared_module_cache_size]} eager_analysis=#{analysis_detail} stages_ms=open:#{open_ms},analysis:#{open_stats[:analysis_ms] || 0.0},diagnostics_enqueue:#{elapsed_ms(diagnostics_start)}"
+          "uri=#{short_uri} source=#{source} bytes=#{open_stats[:bytes]} lines=#{open_stats[:lines]} imports=#{open_stats[:import_count]} shared_modules=#{open_stats[:shared_module_cache_size]} eager_analysis=#{analysis_detail} stages_ms=open:#{open_ms},analysis:#{open_stats[:analysis_ms] || 0.0},diagnostics_enqueue:#{elapsed_ms(diagnostics_start)}"
         )
         nil
       end
@@ -492,7 +494,22 @@ module MilkTea
 
         @semantic_tokens_cache.delete(uri)
         @fixall_cache.delete(uri)
-        schedule_diagnostics(uri)
+        schedule_diagnostics(uri) unless @workspace.background_document?(uri)
+        nil
+      end
+
+      def handle_document_context(params)
+        uri = params.dig('textDocument', 'uri') || params['uri']
+        source = params['source']
+        return nil unless uri && source
+
+        previous_source = @workspace.set_document_source(uri, source)
+        if previous_source == 'background-document' && source != 'background-document' && !@workspace.get_content(uri).empty?
+          @semantic_tokens_cache.delete(uri)
+          @fixall_cache.delete(uri)
+          schedule_diagnostics(uri, force: true)
+        end
+
         nil
       end
 
@@ -518,7 +535,7 @@ module MilkTea
         @semantic_tokens_cache.delete(uri)
         @fixall_cache.delete(uri)
         affected_uris = @workspace.refresh_open_document_dependency_caches(uri)
-        schedule_diagnostics(uri)
+        schedule_diagnostics(uri) unless @workspace.background_document?(uri)
         affected_uris.each { |affected_uri| schedule_diagnostics(affected_uri, force: true) }
         nil
       end
@@ -1176,6 +1193,16 @@ module MilkTea
         # Skip analysis for URIs outside the workspace (e.g. vscode-internal or gem paths).
         # This includes the system MilkTea stdlib and gem code.
         return 'library-uri' if library_uri?(uri)
+
+        skip_reason = @workspace.analysis_skip_reason(uri, content)
+        return skip_reason if skip_reason && skip_reason != 'std-path'
+
+        path = uri_to_path(uri)
+        return nil unless path&.include?('/std/')
+
+        line_count = content.count("\n") + 1
+        return 'std-path' if content.bytesize >= Workspace::SINGLE_IMPORT_HEAVY_BYTES_THRESHOLD
+        return 'std-path' if line_count >= Workspace::SINGLE_IMPORT_HEAVY_LINES_THRESHOLD
 
         nil
       rescue StandardError

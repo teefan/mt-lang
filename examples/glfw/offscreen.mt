@@ -75,7 +75,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     glfw.glfwWindowHint(glfw.GLFW_CONTEXT_VERSION_MINOR, 0)
     glfw.glfwWindowHint(glfw.GLFW_VISIBLE, glfw.GLFW_FALSE)
 
-    let window = glfw.glfwCreateWindow(window_width, window_height, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
+    let window = glfw.glfwCreateWindow(window_width, window_height, window_title, null, null)
     if window == null:
         return 1
     defer glfw.glfwDestroyWindow(window)

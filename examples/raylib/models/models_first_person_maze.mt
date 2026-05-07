@@ -1,6 +1,7 @@
 module examples.raylib.models.models_first_person_maze
 
 import std.c.raylib as rl
+import std.raylib.runtime as rlr
 
 const screen_width: int = 800
 const screen_height: int = 450
@@ -36,7 +37,7 @@ def main() -> int:
 
     rl.SetMaterialTexture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
-    let map_pixels = rl.LoadImageColors(image)
+    let map_pixels = rlr.require_ptr[rl.Color](rl.LoadImageColors(image), "could not load maze image colors")
     defer rl.UnloadImageColors(map_pixels)
 
     let map_position = rl.Vector3(x = -16.0, y = 0.0, z = -8.0)

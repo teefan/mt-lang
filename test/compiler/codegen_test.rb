@@ -1954,7 +1954,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/int32_t main\(void\) \{\s+(?:#[^\n]*\n\s+)?int32_t i = 0;\s+(?:#[^\n]*\n\s+)?while \(i < 3\) \{/m, generated)
+    assert_match(/static int32_t demo_simple_loop_surface_main\(void\) \{\s+(?:#[^\n]*\n\s+)?int32_t i = 0;\s+(?:#[^\n]*\n\s+)?while \(i < 3\) \{/m, generated)
+    assert_match(/int32_t main\(void\) \{\s+(?:#[^\n]*\n\s+)?int32_t __mt_result = demo_simple_loop_surface_main\(\);/m, generated)
     assert_match(/while \(i < 3\) \{/, generated)
     refute_match(/\n  \{\n    while \(i < 3\) \{/, generated)
     refute_match(/__mt_loop_continue_\d+:;/, generated)

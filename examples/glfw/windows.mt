@@ -19,7 +19,7 @@ def init_window(index: int, xpos: int, ypos: int, size: int) -> bool:
     glfw.glfwWindowHint(glfw.GLFW_POSITION_X, xpos + size * (1 + (index & 1)))
     glfw.glfwWindowHint(glfw.GLFW_POSITION_Y, ypos + size * (1 + (index >> 1)))
 
-    let window = glfw.glfwCreateWindow(size, size, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
+    let window = glfw.glfwCreateWindow(size, size, window_title, null, null)
     if window == null:
         return false
 

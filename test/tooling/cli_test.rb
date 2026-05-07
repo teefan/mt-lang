@@ -380,6 +380,42 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
+  def test_bindgen_command_writes_nullable_report_file
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-cli-bindgen-report") do |dir|
+      header_path = File.join(dir, "sample.h")
+      output_path = File.join(dir, "sample.mt")
+      report_path = File.join(dir, "sample.nullable.json")
+      out = StringIO.new
+      err = StringIO.new
+
+      File.write(header_path, <<~C)
+        void * _Nullable returns_nullable(void);
+        void * returns_manual(void);
+      C
+
+      status = MilkTea::CLI.start([
+        "bindgen",
+        "std.c.sample",
+        header_path,
+        "--nullable-report",
+        report_path,
+        "-o",
+        output_path,
+      ], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/generated .*sample\.h -> .*sample\.mt/, out.string)
+      assert_match(/nullable report .*sample\.h -> .*sample\.nullable\.json/, out.string)
+      assert File.exist?(report_path)
+      report = JSON.parse(File.read(report_path))
+      assert_equal 0, report.dig("summary", "total")
+    end
+  end
+
   def test_deps_bootstrap_command_reports_results
     require_relative "../../lib/milk_tea/bindings"
 

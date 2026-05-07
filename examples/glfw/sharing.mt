@@ -110,7 +110,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
     glfw.glfwWindowHint(glfw.GLFW_CONTEXT_VERSION_MAJOR, 2)
     glfw.glfwWindowHint(glfw.GLFW_CONTEXT_VERSION_MINOR, 0)
 
-    let first_window = glfw.glfwCreateWindow(400, 400, first_window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
+    let first_window = glfw.glfwCreateWindow(400, 400, first_window_title, null, null)
     if first_window == null:
         return 1
     defer glfw.glfwDestroyWindow(first_window)
@@ -160,7 +160,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
         gl.glBufferData(uint<-gl.GL_ARRAY_BUFFER, ptr_int<-(8 * int<-size_of(float)), const_ptr[void]<-ptr_of(quad_vertices[0]), uint<-gl.GL_STATIC_DRAW)
     configure_context(program, texture, vertex_buffer, vpos_location, texture_location)
 
-    let second_window = glfw.glfwCreateWindow(400, 400, second_window_title, zero[ptr[glfw.GLFWmonitor]], first_window)
+    let second_window = glfw.glfwCreateWindow(400, 400, second_window_title, null, first_window)
     if second_window == null:
         return 1
     defer glfw.glfwDestroyWindow(second_window)
