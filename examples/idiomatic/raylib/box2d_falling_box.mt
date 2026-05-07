@@ -20,24 +20,24 @@ const sub_step_count: int = 4
 def create_static_box(world_id: b2.WorldId, position: b2.Vec2, half_width: float, half_height: float) -> b2.BodyId:
     var body_def = b2.default_body_def()
     body_def.position = position
-    let body_id = b2.create_body(world_id, in body_def)
-    b2.body_set_type(body_id, b2.BodyType.b2_dynamicBody)
+    let body_id = b2.create_body(world_id, body_def)
+    b2.body_set_type(body_id, b2.BodyType.b2_staticBody)
     let shape_def = b2.default_shape_def()
     let polygon = b2.make_box(half_width, half_height)
-    b2.create_polygon_shape(body_id, in shape_def, in polygon)
+    b2.create_polygon_shape(body_id, shape_def, polygon)
     return body_id
 
 
 def create_dynamic_box(world_id: b2.WorldId, position: b2.Vec2, half_width: float, half_height: float, density: float) -> b2.BodyId:
     var body_def = b2.default_body_def()
     body_def.position = position
-    let body_id = b2.create_body(world_id, in body_def)
+    let body_id = b2.create_body(world_id, body_def)
     b2.body_set_type(body_id, b2.BodyType.b2_dynamicBody)
 
     var shape_def = b2.default_shape_def()
     shape_def.density = density
     let polygon = b2.make_box(half_width, half_height)
-    b2.create_polygon_shape(body_id, in shape_def, in polygon)
+    b2.create_polygon_shape(body_id, shape_def, polygon)
     return body_id
 
 
@@ -79,7 +79,7 @@ def main() -> int:
     var world_def = b2.default_world_def()
     world_def.gravity = b2.Vec2(x = 0.0, y = 18.0)
 
-    let world_id = b2.create_world(in world_def)
+    let world_id = b2.create_world(world_def)
     defer b2.destroy_world(world_id)
 
     let ground_sprite = BoxSprite(

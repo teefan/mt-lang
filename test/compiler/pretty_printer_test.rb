@@ -140,8 +140,8 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       def main(path: str) -> ptr[ubyte]?:
           var data_size = 0
           let contrast = 1.0
-          set_shader_value(Shader(), 0, in contrast, 0)
-          return load_file_data(path, out data_size)
+          set_shader_value(Shader(), 0, contrast, 0)
+          return load_file_data(path, data_size)
     MT
 
     ast = MilkTea::Parser.parse(source)

@@ -4799,6 +4799,14 @@ module MilkTea
         [blocked_entry[:param_ast].name]
       end
 
+      def foreign_argument_expression(argument)
+        if argument.value.is_a?(AST::UnaryOp) && ["out", "in", "inout"].include?(argument.value.operator)
+          argument.value.operand
+        else
+          argument.value
+        end
+      end
+
       def lower_foreign_argument_value(parameter, argument, env:)
         case parameter.passing_mode
         when :plain, :consuming
@@ -4870,7 +4878,7 @@ module MilkTea
       end
 
       def lower_foreign_pointer_argument_value(parameter, argument, env:)
-        operand = argument.value.operand
+        operand = foreign_argument_expression(argument)
         address = IR::AddressOf.new(
           expression: lower_expression(operand, env:),
           type: pointer_to(parameter.type),
@@ -4885,7 +4893,7 @@ module MilkTea
       def prepare_foreign_in_argument(parameter, argument, source_env:, lowered:, env:)
         return argument unless parameter.passing_mode == :in
 
-        operand = argument.value.operand
+        operand = foreign_argument_expression(argument)
         return argument if addressable_storage_expression?(operand)
 
         temp_name = fresh_c_temp_name(env, "foreign_in")
@@ -4899,13 +4907,13 @@ module MilkTea
 
         AST::Argument.new(
           name: argument.name,
-          value: AST::UnaryOp.new(operator: "in", operand: AST::Identifier.new(name: temp_name)),
+          value: AST::Identifier.new(name: temp_name),
         )
       end
 
       def lower_foreign_in_argument_value(parameter, argument, env:)
         address = lower_addr_expression(
-          argument.value.operand,
+          foreign_argument_expression(argument),
           env:,
           target_type: const_pointer_to(parameter.type),
         )
@@ -4972,7 +4980,7 @@ module MilkTea
           parameter = binding.type.params.fetch(index)
           argument = expression.arguments.fetch(index)
           next unless parameter.passing_mode == :in
-          next if addressable_storage_expression?(argument.value.operand)
+          next if addressable_storage_expression?(foreign_argument_expression(argument))
 
           raise LoweringError, "foreign call #{binding.name} cannot be used inline because #{param_ast.name} needs temporary in storage; use it as a statement, local initializer, assignment, or return expression"
         end

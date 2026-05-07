@@ -26,7 +26,7 @@ module MilkTea
     Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :values, :functions, :methods, :local_completion_frames, :binding_resolution, :required_unsafe_lines)
     LocalCompletionFrame = Data.define(:start_line, :end_line, :function_name, :receiver_type, :snapshots)
     LocalCompletionSnapshot = Data.define(:line, :column, :bindings)
-    BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids)
+    BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids, :mutating_argument_identifier_ids)
     class FlowScope
       def initialize = (@bindings = {})
       def [](key) = @bindings[key]
@@ -120,6 +120,7 @@ module MilkTea
         @binding_name_by_id = {}
         @identifier_binding_ids = {}
         @declaration_binding_ids = {}
+        @mutating_argument_identifier_ids = {}
         @preassigned_local_binding_ids = {}
         @nullability_flow_result = nil
         @unsafe_statement_lines = []
@@ -975,6 +976,7 @@ module MilkTea
           binding_resolution: CFG::BindingResolution.new(
             identifier_binding_ids: resolution.identifier_binding_ids,
             declaration_binding_ids: resolution.declaration_binding_ids,
+            mutating_argument_identifier_ids: resolution.mutating_argument_identifier_ids,
           ),
           strict_binding_ids: true,
           local_decl_without_initializer_writes: true,
@@ -1017,6 +1019,7 @@ module MilkTea
           binding_resolution: CFG::BindingResolution.new(
             identifier_binding_ids: resolution.identifier_binding_ids,
             declaration_binding_ids: resolution.declaration_binding_ids,
+            mutating_argument_identifier_ids: resolution.mutating_argument_identifier_ids,
           ),
           strict_binding_ids: true,
         ).build(binding.ast.body)
@@ -1097,6 +1100,7 @@ module MilkTea
         BindingResolution.new(
           identifier_binding_ids: identifier_binding_ids,
           declaration_binding_ids: declaration_binding_ids,
+          mutating_argument_identifier_ids: {},
         )
       end
 
@@ -2562,6 +2566,7 @@ module MilkTea
         expected_params.each_with_index do |parameter, index|
           argument = arguments.fetch(index)
           actual_type = foreign_argument_actual_type(parameter, argument, scopes:, function_name: binding.name)
+          record_mutating_argument_identifier(argument, parameter)
           if foreign_cstr_boundary_parameter?(parameter)
             unless foreign_cstr_argument_compatible?(actual_type, parameter, expression: foreign_argument_expression(argument))
               raise_sema_error("argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}")
@@ -2577,6 +2582,13 @@ module MilkTea
         arguments.drop(expected_params.length).each do |argument|
           infer_expression(argument.value, scopes:)
         end
+      end
+
+      def record_mutating_argument_identifier(argument, parameter)
+        return unless %i[out inout].include?(parameter.passing_mode)
+        return unless argument.value.is_a?(AST::Identifier)
+
+        @mutating_argument_identifier_ids[argument.value.object_id] = true
       end
 
       def format_string_call?(binding, arguments)
@@ -4732,6 +4744,12 @@ module MilkTea
         end
       end
 
+      def foreign_argument_legacy_passing_mode(argument)
+        return nil unless argument.value.is_a?(AST::UnaryOp) && ["out", "in", "inout"].include?(argument.value.operator)
+
+        argument.value.operator
+      end
+
       def foreign_argument_actual_type(parameter, argument, scopes:, function_name:, expected_type: parameter.type)
         case parameter.passing_mode
         when :plain
@@ -4740,14 +4758,14 @@ module MilkTea
           foreign_consuming_argument_binding(parameter, argument, scopes:, function_name:)
           parameter.type
         when :in, :out, :inout
-          unless argument.value.is_a?(AST::UnaryOp) && argument.value.operator == parameter.passing_mode.to_s
-            raise_sema_error("argument #{parameter.name} to #{function_name} must use #{parameter.passing_mode}")
+          if (legacy_passing_mode = foreign_argument_legacy_passing_mode(argument))
+            raise_sema_error("argument #{parameter.name} to #{function_name} must not use #{legacy_passing_mode}; directional passing is declared on #{function_name}")
           end
 
           if parameter.passing_mode == :in
-            infer_expression(argument.value.operand, scopes:, expected_type: expected_type)
+            infer_expression(argument.value, scopes:, expected_type: expected_type)
           else
-            infer_lvalue(argument.value.operand, scopes:)
+            infer_lvalue(argument.value, scopes:)
           end
         else
           raise_sema_error("unsupported foreign passing mode #{parameter.passing_mode}")
@@ -4906,6 +4924,7 @@ module MilkTea
         BindingResolution.new(
           identifier_binding_ids: @identifier_binding_ids.dup.freeze,
           declaration_binding_ids: @declaration_binding_ids.dup.freeze,
+          mutating_argument_identifier_ids: @mutating_argument_identifier_ids.dup.freeze,
         )
       end
 

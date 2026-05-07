@@ -242,8 +242,6 @@ module MilkTea
       vendored_raylib_library = vendored_raylib.library(root:)
       vendored_sdl3 = MilkTea::VendoredSDL3
       vendored_sdl3_library = vendored_sdl3.library(root:)
-      vendored_glfw = MilkTea::VendoredGLFW
-      vendored_glfw_library = vendored_glfw.library(root:)
       vendored_box2d = MilkTea::VendoredBox2D
       vendored_box2d_library = vendored_box2d.library(root:)
       vendored_cjson = MilkTea::VendoredCJSON
@@ -766,88 +764,6 @@ module MilkTea
         "SDL_RenderReadPixels" => "ptr[SDL_Surface]?",
       }.merge(sdl3_documented_function_return_overrides).freeze
 
-      glfw_function_param_overrides = {
-        "glfwGetError" => { "description" => "ptr[cstr]?" },
-        "glfwSetErrorCallback" => { "callback" => "GLFWerrorfun?" },
-        "glfwSetMonitorCallback" => { "callback" => "GLFWmonitorfun?" },
-        "glfwCreateWindow" => {
-          "monitor" => "ptr[GLFWmonitor]?",
-          "share" => "ptr[GLFWwindow]?",
-        },
-        "glfwSetWindowPosCallback" => { "callback" => "GLFWwindowposfun?" },
-        "glfwSetWindowSizeCallback" => { "callback" => "GLFWwindowsizefun?" },
-        "glfwSetWindowCloseCallback" => { "callback" => "GLFWwindowclosefun?" },
-        "glfwSetWindowRefreshCallback" => { "callback" => "GLFWwindowrefreshfun?" },
-        "glfwSetWindowFocusCallback" => { "callback" => "GLFWwindowfocusfun?" },
-        "glfwSetWindowIconifyCallback" => { "callback" => "GLFWwindowiconifyfun?" },
-        "glfwSetWindowMaximizeCallback" => { "callback" => "GLFWwindowmaximizefun?" },
-        "glfwSetFramebufferSizeCallback" => { "callback" => "GLFWframebuffersizefun?" },
-        "glfwSetWindowContentScaleCallback" => { "callback" => "GLFWwindowcontentscalefun?" },
-        "glfwGetCursorPos" => {
-          "xpos" => "ptr[double]?",
-          "ypos" => "ptr[double]?",
-        },
-        "glfwSetCursor" => { "cursor" => "ptr[GLFWcursor]?" },
-        "glfwSetKeyCallback" => { "callback" => "GLFWkeyfun?" },
-        "glfwSetCharCallback" => { "callback" => "GLFWcharfun?" },
-        "glfwSetCharModsCallback" => { "callback" => "GLFWcharmodsfun?" },
-        "glfwSetMouseButtonCallback" => { "callback" => "GLFWmousebuttonfun?" },
-        "glfwSetCursorPosCallback" => { "callback" => "GLFWcursorposfun?" },
-        "glfwSetCursorEnterCallback" => { "callback" => "GLFWcursorenterfun?" },
-        "glfwSetScrollCallback" => { "callback" => "GLFWscrollfun?" },
-        "glfwSetDropCallback" => { "callback" => "GLFWdropfun?" },
-        "glfwSetJoystickCallback" => { "callback" => "GLFWjoystickfun?" },
-        "glfwMakeContextCurrent" => { "window" => "ptr[GLFWwindow]?" },
-      }.freeze
-
-      glfw_function_return_overrides = {
-        "glfwSetErrorCallback" => "GLFWerrorfun?",
-        "glfwGetMonitors" => "ptr[ptr[GLFWmonitor]]?",
-        "glfwGetPrimaryMonitor" => "ptr[GLFWmonitor]?",
-        "glfwGetMonitorName" => "cstr?",
-        "glfwGetMonitorUserPointer" => "ptr[void]?",
-        "glfwSetMonitorCallback" => "GLFWmonitorfun?",
-        "glfwGetVideoModes" => "const_ptr[GLFWvidmode]?",
-        "glfwGetVideoMode" => "const_ptr[GLFWvidmode]?",
-        "glfwGetGammaRamp" => "const_ptr[GLFWgammaramp]?",
-        "glfwCreateWindow" => "ptr[GLFWwindow]?",
-        "glfwGetWindowTitle" => "cstr?",
-        "glfwGetWindowMonitor" => "ptr[GLFWmonitor]?",
-        "glfwGetWindowUserPointer" => "ptr[void]?",
-        "glfwSetWindowPosCallback" => "GLFWwindowposfun?",
-        "glfwSetWindowSizeCallback" => "GLFWwindowsizefun?",
-        "glfwSetWindowCloseCallback" => "GLFWwindowclosefun?",
-        "glfwSetWindowRefreshCallback" => "GLFWwindowrefreshfun?",
-        "glfwSetWindowFocusCallback" => "GLFWwindowfocusfun?",
-        "glfwSetWindowIconifyCallback" => "GLFWwindowiconifyfun?",
-        "glfwSetWindowMaximizeCallback" => "GLFWwindowmaximizefun?",
-        "glfwSetFramebufferSizeCallback" => "GLFWframebuffersizefun?",
-        "glfwSetWindowContentScaleCallback" => "GLFWwindowcontentscalefun?",
-        "glfwGetKeyName" => "cstr?",
-        "glfwCreateCursor" => "ptr[GLFWcursor]?",
-        "glfwCreateStandardCursor" => "ptr[GLFWcursor]?",
-        "glfwSetKeyCallback" => "GLFWkeyfun?",
-        "glfwSetCharCallback" => "GLFWcharfun?",
-        "glfwSetCharModsCallback" => "GLFWcharmodsfun?",
-        "glfwSetMouseButtonCallback" => "GLFWmousebuttonfun?",
-        "glfwSetCursorPosCallback" => "GLFWcursorposfun?",
-        "glfwSetCursorEnterCallback" => "GLFWcursorenterfun?",
-        "glfwSetScrollCallback" => "GLFWscrollfun?",
-        "glfwSetDropCallback" => "GLFWdropfun?",
-        "glfwGetJoystickAxes" => "const_ptr[float]?",
-        "glfwGetJoystickButtons" => "const_ptr[ubyte]?",
-        "glfwGetJoystickHats" => "const_ptr[ubyte]?",
-        "glfwGetJoystickName" => "cstr?",
-        "glfwGetJoystickGUID" => "cstr?",
-        "glfwGetJoystickUserPointer" => "ptr[void]?",
-        "glfwSetJoystickCallback" => "GLFWjoystickfun?",
-        "glfwGetGamepadName" => "cstr?",
-        "glfwGetClipboardString" => "cstr?",
-        "glfwGetCurrentContext" => "ptr[GLFWwindow]?",
-        "glfwGetProcAddress" => "GLFWglproc?",
-        "glfwGetRequiredInstanceExtensions" => "ptr[cstr]?",
-      }.freeze
-
       [
         Binding.new(
           name: "raylib",
@@ -988,47 +904,6 @@ module MilkTea
           header_candidates: [
             vendored_sdl3.header_root(root:).join("SDL.h").to_s,
           ],
-        ),
-        Binding.new(
-          name: "glfw",
-          module_name: "std.c.glfw",
-          binding_path: root.join("std/c/glfw.mt"),
-          include_directives: ["GLFW/glfw3.h"],
-          link_libraries: ["glfw3"],
-          vendored_library: vendored_glfw_library,
-          clang_args: vendored_glfw.include_flags(root:),
-          compiler_flags: ["-DMT_LANG_GL_REGISTRY_HAVE_GLFW", *vendored_glfw.include_flags(root:)],
-          tracked_header_paths: [
-            vendored_glfw.header_root(root:).join("glfw3.h").to_s,
-          ],
-          tracked_header_prefixes: [
-            vendored_glfw.header_root(root:).to_s,
-          ],
-          declaration_name_prefixes: ["GLFW", "glfw"],
-          function_param_type_overrides: glfw_function_param_overrides,
-          function_return_type_overrides: glfw_function_return_overrides,
-          header_candidates: [
-            vendored_glfw.header_root(root:).join("glfw3.h").to_s,
-          ],
-        ),
-        Binding.new(
-          name: "gl",
-          module_name: "std.c.gl",
-          binding_path: root.join("std/c/gl.mt"),
-          include_directives: ["gl_registry_helpers.h"],
-          link_libraries: [],
-          compiler_flags: [],
-          implementation_defines: [MilkTea::OpenGLRegistry::IMPLEMENTATION_DEFINE],
-          tracked_header_paths: [
-            MilkTea::OpenGLRegistry.helper_header_path(root:).to_s,
-          ],
-          declaration_name_prefixes: ["GL", "gl", "mt_gl_"],
-          header_candidates: [
-            MilkTea::OpenGLRegistry.helper_header_path(root:).to_s,
-          ],
-          prepare: lambda do |_binding, **|
-            MilkTea::OpenGLRegistry.prepare!(root:)
-          end,
         ),
         Binding.new(
           name: "box2d",

@@ -104,7 +104,7 @@ def main() -> int:
 
         if (btn_save_mouse_hover and rl.is_mouse_button_released(rl.MouseButton.MOUSE_BUTTON_LEFT)) or rl.is_key_pressed(rl.KeyboardKey.KEY_S):
             var image = rl.load_image_from_texture(target.texture)
-            rl.image_flip_vertical(inout image)
+            rl.image_flip_vertical(image)
             rl.export_image(image, save_path)
             rl.unload_image(image)
             show_save_message = true

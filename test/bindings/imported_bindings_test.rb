@@ -9,7 +9,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "steamworks", "gl", "glfw", "libuv", "libc", "libm"], registry.map(&:name)
+    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "steamworks", "libuv", "libc", "libm"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -44,16 +44,6 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_equal "std.c.steamworks", registry.fetch("steamworks").raw_module_name
     assert_includes registry.fetch("steamworks").binding_path, "/std/steamworks.mt"
     assert_includes registry.fetch("steamworks").policy_path, "/bindings/imported/steamworks.binding.json"
-
-    assert_equal "std.gl", registry.fetch("gl").module_name
-    assert_equal "std.c.gl", registry.fetch("gl").raw_module_name
-    assert_includes registry.fetch("gl").binding_path, "/std/gl.mt"
-    assert_includes registry.fetch("gl").policy_path, "/bindings/imported/gl.binding.json"
-
-    assert_equal "std.glfw", registry.fetch("glfw").module_name
-    assert_equal "std.c.glfw", registry.fetch("glfw").raw_module_name
-    assert_includes registry.fetch("glfw").binding_path, "/std/glfw.mt"
-    assert_includes registry.fetch("glfw").policy_path, "/bindings/imported/glfw.binding.json"
 
     assert_equal "std.libuv", registry.fetch("libuv").module_name
     assert_equal "std.c.libuv", registry.fetch("libuv").raw_module_name
@@ -121,93 +111,6 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     refute_match(/^pub foreign def atan_2\(/, source)
   end
 
-  def test_checked_in_gl_binding_matches_policy_and_loads
-    binding = MilkTea::ImportedBindings.default_registry.fetch("gl")
-
-    assert_includes binding.check!, "/std/c/gl.mt"
-
-    source = File.read(binding.binding_path)
-    assert_match(/^module std\.gl$/, source)
-    assert_match(/^import std\.c\.gl as c$/, source)
-    assert_match(/^pub type GLuint = c\.GLuint$/, source)
-    assert_match(/^pub type GLsync = c\.GLsync$/, source)
-    assert_match(/^pub const COLOR_BUFFER_BIT: int = c\.GL_COLOR_BUFFER_BIT$/, source)
-    assert_match(/^pub const TRIANGLES: int = c\.GL_TRIANGLES$/, source)
-    assert_match(/^pub foreign def clear_color\(red: float, green: float, blue: float, alpha: float\) -> void = c\.glClearColor$/, source)
-    assert_match(/^pub foreign def create_shader\(type_: uint\) -> GLuint = c\.glCreateShader$/, source)
-    assert_match(/^pub foreign def use_glfw_loader\(\) -> void = c\.mt_gl_use_glfw_loader$/, source)
-    assert_match(/^pub foreign def use_sdl_loader\(\) -> void = c\.mt_gl_use_sdl_loader$/, source)
-    assert_match(/^pub foreign def reset_loader\(\) -> void = c\.mt_gl_reset_loader$/, source)
-    refute_match(/^pub foreign def gl_clear_color\(/, source)
-    refute_match(/^pub foreign def mt_gl_use_glfw_loader\(/, source)
-  end
-
-  def test_checked_in_glfw_binding_matches_policy_and_loads
-    binding = MilkTea::ImportedBindings.default_registry.fetch("glfw")
-
-    assert_includes binding.check!, "/std/c/glfw.mt"
-
-    source = File.read(binding.binding_path)
-    assert_match(/^module std\.glfw$/, source)
-    assert_match(/^import std\.c\.glfw as c$/, source)
-    assert_match(/^pub type GLFWwindow = c\.GLFWwindow$/, source)
-    assert_match(/^pub type GLFWvidmode = c\.GLFWvidmode$/, source)
-    assert_match(/^pub const TRUE: int = c\.GLFW_TRUE$/, source)
-    assert_match(/^pub const KEY_ESCAPE: int = c\.GLFW_KEY_ESCAPE$/, source)
-    assert_match(/^pub foreign def init\(\) -> int = c\.glfwInit$/, source)
-    assert_match(/^pub foreign def get_error\(description: ptr\[cstr\]\?\) -> int = c\.glfwGetError$/, source)
-    assert_match(/^pub foreign def set_error_callback\(callback: GLFWerrorfun\?\) -> GLFWerrorfun\? = c\.glfwSetErrorCallback$/, source)
-    assert_match(/^pub foreign def get_monitors\(count: ptr\[int\]\) -> ptr\[ptr\[GLFWmonitor\]\]\? = c\.glfwGetMonitors$/, source)
-    assert_match(/^pub foreign def get_primary_monitor\(\) -> ptr\[GLFWmonitor\]\? = c\.glfwGetPrimaryMonitor$/, source)
-    assert_match(/^pub foreign def get_monitor_name\(monitor: ptr\[GLFWmonitor\]\) -> cstr\? = c\.glfwGetMonitorName$/, source)
-    assert_match(/^pub foreign def set_monitor_callback\(callback: GLFWmonitorfun\?\) -> GLFWmonitorfun\? = c\.glfwSetMonitorCallback$/, source)
-    assert_match(/^pub foreign def get_video_modes\(monitor: ptr\[GLFWmonitor\], count: ptr\[int\]\) -> const_ptr\[GLFWvidmode\]\? = c\.glfwGetVideoModes$/, source)
-    assert_match(/^pub foreign def get_video_mode\(monitor: ptr\[GLFWmonitor\]\) -> const_ptr\[GLFWvidmode\]\? = c\.glfwGetVideoMode$/, source)
-    assert_match(/^pub foreign def get_gamma_ramp\(monitor: ptr\[GLFWmonitor\]\) -> const_ptr\[GLFWgammaramp\]\? = c\.glfwGetGammaRamp$/, source)
-    assert_match(/^pub foreign def create_window\(width: int, height: int, title: cstr, monitor: ptr\[GLFWmonitor\]\?, share: ptr\[GLFWwindow\]\?\) -> ptr\[GLFWwindow\]\? = c\.glfwCreateWindow$/, source)
-    assert_match(/^pub foreign def get_window_title\(window: ptr\[GLFWwindow\]\) -> cstr\? = c\.glfwGetWindowTitle$/, source)
-    assert_match(/^pub foreign def get_window_monitor\(window: ptr\[GLFWwindow\]\) -> ptr\[GLFWmonitor\]\? = c\.glfwGetWindowMonitor$/, source)
-    assert_match(/^pub foreign def get_window_user_pointer\(window: ptr\[GLFWwindow\]\) -> ptr\[void\]\? = c\.glfwGetWindowUserPointer$/, source)
-    assert_match(/^pub foreign def set_window_pos_callback\(window: ptr\[GLFWwindow\], callback: GLFWwindowposfun\?\) -> GLFWwindowposfun\? = c\.glfwSetWindowPosCallback$/, source)
-    assert_match(/^pub foreign def set_window_size_callback\(window: ptr\[GLFWwindow\], callback: GLFWwindowsizefun\?\) -> GLFWwindowsizefun\? = c\.glfwSetWindowSizeCallback$/, source)
-    assert_match(/^pub foreign def set_window_close_callback\(window: ptr\[GLFWwindow\], callback: GLFWwindowclosefun\?\) -> GLFWwindowclosefun\? = c\.glfwSetWindowCloseCallback$/, source)
-    assert_match(/^pub foreign def set_window_refresh_callback\(window: ptr\[GLFWwindow\], callback: GLFWwindowrefreshfun\?\) -> GLFWwindowrefreshfun\? = c\.glfwSetWindowRefreshCallback$/, source)
-    assert_match(/^pub foreign def set_window_focus_callback\(window: ptr\[GLFWwindow\], callback: GLFWwindowfocusfun\?\) -> GLFWwindowfocusfun\? = c\.glfwSetWindowFocusCallback$/, source)
-    assert_match(/^pub foreign def set_window_iconify_callback\(window: ptr\[GLFWwindow\], callback: GLFWwindowiconifyfun\?\) -> GLFWwindowiconifyfun\? = c\.glfwSetWindowIconifyCallback$/, source)
-    assert_match(/^pub foreign def set_window_maximize_callback\(window: ptr\[GLFWwindow\], callback: GLFWwindowmaximizefun\?\) -> GLFWwindowmaximizefun\? = c\.glfwSetWindowMaximizeCallback$/, source)
-    assert_match(/^pub foreign def set_framebuffer_size_callback\(window: ptr\[GLFWwindow\], callback: GLFWframebuffersizefun\?\) -> GLFWframebuffersizefun\? = c\.glfwSetFramebufferSizeCallback$/, source)
-    assert_match(/^pub foreign def set_window_content_scale_callback\(window: ptr\[GLFWwindow\], callback: GLFWwindowcontentscalefun\?\) -> GLFWwindowcontentscalefun\? = c\.glfwSetWindowContentScaleCallback$/, source)
-    assert_match(/^pub foreign def get_key_name\(key: int, scancode: int\) -> cstr\? = c\.glfwGetKeyName$/, source)
-    assert_match(/^pub foreign def get_cursor_pos\(window: ptr\[GLFWwindow\], xpos: ptr\[double\]\?, ypos: ptr\[double\]\?\) -> void = c\.glfwGetCursorPos$/, source)
-    assert_match(/^pub foreign def create_cursor\(image: const_ptr\[GLFWimage\], xhot: int, yhot: int\) -> ptr\[GLFWcursor\]\? = c\.glfwCreateCursor$/, source)
-    assert_match(/^pub foreign def create_standard_cursor\(shape: int\) -> ptr\[GLFWcursor\]\? = c\.glfwCreateStandardCursor$/, source)
-    assert_match(/^pub foreign def set_cursor\(window: ptr\[GLFWwindow\], cursor: ptr\[GLFWcursor\]\?\) -> void = c\.glfwSetCursor$/, source)
-    assert_match(/^pub foreign def set_key_callback\(window: ptr\[GLFWwindow\], callback: GLFWkeyfun\?\) -> GLFWkeyfun\? = c\.glfwSetKeyCallback$/, source)
-    assert_match(/^pub foreign def set_char_callback\(window: ptr\[GLFWwindow\], callback: GLFWcharfun\?\) -> GLFWcharfun\? = c\.glfwSetCharCallback$/, source)
-    assert_match(/^pub foreign def set_char_mods_callback\(window: ptr\[GLFWwindow\], callback: GLFWcharmodsfun\?\) -> GLFWcharmodsfun\? = c\.glfwSetCharModsCallback$/, source)
-    assert_match(/^pub foreign def set_mouse_button_callback\(window: ptr\[GLFWwindow\], callback: GLFWmousebuttonfun\?\) -> GLFWmousebuttonfun\? = c\.glfwSetMouseButtonCallback$/, source)
-    assert_match(/^pub foreign def set_cursor_pos_callback\(window: ptr\[GLFWwindow\], callback: GLFWcursorposfun\?\) -> GLFWcursorposfun\? = c\.glfwSetCursorPosCallback$/, source)
-    assert_match(/^pub foreign def set_cursor_enter_callback\(window: ptr\[GLFWwindow\], callback: GLFWcursorenterfun\?\) -> GLFWcursorenterfun\? = c\.glfwSetCursorEnterCallback$/, source)
-    assert_match(/^pub foreign def set_scroll_callback\(window: ptr\[GLFWwindow\], callback: GLFWscrollfun\?\) -> GLFWscrollfun\? = c\.glfwSetScrollCallback$/, source)
-    assert_match(/^pub foreign def set_drop_callback\(window: ptr\[GLFWwindow\], callback: GLFWdropfun\?\) -> GLFWdropfun\? = c\.glfwSetDropCallback$/, source)
-    assert_match(/^pub foreign def get_joystick_axes\(jid: int, count: ptr\[int\]\) -> const_ptr\[float\]\? = c\.glfwGetJoystickAxes$/, source)
-    assert_match(/^pub foreign def get_joystick_buttons\(jid: int, count: ptr\[int\]\) -> const_ptr\[ubyte\]\? = c\.glfwGetJoystickButtons$/, source)
-    assert_match(/^pub foreign def get_joystick_hats\(jid: int, count: ptr\[int\]\) -> const_ptr\[ubyte\]\? = c\.glfwGetJoystickHats$/, source)
-    assert_match(/^pub foreign def get_joystick_name\(jid: int\) -> cstr\? = c\.glfwGetJoystickName$/, source)
-    assert_match(/^pub foreign def get_joystick_guid\(jid: int\) -> cstr\? = c\.glfwGetJoystickGUID$/, source)
-    assert_match(/^pub foreign def get_joystick_user_pointer\(jid: int\) -> ptr\[void\]\? = c\.glfwGetJoystickUserPointer$/, source)
-    assert_match(/^pub foreign def set_joystick_callback\(callback: GLFWjoystickfun\?\) -> GLFWjoystickfun\? = c\.glfwSetJoystickCallback$/, source)
-    assert_match(/^pub foreign def get_gamepad_name\(jid: int\) -> cstr\? = c\.glfwGetGamepadName$/, source)
-    assert_match(/^pub foreign def get_clipboard_string\(window: ptr\[GLFWwindow\]\) -> cstr\? = c\.glfwGetClipboardString$/, source)
-    assert_match(/^pub foreign def make_context_current\(window: ptr\[GLFWwindow\]\?\) -> void = c\.glfwMakeContextCurrent$/, source)
-    assert_match(/^pub foreign def get_current_context\(\) -> ptr\[GLFWwindow\]\? = c\.glfwGetCurrentContext$/, source)
-    assert_match(/^pub foreign def get_proc_address\(procname: cstr\) -> GLFWglproc\? = c\.glfwGetProcAddress$/, source)
-    assert_match(/^pub foreign def get_required_instance_extensions\(count: ptr\[uint\]\) -> ptr\[cstr\]\? = c\.glfwGetRequiredInstanceExtensions$/, source)
-    assert_match(/^pub foreign def get_time\(\) -> double = c\.glfwGetTime$/, source)
-    assert_match(/^pub foreign def set_window_should_close\(window: ptr\[GLFWwindow\], value: int\) -> void = c\.glfwSetWindowShouldClose$/, source)
-    refute_match(/^pub foreign def glfw_init\(/, source)
-  end
-
   def test_checked_in_libuv_binding_matches_policy_and_loads
     binding = MilkTea::ImportedBindings.default_registry.fetch("libuv")
 
@@ -249,7 +152,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub type InitFlags = c\.SDL_InitFlags$/, source)
     assert_match(/^pub const INIT_VIDEO: uint = c\.SDL_INIT_VIDEO$/, source)
     assert_match(/^pub foreign def malloc\(size: ptr_uint\) -> ptr\[void\] = c\.SDL_malloc$/, source)
-    assert_match(/^pub foreign def create_window\(title: str as cstr, w: int, h: int, flag_bits: ptr_uint\) -> ptr\[Window\] = c\.SDL_CreateWindow$/, source)
+    assert_match(/^pub foreign def create_window\(title: str as cstr, w: int, h: int, flag_bits: ptr_uint\) -> ptr\[Window\]\? = c\.SDL_CreateWindow$/, source)
     assert_match(/^pub foreign def create_window_and_renderer\(title: str as cstr, width: int, height: int, window_flags: ptr_uint, out window: ptr\[Window\], out renderer: ptr\[Renderer\]\) -> bool = c\.SDL_CreateWindowAndRenderer$/, source)
     assert_match(/^pub foreign def run_app\(argc: int, argv: ptr\[ptr\[char\]\], main_function: MainFunc\) -> int = c\.SDL_RunApp\(argc, argv, main_function, null\)$/, source)
     assert_match(/^pub foreign def set_app_metadata\(app_name: str as cstr, app_version: str as cstr, app_identifier: str as cstr\) -> bool = c\.SDL_SetAppMetadata$/, source)
@@ -260,16 +163,22 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub foreign def get_render_output_size\(renderer: ptr\[Renderer\], out w: int, out h: int\) -> bool = c\.SDL_GetRenderOutputSize$/, source)
     assert_match(/^pub foreign def get_power_info\(out seconds: int, out percent: int\) -> PowerState = c\.SDL_GetPowerInfo$/, source)
     assert_match(/^pub foreign def get_preferred_locales\(out count: int\) -> ptr\[ptr\[Locale\]\]\? = c\.SDL_GetPreferredLocales$/, source)
-    assert_match(/^pub foreign def get_displays\(count: ptr\[int\]\) -> ptr\[DisplayID\]\? = c\.SDL_GetDisplays$/, source)
+    assert_match(/^pub foreign def get_displays\(count: ptr\[int\]\?\) -> ptr\[DisplayID\]\? = c\.SDL_GetDisplays$/, source)
     assert_match(/^pub foreign def get_display_name\(display_id: uint\) -> cstr\? = c\.SDL_GetDisplayName$/, source)
-    assert_match(/^pub foreign def get_fullscreen_display_modes\(display_id: uint, count: ptr\[int\]\) -> ptr\[ptr\[DisplayMode\]\]\? = c\.SDL_GetFullscreenDisplayModes$/, source)
+    assert_match(/^pub foreign def get_fullscreen_display_modes\(display_id: uint, count: ptr\[int\]\?\) -> ptr\[ptr\[DisplayMode\]\]\? = c\.SDL_GetFullscreenDisplayModes$/, source)
     assert_match(/^pub foreign def get_desktop_display_mode\(display_id: uint\) -> const_ptr\[DisplayMode\]\? = c\.SDL_GetDesktopDisplayMode$/, source)
     assert_match(/^pub foreign def get_current_display_mode\(display_id: uint\) -> const_ptr\[DisplayMode\]\? = c\.SDL_GetCurrentDisplayMode$/, source)
     assert_match(/^pub foreign def get_window_icc_profile\(window: ptr\[Window\], size: ptr\[ptr_uint\]\) -> ptr\[void\]\? = c\.SDL_GetWindowICCProfile$/, source)
-    assert_match(/^pub foreign def get_windows\(count: ptr\[int\]\) -> ptr\[ptr\[Window\]\]\? = c\.SDL_GetWindows$/, source)
+    assert_match(/^pub foreign def get_windows\(count: ptr\[int\]\?\) -> ptr\[ptr\[Window\]\]\? = c\.SDL_GetWindows$/, source)
     assert_match(/^pub foreign def convert_event_to_render_coordinates\(renderer: ptr\[Renderer\], inout event: Event\) -> bool = c\.SDL_ConvertEventToRenderCoordinates$/, source)
     assert_match(/^pub foreign def get_current_time\(out ticks: Time\) -> bool = c\.SDL_GetCurrentTime$/, source)
     assert_match(/^pub foreign def time_to_date_time\(ticks: Time, out dt: DateTime, local_time: bool\) -> bool = c\.SDL_TimeToDateTime$/, source)
+    assert_match(/^pub foreign def render_points\(renderer: ptr\[Renderer\], points: span\[FPoint\]\) -> bool = c\.SDL_RenderPoints\(renderer, points\.data, int<-points\.len\)$/, source)
+    assert_match(/^pub foreign def render_lines\(renderer: ptr\[Renderer\], points: span\[FPoint\]\) -> bool = c\.SDL_RenderLines\(renderer, points\.data, int<-points\.len\)$/, source)
+    assert_match(/^pub foreign def render_rect\(renderer: ptr\[Renderer\], in rect: FRect as const_ptr\[FRect\]\) -> bool = c\.SDL_RenderRect$/, source)
+    assert_match(/^pub foreign def render_rects\(renderer: ptr\[Renderer\], rects: span\[FRect\]\) -> bool = c\.SDL_RenderRects\(renderer, rects\.data, int<-rects\.len\)$/, source)
+    assert_match(/^pub foreign def render_fill_rect\(renderer: ptr\[Renderer\], in rect: FRect as const_ptr\[FRect\]\) -> bool = c\.SDL_RenderFillRect$/, source)
+    assert_match(/^pub foreign def render_fill_rects\(renderer: ptr\[Renderer\], rects: span\[FRect\]\) -> bool = c\.SDL_RenderFillRects\(renderer, rects\.data, int<-rects\.len\)$/, source)
     assert_match(/^pub foreign def render_debug_text\(renderer: ptr\[Renderer\], x: float, y: float, text: str as cstr\) -> bool = c\.SDL_RenderDebugText$/, source)
     assert_match(/^pub foreign def load_png\(file_name: str as cstr\) -> ptr\[Surface\]\? = c\.SDL_LoadPNG$/, source)
     assert_match(/^pub foreign def gl_get_proc_address\(proc_: cstr\) -> FunctionPointer\? = c\.SDL_GL_GetProcAddress$/, source)
@@ -278,14 +187,14 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub foreign def gl_get_current_context\(\) -> GLContext\? = c\.SDL_GL_GetCurrentContext$/, source)
     assert_match(/^pub foreign def load_object\(sofile: cstr\) -> ptr\[SharedObject\]\? = c\.SDL_LoadObject$/, source)
     assert_match(/^pub foreign def load_function\(handle: ptr\[SharedObject\], name: cstr\) -> FunctionPointer\? = c\.SDL_LoadFunction$/, source)
-    assert_match(/^pub foreign def get_keyboards\(count: ptr\[int\]\) -> ptr\[KeyboardID\]\? = c\.SDL_GetKeyboards$/, source)
+    assert_match(/^pub foreign def get_keyboards\(count: ptr\[int\]\?\) -> ptr\[KeyboardID\]\? = c\.SDL_GetKeyboards$/, source)
     assert_match(/^pub foreign def get_keyboard_name_for_id\(instance_id: uint\) -> cstr\? = c\.SDL_GetKeyboardNameForID$/, source)
-    assert_match(/^pub foreign def get_mice\(count: ptr\[int\]\) -> ptr\[MouseID\]\? = c\.SDL_GetMice$/, source)
+    assert_match(/^pub foreign def get_mice\(count: ptr\[int\]\?\) -> ptr\[MouseID\]\? = c\.SDL_GetMice$/, source)
     assert_match(/^pub foreign def get_mouse_name_for_id\(instance_id: uint\) -> cstr\? = c\.SDL_GetMouseNameForID$/, source)
-    assert_match(/^pub foreign def get_touch_devices\(count: ptr\[int\]\) -> ptr\[TouchID\]\? = c\.SDL_GetTouchDevices$/, source)
+    assert_match(/^pub foreign def get_touch_devices\(count: ptr\[int\]\?\) -> ptr\[TouchID\]\? = c\.SDL_GetTouchDevices$/, source)
     assert_match(/^pub foreign def get_touch_device_name\(touch_id: ptr_uint\) -> cstr\? = c\.SDL_GetTouchDeviceName$/, source)
     assert_match(/^pub foreign def get_touch_fingers\(touch_id: ptr_uint, count: ptr\[int\]\) -> ptr\[ptr\[Finger\]\]\? = c\.SDL_GetTouchFingers$/, source)
-    assert_match(/^pub foreign def get_sensors\(count: ptr\[int\]\) -> ptr\[SensorID\]\? = c\.SDL_GetSensors$/, source)
+    assert_match(/^pub foreign def get_sensors\(count: ptr\[int\]\?\) -> ptr\[SensorID\]\? = c\.SDL_GetSensors$/, source)
     assert_match(/^pub foreign def get_sensor_name_for_id\(instance_id: uint\) -> cstr\? = c\.SDL_GetSensorNameForID$/, source)
     assert_match(/^pub foreign def open_sensor\(instance_id: uint\) -> ptr\[Sensor\]\? = c\.SDL_OpenSensor$/, source)
     assert_match(/^pub foreign def get_sensor_from_id\(instance_id: uint\) -> ptr\[Sensor\]\? = c\.SDL_GetSensorFromID$/, source)
@@ -349,7 +258,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub foreign def parse\(value: str as cstr\) -> ptr\[JSON\]\? = c\.cJSON_Parse$/, source)
     assert_match(/^pub foreign def parse_with_length\(value: str as cstr, buffer_length: ptr_uint\) -> ptr\[JSON\]\? = c\.cJSON_ParseWithLength$/, source)
     assert_match(/^pub foreign def get_object_item\(object: const_ptr\[JSON\], string: str as cstr\) -> ptr\[JSON\]\? = c\.cJSON_GetObjectItem$/, source)
-    assert_match(/^pub foreign def add_string_to_object\(object: ptr\[JSON\], name: str as cstr, string: str as cstr\) -> ptr\[JSON\] = c\.cJSON_AddStringToObject$/, source)
+    assert_match(/^pub foreign def add_string_to_object\(object: ptr\[JSON\], name: str as cstr, string: str as cstr\) -> ptr\[JSON\]\? = c\.cJSON_AddStringToObject$/, source)
     refute_match(/^pub foreign def cjson_parse\(/, source)
     refute_match(/^pub foreign def malloc\(/, source)
     refute_match(/^pub foreign def free\(/, source)
@@ -484,7 +393,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub foreign def gen_texture_mipmaps\(inout texture: Texture2D\) -> void = c\.GenTextureMipmaps$/, source)
     assert_match(/^pub foreign def load_font_data\(file_data: const_ptr\[ubyte\], data_size: int, font_size: int, codepoints: ptr\[int\]\?, codepoint_count: int, kind: FontType, out glyph_count: int\) -> ptr\[GlyphInfo\] = c\.LoadFontData$/, source)
     assert_match(/^pub foreign def gen_image_font_atlas\(glyphs: const_ptr\[GlyphInfo\], out glyph_recs: ptr\[Rectangle\], glyph_count: int, font_size: int, padding: int, pack_method: int\) -> Image = c\.GenImageFontAtlas$/, source)
-    assert_match(/^pub foreign def load_codepoints_ptr\(text: str as cstr, out count: int\) -> ptr\[int\] = c\.LoadCodepoints$/, source)
+    assert_match(/^pub foreign def load_codepoints_ptr\(text: str as cstr, out count: int\) -> ptr\[int\]\? = c\.LoadCodepoints$/, source)
     assert_match(/^pub foreign def load_fragment_shader\(fs_file_name: str as cstr\) -> Shader = c\.LoadShader\(null, fs_file_name\)$/, source)
     refute_match(/^# extension from /, source)
     refute_match(/^pub struct CodepointList:$/, source)

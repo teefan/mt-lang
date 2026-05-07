@@ -31,10 +31,10 @@ def main() -> int:
         rl.draw_circle_sector(center, outer_radius, start_angle, end_angle, int<-segments, rl.fade(rl.MAROON, 0.3))
         rl.draw_circle_sector_lines(center, outer_radius, start_angle, end_angle, int<-segments, rl.fade(rl.MAROON, 0.6))
 
-        gui.slider_bar(rl.Rectangle(x = 600.0, y = 40.0, width = 120.0, height = 20.0), "StartAngle", rl.text_format_float("%.2f", start_angle), inout start_angle, 0.0, 720.0)
-        gui.slider_bar(rl.Rectangle(x = 600.0, y = 70.0, width = 120.0, height = 20.0), "EndAngle", rl.text_format_float("%.2f", end_angle), inout end_angle, 0.0, 720.0)
-        gui.slider_bar(rl.Rectangle(x = 600.0, y = 140.0, width = 120.0, height = 20.0), "Radius", rl.text_format_float("%.2f", outer_radius), inout outer_radius, 0.0, 200.0)
-        gui.slider_bar(rl.Rectangle(x = 600.0, y = 170.0, width = 120.0, height = 20.0), "Segments", rl.text_format_float("%.2f", segments), inout segments, 0.0, 100.0)
+        gui.slider_bar(rl.Rectangle(x = 600.0, y = 40.0, width = 120.0, height = 20.0), "StartAngle", rl.text_format_float("%.2f", start_angle), start_angle, 0.0, 720.0)
+        gui.slider_bar(rl.Rectangle(x = 600.0, y = 70.0, width = 120.0, height = 20.0), "EndAngle", rl.text_format_float("%.2f", end_angle), end_angle, 0.0, 720.0)
+        gui.slider_bar(rl.Rectangle(x = 600.0, y = 140.0, width = 120.0, height = 20.0), "Radius", rl.text_format_float("%.2f", outer_radius), outer_radius, 0.0, 200.0)
+        gui.slider_bar(rl.Rectangle(x = 600.0, y = 170.0, width = 120.0, height = 20.0), "Segments", rl.text_format_float("%.2f", segments), segments, 0.0, 100.0)
 
         let min_segments = math.ceil((end_angle - start_angle) / 90.0)
         rl.draw_text(

@@ -937,7 +937,7 @@ class MilkTeaSemaTest < Minitest::Test
       def main(path: str, data: span[ubyte]) -> int:
           var data_size = 0
           rl.init_window(800, 450, "Demo")
-          let loaded = rl.load_file_data(path, out data_size)
+          let loaded = rl.load_file_data(path, data_size)
           let saved = rl.save_file_data(path, data)
           if loaded != null and saved:
               return data_size
@@ -980,7 +980,7 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> void:
           var labels = array[str, 3]("Play", "Options", "Quit")
           var active = 0
-          sample.use_names(labels, inout active)
+          sample.use_names(labels, active)
     MT
 
     imported_sources = {
@@ -1013,7 +1013,7 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> void:
           var labels = array[str, 3]("Play", "Options", "Quit")
           var active = 0
-          sample.use_names(labels, inout active)
+          sample.use_names(labels, active)
     MT
 
     imported_sources = {
@@ -1215,7 +1215,7 @@ class MilkTeaSemaTest < Minitest::Test
       def main() -> void:
           var labels = array[cstr, 3]("Play", "Options", "Quit")
           var active = 0
-          sample.use_names(labels, inout active)
+          sample.use_names(labels, active)
     MT
 
     imported_sources = {
@@ -3570,7 +3570,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> void:
           let value = 7
-          sample.inspect(in value)
+          sample.inspect(value)
     MT
 
     imported_sources = {
@@ -3592,7 +3592,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_rejects_foreign_in_argument_without_marker
+  def test_rejects_foreign_in_argument_with_legacy_marker
     root_source = <<~MT
       module demo.main
 
@@ -3600,7 +3600,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> void:
           let value = 7
-          sample.inspect(value)
+          sample.inspect(in value)
     MT
 
     imported_sources = {
@@ -3621,7 +3621,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_program_source(root_source, imported_sources)
     end
 
-    assert_match(/argument value to inspect must use in/, error.message)
+    assert_match(/argument value to inspect must not use in/, error.message)
   end
 
   def test_rejects_foreign_in_parameter_without_const_ptr_boundary
@@ -3632,7 +3632,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> void:
           let value = 7
-          sample.inspect(in value)
+          sample.inspect(value)
     MT
 
     imported_sources = {
@@ -3664,7 +3664,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def main() -> void:
           let value = 7
-          sample.inspect(in value)
+          sample.inspect(value)
     MT
 
     imported_sources = {

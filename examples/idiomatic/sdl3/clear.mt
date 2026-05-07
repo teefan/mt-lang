@@ -16,7 +16,7 @@ var renderer: ptr[sdl.Renderer]
 def pump_events() -> bool:
     var event = zero[sdl.Event]
 
-    while sdl.poll_event(out event):
+    while sdl.poll_event(event):
         if sdl.EventType.SDL_EVENT_QUIT == sdl.EventType.SDL_EVENT_QUIT:
             return false
 
@@ -41,7 +41,7 @@ def app_main() -> int:
         return 1
     defer sdl.quit()
 
-    if not sdl.create_window_and_renderer(window_title, window_width, window_height, window_flags, out window, out renderer):
+    if not sdl.create_window_and_renderer(window_title, window_width, window_height, window_flags, window, renderer):
         return 1
     defer sdl.destroy_renderer(renderer)
     defer sdl.destroy_window(window)

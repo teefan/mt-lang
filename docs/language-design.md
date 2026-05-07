@@ -928,6 +928,8 @@ The raw layer should be inspectable and boring. Handwritten wrappers are optiona
 
 ### Imported foreign declarations
 
+The focused follow-on proposal for reducing imported-call friction without adding helper-wrapper sprawl lives in [Foreign Call Ergonomics V2](foreign-call-ergonomics.md).
+
 Most application code should call imported foreign declarations, not raw `std.c.*` bindings.
 
 Imported foreign modules are ordinary `module` files. They import a raw `std.c.*` module and re-export compiler-recognized `foreign def` declarations.
@@ -1008,9 +1010,9 @@ Parameter and boundary rules:
 - a string literal or existing `cstr` value may satisfy `str as cstr` without temporary storage
 - a dynamic `str` argument for `str as cstr` is materialized automatically at the foreign boundary for the duration of the call
 - imported foreign declarations may accept `span[str]` or `array[str, N]` for string-list APIs even when the raw callee wants `span[cstr]`, `span[ptr[char]]`, or pointer-plus-length forms; that marshalling belongs to the declaration, not to the call site
-- `in name: T` means the raw foreign target takes a read-only pointer and the call site must pass `in expr`; the boundary lowers by taking a const address, materializing a temporary first when the expression is not directly addressable
-- `out name: T` means the raw foreign target takes a writable pointer and the call site must pass `out lvalue`
-- `inout name: T` means the raw foreign target reads and writes through a pointer and the call site must pass `inout lvalue`
+- `in name: T` means the raw foreign target takes a read-only pointer; call sites pass an ordinary expression and the boundary lowers by taking a const address, materializing a temporary first when the expression is not directly addressable
+- `out name: T` means the raw foreign target takes a writable pointer; call sites pass an ordinary mutable addressable lvalue
+- `inout name: T` means the raw foreign target reads and writes through a pointer; call sites pass an ordinary mutable addressable lvalue
 - `consuming name: Handle` means the public Milk Tea parameter is a non-null opaque handle or `ptr[T]`, and v1 uses it only for release-style foreign calls that consume an existing nullable binding
 - plain parameters and return values require exact compatibility or an explicitly permitted identity ABI projection
 
@@ -1058,17 +1060,17 @@ Parameter consumption rules:
 
 Call-site checking rules:
 
-- a call to a `foreign def` with `out` parameters requires `out lvalue` at the corresponding argument position
-- a call to a `foreign def` with `in` parameters requires `in expr` at the corresponding argument position
-- a call to a `foreign def` with `inout` parameters requires `inout lvalue` at the corresponding argument position
+- a call to a `foreign def` with `out` parameters requires an ordinary mutable addressable lvalue at the corresponding argument position
+- a call to a `foreign def` with `in` parameters accepts an ordinary expression at the corresponding argument position
+- a call to a `foreign def` with `inout` parameters requires an ordinary mutable addressable lvalue at the corresponding argument position
 - a call to a `foreign def` with `consuming` parameters requires a bare identifier naming a nullable local or parameter binding
 - the current flow type of that binding must already be the non-null handle type required by the `consuming` parameter
 - in v1, a foreign call with any `consuming` parameter must be a top-level expression statement; `defer`, local initializers, assignments, returns, and larger expressions are rejected
 - after a `consuming` foreign call, continuation flow refines each consumed binding to `null`
-- `in`, `out`, and `inout` are rejected outside calls to `foreign def`
-- `in` accepts ordinary expressions; if an expression is not addressable, lowering creates a short-lived temporary before taking its const address
-- `out` requires a mutable addressable lvalue and does not read the old value before the call
-- `inout` requires a mutable addressable lvalue and exposes both the old and new value to the callee
+- legacy call-site markers such as `in expr`, `out lvalue`, and `inout lvalue` are rejected semantically; boundary directionality lives on the imported declaration
+- `in` parameters accept ordinary expressions; if an expression is not addressable, lowering creates a short-lived temporary before taking its const address
+- `out` parameters require a mutable addressable lvalue and do not read the old value before the call
+- `inout` parameters require a mutable addressable lvalue and expose both the old and new value to the callee
 - automatic foreign text marshalling is part of imported-boundary checking, not an extra source clause
 - string literals and existing `cstr` values lower directly where possible, so the compiler only materializes temporary storage when the public argument actually needs it
 
@@ -1112,9 +1114,9 @@ Automatic text marshalling lowering:
 
 Directional pointer lowering:
 
-- `out x` lowers to address-taking of `x` at the raw call boundary without exposing `ptr_of(x)` in user source
-- `in value` lowers to const address-taking at the raw call boundary without exposing `const_ptr_of(value)` or casts in user source; non-addressable operands lower through a visible temporary in statement-shaped foreign calls
-- `inout x` lowers to the same address-taking form, but sema preserves the read-write contract instead of pure output
+- an `out` parameter lowers its call-site lvalue by taking its address at the raw call boundary without exposing `ptr_of(...)` in user source
+- an `in` parameter lowers its call-site argument by taking a const address at the raw call boundary without exposing `const_ptr_of(...)` or casts in user source; non-addressable operands lower through a visible temporary in statement-shaped foreign calls
+- an `inout` parameter lowers the same way as `out`, but sema preserves the read-write contract instead of pure output
 - if the raw target expects `ptr[void]` or another identity-projection pointer type, lowering inserts only the minimal cast required by the raw C signature
 
 Release-function ownership lowering:
@@ -1135,14 +1137,14 @@ Call sites should read like this:
 ```mt
 rl.init_window(screen_width, screen_height, "Milk Tea")
 let texture = rl.load_texture(path)
-let file_data = rl.load_file_data("storage.data", out data_size)
+let file_data = rl.load_file_data("storage.data", data_size)
 let success = rl.save_file_data("storage.data", bytes)
 let ints = rl.mem_alloc[int](16)
 ```
 
 `str as cstr` and `span[str]` foreign boundaries use ordinary imported-call syntax. When the boundary needs synthesized temporary C-compatible storage or other statement-shaped setup, lowering hoists that work into visible temporary locals and branch-local control flow as needed, so nested call arguments, arithmetic, `if ...: ... else: ...` expressions, and short-circuit boolean expressions still read like ordinary Milk Tea while generated C stays explicit about the temporary storage.
 
-`in name`, `out name`, and `inout name` are foreign-boundary forms, not raw pointer expressions. They lower to address-taking at the imported call site without exposing `const_ptr_of(...)`, `ptr_of(...)`, or ABI casts in ordinary code.
+`in`, `out`, and `inout` are declaration-side foreign-boundary forms, not imported-call expressions. They control how ordinary call-site arguments lower at the boundary without exposing `const_ptr_of(...)`, `ptr_of(...)`, or ABI casts in ordinary code.
 
 This is the C# part worth copying: declarations say how the boundary works, while raw pointer code remains explicitly low-level.
 

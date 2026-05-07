@@ -14,29 +14,29 @@ def main() -> int:
     defer rl.close_window()
 
     var cat = rl.load_image(cat_path)
-    rl.image_crop(inout cat, rl.Rectangle(x = 100.0, y = 10.0, width = 280.0, height = 380.0))
-    rl.image_flip_horizontal(inout cat)
-    rl.image_resize(inout cat, 150, 200)
+    rl.image_crop(cat, rl.Rectangle(x = 100.0, y = 10.0, width = 280.0, height = 380.0))
+    rl.image_flip_horizontal(cat)
+    rl.image_resize(cat, 150, 200)
 
     var parrots = rl.load_image(parrots_path)
 
     rl.image_draw(
-        inout parrots,
+        parrots,
         cat,
         rl.Rectangle(x = 0.0, y = 0.0, width = float<-cat.width, height = float<-cat.height),
         rl.Rectangle(x = 30.0, y = 40.0, width = float<-cat.width * 1.5, height = float<-cat.height * 1.5),
         rl.WHITE,
     )
-    rl.image_crop(inout parrots, rl.Rectangle(x = 0.0, y = 50.0, width = float<-parrots.width, height = float<-parrots.height - 100.0))
+    rl.image_crop(parrots, rl.Rectangle(x = 0.0, y = 50.0, width = float<-parrots.width, height = float<-parrots.height - 100.0))
 
-    rl.image_draw_pixel(inout parrots, 10, 10, rl.RAYWHITE)
-    rl.image_draw_circle_lines(inout parrots, 10, 10, 5, rl.RAYWHITE)
-    rl.image_draw_rectangle(inout parrots, 5, 20, 10, 10, rl.RAYWHITE)
+    rl.image_draw_pixel(parrots, 10, 10, rl.RAYWHITE)
+    rl.image_draw_circle_lines(parrots, 10, 10, 5, rl.RAYWHITE)
+    rl.image_draw_rectangle(parrots, 5, 20, 10, 10, rl.RAYWHITE)
 
     rl.unload_image(cat)
 
     let font = rl.load_font(font_path)
-    rl.image_draw_text_ex(inout parrots, font, "PARROTS & CAT", rl.Vector2(x = 300.0, y = 230.0), float<-font.baseSize, -2.0, rl.WHITE)
+    rl.image_draw_text_ex(parrots, font, "PARROTS & CAT", rl.Vector2(x = 300.0, y = 230.0), float<-font.baseSize, -2.0, rl.WHITE)
     rl.unload_font(font)
 
     let texture = rl.load_texture_from_image(parrots)

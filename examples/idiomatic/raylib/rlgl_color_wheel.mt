@@ -188,7 +188,7 @@ def main() -> int:
         rl.draw_text("press ctrl+c to copy!", 8, 425 - copy_offset, 20, copy_color)
         rl.draw_text(rl.text_format_int("triangle count: %d", triangle_count), 8, 395, 20, rl.DARKGRAY)
 
-        gui.slider_bar(slider_rectangle, "value: ", "", inout value, 0.0, 1.0)
+        gui.slider_bar(slider_rectangle, "value: ", "", value, 0.0, 1.0)
         rl.draw_fps(80, 8)
 
     return 0

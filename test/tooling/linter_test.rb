@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "fileutils"
+require "tmpdir"
+
 require_relative "../test_helper"
 
 class MilkTeaLinterTest < Minitest::Test
@@ -1458,12 +1461,14 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
   end
 
   def test_no_constant_condition_or_prefer_let_after_inout_call
-    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local"])
+    source = <<~MT
       module demo.lint
+
+      import std.sample as sample
 
       def main() -> int:
           var tab_active: int = 0
-          gui.tab_bar(inout tab_active)
+          sample.tab_bar(tab_active)
           if tab_active == 0:
               return 1
           elif tab_active == 1:
@@ -1471,8 +1476,33 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
           return 3
     MT
 
-    refute warnings.any? { |w| w.code == "constant-condition" }
-    refute warnings.any? { |w| w.code == "prefer-let" && w.symbol_name == "tab_active" }
+    Dir.mktmpdir do |dir|
+      FileUtils.mkdir_p(File.join(dir, "std", "c"))
+      File.write(File.join(dir, "std", "c", "sample.mt"), <<~MT)
+        extern module std.c.sample:
+            extern def TabBar(active: ptr[int]) -> void
+      MT
+      File.write(File.join(dir, "std", "sample.mt"), <<~MT)
+        module std.sample
+
+        import std.c.sample as c
+
+        pub foreign def tab_bar(inout active: int) -> void = c.TabBar
+      MT
+
+      path = File.join(dir, "demo.mt")
+      File.write(path, source)
+
+      warnings = MilkTea::Linter.lint_source(
+        source,
+        path:,
+        ignore: Set["unused-local"],
+        sema_analysis: MilkTea::Linter.best_effort_sema_analysis(source, path:)
+      )
+
+      refute warnings.any? { |w| w.code == "constant-condition" }
+      refute warnings.any? { |w| w.code == "prefer-let" && w.symbol_name == "tab_active" }
+    end
   end
 
   def test_no_constant_condition_or_prefer_let_after_ptr_of_ref_of_call

@@ -17,7 +17,7 @@ def main() -> int:
     let font = rl.load_font_ex(font_path, font_size, null, 0)
     defer rl.unload_font(font)
 
-    rl.image_draw_text_ex(inout parrots, font, "[Parrots font drawing]", rl.Vector2(x = 20.0, y = 20.0), float<-font.baseSize, 0.0, rl.RED)
+    rl.image_draw_text_ex(parrots, font, "[Parrots font drawing]", rl.Vector2(x = 20.0, y = 20.0), float<-font.baseSize, 0.0, rl.RED)
 
     let texture = rl.load_texture_from_image(parrots)
     rl.unload_image(parrots)

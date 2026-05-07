@@ -22,7 +22,7 @@ var point_speeds: array[float, 500] = zero[array[float, 500]]
 def pump_events() -> bool:
     var event = zero[sdl.Event]
 
-    while sdl.poll_event(out event):
+    while sdl.poll_event(event):
         if sdl.EventType.SDL_EVENT_QUIT == sdl.EventType.SDL_EVENT_QUIT:
             return false
 
@@ -55,7 +55,7 @@ def render_frame() -> void:
     sdl.set_render_draw_color(renderer, 0, 0, 0, 255)
     sdl.render_clear(renderer)
     sdl.set_render_draw_color(renderer, 255, 255, 255, 255)
-    sdl.render_points(renderer, const_ptr_of(points[0]), point_count)
+    sdl.render_points(renderer, points)
     sdl.render_present(renderer)
 
 
@@ -66,7 +66,7 @@ def app_main() -> int:
         return 1
     defer sdl.quit()
 
-    if not sdl.create_window_and_renderer(window_title, window_width, window_height, window_flags, out window, out renderer):
+    if not sdl.create_window_and_renderer(window_title, window_width, window_height, window_flags, window, renderer):
         return 1
     defer sdl.destroy_renderer(renderer)
     defer sdl.destroy_window(window)

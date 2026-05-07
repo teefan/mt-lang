@@ -108,7 +108,7 @@ Symbols:
 Word operators:
 
 - `and`, `or`, `not`
-- `in`, `out`, `inout` (only valid in foreign-call argument positions)
+- `in`, `out`, `inout` (reserved for `foreign def` parameter modes; legacy call-site forms are rejected semantically)
 
 ## 3. Declarations
 
@@ -285,6 +285,8 @@ Boundary projections:
 Rules:
 
 - `as` is only allowed on plain and `in` params.
+- `in`, `out`, and `inout` are declared on the `foreign def` parameter; callers pass ordinary expressions or lvalues at those argument positions.
+- Legacy imported-call syntax such as `load_file_data(path, out size)` or `set_shader_value(shader, loc, in value, kind)` is rejected semantically.
 - consuming foreign calls must appear as top-level expression statements.
 - foreign functions with consuming params must return `void`.
 

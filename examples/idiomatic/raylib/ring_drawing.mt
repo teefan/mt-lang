@@ -39,14 +39,14 @@ def main() -> int:
         if draw_circle_lines:
             rl.draw_circle_sector_lines(center, outer_radius, start_angle, end_angle, int<-segments, rl.fade(rl.BLACK, 0.4))
 
-        gui.slider_bar(rl.Rectangle(x = 600.0, y = 40.0, width = 120.0, height = 20.0), "StartAngle", rl.text_format_float("%.2f", start_angle), inout start_angle, -450.0, 450.0)
-        gui.slider_bar(rl.Rectangle(x = 600.0, y = 70.0, width = 120.0, height = 20.0), "EndAngle", rl.text_format_float("%.2f", end_angle), inout end_angle, -450.0, 450.0)
-        gui.slider_bar(rl.Rectangle(x = 600.0, y = 140.0, width = 120.0, height = 20.0), "InnerRadius", rl.text_format_float("%.2f", inner_radius), inout inner_radius, 0.0, 100.0)
-        gui.slider_bar(rl.Rectangle(x = 600.0, y = 170.0, width = 120.0, height = 20.0), "OuterRadius", rl.text_format_float("%.2f", outer_radius), inout outer_radius, 0.0, 200.0)
-        gui.slider_bar(rl.Rectangle(x = 600.0, y = 240.0, width = 120.0, height = 20.0), "Segments", rl.text_format_float("%.2f", segments), inout segments, 0.0, 100.0)
-        gui.check_box(rl.Rectangle(x = 600.0, y = 320.0, width = 20.0, height = 20.0), "Draw Ring", inout draw_ring)
-        gui.check_box(rl.Rectangle(x = 600.0, y = 350.0, width = 20.0, height = 20.0), "Draw RingLines", inout draw_ring_lines)
-        gui.check_box(rl.Rectangle(x = 600.0, y = 380.0, width = 20.0, height = 20.0), "Draw CircleLines", inout draw_circle_lines)
+        gui.slider_bar(rl.Rectangle(x = 600.0, y = 40.0, width = 120.0, height = 20.0), "StartAngle", rl.text_format_float("%.2f", start_angle), start_angle, -450.0, 450.0)
+        gui.slider_bar(rl.Rectangle(x = 600.0, y = 70.0, width = 120.0, height = 20.0), "EndAngle", rl.text_format_float("%.2f", end_angle), end_angle, -450.0, 450.0)
+        gui.slider_bar(rl.Rectangle(x = 600.0, y = 140.0, width = 120.0, height = 20.0), "InnerRadius", rl.text_format_float("%.2f", inner_radius), inner_radius, 0.0, 100.0)
+        gui.slider_bar(rl.Rectangle(x = 600.0, y = 170.0, width = 120.0, height = 20.0), "OuterRadius", rl.text_format_float("%.2f", outer_radius), outer_radius, 0.0, 200.0)
+        gui.slider_bar(rl.Rectangle(x = 600.0, y = 240.0, width = 120.0, height = 20.0), "Segments", rl.text_format_float("%.2f", segments), segments, 0.0, 100.0)
+        gui.check_box(rl.Rectangle(x = 600.0, y = 320.0, width = 20.0, height = 20.0), "Draw Ring", draw_ring)
+        gui.check_box(rl.Rectangle(x = 600.0, y = 350.0, width = 20.0, height = 20.0), "Draw RingLines", draw_ring_lines)
+        gui.check_box(rl.Rectangle(x = 600.0, y = 380.0, width = 20.0, height = 20.0), "Draw CircleLines", draw_circle_lines)
 
         let min_segments = math.ceil((end_angle - start_angle) / 90.0)
         rl.draw_text(

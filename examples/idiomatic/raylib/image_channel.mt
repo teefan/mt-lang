@@ -14,16 +14,16 @@ def main() -> int:
     let fudesumi_image = rl.load_image(fudesumi_path)
 
     var image_alpha = rl.image_from_channel(fudesumi_image, 3)
-    rl.image_alpha_mask(inout image_alpha, image_alpha)
+    rl.image_alpha_mask(image_alpha, image_alpha)
 
     var image_red = rl.image_from_channel(fudesumi_image, 0)
-    rl.image_alpha_mask(inout image_red, image_alpha)
+    rl.image_alpha_mask(image_red, image_alpha)
 
     var image_green = rl.image_from_channel(fudesumi_image, 1)
-    rl.image_alpha_mask(inout image_green, image_alpha)
+    rl.image_alpha_mask(image_green, image_alpha)
 
     var image_blue = rl.image_from_channel(fudesumi_image, 2)
-    rl.image_alpha_mask(inout image_blue, image_alpha)
+    rl.image_alpha_mask(image_blue, image_alpha)
 
     let background_image = rl.gen_image_checked(screen_width, screen_height, screen_width / 20, screen_height / 20, rl.ORANGE, rl.YELLOW)
 

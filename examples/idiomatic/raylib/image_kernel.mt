@@ -25,7 +25,7 @@ def apply_kernel(image: rl.Image, kernel: array[float, 9], passes: int) -> rl.Im
     var kernel_values = kernel
     for index in 0..passes:
         let _ = index
-        rl.image_kernel_convolution(inout result, const_ptr_of(kernel_values[0]), 9)
+        rl.image_kernel_convolution(result, const_ptr_of(kernel_values[0]), 9)
     return result
 
 
@@ -56,10 +56,10 @@ def main() -> int:
     var cat_gaussian = apply_kernel(rl.image_copy(image), gaussian_kernel, 6)
 
     let crop = rl.Rectangle(x = 0.0, y = 0.0, width = 200.0, height = 450.0)
-    rl.image_crop(inout image, crop)
-    rl.image_crop(inout cat_gaussian, crop)
-    rl.image_crop(inout cat_sobel, crop)
-    rl.image_crop(inout cat_sharpened, crop)
+    rl.image_crop(image, crop)
+    rl.image_crop(cat_gaussian, crop)
+    rl.image_crop(cat_sobel, crop)
+    rl.image_crop(cat_sharpened, crop)
 
     let texture = rl.load_texture_from_image(image)
     let cat_sharpened_texture = rl.load_texture_from_image(cat_sharpened)

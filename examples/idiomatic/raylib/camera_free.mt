@@ -25,7 +25,7 @@ def main() -> int:
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        rl.update_camera(inout camera, rl.CameraMode.CAMERA_FREE)
+        rl.update_camera(camera, rl.CameraMode.CAMERA_FREE)
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_Z):
             camera.target = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)

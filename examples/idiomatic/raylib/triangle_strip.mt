@@ -63,8 +63,8 @@ def main() -> int:
 
         rl.draw_line(580, 0, 580, rl.get_screen_height(), rl.Color(r = 218, g = 218, b = 218, a = 255))
         rl.draw_rectangle(580, 0, rl.get_screen_width(), rl.get_screen_height(), rl.Color(r = 232, g = 232, b = 232, a = 255))
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0), "Segments", rl.text_format_float("%.0f", segments), inout segments, 6.0, 60.0)
-        gui.check_box(rl.Rectangle(x = 640.0, y = 70.0, width = 20.0, height = 20.0), "Outline", inout outline)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0), "Segments", rl.text_format_float("%.0f", segments), segments, 6.0, 60.0)
+        gui.check_box(rl.Rectangle(x = 640.0, y = 70.0, width = 20.0, height = 20.0), "Outline", outline)
         rl.draw_fps(10, 10)
 
     return 0

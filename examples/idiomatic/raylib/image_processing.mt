@@ -41,21 +41,21 @@ def process_label(process: int) -> str:
 def apply_process(image: rl.Image, process: int) -> rl.Image:
     var processed = image
     if process == process_color_grayscale:
-        rl.image_color_grayscale(inout processed)
+        rl.image_color_grayscale(processed)
     elif process == process_color_tint:
-        rl.image_color_tint(inout processed, rl.GREEN)
+        rl.image_color_tint(processed, rl.GREEN)
     elif process == process_color_invert:
-        rl.image_color_invert(inout processed)
+        rl.image_color_invert(processed)
     elif process == process_color_contrast:
-        rl.image_color_contrast(inout processed, -40.0)
+        rl.image_color_contrast(processed, -40.0)
     elif process == process_color_brightness:
-        rl.image_color_brightness(inout processed, -80)
+        rl.image_color_brightness(processed, -80)
     elif process == process_gaussian_blur:
-        rl.image_blur_gaussian(inout processed, 10)
+        rl.image_blur_gaussian(processed, 10)
     elif process == process_flip_vertical:
-        rl.image_flip_vertical(inout processed)
+        rl.image_flip_vertical(processed)
     elif process == process_flip_horizontal:
-        rl.image_flip_horizontal(inout processed)
+        rl.image_flip_horizontal(processed)
     return processed
 
 
@@ -64,7 +64,7 @@ def main() -> int:
     defer rl.close_window()
 
     var image_origin = rl.load_image(parrots_path)
-    rl.image_format(inout image_origin, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
+    rl.image_format(image_origin, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
 
     let texture = rl.load_texture_from_image(image_origin)
     var image_copy = rl.image_copy(image_origin)

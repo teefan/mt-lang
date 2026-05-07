@@ -120,10 +120,10 @@ def main() -> int:
                 let hue = float<-index / float<-stroke_count * 360.0
                 rl.draw_line_ex(path_view[index], path_view[index - 1], thick, rl.color_from_hsv(hue, 1.0, 1.0))
 
-        gui.check_box(rl.Rectangle(x = 450.0, y = 50.0, width = 20.0, height = 20.0), "ANIMATE GENERATION ON CHANGE", inout animate)
-        gui.spinner(rl.Rectangle(x = 585.0, y = 100.0, width = 180.0, height = 30.0), "HILBERT CURVE ORDER:  ", inout order, min_order, max_order, false)
-        gui.slider(rl.Rectangle(x = 524.0, y = 150.0, width = 240.0, height = 24.0), "THICKNESS:  ", "", inout thick, 1.0, 10.0)
-        gui.slider(rl.Rectangle(x = 524.0, y = 190.0, width = 240.0, height = 24.0), "TOTAL SIZE: ", "", inout size, 10.0, size_max)
+        gui.check_box(rl.Rectangle(x = 450.0, y = 50.0, width = 20.0, height = 20.0), "ANIMATE GENERATION ON CHANGE", animate)
+        gui.spinner(rl.Rectangle(x = 585.0, y = 100.0, width = 180.0, height = 30.0), "HILBERT CURVE ORDER:  ", order, min_order, max_order, false)
+        gui.slider(rl.Rectangle(x = 524.0, y = 150.0, width = 240.0, height = 24.0), "THICKNESS:  ", "", thick, 1.0, 10.0)
+        gui.slider(rl.Rectangle(x = 524.0, y = 190.0, width = 240.0, height = 24.0), "TOTAL SIZE: ", "", size, 10.0, size_max)
         rl.draw_rectangle_lines_ex(
             rl.Rectangle(
                 x = panel_position.x - 10.0,

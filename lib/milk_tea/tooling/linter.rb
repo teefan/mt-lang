@@ -27,7 +27,7 @@ module MilkTea
     )
 
     def self.lint_source(source, path: nil, select: nil, ignore: nil, sema_analysis: nil)
-      ast = Parser.parse(source, path:)
+      ast = sema_analysis&.ast || Parser.parse(source, path:)
       trivia = Lexer.lex_with_trivia(source, path:).trivia
       suppressions = parse_suppressions(trivia)
       warnings = new(path:, sema_analysis:).lint(ast)
@@ -779,6 +779,11 @@ module MilkTea
     end
 
     def mark_call_argument_mutated(expression)
+      if expression.is_a?(AST::Identifier) && mutating_argument_identifier?(expression)
+        mark_mutated(expression)
+        return
+      end
+
       if expression.is_a?(AST::UnaryOp) && %w[out inout].include?(expression.operator)
         mark_mutated(expression.operand)
         return
@@ -792,6 +797,12 @@ module MilkTea
          expression.arguments.length == 1
         mark_mutated(expression.arguments.first.value)
       end
+    end
+
+    def mutating_argument_identifier?(expression)
+      return false unless expression.is_a?(AST::Identifier)
+
+      @sema_analysis&.binding_resolution&.mutating_argument_identifier_ids&.key?(expression.object_id)
     end
 
     def with_scope
@@ -945,14 +956,6 @@ module MilkTea
     end
 
     def emit_dead_assignment_warnings(stmts)
-      binding_resolution = @sema_analysis&.binding_resolution
-      cfg_binding_resolution =
-        if binding_resolution
-          CFG::BindingResolution.new(
-            identifier_binding_ids: binding_resolution.identifier_binding_ids,
-            declaration_binding_ids: binding_resolution.declaration_binding_ids,
-          )
-        end
       graph = CFG::Builder.new(
         ignore_name: method(:ignored_binding_name?),
         binding_resolution: cfg_binding_resolution,
@@ -1026,8 +1029,7 @@ module MilkTea
     end
 
     def emit_unreachable_warnings(stmts)
-
-      graph      = CFG::Builder.new(ignore_name: method(:ignored_binding_name?)).build(stmts)
+      graph      = CFG::Builder.new(ignore_name: method(:ignored_binding_name?), binding_resolution: cfg_binding_resolution).build(stmts)
       reachable  = CFG::Reachability.solve(graph)
 
       graph.each_node do |node|
@@ -1094,6 +1096,17 @@ module MilkTea
       end
     end
 
+    def cfg_binding_resolution
+      binding_resolution = @sema_analysis&.binding_resolution
+      return nil unless binding_resolution
+
+      CFG::BindingResolution.new(
+        identifier_binding_ids: binding_resolution.identifier_binding_ids,
+        declaration_binding_ids: binding_resolution.declaration_binding_ids,
+        mutating_argument_identifier_ids: binding_resolution.mutating_argument_identifier_ids,
+      )
+    end
+
     def ignored_binding_name?(name)
       name == "_" || name.start_with?("_")
     end
@@ -1142,7 +1155,7 @@ module MilkTea
     def emit_constant_condition_warnings(stmts)
       return if stmts.nil? || stmts.empty?
 
-      graph = CFG::Builder.new(ignore_name: method(:ignored_binding_name?)).build(stmts)
+      graph = CFG::Builder.new(ignore_name: method(:ignored_binding_name?), binding_resolution: cfg_binding_resolution).build(stmts)
       cp    = CFG::ConstantPropagation.solve(graph)
 
       # Precompute which nodes are inside loops by finding back-edges (a node reachable from its successors).
@@ -1247,7 +1260,7 @@ module MilkTea
     def emit_redundant_null_check_warnings(stmts)
       return if stmts.nil? || stmts.empty?
 
-      graph = CFG::Builder.new(ignore_name: method(:ignored_binding_name?)).build(stmts)
+      graph = CFG::Builder.new(ignore_name: method(:ignored_binding_name?), binding_resolution: cfg_binding_resolution).build(stmts)
       nf    = CFG::NullabilityFlow.solve(graph)
 
       graph.each_node do |node|

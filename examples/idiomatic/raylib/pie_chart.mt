@@ -129,15 +129,15 @@ def main() -> int:
         rl.draw_rectangle_rec(panel_rect, rl.fade(rl.LIGHTGRAY, 0.5))
         rl.draw_rectangle_lines_ex(panel_rect, 1.0, rl.GRAY)
 
-        gui.spinner(rl.Rectangle(x = panel_pos_x + 95.0, y = panel_pos_y + 12.0, width = 125.0, height = 25.0), "Slices ", inout slice_count, 1, max_pie_slices, false)
-        gui.check_box(rl.Rectangle(x = panel_pos_x + 20.0, y = panel_pos_y + 52.0, width = 20.0, height = 20.0), "Show Values", inout show_values)
-        gui.check_box(rl.Rectangle(x = panel_pos_x + 20.0, y = panel_pos_y + 82.0, width = 20.0, height = 20.0), "Show Percentages", inout show_percentages)
-        gui.check_box(rl.Rectangle(x = panel_pos_x + 20.0, y = panel_pos_y + 112.0, width = 20.0, height = 20.0), "Make Donut", inout show_donut)
+        gui.spinner(rl.Rectangle(x = panel_pos_x + 95.0, y = panel_pos_y + 12.0, width = 125.0, height = 25.0), "Slices ", slice_count, 1, max_pie_slices, false)
+        gui.check_box(rl.Rectangle(x = panel_pos_x + 20.0, y = panel_pos_y + 52.0, width = 20.0, height = 20.0), "Show Values", show_values)
+        gui.check_box(rl.Rectangle(x = panel_pos_x + 20.0, y = panel_pos_y + 82.0, width = 20.0, height = 20.0), "Show Percentages", show_percentages)
+        gui.check_box(rl.Rectangle(x = panel_pos_x + 20.0, y = panel_pos_y + 112.0, width = 20.0, height = 20.0), "Make Donut", show_donut)
 
         if show_donut:
             gui.disable()
 
-        gui.slider_bar(rl.Rectangle(x = panel_pos_x + 80.0, y = panel_pos_y + 142.0, width = panel_rect.width - 100.0, height = 30.0), "Inner Radius", "", inout donut_inner_radius, 5.0, radius - 10.0)
+        gui.slider_bar(rl.Rectangle(x = panel_pos_x + 80.0, y = panel_pos_y + 142.0, width = panel_rect.width - 100.0, height = 30.0), "Inner Radius", "", donut_inner_radius, 5.0, radius - 10.0)
         gui.enable()
         gui.line(rl.Rectangle(x = panel_pos_x + 10.0, y = panel_pos_y + 182.0, width = panel_rect.width - 20.0, height = 1.0), "")
 
@@ -153,8 +153,8 @@ def main() -> int:
             scroll_panel_bounds,
             "",
             rl.Rectangle(x = 0.0, y = 0.0, width = panel_rect.width - 25.0, height = float<-content_height),
-            inout scroll_content_offset,
-            out view,
+            scroll_content_offset,
+            view,
         )
 
         let content_x = view.x + scroll_content_offset.x
@@ -169,7 +169,7 @@ def main() -> int:
             if gui.text_box(rl.Rectangle(x = content_x + 45.0, y = float<-row_y, width = 75.0, height = 30.0), labels[index], editing_label[index]) != 0:
                 editing_label[index] = not editing_label[index]
 
-            gui.slider_bar(rl.Rectangle(x = content_x + 130.0, y = float<-row_y, width = 110.0, height = 30.0), "", "", inout values[index], 0.0, 1000.0)
+            gui.slider_bar(rl.Rectangle(x = content_x + 130.0, y = float<-row_y, width = 110.0, height = 30.0), "", "", values[index], 0.0, 1000.0)
 
         rl.end_scissor_mode()
 
