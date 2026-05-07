@@ -44,14 +44,14 @@ def main() -> int:
         if draw_rounded_lines:
             rl.draw_rectangle_rounded_lines_ex(rec, roundness, int<-segments, line_thick, rl.fade(rl.MAROON, 0.4))
 
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 40.0, width = 105.0, height = 20.0), "Width", rl.text_format_float("%.2f", width), inout width, 0.0, float<-rl.get_screen_width() - 300.0)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 70.0, width = 105.0, height = 20.0), "Height", rl.text_format_float("%.2f", height), inout height, 0.0, float<-rl.get_screen_height() - 50.0)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 140.0, width = 105.0, height = 20.0), "Roundness", rl.text_format_float("%.2f", roundness), inout roundness, 0.0, 1.0)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 170.0, width = 105.0, height = 20.0), "Thickness", rl.text_format_float("%.2f", line_thick), inout line_thick, 0.0, 20.0)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 240.0, width = 105.0, height = 20.0), "Segments", rl.text_format_float("%.2f", segments), inout segments, 0.0, 60.0)
-        gui.check_box(rl.Rectangle(x = 640.0, y = 320.0, width = 20.0, height = 20.0), "DrawRoundedRect", inout draw_rounded_rect)
-        gui.check_box(rl.Rectangle(x = 640.0, y = 350.0, width = 20.0, height = 20.0), "DrawRoundedLines", inout draw_rounded_lines)
-        gui.check_box(rl.Rectangle(x = 640.0, y = 380.0, width = 20.0, height = 20.0), "DrawRect", inout draw_rect)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 40.0, width = 105.0, height = 20.0), "Width", rl.text_format_float("%.2f", width), width, 0.0, float<-rl.get_screen_width() - 300.0)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 70.0, width = 105.0, height = 20.0), "Height", rl.text_format_float("%.2f", height), height, 0.0, float<-rl.get_screen_height() - 50.0)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 140.0, width = 105.0, height = 20.0), "Roundness", rl.text_format_float("%.2f", roundness), roundness, 0.0, 1.0)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 170.0, width = 105.0, height = 20.0), "Thickness", rl.text_format_float("%.2f", line_thick), line_thick, 0.0, 20.0)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 240.0, width = 105.0, height = 20.0), "Segments", rl.text_format_float("%.2f", segments), segments, 0.0, 60.0)
+        gui.check_box(rl.Rectangle(x = 640.0, y = 320.0, width = 20.0, height = 20.0), "DrawRoundedRect", draw_rounded_rect)
+        gui.check_box(rl.Rectangle(x = 640.0, y = 350.0, width = 20.0, height = 20.0), "DrawRoundedLines", draw_rounded_lines)
+        gui.check_box(rl.Rectangle(x = 640.0, y = 380.0, width = 20.0, height = 20.0), "DrawRect", draw_rect)
 
         rl.draw_text(
             rl.text_format_cstr("MODE: %s", if segments >= 4.0: "MANUAL" else: "AUTO"),

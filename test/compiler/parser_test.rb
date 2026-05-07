@@ -1430,8 +1430,8 @@ class MilkTeaParserTest < Minitest::Test
       def main(path: str) -> ptr[ubyte]?:
           var data_size = 0
           let contrast = 1.0
-          set_shader_value(Shader(), 0, in contrast, 0)
-          return load_file_data(path, out data_size)
+          set_shader_value(Shader(), 0, contrast, 0)
+          return load_file_data(path, data_size)
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -1468,12 +1468,12 @@ class MilkTeaParserTest < Minitest::Test
     main_fn = ast.declarations[5]
     shader_stmt = main_fn.body[2]
     assert_instance_of MilkTea::AST::Call, shader_stmt.expression
-    assert_instance_of MilkTea::AST::UnaryOp, shader_stmt.expression.arguments[2].value
-    assert_equal "in", shader_stmt.expression.arguments[2].value.operator
+    assert_instance_of MilkTea::AST::Identifier, shader_stmt.expression.arguments[2].value
+    assert_equal "contrast", shader_stmt.expression.arguments[2].value.name
     return_stmt = main_fn.body[3]
     assert_instance_of MilkTea::AST::Call, return_stmt.value
-    assert_instance_of MilkTea::AST::UnaryOp, return_stmt.value.arguments[1].value
-    assert_equal "out", return_stmt.value.arguments[1].value.operator
+    assert_instance_of MilkTea::AST::Identifier, return_stmt.value.arguments[1].value
+    assert_equal "data_size", return_stmt.value.arguments[1].value.name
   end
 
   def test_parses_format_string_precision_spec

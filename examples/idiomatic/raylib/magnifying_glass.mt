@@ -19,7 +19,7 @@ def main() -> int:
     let parrots = rl.load_texture(parrots_path)
 
     var circle = rl.gen_image_color(glass_size, glass_size, rl.BLANK)
-    rl.image_draw_circle(inout circle, 128, 128, 128, rl.WHITE)
+    rl.image_draw_circle(circle, 128, 128, 128, rl.WHITE)
     let mask = rl.load_texture_from_image(circle)
     rl.unload_image(circle)
 

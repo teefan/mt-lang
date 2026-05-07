@@ -35,12 +35,12 @@ def main() -> int:
         if gui.button(rl.Rectangle(x = 40.0, y = 164.0, width = 180.0, height = 34.0), "Flip wording") != 0:
             compact_labels = not compact_labels
 
-        gui.check_box(rl.Rectangle(x = 40.0, y = 220.0, width = 20.0, height = 20.0), "Keep focus callout", inout emphasize_focus)
+        gui.check_box(rl.Rectangle(x = 40.0, y = 220.0, width = 20.0, height = 20.0), "Keep focus callout", emphasize_focus)
         gui.slider(
             rl.Rectangle(x = 40.0, y = 268.0, width = 200.0, height = 24.0),
             "Quiet",
             "Loud",
-            inout slider_value,
+            slider_value,
             0.0,
             100.0,
         )
@@ -57,7 +57,7 @@ def main() -> int:
         gui.tab_bar(
             rl.Rectangle(x = 344.0, y = 132.0, width = 540.0, height = 32.0),
             current_tabs,
-            inout tab_active,
+            tab_active,
         )
 
         var current_tab_label = "Tab: focus"
@@ -76,9 +76,9 @@ def main() -> int:
         gui.list_view_ex(
             rl.Rectangle(x = 344.0, y = 196.0, width = 260.0, height = 188.0),
             current_items,
-            inout list_scroll,
-            inout list_active,
-            inout list_focus,
+            list_scroll,
+            list_active,
+            list_focus,
         )
 
         if tab_active == 0:

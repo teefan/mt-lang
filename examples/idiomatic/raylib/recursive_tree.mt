@@ -89,12 +89,12 @@ def main() -> int:
         rl.draw_line(580, 0, 580, rl.get_screen_height(), rl.Color(r = 218, g = 218, b = 218, a = 255))
         rl.draw_rectangle(580, 0, rl.get_screen_width(), rl.get_screen_height(), rl.Color(r = 232, g = 232, b = 232, a = 255))
 
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0), "Angle", rl.text_format_float("%.0f", angle), inout angle, 0.0, 180.0)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 70.0, width = 120.0, height = 20.0), "Length", rl.text_format_float("%.0f", length), inout length, 12.0, 240.0)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 100.0, width = 120.0, height = 20.0), "Decay", rl.text_format_float("%.2f", branch_decay), inout branch_decay, 0.1, 0.78)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 130.0, width = 120.0, height = 20.0), "Depth", rl.text_format_float("%.0f", tree_depth), inout tree_depth, 1.0, 10.0)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 160.0, width = 120.0, height = 20.0), "Thick", rl.text_format_float("%.0f", thick), inout thick, 1.0, 8.0)
-        gui.check_box(rl.Rectangle(x = 640.0, y = 190.0, width = 20.0, height = 20.0), "Bezier", inout bezier)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0), "Angle", rl.text_format_float("%.0f", angle), angle, 0.0, 180.0)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 70.0, width = 120.0, height = 20.0), "Length", rl.text_format_float("%.0f", length), length, 12.0, 240.0)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 100.0, width = 120.0, height = 20.0), "Decay", rl.text_format_float("%.2f", branch_decay), branch_decay, 0.1, 0.78)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 130.0, width = 120.0, height = 20.0), "Depth", rl.text_format_float("%.0f", tree_depth), tree_depth, 1.0, 10.0)
+        gui.slider_bar(rl.Rectangle(x = 640.0, y = 160.0, width = 120.0, height = 20.0), "Thick", rl.text_format_float("%.0f", thick), thick, 1.0, 8.0)
+        gui.check_box(rl.Rectangle(x = 640.0, y = 190.0, width = 20.0, height = 20.0), "Bezier", bezier)
         rl.draw_fps(10, 10)
 
     return 0

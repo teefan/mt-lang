@@ -16,9 +16,9 @@ def main() -> int:
     var image_90 = rl.load_image(logo_path)
     var image_neg_90 = rl.load_image(logo_path)
 
-    rl.image_rotate(inout image_45, 45)
-    rl.image_rotate(inout image_90, 90)
-    rl.image_rotate(inout image_neg_90, -90)
+    rl.image_rotate(image_45, 45)
+    rl.image_rotate(image_90, 90)
+    rl.image_rotate(image_neg_90, -90)
 
     var textures = zero[array[rl.Texture2D, 3]]
     defer:

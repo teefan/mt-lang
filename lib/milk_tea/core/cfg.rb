@@ -4,7 +4,7 @@ require "set"
 
 module MilkTea
   module CFG
-    BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids)
+    BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids, :mutating_argument_identifier_ids)
 
     Node = Struct.new(
       :id,
@@ -361,6 +361,8 @@ module MilkTea
             target_identifier = nil
             if value.is_a?(AST::UnaryOp) && %w[out inout].include?(value.operator) && value.operand.is_a?(AST::Identifier)
               target_identifier = value.operand
+            elsif value.is_a?(AST::Identifier) && mutating_argument_identifier?(value)
+              target_identifier = value
             else
               target_identifier = call_argument_mutation_target(value)
             end
@@ -418,6 +420,12 @@ module MilkTea
         end
 
         [writes, writes_info]
+      end
+
+      def mutating_argument_identifier?(expression)
+        return false unless expression.is_a?(AST::Identifier)
+
+        @binding_resolution&.mutating_argument_identifier_ids&.key?(expression.object_id)
       end
 
       def call_argument_mutation_target(expression)

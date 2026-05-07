@@ -45,7 +45,7 @@ def main() -> int:
             rl.Rectangle(x = 40.0, y = 252.0, width = 220.0, height = 36.0),
             "Opacity",
             value_text,
-            inout value,
+            value,
             value_active,
         ) != 0:
             value_active = not value_active
@@ -93,7 +93,7 @@ def main() -> int:
                 "Enter a label for the preview swatch",
                 "OK;Cancel",
                 dialog_text,
-                inout secret_view,
+                secret_view,
             )
             if dialog_result >= 0:
                 show_dialog = false

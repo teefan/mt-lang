@@ -28,7 +28,7 @@ var renderer: ptr[sdl.Renderer]
 def pump_events() -> bool:
     var event = zero[sdl.Event]
 
-    while sdl.poll_event(out event):
+    while sdl.poll_event(event):
         if sdl.EventType.SDL_EVENT_QUIT == sdl.EventType.SDL_EVENT_QUIT:
             return false
 
@@ -46,7 +46,7 @@ def render_frame() -> void:
     sdl.render_line(renderer, float<-400.0, float<-356.0, float<-400.0, float<-450.0)
 
     sdl.set_render_draw_color(renderer, 0, 255, 0, 255)
-    sdl.render_lines(renderer, const_ptr_of(line_points[0]), 9)
+    sdl.render_lines(renderer, line_points)
 
     for angle in 0..360:
         let size: float = 30.0
@@ -73,7 +73,7 @@ def app_main() -> int:
         return 1
     defer sdl.quit()
 
-    if not sdl.create_window_and_renderer(window_title, window_width, window_height, window_flags, out window, out renderer):
+    if not sdl.create_window_and_renderer(window_title, window_width, window_height, window_flags, window, renderer):
         return 1
     defer sdl.destroy_renderer(renderer)
     defer sdl.destroy_window(window)

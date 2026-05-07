@@ -17,7 +17,7 @@ var renderer: ptr[sdl.Renderer]
 def pump_events() -> bool:
     var event = zero[sdl.Event]
 
-    while sdl.poll_event(out event):
+    while sdl.poll_event(event):
         if sdl.EventType.SDL_EVENT_QUIT == sdl.EventType.SDL_EVENT_QUIT:
             return false
 
@@ -40,7 +40,7 @@ def render_frame() -> void:
     rects[0].w = 100.0 + (100.0 * scale)
     rects[0].h = 100.0 + (100.0 * scale)
     sdl.set_render_draw_color(renderer, 255, 0, 0, 255)
-    sdl.render_rect(renderer, const_ptr_of(rects[0]))
+    sdl.render_rect(renderer, rects[0])
 
     for index in 0..3:
         let size = float<-(index + 1) * 50.0
@@ -49,15 +49,16 @@ def render_frame() -> void:
         rects[index].x = (float<-window_width - rects[index].w) / 2.0
         rects[index].y = (float<-window_height - rects[index].h) / 2.0
 
+    var outline_rects = array[sdl.FRect, 3](rects[0], rects[1], rects[2])
     sdl.set_render_draw_color(renderer, 0, 255, 0, 255)
-    sdl.render_rects(renderer, const_ptr_of(rects[0]), 3)
+    sdl.render_rects(renderer, outline_rects)
 
     rects[0].x = 400.0
     rects[0].y = 50.0
     rects[0].w = 100.0 + (100.0 * scale)
     rects[0].h = 50.0 + (50.0 * scale)
     sdl.set_render_draw_color(renderer, 0, 0, 255, 255)
-    sdl.render_fill_rect(renderer, const_ptr_of(rects[0]))
+    sdl.render_fill_rect(renderer, rects[0])
 
     for index in 0..rect_count:
         let height = float<-index * 8.0
@@ -67,7 +68,7 @@ def render_frame() -> void:
         rects[index].h = height
 
     sdl.set_render_draw_color(renderer, 255, 255, 255, 255)
-    sdl.render_fill_rects(renderer, const_ptr_of(rects[0]), rect_count)
+    sdl.render_fill_rects(renderer, rects)
     sdl.render_present(renderer)
 
 
@@ -78,7 +79,7 @@ def app_main() -> int:
         return 1
     defer sdl.quit()
 
-    if not sdl.create_window_and_renderer(window_title, window_width, window_height, window_flags, out window, out renderer):
+    if not sdl.create_window_and_renderer(window_title, window_width, window_height, window_flags, window, renderer):
         return 1
     defer sdl.destroy_renderer(renderer)
     defer sdl.destroy_window(window)

@@ -47,14 +47,14 @@ def main() -> int:
             toggle_enabled = not toggle_enabled
             checked = not checked
 
-        gui.toggle(rl.Rectangle(x = 40.0, y = 200.0, width = 120.0, height = 32.0), "Enabled", inout toggle_enabled)
-        gui.check_box(rl.Rectangle(x = 40.0, y = 248.0, width = 20.0, height = 20.0), "Checked", inout checked)
-        gui.combo_box(rl.Rectangle(x = 40.0, y = 292.0, width = 180.0, height = 32.0), "Ocean;Forest;Sunset;Mono", inout combo_active)
+        gui.toggle(rl.Rectangle(x = 40.0, y = 200.0, width = 120.0, height = 32.0), "Enabled", toggle_enabled)
+        gui.check_box(rl.Rectangle(x = 40.0, y = 248.0, width = 20.0, height = 20.0), "Checked", checked)
+        gui.combo_box(rl.Rectangle(x = 40.0, y = 292.0, width = 180.0, height = 32.0), "Ocean;Forest;Sunset;Mono", combo_active)
         gui.slider(
             rl.Rectangle(x = 40.0, y = 344.0, width = 200.0, height = 24.0),
             "Low",
             "High",
-            inout slider_value,
+            slider_value,
             0.0,
             100.0,
         )
@@ -62,7 +62,7 @@ def main() -> int:
             rl.Rectangle(x = 40.0, y = 388.0, width = 200.0, height = 20.0),
             "",
             "",
-            inout progress_value,
+            progress_value,
             0.0,
             100.0,
         )
@@ -76,16 +76,16 @@ def main() -> int:
         gui.list_view_ex(
             rl.Rectangle(x = 40.0, y = 424.0, width = 240.0, height = 84.0),
             list_entries,
-            inout list_scroll,
-            inout list_active,
-            inout list_focus,
+            list_scroll,
+            list_active,
+            list_focus,
         )
 
         gui.group_box(right_panel, "Shared raylib values")
         gui.tab_bar(
             rl.Rectangle(x = 360.0, y = 118.0, width = 520.0, height = 32.0),
             tab_labels,
-            inout tab_active,
+            tab_active,
         )
         if tab_active == 0:
             gui.label(tab_caption_bounds, "Compact second-pass raygui surface")
@@ -96,14 +96,14 @@ def main() -> int:
         gui.color_picker(
             rl.Rectangle(x = 360.0, y = 214.0, width = 260.0, height = 220.0),
             "Accent",
-            inout accent,
+            accent,
         )
         gui.grid(
             rl.Rectangle(x = 660.0, y = 214.0, width = 240.0, height = 220.0),
             "Grid",
             24.0,
             4,
-            out mouse_cell,
+            mouse_cell,
         )
 
         rl.draw_rectangle(360, 364, 160, 80, accent)

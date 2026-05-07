@@ -165,6 +165,98 @@
         "return_type": "bool"
       },
       {
+        "raw": "SDL_RenderPoints",
+        "params": [
+          {
+            "name": "renderer",
+            "type": "ptr[Renderer]"
+          },
+          {
+            "name": "points",
+            "type": "span[FPoint]"
+          }
+        ],
+        "return_type": "bool",
+        "mapping": "c.SDL_RenderPoints(renderer, points.data, int<-points.len)"
+      },
+      {
+        "raw": "SDL_RenderLines",
+        "params": [
+          {
+            "name": "renderer",
+            "type": "ptr[Renderer]"
+          },
+          {
+            "name": "points",
+            "type": "span[FPoint]"
+          }
+        ],
+        "return_type": "bool",
+        "mapping": "c.SDL_RenderLines(renderer, points.data, int<-points.len)"
+      },
+      {
+        "raw": "SDL_RenderRect",
+        "params": [
+          {
+            "name": "renderer",
+            "type": "ptr[Renderer]"
+          },
+          {
+            "name": "rect",
+            "type": "FRect",
+            "mode": "in",
+            "boundary_type": "const_ptr[FRect]"
+          }
+        ],
+        "return_type": "bool"
+      },
+      {
+        "raw": "SDL_RenderRects",
+        "params": [
+          {
+            "name": "renderer",
+            "type": "ptr[Renderer]"
+          },
+          {
+            "name": "rects",
+            "type": "span[FRect]"
+          }
+        ],
+        "return_type": "bool",
+        "mapping": "c.SDL_RenderRects(renderer, rects.data, int<-rects.len)"
+      },
+      {
+        "raw": "SDL_RenderFillRect",
+        "params": [
+          {
+            "name": "renderer",
+            "type": "ptr[Renderer]"
+          },
+          {
+            "name": "rect",
+            "type": "FRect",
+            "mode": "in",
+            "boundary_type": "const_ptr[FRect]"
+          }
+        ],
+        "return_type": "bool"
+      },
+      {
+        "raw": "SDL_RenderFillRects",
+        "params": [
+          {
+            "name": "renderer",
+            "type": "ptr[Renderer]"
+          },
+          {
+            "name": "rects",
+            "type": "span[FRect]"
+          }
+        ],
+        "return_type": "bool",
+        "mapping": "c.SDL_RenderFillRects(renderer, rects.data, int<-rects.len)"
+      },
+      {
         "raw": "SDL_LoadPNG",
         "params": [
           {

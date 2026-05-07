@@ -416,7 +416,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       def main(path: str, data: span[ubyte]) -> int:
           var data_size = 0
-          let loaded = rl.load_file_data(path, out data_size)
+          let loaded = rl.load_file_data(path, data_size)
           let saved = rl.save_file_data(path, data)
           if loaded != null and saved:
               return data_size
@@ -614,8 +614,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
       def main() -> void:
           let value = 7
-          sample.inspect(in value)
-          sample.inspect(in (value + 1))
+          sample.inspect(value)
+          sample.inspect(value + 1)
     MT
 
     imported_sources = {
@@ -731,7 +731,7 @@ class MilkTeaCodegenTest < Minitest::Test
       def main() -> int:
           var labels = array[str, 3]("Play", "Options", "Quit")
           var active = 1
-          return sample.use_names(labels, inout active)
+          return sample.use_names(labels, active)
     MT
 
     imported_sources = {
@@ -770,7 +770,7 @@ class MilkTeaCodegenTest < Minitest::Test
       def main() -> int:
           var labels = array[str, 3]("Play", middle(), "Quit")
           var active = 1
-          return sample.use_names(labels, inout active)
+          return sample.use_names(labels, active)
     MT
 
     imported_sources = {
@@ -808,7 +808,7 @@ class MilkTeaCodegenTest < Minitest::Test
       def main() -> int:
           var labels = array[str, 3]("Play", middle(), "Quit")
           var active = 1
-          sample.use_names(labels, inout active)
+          sample.use_names(labels, active)
           return active
     MT
 
@@ -920,7 +920,7 @@ class MilkTeaCodegenTest < Minitest::Test
       def main() -> int:
           var labels = array[cstr, 3]("Play", "Options", "Quit")
           var active = 1
-          return sample.use_names(labels, inout active)
+          return sample.use_names(labels, active)
     MT
 
     imported_sources = {
@@ -975,7 +975,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       def main() -> void:
           var camera = sample.Camera(id = 1)
-          sample.update_camera(inout camera, sample.CameraMode.CAMERA_FREE)
+          sample.update_camera(camera, sample.CameraMode.CAMERA_FREE)
     MT
 
     imported_sources = {

@@ -86,8 +86,8 @@ def main() -> int:
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        rl.update_camera(inout observer_camera, rl.CameraMode.CAMERA_FREE)
-        rl.update_camera(inout subject_camera, rl.CameraMode.CAMERA_ORBITAL)
+        rl.update_camera(observer_camera, rl.CameraMode.CAMERA_FREE)
+        rl.update_camera(subject_camera, rl.CameraMode.CAMERA_ORBITAL)
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_R):
             observer_camera.target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
