@@ -1727,6 +1727,65 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_semantic_tokens_classify_large_std_imported_module_type_reference
+    Dir.mktmpdir("mt_lsp_semantic_tokens_large_std") do |dir|
+      c_dir = File.join(dir, "std", "c")
+      FileUtils.mkdir_p(c_dir)
+
+      File.write(File.join(c_dir, "raylib.mt"), <<~MT)
+        extern module std.c.raylib:
+            struct Vector2:
+                x: float
+                y: float
+      MT
+
+      filler = (1..160).map { |i| "pub const PAD_#{i}: int = #{i}" }.join("\n")
+      source_path = File.join(dir, "std", "raylib.mt")
+      FileUtils.mkdir_p(File.dirname(source_path))
+      source = <<~MT
+        module std.raylib
+
+        import std.c.raylib as c
+
+        pub type VecAlias = c.Vector2
+        #{filler}
+      MT
+      File.write(source_path, source)
+
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        uri = path_to_uri(source_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        alias_entry = entries.find do |entry|
+          next false unless entry.fetch("line") == 4
+
+          line_text = source.lines.fetch(entry.fetch("line"))
+          line_text[entry.fetch("startChar"), 1] == "c"
+        end or flunk("expected semantic token entry for aliased module receiver on line 5")
+
+        member_entry = entries.find do |entry|
+          next false unless entry.fetch("line") == 4
+
+          line_text = source.lines.fetch(entry.fetch("line"))
+          line_text[entry.fetch("startChar"), "Vector2".length] == "Vector2"
+        end or flunk("expected semantic token entry for imported type member on line 5")
+
+        assert_equal "namespace", alias_entry.fetch("tokenType")
+        assert_equal "type", member_entry.fetch("tokenType")
+      end
+    end
+  end
+
 
     def test_semantic_tokens_classify_str_builder_and_value_receiver_methods
       with_server do |client|

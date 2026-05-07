@@ -1197,13 +1197,6 @@ module MilkTea
         skip_reason = @workspace.analysis_skip_reason(uri, content)
         return skip_reason if skip_reason && skip_reason != 'std-path'
 
-        path = uri_to_path(uri)
-        return nil unless path&.include?('/std/')
-
-        line_count = content.count("\n") + 1
-        return 'std-path' if content.bytesize >= Workspace::SINGLE_IMPORT_HEAVY_BYTES_THRESHOLD
-        return 'std-path' if line_count >= Workspace::SINGLE_IMPORT_HEAVY_LINES_THRESHOLD
-
         nil
       rescue StandardError
         nil
