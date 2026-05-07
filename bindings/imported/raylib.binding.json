@@ -2,6 +2,28 @@
   "module_name": "std.raylib",
   "raw_module_name": "std.c.raylib",
   "raw_import_alias": "c",
+  "imports": [
+    {
+      "module_name": "std.bytes",
+      "alias": "bytes"
+    },
+    {
+      "module_name": "std.option",
+      "alias": "option"
+    },
+    {
+      "module_name": "std.vec",
+      "alias": "vec"
+    },
+    {
+      "module_name": "std.string",
+      "alias": "string"
+    },
+    {
+      "module_name": "std.str",
+      "alias": "text"
+    }
+  ],
   "types": {
     "exclude": [
       "va_list",
@@ -22,7 +44,11 @@
       "SetLoadFileDataCallback",
       "SetSaveFileDataCallback",
       "SetLoadFileTextCallback",
-      "SetSaveFileTextCallback"
+      "SetSaveFileTextCallback",
+      "UnloadFileData",
+      "UnloadFileText",
+      "UnloadUTF8",
+      "UnloadCodepoints"
     ],
     "overrides": [
       {
@@ -260,7 +286,29 @@
             "mode": "out"
           }
         ],
-        "return_type": "ptr[ubyte]?"
+        "wrapper": {
+          "kind": "owned_bytes",
+          "option_alias": "option",
+          "bytes_alias": "bytes",
+          "release": "c.UnloadFileData"
+        }
+      },
+      {
+        "raw": "LoadFileText",
+        "params": [
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ],
+        "wrapper": {
+          "kind": "owned_string",
+          "option_alias": "option",
+          "text_alias": "text",
+          "string_alias": "string",
+          "release": "c.UnloadFileText"
+        }
       },
       {
         "raw": "UnloadFileData",
@@ -286,6 +334,21 @@
           }
         ],
         "mapping": "c.SaveFileData(file_name, data.data, int<-data.len)"
+      },
+      {
+        "raw": "LoadImageFromMemory",
+        "params": [
+          {
+            "name": "file_type",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "file_data",
+            "type": "span[ubyte]"
+          }
+        ],
+        "mapping": "c.LoadImageFromMemory(file_type, file_data.data, int<-file_data.len)"
       },
       {
         "raw": "FileExists",
@@ -621,8 +684,27 @@
         ]
       },
       {
+        "raw": "LoadUTF8",
+        "params": [
+          {
+            "name": "codepoints",
+            "type": "const_ptr[int]"
+          },
+          {
+            "name": "length",
+            "type": "int"
+          }
+        ],
+        "wrapper": {
+          "kind": "owned_string",
+          "option_alias": "option",
+          "text_alias": "text",
+          "string_alias": "string",
+          "release": "c.UnloadUTF8"
+        }
+      },
+      {
         "raw": "LoadCodepoints",
-        "name": "load_codepoints_ptr",
         "params": [
           {
             "name": "text",
@@ -635,7 +717,12 @@
             "mode": "out"
           }
         ],
-        "return_type": "ptr[int]?"
+        "wrapper": {
+          "kind": "owned_vec",
+          "option_alias": "option",
+          "vec_alias": "vec",
+          "release": "c.UnloadCodepoints"
+        }
       },
       {
         "raw": "GetCodepointCount",
@@ -689,7 +776,9 @@
             "type": "int",
             "mode": "out"
           }
-        ]
+        ],
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.CodepointToUTF8(codepoint, utf_8_size))"
       },
       {
         "raw": "TextLength",
@@ -715,8 +804,8 @@
             "type": "int"
           }
         ],
-        "return_type": "cstr",
-        "mapping": "c.TextFormat(format, value)"
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.TextFormat(format, value))"
       },
       {
         "raw": "TextFormat",
@@ -736,8 +825,8 @@
             "type": "int"
           }
         ],
-        "return_type": "cstr",
-        "mapping": "c.TextFormat(format, first, second)"
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.TextFormat(format, first, second))"
       },
       {
         "raw": "TextFormat",
@@ -761,8 +850,8 @@
             "type": "int"
           }
         ],
-        "return_type": "cstr",
-        "mapping": "c.TextFormat(format, first, second, third)"
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.TextFormat(format, first, second, third))"
       },
       {
         "raw": "TextFormat",
@@ -790,8 +879,8 @@
             "type": "int"
           }
         ],
-        "return_type": "cstr",
-        "mapping": "c.TextFormat(format, first, second, third, fourth)"
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.TextFormat(format, first, second, third, fourth))"
       },
       {
         "raw": "TextFormat",
@@ -812,8 +901,8 @@
             "boundary_type": "cstr"
           }
         ],
-        "return_type": "cstr",
-        "mapping": "c.TextFormat(format, value, label)"
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.TextFormat(format, value, label))"
       },
       {
         "raw": "TextFormat",
@@ -830,8 +919,8 @@
             "boundary_type": "cstr"
           }
         ],
-        "return_type": "cstr",
-        "mapping": "c.TextFormat(format, value)"
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.TextFormat(format, value))"
       },
       {
         "raw": "TextFormat",
@@ -853,8 +942,8 @@
             "boundary_type": "cstr"
           }
         ],
-        "return_type": "cstr",
-        "mapping": "c.TextFormat(format, first, second)"
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.TextFormat(format, first, second))"
       },
       {
         "raw": "TextFormat",
@@ -879,8 +968,8 @@
             "type": "int"
           }
         ],
-        "return_type": "cstr",
-        "mapping": "c.TextFormat(format, label, first, second)"
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.TextFormat(format, label, first, second))"
       },
       {
         "raw": "TextFormat",
@@ -904,8 +993,8 @@
             "type": "float"
           }
         ],
-        "return_type": "cstr",
-        "mapping": "c.TextFormat(format, first, second, third)"
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.TextFormat(format, first, second, third))"
       },
       {
         "raw": "TextFormat",
@@ -930,8 +1019,8 @@
             "type": "float"
           }
         ],
-        "return_type": "cstr",
-        "mapping": "c.TextFormat(format, label, first, second)"
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.TextFormat(format, label, first, second))"
       },
       {
         "raw": "TextFormat",
@@ -947,8 +1036,8 @@
             "type": "float"
           }
         ],
-        "return_type": "cstr",
-        "mapping": "c.TextFormat(format, value)"
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.TextFormat(format, value))"
       },
       {
         "raw": "TextFormat",
@@ -968,8 +1057,8 @@
             "type": "float"
           }
         ],
-        "return_type": "cstr",
-        "mapping": "c.TextFormat(format, first, second)"
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.TextFormat(format, first, second))"
       },
       {
         "raw": "TextSubtext",
@@ -988,7 +1077,8 @@
             "type": "int"
           }
         ],
-        "return_type": "cstr"
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.TextSubtext(text, position, length))"
       },
       {
         "raw": "TextSplit",
@@ -1329,13 +1419,265 @@
           },
           {
             "name": "kernel",
-            "type": "const_ptr[float]"
+            "type": "span[float]"
+          }
+        ],
+        "mapping": "c.ImageKernelConvolution(image, kernel.data, int<-kernel.len)"
+      },
+      {
+        "raw": "LoadWaveFromMemory",
+        "params": [
+          {
+            "name": "file_type",
+            "type": "str",
+            "boundary_type": "cstr"
           },
           {
-            "name": "kernel_size",
-            "type": "int"
+            "name": "file_data",
+            "type": "span[ubyte]"
+          }
+        ],
+        "mapping": "c.LoadWaveFromMemory(file_type, file_data.data, int<-file_data.len)"
+      },
+      {
+        "raw": "SetClipboardText",
+        "params": [
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
           }
         ]
+      },
+      {
+        "raw": "SetWindowTitle",
+        "params": [
+          {
+            "name": "title",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GetMonitorName",
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.GetMonitorName(monitor))"
+      },
+      {
+        "raw": "GetClipboardText",
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.GetClipboardText())"
+      },
+      {
+        "raw": "GetWorkingDirectory",
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.GetWorkingDirectory())"
+      },
+      {
+        "raw": "GetApplicationDirectory",
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.GetApplicationDirectory())"
+      },
+      {
+        "raw": "GetFileLength",
+        "params": [
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GetFileModTime",
+        "params": [
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GetFileExtension",
+        "params": [
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ],
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.GetFileExtension(file_name))"
+      },
+      {
+        "raw": "GetFileName",
+        "params": [
+          {
+            "name": "file_path",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ],
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.GetFileName(file_path))"
+      },
+      {
+        "raw": "GetFileNameWithoutExt",
+        "params": [
+          {
+            "name": "file_path",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ],
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.GetFileNameWithoutExt(file_path))"
+      },
+      {
+        "raw": "GetDirectoryPath",
+        "params": [
+          {
+            "name": "file_path",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ],
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.GetDirectoryPath(file_path))"
+      },
+      {
+        "raw": "GetPrevDirectoryPath",
+        "params": [
+          {
+            "name": "dir_path",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ],
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.GetPrevDirectoryPath(dir_path))"
+      },
+      {
+        "raw": "MakeDirectory",
+        "params": [
+          {
+            "name": "dir_path",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "ChangeDirectory",
+        "params": [
+          {
+            "name": "dir_path",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "IsPathFile",
+        "params": [
+          {
+            "name": "path",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "IsFileNameValid",
+        "params": [
+          {
+            "name": "file_name",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "LoadDirectoryFiles",
+        "params": [
+          {
+            "name": "dir_path",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "LoadDirectoryFilesEx",
+        "params": [
+          {
+            "name": "base_path",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "filter",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "scan_subdirs",
+            "type": "bool"
+          }
+        ]
+      },
+      {
+        "raw": "GetDirectoryFileCount",
+        "params": [
+          {
+            "name": "dir_path",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ]
+      },
+      {
+        "raw": "GetDirectoryFileCountEx",
+        "params": [
+          {
+            "name": "base_path",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "filter",
+            "type": "str",
+            "boundary_type": "cstr"
+          },
+          {
+            "name": "scan_subdirs",
+            "type": "bool"
+          }
+        ]
+      },
+      {
+        "raw": "GetKeyName",
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.GetKeyName(key))"
+      },
+      {
+        "raw": "GetGamepadName",
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.GetGamepadName(gamepad))"
+      },
+      {
+        "raw": "TextRemoveSpaces",
+        "params": [
+          {
+            "name": "text",
+            "type": "str",
+            "boundary_type": "cstr"
+          }
+        ],
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.TextRemoveSpaces(text))"
       },
       {
         "raw": "ImageResize",

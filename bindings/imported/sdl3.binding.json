@@ -18,6 +18,16 @@
       {
         "raw": "SDL_main_func",
         "name": "MainFunc"
+      },
+      {
+        "raw": "SDL_Window",
+        "name": "Window",
+        "kind": "opaque"
+      },
+      {
+        "raw": "SDL_Renderer",
+        "name": "Renderer",
+        "kind": "opaque"
       }
     ]
   },
@@ -88,7 +98,7 @@
             "type": "ptr_uint"
           }
         ],
-        "return_type": "ptr[Window]?"
+        "return_type": "Window?"
       },
       {
         "raw": "SDL_CreateWindowAndRenderer",
@@ -112,12 +122,12 @@
           },
           {
             "name": "window",
-            "type": "ptr[Window]",
+            "type": "Window",
             "mode": "out"
           },
           {
             "name": "renderer",
-            "type": "ptr[Renderer]",
+            "type": "Renderer",
             "mode": "out"
           }
         ],
@@ -149,7 +159,7 @@
         "params": [
           {
             "name": "renderer",
-            "type": "ptr[Renderer]"
+            "type": "Renderer"
           },
           {
             "name": "w",
@@ -169,7 +179,7 @@
         "params": [
           {
             "name": "renderer",
-            "type": "ptr[Renderer]"
+            "type": "Renderer"
           },
           {
             "name": "points",
@@ -184,7 +194,7 @@
         "params": [
           {
             "name": "renderer",
-            "type": "ptr[Renderer]"
+            "type": "Renderer"
           },
           {
             "name": "points",
@@ -199,7 +209,7 @@
         "params": [
           {
             "name": "renderer",
-            "type": "ptr[Renderer]"
+            "type": "Renderer"
           },
           {
             "name": "rect",
@@ -215,7 +225,7 @@
         "params": [
           {
             "name": "renderer",
-            "type": "ptr[Renderer]"
+            "type": "Renderer"
           },
           {
             "name": "rects",
@@ -230,7 +240,7 @@
         "params": [
           {
             "name": "renderer",
-            "type": "ptr[Renderer]"
+            "type": "Renderer"
           },
           {
             "name": "rect",
@@ -246,7 +256,7 @@
         "params": [
           {
             "name": "renderer",
-            "type": "ptr[Renderer]"
+            "type": "Renderer"
           },
           {
             "name": "rects",
@@ -283,7 +293,7 @@
         "params": [
           {
             "name": "window",
-            "type": "ptr[Window]"
+            "type": "Window"
           },
           {
             "name": "w",
@@ -303,7 +313,7 @@
         "params": [
           {
             "name": "window",
-            "type": "ptr[Window]"
+            "type": "Window"
           },
           {
             "name": "w",
@@ -372,7 +382,7 @@
         "params": [
           {
             "name": "renderer",
-            "type": "ptr[Renderer]"
+            "type": "Renderer"
           },
           {
             "name": "event",
@@ -417,7 +427,7 @@
         "params": [
           {
             "name": "renderer",
-            "type": "ptr[Renderer]"
+            "type": "Renderer"
           },
           {
             "name": "x",

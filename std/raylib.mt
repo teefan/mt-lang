@@ -2,6 +2,11 @@
 module std.raylib
 
 import std.c.raylib as c
+import std.bytes as bytes
+import std.option as option
+import std.vec as vec
+import std.string as string
+import std.str as text
 
 pub type Vector2 = c.Vector2
 pub type Vector3 = c.Vector3
@@ -117,7 +122,7 @@ pub foreign def minimize_window() -> void = c.MinimizeWindow
 pub foreign def restore_window() -> void = c.RestoreWindow
 pub foreign def set_window_icon(image: Image) -> void = c.SetWindowIcon
 pub foreign def set_window_icons(images: ptr[Image], count: int) -> void = c.SetWindowIcons
-pub foreign def set_window_title(title: cstr) -> void = c.SetWindowTitle
+pub foreign def set_window_title(title: str as cstr) -> void = c.SetWindowTitle
 pub foreign def set_window_position(x: int, y: int) -> void = c.SetWindowPosition
 pub foreign def set_window_monitor(monitor: int) -> void = c.SetWindowMonitor
 pub foreign def set_window_min_size(width: int, height: int) -> void = c.SetWindowMinSize
@@ -140,9 +145,9 @@ pub foreign def get_monitor_physical_height(monitor: int) -> int = c.GetMonitorP
 pub foreign def get_monitor_refresh_rate(monitor: int) -> int = c.GetMonitorRefreshRate
 pub foreign def get_window_position() -> Vector2 = c.GetWindowPosition
 pub foreign def get_window_scale_dpi() -> Vector2 = c.GetWindowScaleDPI
-pub foreign def get_monitor_name(monitor: int) -> cstr = c.GetMonitorName
-pub foreign def set_clipboard_text(text: cstr) -> void = c.SetClipboardText
-pub foreign def get_clipboard_text() -> cstr = c.GetClipboardText
+pub foreign def get_monitor_name(monitor: int) -> str = text.cstr_as_str(c.GetMonitorName(monitor))
+pub foreign def set_clipboard_text(text: str as cstr) -> void = c.SetClipboardText
+pub foreign def get_clipboard_text() -> str = text.cstr_as_str(c.GetClipboardText())
 pub foreign def get_clipboard_image() -> Image = c.GetClipboardImage
 pub foreign def enable_event_waiting() -> void = c.EnableEventWaiting
 pub foreign def disable_event_waiting() -> void = c.DisableEventWaiting
@@ -209,12 +214,38 @@ pub foreign def set_trace_log_level(log_level: int) -> void = c.SetTraceLogLevel
 pub foreign def mem_alloc[T](count: ptr_uint) -> ptr[T]? = c.MemAlloc(count * uint<-size_of(T))
 pub foreign def mem_realloc[T](memory: ptr[T], count: ptr_uint) -> ptr[T]? = c.MemRealloc(memory, count * uint<-size_of(T))
 pub foreign def mem_free[T](memory: ptr[T]) -> void = c.MemFree
-pub foreign def load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
-pub foreign def unload_file_data(consuming data: ptr[ubyte]) -> void = c.UnloadFileData
+foreign def mt_raw_load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
+
+
+pub def load_file_data(file_name: str) -> option.Option[bytes.Buffer]:
+    var data_size = 0
+    let raw_result = mt_raw_load_file_data(file_name, data_size)
+    if raw_result == null:
+        return option.Option[bytes.Buffer].none()
+
+    if data_size < 0:
+        c.UnloadFileData(ptr[ubyte]<-raw_result)
+        panic(c"imported wrapper load_file_data returned negative size")
+
+    var value = bytes.with_capacity(ptr_uint<-data_size)
+    bytes.append(ref_of(value), span[ubyte](data = ptr[ubyte]<-raw_result, len = ptr_uint<-data_size))
+    c.UnloadFileData(ptr[ubyte]<-raw_result)
+    return option.Option[bytes.Buffer].some(value)
+
 pub foreign def save_file_data(file_name: str as cstr, data: span[ubyte]) -> bool = c.SaveFileData(file_name, data.data, int<-data.len)
 pub foreign def export_data_as_code(data: const_ptr[ubyte], data_size: int, file_name: cstr) -> bool = c.ExportDataAsCode
-pub foreign def load_file_text(file_name: cstr) -> ptr[char]? = c.LoadFileText
-pub foreign def unload_file_text(text: ptr[char]) -> void = c.UnloadFileText
+foreign def mt_raw_load_file_text(file_name: str as cstr) -> ptr[char]? = c.LoadFileText
+
+
+pub def load_file_text(file_name: str) -> option.Option[string.String]:
+    let raw_result = mt_raw_load_file_text(file_name)
+    if raw_result == null:
+        return option.Option[string.String].none()
+
+    let value = string.String.from_str(text.chars_as_str(ptr[char]<-raw_result))
+    c.UnloadFileText(ptr[char]<-raw_result)
+    return option.Option[string.String].some(value)
+
 pub foreign def save_file_text(file_name: cstr, text: cstr) -> bool = c.SaveFileText
 pub foreign def file_rename(file_name: cstr, file_rename: cstr) -> int = c.FileRename
 pub foreign def file_remove(file_name: cstr) -> int = c.FileRemove
@@ -225,27 +256,27 @@ pub foreign def file_text_find_index(file_name: cstr, search: cstr) -> int = c.F
 pub foreign def file_exists(file_name: str as cstr) -> bool = c.FileExists
 pub foreign def directory_exists(dir_path: str as cstr) -> bool = c.DirectoryExists
 pub foreign def is_file_extension(file_name: str as cstr, ext: str as cstr) -> bool = c.IsFileExtension
-pub foreign def get_file_length(file_name: cstr) -> int = c.GetFileLength
-pub foreign def get_file_mod_time(file_name: cstr) -> ptr_int = c.GetFileModTime
-pub foreign def get_file_extension(file_name: cstr) -> cstr = c.GetFileExtension
-pub foreign def get_file_name(file_path: cstr) -> cstr = c.GetFileName
-pub foreign def get_file_name_without_ext(file_path: cstr) -> cstr = c.GetFileNameWithoutExt
-pub foreign def get_directory_path(file_path: cstr) -> cstr = c.GetDirectoryPath
-pub foreign def get_prev_directory_path(dir_path: cstr) -> cstr = c.GetPrevDirectoryPath
-pub foreign def get_working_directory() -> cstr = c.GetWorkingDirectory
-pub foreign def get_application_directory() -> cstr = c.GetApplicationDirectory
-pub foreign def make_directory(dir_path: cstr) -> int = c.MakeDirectory
-pub foreign def change_directory(dir_path: cstr) -> bool = c.ChangeDirectory
-pub foreign def is_path_file(path: cstr) -> bool = c.IsPathFile
-pub foreign def is_file_name_valid(file_name: cstr) -> bool = c.IsFileNameValid
-pub foreign def load_directory_files(dir_path: cstr) -> FilePathList = c.LoadDirectoryFiles
-pub foreign def load_directory_files_ex(base_path: cstr, filter: cstr, scan_subdirs: bool) -> FilePathList = c.LoadDirectoryFilesEx
+pub foreign def get_file_length(file_name: str as cstr) -> int = c.GetFileLength
+pub foreign def get_file_mod_time(file_name: str as cstr) -> ptr_int = c.GetFileModTime
+pub foreign def get_file_extension(file_name: str as cstr) -> str = text.cstr_as_str(c.GetFileExtension(file_name))
+pub foreign def get_file_name(file_path: str as cstr) -> str = text.cstr_as_str(c.GetFileName(file_path))
+pub foreign def get_file_name_without_ext(file_path: str as cstr) -> str = text.cstr_as_str(c.GetFileNameWithoutExt(file_path))
+pub foreign def get_directory_path(file_path: str as cstr) -> str = text.cstr_as_str(c.GetDirectoryPath(file_path))
+pub foreign def get_prev_directory_path(dir_path: str as cstr) -> str = text.cstr_as_str(c.GetPrevDirectoryPath(dir_path))
+pub foreign def get_working_directory() -> str = text.cstr_as_str(c.GetWorkingDirectory())
+pub foreign def get_application_directory() -> str = text.cstr_as_str(c.GetApplicationDirectory())
+pub foreign def make_directory(dir_path: str as cstr) -> int = c.MakeDirectory
+pub foreign def change_directory(dir_path: str as cstr) -> bool = c.ChangeDirectory
+pub foreign def is_path_file(path: str as cstr) -> bool = c.IsPathFile
+pub foreign def is_file_name_valid(file_name: str as cstr) -> bool = c.IsFileNameValid
+pub foreign def load_directory_files(dir_path: str as cstr) -> FilePathList = c.LoadDirectoryFiles
+pub foreign def load_directory_files_ex(base_path: str as cstr, filter: str as cstr, scan_subdirs: bool) -> FilePathList = c.LoadDirectoryFilesEx
 pub foreign def unload_directory_files(files: FilePathList) -> void = c.UnloadDirectoryFiles
 pub foreign def is_file_dropped() -> bool = c.IsFileDropped
 pub foreign def load_dropped_files() -> FilePathList = c.LoadDroppedFiles
 pub foreign def unload_dropped_files(files: FilePathList) -> void = c.UnloadDroppedFiles
-pub foreign def get_directory_file_count(dir_path: cstr) -> uint = c.GetDirectoryFileCount
-pub foreign def get_directory_file_count_ex(base_path: cstr, filter: cstr, scan_subdirs: bool) -> uint = c.GetDirectoryFileCountEx
+pub foreign def get_directory_file_count(dir_path: str as cstr) -> uint = c.GetDirectoryFileCount
+pub foreign def get_directory_file_count_ex(base_path: str as cstr, filter: str as cstr, scan_subdirs: bool) -> uint = c.GetDirectoryFileCountEx
 pub foreign def compress_data(data: const_ptr[ubyte], data_size: int, comp_data_size: ptr[int]) -> ptr[ubyte]? = c.CompressData
 pub foreign def decompress_data(comp_data: const_ptr[ubyte], comp_data_size: int, data_size: ptr[int]) -> ptr[ubyte]? = c.DecompressData
 pub foreign def encode_data_base_64(data: const_ptr[ubyte], data_size: int, output_size: ptr[int]) -> ptr[char]? = c.EncodeDataBase64
@@ -269,10 +300,10 @@ pub foreign def is_key_released(key: KeyboardKey) -> bool = c.IsKeyReleased
 pub foreign def is_key_up(key: KeyboardKey) -> bool = c.IsKeyUp
 pub foreign def get_key_pressed() -> int = c.GetKeyPressed
 pub foreign def get_char_pressed() -> int = c.GetCharPressed
-pub foreign def get_key_name(key: int) -> cstr = c.GetKeyName
+pub foreign def get_key_name(key: int) -> str = text.cstr_as_str(c.GetKeyName(key))
 pub foreign def set_exit_key(key: KeyboardKey) -> void = c.SetExitKey
 pub foreign def is_gamepad_available(gamepad: int) -> bool = c.IsGamepadAvailable
-pub foreign def get_gamepad_name(gamepad: int) -> cstr = c.GetGamepadName
+pub foreign def get_gamepad_name(gamepad: int) -> str = text.cstr_as_str(c.GetGamepadName(gamepad))
 pub foreign def is_gamepad_button_pressed(gamepad: int, button: GamepadButton) -> bool = c.IsGamepadButtonPressed
 pub foreign def is_gamepad_button_down(gamepad: int, button: GamepadButton) -> bool = c.IsGamepadButtonDown
 pub foreign def is_gamepad_button_released(gamepad: int, button: GamepadButton) -> bool = c.IsGamepadButtonReleased
@@ -384,7 +415,7 @@ pub foreign def load_image(file_name: str as cstr) -> Image = c.LoadImage
 pub foreign def load_image_raw(file_name: str as cstr, width: int, height: int, format: int, header_size: int) -> Image = c.LoadImageRaw
 pub foreign def load_image_anim(file_name: str as cstr, out frames: int) -> Image = c.LoadImageAnim
 pub foreign def load_image_anim_from_memory(file_type: cstr, file_data: const_ptr[ubyte], data_size: int, frames: ptr[int]) -> Image = c.LoadImageAnimFromMemory
-pub foreign def load_image_from_memory(file_type: cstr, file_data: const_ptr[ubyte], data_size: int) -> Image = c.LoadImageFromMemory
+pub foreign def load_image_from_memory(file_type: str as cstr, file_data: span[ubyte]) -> Image = c.LoadImageFromMemory(file_type, file_data.data, int<-file_data.len)
 pub foreign def load_image_from_texture(texture: Texture) -> Image = c.LoadImageFromTexture
 pub foreign def load_image_from_screen() -> Image = c.LoadImageFromScreen
 pub foreign def is_image_valid(image: Image) -> bool = c.IsImageValid
@@ -414,7 +445,7 @@ pub foreign def image_alpha_clear(inout image: Image, color: Color, threshold: f
 pub foreign def image_alpha_mask(inout image: Image, alpha_mask: Image) -> void = c.ImageAlphaMask
 pub foreign def image_alpha_premultiply(inout image: Image) -> void = c.ImageAlphaPremultiply
 pub foreign def image_blur_gaussian(inout image: Image, blur_size: int) -> void = c.ImageBlurGaussian
-pub foreign def image_kernel_convolution(inout image: Image, kernel: const_ptr[float], kernel_size: int) -> void = c.ImageKernelConvolution
+pub foreign def image_kernel_convolution(inout image: Image, kernel: span[float]) -> void = c.ImageKernelConvolution(image, kernel.data, int<-kernel.len)
 pub foreign def image_resize(inout image: Image, new_width: int, new_height: int) -> void = c.ImageResize
 pub foreign def image_resize_nn(inout image: Image, new_width: int, new_height: int) -> void = c.ImageResizeNN
 pub foreign def image_resize_canvas(inout image: Image, new_width: int, new_height: int, offset_x: int, offset_y: int, fill: Color) -> void = c.ImageResizeCanvas
@@ -519,34 +550,70 @@ pub foreign def measure_text_codepoints(font: Font, codepoints: const_ptr[int], 
 pub foreign def get_glyph_index(font: Font, codepoint: int) -> int = c.GetGlyphIndex
 pub foreign def get_glyph_info(font: Font, codepoint: int) -> GlyphInfo = c.GetGlyphInfo
 pub foreign def get_glyph_atlas_rec(font: Font, codepoint: int) -> Rectangle = c.GetGlyphAtlasRec
-pub foreign def load_utf_8(codepoints: const_ptr[int], length: int) -> ptr[char]? = c.LoadUTF8
-pub foreign def unload_utf_8(text: ptr[char]) -> void = c.UnloadUTF8
-pub foreign def load_codepoints_ptr(text: str as cstr, out count: int) -> ptr[int]? = c.LoadCodepoints
-pub foreign def unload_codepoints(codepoints: ptr[int]) -> void = c.UnloadCodepoints
+foreign def mt_raw_load_utf_8(codepoints: const_ptr[int], length: int) -> ptr[char]? = c.LoadUTF8
+
+
+pub def load_utf_8(codepoints: const_ptr[int], length: int) -> option.Option[string.String]:
+    let raw_result = mt_raw_load_utf_8(codepoints, length)
+    if raw_result == null:
+        return option.Option[string.String].none()
+
+    let value = string.String.from_str(text.chars_as_str(ptr[char]<-raw_result))
+    c.UnloadUTF8(ptr[char]<-raw_result)
+    return option.Option[string.String].some(value)
+
+foreign def mt_raw_load_codepoints(text: str as cstr, out count: int) -> ptr[int]? = c.LoadCodepoints
+
+
+pub def load_codepoints(text: str) -> option.Option[vec.Vec[int]]:
+    var count = 0
+    let raw_result = mt_raw_load_codepoints(text, count)
+    if count < 0:
+        if raw_result != null:
+            c.UnloadCodepoints(ptr[int]<-raw_result)
+        panic(c"imported wrapper load_codepoints returned negative count")
+
+    var value = vec.Vec[int].with_capacity(ptr_uint<-count)
+    if count == 0:
+        if raw_result != null:
+            c.UnloadCodepoints(ptr[int]<-raw_result)
+        return option.Option[vec.Vec[int]].some(value)
+
+    if raw_result == null:
+        return option.Option[vec.Vec[int]].none()
+
+    var index: ptr_uint = 0
+    while index < ptr_uint<-count:
+        unsafe:
+            value.push(read(ptr[int]<-raw_result + index))
+        index += 1
+    c.UnloadCodepoints(ptr[int]<-raw_result)
+    return option.Option[vec.Vec[int]].some(value)
+
 pub foreign def get_codepoint_count(text: str as cstr) -> int = c.GetCodepointCount
 pub foreign def get_codepoint(text: str as cstr, out codepoint_size: int) -> int = c.GetCodepoint
 pub foreign def get_codepoint_next(text: str as cstr, out codepoint_size: int) -> int = c.GetCodepointNext
 pub foreign def get_codepoint_previous(text: cstr, codepoint_size: ptr[int]) -> int = c.GetCodepointPrevious
-pub foreign def codepoint_to_utf_8(codepoint: int, out utf_8_size: int) -> cstr = c.CodepointToUTF8
+pub foreign def codepoint_to_utf_8(codepoint: int, out utf_8_size: int) -> str = text.cstr_as_str(c.CodepointToUTF8(codepoint, utf_8_size))
 pub foreign def load_text_lines(text: cstr, count: ptr[int]) -> ptr[ptr[char]] = c.LoadTextLines
 pub foreign def unload_text_lines(text: ptr[ptr[char]], line_count: int) -> void = c.UnloadTextLines
 pub foreign def text_copy(dst: ptr[char], src: cstr) -> int = c.TextCopy
 pub foreign def text_is_equal(text_1: cstr, text_2: cstr) -> bool = c.TextIsEqual
 pub foreign def text_length(text: str as cstr) -> uint = c.TextLength
-pub foreign def text_format_int(format: str as cstr, value: int) -> cstr = c.TextFormat(format, value)
-pub foreign def text_format_int_int(format: str as cstr, first: int, second: int) -> cstr = c.TextFormat(format, first, second)
-pub foreign def text_format_int_int_int(format: str as cstr, first: int, second: int, third: int) -> cstr = c.TextFormat(format, first, second, third)
-pub foreign def text_format_int_int_int_int(format: str as cstr, first: int, second: int, third: int, fourth: int) -> cstr = c.TextFormat(format, first, second, third, fourth)
-pub foreign def text_format_int_cstr(format: str as cstr, value: int, label: str as cstr) -> cstr = c.TextFormat(format, value, label)
-pub foreign def text_format_cstr(format: str as cstr, value: str as cstr) -> cstr = c.TextFormat(format, value)
-pub foreign def text_format_cstr_cstr(format: str as cstr, first: str as cstr, second: str as cstr) -> cstr = c.TextFormat(format, first, second)
-pub foreign def text_format_cstr_int_int(format: str as cstr, label: str as cstr, first: int, second: int) -> cstr = c.TextFormat(format, label, first, second)
-pub foreign def text_format_int_int_float(format: str as cstr, first: int, second: int, third: float) -> cstr = c.TextFormat(format, first, second, third)
-pub foreign def text_format_cstr_float_float(format: str as cstr, label: str as cstr, first: float, second: float) -> cstr = c.TextFormat(format, label, first, second)
-pub foreign def text_format_float(format: str as cstr, value: float) -> cstr = c.TextFormat(format, value)
-pub foreign def text_format_float_float(format: str as cstr, first: float, second: float) -> cstr = c.TextFormat(format, first, second)
-pub foreign def text_subtext(text: str as cstr, position: int, length: int) -> cstr = c.TextSubtext
-pub foreign def text_remove_spaces(text: cstr) -> cstr = c.TextRemoveSpaces
+pub foreign def text_format_int(format: str as cstr, value: int) -> str = text.cstr_as_str(c.TextFormat(format, value))
+pub foreign def text_format_int_int(format: str as cstr, first: int, second: int) -> str = text.cstr_as_str(c.TextFormat(format, first, second))
+pub foreign def text_format_int_int_int(format: str as cstr, first: int, second: int, third: int) -> str = text.cstr_as_str(c.TextFormat(format, first, second, third))
+pub foreign def text_format_int_int_int_int(format: str as cstr, first: int, second: int, third: int, fourth: int) -> str = text.cstr_as_str(c.TextFormat(format, first, second, third, fourth))
+pub foreign def text_format_int_cstr(format: str as cstr, value: int, label: str as cstr) -> str = text.cstr_as_str(c.TextFormat(format, value, label))
+pub foreign def text_format_cstr(format: str as cstr, value: str as cstr) -> str = text.cstr_as_str(c.TextFormat(format, value))
+pub foreign def text_format_cstr_cstr(format: str as cstr, first: str as cstr, second: str as cstr) -> str = text.cstr_as_str(c.TextFormat(format, first, second))
+pub foreign def text_format_cstr_int_int(format: str as cstr, label: str as cstr, first: int, second: int) -> str = text.cstr_as_str(c.TextFormat(format, label, first, second))
+pub foreign def text_format_int_int_float(format: str as cstr, first: int, second: int, third: float) -> str = text.cstr_as_str(c.TextFormat(format, first, second, third))
+pub foreign def text_format_cstr_float_float(format: str as cstr, label: str as cstr, first: float, second: float) -> str = text.cstr_as_str(c.TextFormat(format, label, first, second))
+pub foreign def text_format_float(format: str as cstr, value: float) -> str = text.cstr_as_str(c.TextFormat(format, value))
+pub foreign def text_format_float_float(format: str as cstr, first: float, second: float) -> str = text.cstr_as_str(c.TextFormat(format, first, second))
+pub foreign def text_subtext(text: str as cstr, position: int, length: int) -> str = text.cstr_as_str(c.TextSubtext(text, position, length))
+pub foreign def text_remove_spaces(text: str as cstr) -> str = text.cstr_as_str(c.TextRemoveSpaces(text))
 pub foreign def get_text_between(text: cstr, begin: cstr, end: cstr) -> ptr[char] = c.GetTextBetween
 pub foreign def text_replace(text: cstr, search: cstr, replacement: cstr) -> ptr[char] = c.TextReplace
 pub foreign def text_replace_alloc(text: cstr, search: cstr, replacement: cstr) -> ptr[char] = c.TextReplaceAlloc
@@ -644,7 +711,7 @@ pub foreign def is_audio_device_ready() -> bool = c.IsAudioDeviceReady
 pub foreign def set_master_volume(volume: float) -> void = c.SetMasterVolume
 pub foreign def get_master_volume() -> float = c.GetMasterVolume
 pub foreign def load_wave(file_name: str as cstr) -> Wave = c.LoadWave
-pub foreign def load_wave_from_memory(file_type: cstr, file_data: const_ptr[ubyte], data_size: int) -> Wave = c.LoadWaveFromMemory
+pub foreign def load_wave_from_memory(file_type: str as cstr, file_data: span[ubyte]) -> Wave = c.LoadWaveFromMemory(file_type, file_data.data, int<-file_data.len)
 pub foreign def is_wave_valid(wave: Wave) -> bool = c.IsWaveValid
 pub foreign def load_sound(file_name: str as cstr) -> Sound = c.LoadSound
 pub foreign def load_sound_from_wave(wave: Wave) -> Sound = c.LoadSoundFromWave

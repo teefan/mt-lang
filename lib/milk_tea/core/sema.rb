@@ -53,7 +53,7 @@ module MilkTea
         )
       end
     end
-    FunctionBinding = Data.define(:name, :type, :body_params, :body_return_type, :ast, :external, :async, :type_params, :instances, :type_arguments, :owner, :type_substitutions)
+    FunctionBinding = Data.define(:name, :type, :body_params, :body_return_type, :ast, :external, :async, :type_params, :instances, :type_arguments, :owner, :type_substitutions, :declared_receiver_type)
     ModuleBinding = Data.define(:name, :types, :values, :functions, :methods, :private_types, :private_values, :private_functions, :private_methods) do
       def private_type?(name)
         private_types.key?(name)
@@ -68,7 +68,9 @@ module MilkTea
       end
 
       def private_method?(receiver_type, name)
-        private_methods.fetch(receiver_type, {}).key?(name)
+        return true if private_methods.fetch(receiver_type, {}).key?(name)
+
+        receiver_type.is_a?(Types::StructInstance) && private_methods.fetch(receiver_type.definition, {}).key?(name)
       end
     end
 
@@ -288,10 +290,6 @@ module MilkTea
               @types[decl.name] = Types::Flags.new(decl.name, module_name: @module_name, external: external_module?)
             when AST::OpaqueDecl
               ensure_available_type_name!(decl.name)
-              if decl.c_name && !external_module?
-                raise_sema_error("opaque #{decl.name} may only specify a foreign C name in an extern module")
-              end
-
               @types[decl.name] = Types::Opaque.new(
                 decl.name,
                 module_name: @module_name,
@@ -468,26 +466,28 @@ module MilkTea
               ensure_available_value_name!(decl.name)
               @top_level_functions[decl.name] = declare_function_binding(decl)
             when AST::MethodsBlock
-              receiver_type = resolve_type_ref(AST::TypeRef.new(name: decl.type_name, arguments: [], nullable: false))
-              unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StringView)
-                raise_sema_error("methods target #{decl.type_name} must be a struct or str")
-              end
+              dispatch_receiver_type, receiver_type, receiver_type_param_names = resolve_methods_receiver_target(decl.type_name)
 
               decl.methods.each do |method|
-                binding = declare_function_binding(method, receiver_type:)
-                raise_sema_error("duplicate method #{receiver_type.name}.#{binding.name}") if @methods[receiver_type].key?(binding.name)
+                binding = declare_function_binding(
+                  method,
+                  receiver_type:,
+                  declared_receiver_type: receiver_type,
+                  receiver_type_param_names:,
+                )
+                raise_sema_error("duplicate method #{decl.type_name}.#{binding.name}") if @methods[dispatch_receiver_type].key?(binding.name)
 
-                @methods[receiver_type][binding.name] = binding
+                @methods[dispatch_receiver_type][binding.name] = binding
               end
             end
           end
         end
       end
 
-      def declare_function_binding(decl, receiver_type: nil, external: false)
+      def declare_function_binding(decl, receiver_type: nil, declared_receiver_type: nil, receiver_type_param_names: [], external: false)
         foreign = decl.is_a?(AST::ForeignFunctionDecl)
         async_function = decl.respond_to?(:async) ? decl.async : false
-        type_param_names = decl.type_params.map(&:name)
+        type_param_names = receiver_type_param_names + decl.type_params.map(&:name)
         raise_sema_error("extern function #{decl.name} cannot be generic") if external && type_param_names.any?
         raise_sema_error("main cannot be generic") if decl.name == "main" && type_param_names.any?
         raise_sema_error("extern function #{decl.name} cannot be async") if external && async_function
@@ -607,6 +607,7 @@ module MilkTea
           type_arguments: [].freeze,
           owner: self,
           type_substitutions: {}.freeze,
+          declared_receiver_type: declared_receiver_type,
         )
       end
 
@@ -2165,14 +2166,24 @@ module MilkTea
 
         case callable_kind
         when :function
-          callable = specialize_function_binding(callable, expression.arguments, scopes:)
+          callable = specialize_function_binding(
+            callable,
+            expression.arguments,
+            scopes:,
+            receiver_type: callable_receiver_type_for_specialization(expression.callee, scopes:),
+          )
           return check_format_string_call(callable, expression.arguments, scopes:) if format_string_call?(callable, expression.arguments)
 
           check_function_call(callable, expression.arguments, scopes:)
           callable.owner.send(:check_function, callable) unless callable.type_arguments.empty?
           callable.type.return_type
         when :method
-          callable = specialize_function_binding(callable, expression.arguments, scopes:) if callable.type_params.any?
+          callable = specialize_function_binding(
+            callable,
+            expression.arguments,
+            scopes:,
+            receiver_type: infer_method_receiver_type(receiver, scopes:),
+          ) if callable.type_params.any?
           raise_sema_error("cannot call edit method #{callable.name} on an immutable receiver") if callable.type.receiver_mutable && !assignable_receiver?(receiver, scopes)
 
           check_function_call(callable, expression.arguments, scopes:)
@@ -2326,7 +2337,12 @@ module MilkTea
         callable_kind, callable, _receiver = resolve_callable(call.callee, scopes:)
         return unless callable_kind == :function
 
-        callable = specialize_function_binding(callable, call.arguments, scopes:) if callable.type_params.any?
+        callable = specialize_function_binding(
+          callable,
+          call.arguments,
+          scopes:,
+          receiver_type: callable_receiver_type_for_specialization(call.callee, scopes:),
+        ) if callable.type_params.any?
         return unless foreign_function_binding?(callable)
 
         { call:, binding: callable }
@@ -2951,13 +2967,18 @@ module MilkTea
       end
 
       def lookup_method(receiver_type, name)
+        dispatch_receiver_type = method_dispatch_receiver_type(receiver_type)
+
         method = @methods.fetch(receiver_type, {})[name]
+        method ||= @methods.fetch(dispatch_receiver_type, {})[name] unless dispatch_receiver_type == receiver_type
         return method if method
 
         @imports.each_value do |module_binding|
-          next unless module_binding.methods.key?(receiver_type)
+          imported_methods = module_binding.methods[receiver_type]
+          imported_methods ||= module_binding.methods[dispatch_receiver_type] unless dispatch_receiver_type == receiver_type
+          next unless imported_methods
 
-          imported_method = module_binding.methods.fetch(receiver_type)[name]
+          imported_method = imported_methods[name]
           return imported_method if imported_method
         end
 
@@ -3380,6 +3401,7 @@ module MilkTea
         return true if actual_type == expected_type
         return true if mutable_to_const_pointer_compatibility?(actual_type, expected_type)
         return true if same_external_opaque_c_name?(actual_type, expected_type)
+        return true if foreign_function_type_projection_compatible?(actual_type, expected_type)
 
         if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
           return foreign_identity_projection_cast_compatible?(actual_type.base, expected_type.base)
@@ -3387,6 +3409,8 @@ module MilkTea
 
         return foreign_identity_projection_cast_compatible?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
         return false if actual_type.is_a?(Types::Nullable)
+
+        return true if same_external_opaque_handle_pointer_compatibility?(actual_type, expected_type)
 
         if pointer_type?(actual_type) && pointer_type?(expected_type)
           return false if const_pointer_type?(actual_type) && mutable_pointer_type?(expected_type)
@@ -3405,9 +3429,37 @@ module MilkTea
         false
       end
 
+      def same_external_opaque_handle_pointer_compatibility?(actual_type, expected_type)
+        if actual_type.is_a?(Types::Opaque) && pointer_type?(expected_type)
+          return same_external_opaque_c_name?(actual_type, expected_type.arguments.first)
+        end
+
+        if pointer_type?(actual_type) && expected_type.is_a?(Types::Opaque)
+          return same_external_opaque_c_name?(actual_type.arguments.first, expected_type)
+        end
+
+        false
+      end
+
+      def foreign_function_type_projection_compatible?(actual_type, expected_type)
+        return false unless actual_type.is_a?(Types::Function) && expected_type.is_a?(Types::Function)
+        return false unless actual_type.receiver_type == expected_type.receiver_type
+        return false unless actual_type.variadic == expected_type.variadic
+        return false unless actual_type.params.length == expected_type.params.length
+        return false unless foreign_identity_projection_compatible?(actual_type.return_type, expected_type.return_type)
+
+        actual_type.params.zip(expected_type.params).all? do |actual_param, expected_param|
+          actual_param.mutable == expected_param.mutable &&
+            actual_param.passing_mode == expected_param.passing_mode &&
+            actual_param.boundary_type == expected_param.boundary_type &&
+            foreign_identity_projection_compatible?(actual_param.type, expected_param.type)
+        end
+      end
+
       def same_external_opaque_c_name?(actual_type, expected_type)
         return false unless actual_type.is_a?(Types::Opaque) && expected_type.is_a?(Types::Opaque)
-        return false unless actual_type.external && expected_type.external
+        return false unless actual_type.external || actual_type.c_name
+        return false unless expected_type.external || expected_type.c_name
 
         foreign_opaque_c_name(actual_type) == foreign_opaque_c_name(expected_type)
       end
@@ -3856,6 +3908,7 @@ module MilkTea
         return true if type.is_a?(Types::Struct)
         return true if type.is_a?(Types::Variant)
         return true if pointer_type?(type)
+        return true if type.is_a?(Types::Opaque) && !type.external
         return true if array_type?(type)
         return true if str_builder_type?(type)
 
@@ -4128,6 +4181,65 @@ module MilkTea
         nil
       end
 
+      def method_dispatch_receiver_type(receiver_type)
+        receiver_type.is_a?(Types::StructInstance) ? receiver_type.definition : receiver_type
+      end
+
+      def resolve_methods_receiver_target(type_ref)
+        if type_ref.is_a?(AST::TypeRef)
+          generic_type = resolve_named_generic_type(type_ref.name.parts)
+          if generic_type.is_a?(Types::GenericStructDefinition)
+            receiver_type_param_names = validate_methods_receiver_type_arguments!(type_ref, generic_type)
+            receiver_type_params = receiver_type_param_names.to_h { |name| [name, Types::TypeVar.new(name)] }
+            receiver_type = resolve_type_ref(type_ref, type_params: receiver_type_params)
+            return [generic_type, receiver_type, receiver_type_param_names]
+          end
+        end
+
+        receiver_type = resolve_type_ref(type_ref)
+        unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::StringView)
+          raise_sema_error("methods target #{type_ref} must be a struct or str")
+        end
+
+        [receiver_type, receiver_type, []]
+      end
+
+      def validate_methods_receiver_type_arguments!(type_ref, generic_type)
+        names = type_ref.arguments.map do |argument|
+          value = argument.value
+          next unless value.is_a?(AST::TypeRef)
+          next unless value.arguments.empty? && !value.nullable && value.name.parts.length == 1
+
+          value.name.parts.first
+        end
+
+        expected_names = generic_type.type_params
+        unless names == expected_names
+          raise_sema_error("methods target #{type_ref} must use the receiver type parameters directly")
+        end
+
+        expected_names
+      end
+
+      def infer_receiver_type_substitutions(binding, receiver_type)
+        declared_receiver_type = binding.declared_receiver_type
+        return {} unless declared_receiver_type
+        return {} unless declared_receiver_type.is_a?(Types::StructInstance)
+        return {} unless declared_receiver_type.definition.is_a?(Types::GenericStructDefinition)
+
+        unless receiver_type.is_a?(Types::StructInstance) && receiver_type.definition == declared_receiver_type.definition
+          raise_sema_error("cannot use method #{binding.name} with receiver #{receiver_type}")
+        end
+
+        declared_receiver_type.definition.type_params.zip(receiver_type.arguments).to_h
+      end
+
+      def callable_receiver_type_for_specialization(callee, scopes:)
+        return unless callee.is_a?(AST::MemberAccess)
+
+        resolve_type_expression(callee.receiver)
+      end
+
       def resolve_type_member(type, name)
         case type
         when Types::Enum, Types::Flags
@@ -4148,6 +4260,7 @@ module MilkTea
       def resolve_specialized_callable_binding(expression, scopes:)
         callable_kind = :function
         receiver = nil
+        receiver_type = nil
         binding = case expression.callee
                   when AST::Identifier
                     @top_level_functions[expression.callee.name]
@@ -4163,6 +4276,7 @@ module MilkTea
                     elsif (type_expr = resolve_type_expression(expression.callee.receiver))
                       associated_function = lookup_method(type_expr, expression.callee.member)
                       if associated_function&.type&.receiver_type.nil?
+                        receiver_type = type_expr
                         associated_function
                       else
                         if (imported_module = imported_module_with_private_method(type_expr, expression.callee.member))
@@ -4190,7 +4304,7 @@ module MilkTea
         return nil unless binding
 
         type_arguments = resolve_specialization_type_arguments(expression)
-        [callable_kind, instantiate_function_binding(binding, type_arguments), receiver]
+        [callable_kind, instantiate_function_binding_with_receiver(binding, type_arguments, receiver_type:), receiver]
       end
 
       def resolve_specialization_type_arguments(expression)
@@ -4199,10 +4313,38 @@ module MilkTea
         end
       end
 
-      def specialize_function_binding(binding, arguments, scopes:)
+      def specialize_function_binding(binding, arguments, scopes:, receiver_type: nil)
         return binding if binding.type_params.empty?
 
-        type_arguments = infer_function_type_arguments(binding, arguments, scopes:)
+        type_arguments = infer_function_type_arguments(binding, arguments, scopes:, receiver_type:)
+        instantiate_function_binding(binding, type_arguments)
+      end
+
+      def instantiate_function_binding_with_receiver(binding, explicit_type_arguments, receiver_type: nil)
+        if binding.type_params.empty?
+          raise_sema_error("function #{binding.name} is not generic and cannot be specialized")
+        end
+
+        receiver_substitutions = infer_receiver_type_substitutions(binding, receiver_type)
+        remaining_type_params = binding.type_params.reject { |name| receiver_substitutions.key?(name) }
+        unless remaining_type_params.length == explicit_type_arguments.length
+          raise_sema_error("function #{binding.name} expects #{remaining_type_params.length} type arguments, got #{explicit_type_arguments.length}")
+        end
+
+        substitutions = receiver_substitutions.dup
+        remaining_type_params.zip(explicit_type_arguments).each do |name, type_argument|
+          raise_sema_error("generic function #{binding.name} cannot be instantiated with ref types") if contains_ref_type?(type_argument)
+
+          substitutions[name] = type_argument
+        end
+
+        type_arguments = binding.type_params.map do |name|
+          inferred = substitutions[name]
+          raise_sema_error("cannot infer type argument #{name} for function #{binding.name}") unless inferred
+
+          inferred
+        end
+
         instantiate_function_binding(binding, type_arguments)
       end
 
@@ -4240,17 +4382,18 @@ module MilkTea
           type_arguments: key,
           owner: binding.owner,
           type_substitutions: substitutions.freeze,
+          declared_receiver_type: binding.declared_receiver_type ? substitute_type(binding.declared_receiver_type, substitutions) : nil,
         )
         binding.instances[key] = instance
       end
 
-      def infer_function_type_arguments(binding, arguments, scopes:)
+      def infer_function_type_arguments(binding, arguments, scopes:, receiver_type: nil)
         expected_params = binding.type.params
         unless call_arity_matches?(binding.type, arguments.length)
           raise_sema_error(arity_error_message(binding.type, binding.name, arguments.length))
         end
 
-        substitutions = {}
+        substitutions = infer_receiver_type_substitutions(binding, receiver_type)
         expected_params.each_with_index do |parameter, index|
           argument = arguments.fetch(index)
           expected_argument_type = callable_type?(parameter.type) ? parameter.type : nil

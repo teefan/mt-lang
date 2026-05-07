@@ -361,7 +361,7 @@ module MilkTea
 
     def parse_methods_block
       line = previous.line
-      type_name = parse_qualified_name
+      type_name = parse_type_ref
       methods = parse_named_block do
         parse_method_def
       end

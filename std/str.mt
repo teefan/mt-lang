@@ -27,9 +27,9 @@ pub def chars_as_str(text: ptr[char]) -> str:
 
 pub def nullable_cstr_as_str(text: cstr?) -> option.Option[str]:
     if text == null:
-        return option.none[str]()
+        return option.Option[str].none()
 
-    return option.some[str](cstr_as_str(cstr<-text))
+    return option.Option[str].some(cstr_as_str(cstr<-text))
 
 
 pub def as_byte_span(text: str) -> span[ubyte]:
@@ -41,9 +41,9 @@ pub def utf8_byte_span_as_str(bytes: span[ubyte]) -> option.Option[str]:
     unsafe:
         let borrowed = str(data = ptr[char]<-bytes.data, len = bytes.len)
         if not is_valid_utf8(borrowed):
-            return option.none[str]()
+            return option.Option[str].none()
 
-        return option.some[str](borrowed)
+        return option.Option[str].some(borrowed)
 
 
 pub def utf8_continuation_byte(byte: ubyte) -> bool:
@@ -108,9 +108,9 @@ pub def find_byte(text: str, byte: ubyte) -> option.Option[ptr_uint]:
     var index: ptr_uint = 0
     while index < text.len:
         if byte_at(text, index) == byte:
-            return option.some[ptr_uint](index)
+            return option.Option[ptr_uint].some(index)
         index += 1
-    return option.none[ptr_uint]()
+    return option.Option[ptr_uint].none()
 
 
 pub def trim_ascii_whitespace(text: str) -> str:

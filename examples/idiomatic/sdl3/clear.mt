@@ -9,15 +9,15 @@ const window_title: str = "examples/renderer/clear"
 const presentation_mode: sdl.RendererLogicalPresentation = sdl.RendererLogicalPresentation.SDL_LOGICAL_PRESENTATION_LETTERBOX
 const window_flags: ptr_uint = sdl.WINDOW_RESIZABLE
 
-var window: ptr[sdl.Window]
-var renderer: ptr[sdl.Renderer]
+var window: sdl.Window
+var renderer: sdl.Renderer
 
 
 def pump_events() -> bool:
     var event = zero[sdl.Event]
 
     while sdl.poll_event(event):
-        if sdl.EventType.SDL_EVENT_QUIT == sdl.EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-sdl.EventType.SDL_EVENT_QUIT:
             return false
 
     return true

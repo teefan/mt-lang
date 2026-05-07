@@ -13,10 +13,10 @@ pub def arg_count(argc: int) -> ptr_uint:
 
 pub def arg(argc: int, argv: ptr[cstr], index: ptr_uint) -> option.Option[str]:
     if index >= arg_count(argc):
-        return option.none[str]()
+        return option.Option[str].none()
 
     unsafe:
-        return option.some[str](text_ops.cstr_as_str(read(argv + index)))
+        return option.Option[str].some(text_ops.cstr_as_str(read(argv + index)))
 
 
 pub def env(name: str) -> option.Option[str]:
@@ -24,7 +24,7 @@ pub def env(name: str) -> option.Option[str]:
 
 
 pub def env_exists(name: str) -> bool:
-    return option.is_some[str](env(name))
+    return env(name).is_some()
 
 
 pub def exit(status: int) -> void:

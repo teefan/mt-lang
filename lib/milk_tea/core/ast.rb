@@ -10,7 +10,19 @@ module MilkTea
 
     TypeParam = Data.define(:name)
     TypeArgument = Data.define(:value)
-    TypeRef = Data.define(:name, :arguments, :nullable)
+    class TypeRef < Data.define(:name, :arguments, :nullable)
+      def to_s
+        text = name.to_s
+        unless arguments.empty?
+          rendered_arguments = arguments.map do |argument|
+            value = argument.value
+            value.respond_to?(:to_s) ? value.to_s : value.inspect
+          end
+          text += "[#{rendered_arguments.join(', ')}]"
+        end
+        nullable ? "#{text}?" : text
+      end
+    end
     FunctionType = Data.define(:params, :return_type)
     ProcType = Data.define(:params, :return_type)
     SourceFile = Data.define(:module_name, :module_kind, :imports, :directives, :declarations, :line) do

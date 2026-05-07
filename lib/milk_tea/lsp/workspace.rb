@@ -95,7 +95,7 @@ module MilkTea
         entry = @diagnostics_cache[uri]
         return entry[:diagnostics] if entry && entry[:content_hash] == hash
 
-        result = Diagnostics.collect(uri, content, shared_module_cache: @shared_module_cache)
+        result = Diagnostics.collect(uri, content, shared_module_cache: @shared_module_cache, source_overrides: file_backed_source_overrides)
         diagnostics = result[:diagnostics]
         analysis = result[:analysis]
         @analysis_cache[uri] = analysis if analysis
@@ -300,6 +300,9 @@ module MilkTea
       end
 
       def refresh_open_document_dependency_caches(changed_uri)
+        path = uri_to_path(changed_uri)
+        return [] unless path && File.file?(path)
+
         refresh_import_dependent_caches(changed_uri: changed_uri)
       end
 
@@ -683,6 +686,7 @@ module MilkTea
           loader = MilkTea::ModuleLoader.new(
             module_roots: MilkTea::ModuleRoots.roots_for_path(path),
             shared_cache: @shared_module_cache,
+            source_overrides: file_backed_source_overrides,
           )
           loader.check_file(path)
         else
@@ -706,6 +710,7 @@ module MilkTea
                    loader = MilkTea::ModuleLoader.new(
                      module_roots: MilkTea::ModuleRoots.roots_for_path(path),
                      shared_cache: @shared_module_cache,
+                     source_overrides: file_backed_source_overrides,
                    )
                    loader.check_file(path)
                  else
@@ -753,6 +758,22 @@ module MilkTea
           }
         end
         symbols
+      end
+
+      def file_backed_source_overrides
+        @open_documents.each_with_object({}) do |(uri, content), overrides|
+          path = uri_to_path(uri)
+          next unless path && File.file?(path)
+
+          use_override = true
+          begin
+            use_override = File.read(path) != content
+          rescue StandardError
+            use_override = true
+          end
+
+          overrides[File.expand_path(path)] = content if use_override
+        end
       end
 
       def extract_doc_comments_for_definitions(uri)

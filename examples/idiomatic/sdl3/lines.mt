@@ -21,15 +21,15 @@ var line_points: array[sdl.FPoint, 9] = array[sdl.FPoint, 9](
     sdl.FPoint(x = 100.0, y = 354.0),
 )
 
-var window: ptr[sdl.Window]
-var renderer: ptr[sdl.Renderer]
+var window: sdl.Window
+var renderer: sdl.Renderer
 
 
 def pump_events() -> bool:
     var event = zero[sdl.Event]
 
     while sdl.poll_event(event):
-        if sdl.EventType.SDL_EVENT_QUIT == sdl.EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-sdl.EventType.SDL_EVENT_QUIT:
             return false
 
     return true
