@@ -107,10 +107,10 @@ def main() -> int:
     glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 0)
     glfw.window_hint(glfw.CONTEXT_CREATION_API, glfw.EGL_CONTEXT_API)
 
-    var window = glfw.create_window(window_width, window_height, window_title_egl, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
+    var window = glfw.create_window(window_width, window_height, window_title_egl, null, null)
     if window == null:
         glfw.window_hint(glfw.CONTEXT_CREATION_API, glfw.NATIVE_CONTEXT_API)
-        window = glfw.create_window(window_width, window_height, window_title_native, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
+        window = glfw.create_window(window_width, window_height, window_title_native, null, null)
         if window == null:
             return 1
 

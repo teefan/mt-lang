@@ -114,12 +114,12 @@ def app_main() -> int:
         return 1
 
     let window = sdl.create_window(window_title, window_width, window_height, window_flags)
-    if window == zero[ptr[sdl.Window]]:
+    if window == null:
         return 1
     defer sdl.destroy_window(window)
 
     let context = sdl.gl_create_context(window)
-    if context == zero[ptr[sdl.GLContextState]]:
+    if context == null:
         return 1
     defer sdl.gl_destroy_context(context)
 

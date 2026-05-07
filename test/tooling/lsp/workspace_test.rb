@@ -64,7 +64,7 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_import_heavy_open") do |dir|
       FileUtils.mkdir_p(File.join(dir, "std"))
       path = File.join(dir, "main.mt")
-      body = (1..130).map { |i| "# filler #{i}" }.join("\n")
+      body = (1..55).map { |i| "# filler #{i}" }.join("\n")
       content = <<~MT
         module main
 
@@ -88,11 +88,85 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
+  def test_open_document_skips_eager_analysis_for_small_files_with_many_imports
+    Dir.mktmpdir("lsp_workspace_many_imports_open") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "std"))
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        import alpha as a
+        import beta as b
+        import gamma as g
+        import delta as d
+
+        def main() -> int:
+            return 0
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      stats = workspace.open_document(path_to_uri(path), content)
+
+      assert_equal false, stats[:eager_analysis]
+      assert_equal 'import-heavy', stats[:skip_reason]
+      assert_equal 4, stats[:import_count]
+      assert_nil stats[:analysis_ms]
+    end
+  end
+
+  def test_open_document_skips_eager_analysis_for_single_large_imported_file
+    Dir.mktmpdir("lsp_workspace_single_import_large_open") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "std"))
+      path = File.join(dir, "main.mt")
+      body = (1..155).map { |i| "# filler #{i}" }.join("\n")
+      content = <<~MT
+        module main
+
+        import mathx as mx
+
+        def main() -> int:
+            return 0
+
+        #{body}
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      stats = workspace.open_document(path_to_uri(path), content)
+
+      assert_equal false, stats[:eager_analysis]
+      assert_equal 'import-heavy', stats[:skip_reason]
+      assert_equal 1, stats[:import_count]
+      assert_nil stats[:analysis_ms]
+    end
+  end
+
+  def test_open_document_skips_eager_analysis_for_background_documents
+    workspace = MilkTea::LSP::Workspace.new
+    uri = "file:///tmp/lsp_workspace_background.mt"
+    workspace.set_document_source(uri, "background-document")
+
+    stats = workspace.open_document(uri, <<~MT)
+      module main
+
+      def main() -> int:
+          return 0
+    MT
+
+    assert_equal false, stats[:eager_analysis]
+    assert_equal 'background-document', stats[:skip_reason]
+    assert_equal 0, stats[:import_count]
+    assert_nil stats[:analysis_ms]
+  ensure
+    workspace&.shutdown
+  end
+
   def test_update_document_uses_skip_heuristic_for_import_heavy_files
     Dir.mktmpdir("lsp_workspace_import_heavy_update") do |dir|
       FileUtils.mkdir_p(File.join(dir, "std"))
       path = File.join(dir, "main.mt")
-      body = (1..130).map { |i| "# filler #{i}" }.join("\n")
+      body = (1..55).map { |i| "# filler #{i}" }.join("\n")
       content = <<~MT
         module main
 
@@ -144,6 +218,46 @@ class LSPWorkspaceTest < Minitest::Test
       end
 
       refute_nil workspace.instance_variable_get(:@last_good_analysis_cache)[uri]
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_populates_analysis_cache_for_skipped_documents
+    Dir.mktmpdir("lsp_workspace_diagnostics_cache") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+      path = File.join(std_dir, "demo.mt")
+      content = <<~MT
+        module std.demo
+
+        pub def answer() -> int:
+            return 42
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new(enable_background_analysis_warmup: false)
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      assert_equal [], workspace.collect_diagnostics(uri)
+      refute_nil workspace.instance_variable_get(:@analysis_cache)[uri]
+      refute_nil workspace.instance_variable_get(:@last_good_analysis_cache)[uri]
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_index_workspace_does_not_start_definition_warmup_for_every_file
+    Dir.mktmpdir("lsp_workspace_index") do |dir|
+      path = File.join(dir, "main.mt")
+      File.write(path, "module main\n")
+
+      workspace = MilkTea::LSP::Workspace.new
+      workspace.index_workspace(path_to_uri(dir))
+
+      assert_nil workspace.instance_variable_get(:@definition_warmup_thread)
+      assert_equal "module main\n", workspace.get_content(path_to_uri(path))
     ensure
       workspace&.shutdown
     end

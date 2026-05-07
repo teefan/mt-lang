@@ -133,11 +133,11 @@ def window_refresh_callback(window: ptr[glfw.GLFWwindow]) -> void:
     glfw.glfwSwapBuffers(window)
 
 
-def create_window(monitor: ptr[glfw.GLFWmonitor]) -> ptr[glfw.GLFWwindow]?:
+def create_window(monitor: ptr[glfw.GLFWmonitor]?) -> ptr[glfw.GLFWwindow]?:
     var width = windowed_width
     var height = windowed_height
 
-    if monitor != zero[ptr[glfw.GLFWmonitor]]:
+    if monitor != null:
         let mode_ptr = glfw.glfwGetVideoMode(monitor)
         if mode_ptr != null:
             unsafe:
@@ -151,7 +151,7 @@ def create_window(monitor: ptr[glfw.GLFWmonitor]) -> ptr[glfw.GLFWwindow]?:
         else:
             return null
 
-    let window = glfw.glfwCreateWindow(width, height, c"Iconify", monitor, zero[ptr[glfw.GLFWwindow]])
+    let window = glfw.glfwCreateWindow(width, height, c"Iconify", monitor, null)
     if window == null:
         return null
 
@@ -160,12 +160,12 @@ def create_window(monitor: ptr[glfw.GLFWmonitor]) -> ptr[glfw.GLFWwindow]?:
     return window
 
 
-def destroy_windows(windows: ptr[ptr[glfw.GLFWwindow]], window_count: int) -> void:
+def destroy_windows(windows: ptr[ptr[glfw.GLFWwindow]?], window_count: int) -> void:
     unsafe:
         var index = 0
         while index < window_count:
             let window = read(windows + ptr_uint<-index)
-            if window != zero[ptr[glfw.GLFWwindow]]:
+            if window != null:
                 glfw.glfwDestroyWindow(window)
             index += 1
         libc.free(ptr[void]?<-windows)
@@ -206,13 +206,13 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
             return 1
         window_count = monitor_count
 
-    let allocated = libc.calloc(ptr_uint<-window_count, ptr_uint<-size_of(ptr[glfw.GLFWwindow]))
+    let allocated = libc.calloc(ptr_uint<-window_count, ptr_uint<-size_of(ptr[glfw.GLFWwindow]?))
     if allocated == null:
         return 1
 
-    var windows = zero[ptr[ptr[glfw.GLFWwindow]]]
+    var windows = zero[ptr[ptr[glfw.GLFWwindow]?]]
     unsafe:
-        windows = ptr[ptr[glfw.GLFWwindow]]<-allocated
+        windows = ptr[ptr[glfw.GLFWwindow]?]<-allocated
     defer destroy_windows(windows, window_count)
 
     if fullscreen != 0 and all_monitors != 0:
@@ -240,7 +240,7 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
                     return 1
                 read(windows) = window
             else:
-                let window = create_window(zero[ptr[glfw.GLFWmonitor]])
+                let window = create_window(null)
                 if window == null:
                     return 1
                 read(windows) = window
@@ -249,6 +249,8 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
         var index = 0
         while index < window_count:
             let window = read(windows + ptr_uint<-index)
+            if window == null:
+                return 1
             glfw.glfwSetKeyCallback(window, key_callback)
             glfw.glfwSetFramebufferSizeCallback(window, framebuffer_size_callback)
             glfw.glfwSetWindowSizeCallback(window, window_size_callback)
@@ -270,6 +272,9 @@ def main(argc: int, argv: ptr[ptr[char]]) -> int:
         unsafe:
             var index = 0
             while index < window_count:
-                if glfw.glfwWindowShouldClose(read(windows + ptr_uint<-index)) != 0:
+                let window = read(windows + ptr_uint<-index)
+                if window == null:
+                    return 1
+                if glfw.glfwWindowShouldClose(window) != 0:
                     return 0
                 index += 1

@@ -771,6 +771,68 @@ class LSPServerTest < Minitest::Test
     server&.send(:handle_shutdown, nil)
   end
 
+  def test_server_disables_workspace_background_analysis_warmup
+    server = MilkTea::LSP::Server.new
+
+    refute server.instance_variable_get(:@workspace).background_analysis_warmup_enabled?
+  ensure
+    server&.send(:handle_shutdown, nil)
+  end
+
+  def test_semantic_tokens_skip_reason_uses_workspace_expensive_file_guard
+    Dir.mktmpdir("lsp_semantic_skip_reason") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "std"))
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        module main
+
+        import alpha as a
+        import beta as b
+        import gamma as g
+        import delta as d
+
+        def main() -> int:
+            return 0
+      MT
+      File.write(path, source)
+
+      server = MilkTea::LSP::Server.new
+      assert_equal 'import-heavy', server.send(:semantic_tokens_analysis_skip_reason, path_to_uri(path), source)
+    ensure
+      server&.send(:handle_shutdown, nil)
+    end
+  end
+
+  def test_background_document_context_skips_diagnostics_until_promoted
+    server = MilkTea::LSP::Server.new
+    uri = "file:///tmp/lsp_background_context.mt"
+    source = <<~MT
+      module main
+
+      def main() -> int:
+          return 0
+    MT
+
+    server.send(:handle_document_context, {
+      "textDocument" => { "uri" => uri },
+      "source" => "background-document"
+    })
+    server.send(:handle_did_open, {
+      "textDocument" => { "uri" => uri, "text" => source }
+    })
+
+    refute_includes server.instance_variable_get(:@diagnostics_last_scheduled_hash).keys, uri
+
+    server.send(:handle_document_context, {
+      "textDocument" => { "uri" => uri },
+      "source" => "active-editor"
+    })
+
+    assert_includes server.instance_variable_get(:@diagnostics_last_scheduled_hash).keys, uri
+  ensure
+    server&.send(:handle_shutdown, nil)
+  end
+
   def test_document_symbol_captures_opaque_declarations
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })

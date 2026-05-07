@@ -3,6 +3,7 @@ module examples.raylib.audio.audio_spectrum_visualizer
 import std.c.libm as libm
 import std.c.raylib as rl
 import std.raylib.math as rm
+import std.raylib.runtime as rlr
 
 struct FFTComplex:
     real: float
@@ -170,7 +171,7 @@ def main() -> int:
     defer rl.UnloadWave(wav)
     rl.WaveFormat(ptr_of(wav), sample_rate, per_sample_bit_depth, mono)
 
-    let wav_samples = rl.LoadWaveSamples(wav)
+    let wav_samples = rlr.require_ptr[float](rl.LoadWaveSamples(wav), "could not load wave samples")
     defer rl.UnloadWaveSamples(wav_samples)
 
     let audio_stream = rl.LoadAudioStream(sample_rate, per_sample_bit_depth, mono)

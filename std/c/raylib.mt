@@ -248,7 +248,7 @@ extern module std.c.raylib:
 
     struct AutomationEvent:
         frame: uint
-        kind: uint
+        type_: uint
         params: array[int, 4]
 
     struct AutomationEventList:
@@ -620,8 +620,8 @@ extern module std.c.raylib:
     extern def IsWindowFocused() -> bool
     extern def IsWindowResized() -> bool
     extern def IsWindowState(flag: uint) -> bool
-    extern def SetWindowState(flag_bits: uint) -> void
-    extern def ClearWindowState(flag_bits: uint) -> void
+    extern def SetWindowState(flags_: uint) -> void
+    extern def ClearWindowState(flags_: uint) -> void
     extern def ToggleFullscreen() -> void
     extern def ToggleBorderlessWindowed() -> void
     extern def MaximizeWindow() -> void
@@ -710,22 +710,22 @@ extern module std.c.raylib:
     extern def WaitTime(seconds: double) -> void
     extern def SetRandomSeed(seed: uint) -> void
     extern def GetRandomValue(min: int, max: int) -> int
-    extern def LoadRandomSequence(count: uint, min: int, max: int) -> ptr[int]
+    extern def LoadRandomSequence(count: uint, min: int, max: int) -> ptr[int]?
     extern def UnloadRandomSequence(sequence: ptr[int]) -> void
     extern def TakeScreenshot(fileName: cstr) -> void
-    extern def SetConfigFlags(flag_bits: uint) -> void
+    extern def SetConfigFlags(flags_: uint) -> void
     extern def OpenURL(url: cstr) -> void
     extern def SetTraceLogLevel(logLevel: int) -> void
     extern def TraceLog(logLevel: int, text: cstr, ...) -> void
     extern def SetTraceLogCallback(callback: fn(arg0: int, arg1: cstr, arg2: va_list) -> void) -> void
-    extern def MemAlloc(size: uint) -> ptr[void]
-    extern def MemRealloc(ptr: ptr[void], size: uint) -> ptr[void]
+    extern def MemAlloc(size: uint) -> ptr[void]?
+    extern def MemRealloc(ptr: ptr[void], size: uint) -> ptr[void]?
     extern def MemFree(ptr: ptr[void]) -> void
-    extern def LoadFileData(fileName: cstr, dataSize: ptr[int]) -> ptr[ubyte]
+    extern def LoadFileData(fileName: cstr, dataSize: ptr[int]) -> ptr[ubyte]?
     extern def UnloadFileData(data: ptr[ubyte]) -> void
     extern def SaveFileData(fileName: cstr, data: ptr[void], dataSize: int) -> bool
     extern def ExportDataAsCode(data: const_ptr[ubyte], dataSize: int, fileName: cstr) -> bool
-    extern def LoadFileText(fileName: cstr) -> ptr[char]
+    extern def LoadFileText(fileName: cstr) -> ptr[char]?
     extern def UnloadFileText(text: ptr[char]) -> void
     extern def SaveFileText(fileName: cstr, text: cstr) -> bool
     extern def SetLoadFileDataCallback(callback: fn(arg0: cstr, arg1: ptr[int]) -> ptr[ubyte]) -> void
@@ -762,10 +762,10 @@ extern module std.c.raylib:
     extern def UnloadDroppedFiles(files: FilePathList) -> void
     extern def GetDirectoryFileCount(dirPath: cstr) -> uint
     extern def GetDirectoryFileCountEx(basePath: cstr, filter: cstr, scanSubdirs: bool) -> uint
-    extern def CompressData(data: const_ptr[ubyte], dataSize: int, compDataSize: ptr[int]) -> ptr[ubyte]
-    extern def DecompressData(compData: const_ptr[ubyte], compDataSize: int, dataSize: ptr[int]) -> ptr[ubyte]
-    extern def EncodeDataBase64(data: const_ptr[ubyte], dataSize: int, outputSize: ptr[int]) -> ptr[char]
-    extern def DecodeDataBase64(text: cstr, outputSize: ptr[int]) -> ptr[ubyte]
+    extern def CompressData(data: const_ptr[ubyte], dataSize: int, compDataSize: ptr[int]) -> ptr[ubyte]?
+    extern def DecompressData(compData: const_ptr[ubyte], compDataSize: int, dataSize: ptr[int]) -> ptr[ubyte]?
+    extern def EncodeDataBase64(data: const_ptr[ubyte], dataSize: int, outputSize: ptr[int]) -> ptr[char]?
+    extern def DecodeDataBase64(text: cstr, outputSize: ptr[int]) -> ptr[ubyte]?
     extern def ComputeCRC32(data: ptr[ubyte], dataSize: int) -> uint
     extern def ComputeMD5(data: ptr[ubyte], dataSize: int) -> ptr[uint]
     extern def ComputeSHA1(data: ptr[ubyte], dataSize: int) -> ptr[uint]
@@ -817,7 +817,7 @@ extern module std.c.raylib:
     extern def GetTouchPosition(index: int) -> Vector2
     extern def GetTouchPointId(index: int) -> int
     extern def GetTouchPointCount() -> int
-    extern def SetGesturesEnabled(flag_bits: uint) -> void
+    extern def SetGesturesEnabled(flags_: uint) -> void
     extern def IsGestureDetected(gesture: uint) -> bool
     extern def GetGestureDetected() -> int
     extern def GetGestureHoldDuration() -> float
@@ -906,7 +906,7 @@ extern module std.c.raylib:
     extern def IsImageValid(image: Image) -> bool
     extern def UnloadImage(image: Image) -> void
     extern def ExportImage(image: Image, fileName: cstr) -> bool
-    extern def ExportImageToMemory(image: Image, fileType: cstr, fileSize: ptr[int]) -> ptr[ubyte]
+    extern def ExportImageToMemory(image: Image, fileType: cstr, fileSize: ptr[int]) -> ptr[ubyte]?
     extern def ExportImageAsCode(image: Image, fileName: cstr) -> bool
     extern def GenImageColor(width: int, height: int, color: Color) -> Image
     extern def GenImageGradientLinear(width: int, height: int, direction: int, start: Color, end: Color) -> Image
@@ -947,8 +947,8 @@ extern module std.c.raylib:
     extern def ImageColorContrast(image: ptr[Image], contrast: float) -> void
     extern def ImageColorBrightness(image: ptr[Image], brightness: int) -> void
     extern def ImageColorReplace(image: ptr[Image], color: Color, replace: Color) -> void
-    extern def LoadImageColors(image: Image) -> ptr[Color]
-    extern def LoadImagePalette(image: Image, maxPaletteSize: int, colorCount: ptr[int]) -> ptr[Color]
+    extern def LoadImageColors(image: Image) -> ptr[Color]?
+    extern def LoadImagePalette(image: Image, maxPaletteSize: int, colorCount: ptr[int]) -> ptr[Color]?
     extern def UnloadImageColors(colors: ptr[Color]) -> void
     extern def UnloadImagePalette(colors: ptr[Color]) -> void
     extern def GetImageAlphaBorder(image: Image, threshold: float) -> Rectangle
@@ -1017,7 +1017,7 @@ extern module std.c.raylib:
     extern def LoadFontFromImage(image: Image, key: Color, firstChar: int) -> Font
     extern def LoadFontFromMemory(fileType: cstr, fileData: const_ptr[ubyte], dataSize: int, fontSize: int, codepoints: ptr[int]?, codepointCount: int) -> Font
     extern def IsFontValid(font: Font) -> bool
-    extern def LoadFontData(fileData: const_ptr[ubyte], dataSize: int, fontSize: int, codepoints: ptr[int]?, codepointCount: int, kind: int, glyphCount: ptr[int]) -> ptr[GlyphInfo]
+    extern def LoadFontData(fileData: const_ptr[ubyte], dataSize: int, fontSize: int, codepoints: ptr[int]?, codepointCount: int, type_: int, glyphCount: ptr[int]) -> ptr[GlyphInfo]
     extern def GenImageFontAtlas(glyphs: const_ptr[GlyphInfo], glyphRecs: ptr[ptr[Rectangle]], glyphCount: int, fontSize: int, padding: int, packMethod: int) -> Image
     extern def UnloadFontData(glyphs: ptr[GlyphInfo], glyphCount: int) -> void
     extern def UnloadFont(font: Font) -> void
@@ -1035,9 +1035,9 @@ extern module std.c.raylib:
     extern def GetGlyphIndex(font: Font, codepoint: int) -> int
     extern def GetGlyphInfo(font: Font, codepoint: int) -> GlyphInfo
     extern def GetGlyphAtlasRec(font: Font, codepoint: int) -> Rectangle
-    extern def LoadUTF8(codepoints: const_ptr[int], length: int) -> ptr[char]
+    extern def LoadUTF8(codepoints: const_ptr[int], length: int) -> ptr[char]?
     extern def UnloadUTF8(text: ptr[char]) -> void
-    extern def LoadCodepoints(text: cstr, count: ptr[int]) -> ptr[int]
+    extern def LoadCodepoints(text: cstr, count: ptr[int]) -> ptr[int]?
     extern def UnloadCodepoints(codepoints: ptr[int]) -> void
     extern def GetCodepointCount(text: cstr) -> int
     extern def GetCodepoint(text: cstr, codepointSize: ptr[int]) -> int
@@ -1124,13 +1124,13 @@ extern module std.c.raylib:
     extern def GenMeshKnot(radius: float, size: float, radSeg: int, sides: int) -> Mesh
     extern def GenMeshHeightmap(heightmap: Image, size: Vector3) -> Mesh
     extern def GenMeshCubicmap(cubicmap: Image, cubeSize: Vector3) -> Mesh
-    extern def LoadMaterials(fileName: cstr, materialCount: ptr[int]) -> ptr[Material]
+    extern def LoadMaterials(fileName: cstr, materialCount: ptr[int]) -> ptr[Material]?
     extern def LoadMaterialDefault() -> Material
     extern def IsMaterialValid(material: Material) -> bool
     extern def UnloadMaterial(material: Material) -> void
     extern def SetMaterialTexture(material: ptr[Material], mapType: int, texture: Texture) -> void
     extern def SetModelMeshMaterial(model: ptr[Model], meshId: int, materialId: int) -> void
-    extern def LoadModelAnimations(fileName: cstr, animCount: ptr[int]) -> ptr[ModelAnimation]
+    extern def LoadModelAnimations(fileName: cstr, animCount: ptr[int]) -> ptr[ModelAnimation]?
     extern def UpdateModelAnimation(model: Model, anim: ModelAnimation, frame: float) -> void
     extern def UpdateModelAnimationEx(model: Model, animA: ModelAnimation, frameA: float, animB: ModelAnimation, frameB: float, blend: float) -> void
     extern def UnloadModelAnimations(animations: ptr[ModelAnimation], animCount: int) -> void
@@ -1175,7 +1175,7 @@ extern module std.c.raylib:
     extern def WaveCopy(wave: Wave) -> Wave
     extern def WaveCrop(wave: ptr[Wave], initFrame: int, finalFrame: int) -> void
     extern def WaveFormat(wave: ptr[Wave], sampleRate: int, sampleSize: int, channels: int) -> void
-    extern def LoadWaveSamples(wave: Wave) -> ptr[float]
+    extern def LoadWaveSamples(wave: Wave) -> ptr[float]?
     extern def UnloadWaveSamples(samples: ptr[float]) -> void
     extern def LoadMusicStream(fileName: cstr) -> Music
     extern def LoadMusicStreamFromMemory(fileType: cstr, data: const_ptr[ubyte], dataSize: int) -> Music

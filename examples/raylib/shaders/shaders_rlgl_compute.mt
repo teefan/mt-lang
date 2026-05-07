@@ -2,6 +2,7 @@ module examples.raylib.shaders.shaders_rlgl_compute
 
 import std.c.raylib as rl
 import std.rlgl as rlgl
+import std.raylib.runtime as rlr
 
 const gol_width: int = 768
 const max_buffered_transferts: int = 48
@@ -37,7 +38,7 @@ def main() -> int:
     var resolution = array[float, 2](float<-screen_width, float<-screen_height)
     var brush_size = 8
 
-    let gol_logic_code = rl.LoadFileText(gol_logic_shader_path)
+    let gol_logic_code = rlr.require_ptr[char](rl.LoadFileText(gol_logic_shader_path), "could not load compute shader source")
     let gol_logic_shader = rlgl.load_shader(char_ptr_to_cstr(gol_logic_code), rlgl.RL_COMPUTE_SHADER)
     let gol_logic_program = rlgl.load_shader_program_compute(gol_logic_shader)
     rl.UnloadFileText(gol_logic_code)
@@ -46,7 +47,7 @@ def main() -> int:
     defer rl.UnloadShader(gol_render_shader)
     let res_uniform_loc = rl.GetShaderLocation(gol_render_shader, resolution_uniform_name)
 
-    let gol_transfert_code = rl.LoadFileText(gol_transfert_shader_path)
+    let gol_transfert_code = rlr.require_ptr[char](rl.LoadFileText(gol_transfert_shader_path), "could not load transfer shader source")
     let gol_transfert_shader = rlgl.load_shader(char_ptr_to_cstr(gol_transfert_code), rlgl.RL_COMPUTE_SHADER)
     let gol_transfert_program = rlgl.load_shader_program_compute(gol_transfert_shader)
     rl.UnloadFileText(gol_transfert_code)

@@ -3,6 +3,7 @@ module examples.raylib.shaders.shaders_shadowmap_rendering
 import std.c.raylib as rl
 import std.c.rlgl as rlgl
 import std.raylib.math as rm
+import std.raylib.runtime as rlr
 
 const glsl_version: int = 330
 const shadowmap_resolution: int = 1024
@@ -144,7 +145,7 @@ def main() -> int:
     set_all_model_shaders(ptr_of(robot), shadow_shader)
 
     var anim_count = 0
-    let anims = rl.LoadModelAnimations(robot_model_path, ptr_of(anim_count))
+    let anims = rlr.require_ptr[rl.ModelAnimation](rl.LoadModelAnimations(robot_model_path, ptr_of(anim_count)), "could not load model animations")
     defer rl.UnloadModelAnimations(anims, anim_count)
     var anim = zero[rl.ModelAnimation]
     unsafe:

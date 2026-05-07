@@ -1,6 +1,7 @@
 module examples.sdl3.demo.bytepusher
 
 import std.c.sdl3 as c
+import std.sdl3.runtime as sdl_rt
 
 const screen_width: int = 256
 const screen_height: int = 256
@@ -61,8 +62,9 @@ def set_status_filename(prefix: cstr, path: cstr) -> void:
     status_ticks = int<-(frames_per_second * 3)
 
 
-def set_status_renderer(name: cstr) -> void:
-    c.SDL_snprintf(ptr_of(status[0]), ptr_uint<-status_buffer_len, c"renderer: %s", name)
+def set_status_renderer(name: cstr?) -> void:
+    let display_name = if name != null: cstr<-name else: c"<unknown>"
+    c.SDL_snprintf(ptr_of(status[0]), ptr_uint<-status_buffer_len, c"renderer: %s", display_name)
     status[status_buffer_len - 1] = char<-0
     status_ticks = int<-(frames_per_second * 3)
 
@@ -322,7 +324,7 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     if not c.SDL_SetRenderLogicalPresentation(renderer, screen_width, screen_height, presentation_mode):
         return 1
 
-    var created_palette = c.SDL_CreatePalette(256)
+    let created_palette = sdl_rt.require_ptr[c.SDL_Palette](c.SDL_CreatePalette(256), "could not create palette")
     palette = created_palette
 
     var color_index = 0

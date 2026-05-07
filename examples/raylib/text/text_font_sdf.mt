@@ -1,6 +1,7 @@
 module examples.raylib.text.text_font_sdf
 
 import std.c.raylib as rl
+import std.raylib.runtime as rlr
 
 const screen_width: int = 800
 const screen_height: int = 450
@@ -21,7 +22,7 @@ def main() -> int:
     defer rl.CloseWindow()
 
     var file_size = 0
-    let file_data = rl.LoadFileData(font_path, ptr_of(file_size))
+    let file_data = rlr.require_ptr[ubyte](rl.LoadFileData(font_path, ptr_of(file_size)), "could not load font file")
     defer rl.UnloadFileData(file_data)
 
     var font_default = zero[rl.Font]

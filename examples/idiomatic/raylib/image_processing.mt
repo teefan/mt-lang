@@ -1,6 +1,7 @@
 module examples.idiomatic.raylib.image_processing
 
 import std.raylib as rl
+import std.raylib.runtime as rlr
 
 const num_processes: int = 9
 const process_none: int = 0
@@ -111,8 +112,9 @@ def main() -> int:
             image_copy = apply_process(image_copy, current_process)
 
             let pixels = rl.load_image_colors(image_copy)
-            rl.update_texture(texture, pixels)
-            rl.unload_image_colors(pixels)
+            let image_pixels = rlr.require_ptr[rl.Color](pixels, "raylib could not extract image colors")
+            rl.update_texture(texture, image_pixels)
+            rl.unload_image_colors(image_pixels)
 
             texture_reload = false
 

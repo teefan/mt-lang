@@ -42,7 +42,7 @@ module MilkTea
           warn "Error collecting lint diagnostics: #{e.message}"
         end
 
-        diagnostics
+        { diagnostics: diagnostics, analysis: sema_analysis }
       end
 
       private

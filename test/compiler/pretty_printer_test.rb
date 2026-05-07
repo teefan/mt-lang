@@ -267,7 +267,8 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       MilkTea::PrettyPrinter.format_ir(MilkTea::Lowering.lower(program))
     end
 
-    assert_includes output, "fn main() -> void [entry]:"
+    assert_includes output, "fn main as demo_pretty_for_main() -> void:"
+    assert_includes output, "fn main() -> int [entry]:"
     assert_includes output, "for i: int = 0; i < 3; i += 1:"
     assert_includes output, "demo_pretty_for_keep(i)"
   end

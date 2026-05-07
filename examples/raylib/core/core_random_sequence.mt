@@ -3,6 +3,7 @@ module examples.raylib.core.core_random_sequence
 import std.c.raylib as rl
 import std.mem.heap as heap
 import std.span as sp
+import std.raylib.runtime as rlr
 
 struct ColorRect:
     color: rl.Color
@@ -43,7 +44,7 @@ def release_color_rects(rectangles: ptr[ColorRect]) -> void:
 
 def generate_random_color_rect_sequence(rect_count: int, rect_width: float, width: float, height: float) -> ptr[ColorRect]:
     let rectangles = alloc_color_rects(rect_count)
-    let sequence = rl.LoadRandomSequence(rect_count, 0, rect_count - 1)
+    let sequence = rlr.require_ptr[int](rl.LoadRandomSequence(rect_count, 0, rect_count - 1), "could not load random sequence")
     var rectangles_view = sp.from_ptr[ColorRect](rectangles, ptr_uint<-rect_count)
     let sequence_view = sp.from_ptr[int](sequence, ptr_uint<-rect_count)
     let rect_sequence_width = rect_count * rect_width
@@ -77,7 +78,7 @@ def swap_color_rect_values(left: ref[ColorRect], right: ref[ColorRect]) -> void:
 
 
 def shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: int) -> void:
-    let sequence = rl.LoadRandomSequence(rect_count, 0, rect_count - 1)
+    let sequence = rlr.require_ptr[int](rl.LoadRandomSequence(rect_count, 0, rect_count - 1), "could not load random sequence")
     var rectangles_view = sp.from_ptr[ColorRect](rectangles, ptr_uint<-rect_count)
     let sequence_view = sp.from_ptr[int](sequence, ptr_uint<-rect_count)
 

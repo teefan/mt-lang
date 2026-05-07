@@ -2,6 +2,7 @@ module examples.raylib.models.models_bone_socket
 
 import std.c.raylib as rl
 import std.raylib.math as rm
+import std.raylib.runtime as rlr
 
 const screen_width: int = 800
 const screen_height: int = 450
@@ -78,7 +79,7 @@ def main() -> int:
     var show_equip = array[bool, bone_sockets](true, true, true)
 
     var anims_count = 0
-    let model_animations = rl.LoadModelAnimations(character_model_path, ptr_of(anims_count))
+    let model_animations = rlr.require_ptr[rl.ModelAnimation](rl.LoadModelAnimations(character_model_path, ptr_of(anims_count)), "could not load model animations")
     defer rl.UnloadModelAnimations(model_animations, anims_count)
 
     var anim_index = 0

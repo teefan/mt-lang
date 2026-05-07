@@ -191,6 +191,56 @@ class MilkTeaBindgenTest < Minitest::Test
     end
   end
 
+  def test_generate_with_report_extracts_nullable_annotations_and_tracks_manual_nullable_overrides
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-nullable-report") do |dir|
+      header_path = File.join(dir, "sample.h")
+      File.write(header_path, <<~C)
+        void * _Nullable returns_nullable(void);
+        const char * _Nullable returns_name(void);
+        void takes_nullable(void * _Nullable data, const char * _Nullable name);
+        void * returns_manual(void);
+        void takes_manual(void * data);
+      C
+
+      result = MilkTea::Bindgen.generate_with_report(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+        function_param_type_overrides: {
+          "takes_manual" => { "data" => "ptr[void]?" },
+        },
+        function_return_type_overrides: {
+          "returns_manual" => "ptr[void]?",
+        },
+      )
+
+      generated = result.fetch(:source)
+      report = result.fetch(:nullable_policy_report)
+
+      assert_match(/extern def returns_nullable\(\) -> ptr\[void\]\?/, generated)
+      assert_match(/extern def returns_name\(\) -> cstr\?/, generated)
+      assert_match(/extern def takes_nullable\(data: ptr\[void\]\?, name: cstr\?\) -> void/, generated)
+      assert_equal 2, report.dig(:summary, :total)
+      assert_equal [{
+        function: "takes_manual",
+        parameter: "data",
+        override_type: "ptr[void]?",
+        auto_type: "ptr[void]",
+        c_type: "void *",
+      }], report.dig(:manual_nullable_policy, :parameters)
+      assert_equal [{
+        function: "returns_manual",
+        override_type: "ptr[void]?",
+        auto_type: "ptr[void]",
+        c_type: "void *",
+      }], report.dig(:manual_nullable_policy, :return_types)
+    end
+  end
+
   def test_generate_handles_implicit_zero_initialized_aggregate_constants
     clang = ENV.fetch("CLANG", "clang")
     skip "clang not available: #{clang}" unless executable_available?(clang)
@@ -330,6 +380,103 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_equal "std.c.sample", analysis.module_name
       assert_includes analysis.types.keys, "FrictionCallback"
       assert_includes analysis.types.keys, "WorldDef"
+    end
+  end
+
+  def test_generate_preserves_pointer_wrappers_inside_function_type_typedefs
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-function-typedef-pointer") do |dir|
+      header_path = File.join(dir, "sample.h")
+      output_path = File.join(dir, "sample.mt")
+      File.write(header_path, <<~C)
+        typedef struct WindowHandle WindowHandle;
+
+        typedef void (*WindowCallback)(WindowHandle *window, const char *title);
+
+        void set_window_callback(WindowCallback callback);
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+      )
+
+      assert_match(/opaque WindowHandle = c"WindowHandle"/, generated)
+      assert_match(/type WindowCallback = fn\(arg0: ptr\[WindowHandle\], arg1: cstr\) -> void/, generated)
+      assert_match(/extern def set_window_callback\(callback: fn\(arg0: ptr\[WindowHandle\], arg1: cstr\) -> void\) -> void/, generated)
+
+      File.write(output_path, generated)
+      analysis = MilkTea::ModuleLoader.check_file(output_path)
+
+      assert_equal :extern_module, analysis.module_kind
+      assert_equal "std.c.sample", analysis.module_name
+      assert_includes analysis.types.keys, "WindowHandle"
+      assert_includes analysis.types.keys, "WindowCallback"
+      assert_includes analysis.functions.keys, "set_window_callback"
+    end
+  end
+
+  def test_generate_emits_typedef_defined_structs_as_structs
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-typedef-struct") do |dir|
+      header_path = File.join(dir, "sample.h")
+      File.write(header_path, <<~C)
+        typedef struct Vector2 {
+          float x;
+          float y;
+        } Vector2;
+
+        int uses_vector(Vector2 value);
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+      )
+
+      assert_match(/struct Vector2:\n\s+x: float\n\s+y: float/, generated)
+      refute_match(/opaque Vector2/, generated)
+      assert_match(/extern def uses_vector\(value: Vector2\) -> int/, generated)
+    end
+  end
+
+  def test_generate_synthesizes_struct_dependencies_from_included_headers
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-included-struct") do |dir|
+      dep_header_path = File.join(dir, "dep.h")
+      header_path = File.join(dir, "sample.h")
+      File.write(dep_header_path, <<~C)
+        typedef struct Vector2 {
+          float x;
+          float y;
+        } Vector2;
+      C
+      File.write(header_path, <<~C)
+        #include "dep.h"
+
+        int uses_vector(Vector2 *value);
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+      )
+
+      assert_match(/struct Vector2:\n\s+x: float\n\s+y: float/, generated)
+      refute_match(/opaque Vector2/, generated)
+      assert_match(/extern def uses_vector\(value: ptr\[Vector2\]\) -> int/, generated)
     end
   end
 

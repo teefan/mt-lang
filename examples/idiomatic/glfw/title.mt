@@ -19,7 +19,7 @@ def main() -> int:
         return 1
     defer glfw.terminate()
 
-    let window = glfw.create_window(window_width, window_height, window_title_utf8, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
+    let window = glfw.create_window(window_width, window_height, window_title_utf8, null, null)
     if window == null:
         return 1
     defer glfw.destroy_window(window)

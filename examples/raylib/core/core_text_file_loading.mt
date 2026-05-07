@@ -2,6 +2,7 @@ module examples.raylib.core.core_text_file_loading
 
 import std.c.raylib as rl
 import std.raylib.math as rm
+import std.raylib.runtime as rlr
 
 const screen_width: int = 800
 const screen_height: int = 450
@@ -24,7 +25,7 @@ def main() -> int:
         zoom = 1.0,
     )
 
-    let text = rl.LoadFileText(file_name)
+    let text = rlr.require_ptr[char](rl.LoadFileText(file_name), "could not load text file")
     var line_count = 0
     var lines: ptr[ptr[char]]
     unsafe:

@@ -259,7 +259,7 @@ def main() -> int:
     glfw.window_hint(glfw.DEPTH_BITS, 16)
     glfw.window_hint(glfw.TRANSPARENT_FRAMEBUFFER, glfw.TRUE)
 
-    let window = glfw.create_window(window_width, window_height, window_title, zero[ptr[glfw.GLFWmonitor]], zero[ptr[glfw.GLFWwindow]])
+    let window = glfw.create_window(window_width, window_height, window_title, null, null)
     if window == null:
         return 1
     defer glfw.destroy_window(window)

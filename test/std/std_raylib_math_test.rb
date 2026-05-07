@@ -36,7 +36,7 @@ class MilkTeaStdRaylibMathTest < Minitest::Test
       assert File.exist?(output_path)
       assert File.exist?(c_path)
       assert_match(/#include "raylib\.h"/, File.read(c_path))
-      assert_match(/#include "math\.h"/, File.read(c_path))
+      assert_match(/#include "libm_helpers\.h"/, File.read(c_path))
       assert_includes File.read(compiler_log).lines(chomp: true), "-lraylib"
       assert_includes File.read(compiler_log).lines(chomp: true), "-lm"
     end

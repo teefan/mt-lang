@@ -125,12 +125,11 @@ extern module std.c.raygui:
         tangents: ptr[float]
         colors: ptr[ubyte]
         indices: ptr[ushort]
+        boneCount: int
+        boneIndices: ptr[ubyte]
+        boneWeights: ptr[float]
         animVertices: ptr[float]
         animNormals: ptr[float]
-        boneIds: ptr[ubyte]
-        boneWeights: ptr[float]
-        boneMatrices: ptr[Matrix]
-        boneCount: int
         vaoId: uint
         vboId: ptr[uint]
 
@@ -153,9 +152,16 @@ extern module std.c.raygui:
         rotation: Vector4
         scale: Vector3
 
+    type ModelAnimPose = ptr[Transform]
+
     struct BoneInfo:
         name: array[char, 32]
         parent: int
+
+    struct ModelSkeleton:
+        boneCount: int
+        bones: ptr[BoneInfo]
+        bindPose: ptr[Transform]
 
     struct Model:
         transform: Matrix
@@ -164,16 +170,15 @@ extern module std.c.raygui:
         meshes: ptr[Mesh]
         materials: ptr[Material]
         meshMaterial: ptr[int]
-        boneCount: int
-        bones: ptr[BoneInfo]
-        bindPose: ptr[Transform]
+        skeleton: ModelSkeleton
+        currentPose: ptr[Transform]
+        boneMatrices: ptr[Matrix]
 
     struct ModelAnimation:
-        boneCount: int
-        frameCount: int
-        bones: ptr[BoneInfo]
-        framePoses: ptr[ptr[Transform]]
         name: array[char, 32]
+        boneCount: int
+        keyframeCount: int
+        keyframePoses: ptr[ModelAnimPose]
 
     struct Ray:
         position: Vector3
@@ -239,13 +244,12 @@ extern module std.c.raygui:
         scaleIn: array[float, 2]
 
     struct FilePathList:
-        capacity: uint
         count: uint
         paths: ptr[ptr[char]]
 
     struct AutomationEvent:
         frame: uint
-        kind: uint
+        type_: uint
         params: array[int, 4]
 
     struct AutomationEventList:
@@ -485,7 +489,8 @@ extern module std.c.raygui:
         SHADER_LOC_MAP_BRDF = 25
         SHADER_LOC_VERTEX_BONEIDS = 26
         SHADER_LOC_VERTEX_BONEWEIGHTS = 27
-        SHADER_LOC_BONE_MATRICES = 28
+        SHADER_LOC_MATRIX_BONETRANSFORMS = 28
+        SHADER_LOC_VERTEX_INSTANCETRANSFORM = 29
 
     enum ShaderUniformDataType: int
         SHADER_UNIFORM_FLOAT = 0
@@ -496,7 +501,11 @@ extern module std.c.raygui:
         SHADER_UNIFORM_IVEC2 = 5
         SHADER_UNIFORM_IVEC3 = 6
         SHADER_UNIFORM_IVEC4 = 7
-        SHADER_UNIFORM_SAMPLER2D = 8
+        SHADER_UNIFORM_UINT = 8
+        SHADER_UNIFORM_UIVEC2 = 9
+        SHADER_UNIFORM_UIVEC3 = 10
+        SHADER_UNIFORM_UIVEC4 = 11
+        SHADER_UNIFORM_SAMPLER2D = 12
 
     enum ShaderAttributeDataType: int
         SHADER_ATTRIB_FLOAT = 0
@@ -599,21 +608,12 @@ extern module std.c.raygui:
     type LoadFileDataCallback = fn(arg0: cstr, arg1: ptr[int]) -> ptr[ubyte]
     type SaveFileDataCallback = fn(arg0: cstr, arg1: ptr[void], arg2: int) -> bool
     type LoadFileTextCallback = fn(arg0: cstr) -> ptr[char]
-    type SaveFileTextCallback = fn(arg0: cstr, arg1: ptr[char]) -> bool
+    type SaveFileTextCallback = fn(arg0: cstr, arg1: cstr) -> bool
 
     extern def InitWindow(width: int, height: int, title: cstr) -> void
     extern def CloseWindow() -> void
-    extern def WindowShouldClose() -> bool
-    extern def IsWindowReady() -> bool
-    extern def IsWindowFullscreen() -> bool
-    extern def IsWindowHidden() -> bool
-    extern def IsWindowMinimized() -> bool
-    extern def IsWindowMaximized() -> bool
-    extern def IsWindowFocused() -> bool
-    extern def IsWindowResized() -> bool
-    extern def IsWindowState(flag: uint) -> bool
-    extern def SetWindowState(flag_bits: uint) -> void
-    extern def ClearWindowState(flag_bits: uint) -> void
+    extern def SetWindowState(flags_: uint) -> void
+    extern def ClearWindowState(flags_: uint) -> void
     extern def ToggleFullscreen() -> void
     extern def ToggleBorderlessWindowed() -> void
     extern def MaximizeWindow() -> void
@@ -652,10 +652,8 @@ extern module std.c.raygui:
     extern def DisableEventWaiting() -> void
     extern def ShowCursor() -> void
     extern def HideCursor() -> void
-    extern def IsCursorHidden() -> bool
     extern def EnableCursor() -> void
     extern def DisableCursor() -> void
-    extern def IsCursorOnScreen() -> bool
     extern def ClearBackground(color: Color) -> void
     extern def BeginDrawing() -> void
     extern def EndDrawing() -> void
@@ -677,7 +675,6 @@ extern module std.c.raygui:
     extern def UnloadVrStereoConfig(config: VrStereoConfig) -> void
     extern def LoadShader(vsFileName: cstr?, fsFileName: cstr?) -> Shader
     extern def LoadShaderFromMemory(vsCode: cstr?, fsCode: cstr?) -> Shader
-    extern def IsShaderValid(shader: Shader) -> bool
     extern def GetShaderLocation(shader: Shader, uniformName: cstr) -> int
     extern def GetShaderLocationAttrib(shader: Shader, attribName: cstr) -> int
     extern def SetShaderValue(shader: Shader, locIndex: int, value: const_ptr[void], uniformType: int) -> void
@@ -702,32 +699,33 @@ extern module std.c.raygui:
     extern def WaitTime(seconds: double) -> void
     extern def SetRandomSeed(seed: uint) -> void
     extern def GetRandomValue(min: int, max: int) -> int
-    extern def LoadRandomSequence(count: uint, min: int, max: int) -> ptr[int]
+    extern def LoadRandomSequence(count: uint, min: int, max: int) -> ptr[int]?
     extern def UnloadRandomSequence(sequence: ptr[int]) -> void
     extern def TakeScreenshot(fileName: cstr) -> void
-    extern def SetConfigFlags(flag_bits: uint) -> void
+    extern def SetConfigFlags(flags_: uint) -> void
     extern def OpenURL(url: cstr) -> void
-    extern def TraceLog(logLevel: int, text: cstr, ...) -> void
     extern def SetTraceLogLevel(logLevel: int) -> void
-    extern def MemAlloc(size: uint) -> ptr[void]
-    extern def MemRealloc(ptr: ptr[void], size: uint) -> ptr[void]
-    extern def MemFree(ptr: ptr[void]) -> void
+    extern def TraceLog(logLevel: int, text: cstr, ...) -> void
     extern def SetTraceLogCallback(callback: fn(arg0: int, arg1: cstr, arg2: va_list) -> void) -> void
+    extern def MemAlloc(size: uint) -> ptr[void]?
+    extern def MemRealloc(ptr: ptr[void], size: uint) -> ptr[void]?
+    extern def MemFree(ptr: ptr[void]) -> void
+    extern def LoadFileData(fileName: cstr, dataSize: ptr[int]) -> ptr[ubyte]?
+    extern def UnloadFileData(data: ptr[ubyte]) -> void
+    extern def LoadFileText(fileName: cstr) -> ptr[char]?
+    extern def UnloadFileText(text: ptr[char]) -> void
     extern def SetLoadFileDataCallback(callback: fn(arg0: cstr, arg1: ptr[int]) -> ptr[ubyte]) -> void
     extern def SetSaveFileDataCallback(callback: fn(arg0: cstr, arg1: ptr[void], arg2: int) -> bool) -> void
     extern def SetLoadFileTextCallback(callback: fn(arg0: cstr) -> ptr[char]) -> void
-    extern def SetSaveFileTextCallback(callback: fn(arg0: cstr, arg1: ptr[char]) -> bool) -> void
-    extern def LoadFileData(fileName: cstr, dataSize: ptr[int]) -> ptr[ubyte]
-    extern def UnloadFileData(data: ptr[ubyte]) -> void
-    extern def SaveFileData(fileName: cstr, data: ptr[void], dataSize: int) -> bool
-    extern def ExportDataAsCode(data: const_ptr[ubyte], dataSize: int, fileName: cstr) -> bool
-    extern def LoadFileText(fileName: cstr) -> ptr[char]
-    extern def UnloadFileText(text: ptr[char]) -> void
-    extern def SaveFileText(fileName: cstr, text: ptr[char]) -> bool
-    extern def FileExists(fileName: cstr) -> bool
-    extern def DirectoryExists(dirPath: cstr) -> bool
-    extern def IsFileExtension(fileName: cstr, ext: cstr) -> bool
+    extern def SetSaveFileTextCallback(callback: fn(arg0: cstr, arg1: cstr) -> bool) -> void
+    extern def FileRename(fileName: cstr, fileRename: cstr) -> int
+    extern def FileRemove(fileName: cstr) -> int
+    extern def FileCopy(srcPath: cstr, dstPath: cstr) -> int
+    extern def FileMove(srcPath: cstr, dstPath: cstr) -> int
+    extern def FileTextReplace(fileName: cstr, search: cstr, replacement: cstr) -> int
+    extern def FileTextFindIndex(fileName: cstr, search: cstr) -> int
     extern def GetFileLength(fileName: cstr) -> int
+    extern def GetFileModTime(fileName: cstr) -> ptr_int
     extern def GetFileExtension(fileName: cstr) -> cstr
     extern def GetFileName(filePath: cstr) -> cstr
     extern def GetFileNameWithoutExt(filePath: cstr) -> cstr
@@ -736,54 +734,38 @@ extern module std.c.raygui:
     extern def GetWorkingDirectory() -> cstr
     extern def GetApplicationDirectory() -> cstr
     extern def MakeDirectory(dirPath: cstr) -> int
-    extern def ChangeDirectory(dir: cstr) -> bool
-    extern def IsPathFile(path: cstr) -> bool
-    extern def IsFileNameValid(fileName: cstr) -> bool
     extern def LoadDirectoryFiles(dirPath: cstr) -> FilePathList
     extern def LoadDirectoryFilesEx(basePath: cstr, filter: cstr, scanSubdirs: bool) -> FilePathList
     extern def UnloadDirectoryFiles(files: FilePathList) -> void
-    extern def IsFileDropped() -> bool
     extern def LoadDroppedFiles() -> FilePathList
     extern def UnloadDroppedFiles(files: FilePathList) -> void
-    extern def GetFileModTime(fileName: cstr) -> long
-    extern def CompressData(data: const_ptr[ubyte], dataSize: int, compDataSize: ptr[int]) -> ptr[ubyte]
-    extern def DecompressData(compData: const_ptr[ubyte], compDataSize: int, dataSize: ptr[int]) -> ptr[ubyte]
-    extern def EncodeDataBase64(data: const_ptr[ubyte], dataSize: int, outputSize: ptr[int]) -> ptr[char]
-    extern def DecodeDataBase64(data: const_ptr[ubyte], outputSize: ptr[int]) -> ptr[ubyte]
+    extern def GetDirectoryFileCount(dirPath: cstr) -> uint
+    extern def GetDirectoryFileCountEx(basePath: cstr, filter: cstr, scanSubdirs: bool) -> uint
+    extern def CompressData(data: const_ptr[ubyte], dataSize: int, compDataSize: ptr[int]) -> ptr[ubyte]?
+    extern def DecompressData(compData: const_ptr[ubyte], compDataSize: int, dataSize: ptr[int]) -> ptr[ubyte]?
+    extern def EncodeDataBase64(data: const_ptr[ubyte], dataSize: int, outputSize: ptr[int]) -> ptr[char]?
+    extern def DecodeDataBase64(text: cstr, outputSize: ptr[int]) -> ptr[ubyte]?
     extern def ComputeCRC32(data: ptr[ubyte], dataSize: int) -> uint
     extern def ComputeMD5(data: ptr[ubyte], dataSize: int) -> ptr[uint]
     extern def ComputeSHA1(data: ptr[ubyte], dataSize: int) -> ptr[uint]
-    extern def LoadAutomationEventList(fileName: cstr) -> AutomationEventList
+    extern def ComputeSHA256(data: ptr[ubyte], dataSize: int) -> ptr[uint]
+    extern def LoadAutomationEventList(fileName: cstr?) -> AutomationEventList
     extern def UnloadAutomationEventList(list: AutomationEventList) -> void
-    extern def ExportAutomationEventList(list: AutomationEventList, fileName: cstr) -> bool
     extern def SetAutomationEventList(list: ptr[AutomationEventList]) -> void
     extern def SetAutomationEventBaseFrame(frame: int) -> void
     extern def StartAutomationEventRecording() -> void
     extern def StopAutomationEventRecording() -> void
     extern def PlayAutomationEvent(event: AutomationEvent) -> void
-    extern def IsKeyPressed(key: int) -> bool
-    extern def IsKeyPressedRepeat(key: int) -> bool
-    extern def IsKeyDown(key: int) -> bool
-    extern def IsKeyReleased(key: int) -> bool
-    extern def IsKeyUp(key: int) -> bool
     extern def GetKeyPressed() -> int
     extern def GetCharPressed() -> int
+    extern def GetKeyName(key: int) -> cstr
     extern def SetExitKey(key: int) -> void
-    extern def IsGamepadAvailable(gamepad: int) -> bool
     extern def GetGamepadName(gamepad: int) -> cstr
-    extern def IsGamepadButtonPressed(gamepad: int, button: int) -> bool
-    extern def IsGamepadButtonDown(gamepad: int, button: int) -> bool
-    extern def IsGamepadButtonReleased(gamepad: int, button: int) -> bool
-    extern def IsGamepadButtonUp(gamepad: int, button: int) -> bool
     extern def GetGamepadButtonPressed() -> int
     extern def GetGamepadAxisCount(gamepad: int) -> int
     extern def GetGamepadAxisMovement(gamepad: int, axis: int) -> float
     extern def SetGamepadMappings(mappings: cstr) -> int
     extern def SetGamepadVibration(gamepad: int, leftMotor: float, rightMotor: float, duration: float) -> void
-    extern def IsMouseButtonPressed(button: int) -> bool
-    extern def IsMouseButtonDown(button: int) -> bool
-    extern def IsMouseButtonReleased(button: int) -> bool
-    extern def IsMouseButtonUp(button: int) -> bool
     extern def GetMouseX() -> int
     extern def GetMouseY() -> int
     extern def GetMousePosition() -> Vector2
@@ -799,8 +781,7 @@ extern module std.c.raygui:
     extern def GetTouchPosition(index: int) -> Vector2
     extern def GetTouchPointId(index: int) -> int
     extern def GetTouchPointCount() -> int
-    extern def SetGesturesEnabled(flag_bits: uint) -> void
-    extern def IsGestureDetected(gesture: uint) -> bool
+    extern def SetGesturesEnabled(flags_: uint) -> void
     extern def GetGestureDetected() -> int
     extern def GetGestureHoldDuration() -> float
     extern def GetGestureDragVector() -> Vector2
@@ -819,15 +800,18 @@ extern module std.c.raygui:
     extern def DrawLineEx(startPos: Vector2, endPos: Vector2, thick: float, color: Color) -> void
     extern def DrawLineStrip(points: const_ptr[Vector2], pointCount: int, color: Color) -> void
     extern def DrawLineBezier(startPos: Vector2, endPos: Vector2, thick: float, color: Color) -> void
+    extern def DrawLineDashed(startPos: Vector2, endPos: Vector2, dashSize: int, spaceSize: int, color: Color) -> void
     extern def DrawCircle(centerX: int, centerY: int, radius: float, color: Color) -> void
+    extern def DrawCircleV(center: Vector2, radius: float, color: Color) -> void
+    extern def DrawCircleGradient(center: Vector2, radius: float, inner: Color, outer: Color) -> void
     extern def DrawCircleSector(center: Vector2, radius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
     extern def DrawCircleSectorLines(center: Vector2, radius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
-    extern def DrawCircleGradient(centerX: int, centerY: int, radius: float, inner: Color, outer: Color) -> void
-    extern def DrawCircleV(center: Vector2, radius: float, color: Color) -> void
     extern def DrawCircleLines(centerX: int, centerY: int, radius: float, color: Color) -> void
     extern def DrawCircleLinesV(center: Vector2, radius: float, color: Color) -> void
     extern def DrawEllipse(centerX: int, centerY: int, radiusH: float, radiusV: float, color: Color) -> void
+    extern def DrawEllipseV(center: Vector2, radiusH: float, radiusV: float, color: Color) -> void
     extern def DrawEllipseLines(centerX: int, centerY: int, radiusH: float, radiusV: float, color: Color) -> void
+    extern def DrawEllipseLinesV(center: Vector2, radiusH: float, radiusV: float, color: Color) -> void
     extern def DrawRing(center: Vector2, innerRadius: float, outerRadius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
     extern def DrawRingLines(center: Vector2, innerRadius: float, outerRadius: float, startAngle: float, endAngle: float, segments: int, color: Color) -> void
     extern def DrawRectangle(posX: int, posY: int, width: int, height: int, color: Color) -> void
@@ -836,7 +820,7 @@ extern module std.c.raygui:
     extern def DrawRectanglePro(rec: Rectangle, origin: Vector2, rotation: float, color: Color) -> void
     extern def DrawRectangleGradientV(posX: int, posY: int, width: int, height: int, top: Color, bottom: Color) -> void
     extern def DrawRectangleGradientH(posX: int, posY: int, width: int, height: int, left: Color, right: Color) -> void
-    extern def DrawRectangleGradientEx(rec: Rectangle, topLeft: Color, bottomLeft: Color, topRight: Color, bottomRight: Color) -> void
+    extern def DrawRectangleGradientEx(rec: Rectangle, topLeft: Color, bottomLeft: Color, bottomRight: Color, topRight: Color) -> void
     extern def DrawRectangleLines(posX: int, posY: int, width: int, height: int, color: Color) -> void
     extern def DrawRectangleLinesEx(rec: Rectangle, lineThick: float, color: Color) -> void
     extern def DrawRectangleRounded(rec: Rectangle, roundness: float, segments: int, color: Color) -> void
@@ -864,16 +848,6 @@ extern module std.c.raygui:
     extern def GetSplinePointCatmullRom(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, t: float) -> Vector2
     extern def GetSplinePointBezierQuad(p1: Vector2, c2: Vector2, p3: Vector2, t: float) -> Vector2
     extern def GetSplinePointBezierCubic(p1: Vector2, c2: Vector2, c3: Vector2, p4: Vector2, t: float) -> Vector2
-    extern def CheckCollisionRecs(rec1: Rectangle, rec2: Rectangle) -> bool
-    extern def CheckCollisionCircles(center1: Vector2, radius1: float, center2: Vector2, radius2: float) -> bool
-    extern def CheckCollisionCircleRec(center: Vector2, radius: float, rec: Rectangle) -> bool
-    extern def CheckCollisionCircleLine(center: Vector2, radius: float, p1: Vector2, p2: Vector2) -> bool
-    extern def CheckCollisionPointRec(point: Vector2, rec: Rectangle) -> bool
-    extern def CheckCollisionPointCircle(point: Vector2, center: Vector2, radius: float) -> bool
-    extern def CheckCollisionPointTriangle(point: Vector2, p1: Vector2, p2: Vector2, p3: Vector2) -> bool
-    extern def CheckCollisionPointLine(point: Vector2, p1: Vector2, p2: Vector2, threshold: int) -> bool
-    extern def CheckCollisionPointPoly(point: Vector2, points: const_ptr[Vector2], pointCount: int) -> bool
-    extern def CheckCollisionLines(startPos1: Vector2, endPos1: Vector2, startPos2: Vector2, endPos2: Vector2, collisionPoint: ptr[Vector2]) -> bool
     extern def GetCollisionRec(rec1: Rectangle, rec2: Rectangle) -> Rectangle
     extern def LoadImage(fileName: cstr) -> Image
     extern def LoadImageRaw(fileName: cstr, width: int, height: int, format: int, headerSize: int) -> Image
@@ -882,11 +856,8 @@ extern module std.c.raygui:
     extern def LoadImageFromMemory(fileType: cstr, fileData: const_ptr[ubyte], dataSize: int) -> Image
     extern def LoadImageFromTexture(texture: Texture) -> Image
     extern def LoadImageFromScreen() -> Image
-    extern def IsImageValid(image: Image) -> bool
     extern def UnloadImage(image: Image) -> void
-    extern def ExportImage(image: Image, fileName: cstr) -> bool
-    extern def ExportImageToMemory(image: Image, fileType: cstr, fileSize: ptr[int]) -> ptr[ubyte]
-    extern def ExportImageAsCode(image: Image, fileName: cstr) -> bool
+    extern def ExportImageToMemory(image: Image, fileType: cstr, fileSize: ptr[int]) -> ptr[ubyte]?
     extern def GenImageColor(width: int, height: int, color: Color) -> Image
     extern def GenImageGradientLinear(width: int, height: int, direction: int, start: Color, end: Color) -> Image
     extern def GenImageGradientRadial(width: int, height: int, density: float, inner: Color, outer: Color) -> Image
@@ -926,8 +897,8 @@ extern module std.c.raygui:
     extern def ImageColorContrast(image: ptr[Image], contrast: float) -> void
     extern def ImageColorBrightness(image: ptr[Image], brightness: int) -> void
     extern def ImageColorReplace(image: ptr[Image], color: Color, replace: Color) -> void
-    extern def LoadImageColors(image: Image) -> ptr[Color]
-    extern def LoadImagePalette(image: Image, maxPaletteSize: int, colorCount: ptr[int]) -> ptr[Color]
+    extern def LoadImageColors(image: Image) -> ptr[Color]?
+    extern def LoadImagePalette(image: Image, maxPaletteSize: int, colorCount: ptr[int]) -> ptr[Color]?
     extern def UnloadImageColors(colors: ptr[Color]) -> void
     extern def UnloadImagePalette(colors: ptr[Color]) -> void
     extern def GetImageAlphaBorder(image: Image, threshold: float) -> Rectangle
@@ -949,8 +920,8 @@ extern module std.c.raygui:
     extern def ImageDrawTriangle(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
     extern def ImageDrawTriangleEx(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, c1: Color, c2: Color, c3: Color) -> void
     extern def ImageDrawTriangleLines(dst: ptr[Image], v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
-    extern def ImageDrawTriangleFan(dst: ptr[Image], points: ptr[Vector2], pointCount: int, color: Color) -> void
-    extern def ImageDrawTriangleStrip(dst: ptr[Image], points: ptr[Vector2], pointCount: int, color: Color) -> void
+    extern def ImageDrawTriangleFan(dst: ptr[Image], points: const_ptr[Vector2], pointCount: int, color: Color) -> void
+    extern def ImageDrawTriangleStrip(dst: ptr[Image], points: const_ptr[Vector2], pointCount: int, color: Color) -> void
     extern def ImageDraw(dst: ptr[Image], src: Image, srcRec: Rectangle, dstRec: Rectangle, tint: Color) -> void
     extern def ImageDrawText(dst: ptr[Image], text: cstr, posX: int, posY: int, fontSize: int, color: Color) -> void
     extern def ImageDrawTextEx(dst: ptr[Image], font: Font, text: cstr, position: Vector2, fontSize: float, spacing: float, tint: Color) -> void
@@ -958,9 +929,7 @@ extern module std.c.raygui:
     extern def LoadTextureFromImage(image: Image) -> Texture2D
     extern def LoadTextureCubemap(image: Image, layout: int) -> TextureCubemap
     extern def LoadRenderTexture(width: int, height: int) -> RenderTexture2D
-    extern def IsTextureValid(texture: Texture) -> bool
     extern def UnloadTexture(texture: Texture) -> void
-    extern def IsRenderTextureValid(target: RenderTexture) -> bool
     extern def UnloadRenderTexture(target: RenderTexture) -> void
     extern def UpdateTexture(texture: Texture, pixels: const_ptr[void]) -> void
     extern def UpdateTextureRec(texture: Texture, rec: Rectangle, pixels: const_ptr[void]) -> void
@@ -973,7 +942,6 @@ extern module std.c.raygui:
     extern def DrawTextureRec(texture: Texture, source: Rectangle, position: Vector2, tint: Color) -> void
     extern def DrawTexturePro(texture: Texture, source: Rectangle, dest: Rectangle, origin: Vector2, rotation: float, tint: Color) -> void
     extern def DrawTextureNPatch(texture: Texture, nPatchInfo: NPatchInfo, dest: Rectangle, origin: Vector2, rotation: float, tint: Color) -> void
-    extern def ColorIsEqual(col1: Color, col2: Color) -> bool
     extern def Fade(color: Color, alpha: float) -> Color
     extern def ColorToInt(color: Color) -> int
     extern def ColorNormalize(color: Color) -> Vector4
@@ -995,12 +963,10 @@ extern module std.c.raygui:
     extern def LoadFontEx(fileName: cstr, fontSize: int, codepoints: ptr[int]?, codepointCount: int) -> Font
     extern def LoadFontFromImage(image: Image, key: Color, firstChar: int) -> Font
     extern def LoadFontFromMemory(fileType: cstr, fileData: const_ptr[ubyte], dataSize: int, fontSize: int, codepoints: ptr[int]?, codepointCount: int) -> Font
-    extern def IsFontValid(font: Font) -> bool
-    extern def LoadFontData(fileData: const_ptr[ubyte], dataSize: int, fontSize: int, codepoints: ptr[int]?, codepointCount: int, kind: int) -> ptr[GlyphInfo]
+    extern def LoadFontData(fileData: const_ptr[ubyte], dataSize: int, fontSize: int, codepoints: ptr[int]?, codepointCount: int, type_: int, glyphCount: ptr[int]) -> ptr[GlyphInfo]
     extern def GenImageFontAtlas(glyphs: const_ptr[GlyphInfo], glyphRecs: ptr[ptr[Rectangle]], glyphCount: int, fontSize: int, padding: int, packMethod: int) -> Image
     extern def UnloadFontData(glyphs: ptr[GlyphInfo], glyphCount: int) -> void
     extern def UnloadFont(font: Font) -> void
-    extern def ExportFontAsCode(font: Font, fileName: cstr) -> bool
     extern def DrawFPS(posX: int, posY: int) -> void
     extern def DrawText(text: cstr, posX: int, posY: int, fontSize: int, color: Color) -> void
     extern def DrawTextEx(font: Font, text: cstr, position: Vector2, fontSize: float, spacing: float, tint: Color) -> void
@@ -1010,34 +976,42 @@ extern module std.c.raygui:
     extern def SetTextLineSpacing(spacing: int) -> void
     extern def MeasureText(text: cstr, fontSize: int) -> int
     extern def MeasureTextEx(font: Font, text: cstr, fontSize: float, spacing: float) -> Vector2
+    extern def MeasureTextCodepoints(font: Font, codepoints: const_ptr[int], length: int, fontSize: float, spacing: float) -> Vector2
     extern def GetGlyphIndex(font: Font, codepoint: int) -> int
     extern def GetGlyphInfo(font: Font, codepoint: int) -> GlyphInfo
     extern def GetGlyphAtlasRec(font: Font, codepoint: int) -> Rectangle
-    extern def LoadUTF8(codepoints: const_ptr[int], length: int) -> ptr[char]
+    extern def LoadUTF8(codepoints: const_ptr[int], length: int) -> ptr[char]?
     extern def UnloadUTF8(text: ptr[char]) -> void
-    extern def LoadCodepoints(text: cstr, count: ptr[int]) -> ptr[int]
+    extern def LoadCodepoints(text: cstr, count: ptr[int]) -> ptr[int]?
     extern def UnloadCodepoints(codepoints: ptr[int]) -> void
     extern def GetCodepointCount(text: cstr) -> int
     extern def GetCodepoint(text: cstr, codepointSize: ptr[int]) -> int
     extern def GetCodepointNext(text: cstr, codepointSize: ptr[int]) -> int
     extern def GetCodepointPrevious(text: cstr, codepointSize: ptr[int]) -> int
     extern def CodepointToUTF8(codepoint: int, utf8Size: ptr[int]) -> cstr
+    extern def LoadTextLines(text: cstr, count: ptr[int]) -> ptr[ptr[char]]
+    extern def UnloadTextLines(text: ptr[ptr[char]], lineCount: int) -> void
     extern def TextCopy(dst: ptr[char], src: cstr) -> int
-    extern def TextIsEqual(text1: cstr, text2: cstr) -> bool
     extern def TextLength(text: cstr) -> uint
     extern def TextFormat(text: cstr, ...) -> cstr
     extern def TextSubtext(text: cstr, position: int, length: int) -> cstr
-    extern def TextReplace(text: cstr, replace: cstr, by: cstr) -> ptr[char]
+    extern def TextRemoveSpaces(text: cstr) -> cstr
+    extern def GetTextBetween(text: cstr, begin: cstr, end: cstr) -> ptr[char]
+    extern def TextReplace(text: cstr, search: cstr, replacement: cstr) -> ptr[char]
+    extern def TextReplaceAlloc(text: cstr, search: cstr, replacement: cstr) -> ptr[char]
+    extern def TextReplaceBetween(text: cstr, begin: cstr, end: cstr, replacement: cstr) -> ptr[char]
+    extern def TextReplaceBetweenAlloc(text: cstr, begin: cstr, end: cstr, replacement: cstr) -> ptr[char]
     extern def TextInsert(text: cstr, insert: cstr, position: int) -> ptr[char]
-    extern def TextJoin(textList: ptr[cstr], count: int, delimiter: cstr) -> cstr
-    extern def TextSplit(text: cstr, delimiter: char, count: ptr[int]) -> ptr[cstr]
+    extern def TextInsertAlloc(text: cstr, insert: cstr, position: int) -> ptr[char]
+    extern def TextJoin(textList: ptr[ptr[char]], count: int, delimiter: cstr) -> ptr[char]
+    extern def TextSplit(text: cstr, delimiter: char, count: ptr[int]) -> ptr[ptr[char]]
     extern def TextAppend(text: ptr[char], append: cstr, position: ptr[int]) -> void
-    extern def TextFindIndex(text: cstr, find: cstr) -> int
-    extern def TextToUpper(text: cstr) -> cstr
-    extern def TextToLower(text: cstr) -> cstr
-    extern def TextToPascal(text: cstr) -> cstr
-    extern def TextToSnake(text: cstr) -> cstr
-    extern def TextToCamel(text: cstr) -> cstr
+    extern def TextFindIndex(text: cstr, search: cstr) -> int
+    extern def TextToUpper(text: cstr) -> ptr[char]
+    extern def TextToLower(text: cstr) -> ptr[char]
+    extern def TextToPascal(text: cstr) -> ptr[char]
+    extern def TextToSnake(text: cstr) -> ptr[char]
+    extern def TextToCamel(text: cstr) -> ptr[char]
     extern def TextToInteger(text: cstr) -> int
     extern def TextToFloat(text: cstr) -> float
     extern def DrawLine3D(startPos: Vector3, endPos: Vector3, color: Color) -> void
@@ -1063,15 +1037,12 @@ extern module std.c.raygui:
     extern def DrawGrid(slices: int, spacing: float) -> void
     extern def LoadModel(fileName: cstr) -> Model
     extern def LoadModelFromMesh(mesh: Mesh) -> Model
-    extern def IsModelValid(model: Model) -> bool
     extern def UnloadModel(model: Model) -> void
     extern def GetModelBoundingBox(model: Model) -> BoundingBox
     extern def DrawModel(model: Model, position: Vector3, scale: float, tint: Color) -> void
     extern def DrawModelEx(model: Model, position: Vector3, rotationAxis: Vector3, rotationAngle: float, scale: Vector3, tint: Color) -> void
     extern def DrawModelWires(model: Model, position: Vector3, scale: float, tint: Color) -> void
     extern def DrawModelWiresEx(model: Model, position: Vector3, rotationAxis: Vector3, rotationAngle: float, scale: Vector3, tint: Color) -> void
-    extern def DrawModelPoints(model: Model, position: Vector3, scale: float, tint: Color) -> void
-    extern def DrawModelPointsEx(model: Model, position: Vector3, rotationAxis: Vector3, rotationAngle: float, scale: Vector3, tint: Color) -> void
     extern def DrawBoundingBox(box: BoundingBox, color: Color) -> void
     extern def DrawBillboard(camera: Camera3D, texture: Texture, position: Vector3, scale: float, tint: Color) -> void
     extern def DrawBillboardRec(camera: Camera3D, texture: Texture, source: Rectangle, position: Vector3, size: Vector2, tint: Color) -> void
@@ -1083,8 +1054,6 @@ extern module std.c.raygui:
     extern def DrawMeshInstanced(mesh: Mesh, material: Material, transforms: const_ptr[Matrix], instances: int) -> void
     extern def GetMeshBoundingBox(mesh: Mesh) -> BoundingBox
     extern def GenMeshTangents(mesh: ptr[Mesh]) -> void
-    extern def ExportMesh(mesh: Mesh, fileName: cstr) -> bool
-    extern def ExportMeshAsCode(mesh: Mesh, fileName: cstr) -> bool
     extern def GenMeshPoly(sides: int, radius: float) -> Mesh
     extern def GenMeshPlane(width: float, length: float, resX: int, resZ: int) -> Mesh
     extern def GenMeshCube(width: float, height: float, length: float) -> Mesh
@@ -1096,21 +1065,15 @@ extern module std.c.raygui:
     extern def GenMeshKnot(radius: float, size: float, radSeg: int, sides: int) -> Mesh
     extern def GenMeshHeightmap(heightmap: Image, size: Vector3) -> Mesh
     extern def GenMeshCubicmap(cubicmap: Image, cubeSize: Vector3) -> Mesh
-    extern def LoadMaterials(fileName: cstr, materialCount: ptr[int]) -> ptr[Material]
+    extern def LoadMaterials(fileName: cstr, materialCount: ptr[int]) -> ptr[Material]?
     extern def LoadMaterialDefault() -> Material
-    extern def IsMaterialValid(material: Material) -> bool
     extern def UnloadMaterial(material: Material) -> void
     extern def SetMaterialTexture(material: ptr[Material], mapType: int, texture: Texture) -> void
     extern def SetModelMeshMaterial(model: ptr[Model], meshId: int, materialId: int) -> void
-    extern def LoadModelAnimations(fileName: cstr, animCount: ptr[int]) -> ptr[ModelAnimation]
-    extern def UpdateModelAnimation(model: Model, anim: ModelAnimation, frame: int) -> void
-    extern def UpdateModelAnimationBones(model: Model, anim: ModelAnimation, frame: int) -> void
-    extern def UnloadModelAnimation(anim: ModelAnimation) -> void
+    extern def LoadModelAnimations(fileName: cstr, animCount: ptr[int]) -> ptr[ModelAnimation]?
+    extern def UpdateModelAnimation(model: Model, anim: ModelAnimation, frame: float) -> void
+    extern def UpdateModelAnimationEx(model: Model, animA: ModelAnimation, frameA: float, animB: ModelAnimation, frameB: float, blend: float) -> void
     extern def UnloadModelAnimations(animations: ptr[ModelAnimation], animCount: int) -> void
-    extern def IsModelAnimationValid(model: Model, anim: ModelAnimation) -> bool
-    extern def CheckCollisionSpheres(center1: Vector3, radius1: float, center2: Vector3, radius2: float) -> bool
-    extern def CheckCollisionBoxes(box1: BoundingBox, box2: BoundingBox) -> bool
-    extern def CheckCollisionBoxSphere(box: BoundingBox, center: Vector3, radius: float) -> bool
     extern def GetRayCollisionSphere(ray: Ray, center: Vector3, radius: float) -> RayCollision
     extern def GetRayCollisionBox(ray: Ray, box: BoundingBox) -> RayCollision
     extern def GetRayCollisionMesh(ray: Ray, mesh: Mesh, transform: Matrix) -> RayCollision
@@ -1121,41 +1084,33 @@ extern module std.c.raygui:
 
     extern def InitAudioDevice() -> void
     extern def CloseAudioDevice() -> void
-    extern def IsAudioDeviceReady() -> bool
     extern def SetMasterVolume(volume: float) -> void
     extern def GetMasterVolume() -> float
     extern def LoadWave(fileName: cstr) -> Wave
     extern def LoadWaveFromMemory(fileType: cstr, fileData: const_ptr[ubyte], dataSize: int) -> Wave
-    extern def IsWaveValid(wave: Wave) -> bool
     extern def LoadSound(fileName: cstr) -> Sound
     extern def LoadSoundFromWave(wave: Wave) -> Sound
     extern def LoadSoundAlias(source: Sound) -> Sound
-    extern def IsSoundValid(sound: Sound) -> bool
     extern def UpdateSound(sound: Sound, data: const_ptr[void], sampleCount: int) -> void
     extern def UnloadWave(wave: Wave) -> void
     extern def UnloadSound(sound: Sound) -> void
     extern def UnloadSoundAlias(alias: Sound) -> void
-    extern def ExportWave(wave: Wave, fileName: cstr) -> bool
-    extern def ExportWaveAsCode(wave: Wave, fileName: cstr) -> bool
     extern def PlaySound(sound: Sound) -> void
     extern def StopSound(sound: Sound) -> void
     extern def PauseSound(sound: Sound) -> void
     extern def ResumeSound(sound: Sound) -> void
-    extern def IsSoundPlaying(sound: Sound) -> bool
     extern def SetSoundVolume(sound: Sound, volume: float) -> void
     extern def SetSoundPitch(sound: Sound, pitch: float) -> void
     extern def SetSoundPan(sound: Sound, pan: float) -> void
     extern def WaveCopy(wave: Wave) -> Wave
     extern def WaveCrop(wave: ptr[Wave], initFrame: int, finalFrame: int) -> void
     extern def WaveFormat(wave: ptr[Wave], sampleRate: int, sampleSize: int, channels: int) -> void
-    extern def LoadWaveSamples(wave: Wave) -> ptr[float]
+    extern def LoadWaveSamples(wave: Wave) -> ptr[float]?
     extern def UnloadWaveSamples(samples: ptr[float]) -> void
     extern def LoadMusicStream(fileName: cstr) -> Music
     extern def LoadMusicStreamFromMemory(fileType: cstr, data: const_ptr[ubyte], dataSize: int) -> Music
-    extern def IsMusicValid(music: Music) -> bool
     extern def UnloadMusicStream(music: Music) -> void
     extern def PlayMusicStream(music: Music) -> void
-    extern def IsMusicStreamPlaying(music: Music) -> bool
     extern def UpdateMusicStream(music: Music) -> void
     extern def StopMusicStream(music: Music) -> void
     extern def PauseMusicStream(music: Music) -> void
@@ -1167,14 +1122,11 @@ extern module std.c.raygui:
     extern def GetMusicTimeLength(music: Music) -> float
     extern def GetMusicTimePlayed(music: Music) -> float
     extern def LoadAudioStream(sampleRate: uint, sampleSize: uint, channels: uint) -> AudioStream
-    extern def IsAudioStreamValid(stream: AudioStream) -> bool
     extern def UnloadAudioStream(stream: AudioStream) -> void
     extern def UpdateAudioStream(stream: AudioStream, data: const_ptr[void], frameCount: int) -> void
-    extern def IsAudioStreamProcessed(stream: AudioStream) -> bool
     extern def PlayAudioStream(stream: AudioStream) -> void
     extern def PauseAudioStream(stream: AudioStream) -> void
     extern def ResumeAudioStream(stream: AudioStream) -> void
-    extern def IsAudioStreamPlaying(stream: AudioStream) -> bool
     extern def StopAudioStream(stream: AudioStream) -> void
     extern def SetAudioStreamVolume(stream: AudioStream, volume: float) -> void
     extern def SetAudioStreamPitch(stream: AudioStream, pitch: float) -> void
@@ -1330,7 +1282,7 @@ extern module std.c.raygui:
     extern def GuiIconText(iconId: int, text: cstr) -> cstr
     extern def GuiSetIconScale(scale: int) -> void
     extern def GuiGetIcons() -> ptr[uint]
-    extern def GuiLoadIcons(fileName: cstr, loadIconsName: bool) -> ptr[ptr[char]]
+    extern def GuiLoadIcons(fileName: cstr, loadIconsName: bool) -> ptr[ptr[char]]?
     extern def GuiDrawIcon(iconId: int, posX: int, posY: int, pixelSize: int, color: Color) -> void
     extern def GuiGetTextWidth(text: cstr) -> int
     extern def GuiWindowBox(bounds: Rectangle, title: cstr) -> int
