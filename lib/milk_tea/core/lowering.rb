@@ -487,7 +487,15 @@ module MilkTea
       end
 
       def resolve_methods_receiver_type(analysis, type_name)
-        parts = type_name.parts
+        if type_name.is_a?(AST::TypeRef)
+          generic_type = resolve_named_generic_type_for_analysis(analysis, type_name.name.parts)
+          if generic_type.is_a?(Types::GenericStructDefinition)
+            validate_methods_receiver_type_arguments!(type_name, generic_type)
+            return generic_type
+          end
+        end
+
+        parts = type_name.name.parts
         if parts.length == 1
           return analysis.types.fetch(parts.first)
         end
@@ -6120,13 +6128,15 @@ module MilkTea
               return [:variant_arm_ctor, nil, nil, type_expr, [type_expr, arm_name]]
             end
 
+            dispatch_receiver_type = method_dispatch_receiver_type(type_expr)
             method_entry = @method_definitions[[type_expr, callee.member]]
+            method_entry ||= @method_definitions[[dispatch_receiver_type, callee.member]] unless dispatch_receiver_type == type_expr
             if method_entry
               method_analysis, method_ast = method_entry
-              method_binding = method_analysis.methods.fetch(type_expr).fetch(method_ast.name)
+              method_binding = method_analysis.methods.fetch(dispatch_receiver_type).fetch(method_ast.name)
               if method_binding.type.receiver_type.nil?
-                method_binding = specialize_function_binding(method_binding, arguments, env) if method_binding.type_params.any?
-                return [:associated_method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: type_expr), nil, method_binding.type]
+                method_binding = specialize_function_binding(method_binding, arguments, env, receiver_type: type_expr) if method_binding.type_params.any?
+                return [:associated_method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: dispatch_receiver_type), nil, method_binding.type]
               end
             end
 
@@ -6134,14 +6144,16 @@ module MilkTea
           end
 
           resolved_receiver_type = infer_method_receiver_type(callee.receiver, env:)
+          dispatch_receiver_type = method_dispatch_receiver_type(resolved_receiver_type)
           method_entry = @method_definitions[[resolved_receiver_type, callee.member]]
+          method_entry ||= @method_definitions[[dispatch_receiver_type, callee.member]] unless dispatch_receiver_type == resolved_receiver_type
           if method_entry
             method_analysis, method_ast = method_entry
-            method_binding = method_analysis.methods.fetch(resolved_receiver_type).fetch(method_ast.name)
-            method_binding = specialize_function_binding(method_binding, arguments, env)
+            method_binding = method_analysis.methods.fetch(dispatch_receiver_type).fetch(method_ast.name)
+            method_binding = specialize_function_binding(method_binding, arguments, env, receiver_type: resolved_receiver_type)
             return [
               :method,
-              function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: resolved_receiver_type),
+              function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: dispatch_receiver_type),
               callee.receiver,
               method_binding.type,
             ]
@@ -6255,9 +6267,12 @@ module MilkTea
             member_type = resolve_type_member(type_expr, expression.member)
             return member_type if member_type
 
-            if (method_entry = @method_definitions[[type_expr, expression.member]])
+            dispatch_receiver_type = method_dispatch_receiver_type(type_expr)
+            method_entry = @method_definitions[[type_expr, expression.member]]
+            method_entry ||= @method_definitions[[dispatch_receiver_type, expression.member]] unless dispatch_receiver_type == type_expr
+            if method_entry
               method_analysis, method_ast = method_entry
-              method_binding = method_analysis.methods.fetch(type_expr).fetch(method_ast.name)
+              method_binding = method_analysis.methods.fetch(dispatch_receiver_type).fetch(method_ast.name)
               return method_binding.type if method_binding.type.receiver_type.nil?
             end
           end
@@ -6494,6 +6509,7 @@ module MilkTea
       def foreign_identity_projection_cast_compatible?(actual_type, expected_type)
         return true if actual_type == expected_type
         return true if same_external_opaque_c_name?(actual_type, expected_type)
+        return true if foreign_function_type_projection_compatible?(actual_type, expected_type)
 
         if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
           return foreign_identity_projection_cast_compatible?(actual_type.base, expected_type.base)
@@ -6501,6 +6517,8 @@ module MilkTea
 
         return foreign_identity_projection_cast_compatible?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
         return false if actual_type.is_a?(Types::Nullable)
+
+        return true if same_external_opaque_handle_pointer_compatibility?(actual_type, expected_type)
 
         if pointer_type?(actual_type) && pointer_type?(expected_type)
           return true if void_pointer_type?(actual_type) || void_pointer_type?(expected_type)
@@ -6518,9 +6536,37 @@ module MilkTea
         false
       end
 
+      def same_external_opaque_handle_pointer_compatibility?(actual_type, expected_type)
+        if actual_type.is_a?(Types::Opaque) && pointer_type?(expected_type)
+          return same_external_opaque_c_name?(actual_type, expected_type.arguments.first)
+        end
+
+        if pointer_type?(actual_type) && expected_type.is_a?(Types::Opaque)
+          return same_external_opaque_c_name?(actual_type.arguments.first, expected_type)
+        end
+
+        false
+      end
+
+      def foreign_function_type_projection_compatible?(actual_type, expected_type)
+        return false unless actual_type.is_a?(Types::Function) && expected_type.is_a?(Types::Function)
+        return false unless actual_type.receiver_type == expected_type.receiver_type
+        return false unless actual_type.variadic == expected_type.variadic
+        return false unless actual_type.params.length == expected_type.params.length
+        return false unless foreign_identity_projection_compatible?(actual_type.return_type, expected_type.return_type)
+
+        actual_type.params.zip(expected_type.params).all? do |actual_param, expected_param|
+          actual_param.mutable == expected_param.mutable &&
+            actual_param.passing_mode == expected_param.passing_mode &&
+            actual_param.boundary_type == expected_param.boundary_type &&
+            foreign_identity_projection_compatible?(actual_param.type, expected_param.type)
+        end
+      end
+
       def same_external_opaque_c_name?(actual_type, expected_type)
         return false unless actual_type.is_a?(Types::Opaque) && expected_type.is_a?(Types::Opaque)
-        return false unless actual_type.external && expected_type.external
+        return false unless actual_type.external || actual_type.c_name
+        return false unless expected_type.external || expected_type.c_name
 
         foreign_opaque_c_name(actual_type) == foreign_opaque_c_name(expected_type)
       end
@@ -6671,6 +6717,7 @@ module MilkTea
       def resolve_specialized_callable_binding(expression, env:)
         callable_kind = :function
         receiver = nil
+        receiver_type = nil
         binding = case expression.callee
                   when AST::Identifier
                     @functions[expression.callee.name]
@@ -6678,27 +6725,35 @@ module MilkTea
                     if expression.callee.receiver.is_a?(AST::Identifier) && @imports.key?(expression.callee.receiver.name)
                       @imports.fetch(expression.callee.receiver.name).functions[expression.callee.member]
                     elsif (type_expr = resolve_type_expression(expression.callee.receiver))
+                      dispatch_receiver_type = method_dispatch_receiver_type(type_expr)
                       method_entry = @method_definitions[[type_expr, expression.callee.member]]
+                      method_entry ||= @method_definitions[[dispatch_receiver_type, expression.callee.member]] unless dispatch_receiver_type == type_expr
                       if method_entry
                         method_analysis, method_ast = method_entry
-                        method_binding = method_analysis.methods.fetch(type_expr).fetch(method_ast.name)
-                        method_binding if method_binding.type.receiver_type.nil?
+                        method_binding = method_analysis.methods.fetch(dispatch_receiver_type).fetch(method_ast.name)
+                        if method_binding.type.receiver_type.nil?
+                          receiver_type = type_expr
+                          method_binding
+                        end
                       end
                     else
                       resolved_receiver_type = infer_method_receiver_type(expression.callee.receiver, env:)
+                      dispatch_receiver_type = method_dispatch_receiver_type(resolved_receiver_type)
                       method_entry = @method_definitions[[resolved_receiver_type, expression.callee.member]]
+                      method_entry ||= @method_definitions[[dispatch_receiver_type, expression.callee.member]] unless dispatch_receiver_type == resolved_receiver_type
                       if method_entry
                         method_analysis, method_ast = method_entry
                         callable_kind = :method
                         receiver = expression.callee.receiver
-                        method_analysis.methods.fetch(resolved_receiver_type).fetch(method_ast.name)
+                        receiver_type = resolved_receiver_type
+                        method_analysis.methods.fetch(dispatch_receiver_type).fetch(method_ast.name)
                       end
                     end
                   end
         return nil unless binding
 
         type_arguments = resolve_specialization_type_arguments(expression)
-        [callable_kind, instantiate_function_binding(binding, type_arguments), receiver]
+        [callable_kind, instantiate_function_binding_with_receiver(binding, type_arguments, receiver_type:), receiver]
       end
 
       def resolve_specialization_type_arguments(expression)
@@ -6827,11 +6882,39 @@ module MilkTea
         end
       end
 
-      def specialize_function_binding(binding, arguments, env)
+      def specialize_function_binding(binding, arguments, env, receiver_type: nil)
         return binding if binding.type_params.empty?
         raise LoweringError, "generic function #{binding.name} must be called" unless arguments
 
-        type_arguments = infer_function_type_arguments(binding, arguments, env)
+        type_arguments = infer_function_type_arguments(binding, arguments, env, receiver_type:)
+        instantiate_function_binding(binding, type_arguments)
+      end
+
+      def instantiate_function_binding_with_receiver(binding, explicit_type_arguments, receiver_type: nil)
+        if binding.type_params.empty?
+          raise LoweringError, "function #{binding.name} is not generic and cannot be specialized"
+        end
+
+        receiver_substitutions = infer_receiver_type_substitutions(binding, receiver_type)
+        remaining_type_params = binding.type_params.reject { |name| receiver_substitutions.key?(name) }
+        unless remaining_type_params.length == explicit_type_arguments.length
+          raise LoweringError, "function #{binding.name} expects #{remaining_type_params.length} type arguments, got #{explicit_type_arguments.length}"
+        end
+
+        substitutions = receiver_substitutions.dup
+        remaining_type_params.zip(explicit_type_arguments).each do |name, type_argument|
+          raise LoweringError, "generic function #{binding.name} cannot be instantiated with ref types" if contains_ref_type?(type_argument)
+
+          substitutions[name] = type_argument
+        end
+
+        type_arguments = binding.type_params.map do |name|
+          inferred = substitutions[name]
+          raise LoweringError, "cannot infer type argument #{name} for function #{binding.name}" unless inferred
+
+          inferred
+        end
+
         instantiate_function_binding(binding, type_arguments)
       end
 
@@ -6865,17 +6948,18 @@ module MilkTea
           type_arguments: key,
           owner: binding.owner,
           type_substitutions: substitutions.freeze,
+          declared_receiver_type: binding.declared_receiver_type ? substitute_type(binding.declared_receiver_type, substitutions) : nil,
         )
         binding.instances[key] = instance
       end
 
-      def infer_function_type_arguments(binding, arguments, env)
+      def infer_function_type_arguments(binding, arguments, env, receiver_type: nil)
         expected_params = binding.type.params
         unless call_arity_matches?(binding.type, arguments.length)
           raise LoweringError, arity_error_message(binding.type, binding.name, arguments.length)
         end
 
-        substitutions = {}
+        substitutions = infer_receiver_type_substitutions(binding, receiver_type)
         expected_params.each_with_index do |parameter, index|
           argument = arguments.fetch(index)
           actual_type = infer_expression_type(argument.value, env:)
@@ -6888,6 +6972,52 @@ module MilkTea
 
           inferred
         end
+      end
+
+      def method_dispatch_receiver_type(receiver_type)
+        receiver_type.is_a?(Types::StructInstance) ? receiver_type.definition : receiver_type
+      end
+
+      def resolve_named_generic_type_for_analysis(analysis, parts)
+        if parts.length == 1
+          type = analysis.types[parts.first]
+          return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+        elsif parts.length == 2 && analysis.imports.key?(parts.first)
+          type = analysis.imports.fetch(parts.first).types[parts.last]
+          return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+        end
+
+        nil
+      end
+
+      def validate_methods_receiver_type_arguments!(type_ref, generic_type)
+        names = type_ref.arguments.map do |argument|
+          value = argument.value
+          next unless value.is_a?(AST::TypeRef)
+          next unless value.arguments.empty? && !value.nullable && value.name.parts.length == 1
+
+          value.name.parts.first
+        end
+
+        expected_names = generic_type.type_params
+        unless names == expected_names
+          raise LoweringError, "methods target #{type_ref} must use the receiver type parameters directly"
+        end
+
+        expected_names
+      end
+
+      def infer_receiver_type_substitutions(binding, receiver_type)
+        declared_receiver_type = binding.declared_receiver_type
+        return {} unless declared_receiver_type
+        return {} unless declared_receiver_type.is_a?(Types::StructInstance)
+        return {} unless declared_receiver_type.definition.is_a?(Types::GenericStructDefinition)
+
+        unless receiver_type.is_a?(Types::StructInstance) && receiver_type.definition == declared_receiver_type.definition
+          raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+        end
+
+        declared_receiver_type.definition.type_params.zip(receiver_type.arguments).to_h
       end
 
       def call_arity_matches?(function_type, actual_count)

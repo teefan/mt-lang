@@ -79,6 +79,23 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_generic_methods_block_targets_like_source
+    source = <<~MT
+      module demo.pretty_generic_methods
+
+      struct Box[T]:
+          value: T
+
+      methods Box[T]:
+          def get() -> T:
+              return this.value
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_variadic_extern_module_ast_like_source
     source = <<~MT
       extern module std.c.stdio:

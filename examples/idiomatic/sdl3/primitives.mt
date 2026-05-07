@@ -10,8 +10,8 @@ const presentation_mode: sdl.RendererLogicalPresentation = sdl.RendererLogicalPr
 const window_flags: ptr_uint = sdl.WINDOW_RESIZABLE
 const point_count: int = 500
 
-var window: ptr[sdl.Window]
-var renderer: ptr[sdl.Renderer]
+var window: sdl.Window
+var renderer: sdl.Renderer
 var points: array[sdl.FPoint, 500] = zero[array[sdl.FPoint, 500]]
 
 
@@ -19,7 +19,7 @@ def pump_events() -> bool:
     var event = zero[sdl.Event]
 
     while sdl.poll_event(event):
-        if sdl.EventType.SDL_EVENT_QUIT == sdl.EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-sdl.EventType.SDL_EVENT_QUIT:
             return false
 
     return true

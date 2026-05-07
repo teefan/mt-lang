@@ -12,8 +12,8 @@ const point_count: int = 500
 const min_pixels_per_second: float = 30.0
 const max_pixels_per_second: float = 60.0
 
-var window: ptr[sdl.Window]
-var renderer: ptr[sdl.Renderer]
+var window: sdl.Window
+var renderer: sdl.Renderer
 var last_time: ptr_uint = 0
 var points: array[sdl.FPoint, 500] = zero[array[sdl.FPoint, 500]]
 var point_speeds: array[float, 500] = zero[array[float, 500]]
@@ -23,7 +23,7 @@ def pump_events() -> bool:
     var event = zero[sdl.Event]
 
     while sdl.poll_event(event):
-        if sdl.EventType.SDL_EVENT_QUIT == sdl.EventType.SDL_EVENT_QUIT:
+        if event.type_ == uint<-sdl.EventType.SDL_EVENT_QUIT:
             return false
 
     return true

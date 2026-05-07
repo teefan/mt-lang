@@ -1656,6 +1656,7 @@ module MilkTea
       return "{ 0 }" if type.is_a?(Types::StringView)
       return "{ 0 }" if array_type?(type)
       return "NULL" if type.is_a?(Types::Nullable)
+      return "NULL" if type.is_a?(Types::Opaque) && !type.external
       return "false" if type.is_a?(Types::Primitive) && type.boolean?
       return "0.0" if type.is_a?(Types::Primitive) && type.float?
       return "0" if type.is_a?(Types::Primitive) && !type.void?
@@ -1980,7 +1981,7 @@ module MilkTea
           base = external_opaque_c_type(type)
           pointer ? "#{base}*" : base
         else
-          base = named_type_c_name(type)
+          base = type.c_name || named_type_c_name(type)
           pointer ? "#{base}**" : "#{base}*"
         end
       else

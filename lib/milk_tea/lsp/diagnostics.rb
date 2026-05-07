@@ -7,14 +7,14 @@ module MilkTea
   module LSP
     # Collects parse and semantic errors and formats them as LSP Diagnostics
     class Diagnostics
-      def self.collect(uri, content, shared_module_cache: nil)
+      def self.collect(uri, content, shared_module_cache: nil, source_overrides: nil)
         diagnostics = []
         sema_analysis = nil
 
         # Parse
         begin
           ast = Parser.parse(content, path: uri)
-          imported_modules = resolve_imported_modules(uri, ast, diagnostics, shared_module_cache: shared_module_cache)
+          imported_modules = resolve_imported_modules(uri, ast, diagnostics, shared_module_cache: shared_module_cache, source_overrides: source_overrides)
 
           # Semantic analysis — collect errors from all functions, not just first.
           begin
@@ -47,13 +47,14 @@ module MilkTea
 
       private
 
-      def self.resolve_imported_modules(uri, ast, diagnostics, shared_module_cache: nil)
+      def self.resolve_imported_modules(uri, ast, diagnostics, shared_module_cache: nil, source_overrides: nil)
         path = uri_to_path(uri)
         return {} unless path && File.file?(path)
 
         loader = ModuleLoader.new(
           module_roots: MilkTea::ModuleRoots.roots_for_path(path),
           shared_cache: shared_module_cache,
+          source_overrides: source_overrides,
         )
         loader.imported_modules_for_ast(ast)
       rescue ModuleLoadError => e

@@ -69,7 +69,7 @@ pub def module_relative_path(module_name: str) -> string.String:
 
 pub def normalize(path: str) -> string.String:
     let absolute = is_absolute(path)
-    var segments = vec.create[Segment]()
+    var segments = vec.Vec[Segment].create()
 
     var index: ptr_uint = 0
     while index < path.len:
@@ -85,35 +85,35 @@ pub def normalize(path: str) -> string.String:
             let segment = Segment(start = start, len = length)
             if not segment_equals(path, segment, "."):
                 if segment_equals(path, segment, ".."):
-                    if vec.count[Segment](segments) > 0:
-                        let last_index = vec.count[Segment](segments) - 1
-                        let last = vec.get[Segment](segments, last_index)
+                    if segments.count() > 0:
+                        let last_index = segments.count() - 1
+                        let last = segments.get(last_index)
                         if not segment_equals(path, last, ".."):
-                            vec.remove_ordered[Segment](ref_of(segments), last_index)
+                            segments.remove_ordered(last_index)
                         elif not absolute:
-                            vec.push[Segment](ref_of(segments), segment)
+                            segments.push(segment)
                     elif not absolute:
-                        vec.push[Segment](ref_of(segments), segment)
+                        segments.push(segment)
                 else:
-                    vec.push[Segment](ref_of(segments), segment)
+                    segments.push(segment)
 
     var result = string.String.with_capacity(path.len)
     if absolute:
         result.append("/")
 
-    if vec.count[Segment](segments) == 0:
+    if segments.count() == 0:
         if not absolute:
             result.append(".")
     else:
         var segment_index: ptr_uint = 0
-        while segment_index < vec.count[Segment](segments):
+        while segment_index < segments.count():
             if segment_index > 0:
                 result.append("/")
-            let segment = vec.get[Segment](segments, segment_index)
+            let segment = segments.get(segment_index)
             result.append(segment_text(path, segment))
             segment_index += 1
 
-    vec.release[Segment](ref_of(segments))
+    segments.release()
     return result
 
 

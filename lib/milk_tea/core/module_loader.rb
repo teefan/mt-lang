@@ -30,12 +30,17 @@ module MilkTea
     # absolute path and hold { mtime: Float, analysis: Sema::Analysis }.  When an
     # entry's mtime matches the file's current mtime the cached analysis is reused,
     # avoiding full re-parse + re-sema of large stdlib files on every LSP request.
-    def initialize(module_roots: [MilkTea.root], shared_cache: nil)
+    #
+    # +source_overrides+ is an optional path => source hash used by the LSP for
+    # unsaved open documents. When any override is present the shared cache is
+    # bypassed so dependent analyses never reuse bindings built from stale disk state.
+    def initialize(module_roots: [MilkTea.root], shared_cache: nil, source_overrides: nil)
       @module_roots = module_roots.map { |root| File.expand_path(root.to_s) }
       @ast_cache = {}
       @analysis_cache = {}
       @checking_paths = []
       @shared_cache = shared_cache # Hash or nil; mutated in-place to persist across calls
+      @source_overrides = normalize_source_overrides(source_overrides)
     end
 
     def load_file(path)
@@ -82,7 +87,7 @@ module MilkTea
 
       # 2. Shared cross-request cache (owned by the LSP Workspace): reuse if the
       #    file has not changed on disk since it was last analyzed.
-      if @shared_cache
+      if use_shared_cache?
         entry = @shared_cache[path]
         if entry
           current_mtime = File.mtime(path).to_f rescue nil
@@ -109,7 +114,7 @@ module MilkTea
       @analysis_cache[path] = analysis
 
       # Populate shared cache with current mtime so subsequent requests skip re-analysis.
-      if @shared_cache
+      if use_shared_cache?
         mtime = File.mtime(path).to_f rescue nil
         @shared_cache[path] = { mtime: mtime, analysis: analysis } if mtime
       end
@@ -120,12 +125,24 @@ module MilkTea
     end
 
     def parse_file(path)
-      source = File.read(path)
+      source = @source_overrides.fetch(path) { File.read(path) }
       Parser.parse(source, path: path)
     rescue Errno::ENOENT
       raise ModuleLoadError.new("source file not found", path: path)
     rescue Errno::EISDIR
       raise ModuleLoadError.new("expected a source file, got a directory", path: path)
+    end
+
+    def normalize_source_overrides(source_overrides)
+      return {} unless source_overrides
+
+      source_overrides.each_with_object({}) do |(path, source), overrides|
+        overrides[File.expand_path(path.to_s)] = source.to_s
+      end
+    end
+
+    def use_shared_cache?
+      @shared_cache && @source_overrides.empty?
     end
 
     def resolve_module_path(module_name)
@@ -210,7 +227,10 @@ module MilkTea
     end
 
     def exported_method_receiver?(receiver_type, exported_types)
-      receiver_type.is_a?(Types::StringView) || exported_types.value?(receiver_type)
+      return true if receiver_type.is_a?(Types::StringView)
+      return true if exported_types.value?(receiver_type)
+
+      receiver_type.is_a?(Types::StructInstance) && exported_types.value?(receiver_type.definition)
     end
 
     def ensure_format_string_support_loaded!

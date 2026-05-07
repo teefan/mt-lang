@@ -1,6 +1,7 @@
 module std.vec
 
 import std.mem.heap as heap
+import std.option as option
 import std.span as sp
 
 pub struct Vec[T]:
@@ -8,158 +9,176 @@ pub struct Vec[T]:
     len: ptr_uint
     capacity: ptr_uint
 
-
-pub def create[T]() -> Vec[T]:
-    return Vec[T](data = null, len = 0, capacity = 0)
-
-
-pub def with_capacity[T](capacity: ptr_uint) -> Vec[T]:
-    var items = create[T]()
-    reserve[T](ref_of(items), capacity)
-    return items
+methods Vec[T]:
+    pub static def create() -> Vec[T]:
+        return Vec[T](data = null, len = 0, capacity = 0)
 
 
-pub def count[T](items: Vec[T]) -> ptr_uint:
-    return items.len
+    pub static def with_capacity(capacity: ptr_uint) -> Vec[T]:
+        var items = Vec[T](data = null, len = 0, capacity = 0)
+        items.reserve(capacity)
+        return items
 
 
-pub def capacity[T](items: Vec[T]) -> ptr_uint:
-    return items.capacity
+    pub def count() -> ptr_uint:
+        return this.len
 
 
-pub def is_empty[T](items: Vec[T]) -> bool:
-    return items.len == 0
+    pub def capacity() -> ptr_uint:
+        return this.capacity
 
 
-pub def data_ptr[T](items: Vec[T]) -> ptr[T]?:
-    return items.data
+    pub def is_empty() -> bool:
+        return this.len == 0
 
 
-pub def as_span[T](items: Vec[T]) -> span[T]:
-    return sp.from_nullable_ptr[T](items.data, items.len)
+    pub def data_ptr() -> ptr[T]?:
+        return this.data
 
 
-pub def clear[T](items: ref[Vec[T]]) -> void:
-    items.len = 0
-    return
+    pub def as_span() -> span[T]:
+        return sp.from_nullable_ptr[T](this.data, this.len)
 
 
-pub def release[T](items: ref[Vec[T]]) -> void:
-    heap.release(items.data)
-    items.data = null
-    items.len = 0
-    items.capacity = 0
-    return
+    pub edit def clear() -> void:
+        this.len = 0
+        return
 
 
-pub def try_reserve[T](items: ref[Vec[T]], min_capacity: ptr_uint) -> bool:
-    if min_capacity <= items.capacity:
-        return true
-
-    var new_capacity = items.capacity
-    if new_capacity == 0:
-        new_capacity = 4
-
-    while new_capacity < min_capacity:
-        if new_capacity > heap.ptr_uint_max() / 2:
-            new_capacity = min_capacity
-        else:
-            new_capacity *= 2
-
-    let resized = heap.resize[T](items.data, new_capacity)
-    if resized == null:
-        return false
-
-    items.data = resized
-    items.capacity = new_capacity
-    return true
+    pub edit def release() -> void:
+        heap.release(this.data)
+        this.data = null
+        this.len = 0
+        this.capacity = 0
+        return
 
 
-pub def reserve[T](items: ref[Vec[T]], min_capacity: ptr_uint) -> void:
-    if not try_reserve[T](items, min_capacity):
-        panic(c"vec.reserve out of memory")
-    return
+    pub edit def try_reserve(min_capacity: ptr_uint) -> bool:
+        if min_capacity <= this.capacity:
+            return true
 
+        var new_capacity = this.capacity
+        if new_capacity == 0:
+            new_capacity = 4
 
-pub def try_push[T](items: ref[Vec[T]], item: T) -> bool:
-    if items.len == items.capacity:
-        if not try_reserve[T](items, items.len + 1):
+        while new_capacity < min_capacity:
+            if new_capacity > heap.ptr_uint_max() / 2:
+                new_capacity = min_capacity
+            else:
+                new_capacity *= 2
+
+        let resized = heap.resize[T](this.data, new_capacity)
+        if resized == null:
             return false
 
-    let data = items.data
-    if data == null:
-        return false
-    else:
+        this.data = resized
+        this.capacity = new_capacity
+        return true
+
+
+    pub edit def reserve(min_capacity: ptr_uint) -> void:
+        if not this.try_reserve(min_capacity):
+            panic(c"vec.reserve out of memory")
+        return
+
+
+    pub edit def try_push(item: T) -> bool:
+        if this.len == this.capacity:
+            if not this.try_reserve(this.len + 1):
+                return false
+
+        let data = this.data
+        if data == null:
+            return false
+
         unsafe:
-            read(data + items.len) = item
+            let data_ptr = ptr[T]<-data
+            read(data_ptr + this.len) = item
 
-    items.len += 1
-    return true
-
-
-pub def push[T](items: ref[Vec[T]], item: T) -> void:
-    if not try_push[T](items, item):
-        panic(c"vec.push out of memory")
-    return
+        this.len += 1
+        return true
 
 
-pub def get[T](items: Vec[T], index: ptr_uint) -> T:
-    if index >= items.len:
-        panic(c"vec.get index out of bounds")
+    pub edit def push(item: T) -> void:
+        if not this.try_push(item):
+            panic(c"vec.push out of memory")
+        return
 
-    let data = items.data
-    if data == null:
-        panic(c"vec.get missing storage")
-    else:
+
+    pub def get(index: ptr_uint) -> T:
+        if index >= this.len:
+            panic(c"vec.get index out of bounds")
+
+        let data = this.data
+        if data == null:
+            panic(c"vec.get missing storage")
+
         unsafe:
-            return read(data + index)
+            let data_ptr = ptr[T]<-data
+            return read(data_ptr + index)
 
 
-pub def set[T](items: ref[Vec[T]], index: ptr_uint, item: T) -> void:
-    if index >= items.len:
-        panic(c"vec.set index out of bounds")
+    pub edit def set(index: ptr_uint, item: T) -> void:
+        if index >= this.len:
+            panic(c"vec.set index out of bounds")
 
-    let data = items.data
-    if data == null:
-        panic(c"vec.set missing storage")
-    else:
+        let data = this.data
+        if data == null:
+            panic(c"vec.set missing storage")
+
         unsafe:
-            read(data + index) = item
-    return
+            let data_ptr = ptr[T]<-data
+            read(data_ptr + index) = item
+        return
 
 
-pub def pop_into[T](items: ref[Vec[T]], target: ref[T]) -> bool:
-    if items.len == 0:
-        return false
+    pub edit def pop() -> option.Option[T]:
+        if this.len == 0:
+            return option.Option[T].none()
 
-    let last_index = items.len - 1
-    let result = get[T](read(items), last_index)
-    items.len -= 1
-    read(target) = result
-    return true
+        let last_index = this.len - 1
+        let data = this.data
+        if data == null:
+            panic(c"vec.pop missing storage")
+
+        this.len -= 1
+        unsafe:
+            let data_ptr = ptr[T]<-data
+            return option.Option[T].some(read(data_ptr + last_index))
+
+    pub edit def remove_swap(index: ptr_uint) -> T:
+        if index >= this.len:
+            panic(c"vec.remove_swap index out of bounds")
+
+        let last_index = this.len - 1
+        let data = this.data
+        if data == null:
+            panic(c"vec.remove_swap missing storage")
+
+        unsafe:
+            let data_ptr = ptr[T]<-data
+            let result = read(data_ptr + index)
+            read(data_ptr + index) = read(data_ptr + last_index)
+            this.len = last_index
+            return result
 
 
-pub def remove_swap[T](items: ref[Vec[T]], index: ptr_uint) -> T:
-    if index >= items.len:
-        panic(c"vec.remove_swap index out of bounds")
+    pub edit def remove_ordered(index: ptr_uint) -> T:
+        if index >= this.len:
+            panic(c"vec.remove_ordered index out of bounds")
 
-    let last_index = items.len - 1
-    let result = get[T](read(items), index)
-    set[T](items, index, get[T](read(items), last_index))
-    items.len = last_index
-    return result
+        let data = this.data
+        if data == null:
+            panic(c"vec.remove_ordered missing storage")
 
+        unsafe:
+            let data_ptr = ptr[T]<-data
+            let result = read(data_ptr + index)
+            var cursor = index
+            while cursor + 1 < this.len:
+                let next = cursor + 1
+                read(data_ptr + cursor) = read(data_ptr + next)
+                cursor += 1
 
-pub def remove_ordered[T](items: ref[Vec[T]], index: ptr_uint) -> T:
-    if index >= items.len:
-        panic(c"vec.remove_ordered index out of bounds")
-
-    let result = get[T](read(items), index)
-    var cursor = index
-    while cursor + 1 < items.len:
-        let next = cursor + 1
-        set[T](items, cursor, get[T](read(items), next))
-        cursor += 1
-
-    items.len -= 1
-    return result
+            this.len -= 1
+            return result

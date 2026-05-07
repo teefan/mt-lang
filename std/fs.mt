@@ -56,12 +56,12 @@ pub def read_text(path: str) -> Result[string.String, Error]:
 
     var data = loaded.value
     let view = bytes.as_span(data)
-    let borrowed = text.utf8_byte_span_as_str(view)
-    if option.is_none[str](borrowed):
+    let borrowed: option.Option[str] = text.utf8_byte_span_as_str(view)
+    if borrowed.is_none():
         bytes.release(ref_of(data))
         return err(Error.invalid_utf8)
 
-    let borrowed_text = option.unwrap[str](borrowed)
+    let borrowed_text = borrowed.unwrap()
     var result = string.String.with_capacity(borrowed_text.len)
     result.append(borrowed_text)
     bytes.release(ref_of(data))

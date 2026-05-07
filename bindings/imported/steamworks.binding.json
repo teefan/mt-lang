@@ -2,6 +2,12 @@
   "module_name": "std.steamworks",
   "raw_module_name": "std.c.steamworks",
   "raw_import_alias": "c",
+  "imports": [
+    {
+      "module_name": "std.str",
+      "alias": "text"
+    }
+  ],
   "types": {
     "rename_rules": [
       {
@@ -21,6 +27,13 @@
   },
   "constants": {},
   "functions": {
+    "overrides": [
+      {
+        "raw": "SteamAPI_ISteamFriends_GetPersonaName",
+        "return_type": "str",
+        "mapping": "text.cstr_as_str(c.SteamAPI_ISteamFriends_GetPersonaName(self))"
+      }
+    ],
     "rename_rules": [
       {
         "kind": "prefix",

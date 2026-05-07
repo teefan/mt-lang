@@ -301,7 +301,7 @@ module MilkTea
           text += " = c#{declaration.c_name.inspect}" if declaration.c_name
           line(text)
         when AST::MethodsBlock
-          line("methods #{declaration.type_name}:")
+          line("methods #{render_type(declaration.type_name)}:")
           with_indent do
             declaration.methods.each_with_index do |method, index|
               emit_function(method)

@@ -256,6 +256,41 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/demo_generic_methods_codegen_Box_make_int\(4\)/, generated)
   end
 
+  def test_generate_c_for_generic_receiver_methods
+    source = <<~MT
+      module demo.generic_receiver_methods_codegen
+
+      struct Box[T]:
+          value: T
+
+      methods Box[T]:
+          def get() -> T:
+              return this.value
+
+          static def zero() -> Box[T]:
+              return Box[T](value = zero[T])
+
+          def echo[U](input: U) -> U:
+              return input
+
+      def main() -> int:
+          let box = Box[int].zero()
+          let echoed = box.echo(true)
+          if echoed:
+              return box.get()
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/demo_generic_receiver_methods_codegen_Box_zero_int/, generated)
+    assert_match(/demo_generic_receiver_methods_codegen_Box_get_int/, generated)
+    assert_match(/demo_generic_receiver_methods_codegen_Box_echo_int_bool/, generated)
+    assert_match(/demo_generic_receiver_methods_codegen_Box_zero_int\(\)/, generated)
+    assert_match(/demo_generic_receiver_methods_codegen_Box_get_int\(box\)/, generated)
+    assert_match(/demo_generic_receiver_methods_codegen_Box_echo_int_bool\(box, true\)/, generated)
+  end
+
   def test_generate_c_for_async_with_control_flow
     source = <<~MT
       module demo.async_flow_codegen
@@ -1368,6 +1403,52 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/DestroyWindow\(window\);/, generated)
     assert_match(/window = NULL;/, generated)
     assert_match(/if \(window == NULL\)/, generated)
+  end
+
+  def test_generate_c_for_typed_opaque_handle_out_projection
+    source = <<~MT
+      module demo.main
+
+      import std.window as win
+
+      def main() -> int:
+          var window: win.Window
+          if not win.create(window):
+              return 1
+          defer:
+              win.destroy(window)
+          return 0
+    MT
+
+    imported_sources = {
+      "std/c/window.mt" => <<~MT,
+        extern module std.c.window:
+            include "window.h"
+
+            opaque RawWindow = c"RawWindow"
+
+            extern def CreateWindow(window: ptr[ptr[RawWindow]]?) -> bool
+            extern def DestroyWindow(window: ptr[RawWindow]) -> void
+      MT
+      "std/window.mt" => <<~MT,
+        module std.window
+
+        import std.c.window as c
+
+        pub opaque Window = c"RawWindow"
+
+        pub foreign def create(out window: Window) -> bool = c.CreateWindow
+        pub foreign def destroy(window: Window) -> void = c.DestroyWindow
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/typedef struct RawWindow RawWindow;/, generated)
+    assert_match(/RawWindow\* window = NULL;/, generated)
+    assert_match(/CreateWindow\(&window\)/, generated)
+    assert_match(/DestroyWindow\(window\);/, generated)
+    assert_match(/window = NULL;/, generated)
   end
 
   def test_generate_c_for_safe_span_indexing_and_element_assignment

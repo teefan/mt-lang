@@ -492,8 +492,8 @@ module MilkTea
           end
         end
 
-        @semantic_tokens_cache.delete(uri)
-        @fixall_cache.delete(uri)
+        invalidate_document_caches(uri)
+        refresh_open_document_dependency_state(uri)
         schedule_diagnostics(uri) unless @workspace.background_document?(uri)
         nil
       end
@@ -517,8 +517,8 @@ module MilkTea
         uri = params['textDocument']['uri']
         cancel_diagnostics(uri)
         @workspace.close_document(uri)
-        @semantic_tokens_cache.delete(uri)
-        @fixall_cache.delete(uri)
+        invalidate_document_caches(uri)
+        refresh_open_document_dependency_state(uri)
         Protocol.write_notification('textDocument/publishDiagnostics', {
           uri: uri,
           diagnostics: []
@@ -532,11 +532,9 @@ module MilkTea
 
         text = params['text']
         @workspace.update_document(uri, text) if text
-        @semantic_tokens_cache.delete(uri)
-        @fixall_cache.delete(uri)
-        affected_uris = @workspace.refresh_open_document_dependency_caches(uri)
+        invalidate_document_caches(uri)
+        affected_uris = refresh_open_document_dependency_state(uri)
         schedule_diagnostics(uri) unless @workspace.background_document?(uri)
-        affected_uris.each { |affected_uri| schedule_diagnostics(affected_uri, force: true) }
         nil
       end
 
@@ -1500,8 +1498,27 @@ module MilkTea
           affected_uris.merge(@workspace.apply_watched_file_change(uri, type))
         end
 
+        invalidate_document_caches_for(affected_uris)
         affected_uris.each { |affected_uri| schedule_diagnostics(affected_uri, force: true) }
         nil
+      end
+
+      def invalidate_document_caches(uri)
+        @semantic_tokens_cache.delete(uri)
+        @fixall_cache.delete(uri)
+      end
+
+      def invalidate_document_caches_for(uris)
+        uris.each { |uri| invalidate_document_caches(uri) }
+      end
+
+      def refresh_open_document_dependency_state(changed_uri)
+        affected_uris = @workspace.refresh_open_document_dependency_caches(changed_uri)
+        invalidate_document_caches_for(affected_uris)
+        affected_uris.each do |affected_uri|
+          schedule_diagnostics(affected_uri, force: true) unless @workspace.background_document?(affected_uri)
+        end
+        affected_uris
       end
 
       # ── Diagnostics ──────────────────────────────────────────────────────────
@@ -2118,8 +2135,10 @@ module MilkTea
       end
 
       def classify_name_semantic(name, tokens, index, analysis = nil)
+        tok = tokens[index]
         prev_tok = previous_non_trivia_token(tokens, index)
         next_tok = next_non_trivia_token(tokens, index + 1)
+        colon_terminated_identifier = next_tok&.type == :colon
 
         if (import_info = import_path_info_at(tokens, index, allow_keywords: true))
           modifiers = []
@@ -2145,9 +2164,23 @@ module MilkTea
           return [:variable, ['declaration']]
         end
 
+        if prev_tok&.type == :for
+          return [:variable, ['declaration']]
+        end
+
+        return [:property, []] if named_argument_label_token?(tokens, index)
+
         if next_tok&.type == :dot && analysis
           return [:type, []] if analysis.types.key?(name)
           return [:namespace, []] if analysis.imports.key?(name)
+
+          if (binding = local_semantic_value_binding(analysis, tok, allow_same_line_future: colon_terminated_identifier))
+            return semantic_value_binding_entry(binding, declaration: binding.kind == :param && colon_terminated_identifier)
+          end
+
+          if (binding = analysis.values[name])
+            return semantic_value_binding_entry(binding)
+          end
         end
 
         if analysis && analysis.types.key?(name) && identifier_in_type_argument_position?(tokens, index)
@@ -2169,6 +2202,8 @@ module MilkTea
               end
               return [:namespace, []] if analysis.imports.key?(name)
             end
+
+            return [:property, []] if callable_field_member_access?(name, tokens, index, analysis)
           end
 
           return [:enumMember, []] if type_name_member_access?(tokens, index)
@@ -2177,6 +2212,10 @@ module MilkTea
         end
 
         if next_tok&.type == :lparen
+          if analysis && (resolved = resolved_call_callee_semantic(name, tok, colon_terminated_identifier, analysis))
+            return resolved
+          end
+
           modifiers = []
           modifiers << 'defaultLibrary' if BUILTIN_FUNCTION_NAMES.include?(name)
           return [:function, modifiers]
@@ -2196,9 +2235,118 @@ module MilkTea
         if analysis
           return [:type, []] if analysis.types.key?(name)
           return [:namespace, []] if analysis.imports.key?(name)
+
+          if (binding = local_semantic_value_binding(analysis, tok, allow_same_line_future: colon_terminated_identifier))
+            return semantic_value_binding_entry(binding, declaration: binding.kind == :param && colon_terminated_identifier)
+          end
+
+          if (binding = analysis.values[name])
+            return semantic_value_binding_entry(binding)
+          end
         end
 
         [:variable, []]
+      end
+
+      def named_argument_label_token?(tokens, index)
+        prev_tok = previous_non_trivia_token(tokens, index)
+        next_tok = next_non_trivia_token(tokens, index + 1)
+        next_tok&.type == :equal && prev_tok && [:lparen, :comma].include?(prev_tok.type)
+      end
+
+      def local_semantic_value_binding(analysis, token, allow_same_line_future: false)
+        char = token.column - 1
+        [token.line - 1, token.line].uniq.each do |line|
+          frame = enclosing_completion_frame(analysis, line)
+          next unless frame
+
+          snapshot = latest_completion_snapshot(frame, line, char)
+          binding = snapshot&.bindings&.dig(token.lexeme)
+          return binding if binding
+
+          next unless allow_same_line_future
+
+          future_snapshot = same_line_future_completion_snapshot(frame, line, char)
+          binding = future_snapshot&.bindings&.dig(token.lexeme)
+          return binding if binding
+        end
+
+        nil
+      end
+
+      def semantic_value_binding_entry(binding, declaration: false)
+        case binding.kind
+        when :param
+          modifiers = []
+          modifiers << 'declaration' if declaration
+          [:parameter, modifiers]
+        when :const
+          [:variable, ['readonly']]
+        else
+          modifiers = []
+          modifiers << 'declaration' if declaration
+          [:variable, modifiers]
+        end
+      end
+
+      def resolved_call_callee_semantic(name, token, colon_terminated_identifier, analysis)
+        if (binding = local_semantic_value_binding(analysis, token, allow_same_line_future: colon_terminated_identifier))
+          return semantic_value_binding_entry(binding, declaration: binding.kind == :param && colon_terminated_identifier)
+        end
+
+        if (binding = analysis.values[name])
+          return semantic_value_binding_entry(binding)
+        end
+
+        modifiers = []
+        modifiers << 'defaultLibrary' if BUILTIN_FUNCTION_NAMES.include?(name)
+        return [:function, modifiers] if BUILTIN_FUNCTION_NAMES.include?(name)
+        return [:function, modifiers] if analysis.functions.key?(name)
+        return [:type, []] if constructible_semantic_type?(analysis.types[name])
+
+        nil
+      end
+
+      def callable_field_member_access?(name, tokens, index, analysis)
+        next_tok = next_non_trivia_token(tokens, index + 1)
+        return false unless next_tok&.type == :lparen
+
+        dot_index = previous_non_trivia_token_index(tokens, index)
+        return false unless dot_index && tokens[dot_index].type == :dot
+
+        receiver_index = previous_non_trivia_token_index(tokens, dot_index)
+        return false unless receiver_index
+
+        receiver_tok = tokens[receiver_index]
+        return false unless receiver_tok.type == :identifier
+
+        resolve_receiver_value_type(analysis, receiver_tok).then do |receiver_type|
+          next false unless receiver_type
+
+          field_receiver_type = project_field_receiver_type_for_completion(receiver_type)
+          next false unless field_receiver_type.respond_to?(:field)
+
+          callable_semantic_type?(field_receiver_type.field(name))
+        end
+      end
+
+      def resolve_receiver_value_type(analysis, token)
+        char = token.column
+
+        [token.line - 1, token.line].uniq.each do |line|
+          receiver_type = resolve_dot_receiver_value_type(analysis, token.lexeme, line, char)
+          return receiver_type if receiver_type
+        end
+
+        nil
+      end
+
+      def callable_semantic_type?(type)
+        type.is_a?(Types::Function) || type.is_a?(Types::Proc)
+      end
+
+      def constructible_semantic_type?(type)
+        type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || type.is_a?(Types::Task)
       end
 
       def imported_module_binding_for_member(tokens, index, analysis)

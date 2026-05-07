@@ -103,7 +103,7 @@ class MilkTeaStdStringTest < Minitest::Test
       "    if not text.is_valid_utf8(trimmed):",
       "        return 4",
       "    let found = text.find_byte(trimmed, ubyte<-32)",
-      "    return int<-trimmed.len + int<-option.unwrap[ptr_uint](found)",
+      "    return int<-trimmed.len + int<-found.unwrap()",
       "",
     ].join("\n")
 

@@ -4,7 +4,6 @@ import std.bytes as bytes
 import std.async as aio
 import std.fs as fs
 import std.libuv.runtime as rt
-import std.mem.arena as arena
 import std.raylib as rl
 
 const screen_width: int = 960
@@ -28,11 +27,8 @@ def load_sound_bytes() -> bytes.Buffer:
 
 
 def texture_from_png_bytes(data: bytes.Buffer) -> rl.Texture2D:
-    var scratch = arena.create(16)
-    defer scratch.release()
-
     let view = bytes.as_span(data)
-    let image = rl.load_image_from_memory(scratch.to_cstr(".png"), view.data, int<-view.len)
+    let image = rl.load_image_from_memory(".png", view)
     if not rl.is_image_valid(image):
         panic("raylib could not decode png bytes")
 
@@ -44,11 +40,8 @@ def texture_from_png_bytes(data: bytes.Buffer) -> rl.Texture2D:
 
 
 def sound_from_wav_bytes(data: bytes.Buffer) -> rl.Sound:
-    var scratch = arena.create(16)
-    defer scratch.release()
-
     let view = bytes.as_span(data)
-    let wave = rl.load_wave_from_memory(scratch.to_cstr(".wav"), view.data, int<-view.len)
+    let wave = rl.load_wave_from_memory(".wav", view)
     if not rl.is_wave_valid(wave):
         panic("raylib could not decode wav bytes")
 

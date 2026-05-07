@@ -222,6 +222,41 @@ class LSPServerTest < Minitest::Test
         return array[int, 4](1, 2, 3, 4)
   MT
 
+  SOURCE_WITH_PARAMETER_AND_LABEL_SEMANTICS = <<~MT
+    struct Vec2:
+        x: int
+        y: int
+
+    def sample(position: int, speed: int) -> int:
+        let point = Vec2(x = position, y = speed)
+        for index in 0..1:
+            return point.x + index + position
+        return speed
+  MT
+
+  SOURCE_WITH_RESOLVED_CALLABLE_SEMANTICS = <<~MT
+    struct Point:
+        x: int
+        y: int
+
+    struct Entry:
+        callback: proc(value: int) -> int
+
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    def build() -> Point:
+        return Point(x = 1, y = 2)
+
+    def main() -> int:
+        let callback = proc(value: int) -> int:
+            return value + 1
+        let entry = Entry(callback = callback)
+        let invoked = callback(3)
+        let from_entry = entry.callback(4)
+        return add(invoked, from_entry)
+  MT
+
   SOURCE_WITH_FSTRING_INTERPOLATION = <<~'MT'
     def main() -> int:
         let name = "milk"
@@ -1375,6 +1410,95 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_document_diagnostic_refreshes_after_imported_module_did_change
+    Dir.mktmpdir("milk-tea-lsp-didchange-diagnostics") do |dir|
+      Dir.mkdir(File.join(dir, "std"))
+      option_path = File.join(dir, "option.mt")
+      main_path = File.join(dir, "main.mt")
+
+      option_initial = <<~MT
+        module option
+
+        pub struct Option[T]:
+            is_some: bool
+            value: T
+      MT
+      option_updated = <<~MT
+        module option
+
+        pub struct Option[T]:
+            is_some: bool
+            value: T
+
+        methods Option[T]:
+            pub def is_none() -> bool:
+                return not this.is_some
+      MT
+      main_source = <<~MT
+        module main
+
+        import option as option
+
+        def main() -> int:
+            let maybe = option.Option[int](is_some = false, value = 0)
+            if maybe.is_none():
+                return 1
+            return 0
+      MT
+
+      File.write(option_path, option_initial)
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      option_uri = path_to_uri(option_path)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => option_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => option_initial
+          }
+        })
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        first = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        first_result = first.fetch("result")
+
+        assert_equal "full", first_result["kind"]
+        assert_operator first_result.fetch("items").length, :>=, 1
+
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => option_uri, "version" => 2 },
+          "contentChanges" => [{ "text" => option_updated }]
+        })
+
+        second = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri },
+          "previousResultId" => first_result["resultId"]
+        })
+        second_result = second.fetch("result")
+
+        assert_equal "full", second_result["kind"]
+        refute_equal first_result["resultId"], second_result["resultId"]
+        assert_equal [], second_result["items"]
+      end
+    end
+  end
+
   def test_completion_returns_function_names
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -1786,6 +1910,67 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_semantic_tokens_refresh_after_imported_module_did_change
+    Dir.mktmpdir("mt_lsp_semantic_tokens_import_change") do |dir|
+      Dir.mkdir(File.join(dir, "std"))
+      api_path = File.join(dir, "api.mt")
+      main_path = File.join(dir, "main.mt")
+
+      api_initial = <<~MT
+        module api
+      MT
+      api_updated = <<~MT
+        module api
+
+        pub type Answer = int
+      MT
+      main_source = <<~MT
+        module main
+
+        import api as api
+
+        pub type Result = api.Answer
+      MT
+
+      File.write(api_path, api_initial)
+      File.write(main_path, main_source)
+
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        api_uri = path_to_uri(api_path)
+        main_uri = path_to_uri(main_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => api_uri, "languageId" => "milk-tea", "version" => 1, "text" => api_initial }
+        })
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => main_uri, "languageId" => "milk-tea", "version" => 1, "text" => main_source }
+        })
+
+        first = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        first_entries = decode_semantic_token_entries(first.fetch("result").fetch("data"), legend)
+        first_answer = semantic_entry_for_lexeme(main_source, first_entries, "Answer")
+
+        assert_equal "property", first_answer.fetch("tokenType")
+
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => api_uri, "version" => 2 },
+          "contentChanges" => [{ "text" => api_updated }]
+        })
+
+        second = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        second_entries = decode_semantic_token_entries(second.fetch("result").fetch("data"), legend)
+        second_answer = semantic_entry_for_lexeme(main_source, second_entries, "Answer")
+
+        assert_equal "type", second_answer.fetch("tokenType")
+      end
+    end
+  end
+
 
     def test_semantic_tokens_classify_str_builder_and_value_receiver_methods
       with_server do |client|
@@ -1846,6 +2031,71 @@ class LSPServerTest < Minitest::Test
         assert_equal "type", span_type_entry.fetch("tokenType")
         assert_equal "type", array_return_entry.fetch("tokenType")
         assert_equal "function", array_ctor_entry.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_classify_parameters_named_labels_and_for_binders
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_parameter_labels_test.mt"
+        source = SOURCE_WITH_PARAMETER_AND_LABEL_SEMANTICS
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        position_decl = semantic_entry_for_lexeme_on_line(source, entries, "position", 4)
+        position_ref = semantic_entry_for_lexeme_on_line(source, entries, "position", 7)
+        x_label = semantic_entry_for_lexeme_on_line(source, entries, "x", 5)
+        y_label = semantic_entry_for_lexeme_on_line(source, entries, "y", 5)
+        index_decl = semantic_entry_for_lexeme_on_line(source, entries, "index", 6)
+        index_ref = semantic_entry_for_lexeme_on_line(source, entries, "index", 7)
+
+        assert_equal "parameter", position_decl.fetch("tokenType")
+        assert_includes position_decl.fetch("modifierNames"), "declaration"
+        assert_equal "parameter", position_ref.fetch("tokenType")
+        refute_includes position_ref.fetch("modifierNames"), "declaration"
+        assert_equal "property", x_label.fetch("tokenType")
+        assert_equal "property", y_label.fetch("tokenType")
+        assert_equal "variable", index_decl.fetch("tokenType")
+        assert_includes index_decl.fetch("modifierNames"), "declaration"
+        assert_equal "variable", index_ref.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_classify_resolved_callables_for_constructors_and_callable_values
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_resolved_callable_test.mt"
+        source = SOURCE_WITH_RESOLVED_CALLABLE_SEMANTICS
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        point_ctor = semantic_entry_for_lexeme_on_line(source, entries, "Point", 11)
+        entry_ctor = semantic_entry_for_lexeme_on_line(source, entries, "Entry", 16)
+        callback_call = semantic_entry_for_lexeme_on_line(source, entries, "callback", 17)
+        field_callback_call = semantic_entry_for_lexeme_on_line(source, entries, "callback", 18)
+        add_call = semantic_entry_for_lexeme_on_line(source, entries, "add", 19)
+
+        assert_equal "type", point_ctor.fetch("tokenType")
+        assert_equal "type", entry_ctor.fetch("tokenType")
+        assert_equal "variable", callback_call.fetch("tokenType")
+        assert_equal "property", field_callback_call.fetch("tokenType")
+        assert_equal "function", add_call.fetch("tokenType")
       end
     end
 
@@ -2113,7 +2363,10 @@ class LSPServerTest < Minitest::Test
         "startChar" => char,
         "endChar" => char + length,
         "tokenType" => legend.fetch("tokenTypes").fetch(token_type_idx),
-        "modifierBits" => modifier_bits
+        "modifierBits" => modifier_bits,
+        "modifierNames" => legend.fetch("tokenModifiers").each_with_index.filter_map do |name, bit|
+          name if (modifier_bits & (1 << bit)) != 0
+        end
       }
     end
   end
@@ -2149,6 +2402,16 @@ class LSPServerTest < Minitest::Test
       line_text = lines.fetch(entry.fetch("line"))
       line_text[entry.fetch("startChar"), lexeme.length] == lexeme
     end or flunk("expected semantic token entry for #{lexeme.inspect}")
+  end
+
+  def semantic_entry_for_lexeme_on_line(source, entries, lexeme, line)
+    lines = source.lines
+    entries.find do |entry|
+      next false unless entry.fetch("line") == line
+
+      line_text = lines.fetch(line)
+      line_text[entry.fetch("startChar"), lexeme.length] == lexeme
+    end or flunk("expected semantic token entry for #{lexeme.inspect} on line #{line}")
   end
 
   def with_server

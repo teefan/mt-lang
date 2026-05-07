@@ -3,7 +3,6 @@ module examples.idiomatic.steamworks.persona_name
 import std.io as io
 import std.libc as libc
 import std.steamworks as steam
-import std.str as text
 
 
 def main(args: span[str]) -> int:
@@ -31,7 +30,7 @@ def main(args: span[str]) -> int:
 
     let friends = steam.friends()
     let persona_name = steam.friends_get_persona_name(friends)
-    if not io.println(f"Steam persona -> #{text.cstr_as_str(persona_name)}"):
+    if not io.println(f"Steam persona -> #{persona_name}"):
         return 7
 
     return 0

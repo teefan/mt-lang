@@ -1431,6 +1431,94 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_external_opaque_handle_projection_against_typed_pointer_signatures
+    root_source = <<~MT
+      module demo.main
+
+      import std.window as win
+
+      def main() -> int:
+          let window = win.create()
+          if window != null:
+              win.destroy(window)
+              if window == null:
+                  return 1
+          return 0
+    MT
+
+    imported_sources = {
+      "std/c/window.mt" => <<~MT,
+        extern module std.c.window:
+            include "window.h"
+
+            opaque RawWindow = c"RawWindow"
+
+            extern def CreateWindow() -> ptr[RawWindow]?
+            extern def DestroyWindow(window: ptr[RawWindow]) -> void
+      MT
+      "std/window.mt" => <<~MT,
+        module std.window
+
+        import std.c.window as c
+
+        pub opaque Window = c"RawWindow"
+
+        pub foreign def create() -> Window? = c.CreateWindow
+        pub foreign def destroy(consuming window: Window) -> void = c.DestroyWindow
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.imports.key?("win")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_out_opaque_handle_projection_against_typed_pointer_signatures
+    root_source = <<~MT
+      module demo.main
+
+      import std.window as win
+
+      def main() -> int:
+          var window: win.Window
+          if not win.create(window):
+              return 1
+          defer:
+              win.destroy(window)
+          return 0
+    MT
+
+    imported_sources = {
+      "std/c/window.mt" => <<~MT,
+        extern module std.c.window:
+            include "window.h"
+
+            opaque RawWindow = c"RawWindow"
+
+            extern def CreateWindow(window: ptr[ptr[RawWindow]]?) -> bool
+            extern def DestroyWindow(window: ptr[RawWindow]) -> void
+      MT
+      "std/window.mt" => <<~MT,
+        module std.window
+
+        import std.c.window as c
+
+        pub opaque Window = c"RawWindow"
+
+        pub foreign def create(out window: Window) -> bool = c.CreateWindow
+        pub foreign def destroy(window: Window) -> void = c.DestroyWindow
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.imports.key?("win")
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_plain_null_for_nullable_external_pointer_argument
     source = <<~MT
       module demo.ok
@@ -1926,6 +2014,46 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal ["T"], make_binding.type_params
     assert_equal true, result.functions.key?("main")
   end
+
+    def test_type_checks_generic_receiver_methods
+    source = <<~MT
+      module demo.generic_receiver_methods
+
+      struct Box[T]:
+          value: T
+
+      methods Box[T]:
+          def get() -> T:
+              return this.value
+
+          edit def set(value: T) -> void:
+              this.value = value
+
+          static def zero() -> Box[T]:
+              return Box[T](value = zero[T])
+
+          def echo[U](input: U) -> U:
+              return input
+
+      def main() -> int:
+          var box = Box[int].zero()
+          box.set(7)
+          let echoed = box.echo(true)
+          if echoed:
+              return box.get()
+          return 0
+    MT
+
+    result = check_source(source)
+
+    box_type = result.types.fetch("Box")
+    methods = result.methods.fetch(box_type)
+
+    assert_equal "demo.generic_receiver_methods.Box[T]", methods.fetch("get").declared_receiver_type.to_s
+    assert_equal ["T"], methods.fetch("zero").type_params
+    assert_equal ["T", "U"], methods.fetch("echo").type_params
+    assert_equal true, result.functions.key?("main")
+    end
 
   def test_type_checks_named_constants_in_integer_type_argument_slots
     source = <<~MT

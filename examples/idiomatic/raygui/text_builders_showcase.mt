@@ -74,7 +74,7 @@ def main() -> int:
             gui.label(rl.Rectangle(x = 480.0, y = 198.0, width = 360.0, height = 24.0), "Secret view disabled")
 
         gui.label(rl.Rectangle(x = 480.0, y = 234.0, width = 360.0, height = 24.0), "Current dialog text")
-        gui.label(rl.Rectangle(x = 480.0, y = 262.0, width = 360.0, height = 24.0), dialog_text.as_cstr())
+        gui.label(rl.Rectangle(x = 480.0, y = 262.0, width = 360.0, height = 24.0), dialog_text.as_str())
 
         if dialog_text.capacity() == 64:
             gui.label(rl.Rectangle(x = 480.0, y = 298.0, width = 360.0, height = 24.0), "Dialog builder capacity: 64 bytes plus trailing NUL")

@@ -25,7 +25,7 @@ def apply_kernel(image: rl.Image, kernel: array[float, 9], passes: int) -> rl.Im
     var kernel_values = kernel
     for index in 0..passes:
         let _ = index
-        rl.image_kernel_convolution(result, const_ptr_of(kernel_values[0]), 9)
+        rl.image_kernel_convolution(result, kernel_values)
     return result
 
 

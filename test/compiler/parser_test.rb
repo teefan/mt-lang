@@ -1197,6 +1197,25 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal :edit, methods.methods[1].kind
   end
 
+  def test_parses_generic_methods_block_targets
+    source = <<~MT
+      module demo.generic_receiver_parse
+
+      struct Box[T]:
+          value: T
+
+      methods Box[T]:
+          def get() -> T:
+              return this.value
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    methods = ast.declarations[1]
+
+    assert_instance_of MilkTea::AST::MethodsBlock, methods
+    assert_equal "Box[T]", methods.type_name.to_s
+  end
+
   def test_parses_unsafe_blocks_with_pointer_cast_and_arithmetic
     source = <<~MT
       module demo.unsafe_surface

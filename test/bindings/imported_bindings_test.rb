@@ -139,7 +139,8 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     source = File.read(binding.binding_path)
     refute_match(/^import std\.mem\.arena as arena$/, source)
     refute_match(/^import std\.string as string$/, source)
-    assert_match(/^pub type Window = c\.SDL_Window$/, source)
+    assert_match(/^pub opaque Window = c"SDL_Window"$/, source)
+    assert_match(/^pub opaque Renderer = c"SDL_Renderer"$/, source)
     assert_match(/^pub type MainFunc = c\.SDL_main_func$/, source)
     refute_match(/^pub type Sint8 = /, source)
     refute_match(/^pub type Uint8 = /, source)
@@ -152,15 +153,15 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub type InitFlags = c\.SDL_InitFlags$/, source)
     assert_match(/^pub const INIT_VIDEO: uint = c\.SDL_INIT_VIDEO$/, source)
     assert_match(/^pub foreign def malloc\(size: ptr_uint\) -> ptr\[void\] = c\.SDL_malloc$/, source)
-    assert_match(/^pub foreign def create_window\(title: str as cstr, w: int, h: int, flag_bits: ptr_uint\) -> ptr\[Window\]\? = c\.SDL_CreateWindow$/, source)
-    assert_match(/^pub foreign def create_window_and_renderer\(title: str as cstr, width: int, height: int, window_flags: ptr_uint, out window: ptr\[Window\], out renderer: ptr\[Renderer\]\) -> bool = c\.SDL_CreateWindowAndRenderer$/, source)
+    assert_match(/^pub foreign def create_window\(title: str as cstr, w: int, h: int, flag_bits: ptr_uint\) -> Window\? = c\.SDL_CreateWindow$/, source)
+    assert_match(/^pub foreign def create_window_and_renderer\(title: str as cstr, width: int, height: int, window_flags: ptr_uint, out window: Window, out renderer: Renderer\) -> bool = c\.SDL_CreateWindowAndRenderer$/, source)
     assert_match(/^pub foreign def run_app\(argc: int, argv: ptr\[ptr\[char\]\], main_function: MainFunc\) -> int = c\.SDL_RunApp\(argc, argv, main_function, null\)$/, source)
     assert_match(/^pub foreign def set_app_metadata\(app_name: str as cstr, app_version: str as cstr, app_identifier: str as cstr\) -> bool = c\.SDL_SetAppMetadata$/, source)
     assert_match(/^pub foreign def init\(flag_bits: InitFlags\) -> bool = c\.SDL_Init$/, source)
     assert_match(/^pub foreign def poll_event\(out event: Event\) -> bool = c\.SDL_PollEvent$/, source)
     assert_match(/^pub foreign def set_clipboard_text\(text: str as cstr\) -> bool = c\.SDL_SetClipboardText$/, source)
-    assert_match(/^pub foreign def get_window_size\(window: ptr\[Window\], out w: int, out h: int\) -> bool = c\.SDL_GetWindowSize$/, source)
-    assert_match(/^pub foreign def get_render_output_size\(renderer: ptr\[Renderer\], out w: int, out h: int\) -> bool = c\.SDL_GetRenderOutputSize$/, source)
+    assert_match(/^pub foreign def get_window_size\(window: Window, out w: int, out h: int\) -> bool = c\.SDL_GetWindowSize$/, source)
+    assert_match(/^pub foreign def get_render_output_size\(renderer: Renderer, out w: int, out h: int\) -> bool = c\.SDL_GetRenderOutputSize$/, source)
     assert_match(/^pub foreign def get_power_info\(out seconds: int, out percent: int\) -> PowerState = c\.SDL_GetPowerInfo$/, source)
     assert_match(/^pub foreign def get_preferred_locales\(out count: int\) -> ptr\[ptr\[Locale\]\]\? = c\.SDL_GetPreferredLocales$/, source)
     assert_match(/^pub foreign def get_displays\(count: ptr\[int\]\?\) -> ptr\[DisplayID\]\? = c\.SDL_GetDisplays$/, source)
@@ -168,22 +169,22 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub foreign def get_fullscreen_display_modes\(display_id: uint, count: ptr\[int\]\?\) -> ptr\[ptr\[DisplayMode\]\]\? = c\.SDL_GetFullscreenDisplayModes$/, source)
     assert_match(/^pub foreign def get_desktop_display_mode\(display_id: uint\) -> const_ptr\[DisplayMode\]\? = c\.SDL_GetDesktopDisplayMode$/, source)
     assert_match(/^pub foreign def get_current_display_mode\(display_id: uint\) -> const_ptr\[DisplayMode\]\? = c\.SDL_GetCurrentDisplayMode$/, source)
-    assert_match(/^pub foreign def get_window_icc_profile\(window: ptr\[Window\], size: ptr\[ptr_uint\]\) -> ptr\[void\]\? = c\.SDL_GetWindowICCProfile$/, source)
+    assert_match(/^pub foreign def get_window_icc_profile\(window: Window, size: ptr\[ptr_uint\]\) -> ptr\[void\]\? = c\.SDL_GetWindowICCProfile$/, source)
     assert_match(/^pub foreign def get_windows\(count: ptr\[int\]\?\) -> ptr\[ptr\[Window\]\]\? = c\.SDL_GetWindows$/, source)
-    assert_match(/^pub foreign def convert_event_to_render_coordinates\(renderer: ptr\[Renderer\], inout event: Event\) -> bool = c\.SDL_ConvertEventToRenderCoordinates$/, source)
+    assert_match(/^pub foreign def convert_event_to_render_coordinates\(renderer: Renderer, inout event: Event\) -> bool = c\.SDL_ConvertEventToRenderCoordinates$/, source)
     assert_match(/^pub foreign def get_current_time\(out ticks: Time\) -> bool = c\.SDL_GetCurrentTime$/, source)
     assert_match(/^pub foreign def time_to_date_time\(ticks: Time, out dt: DateTime, local_time: bool\) -> bool = c\.SDL_TimeToDateTime$/, source)
-    assert_match(/^pub foreign def render_points\(renderer: ptr\[Renderer\], points: span\[FPoint\]\) -> bool = c\.SDL_RenderPoints\(renderer, points\.data, int<-points\.len\)$/, source)
-    assert_match(/^pub foreign def render_lines\(renderer: ptr\[Renderer\], points: span\[FPoint\]\) -> bool = c\.SDL_RenderLines\(renderer, points\.data, int<-points\.len\)$/, source)
-    assert_match(/^pub foreign def render_rect\(renderer: ptr\[Renderer\], in rect: FRect as const_ptr\[FRect\]\) -> bool = c\.SDL_RenderRect$/, source)
-    assert_match(/^pub foreign def render_rects\(renderer: ptr\[Renderer\], rects: span\[FRect\]\) -> bool = c\.SDL_RenderRects\(renderer, rects\.data, int<-rects\.len\)$/, source)
-    assert_match(/^pub foreign def render_fill_rect\(renderer: ptr\[Renderer\], in rect: FRect as const_ptr\[FRect\]\) -> bool = c\.SDL_RenderFillRect$/, source)
-    assert_match(/^pub foreign def render_fill_rects\(renderer: ptr\[Renderer\], rects: span\[FRect\]\) -> bool = c\.SDL_RenderFillRects\(renderer, rects\.data, int<-rects\.len\)$/, source)
-    assert_match(/^pub foreign def render_debug_text\(renderer: ptr\[Renderer\], x: float, y: float, text: str as cstr\) -> bool = c\.SDL_RenderDebugText$/, source)
+    assert_match(/^pub foreign def render_points\(renderer: Renderer, points: span\[FPoint\]\) -> bool = c\.SDL_RenderPoints\(renderer, points\.data, int<-points\.len\)$/, source)
+    assert_match(/^pub foreign def render_lines\(renderer: Renderer, points: span\[FPoint\]\) -> bool = c\.SDL_RenderLines\(renderer, points\.data, int<-points\.len\)$/, source)
+    assert_match(/^pub foreign def render_rect\(renderer: Renderer, in rect: FRect as const_ptr\[FRect\]\) -> bool = c\.SDL_RenderRect$/, source)
+    assert_match(/^pub foreign def render_rects\(renderer: Renderer, rects: span\[FRect\]\) -> bool = c\.SDL_RenderRects\(renderer, rects\.data, int<-rects\.len\)$/, source)
+    assert_match(/^pub foreign def render_fill_rect\(renderer: Renderer, in rect: FRect as const_ptr\[FRect\]\) -> bool = c\.SDL_RenderFillRect$/, source)
+    assert_match(/^pub foreign def render_fill_rects\(renderer: Renderer, rects: span\[FRect\]\) -> bool = c\.SDL_RenderFillRects\(renderer, rects\.data, int<-rects\.len\)$/, source)
+    assert_match(/^pub foreign def render_debug_text\(renderer: Renderer, x: float, y: float, text: str as cstr\) -> bool = c\.SDL_RenderDebugText$/, source)
     assert_match(/^pub foreign def load_png\(file_name: str as cstr\) -> ptr\[Surface\]\? = c\.SDL_LoadPNG$/, source)
     assert_match(/^pub foreign def gl_get_proc_address\(proc_: cstr\) -> FunctionPointer\? = c\.SDL_GL_GetProcAddress$/, source)
     assert_match(/^pub foreign def egl_get_proc_address\(proc_: cstr\) -> FunctionPointer\? = c\.SDL_EGL_GetProcAddress$/, source)
-    assert_match(/^pub foreign def gl_get_current_window\(\) -> ptr\[Window\]\? = c\.SDL_GL_GetCurrentWindow$/, source)
+    assert_match(/^pub foreign def gl_get_current_window\(\) -> Window\? = c\.SDL_GL_GetCurrentWindow$/, source)
     assert_match(/^pub foreign def gl_get_current_context\(\) -> GLContext\? = c\.SDL_GL_GetCurrentContext$/, source)
     assert_match(/^pub foreign def load_object\(sofile: cstr\) -> ptr\[SharedObject\]\? = c\.SDL_LoadObject$/, source)
     assert_match(/^pub foreign def load_function\(handle: ptr\[SharedObject\], name: cstr\) -> FunctionPointer\? = c\.SDL_LoadFunction$/, source)
@@ -369,6 +370,11 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     refute_match(/^pub type va_list = /, source)
     refute_match(/^pub type TraceLogCallback = /, source)
     refute_match(/^pub foreign def set_trace_log_callback\(/, source)
+    assert_match(/^import std\.bytes as bytes$/, source)
+    assert_match(/^import std\.option as option$/, source)
+    assert_match(/^import std\.vec as vec$/, source)
+    assert_match(/^import std\.string as string$/, source)
+    assert_match(/^import std\.str as text$/, source)
     assert_match(/^pub foreign def load_shader\(vs_file_name: cstr\?, fs_file_name: cstr\?\) -> Shader = c\.LoadShader$/, source)
     assert_match(/^pub foreign def load_shader_from_memory\(vs_code: cstr\?, fs_code: cstr\?\) -> Shader = c\.LoadShaderFromMemory$/, source)
     assert_match(/^pub foreign def set_shader_value\[T\]\(shader: Shader, loc_index: int, in value: T as const_ptr\[void\], uniform_type: int\) -> void = c\.SetShaderValue$/, source)
@@ -376,24 +382,72 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub foreign def load_image\(file_name: str as cstr\) -> Image = c\.LoadImage$/, source)
     assert_match(/^pub foreign def load_image_raw\(file_name: str as cstr, width: int, height: int, format: int, header_size: int\) -> Image = c\.LoadImageRaw$/, source)
     assert_match(/^pub foreign def load_image_anim\(file_name: str as cstr, out frames: int\) -> Image = c\.LoadImageAnim$/, source)
+    assert_match(/^pub foreign def load_image_from_memory\(file_type: str as cstr, file_data: span\[ubyte\]\) -> Image = c\.LoadImageFromMemory\(file_type, file_data\.data, int<-file_data\.len\)$/, source)
+    assert_match(/^pub foreign def set_window_title\(title: str as cstr\) -> void = c\.SetWindowTitle$/, source)
+    assert_match(/^pub foreign def get_monitor_name\(monitor: int\) -> str = text\.cstr_as_str\(c\.GetMonitorName\(monitor\)\)$/, source)
+    assert_match(/^pub foreign def get_clipboard_text\(\) -> str = text\.cstr_as_str\(c\.GetClipboardText\(\)\)$/, source)
+    assert_match(/^pub foreign def get_working_directory\(\) -> str = text\.cstr_as_str\(c\.GetWorkingDirectory\(\)\)$/, source)
+    assert_match(/^pub foreign def get_application_directory\(\) -> str = text\.cstr_as_str\(c\.GetApplicationDirectory\(\)\)$/, source)
+    assert_match(/^pub foreign def get_file_length\(file_name: str as cstr\) -> int = c\.GetFileLength$/, source)
+    assert_match(/^pub foreign def get_file_mod_time\(file_name: str as cstr\) -> ptr_int = c\.GetFileModTime$/, source)
+    assert_match(/^pub foreign def get_file_extension\(file_name: str as cstr\) -> str = text\.cstr_as_str\(c\.GetFileExtension\(file_name\)\)$/, source)
+    assert_match(/^pub foreign def get_file_name\(file_path: str as cstr\) -> str = text\.cstr_as_str\(c\.GetFileName\(file_path\)\)$/, source)
+    assert_match(/^pub foreign def get_file_name_without_ext\(file_path: str as cstr\) -> str = text\.cstr_as_str\(c\.GetFileNameWithoutExt\(file_path\)\)$/, source)
+    assert_match(/^pub foreign def get_directory_path\(file_path: str as cstr\) -> str = text\.cstr_as_str\(c\.GetDirectoryPath\(file_path\)\)$/, source)
+    assert_match(/^pub foreign def get_prev_directory_path\(dir_path: str as cstr\) -> str = text\.cstr_as_str\(c\.GetPrevDirectoryPath\(dir_path\)\)$/, source)
+    assert_match(/^pub foreign def make_directory\(dir_path: str as cstr\) -> int = c\.MakeDirectory$/, source)
+    assert_match(/^pub foreign def change_directory\(dir_path: str as cstr\) -> bool = c\.ChangeDirectory$/, source)
+    assert_match(/^pub foreign def is_path_file\(path: str as cstr\) -> bool = c\.IsPathFile$/, source)
+    assert_match(/^pub foreign def is_file_name_valid\(file_name: str as cstr\) -> bool = c\.IsFileNameValid$/, source)
+    assert_match(/^pub foreign def load_directory_files\(dir_path: str as cstr\) -> FilePathList = c\.LoadDirectoryFiles$/, source)
+    assert_match(/^pub foreign def load_directory_files_ex\(base_path: str as cstr, filter: str as cstr, scan_subdirs: bool\) -> FilePathList = c\.LoadDirectoryFilesEx$/, source)
+    assert_match(/^pub foreign def get_directory_file_count\(dir_path: str as cstr\) -> uint = c\.GetDirectoryFileCount$/, source)
+    assert_match(/^pub foreign def get_directory_file_count_ex\(base_path: str as cstr, filter: str as cstr, scan_subdirs: bool\) -> uint = c\.GetDirectoryFileCountEx$/, source)
+    assert_match(/^pub foreign def get_key_name\(key: int\) -> str = text\.cstr_as_str\(c\.GetKeyName\(key\)\)$/, source)
+    assert_match(/^pub foreign def get_gamepad_name\(gamepad: int\) -> str = text\.cstr_as_str\(c\.GetGamepadName\(gamepad\)\)$/, source)
     assert_match(/^pub foreign def export_image\(image: Image, file_name: str as cstr\) -> bool = c\.ExportImage$/, source)
     assert_match(/^pub foreign def update_texture\[T\]\(texture: Texture, pixels: ptr\[T\] as const_ptr\[void\]\) -> void = c\.UpdateTexture$/, source)
     assert_match(/^pub foreign def update_mesh_buffer\[T\]\(mesh: Mesh, index: int, data: ptr\[T\] as const_ptr\[void\], data_size: int, offset: int\) -> void = c\.UpdateMeshBuffer$/, source)
     assert_match(/^pub foreign def update_audio_stream\[T\]\(stream: AudioStream, data: ptr\[T\] as const_ptr\[void\], frame_count: int\) -> void = c\.UpdateAudioStream$/, source)
     assert_match(/^pub foreign def draw_spline_linear_ptr\(points: const_ptr\[Vector2\], point_count: int, thick: float, color: Color\) -> void = c\.DrawSplineLinear$/, source)
-    assert_match(/^pub foreign def text_format_int_int_int\(format: str as cstr, first: int, second: int, third: int\) -> cstr = c\.TextFormat\(format, first, second, third\)$/, source)
-    assert_match(/^pub foreign def text_format_cstr_float_float\(format: str as cstr, label: str as cstr, first: float, second: float\) -> cstr = c\.TextFormat\(format, label, first, second\)$/, source)
+    assert_match(/^foreign def mt_raw_load_file_data\(file_name: str as cstr, out data_size: int\) -> ptr\[ubyte\]\? = c\.LoadFileData$/, source)
+    assert_match(/^pub def load_file_data\(file_name: str\) -> option\.Option\[bytes\.Buffer\]:$/, source)
+    assert_match(/^    c\.UnloadFileData\(ptr\[ubyte\]<-raw_result\)$/, source)
+    refute_match(/^pub foreign def load_file_data\(file_name: str as cstr, out data_size: int\) -> ptr\[ubyte\]\? = c\.LoadFileData$/, source)
+    refute_match(/^pub foreign def unload_file_data\(consuming data: ptr\[ubyte\]\) -> void = c\.UnloadFileData$/, source)
+    assert_match(/^foreign def mt_raw_load_file_text\(file_name: str as cstr\) -> ptr\[char\]\? = c\.LoadFileText$/, source)
+    assert_match(/^pub def load_file_text\(file_name: str\) -> option\.Option\[string\.String\]:$/, source)
+    assert_match(/^    c\.UnloadFileText\(ptr\[char\]<-raw_result\)$/, source)
+    refute_match(/^pub foreign def load_file_text\(file_name: cstr\) -> ptr\[char\]\? = c\.LoadFileText$/, source)
+    refute_match(/^pub foreign def unload_file_text\(text: ptr\[char\]\) -> void = c\.UnloadFileText$/, source)
+    assert_match(/^foreign def mt_raw_load_utf_8\(codepoints: const_ptr\[int\], length: int\) -> ptr\[char\]\? = c\.LoadUTF8$/, source)
+    assert_match(/^pub def load_utf_8\(codepoints: const_ptr\[int\], length: int\) -> option\.Option\[string\.String\]:$/, source)
+    assert_match(/^    c\.UnloadUTF8\(ptr\[char\]<-raw_result\)$/, source)
+    refute_match(/^pub foreign def load_utf_8\(codepoints: const_ptr\[int\], length: int\) -> ptr\[char\]\? = c\.LoadUTF8$/, source)
+    refute_match(/^pub foreign def unload_utf_8\(text: ptr\[char\]\) -> void = c\.UnloadUTF8$/, source)
+    assert_match(/^pub foreign def text_format_int_int_int\(format: str as cstr, first: int, second: int, third: int\) -> str = text\.cstr_as_str\(c\.TextFormat\(format, first, second, third\)\)$/, source)
+    assert_match(/^pub foreign def text_format_cstr_float_float\(format: str as cstr, label: str as cstr, first: float, second: float\) -> str = text\.cstr_as_str\(c\.TextFormat\(format, label, first, second\)\)$/, source)
     assert_match(/^pub foreign def image_format\(inout image: Image, new_format: int\) -> void = c\.ImageFormat$/, source)
+    assert_match(/^pub foreign def image_kernel_convolution\(inout image: Image, kernel: span\[float\]\) -> void = c\.ImageKernelConvolution\(image, kernel\.data, int<-kernel\.len\)$/, source)
     assert_match(/^pub foreign def image_draw_text_ex\(inout dst: Image, font: Font, text: str as cstr, position: Vector2, font_size: float, spacing: float, tint: Color\) -> void = c\.ImageDrawTextEx$/, source)
     assert_match(/^pub foreign def draw_text_ex\(font: Font, text: str as cstr, position: Vector2, font_size: float, spacing: float, tint: Color\) -> void = c\.DrawTextEx$/, source)
     assert_match(/^pub foreign def load_font\(file_name: str as cstr\) -> Font = c\.LoadFont$/, source)
     assert_match(/^pub foreign def load_font_ex\(file_name: str as cstr, font_size: int, codepoints: ptr\[int\]\?, codepoint_count: int\) -> Font = c\.LoadFontEx$/, source)
     assert_match(/^pub foreign def load_sound\(file_name: str as cstr\) -> Sound = c\.LoadSound$/, source)
+    assert_match(/^pub foreign def load_wave_from_memory\(file_type: str as cstr, file_data: span\[ubyte\]\) -> Wave = c\.LoadWaveFromMemory\(file_type, file_data\.data, int<-file_data\.len\)$/, source)
+    assert_match(/^pub foreign def set_clipboard_text\(text: str as cstr\) -> void = c\.SetClipboardText$/, source)
     assert_match(/^pub foreign def load_font_from_memory\(file_type: cstr, file_data: const_ptr\[ubyte\], data_size: int, font_size: int, codepoints: ptr\[int\]\?, codepoint_count: int\) -> Font = c\.LoadFontFromMemory$/, source)
     assert_match(/^pub foreign def gen_texture_mipmaps\(inout texture: Texture2D\) -> void = c\.GenTextureMipmaps$/, source)
     assert_match(/^pub foreign def load_font_data\(file_data: const_ptr\[ubyte\], data_size: int, font_size: int, codepoints: ptr\[int\]\?, codepoint_count: int, kind: FontType, out glyph_count: int\) -> ptr\[GlyphInfo\] = c\.LoadFontData$/, source)
     assert_match(/^pub foreign def gen_image_font_atlas\(glyphs: const_ptr\[GlyphInfo\], out glyph_recs: ptr\[Rectangle\], glyph_count: int, font_size: int, padding: int, pack_method: int\) -> Image = c\.GenImageFontAtlas$/, source)
-    assert_match(/^pub foreign def load_codepoints_ptr\(text: str as cstr, out count: int\) -> ptr\[int\]\? = c\.LoadCodepoints$/, source)
+    assert_match(/^foreign def mt_raw_load_codepoints\(text: str as cstr, out count: int\) -> ptr\[int\]\? = c\.LoadCodepoints$/, source)
+    assert_match(/^pub def load_codepoints\(text: str\) -> option\.Option\[vec\.Vec\[int\]\]:$/, source)
+    assert_match(/^    c\.UnloadCodepoints\(ptr\[int\]<-raw_result\)$/, source)
+    refute_match(/^pub foreign def load_codepoints_ptr\(text: str as cstr, out count: int\) -> ptr\[int\]\? = c\.LoadCodepoints$/, source)
+    refute_match(/^pub foreign def unload_codepoints\(codepoints: ptr\[int\]\) -> void = c\.UnloadCodepoints$/, source)
+    assert_match(/^pub foreign def codepoint_to_utf_8\(codepoint: int, out utf_8_size: int\) -> str = text\.cstr_as_str\(c\.CodepointToUTF8\(codepoint, utf_8_size\)\)$/, source)
+    assert_match(/^pub foreign def text_subtext\(text: str as cstr, position: int, length: int\) -> str = text\.cstr_as_str\(c\.TextSubtext\(text, position, length\)\)$/, source)
+    assert_match(/^pub foreign def text_remove_spaces\(text: str as cstr\) -> str = text\.cstr_as_str\(c\.TextRemoveSpaces\(text\)\)$/, source)
     assert_match(/^pub foreign def load_fragment_shader\(fs_file_name: str as cstr\) -> Shader = c\.LoadShader\(null, fs_file_name\)$/, source)
     refute_match(/^# extension from /, source)
     refute_match(/^pub struct CodepointList:$/, source)
@@ -460,6 +514,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     source = File.read(binding.binding_path)
     assert_match(/^module std\.steamworks$/, source)
     assert_match(/^import std\.c\.steamworks as c$/, source)
+    assert_match(/^import std\.str as text$/, source)
     assert_match(/^pub type AppId_t = c\.AppId_t$/, source)
     assert_match(/^pub type Friends = c\.ISteamFriends$/, source)
     assert_match(/^pub type ErrMsg = c\.SteamErrMsg$/, source)
@@ -469,7 +524,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub foreign def init\(\) -> bool = c\.SteamAPI_Init$/, source)
     assert_match(/^pub foreign def shutdown\(\) -> void = c\.SteamAPI_Shutdown$/, source)
     assert_match(/^pub foreign def friends\(\) -> ptr\[Friends\] = c\.SteamAPI_SteamFriends$/, source)
-    assert_match(/^pub foreign def friends_get_persona_name\(self: ptr\[Friends\]\) -> cstr = c\.SteamAPI_ISteamFriends_GetPersonaName$/, source)
+    assert_match(/^pub foreign def friends_get_persona_name\(self: ptr\[Friends\]\) -> str = text\.cstr_as_str\(c\.SteamAPI_ISteamFriends_GetPersonaName\(self\)\)$/, source)
     assert_match(/^pub foreign def internal_context_init\(p_context_init_data: ptr\[void\]\) -> ptr\[void\] = c\.SteamInternal_ContextInit$/, source)
     refute_match(/^pub foreign def steam_api_init\(/, source)
     refute_match(/^pub foreign def steam_api_i_steam_friends_get_persona_name\(/, source)
@@ -555,11 +610,404 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         pub foreign def get_mode() -> Mode = c.rlGetMode
       MT
 
-      generated = binding.generate(module_roots: [dir])
+      module_roots = [dir, MilkTea.root]
+
+      generated = binding.generate(module_roots: module_roots)
       assert_equal expected, generated
 
       File.write(binding_path, generated)
-      assert_equal File.expand_path(raw_path), binding.check!(module_roots: [dir])
+      assert_equal File.expand_path(raw_path), binding.check!(module_roots: module_roots)
+    end
+  end
+
+  def test_generate_supports_public_opaque_handles_and_projects_plain_handle_signatures
+    Dir.mktmpdir("milk-tea-imported-binding-opaque-handles") do |dir|
+      raw_path = File.join(dir, "std", "c", "sample.mt")
+      binding_path = File.join(dir, "std", "sample.mt")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
+      FileUtils.mkdir_p(File.dirname(raw_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
+
+      File.write(raw_path, <<~MT)
+        extern module std.c.sample:
+            opaque WindowHandle = c"WindowHandle"
+
+            extern def CreateWindow() -> ptr[WindowHandle]?
+            extern def DestroyWindow(window: ptr[WindowHandle]) -> void
+            extern def CreateWindowInPlace(window: ptr[ptr[WindowHandle]]?) -> bool
+      MT
+
+      File.write(policy_path, JSON.pretty_generate({
+        module_name: "std.sample",
+        raw_module_name: "std.c.sample",
+        raw_import_alias: "c",
+        types: {
+          overrides: [
+            {
+              raw: "WindowHandle",
+              name: "Window",
+              kind: "opaque",
+            },
+          ],
+        },
+        constants: {},
+        functions: {
+          overrides: [
+            {
+              raw: "CreateWindowInPlace",
+              name: "create_window_in_place",
+              params: [
+                {
+                  name: "window",
+                  type: "Window",
+                  mode: "out",
+                },
+              ],
+            },
+          ],
+        },
+      }))
+
+      binding = MilkTea::ImportedBindings::Binding.new(
+        name: "sample",
+        module_name: "std.sample",
+        binding_path:,
+        raw_module_name: "std.c.sample",
+        policy_path:,
+      )
+
+      expected = <<~MT
+        # generated by mtc imported-bindings from std.c.sample using sample.binding.json
+        module std.sample
+
+        import std.c.sample as c
+
+        pub opaque Window = c"WindowHandle"
+
+        pub foreign def create_window() -> Window? = c.CreateWindow
+        pub foreign def destroy_window(window: Window) -> void = c.DestroyWindow
+        pub foreign def create_window_in_place(out window: Window) -> bool = c.CreateWindowInPlace
+      MT
+
+      generated = binding.generate(module_roots: [dir])
+      assert_equal expected, generated
+    end
+  end
+
+  def test_generate_supports_owned_string_wrappers_for_raw_pointer_results
+    Dir.mktmpdir("milk-tea-imported-binding-owned-string-wrapper") do |dir|
+      raw_path = File.join(dir, "std", "c", "sample.mt")
+      binding_path = File.join(dir, "std", "sample.mt")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
+      FileUtils.mkdir_p(File.dirname(raw_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
+
+      File.write(raw_path, <<~MT)
+        extern module std.c.sample:
+            extern def LoadText(file_name: cstr) -> ptr[char]?
+            extern def UnloadText(text: ptr[char]) -> void
+      MT
+
+      File.write(policy_path, JSON.pretty_generate({
+        module_name: "std.sample",
+        raw_module_name: "std.c.sample",
+        raw_import_alias: "c",
+        imports: [
+          {
+            module_name: "std.option",
+            alias: "option",
+          },
+          {
+            module_name: "std.str",
+            alias: "text",
+          },
+          {
+            module_name: "std.string",
+            alias: "string",
+          },
+        ],
+        types: {},
+        constants: {},
+        functions: {
+          include: [],
+          overrides: [
+            {
+              raw: "LoadText",
+              name: "load_text",
+              params: [
+                {
+                  name: "file_name",
+                  type: "str",
+                  boundary_type: "cstr",
+                },
+              ],
+              wrapper: {
+                kind: "owned_string",
+                option_alias: "option",
+                text_alias: "text",
+                string_alias: "string",
+                release: "c.UnloadText",
+              },
+            },
+          ],
+        },
+      }))
+
+      binding = MilkTea::ImportedBindings::Binding.new(
+        name: "sample",
+        module_name: "std.sample",
+        binding_path:,
+        raw_module_name: "std.c.sample",
+        policy_path:,
+      )
+
+      expected = [
+        "# generated by mtc imported-bindings from std.c.sample using sample.binding.json",
+        "module std.sample",
+        "",
+        "import std.c.sample as c",
+        "import std.option as option",
+        "import std.str as text",
+        "import std.string as string",
+        "",
+        "foreign def mt_raw_load_text(file_name: str as cstr) -> ptr[char]? = c.LoadText",
+        "",
+        "",
+        "pub def load_text(file_name: str) -> option.Option[string.String]:",
+        "    let raw_result = mt_raw_load_text(file_name)",
+        "    if raw_result == null:",
+        "        return option.Option[string.String].none()",
+        "",
+        "    let value = string.String.from_str(text.chars_as_str(ptr[char]<-raw_result))",
+        "    c.UnloadText(ptr[char]<-raw_result)",
+        "    return option.Option[string.String].some(value)",
+      ].join("\n") + "\n"
+
+      module_roots = [dir, MilkTea.root]
+
+      generated = binding.generate(module_roots: module_roots)
+      assert_equal expected, generated
+
+      File.write(binding_path, generated)
+      assert_equal File.expand_path(raw_path), binding.check!(module_roots: module_roots)
+    end
+  end
+
+  def test_generate_supports_owned_bytes_wrappers_for_pointer_and_count_results
+    Dir.mktmpdir("milk-tea-imported-binding-owned-bytes-wrapper") do |dir|
+      raw_path = File.join(dir, "std", "c", "sample.mt")
+      binding_path = File.join(dir, "std", "sample.mt")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
+      FileUtils.mkdir_p(File.dirname(raw_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
+
+      File.write(raw_path, <<~MT)
+        extern module std.c.sample:
+            extern def LoadData(file_name: cstr, data_size: ptr[int]) -> ptr[ubyte]?
+            extern def UnloadData(data: ptr[ubyte]) -> void
+      MT
+
+      File.write(policy_path, JSON.pretty_generate({
+        module_name: "std.sample",
+        raw_module_name: "std.c.sample",
+        raw_import_alias: "c",
+        imports: [
+          {
+            module_name: "std.bytes",
+            alias: "bytes",
+          },
+          {
+            module_name: "std.option",
+            alias: "option",
+          },
+        ],
+        types: {},
+        constants: {},
+        functions: {
+          include: [],
+          overrides: [
+            {
+              raw: "LoadData",
+              name: "load_data",
+              params: [
+                {
+                  name: "file_name",
+                  type: "str",
+                  boundary_type: "cstr",
+                },
+                {
+                  name: "data_size",
+                  type: "int",
+                  mode: "out",
+                },
+              ],
+              wrapper: {
+                kind: "owned_bytes",
+                option_alias: "option",
+                bytes_alias: "bytes",
+                release: "c.UnloadData",
+              },
+            },
+          ],
+        },
+      }))
+
+      binding = MilkTea::ImportedBindings::Binding.new(
+        name: "sample",
+        module_name: "std.sample",
+        binding_path:,
+        raw_module_name: "std.c.sample",
+        policy_path:,
+      )
+
+      expected = [
+        "# generated by mtc imported-bindings from std.c.sample using sample.binding.json",
+        "module std.sample",
+        "",
+        "import std.c.sample as c",
+        "import std.bytes as bytes",
+        "import std.option as option",
+        "",
+        "foreign def mt_raw_load_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadData",
+        "",
+        "",
+        "pub def load_data(file_name: str) -> option.Option[bytes.Buffer]:",
+        "    var data_size = 0",
+        "    let raw_result = mt_raw_load_data(file_name, data_size)",
+        "    if raw_result == null:",
+        "        return option.Option[bytes.Buffer].none()",
+        "",
+        "    if data_size < 0:",
+        "        c.UnloadData(ptr[ubyte]<-raw_result)",
+        "        panic(c\"imported wrapper load_data returned negative size\")",
+        "",
+        "    var value = bytes.with_capacity(ptr_uint<-data_size)",
+        "    bytes.append(ref_of(value), span[ubyte](data = ptr[ubyte]<-raw_result, len = ptr_uint<-data_size))",
+        "    c.UnloadData(ptr[ubyte]<-raw_result)",
+        "    return option.Option[bytes.Buffer].some(value)",
+      ].join("\n") + "\n"
+
+      module_roots = [dir, MilkTea.root]
+
+      generated = binding.generate(module_roots: module_roots)
+      assert_equal expected, generated
+
+      File.write(binding_path, generated)
+      assert_equal File.expand_path(raw_path), binding.check!(module_roots: module_roots)
+    end
+  end
+
+  def test_generate_supports_owned_vec_wrappers_for_pointer_and_count_results
+    Dir.mktmpdir("milk-tea-imported-binding-owned-vec-wrapper") do |dir|
+      raw_path = File.join(dir, "std", "c", "sample.mt")
+      binding_path = File.join(dir, "std", "sample.mt")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
+      FileUtils.mkdir_p(File.dirname(raw_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
+
+      File.write(raw_path, <<~MT)
+        extern module std.c.sample:
+            extern def LoadItems(text: cstr, count: ptr[int]) -> ptr[int]?
+            extern def UnloadItems(items: ptr[int]) -> void
+      MT
+
+      File.write(policy_path, JSON.pretty_generate({
+        module_name: "std.sample",
+        raw_module_name: "std.c.sample",
+        raw_import_alias: "c",
+        imports: [
+          {
+            module_name: "std.option",
+            alias: "option",
+          },
+          {
+            module_name: "std.vec",
+            alias: "vec",
+          },
+        ],
+        types: {},
+        constants: {},
+        functions: {
+          include: [],
+          overrides: [
+            {
+              raw: "LoadItems",
+              name: "load_items",
+              params: [
+                {
+                  name: "text",
+                  type: "str",
+                  boundary_type: "cstr",
+                },
+                {
+                  name: "count",
+                  type: "int",
+                  mode: "out",
+                },
+              ],
+              wrapper: {
+                kind: "owned_vec",
+                option_alias: "option",
+                vec_alias: "vec",
+                release: "c.UnloadItems",
+              },
+            },
+          ],
+        },
+      }))
+
+      binding = MilkTea::ImportedBindings::Binding.new(
+        name: "sample",
+        module_name: "std.sample",
+        binding_path:,
+        raw_module_name: "std.c.sample",
+        policy_path:,
+      )
+
+      expected = <<~MT
+        # generated by mtc imported-bindings from std.c.sample using sample.binding.json
+        module std.sample
+
+        import std.c.sample as c
+        import std.option as option
+        import std.vec as vec
+
+        foreign def mt_raw_load_items(text: str as cstr, out count: int) -> ptr[int]? = c.LoadItems
+
+
+        pub def load_items(text: str) -> option.Option[vec.Vec[int]]:
+            var count = 0
+            let raw_result = mt_raw_load_items(text, count)
+            if count < 0:
+                if raw_result != null:
+                    c.UnloadItems(ptr[int]<-raw_result)
+                panic(c"imported wrapper load_items returned negative count")
+
+            var value = vec.Vec[int].with_capacity(ptr_uint<-count)
+            if count == 0:
+                if raw_result != null:
+                    c.UnloadItems(ptr[int]<-raw_result)
+                return option.Option[vec.Vec[int]].some(value)
+
+            if raw_result == null:
+                return option.Option[vec.Vec[int]].none()
+
+            var index: ptr_uint = 0
+            while index < ptr_uint<-count:
+                unsafe:
+                    value.push(read(ptr[int]<-raw_result + index))
+                index += 1
+            c.UnloadItems(ptr[int]<-raw_result)
+            return option.Option[vec.Vec[int]].some(value)
+      MT
+
+      module_roots = [dir, MilkTea.root]
+
+      generated = binding.generate(module_roots: module_roots)
+      assert_equal expected, generated
+
+      File.write(binding_path, generated)
+      assert_equal File.expand_path(raw_path), binding.check!(module_roots: module_roots)
     end
   end
 
