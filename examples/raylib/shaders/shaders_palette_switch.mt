@@ -101,12 +101,13 @@ def main() -> int:
 
         var palette_index = 0
         while palette_index < colors_per_palette:
+            let channel = ubyte<-palette_index
             rl.DrawRectangle(
                 0,
                 line_height * palette_index,
                 rl.GetScreenWidth(),
                 line_height,
-                rl.Color(r = palette_index, g = palette_index, b = palette_index, a = 255),
+                rl.Color(r = channel, g = channel, b = channel, a = 255),
             )
             palette_index += 1
 

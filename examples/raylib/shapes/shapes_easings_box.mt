@@ -67,7 +67,7 @@ def main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
-    let center_x = rl.GetScreenWidth() / 2.0
+    let center_x: float = rl.GetScreenWidth() / 2.0
     let center_y_delta = float<-(rl.GetScreenHeight() / 2 + 100)
 
     var rec = rl.Rectangle(x = center_x, y = -100.0, width = 100.0, height = 100.0)

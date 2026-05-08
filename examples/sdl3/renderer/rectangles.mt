@@ -25,8 +25,8 @@ def pump_events() -> bool:
 
 def render_frame() -> void:
     let now = int<-c.SDL_GetTicks()
-    let direction = if (now % 2000) >= 1000: 1.0 else: -1.0
-    let scale = (float<-((now % 1000) - 500) / 500.0) * direction
+    let direction: float = if (now % 2000) >= 1000: 1.0 else: -1.0
+    let scale: float = (float<-((now % 1000) - 500) / 500.0) * direction
     let column_width = float<-window_width / float<-rect_count
 
     var rects = zero[array[c.SDL_FRect, 16]]
@@ -59,7 +59,7 @@ def render_frame() -> void:
     c.SDL_RenderFillRect(renderer, ptr_of(rects[0]))
 
     for index in 0..rect_count:
-        let height = float<-index * 8.0
+        let height: float = float<-index * 8.0
         rects[index].x = float<-index * column_width
         rects[index].y = float<-window_height - height
         rects[index].w = column_width

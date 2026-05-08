@@ -1,0 +1,135 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "English"
+
+DEFAULT_PATTERNS = [
+  "examples/raylib/**/*.mt",
+  "examples/sdl3/**/*.mt",
+].freeze
+
+def usage(io)
+  io.puts <<~TEXT
+    Usage: ruby bin/profile-mtc-checks [--start-after PATH] [--report-all] [--summary PATH] [PATH_OR_GLOB ...]
+
+      Run `bin/mtc check` over the matched files, printing elapsed time for each file.
+      Defaults to:
+        examples/raylib/**/*.mt
+        examples/sdl3/**/*.mt
+  TEXT
+end
+
+def parse_arguments(argv)
+  patterns = []
+  start_after = nil
+  report_all = false
+  summary_path = nil
+
+  until argv.empty?
+    argument = argv.shift
+
+    case argument
+    when "-h", "--help"
+      usage($stdout)
+      exit(0)
+    when "--start-after"
+      abort("missing path after --start-after") if argv.empty?
+
+      start_after = argv.shift
+    when /\A--start-after=(.+)\z/
+      start_after = Regexp.last_match(1)
+    when "--report-all"
+      report_all = true
+    when "--summary"
+      abort("missing path after --summary") if argv.empty?
+
+      summary_path = argv.shift
+    when /\A--summary=(.+)\z/
+      summary_path = Regexp.last_match(1)
+    else
+      patterns << argument
+    end
+  end
+
+  [
+    start_after,
+    report_all,
+    summary_path,
+    patterns.empty? ? DEFAULT_PATTERNS : patterns,
+  ]
+end
+
+def expand_files(patterns)
+  patterns.flat_map { |pattern| Dir.glob(pattern) }
+          .select { |path| File.file?(path) }
+          .uniq
+          .sort
+end
+
+def resume_from(files, start_after)
+  return files if start_after.nil?
+
+  start_index = files.index(start_after)
+  abort("start-after path not found in selected files: #{start_after}") if start_index.nil?
+
+  files[(start_index + 1)..] || []
+end
+
+def write_summary(summary_path, failures)
+  return if summary_path.nil?
+
+  File.write(
+    summary_path,
+    failures.map { |failure| "#{failure[:path]}\t#{failure[:exitstatus]}" }.join("\n") + (failures.empty? ? "" : "\n"),
+  )
+end
+
+start_after, report_all, summary_path, patterns = parse_arguments(ARGV.dup)
+files = resume_from(expand_files(patterns), start_after)
+
+abort("no files matched the selected paths") if files.empty?
+
+total_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+failures = []
+
+files.each_with_index do |path, index|
+  current = index + 1
+  total = files.length
+  puts(format("[start %03d/%03d] %s", current, total, path))
+
+  started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  success = system("ruby", "bin/mtc", "check", path)
+  elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
+
+  puts(format("[done  %03d/%03d] %7.3fs %s", current, total, elapsed, path))
+
+  next if success
+
+  puts("FAILED:#{path}")
+
+  failures << {
+    path: path,
+    exitstatus: $CHILD_STATUS&.exitstatus || 1,
+  }
+
+  unless report_all
+    write_summary(summary_path, failures)
+    exit(failures.first[:exitstatus])
+  end
+end
+
+total_elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - total_started_at
+puts(format("[total] %7.3fs %d files", total_elapsed, files.length))
+
+if failures.empty?
+  write_summary(summary_path, failures)
+  exit(0)
+end
+
+puts(format("[failures] %d", failures.length))
+failures.each do |failure|
+  puts(format("[failure] exit=%d %s", failure[:exitstatus], failure[:path]))
+end
+
+write_summary(summary_path, failures)
+exit(failures.first[:exitstatus])

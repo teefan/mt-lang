@@ -35,9 +35,9 @@ def main() -> int:
         )
         spacing += width
         build_colors[index] = rl.Color(
-            r = rl.GetRandomValue(200, 240),
-            g = rl.GetRandomValue(200, 240),
-            b = rl.GetRandomValue(200, 250),
+            r = ubyte<-rl.GetRandomValue(200, 240),
+            g = ubyte<-rl.GetRandomValue(200, 240),
+            b = ubyte<-rl.GetRandomValue(200, 250),
             a = 255,
         )
 
@@ -89,8 +89,8 @@ def main() -> int:
         for index in 0..building_count:
             rl.DrawRectangleRec(buildings[index], build_colors[index])
         rl.DrawRectangleRec(player, rl.RED)
-        rl.DrawLine(camera.target.x, -screen_height * 10, camera.target.x, screen_height * 10, rl.GREEN)
-        rl.DrawLine(-screen_width * 10, camera.target.y, screen_width * 10, camera.target.y, rl.GREEN)
+        rl.DrawLine(int<-camera.target.x, -screen_height * 10, int<-camera.target.x, screen_height * 10, rl.GREEN)
+        rl.DrawLine(-screen_width * 10, int<-camera.target.y, screen_width * 10, int<-camera.target.y, rl.GREEN)
         rl.EndMode2D()
 
         rl.DrawText(screen_area_text, 640, 10, 20, rl.RED)

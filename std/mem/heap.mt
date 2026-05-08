@@ -40,7 +40,7 @@ pub def alloc_bytes(size_bytes: ptr_uint) -> ptr[void]?:
     if size_bytes == 0:
         return null
 
-    return libc.malloc(ulong<-size_bytes)
+    return libc.malloc(ptr_uint<-size_bytes)
 
 
 pub def must_alloc_bytes(size_bytes: ptr_uint) -> ptr[void]:
@@ -94,7 +94,7 @@ pub def alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr_uint) -> ptr
     if mul_overflows(count, element_size_bytes):
         return null
 
-    return libc.calloc(ulong<-count, ulong<-element_size_bytes)
+    return libc.calloc(ptr_uint<-count, ptr_uint<-element_size_bytes)
 
 
 pub def must_alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr_uint) -> ptr[void]:
@@ -114,7 +114,7 @@ pub def resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[void]?:
         release_bytes(memory)
         return null
 
-    return libc.realloc(memory, ulong<-size_bytes)
+    return libc.realloc(memory, ptr_uint<-size_bytes)
 
 
 pub def must_resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[void]:

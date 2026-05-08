@@ -24,7 +24,7 @@ def main() -> int:
     rl.SetAudioStreamBufferSizeDefault(buffer_size)
     var buffer = zero[array[float, 4096]]
 
-    let stream = rl.LoadAudioStream(sample_rate, 32, 1)
+    let stream = rl.LoadAudioStream(uint<-sample_rate, 32, 1)
     defer rl.UnloadAudioStream(stream)
 
     var pan: float = 0.0

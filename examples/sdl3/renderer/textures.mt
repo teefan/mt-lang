@@ -28,8 +28,8 @@ def pump_events() -> bool:
 
 def render_frame() -> void:
     let now = int<-c.SDL_GetTicks()
-    let direction = if (now % 2000) >= 1000: 1.0 else: -1.0
-    let scale = (float<-((now % 1000) - 500) / 500.0) * direction
+    let direction: float = if (now % 2000) >= 1000: 1.0 else: -1.0
+    let scale: float = (float<-((now % 1000) - 500) / 500.0) * direction
     let texture_width_f = float<-texture_width
     let texture_height_f = float<-texture_height
 

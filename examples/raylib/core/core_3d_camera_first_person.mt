@@ -76,9 +76,9 @@ def main() -> int:
             z = rl.GetRandomValue(-15, 15),
         )
         colors[index] = rl.Color(
-            r = rl.GetRandomValue(20, 255),
-            g = rl.GetRandomValue(10, 55),
-            b = 30,
+            r = ubyte<-rl.GetRandomValue(20, 255),
+            g = ubyte<-rl.GetRandomValue(10, 55),
+            b = ubyte<-30,
             a = 255,
         )
 

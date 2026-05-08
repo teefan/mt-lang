@@ -968,7 +968,13 @@ module MilkTea
               await_fields[statement.value.object_id] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
               await_counter += 1
             end
-            env[:scopes].last[statement.name] = local_binding(type:, c_name: statement.name, mutable: statement.kind == :var, pointer: false)
+            env[:scopes].last[statement.name] = local_binding(
+              type:,
+              c_name: statement.name,
+              mutable: statement.kind == :var,
+              pointer: false,
+              const_value: statement.kind == :let && statement.value ? compile_time_const_value(statement.value, env:) : nil,
+            )
           when AST::Assignment
             next unless statement.value.is_a?(AST::AwaitExpr)
 
@@ -1036,7 +1042,13 @@ module MilkTea
               await_fields[statement.value.object_id] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
               await_counter += 1
             end
-            env[:scopes].last[statement.name] = local_binding(type:, c_name: statement.name, mutable: statement.kind == :var, pointer: false)
+            env[:scopes].last[statement.name] = local_binding(
+              type:,
+              c_name: statement.name,
+              mutable: statement.kind == :var,
+              pointer: false,
+              const_value: statement.kind == :let && statement.value ? compile_time_const_value(statement.value, env:) : nil,
+            )
           when AST::Assignment
             if statement.value.is_a?(AST::AwaitExpr)
               await_fields[statement.value.object_id] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
@@ -1522,12 +1534,24 @@ module MilkTea
             setup, value = normalize_async_expression(statement.value, counter, env:, expected_type: declared_type)
             normalized = AST::LocalDecl.new(kind: statement.kind, name: statement.name, type: statement.type, value: value, line: statement.line)
             local_type = statement.type ? resolve_type_ref(statement.type) : original_value_type
-            current_actual_scope(env[:scopes])[statement.name] = local_binding(type: local_type, c_name: statement.name, mutable: statement.kind == :var, pointer: false)
+            current_actual_scope(env[:scopes])[statement.name] = local_binding(
+              type: local_type,
+              c_name: statement.name,
+              mutable: statement.kind == :var,
+              pointer: false,
+              const_value: statement.kind == :let ? compile_time_const_value(statement.value, env:) : nil,
+            )
             return setup + [normalized]
           end
 
           local_type = resolve_type_ref(statement.type)
-          current_actual_scope(env[:scopes])[statement.name] = local_binding(type: local_type, c_name: statement.name, mutable: statement.kind == :var, pointer: false)
+          current_actual_scope(env[:scopes])[statement.name] = local_binding(
+            type: local_type,
+            c_name: statement.name,
+            mutable: statement.kind == :var,
+            pointer: false,
+            const_value: nil,
+          )
           [statement]
         when AST::Assignment
           target_setup, target = normalize_async_assignment_target(statement.target, counter, env:)
@@ -2370,8 +2394,15 @@ module MilkTea
                     external_numeric: external_numeric_assignment_target?(statement.target, env:),
                     contextual_int_to_float: contextual_int_to_float_target?(target.type),
                   )
+                elsif ["+=", "-=", "*=", "/="].include?(statement.operator)
+                  lower_contextual_expression(
+                    prepared_value,
+                    env:,
+                    expected_type: target.type,
+                    contextual_int_to_float: contextual_int_to_float_target?(target.type),
+                  )
                 else
-                  lower_expression(statement.value, env:, expected_type: target.type)
+                  lower_expression(prepared_value, env:, expected_type: target.type)
                 end
         update_cstr_metadata_for_assignment!(statement, prepared_value, env)
         if statement.operator == "=" && contains_proc_storage_type?(target.type)
@@ -2656,6 +2687,7 @@ module MilkTea
               pointer: false,
               cstr_backed: cstr_backed_storage_value?(type, prepared_value, local_env),
               cstr_list_backed: cstr_list_backed_storage_value?(type, prepared_value, local_env),
+              const_value: statement.kind == :let && prepared_value ? compile_time_const_value(prepared_value, env: local_env) : nil,
             )
             lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:, line: statement.line, source_path: @current_analysis_path) unless emitted_decl
             local_defers.concat(prepared_cleanups)
@@ -2709,8 +2741,15 @@ module MilkTea
                           external_numeric: external_numeric_assignment_target?(statement.target, env: local_env),
                           contextual_int_to_float: contextual_int_to_float_target?(target.type),
                         )
+                      elsif ["+=", "-=", "*=", "/="].include?(statement.operator)
+                        lower_contextual_expression(
+                          prepared_value,
+                          env: local_env,
+                          expected_type: target.type,
+                          contextual_int_to_float: contextual_int_to_float_target?(target.type),
+                        )
                       else
-                        lower_expression(statement.value, env: local_env, expected_type: target.type)
+                        lower_expression(prepared_value, env: local_env, expected_type: target.type)
                       end
             end
             update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
@@ -5620,7 +5659,7 @@ module MilkTea
         return lower_direct_function_to_proc_expression(expression, lowered, env:, expected_type:) if direct_function_to_proc_contextual_compatibility?(expression, lowered.type, env:, expected_type:)
         return lower_str_builder_to_span_expression(lowered, expected_type) if str_builder_to_span_compatible?(lowered.type, expected_type)
         return lower_array_to_span_expression(lowered, expected_type) if array_to_span_compatible?(lowered.type, expected_type)
-        return cast_expression(lowered, expected_type) if contextual_numeric_compatibility?(expression, lowered.type, expected_type, external_numeric:, contextual_int_to_float:)
+        return cast_expression(lowered, expected_type) if contextual_numeric_compatibility?(expression, lowered.type, expected_type, env:, external_numeric:, contextual_int_to_float:)
 
         lowered
       end
@@ -5797,8 +5836,8 @@ module MilkTea
         )
       end
 
-      def contextual_numeric_compatibility?(expression, actual_type, expected_type, external_numeric: false, contextual_int_to_float: false)
-        return true if integer_literal_numeric_compatibility?(expression, expected_type)
+      def contextual_numeric_compatibility?(expression, actual_type, expected_type, env:, external_numeric: false, contextual_int_to_float: false)
+        return true if exact_compile_time_numeric_compatibility?(expression, expected_type, env:)
         return true if integer_to_char_compatibility?(actual_type, expected_type)
         return true if external_numeric && external_numeric_compatibility?(actual_type, expected_type)
         return true if contextual_int_to_float && contextual_int_to_float_compatibility?(actual_type, expected_type)
@@ -5944,6 +5983,7 @@ module MilkTea
               pointer: false,
               cstr_backed: cstr_backed_storage_value?(type, statement.value, simulated_env),
               cstr_list_backed: cstr_list_backed_storage_value?(type, statement.value, simulated_env),
+              const_value: statement.kind == :let && statement.value ? compile_time_const_value(statement.value, env: simulated_env) : nil,
             )
           when AST::Assignment
             update_cstr_metadata_for_assignment!(statement, statement.value, simulated_env)
@@ -6007,8 +6047,65 @@ module MilkTea
         binding && binding[:cstr_list_backed]
       end
 
-      def integer_literal_numeric_compatibility?(expression, expected_type)
-        integer_literal_expression?(expression) && expected_type.is_a?(Types::Primitive) && expected_type.numeric?
+      def exact_compile_time_numeric_compatibility?(expression, expected_type, env: nil)
+        return false unless expected_type.is_a?(Types::Primitive) && expected_type.numeric?
+
+        value = compile_time_const_value(expression, env:)
+        return false unless value.is_a?(Numeric)
+
+        numeric_constant_fits_type?(value, expected_type)
+      end
+
+      def numeric_constant_fits_type?(value, expected_type)
+        if expected_type.integer?
+          integer_constant_fits_type?(value, expected_type)
+        else
+          float_constant_fits_type?(value, expected_type)
+        end
+      end
+
+      def integer_constant_fits_type?(value, expected_type)
+        integer_value = exact_integer_constant_value(value)
+        return false if integer_value.nil?
+
+        value_fits_integer_type?(integer_value, expected_type)
+      end
+
+      def float_constant_fits_type?(value, expected_type)
+        return false unless value.is_a?(Numeric)
+
+        float_value = value.to_f
+        return false unless float_value.finite?
+        return true if expected_type.name == "double"
+
+        exactly_representable_float32?(float_value)
+      end
+
+      def exact_integer_constant_value(value)
+        return value if value.is_a?(Integer)
+        return nil unless value.is_a?(Float) && value.finite?
+
+        integer_value = value.to_i
+        integer_value.to_f == value ? integer_value : nil
+      end
+
+      def value_fits_integer_type?(value, expected_type)
+        return false unless expected_type.is_a?(Types::Primitive) && expected_type.integer?
+
+        width = expected_type.integer_width
+        return false if width.nil?
+
+        min_value, max_value = if expected_type.signed_integer?
+                                 [-(1 << (width - 1)), (1 << (width - 1)) - 1]
+                               else
+                                 [0, (1 << width) - 1]
+                               end
+
+        value >= min_value && value <= max_value
+      end
+
+      def exactly_representable_float32?(value)
+        [value].pack("f").unpack1("f") == value
       end
 
       def integer_to_char_compatibility?(actual_type, expected_type)
@@ -6032,8 +6129,25 @@ module MilkTea
       end
 
       def external_numeric_compatibility?(actual_type, expected_type)
-        actual_type.is_a?(Types::Primitive) && actual_type.numeric? &&
-          expected_type.is_a?(Types::Primitive) && expected_type.numeric?
+        return false unless actual_type.is_a?(Types::Primitive) && expected_type.is_a?(Types::Primitive)
+        return false unless actual_type.numeric? && expected_type.numeric?
+
+        return lossless_external_integer_compatibility?(actual_type, expected_type) if actual_type.integer? && expected_type.integer?
+        return expected_type.float_width >= actual_type.float_width if actual_type.float? && expected_type.float?
+
+        false
+      end
+
+      def lossless_external_integer_compatibility?(actual_type, expected_type)
+        return false unless actual_type.fixed_width_integer? && expected_type.fixed_width_integer?
+
+        if actual_type.signed_integer? == expected_type.signed_integer?
+          return expected_type.integer_width >= actual_type.integer_width
+        end
+
+        return false if actual_type.signed_integer?
+
+        expected_type.signed_integer? && expected_type.integer_width > actual_type.integer_width
       end
 
       def contextual_int_to_float_compatibility?(actual_type, expected_type)
@@ -6836,23 +6950,28 @@ module MilkTea
         binding.const_value
       end
 
-      def compile_time_numeric_const_expression?(expression)
-        value = compile_time_const_value(expression)
+      def compile_time_numeric_const_expression?(expression, env: nil)
+        value = compile_time_const_value(expression, env:)
         value.is_a?(Integer) || value.is_a?(Float)
       end
 
-      def compile_time_const_value(expression)
+      def compile_time_const_value(expression, env: nil)
         case expression
         when AST::IntegerLiteral, AST::FloatLiteral, AST::BooleanLiteral
           expression.value
         when AST::Identifier
+          if env
+            binding = lookup_value(expression.name, env)
+            return binding[:const_value] unless binding&.fetch(:const_value, nil).nil?
+          end
+
           resolve_current_module_const_value(expression.name)
         when AST::MemberAccess
           return unless expression.receiver.is_a?(AST::Identifier)
 
           resolve_imported_module_const_value(expression.receiver.name, expression.member)
         when AST::UnaryOp
-          operand = compile_time_const_value(expression.operand)
+          operand = compile_time_const_value(expression.operand, env:)
           return if operand.nil?
 
           case expression.operator
@@ -6864,8 +6983,8 @@ module MilkTea
             !operand
           end
         when AST::BinaryOp
-          left = compile_time_const_value(expression.left)
-          right = compile_time_const_value(expression.right)
+          left = compile_time_const_value(expression.left, env:)
+          right = compile_time_const_value(expression.right, env:)
           return if left.nil? || right.nil?
 
           case expression.operator
@@ -7735,8 +7854,8 @@ module MilkTea
         declaration
       end
 
-      def local_binding(type:, c_name:, mutable:, pointer:, storage_type: nil, cstr_backed: false, cstr_list_backed: false)
-        { type:, storage_type: storage_type || type, c_name:, mutable:, pointer:, cstr_backed:, cstr_list_backed: }
+      def local_binding(type:, c_name:, mutable:, pointer:, storage_type: nil, cstr_backed: false, cstr_list_backed: false, const_value: nil)
+        { type:, storage_type: storage_type || type, c_name:, mutable:, pointer:, cstr_backed:, cstr_list_backed:, const_value: }
       end
 
       def callable_type?(type)

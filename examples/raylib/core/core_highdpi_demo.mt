@@ -9,7 +9,7 @@ const window_title: cstr = c"raylib [core] example - highdpi demo"
 const sample_text: cstr = c"Can you see this?"
 
 
-def draw_text_center(text: cstr, x: int, y: int, font_size: int, color: rl.Color) -> void:
+def draw_text_center(text: cstr, x: int, y: int, font_size: float, color: rl.Color) -> void:
     let font = rl.GetFontDefault()
     let size = rl.MeasureTextEx(font, text, font_size, 3.0)
     rl.DrawTextEx(
@@ -85,9 +85,9 @@ def main() -> int:
                 rl.DrawRectangle(
                     x,
                     pixel_grid_top,
-                    cell_size_px,
+                    int<-cell_size_px,
                     pixel_grid_bottom - pixel_grid_top,
-                    rl.Color(r = 0, g = 121, b = 241, a = 100),
+                    rl.Color(r = ubyte<-0, g = ubyte<-121, b = ubyte<-241, a = ubyte<-100),
                 )
             rl.DrawLine(x, pixel_grid_top, x, pixel_grid_label_y - 10, rl.GRAY)
 

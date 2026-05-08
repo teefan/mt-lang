@@ -115,8 +115,9 @@ def main() -> int:
             let angle_360 = angle * 360.0
             let saturation = mt_math.clamp(distance, 0.0, 1.0)
             let value_actual = mt_math.clamp(distance, 0.0, 1.0)
+            let grayscale = ubyte<-(value * 255.0)
             color = rl.ColorLerp(
-                rl.Color(r = int<-(value * 255.0), g = int<-(value * 255.0), b = int<-(value * 255.0), a = 255),
+                rl.Color(r = grayscale, g = grayscale, b = grayscale, a = 255),
                 rl.ColorFromHSV(angle_360, saturation, 1.0),
                 value_actual,
             )

@@ -58,15 +58,15 @@ def main() -> int:
     var scroll_content_offset = rl.Vector2(x = 0.0, y = 0.0)
     var view = rl.Rectangle(x = 0.0, y = 0.0, width = 0.0, height = 0.0)
 
-    let panel_pos_x = float<-screen_width - panel_margin - panel_width
+    let panel_pos_x = screen_width - panel_margin - panel_width
     let panel_pos_y = panel_margin
     let panel_rect = rl.Rectangle(
         x = panel_pos_x,
         y = panel_pos_y,
         width = panel_width,
-        height = float<-screen_height - 2.0 * panel_margin,
+        height = screen_height - 2.0 * panel_margin,
     )
-    let canvas = rl.Rectangle(x = 0.0, y = 0.0, width = panel_pos_x, height = float<-screen_height)
+    let canvas = rl.Rectangle(x = 0.0, y = 0.0, width = panel_pos_x, height = screen_height)
     let center = rl.Vector2(x = canvas.width / 2.0, y = canvas.height / 2.0)
 
     rl.set_target_fps(60)
@@ -86,11 +86,11 @@ def main() -> int:
             if distance <= radius:
                 var angle = math.atan2(dy, dx) * math.rad2deg
                 if angle < 0.0:
-                    angle += float<-360.0
+                    angle += 360.0
 
                 var current_angle: float = 0.0
                 for index in 0..slice_count:
-                    let sweep: float = if total_value > 0.0: values[index] / total_value * float<-360.0 else: float<-0.0
+                    let sweep: float = if total_value > 0.0: values[index] / total_value * 360.0 else: 0.0
                     if angle >= current_angle and angle < current_angle + sweep:
                         hovered_slice = index
                         break
@@ -104,12 +104,12 @@ def main() -> int:
 
         var start_angle: float = 0.0
         for index in 0..slice_count:
-            let sweep_angle: float = if total_value > 0.0: values[index] / total_value * float<-360.0 else: float<-0.0
+            let sweep_angle: float = if total_value > 0.0: values[index] / total_value * 360.0 else: 0.0
             let mid_angle = start_angle + sweep_angle / 2.0
-            let color = rl.color_from_hsv(float<-index / float<-slice_count * 360.0, 0.75, 0.9)
+            let color = rl.color_from_hsv(index / float<-slice_count * 360.0, 0.75, 0.9)
             var current_radius = radius
             if index == hovered_slice:
-                current_radius += float<-20.0
+                current_radius += 20.0
 
             rl.draw_circle_sector(center, current_radius, start_angle, start_angle + sweep_angle, 120, color)
 
@@ -152,7 +152,7 @@ def main() -> int:
         gui.scroll_panel(
             scroll_panel_bounds,
             "",
-            rl.Rectangle(x = 0.0, y = 0.0, width = panel_rect.width - 25.0, height = float<-content_height),
+            rl.Rectangle(x = 0.0, y = 0.0, width = panel_rect.width - 25.0, height = content_height),
             scroll_content_offset,
             view,
         )
@@ -162,14 +162,14 @@ def main() -> int:
 
         rl.begin_scissor_mode(int<-view.x, int<-view.y, int<-view.width, int<-view.height)
         for index in 0..slice_count:
-            let row_y = int<-(content_y + 5.0 + float<-(index * 35))
-            let color = rl.color_from_hsv(float<-index / float<-slice_count * 360.0, 0.75, 0.9)
+            let row_y = int<-(content_y + 5.0 + index * 35)
+            let color = rl.color_from_hsv(index / float<-slice_count * 360.0, 0.75, 0.9)
             rl.draw_rectangle(int<-(content_x + 15.0), row_y + 5, 20, 20, color)
 
-            if gui.text_box(rl.Rectangle(x = content_x + 45.0, y = float<-row_y, width = 75.0, height = 30.0), labels[index], editing_label[index]) != 0:
+            if gui.text_box(rl.Rectangle(x = content_x + 45.0, y = row_y, width = 75.0, height = 30.0), labels[index], editing_label[index]) != 0:
                 editing_label[index] = not editing_label[index]
 
-            gui.slider_bar(rl.Rectangle(x = content_x + 130.0, y = float<-row_y, width = 110.0, height = 30.0), "", "", values[index], 0.0, 1000.0)
+            gui.slider_bar(rl.Rectangle(x = content_x + 130.0, y = row_y, width = 110.0, height = 30.0), "", "", values[index], 0.0, 1000.0)
 
         rl.end_scissor_mode()
 

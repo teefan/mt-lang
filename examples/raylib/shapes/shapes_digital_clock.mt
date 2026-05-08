@@ -67,8 +67,8 @@ def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
     rl.DrawCircleV(position, 12.0, rl.GRAY)
 
     for index in 0..60:
-        let tick_angle = 6.0 * float<-index - 90.0
-        let inner_offset = if index % 5 != 0: 10.0 else: 6.0
+        let tick_angle: float = 6.0 * float<-index - 90.0
+        let inner_offset: float = if index % 5 != 0: 10.0 else: 6.0
         rl.DrawLineEx(
             rl.Vector2(
                 x = position.x + (float<-clock.second.length + inner_offset) * math.cosf(mt_math.deg2rad * tick_angle),
@@ -84,19 +84,19 @@ def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
 
     rl.DrawRectanglePro(
         rl.Rectangle(x = position.x, y = position.y, width = clock.second.length, height = clock.second.thickness),
-        rl.Vector2(x = 0.0, y = clock.second.thickness / 2.0),
+        rl.Vector2(x = 0.0, y = float<-clock.second.thickness / 2.0),
         clock.second.angle,
         clock.second.color,
     )
     rl.DrawRectanglePro(
         rl.Rectangle(x = position.x, y = position.y, width = clock.minute.length, height = clock.minute.thickness),
-        rl.Vector2(x = 0.0, y = clock.minute.thickness / 2.0),
+        rl.Vector2(x = 0.0, y = float<-clock.minute.thickness / 2.0),
         clock.minute.angle,
         clock.minute.color,
     )
     rl.DrawRectanglePro(
         rl.Rectangle(x = position.x, y = position.y, width = clock.hour.length, height = clock.hour.thickness),
-        rl.Vector2(x = 0.0, y = clock.hour.thickness / 2.0),
+        rl.Vector2(x = 0.0, y = float<-clock.hour.thickness / 2.0),
         clock.hour.angle,
         clock.hour.color,
     )

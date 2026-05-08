@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "fiddle"
+
 module MilkTea
   module Types
     BUILTIN_PRIMITIVE_NAMES = %w[
@@ -44,6 +46,8 @@ module MilkTea
     end
 
     class Primitive < Base
+      POINTER_INTEGER_WIDTH = Fiddle::SIZEOF_VOIDP * 8
+
       INTEGER_NAMES = %w[byte short int long ubyte ushort uint ulong ptr_int ptr_uint].freeze
       FLOAT_NAMES = %w[float double].freeze
       FIXED_SIGNED_INTEGER_WIDTHS = {
@@ -105,7 +109,7 @@ module MilkTea
       end
 
       def fixed_width_integer?
-        FIXED_SIGNED_INTEGER_WIDTHS.key?(name) || FIXED_UNSIGNED_INTEGER_WIDTHS.key?(name)
+        FIXED_SIGNED_INTEGER_WIDTHS.key?(name) || FIXED_UNSIGNED_INTEGER_WIDTHS.key?(name) || pointer_sized_integer?
       end
 
       def pointer_sized_integer?
@@ -113,7 +117,7 @@ module MilkTea
       end
 
       def integer_width
-        FIXED_SIGNED_INTEGER_WIDTHS[name] || FIXED_UNSIGNED_INTEGER_WIDTHS[name]
+        FIXED_SIGNED_INTEGER_WIDTHS[name] || FIXED_UNSIGNED_INTEGER_WIDTHS[name] || (pointer_sized_integer? ? POINTER_INTEGER_WIDTH : nil)
       end
 
       def float_width

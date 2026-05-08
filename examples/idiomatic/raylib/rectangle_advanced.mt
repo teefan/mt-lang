@@ -153,8 +153,8 @@ def main() -> int:
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        let width = rl.get_screen_width() / 2.0
-        let height = rl.get_screen_height() / 6.0
+        let width: float = rl.get_screen_width() / 2.0
+        let height: float = rl.get_screen_height() / 6.0
         var rec = rl.Rectangle(
             x = rl.get_screen_width() / 2.0 - width / 2.0,
             y = rl.get_screen_height() / 2.0 - 5.0 * (height / 2.0),

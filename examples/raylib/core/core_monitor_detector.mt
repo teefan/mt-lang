@@ -73,12 +73,14 @@ def main() -> int:
                 width = width * monitor_scale,
                 height = height * monitor_scale,
             )
+            let label_x: int = int<-(rec.x + 10.0)
+            let name_y: int = int<-(rec.y + 10.0)
 
-            rl.DrawText(rl.GetMonitorName(draw_index), rec.x + 10, rec.y + 10, 20, rl.BLUE)
+            rl.DrawText(rl.GetMonitorName(draw_index), label_x, name_y, 20, rl.BLUE)
 
             if draw_index == current_monitor_index:
                 rl.DrawRectangleLinesEx(rec, 5.0, rl.RED)
-                rl.DrawText(current_label, rec.x + 10, rec.y + 40, 20, rl.RED)
+                rl.DrawText(current_label, label_x, int<-(rec.y + 40.0), 20, rl.RED)
                 let window_position = rl.GetWindowPosition()
                 rl.DrawRectangleV(
                     rl.Vector2(

@@ -12,9 +12,9 @@ const bar_count: int = 10
 
 def random_bar_color() -> rl.Color:
     return rl.Color(
-        r = rl.get_random_value(100, 250),
-        g = rl.get_random_value(50, 150),
-        b = rl.get_random_value(10, 100),
+        r = ubyte<-rl.get_random_value(100, 250),
+        g = ubyte<-rl.get_random_value(50, 150),
+        b = ubyte<-rl.get_random_value(10, 100),
         a = 255,
     )
 

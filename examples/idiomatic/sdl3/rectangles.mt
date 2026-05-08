@@ -26,9 +26,9 @@ def pump_events() -> bool:
 
 def render_frame() -> void:
     let now = int<-sdl.get_ticks()
-    let direction = if (now % 2000) >= 1000: 1.0 else: -1.0
-    let scale = (float<-((now % 1000) - 500) / 500.0) * direction
-    let column_width = float<-window_width / float<-rect_count
+    let direction: float = if (now % 2000) >= 1000: 1.0 else: -1.0
+    let scale: float = (((now % 1000) - 500) / 500.0) * direction
+    let column_width: float = window_width / float<-rect_count
 
     var rects = zero[array[sdl.FRect, 16]]
 
@@ -43,11 +43,11 @@ def render_frame() -> void:
     sdl.render_rect(renderer, rects[0])
 
     for index in 0..3:
-        let size = float<-(index + 1) * 50.0
+        let size: float = (index + 1) * 50.0
         rects[index].w = size + (size * scale)
         rects[index].h = size + (size * scale)
-        rects[index].x = (float<-window_width - rects[index].w) / 2.0
-        rects[index].y = (float<-window_height - rects[index].h) / 2.0
+        rects[index].x = (window_width - rects[index].w) / 2.0
+        rects[index].y = (window_height - rects[index].h) / 2.0
 
     var outline_rects = array[sdl.FRect, 3](rects[0], rects[1], rects[2])
     sdl.set_render_draw_color(renderer, 0, 255, 0, 255)
@@ -61,9 +61,9 @@ def render_frame() -> void:
     sdl.render_fill_rect(renderer, rects[0])
 
     for index in 0..rect_count:
-        let height = float<-index * 8.0
-        rects[index].x = float<-index * column_width
-        rects[index].y = float<-window_height - height
+        let height: float = index * 8.0
+        rects[index].x = index * column_width
+        rects[index].y = window_height - height
         rects[index].w = column_width
         rects[index].h = height
 

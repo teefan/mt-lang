@@ -21,12 +21,12 @@ def draw_text_styled(font: rl.Font, text: cstr, position: rl.Vector2, font_size:
     let text_len = int<-rl.TextLength(text)
     var col_front = color
     var col_back = rl.BLANK
-    let back_rec_padding = 4.0
+    let back_rec_padding: float = 4.0
 
     var text_offset_y: float = 0.0
     var text_offset_x: float = 0.0
     let text_line_spacing: float = 0.0
-    let scale_factor = font_size / float<-active_font.baseSize
+    let scale_factor: float = font_size / float<-active_font.baseSize
 
     unsafe:
         let raw_text = ptr[char]<-text

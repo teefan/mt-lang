@@ -26,9 +26,9 @@ def main() -> int:
     var color_index = 0
     while color_index < bar_count:
         colors[color_index] = rl.Color(
-            r = rl.GetRandomValue(100, 250),
-            g = rl.GetRandomValue(50, 150),
-            b = rl.GetRandomValue(10, 100),
+            r = ubyte<-rl.GetRandomValue(100, 250),
+            g = ubyte<-rl.GetRandomValue(50, 150),
+            b = ubyte<-rl.GetRandomValue(10, 100),
             a = 255,
         )
         color_index += 1
@@ -46,9 +46,9 @@ def main() -> int:
             color_index = 0
             while color_index < bar_count:
                 colors[color_index] = rl.Color(
-                    r = rl.GetRandomValue(100, 250),
-                    g = rl.GetRandomValue(50, 150),
-                    b = rl.GetRandomValue(10, 100),
+                    r = ubyte<-rl.GetRandomValue(100, 250),
+                    g = ubyte<-rl.GetRandomValue(50, 150),
+                    b = ubyte<-rl.GetRandomValue(10, 100),
                     a = 255,
                 )
                 color_index += 1

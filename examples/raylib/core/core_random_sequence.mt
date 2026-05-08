@@ -26,10 +26,10 @@ def remap(value: float, input_start: float, input_end: float, output_start: floa
 
 def generate_random_color() -> rl.Color:
     return rl.Color(
-        r = rl.GetRandomValue(0, 255),
-        g = rl.GetRandomValue(0, 255),
-        b = rl.GetRandomValue(0, 255),
-        a = 255,
+        r = ubyte<-rl.GetRandomValue(0, 255),
+        g = ubyte<-rl.GetRandomValue(0, 255),
+        b = ubyte<-rl.GetRandomValue(0, 255),
+        a = ubyte<-255,
     )
 
 
@@ -44,7 +44,7 @@ def release_color_rects(rectangles: ptr[ColorRect]) -> void:
 
 def generate_random_color_rect_sequence(rect_count: int, rect_width: float, width: float, height: float) -> ptr[ColorRect]:
     let rectangles = alloc_color_rects(rect_count)
-    let sequence = rlr.require_ptr[int](rl.LoadRandomSequence(rect_count, 0, rect_count - 1), "could not load random sequence")
+    let sequence = rlr.require_ptr[int](rl.LoadRandomSequence(uint<-rect_count, 0, rect_count - 1), "could not load random sequence")
     var rectangles_view = sp.from_ptr[ColorRect](rectangles, ptr_uint<-rect_count)
     let sequence_view = sp.from_ptr[int](sequence, ptr_uint<-rect_count)
     let rect_sequence_width = rect_count * rect_width
@@ -78,7 +78,7 @@ def swap_color_rect_values(left: ref[ColorRect], right: ref[ColorRect]) -> void:
 
 
 def shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: int) -> void:
-    let sequence = rlr.require_ptr[int](rl.LoadRandomSequence(rect_count, 0, rect_count - 1), "could not load random sequence")
+    let sequence = rlr.require_ptr[int](rl.LoadRandomSequence(uint<-rect_count, 0, rect_count - 1), "could not load random sequence")
     var rectangles_view = sp.from_ptr[ColorRect](rectangles, ptr_uint<-rect_count)
     let sequence_view = sp.from_ptr[int](sequence, ptr_uint<-rect_count)
 

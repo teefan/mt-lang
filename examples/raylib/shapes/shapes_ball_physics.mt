@@ -103,9 +103,9 @@ def main() -> int:
                     ),
                     20.0 + float<-rl.GetRandomValue(0, 30),
                     rl.Color(
-                        r = rl.GetRandomValue(0, 255),
-                        g = rl.GetRandomValue(0, 255),
-                        b = rl.GetRandomValue(0, 255),
+                        r = ubyte<-rl.GetRandomValue(0, 255),
+                        g = ubyte<-rl.GetRandomValue(0, 255),
+                        b = ubyte<-rl.GetRandomValue(0, 255),
                         a = 255,
                     ),
                 )
