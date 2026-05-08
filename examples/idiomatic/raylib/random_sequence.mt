@@ -23,9 +23,9 @@ def remap(value: float, input_start: float, input_end: float, output_start: floa
 
 def generate_random_color() -> rl.Color:
     return rl.Color(
-        r = rl.get_random_value(0, 255),
-        g = rl.get_random_value(0, 255),
-        b = rl.get_random_value(0, 255),
+        r = ubyte<-rl.get_random_value(0, 255),
+        g = ubyte<-rl.get_random_value(0, 255),
+        b = ubyte<-rl.get_random_value(0, 255),
         a = 255,
     )
 
@@ -52,15 +52,15 @@ def shuffled_ranks(rect_count: int) -> array[int, 22]:
 def generate_rectangles(rect_count: int, rect_width: float, width: float, height: float) -> array[ColorRect, 22]:
     var rectangles = zero[array[ColorRect, 22]]
     let ranks = shuffled_ranks(rect_count)
-    let rect_sequence_width = float<-rect_count * rect_width
+    let rect_sequence_width = rect_count * rect_width
     let start_x = (width - rect_sequence_width) * 0.5
 
     var index = 0
     while index < rect_count:
-        let rect_height = remap(float<-ranks[index], 0.0, float<-(rect_count - 1), 0.0, height)
+        let rect_height = remap(ranks[index], 0.0, rect_count - 1, 0.0, height)
         rectangles[index].color = generate_random_color()
         rectangles[index].rect = rl.Rectangle(
-            x = start_x + float<-index * rect_width,
+            x = start_x + index * rect_width,
             y = height - rect_height,
             width = rect_width,
             height = rect_height,
@@ -97,12 +97,12 @@ def main() -> int:
     defer rl.close_window()
 
     var rect_count = initial_rect_count
-    var rect_size = float<-screen_width / float<-rect_count
+    var rect_size = screen_width / float<-rect_count
     var rectangles = generate_rectangles(
         rect_count,
         rect_size,
-        float<-screen_width,
-        sequence_height_factor * float<-screen_height,
+        screen_width,
+        sequence_height_factor * screen_height,
     )
 
     rl.set_target_fps(60)
@@ -113,22 +113,22 @@ def main() -> int:
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_UP) and rect_count < max_rect_count:
             rect_count += 1
-            rect_size = float<-screen_width / float<-rect_count
+            rect_size = screen_width / float<-rect_count
             rectangles = generate_rectangles(
                 rect_count,
                 rect_size,
-                float<-screen_width,
-                sequence_height_factor * float<-screen_height,
+                screen_width,
+                sequence_height_factor * screen_height,
             )
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_DOWN) and rect_count > min_rect_count:
             rect_count -= 1
-            rect_size = float<-screen_width / float<-rect_count
+            rect_size = screen_width / float<-rect_count
             rectangles = generate_rectangles(
                 rect_count,
                 rect_size,
-                float<-screen_width,
-                sequence_height_factor * float<-screen_height,
+                screen_width,
+                sequence_height_factor * screen_height,
             )
 
         rl.begin_drawing()

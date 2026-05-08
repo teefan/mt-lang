@@ -28,9 +28,9 @@ def pump_events() -> bool:
 
 def render_frame() -> void:
     let now = int<-c.SDL_GetTicks()
-    let direction = if (now % 2000) >= 1000: 1.0 else: -1.0
-    let scale = (float<-((now % 1000) - 500) / 500.0) * direction
-    let size = 200.0 + (200.0 * scale)
+    let direction: float = if (now % 2000) >= 1000: 1.0 else: -1.0
+    let scale: float = (float<-((now % 1000) - 500) / 500.0) * direction
+    let size: float = 200.0 + (200.0 * scale)
 
     var vertices = zero[array[c.SDL_Vertex, 4]]
     var indices = array[int, 6](0, 1, 2, 1, 2, 3)

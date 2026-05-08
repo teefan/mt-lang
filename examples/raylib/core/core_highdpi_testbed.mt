@@ -75,6 +75,6 @@ def main() -> int:
 
         let mouse_text_y = if mouse_pos.y > rl.GetScreenHeight() - 60: int<-mouse_pos.y - 46 else: int<-mouse_pos.y + 30
 
-        rl.DrawText(rl.TextFormat(c"[%i,%i]", rl.GetMouseX(), rl.GetMouseY()), mouse_pos.x - 44, mouse_text_y, 20, rl.BLACK)
+        rl.DrawText(rl.TextFormat(c"[%i,%i]", rl.GetMouseX(), rl.GetMouseY()), int<-(mouse_pos.x - 44.0), mouse_text_y, 20, rl.BLACK)
 
     return 0

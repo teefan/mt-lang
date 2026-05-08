@@ -155,8 +155,8 @@ def main() -> int:
     rl.SetTargetFPS(60)
 
     while not rl.WindowShouldClose():
-        let width = rl.GetScreenWidth() / 2.0
-        let height = rl.GetScreenHeight() / 6.0
+        let width: float = rl.GetScreenWidth() / 2.0
+        let height: float = rl.GetScreenHeight() / 6.0
         var rec = rl.Rectangle(
             x = rl.GetScreenWidth() / 2.0 - width / 2.0,
             y = rl.GetScreenHeight() / 2.0 - 5.0 * (height / 2.0),

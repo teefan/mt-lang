@@ -31,15 +31,15 @@ def apply_clock_time(clock: ref[Clock], current: time.ClockTime) -> void:
     clock.minute.value = current.minute
     clock.second.value = current.second
 
-    clock.hour.angle = float<-(clock.hour.value % 12) * 180.0 / 6.0
-    clock.hour.angle += float<-(clock.minute.value % 60) * 30.0 / 60.0
+    clock.hour.angle = (clock.hour.value % 12) * 180.0 / 6.0
+    clock.hour.angle += (clock.minute.value % 60) * 30.0 / 60.0
     clock.hour.angle -= 90.0
 
-    clock.minute.angle = float<-(clock.minute.value % 60) * 6.0
-    clock.minute.angle += float<-(clock.second.value % 60) * 6.0 / 60.0
+    clock.minute.angle = (clock.minute.value % 60) * 6.0
+    clock.minute.angle += (clock.second.value % 60) * 6.0 / 60.0
     clock.minute.angle -= 90.0
 
-    clock.second.angle = float<-(clock.second.value % 60) * 6.0
+    clock.second.angle = (clock.second.value % 60) * 6.0
     clock.second.angle -= 90.0
 
 
@@ -50,40 +50,40 @@ def update_clock(clock: ref[Clock]) -> void:
 
 
 def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
-    rl.draw_circle_v(position, float<-clock.second.length + 40.0, rl.LIGHTGRAY)
+    rl.draw_circle_v(position, clock.second.length + 40.0, rl.LIGHTGRAY)
     rl.draw_circle_v(position, 12.0, rl.GRAY)
 
     for index in 0..60:
         let tick_angle = 6.0 * float<-index - 90.0
-        let inner_offset = if index % 5 != 0: 10.0 else: 6.0
+        let inner_offset: float = if index % 5 != 0: 10.0 else: 6.0
         rl.draw_line_ex(
             rl.Vector2(
-                x = position.x + (float<-clock.second.length + inner_offset) * math.cos(math.deg2rad * tick_angle),
-                y = position.y + (float<-clock.second.length + inner_offset) * math.sin(math.deg2rad * tick_angle),
+                x = position.x + (clock.second.length + inner_offset) * math.cos(math.deg2rad * tick_angle),
+                y = position.y + (clock.second.length + inner_offset) * math.sin(math.deg2rad * tick_angle),
             ),
             rl.Vector2(
-                x = position.x + (float<-clock.second.length + 20.0) * math.cos(math.deg2rad * tick_angle),
-                y = position.y + (float<-clock.second.length + 20.0) * math.sin(math.deg2rad * tick_angle),
+                x = position.x + (clock.second.length + 20.0) * math.cos(math.deg2rad * tick_angle),
+                y = position.y + (clock.second.length + 20.0) * math.sin(math.deg2rad * tick_angle),
             ),
             if index % 5 != 0: 1.0 else: 3.0,
             rl.DARKGRAY,
         )
 
     rl.draw_rectangle_pro(
-        rl.Rectangle(x = position.x, y = position.y, width = float<-clock.second.length, height = float<-clock.second.thickness),
-        rl.Vector2(x = 0.0, y = float<-clock.second.thickness / 2.0),
+        rl.Rectangle(x = position.x, y = position.y, width = clock.second.length, height = clock.second.thickness),
+        rl.Vector2(x = 0.0, y = clock.second.thickness / 2.0),
         clock.second.angle,
         clock.second.color,
     )
     rl.draw_rectangle_pro(
-        rl.Rectangle(x = position.x, y = position.y, width = float<-clock.minute.length, height = float<-clock.minute.thickness),
-        rl.Vector2(x = 0.0, y = float<-clock.minute.thickness / 2.0),
+        rl.Rectangle(x = position.x, y = position.y, width = clock.minute.length, height = clock.minute.thickness),
+        rl.Vector2(x = 0.0, y = clock.minute.thickness / 2.0),
         clock.minute.angle,
         clock.minute.color,
     )
     rl.draw_rectangle_pro(
-        rl.Rectangle(x = position.x, y = position.y, width = float<-clock.hour.length, height = float<-clock.hour.thickness),
-        rl.Vector2(x = 0.0, y = float<-clock.hour.thickness / 2.0),
+        rl.Rectangle(x = position.x, y = position.y, width = clock.hour.length, height = clock.hour.thickness),
+        rl.Vector2(x = 0.0, y = clock.hour.thickness / 2.0),
         clock.hour.angle,
         clock.hour.color,
     )
@@ -125,49 +125,49 @@ def draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color, col
     let offset_y_adjust = float<-segment_thick * 0.3
 
     draw_display_segment(
-        rl.Vector2(x = position.x + float<-segment_thick + float<-segment_len / 2.0, y = position.y + float<-segment_thick),
+        rl.Vector2(x = position.x + segment_thick + segment_len / 2.0, y = position.y + segment_thick),
         segment_len,
         segment_thick,
         false,
         if (segments & 1) != 0: color_on else: color_off,
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + float<-segment_thick + float<-segment_len + float<-segment_thick / 2.0, y = position.y + 2.0 * float<-segment_thick + float<-segment_len / 2.0 - offset_y_adjust),
+        rl.Vector2(x = position.x + segment_thick + segment_len + segment_thick / 2.0, y = position.y + 2.0 * segment_thick + segment_len / 2.0 - offset_y_adjust),
         segment_len,
         segment_thick,
         true,
         if (segments & 2) != 0: color_on else: color_off,
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + float<-segment_thick + float<-segment_len + float<-segment_thick / 2.0, y = position.y + 4.0 * float<-segment_thick + float<-segment_len + float<-segment_len / 2.0 - 3.0 * offset_y_adjust),
+        rl.Vector2(x = position.x + segment_thick + segment_len + segment_thick / 2.0, y = position.y + 4.0 * segment_thick + segment_len + segment_len / 2.0 - 3.0 * offset_y_adjust),
         segment_len,
         segment_thick,
         true,
         if (segments & 4) != 0: color_on else: color_off,
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + float<-segment_thick + float<-segment_len / 2.0, y = position.y + 5.0 * float<-segment_thick + 2.0 * float<-segment_len - 4.0 * offset_y_adjust),
+        rl.Vector2(x = position.x + segment_thick + segment_len / 2.0, y = position.y + 5.0 * segment_thick + 2.0 * segment_len - 4.0 * offset_y_adjust),
         segment_len,
         segment_thick,
         false,
         if (segments & 8) != 0: color_on else: color_off,
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + float<-segment_thick / 2.0, y = position.y + 4.0 * float<-segment_thick + float<-segment_len + float<-segment_len / 2.0 - 3.0 * offset_y_adjust),
+        rl.Vector2(x = position.x + segment_thick / 2.0, y = position.y + 4.0 * segment_thick + segment_len + segment_len / 2.0 - 3.0 * offset_y_adjust),
         segment_len,
         segment_thick,
         true,
         if (segments & 16) != 0: color_on else: color_off,
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + float<-segment_thick / 2.0, y = position.y + 2.0 * float<-segment_thick + float<-segment_len / 2.0 - offset_y_adjust),
+        rl.Vector2(x = position.x + segment_thick / 2.0, y = position.y + 2.0 * segment_thick + segment_len / 2.0 - offset_y_adjust),
         segment_len,
         segment_thick,
         true,
         if (segments & 32) != 0: color_on else: color_off,
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + float<-segment_thick + float<-segment_len / 2.0, y = position.y + 3.0 * float<-segment_thick + float<-segment_len - 2.0 * offset_y_adjust),
+        rl.Vector2(x = position.x + segment_thick + segment_len / 2.0, y = position.y + 3.0 * segment_thick + segment_len - 2.0 * offset_y_adjust),
         segment_len,
         segment_thick,
         false,

@@ -63,20 +63,20 @@ def main() -> int:
     )
 
     let observer_target = rl.load_render_texture(split_width, screen_height)
-    let observer_source = rl.Rectangle(x = 0.0, y = 0.0, width = float<-observer_target.texture.width, height = -float<-observer_target.texture.height)
-    let observer_dest = rl.Rectangle(x = 0.0, y = 0.0, width = float<-split_width, height = float<-screen_height)
+    let observer_source = rl.Rectangle(x = 0.0, y = 0.0, width = observer_target.texture.width, height = -observer_target.texture.height)
+    let observer_dest = rl.Rectangle(x = 0.0, y = 0.0, width = split_width, height = screen_height)
 
     let subject_target = rl.load_render_texture(split_width, screen_height)
-    let subject_source = rl.Rectangle(x = 0.0, y = 0.0, width = float<-subject_target.texture.width, height = -float<-subject_target.texture.height)
-    let subject_dest = rl.Rectangle(x = float<-split_width, y = 0.0, width = float<-split_width, height = float<-screen_height)
-    let texture_aspect_ratio = float<-subject_target.texture.width / float<-subject_target.texture.height
+    let subject_source = rl.Rectangle(x = 0.0, y = 0.0, width = subject_target.texture.width, height = -subject_target.texture.height)
+    let subject_dest = rl.Rectangle(x = split_width, y = 0.0, width = split_width, height = screen_height)
+    let texture_aspect_ratio = subject_target.texture.width / float<-subject_target.texture.height
     let crop_source = rl.Rectangle(
-        x = (float<-subject_target.texture.width - capture_size) / 2.0,
-        y = (float<-subject_target.texture.height - capture_size) / 2.0,
+        x = (subject_target.texture.width - capture_size) / 2.0,
+        y = (subject_target.texture.height - capture_size) / 2.0,
         width = capture_size,
         height = -capture_size,
     )
-    let crop_dest = rl.Rectangle(x = float<-split_width + 20.0, y = 20.0, width = capture_size, height = capture_size)
+    let crop_dest = rl.Rectangle(x = split_width + 20.0, y = 20.0, width = capture_size, height = capture_size)
 
     defer:
         rl.unload_render_texture(subject_target)
@@ -114,8 +114,8 @@ def main() -> int:
         rl.draw_grid(10, 1.0)
         rl.end_mode_3d()
         rl.draw_rectangle_lines(
-            int<-((float<-subject_target.texture.width - capture_size) / 2.0),
-            int<-((float<-subject_target.texture.height - capture_size) / 2.0),
+            int<-((subject_target.texture.width - capture_size) / 2.0),
+            int<-((subject_target.texture.height - capture_size) / 2.0),
             int<-capture_size,
             int<-capture_size,
             rl.GREEN,

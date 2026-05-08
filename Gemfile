@@ -6,6 +6,7 @@ ruby "4.0.3"
 
 gem "rake", "~> 13.4"
 gem "rexml", "~> 3.4"
+gem "fiddle"
 
 group :development, :test do
   gem "minitest", "~> 6.0"

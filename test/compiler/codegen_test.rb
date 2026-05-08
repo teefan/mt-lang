@@ -1543,7 +1543,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return demo_variadic_codegen_printf\("value=%d %s\\n", 7, "ok"\);/, generated)
   end
 
-  def test_generate_c_for_contextual_numeric_coercion_at_external_boundaries
+  def test_generate_c_for_lossless_numeric_coercion_at_external_boundaries
     generated = generate_c_from_program_source(
       <<~MT,
         module demo.external_numeric_codegen
@@ -1551,29 +1551,64 @@ class MilkTeaCodegenTest < Minitest::Test
         import std.c.demo as demo
 
         def main() -> int:
-            let channel = 200
-            var color = demo.Color(r = channel, g = 0, b = 0, a = 255)
-            color.g = channel
-            demo.set_scale(channel)
+            let shade: ubyte = 200
+            let count: short = 120
+            let alpha: float = 0.5
+            var color = demo.Color(r = shade, g = 0, b = 0, a = 255)
+            color.g = shade
+            demo.set_count(count)
+            demo.set_opacity(alpha)
             return 0
       MT
       {
         "std/c/demo.mt" => <<~MT,
           extern module std.c.demo:
               struct Color:
-                  r: ubyte
-                  g: ubyte
+                  r: short
+                  g: short
                   b: ubyte
                   a: ubyte
 
+              extern def set_count(value: int) -> void
+              extern def set_opacity(value: double) -> void
+        MT
+      },
+    )
+
+    assert_match(/\.r = \(\(int16_t\) shade\)/, generated)
+    assert_match(/color\.g = \(\(int16_t\) shade\);/, generated)
+    assert_match(/set_count\(\(\(int32_t\) count\)\);/, generated)
+    assert_match(/set_opacity\(\(\(double\) alpha\)\);/, generated)
+  end
+
+  def test_generate_c_for_exact_compile_time_numeric_coercion
+    generated = generate_c_from_program_source(
+      <<~MT,
+        module demo.exact_numeric_codegen
+
+        import std.c.demo as demo
+
+        const channel_value: int = 255
+
+        def main() -> int:
+            let whole: int = 2.0
+            let local_opaque = channel_value
+            demo.set_channel(local_opaque)
+            demo.set_scale(200)
+            return whole
+      MT
+      {
+        "std/c/demo.mt" => <<~MT,
+          extern module std.c.demo:
+              extern def set_channel(value: ubyte) -> void
               extern def set_scale(value: float) -> void
         MT
       },
     )
 
-    assert_match(/\.r = \(\(uint8_t\) channel\)/, generated)
-    assert_match(/color\.g = \(\(uint8_t\) channel\);/, generated)
-    assert_match(/set_scale\(\(\(float\) channel\)\);/, generated)
+    assert_match(/int32_t whole = \(\(int32_t\) 2\.0\);/, generated)
+    assert_match(/set_channel\(\(\(uint8_t\) local_opaque\)\);/, generated)
+    assert_match(/set_scale\(\(\(float\) 200\)\);/, generated)
   end
 
   def test_generate_c_for_contextual_integer_to_float_at_local_assignment_and_return_boundaries
@@ -1586,9 +1621,11 @@ class MilkTeaCodegenTest < Minitest::Test
       "def project(value: int) -> float:",
       "    var total: float = value",
       "    total = value + 1",
+      "    total += value + 2",
+      "    total -= value + 3",
       "    var point = Point(x = 0.0)",
-      "    point.x = value + 2",
-      "    return value + 3",
+      "    point.x = value + 4",
+      "    return value + 5",
       "",
     ].join("\n")
 
@@ -1596,8 +1633,10 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/float total = \(\(float\) value\);/, generated)
     assert_match(/total = \(\(float\) \(value \+ 1\)\);/, generated)
-    assert_match(/point\.x = \(\(float\) \(value \+ 2\)\);/, generated)
-    assert_match(/return \(\(float\) \(value \+ 3\)\);/, generated)
+    assert_match(/total \+= \(\(float\) \(value \+ 2\)\);/, generated)
+    assert_match(/total -= \(\(float\) \(value \+ 3\)\);/, generated)
+    assert_match(/point\.x = \(\(float\) \(value \+ 4\)\);/, generated)
+    assert_match(/return \(\(float\) \(value \+ 5\)\);/, generated)
   end
 
   def test_generate_c_for_contextual_integer_to_float_at_call_and_field_boundaries

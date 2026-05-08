@@ -91,7 +91,7 @@ def main() -> int:
         if cam.target.y < 0.0:
             cam.target.y = 0.0
 
-        let max_target_y = if text_height > screen_height: float<-(text_height - screen_height + text_top) else: 0.0
+        let max_target_y: float = if text_height > screen_height: float<-(text_height - screen_height + text_top) else: 0.0
         if cam.target.y > max_target_y:
             cam.target.y = max_target_y
 

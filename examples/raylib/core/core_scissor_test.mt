@@ -36,10 +36,10 @@ def main() -> int:
 
         if scissor_mode:
             rl.BeginScissorMode(
-                scissor_area.x,
-                scissor_area.y,
-                scissor_area.width,
-                scissor_area.height,
+                int<-scissor_area.x,
+                int<-scissor_area.y,
+                int<-scissor_area.width,
+                int<-scissor_area.height,
             )
 
         rl.DrawRectangle(0, 0, rl.GetScreenWidth(), rl.GetScreenHeight(), rl.RED)

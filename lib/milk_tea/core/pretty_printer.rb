@@ -840,6 +840,8 @@ module MilkTea
           expression.value ? "true" : "false"
         when IR::NullLiteral
           "null"
+        when IR::ZeroInit
+          "zero[#{expression.type}]"
         when IR::AddressOf
           wrap("&#{render_expression(expression.expression, UNARY_PRECEDENCE)}", parent_precedence, UNARY_PRECEDENCE)
         when IR::Cast

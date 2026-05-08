@@ -40,7 +40,7 @@ def main() -> int:
 
     rl.SetMaterialTexture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
-    var rotation = 0.0
+    var rotation: float = 0.0
 
     rl.SetTargetFPS(60)
 

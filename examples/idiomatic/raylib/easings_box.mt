@@ -11,7 +11,7 @@ def main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Easings Box")
     defer rl.close_window()
 
-    let center_x = rl.get_screen_width() / 2.0
+    let center_x: float = rl.get_screen_width() / 2.0
     let center_y_delta = float<-(rl.get_screen_height() / 2 + 100)
 
     var rec = rl.Rectangle(x = center_x, y = -100.0, width = 100.0, height = 100.0)

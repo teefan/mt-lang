@@ -32,9 +32,9 @@ def player_states_equal(left: PlayerState, right: PlayerState) -> bool:
 
 def random_player_color() -> rl.Color:
     return rl.Color(
-        r = rl.GetRandomValue(20, 255),
-        g = rl.GetRandomValue(20, 220),
-        b = rl.GetRandomValue(20, 240),
+        r = ubyte<-rl.GetRandomValue(20, 255),
+        g = ubyte<-rl.GetRandomValue(20, 220),
+        b = ubyte<-rl.GetRandomValue(20, 240),
         a = 255,
     )
 

@@ -178,16 +178,19 @@ def key_text(key: int) -> cstr:
 
 
 def draw_keyboard_key(bounds: rl.Rectangle, key: int) -> void:
+    let label_x: int = int<-(bounds.x + 4.0)
+    let label_y: int = int<-(bounds.y + 4.0)
+
     if key == rl.KeyboardKey.KEY_NULL:
         rl.DrawRectangleLinesEx(bounds, 2.0, rl.LIGHTGRAY)
     else:
         let active = rl.IsKeyDown(key)
         if active:
             rl.DrawRectangleLinesEx(bounds, 2.0, rl.MAROON)
-            rl.DrawText(key_text(key), bounds.x + 4, bounds.y + 4, 10, rl.MAROON)
+            rl.DrawText(key_text(key), label_x, label_y, 10, rl.MAROON)
         else:
             rl.DrawRectangleLinesEx(bounds, 2.0, rl.DARKGRAY)
-            rl.DrawText(key_text(key), bounds.x + 4, bounds.y + 4, 10, rl.DARKGRAY)
+            rl.DrawText(key_text(key), label_x, label_y, 10, rl.DARKGRAY)
 
     if rl.CheckCollisionPointRec(rl.GetMousePosition(), bounds):
         rl.DrawRectangleRec(bounds, rl.Fade(rl.RED, 0.2))

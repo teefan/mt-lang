@@ -44,8 +44,8 @@ def main() -> int:
         rl.EndMode3D()
         rl.DrawText(
             enemy_text,
-            cube_screen_position.x - rl.MeasureText(enemy_text, 20) / 2,
-            cube_screen_position.y,
+            int<-(cube_screen_position.x - float<-rl.MeasureText(enemy_text, 20) / 2.0),
+            int<-cube_screen_position.y,
             20,
             rl.BLACK,
         )

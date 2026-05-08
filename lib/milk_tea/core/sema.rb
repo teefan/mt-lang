@@ -787,20 +787,25 @@ module MilkTea
         value
       end
 
-      def evaluate_compile_time_const_value(expression)
+      def evaluate_compile_time_const_value(expression, scopes: nil)
         case expression
         when AST::IntegerLiteral, AST::FloatLiteral
           expression.value
         when AST::StringLiteral
           expression.value
         when AST::Identifier
+          if scopes
+            binding = lookup_value(expression.name, scopes)
+            return binding.const_value unless binding&.const_value.nil?
+          end
+
           resolve_current_module_const_value(expression.name)
         when AST::MemberAccess
           if expression.receiver.is_a?(AST::Identifier)
             resolve_imported_module_const_value(expression.receiver.name, expression.member)
           end
         when AST::UnaryOp
-          operand = evaluate_compile_time_const_value(expression.operand)
+          operand = evaluate_compile_time_const_value(expression.operand, scopes:)
           return unless operand.is_a?(Numeric)
 
           case expression.operator
@@ -812,8 +817,8 @@ module MilkTea
             operand.is_a?(Integer) ? ~operand : nil
           end
         when AST::BinaryOp
-          left = evaluate_compile_time_const_value(expression.left)
-          right = evaluate_compile_time_const_value(expression.right)
+          left = evaluate_compile_time_const_value(expression.left, scopes:)
+          right = evaluate_compile_time_const_value(expression.right, scopes:)
           evaluate_compile_time_const_binary(expression.operator, left, right)
         end
       end
@@ -1360,6 +1365,7 @@ module MilkTea
             declared_type,
             "cannot assign #{inferred_type} to #{statement.name}: expected #{declared_type}",
             expression: statement.value,
+            scopes:,
             contextual_int_to_float: contextual_int_to_float_target?(declared_type),
             line: statement.line,
             column: statement.column,
@@ -1380,6 +1386,7 @@ module MilkTea
           type: final_type,
           mutable: statement.kind == :var,
           kind: statement.kind,
+          const_value: statement.kind == :let && statement.value ? evaluate_compile_time_const_value(statement.value, scopes:) : nil,
           id: @preassigned_local_binding_ids[statement.object_id],
         )
         record_declaration_binding(statement, current_scope[statement.name])
@@ -1409,9 +1416,16 @@ module MilkTea
             line: statement.line,
           )
         when "+=", "-=", "*=", "/="
-          unless target_type.numeric? && value_type.numeric? && target_type == value_type
-            raise_sema_error("operator #{statement.operator} requires matching numeric types, got #{target_type} and #{value_type}")
-          end
+          raise_sema_error("operator #{statement.operator} requires matching numeric types, got #{target_type} and #{value_type}") unless target_type.numeric? && value_type.numeric?
+
+          ensure_assignable!(
+            value_type,
+            target_type,
+            "operator #{statement.operator} requires matching numeric types, got #{target_type} and #{value_type}",
+            expression: statement.value,
+            contextual_int_to_float: contextual_int_to_float_target?(target_type),
+            line: statement.line,
+          )
         when "%="
           unless common_integer_type(target_type, value_type) == target_type
             raise_sema_error("operator #{statement.operator} requires compatible integer types, got #{target_type} and #{value_type}")
@@ -3202,17 +3216,17 @@ module MilkTea
         binding.const_value
       end
 
-      def ensure_assignable!(actual_type, expected_type, message, expression: nil, external_numeric: false, contextual_int_to_float: false, line: nil, column: nil)
+      def ensure_assignable!(actual_type, expected_type, message, expression: nil, scopes: nil, external_numeric: false, contextual_int_to_float: false, line: nil, column: nil)
         line ||= source_line(expression)
         column ||= source_column(expression)
 
-        raise SemaError.new(message, line:, column:) unless types_compatible?(actual_type, expected_type, expression:, external_numeric:, contextual_int_to_float:)
+        raise SemaError.new(message, line:, column:) unless types_compatible?(actual_type, expected_type, expression:, scopes:, external_numeric:, contextual_int_to_float:)
       end
 
-      def ensure_argument_assignable!(actual_type, expected_type, external:, message:, expression: nil)
+      def ensure_argument_assignable!(actual_type, expected_type, external:, message:, expression: nil, scopes: nil)
         line = source_line(expression)
         column = source_column(expression)
-        raise SemaError.new(message, line:, column:) unless argument_types_compatible?(actual_type, expected_type, external:, expression:)
+        raise SemaError.new(message, line:, column:) unless argument_types_compatible?(actual_type, expected_type, external:, expression:, scopes:)
       end
 
       def with_error_node(node)
@@ -3272,20 +3286,20 @@ module MilkTea
       end
 
       def call_argument_compatible?(actual_type, expected_type, scopes:, external:, expression: nil)
-        return true if argument_types_compatible?(actual_type, expected_type, external:, expression:, contextual_int_to_float: !external)
+        return true if argument_types_compatible?(actual_type, expected_type, external:, expression:, scopes:, contextual_int_to_float: !external)
         return true if direct_function_to_proc_argument_compatible?(actual_type, expected_type, expression, scopes)
 
         false
       end
 
-      def types_compatible?(actual_type, expected_type, expression: nil, external_numeric: false, contextual_int_to_float: false)
+      def types_compatible?(actual_type, expected_type, expression: nil, scopes: nil, external_numeric: false, contextual_int_to_float: false)
         return true if actual_type == expected_type
         return true if null_assignable_to?(actual_type, expected_type)
         return true if expected_type.is_a?(Types::Nullable) && actual_type == expected_type.base
         return true if mutable_to_const_pointer_compatibility?(actual_type, expected_type)
         return true if actual_type.is_a?(Types::EnumBase) && actual_type.backing_type == expected_type
         return true if string_literal_cstr_compatibility?(expression, expected_type)
-        return true if integer_literal_numeric_compatibility?(expression, expected_type)
+        return true if exact_compile_time_numeric_compatibility?(expression, expected_type, scopes:)
         return true if integer_to_char_compatibility?(actual_type, expected_type)
         return true if external_numeric && external_numeric_compatibility?(actual_type, expected_type)
         return true if contextual_int_to_float && contextual_int_to_float_compatibility?(actual_type, expected_type)
@@ -3297,8 +3311,8 @@ module MilkTea
         expression.is_a?(AST::StringLiteral) && !expression.cstring && expected_type == @types.fetch("cstr")
       end
 
-      def argument_types_compatible?(actual_type, expected_type, external:, expression: nil, contextual_int_to_float: false)
-        return true if types_compatible?(actual_type, expected_type, expression:, external_numeric: external, contextual_int_to_float:)
+      def argument_types_compatible?(actual_type, expected_type, external:, expression: nil, scopes: nil, contextual_int_to_float: false)
+        return true if types_compatible?(actual_type, expected_type, expression:, scopes:, external_numeric: external, contextual_int_to_float:)
         return true if external && external_void_pointer_argument_compatibility?(actual_type, expected_type)
         return true if external && extern_enum_integer_argument_compatibility?(actual_type, expected_type)
         if external && foreign_mapping_context? && foreign_identity_projection_compatible?(actual_type, expected_type)
@@ -3368,8 +3382,65 @@ module MilkTea
         actual_pointee == @types.fetch("void") || expected_pointee == @types.fetch("void")
       end
 
-      def integer_literal_numeric_compatibility?(expression, expected_type)
-        integer_literal_expression?(expression) && expected_type.is_a?(Types::Primitive) && expected_type.numeric?
+      def exact_compile_time_numeric_compatibility?(expression, expected_type, scopes: nil)
+        return false unless expected_type.is_a?(Types::Primitive) && expected_type.numeric?
+
+        value = evaluate_compile_time_const_value(expression, scopes:)
+        return false unless value.is_a?(Numeric)
+
+        numeric_constant_fits_type?(value, expected_type)
+      end
+
+      def numeric_constant_fits_type?(value, expected_type)
+        if expected_type.integer?
+          integer_constant_fits_type?(value, expected_type)
+        else
+          float_constant_fits_type?(value, expected_type)
+        end
+      end
+
+      def integer_constant_fits_type?(value, expected_type)
+        integer_value = exact_integer_constant_value(value)
+        return false if integer_value.nil?
+
+        value_fits_integer_type?(integer_value, expected_type)
+      end
+
+      def float_constant_fits_type?(value, expected_type)
+        return false unless value.is_a?(Numeric)
+
+        float_value = value.to_f
+        return false unless float_value.finite?
+        return true if expected_type.name == "double"
+
+        exactly_representable_float32?(float_value)
+      end
+
+      def exact_integer_constant_value(value)
+        return value if value.is_a?(Integer)
+        return nil unless value.is_a?(Float) && value.finite?
+
+        integer_value = value.to_i
+        integer_value.to_f == value ? integer_value : nil
+      end
+
+      def value_fits_integer_type?(value, expected_type)
+        return false unless expected_type.is_a?(Types::Primitive) && expected_type.integer?
+
+        width = expected_type.integer_width
+        return false if width.nil?
+
+        min_value, max_value = if expected_type.signed_integer?
+                                 [-(1 << (width - 1)), (1 << (width - 1)) - 1]
+                               else
+                                 [0, (1 << width) - 1]
+                               end
+
+        value >= min_value && value <= max_value
+      end
+
+      def exactly_representable_float32?(value)
+        [value].pack("f").unpack1("f") == value
       end
 
       def integer_to_char_compatibility?(actual_type, expected_type)
@@ -3401,8 +3472,25 @@ module MilkTea
       end
 
       def external_numeric_compatibility?(actual_type, expected_type)
-        actual_type.is_a?(Types::Primitive) && actual_type.numeric? &&
-          expected_type.is_a?(Types::Primitive) && expected_type.numeric?
+        return false unless actual_type.is_a?(Types::Primitive) && expected_type.is_a?(Types::Primitive)
+        return false unless actual_type.numeric? && expected_type.numeric?
+
+        return lossless_external_integer_compatibility?(actual_type, expected_type) if actual_type.integer? && expected_type.integer?
+        return expected_type.float_width >= actual_type.float_width if actual_type.float? && expected_type.float?
+
+        false
+      end
+
+      def lossless_external_integer_compatibility?(actual_type, expected_type)
+        return false unless actual_type.fixed_width_integer? && expected_type.fixed_width_integer?
+
+        if actual_type.signed_integer? == expected_type.signed_integer?
+          return expected_type.integer_width >= actual_type.integer_width
+        end
+
+        return false if actual_type.signed_integer?
+
+        expected_type.signed_integer? && expected_type.integer_width > actual_type.integer_width
       end
 
       def contextual_int_to_float_compatibility?(actual_type, expected_type)
@@ -5079,10 +5167,10 @@ module MilkTea
         yield(nested_scopes)
       end
 
-      def value_binding(name:, type:, mutable:, kind:, flow_type: nil, id: nil)
+      def value_binding(name:, type:, mutable:, kind:, flow_type: nil, const_value: nil, id: nil)
         id ||= allocate_binding_id
         @binding_name_by_id[id] = name
-        ValueBinding.new(id:, name:, storage_type: type, flow_type: flow_type == type ? nil : flow_type, mutable:, kind:, const_value: nil)
+        ValueBinding.new(id:, name:, storage_type: type, flow_type: flow_type == type ? nil : flow_type, mutable:, kind:, const_value:)
       end
 
       def binding_resolution_snapshot

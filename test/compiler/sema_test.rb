@@ -2557,9 +2557,11 @@ class MilkTeaSemaTest < Minitest::Test
       def project(value: int) -> float:
           var total: float = value
           total = value + 1
+          total += value + 2
+          total -= value + 3
           var point = Point(x = 0.0)
-          point.x = value + 2
-          return value + 3
+          point.x = value + 4
+          return value + 5
 
       def main() -> int:
           let value = 4
@@ -2577,7 +2579,7 @@ class MilkTeaSemaTest < Minitest::Test
       module demo.contextual_float_expected_only
 
       def main() -> int:
-          let angle = 1
+          var angle = 1
           let radians = angle * 0.5
           let target: float = radians
           return int<-target
@@ -2590,7 +2592,24 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/cannot assign double to target: expected float/, error.message)
   end
 
-  def test_type_checks_numeric_coercion_for_external_boundaries
+  def test_rejects_contextual_float_narrowing_for_integer_compound_assignment_targets
+    source = <<~MT
+      module demo.contextual_float_compound_reject
+
+      def main() -> int:
+          var total = 1
+          total += 0.5
+          return total
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/operator \+= requires matching numeric types, got int and double/, error.message)
+  end
+
+  def test_type_checks_lossless_numeric_coercion_for_external_boundaries
     program = check_program_source(
       <<~MT,
         module demo.external_numeric
@@ -2598,27 +2617,133 @@ class MilkTeaSemaTest < Minitest::Test
         import std.c.demo as demo
 
         def main() -> int:
-            let channel = 200
-            var color = demo.Color(r = channel, g = 0, b = 0, a = 255)
-            color.g = channel
-            demo.set_scale(channel)
+            let shade: ubyte = 200
+            let count: short = 120
+            let alpha: float = 0.5
+            var color = demo.Color(r = shade, g = 0, b = 0, a = 255)
+            color.g = shade
+            demo.set_count(count)
+            demo.set_opacity(alpha)
             return 0
       MT
       {
         "std/c/demo.mt" => <<~MT,
           extern module std.c.demo:
               struct Color:
-                  r: ubyte
-                  g: ubyte
+                  r: short
+                  g: short
                   b: ubyte
                   a: ubyte
 
-              extern def set_scale(value: float) -> void
+              extern def set_count(value: int) -> void
+              extern def set_opacity(value: double) -> void
         MT
       },
     )
 
     assert_equal true, program.analyses_by_module_name.key?("demo.external_numeric")
+  end
+
+  def test_type_checks_exact_compile_time_numeric_coercion_at_typed_and_external_boundaries
+    program = check_program_source(
+      <<~MT,
+        module demo.exact_numeric_constants
+
+        import std.c.demo as demo
+
+        const channel_value: int = 255
+
+        def main() -> int:
+            let whole: int = 2.0
+            let local_opaque = channel_value
+            demo.set_channel(local_opaque)
+            demo.set_channel(demo.OPAQUE)
+            demo.set_scale(200)
+            return whole
+      MT
+      {
+        "std/c/demo.mt" => <<~MT,
+          extern module std.c.demo:
+              const OPAQUE: int = 255
+
+              extern def set_channel(value: ubyte) -> void
+              extern def set_scale(value: float) -> void
+        MT
+      },
+    )
+
+    assert_equal true, program.analyses_by_module_name.key?("demo.exact_numeric_constants")
+  end
+
+  def test_rejects_lossy_numeric_coercion_for_external_function_boundaries
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(
+        <<~MT,
+          module demo.external_numeric_lossy_call
+
+          import std.c.demo as demo
+
+          def main() -> int:
+              var channel = 200
+              demo.set_scale(channel)
+              return 0
+        MT
+        {
+          "std/c/demo.mt" => <<~MT,
+            extern module std.c.demo:
+                extern def set_scale(value: float) -> void
+          MT
+        },
+      )
+    end
+
+    assert_match(/argument value to set_scale expects float, got int/, error.message)
+  end
+
+  def test_rejects_lossy_numeric_coercion_for_external_field_boundaries
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(
+        <<~MT,
+          module demo.external_numeric_lossy_field
+
+          import std.c.demo as demo
+
+          def main() -> int:
+              var channel = 200
+              var color = demo.Color(r = 0, g = 0, b = 0, a = 255)
+              color.g = channel
+              return 0
+        MT
+        {
+          "std/c/demo.mt" => <<~MT,
+            extern module std.c.demo:
+                struct Color:
+                    r: ubyte
+                    g: ubyte
+                    b: ubyte
+                    a: ubyte
+          MT
+        },
+      )
+    end
+
+    assert_match(/cannot assign int to ubyte/, error.message)
+  end
+
+  def test_rejects_inexact_compile_time_numeric_coercion_for_typed_boundaries
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(
+        <<~MT,
+          module demo.inexact_numeric_constants
+
+          def main() -> int:
+              let whole: int = 2.5
+              return whole
+        MT
+      )
+    end
+
+    assert_match(/cannot assign double to whole: expected int/, error.message)
   end
 
   def test_type_checks_import_of_public_declarations_and_methods

@@ -591,9 +591,13 @@ Float literals default to `double` when unconstrained.
 
 Typed contexts may adopt the expected numeric type for a literal directly. This is limited to literal typing, not general implicit conversion.
 
-There is one additional narrow boundary rule for float-heavy code: a primitive integer expression may flow into an expected float type for an explicitly typed local declaration, an `=` assignment to a float-typed lvalue, a return expression from a float-returning function, an ordinary function argument with a float parameter type, or an aggregate/variant field initializer with a float field type.
+Exact compile-time numeric constants may also fit an explicit numeric target without a manual cast when the value is representable exactly in that target type. This applies to literals, named `const`s, and immutable locals whose initializer is itself a compile-time numeric constant. If the value would lose range or precision, the compiler rejects it; this is a type error, not a linter warning.
+
+There is one additional narrow boundary rule for float-heavy code: a primitive integer expression may flow into an expected float type for an explicitly typed local declaration, an assignment to a float-typed lvalue (`=` and arithmetic compound assignment operators), a return expression from a float-returning function, an ordinary function argument with a float parameter type, or an aggregate/variant field initializer with a float field type.
 
 This is still a boundary cast, not a general usual-arithmetic-conversions model. It does not widen public constant initialization or arbitrary expression typing. Integer arithmetic stays integer arithmetic until that final boundary cast, so `let ratio: float = hits / total` still performs integer division before the result is converted. When a float boundary is already known, mixed arithmetic under that boundary may type float literals as `float` instead of defaulting the whole expression to `double`, so code like `takes_float(angle * 0.5)` does not need a manual `float<-` on the literal.
+
+Foreign/external numeric boundaries are stricter: runtime implicit conversion is limited to provably lossless widening within the same numeric family. Truncating conversions and runtime implicit integer-to-float or float-to-integer conversions at foreign boundaries require an explicit cast. Exact compile-time numeric constants are still allowed when the target type can represent them exactly.
 
 Examples of typed contexts:
 
