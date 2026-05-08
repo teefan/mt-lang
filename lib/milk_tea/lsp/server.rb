@@ -2192,7 +2192,7 @@ module MilkTea
             return [:property, []] if callable_field_member_access?(name, tokens, index, analysis)
           end
 
-          return [:enumMember, []] if type_name_member_access?(tokens, index)
+          return [:enumMember, []] if type_name_member_access?(tokens, index, analysis)
           return [:method, []] if next_tok&.type == :lparen || specialized_call_with_type_args?(tokens, index)
           return [:property, []]
         end
@@ -2590,27 +2590,39 @@ module MilkTea
 
       # Returns true if the token at `index` (accessed via `.`) is a member of a
       # type name receiver, e.g. `Option.none`, `Outcome[int, str].ok`.
-      def type_name_member_access?(tokens, index)
+      def type_name_member_access?(tokens, index, analysis = nil)
         dot_index = previous_non_trivia_token_index(tokens, index)
         return false unless dot_index && tokens[dot_index].type == :dot
 
         receiver_index = previous_non_trivia_token_index(tokens, dot_index)
         return false unless receiver_index
 
-        receiver = tokens[receiver_index]
+        type_name_receiver_token?(tokens, receiver_index, analysis)
+      end
+
+      def type_name_receiver_token?(tokens, index, analysis = nil)
+        receiver = tokens[index]
+
         if receiver.type == :identifier
-          return receiver.lexeme.match?(/\A[A-Z]/)
+          return true if receiver.lexeme.match?(/\A[A-Z]/)
+          return true if analysis && analysis.types.key?(receiver.lexeme)
+
+          if analysis
+            module_binding = imported_module_binding_for_member(tokens, index, analysis)
+            return true if module_binding && module_binding.types.key?(receiver.lexeme)
+          end
+
+          return false
         end
 
         if receiver.type == :rbracket
-          lbracket_i = matching_opener_index(tokens, receiver_index)
+          lbracket_i = matching_opener_index(tokens, index)
           return false unless lbracket_i
 
           base_index = previous_non_trivia_token_index(tokens, lbracket_i)
           return false unless base_index
 
-          base = tokens[base_index]
-          return base.type == :identifier && base.lexeme.match?(/\A[A-Z]/)
+          return type_name_receiver_token?(tokens, base_index, analysis)
         end
 
         false
