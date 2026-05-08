@@ -49,7 +49,7 @@ module MilkTea
       end
 
       opaque_decls = @program.opaques
-      struct_decls = sort_struct_decls(@program.structs + collect_generic_struct_decls + collect_result_decls + collect_task_decls + collect_proc_decls + collect_str_builder_decls)
+      struct_decls = sort_struct_decls(@program.structs + collect_generic_struct_decls + collect_task_decls + collect_proc_decls + collect_str_builder_decls)
 
       forward_declarations = emit_forward_declarations(opaque_decls, struct_decls)
       unless forward_declarations.empty?
@@ -1961,9 +1961,6 @@ module MilkTea
       when Types::Span
         base = span_type_name(type)
         pointer ? "#{base}*" : base
-      when Types::Result
-        base = result_type_name(type)
-        pointer ? "#{base}*" : base
       when Types::Task
         base = task_type_name(type)
         pointer ? "#{base}*" : base
@@ -2219,18 +2216,6 @@ module MilkTea
       end
     end
 
-    def collect_result_decls
-      collect_result_types.map do |type|
-        IR::StructDecl.new(
-          name: type.to_s,
-          c_name: result_type_name(type),
-          fields: type.fields.map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) },
-          packed: false,
-          alignment: nil,
-        )
-      end
-    end
-
     def collect_task_decls
       collect_task_types.map do |type|
         IR::StructDecl.new(
@@ -2289,46 +2274,6 @@ module MilkTea
         end
         IR::VariantDecl.new(name: type.to_s, c_name: outer_c, arms:)
       end
-    end
-
-    def collect_result_types
-      result_types = []
-      visited = {}
-
-      all_emitted_top_level_values.each do |value|
-        collect_result_type(value.type, result_types, visited)
-      end
-
-      @program.structs.each do |struct_decl|
-        struct_decl.fields.each do |field|
-          collect_result_type(field.type, result_types, visited)
-        end
-      end
-
-      @program.unions.each do |union_decl|
-        union_decl.fields.each do |field|
-          collect_result_type(field.type, result_types, visited)
-        end
-      end
-
-      each_variant_arm_field_type do |field_type|
-        collect_result_type(field_type, result_types, visited)
-      end
-
-      emitted_functions.each do |function|
-        collect_result_type(function.return_type, result_types, visited)
-        function.params.each do |param|
-          collect_result_type(param.type, result_types, visited)
-        end
-        collect_result_types_from_statements(function.body, result_types, visited)
-      end
-
-      @program.static_asserts.each do |statement|
-        collect_result_types_from_expression(statement.condition, result_types, visited)
-        collect_result_types_from_expression(statement.message, result_types, visited)
-      end
-
-      result_types
     end
 
     def collect_task_types
@@ -2495,9 +2440,6 @@ module MilkTea
       case type
       when Types::Nullable
         collect_proc_type(type.base, proc_types, visited)
-      when Types::Result
-        collect_proc_type(type.ok_type, proc_types, visited)
-        collect_proc_type(type.error_type, proc_types, visited)
       when Types::Task
         collect_proc_type(type.result_type, proc_types, visited)
       when Types::Proc
@@ -2621,9 +2563,6 @@ module MilkTea
       case type
       when Types::Nullable
         collect_task_type(type.base, task_types, visited)
-      when Types::Result
-        collect_task_type(type.ok_type, task_types, visited)
-        collect_task_type(type.error_type, task_types, visited)
       when Types::Task
         task_types << type
         collect_task_type(type.result_type, task_types, visited)
@@ -2653,115 +2592,6 @@ module MilkTea
         type.arm_names.each do |arm_name|
           type.arm(arm_name).each_value do |field_type|
             collect_task_type(field_type, task_types, visited)
-          end
-        end
-      end
-    end
-
-    def collect_result_types_from_statements(statements, result_types, visited)
-      statements.each do |statement|
-        case statement
-        when IR::LocalDecl
-          collect_result_type(statement.type, result_types, visited)
-        when IR::BlockStmt
-          collect_result_types_from_statements(statement.body, result_types, visited)
-        when IR::WhileStmt
-          collect_result_types_from_expression(statement.condition, result_types, visited)
-          collect_result_types_from_statements(statement.body, result_types, visited)
-        when IR::ForStmt
-          collect_result_types_from_statements([statement.init], result_types, visited)
-          collect_result_types_from_expression(statement.condition, result_types, visited)
-          collect_result_types_from_statements(statement.body, result_types, visited)
-          collect_result_types_from_statements([statement.post], result_types, visited)
-        when IR::IfStmt
-          collect_result_types_from_statements(statement.then_body, result_types, visited)
-          collect_result_types_from_statements(statement.else_body, result_types, visited) if statement.else_body
-        when IR::SwitchStmt
-          statement.cases.each do |switch_case|
-            collect_result_types_from_statements(switch_case.body, result_types, visited)
-          end
-        when IR::StaticAssert
-          collect_result_types_from_expression(statement.condition, result_types, visited)
-          collect_result_types_from_expression(statement.message, result_types, visited)
-        end
-      end
-    end
-
-    def collect_result_types_from_expression(expression, result_types, visited)
-      case expression
-      when IR::Member
-        collect_result_types_from_expression(expression.receiver, result_types, visited)
-      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
-        collect_result_types_from_expression(expression.receiver, result_types, visited)
-        collect_result_types_from_expression(expression.index, result_types, visited)
-      when IR::Call
-        collect_result_types_from_expression(expression.callee, result_types, visited) unless expression.callee.is_a?(String)
-        expression.arguments.each { |argument| collect_result_types_from_expression(argument, result_types, visited) }
-      when IR::Unary
-        collect_result_types_from_expression(expression.operand, result_types, visited)
-      when IR::Binary
-        collect_result_types_from_expression(expression.left, result_types, visited)
-        collect_result_types_from_expression(expression.right, result_types, visited)
-      when IR::Conditional
-        collect_result_types_from_expression(expression.condition, result_types, visited)
-        collect_result_types_from_expression(expression.then_expression, result_types, visited)
-        collect_result_types_from_expression(expression.else_expression, result_types, visited)
-      when IR::ReinterpretExpr
-        collect_result_type(expression.target_type, result_types, visited)
-        collect_result_type(expression.source_type, result_types, visited)
-        collect_result_types_from_expression(expression.expression, result_types, visited)
-      when IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
-        collect_result_type(expression.target_type, result_types, visited)
-      when IR::AddressOf
-        collect_result_types_from_expression(expression.expression, result_types, visited)
-      when IR::Cast
-        collect_result_types_from_expression(expression.expression, result_types, visited)
-      when IR::AggregateLiteral
-        expression.fields.each { |field| collect_result_types_from_expression(field.value, result_types, visited) }
-      when IR::ArrayLiteral
-        expression.elements.each { |element| collect_result_types_from_expression(element, result_types, visited) }
-      end
-    end
-
-    def collect_result_type(type, result_types, visited)
-      return unless type
-      return if visited[type]
-
-      visited[type] = true
-
-      case type
-      when Types::Nullable
-        collect_result_type(type.base, result_types, visited)
-      when Types::Result
-        result_types << type
-        collect_result_type(type.ok_type, result_types, visited)
-        collect_result_type(type.error_type, result_types, visited)
-      when Types::Span
-        collect_result_type(type.element_type, result_types, visited)
-      when Types::StructInstance
-        type.arguments.each do |argument|
-          collect_result_type(argument, result_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
-        end
-        type.fields.each_value do |field_type|
-          collect_result_type(field_type, result_types, visited)
-        end
-      when Types::GenericInstance
-        type.arguments.each do |argument|
-          collect_result_type(argument, result_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
-        end
-      when Types::Function
-        type.params.each do |param|
-          collect_result_type(param.type, result_types, visited)
-        end
-        collect_result_type(type.return_type, result_types, visited)
-      when Types::Struct, Types::Union
-        type.fields.each_value do |field_type|
-          collect_result_type(field_type, result_types, visited)
-        end
-      when Types::Variant
-        type.arm_names.each do |arm_name|
-          type.arm(arm_name).each_value do |field_type|
-            collect_result_type(field_type, result_types, visited)
           end
         end
       end
@@ -2891,9 +2721,6 @@ module MilkTea
       case type
       when Types::Nullable
         collect_generic_variant_type(type.base, generic_variant_types, visited)
-      when Types::Result
-        collect_generic_variant_type(type.ok_type, generic_variant_types, visited)
-        collect_generic_variant_type(type.error_type, generic_variant_types, visited)
       when Types::Task
         collect_generic_variant_type(type.result_type, generic_variant_types, visited)
       when Types::Span
@@ -3207,9 +3034,6 @@ module MilkTea
       case type
       when Types::Nullable
         collect_generic_struct_type(type.base, generic_struct_types, visited)
-      when Types::Result
-        collect_generic_struct_type(type.ok_type, generic_struct_types, visited)
-        collect_generic_struct_type(type.error_type, generic_struct_types, visited)
       when Types::Span
         collect_generic_struct_type(type.element_type, generic_struct_types, visited)
       when Types::StructInstance
@@ -3288,8 +3112,6 @@ module MilkTea
       case type
       when Types::Nullable
         struct_type_dependencies(type.base)
-      when Types::Result
-        [result_type_name(type)]
       when Types::Task
         [task_type_name(type)] + struct_type_dependencies(type.result_type)
       when Types::GenericInstance
@@ -3395,9 +3217,6 @@ module MilkTea
       case type
       when Types::Nullable
         collect_span_type(type.base, span_types, visited)
-      when Types::Result
-        collect_span_type(type.ok_type, span_types, visited)
-        collect_span_type(type.error_type, span_types, visited)
       when Types::Span
         span_types << type
         collect_span_type(type.element_type, span_types, visited)
@@ -3459,10 +3278,6 @@ module MilkTea
       "mt_span_#{sanitize_identifier(type.element_type.to_s)}"
     end
 
-    def result_type_name(type)
-      "mt_result_#{sanitize_identifier(type.ok_type.to_s)}_#{sanitize_identifier(type.error_type.to_s)}"
-    end
-
     def task_type_name(type)
       "mt_task_#{sanitize_identifier(type.result_type.to_s)}"
     end
@@ -3472,7 +3287,6 @@ module MilkTea
     end
 
     def named_type_c_name(type)
-      return result_type_name(type) if type.is_a?(Types::Result)
       return task_type_name(type) if type.is_a?(Types::Task)
       if type.is_a?(Types::VariantArmPayload)
         return "#{named_type_c_name(type.variant_type)}_#{type.arm_name}"

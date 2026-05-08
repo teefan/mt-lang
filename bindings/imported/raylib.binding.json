@@ -8,8 +8,8 @@
       "alias": "bytes"
     },
     {
-      "module_name": "std.option",
-      "alias": "option"
+      "module_name": "std.maybe",
+      "alias": "maybe"
     },
     {
       "module_name": "std.vec",
@@ -288,7 +288,7 @@
         ],
         "wrapper": {
           "kind": "owned_bytes",
-          "option_alias": "option",
+          "maybe_alias": "maybe",
           "bytes_alias": "bytes",
           "release": "c.UnloadFileData"
         }
@@ -304,7 +304,7 @@
         ],
         "wrapper": {
           "kind": "owned_string",
-          "option_alias": "option",
+          "maybe_alias": "maybe",
           "text_alias": "text",
           "string_alias": "string",
           "release": "c.UnloadFileText"
@@ -697,7 +697,7 @@
         ],
         "wrapper": {
           "kind": "owned_string",
-          "option_alias": "option",
+          "maybe_alias": "maybe",
           "text_alias": "text",
           "string_alias": "string",
           "release": "c.UnloadUTF8"
@@ -719,7 +719,7 @@
         ],
         "wrapper": {
           "kind": "owned_vec",
-          "option_alias": "option",
+          "maybe_alias": "maybe",
           "vec_alias": "vec",
           "release": "c.UnloadCodepoints"
         }

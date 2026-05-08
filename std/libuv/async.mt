@@ -3,6 +3,7 @@ module std.libuv.async
 import std.libuv as uv
 import std.libuv.runtime as rt
 import std.mem.heap as heap
+import std.status as status
 
 var current_loop: rt.Loop = zero[rt.Loop]
 var current_loop_active: bool = false
@@ -200,22 +201,23 @@ pub def work_take_result[T](frame: ptr[void]) -> T:
 pub def sleep_on(loop: rt.Loop, timeout: ptr_uint) -> Task[int]:
     let state = heap.must_alloc_zeroed[SleepState](1)
     let timer_result = rt.create_timer(loop)
-    if not timer_result.is_ok:
-        unsafe:
-            state.status = timer_result.error
-            state.ready = true
-        return sleep_task(state)
+    match timer_result:
+        status.Status.err as payload:
+            unsafe:
+                state.status = payload.error
+                state.ready = true
+            return sleep_task(state)
+        status.Status.ok as payload:
+            unsafe:
+                state.timer = payload.value
+                uv.handle_set_data(ptr[uv.uv_handle_t]<-rt.handle_ptr(state.timer), ptr[void]<-state)
 
+    var code = 0
     unsafe:
-        state.timer = timer_result.value
-        uv.handle_set_data(ptr[uv.uv_handle_t]<-rt.handle_ptr(state.timer), ptr[void]<-state)
-
-    var status = 0
-    unsafe:
-        status = rt.timer_start_once(state.timer, timeout, on_sleep_timer)
-    if status != 0:
+        code = rt.timer_start_once(state.timer, timeout, on_sleep_timer)
+    if code != 0:
         unsafe:
-            state.status = status
+            state.status = code
             uv.close(ptr[uv.uv_handle_t]<-rt.handle_ptr(state.timer), on_sleep_closed)
     return sleep_task(state)
 
@@ -248,9 +250,12 @@ pub def work[T](run_work: fn() -> T) -> Task[T]:
 
 def must_create_loop() -> rt.Loop:
     let loop_result = rt.create_loop()
-    if not loop_result.is_ok:
-        panic(c"libuv.async.create_loop failed")
-    return loop_result.value
+    match loop_result:
+        status.Status.ok as payload:
+            return payload.value
+        status.Status.err:
+            panic(c"libuv.async.create_loop failed")
+    return zero[rt.Loop]
 
 
 def must_release_loop(loop: ref[rt.Loop]) -> void:

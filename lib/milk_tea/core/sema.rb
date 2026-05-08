@@ -725,8 +725,6 @@ module MilkTea
 
         callee = expression.callee
         if callee.is_a?(AST::Identifier)
-          return if %w[ok err].include?(callee.name)
-
           if (type_expr = resolve_type_expression(callee))
             return if type_expr.is_a?(Types::Struct) || type_expr.is_a?(Types::StringView)
           end
@@ -2235,8 +2233,6 @@ module MilkTea
           check_reinterpret_call(callable, expression.arguments, scopes:)
         when :zero
           raise_sema_error("zero[T]() is no longer supported; use zero[T]")
-        when :result_ok, :result_err
-          check_result_construction(callable_kind, expression.arguments, scopes:, expected_type:)
         when :panic
           check_panic_call(expression.arguments, scopes:)
         when :ref_of
@@ -2461,8 +2457,6 @@ module MilkTea
           end
 
           return [:function, @top_level_functions.fetch(callee.name), nil] if @top_level_functions.key?(callee.name)
-          return [:result_ok, nil, nil] if callee.name == "ok"
-          return [:result_err, nil, nil] if callee.name == "err"
           return [:panic, nil, nil] if callee.name == "panic"
           return [:ref_of, nil, nil] if callee.name == "ref_of"
           return [:const_ptr_of, nil, nil] if callee.name == "const_ptr_of"
@@ -2586,7 +2580,7 @@ module MilkTea
 
           if (type_ref = type_ref_from_specialization(callee))
             specialized_type = resolve_type_ref(type_ref)
-            return [:struct, specialized_type, nil] if specialized_type.is_a?(Types::Struct) || result_type?(specialized_type) || task_type?(specialized_type)
+            return [:struct, specialized_type, nil] if specialized_type.is_a?(Types::Struct) || task_type?(specialized_type)
           end
 
           raise_sema_error("unsupported callable specialization #{describe_expression(callee)}")
@@ -2721,23 +2715,6 @@ module MilkTea
         else
           "function #{name} expects #{function_type.params.length} arguments, got #{actual_count}"
         end
-      end
-
-      def check_result_construction(kind, arguments, scopes:, expected_type:)
-        name = kind == :result_ok ? "ok" : "err"
-        raise_sema_error("#{name} does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("#{name} expects 1 argument, got #{arguments.length}") unless arguments.length == 1
-        raise_sema_error("cannot infer result type for #{name} without an expected Result[T, E]") unless result_type?(expected_type)
-
-        field_type = kind == :result_ok ? expected_type.ok_type : expected_type.error_type
-        actual_type = infer_expression(arguments.first.value, scopes:, expected_type: field_type)
-        ensure_assignable!(
-          actual_type,
-          field_type,
-          "argument to #{name} expects #{field_type}, got #{actual_type}",
-          expression: arguments.first.value,
-        )
-        expected_type
       end
 
       def check_panic_call(arguments, scopes:)
@@ -3104,11 +3081,6 @@ module MilkTea
 
           if name != "ref" && arguments.any? { |argument| contains_ref_type?(argument) }
             raise_sema_error("ref types cannot be nested inside #{name}")
-          end
-
-          if name == "Result"
-            validate_generic_type!(name, arguments)
-            return Types::Result.new(arguments[0], arguments[1])
           end
 
           if name == "Task"
@@ -3960,10 +3932,6 @@ module MilkTea
         type.is_a?(Types::StringView)
       end
 
-      def result_type?(type)
-        type.is_a?(Types::Result)
-      end
-
       def task_type?(type)
         type.is_a?(Types::Task)
       end
@@ -3978,7 +3946,7 @@ module MilkTea
       def infer_offsetof_type(type_ref, field_name)
         type = resolve_type_ref(type_ref)
         unless layout_aggregate_type?(type)
-          raise_sema_error("offset_of requires a struct, union, span, Result, or str type, got #{type}")
+          raise_sema_error("offset_of requires a struct, union, span, or str type, got #{type}")
         end
 
         field_type = type.field(field_name)
@@ -3989,7 +3957,7 @@ module MilkTea
 
       def sized_layout_type?(type)
         case type
-        when Types::Primitive, Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Variant, Types::Span, Types::StringView, Types::Result, Types::Task
+        when Types::Primitive, Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Variant, Types::Span, Types::StringView, Types::Task
           true
         when Types::Nullable
           true
@@ -4013,7 +3981,6 @@ module MilkTea
         return true if type.is_a?(Types::EnumBase)
         return true if span_type?(type)
         return true if string_view_type?(type)
-        return true if result_type?(type)
         return true if task_type?(type)
         return true if type.is_a?(Types::Struct)
         return true if type.is_a?(Types::Variant)
@@ -4034,7 +4001,7 @@ module MilkTea
       end
 
       def aggregate_type?(type)
-        type.is_a?(Types::Struct) || span_type?(type) || string_view_type?(type) || result_type?(type) || task_type?(type)
+        type.is_a?(Types::Struct) || span_type?(type) || string_view_type?(type) || task_type?(type)
       end
 
       def array_type?(type)
@@ -4105,8 +4072,6 @@ module MilkTea
           type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_ref_type?(argument) }
         when Types::Span
           contains_ref_type?(type.element_type)
-        when Types::Result
-          contains_ref_type?(type.ok_type) || contains_ref_type?(type.error_type)
         when Types::Task
           contains_ref_type?(type.result_type)
         when Types::StructInstance
@@ -4185,10 +4150,6 @@ module MilkTea
           raise_sema_error("str_builder requires exactly one type argument") unless arguments.length == 1
           raise_sema_error("str_builder capacity must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments.first)
           raise_sema_error("str_builder capacity must be positive") if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
-        when "Result"
-          raise_sema_error("Result requires exactly two type arguments") unless arguments.length == 2
-          raise_sema_error("Result ok type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise_sema_error("Result error type must be a type") if arguments[1].is_a?(Types::LiteralTypeArg)
         when "Task"
           raise_sema_error("Task requires exactly one type argument") unless arguments.length == 1
           raise_sema_error("Task result type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
@@ -4546,11 +4507,6 @@ module MilkTea
           return unless actual_type.is_a?(Types::Span)
 
           collect_type_substitutions(pattern_type.element_type, actual_type.element_type, substitutions, function_name)
-        when Types::Result
-          return unless actual_type.is_a?(Types::Result)
-
-          collect_type_substitutions(pattern_type.ok_type, actual_type.ok_type, substitutions, function_name)
-          collect_type_substitutions(pattern_type.error_type, actual_type.error_type, substitutions, function_name)
         when Types::Task
           return unless actual_type.is_a?(Types::Task)
 
@@ -4576,6 +4532,13 @@ module MilkTea
           collect_type_substitutions(pattern_type.return_type, actual_type.return_type, substitutions, function_name)
         when Types::StructInstance
           return unless actual_type.is_a?(Types::StructInstance)
+          return unless actual_type.definition == pattern_type.definition && actual_type.arguments.length == pattern_type.arguments.length
+
+          pattern_type.arguments.zip(actual_type.arguments).each do |expected_argument, actual_argument|
+            collect_type_substitutions(expected_argument, actual_argument, substitutions, function_name)
+          end
+        when Types::VariantInstance
+          return unless actual_type.is_a?(Types::VariantInstance)
           return unless actual_type.definition == pattern_type.definition && actual_type.arguments.length == pattern_type.arguments.length
 
           pattern_type.arguments.zip(actual_type.arguments).each do |expected_argument, actual_argument|
@@ -4636,9 +4599,6 @@ module MilkTea
           end
         when Types::Span
           validate_specialized_function_type!(type.element_type, function_name:, context:)
-        when Types::Result
-          validate_specialized_function_type!(type.ok_type, function_name:, context:)
-          validate_specialized_function_type!(type.error_type, function_name:, context:)
         when Types::Task
           validate_specialized_function_type!(type.result_type, function_name:, context:)
         when Types::Proc
@@ -4675,8 +4635,6 @@ module MilkTea
           )
         when Types::Span
           Types::Span.new(substitute_type(type.element_type, substitutions))
-        when Types::Result
-          Types::Result.new(substitute_type(type.ok_type, substitutions), substitute_type(type.error_type, substitutions))
         when Types::Task
           Types::Task.new(substitute_type(type.result_type, substitutions))
         when Types::Proc
@@ -4787,8 +4745,6 @@ module MilkTea
           end
         when Types::Span
           contains_proc_type?(type.element_type, visited)
-        when Types::Result
-          contains_proc_type?(type.ok_type, visited) || contains_proc_type?(type.error_type, visited)
         when Types::Task
           contains_proc_type?(type.result_type, visited)
         when Types::StructInstance

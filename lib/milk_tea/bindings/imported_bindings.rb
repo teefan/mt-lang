@@ -901,10 +901,10 @@ module MilkTea
         lines << "    let raw_result = #{raw_function_name}#{render_call_args(call_args)}"
 
         if raw_declaration.return_type.nullable
-          option_alias = wrapper.fetch(:option_alias)
+          maybe_alias = wrapper.fetch(:maybe_alias)
           string_alias = wrapper.fetch(:string_alias)
           lines << "    if raw_result == null:"
-          lines << "        return #{option_alias}.Option[#{string_alias}.String].none()"
+          lines << "        return #{maybe_alias}.Maybe[#{string_alias}.String].none"
           lines << ""
         end
 
@@ -912,9 +912,9 @@ module MilkTea
         lines << "    #{wrapper.fetch(:release)}(#{raw_value_expression})"
 
         if raw_declaration.return_type.nullable
-          option_alias = wrapper.fetch(:option_alias)
+          maybe_alias = wrapper.fetch(:maybe_alias)
           string_alias = wrapper.fetch(:string_alias)
-          lines << "    return #{option_alias}.Option[#{string_alias}.String].some(value)"
+          lines << "    return #{maybe_alias}.Maybe[#{string_alias}.String].some(value= value)"
         else
           lines << "    return value"
         end
@@ -942,10 +942,10 @@ module MilkTea
         lines << "    let raw_result = #{raw_function_name}#{render_call_args(call_args)}"
 
         if raw_declaration.return_type.nullable
-          option_alias = wrapper.fetch(:option_alias)
+          maybe_alias = wrapper.fetch(:maybe_alias)
           bytes_alias = wrapper.fetch(:bytes_alias)
           lines << "    if raw_result == null:"
-          lines << "        return #{option_alias}.Option[#{bytes_alias}.Buffer].none()"
+          lines << "        return #{maybe_alias}.Maybe[#{bytes_alias}.Buffer].none"
           lines << ""
         end
 
@@ -958,9 +958,9 @@ module MilkTea
         lines << "    #{wrapper.fetch(:release)}(#{raw_value_expression})"
 
         if raw_declaration.return_type.nullable
-          option_alias = wrapper.fetch(:option_alias)
+          maybe_alias = wrapper.fetch(:maybe_alias)
           bytes_alias = wrapper.fetch(:bytes_alias)
-          lines << "    return #{option_alias}.Option[#{bytes_alias}.Buffer].some(value)"
+          lines << "    return #{maybe_alias}.Maybe[#{bytes_alias}.Buffer].some(value= value)"
         else
           lines << "    return value"
         end
@@ -998,17 +998,17 @@ module MilkTea
         lines << "            #{wrapper.fetch(:release)}(#{raw_value_expression})"
 
         if raw_declaration.return_type.nullable
-          option_alias = wrapper.fetch(:option_alias)
-          lines << "        return #{option_alias}.Option[#{vec_alias}.Vec[#{element_type}]].some(value)"
+          maybe_alias = wrapper.fetch(:maybe_alias)
+          lines << "        return #{maybe_alias}.Maybe[#{vec_alias}.Vec[#{element_type}]].some(value= value)"
         else
           lines << "        return value"
         end
 
         lines << ""
         if raw_declaration.return_type.nullable
-          option_alias = wrapper.fetch(:option_alias)
+          maybe_alias = wrapper.fetch(:maybe_alias)
           lines << "    if raw_result == null:"
-          lines << "        return #{option_alias}.Option[#{vec_alias}.Vec[#{element_type}]].none()"
+          lines << "        return #{maybe_alias}.Maybe[#{vec_alias}.Vec[#{element_type}]].none"
           lines << ""
         end
 
@@ -1020,8 +1020,8 @@ module MilkTea
         lines << "    #{wrapper.fetch(:release)}(#{raw_value_expression})"
 
         if raw_declaration.return_type.nullable
-          option_alias = wrapper.fetch(:option_alias)
-          lines << "    return #{option_alias}.Option[#{vec_alias}.Vec[#{element_type}]].some(value)"
+          maybe_alias = wrapper.fetch(:maybe_alias)
+          lines << "    return #{maybe_alias}.Maybe[#{vec_alias}.Vec[#{element_type}]].some(value= value)"
         else
           lines << "    return value"
         end
@@ -1037,52 +1037,52 @@ module MilkTea
 
         case kind
         when "owned_string"
-          validate_allowed_keys!(value, %w[kind option_alias text_alias string_alias release], context: "function wrapper")
+          validate_allowed_keys!(value, %w[kind maybe_alias text_alias string_alias release], context: "function wrapper")
           text_alias = value.fetch("text_alias")
           string_alias = value.fetch("string_alias")
           release = value.fetch("release")
-          option_alias = value["option_alias"]
+          maybe_alias = value["maybe_alias"]
 
-          [text_alias, string_alias, release, option_alias].compact.each do |field|
+          [text_alias, string_alias, release, maybe_alias].compact.each do |field|
             raise Error, "function wrapper fields for #{raw_name} in #{@policy_path} must be strings" unless field.is_a?(String) && !field.empty?
           end
 
           {
             kind: :owned_string,
-            option_alias: option_alias,
+            maybe_alias: maybe_alias,
             text_alias:,
             string_alias:,
             release:,
           }
         when "owned_bytes"
-          validate_allowed_keys!(value, %w[kind option_alias bytes_alias release], context: "function wrapper")
+          validate_allowed_keys!(value, %w[kind maybe_alias bytes_alias release], context: "function wrapper")
           bytes_alias = value.fetch("bytes_alias")
           release = value.fetch("release")
-          option_alias = value["option_alias"]
+          maybe_alias = value["maybe_alias"]
 
-          [bytes_alias, release, option_alias].compact.each do |field|
+          [bytes_alias, release, maybe_alias].compact.each do |field|
             raise Error, "function wrapper fields for #{raw_name} in #{@policy_path} must be strings" unless field.is_a?(String) && !field.empty?
           end
 
           {
             kind: :owned_bytes,
-            option_alias: option_alias,
+            maybe_alias: maybe_alias,
             bytes_alias:,
             release:,
           }
         when "owned_vec"
-          validate_allowed_keys!(value, %w[kind option_alias vec_alias release], context: "function wrapper")
+          validate_allowed_keys!(value, %w[kind maybe_alias vec_alias release], context: "function wrapper")
           vec_alias = value.fetch("vec_alias")
           release = value.fetch("release")
-          option_alias = value["option_alias"]
+          maybe_alias = value["maybe_alias"]
 
-          [vec_alias, release, option_alias].compact.each do |field|
+          [vec_alias, release, maybe_alias].compact.each do |field|
             raise Error, "function wrapper fields for #{raw_name} in #{@policy_path} must be strings" unless field.is_a?(String) && !field.empty?
           end
 
           {
             kind: :owned_vec,
-            option_alias: option_alias,
+            maybe_alias: maybe_alias,
             vec_alias:,
             release:,
           }
@@ -1242,30 +1242,30 @@ module MilkTea
         string_type = "#{wrapper.fetch(:string_alias)}.String"
         return string_type unless raw_declaration.return_type.nullable
 
-        option_alias = wrapper[:option_alias]
-        raise Error, "owned_string wrapper in #{@policy_path} requires option_alias for nullable raw returns" unless option_alias
+        maybe_alias = wrapper[:maybe_alias]
+        raise Error, "owned_string wrapper in #{@policy_path} requires maybe_alias for nullable raw returns" unless maybe_alias
 
-        "#{option_alias}.Option[#{string_type}]"
+        "#{maybe_alias}.Maybe[#{string_type}]"
       end
 
       def owned_bytes_wrapper_return_type(raw_declaration, wrapper)
         buffer_type = "#{wrapper.fetch(:bytes_alias)}.Buffer"
         return buffer_type unless raw_declaration.return_type.nullable
 
-        option_alias = wrapper[:option_alias]
-        raise Error, "owned_bytes wrapper in #{@policy_path} requires option_alias for nullable raw returns" unless option_alias
+        maybe_alias = wrapper[:maybe_alias]
+        raise Error, "owned_bytes wrapper in #{@policy_path} requires maybe_alias for nullable raw returns" unless maybe_alias
 
-        "#{option_alias}.Option[#{buffer_type}]"
+        "#{maybe_alias}.Maybe[#{buffer_type}]"
       end
 
       def owned_vec_wrapper_return_type(raw_declaration, wrapper, element_type)
         vec_type = "#{wrapper.fetch(:vec_alias)}.Vec[#{element_type}]"
         return vec_type unless raw_declaration.return_type.nullable
 
-        option_alias = wrapper[:option_alias]
-        raise Error, "owned_vec wrapper in #{@policy_path} requires option_alias for nullable raw returns" unless option_alias
+        maybe_alias = wrapper[:maybe_alias]
+        raise Error, "owned_vec wrapper in #{@policy_path} requires maybe_alias for nullable raw returns" unless maybe_alias
 
-        "#{option_alias}.Option[#{vec_type}]"
+        "#{maybe_alias}.Maybe[#{vec_type}]"
       end
 
       def build_function_signature(name, type_params:, params:, return_type:)

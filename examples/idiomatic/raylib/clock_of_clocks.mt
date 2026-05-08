@@ -2,6 +2,7 @@ module examples.idiomatic.raylib.clock_of_clocks
 
 import std.raylib as rl
 import std.raylib.math as math
+import std.status as status
 import std.time as time
 
 const screen_width: int = 800
@@ -191,8 +192,12 @@ def main() -> int:
                 hour_mode = hour_mode_24
 
         let loaded_clock = time.local_clock()
-        if loaded_clock.is_ok:
-            current_clock = loaded_clock.value
+        if status.is_ok(loaded_clock):
+            match loaded_clock:
+                status.Status.ok as payload:
+                    current_clock = payload.value
+                status.Status.err:
+                    return 1
 
         if current_clock.second != previous_second or hour_mode != previous_hour_mode:
             previous_second = current_clock.second

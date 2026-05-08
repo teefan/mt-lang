@@ -454,7 +454,6 @@ Unsafe context is required for raw-pointer-level operations such as:
 - `span[T]`
 - `array[T, N]`
 - `str_builder[N]`
-- `Result[T, E]`
 - `Task[T]`
 - `fn(params...) -> R`
 - `proc(params...) -> R`
@@ -484,7 +483,6 @@ Type arguments can be:
 
 Special recognized callables:
 
-- `ok(value)` / `err(value)`
 - `panic(message)`
 - `ref_of(x)`
 - `const_ptr_of(x)`
@@ -496,6 +494,8 @@ Special recognized callables:
 - `zero[T]`
 - `array[T, N](...)`
 - `span[T](data = ..., len = ...)`
+
+For recoverable failures, use `import std.status as status` and the ordinary library type `status.Status[T, E]`. Its `.ok(...)` and `.err(...)` constructors are variant arms, not built-in callables.
 
 For repeated pointer-plus-length span construction, prefer `std.span` helpers like `sp.from_ptr[T](ptr, len)` and `sp.from_nullable_ptr[T](ptr_or_null, len)`.
 

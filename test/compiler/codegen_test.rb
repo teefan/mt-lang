@@ -1843,7 +1843,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return \(\(int32_t\) demo_generic_builder_named_const_capacity_of_32\(buffer\)\);/, generated)
   end
 
-  def test_generate_c_for_result_construction_from_expected_context
+  def test_generate_c_rejects_removed_builtin_result_type
     source = [
       "module demo.result_surface",
       "",
@@ -1851,29 +1851,15 @@ class MilkTeaCodegenTest < Minitest::Test
       "    invalid_format = 1",
       "",
       "def load(available: bool) -> Result[int, LoadError]:",
-      "    if available:",
-      "        return ok(7)",
-      "    return err(LoadError.invalid_format)",
-      "",
-      "def main() -> int:",
-      "    let loaded = load(false)",
-      "    if loaded.is_ok:",
-      "        return loaded.value",
-      "    if loaded.error == LoadError.invalid_format:",
-      "        return 1",
       "    return 0",
       "",
     ].join("\n")
 
-    generated = generate_c_from_source(source)
+    error = assert_raises(MilkTea::SemaError) do
+      generate_c_from_source(source)
+    end
 
-    assert_match(/typedef struct mt_result_int_demo_result_surface_LoadError mt_result_int_demo_result_surface_LoadError;/, generated)
-    assert_match(/struct mt_result_int_demo_result_surface_LoadError \{/, generated)
-    assert_match(/bool is_ok;/, generated)
-    assert_match(/int32_t value;/, generated)
-    assert_match(/demo_result_surface_LoadError error;/, generated)
-    assert_match(/return \(mt_result_int_demo_result_surface_LoadError\)\{ \.is_ok = true, \.value = 7 \};/, generated)
-    assert_match(/return \(mt_result_int_demo_result_surface_LoadError\)\{ \.is_ok = false, \.error = demo_result_surface_LoadError_invalid_format \};/, generated)
+    assert_match(/unknown generic type Result/, error.message)
   end
 
   def test_generate_c_for_builtin_panic_helper
@@ -3639,31 +3625,31 @@ class MilkTeaCodegenTest < Minitest::Test
     source = <<~MT
       module demo.generic_variant_codegen
 
-      variant Option[T]:
+      variant Maybe[T]:
           some(value: T)
           none
 
-      def unwrap_or_zero(value: Option[int]) -> int:
+      def value_or_zero(value: Maybe[int]) -> int:
           match value:
-              Option.some as payload:
+              Maybe.some as payload:
                   return payload.value
-              Option.none:
+              Maybe.none:
                   return 0
 
       def main() -> int:
-          let value: Option[int] = Option[int].some(value= 7)
-          return unwrap_or_zero(value)
+          let value: Maybe[int] = Maybe[int].some(value= 7)
+          return value_or_zero(value)
     MT
 
     generated = generate_c_from_source(source)
 
-    assert_match(/typedef int32_t demo_generic_variant_codegen_Option_int_kind;/, generated)
-    assert_match(/struct demo_generic_variant_codegen_Option_int_some \{/, generated)
-    assert_match(/struct demo_generic_variant_codegen_Option_int \{/, generated)
-    assert_match(/demo_generic_variant_codegen_Option_int_kind kind;/, generated)
-    assert_match(/case demo_generic_variant_codegen_Option_int_kind_some:/, generated)
-    assert_match(/case demo_generic_variant_codegen_Option_int_kind_none:/, generated)
-    assert_match(/demo_generic_variant_codegen_Option_int_some payload = .*\.data\.some;/, generated)
+    assert_match(/typedef int32_t demo_generic_variant_codegen_Maybe_int_kind;/, generated)
+    assert_match(/struct demo_generic_variant_codegen_Maybe_int_some \{/, generated)
+    assert_match(/struct demo_generic_variant_codegen_Maybe_int \{/, generated)
+    assert_match(/demo_generic_variant_codegen_Maybe_int_kind kind;/, generated)
+    assert_match(/case demo_generic_variant_codegen_Maybe_int_kind_some:/, generated)
+    assert_match(/case demo_generic_variant_codegen_Maybe_int_kind_none:/, generated)
+    assert_match(/demo_generic_variant_codegen_Maybe_int_some payload = .*\.data\.some;/, generated)
   end
 
   def test_generate_c_for_union_with_proc_field

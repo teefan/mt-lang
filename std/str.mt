@@ -1,8 +1,8 @@
 module std.str
 
 import std.ascii as ascii
+import std.maybe as maybe
 import std.mem.arena as arena
-import std.option as option
 import std.span as sp
 
 
@@ -25,11 +25,11 @@ pub def chars_as_str(text: ptr[char]) -> str:
         return str(data = text, len = cstr_len(cstr<-text))
 
 
-pub def nullable_cstr_as_str(text: cstr?) -> option.Option[str]:
+pub def nullable_cstr_as_str(text: cstr?) -> maybe.Maybe[str]:
     if text == null:
-        return option.Option[str].none()
+        return maybe.Maybe[str].none
 
-    return option.Option[str].some(cstr_as_str(cstr<-text))
+    return maybe.Maybe[str].some(value= cstr_as_str(cstr<-text))
 
 
 pub def as_byte_span(text: str) -> span[ubyte]:
@@ -37,13 +37,13 @@ pub def as_byte_span(text: str) -> span[ubyte]:
         return sp.from_ptr[ubyte](ptr[ubyte]<-text.data, text.len)
 
 
-pub def utf8_byte_span_as_str(bytes: span[ubyte]) -> option.Option[str]:
+pub def utf8_byte_span_as_str(bytes: span[ubyte]) -> maybe.Maybe[str]:
     unsafe:
         let borrowed = str(data = ptr[char]<-bytes.data, len = bytes.len)
         if not is_valid_utf8(borrowed):
-            return option.Option[str].none()
+            return maybe.Maybe[str].none
 
-        return option.Option[str].some(borrowed)
+        return maybe.Maybe[str].some(value= borrowed)
 
 
 pub def utf8_continuation_byte(byte: ubyte) -> bool:
@@ -104,13 +104,13 @@ pub def ends_with(text: str, suffix: str) -> bool:
     return true
 
 
-pub def find_byte(text: str, byte: ubyte) -> option.Option[ptr_uint]:
+pub def find_byte(text: str, byte: ubyte) -> maybe.Maybe[ptr_uint]:
     var index: ptr_uint = 0
     while index < text.len:
         if byte_at(text, index) == byte:
-            return option.Option[ptr_uint].some(index)
+            return maybe.Maybe[ptr_uint].some(value= index)
         index += 1
-    return option.Option[ptr_uint].none()
+    return maybe.Maybe[ptr_uint].none
 
 
 pub def trim_ascii_whitespace(text: str) -> str:

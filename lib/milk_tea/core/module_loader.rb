@@ -163,7 +163,7 @@ module MilkTea
 
       analysis.ast.declarations.each do |declaration|
         case declaration
-        when AST::StructDecl, AST::UnionDecl, AST::EnumDecl, AST::FlagsDecl, AST::OpaqueDecl, AST::TypeAliasDecl
+        when AST::StructDecl, AST::UnionDecl, AST::VariantDecl, AST::EnumDecl, AST::FlagsDecl, AST::OpaqueDecl, AST::TypeAliasDecl
           target = exported_declaration?(analysis, declaration) ? types : private_types
           target[declaration.name] = analysis.types.fetch(declaration.name)
         when AST::ConstDecl, AST::VarDecl

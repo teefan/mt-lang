@@ -398,7 +398,7 @@ class MilkTeaBuildTest < Minitest::Test
       File.write(source_path, [
         "module projects.snake_duel",
         "",
-        "import std.option as option",
+        "import std.maybe as maybe",
         "import src.game_types as gt",
         "",
         "def main() -> int:",

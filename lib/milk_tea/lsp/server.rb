@@ -28,7 +28,7 @@ module MilkTea
 
       KEYWORD_TOKEN_TYPES = Token::KEYWORDS.values.to_set.freeze
       DEFAULT_LIBRARY_TYPE_NAMES = Types::BUILTIN_TYPE_NAMES.to_set.freeze
-      BUILTIN_FUNCTION_NAMES = %w[ref_of const_ptr_of ptr_of read panic ok err cast reinterpret array span zero range].to_set.freeze
+      BUILTIN_FUNCTION_NAMES = %w[ref_of const_ptr_of ptr_of read panic cast reinterpret array span zero range].to_set.freeze
       OPERATOR_TOKEN_TYPES = %i[
         amp colon comma caret dot lparen rparen pipe lbracket rbracket question
         equal plus minus star slash percent less greater tilde
@@ -533,7 +533,7 @@ module MilkTea
         text = params['text']
         @workspace.update_document(uri, text) if text
         invalidate_document_caches(uri)
-        affected_uris = refresh_open_document_dependency_state(uri)
+        refresh_open_document_dependency_state(uri)
         schedule_diagnostics(uri) unless @workspace.background_document?(uri)
         nil
       end
@@ -2581,7 +2581,7 @@ module MilkTea
 
       # Returns true if the identifier at `index` is a variant/enum/flags member
       # declared directly in a type body — e.g. `none` or `some(value: T)` inside
-      # `variant Option[T]:`. Detects this by finding that the token is the first
+      # `variant Maybe[T]:`. Detects this by finding that the token is the first
       # non-trivia token on its (indented) line and the nearest less-indented line
       # starts with `variant`, `enum`, or `flags`.
       def variant_enum_member_declaration?(tokens, index)

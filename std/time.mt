@@ -2,6 +2,7 @@ module std.time
 
 import std.c.time as c
 import std.mem.arena as arena
+import std.status as status
 import std.string as string
 
 const format_buffer_capacity: ptr_uint = 128
@@ -37,20 +38,20 @@ pub def timespec_to_seconds(value: Timespec) -> double:
     return double<-value.tv_sec + double<-value.tv_nsec / double<-nanoseconds_per_second
 
 
-pub def monotonic_time() -> Result[Timespec, int]:
+pub def monotonic_time() -> status.Status[Timespec, int]:
     var value = zero[Timespec]
-    let status = clock_gettime(CLOCK_MONOTONIC, ptr_of(value))
-    if status != 0:
-        return err(status)
-    return ok(value)
+    let code = clock_gettime(CLOCK_MONOTONIC, ptr_of(value))
+    if code != 0:
+        return status.Status[Timespec, int].err(error= code)
+    return status.Status[Timespec, int].ok(value= value)
 
 
-pub def realtime_time() -> Result[Timespec, int]:
+pub def realtime_time() -> status.Status[Timespec, int]:
     var value = zero[Timespec]
-    let status = clock_gettime(CLOCK_REALTIME, ptr_of(value))
-    if status != 0:
-        return err(status)
-    return ok(value)
+    let code = clock_gettime(CLOCK_REALTIME, ptr_of(value))
+    if code != 0:
+        return status.Status[Timespec, int].err(error= code)
+    return status.Status[Timespec, int].ok(value= value)
 
 
 pub def now_unix_seconds() -> long:
@@ -67,13 +68,13 @@ def two_digits(buffer: array[char, 7], index: int) -> int:
     return digit_value(buffer[index]) * 10 + digit_value(buffer[index + 1])
 
 
-def clock_from_tm(time_info: ptr[c.tm]) -> Result[ClockTime, Error]:
+def clock_from_tm(time_info: ptr[c.tm]) -> status.Status[ClockTime, Error]:
     var buffer = zero[array[char, 7]]
     let written = c.strftime(ptr_of(buffer[0]), ulong<-clock_buffer_capacity, c"%H%M%S", time_info)
     if written != ptr_uint<-6:
-        return err(Error.invalid_time)
+        return status.Status[ClockTime, Error].err(error= Error.invalid_time)
 
-    return ok(ClockTime(
+    return status.Status[ClockTime, Error].ok(value= ClockTime(
         hour = two_digits(buffer, 0),
         minute = two_digits(buffer, 2),
         second = two_digits(buffer, 4),
@@ -87,23 +88,23 @@ pub def hour_12(clock: ClockTime) -> int:
     return wrapped
 
 
-pub def clock_utc(timestamp: long) -> Result[ClockTime, Error]:
+pub def clock_utc(timestamp: long) -> status.Status[ClockTime, Error]:
     var time_value: c.time_t = c.time_t<-timestamp
     let time_info = c.gmtime(ptr_of(time_value))
     return clock_from_tm(time_info)
 
 
-pub def clock_local(timestamp: long) -> Result[ClockTime, Error]:
+pub def clock_local(timestamp: long) -> status.Status[ClockTime, Error]:
     var time_value: c.time_t = c.time_t<-timestamp
     let time_info = c.localtime(ptr_of(time_value))
     return clock_from_tm(time_info)
 
 
-pub def local_clock() -> Result[ClockTime, Error]:
+pub def local_clock() -> status.Status[ClockTime, Error]:
     return clock_local(now_unix_seconds())
 
 
-def format_tm(time_info: ptr[c.tm], format: str, scratch: ref[arena.Arena]) -> Result[string.String, Error]:
+def format_tm(time_info: ptr[c.tm], format: str, scratch: ref[arena.Arena]) -> status.Status[string.String, Error]:
     let mark = scratch.mark()
     defer scratch.reset(mark)
 
@@ -111,7 +112,7 @@ def format_tm(time_info: ptr[c.tm], format: str, scratch: ref[arena.Arena]) -> R
     var buffer: array[char, 128]
     let written = c.strftime(ptr_of(buffer[0]), ulong<-format_buffer_capacity, c_format, time_info)
     if written == 0:
-        return err(Error.output_too_large)
+        return status.Status[string.String, Error].err(error= Error.output_too_large)
 
     var result = string.String.with_capacity(written)
     var index: ptr_uint = 0
@@ -120,16 +121,16 @@ def format_tm(time_info: ptr[c.tm], format: str, scratch: ref[arena.Arena]) -> R
             result.push_byte(ubyte<-read(ptr_of(buffer[0]) + index))
         index += 1
 
-    return ok(result)
+    return status.Status[string.String, Error].ok(value= result)
 
 
-pub def format_utc(timestamp: long, format: str, scratch: ref[arena.Arena]) -> Result[string.String, Error]:
+pub def format_utc(timestamp: long, format: str, scratch: ref[arena.Arena]) -> status.Status[string.String, Error]:
     var time_value: c.time_t = c.time_t<-timestamp
     let time_info = c.gmtime(ptr_of(time_value))
     return format_tm(time_info, format, scratch)
 
 
-pub def format_local(timestamp: long, format: str, scratch: ref[arena.Arena]) -> Result[string.String, Error]:
+pub def format_local(timestamp: long, format: str, scratch: ref[arena.Arena]) -> status.Status[string.String, Error]:
     var time_value: c.time_t = c.time_t<-timestamp
     let time_info = c.localtime(ptr_of(time_value))
     return format_tm(time_info, format, scratch)

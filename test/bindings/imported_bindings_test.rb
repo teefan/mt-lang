@@ -371,7 +371,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     refute_match(/^pub type TraceLogCallback = /, source)
     refute_match(/^pub foreign def set_trace_log_callback\(/, source)
     assert_match(/^import std\.bytes as bytes$/, source)
-    assert_match(/^import std\.option as option$/, source)
+    assert_match(/^import std\.maybe as maybe$/, source)
     assert_match(/^import std\.vec as vec$/, source)
     assert_match(/^import std\.string as string$/, source)
     assert_match(/^import std\.str as text$/, source)
@@ -411,17 +411,17 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub foreign def update_audio_stream\[T\]\(stream: AudioStream, data: ptr\[T\] as const_ptr\[void\], frame_count: int\) -> void = c\.UpdateAudioStream$/, source)
     assert_match(/^pub foreign def draw_spline_linear_ptr\(points: const_ptr\[Vector2\], point_count: int, thick: float, color: Color\) -> void = c\.DrawSplineLinear$/, source)
     assert_match(/^foreign def mt_raw_load_file_data\(file_name: str as cstr, out data_size: int\) -> ptr\[ubyte\]\? = c\.LoadFileData$/, source)
-    assert_match(/^pub def load_file_data\(file_name: str\) -> option\.Option\[bytes\.Buffer\]:$/, source)
+    assert_match(/^pub def load_file_data\(file_name: str\) -> maybe\.Maybe\[bytes\.Buffer\]:$/, source)
     assert_match(/^    c\.UnloadFileData\(ptr\[ubyte\]<-raw_result\)$/, source)
     refute_match(/^pub foreign def load_file_data\(file_name: str as cstr, out data_size: int\) -> ptr\[ubyte\]\? = c\.LoadFileData$/, source)
     refute_match(/^pub foreign def unload_file_data\(consuming data: ptr\[ubyte\]\) -> void = c\.UnloadFileData$/, source)
     assert_match(/^foreign def mt_raw_load_file_text\(file_name: str as cstr\) -> ptr\[char\]\? = c\.LoadFileText$/, source)
-    assert_match(/^pub def load_file_text\(file_name: str\) -> option\.Option\[string\.String\]:$/, source)
+    assert_match(/^pub def load_file_text\(file_name: str\) -> maybe\.Maybe\[string\.String\]:$/, source)
     assert_match(/^    c\.UnloadFileText\(ptr\[char\]<-raw_result\)$/, source)
     refute_match(/^pub foreign def load_file_text\(file_name: cstr\) -> ptr\[char\]\? = c\.LoadFileText$/, source)
     refute_match(/^pub foreign def unload_file_text\(text: ptr\[char\]\) -> void = c\.UnloadFileText$/, source)
     assert_match(/^foreign def mt_raw_load_utf_8\(codepoints: const_ptr\[int\], length: int\) -> ptr\[char\]\? = c\.LoadUTF8$/, source)
-    assert_match(/^pub def load_utf_8\(codepoints: const_ptr\[int\], length: int\) -> option\.Option\[string\.String\]:$/, source)
+    assert_match(/^pub def load_utf_8\(codepoints: const_ptr\[int\], length: int\) -> maybe\.Maybe\[string\.String\]:$/, source)
     assert_match(/^    c\.UnloadUTF8\(ptr\[char\]<-raw_result\)$/, source)
     refute_match(/^pub foreign def load_utf_8\(codepoints: const_ptr\[int\], length: int\) -> ptr\[char\]\? = c\.LoadUTF8$/, source)
     refute_match(/^pub foreign def unload_utf_8\(text: ptr\[char\]\) -> void = c\.UnloadUTF8$/, source)
@@ -441,7 +441,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^pub foreign def load_font_data\(file_data: const_ptr\[ubyte\], data_size: int, font_size: int, codepoints: ptr\[int\]\?, codepoint_count: int, kind: FontType, out glyph_count: int\) -> ptr\[GlyphInfo\] = c\.LoadFontData$/, source)
     assert_match(/^pub foreign def gen_image_font_atlas\(glyphs: const_ptr\[GlyphInfo\], out glyph_recs: ptr\[Rectangle\], glyph_count: int, font_size: int, padding: int, pack_method: int\) -> Image = c\.GenImageFontAtlas$/, source)
     assert_match(/^foreign def mt_raw_load_codepoints\(text: str as cstr, out count: int\) -> ptr\[int\]\? = c\.LoadCodepoints$/, source)
-    assert_match(/^pub def load_codepoints\(text: str\) -> option\.Option\[vec\.Vec\[int\]\]:$/, source)
+    assert_match(/^pub def load_codepoints\(text: str\) -> maybe\.Maybe\[vec\.Vec\[int\]\]:$/, source)
     assert_match(/^    c\.UnloadCodepoints\(ptr\[int\]<-raw_result\)$/, source)
     refute_match(/^pub foreign def load_codepoints_ptr\(text: str as cstr, out count: int\) -> ptr\[int\]\? = c\.LoadCodepoints$/, source)
     refute_match(/^pub foreign def unload_codepoints\(codepoints: ptr\[int\]\) -> void = c\.UnloadCodepoints$/, source)
@@ -714,8 +714,8 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         raw_import_alias: "c",
         imports: [
           {
-            module_name: "std.option",
-            alias: "option",
+            module_name: "std.maybe",
+            alias: "maybe",
           },
           {
             module_name: "std.str",
@@ -743,7 +743,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
               ],
               wrapper: {
                 kind: "owned_string",
-                option_alias: "option",
+                maybe_alias: "maybe",
                 text_alias: "text",
                 string_alias: "string",
                 release: "c.UnloadText",
@@ -766,21 +766,21 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         "module std.sample",
         "",
         "import std.c.sample as c",
-        "import std.option as option",
+        "import std.maybe as maybe",
         "import std.str as text",
         "import std.string as string",
         "",
         "foreign def mt_raw_load_text(file_name: str as cstr) -> ptr[char]? = c.LoadText",
         "",
         "",
-        "pub def load_text(file_name: str) -> option.Option[string.String]:",
+        "pub def load_text(file_name: str) -> maybe.Maybe[string.String]:",
         "    let raw_result = mt_raw_load_text(file_name)",
         "    if raw_result == null:",
-        "        return option.Option[string.String].none()",
+        "        return maybe.Maybe[string.String].none",
         "",
         "    let value = string.String.from_str(text.chars_as_str(ptr[char]<-raw_result))",
         "    c.UnloadText(ptr[char]<-raw_result)",
-        "    return option.Option[string.String].some(value)",
+        "    return maybe.Maybe[string.String].some(value= value)",
       ].join("\n") + "\n"
 
       module_roots = [dir, MilkTea.root]
@@ -817,8 +817,8 @@ class MilkTeaImportedBindingsTest < Minitest::Test
             alias: "bytes",
           },
           {
-            module_name: "std.option",
-            alias: "option",
+            module_name: "std.maybe",
+            alias: "maybe",
           },
         ],
         types: {},
@@ -843,7 +843,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
               ],
               wrapper: {
                 kind: "owned_bytes",
-                option_alias: "option",
+                maybe_alias: "maybe",
                 bytes_alias: "bytes",
                 release: "c.UnloadData",
               },
@@ -866,16 +866,16 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         "",
         "import std.c.sample as c",
         "import std.bytes as bytes",
-        "import std.option as option",
+        "import std.maybe as maybe",
         "",
         "foreign def mt_raw_load_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadData",
         "",
         "",
-        "pub def load_data(file_name: str) -> option.Option[bytes.Buffer]:",
+        "pub def load_data(file_name: str) -> maybe.Maybe[bytes.Buffer]:",
         "    var data_size = 0",
         "    let raw_result = mt_raw_load_data(file_name, data_size)",
         "    if raw_result == null:",
-        "        return option.Option[bytes.Buffer].none()",
+        "        return maybe.Maybe[bytes.Buffer].none",
         "",
         "    if data_size < 0:",
         "        c.UnloadData(ptr[ubyte]<-raw_result)",
@@ -884,7 +884,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         "    var value = bytes.with_capacity(ptr_uint<-data_size)",
         "    bytes.append(ref_of(value), span[ubyte](data = ptr[ubyte]<-raw_result, len = ptr_uint<-data_size))",
         "    c.UnloadData(ptr[ubyte]<-raw_result)",
-        "    return option.Option[bytes.Buffer].some(value)",
+        "    return maybe.Maybe[bytes.Buffer].some(value= value)",
       ].join("\n") + "\n"
 
       module_roots = [dir, MilkTea.root]
@@ -917,8 +917,8 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         raw_import_alias: "c",
         imports: [
           {
-            module_name: "std.option",
-            alias: "option",
+            module_name: "std.maybe",
+            alias: "maybe",
           },
           {
             module_name: "std.vec",
@@ -947,7 +947,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
               ],
               wrapper: {
                 kind: "owned_vec",
-                option_alias: "option",
+                maybe_alias: "maybe",
                 vec_alias: "vec",
                 release: "c.UnloadItems",
               },
@@ -969,13 +969,13 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         module std.sample
 
         import std.c.sample as c
-        import std.option as option
+        import std.maybe as maybe
         import std.vec as vec
 
         foreign def mt_raw_load_items(text: str as cstr, out count: int) -> ptr[int]? = c.LoadItems
 
 
-        pub def load_items(text: str) -> option.Option[vec.Vec[int]]:
+        pub def load_items(text: str) -> maybe.Maybe[vec.Vec[int]]:
             var count = 0
             let raw_result = mt_raw_load_items(text, count)
             if count < 0:
@@ -987,10 +987,10 @@ class MilkTeaImportedBindingsTest < Minitest::Test
             if count == 0:
                 if raw_result != null:
                     c.UnloadItems(ptr[int]<-raw_result)
-                return option.Option[vec.Vec[int]].some(value)
+                return maybe.Maybe[vec.Vec[int]].some(value= value)
 
             if raw_result == null:
-                return option.Option[vec.Vec[int]].none()
+                return maybe.Maybe[vec.Vec[int]].none
 
             var index: ptr_uint = 0
             while index < ptr_uint<-count:
@@ -998,7 +998,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
                     value.push(read(ptr[int]<-raw_result + index))
                 index += 1
             c.UnloadItems(ptr[int]<-raw_result)
-            return option.Option[vec.Vec[int]].some(value)
+            return maybe.Maybe[vec.Vec[int]].some(value= value)
       MT
 
       module_roots = [dir, MilkTea.root]

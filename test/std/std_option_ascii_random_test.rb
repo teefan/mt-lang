@@ -3,31 +3,33 @@
 require "tmpdir"
 require_relative "../test_helper"
 
-class MilkTeaStdOptionAsciiRandomTest < Minitest::Test
-  def test_host_runtime_executes_option_and_ascii_helpers
+class MilkTeaStdMaybeAsciiRandomTest < Minitest::Test
+  def test_host_runtime_executes_maybe_and_ascii_helpers
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_option_ascii",
+      "module demo.std_maybe_ascii",
       "",
       "import std.ascii as ascii",
-      "import std.option as option",
+      "import std.maybe as maybe",
       "",
       "def main() -> int:",
-      "    var maybe = option.Option[int].none()",
-      "    if not maybe.is_none():",
+      "    let number: maybe.Maybe[int] = maybe.Maybe[int].some(value= 37)",
+      "    if not maybe.is_some(number):",
       "        return 1",
-      "    maybe.set_some(37)",
-      "    if not maybe.is_some():",
-      "        return 2",
       "    let digit = ascii.digit_value(ubyte<-55)",
       "    let hex = ascii.hex_digit_value(ubyte<-70)",
       "    if not ascii.is_ident_start(ubyte<-95):",
-      "        return 3",
+      "        return 2",
       "    if ascii.to_lower(ubyte<-65) != ubyte<-97:",
-      "        return 4",
-      "    return maybe.unwrap() + digit + hex",
+      "        return 3",
+      "    match number:",
+      "        maybe.Maybe.none:",
+      "            return 4",
+      "        maybe.Maybe.some as payload:",
+      "            return payload.value + digit + hex",
+      "    return 5",
       "",
     ].join("\n")
 
@@ -77,7 +79,7 @@ class MilkTeaStdOptionAsciiRandomTest < Minitest::Test
   private
 
   def run_program(source, compiler:)
-    Dir.mktmpdir("milk-tea-std-option-ascii-random") do |dir|
+    Dir.mktmpdir("milk-tea-std-maybe-ascii-random") do |dir|
       source_path = File.join(dir, "program.mt")
       File.write(source_path, source)
       return MilkTea::Run.run(source_path, cc: compiler)

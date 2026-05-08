@@ -294,13 +294,15 @@ Milk Tea should include a small number of control-flow features that materially 
 `defer` registers cleanup code at scope exit and lowers to obvious cleanup labels in C.
 
 ```mt
-def load_texture(path: str) -> Result[Texture, LoadError]:
+import std.status as status
+
+def load_texture(path: str) -> status.Status[Texture, LoadError]:
 	let texture = rl.load_texture(path)
 
 	if texture.id == 0:
-		return err(LoadError.file_not_found)
+		return status.Status[Texture, LoadError].err(error= LoadError.file_not_found)
 
-	return texture
+	return status.Status[Texture, LoadError].ok(value= texture)
 ```
 
 #### `unsafe`
@@ -749,7 +751,7 @@ The standard library follows the same rule as the language: no hidden allocation
 
 Implemented core modules:
 
-- `std.option` is a plain generic optional-value container for APIs where a nullable pointer would be the wrong surface.
+- `std.maybe` provides `Maybe[T]` for APIs where an explicit optional value is clearer than a nullable pointer.
 - `std.ascii` provides byte-level classification and conversion helpers for lexers and parsers.
 - `std.vec` is the owned heap-backed `Vec[T]`. It grows explicitly, releases explicitly, and exposes borrowed `span[T]` views.
 - `std.bytes` is an owned byte buffer on top of `Vec[ubyte]`. It is a low-level substrate, not the default application-facing text tool.
@@ -814,21 +816,23 @@ Exceptions do not belong here.
 
 Preferred strategy:
 
-- `Result[T, E]` for recoverable failures
+- `status.Status[T, E]` for recoverable failures
 - `panic("message")` for programmer errors and impossible states
 - explicit status codes for imported foreign APIs when that matches the C API better
 
 Example:
 
 ```mt
+import std.status as status
+
 enum LoadError: ubyte
 	file_not_found = 1
 	invalid_format = 2
 
-def load_level(path: str, arena: ptr[Arena]) -> Result[Level, LoadError]:
+def load_level(path: str, arena: ptr[Arena]) -> status.Status[Level, LoadError]:
 	let json = read_text_file(path, arena)
 	if json == null:
-		return err(LoadError.file_not_found)
+		return status.Status[Level, LoadError].err(error= LoadError.file_not_found)
 
 	return parse_level(json)
 ```

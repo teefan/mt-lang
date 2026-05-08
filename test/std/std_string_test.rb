@@ -89,7 +89,7 @@ class MilkTeaStdStringTest < Minitest::Test
     source = [
       "module demo.std_str_helpers",
       "",
-      "import std.option as option",
+      "import std.maybe as maybe",
       "import std.str as text",
       "",
       "def main() -> int:",
@@ -103,7 +103,12 @@ class MilkTeaStdStringTest < Minitest::Test
       "    if not text.is_valid_utf8(trimmed):",
       "        return 4",
       "    let found = text.find_byte(trimmed, ubyte<-32)",
-      "    return int<-trimmed.len + int<-found.unwrap()",
+      "    match found:",
+      "        maybe.Maybe.none:",
+      "            return 5",
+      "        maybe.Maybe.some as payload:",
+      "            return int<-trimmed.len + int<-payload.value",
+      "    return 5",
       "",
     ].join("\n")
 

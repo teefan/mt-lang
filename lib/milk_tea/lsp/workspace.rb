@@ -38,6 +38,7 @@ module MilkTea
         @doc_comments_cache = {} # uri -> {"line:column" => markdown_doc}
         @last_good_analysis_cache = {} # uri -> last Sema::Analysis that succeeded
         @shared_module_cache = {}
+        @analysis_state_mutex = Mutex.new
         # Diagnostics cache: uri -> { content_hash: Integer, diagnostics: Array }
         # Avoids re-running Sema.check_collecting_errors when content is unchanged.
         @diagnostics_cache = {}
@@ -92,16 +93,18 @@ module MilkTea
       def collect_diagnostics(uri)
         content = get_content(uri)
         hash = content.hash
-        entry = @diagnostics_cache[uri]
-        return entry[:diagnostics] if entry && entry[:content_hash] == hash
+        @analysis_state_mutex.synchronize do
+          entry = @diagnostics_cache[uri]
+          return entry[:diagnostics] if entry && entry[:content_hash] == hash
 
-        result = Diagnostics.collect(uri, content, shared_module_cache: @shared_module_cache, source_overrides: file_backed_source_overrides)
-        diagnostics = result[:diagnostics]
-        analysis = result[:analysis]
-        @analysis_cache[uri] = analysis if analysis
-        @last_good_analysis_cache[uri] = analysis if analysis
-        @diagnostics_cache[uri] = { content_hash: hash, diagnostics: diagnostics }
-        diagnostics
+          result = Diagnostics.collect(uri, content, shared_module_cache: @shared_module_cache, source_overrides: file_backed_source_overrides)
+          diagnostics = result[:diagnostics]
+          analysis = result[:analysis]
+          @analysis_cache[uri] = analysis if analysis
+          @last_good_analysis_cache[uri] = analysis if analysis
+          @diagnostics_cache[uri] = { content_hash: hash, diagnostics: diagnostics }
+          diagnostics
+        end
       rescue StandardError => e
         log_error("LSP diagnostics error #{uri}: #{e.message}")
         []
@@ -189,7 +192,9 @@ module MilkTea
       end
 
       def get_analysis(uri)
-        @analysis_cache[uri] ||= analyze_document(uri)
+        @analysis_state_mutex.synchronize do
+          @analysis_cache[uri] ||= analyze_document(uri)
+        end
       end
 
       def get_symbols(uri)
@@ -458,10 +463,12 @@ module MilkTea
       def invalidate_cache(uri)
         @tokens_cache.delete(uri)
         @ast_cache.delete(uri)
-        @analysis_cache.delete(uri)
         @symbols_cache.delete(uri)
         @doc_comments_cache.delete(uri)
-        @diagnostics_cache.delete(uri)
+        @analysis_state_mutex.synchronize do
+          @analysis_cache.delete(uri)
+          @diagnostics_cache.delete(uri)
+        end
         @definition_cache_mutex.synchronize do
           @definition_index.each_value { |entries| entries.delete_if { |e| e[:uri] == uri } }
           @definition_index.delete_if { |_k, v| v.empty? }
@@ -471,10 +478,12 @@ module MilkTea
       end
 
       def refresh_import_dependent_caches(changed_uri: nil)
-        @shared_module_cache.clear
-        @analysis_cache.clear
-        @diagnostics_cache.clear
-        @last_good_analysis_cache.clear
+        @analysis_state_mutex.synchronize do
+          @shared_module_cache.clear
+          @analysis_cache.clear
+          @diagnostics_cache.clear
+          @last_good_analysis_cache.clear
+        end
         @open_documents.keys.reject { |open_uri| open_uri == changed_uri }
       end
 
@@ -668,13 +677,15 @@ module MilkTea
         content = get_content(uri)
         return false unless analysis_warmup_digest(content) == expected_digest
 
-        analysis = compute_analysis_for_content(uri, content)
-        return false unless analysis
-        return false unless analysis_warmup_digest(get_content(uri)) == expected_digest
+        @analysis_state_mutex.synchronize do
+          analysis = compute_analysis_for_content(uri, content)
+          return false unless analysis
+          return false unless analysis_warmup_digest(get_content(uri)) == expected_digest
 
-        @analysis_cache[uri] = analysis
-        @last_good_analysis_cache[uri] = analysis
-        true
+          @analysis_cache[uri] = analysis
+          @last_good_analysis_cache[uri] = analysis
+          true
+        end
       rescue StandardError => e
         warn "LSP background analysis warmup error #{uri}: #{e.message}"
         false

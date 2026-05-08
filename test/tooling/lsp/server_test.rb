@@ -298,18 +298,18 @@ class LSPServerTest < Minitest::Test
         return 0
   MT
 
-  SOURCE_WITH_GENERIC_VARIANT_SEMANTICS = <<~MT
-    variant Option[T]:
-        some(value: T)
-        none
+    SOURCE_WITH_GENERIC_VARIANT_SEMANTICS = <<~MT
+      variant Maybe[T]:
+          some(value: T)
+          none
 
-    def has_payload(value: Option[int]) -> bool:
-        match value:
-            Option.some as payload:
-                return payload.value > 0
-            Option.none:
-                return false
-  MT
+      def has_payload(value: Maybe[int]) -> bool:
+          match value:
+              Maybe.some as payload:
+                  return payload.value > 0
+              Maybe.none:
+                  return false
+    MT
 
   SOURCE_WITH_FSTRING_INTERPOLATION = <<~'MT'
     def main() -> int:
@@ -1516,44 +1516,44 @@ class LSPServerTest < Minitest::Test
   def test_document_diagnostic_refreshes_after_imported_module_did_change
     Dir.mktmpdir("milk-tea-lsp-didchange-diagnostics") do |dir|
       Dir.mkdir(File.join(dir, "std"))
-      option_path = File.join(dir, "option.mt")
+      maybe_path = File.join(dir, "maybe.mt")
       main_path = File.join(dir, "main.mt")
 
-      option_initial = <<~MT
-        module option
+      maybe_initial = <<~MT
+        module maybe
 
-        pub struct Option[T]:
+        pub struct Maybe[T]:
             is_some: bool
             value: T
       MT
-      option_updated = <<~MT
-        module option
+      maybe_updated = <<~MT
+        module maybe
 
-        pub struct Option[T]:
+        pub struct Maybe[T]:
             is_some: bool
             value: T
 
-        methods Option[T]:
+        methods Maybe[T]:
             pub def is_none() -> bool:
                 return not this.is_some
       MT
       main_source = <<~MT
         module main
 
-        import option as option
+        import maybe as maybe
 
         def main() -> int:
-            let maybe = option.Option[int](is_some = false, value = 0)
-            if maybe.is_none():
+            let value = maybe.Maybe[int](is_some = false, value = 0)
+            if value.is_none():
                 return 1
             return 0
       MT
 
-      File.write(option_path, option_initial)
+      File.write(maybe_path, maybe_initial)
       File.write(main_path, main_source)
 
       root_uri = path_to_uri(dir)
-      option_uri = path_to_uri(option_path)
+      maybe_uri = path_to_uri(maybe_path)
       main_uri = path_to_uri(main_path)
 
       with_server do |client|
@@ -1561,10 +1561,10 @@ class LSPServerTest < Minitest::Test
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
           "textDocument" => {
-            "uri" => option_uri,
+            "uri" => maybe_uri,
             "languageId" => "milk-tea",
             "version" => 1,
-            "text" => option_initial
+            "text" => maybe_initial
           }
         })
         client.send_notification("textDocument/didOpen", {
@@ -1585,8 +1585,8 @@ class LSPServerTest < Minitest::Test
         assert_operator first_result.fetch("items").length, :>=, 1
 
         client.send_notification("textDocument/didChange", {
-          "textDocument" => { "uri" => option_uri, "version" => 2 },
-          "contentChanges" => [{ "text" => option_updated }]
+          "textDocument" => { "uri" => maybe_uri, "version" => 2 },
+          "contentChanges" => [{ "text" => maybe_updated }]
         })
 
         second = client.send_request("textDocument/diagnostic", {

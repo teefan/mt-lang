@@ -2,7 +2,7 @@ module examples.idiomatic.std.generic_variants
 
 import std.io as io
 
-variant Option[T]:
+variant Maybe[T]:
     some(value: T)
     none
 
@@ -11,19 +11,19 @@ variant Outcome[T, E]:
     err(error: E)
 
 
-def is_some(value: Option[int]) -> bool:
+def is_some(value: Maybe[int]) -> bool:
     match value:
-        Option.some:
+        Maybe.some:
             return true
         _:
             return false
 
 
-def unwrap_or(value: Option[int], fallback: int) -> int:
+def value_or(value: Maybe[int], fallback: int) -> int:
     match value:
-        Option.some as payload:
+        Maybe.some as payload:
             return payload.value
-        Option.none:
+        Maybe.none:
             return fallback
 
 
@@ -44,8 +44,8 @@ def outcome_has_error(value: Outcome[int, str]) -> bool:
 
 
 def main() -> int:
-    let empty: Option[int] = Option[int].none
-    let seeded: Option[int] = Option[int].some(value= 41)
+    let empty: Maybe[int] = Maybe[int].none
+    let seeded: Maybe[int] = Maybe[int].some(value= 41)
 
     let ok_value: Outcome[int, str] = Outcome[int, str].ok(value= 41)
     let err_value: Outcome[int, str] = Outcome[int, str].err(error= "missing")
@@ -57,9 +57,9 @@ def main() -> int:
         return 2
     if not is_some(seeded):
         return 3
-    if unwrap_or(seeded, 0) != 41:
+    if value_or(seeded, 0) != 41:
         return 4
-    if unwrap_or(empty, 17) != 17:
+    if value_or(empty, 17) != 17:
         return 5
 
     if outcome_code(ok_value) != 1:
