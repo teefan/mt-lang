@@ -2,6 +2,7 @@ module std.json
 
 import std.ascii as ascii
 import std.fmt as fmt
+import std.status as status
 import std.string as string
 
 pub enum TokenKind: ubyte
@@ -119,20 +120,20 @@ def match_keyword(lexer: ref[Lexer], keyword: str) -> bool:
     return true
 
 
-def read_string(lexer: ref[Lexer]) -> Result[Token, Error]:
+def read_string(lexer: ref[Lexer]) -> status.Status[Token, Error]:
     let start = lexer.index
     while lexer.index < lexer.source.len:
         let current = byte_at(lexer.source, lexer.index)
         if current == ubyte<-34:
             let stop = lexer.index
             lexer.index += 1
-            return ok(slice_token(TokenKind.string_value, lexer.source, start, stop))
+            return status.Status[Token, Error].ok(value= slice_token(TokenKind.string_value, lexer.source, start, stop))
         elif current < ubyte<-32:
-            return err(Error.unexpected_char)
+            return status.Status[Token, Error].err(error= Error.unexpected_char)
         elif current == ubyte<-92:
             lexer.index += 1
             if lexer.index >= lexer.source.len:
-                return err(Error.unexpected_end)
+                return status.Status[Token, Error].err(error= Error.unexpected_end)
 
             let escaped = byte_at(lexer.source, lexer.index)
             if escaped == ubyte<-34 or escaped == ubyte<-47 or escaped == ubyte<-92 or escaped == ubyte<-98 or escaped == ubyte<-102 or escaped == ubyte<-110 or escaped == ubyte<-114 or escaped == ubyte<-116:
@@ -142,25 +143,25 @@ def read_string(lexer: ref[Lexer]) -> Result[Token, Error]:
                 var digit_count: ptr_uint = 0
                 while digit_count < 4:
                     if lexer.index >= lexer.source.len:
-                        return err(Error.unexpected_end)
+                        return status.Status[Token, Error].err(error= Error.unexpected_end)
                     if not ascii.is_hex_digit(byte_at(lexer.source, lexer.index)):
-                        return err(Error.invalid_escape)
+                        return status.Status[Token, Error].err(error= Error.invalid_escape)
                     lexer.index += 1
                     digit_count += 1
             else:
-                return err(Error.invalid_escape)
+                return status.Status[Token, Error].err(error= Error.invalid_escape)
         else:
             lexer.index += 1
 
-    return err(Error.unexpected_end)
+    return status.Status[Token, Error].err(error= Error.unexpected_end)
 
 
-def read_number(lexer: ref[Lexer]) -> Result[Token, Error]:
+def read_number(lexer: ref[Lexer]) -> status.Status[Token, Error]:
     let start = lexer.index
     if byte_at(lexer.source, lexer.index) == ubyte<-45:
         lexer.index += 1
         if lexer.index >= lexer.source.len:
-            return err(Error.invalid_number)
+            return status.Status[Token, Error].err(error= Error.invalid_number)
 
     let first_digit = byte_at(lexer.source, lexer.index)
     if first_digit == ubyte<-48:
@@ -169,12 +170,12 @@ def read_number(lexer: ref[Lexer]) -> Result[Token, Error]:
         while lexer.index < lexer.source.len and ascii.is_digit(byte_at(lexer.source, lexer.index)):
             lexer.index += 1
     else:
-        return err(Error.invalid_number)
+        return status.Status[Token, Error].err(error= Error.invalid_number)
 
     if lexer.index < lexer.source.len and byte_at(lexer.source, lexer.index) == ubyte<-46:
         lexer.index += 1
         if lexer.index >= lexer.source.len or not ascii.is_digit(byte_at(lexer.source, lexer.index)):
-            return err(Error.invalid_number)
+            return status.Status[Token, Error].err(error= Error.invalid_number)
         while lexer.index < lexer.source.len and ascii.is_digit(byte_at(lexer.source, lexer.index)):
             lexer.index += 1
 
@@ -187,50 +188,50 @@ def read_number(lexer: ref[Lexer]) -> Result[Token, Error]:
                 if sign == ubyte<-43 or sign == ubyte<-45:
                     lexer.index += 1
             if lexer.index >= lexer.source.len or not ascii.is_digit(byte_at(lexer.source, lexer.index)):
-                return err(Error.invalid_number)
+                return status.Status[Token, Error].err(error= Error.invalid_number)
             while lexer.index < lexer.source.len and ascii.is_digit(byte_at(lexer.source, lexer.index)):
                 lexer.index += 1
 
-    return ok(slice_token(TokenKind.number_value, lexer.source, start, lexer.index))
+    return status.Status[Token, Error].ok(value= slice_token(TokenKind.number_value, lexer.source, start, lexer.index))
 
 
-pub def next(lexer: ref[Lexer]) -> Result[Token, Error]:
+pub def next(lexer: ref[Lexer]) -> status.Status[Token, Error]:
     skip_space(lexer)
     if lexer.index >= lexer.source.len:
-        return ok(token(TokenKind.eof))
+        return status.Status[Token, Error].ok(value= token(TokenKind.eof))
 
     let current = byte_at(lexer.source, lexer.index)
     if current == ubyte<-123:
         lexer.index += 1
-        return ok(token(TokenKind.left_brace))
+        return status.Status[Token, Error].ok(value= token(TokenKind.left_brace))
     elif current == ubyte<-125:
         lexer.index += 1
-        return ok(token(TokenKind.right_brace))
+        return status.Status[Token, Error].ok(value= token(TokenKind.right_brace))
     elif current == ubyte<-91:
         lexer.index += 1
-        return ok(token(TokenKind.left_bracket))
+        return status.Status[Token, Error].ok(value= token(TokenKind.left_bracket))
     elif current == ubyte<-93:
         lexer.index += 1
-        return ok(token(TokenKind.right_bracket))
+        return status.Status[Token, Error].ok(value= token(TokenKind.right_bracket))
     elif current == ubyte<-58:
         lexer.index += 1
-        return ok(token(TokenKind.colon))
+        return status.Status[Token, Error].ok(value= token(TokenKind.colon))
     elif current == ubyte<-44:
         lexer.index += 1
-        return ok(token(TokenKind.comma))
+        return status.Status[Token, Error].ok(value= token(TokenKind.comma))
     elif current == ubyte<-34:
         lexer.index += 1
         return read_string(lexer)
     elif current == ubyte<-45 or ascii.is_digit(current):
         return read_number(lexer)
     elif match_keyword(lexer, "true"):
-        return ok(token(TokenKind.true_value))
+        return status.Status[Token, Error].ok(value= token(TokenKind.true_value))
     elif match_keyword(lexer, "false"):
-        return ok(token(TokenKind.false_value))
+        return status.Status[Token, Error].ok(value= token(TokenKind.false_value))
     elif match_keyword(lexer, "null"):
-        return ok(token(TokenKind.null_value))
+        return status.Status[Token, Error].ok(value= token(TokenKind.null_value))
 
-    return err(Error.unexpected_char)
+    return status.Status[Token, Error].err(error= Error.unexpected_char)
 
 
 pub def append_null(output: ref[string.String]) -> void:

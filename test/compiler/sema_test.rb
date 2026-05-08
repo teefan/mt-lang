@@ -2079,7 +2079,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_type_checks_result_construction_from_expected_context
+  def test_rejects_removed_builtin_result_type
     source = <<~MT
       module demo.result
 
@@ -2088,22 +2088,44 @@ class MilkTeaSemaTest < Minitest::Test
           invalid_format = 2
 
       def load(available: bool) -> Result[int, LoadError]:
-          if available:
-              return ok(7)
-          return err(LoadError.invalid_format)
-
-      def main() -> int:
-          let cached: Result[int, LoadError] = ok(5)
-          let missing = load(false)
-          if cached.is_ok and missing.error == LoadError.invalid_format:
-              return cached.value
           return 0
     MT
 
-    result = check_source(source)
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
 
-    assert_equal "Result[int, demo.result.LoadError]", result.functions.fetch("load").type.return_type.to_s
-    assert_equal true, result.functions.key?("main")
+    assert_match(/unknown generic type Result/, error.message)
+  end
+
+  def test_rejects_removed_builtin_ok_and_err_helpers
+    ok_source = <<~MT
+      module demo.ok
+
+      def main() -> int:
+          let value = ok(7)
+          return 0
+    MT
+
+    ok_error = assert_raises(MilkTea::SemaError) do
+      check_source(ok_source)
+    end
+
+    assert_match(/unknown callable ok/, ok_error.message)
+
+    err_source = <<~MT
+      module demo.err
+
+      def main() -> int:
+          let value = err(7)
+          return 0
+    MT
+
+    err_error = assert_raises(MilkTea::SemaError) do
+      check_source(err_source)
+    end
+
+    assert_match(/unknown callable err/, err_error.message)
   end
 
   def test_type_checks_panic_statement_with_string_message

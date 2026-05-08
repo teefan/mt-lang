@@ -202,7 +202,7 @@ That is explicit but repetitive. It also keeps ordinary source tied to the raw f
 The imported layer should know whether a function fails by returning `null`, `false`, `-1`, or some other sentinel. The user-facing surface should expose either:
 
 - a nullable value when absence is ordinary and expected
-- a `Result[T, E]` when the API represents operational failure
+- a `status.Status[T, E]` when the API represents operational failure
 
 ### Proposed modeling rule
 
@@ -222,7 +222,7 @@ These remain `T?`.
 
 #### 2.2 Operational failure
 
-Use `Result[T, ForeignError]` or `Result[void, ForeignError]` when a sentinel means the operation failed and the library provides error context or a meaningful failure contract.
+Use `status.Status[T, ForeignError]` or `status.Status[void, ForeignError]` when a sentinel means the operation failed and the library provides error context or a meaningful failure contract.
 
 Examples:
 
@@ -246,7 +246,7 @@ let value = expr else:
 Semantics:
 
 - if `expr` has type `T?`, the `else` block runs when the value is `null`; otherwise `value` is bound as non-null `T`
-- if `expr` has type `Result[T, E]`, the `else` block runs on `err`; otherwise `value` is bound as `T`
+- if `expr` has type `status.Status[T, E]`, the `else` block runs on `.err`; otherwise `value` is bound as `T`
 - the `else` block must exit the current control-flow path via `return`, `break`, `continue`, or `panic`
 
 Examples:
@@ -262,7 +262,7 @@ let texture = rl.load_texture(path) else:
     return 1
 ```
 
-For status-style imported calls, the imported surface should prefer `Result[void, ForeignError]` so the same feature works:
+For status-style imported calls, the imported surface should prefer `status.Status[void, ForeignError]` so the same feature works:
 
 ```mt
 let _ = sdl.init(sdl.INIT_VIDEO) else:
@@ -298,7 +298,7 @@ Recommended policy defaults:
 2. Pointer-plus-length inputs default to `span[T]`.
 3. Single writable pointer parameters default to `out T` or `inout T`.
 4. Identity-only `void *` handles default to imported opaque handle types.
-5. Creation and initialization functions default to `Result[...]` when failure is operational.
+5. Creation and initialization functions default to `status.Status[...]` when failure is operational.
 6. Null-return lookups stay nullable only when absence is semantically ordinary.
 
 If a header is too ambiguous to classify honestly, keep that API raw rather than guessing.

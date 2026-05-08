@@ -5,6 +5,7 @@ import std.c.libuv_runtime as helper
 import std.c.libuv_system as sys
 import std.libuv as uv
 import std.mem.heap as heap
+import std.status as status
 import std.str as text
 
 pub struct Loop:
@@ -60,15 +61,15 @@ def release_ipv4_address(address: ref[IPv4Address]) -> void:
     return
 
 
-def create_ipv4_address(ip: str, port: int) -> Result[IPv4Address, int]:
+def create_ipv4_address(ip: str, port: int) -> status.Status[IPv4Address, int]:
     let storage = heap.must_alloc_zeroed_bytes(1, helper.mt_libuv_sockaddr_in_size())
     unsafe:
         let raw_addr = ptr[sys.sockaddr_in]<-storage
-        let status = ip_4_addr_str(ip, port, raw_addr)
-        if failed(status):
+        let code = ip_4_addr_str(ip, port, raw_addr)
+        if failed(code):
             heap.release_bytes(storage)
-            return err(status)
-        return ok(IPv4Address(raw = raw_addr, storage = storage))
+            return status.Status[IPv4Address, int].err(error= code)
+        return status.Status[IPv4Address, int].ok(value= IPv4Address(raw = raw_addr, storage = storage))
 
 
 def ipv4_sockaddr(address: IPv4Address) -> ptr[sys.sockaddr]:
@@ -86,15 +87,15 @@ def byte_buffer(data: span[ubyte]) -> uv.uv_buf_t:
         return uv.buf_init(ptr[char]<-data.data, uint<-data.len)
 
 
-pub def create_loop() -> Result[Loop, int]:
+pub def create_loop() -> status.Status[Loop, int]:
     let storage = heap.must_alloc_zeroed_bytes(1, uv.loop_size())
     unsafe:
         let raw_loop = ptr[uv.uv_loop_t]<-storage
-        let status = uv.loop_init(raw_loop)
-        if failed(status):
+        let code = uv.loop_init(raw_loop)
+        if failed(code):
             heap.release_bytes(storage)
-            return err(status)
-        return ok(Loop(raw = raw_loop, storage = storage))
+            return status.Status[Loop, int].err(error= code)
+        return status.Status[Loop, int].ok(value= Loop(raw = raw_loop, storage = storage))
 
 
 pub def loop_ptr(loop: Loop) -> ptr[uv.uv_loop_t]:
@@ -174,13 +175,13 @@ pub def request_release[T](request: ref[Request[T]]) -> void:
     return
 
 
-pub def create_timer(loop: Loop) -> Result[Handle[uv.uv_timer_t], int]:
+pub def create_timer(loop: Loop) -> status.Status[Handle[uv.uv_timer_t], int]:
     var timer = alloc_handle[uv.uv_timer_t](c.uv_handle_type.UV_TIMER)
-    let status = uv.timer_init(loop.raw, timer.raw)
-    if failed(status):
+    let code = uv.timer_init(loop.raw, timer.raw)
+    if failed(code):
         handle_release[uv.uv_timer_t](ref_of(timer))
-        return err(status)
-    return ok(timer)
+        return status.Status[Handle[uv.uv_timer_t], int].err(error= code)
+    return status.Status[Handle[uv.uv_timer_t], int].ok(value= timer)
 
 
 pub def timer_start_once(timer: Handle[uv.uv_timer_t], timeout: ptr_uint, callback: fn(arg0: ptr[uv.uv_timer_t]) -> void) -> int:
@@ -203,13 +204,13 @@ pub def queue_work(loop: Loop, request: Request[uv.uv_work_t], work_cb: fn(arg0:
     return uv.queue_work(loop.raw, request.raw, work_cb, after_work_cb)
 
 
-pub def create_tcp(loop: Loop) -> Result[Handle[uv.uv_tcp_t], int]:
+pub def create_tcp(loop: Loop) -> status.Status[Handle[uv.uv_tcp_t], int]:
     var tcp = alloc_handle[uv.uv_tcp_t](c.uv_handle_type.UV_TCP)
-    let status = uv.tcp_init(loop.raw, tcp.raw)
-    if failed(status):
+    let code = uv.tcp_init(loop.raw, tcp.raw)
+    if failed(code):
         handle_release[uv.uv_tcp_t](ref_of(tcp))
-        return err(status)
-    return ok(tcp)
+        return status.Status[Handle[uv.uv_tcp_t], int].err(error= code)
+    return status.Status[Handle[uv.uv_tcp_t], int].ok(value= tcp)
 
 
 pub def create_connect_request() -> Request[uv.uv_connect_t]:
@@ -231,39 +232,43 @@ pub def tcp_accept(server: Handle[uv.uv_tcp_t], client: Handle[uv.uv_tcp_t]) -> 
 
 pub def tcp_bind_ipv4(tcp: Handle[uv.uv_tcp_t], ip: str, port: int, flag_bits: uint) -> int:
     let address = create_ipv4_address(ip, port)
-    if not address.is_ok:
-        return address.error
+    match address:
+        status.Status.err as payload:
+            return payload.error
+        status.Status.ok as payload:
+            var ipv4 = payload.value
+            defer release_ipv4_address(ref_of(ipv4))
+            let code = uv.tcp_bind(tcp.raw, ipv4_const_sockaddr(ipv4), flag_bits)
+            return code
+    return -1
 
-    var ipv4 = address.value
-    defer release_ipv4_address(ref_of(ipv4))
-    let status = uv.tcp_bind(tcp.raw, ipv4_const_sockaddr(ipv4), flag_bits)
-    return status
 
-
-pub def tcp_local_port(tcp: Handle[uv.uv_tcp_t]) -> Result[int, int]:
+pub def tcp_local_port(tcp: Handle[uv.uv_tcp_t]) -> status.Status[int, int]:
     let storage = heap.must_alloc_zeroed_bytes(1, helper.mt_libuv_sockaddr_in_size())
     unsafe:
         let raw_addr = ptr[sys.sockaddr_in]<-storage
         var name_len: int = int<-helper.mt_libuv_sockaddr_in_size()
-        let status = uv.tcp_getsockname(tcp.raw, ptr[sys.sockaddr]<-raw_addr, ptr_of(name_len))
-        if failed(status):
+        let code = uv.tcp_getsockname(tcp.raw, ptr[sys.sockaddr]<-raw_addr, ptr_of(name_len))
+        if failed(code):
             heap.release_bytes(storage)
-            return err(status)
+            return status.Status[int, int].err(error= code)
 
         let port = helper.mt_libuv_sockaddr_in_port(raw_addr)
         heap.release_bytes(storage)
-        return ok(port)
+        return status.Status[int, int].ok(value= port)
 
 
 pub def tcp_connect_ipv4(request: Request[uv.uv_connect_t], tcp: Handle[uv.uv_tcp_t], ip: str, port: int, callback: fn(arg0: ptr[uv.uv_connect_t], arg1: int) -> void) -> int:
     let address = create_ipv4_address(ip, port)
-    if not address.is_ok:
-        return address.error
-
-    var ipv4 = address.value
-    defer release_ipv4_address(ref_of(ipv4))
-    let status = uv.tcp_connect(request.raw, tcp.raw, ipv4_const_sockaddr(ipv4), callback)
-    return status
+    match address:
+        status.Status.err as payload:
+            return payload.error
+        status.Status.ok as payload:
+            var ipv4 = payload.value
+            defer release_ipv4_address(ref_of(ipv4))
+            let code = uv.tcp_connect(request.raw, tcp.raw, ipv4_const_sockaddr(ipv4), callback)
+            return code
+    return -1
 
 
 pub def create_fs_request() -> Request[uv.uv_fs_t]:

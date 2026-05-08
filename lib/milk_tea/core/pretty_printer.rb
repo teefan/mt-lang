@@ -848,6 +848,12 @@ module MilkTea
           "#{expression.target_type}<-#{render_expression(expression.expression)}"
         when IR::AggregateLiteral
           "#{expression.type}(#{expression.fields.map { |field| "#{field.name} = #{render_expression(field.value)}" }.join(', ')})"
+        when IR::VariantLiteral
+          if expression.fields.empty?
+            "#{expression.type}.#{expression.arm_name}"
+          else
+            "#{expression.type}.#{expression.arm_name}(#{expression.fields.map { |field| "#{field.name} = #{render_expression(field.value)}" }.join(', ')})"
+          end
         when IR::ArrayLiteral
           "#{expression.type}(#{expression.elements.map { |element| render_expression(element) }.join(', ')})"
         else

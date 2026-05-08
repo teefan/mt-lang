@@ -2,6 +2,7 @@ module examples.idiomatic.raylib.digital_clock
 
 import std.raylib as rl
 import std.raylib.math as math
+import std.status as status
 import std.time as time
 
 struct ClockHand:
@@ -45,8 +46,12 @@ def apply_clock_time(clock: ref[Clock], current: time.ClockTime) -> void:
 
 def update_clock(clock: ref[Clock]) -> void:
     let current = time.local_clock()
-    if current.is_ok:
-        apply_clock_time(clock, current.value)
+    if status.is_ok(current):
+        match current:
+            status.Status.ok as payload:
+                apply_clock_time(clock, payload.value)
+            status.Status.err:
+                return
 
 
 def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:

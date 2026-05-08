@@ -580,7 +580,7 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
-  def test_run_with_host_compiler_executes_program_using_result_construction
+  def test_run_with_host_compiler_executes_program_using_status_construction
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
@@ -590,19 +590,29 @@ class MilkTeaRunTest < Minitest::Test
       File.write(source_path, [
         "module demo.result_runtime",
         "",
+        "import std.status as status",
+        "",
         "enum LoadError: ubyte",
         "    invalid_format = 1",
         "",
-        "def load(available: bool) -> Result[int, LoadError]:",
+        "def load(available: bool) -> status.Status[int, LoadError]:",
         "    if available:",
-        "        return ok(7)",
-        "    return err(LoadError.invalid_format)",
+        "        return status.Status[int, LoadError].ok(value= 7)",
+        "    return status.Status[int, LoadError].err(error= LoadError.invalid_format)",
         "",
         "def main() -> int:",
         "    let success = load(true)",
         "    let failure = load(false)",
-        "    if success.is_ok and failure.error == LoadError.invalid_format:",
-        "        return success.value + 1",
+        "    match success:",
+        "        status.Status.ok as success_payload:",
+        "            match failure:",
+        "                status.Status.err as failure_payload:",
+        "                    if failure_payload.error == LoadError.invalid_format:",
+        "                        return success_payload.value + 1",
+        "                status.Status.ok:",
+        "                    return 0",
+        "        status.Status.err:",
+        "            return 0",
         "    return 0",
         "",
       ].join("\n"))
@@ -720,7 +730,7 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
-  def test_run_with_host_compiler_executes_program_using_result_values
+  def test_run_with_host_compiler_executes_program_using_status_values
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
@@ -730,25 +740,30 @@ class MilkTeaRunTest < Minitest::Test
       File.write(source_path, [
         "module demo.result_runtime",
         "",
+        "import std.status as status",
+        "",
         "enum ParseError: ubyte",
         "    empty = 1",
         "    invalid = 2",
         "",
-        "def parse(flag: int) -> Result[int, ParseError]:",
+        "def parse(flag: int) -> status.Status[int, ParseError]:",
         "    if flag == 0:",
-        "        return err(ParseError.empty)",
+        "        return status.Status[int, ParseError].err(error= ParseError.empty)",
         "    elif flag < 0:",
-        "        return err(ParseError.invalid)",
-        "    return ok(flag + 10)",
+        "        return status.Status[int, ParseError].err(error= ParseError.invalid)",
+        "    return status.Status[int, ParseError].ok(value= flag + 10)",
         "",
-        "def value_or_code(result: Result[int, ParseError]) -> int:",
-        "    if result.is_ok:",
-        "        return result.value",
-        "    match result.error:",
-        "        ParseError.empty:",
-        "            return 2",
-        "        ParseError.invalid:",
-        "            return 3",
+        "def value_or_code(result: status.Status[int, ParseError]) -> int:",
+        "    match result:",
+        "        status.Status.ok as payload:",
+        "            return payload.value",
+        "        status.Status.err as payload:",
+        "            match payload.error:",
+        "                ParseError.empty:",
+        "                    return 2",
+        "                ParseError.invalid:",
+        "                    return 3",
+        "    return 0",
         "",
         "def main() -> int:",
         "    let parsed = parse(4)",

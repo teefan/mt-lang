@@ -1784,12 +1784,6 @@ module MilkTea
           )
         when Types::Span
           AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["span"]), arguments: [AST::TypeArgument.new(value: ast_type_ref_for(type.element_type))], nullable: false)
-        when Types::Result
-          AST::TypeRef.new(
-            name: AST::QualifiedName.new(parts: ["Result"]),
-            arguments: [AST::TypeArgument.new(value: ast_type_ref_for(type.ok_type)), AST::TypeArgument.new(value: ast_type_ref_for(type.error_type))],
-            nullable: false,
-          )
         when Types::Task
           AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["Task"]), arguments: [AST::TypeArgument.new(value: ast_type_ref_for(type.result_type))], nullable: false)
         when Types::TypeVar
@@ -4531,20 +4525,6 @@ module MilkTea
           )
         when :zero
           IR::ZeroInit.new(type:)
-        when :result_ok
-          argument = expression.arguments.fetch(0)
-          fields = [
-            IR::AggregateField.new(name: "is_ok", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
-            IR::AggregateField.new(name: "value", value: lower_contextual_expression(argument.value, env:, expected_type: type.ok_type)),
-          ]
-          IR::AggregateLiteral.new(type:, fields:)
-        when :result_err
-          argument = expression.arguments.fetch(0)
-          fields = [
-            IR::AggregateField.new(name: "is_ok", value: IR::BooleanLiteral.new(value: false, type: @types.fetch("bool"))),
-            IR::AggregateField.new(name: "error", value: lower_contextual_expression(argument.value, env:, expected_type: type.error_type)),
-          ]
-          IR::AggregateLiteral.new(type:, fields:)
         when :panic
           argument = expression.arguments.fetch(0)
           message_type = infer_expression_type(argument.value, env:)
@@ -6208,10 +6188,6 @@ module MilkTea
           if @functions.key?(callee.name)
             binding = specialize_function_binding(@functions.fetch(callee.name), arguments, env)
             [ :function, function_binding_c_name(binding, module_name: @module_name), nil, binding.type, binding ]
-          elsif callee.name == "ok"
-            [:result_ok, nil, nil, nil]
-          elsif callee.name == "err"
-            [:result_err, nil, nil, nil]
           elsif callee.name == "panic"
             [:panic, nil, nil, nil]
           elsif callee.name == "ref_of"
@@ -6340,7 +6316,7 @@ module MilkTea
 
           if (type_ref = type_ref_from_specialization(callee))
             specialized_type = resolve_type_ref(type_ref)
-            return [:struct_literal, nil, nil, specialized_type] if specialized_type.is_a?(Types::Struct) || result_type?(specialized_type) || task_type?(specialized_type)
+            return [:struct_literal, nil, nil, specialized_type] if specialized_type.is_a?(Types::Struct) || task_type?(specialized_type)
           end
 
           raise LoweringError, "unsupported specialization callee"
@@ -6484,10 +6460,6 @@ module MilkTea
           when :zero
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             function_type.return_type
-          when :result_ok, :result_err
-            raise LoweringError, "cannot infer result type for #{kind == :result_ok ? 'ok' : 'err'} without an expected Result[T, E]" unless result_type?(expected_type)
-
-            expected_type
           when :variant_arm_ctor
             _, _, _, variant_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             variant_type
@@ -7191,11 +7163,6 @@ module MilkTea
           return unless actual_type.is_a?(Types::Span)
 
           collect_type_substitutions(pattern_type.element_type, actual_type.element_type, substitutions, function_name)
-        when Types::Result
-          return unless actual_type.is_a?(Types::Result)
-
-          collect_type_substitutions(pattern_type.ok_type, actual_type.ok_type, substitutions, function_name)
-          collect_type_substitutions(pattern_type.error_type, actual_type.error_type, substitutions, function_name)
         when Types::Task
           return unless actual_type.is_a?(Types::Task)
 
@@ -7222,6 +7189,13 @@ module MilkTea
           collect_type_substitutions(pattern_type.return_type, actual_type.return_type, substitutions, function_name)
         when Types::StructInstance
           return unless actual_type.is_a?(Types::StructInstance)
+          return unless actual_type.definition == pattern_type.definition && actual_type.arguments.length == pattern_type.arguments.length
+
+          pattern_type.arguments.zip(actual_type.arguments).each do |expected_argument, actual_argument|
+            collect_type_substitutions(expected_argument, actual_argument, substitutions, function_name)
+          end
+        when Types::VariantInstance
+          return unless actual_type.is_a?(Types::VariantInstance)
           return unless actual_type.definition == pattern_type.definition && actual_type.arguments.length == pattern_type.arguments.length
 
           pattern_type.arguments.zip(actual_type.arguments).each do |expected_argument, actual_argument|
@@ -7263,8 +7237,6 @@ module MilkTea
           )
         when Types::Span
           Types::Span.new(substitute_type(type.element_type, substitutions))
-        when Types::Result
-          Types::Result.new(substitute_type(type.ok_type, substitutions), substitute_type(type.error_type, substitutions))
         when Types::Task
           Types::Task.new(substitute_type(type.result_type, substitutions))
         when Types::Proc
@@ -7336,10 +7308,6 @@ module MilkTea
       def variant_match_arm_name_from_pattern(pattern)
         # pattern is TypeName.arm_name or module.TypeName.arm_name
         pattern.is_a?(AST::MemberAccess) ? pattern.member : nil
-      end
-
-      def result_type?(type)
-        type.is_a?(Types::Result)
       end
 
       def task_type?(type)
@@ -7615,8 +7583,6 @@ module MilkTea
           type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_ref_type?(argument) }
         when Types::Span
           contains_ref_type?(type.element_type)
-        when Types::Result
-          contains_ref_type?(type.ok_type) || contains_ref_type?(type.error_type)
         when Types::Task
           contains_ref_type?(type.result_type)
         when Types::StructInstance
@@ -7724,10 +7690,7 @@ module MilkTea
                  if name != "ref" && args.any? { |argument| contains_ref_type?(argument) }
                    raise LoweringError, "ref types cannot be nested inside #{name}"
                  end
-                 if name == "Result"
-                   validate_generic_type!(name, args)
-                   Types::Result.new(args.fetch(0), args.fetch(1))
-                 elsif name == "Task"
+                 if name == "Task"
                    validate_generic_type!(name, args)
                    Types::Task.new(args.fetch(0))
                  elsif (generic_type = resolve_named_generic_type(parts))
@@ -8247,10 +8210,6 @@ module MilkTea
           raise LoweringError, "str_builder requires exactly one type argument" unless arguments.length == 1
           raise LoweringError, "str_builder capacity must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments.first)
           raise LoweringError, "str_builder capacity must be positive" if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
-        when "Result"
-          raise LoweringError, "Result requires exactly two type arguments" unless arguments.length == 2
-          raise LoweringError, "Result ok type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise LoweringError, "Result error type must be a type" if arguments[1].is_a?(Types::LiteralTypeArg)
         when "Task"
           raise LoweringError, "Task requires exactly one type argument" unless arguments.length == 1
           raise LoweringError, "Task result type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)

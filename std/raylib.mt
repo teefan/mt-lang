@@ -3,7 +3,7 @@ module std.raylib
 
 import std.c.raylib as c
 import std.bytes as bytes
-import std.option as option
+import std.maybe as maybe
 import std.vec as vec
 import std.string as string
 import std.str as text
@@ -217,11 +217,11 @@ pub foreign def mem_free[T](memory: ptr[T]) -> void = c.MemFree
 foreign def mt_raw_load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
 
 
-pub def load_file_data(file_name: str) -> option.Option[bytes.Buffer]:
+pub def load_file_data(file_name: str) -> maybe.Maybe[bytes.Buffer]:
     var data_size = 0
     let raw_result = mt_raw_load_file_data(file_name, data_size)
     if raw_result == null:
-        return option.Option[bytes.Buffer].none()
+        return maybe.Maybe[bytes.Buffer].none
 
     if data_size < 0:
         c.UnloadFileData(ptr[ubyte]<-raw_result)
@@ -230,21 +230,21 @@ pub def load_file_data(file_name: str) -> option.Option[bytes.Buffer]:
     var value = bytes.with_capacity(ptr_uint<-data_size)
     bytes.append(ref_of(value), span[ubyte](data = ptr[ubyte]<-raw_result, len = ptr_uint<-data_size))
     c.UnloadFileData(ptr[ubyte]<-raw_result)
-    return option.Option[bytes.Buffer].some(value)
+    return maybe.Maybe[bytes.Buffer].some(value= value)
 
 pub foreign def save_file_data(file_name: str as cstr, data: span[ubyte]) -> bool = c.SaveFileData(file_name, data.data, int<-data.len)
 pub foreign def export_data_as_code(data: const_ptr[ubyte], data_size: int, file_name: cstr) -> bool = c.ExportDataAsCode
 foreign def mt_raw_load_file_text(file_name: str as cstr) -> ptr[char]? = c.LoadFileText
 
 
-pub def load_file_text(file_name: str) -> option.Option[string.String]:
+pub def load_file_text(file_name: str) -> maybe.Maybe[string.String]:
     let raw_result = mt_raw_load_file_text(file_name)
     if raw_result == null:
-        return option.Option[string.String].none()
+        return maybe.Maybe[string.String].none
 
     let value = string.String.from_str(text.chars_as_str(ptr[char]<-raw_result))
     c.UnloadFileText(ptr[char]<-raw_result)
-    return option.Option[string.String].some(value)
+    return maybe.Maybe[string.String].some(value= value)
 
 pub foreign def save_file_text(file_name: cstr, text: cstr) -> bool = c.SaveFileText
 pub foreign def file_rename(file_name: cstr, file_rename: cstr) -> int = c.FileRename
@@ -553,19 +553,19 @@ pub foreign def get_glyph_atlas_rec(font: Font, codepoint: int) -> Rectangle = c
 foreign def mt_raw_load_utf_8(codepoints: const_ptr[int], length: int) -> ptr[char]? = c.LoadUTF8
 
 
-pub def load_utf_8(codepoints: const_ptr[int], length: int) -> option.Option[string.String]:
+pub def load_utf_8(codepoints: const_ptr[int], length: int) -> maybe.Maybe[string.String]:
     let raw_result = mt_raw_load_utf_8(codepoints, length)
     if raw_result == null:
-        return option.Option[string.String].none()
+        return maybe.Maybe[string.String].none
 
     let value = string.String.from_str(text.chars_as_str(ptr[char]<-raw_result))
     c.UnloadUTF8(ptr[char]<-raw_result)
-    return option.Option[string.String].some(value)
+    return maybe.Maybe[string.String].some(value= value)
 
 foreign def mt_raw_load_codepoints(text: str as cstr, out count: int) -> ptr[int]? = c.LoadCodepoints
 
 
-pub def load_codepoints(text: str) -> option.Option[vec.Vec[int]]:
+pub def load_codepoints(text: str) -> maybe.Maybe[vec.Vec[int]]:
     var count = 0
     let raw_result = mt_raw_load_codepoints(text, count)
     if count < 0:
@@ -577,10 +577,10 @@ pub def load_codepoints(text: str) -> option.Option[vec.Vec[int]]:
     if count == 0:
         if raw_result != null:
             c.UnloadCodepoints(ptr[int]<-raw_result)
-        return option.Option[vec.Vec[int]].some(value)
+        return maybe.Maybe[vec.Vec[int]].some(value= value)
 
     if raw_result == null:
-        return option.Option[vec.Vec[int]].none()
+        return maybe.Maybe[vec.Vec[int]].none
 
     var index: ptr_uint = 0
     while index < ptr_uint<-count:
@@ -588,7 +588,7 @@ pub def load_codepoints(text: str) -> option.Option[vec.Vec[int]]:
             value.push(read(ptr[int]<-raw_result + index))
         index += 1
     c.UnloadCodepoints(ptr[int]<-raw_result)
-    return option.Option[vec.Vec[int]].some(value)
+    return maybe.Maybe[vec.Vec[int]].some(value= value)
 
 pub foreign def get_codepoint_count(text: str as cstr) -> int = c.GetCodepointCount
 pub foreign def get_codepoint(text: str as cstr, out codepoint_size: int) -> int = c.GetCodepoint

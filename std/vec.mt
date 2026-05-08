@@ -1,7 +1,7 @@
 module std.vec
 
 import std.mem.heap as heap
-import std.option as option
+import std.maybe as maybe
 import std.span as sp
 
 pub struct Vec[T]:
@@ -132,9 +132,9 @@ methods Vec[T]:
         return
 
 
-    pub edit def pop() -> option.Option[T]:
+    pub edit def pop() -> maybe.Maybe[T]:
         if this.len == 0:
-            return option.Option[T].none()
+            return maybe.Maybe[T].none
 
         let last_index = this.len - 1
         let data = this.data
@@ -144,7 +144,7 @@ methods Vec[T]:
         this.len -= 1
         unsafe:
             let data_ptr = ptr[T]<-data
-            return option.Option[T].some(read(data_ptr + last_index))
+            return maybe.Maybe[T].some(value= read(data_ptr + last_index))
 
     pub edit def remove_swap(index: ptr_uint) -> T:
         if index >= this.len:

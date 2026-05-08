@@ -8,7 +8,7 @@ module MilkTea
       bool byte ubyte char short ushort int uint long ulong ptr_int ptr_uint float double void str cstr
     ].freeze
     BUILTIN_TYPE_NAMES = (BUILTIN_PRIMITIVE_NAMES + %w[
-      ptr const_ptr ref span array str_builder Result Task
+      ptr const_ptr ref span array str_builder Task
     ]).freeze
 
     class Base
@@ -332,47 +332,6 @@ module MilkTea
       end
     end
 
-    class Result < Base
-      attr_reader :ok_type, :error_type
-
-      def initialize(ok_type, error_type)
-        @ok_type = ok_type
-        @error_type = error_type
-        @fields = {
-          "is_ok" => Primitive.new("bool"),
-          "value" => ok_type,
-          "error" => error_type,
-        }.freeze
-        freeze
-      end
-
-      def eql?(other)
-        other.is_a?(Result) && other.ok_type == ok_type && other.error_type == error_type
-      end
-
-      alias == eql?
-
-      def hash
-        [self.class, ok_type, error_type].hash
-      end
-
-      def name
-        to_s
-      end
-
-      def fields
-        @fields
-      end
-
-      def field(name)
-        @fields[name]
-      end
-
-      def to_s
-        "Result[#{ok_type}, #{error_type}]"
-      end
-    end
-
     class Task < Base
       attr_reader :result_type
 
@@ -502,8 +461,6 @@ module MilkTea
           GenericInstance.new(type.name, type.arguments.map { |argument| argument.is_a?(LiteralTypeArg) ? argument : substitute_type(argument, substitutions) })
         when Span
           Span.new(substitute_type(type.element_type, substitutions))
-        when Result
-          Result.new(substitute_type(type.ok_type, substitutions), substitute_type(type.error_type, substitutions))
         when Task
           Task.new(substitute_type(type.result_type, substitutions))
         when Proc
@@ -702,8 +659,6 @@ module MilkTea
           GenericInstance.new(type.name, type.arguments.map { |argument| argument.is_a?(LiteralTypeArg) ? argument : substitute_type(argument, substitutions) })
         when Span
           Span.new(substitute_type(type.element_type, substitutions))
-        when Result
-          Result.new(substitute_type(type.ok_type, substitutions), substitute_type(type.error_type, substitutions))
         when Task
           Task.new(substitute_type(type.result_type, substitutions))
         when Proc

@@ -42,7 +42,7 @@ class LSPWorkspaceTest < Minitest::Test
       content = <<~MT
         module std.jsonc
 
-        import std.option as option
+        import std.maybe as maybe
         import std.string as string
 
         pub def parse() -> int:
