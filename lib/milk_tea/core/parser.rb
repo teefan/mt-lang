@@ -727,7 +727,8 @@ module MilkTea
     end
 
     def parse_match_stmt
-      line = previous.line
+      token = previous
+      line = token.line
       expression = parse_expression
       arms = parse_named_block do
         pattern = parse_expression
@@ -745,7 +746,7 @@ module MilkTea
           body:,
         )
       end
-      AST::MatchStmt.new(expression:, arms:, line:)
+      AST::MatchStmt.new(expression:, arms:, line:, column: token.column, length: token.lexeme.length)
     end
 
     def parse_unsafe_stmt
@@ -775,40 +776,45 @@ module MilkTea
     end
 
     def parse_while_stmt
-      line = previous.line
+      token = previous
+      line = token.line
       condition = parse_expression
       body = parse_block
-      AST::WhileStmt.new(condition:, body:, line:)
+      AST::WhileStmt.new(condition:, body:, line:, column: token.column, length: token.lexeme.length)
     end
 
     def parse_break_stmt
-      line = previous.line
+      token = previous
+      line = token.line
       consume_end_of_statement
-      AST::BreakStmt.new(line:)
+      AST::BreakStmt.new(line:, column: token.column, length: token.lexeme.length)
     end
 
     def parse_continue_stmt
-      line = previous.line
+      token = previous
+      line = token.line
       consume_end_of_statement
-      AST::ContinueStmt.new(line:)
+      AST::ContinueStmt.new(line:, column: token.column, length: token.lexeme.length)
     end
 
     def parse_return_stmt
-      line = previous.line
+      token = previous
+      line = token.line
       value = check(:newline) ? nil : parse_expression
       consume_end_of_statement unless block_expression?(value)
-      AST::ReturnStmt.new(value:, line:)
+      AST::ReturnStmt.new(value:, line:, column: token.column, length: token.lexeme.length)
     end
 
     def parse_defer_stmt
-      line = previous.line
+      token = previous
+      line = token.line
       if check(:colon)
         body = parse_block
-        AST::DeferStmt.new(expression: nil, body:, line:)
+        AST::DeferStmt.new(expression: nil, body:, line:, column: token.column, length: token.lexeme.length)
       else
         expression = parse_expression
         consume_end_of_statement unless block_expression?(expression)
-        AST::DeferStmt.new(expression:, body: nil, line:)
+        AST::DeferStmt.new(expression:, body: nil, line:, column: token.column, length: token.lexeme.length)
       end
     end
 

@@ -258,6 +258,8 @@ class MilkTeaLinterTest < Minitest::Test
     assert_equal "unreachable-code", w.code
     assert_match(/unreachable/, w.message)
     assert_equal 5, w.line
+    assert_equal 9, w.column
+    assert_equal 4, w.length
   end
 
   def test_no_unreachable_before_return
@@ -287,6 +289,27 @@ class MilkTeaLinterTest < Minitest::Test
     unreachable = warnings.select { |w| w.code == "unreachable-code" }
     assert_equal 1, unreachable.length
     assert_equal 8, unreachable.first.line
+    assert_equal 9, unreachable.first.column
+    assert_equal 4, unreachable.first.length
+  end
+
+  def test_unreachable_return_anchors_to_return_keyword
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["missing-return"])
+      module demo.lint
+
+      function main(flag: bool) -> int:
+          if flag:
+              return 1
+          else:
+              return 2
+          return -1
+    MT
+
+    unreachable = warnings.select { |w| w.code == "unreachable-code" }
+    assert_equal 1, unreachable.length
+    assert_equal 8, unreachable.first.line
+    assert_equal 5, unreachable.first.column
+    assert_equal 6, unreachable.first.length
   end
 
   # ── borrow-and-mutate ────────────────────────────────────────────────

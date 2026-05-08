@@ -99,8 +99,8 @@ module MilkTea
     MatchArm = Data.define(:pattern, :binding_name, :binding_line, :binding_column, :body) do
       def initialize(pattern:, binding_name:, body:, binding_line: nil, binding_column: nil) = super
     end
-    MatchStmt = Data.define(:expression, :arms, :line) do
-      def initialize(expression:, arms:, line: nil) = super
+    MatchStmt = Data.define(:expression, :arms, :line, :column, :length) do
+      def initialize(expression:, arms:, line: nil, column: nil, length: nil) = super
     end
     UnsafeStmt = Data.define(:body, :line, :column, :length) do
       def initialize(body:, line: nil, column: nil, length: nil) = super
@@ -111,20 +111,20 @@ module MilkTea
     ForStmt = Data.define(:name, :iterable, :body, :line, :column) do
       def initialize(name:, iterable:, body:, line: nil, column: nil) = super
     end
-    WhileStmt = Data.define(:condition, :body, :line) do
-      def initialize(condition:, body:, line: nil) = super
+    WhileStmt = Data.define(:condition, :body, :line, :column, :length) do
+      def initialize(condition:, body:, line: nil, column: nil, length: nil) = super
     end
-    BreakStmt = Data.define(:line) do
-      def initialize(line: nil) = super
+    BreakStmt = Data.define(:line, :column, :length) do
+      def initialize(line: nil, column: nil, length: nil) = super
     end
-    ContinueStmt = Data.define(:line) do
-      def initialize(line: nil) = super
+    ContinueStmt = Data.define(:line, :column, :length) do
+      def initialize(line: nil, column: nil, length: nil) = super
     end
-    ReturnStmt = Data.define(:value, :line) do
-      def initialize(value:, line: nil) = super
+    ReturnStmt = Data.define(:value, :line, :column, :length) do
+      def initialize(value:, line: nil, column: nil, length: nil) = super
     end
-    DeferStmt = Data.define(:expression, :body, :line) do
-      def initialize(expression:, body:, line: nil) = super
+    DeferStmt = Data.define(:expression, :body, :line, :column, :length) do
+      def initialize(expression:, body:, line: nil, column: nil, length: nil) = super
     end
     ExpressionStmt = Data.define(:expression, :line) do
       def initialize(expression:, line: nil) = super
