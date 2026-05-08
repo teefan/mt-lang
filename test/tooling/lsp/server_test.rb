@@ -2121,6 +2121,58 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_semantic_tokens_keep_generic_helper_parameter_declarations_and_imported_lowercase_enum_members
+    Dir.mktmpdir("mt_lsp_semantic_tokens_generic_helper_enum") do |dir|
+      c_dir = File.join(dir, "std", "c")
+      FileUtils.mkdir_p(c_dir)
+
+      File.write(File.join(c_dir, "foo.mt"), <<~MT)
+        external module std.c.foo:
+            enum thing_t: int
+                THING_A = 1
+      MT
+
+      source_path = File.join(dir, "demo.mt")
+      source = <<~MT
+        module demo
+
+        import std.c.foo as c
+
+        function uses_helper(loop: int) -> int:
+            return helper[int](loop)
+
+        function helper[T](value: T) -> T:
+            return value
+
+        function use_enum() -> c.thing_t:
+            return c.thing_t.THING_A
+      MT
+      File.write(source_path, source)
+
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        uri = path_to_uri(source_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        loop_decl = semantic_entry_for_lexeme_on_line(source, entries, "loop", 4)
+        enum_member = semantic_entry_for_lexeme_on_line(source, entries, "THING_A", 11)
+
+        assert_equal "parameter", loop_decl.fetch("tokenType")
+        assert_includes loop_decl.fetch("modifierNames"), "declaration"
+        assert_equal "enumMember", enum_member.fetch("tokenType")
+      end
+    end
+  end
+
   def test_semantic_tokens_refresh_after_imported_module_did_change
     Dir.mktmpdir("mt_lsp_semantic_tokens_import_change") do |dir|
       Dir.mkdir(File.join(dir, "std"))

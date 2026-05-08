@@ -117,7 +117,7 @@ module MilkTea
         @evaluated_const_values = {}
         @error_node_stack = []
         @local_completion_frames = []
-        @active_local_completion = nil
+        @active_local_completion_stack = []
         @next_binding_id = 1
         @binding_name_by_id = {}
         @identifier_binding_ids = {}
@@ -5259,20 +5259,21 @@ module MilkTea
       end
 
       def start_local_completion_frame(binding, scopes)
-        @active_local_completion = {
+        frame = {
           function_name: binding.name,
           receiver_type: binding.type.receiver_type,
           snapshots: [],
         }
+        @active_local_completion_stack << frame
         record_local_completion_snapshot(binding.ast.respond_to?(:line) ? binding.ast.line : nil, 0, scopes)
       end
 
       def finish_local_completion_frame(binding)
-        return unless @active_local_completion
+        return if @active_local_completion_stack.empty?
 
-        snapshots = @active_local_completion[:snapshots]
+        frame = @active_local_completion_stack.pop
+        snapshots = frame[:snapshots]
         if snapshots.empty?
-          @active_local_completion = nil
           return
         end
 
@@ -5282,15 +5283,14 @@ module MilkTea
         @local_completion_frames << LocalCompletionFrame.new(
           start_line:,
           end_line:,
-          function_name: @active_local_completion[:function_name],
-          receiver_type: @active_local_completion[:receiver_type],
+          function_name: frame[:function_name],
+          receiver_type: frame[:receiver_type],
           snapshots: snapshots.freeze,
         )
-        @active_local_completion = nil
       end
 
       def record_local_completion_snapshot(line, column, scopes)
-        return unless @active_local_completion
+        return if @active_local_completion_stack.empty?
         return if line.nil?
 
         snapshot = LocalCompletionSnapshot.new(
@@ -5299,7 +5299,7 @@ module MilkTea
           bindings: merged_scope_bindings(scopes).freeze,
         )
 
-        snapshots = @active_local_completion[:snapshots]
+        snapshots = @active_local_completion_stack.last[:snapshots]
         prev = snapshots.last
         if prev && prev.line == snapshot.line && prev.column == snapshot.column
           snapshots[-1] = snapshot
