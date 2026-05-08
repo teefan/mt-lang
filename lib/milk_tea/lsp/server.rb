@@ -69,7 +69,8 @@ module MilkTea
         }
       end
 
-      def initialize
+      def initialize(protocol: Protocol)
+        @protocol = protocol
         @workspace = Workspace.new(enable_background_analysis_warmup: false)
         @format_mode = :tidy
         @handlers = {}
@@ -105,7 +106,7 @@ module MilkTea
         end
 
         loop do
-          message = Protocol.read_message
+          message = @protocol.read_message
           break if message.nil?
 
           process_message(message)
@@ -173,13 +174,13 @@ module MilkTea
         end
       rescue StandardError => e
         warn "Error processing message: #{e.message}"
-        Protocol.write_error(id, -32_603, 'Internal server error') if id
+        @protocol.write_error(id, -32_603, 'Internal server error') if id
       end
 
       def handle_request(method_name, params, id)
         handler = @handlers[method_name]
         if handler.nil?
-          Protocol.write_error(id, -32_601, 'Method not found')
+          @protocol.write_error(id, -32_601, 'Method not found')
           return
         end
 
@@ -192,11 +193,11 @@ module MilkTea
             detail = perf_log_context(method_name, params, verbose: perf_verbose?)
             warn "[LSP perf] req #{method_name} #{elapsed_ms}ms id=#{id}#{detail}"
           end
-          Protocol.write_response(id, result)
+          @protocol.write_response(id, result)
         rescue StandardError => e
           warn "Error in handler for #{method_name}: #{e.message}"
           warn e.backtrace.first(3).join("\n")
-          Protocol.write_error(id, -32_603, "Internal error: #{e.message}")
+          @protocol.write_error(id, -32_603, "Internal error: #{e.message}")
         ensure
           @current_request_id = nil
         end
@@ -519,7 +520,7 @@ module MilkTea
         @workspace.close_document(uri)
         invalidate_document_caches(uri)
         refresh_open_document_dependency_state(uri)
-        Protocol.write_notification('textDocument/publishDiagnostics', {
+        @protocol.write_notification('textDocument/publishDiagnostics', {
           uri: uri,
           diagnostics: []
         })
@@ -1616,7 +1617,7 @@ module MilkTea
 
           if publish
             @diagnostics_perf[:published] += 1 if perf_logging?
-            Protocol.write_notification('textDocument/publishDiagnostics', {
+            @protocol.write_notification('textDocument/publishDiagnostics', {
               uri: uri,
               diagnostics: diagnostics
             })

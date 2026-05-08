@@ -922,6 +922,58 @@ module MilkTea
       end
     end
 
+    def statement_column(statement)
+      return nil unless statement
+
+      if statement.respond_to?(:column) && statement.column
+        return statement.column
+      end
+
+      case statement
+      when AST::IfStmt
+        statement.branches.first&.column || statement.else_column
+      when AST::WhileStmt
+        expression_column(statement.condition)
+      when AST::MatchStmt
+        expression_column(statement.expression)
+      when AST::ReturnStmt
+        expression_column(statement.value)
+      when AST::DeferStmt
+        expression_column(statement.expression)
+      when AST::ExpressionStmt
+        expression_column(statement.expression)
+      else
+        nil
+      end
+    end
+
+    def statement_length(statement)
+      return nil unless statement
+
+      if statement.respond_to?(:length) && statement.length
+        return statement.length
+      end
+
+      case statement
+      when AST::LocalDecl, AST::ForStmt
+        statement.name.length
+      when AST::IfStmt
+        statement.branches.first&.length || (statement.else_column ? 4 : nil)
+      when AST::WhileStmt
+        expression_length(statement.condition)
+      when AST::MatchStmt
+        expression_length(statement.expression)
+      when AST::ReturnStmt
+        expression_length(statement.value)
+      when AST::DeferStmt
+        expression_length(statement.expression)
+      when AST::ExpressionStmt
+        expression_length(statement.expression)
+      else
+        nil
+      end
+    end
+
     def condition_symbol_name(expr)
       case expr
       when AST::Identifier
@@ -1037,8 +1089,16 @@ module MilkTea
         next if node.kind == :exit
         next unless node.statement
 
-        line = node.statement.respond_to?(:line) ? node.statement.line : nil
-        @warnings << Warning.new(path: @path, line:, code: "unreachable-code", message: "unreachable code")
+        statement = node.statement
+        line = statement.respond_to?(:line) ? statement.line : nil
+        @warnings << Warning.new(
+          path: @path,
+          line:,
+          column: statement_column(statement),
+          length: statement_length(statement),
+          code: "unreachable-code",
+          message: "unreachable code"
+        )
       end
     end
 

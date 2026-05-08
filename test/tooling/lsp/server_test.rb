@@ -10,6 +10,26 @@ class LSPServerTest < Minitest::Test
   HOVER_LATENCY_BUDGET_MS = 250.0
   SEMANTIC_TOKENS_LATENCY_BUDGET_MS = 450.0
 
+  class RecordingProtocol
+    attr_reader :notifications
+
+    def initialize
+      @notifications = Queue.new
+    end
+
+    def read_message = nil
+
+    def write_notification(method, params)
+      @notifications << { "method" => method, "params" => params }
+    end
+
+    def write_response(_id, _result)
+    end
+
+    def write_error(_id, _code, _message)
+    end
+  end
+
   class LSPClient
     def initialize(stdin_write, stdout_read)
       @stdin = stdin_write
@@ -893,7 +913,8 @@ class LSPServerTest < Minitest::Test
   end
 
   def test_background_document_context_skips_diagnostics_until_promoted
-    server = MilkTea::LSP::Server.new
+    protocol = RecordingProtocol.new
+    server = MilkTea::LSP::Server.new(protocol: protocol)
     uri = "file:///tmp/lsp_background_context.mt"
     source = <<~MT
       module main
@@ -918,6 +939,16 @@ class LSPServerTest < Minitest::Test
     })
 
     assert_includes server.instance_variable_get(:@diagnostics_last_scheduled_hash).keys, uri
+
+    published = Timeout.timeout(5) do
+      loop do
+        message = protocol.notifications.pop
+        break message if message.dig("method") == "textDocument/publishDiagnostics" && message.dig("params", :uri) == uri
+      end
+    end
+
+    assert_equal "textDocument/publishDiagnostics", published.fetch("method")
+    assert_equal uri, published.dig("params", :uri)
   ensure
     server&.send(:handle_shutdown, nil)
   end
