@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require 'cgi/escape'
-require 'digest'
 require 'set'
 require 'thread'
 require 'uri'
@@ -18,16 +17,9 @@ module MilkTea
       DOC_COMMENT_PREFIX = '##'
       DEFINITION_LINE_PREFIX = /^(?:\s)*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|methods|opaque)\s+/m
       DEFINITION_NAME_REGEX = /^\s*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|methods|opaque)\s+([A-Za-z_][A-Za-z0-9_]*)\b/
-      IMPORT_HEAVY_ALWAYS_IMPORT_COUNT = 4
-      IMPORT_HEAVY_IMPORT_COUNT = 2
-      IMPORT_HEAVY_BYTES_THRESHOLD = 1_500
-      IMPORT_HEAVY_LINES_THRESHOLD = 50
-      SINGLE_IMPORT_HEAVY_BYTES_THRESHOLD = 6_000
-      SINGLE_IMPORT_HEAVY_LINES_THRESHOLD = 150
 
-      def initialize(error_output: nil, enable_background_analysis_warmup: true)
+      def initialize(error_output: nil)
         @error_output = error_output
-        @enable_background_analysis_warmup = enable_background_analysis_warmup
         @open_documents = {}   # uri -> content String from didOpen/didChange
         @indexed_documents = {} # uri -> content String loaded from disk index
         @document_sources = {} # uri -> source string from the editor client
@@ -53,19 +45,10 @@ module MilkTea
         @definition_warmup_queue = Queue.new
         @definition_warmup_enqueued = Set.new
         @definition_warmup_thread = nil
-        @analysis_warmup_queue = Queue.new
-        @analysis_warmup_pending = {}
-        @analysis_warmup_enqueued = Set.new
-        @analysis_warmup_mutex = Mutex.new
-        @analysis_warmup_thread = nil
       end
 
       def shared_module_cache
         @shared_module_cache
-      end
-
-      def background_analysis_warmup_enabled?
-        @enable_background_analysis_warmup
       end
 
       def set_document_source(uri, source)
@@ -83,10 +66,6 @@ module MilkTea
 
       def background_document?(uri)
         @document_sources[uri] == 'background-document'
-      end
-
-      def analysis_skip_reason(uri, content)
-        eager_analysis_skip_reason(uri, content).first
       end
 
       # Return cached diagnostics for +uri+, re-collecting only when content changes.
@@ -173,7 +152,6 @@ module MilkTea
       end
 
       def shutdown
-        stop_analysis_warmup
         stop_definition_warmup
       end
 
@@ -517,23 +495,6 @@ module MilkTea
         nil
       end
 
-      def large_document_content?(content)
-        !large_document_content_reason(content).nil?
-      end
-
-      def large_document_content_reason(content)
-        return nil unless content
-
-        return 'large-bytes' if content.bytesize > 200_000
-        return 'large-lines' if content.count("\n") > 1200
-
-        nil
-      end
-
-      def background_analysis_skip_reason?(skip_reason)
-        %w[std-path import-heavy].include?(skip_reason)
-      end
-
       def ast_for_content(uri, content)
         return get_ast(uri) if get_content(uri) == content
 
@@ -542,32 +503,8 @@ module MilkTea
         nil
       end
 
-      def eager_analysis_skip_reason(uri, content)
-        return ['background-document', 0] if background_document?(uri)
-
-        large_reason = large_document_content_reason(content)
-        return [large_reason, 0] if large_reason
-
-        path = uri_to_path(uri)
-        return [nil, 0] unless path && File.file?(path)
-
-        ast = ast_for_content(uri, content)
-        import_count = ast.respond_to?(:imports) ? ast.imports.length : 0
-        line_count = content.count("\n") + 1
-
-        return ['std-path', import_count] if path.include?('/std/')
-
-        import_heavy = import_count >= IMPORT_HEAVY_ALWAYS_IMPORT_COUNT ||
-                       (import_count >= IMPORT_HEAVY_IMPORT_COUNT &&
-                        (content.bytesize >= IMPORT_HEAVY_BYTES_THRESHOLD || line_count >= IMPORT_HEAVY_LINES_THRESHOLD)) ||
-                       (import_count >= 1 &&
-                        (content.bytesize >= SINGLE_IMPORT_HEAVY_BYTES_THRESHOLD || line_count >= SINGLE_IMPORT_HEAVY_LINES_THRESHOLD))
-        return ['import-heavy', import_count] if import_heavy
-
-        [nil, import_count]
-      end
-
       def warm_document_analysis(uri, content)
+        ast = ast_for_content(uri, content)
         stats = {
           bytes: content.bytesize,
           lines: content.count("\n") + 1,
@@ -575,17 +512,9 @@ module MilkTea
           analysis_mode: nil,
           analysis_ms: nil,
           skip_reason: nil,
-          import_count: 0,
+          import_count: ast.respond_to?(:imports) ? ast.imports.length : 0,
           shared_module_cache_size: @shared_module_cache.length,
         }
-
-        skip_reason, import_count = eager_analysis_skip_reason(uri, content)
-        stats[:import_count] = import_count
-        if skip_reason
-          stats[:skip_reason] = skip_reason
-          enqueue_analysis_warmup(uri, content) if @enable_background_analysis_warmup && background_analysis_skip_reason?(skip_reason)
-          return stats
-        end
 
         analysis_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         analysis_path = uri_to_path(uri)
@@ -595,100 +524,6 @@ module MilkTea
         stats[:analysis_ms] = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - analysis_start) * 1000).round(1)
         stats[:shared_module_cache_size] = @shared_module_cache.length
         stats
-      end
-
-      def analysis_warmup_digest(content)
-        Digest::SHA256.hexdigest(content)
-      end
-
-      def start_analysis_warmup
-        return unless @enable_background_analysis_warmup
-        return if @analysis_warmup_thread&.alive?
-
-        @analysis_warmup_thread = Thread.new do
-          Thread.current.name = 'mt-lsp-analysis-warmup' if Thread.current.respond_to?(:name=)
-
-          loop do
-            uri = @analysis_warmup_queue.pop
-            break if uri == :__stop__
-
-            process_analysis_warmup(uri)
-          end
-        rescue StandardError => e
-          warn "LSP analysis warmup error: #{e.message}"
-        end
-      end
-
-      def stop_analysis_warmup
-        return unless @enable_background_analysis_warmup
-        worker = @analysis_warmup_thread
-        return unless worker
-
-        @analysis_warmup_queue << :__stop__
-        worker.join(0.25)
-        @analysis_warmup_thread = nil
-      rescue StandardError => e
-        warn "LSP analysis warmup shutdown error: #{e.message}"
-      end
-
-      def enqueue_analysis_warmup(uri, content = nil)
-        return unless @enable_background_analysis_warmup
-        return if uri.nil?
-
-        start_analysis_warmup unless @analysis_warmup_thread&.alive?
-
-        digest = analysis_warmup_digest(content || get_content(uri))
-        should_enqueue = false
-        @analysis_warmup_mutex.synchronize do
-          @analysis_warmup_pending[uri] = digest
-          unless @analysis_warmup_enqueued.include?(uri)
-            @analysis_warmup_enqueued << uri
-            should_enqueue = true
-          end
-        end
-
-        @analysis_warmup_queue << uri if should_enqueue
-      end
-
-      def process_analysis_warmup(uri)
-        loop do
-          digest = nil
-          @analysis_warmup_mutex.synchronize do
-            digest = @analysis_warmup_pending.delete(uri)
-          end
-          break unless digest
-
-          warm_analysis_for_uri(uri, expected_digest: digest)
-        end
-      ensure
-        requeue = false
-        @analysis_warmup_mutex.synchronize do
-          @analysis_warmup_enqueued.delete(uri)
-          if @analysis_warmup_pending.key?(uri)
-            @analysis_warmup_enqueued << uri
-            requeue = true
-          end
-        end
-
-        @analysis_warmup_queue << uri if requeue
-      end
-
-      def warm_analysis_for_uri(uri, expected_digest:)
-        content = get_content(uri)
-        return false unless analysis_warmup_digest(content) == expected_digest
-
-        @analysis_state_mutex.synchronize do
-          analysis = compute_analysis_for_content(uri, content)
-          return false unless analysis
-          return false unless analysis_warmup_digest(get_content(uri)) == expected_digest
-
-          @analysis_cache[uri] = analysis
-          @last_good_analysis_cache[uri] = analysis
-          true
-        end
-      rescue StandardError => e
-        warn "LSP background analysis warmup error #{uri}: #{e.message}"
-        false
       end
 
       def compute_analysis_for_content(uri, content)

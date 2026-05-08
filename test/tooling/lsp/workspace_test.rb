@@ -22,19 +22,20 @@ class LSPWorkspaceTest < Minitest::Test
     assert_operator stats[:lines], :>=, 4
   end
 
-  def test_open_document_reports_skip_reason_for_large_documents
+  def test_open_document_eagerly_analyzes_large_documents
     workspace = MilkTea::LSP::Workspace.new
     uri = "file:///tmp/lsp_workspace_large_open.mt"
     content = "module main\n" + ("# filler\n" * 1201)
 
     stats = workspace.open_document(uri, content)
 
-    assert_equal false, stats[:eager_analysis]
-    assert_equal 'large-lines', stats[:skip_reason]
-    assert_nil stats[:analysis_ms]
+    assert_equal true, stats[:eager_analysis]
+    assert_equal :memory, stats[:analysis_mode]
+    assert_nil stats[:skip_reason]
+    assert_kind_of Numeric, stats[:analysis_ms]
   end
 
-  def test_open_document_skips_eager_analysis_for_std_paths
+  def test_open_document_eagerly_analyzes_std_paths
     Dir.mktmpdir("lsp_workspace_std_open") do |dir|
       std_dir = File.join(dir, "std")
       FileUtils.mkdir_p(std_dir)
@@ -53,14 +54,15 @@ class LSPWorkspaceTest < Minitest::Test
       workspace = MilkTea::LSP::Workspace.new
       stats = workspace.open_document(path_to_uri(path), content)
 
-      assert_equal false, stats[:eager_analysis]
-      assert_equal 'std-path', stats[:skip_reason]
+      assert_equal true, stats[:eager_analysis]
+      assert_equal :module_loader, stats[:analysis_mode]
+      assert_nil stats[:skip_reason]
       assert_equal 2, stats[:import_count]
-      assert_nil stats[:analysis_ms]
+      assert_kind_of Numeric, stats[:analysis_ms]
     end
   end
 
-  def test_open_document_skips_eager_analysis_for_import_heavy_files
+  def test_open_document_eagerly_analyzes_import_heavy_files
     Dir.mktmpdir("lsp_workspace_import_heavy_open") do |dir|
       FileUtils.mkdir_p(File.join(dir, "std"))
       path = File.join(dir, "main.mt")
@@ -81,14 +83,15 @@ class LSPWorkspaceTest < Minitest::Test
       workspace = MilkTea::LSP::Workspace.new
       stats = workspace.open_document(path_to_uri(path), content)
 
-      assert_equal false, stats[:eager_analysis]
-      assert_equal 'import-heavy', stats[:skip_reason]
+      assert_equal true, stats[:eager_analysis]
+      assert_equal :module_loader, stats[:analysis_mode]
+      assert_nil stats[:skip_reason]
       assert_equal 2, stats[:import_count]
-      assert_nil stats[:analysis_ms]
+      assert_kind_of Numeric, stats[:analysis_ms]
     end
   end
 
-  def test_open_document_skips_eager_analysis_for_small_files_with_many_imports
+  def test_open_document_eagerly_analyzes_small_files_with_many_imports
     Dir.mktmpdir("lsp_workspace_many_imports_open") do |dir|
       FileUtils.mkdir_p(File.join(dir, "std"))
       path = File.join(dir, "main.mt")
@@ -108,14 +111,15 @@ class LSPWorkspaceTest < Minitest::Test
       workspace = MilkTea::LSP::Workspace.new
       stats = workspace.open_document(path_to_uri(path), content)
 
-      assert_equal false, stats[:eager_analysis]
-      assert_equal 'import-heavy', stats[:skip_reason]
+      assert_equal true, stats[:eager_analysis]
+      assert_equal :module_loader, stats[:analysis_mode]
+      assert_nil stats[:skip_reason]
       assert_equal 4, stats[:import_count]
-      assert_nil stats[:analysis_ms]
+      assert_kind_of Numeric, stats[:analysis_ms]
     end
   end
 
-  def test_open_document_skips_eager_analysis_for_single_large_imported_file
+  def test_open_document_eagerly_analyzes_single_large_imported_file
     Dir.mktmpdir("lsp_workspace_single_import_large_open") do |dir|
       FileUtils.mkdir_p(File.join(dir, "std"))
       path = File.join(dir, "main.mt")
@@ -135,14 +139,15 @@ class LSPWorkspaceTest < Minitest::Test
       workspace = MilkTea::LSP::Workspace.new
       stats = workspace.open_document(path_to_uri(path), content)
 
-      assert_equal false, stats[:eager_analysis]
-      assert_equal 'import-heavy', stats[:skip_reason]
+      assert_equal true, stats[:eager_analysis]
+      assert_equal :module_loader, stats[:analysis_mode]
+      assert_nil stats[:skip_reason]
       assert_equal 1, stats[:import_count]
-      assert_nil stats[:analysis_ms]
+      assert_kind_of Numeric, stats[:analysis_ms]
     end
   end
 
-  def test_open_document_skips_eager_analysis_for_background_documents
+  def test_open_document_eagerly_analyzes_background_documents
     workspace = MilkTea::LSP::Workspace.new
     uri = "file:///tmp/lsp_workspace_background.mt"
     workspace.set_document_source(uri, "background-document")
@@ -154,15 +159,16 @@ class LSPWorkspaceTest < Minitest::Test
           return 0
     MT
 
-    assert_equal false, stats[:eager_analysis]
-    assert_equal 'background-document', stats[:skip_reason]
+    assert_equal true, stats[:eager_analysis]
+    assert_equal :memory, stats[:analysis_mode]
+    assert_nil stats[:skip_reason]
     assert_equal 0, stats[:import_count]
-    assert_nil stats[:analysis_ms]
+    assert_kind_of Numeric, stats[:analysis_ms]
   ensure
     workspace&.shutdown
   end
 
-  def test_update_document_uses_skip_heuristic_for_import_heavy_files
+  def test_update_document_eagerly_analyzes_import_heavy_files
     Dir.mktmpdir("lsp_workspace_import_heavy_update") do |dir|
       FileUtils.mkdir_p(File.join(dir, "std"))
       path = File.join(dir, "main.mt")
@@ -183,16 +189,17 @@ class LSPWorkspaceTest < Minitest::Test
       workspace = MilkTea::LSP::Workspace.new
       stats = workspace.update_document(path_to_uri(path), content)
 
-      assert_equal false, stats[:eager_analysis]
-      assert_equal 'import-heavy', stats[:skip_reason]
+      assert_equal true, stats[:eager_analysis]
+      assert_equal :module_loader, stats[:analysis_mode]
+      assert_nil stats[:skip_reason]
       assert_equal 2, stats[:import_count]
-      assert_nil stats[:analysis_ms]
+      assert_kind_of Numeric, stats[:analysis_ms]
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_skipped_open_document_warms_analysis_in_background
+  def test_open_document_populates_analysis_cache_for_std_paths
     Dir.mktmpdir("lsp_workspace_analysis_warmup") do |dir|
       std_dir = File.join(dir, "std")
       FileUtils.mkdir_p(std_dir)
@@ -209,21 +216,18 @@ class LSPWorkspaceTest < Minitest::Test
       uri = path_to_uri(path)
       stats = workspace.open_document(uri, content)
 
-      assert_equal false, stats[:eager_analysis]
-      assert_equal 'std-path', stats[:skip_reason]
+      assert_equal true, stats[:eager_analysis]
+      assert_equal :module_loader, stats[:analysis_mode]
+      assert_nil stats[:skip_reason]
 
-      wait_until do
-        analysis_cache = workspace.instance_variable_get(:@analysis_cache)
-        analysis_cache.key?(uri) && !analysis_cache[uri].nil?
-      end
-
+      refute_nil workspace.instance_variable_get(:@analysis_cache)[uri]
       refute_nil workspace.instance_variable_get(:@last_good_analysis_cache)[uri]
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_collect_diagnostics_populates_analysis_cache_for_skipped_documents
+  def test_collect_diagnostics_populates_analysis_cache_for_open_documents
     Dir.mktmpdir("lsp_workspace_diagnostics_cache") do |dir|
       std_dir = File.join(dir, "std")
       FileUtils.mkdir_p(std_dir)
@@ -236,7 +240,7 @@ class LSPWorkspaceTest < Minitest::Test
       MT
       File.write(path, content)
 
-      workspace = MilkTea::LSP::Workspace.new(enable_background_analysis_warmup: false)
+      workspace = MilkTea::LSP::Workspace.new
       uri = path_to_uri(path)
       workspace.open_document(uri, content)
 
@@ -264,16 +268,6 @@ class LSPWorkspaceTest < Minitest::Test
   end
 
   private
-
-  def wait_until(timeout: 1.0)
-    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
-
-    until yield
-      flunk "timed out waiting for background work" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
-
-      Thread.pass
-    end
-  end
 
   def path_to_uri(path)
     "file://#{path}"
