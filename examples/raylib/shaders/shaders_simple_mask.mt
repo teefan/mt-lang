@@ -15,12 +15,12 @@ const frame_format: cstr = c"Frame: %i"
 const window_title: cstr = c"raylib [shaders] example - simple mask"
 
 
-def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
+function set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

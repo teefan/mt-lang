@@ -15,7 +15,7 @@ const hour_mode_12: int = 12
 const hands_move_duration: float = 0.5
 
 
-def blank_digit_angles() -> array[rl.Vector2, 24]:
+function blank_digit_angles() -> array[rl.Vector2, 24]:
     let zz = rl.Vector2(x = 135.0, y = 135.0)
     var result = zero[array[rl.Vector2, 24]]
     for index in 0..cells_per_digit:
@@ -23,7 +23,7 @@ def blank_digit_angles() -> array[rl.Vector2, 24]:
     return result
 
 
-def digit_angles_for(digit: int) -> array[rl.Vector2, 24]:
+function digit_angles_for(digit: int) -> array[rl.Vector2, 24]:
     let tl = rl.Vector2(x = 0.0, y = 90.0)
     let tr = rl.Vector2(x = 90.0, y = 180.0)
     let br = rl.Vector2(x = 180.0, y = 270.0)
@@ -126,7 +126,7 @@ def digit_angles_for(digit: int) -> array[rl.Vector2, 24]:
     return blank_digit_angles()
 
 
-def digits_for(clock: time.ClockTime, hour_mode: int) -> array[int, 6]:
+function digits_for(clock: time.ClockTime, hour_mode: int) -> array[int, 6]:
     var result = zero[array[int, 6]]
     let hour_value = if hour_mode == hour_mode_24: clock.hour else: time.hour_12(clock)
     result[0] = hour_value / 10
@@ -138,11 +138,11 @@ def digits_for(clock: time.ClockTime, hour_mode: int) -> array[int, 6]:
     return result
 
 
-def angle_slot(digit: int, cell: int) -> int:
+function angle_slot(digit: int, cell: int) -> int:
     return digit * cells_per_digit + cell
 
 
-def refresh_digits(current_clock: time.ClockTime, hour_mode: int, current_angles: array[rl.Vector2, 144], src_angles: ref[array[rl.Vector2, 144]], dst_angles: ref[array[rl.Vector2, 144]]) -> void:
+function refresh_digits(current_clock: time.ClockTime, hour_mode: int, current_angles: array[rl.Vector2, 144], src_angles: ref[array[rl.Vector2, 144]], dst_angles: ref[array[rl.Vector2, 144]]) -> void:
     let display_digits = digits_for(current_clock, hour_mode)
     let blank_leading_hour = hour_mode == hour_mode_12 and time.hour_12(current_clock) < 10
 
@@ -161,7 +161,7 @@ def refresh_digits(current_clock: time.ClockTime, hour_mode: int, current_angles
                 read(src_angles)[slot].y -= 360.0
 
 
-def main() -> int:
+function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(screen_width, screen_height, "Milk Tea Clock of Clocks")
     defer rl.close_window()

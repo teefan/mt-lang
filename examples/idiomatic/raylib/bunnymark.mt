@@ -16,7 +16,7 @@ const screen_height: int = 450
 const bunny_path: str = "../../raylib/resources/raybunny.png"
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Bunnymark")
     defer rl.close_window()
 

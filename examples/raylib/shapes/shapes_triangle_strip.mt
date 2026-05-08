@@ -10,7 +10,7 @@ const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - triangle strip"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

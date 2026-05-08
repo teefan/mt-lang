@@ -62,7 +62,7 @@ class MilkTeaRaylibExamplePortsTest < Minitest::Test
       source = File.read(path)
       relative_path = path.delete_prefix(File.expand_path("../../examples/", __dir__))
       entries = []
-      entries << "#{relative_path}: defines null_cstr helper" if source.match?(/^def null_cstr\(\) -> cstr:$/)
+      entries << "#{relative_path}: defines null_cstr helper" if source.match?(/^function null_cstr\(\) -> cstr:$/)
       entries << "#{relative_path}: calls LoadShader(null_cstr(), ...)" if source.match?(/LoadShader\(null_cstr\(/)
       entries
     end

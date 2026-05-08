@@ -12,7 +12,7 @@ const mobile_message: cstr = c"Example optimized for Web/HTML5\non Smartphones w
 const desktop_message: cstr = c"While running on Desktop Web Browsers,\ninspect and turn on Touch Emulation."
 
 
-def gesture_name(gesture: int) -> cstr:
+function gesture_name(gesture: int) -> cstr:
     if gesture == rl.Gesture.GESTURE_TAP:
         return c"Tap"
     if gesture == rl.Gesture.GESTURE_DOUBLETAP:
@@ -36,7 +36,7 @@ def gesture_name(gesture: int) -> cstr:
     return c"None"
 
 
-def gesture_color_for(gesture: int) -> rl.Color:
+function gesture_color_for(gesture: int) -> rl.Color:
     if gesture == rl.Gesture.GESTURE_TAP:
         return rl.BLUE
     if gesture == rl.Gesture.GESTURE_DOUBLETAP:
@@ -58,7 +58,7 @@ def gesture_color_for(gesture: int) -> rl.Color:
     return rl.BLACK
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

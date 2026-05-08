@@ -10,7 +10,7 @@ const cubicmap_path: cstr = c"../resources/cubicmap.png"
 const atlas_path: cstr = c"../resources/cubicmap_atlas.png"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

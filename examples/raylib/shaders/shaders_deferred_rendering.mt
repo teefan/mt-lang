@@ -43,16 +43,16 @@ const switch_textures_text: cstr = c"Switch G-buffer textures: [1][2][3][4]"
 const cube_scale: float = 0.25
 
 
-def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
+function set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
 
 
-def gbuffer_texture(id: uint, width: int, height: int) -> rl.Texture:
+function gbuffer_texture(id: uint, width: int, height: int) -> rl.Texture:
     return rl.Texture(id = id, width = width, height = height, mipmaps = 1, format = 0)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

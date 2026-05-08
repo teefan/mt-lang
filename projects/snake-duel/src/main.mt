@@ -6,7 +6,7 @@ import src.game_logic as game_logic
 import src.game_render as game_render
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(gt.screen_width(), gt.screen_height(), "Snake Duel")
     defer rl.close_window()
 

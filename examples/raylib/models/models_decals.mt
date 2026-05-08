@@ -34,37 +34,37 @@ const ellipsis_text: cstr = c"..."
 const window_title: cstr = c"raylib [models] example - decals"
 
 
-def model_mesh(model: rl.Model, index: int) -> rl.Mesh:
+function model_mesh(model: rl.Model, index: int) -> rl.Mesh:
     unsafe:
         return model.meshes[index]
 
 
-def material_map(material: rl.Material, index: int) -> rl.MaterialMap:
+function material_map(material: rl.Material, index: int) -> rl.MaterialMap:
     unsafe:
         return material.maps[index]
 
 
-def alloc_vector3(count: int) -> ptr[rl.Vector3]:
+function alloc_vector3(count: int) -> ptr[rl.Vector3]:
     unsafe:
         return ptr[rl.Vector3]<-rl.MemAlloc(uint<-count * uint<-size_of(rl.Vector3))
 
 
-def alloc_vector2(count: int) -> ptr[rl.Vector2]:
+function alloc_vector2(count: int) -> ptr[rl.Vector2]:
     unsafe:
         return ptr[rl.Vector2]<-rl.MemAlloc(uint<-count * uint<-size_of(rl.Vector2))
 
 
-def alloc_float(count: int) -> ptr[float]:
+function alloc_float(count: int) -> ptr[float]:
     unsafe:
         return ptr[float]<-rl.MemAlloc(uint<-count * uint<-size_of(float))
 
 
-def mesh_has_indices(mesh: rl.Mesh) -> bool:
+function mesh_has_indices(mesh: rl.Mesh) -> bool:
     unsafe:
         return mesh.indices != null
 
 
-def mesh_vertex(mesh: rl.Mesh, index: int) -> rl.Vector3:
+function mesh_vertex(mesh: rl.Mesh, index: int) -> rl.Vector3:
     unsafe:
         return rl.Vector3(
             x = mesh.vertices[index * 3],
@@ -73,7 +73,7 @@ def mesh_vertex(mesh: rl.Mesh, index: int) -> rl.Vector3:
         )
 
 
-def mesh_index(mesh: rl.Mesh, index: int) -> int:
+function mesh_index(mesh: rl.Mesh, index: int) -> int:
     let indices = mesh.indices
     if indices != null:
         unsafe:
@@ -82,7 +82,7 @@ def mesh_index(mesh: rl.Mesh, index: int) -> int:
     panic("mesh indices missing")
 
 
-def triangle_vertices(v0: rl.Vector3, v1: rl.Vector3, v2: rl.Vector3) -> array[rl.Vector3, 3]:
+function triangle_vertices(v0: rl.Vector3, v1: rl.Vector3, v2: rl.Vector3) -> array[rl.Vector3, 3]:
     var vertices = zero[array[rl.Vector3, 3]]
     vertices[0] = v0
     vertices[1] = v1
@@ -90,7 +90,7 @@ def triangle_vertices(v0: rl.Vector3, v1: rl.Vector3, v2: rl.Vector3) -> array[r
     return vertices
 
 
-def mesh_triangle(mesh: rl.Mesh, triangle_index: int) -> array[rl.Vector3, 3]:
+function mesh_triangle(mesh: rl.Mesh, triangle_index: int) -> array[rl.Vector3, 3]:
     if not mesh_has_indices(mesh):
         return triangle_vertices(
             mesh_vertex(mesh, triangle_index * 3),
@@ -105,7 +105,7 @@ def mesh_triangle(mesh: rl.Mesh, triangle_index: int) -> array[rl.Vector3, 3]:
     )
 
 
-def add_triangle_to_mesh_builder(mb: ref[MeshBuilder], vertices: array[rl.Vector3, 3]) -> void:
+function add_triangle_to_mesh_builder(mb: ref[MeshBuilder], vertices: array[rl.Vector3, 3]) -> void:
     if mb.vertexCapacity <= mb.vertexCount + 3:
         let new_vertex_capacity = (1 + mb.vertexCapacity / 256) * 256
 
@@ -130,7 +130,7 @@ def add_triangle_to_mesh_builder(mb: ref[MeshBuilder], vertices: array[rl.Vector
         vertex_view[start + index] = vertices[index]
 
 
-def free_mesh_builder(mb: ref[MeshBuilder]) -> void:
+function free_mesh_builder(mb: ref[MeshBuilder]) -> void:
     if mb.vertexCapacity > 0:
         rl.MemFree(mb.vertices)
     if mb.hasUvs:
@@ -138,7 +138,7 @@ def free_mesh_builder(mb: ref[MeshBuilder]) -> void:
     read(mb) = zero[MeshBuilder]
 
 
-def build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:
+function build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:
     var out_mesh = zero[rl.Mesh]
     out_mesh.vertexCount = mb.vertexCount
     out_mesh.triangleCount = mb.vertexCount / 3
@@ -164,20 +164,20 @@ def build_mesh(mb: ref[MeshBuilder]) -> rl.Mesh:
     return out_mesh
 
 
-def clip_segment(v0: rl.Vector3, v1: rl.Vector3, plane: rl.Vector3, distance: float) -> rl.Vector3:
+function clip_segment(v0: rl.Vector3, v1: rl.Vector3, plane: rl.Vector3, distance: float) -> rl.Vector3:
     let d0 = v0.dot(plane) - distance
     let d1 = v1.dot(plane) - distance
     let amount = d0 / (d0 - d1)
     return v0.lerp(v1, amount)
 
 
-def minf(a: float, b: float) -> float:
+function minf(a: float, b: float) -> float:
     if a < b:
         return a
     return b
 
 
-def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: float, decal_offset: float) -> rl.Mesh:
+function gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: float, decal_offset: float) -> rl.Mesh:
     let inv_proj = projection.invert()
     var mesh_builders = zero[array[MeshBuilder, 2]]
     defer:
@@ -303,7 +303,7 @@ def gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: float, d
     return zero[rl.Mesh]
 
 
-def gui_button(rec: rl.Rectangle, label: cstr) -> bool:
+function gui_button(rec: rl.Rectangle, label: cstr) -> bool:
     var background_color = rl.GRAY
     var pressed = false
 
@@ -322,7 +322,7 @@ def gui_button(rec: rl.Rectangle, label: cstr) -> bool:
     return pressed
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

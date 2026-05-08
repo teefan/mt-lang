@@ -47,7 +47,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
       import std.c.missing as missing
 
-      def main() -> int:
+      function main() -> int:
           return 0
     MT
 
@@ -71,7 +71,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
         import demo.lib as lib
 
-        def main() -> int:
+        function main() -> int:
             let counter = lib.Counter(value = lib.answer)
             return counter.read()
       MT
@@ -79,26 +79,26 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       File.write(lib_path, <<~MT)
         module demo.lib
 
-        pub const answer: int = 7
+        public const answer: int = 7
         const hidden: int = 9
 
-        pub struct Counter:
+        public struct Counter:
             value: int
 
         struct Hidden:
             value: int
 
         methods Counter:
-            pub def read() -> int:
+            public function read() -> int:
                 return this.value
 
-            def bump() -> int:
+            function bump() -> int:
                 return this.value + 1
 
-        pub def make_counter() -> Counter:
+        public function make_counter() -> Counter:
             return Counter(value = answer)
 
-        def hidden_fn() -> int:
+        function hidden_fn() -> int:
             return hidden
       MT
 
@@ -121,14 +121,14 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       FileUtils.mkdir_p(File.dirname(dep_path))
 
       File.write(dep_path, <<~MT)
-        extern module std.c.dep:
+        external module std.c.dep:
             struct Vec:
                 x: float
                 y: float
       MT
 
       File.write(helper_path, <<~MT)
-        extern module std.c.helper:
+        external module std.c.helper:
             import std.c.dep as dep
 
             include "helper.h"
@@ -136,7 +136,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
             struct Holder:
                 value: dep.Vec
 
-            extern def wrap(value: dep.Vec) -> Holder
+            external function wrap(value: dep.Vec) -> Holder
       MT
 
       program = MilkTea::ModuleLoader.new(module_roots: [dir]).check_program(helper_path)

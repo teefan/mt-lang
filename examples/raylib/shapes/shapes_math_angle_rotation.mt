@@ -13,7 +13,7 @@ const title_text: cstr = c"Fixed angles + rotating line"
 const label_format: cstr = c"%d deg"
 
 
-def line_color(index: int) -> rl.Color:
+function line_color(index: int) -> rl.Color:
     if index == 0:
         return rl.GREEN
     if index == 1:
@@ -25,7 +25,7 @@ def line_color(index: int) -> rl.Color:
     return rl.WHITE
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

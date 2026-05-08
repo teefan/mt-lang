@@ -9,7 +9,7 @@ const font_bm_path: str = "../../raylib/resources/pixantiqua.fnt"
 const font_ttf_path: str = "../../raylib/resources/pixantiqua.ttf"
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Font Loading")
     defer rl.close_window()
 

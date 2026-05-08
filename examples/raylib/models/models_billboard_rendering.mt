@@ -9,14 +9,14 @@ const window_title: cstr = c"raylib [models] example - billboard rendering"
 const billboard_path: cstr = c"../resources/billboard.png"
 
 
-def vector3_distance(left: rl.Vector3, right: rl.Vector3) -> float:
+function vector3_distance(left: rl.Vector3, right: rl.Vector3) -> float:
     let dx = right.x - left.x
     let dy = right.y - left.y
     let dz = right.z - left.z
     return math.sqrtf(dx * dx + dy * dy + dz * dz)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

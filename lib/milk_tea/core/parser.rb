@@ -51,14 +51,14 @@ module MilkTea
           imports << parse_import
           skip_newlines
         end
-      elsif match(:extern)
+      elsif match(:external)
         module_line = previous.line
-        consume(:module, "expected module after extern")
+        consume(:module, "expected module after external")
         module_kind = :extern_module
         module_name = parse_qualified_name
         imports, directives, declarations = parse_extern_module_body
         skip_newlines
-        raise error(peek, "expected end of file after extern module") unless eof?
+        raise error(peek, "expected end of file after external module") unless eof?
 
         return AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:, line: module_line)
       end
@@ -118,36 +118,36 @@ module MilkTea
       elsif match(:opaque)
         parse_opaque_decl(visibility:)
       elsif match(:methods)
-        raise error(visibility_token, "pub is not allowed on methods blocks") if visibility == :public
+        raise error(visibility_token, "public is not allowed on methods blocks") if visibility == :public
 
         parse_methods_block
       elsif check(:edit) || check(:static)
-        raise error(peek, "#{peek.lexeme} def is only allowed inside methods blocks")
+        raise error(peek, "#{peek.lexeme} function is only allowed inside methods blocks")
       elsif match(:foreign)
         parse_foreign_decl(visibility:)
       elsif match(:async)
-        consume(:def, "expected def after async")
+        consume(:function, "expected function after async")
         parse_function_def(visibility:, async: true)
-      elsif match(:def)
+      elsif match(:function)
         parse_function_def(visibility:)
-      elsif match(:extern)
-        raise error(visibility_token, "pub is not allowed on extern declarations yet") if visibility == :public
+      elsif match(:external)
+        raise error(visibility_token, "public is not allowed on external declarations yet") if visibility == :public
 
         parse_extern_decl
       elsif match(:static_assert)
-        raise error(visibility_token, "pub is not allowed on static_assert") if visibility == :public
+        raise error(visibility_token, "public is not allowed on static_assert") if visibility == :public
 
         parse_static_assert
       else
-        message = visibility == :public ? "expected exportable declaration after pub" : "expected declaration"
+        message = visibility == :public ? "expected exportable declaration after public" : "expected declaration"
         raise error(peek, message)
       end
     end
 
     def parse_extern_module_body
-      consume(:colon, "expected ':' before extern module body")
-      consume(:newline, "expected newline before extern module body")
-      consume(:indent, "expected indented extern module body")
+      consume(:colon, "expected ':' before external module body")
+      consume(:newline, "expected newline before external module body")
+      consume(:indent, "expected indented external module body")
 
       imports = []
       directives = []
@@ -169,7 +169,7 @@ module MilkTea
         skip_newlines
       end
 
-      consume(:dedent, "expected end of extern module body")
+      consume(:dedent, "expected end of external module body")
       [imports, directives, declarations]
     end
 
@@ -186,8 +186,8 @@ module MilkTea
     end
 
     def parse_extern_module_declaration
-      if match(:pub)
-        raise error(previous, "pub is not allowed inside extern modules")
+      if match(:public)
+        raise error(previous, "public is not allowed inside external modules")
       elsif check(:packed) || check(:align)
         parse_struct_decl_with_layout(visibility: :public)
       elsif match(:const)
@@ -204,10 +204,10 @@ module MilkTea
         parse_enum_decl(AST::FlagsDecl, visibility: :public)
       elsif match(:opaque)
         parse_opaque_decl(visibility: :public)
-      elsif match(:extern)
+      elsif match(:external)
         parse_extern_decl
       else
-        raise error(peek, "expected extern module declaration")
+        raise error(peek, "expected external module declaration")
       end
     end
 
@@ -395,7 +395,7 @@ module MilkTea
              else
                :plain
              end
-      consume(:def, "expected method declaration")
+      consume(:function, "expected function declaration")
       line = previous.line
 
       name_token = consume_name("expected function name")
@@ -413,18 +413,18 @@ module MilkTea
     end
 
     def parse_visibility
-      return [:public, previous] if match(:pub)
+      return [:public, previous] if match(:public)
 
       [:private, nil]
     end
 
     def parse_extern_decl
-      consume(:def, "expected def after extern")
+      consume(:function, "expected function after external")
       parse_extern_function_decl
     end
 
     def parse_foreign_decl(visibility: :private)
-      consume(:def, "expected def after foreign")
+      consume(:function, "expected function after foreign")
       parse_foreign_function_decl(visibility:)
     end
 
@@ -437,7 +437,7 @@ module MilkTea
       return_type = nil
       with_type_param_names(type_params.map(&:name)) do
         params, variadic = parse_params(allow_variadic: true)
-        consume(:arrow, "expected '->' before extern function return type")
+        consume(:arrow, "expected '->' before external function return type")
         return_type = parse_type_ref
       end
       consume_end_of_statement
@@ -749,8 +749,8 @@ module MilkTea
     end
 
     def parse_unsafe_stmt
-      line = previous.line
-      AST::UnsafeStmt.new(body: parse_block, line: line)
+      token = previous
+      AST::UnsafeStmt.new(body: parse_block, line: token.line, column: token.column, length: token.lexeme.length)
     end
 
     def parse_static_assert
@@ -1374,7 +1374,7 @@ module MilkTea
           depth -= 1 if depth.positive?
         when :import
           index = seed_import_alias(index + 1) if depth.zero?
-        when :def
+        when :function
           if depth.zero?
             name_token = @tokens[index + 1]
             type_param_token = @tokens[index + 2]
@@ -1383,7 +1383,7 @@ module MilkTea
             end
           end
         when :async
-          if depth.zero? && @tokens[index + 1]&.type == :def
+          if depth.zero? && @tokens[index + 1]&.type == :function
             name_token = @tokens[index + 2]
             type_param_token = @tokens[index + 3]
             if type_name_token?(name_token) && type_param_token&.type == :lbracket
@@ -1391,7 +1391,7 @@ module MilkTea
             end
           end
         when :foreign
-          if depth.zero? && @tokens[index + 1]&.type == :def
+          if depth.zero? && @tokens[index + 1]&.type == :function
             name_token = @tokens[index + 2]
             type_param_token = @tokens[index + 3]
             if type_name_token?(name_token) && type_param_token&.type == :lbracket

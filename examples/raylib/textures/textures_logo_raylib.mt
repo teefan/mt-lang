@@ -9,7 +9,7 @@ const texture_path: cstr = c"../resources/raylib_logo.png"
 const message_text: cstr = c"this IS a texture!"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

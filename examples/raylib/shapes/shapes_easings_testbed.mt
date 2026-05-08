@@ -22,53 +22,53 @@ struct EasingFunc:
     callback: fn(t: float, b: float, c: float, d: float) -> float
 
 
-def pow2(exponent: float) -> float:
+function pow2(exponent: float) -> float:
     return math.expf(math.logf(2.0) * exponent)
 
 
-def no_ease(t: float, b: float, c: float, d: float) -> float:
+function no_ease(t: float, b: float, c: float, d: float) -> float:
     return b
 
 
-def ease_linear_none(t: float, b: float, c: float, d: float) -> float:
+function ease_linear_none(t: float, b: float, c: float, d: float) -> float:
     return c * t / d + b
 
 
-def ease_linear_in(t: float, b: float, c: float, d: float) -> float:
+function ease_linear_in(t: float, b: float, c: float, d: float) -> float:
     return c * t / d + b
 
 
-def ease_linear_out(t: float, b: float, c: float, d: float) -> float:
+function ease_linear_out(t: float, b: float, c: float, d: float) -> float:
     return c * t / d + b
 
 
-def ease_linear_in_out(t: float, b: float, c: float, d: float) -> float:
+function ease_linear_in_out(t: float, b: float, c: float, d: float) -> float:
     return c * t / d + b
 
 
-def ease_sine_in(t: float, b: float, c: float, d: float) -> float:
+function ease_sine_in(t: float, b: float, c: float, d: float) -> float:
     return -c * math.cosf(t / d * (mt_math.pi / 2.0)) + c + b
 
 
-def ease_sine_out(t: float, b: float, c: float, d: float) -> float:
+function ease_sine_out(t: float, b: float, c: float, d: float) -> float:
     return c * math.sinf(t / d * (mt_math.pi / 2.0)) + b
 
 
-def ease_sine_in_out(t: float, b: float, c: float, d: float) -> float:
+function ease_sine_in_out(t: float, b: float, c: float, d: float) -> float:
     return -c / 2.0 * (math.cosf(mt_math.pi * t / d) - 1.0) + b
 
 
-def ease_circ_in(t: float, b: float, c: float, d: float) -> float:
+function ease_circ_in(t: float, b: float, c: float, d: float) -> float:
     let normalized = t / d
     return -c * (math.sqrtf(1.0 - normalized * normalized) - 1.0) + b
 
 
-def ease_circ_out(t: float, b: float, c: float, d: float) -> float:
+function ease_circ_out(t: float, b: float, c: float, d: float) -> float:
     let normalized = t / d - 1.0
     return c * math.sqrtf(1.0 - normalized * normalized) + b
 
 
-def ease_circ_in_out(t: float, b: float, c: float, d: float) -> float:
+function ease_circ_in_out(t: float, b: float, c: float, d: float) -> float:
     var normalized = t / (d / 2.0)
     if normalized < 1.0:
         return -c / 2.0 * (math.sqrtf(1.0 - normalized * normalized) - 1.0) + b
@@ -77,17 +77,17 @@ def ease_circ_in_out(t: float, b: float, c: float, d: float) -> float:
     return c / 2.0 * (math.sqrtf(1.0 - normalized * normalized) + 1.0) + b
 
 
-def ease_cubic_in(t: float, b: float, c: float, d: float) -> float:
+function ease_cubic_in(t: float, b: float, c: float, d: float) -> float:
     let normalized = t / d
     return c * normalized * normalized * normalized + b
 
 
-def ease_cubic_out(t: float, b: float, c: float, d: float) -> float:
+function ease_cubic_out(t: float, b: float, c: float, d: float) -> float:
     let normalized = t / d - 1.0
     return c * (normalized * normalized * normalized + 1.0) + b
 
 
-def ease_cubic_in_out(t: float, b: float, c: float, d: float) -> float:
+function ease_cubic_in_out(t: float, b: float, c: float, d: float) -> float:
     var normalized = t / (d / 2.0)
     if normalized < 1.0:
         return c / 2.0 * normalized * normalized * normalized + b
@@ -96,17 +96,17 @@ def ease_cubic_in_out(t: float, b: float, c: float, d: float) -> float:
     return c / 2.0 * (normalized * normalized * normalized + 2.0) + b
 
 
-def ease_quad_in(t: float, b: float, c: float, d: float) -> float:
+function ease_quad_in(t: float, b: float, c: float, d: float) -> float:
     let normalized = t / d
     return c * normalized * normalized + b
 
 
-def ease_quad_out(t: float, b: float, c: float, d: float) -> float:
+function ease_quad_out(t: float, b: float, c: float, d: float) -> float:
     let normalized = t / d
     return -c * normalized * (normalized - 2.0) + b
 
 
-def ease_quad_in_out(t: float, b: float, c: float, d: float) -> float:
+function ease_quad_in_out(t: float, b: float, c: float, d: float) -> float:
     let normalized = t / (d / 2.0)
     if normalized < 1.0:
         return c / 2.0 * normalized * normalized + b
@@ -114,21 +114,21 @@ def ease_quad_in_out(t: float, b: float, c: float, d: float) -> float:
     return -c / 2.0 * ((normalized - 1.0) * (normalized - 3.0) - 1.0) + b
 
 
-def ease_expo_in(t: float, b: float, c: float, d: float) -> float:
+function ease_expo_in(t: float, b: float, c: float, d: float) -> float:
     if t == 0.0:
         return b
 
     return c * pow2(10.0 * (t / d - 1.0)) + b
 
 
-def ease_expo_out(t: float, b: float, c: float, d: float) -> float:
+function ease_expo_out(t: float, b: float, c: float, d: float) -> float:
     if t == d:
         return b + c
 
     return c * (-pow2(-10.0 * t / d) + 1.0) + b
 
 
-def ease_expo_in_out(t: float, b: float, c: float, d: float) -> float:
+function ease_expo_in_out(t: float, b: float, c: float, d: float) -> float:
     if t == 0.0:
         return b
     if t == d:
@@ -141,19 +141,19 @@ def ease_expo_in_out(t: float, b: float, c: float, d: float) -> float:
     return c / 2.0 * (-pow2(-10.0 * (normalized - 1.0)) + 2.0) + b
 
 
-def ease_back_in(t: float, b: float, c: float, d: float) -> float:
+function ease_back_in(t: float, b: float, c: float, d: float) -> float:
     let overshoot: float = 1.70158
     let normalized = t / d
     return c * normalized * normalized * ((overshoot + 1.0) * normalized - overshoot) + b
 
 
-def ease_back_out(t: float, b: float, c: float, d: float) -> float:
+function ease_back_out(t: float, b: float, c: float, d: float) -> float:
     let overshoot: float = 1.70158
     let normalized = t / d - 1.0
     return c * (normalized * normalized * ((overshoot + 1.0) * normalized + overshoot) + 1.0) + b
 
 
-def ease_back_in_out(t: float, b: float, c: float, d: float) -> float:
+function ease_back_in_out(t: float, b: float, c: float, d: float) -> float:
     let scaled_overshoot: float = 1.70158 * 1.525
     var normalized = t / (d / 2.0)
     if normalized < 1.0:
@@ -163,7 +163,7 @@ def ease_back_in_out(t: float, b: float, c: float, d: float) -> float:
     return c / 2.0 * (normalized * normalized * ((scaled_overshoot + 1.0) * normalized + scaled_overshoot) + 2.0) + b
 
 
-def ease_bounce_out(t: float, b: float, c: float, d: float) -> float:
+function ease_bounce_out(t: float, b: float, c: float, d: float) -> float:
     var normalized = t / d
 
     if normalized < 1.0 / 2.75:
@@ -179,18 +179,18 @@ def ease_bounce_out(t: float, b: float, c: float, d: float) -> float:
     return c * (7.5625 * normalized * normalized + 0.984375) + b
 
 
-def ease_bounce_in(t: float, b: float, c: float, d: float) -> float:
+function ease_bounce_in(t: float, b: float, c: float, d: float) -> float:
     return c - ease_bounce_out(d - t, 0.0, c, d) + b
 
 
-def ease_bounce_in_out(t: float, b: float, c: float, d: float) -> float:
+function ease_bounce_in_out(t: float, b: float, c: float, d: float) -> float:
     if t < d / 2.0:
         return ease_bounce_in(t * 2.0, 0.0, c, d) * 0.5 + b
 
     return ease_bounce_out(t * 2.0 - d, 0.0, c, d) * 0.5 + c * 0.5 + b
 
 
-def ease_elastic_in(t: float, b: float, c: float, d: float) -> float:
+function ease_elastic_in(t: float, b: float, c: float, d: float) -> float:
     if t == 0.0:
         return b
 
@@ -207,7 +207,7 @@ def ease_elastic_in(t: float, b: float, c: float, d: float) -> float:
     return -(post_fix * math.sinf((normalized * d - shift) * mt_math.tau / period)) + b
 
 
-def ease_elastic_out(t: float, b: float, c: float, d: float) -> float:
+function ease_elastic_out(t: float, b: float, c: float, d: float) -> float:
     if t == 0.0:
         return b
 
@@ -222,7 +222,7 @@ def ease_elastic_out(t: float, b: float, c: float, d: float) -> float:
     return amplitude * pow2(-10.0 * normalized) * math.sinf((normalized * d - shift) * mt_math.tau / period) + c + b
 
 
-def ease_elastic_in_out(t: float, b: float, c: float, d: float) -> float:
+function ease_elastic_in_out(t: float, b: float, c: float, d: float) -> float:
     if t == 0.0:
         return b
 
@@ -244,7 +244,7 @@ def ease_elastic_in_out(t: float, b: float, c: float, d: float) -> float:
     return post_fix * math.sinf((normalized * d - shift) * mt_math.tau / period) * 0.5 + c + b
 
 
-def restart_requested(bounded_t: bool, t: float, d: float) -> bool:
+function restart_requested(bounded_t: bool, t: float, d: float) -> bool:
     if rl.IsKeyPressed(rl.KeyboardKey.KEY_RIGHT) or rl.IsKeyPressed(rl.KeyboardKey.KEY_LEFT):
         return true
     if rl.IsKeyPressed(rl.KeyboardKey.KEY_DOWN) or rl.IsKeyPressed(rl.KeyboardKey.KEY_UP):
@@ -259,7 +259,7 @@ def restart_requested(bounded_t: bool, t: float, d: float) -> bool:
     return rl.IsKeyPressed(rl.KeyboardKey.KEY_ENTER) and bounded_t and t >= d
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

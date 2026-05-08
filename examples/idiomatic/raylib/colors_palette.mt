@@ -8,7 +8,7 @@ const color_count: int = 21
 const grid_columns: int = 7
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Colors Palette")
     defer rl.close_window()
 

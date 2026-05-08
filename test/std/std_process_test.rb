@@ -19,7 +19,7 @@ class MilkTeaStdProcessTest < Minitest::Test
         "import std.process as process",
         "import std.str as text",
         "",
-        "def main(argc: int, argv: ptr[cstr]) -> int:",
+        "function main(argc: int, argv: ptr[cstr]) -> int:",
         "    let first = process.arg(argc, argv, 1)",
         "    let second = process.arg(argc, argv, 2)",
         "    let env_value = process.env(\"MT_PROCESS_TEST\")",

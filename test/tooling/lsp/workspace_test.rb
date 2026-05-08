@@ -10,7 +10,7 @@ class LSPWorkspaceTest < Minitest::Test
     stats = workspace.open_document(uri, <<~MT)
       module main
 
-      def main() -> int:
+      function main() -> int:
           return 0
     MT
 
@@ -45,7 +45,7 @@ class LSPWorkspaceTest < Minitest::Test
         import std.maybe as maybe
         import std.string as string
 
-        pub def parse() -> int:
+        public function parse() -> int:
             return 0
       MT
       File.write(path, content)
@@ -71,7 +71,7 @@ class LSPWorkspaceTest < Minitest::Test
         import mathx as mx
         import mathy as my
 
-        def main() -> int:
+        function main() -> int:
             return 0
 
         #{body}
@@ -100,7 +100,7 @@ class LSPWorkspaceTest < Minitest::Test
         import gamma as g
         import delta as d
 
-        def main() -> int:
+        function main() -> int:
             return 0
       MT
       File.write(path, content)
@@ -125,7 +125,7 @@ class LSPWorkspaceTest < Minitest::Test
 
         import mathx as mx
 
-        def main() -> int:
+        function main() -> int:
             return 0
 
         #{body}
@@ -150,7 +150,7 @@ class LSPWorkspaceTest < Minitest::Test
     stats = workspace.open_document(uri, <<~MT)
       module main
 
-      def main() -> int:
+      function main() -> int:
           return 0
     MT
 
@@ -173,7 +173,7 @@ class LSPWorkspaceTest < Minitest::Test
         import mathx as mx
         import mathy as my
 
-        def main() -> int:
+        function main() -> int:
             return 0
 
         #{body}
@@ -200,7 +200,7 @@ class LSPWorkspaceTest < Minitest::Test
       content = <<~MT
         module std.demo
 
-        pub def answer() -> int:
+        public function answer() -> int:
             return 42
       MT
       File.write(path, content)
@@ -231,7 +231,7 @@ class LSPWorkspaceTest < Minitest::Test
       content = <<~MT
         module std.demo
 
-        pub def answer() -> int:
+        public function answer() -> int:
             return 42
       MT
       File.write(path, content)

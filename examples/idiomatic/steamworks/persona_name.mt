@@ -5,7 +5,7 @@ import std.libc as libc
 import std.steamworks as steam
 
 
-def main(args: span[str]) -> int:
+function main(args: span[str]) -> int:
     if args.len == 0:
         if not io.write_error_line("Usage: persona_name APP_ID"):
             return 1

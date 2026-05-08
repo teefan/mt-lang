@@ -73,16 +73,16 @@ class LSPServerTest < Minitest::Test
         x: float
         y: float
 
-    def add(a: int, b: int) -> int:
+    function add(a: int, b: int) -> int:
         return a + b
   MT
 
   # Source that has both a definition and a call-site for 'add'.
   SOURCE_WITH_CALL = <<~MT
-    def add(a: int, b: int) -> int:
+    function add(a: int, b: int) -> int:
         return a + b
 
-    def main() -> int:
+    function main() -> int:
         return add(1, 2)
   MT
 
@@ -93,39 +93,39 @@ class LSPServerTest < Minitest::Test
         y: int
 
     methods Point:
-        def zero() -> int:
+        function zero() -> int:
             return 0
 
-    def get_val() -> int:
+    function get_val() -> int:
         return 1
   MT
 
   SOURCE_WITH_HOVER_DOCS = <<~MT
     ## Adds two values.
     ## Used by main.
-    def add(a: int, b: int) -> int:
+    function add(a: int, b: int) -> int:
         return a + b
 
-    def main() -> int:
+    function main() -> int:
         return add(1, 2)
   MT
 
   SOURCE_WITH_HOVER_PLAIN_COMMENT = <<~MT
     # Not documentation.
-    def add(a: int, b: int) -> int:
+    function add(a: int, b: int) -> int:
         return a + b
 
-    def main() -> int:
+    function main() -> int:
         return add(1, 2)
   MT
 
   SOURCE_WITH_HOVER_DOC_GAP = <<~MT
     ## Detached doc.
 
-    def add(a: int, b: int) -> int:
+    function add(a: int, b: int) -> int:
         return a + b
 
-    def main() -> int:
+    function main() -> int:
         return add(1, 2)
   MT
 
@@ -135,10 +135,10 @@ class LSPServerTest < Minitest::Test
         y: int
 
     methods Point:
-        def length() -> int:
+        function length() -> int:
             return this.x + this.y
 
-    def main() -> int:
+    function main() -> int:
         let p = Point(x = 1, y = 2)
         return p.x
   MT
@@ -150,7 +150,7 @@ class LSPServerTest < Minitest::Test
     struct Size:
         w: int
 
-    def main() -> int:
+    function main() -> int:
         let v = Point(x = 1)
         if true:
             let v = Size(w = 2)
@@ -162,7 +162,7 @@ class LSPServerTest < Minitest::Test
     struct Point:
         x: int
 
-    def main() -> int:
+    function main() -> int:
         var p: Point? = null
         if p != null:
             return p.x
@@ -174,7 +174,7 @@ class LSPServerTest < Minitest::Test
         x: int
         y: int
 
-    def main() -> int:
+    function main() -> int:
         var p = Point(x = 1, y = 2)
         let rp = ref_of(p)
         return rp.x
@@ -185,7 +185,7 @@ class LSPServerTest < Minitest::Test
         x: int
         y: int
 
-    def main() -> int:
+    function main() -> int:
         var p = Point(x = 1, y = 2)
         let pp = ptr_of(p)
         unsafe:
@@ -198,17 +198,17 @@ class LSPServerTest < Minitest::Test
         y: int
 
     methods Point:
-        def area() -> int:
+        function area() -> int:
             return this.x * this.y
 
     var origin: Point = Point(x = 3, y = 4)
 
-    def main() -> int:
+    function main() -> int:
         return origin.x
   MT
 
   SOURCE_WITH_STR_BUILDER_METHODS = <<~MT
-    def main() -> int:
+    function main() -> int:
         var editor_text: str_builder[64]
         editor_text.assign("Milk Tea")
         let current = editor_text.as_str()
@@ -218,7 +218,7 @@ class LSPServerTest < Minitest::Test
   MT
 
   SOURCE_WITH_GENERIC_TYPE_SURFACES = <<~MT
-    def takes(values: span[int]) -> array[int, 4]:
+    function takes(values: span[int]) -> array[int, 4]:
         return array[int, 4](1, 2, 3, 4)
   MT
 
@@ -227,7 +227,7 @@ class LSPServerTest < Minitest::Test
         x: int
         y: int
 
-    def sample(position: int, speed: int) -> int:
+    function sample(position: int, speed: int) -> int:
         let point = Vec2(x = position, y = speed)
         for index in 0..1:
             return point.x + index + position
@@ -242,13 +242,13 @@ class LSPServerTest < Minitest::Test
     struct Entry:
         callback: proc(value: int) -> int
 
-    def add(a: int, b: int) -> int:
+    function add(a: int, b: int) -> int:
         return a + b
 
-    def build() -> Point:
+    function build() -> Point:
         return Point(x = 1, y = 2)
 
-    def main() -> int:
+    function main() -> int:
         let callback = proc(value: int) -> int:
             return value + 1
         let entry = Entry(callback = callback)
@@ -261,23 +261,23 @@ class LSPServerTest < Minitest::Test
     struct Box:
         value: int
 
-    def add_one(value: int) -> int:
+    function add_one(value: int) -> int:
         return value + 1
 
-    def apply(callback: fn(value: int) -> int, value: int) -> int:
+    function apply(callback: fn(value: int) -> int, value: int) -> int:
         return callback(value)
 
-    def main() -> int:
+    function main() -> int:
         let callback: fn(value: int) -> int = add_one
         let zeroed = zero[Box]
         return apply(add_one, zeroed.value) + callback(0)
   MT
 
   SOURCE_WITH_INVALID_BARE_FUNCTION_REFERENCE_SEMANTICS = <<~MT
-    def add_one(value: int) -> int:
+    function add_one(value: int) -> int:
         return value + 1
 
-    def main() -> int:
+    function main() -> int:
         let callback = add_one
         return 0
   MT
@@ -290,7 +290,7 @@ class LSPServerTest < Minitest::Test
     struct Mat4:
         value: int
 
-    def main() -> int:
+    function main() -> int:
         var matrices = pool.create_for[Mat4](2)
         let item = matrices.alloc[Mat4]()
         if item == null:
@@ -303,7 +303,7 @@ class LSPServerTest < Minitest::Test
           some(value: T)
           none
 
-      def has_payload(value: Maybe[int]) -> bool:
+      function has_payload(value: Maybe[int]) -> bool:
           match value:
               Maybe.some as payload:
                   return payload.value > 0
@@ -312,7 +312,7 @@ class LSPServerTest < Minitest::Test
     MT
 
   SOURCE_WITH_FSTRING_INTERPOLATION = <<~'MT'
-    def main() -> int:
+    function main() -> int:
         let name = "milk"
         let msg = f"hello #{name}"
         return msg.len
@@ -419,7 +419,7 @@ class LSPServerTest < Minitest::Test
 
       hover_response = client.send_request("textDocument/hover", {
         "textDocument" => { "uri" => uri },
-        "position" => { "line" => 4, "character" => 4 }
+        "position" => { "line" => 4, "character" => 9 }
       })
       hover_value = hover_response.dig("result", "contents", "value")
       assert_includes hover_value, "add"
@@ -456,7 +456,7 @@ class LSPServerTest < Minitest::Test
         hover_value = hover_result.dig("contents", "value")
         hover_range = hover_result.fetch("range")
 
-        assert_includes hover_value, "def add(a: int, b: int) -> int"
+        assert_includes hover_value, "function add(a: int, b: int) -> int"
         assert_includes hover_value, "Adds two values."
         assert_includes hover_value, "Used by main."
         assert_includes hover_value, "Defined at: [main.mt:3](#{uri}#L3)"
@@ -470,7 +470,7 @@ class LSPServerTest < Minitest::Test
 
   def test_hover_shows_local_variable_type
     source = <<~MT
-      def main() -> int:
+      function main() -> int:
           let value = 1
           return value
     MT
@@ -501,7 +501,7 @@ class LSPServerTest < Minitest::Test
 
   def test_hover_shows_local_declaration_type
     source = <<~MT
-      def main() -> int:
+      function main() -> int:
           let value = 1
           return value
     MT
@@ -532,7 +532,7 @@ class LSPServerTest < Minitest::Test
 
   def test_hover_shows_parameter_type
     source = <<~MT
-      def main(value: int) -> int:
+      function main(value: int) -> int:
           return value
     MT
 
@@ -726,7 +726,7 @@ class LSPServerTest < Minitest::Test
       })
       response = client.send_request("textDocument/references", {
         "textDocument" => { "uri" => uri },
-        "position"     => { "line" => 0, "character" => 4 },
+        "position"     => { "line" => 0, "character" => 9 },
         "context"      => { "includeDeclaration" => true }
       })
       locations = response.fetch("result")
@@ -745,7 +745,7 @@ class LSPServerTest < Minitest::Test
       })
       response = client.send_request("textDocument/documentHighlight", {
         "textDocument" => { "uri" => uri },
-        "position"     => { "line" => 0, "character" => 4 }
+        "position"     => { "line" => 0, "character" => 9 }
       })
       highlights = response.fetch("result")
       assert highlights.length >= 2, "expected at least 2 highlights for 'add', got #{highlights.length}"
@@ -801,12 +801,12 @@ class LSPServerTest < Minitest::Test
       })
       response = client.send_request("textDocument/prepareRename", {
         "textDocument" => { "uri" => uri },
-        "position"     => { "line" => 0, "character" => 4 }
+        "position"     => { "line" => 0, "character" => 9 }
       })
       result = response.fetch("result")
       assert_equal "add", result["placeholder"]
       assert_equal 0, result.dig("range", "start", "line")
-      assert_equal 4, result.dig("range", "start", "character")
+      assert_equal 9, result.dig("range", "start", "character")
     end
   end
 
@@ -819,7 +819,7 @@ class LSPServerTest < Minitest::Test
       })
       response = client.send_request("textDocument/rename", {
         "textDocument" => { "uri" => uri },
-        "position"     => { "line" => 0, "character" => 4 },
+        "position"     => { "line" => 0, "character" => 9 },
         "newName"      => "sum"
       })
       changes = response.dig("result", "changes", uri)
@@ -880,7 +880,7 @@ class LSPServerTest < Minitest::Test
         import gamma as g
         import delta as d
 
-        def main() -> int:
+        function main() -> int:
             return 0
       MT
       File.write(path, source)
@@ -898,7 +898,7 @@ class LSPServerTest < Minitest::Test
     source = <<~MT
       module main
 
-      def main() -> int:
+      function main() -> int:
           return 0
     MT
 
@@ -939,7 +939,7 @@ class LSPServerTest < Minitest::Test
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_range_fmt_test.mt"
-      source = "def add(a:int,b:int)->int:\n    return a+b\n"
+      source = "function add(a:int,b:int)->int:\n    return a+b\n"
       client.send_notification("textDocument/didOpen", {
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
       })
@@ -956,7 +956,7 @@ class LSPServerTest < Minitest::Test
       edits = response.fetch("result")
       assert_kind_of Array, edits
       assert_equal 1, edits.length
-      assert_match(/def\s+add\(a:\s*int,\s*b:\s*int\)\s*->\s*int:/, edits[0]["newText"])
+      assert_match(/function\s+add\(a:\s*int,\s*b:\s*int\)\s*->\s*int:/, edits[0]["newText"])
     end
   end
 
@@ -964,7 +964,7 @@ class LSPServerTest < Minitest::Test
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_code_action_test.mt"
-      source = "def add(a:int,b:int)->int:\n    return a+b\n"
+      source = "function add(a:int,b:int)->int:\n    return a+b\n"
       client.send_notification("textDocument/didOpen", {
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
       })
@@ -995,7 +995,7 @@ class LSPServerTest < Minitest::Test
       Dir.mkdir(std_dir)
 
       file_path = File.join(std_dir, "sdl3.mt")
-      source = "def add(a:int,b:int)->int:\n    return a+b\n"
+      source = "function add(a:int,b:int)->int:\n    return a+b\n"
       File.write(file_path, source)
 
       root_uri = path_to_uri(dir)
@@ -1081,7 +1081,7 @@ class LSPServerTest < Minitest::Test
       module_source = <<~MT
         module mathx
 
-        pub def add(a: int, b: int) -> int:
+        public function add(a: int, b: int) -> int:
             return a + b
       MT
       File.write(module_path, module_source)
@@ -1092,7 +1092,7 @@ class LSPServerTest < Minitest::Test
 
         import mathx as mx
 
-        def main() -> int:
+        function main() -> int:
             return mx.add(1, 2)
       MT
       File.write(main_path, main_source)
@@ -1129,7 +1129,7 @@ class LSPServerTest < Minitest::Test
       module_source = <<~MT
         module ui
 
-        pub def draw(width: int, title: str, count: int) -> int:
+        public function draw(width: int, title: str, count: int) -> int:
             return count
       MT
       File.write(module_path, module_source)
@@ -1140,7 +1140,7 @@ class LSPServerTest < Minitest::Test
 
         import ui as ui
 
-        def main() -> int:
+        function main() -> int:
             let screen_width = 800
             return ui.draw(screen_width, "Milk Tea", 3)
       MT
@@ -1179,7 +1179,7 @@ class LSPServerTest < Minitest::Test
           "uri" => uri,
           "languageId" => "milk-tea",
           "version" => 1,
-          "text" => "def add(a: int, b: int) -> int:\n    return a + b\n"
+          "text" => "function add(a: int, b: int) -> int:\n    return a + b\n"
         }
       })
 
@@ -1203,7 +1203,7 @@ class LSPServerTest < Minitest::Test
           "uri" => uri,
           "languageId" => "milk-tea",
           "version" => 1,
-          "text" => "def bad(\n"
+          "text" => "function bad(\n"
         }
       })
 
@@ -1222,7 +1222,7 @@ class LSPServerTest < Minitest::Test
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_doc_diag_unchanged_test.mt"
-      source = "def add(a: int, b: int) -> int:\n    return a + b\n"
+      source = "function add(a: int, b: int) -> int:\n    return a + b\n"
       client.send_notification("textDocument/didOpen", {
         "textDocument" => {
           "uri" => uri,
@@ -1253,7 +1253,7 @@ class LSPServerTest < Minitest::Test
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_doc_diag_change_test.mt"
-      source = "def add(a: int, b: int) -> int:\n    return a + b\n"
+      source = "function add(a: int, b: int) -> int:\n    return a + b\n"
       client.send_notification("textDocument/didOpen", {
         "textDocument" => {
           "uri" => uri,
@@ -1269,7 +1269,7 @@ class LSPServerTest < Minitest::Test
       first_result = first.fetch("result")
       assert_equal "full", first_result["kind"]
 
-      changed = "def add(a: int, b: int) -> int:\n    return a - b\n"
+      changed = "function add(a: int, b: int) -> int:\n    return a - b\n"
       client.send_notification("textDocument/didChange", {
         "textDocument" => { "uri" => uri, "version" => 2 },
         "contentChanges" => [{ "text" => changed }]
@@ -1304,11 +1304,11 @@ class LSPServerTest < Minitest::Test
 
       assert_equal uri, declaration.dig("result", "uri")
       assert_equal 0, declaration.dig("result", "range", "start", "line")
-      assert_equal 4, declaration.dig("result", "range", "start", "character")
+      assert_equal 9, declaration.dig("result", "range", "start", "character")
 
       assert_equal uri, type_definition.dig("result", "uri")
       assert_equal 0, type_definition.dig("result", "range", "start", "line")
-      assert_equal 4, type_definition.dig("result", "range", "start", "character")
+      assert_equal 9, type_definition.dig("result", "range", "start", "character")
     end
   end
 
@@ -1317,11 +1317,11 @@ class LSPServerTest < Minitest::Test
       shared_path = File.join(dir, "shared.mt")
       main_path = File.join(dir, "main.mt")
       File.write(shared_path, <<~MT)
-        def shared(a: int, b: int) -> int:
+        function shared(a: int, b: int) -> int:
             return a + b
       MT
       File.write(main_path, <<~MT)
-        def main() -> int:
+        function main() -> int:
             return shared(1, 2)
       MT
 
@@ -1348,7 +1348,7 @@ class LSPServerTest < Minitest::Test
 
         assert_equal shared_uri, definition.dig("result", "uri")
         assert_equal 0, definition.dig("result", "range", "start", "line")
-        assert_equal 4, definition.dig("result", "range", "start", "character")
+        assert_equal 9, definition.dig("result", "range", "start", "character")
       end
     end
   end
@@ -1362,7 +1362,7 @@ class LSPServerTest < Minitest::Test
       lib_source = <<~MT
         module demo.lib
 
-        def greet() -> int:
+        function greet() -> int:
             return 1
       MT
       main_source = <<~MT
@@ -1370,7 +1370,7 @@ class LSPServerTest < Minitest::Test
 
         import demo.lib as lib
 
-        def main() -> int:
+        function main() -> int:
             return lib.greet()
       MT
 
@@ -1403,7 +1403,7 @@ class LSPServerTest < Minitest::Test
 
         assert_equal lib_uri, definition.dig("result", "uri")
         assert_equal 2, definition.dig("result", "range", "start", "line")
-        assert_equal 4, definition.dig("result", "range", "start", "character")
+        assert_equal 9, definition.dig("result", "range", "start", "character")
       end
     end
   end
@@ -1412,7 +1412,7 @@ class LSPServerTest < Minitest::Test
     Dir.mktmpdir("milk-tea-lsp-watch") do |dir|
       watched_path = File.join(dir, "watched.mt")
       File.write(watched_path, <<~MT)
-        def old_name() -> int:
+        function old_name() -> int:
             return 0
       MT
 
@@ -1428,7 +1428,7 @@ class LSPServerTest < Minitest::Test
         assert_includes old_names, "old_name"
 
         File.write(watched_path, <<~MT)
-          def new_name() -> int:
+          function new_name() -> int:
               return 0
         MT
 
@@ -1453,7 +1453,7 @@ class LSPServerTest < Minitest::Test
       File.write(lib_path, <<~MT)
         module mathx
 
-        pub def greet() -> int:
+        public function greet() -> int:
             return 1
       MT
       main_source = <<~MT
@@ -1461,7 +1461,7 @@ class LSPServerTest < Minitest::Test
 
         import mathx as mx
 
-        def main() -> int:
+        function main() -> int:
             return mx.greet()
       MT
       File.write(main_path, main_source)
@@ -1492,7 +1492,7 @@ class LSPServerTest < Minitest::Test
         File.write(lib_path, <<~MT)
           module mathx
 
-          pub def greet() -> str:
+          public function greet() -> str:
               return "oops"
         MT
 
@@ -1522,19 +1522,19 @@ class LSPServerTest < Minitest::Test
       maybe_initial = <<~MT
         module maybe
 
-        pub struct Maybe[T]:
+        public struct Maybe[T]:
             is_some: bool
             value: T
       MT
       maybe_updated = <<~MT
         module maybe
 
-        pub struct Maybe[T]:
+        public struct Maybe[T]:
             is_some: bool
             value: T
 
         methods Maybe[T]:
-            pub def is_none() -> bool:
+            public function is_none() -> bool:
                 return not this.is_some
       MT
       main_source = <<~MT
@@ -1542,7 +1542,7 @@ class LSPServerTest < Minitest::Test
 
         import maybe as maybe
 
-        def main() -> int:
+        function main() -> int:
             let value = maybe.Maybe[int](is_some = false, value = 0)
             if value.is_none():
                 return 1
@@ -1833,10 +1833,10 @@ class LSPServerTest < Minitest::Test
       client.send_notification("textDocument/didOpen", {
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_METHODS }
       })
-      # Line 5 (0-based) is "    def zero() -> int:", 'zero' starts at character 8.
+      # Line 5 (0-based) is "    function zero() -> int:", 'zero' starts at character 13.
       response = client.send_request("textDocument/hover", {
         "textDocument" => { "uri" => uri },
-        "position"     => { "line" => 5, "character" => 8 }
+        "position"     => { "line" => 5, "character" => 13 }
       })
       hover_value = response.dig("result", "contents", "value")
       assert_includes hover_value, "local zero"
@@ -1865,10 +1865,10 @@ class LSPServerTest < Minitest::Test
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_multi_err_test.mt"
       source = <<~MT
-        def foo() -> int:
+        function foo() -> int:
             return "not an int"
 
-        def bar() -> bool:
+        function bar() -> bool:
             return 42
       MT
       client.send_notification("textDocument/didOpen", {
@@ -1888,10 +1888,10 @@ class LSPServerTest < Minitest::Test
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_err_line_test.mt"
       source = <<~MT
-        def ok(a: int, b: int) -> int:
+        function ok(a: int, b: int) -> int:
             return a + b
 
-        def broken() -> int:
+        function broken() -> int:
             return "wrong type"
       MT
       client.send_notification("textDocument/didOpen", {
@@ -1916,8 +1916,8 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(c_dir)
 
       File.write(File.join(c_dir, "sdl3.mt"), <<~MT)
-        extern module std.c.sdl3:
-            extern def SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
+        external module std.c.sdl3:
+            external function SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
       MT
 
       source_path = File.join(dir, "std", "sdl3.mt")
@@ -1927,7 +1927,7 @@ class LSPServerTest < Minitest::Test
 
         import std.c.sdl3 as c
 
-        pub foreign def set_window_fill_document(window: ptr[void], fill: bool) -> bool = c.SDL_SetWindowFillDocument
+        public foreign function set_window_fill_document(window: ptr[void], fill: bool) -> bool = c.SDL_SetWindowFillDocument
       MT
       File.write(source_path, source)
 
@@ -1960,8 +1960,8 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(c_dir)
 
       File.write(File.join(c_dir, "sdl3.mt"), <<~MT)
-        extern module std.c.sdl3:
-            extern def SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
+        external module std.c.sdl3:
+            external function SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
       MT
 
       source_path = File.join(dir, "std", "sdl3.mt")
@@ -1971,7 +1971,7 @@ class LSPServerTest < Minitest::Test
 
         import std.c.sdl3 as c
 
-        def main() -> int:
+        function main() -> int:
             let callback = c.SDL_SetWindowFillDocument
             return 0
       MT
@@ -2003,13 +2003,13 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(c_dir)
 
       File.write(File.join(c_dir, "raylib.mt"), <<~MT)
-        extern module std.c.raylib:
+        external module std.c.raylib:
             struct Vector2:
                 x: float
                 y: float
       MT
 
-      filler = (1..160).map { |i| "pub const PAD_#{i}: int = #{i}" }.join("\n")
+      filler = (1..160).map { |i| "public const PAD_#{i}: int = #{i}" }.join("\n")
       source_path = File.join(dir, "std", "raylib.mt")
       FileUtils.mkdir_p(File.dirname(source_path))
       source = <<~MT
@@ -2017,7 +2017,7 @@ class LSPServerTest < Minitest::Test
 
         import std.c.raylib as c
 
-        pub type VecAlias = c.Vector2
+        public type VecAlias = c.Vector2
         #{filler}
       MT
       File.write(source_path, source)
@@ -2068,14 +2068,14 @@ class LSPServerTest < Minitest::Test
       api_updated = <<~MT
         module api
 
-        pub type Answer = int
+        public type Answer = int
       MT
       main_source = <<~MT
         module main
 
         import api as api
 
-        pub type Result = api.Answer
+        public type Result = api.Answer
       MT
 
       File.write(api_path, api_initial)
@@ -2474,7 +2474,7 @@ class LSPServerTest < Minitest::Test
       source = <<~MT
         module demo.lint
 
-        def main() -> int:
+        function main() -> int:
             var x = 1
             return x
       MT
@@ -2512,7 +2512,7 @@ class LSPServerTest < Minitest::Test
       source = <<~MT
         module demo.lint
 
-        def sign(n: int) -> int:
+        function sign(n: int) -> int:
             if n > 0:
                 return 1
             else:
@@ -2554,7 +2554,7 @@ class LSPServerTest < Minitest::Test
       source = <<~MT
         module demo.lint
 
-        def main(value: int) -> int:
+        function main(value: int) -> int:
             unsafe:
                 let copy = value + 1
             return value

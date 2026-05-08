@@ -8,7 +8,7 @@ const window_title: cstr = c"raylib [core] example - input mouse wheel"
 const help_text: cstr = c"Use mouse wheel to move the cube up and down!"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

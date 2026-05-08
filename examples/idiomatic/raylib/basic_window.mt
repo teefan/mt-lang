@@ -7,7 +7,7 @@ const screen_height: int = 540
 const accent_radius: float = 48.0
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea")
     defer rl.close_window()
 

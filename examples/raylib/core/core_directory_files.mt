@@ -11,7 +11,7 @@ const filter_text: cstr = c".png;.c"
 const back_button_text: cstr = c"<"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

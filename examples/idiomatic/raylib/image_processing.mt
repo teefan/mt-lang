@@ -17,7 +17,7 @@ const screen_height: int = 450
 const parrots_path: str = "../../raylib/resources/parrots.png"
 
 
-def process_label(process: int) -> str:
+function process_label(process: int) -> str:
     if process == process_none:
         return "NO PROCESSING"
     elif process == process_color_grayscale:
@@ -37,7 +37,7 @@ def process_label(process: int) -> str:
     return "FLIP HORIZONTAL"
 
 
-def apply_process(image: rl.Image, process: int) -> rl.Image:
+function apply_process(image: rl.Image, process: int) -> rl.Image:
     var processed = image
     if process == process_color_grayscale:
         rl.image_color_grayscale(processed)
@@ -58,7 +58,7 @@ def apply_process(image: rl.Image, process: int) -> rl.Image:
     return processed
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Image Processing")
     defer rl.close_window()
 

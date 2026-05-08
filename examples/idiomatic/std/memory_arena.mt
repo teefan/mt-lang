@@ -7,7 +7,7 @@ align(16) struct Mat4:
     data: array[float, 16]
 
 
-def main() -> int:
+function main() -> int:
     var scratch = arena.create_for[Mat4](2)
     defer scratch.release()
     let capacity = scratch.remaining_bytes()

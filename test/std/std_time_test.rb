@@ -17,7 +17,7 @@ class MilkTeaStdTimeTest < Minitest::Test
       "import std.string as string",
       "import std.time as time",
       "",
-      "def main() -> int:",
+      "function main() -> int:",
       "    var scratch = arena.create(256)",
       "    defer scratch.release()",
       "    let formatted = time.format_utc(0, \"%Y-%m-%d\", ref_of(scratch))",

@@ -6,7 +6,7 @@ const screen_width: int = 800
 const screen_height: int = 450
 
 
-def draw_frame() -> void:
+function draw_frame() -> void:
     rl.begin_drawing()
     defer rl.end_drawing()
 
@@ -15,7 +15,7 @@ def draw_frame() -> void:
     return
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Web Window")
     defer rl.close_window()
 

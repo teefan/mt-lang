@@ -12,7 +12,7 @@ const font2_path: str = "../../raylib/resources/custom_alagard.png"
 const font3_path: str = "../../raylib/resources/custom_jupiter_crash.png"
 
 
-def centered_position(font: rl.Font, text: str, spacing: float, y_offset: float) -> rl.Vector2:
+function centered_position(font: rl.Font, text: str, spacing: float, y_offset: float) -> rl.Vector2:
     let size = rl.measure_text_ex(font, text, float<-font.baseSize, spacing)
     return rl.Vector2(
         x = float<-screen_width / 2.0 - size.x / 2.0,
@@ -20,7 +20,7 @@ def centered_position(font: rl.Font, text: str, spacing: float, y_offset: float)
     )
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Sprite Font")
     defer rl.close_window()
 

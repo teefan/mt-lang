@@ -17,11 +17,11 @@ const v2_label: cstr = c"v2"
 const angle_format: cstr = c"ANGLE: %2.2f"
 
 
-def line_angle(start: rl.Vector2, finish: rl.Vector2) -> float:
+function line_angle(start: rl.Vector2, finish: rl.Vector2) -> float:
     return rm.atan2(finish.y - start.y, finish.x - start.x)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

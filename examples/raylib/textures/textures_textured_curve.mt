@@ -17,7 +17,7 @@ const width_format: cstr = c"Curve width: %2.0f (Use + and - to adjust)"
 const segments_format: cstr = c"Curve segments: %d (Use LEFT and RIGHT to adjust)"
 
 
-def hovered_handle(mouse: rl.Vector2, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2) -> int:
+function hovered_handle(mouse: rl.Vector2, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2) -> int:
     if rl.CheckCollisionPointCircle(mouse, curve_start_position, 6.0):
         return start_handle
     if rl.CheckCollisionPointCircle(mouse, curve_start_position_tangent, 6.0):
@@ -29,7 +29,7 @@ def hovered_handle(mouse: rl.Vector2, curve_start_position: rl.Vector2, curve_st
     return -1
 
 
-def draw_textured_curve(tex_road: rl.Texture, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2, curve_width: float, curve_segments: int) -> void:
+function draw_textured_curve(tex_road: rl.Texture, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2, curve_width: float, curve_segments: int) -> void:
     let step = 1.0 / float<-curve_segments
 
     var previous = curve_start_position
@@ -75,7 +75,7 @@ def draw_textured_curve(tex_road: rl.Texture, curve_start_position: rl.Vector2, 
     rlgl.rlSetTexture(uint<-0)
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_VSYNC_HINT | rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

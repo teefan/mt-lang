@@ -19,7 +19,7 @@ var points: array[sdl.FPoint, 500] = zero[array[sdl.FPoint, 500]]
 var point_speeds: array[float, 500] = zero[array[float, 500]]
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[sdl.Event]
 
     while sdl.poll_event(event):
@@ -29,7 +29,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     let now = sdl.get_ticks()
     let elapsed = float<-(now - last_time) / 1000.0
     let width_f = float<-window_width
@@ -59,7 +59,7 @@ def render_frame() -> void:
     sdl.render_present(renderer)
 
 
-def app_main() -> int:
+function app_main() -> int:
     sdl.set_app_metadata("Example Renderer Points", "1.0", "com.example.renderer-points")
 
     if not sdl.init(sdl.INIT_VIDEO):
@@ -87,5 +87,5 @@ def app_main() -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return sdl_rt.run_app_no_args(argc, argv, app_main)

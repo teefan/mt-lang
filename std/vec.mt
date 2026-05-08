@@ -4,48 +4,48 @@ import std.mem.heap as heap
 import std.maybe as maybe
 import std.span as sp
 
-pub struct Vec[T]:
+public struct Vec[T]:
     data: ptr[T]?
     len: ptr_uint
     capacity: ptr_uint
 
 methods Vec[T]:
-    pub static def create() -> Vec[T]:
+    public static function create() -> Vec[T]:
         return Vec[T](data = null, len = 0, capacity = 0)
 
 
-    pub static def with_capacity(capacity: ptr_uint) -> Vec[T]:
+    public static function with_capacity(capacity: ptr_uint) -> Vec[T]:
         var items = Vec[T](data = null, len = 0, capacity = 0)
         items.reserve(capacity)
         return items
 
 
-    pub def count() -> ptr_uint:
+    public function count() -> ptr_uint:
         return this.len
 
 
-    pub def capacity() -> ptr_uint:
+    public function capacity() -> ptr_uint:
         return this.capacity
 
 
-    pub def is_empty() -> bool:
+    public function is_empty() -> bool:
         return this.len == 0
 
 
-    pub def data_ptr() -> ptr[T]?:
+    public function data_ptr() -> ptr[T]?:
         return this.data
 
 
-    pub def as_span() -> span[T]:
+    public function as_span() -> span[T]:
         return sp.from_nullable_ptr[T](this.data, this.len)
 
 
-    pub edit def clear() -> void:
+    public edit function clear() -> void:
         this.len = 0
         return
 
 
-    pub edit def release() -> void:
+    public edit function release() -> void:
         heap.release(this.data)
         this.data = null
         this.len = 0
@@ -53,7 +53,7 @@ methods Vec[T]:
         return
 
 
-    pub edit def try_reserve(min_capacity: ptr_uint) -> bool:
+    public edit function try_reserve(min_capacity: ptr_uint) -> bool:
         if min_capacity <= this.capacity:
             return true
 
@@ -76,13 +76,13 @@ methods Vec[T]:
         return true
 
 
-    pub edit def reserve(min_capacity: ptr_uint) -> void:
+    public edit function reserve(min_capacity: ptr_uint) -> void:
         if not this.try_reserve(min_capacity):
             panic(c"vec.reserve out of memory")
         return
 
 
-    pub edit def try_push(item: T) -> bool:
+    public edit function try_push(item: T) -> bool:
         if this.len == this.capacity:
             if not this.try_reserve(this.len + 1):
                 return false
@@ -99,13 +99,13 @@ methods Vec[T]:
         return true
 
 
-    pub edit def push(item: T) -> void:
+    public edit function push(item: T) -> void:
         if not this.try_push(item):
             panic(c"vec.push out of memory")
         return
 
 
-    pub def get(index: ptr_uint) -> T:
+    public function get(index: ptr_uint) -> T:
         if index >= this.len:
             panic(c"vec.get index out of bounds")
 
@@ -118,7 +118,7 @@ methods Vec[T]:
             return read(data_ptr + index)
 
 
-    pub edit def set(index: ptr_uint, item: T) -> void:
+    public edit function set(index: ptr_uint, item: T) -> void:
         if index >= this.len:
             panic(c"vec.set index out of bounds")
 
@@ -132,7 +132,7 @@ methods Vec[T]:
         return
 
 
-    pub edit def pop() -> maybe.Maybe[T]:
+    public edit function pop() -> maybe.Maybe[T]:
         if this.len == 0:
             return maybe.Maybe[T].none
 
@@ -146,7 +146,7 @@ methods Vec[T]:
             let data_ptr = ptr[T]<-data
             return maybe.Maybe[T].some(value= read(data_ptr + last_index))
 
-    pub edit def remove_swap(index: ptr_uint) -> T:
+    public edit function remove_swap(index: ptr_uint) -> T:
         if index >= this.len:
             panic(c"vec.remove_swap index out of bounds")
 
@@ -163,7 +163,7 @@ methods Vec[T]:
             return result
 
 
-    pub edit def remove_ordered(index: ptr_uint) -> T:
+    public edit function remove_ordered(index: ptr_uint) -> T:
         if index >= this.len:
             panic(c"vec.remove_ordered index out of bounds")
 

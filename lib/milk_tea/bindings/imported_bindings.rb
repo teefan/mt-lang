@@ -217,7 +217,7 @@ module MilkTea
 
       def validate_raw_module!(raw_ast)
         unless raw_ast.module_kind == :extern_module && raw_ast.module_name&.to_s == @raw_module_name
-          raise Error, "expected #{@raw_module_path} to define extern module #{@raw_module_name}"
+          raise Error, "expected #{@raw_module_path} to define external module #{@raw_module_name}"
         end
       end
 
@@ -323,10 +323,10 @@ module MilkTea
           case public_type_kind(raw_name, override:, raw_declaration:)
           when :alias
             mapping = override && override["mapping"] || shared_type_mapping(raw_name, spec:) || "#{@import_alias}.#{raw_name}"
-            "pub type #{public_name} = #{mapping}"
+            "public type #{public_name} = #{mapping}"
           when :opaque
             opaque_c_name = raw_declaration.c_name || raw_name
-            "pub opaque #{public_name} = c#{opaque_c_name.inspect}"
+            "public opaque #{public_name} = c#{opaque_c_name.inspect}"
           else
             raise Error, "unsupported generated public type kind for #{raw_name} in #{@policy_path}"
           end
@@ -346,7 +346,7 @@ module MilkTea
           seen_public_names[public_name] = true
           const_type = override && override["type"] || render_type(raw_declaration.type)
           mapping = override && override["mapping"] || "#{@import_alias}.#{raw_name}"
-          "pub const #{public_name}: #{const_type} = #{mapping}"
+          "public const #{public_name}: #{const_type} = #{mapping}"
         end
       end
 
@@ -1269,7 +1269,7 @@ module MilkTea
       end
 
       def build_function_signature(name, type_params:, params:, return_type:)
-        signature = +"pub def #{name}"
+        signature = +"public function #{name}"
         signature << render_type_params(type_params)
         signature << "(#{params.join(', ')})"
         signature << " -> #{return_type}"
@@ -1289,8 +1289,8 @@ module MilkTea
 
       def build_foreign_signature(name, type_params:, params:, return_type:, mapping:, visibility: :public)
         signature = +""
-        signature << "pub " if visibility == :public
-        signature << "foreign def #{name}"
+        signature << "public " if visibility == :public
+        signature << "foreign function #{name}"
         signature << render_type_params(type_params)
         signature << "(#{params.join(', ')}) -> #{return_type}"
         signature << " = #{mapping}"

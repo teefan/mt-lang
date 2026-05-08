@@ -11,19 +11,19 @@ variant Event:
 # Payload construction with named arguments.
 
 
-def make_click(x: int, y: int) -> Event:
+function make_click(x: int, y: int) -> Event:
     return Event.click(x= x, y= y)
 
 # No-payload arm construction as a plain value.
 
 
-def make_quit() -> Event:
+function make_quit() -> Event:
     return Event.quit
 
 # Exhaustive matching over every arm.
 
 
-def event_code(event: Event) -> int:
+function event_code(event: Event) -> int:
     match event:
         Event.click as click_event:
             return click_event.x + click_event.y
@@ -40,7 +40,7 @@ def event_code(event: Event) -> int:
 # Wildcard matching when only one arm needs special handling.
 
 
-def is_terminal(event: Event) -> bool:
+function is_terminal(event: Event) -> bool:
     match event:
         Event.quit:
             return true
@@ -48,7 +48,7 @@ def is_terminal(event: Event) -> bool:
             return false
 
 
-def main() -> int:
+function main() -> int:
     let click = make_click(7, 9)
     let key_down: Event = Event.key(code= 65, pressed= true)
     let key_up: Event = Event.key(code= 65, pressed= false)

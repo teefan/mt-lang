@@ -19,7 +19,7 @@ const current_tile_format: cstr = c"Current tile: [%i,%i]"
 const help_text: cstr = c"ARROW KEYS to move"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

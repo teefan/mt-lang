@@ -3,7 +3,7 @@ module examples.idiomatic.std.io_printing
 import std.io as io
 
 
-def main() -> int:
+function main() -> int:
     let count: int = 7
     let angle: float = 45.5
     let ratio: double = 0.25

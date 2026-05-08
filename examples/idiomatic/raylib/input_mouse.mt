@@ -7,7 +7,7 @@ const screen_height: int = 450
 const ball_radius: float = 40.0
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Input Mouse")
     defer rl.close_window()
 

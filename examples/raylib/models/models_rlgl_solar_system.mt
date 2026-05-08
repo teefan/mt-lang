@@ -16,7 +16,7 @@ const orbit_text: cstr = c"EARTH ORBITING AROUND THE SUN!"
 const window_title: cstr = c"raylib [models] example - rlgl solar system"
 
 
-def draw_sphere_basic(color: rl.Color) -> void:
+function draw_sphere_basic(color: rl.Color) -> void:
     let rings = 16
     let slices = 16
 
@@ -51,7 +51,7 @@ def draw_sphere_basic(color: rl.Color) -> void:
     rlgl.rlEnd()
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

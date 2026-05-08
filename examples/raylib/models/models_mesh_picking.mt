@@ -13,7 +13,7 @@ const toggle_text: cstr = c"Right click mouse to toggle camera controls"
 const turret_credit: cstr = c"(c) Turret 3D model by Alberto Cano"
 
 
-def vector3_barycenter(point: rl.Vector3, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3) -> rl.Vector3:
+function vector3_barycenter(point: rl.Vector3, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3) -> rl.Vector3:
     let v0 = b.subtract(a)
     let v1 = c.subtract(a)
     let v2 = point.subtract(a)
@@ -31,7 +31,7 @@ def vector3_barycenter(point: rl.Vector3, a: rl.Vector3, b: rl.Vector3, c: rl.Ve
     return rl.Vector3(x = u, y = v, z = w)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

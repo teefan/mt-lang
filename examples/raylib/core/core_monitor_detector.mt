@@ -9,7 +9,7 @@ const help_text: cstr = c"Press [Enter] to move window to next monitor available
 const current_label: cstr = c"CURRENT"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

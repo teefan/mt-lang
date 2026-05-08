@@ -15,7 +15,7 @@ var joystick: ptr[c.SDL_Joystick]? = null
 var colors: array[c.SDL_Color, 64] = zero[array[c.SDL_Color, 64]]
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -35,7 +35,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     var winw: int = window_width
     var winh: int = window_height
     var text: cstr = c"Plug in a joystick, please."
@@ -131,7 +131,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Input Joystick Polling", c"1.0", c"com.example.input-joystick-polling")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_JOYSTICK):
@@ -158,5 +158,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

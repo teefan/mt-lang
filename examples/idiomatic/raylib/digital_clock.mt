@@ -23,11 +23,11 @@ const screen_width: int = 800
 const screen_height: int = 450
 
 
-def clock_hand(angle: float, length: int, thickness: int, color: rl.Color) -> ClockHand:
+function clock_hand(angle: float, length: int, thickness: int, color: rl.Color) -> ClockHand:
     return ClockHand(value = 0, angle = angle, length = length, thickness = thickness, color = color)
 
 
-def apply_clock_time(clock: ref[Clock], current: time.ClockTime) -> void:
+function apply_clock_time(clock: ref[Clock], current: time.ClockTime) -> void:
     clock.hour.value = current.hour
     clock.minute.value = current.minute
     clock.second.value = current.second
@@ -44,7 +44,7 @@ def apply_clock_time(clock: ref[Clock], current: time.ClockTime) -> void:
     clock.second.angle -= 90.0
 
 
-def update_clock(clock: ref[Clock]) -> void:
+function update_clock(clock: ref[Clock]) -> void:
     let current = time.local_clock()
     if status.is_ok(current):
         match current:
@@ -54,7 +54,7 @@ def update_clock(clock: ref[Clock]) -> void:
                 return
 
 
-def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
+function draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
     rl.draw_circle_v(position, clock.second.length + 40.0, rl.LIGHTGRAY)
     rl.draw_circle_v(position, 12.0, rl.GRAY)
 
@@ -94,14 +94,14 @@ def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
     )
 
 
-def draw_segment_triangles(points: array[rl.Vector2, 6], color: rl.Color) -> void:
+function draw_segment_triangles(points: array[rl.Vector2, 6], color: rl.Color) -> void:
     rl.draw_triangle(points[0], points[1], points[2], color)
     rl.draw_triangle(points[2], points[1], points[3], color)
     rl.draw_triangle(points[2], points[3], points[4], color)
     rl.draw_triangle(points[4], points[3], points[5], color)
 
 
-def draw_display_segment(center: rl.Vector2, length: int, thick: int, vertical: bool, color: rl.Color) -> void:
+function draw_display_segment(center: rl.Vector2, length: int, thick: int, vertical: bool, color: rl.Color) -> void:
     let half_length = float<-length / 2.0
     let half_thick = float<-thick / 2.0
     if not vertical:
@@ -124,7 +124,7 @@ def draw_display_segment(center: rl.Vector2, length: int, thick: int, vertical: 
         ), color)
 
 
-def draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color, color_off: rl.Color) -> void:
+function draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color, color_off: rl.Color) -> void:
     let segment_len = 60
     let segment_thick = 20
     let offset_y_adjust = float<-segment_thick * 0.3
@@ -180,7 +180,7 @@ def draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color, col
     )
 
 
-def draw_display_value(position: rl.Vector2, value: int, color_on: rl.Color, color_off: rl.Color) -> void:
+function draw_display_value(position: rl.Vector2, value: int, color_on: rl.Color, color_off: rl.Color) -> void:
     if value == 0:
         draw_7s_display(position, 63, color_on, color_off)
     elif value == 1:
@@ -203,7 +203,7 @@ def draw_display_value(position: rl.Vector2, value: int, color_on: rl.Color, col
         draw_7s_display(position, 111, color_on, color_off)
 
 
-def draw_clock_digital(clock: Clock, position: rl.Vector2) -> void:
+function draw_clock_digital(clock: Clock, position: rl.Vector2) -> void:
     let color_off = rl.fade(rl.LIGHTGRAY, 0.3)
 
     draw_display_value(position, clock.hour.value / 10, rl.RED, color_off)
@@ -222,7 +222,7 @@ def draw_clock_digital(clock: Clock, position: rl.Vector2) -> void:
     draw_display_value(rl.Vector2(x = position.x + 640.0, y = position.y), clock.second.value % 10, rl.RED, color_off)
 
 
-def main() -> int:
+function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(screen_width, screen_height, "Milk Tea Digital Clock")
     defer rl.close_window()

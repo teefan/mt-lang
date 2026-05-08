@@ -10,7 +10,7 @@ const boom_path: str = "../../raylib/resources/boom.wav"
 const explosion_path: str = "../../raylib/resources/explosion.png"
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Sprite Explosion")
     defer rl.close_window()
 

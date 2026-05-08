@@ -11,7 +11,7 @@ const ogg_text: cstr = c"Press ENTER to PLAY the OGG sound!"
 const window_title: cstr = c"raylib [audio] example - sound loading"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

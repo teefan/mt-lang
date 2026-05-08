@@ -7,7 +7,7 @@ align(16) struct Mat4:
     data: array[float, 16]
 
 
-def main() -> int:
+function main() -> int:
     var matrices = pool.create_for[Mat4](2)
     defer matrices.release()
 

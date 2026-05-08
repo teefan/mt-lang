@@ -12,7 +12,7 @@ const screen_height: int = 450
 const pattern_path: str = "../../raylib/resources/patterns.png"
 
 
-def draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rectangle, origin: rl.Vector2, rotation: float, scale: float, tint: rl.Color) -> void:
+function draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rectangle, origin: rl.Vector2, rotation: float, scale: float, tint: rl.Color) -> void:
     if texture.id <= 0 or scale <= 0.0:
         return
     if source.width == 0.0 or source.height == 0.0:
@@ -170,7 +170,7 @@ def draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rec
             )
 
 
-def main() -> int:
+function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE)
     rl.init_window(screen_width, screen_height, "Milk Tea Tiled Drawing")
     defer rl.close_window()

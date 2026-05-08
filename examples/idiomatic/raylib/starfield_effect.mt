@@ -8,7 +8,7 @@ const screen_height: int = 450
 const star_count: int = 420
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Starfield Effect")
     defer rl.close_window()
 

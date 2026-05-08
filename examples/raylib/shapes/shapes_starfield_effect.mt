@@ -13,7 +13,7 @@ const lines_text: cstr = c"Lines"
 const circles_text: cstr = c"Circles"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

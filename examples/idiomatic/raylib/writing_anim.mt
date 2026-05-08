@@ -7,7 +7,7 @@ const screen_height: int = 450
 const message: str = "This sample illustrates a text writing\nanimation effect! Check it out! ;)"
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Writing Animation")
     defer rl.close_window()
 

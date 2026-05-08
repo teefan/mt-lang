@@ -26,19 +26,19 @@ var wave_index: int = 0
 var buffer: array[float, 44100]
 
 
-def void_ptr_to_float(value: ptr[void]) -> ptr[float]:
+function void_ptr_to_float(value: ptr[void]) -> ptr[float]:
     unsafe:
         return ptr[float]<-value
 
 
-def advance_wave_state(wavelength: int) -> void:
+function advance_wave_state(wavelength: int) -> void:
     wave_index += 1
     if wave_index >= wavelength:
         wave_frequency = new_wave_frequency
         wave_index = 0
 
 
-def save_wave_samples(samples: ptr[float], frame_count: int) -> void:
+function save_wave_samples(samples: ptr[float], frame_count: int) -> void:
     unsafe:
         for index in 0..sample_rate - frame_count:
             buffer[index] = buffer[index + frame_count]
@@ -47,7 +47,7 @@ def save_wave_samples(samples: ptr[float], frame_count: int) -> void:
             buffer[sample_rate - frame_count + index] = read(samples + index)
 
 
-def sine_callback(frames_out: ptr[void], frame_count: uint) -> void:
+function sine_callback(frames_out: ptr[void], frame_count: uint) -> void:
     let samples = void_ptr_to_float(frames_out)
     let count = int<-frame_count
     let wavelength = sample_rate / wave_frequency
@@ -60,7 +60,7 @@ def sine_callback(frames_out: ptr[void], frame_count: uint) -> void:
     save_wave_samples(samples, count)
 
 
-def square_callback(frames_out: ptr[void], frame_count: uint) -> void:
+function square_callback(frames_out: ptr[void], frame_count: uint) -> void:
     let samples = void_ptr_to_float(frames_out)
     let count = int<-frame_count
     let wavelength = sample_rate / wave_frequency
@@ -74,7 +74,7 @@ def square_callback(frames_out: ptr[void], frame_count: uint) -> void:
     save_wave_samples(samples, count)
 
 
-def triangle_callback(frames_out: ptr[void], frame_count: uint) -> void:
+function triangle_callback(frames_out: ptr[void], frame_count: uint) -> void:
     let samples = void_ptr_to_float(frames_out)
     let count = int<-frame_count
     let wavelength = sample_rate / wave_frequency
@@ -94,7 +94,7 @@ def triangle_callback(frames_out: ptr[void], frame_count: uint) -> void:
     save_wave_samples(samples, count)
 
 
-def sawtooth_callback(frames_out: ptr[void], frame_count: uint) -> void:
+function sawtooth_callback(frames_out: ptr[void], frame_count: uint) -> void:
     let samples = void_ptr_to_float(frames_out)
     let count = int<-frame_count
     let wavelength = sample_rate / wave_frequency
@@ -107,7 +107,7 @@ def sawtooth_callback(frames_out: ptr[void], frame_count: uint) -> void:
     save_wave_samples(samples, count)
 
 
-def preview_sample_index(index: int) -> int:
+function preview_sample_index(index: int) -> int:
     let base_index = sample_rate - visible_sample_count
     let sample_index = base_index + index * visible_sample_count / screen_width
     if sample_index >= sample_rate:
@@ -115,7 +115,7 @@ def preview_sample_index(index: int) -> int:
     return sample_index
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

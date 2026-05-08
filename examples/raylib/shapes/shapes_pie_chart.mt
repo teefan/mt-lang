@@ -24,7 +24,7 @@ const make_donut_text: cstr = c"Make Donut"
 const inner_radius_text: cstr = c"Inner Radius"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -13,7 +13,7 @@ const end_tangent_handle: int = 3
 const road_path: str = "../../raylib/resources/road.png"
 
 
-def hovered_handle(mouse: rl.Vector2, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2) -> int:
+function hovered_handle(mouse: rl.Vector2, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2) -> int:
     if rl.check_collision_point_circle(mouse, curve_start_position, 6.0):
         return start_handle
     if rl.check_collision_point_circle(mouse, curve_start_position_tangent, 6.0):
@@ -25,7 +25,7 @@ def hovered_handle(mouse: rl.Vector2, curve_start_position: rl.Vector2, curve_st
     return -1
 
 
-def draw_textured_curve(tex_road: rl.Texture2D, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2, curve_width: float, curve_segments: int) -> void:
+function draw_textured_curve(tex_road: rl.Texture2D, curve_start_position: rl.Vector2, curve_start_position_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_position_tangent: rl.Vector2, curve_width: float, curve_segments: int) -> void:
     let step = 1.0 / float<-curve_segments
 
     var previous = curve_start_position
@@ -71,7 +71,7 @@ def draw_textured_curve(tex_road: rl.Texture2D, curve_start_position: rl.Vector2
     rlgl.set_texture(uint<-0)
 
 
-def main() -> int:
+function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_VSYNC_HINT | rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(screen_width, screen_height, "Milk Tea Textured Curve")
     defer rl.close_window()

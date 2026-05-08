@@ -9,7 +9,7 @@ const player_one_text: cstr = c"PLAYER1: W/S to move"
 const player_two_text: cstr = c"PLAYER2: UP/DOWN to move"
 
 
-def draw_scene(player_one_position: rl.Vector3, player_two_position: rl.Vector3, count: int, spacing: float) -> void:
+function draw_scene(player_one_position: rl.Vector3, player_two_position: rl.Vector3, count: int, spacing: float) -> void:
     rl.DrawPlane(rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector2(x = 50.0, y = 50.0), rl.BEIGE)
 
     var x_index = -count
@@ -29,7 +29,7 @@ def draw_scene(player_one_position: rl.Vector3, player_two_position: rl.Vector3,
     rl.DrawCube(player_two_position, 1.0, 1.0, 1.0, rl.BLUE)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

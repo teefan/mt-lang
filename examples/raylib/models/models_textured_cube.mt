@@ -9,7 +9,7 @@ const texture_path: cstr = c"../resources/cubicmap_atlas.png"
 const window_title: cstr = c"raylib [models] example - textured cube"
 
 
-def draw_cube_texture(texture: rl.Texture2D, position: rl.Vector3, width: float, height: float, length: float, color: rl.Color) -> void:
+function draw_cube_texture(texture: rl.Texture2D, position: rl.Vector3, width: float, height: float, length: float, color: rl.Color) -> void:
     let x = position.x
     let y = position.y
     let z = position.z
@@ -85,7 +85,7 @@ def draw_cube_texture(texture: rl.Texture2D, position: rl.Vector3, width: float,
     rlgl.rlSetTexture(uint<-0)
 
 
-def draw_cube_texture_rec(texture: rl.Texture2D, source: rl.Rectangle, position: rl.Vector3, width: float, height: float, length: float, color: rl.Color) -> void:
+function draw_cube_texture_rec(texture: rl.Texture2D, source: rl.Rectangle, position: rl.Vector3, width: float, height: float, length: float, color: rl.Color) -> void:
     let x = position.x
     let y = position.y
     let z = position.z
@@ -163,7 +163,7 @@ def draw_cube_texture_rec(texture: rl.Texture2D, source: rl.Rectangle, position:
     rlgl.rlSetTexture(uint<-0)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

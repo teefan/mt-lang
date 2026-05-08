@@ -14,14 +14,14 @@ const max_rect_count: int = 22
 const sequence_height_factor: float = 0.75
 
 
-def remap(value: float, input_start: float, input_end: float, output_start: float, output_end: float) -> float:
+function remap(value: float, input_start: float, input_end: float, output_start: float, output_end: float) -> float:
     if input_end == input_start:
         return output_start
     let normalized = (value - input_start) / (input_end - input_start)
     return output_start + normalized * (output_end - output_start)
 
 
-def generate_random_color() -> rl.Color:
+function generate_random_color() -> rl.Color:
     return rl.Color(
         r = ubyte<-rl.get_random_value(0, 255),
         g = ubyte<-rl.get_random_value(0, 255),
@@ -30,7 +30,7 @@ def generate_random_color() -> rl.Color:
     )
 
 
-def shuffled_ranks(rect_count: int) -> array[int, 22]:
+function shuffled_ranks(rect_count: int) -> array[int, 22]:
     var ranks = zero[array[int, 22]]
 
     var index = 0
@@ -49,7 +49,7 @@ def shuffled_ranks(rect_count: int) -> array[int, 22]:
     return ranks
 
 
-def generate_rectangles(rect_count: int, rect_width: float, width: float, height: float) -> array[ColorRect, 22]:
+function generate_rectangles(rect_count: int, rect_width: float, width: float, height: float) -> array[ColorRect, 22]:
     var rectangles = zero[array[ColorRect, 22]]
     let ranks = shuffled_ranks(rect_count)
     let rect_sequence_width = rect_count * rect_width
@@ -70,7 +70,7 @@ def generate_rectangles(rect_count: int, rect_width: float, width: float, height
     return rectangles
 
 
-def shuffle_rectangles(rectangles: array[ColorRect, 22], rect_count: int) -> array[ColorRect, 22]:
+function shuffle_rectangles(rectangles: array[ColorRect, 22], rect_count: int) -> array[ColorRect, 22]:
     var shuffled = rectangles
     let order = shuffled_ranks(rect_count)
 
@@ -85,14 +85,14 @@ def shuffle_rectangles(rectangles: array[ColorRect, 22], rect_count: int) -> arr
     return shuffled
 
 
-def draw_help_text(height: int) -> void:
+function draw_help_text(height: int) -> void:
     rl.draw_text("Press SPACE to shuffle the current sequence", 10, height - 96, 20, rl.BLACK)
     rl.draw_text("Press UP to add a rectangle and generate a new sequence", 10, height - 64, 20, rl.BLACK)
     rl.draw_text("Press DOWN to remove a rectangle and generate a new sequence", 10, height - 32, 20, rl.BLACK)
     return
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Random Sequence")
     defer rl.close_window()
 

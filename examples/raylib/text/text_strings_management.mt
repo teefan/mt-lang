@@ -35,21 +35,21 @@ struct TextParticle:
     grabbed: bool
 
 
-def chars_to_cstr(text: ptr[char]) -> cstr:
+function chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
 
 
-def text_particle_text_ptr(tp: ptr[TextParticle]) -> ptr[char]:
+function text_particle_text_ptr(tp: ptr[TextParticle]) -> ptr[char]:
     unsafe:
         return ptr_of(tp.text[0])
 
 
-def text_particle_text(tp: ptr[TextParticle]) -> cstr:
+function text_particle_text(tp: ptr[TextParticle]) -> cstr:
     return chars_to_cstr(text_particle_text_ptr(tp))
 
 
-def random_color() -> rl.Color:
+function random_color() -> rl.Color:
     return rl.Color(
         r = ubyte<-rl.GetRandomValue(0, 255),
         g = ubyte<-rl.GetRandomValue(0, 255),
@@ -58,7 +58,7 @@ def random_color() -> rl.Color:
     )
 
 
-def create_text_particle(text: cstr, x: float, y: float, color: rl.Color) -> TextParticle:
+function create_text_particle(text: cstr, x: float, y: float, color: rl.Color) -> TextParticle:
     var tp = zero[TextParticle]
     tp.rect = rl.Rectangle(x = x, y = y, width = 30.0, height = 30.0)
     tp.vel = rl.Vector2(x = float<-rl.GetRandomValue(-200, 200), y = float<-rl.GetRandomValue(-200, 200))
@@ -77,7 +77,7 @@ def create_text_particle(text: cstr, x: float, y: float, color: rl.Color) -> Tex
     return tp
 
 
-def prepare_first_text_particle(text: cstr, tps: ptr[TextParticle], particle_count: ptr[int]) -> void:
+function prepare_first_text_particle(text: cstr, tps: ptr[TextParticle], particle_count: ptr[int]) -> void:
     unsafe:
         read(tps) = create_text_particle(
             text,
@@ -88,14 +88,14 @@ def prepare_first_text_particle(text: cstr, tps: ptr[TextParticle], particle_cou
         read(particle_count) = 1
 
 
-def append_particle(tps: ptr[TextParticle], particle_count: ptr[int], particle: TextParticle) -> void:
+function append_particle(tps: ptr[TextParticle], particle_count: ptr[int], particle: TextParticle) -> void:
     unsafe:
         let next_index = read(particle_count)
         read(tps + next_index) = particle
         read(particle_count) = next_index + 1
 
 
-def reallocate_text_particles(tps: ptr[TextParticle], particle_pos: int, particle_count: ptr[int]) -> void:
+function reallocate_text_particles(tps: ptr[TextParticle], particle_pos: int, particle_count: ptr[int]) -> void:
     unsafe:
         var index = particle_pos + 1
         while index < read(particle_count):
@@ -105,7 +105,7 @@ def reallocate_text_particles(tps: ptr[TextParticle], particle_pos: int, particl
         read(particle_count) = read(particle_count) - 1
 
 
-def slice_text_particle(tp: ptr[TextParticle], particle_pos: int, slice_length: int, tps: ptr[TextParticle], particle_count: ptr[int]) -> void:
+function slice_text_particle(tp: ptr[TextParticle], particle_pos: int, slice_length: int, tps: ptr[TextParticle], particle_count: ptr[int]) -> void:
     let length = int<-rl.TextLength(text_particle_text(tp))
 
     unsafe:
@@ -128,7 +128,7 @@ def slice_text_particle(tp: ptr[TextParticle], particle_pos: int, slice_length: 
             reallocate_text_particles(tps, particle_pos, particle_count)
 
 
-def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps: ptr[TextParticle], particle_count: ptr[int]) -> void:
+function slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps: ptr[TextParticle], particle_count: ptr[int]) -> void:
     var token_count = 0
     let tokens = rl.TextSplit(text_particle_text(tp), char_to_slice, ptr_of(token_count))
 
@@ -169,11 +169,11 @@ def slice_text_particle_by_char(tp: ptr[TextParticle], char_to_slice: char, tps:
             reallocate_text_particles(tps, 0, particle_count)
 
 
-def shatter_text_particle(tp: ptr[TextParticle], particle_pos: int, tps: ptr[TextParticle], particle_count: ptr[int]) -> void:
+function shatter_text_particle(tp: ptr[TextParticle], particle_pos: int, tps: ptr[TextParticle], particle_count: ptr[int]) -> void:
     slice_text_particle(tp, particle_pos, 1, tps, particle_count)
 
 
-def glue_text_particles(grabbed_index: int, target_index: int, tps: ptr[TextParticle], particle_count: ptr[int]) -> int:
+function glue_text_particles(grabbed_index: int, target_index: int, tps: ptr[TextParticle], particle_count: ptr[int]) -> int:
     unsafe:
         if grabbed_index >= 0 and target_index >= 0 and grabbed_index < read(particle_count) and target_index < read(particle_count):
             let grabbed = tps + grabbed_index
@@ -201,7 +201,7 @@ def glue_text_particles(grabbed_index: int, target_index: int, tps: ptr[TextPart
     return grabbed_index
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

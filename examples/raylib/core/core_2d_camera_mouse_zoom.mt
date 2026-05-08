@@ -12,7 +12,7 @@ const wheel_zoom_text: cstr = c"Mouse left button drag to move, mouse wheel to z
 const move_zoom_text: cstr = c"Mouse left button drag to move, mouse press and move to zoom"
 
 
-def clamp_zoom(zoom: float) -> float:
+function clamp_zoom(zoom: float) -> float:
     if zoom < 0.125:
         return 0.125
     if zoom > 64.0:
@@ -20,7 +20,7 @@ def clamp_zoom(zoom: float) -> float:
     return zoom
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

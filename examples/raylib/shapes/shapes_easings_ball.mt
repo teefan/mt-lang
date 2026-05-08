@@ -10,16 +10,16 @@ const window_title: cstr = c"raylib [shapes] example - easings ball"
 const replay_text: cstr = c"PRESS [ENTER] TO PLAY AGAIN!"
 
 
-def pow2(exponent: float) -> float:
+function pow2(exponent: float) -> float:
     return math.expf(math.logf(2.0) * exponent)
 
 
-def ease_cubic_out(t: float, b: float, c: float, d: float) -> float:
+function ease_cubic_out(t: float, b: float, c: float, d: float) -> float:
     let normalized = t / d - 1.0
     return c * (normalized * normalized * normalized + 1.0) + b
 
 
-def ease_elastic_in(t: float, b: float, c: float, d: float) -> float:
+function ease_elastic_in(t: float, b: float, c: float, d: float) -> float:
     if t == 0.0:
         return b
 
@@ -36,7 +36,7 @@ def ease_elastic_in(t: float, b: float, c: float, d: float) -> float:
     return -(post_fix * math.sinf((normalized * d - shift) * mt_math.tau / period)) + b
 
 
-def ease_elastic_out(t: float, b: float, c: float, d: float) -> float:
+function ease_elastic_out(t: float, b: float, c: float, d: float) -> float:
     if t == 0.0:
         return b
 
@@ -51,7 +51,7 @@ def ease_elastic_out(t: float, b: float, c: float, d: float) -> float:
     return amplitude * pow2(-10.0 * normalized) * math.sinf((normalized * d - shift) * mt_math.tau / period) + c + b
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

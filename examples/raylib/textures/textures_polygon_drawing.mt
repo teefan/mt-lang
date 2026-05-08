@@ -12,7 +12,7 @@ const title_text: cstr = c"textured polygon"
 const texture_path: cstr = c"../resources/cat.png"
 
 
-def draw_texture_poly(texture: rl.Texture, center: rl.Vector2, points: ptr[rl.Vector2], texcoords: ptr[rl.Vector2], point_count: int, tint: rl.Color) -> void:
+function draw_texture_poly(texture: rl.Texture, center: rl.Vector2, points: ptr[rl.Vector2], texcoords: ptr[rl.Vector2], point_count: int, tint: rl.Color) -> void:
     unsafe:
         rlgl.rlSetTexture(texture.id)
         rlgl.rlBegin(rlgl.RL_TRIANGLES)
@@ -33,7 +33,7 @@ def draw_texture_poly(texture: rl.Texture, center: rl.Vector2, points: ptr[rl.Ve
         rlgl.rlSetTexture(uint<-0)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

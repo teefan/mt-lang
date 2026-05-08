@@ -14,7 +14,7 @@ const controls_zoom: cstr = c"- Zoom keys: num-plus, num-minus or mouse scroll"
 const controls_projection: cstr = c"- Camera projection key: P"
 
 
-def camera_mode_text(camera_mode: int) -> cstr:
+function camera_mode_text(camera_mode: int) -> cstr:
     if camera_mode == rl.CameraMode.CAMERA_FREE:
         return c"Mode: FREE"
     if camera_mode == rl.CameraMode.CAMERA_FIRST_PERSON:
@@ -26,7 +26,7 @@ def camera_mode_text(camera_mode: int) -> cstr:
     return c"Mode: CUSTOM"
 
 
-def projection_text(projection: int) -> cstr:
+function projection_text(projection: int) -> cstr:
     if projection == rl.CameraProjection.CAMERA_PERSPECTIVE:
         return c"Projection: PERSPECTIVE"
     if projection == rl.CameraProjection.CAMERA_ORTHOGRAPHIC:
@@ -34,7 +34,7 @@ def projection_text(projection: int) -> cstr:
     return c"Projection: CUSTOM"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

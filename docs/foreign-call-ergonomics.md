@@ -10,7 +10,7 @@ The current language already has the right high-level shape for game code:
 
 - `defer` is good enough for resource cleanup.
 - loops and data-oriented structs are good enough for gameplay code.
-- imported `foreign def` already owns marshalling policy instead of forcing every call site to spell C ABI details.
+- imported `foreign function` already owns marshalling policy instead of forcing every call site to spell C ABI details.
 
 The remaining friction is concentrated at the imported foreign boundary.
 
@@ -86,9 +86,9 @@ This matches the existing design rule already used elsewhere in the language:
 Imported declarations continue to declare parameter direction:
 
 ```mt
-pub foreign def set_shader_value[T](shader: Shader, loc_index: int, in value: T as const_ptr[void], uniform_type: int) -> void = c.SetShaderValue
-pub foreign def get_render_output_size(renderer: Renderer, out width: int, out height: int) -> bool = c.GetRenderOutputSize
-pub foreign def update_camera(inout camera: Camera, mode: CameraMode) -> void = c.UpdateCamera
+public foreign function set_shader_value[T](shader: Shader, loc_index: int, in value: T as const_ptr[void], uniform_type: int) -> void = c.SetShaderValue
+public foreign function get_render_output_size(renderer: Renderer, out width: int, out height: int) -> bool = c.GetRenderOutputSize
+public foreign function update_camera(inout camera: Camera, mode: CameraMode) -> void = c.UpdateCamera
 ```
 
 But ordinary call sites become:
@@ -109,14 +109,14 @@ rl.update_camera(inout camera, rl.CameraMode.CAMERA_FREE)
 
 ### Sema rules
 
-For ordinary calls to imported `foreign def` only:
+For ordinary calls to imported `foreign function` only:
 
 - `in` parameters accept any expression
 - `out` parameters require a mutable addressable lvalue
 - `inout` parameters require a mutable addressable lvalue
 - plain parameters behave exactly as they do today
 
-For raw `extern def` calls:
+For raw `external function` calls:
 
 - nothing changes
 - raw code still spells raw pointer operations explicitly
@@ -146,9 +146,9 @@ Imported policy should prefer:
 Examples of the intended imported surfaces:
 
 ```mt
-pub foreign def render_rects(renderer: Renderer, rects: span[FRect]) -> void = c.SDL_RenderRects(renderer, rects.data, int<-rects.len)
-pub foreign def get_render_output_size(renderer: Renderer, out width: int, out height: int) -> bool = c.SDL_GetRenderOutputSize
-pub foreign def set_shader_value[T](shader: Shader, loc_index: int, in value: T as const_ptr[void], uniform_type: int) -> void = c.SetShaderValue
+public foreign function render_rects(renderer: Renderer, rects: span[FRect]) -> void = c.SDL_RenderRects(renderer, rects.data, int<-rects.len)
+public foreign function get_render_output_size(renderer: Renderer, out width: int, out height: int) -> bool = c.SDL_GetRenderOutputSize
+public foreign function set_shader_value[T](shader: Shader, loc_index: int, in value: T as const_ptr[void], uniform_type: int) -> void = c.SetShaderValue
 ```
 
 Application code should then read like this:

@@ -21,7 +21,7 @@ const reset_text: cstr = c"Press [SPACE] to reset"
 const fps_format: cstr = c"%i FPS"
 
 
-def draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rectangle, origin: rl.Vector2, rotation: float, scale: float, tint: rl.Color) -> void:
+function draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rectangle, origin: rl.Vector2, rotation: float, scale: float, tint: rl.Color) -> void:
     if texture.id <= 0 or scale <= 0.0:
         return
     if source.width == 0.0 or source.height == 0.0:
@@ -179,7 +179,7 @@ def draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rec
             )
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

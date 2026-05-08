@@ -21,12 +21,12 @@ var delay_write_index: uint = 0
 var low_pass_state: array[float, 2]
 
 
-def void_ptr_to_float(value: ptr[void]) -> ptr[float]:
+function void_ptr_to_float(value: ptr[void]) -> ptr[float]:
     unsafe:
         return ptr[float]<-value
 
 
-def allocate_delay_buffer() -> void:
+function allocate_delay_buffer() -> void:
     delay_buffer_size = uint<-(48000 * 2)
     delay_read_index = 2
     delay_write_index = 0
@@ -39,7 +39,7 @@ def allocate_delay_buffer() -> void:
                 read(samples + index) = 0.0
 
 
-def free_delay_buffer() -> void:
+function free_delay_buffer() -> void:
     if delay_buffer == null:
         return
 
@@ -47,7 +47,7 @@ def free_delay_buffer() -> void:
         rl.MemFree(ptr[float]<-delay_buffer)
 
 
-def audio_process_effect_lpf(buffer: ptr[void], frames: uint) -> void:
+function audio_process_effect_lpf(buffer: ptr[void], frames: uint) -> void:
     let buffer_data = void_ptr_to_float(buffer)
     let sample_count = int<-frames * 2
 
@@ -65,7 +65,7 @@ def audio_process_effect_lpf(buffer: ptr[void], frames: uint) -> void:
             index += 2
 
 
-def audio_process_effect_delay(buffer: ptr[void], frames: uint) -> void:
+function audio_process_effect_delay(buffer: ptr[void], frames: uint) -> void:
     if delay_buffer == null:
         return
 
@@ -102,7 +102,7 @@ def audio_process_effect_delay(buffer: ptr[void], frames: uint) -> void:
             index += 2
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

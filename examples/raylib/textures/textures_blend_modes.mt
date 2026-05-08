@@ -12,7 +12,7 @@ const help_text: cstr = c"Press SPACE to change blend modes."
 const credit_text: cstr = c"(c) Cyberpunk Street Environment by Luis Zuno (@ansimuz)"
 
 
-def blend_label(blend_mode: int) -> cstr:
+function blend_label(blend_mode: int) -> cstr:
     if blend_mode == rl.BlendMode.BLEND_ALPHA:
         return c"Current: BLEND_ALPHA"
     elif blend_mode == rl.BlendMode.BLEND_ADDITIVE:
@@ -22,7 +22,7 @@ def blend_label(blend_mode: int) -> cstr:
     return c"Current: BLEND_ADD_COLORS"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

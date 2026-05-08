@@ -40,7 +40,7 @@ const credit_text: cstr = c"(c) Rounded rectangle SDF by Inigo Quilez. MIT Licen
 const window_title: cstr = c"raylib [shaders] example - rounded rectangle"
 
 
-def normalized_color(color: rl.Color) -> array[float, 4]:
+function normalized_color(color: rl.Color) -> array[float, 4]:
     return array[float, 4](
         float<-color.r / 255.0,
         float<-color.g / 255.0,
@@ -49,44 +49,44 @@ def normalized_color(color: rl.Color) -> array[float, 4]:
     )
 
 
-def rectangle_components(rectangle: rl.Rectangle) -> array[float, 4]:
+function rectangle_components(rectangle: rl.Rectangle) -> array[float, 4]:
     return array[float, 4](rectangle.x, rectangle.y, rectangle.width, rectangle.height)
 
 
-def vector4_components(vector: rl.Vector4) -> array[float, 4]:
+function vector4_components(vector: rl.Vector4) -> array[float, 4]:
     return array[float, 4](vector.x, vector.y, vector.z, vector.w)
 
 
-def vector2_components(vector: rl.Vector2) -> array[float, 2]:
+function vector2_components(vector: rl.Vector2) -> array[float, 2]:
     return array[float, 2](vector.x, vector.y)
 
 
-def set_vec4_uniform(shader: rl.Shader, location: int, x: float, y: float, z: float, w: float) -> void:
+function set_vec4_uniform(shader: rl.Shader, location: int, x: float, y: float, z: float, w: float) -> void:
     var values = array[float, 4](x, y, z, w)
     rl.SetShaderValue(shader, location, ptr_of(values[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
 
-def set_vec2_uniform(shader: rl.Shader, location: int, x: float, y: float) -> void:
+function set_vec2_uniform(shader: rl.Shader, location: int, x: float, y: float) -> void:
     var values = array[float, 2](x, y)
     rl.SetShaderValue(shader, location, ptr_of(values[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
 
-def set_float_uniform(shader: rl.Shader, location: int, value: float) -> void:
+function set_float_uniform(shader: rl.Shader, location: int, value: float) -> void:
     var storage: float = value
     rl.SetShaderValue(shader, location, ptr_of(storage), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
 
-def set_rectangle_uniform(shader: rl.Shader, rounded_rectangle: RoundedRectangle, rectangle: rl.Rectangle) -> void:
+function set_rectangle_uniform(shader: rl.Shader, rounded_rectangle: RoundedRectangle, rectangle: rl.Rectangle) -> void:
     let rectangle_values = rectangle_components(rectangle)
     set_vec4_uniform(shader, rounded_rectangle.rectangle_loc, rectangle_values[0], rectangle_values[1], rectangle_values[2], rectangle_values[3])
 
 
-def set_color_uniform(shader: rl.Shader, location: int, color: rl.Color) -> void:
+function set_color_uniform(shader: rl.Shader, location: int, color: rl.Color) -> void:
     let color_values = normalized_color(color)
     set_vec4_uniform(shader, location, color_values[0], color_values[1], color_values[2], color_values[3])
 
 
-def update_rounded_rectangle(rounded_rectangle: RoundedRectangle, shader: rl.Shader) -> void:
+function update_rounded_rectangle(rounded_rectangle: RoundedRectangle, shader: rl.Shader) -> void:
     let radius_values = vector4_components(rounded_rectangle.corner_radius)
     let shadow_offset_values = vector2_components(rounded_rectangle.shadow_offset)
     var shadow_radius = rounded_rectangle.shadow_radius
@@ -100,7 +100,7 @@ def update_rounded_rectangle(rounded_rectangle: RoundedRectangle, shader: rl.Sha
     set_float_uniform(shader, rounded_rectangle.border_thickness_loc, border_thickness)
 
 
-def create_rounded_rectangle(corner_radius: rl.Vector4, shadow_radius: float, shadow_offset: rl.Vector2, shadow_scale: float, border_thickness: float, shader: rl.Shader) -> RoundedRectangle:
+function create_rounded_rectangle(corner_radius: rl.Vector4, shadow_radius: float, shadow_offset: rl.Vector2, shadow_scale: float, border_thickness: float, shader: rl.Shader) -> RoundedRectangle:
     let rounded_rectangle = RoundedRectangle(
         corner_radius = corner_radius,
         shadow_radius = shadow_radius,
@@ -122,7 +122,7 @@ def create_rounded_rectangle(corner_radius: rl.Vector4, shadow_radius: float, sh
     return rounded_rectangle
 
 
-def flipped_rectangle(rectangle: rl.Rectangle) -> rl.Rectangle:
+function flipped_rectangle(rectangle: rl.Rectangle) -> rl.Rectangle:
     return rl.Rectangle(
         x = rectangle.x,
         y = float<-screen_height - rectangle.y - rectangle.height,
@@ -131,7 +131,7 @@ def flipped_rectangle(rectangle: rl.Rectangle) -> rl.Rectangle:
     )
 
 
-def draw_shader_pass(shader: rl.Shader, rounded_rectangle: RoundedRectangle, rectangle: rl.Rectangle, color: rl.Color, shadow_color: rl.Color, border_color: rl.Color) -> void:
+function draw_shader_pass(shader: rl.Shader, rounded_rectangle: RoundedRectangle, rectangle: rl.Rectangle, color: rl.Color, shadow_color: rl.Color, border_color: rl.Color) -> void:
     set_rectangle_uniform(shader, rounded_rectangle, flipped_rectangle(rectangle))
     set_color_uniform(shader, rounded_rectangle.color_loc, color)
     set_color_uniform(shader, rounded_rectangle.shadow_color_loc, shadow_color)
@@ -142,7 +142,7 @@ def draw_shader_pass(shader: rl.Shader, rounded_rectangle: RoundedRectangle, rec
     rl.EndShaderMode()
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

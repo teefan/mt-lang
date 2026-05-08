@@ -8,7 +8,7 @@ const ball_radius: float = 50.0
 const ball_step: float = 2.0
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Input Keys")
     defer rl.close_window()
 

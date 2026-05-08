@@ -18,40 +18,40 @@ struct WaveTextConfig:
     wave_offset: rl.Vector3
 
 
-def chars_to_cstr(text: ptr[char]) -> cstr:
+function chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
 
 
-def text_buffer_ptr(text: ref[array[char, 64]]) -> ptr[char]:
+function text_buffer_ptr(text: ref[array[char, 64]]) -> ptr[char]:
     return ptr_of(read(text)[0])
 
 
-def text_buffer_cstr(text: ref[array[char, 64]]) -> cstr:
+function text_buffer_cstr(text: ref[array[char, 64]]) -> cstr:
     return chars_to_cstr(text_buffer_ptr(text))
 
 
-def font_glyph(font: rl.Font, index: int) -> rl.GlyphInfo:
+function font_glyph(font: rl.Font, index: int) -> rl.GlyphInfo:
     unsafe:
         return read(font.glyphs + index)
 
 
-def font_rec(font: rl.Font, index: int) -> rl.Rectangle:
+function font_rec(font: rl.Font, index: int) -> rl.Rectangle:
     unsafe:
         return read(font.recs + index)
 
 
-def text_codepoint_at(text: cstr, index: int, byte_count: ptr[int]) -> int:
+function text_codepoint_at(text: cstr, index: int, byte_count: ptr[int]) -> int:
     unsafe:
         return rl.GetCodepoint(cstr<-(ptr[char]<-text + index), byte_count)
 
 
-def wave_text_config_value(config: ptr[WaveTextConfig]) -> WaveTextConfig:
+function wave_text_config_value(config: ptr[WaveTextConfig]) -> WaveTextConfig:
     unsafe:
         return read(config)
 
 
-def wrap_hue(hue_value: float) -> float:
+function wrap_hue(hue_value: float) -> float:
     var hue = hue_value
     while hue >= 360.0:
         hue -= 360.0
@@ -60,14 +60,14 @@ def wrap_hue(hue_value: float) -> float:
     return hue
 
 
-def generate_random_color(s: float, v: float) -> rl.Color:
+function generate_random_color(s: float, v: float) -> rl.Color:
     let phi = float<-0.618033988749895
     let seed = float<-rl.GetRandomValue(0, 360)
     let hue = wrap_hue(seed + seed * phi)
     return rl.ColorFromHSV(hue, s, v)
 
 
-def draw_text_codepoint_3d(font: rl.Font, codepoint: int, position: rl.Vector3, font_size: float, backface: bool, tint: rl.Color, show_letter_boundary: bool) -> void:
+function draw_text_codepoint_3d(font: rl.Font, codepoint: int, position: rl.Vector3, font_size: float, backface: bool, tint: rl.Color, show_letter_boundary: bool) -> void:
     let glyph_index = rl.GetGlyphIndex(font, codepoint)
     let glyph = font_glyph(font, glyph_index)
     let rec = font_rec(font, glyph_index)
@@ -136,7 +136,7 @@ def draw_text_codepoint_3d(font: rl.Font, codepoint: int, position: rl.Vector3, 
         rlgl.rlSetTexture(0)
 
 
-def draw_text_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size: float, font_spacing: float, line_spacing: float, backface: bool, tint: rl.Color, show_letter_boundary: bool) -> void:
+function draw_text_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size: float, font_spacing: float, line_spacing: float, backface: bool, tint: rl.Color, show_letter_boundary: bool) -> void:
     let length = int<-rl.TextLength(text)
     let scale = font_size / float<-font.baseSize
 
@@ -176,7 +176,7 @@ def draw_text_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size: flo
         index += codepoint_byte_count
 
 
-def draw_text_wave_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size: float, font_spacing: float, line_spacing: float, backface: bool, config: ptr[WaveTextConfig], time: float, tint: rl.Color, show_letter_boundary: bool) -> void:
+function draw_text_wave_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size: float, font_spacing: float, line_spacing: float, backface: bool, config: ptr[WaveTextConfig], time: float, tint: rl.Color, show_letter_boundary: bool) -> void:
     let length = int<-rl.TextLength(text)
     let scale = font_size / float<-font.baseSize
     let wave_config = wave_text_config_value(config)
@@ -234,7 +234,7 @@ def draw_text_wave_3d(font: rl.Font, text: cstr, position: rl.Vector3, font_size
         index += codepoint_byte_count
 
 
-def measure_text_wave_3d(font: rl.Font, text: cstr, font_size: float, font_spacing: float, line_spacing: float) -> rl.Vector3:
+function measure_text_wave_3d(font: rl.Font, text: cstr, font_size: float, font_spacing: float, line_spacing: float) -> rl.Vector3:
     let length = int<-rl.TextLength(text)
     let scale = font_size / float<-font.baseSize
 
@@ -293,7 +293,7 @@ def measure_text_wave_3d(font: rl.Font, text: cstr, font_size: float, font_spaci
     )
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT | rl.ConfigFlags.FLAG_VSYNC_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

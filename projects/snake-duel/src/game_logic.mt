@@ -5,11 +5,11 @@ import src.game_ai as game_ai
 import src.game_types as gt
 
 
-def same_cell(lhs: gt.Vec2i, rhs: gt.Vec2i) -> bool:
+function same_cell(lhs: gt.Vec2i, rhs: gt.Vec2i) -> bool:
     return lhs.x == rhs.x and lhs.y == rhs.y
 
 
-def snake_contains_cell(snake: gt.Snake, cell: gt.Vec2i, from_index: int) -> bool:
+function snake_contains_cell(snake: gt.Snake, cell: gt.Vec2i, from_index: int) -> bool:
     var index = from_index
     while index < snake.length:
         if same_cell(snake.body[index], cell):
@@ -19,11 +19,11 @@ def snake_contains_cell(snake: gt.Snake, cell: gt.Vec2i, from_index: int) -> boo
     return false
 
 
-def can_turn(current_x: int, current_y: int, next_x: int, next_y: int) -> bool:
+function can_turn(current_x: int, current_y: int, next_x: int, next_y: int) -> bool:
     return not (next_x == -current_x and next_y == -current_y)
 
 
-def make_snake(head_x: int, head_y: int, dx: int, dy: int, color: rl.Color) -> gt.Snake:
+function make_snake(head_x: int, head_y: int, dx: int, dy: int, color: rl.Color) -> gt.Snake:
     var snake = zero[gt.Snake]
     snake.length = 3
     snake.dir_x = dx
@@ -38,7 +38,7 @@ def make_snake(head_x: int, head_y: int, dx: int, dy: int, color: rl.Color) -> g
     return snake
 
 
-def spawn_food(player: gt.Snake, enemy: gt.Snake) -> gt.Vec2i:
+function spawn_food(player: gt.Snake, enemy: gt.Snake) -> gt.Vec2i:
     var tries = 0
     while tries < 1024:
         let candidate = gt.vec2i(rl.get_random_value(0, gt.grid_width() - 1), rl.get_random_value(0, gt.grid_height() - 1))
@@ -49,7 +49,7 @@ def spawn_food(player: gt.Snake, enemy: gt.Snake) -> gt.Vec2i:
     return gt.vec2i(gt.grid_width() / 2, gt.grid_height() / 2)
 
 
-pub def reset_game() -> gt.Game:
+public function reset_game() -> gt.Game:
     let player = make_snake(6, 6, 1, 0, rl.SKYBLUE)
     let enemy = make_snake(gt.grid_width() - 7, gt.grid_height() - 7, -1, 0, rl.ORANGE)
     return gt.Game(
@@ -62,7 +62,7 @@ pub def reset_game() -> gt.Game:
     )
 
 
-def move_snake(snake: gt.Snake, grow: bool) -> gt.Snake:
+function move_snake(snake: gt.Snake, grow: bool) -> gt.Snake:
     var moved = snake
     if grow and moved.length < gt.max_body():
         moved.length += 1
@@ -77,11 +77,11 @@ def move_snake(snake: gt.Snake, grow: bool) -> gt.Snake:
     return moved
 
 
-def out_of_bounds(cell: gt.Vec2i) -> bool:
+function out_of_bounds(cell: gt.Vec2i) -> bool:
     return cell.x < 0 or cell.y < 0 or cell.x >= gt.grid_width() or cell.y >= gt.grid_height()
 
 
-pub def update_player_direction(player: gt.Snake) -> gt.Snake:
+public function update_player_direction(player: gt.Snake) -> gt.Snake:
     var next = player
 
     if rl.is_key_pressed(rl.KeyboardKey.KEY_UP) or rl.is_key_pressed(rl.KeyboardKey.KEY_W):
@@ -107,7 +107,7 @@ pub def update_player_direction(player: gt.Snake) -> gt.Snake:
     return next
 
 
-def ai_update_direction(enemy: gt.Snake, player: gt.Snake, food: gt.Vec2i, tick: int) -> gt.Snake:
+function ai_update_direction(enemy: gt.Snake, player: gt.Snake, food: gt.Vec2i, tick: int) -> gt.Snake:
     var next = enemy
     let raw_dx = game_ai.choose_dx(next.body[0].x, food.x, tick)
     let raw_dy = game_ai.choose_dy(next.body[0].y, food.y, tick)
@@ -141,7 +141,7 @@ def ai_update_direction(enemy: gt.Snake, player: gt.Snake, food: gt.Vec2i, tick:
     return next
 
 
-def evaluate_collisions(game: gt.Game) -> gt.Game:
+function evaluate_collisions(game: gt.Game) -> gt.Game:
     var next = game
     if out_of_bounds(next.player.body[0]) or snake_contains_cell(next.player, next.player.body[0], 1) or snake_contains_cell(next.enemy, next.player.body[0], 0):
         next.player.alive = false
@@ -156,7 +156,7 @@ def evaluate_collisions(game: gt.Game) -> gt.Game:
     return next
 
 
-pub def step_game(game: gt.Game) -> gt.Game:
+public function step_game(game: gt.Game) -> gt.Game:
     var next = game
     next.enemy = ai_update_direction(next.enemy, next.player, next.food, next.tick)
 

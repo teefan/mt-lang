@@ -14,10 +14,10 @@ module MilkTea
       DOCUMENT_SOURCES = %w[active-editor visible-editor background-document].freeze
 
       # Token types that introduce a named definition, in order of precedence
-      DEFINITION_KEYWORDS = %i[def struct union enum flags variant type const var let methods opaque].freeze
+      DEFINITION_KEYWORDS = %i[function struct union enum flags variant type const var let methods opaque].freeze
       DOC_COMMENT_PREFIX = '##'
-      DEFINITION_LINE_PREFIX = /^(?:\s)*(?:(?:pub|foreign)\s+)*(?:def|struct|union|enum|flags|variant|type|const|var|let|methods|opaque)\s+/m
-      DEFINITION_NAME_REGEX = /^\s*(?:(?:pub|foreign)\s+)*(?:def|struct|union|enum|flags|variant|type|const|var|let|methods|opaque)\s+([A-Za-z_][A-Za-z0-9_]*)\b/
+      DEFINITION_LINE_PREFIX = /^(?:\s)*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|methods|opaque)\s+/m
+      DEFINITION_NAME_REGEX = /^\s*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|methods|opaque)\s+([A-Za-z_][A-Za-z0-9_]*)\b/
       IMPORT_HEAVY_ALWAYS_IMPORT_COUNT = 4
       IMPORT_HEAVY_IMPORT_COUNT = 2
       IMPORT_HEAVY_BYTES_THRESHOLD = 1_500
@@ -748,7 +748,7 @@ module MilkTea
           next unless id_tok.type == :identifier
 
           kind = case kw_tok.type
-                 when :def     then 'function'
+                 when :function then 'function'
                  when :struct  then 'struct'
                  when :union   then 'union'
                  when :enum    then 'enum'

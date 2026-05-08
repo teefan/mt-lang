@@ -4,11 +4,11 @@ import std.raylib as rl
 import src.game_types as gt
 
 
-def cell_to_px(value: int) -> int:
+function cell_to_px(value: int) -> int:
     return value * gt.cell_size()
 
 
-pub def draw_board(game: gt.Game):
+public function draw_board(game: gt.Game):
     var y = 0
     while y < gt.grid_height():
         var x = 0
@@ -31,7 +31,7 @@ pub def draw_board(game: gt.Game):
         e += 1
 
 
-pub def draw_hud(game: gt.Game):
+public function draw_hud(game: gt.Game):
     rl.draw_rectangle(0, gt.grid_height() * gt.cell_size(), gt.screen_width(), gt.hud_height(), rl.Color(r = 10, g = 12, b = 16, a = 255))
     rl.draw_text(rl.text_format_int_int("P1 %d   AI %d", game.player.score, game.enemy.score), 16, (gt.grid_height() * gt.cell_size()) + 14, 28, rl.RAYWHITE)
 

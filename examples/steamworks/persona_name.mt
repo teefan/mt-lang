@@ -5,12 +5,12 @@ import std.c.stdio as stdio
 import std.c.steamworks as steam
 
 
-def usage() -> int:
+function usage() -> int:
     stdio.printf(c"Usage: persona_name APP_ID\n")
     return 2
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     if argc < 2:
         return usage()
 

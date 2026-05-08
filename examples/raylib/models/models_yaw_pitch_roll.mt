@@ -14,7 +14,7 @@ const yaw_controls_text: cstr = c"Yaw controlled with: KEY_A / KEY_S"
 const credit_text: cstr = c"(c) WWI Plane Model created by GiaHanLam"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

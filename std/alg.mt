@@ -1,13 +1,13 @@
 module std.alg
 
 
-pub def min_ptr_uint(left: ptr_uint, right: ptr_uint) -> ptr_uint:
+public function min_ptr_uint(left: ptr_uint, right: ptr_uint) -> ptr_uint:
     if left < right:
         return left
     return right
 
 
-pub def index_of[T](items: span[T], needle: T, equals: fn(left: T, right: T) -> bool, index_out: ref[ptr_uint]) -> bool:
+public function index_of[T](items: span[T], needle: T, equals: fn(left: T, right: T) -> bool, index_out: ref[ptr_uint]) -> bool:
     var index: ptr_uint = 0
     while index < items.len:
         if equals(items[index], needle):
@@ -17,7 +17,7 @@ pub def index_of[T](items: span[T], needle: T, equals: fn(left: T, right: T) -> 
     return false
 
 
-pub def contains[T](items: span[T], needle: T, equals: fn(left: T, right: T) -> bool) -> bool:
+public function contains[T](items: span[T], needle: T, equals: fn(left: T, right: T) -> bool) -> bool:
     var index: ptr_uint = 0
     while index < items.len:
         if equals(items[index], needle):
@@ -26,7 +26,7 @@ pub def contains[T](items: span[T], needle: T, equals: fn(left: T, right: T) -> 
     return false
 
 
-pub def equal[T](left: span[T], right: span[T], equals: fn(left: T, right: T) -> bool) -> bool:
+public function equal[T](left: span[T], right: span[T], equals: fn(left: T, right: T) -> bool) -> bool:
     if left.len != right.len:
         return false
 
@@ -38,7 +38,7 @@ pub def equal[T](left: span[T], right: span[T], equals: fn(left: T, right: T) ->
     return true
 
 
-pub def any[T](items: span[T], predicate: fn(value: T) -> bool) -> bool:
+public function any[T](items: span[T], predicate: fn(value: T) -> bool) -> bool:
     var index: ptr_uint = 0
     while index < items.len:
         if predicate(items[index]):
@@ -47,7 +47,7 @@ pub def any[T](items: span[T], predicate: fn(value: T) -> bool) -> bool:
     return false
 
 
-pub def all[T](items: span[T], predicate: fn(value: T) -> bool) -> bool:
+public function all[T](items: span[T], predicate: fn(value: T) -> bool) -> bool:
     var index: ptr_uint = 0
     while index < items.len:
         if not predicate(items[index]):
@@ -56,7 +56,7 @@ pub def all[T](items: span[T], predicate: fn(value: T) -> bool) -> bool:
     return true
 
 
-pub def count_if[T](items: span[T], predicate: fn(value: T) -> bool) -> ptr_uint:
+public function count_if[T](items: span[T], predicate: fn(value: T) -> bool) -> ptr_uint:
     var total: ptr_uint = 0
     var index: ptr_uint = 0
     while index < items.len:
@@ -66,7 +66,7 @@ pub def count_if[T](items: span[T], predicate: fn(value: T) -> bool) -> ptr_uint
     return total
 
 
-pub def fill[T](items: span[T], value_item: T) -> void:
+public function fill[T](items: span[T], value_item: T) -> void:
     var index: ptr_uint = 0
     while index < items.len:
         items[index] = value_item
@@ -74,7 +74,7 @@ pub def fill[T](items: span[T], value_item: T) -> void:
     return
 
 
-pub def copy[T](target: span[T], source: span[T]) -> ptr_uint:
+public function copy[T](target: span[T], source: span[T]) -> ptr_uint:
     let count = min_ptr_uint(target.len, source.len)
     var index: ptr_uint = 0
     while index < count:
@@ -83,7 +83,7 @@ pub def copy[T](target: span[T], source: span[T]) -> ptr_uint:
     return count
 
 
-pub def sort[T](items: span[T], less: fn(left: T, right: T) -> bool) -> void:
+public function sort[T](items: span[T], less: fn(left: T, right: T) -> bool) -> void:
     var index: ptr_uint = 1
     while index < items.len:
         let item = items[index]

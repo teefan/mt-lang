@@ -13,7 +13,7 @@ const dropped_files_text: cstr = c"Dropped files:"
 const continue_prompt_text: cstr = c"Drop new files..."
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

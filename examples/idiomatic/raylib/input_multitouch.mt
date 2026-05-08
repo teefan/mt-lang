@@ -8,7 +8,7 @@ const max_touch_points: int = 10
 const touch_radius: float = 34.0
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Multitouch")
     defer rl.close_window()
 

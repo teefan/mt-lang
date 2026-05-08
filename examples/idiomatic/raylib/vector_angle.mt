@@ -7,11 +7,11 @@ const screen_width: int = 800
 const screen_height: int = 450
 
 
-def line_angle(start: rl.Vector2, finish: rl.Vector2) -> float:
+function line_angle(start: rl.Vector2, finish: rl.Vector2) -> float:
     return math.atan2(finish.y - start.y, finish.x - start.x)
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Vector Angle")
     defer rl.close_window()
 

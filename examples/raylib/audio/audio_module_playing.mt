@@ -20,7 +20,7 @@ const speed_format: cstr = c"SPEED: %f"
 const window_title: cstr = c"raylib [audio] example - module playing"
 
 
-def random_circle(circles: ref[array[CircleWave, 64]], index: int, colors: ref[array[rl.Color, 14]]) -> void:
+function random_circle(circles: ref[array[CircleWave, 64]], index: int, colors: ref[array[rl.Color, 14]]) -> void:
     var items = read(circles)
     var palette = read(colors)
     var circle = items[index]
@@ -34,7 +34,7 @@ def random_circle(circles: ref[array[CircleWave, 64]], index: int, colors: ref[a
     read(circles) = items
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

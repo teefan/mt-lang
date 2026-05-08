@@ -11,20 +11,20 @@ const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - double pendulum"
 
 
-def calculate_pendulum_end_point(length: float, theta: float) -> rl.Vector2:
+function calculate_pendulum_end_point(length: float, theta: float) -> rl.Vector2:
     return rl.Vector2(
         x = 10.0 * length * math.sinf(theta),
         y = 10.0 * length * math.cosf(theta),
     )
 
 
-def calculate_double_pendulum_end_point(length1: float, theta1: float, length2: float, theta2: float) -> rl.Vector2:
+function calculate_double_pendulum_end_point(length1: float, theta1: float, length2: float, theta2: float) -> rl.Vector2:
     let endpoint1 = calculate_pendulum_end_point(length1, theta1)
     let endpoint2 = calculate_pendulum_end_point(length2, theta2)
     return rl.Vector2(x = endpoint1.x + endpoint2.x, y = endpoint1.y + endpoint2.y)
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_WINDOW_HIGHDPI)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

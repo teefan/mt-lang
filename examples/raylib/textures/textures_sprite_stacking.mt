@@ -12,7 +12,7 @@ const help_text: cstr = c"A/D to spin\nmouse wheel to change separation (aka 'an
 const credit_text: cstr = c"redbooth model (c) kluchek under cc 4.0"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

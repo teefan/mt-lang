@@ -5,7 +5,7 @@ import std.fmt as fmt
 import std.status as status
 import std.string as string
 
-pub enum TokenKind: ubyte
+public enum TokenKind: ubyte
     left_brace = 1
     right_brace = 2
     left_bracket = 3
@@ -19,94 +19,94 @@ pub enum TokenKind: ubyte
     null_value = 11
     eof = 12
 
-pub enum Error: ubyte
+public enum Error: ubyte
     unexpected_end = 1
     unexpected_char = 2
     invalid_escape = 3
     invalid_number = 4
 
-pub struct Token:
+public struct Token:
     kind: TokenKind
     text: str
 
-pub struct Lexer:
+public struct Lexer:
     source: str
     index: ptr_uint
 
 
-pub def create(source: str) -> Lexer:
+public function create(source: str) -> Lexer:
     return Lexer(source = source, index = 0)
 
 
-pub def left_brace() -> TokenKind:
+public function left_brace() -> TokenKind:
     return TokenKind.left_brace
 
 
-pub def right_brace() -> TokenKind:
+public function right_brace() -> TokenKind:
     return TokenKind.right_brace
 
 
-pub def left_bracket() -> TokenKind:
+public function left_bracket() -> TokenKind:
     return TokenKind.left_bracket
 
 
-pub def right_bracket() -> TokenKind:
+public function right_bracket() -> TokenKind:
     return TokenKind.right_bracket
 
 
-pub def colon() -> TokenKind:
+public function colon() -> TokenKind:
     return TokenKind.colon
 
 
-pub def comma() -> TokenKind:
+public function comma() -> TokenKind:
     return TokenKind.comma
 
 
-pub def string_value() -> TokenKind:
+public function string_value() -> TokenKind:
     return TokenKind.string_value
 
 
-pub def number_value() -> TokenKind:
+public function number_value() -> TokenKind:
     return TokenKind.number_value
 
 
-pub def true_value() -> TokenKind:
+public function true_value() -> TokenKind:
     return TokenKind.true_value
 
 
-pub def false_value() -> TokenKind:
+public function false_value() -> TokenKind:
     return TokenKind.false_value
 
 
-pub def null_value() -> TokenKind:
+public function null_value() -> TokenKind:
     return TokenKind.null_value
 
 
-pub def eof() -> TokenKind:
+public function eof() -> TokenKind:
     return TokenKind.eof
 
 
-def token(kind: TokenKind) -> Token:
+function token(kind: TokenKind) -> Token:
     return Token(kind = kind, text = "")
 
 
-def slice_token(kind: TokenKind, source: str, start: ptr_uint, stop: ptr_uint) -> Token:
+function slice_token(kind: TokenKind, source: str, start: ptr_uint, stop: ptr_uint) -> Token:
     unsafe:
         return Token(kind = kind, text = str(data = source.data + start, len = stop - start))
 
 
-def byte_at(source: str, index: ptr_uint) -> ubyte:
+function byte_at(source: str, index: ptr_uint) -> ubyte:
     unsafe:
         return ubyte<-read(source.data + index)
 
 
-def skip_space(lexer: ref[Lexer]) -> void:
+function skip_space(lexer: ref[Lexer]) -> void:
     while lexer.index < lexer.source.len and ascii.is_space(byte_at(lexer.source, lexer.index)):
         lexer.index += 1
     return
 
 
-def match_keyword(lexer: ref[Lexer], keyword: str) -> bool:
+function match_keyword(lexer: ref[Lexer], keyword: str) -> bool:
     if lexer.source.len - lexer.index < keyword.len:
         return false
 
@@ -120,7 +120,7 @@ def match_keyword(lexer: ref[Lexer], keyword: str) -> bool:
     return true
 
 
-def read_string(lexer: ref[Lexer]) -> status.Status[Token, Error]:
+function read_string(lexer: ref[Lexer]) -> status.Status[Token, Error]:
     let start = lexer.index
     while lexer.index < lexer.source.len:
         let current = byte_at(lexer.source, lexer.index)
@@ -156,7 +156,7 @@ def read_string(lexer: ref[Lexer]) -> status.Status[Token, Error]:
     return status.Status[Token, Error].err(error= Error.unexpected_end)
 
 
-def read_number(lexer: ref[Lexer]) -> status.Status[Token, Error]:
+function read_number(lexer: ref[Lexer]) -> status.Status[Token, Error]:
     let start = lexer.index
     if byte_at(lexer.source, lexer.index) == ubyte<-45:
         lexer.index += 1
@@ -195,7 +195,7 @@ def read_number(lexer: ref[Lexer]) -> status.Status[Token, Error]:
     return status.Status[Token, Error].ok(value= slice_token(TokenKind.number_value, lexer.source, start, lexer.index))
 
 
-pub def next(lexer: ref[Lexer]) -> status.Status[Token, Error]:
+public function next(lexer: ref[Lexer]) -> status.Status[Token, Error]:
     skip_space(lexer)
     if lexer.index >= lexer.source.len:
         return status.Status[Token, Error].ok(value= token(TokenKind.eof))
@@ -234,27 +234,27 @@ pub def next(lexer: ref[Lexer]) -> status.Status[Token, Error]:
     return status.Status[Token, Error].err(error= Error.unexpected_char)
 
 
-pub def append_null(output: ref[string.String]) -> void:
+public function append_null(output: ref[string.String]) -> void:
     output.append("null")
     return
 
 
-pub def append_bool(output: ref[string.String], value: bool) -> void:
+public function append_bool(output: ref[string.String], value: bool) -> void:
     fmt.append_bool(output, value)
     return
 
 
-pub def append_int(output: ref[string.String], value: int) -> void:
+public function append_int(output: ref[string.String], value: int) -> void:
     fmt.append_int(output, value)
     return
 
 
-pub def append_ptr_uint(output: ref[string.String], value: ptr_uint) -> void:
+public function append_ptr_uint(output: ref[string.String], value: ptr_uint) -> void:
     fmt.append_ptr_uint(output, value)
     return
 
 
-def append_hex_nibble(output: ref[string.String], nibble: ubyte) -> void:
+function append_hex_nibble(output: ref[string.String], nibble: ubyte) -> void:
     if nibble < ubyte<-10:
         output.push_byte(ubyte<-48 + nibble)
     else:
@@ -262,7 +262,7 @@ def append_hex_nibble(output: ref[string.String], nibble: ubyte) -> void:
     return
 
 
-pub def append_string(output: ref[string.String], text_value: str) -> void:
+public function append_string(output: ref[string.String], text_value: str) -> void:
     output.append("\"")
     var index: ptr_uint = 0
     while index < text_value.len:

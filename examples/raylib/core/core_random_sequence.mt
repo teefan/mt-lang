@@ -17,14 +17,14 @@ const sequence_height_factor: float = 0.75
 const min_rect_count: int = 4
 
 
-def remap(value: float, input_start: float, input_end: float, output_start: float, output_end: float) -> float:
+function remap(value: float, input_start: float, input_end: float, output_start: float, output_end: float) -> float:
     if input_end == input_start:
         return output_start
     let normalized = (value - input_start) / (input_end - input_start)
     return output_start + normalized * (output_end - output_start)
 
 
-def generate_random_color() -> rl.Color:
+function generate_random_color() -> rl.Color:
     return rl.Color(
         r = ubyte<-rl.GetRandomValue(0, 255),
         g = ubyte<-rl.GetRandomValue(0, 255),
@@ -33,16 +33,16 @@ def generate_random_color() -> rl.Color:
     )
 
 
-def alloc_color_rects(rect_count: int) -> ptr[ColorRect]:
+function alloc_color_rects(rect_count: int) -> ptr[ColorRect]:
     return heap.must_alloc_zeroed[ColorRect](ptr_uint<-rect_count)
 
 
-def release_color_rects(rectangles: ptr[ColorRect]) -> void:
+function release_color_rects(rectangles: ptr[ColorRect]) -> void:
     heap.release(rectangles)
     return
 
 
-def generate_random_color_rect_sequence(rect_count: int, rect_width: float, width: float, height: float) -> ptr[ColorRect]:
+function generate_random_color_rect_sequence(rect_count: int, rect_width: float, width: float, height: float) -> ptr[ColorRect]:
     let rectangles = alloc_color_rects(rect_count)
     let sequence = rlr.require_ptr[int](rl.LoadRandomSequence(uint<-rect_count, 0, rect_count - 1), "could not load random sequence")
     var rectangles_view = sp.from_ptr[ColorRect](rectangles, ptr_uint<-rect_count)
@@ -66,7 +66,7 @@ def generate_random_color_rect_sequence(rect_count: int, rect_width: float, widt
     return rectangles
 
 
-def swap_color_rect_values(left: ref[ColorRect], right: ref[ColorRect]) -> void:
+function swap_color_rect_values(left: ref[ColorRect], right: ref[ColorRect]) -> void:
     let tmp = read(left)
     left.color = right.color
     left.rect.height = right.rect.height
@@ -77,7 +77,7 @@ def swap_color_rect_values(left: ref[ColorRect], right: ref[ColorRect]) -> void:
     return
 
 
-def shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: int) -> void:
+function shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: int) -> void:
     let sequence = rlr.require_ptr[int](rl.LoadRandomSequence(uint<-rect_count, 0, rect_count - 1), "could not load random sequence")
     var rectangles_view = sp.from_ptr[ColorRect](rectangles, ptr_uint<-rect_count)
     let sequence_view = sp.from_ptr[int](sequence, ptr_uint<-rect_count)
@@ -92,13 +92,13 @@ def shuffle_color_rect_sequence(rectangles: ptr[ColorRect], rect_count: int) -> 
     return
 
 
-def draw_help_text(height: int) -> void:
+function draw_help_text(height: int) -> void:
     rl.DrawText(c"Press SPACE to shuffle the current sequence", 10, height - 96, 20, rl.BLACK)
     rl.DrawText(c"Press UP to add a rectangle and generate a new sequence", 10, height - 64, 20, rl.BLACK)
     rl.DrawText(c"Press DOWN to remove a rectangle and generate a new sequence", 10, height - 32, 20, rl.BLACK)
 
 
-def rect_count_text(rect_count: int) -> cstr:
+function rect_count_text(rect_count: int) -> cstr:
     if rect_count == 4:
         return c"Count: 4 rectangles"
     if rect_count == 5:
@@ -138,7 +138,7 @@ def rect_count_text(rect_count: int) -> cstr:
     return c"Count: 22 rectangles"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

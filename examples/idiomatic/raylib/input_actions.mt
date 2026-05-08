@@ -14,7 +14,7 @@ enum ActionType: int
     ACTION_FIRE = 5
 
 
-def is_action_pressed(action: ActionType, cursor_set: bool) -> bool:
+function is_action_pressed(action: ActionType, cursor_set: bool) -> bool:
     if action == ActionType.ACTION_UP:
         if cursor_set:
             return rl.is_key_pressed(rl.KeyboardKey.KEY_UP) or rl.is_gamepad_button_pressed(gamepad_index, rl.GamepadButton.GAMEPAD_BUTTON_RIGHT_FACE_UP)
@@ -36,7 +36,7 @@ def is_action_pressed(action: ActionType, cursor_set: bool) -> bool:
     return rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE) or rl.is_gamepad_button_pressed(gamepad_index, rl.GamepadButton.GAMEPAD_BUTTON_RIGHT_FACE_DOWN)
 
 
-def is_action_released(action: ActionType, cursor_set: bool) -> bool:
+function is_action_released(action: ActionType, cursor_set: bool) -> bool:
     if action == ActionType.ACTION_UP:
         if cursor_set:
             return rl.is_key_released(rl.KeyboardKey.KEY_UP) or rl.is_gamepad_button_released(gamepad_index, rl.GamepadButton.GAMEPAD_BUTTON_RIGHT_FACE_UP)
@@ -58,7 +58,7 @@ def is_action_released(action: ActionType, cursor_set: bool) -> bool:
     return rl.is_key_released(rl.KeyboardKey.KEY_SPACE) or rl.is_gamepad_button_released(gamepad_index, rl.GamepadButton.GAMEPAD_BUTTON_RIGHT_FACE_DOWN)
 
 
-def is_action_down(action: ActionType, cursor_set: bool) -> bool:
+function is_action_down(action: ActionType, cursor_set: bool) -> bool:
     if action == ActionType.ACTION_UP:
         if cursor_set:
             return rl.is_key_down(rl.KeyboardKey.KEY_UP) or rl.is_gamepad_button_down(gamepad_index, rl.GamepadButton.GAMEPAD_BUTTON_RIGHT_FACE_UP)
@@ -80,7 +80,7 @@ def is_action_down(action: ActionType, cursor_set: bool) -> bool:
     return rl.is_key_down(rl.KeyboardKey.KEY_SPACE) or rl.is_gamepad_button_down(gamepad_index, rl.GamepadButton.GAMEPAD_BUTTON_RIGHT_FACE_DOWN)
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Input Actions")
     defer rl.close_window()
 

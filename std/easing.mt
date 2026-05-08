@@ -4,49 +4,49 @@ import std.libm as libm
 import std.math as math
 
 
-pub def none(time: float, start: float, change: float, duration: float) -> float:
+public function none(time: float, start: float, change: float, duration: float) -> float:
     return start
 
 
-pub def linear_none(time: float, start: float, change: float, duration: float) -> float:
+public function linear_none(time: float, start: float, change: float, duration: float) -> float:
     return change * time / duration + start
 
 
-pub def linear_in(time: float, start: float, change: float, duration: float) -> float:
+public function linear_in(time: float, start: float, change: float, duration: float) -> float:
     return change * time / duration + start
 
 
-pub def linear_out(time: float, start: float, change: float, duration: float) -> float:
+public function linear_out(time: float, start: float, change: float, duration: float) -> float:
     return change * time / duration + start
 
 
-pub def linear_in_out(time: float, start: float, change: float, duration: float) -> float:
+public function linear_in_out(time: float, start: float, change: float, duration: float) -> float:
     return change * time / duration + start
 
 
-pub def sine_in(time: float, start: float, change: float, duration: float) -> float:
+public function sine_in(time: float, start: float, change: float, duration: float) -> float:
     return -change * libm.cosf(time / duration * (math.pi / 2.0)) + change + start
 
 
-pub def sine_out(time: float, start: float, change: float, duration: float) -> float:
+public function sine_out(time: float, start: float, change: float, duration: float) -> float:
     return change * libm.sinf(time / duration * (math.pi / 2.0)) + start
 
 
-pub def sine_in_out(time: float, start: float, change: float, duration: float) -> float:
+public function sine_in_out(time: float, start: float, change: float, duration: float) -> float:
     return -change / 2.0 * (libm.cosf(math.pi * time / duration) - 1.0) + start
 
 
-pub def circ_in(time: float, start: float, change: float, duration: float) -> float:
+public function circ_in(time: float, start: float, change: float, duration: float) -> float:
     let normalized = time / duration
     return -change * (libm.sqrtf(1.0 - normalized * normalized) - 1.0) + start
 
 
-pub def circ_out(time: float, start: float, change: float, duration: float) -> float:
+public function circ_out(time: float, start: float, change: float, duration: float) -> float:
     let normalized = time / duration - 1.0
     return change * libm.sqrtf(1.0 - normalized * normalized) + start
 
 
-pub def circ_in_out(time: float, start: float, change: float, duration: float) -> float:
+public function circ_in_out(time: float, start: float, change: float, duration: float) -> float:
     var normalized = time / (duration / 2.0)
     if normalized < 1.0:
         return -change / 2.0 * (libm.sqrtf(1.0 - normalized * normalized) - 1.0) + start
@@ -55,17 +55,17 @@ pub def circ_in_out(time: float, start: float, change: float, duration: float) -
     return change / 2.0 * (libm.sqrtf(1.0 - normalized * normalized) + 1.0) + start
 
 
-pub def quad_in(time: float, start: float, change: float, duration: float) -> float:
+public function quad_in(time: float, start: float, change: float, duration: float) -> float:
     let normalized = time / duration
     return change * normalized * normalized + start
 
 
-pub def quad_out(time: float, start: float, change: float, duration: float) -> float:
+public function quad_out(time: float, start: float, change: float, duration: float) -> float:
     let normalized = time / duration
     return -change * normalized * (normalized - 2.0) + start
 
 
-pub def quad_in_out(time: float, start: float, change: float, duration: float) -> float:
+public function quad_in_out(time: float, start: float, change: float, duration: float) -> float:
     let normalized = time / (duration / 2.0)
     if normalized < 1.0:
         return change / 2.0 * normalized * normalized + start
@@ -73,17 +73,17 @@ pub def quad_in_out(time: float, start: float, change: float, duration: float) -
     return -change / 2.0 * ((normalized - 1.0) * (normalized - 3.0) - 1.0) + start
 
 
-pub def cubic_in(time: float, start: float, change: float, duration: float) -> float:
+public function cubic_in(time: float, start: float, change: float, duration: float) -> float:
     let normalized = time / duration
     return change * normalized * normalized * normalized + start
 
 
-pub def cubic_out(time: float, start: float, change: float, duration: float) -> float:
+public function cubic_out(time: float, start: float, change: float, duration: float) -> float:
     let normalized = time / duration - 1.0
     return change * (normalized * normalized * normalized + 1.0) + start
 
 
-pub def cubic_in_out(time: float, start: float, change: float, duration: float) -> float:
+public function cubic_in_out(time: float, start: float, change: float, duration: float) -> float:
     var normalized = time / (duration / 2.0)
     if normalized < 1.0:
         return change / 2.0 * normalized * normalized * normalized + start
@@ -92,21 +92,21 @@ pub def cubic_in_out(time: float, start: float, change: float, duration: float) 
     return change / 2.0 * (normalized * normalized * normalized + 2.0) + start
 
 
-pub def expo_in(time: float, start: float, change: float, duration: float) -> float:
+public function expo_in(time: float, start: float, change: float, duration: float) -> float:
     if time == 0.0:
         return start
 
     return change * libm.powf(2.0, 10.0 * (time / duration - 1.0)) + start
 
 
-pub def expo_out(time: float, start: float, change: float, duration: float) -> float:
+public function expo_out(time: float, start: float, change: float, duration: float) -> float:
     if time == duration:
         return start + change
 
     return change * (-libm.powf(2.0, -10.0 * time / duration) + 1.0) + start
 
 
-pub def expo_in_out(time: float, start: float, change: float, duration: float) -> float:
+public function expo_in_out(time: float, start: float, change: float, duration: float) -> float:
     if time == 0.0:
         return start
     if time == duration:
@@ -119,19 +119,19 @@ pub def expo_in_out(time: float, start: float, change: float, duration: float) -
     return change / 2.0 * (-libm.powf(2.0, -10.0 * (normalized - 1.0)) + 2.0) + start
 
 
-pub def back_in(time: float, start: float, change: float, duration: float) -> float:
+public function back_in(time: float, start: float, change: float, duration: float) -> float:
     let overshoot: float = 1.70158
     let normalized = time / duration
     return change * normalized * normalized * ((overshoot + 1.0) * normalized - overshoot) + start
 
 
-pub def back_out(time: float, start: float, change: float, duration: float) -> float:
+public function back_out(time: float, start: float, change: float, duration: float) -> float:
     let overshoot: float = 1.70158
     let normalized = time / duration - 1.0
     return change * (normalized * normalized * ((overshoot + 1.0) * normalized + overshoot) + 1.0) + start
 
 
-pub def back_in_out(time: float, start: float, change: float, duration: float) -> float:
+public function back_in_out(time: float, start: float, change: float, duration: float) -> float:
     let scaled_overshoot: float = 1.70158 * 1.525
     var normalized = time / (duration / 2.0)
     if normalized < 1.0:
@@ -141,7 +141,7 @@ pub def back_in_out(time: float, start: float, change: float, duration: float) -
     return change / 2.0 * (normalized * normalized * ((scaled_overshoot + 1.0) * normalized + scaled_overshoot) + 2.0) + start
 
 
-pub def bounce_out(time: float, start: float, change: float, duration: float) -> float:
+public function bounce_out(time: float, start: float, change: float, duration: float) -> float:
     var normalized = time / duration
 
     if normalized < 1.0 / 2.75:
@@ -157,18 +157,18 @@ pub def bounce_out(time: float, start: float, change: float, duration: float) ->
     return change * (7.5625 * normalized * normalized + 0.984375) + start
 
 
-pub def bounce_in(time: float, start: float, change: float, duration: float) -> float:
+public function bounce_in(time: float, start: float, change: float, duration: float) -> float:
     return change - bounce_out(duration - time, 0.0, change, duration) + start
 
 
-pub def bounce_in_out(time: float, start: float, change: float, duration: float) -> float:
+public function bounce_in_out(time: float, start: float, change: float, duration: float) -> float:
     if time < duration / 2.0:
         return bounce_in(time * 2.0, 0.0, change, duration) * 0.5 + start
 
     return bounce_out(time * 2.0 - duration, 0.0, change, duration) * 0.5 + change * 0.5 + start
 
 
-pub def elastic_in(time: float, start: float, change: float, duration: float) -> float:
+public function elastic_in(time: float, start: float, change: float, duration: float) -> float:
     if time == 0.0:
         return start
 
@@ -185,7 +185,7 @@ pub def elastic_in(time: float, start: float, change: float, duration: float) ->
     return -(post_fix * libm.sinf((normalized * duration - shift) * math.tau / period)) + start
 
 
-pub def elastic_out(time: float, start: float, change: float, duration: float) -> float:
+public function elastic_out(time: float, start: float, change: float, duration: float) -> float:
     if time == 0.0:
         return start
 
@@ -200,7 +200,7 @@ pub def elastic_out(time: float, start: float, change: float, duration: float) -
     return amplitude * libm.powf(2.0, -10.0 * normalized) * libm.sinf((normalized * duration - shift) * math.tau / period) + change + start
 
 
-pub def elastic_in_out(time: float, start: float, change: float, duration: float) -> float:
+public function elastic_in_out(time: float, start: float, change: float, duration: float) -> float:
     if time == 0.0:
         return start
 

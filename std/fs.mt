@@ -7,7 +7,7 @@ import std.stdio as c
 import std.str as text
 import std.string as string
 
-pub enum Error: ubyte
+public enum Error: ubyte
     open_failed = 1
     read_failed = 2
     write_failed = 3
@@ -15,7 +15,7 @@ pub enum Error: ubyte
     invalid_utf8 = 5
 
 
-pub def exists(path: str) -> bool:
+public function exists(path: str) -> bool:
     let file = c.open(path, "rb")
     if file == null:
         return false
@@ -24,7 +24,7 @@ pub def exists(path: str) -> bool:
     return true
 
 
-pub def read_bytes(path: str) -> status.Status[bytes.Buffer, Error]:
+public function read_bytes(path: str) -> status.Status[bytes.Buffer, Error]:
     let file = c.open(path, "rb")
     if file == null:
         return status.Status[bytes.Buffer, Error].err(error= Error.open_failed)
@@ -50,7 +50,7 @@ pub def read_bytes(path: str) -> status.Status[bytes.Buffer, Error]:
     return status.Status[bytes.Buffer, Error].ok(value= result)
 
 
-pub def read_text(path: str) -> status.Status[string.String, Error]:
+public function read_text(path: str) -> status.Status[string.String, Error]:
     let loaded = read_bytes(path)
     match loaded:
         status.Status.err as payload:
@@ -71,7 +71,7 @@ pub def read_text(path: str) -> status.Status[string.String, Error]:
                     return status.Status[string.String, Error].ok(value= result)
 
 
-pub def write_bytes(path: str, data: span[ubyte]) -> status.Status[bool, Error]:
+public function write_bytes(path: str, data: span[ubyte]) -> status.Status[bool, Error]:
     let file = c.open(path, "wb")
     if file == null:
         return status.Status[bool, Error].err(error= Error.open_failed)
@@ -90,5 +90,5 @@ pub def write_bytes(path: str, data: span[ubyte]) -> status.Status[bool, Error]:
     return status.Status[bool, Error].ok(value= true)
 
 
-pub def write_text(path: str, data: str) -> status.Status[bool, Error]:
+public function write_text(path: str, data: str) -> status.Status[bool, Error]:
     return write_bytes(path, text.as_byte_span(data))

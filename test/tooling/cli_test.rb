@@ -23,8 +23,8 @@ class MilkTeaCliTest < Minitest::Test
       FileUtils.mkdir_p(c_dir)
 
       File.write(File.join(c_dir, "sdl3.mt"), <<~MT)
-        extern module std.c.sdl3:
-            extern def SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
+        external module std.c.sdl3:
+            external function SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
       MT
 
       source_path = File.join(dir, "std", "sdl3.mt")
@@ -34,7 +34,7 @@ class MilkTeaCliTest < Minitest::Test
 
         import std.c.sdl3 as c
 
-        pub foreign def set_window_fill_document(window: ptr[void], fill: bool) -> bool = c.SDL_SetWindowFillDocument
+        public foreign function set_window_fill_document(window: ptr[void], fill: bool) -> bool = c.SDL_SetWindowFillDocument
       MT
       File.write(source_path, source)
 
@@ -65,7 +65,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal "", err.string
     assert_includes out.string, "module demo.bouncing_ball"
     assert_includes out.string, "methods Ball:"
-    assert_includes out.string, "def main() -> int:"
+    assert_includes out.string, "function main() -> int:"
   end
 
   def test_fmt_command_prints_formatted_source
@@ -77,13 +77,13 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal 0, status
     assert_equal "", err.string
     assert_includes out.string, "module demo.bouncing_ball"
-    assert_includes out.string, "def main() -> int:"
+    assert_includes out.string, "function main() -> int:"
   end
 
   def test_fmt_command_check_mode_reports_changes
     Dir.mktmpdir("milk-tea-cli-fmt-check") do |dir|
       path = File.join(dir, "sample.mt")
-      File.write(path, "module demo.fmt\n\ndef main()->int:\n    return 0\n")
+      File.write(path, "module demo.fmt\n\nfunction main()->int:\n    return 0\n")
       out = StringIO.new
       err = StringIO.new
 
@@ -98,7 +98,7 @@ class MilkTeaCliTest < Minitest::Test
   def test_fmt_command_write_mode_rewrites_file
     Dir.mktmpdir("milk-tea-cli-fmt-write") do |dir|
       path = File.join(dir, "sample.mt")
-      File.write(path, "module demo.fmt\n\ndef main()->int:\n    return 0\n")
+      File.write(path, "module demo.fmt\n\nfunction main()->int:\n    return 0\n")
       out = StringIO.new
       err = StringIO.new
 
@@ -107,7 +107,7 @@ class MilkTeaCliTest < Minitest::Test
       assert_equal 0, status
       assert_equal "", err.string
       assert_match(/formatted/, out.string)
-      assert_equal "module demo.fmt\n\ndef main() -> int:\n    return 0\n", File.read(path)
+      assert_equal "module demo.fmt\n\nfunction main() -> int:\n    return 0\n", File.read(path)
     end
   end
 
@@ -165,7 +165,7 @@ class MilkTeaCliTest < Minitest::Test
       File.write(path, <<~MT)
         module demo.lint
 
-        def main() -> int:
+        function main() -> int:
             let unused = 1
             return 0
       MT
@@ -186,7 +186,7 @@ class MilkTeaCliTest < Minitest::Test
       File.write(path, <<~MT)
         module demo.lint
 
-        def main() -> int:
+        function main() -> int:
             let used = 1
             return used
       MT
@@ -248,7 +248,7 @@ class MilkTeaCliTest < Minitest::Test
 
     assert_equal 1, status
     assert_equal "", out.string
-    assert_match(/cannot emit C for extern module std\.c\.raylib/, err.string)
+    assert_match(/cannot emit C for external module std\.c\.raylib/, err.string)
   end
 
   def test_build_command_compiles_with_fake_compiler
@@ -293,7 +293,7 @@ class MilkTeaCliTest < Minitest::Test
       File.write(File.join(source_dir, "main.mt"), <<~MT)
         module demo.clean
 
-        def main() -> int:
+        function main() -> int:
             return 0
       MT
       File.write(File.join(dir, "package.toml"), <<~TOML)
@@ -376,7 +376,7 @@ class MilkTeaCliTest < Minitest::Test
       assert_equal "", err.string
       assert_match(/generated .*sample\.h -> .*sample\.mt/, out.string)
       assert File.exist?(output_path)
-      assert_match(/extern module std\.c\.sample:/, File.read(output_path))
+      assert_match(/external module std\.c\.sample:/, File.read(output_path))
     end
   end
 
@@ -506,7 +506,7 @@ class MilkTeaCliTest < Minitest::Test
       File.write(path, <<~MT)
         module demo.lint
 
-        def compute(x: int) -> int:
+        function compute(x: int) -> int:
             let unused = 1
             return 0
       MT
@@ -528,7 +528,7 @@ class MilkTeaCliTest < Minitest::Test
       File.write(path, <<~MT)
         module demo.lint
 
-        def compute(x: int) -> int:
+        function compute(x: int) -> int:
             let unused = 1
             return 0
       MT
@@ -549,7 +549,7 @@ class MilkTeaCliTest < Minitest::Test
       File.write(path, <<~MT)
         module demo.lint
 
-        def compute() -> int:
+        function compute() -> int:
             let _x = 1
       MT
       out = StringIO.new
@@ -567,14 +567,14 @@ class MilkTeaCliTest < Minitest::Test
       File.write(File.join(dir, "a.mt"), <<~MT)
         module demo.a
 
-        def main() -> int:
+        function main() -> int:
             let unused_a = 1
             return 0
       MT
       File.write(File.join(dir, "b.mt"), <<~MT)
         module demo.b
 
-        def main() -> int:
+        function main() -> int:
             let unused_b = 1
             return 0
       MT
@@ -594,7 +594,7 @@ class MilkTeaCliTest < Minitest::Test
       File.write(File.join(dir, "clean.mt"), <<~MT)
         module demo.clean
 
-        def main() -> int:
+        function main() -> int:
             return 0
       MT
       out = StringIO.new
@@ -613,7 +613,7 @@ class MilkTeaCliTest < Minitest::Test
       File.write(path, <<~MT)
         module demo.lint
 
-        def main() -> int:
+        function main() -> int:
             var x = 1
             return x
       MT
@@ -634,7 +634,7 @@ class MilkTeaCliTest < Minitest::Test
       File.write(path, <<~MT)
         module demo.lint
 
-        def main() -> int:
+        function main() -> int:
             let unused = 1
             return 0
       MT
@@ -658,7 +658,7 @@ class MilkTeaCliTest < Minitest::Test
       File.write(path, <<~MT)
         module demo.lint
 
-        def main() -> int:
+        function main() -> int:
             return 0
       MT
       out = StringIO.new
@@ -678,7 +678,7 @@ class MilkTeaCliTest < Minitest::Test
       File.write(path, <<~MT)
         module demo.lint
 
-        def main() -> int:
+        function main() -> int:
             let a = 1
             let b = 2
             return 0
@@ -698,7 +698,7 @@ class MilkTeaCliTest < Minitest::Test
       already_ok  = File.join(dir, "b.mt")
 
       # Unformatted: missing module header, but valid enough for formatter
-      File.write(unformatted, "module demo.fmt\ndef  main()->int:\n    return 0\n")
+      File.write(unformatted, "module demo.fmt\nfunction  main()->int:\n    return 0\n")
       File.write(already_ok,  "module demo.fmt\n")
 
       out = StringIO.new
@@ -715,7 +715,7 @@ class MilkTeaCliTest < Minitest::Test
   def test_fmt_command_directory_write_mode
     Dir.mktmpdir("milk-tea-cli-fmt-dir-write") do |dir|
       path = File.join(dir, "sample.mt")
-      File.write(path, "module demo.fmt\ndef  main()->int:\n    return 0\n")
+      File.write(path, "module demo.fmt\nfunction  main()->int:\n    return 0\n")
 
       out = StringIO.new
       err = StringIO.new

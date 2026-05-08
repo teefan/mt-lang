@@ -12,7 +12,7 @@ const fovy_perspective: float = 45.0
 const width_orthographic: float = 10.0
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

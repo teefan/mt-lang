@@ -31,7 +31,7 @@ const negative_rate_format: cstr = c"Particles every %d frames | Type: %s"
 const positive_rate_format: cstr = c"%d Particles per frame | Type: %s"
 
 
-def particle_type_name(particle_type: int) -> cstr:
+function particle_type_name(particle_type: int) -> cstr:
     if particle_type == ParticleType.WATER:
         return c"WATER"
     if particle_type == ParticleType.SMOKE:
@@ -39,11 +39,11 @@ def particle_type_name(particle_type: int) -> cstr:
     return c"FIRE"
 
 
-def next_buffer_index(index: int) -> int:
+function next_buffer_index(index: int) -> int:
     return (index + 1) % max_particles
 
 
-def add_to_circular_buffer(head: ref[int], tail: int) -> int:
+function add_to_circular_buffer(head: ref[int], tail: int) -> int:
     if next_buffer_index(read(head)) != tail:
         let particle_index = read(head)
         read(head) = next_buffer_index(read(head))
@@ -51,7 +51,7 @@ def add_to_circular_buffer(head: ref[int], tail: int) -> int:
     return -1
 
 
-def emit_particle(particles: ptr[Particle], head: ref[int], tail: int, emitter_position: rl.Vector2, particle_type: int) -> void:
+function emit_particle(particles: ptr[Particle], head: ref[int], tail: int, emitter_position: rl.Vector2, particle_type: int) -> void:
     let particle_index = add_to_circular_buffer(head, tail)
     if particle_index < 0:
         return
@@ -82,7 +82,7 @@ def emit_particle(particles: ptr[Particle], head: ref[int], tail: int, emitter_p
     return
 
 
-def update_particles(particles: ptr[Particle], head: int, tail: int, width: int, height: int) -> void:
+function update_particles(particles: ptr[Particle], head: int, tail: int, width: int, height: int) -> void:
     var particles_view = sp.from_ptr[Particle](particles, ptr_uint<-max_particles)
     var index = tail
     while index != head:
@@ -125,14 +125,14 @@ def update_particles(particles: ptr[Particle], head: int, tail: int, width: int,
     return
 
 
-def update_circular_buffer(particles: ptr[Particle], head: int, tail: ref[int]) -> void:
+function update_circular_buffer(particles: ptr[Particle], head: int, tail: ref[int]) -> void:
     let particles_view = sp.from_ptr[Particle](particles, ptr_uint<-max_particles)
     while read(tail) != head and not particles_view[read(tail)].alive:
         read(tail) = next_buffer_index(read(tail))
     return
 
 
-def draw_particles(particles: ptr[Particle], head: int, tail: int) -> void:
+function draw_particles(particles: ptr[Particle], head: int, tail: int) -> void:
     let particles_view = sp.from_ptr[Particle](particles, ptr_uint<-max_particles)
     var index = tail
     while index != head:
@@ -142,7 +142,7 @@ def draw_particles(particles: ptr[Particle], head: int, tail: int) -> void:
     return
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

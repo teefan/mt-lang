@@ -142,7 +142,7 @@ module MilkTea
         # Flush any comments that appear before the module header line
         flush_leading_comments_before(source_file.line) if source_file.line
         module_name = source_file.module_name ? source_file.module_name.to_s : "(anonymous)"
-        header = source_file.module_kind == :extern_module ? "extern module #{module_name}:" : "module #{module_name}"
+        header = source_file.module_kind == :extern_module ? "external module #{module_name}:" : "module #{module_name}"
         line(header)
         # Inline trailing comment on the module header line itself
         if source_file.line && @comment_map.key?(source_file.line)
@@ -311,7 +311,7 @@ module MilkTea
         when AST::FunctionDef
           emit_function(declaration)
         when AST::ExternFunctionDecl
-          line("#{render_function_signature(declaration, prefix: 'extern ')}")
+          line("#{render_function_signature(declaration, prefix: 'external ')}")
         when AST::ForeignFunctionDecl
           line("#{render_function_signature(declaration)} = #{render_expression(declaration.mapping)}")
         else
@@ -351,16 +351,16 @@ module MilkTea
         signature_prefix = if function.is_a?(AST::MethodDef)
                              case function.kind
                              when :edit
-                               "edit def "
+                               "edit function "
                              when :static
-                               "static def "
+                               "static function "
                              else
-                               "def "
+                               "function "
                              end
                            elsif function.is_a?(AST::ForeignFunctionDecl)
-                             "foreign def "
+                             "foreign function "
                            else
-                             "def "
+                             "function "
                            end
         text = +"#{prefix}#{visibility_prefix(function)}#{signature_prefix}#{function.name}#{render_type_params(function.type_params)}(#{render_signature_params(function)})"
         text << " -> #{render_type(function.return_type)}" if function.return_type
@@ -376,7 +376,7 @@ module MilkTea
                        declaration_or_visibility.visibility
                      end
 
-        visibility == :public ? "pub " : ""
+        visibility == :public ? "public " : ""
       end
 
       def render_signature_params(function)

@@ -18,13 +18,13 @@ const smoke_path: cstr = c"../resources/spark_flame.png"
 const help_text: cstr = c"PRESS SPACE to CHANGE BLENDING MODE"
 
 
-def blend_label(blend_mode: int) -> cstr:
+function blend_label(blend_mode: int) -> cstr:
     if blend_mode == rl.BlendMode.BLEND_ALPHA:
         return c"ALPHA BLENDING"
     return c"ADDITIVE BLENDING"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

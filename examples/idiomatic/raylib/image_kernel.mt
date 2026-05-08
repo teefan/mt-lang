@@ -7,7 +7,7 @@ const screen_height: int = 450
 const cat_path: str = "../../raylib/resources/cat.png"
 
 
-def normalize_kernel(kernel: array[float, 9]) -> array[float, 9]:
+function normalize_kernel(kernel: array[float, 9]) -> array[float, 9]:
     var values = kernel
     var sum: float = 0.0
     for index in 0..9:
@@ -20,7 +20,7 @@ def normalize_kernel(kernel: array[float, 9]) -> array[float, 9]:
     return values
 
 
-def apply_kernel(image: rl.Image, kernel: array[float, 9], passes: int) -> rl.Image:
+function apply_kernel(image: rl.Image, kernel: array[float, 9], passes: int) -> rl.Image:
     var result = image
     var kernel_values = kernel
     for index in 0..passes:
@@ -29,7 +29,7 @@ def apply_kernel(image: rl.Image, kernel: array[float, 9], passes: int) -> rl.Im
     return result
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Image Kernel")
     defer rl.close_window()
 

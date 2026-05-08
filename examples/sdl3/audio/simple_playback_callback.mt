@@ -18,14 +18,14 @@ var stream: ptr[c.SDL_AudioStream]? = null
 var current_sine_sample: int = 0
 
 
-def min_int(lhs: int, rhs: int) -> int:
+function min_int(lhs: int, rhs: int) -> int:
     if lhs < rhs:
         return lhs
 
     return rhs
 
 
-def feed_audio_stream_more(userdata: ptr[void], astream: ptr[c.SDL_AudioStream], additional_amount: int, total_amount: int) -> void:
+function feed_audio_stream_more(userdata: ptr[void], astream: ptr[c.SDL_AudioStream], additional_amount: int, total_amount: int) -> void:
     var remaining_samples = additional_amount / int<-size_of(float)
 
     while remaining_samples > 0:
@@ -42,7 +42,7 @@ def feed_audio_stream_more(userdata: ptr[void], astream: ptr[c.SDL_AudioStream],
         remaining_samples -= total
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -52,12 +52,12 @@ def pump_events() -> bool:
     return true
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     c.SDL_RenderClear(renderer)
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     var spec = zero[c.SDL_AudioSpec]
 
     c.SDL_SetAppMetadata(c"Example Simple Audio Playback Callback", c"1.0", c"com.example.audio-simple-playback-callback")
@@ -93,5 +93,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

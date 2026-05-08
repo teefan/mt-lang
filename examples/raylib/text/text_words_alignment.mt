@@ -19,7 +19,7 @@ const help_text: cstr = c"Use Arrow Keys to change the text alignment"
 const align_format: cstr = c"Alignment: Horizontal = %s, Vertical = %s"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

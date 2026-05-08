@@ -4,19 +4,19 @@ import std.libm as libm
 import std.c.raylib as rl
 import std.math as math
 
-pub type Vector2 = rl.Vector2
-pub type Vector3 = rl.Vector3
-pub type Matrix = rl.Matrix
-pub type Quaternion = rl.Quaternion
-pub type Color = rl.Color
+public type Vector2 = rl.Vector2
+public type Vector3 = rl.Vector3
+public type Matrix = rl.Matrix
+public type Quaternion = rl.Quaternion
+public type Color = rl.Color
 
-pub const deg2rad: float = math.deg2rad
-pub const rad2deg: float = math.rad2deg
+public const deg2rad: float = math.deg2rad
+public const rad2deg: float = math.rad2deg
 const quaternion_slerp_epsilon: float = 0.000001
 const quaternion_slerp_linear_threshold: float = 0.95
 
 
-pub def clamp(value: float, min_value: float, max_value: float) -> float:
+public function clamp(value: float, min_value: float, max_value: float) -> float:
     if value < min_value:
         return min_value
     if value > max_value:
@@ -24,95 +24,95 @@ pub def clamp(value: float, min_value: float, max_value: float) -> float:
     return value
 
 
-pub def lerp(start: float, finish: float, amount: float) -> float:
+public function lerp(start: float, finish: float, amount: float) -> float:
     return start + (finish - start) * amount
 
 
-pub def abs(value: float) -> float:
+public function abs(value: float) -> float:
     return libm.fabsf(value)
 
 
-pub def ceil(value: float) -> float:
+public function ceil(value: float) -> float:
     return libm.ceilf(value)
 
 
-pub def floor(value: float) -> float:
+public function floor(value: float) -> float:
     return libm.floorf(value)
 
 
-pub def trunc(value: float) -> float:
+public function trunc(value: float) -> float:
     return libm.truncf(value)
 
 
-pub def sqrt(value: float) -> float:
+public function sqrt(value: float) -> float:
     return libm.sqrtf(value)
 
 
-pub def sin(value: float) -> float:
+public function sin(value: float) -> float:
     return libm.sinf(value)
 
 
-pub def cos(value: float) -> float:
+public function cos(value: float) -> float:
     return libm.cosf(value)
 
 
-pub def tan(value: float) -> float:
+public function tan(value: float) -> float:
     return libm.tanf(value)
 
 
-pub def atan2(y: float, x: float) -> float:
+public function atan2(y: float, x: float) -> float:
     return libm.atan2f(y, x)
 
 
-pub def acos(value: float) -> float:
+public function acos(value: float) -> float:
     return libm.acosf(value)
 
 methods rl.Color:
-    pub static def from_hsv(hue: float, saturation: float, value: float) -> Color:
+    public static function from_hsv(hue: float, saturation: float, value: float) -> Color:
         return rl.ColorFromHSV(hue, saturation, value)
 
 methods rl.Vector2:
-    pub static def zero() -> Vector2:
+    public static function zero() -> Vector2:
         return rl.Vector2(x = 0.0, y = 0.0)
 
 
-    pub static def one() -> Vector2:
+    public static function one() -> Vector2:
         return rl.Vector2(x = 1.0, y = 1.0)
 
 
-    pub def add(other: Vector2) -> Vector2:
+    public function add(other: Vector2) -> Vector2:
         return rl.Vector2(x = this.x + other.x, y = this.y + other.y)
 
 
-    pub def subtract(other: Vector2) -> Vector2:
+    public function subtract(other: Vector2) -> Vector2:
         return rl.Vector2(x = this.x - other.x, y = this.y - other.y)
 
 
-    pub def scale(factor: float) -> Vector2:
+    public function scale(factor: float) -> Vector2:
         return rl.Vector2(x = this.x * factor, y = this.y * factor)
 
 
-    pub def multiply(other: Vector2) -> Vector2:
+    public function multiply(other: Vector2) -> Vector2:
         return rl.Vector2(x = this.x * other.x, y = this.y * other.y)
 
 
-    pub def length() -> float:
+    public function length() -> float:
         return libm.sqrtf(this.x * this.x + this.y * this.y)
 
 
-    pub def distance(other: Vector2) -> float:
+    public function distance(other: Vector2) -> float:
         let dx = this.x - other.x
         let dy = this.y - other.y
         return libm.sqrtf(dx * dx + dy * dy)
 
 
-    pub def angle(other: Vector2) -> float:
+    public function angle(other: Vector2) -> float:
         let dot = this.x * other.x + this.y * other.y
         let det = this.x * other.y - this.y * other.x
         return libm.atan2f(det, dot)
 
 
-    pub def normalize() -> Vector2:
+    public function normalize() -> Vector2:
         let length = this.length()
         if length > 0.0:
             let inv_length = 1.0 / length
@@ -120,7 +120,7 @@ methods rl.Vector2:
         return Vector2.zero()
 
 
-    pub def rotate(angle: float) -> Vector2:
+    public function rotate(angle: float) -> Vector2:
         let cos_angle = libm.cosf(angle)
         let sin_angle = libm.sinf(angle)
         return rl.Vector2(
@@ -129,49 +129,49 @@ methods rl.Vector2:
         )
 
 
-    pub def clamp(min_value: Vector2, max_value: Vector2) -> Vector2:
+    public function clamp(min_value: Vector2, max_value: Vector2) -> Vector2:
         return rl.Vector2(
             x = clamp(this.x, min_value.x, max_value.x),
             y = clamp(this.y, min_value.y, max_value.y),
         )
 
 methods rl.Vector3:
-    pub static def zero() -> Vector3:
+    public static function zero() -> Vector3:
         return rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 
 
-    pub static def one() -> Vector3:
+    public static function one() -> Vector3:
         return rl.Vector3(x = 1.0, y = 1.0, z = 1.0)
 
 
-    pub def add(other: Vector3) -> Vector3:
+    public function add(other: Vector3) -> Vector3:
         return rl.Vector3(x = this.x + other.x, y = this.y + other.y, z = this.z + other.z)
 
 
-    pub def subtract(other: Vector3) -> Vector3:
+    public function subtract(other: Vector3) -> Vector3:
         return rl.Vector3(x = this.x - other.x, y = this.y - other.y, z = this.z - other.z)
 
 
-    pub def scale(factor: float) -> Vector3:
+    public function scale(factor: float) -> Vector3:
         return rl.Vector3(x = this.x * factor, y = this.y * factor, z = this.z * factor)
 
 
-    pub def dot(other: Vector3) -> float:
+    public function dot(other: Vector3) -> float:
         return this.x * other.x + this.y * other.y + this.z * other.z
 
 
-    pub def length() -> float:
+    public function length() -> float:
         return libm.sqrtf(this.x * this.x + this.y * this.y + this.z * this.z)
 
 
-    pub def distance(other: Vector3) -> float:
+    public function distance(other: Vector3) -> float:
         let dx = other.x - this.x
         let dy = other.y - this.y
         let dz = other.z - this.z
         return libm.sqrtf(dx * dx + dy * dy + dz * dz)
 
 
-    pub def cross(other: Vector3) -> Vector3:
+    public function cross(other: Vector3) -> Vector3:
         return rl.Vector3(
             x = this.y * other.z - this.z * other.y,
             y = this.z * other.x - this.x * other.z,
@@ -179,18 +179,18 @@ methods rl.Vector3:
         )
 
 
-    pub def angle(other: Vector3) -> float:
+    public function angle(other: Vector3) -> float:
         let cross = this.cross(other)
         let length = cross.length()
         let dot = this.dot(other)
         return libm.atan2f(length, dot)
 
 
-    pub def negate() -> Vector3:
+    public function negate() -> Vector3:
         return rl.Vector3(x = -this.x, y = -this.y, z = -this.z)
 
 
-    pub def normalize() -> Vector3:
+    public function normalize() -> Vector3:
         let length = this.length()
         if length != 0.0:
             let inv_length = 1.0 / length
@@ -198,7 +198,7 @@ methods rl.Vector3:
         return this
 
 
-    pub def lerp(other: Vector3, amount: float) -> Vector3:
+    public function lerp(other: Vector3, amount: float) -> Vector3:
         return rl.Vector3(
             x = lerp(this.x, other.x, amount),
             y = lerp(this.y, other.y, amount),
@@ -206,7 +206,7 @@ methods rl.Vector3:
         )
 
 
-    pub def rotate_by_axis_angle(axis: Vector3, angle: float) -> Vector3:
+    public function rotate_by_axis_angle(axis: Vector3, angle: float) -> Vector3:
         let normalized_axis = axis.normalize()
         let half_angle = angle / 2.0
         let sin_half_angle = libm.sinf(half_angle)
@@ -223,7 +223,7 @@ methods rl.Vector3:
         return this.add(scaled_wv).add(scaled_wwv)
 
 
-    pub def transform(mat: Matrix) -> Vector3:
+    public function transform(mat: Matrix) -> Vector3:
         let x = this.x
         let y = this.y
         let z = this.z
@@ -234,7 +234,7 @@ methods rl.Vector3:
         )
 
 methods rl.Matrix:
-    pub static def identity() -> Matrix:
+    public static function identity() -> Matrix:
         return rl.Matrix(
             m0 = 1.0,
             m4 = 0.0,
@@ -255,7 +255,7 @@ methods rl.Matrix:
         )
 
 
-    pub def multiply(other: Matrix) -> Matrix:
+    public function multiply(other: Matrix) -> Matrix:
         return rl.Matrix(
             m0 = this.m0 * other.m0 + this.m1 * other.m4 + this.m2 * other.m8 + this.m3 * other.m12,
             m4 = this.m4 * other.m0 + this.m5 * other.m4 + this.m6 * other.m8 + this.m7 * other.m12,
@@ -276,7 +276,7 @@ methods rl.Matrix:
         )
 
 
-    pub def transpose() -> Matrix:
+    public function transpose() -> Matrix:
         return rl.Matrix(
             m0 = this.m0,
             m4 = this.m1,
@@ -297,7 +297,7 @@ methods rl.Matrix:
         )
 
 
-    pub def invert() -> Matrix:
+    public function invert() -> Matrix:
         let a00 = this.m0
         let a01 = this.m1
         let a02 = this.m2
@@ -349,7 +349,7 @@ methods rl.Matrix:
         )
 
 
-    pub static def translate(x: float, y: float, z: float) -> Matrix:
+    public static function translate(x: float, y: float, z: float) -> Matrix:
         return rl.Matrix(
             m0 = 1.0,
             m4 = 0.0,
@@ -370,7 +370,7 @@ methods rl.Matrix:
         )
 
 
-    pub static def scale(x: float, y: float, z: float) -> Matrix:
+    public static function scale(x: float, y: float, z: float) -> Matrix:
         return rl.Matrix(
             m0 = x,
             m4 = 0.0,
@@ -391,7 +391,7 @@ methods rl.Matrix:
         )
 
 
-    pub static def rotate_z(angle: float) -> Matrix:
+    public static function rotate_z(angle: float) -> Matrix:
         let cosz = libm.cosf(angle)
         let sinz = libm.sinf(angle)
         return rl.Matrix(
@@ -414,7 +414,7 @@ methods rl.Matrix:
         )
 
 
-    pub static def rotate_xyz(angle: Vector3) -> Matrix:
+    public static function rotate_xyz(angle: Vector3) -> Matrix:
         let cosz = libm.cosf(-angle.z)
         let sinz = libm.sinf(-angle.z)
         let cosy = libm.cosf(-angle.y)
@@ -441,7 +441,7 @@ methods rl.Matrix:
         )
 
 
-    pub static def perspective(fov_y: float, aspect: float, near_plane: float, far_plane: float) -> Matrix:
+    public static function perspective(fov_y: float, aspect: float, near_plane: float, far_plane: float) -> Matrix:
         let top = near_plane * libm.tanf(fov_y * 0.5)
         let bottom = -top
         let right = top * aspect
@@ -469,7 +469,7 @@ methods rl.Matrix:
         )
 
 
-    pub static def ortho(left: float, right: float, bottom: float, top: float, near_plane: float, far_plane: float) -> Matrix:
+    public static function ortho(left: float, right: float, bottom: float, top: float, near_plane: float, far_plane: float) -> Matrix:
         let rl_width = right - left
         let tb = top - bottom
         let far_n = far_plane - near_plane
@@ -493,7 +493,7 @@ methods rl.Matrix:
         )
 
 
-    pub static def look_at(eye: Vector3, target: Vector3, up: Vector3) -> Matrix:
+    public static function look_at(eye: Vector3, target: Vector3, up: Vector3) -> Matrix:
         let vz = eye.subtract(target).normalize()
         let vx = up.cross(vz).normalize()
         let vy = vz.cross(vx)
@@ -517,15 +517,15 @@ methods rl.Matrix:
         )
 
 methods rl.Quaternion:
-    pub static def identity() -> Quaternion:
+    public static function identity() -> Quaternion:
         return rl.Vector4(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
 
 
-    pub def length() -> float:
+    public function length() -> float:
         return libm.sqrtf(this.x * this.x + this.y * this.y + this.z * this.z + this.w * this.w)
 
 
-    pub def normalize() -> Quaternion:
+    public function normalize() -> Quaternion:
         let length = this.length()
         if length == 0.0:
             return this
@@ -538,7 +538,7 @@ methods rl.Quaternion:
         )
 
 
-    pub def invert() -> Quaternion:
+    public function invert() -> Quaternion:
         let length_sq = this.x * this.x + this.y * this.y + this.z * this.z + this.w * this.w
         if length_sq == 0.0:
             return this
@@ -551,7 +551,7 @@ methods rl.Quaternion:
         )
 
 
-    pub def multiply(other: Quaternion) -> Quaternion:
+    public function multiply(other: Quaternion) -> Quaternion:
         return rl.Vector4(
             x = this.x * other.w + this.w * other.x + this.y * other.z - this.z * other.y,
             y = this.y * other.w + this.w * other.y + this.z * other.x - this.x * other.z,
@@ -560,7 +560,7 @@ methods rl.Quaternion:
         )
 
 
-    pub def to_matrix() -> Matrix:
+    public function to_matrix() -> Matrix:
         let a2 = this.x * this.x
         let b2 = this.y * this.y
         let c2 = this.z * this.z
@@ -590,7 +590,7 @@ methods rl.Quaternion:
         )
 
 
-    pub static def from_axis_angle(axis: Vector3, angle: float) -> Quaternion:
+    public static function from_axis_angle(axis: Vector3, angle: float) -> Quaternion:
         let axis_length = axis.length()
         if axis_length == 0.0:
             return Quaternion.identity()
@@ -606,7 +606,7 @@ methods rl.Quaternion:
         ).normalize()
 
 
-    pub static def from_matrix(mat: Matrix) -> Quaternion:
+    public static function from_matrix(mat: Matrix) -> Quaternion:
         let four_w_squared_minus_one = mat.m0 + mat.m5 + mat.m10
         let four_x_squared_minus_one = mat.m0 - mat.m5 - mat.m10
         let four_y_squared_minus_one = mat.m5 - mat.m0 - mat.m10
@@ -656,7 +656,7 @@ methods rl.Quaternion:
         )
 
 
-    pub def nlerp(other: Quaternion, amount: float) -> Quaternion:
+    public function nlerp(other: Quaternion, amount: float) -> Quaternion:
         return rl.Vector4(
             x = this.x + amount * (other.x - this.x),
             y = this.y + amount * (other.y - this.y),
@@ -665,7 +665,7 @@ methods rl.Quaternion:
         ).normalize()
 
 
-    pub def slerp(other: Quaternion, amount: float) -> Quaternion:
+    public function slerp(other: Quaternion, amount: float) -> Quaternion:
         var target = other
         var cos_half_theta = this.x * other.x + this.y * other.y + this.z * other.z + this.w * other.w
 

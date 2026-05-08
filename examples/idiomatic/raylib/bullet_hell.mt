@@ -16,7 +16,7 @@ const screen_height: int = 450
 const max_bullets: int = 500000
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Bullet Hell")
     defer rl.close_window()
 

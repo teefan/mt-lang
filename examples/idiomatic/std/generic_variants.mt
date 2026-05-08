@@ -11,7 +11,7 @@ variant Outcome[T, E]:
     err(error: E)
 
 
-def is_some(value: Maybe[int]) -> bool:
+function is_some(value: Maybe[int]) -> bool:
     match value:
         Maybe.some:
             return true
@@ -19,7 +19,7 @@ def is_some(value: Maybe[int]) -> bool:
             return false
 
 
-def value_or(value: Maybe[int], fallback: int) -> int:
+function value_or(value: Maybe[int], fallback: int) -> int:
     match value:
         Maybe.some as payload:
             return payload.value
@@ -27,7 +27,7 @@ def value_or(value: Maybe[int], fallback: int) -> int:
             return fallback
 
 
-def outcome_code(value: Outcome[int, str]) -> int:
+function outcome_code(value: Outcome[int, str]) -> int:
     match value:
         Outcome.ok:
             return 1
@@ -35,7 +35,7 @@ def outcome_code(value: Outcome[int, str]) -> int:
             return -1
 
 
-def outcome_has_error(value: Outcome[int, str]) -> bool:
+function outcome_has_error(value: Outcome[int, str]) -> bool:
     match value:
         Outcome.ok:
             return false
@@ -43,7 +43,7 @@ def outcome_has_error(value: Outcome[int, str]) -> bool:
             return payload.error.len > 0
 
 
-def main() -> int:
+function main() -> int:
     let empty: Maybe[int] = Maybe[int].none
     let seeded: Maybe[int] = Maybe[int].some(value= 41)
 

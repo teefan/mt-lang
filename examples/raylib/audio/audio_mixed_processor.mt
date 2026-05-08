@@ -18,19 +18,19 @@ var exponent: float = 1.0
 var average_volume: array[float, 400]
 
 
-def void_ptr_to_float(value: ptr[void]) -> ptr[float]:
+function void_ptr_to_float(value: ptr[void]) -> ptr[float]:
     unsafe:
         return ptr[float]<-value
 
 
-def signed_power(value: float) -> float:
+function signed_power(value: float) -> float:
     var sign: float = 1.0
     if value < 0.0:
         sign = -1.0
     return libm.powf(libm.fabsf(value), exponent) * sign
 
 
-def process_audio(buffer: ptr[void], frames: uint) -> void:
+function process_audio(buffer: ptr[void], frames: uint) -> void:
     let samples = void_ptr_to_float(buffer)
     let frame_count = int<-frames
     let frames_f = float<-frame_count
@@ -55,7 +55,7 @@ def process_audio(buffer: ptr[void], frames: uint) -> void:
     average_volume[average_volume_size - 1] = average
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -10,7 +10,7 @@ const screen_height: int = 450
 const texture_path: str = "../../raylib/resources/cat.png"
 
 
-def draw_texture_poly(texture: rl.Texture2D, center: rl.Vector2, points: array[rl.Vector2, 11], texcoords: array[rl.Vector2, 11], tint: rl.Color) -> void:
+function draw_texture_poly(texture: rl.Texture2D, center: rl.Vector2, points: array[rl.Vector2, 11], texcoords: array[rl.Vector2, 11], tint: rl.Color) -> void:
     rlgl.set_texture(texture.id)
     rlgl.begin(rlgl.RL_TRIANGLES)
     rlgl.color_4ub(tint.r, tint.g, tint.b, tint.a)
@@ -29,7 +29,7 @@ def draw_texture_poly(texture: rl.Texture2D, center: rl.Vector2, points: array[r
     rlgl.set_texture(uint<-0)
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Polygon Drawing")
     defer rl.close_window()
 

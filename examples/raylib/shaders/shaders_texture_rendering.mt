@@ -11,7 +11,7 @@ const shader_time_name: cstr = c"uTime"
 const window_title: cstr = c"raylib [shaders] example - texture rendering"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

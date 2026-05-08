@@ -34,7 +34,7 @@ var monkey_chars: Line = zero[Line]
 var monkeys: int = default_monkey_count
 
 
-def free_lines() -> void:
+function free_lines() -> void:
     let line_storage = lines
     if line_storage != null:
         for index in 0..rows:
@@ -55,7 +55,7 @@ def free_lines() -> void:
     cols = 0
 
 
-def on_window_size_changed() -> void:
+function on_window_size_changed() -> void:
     var w: int = 0
     var h: int = 0
 
@@ -88,7 +88,7 @@ def on_window_size_changed() -> void:
                 read(monkey_text + ptr_uint<-index) = uint<-32
 
 
-def step_progress() -> void:
+function step_progress() -> void:
     if progress_remaining == 0:
         return
 
@@ -99,7 +99,7 @@ def step_progress() -> void:
     progress_remaining = remaining
 
 
-def display_line(x: float, y: float, line: ptr[Line]) -> void:
+function display_line(x: float, y: float, line: ptr[Line]) -> void:
     var line_length: int = 0
     var line_text: ptr[uint]? = null
 
@@ -127,7 +127,7 @@ def display_line(x: float, y: float, line: ptr[Line]) -> void:
         c.SDL_RenderDebugText(renderer, x, y, cstr<-utf8)
 
 
-def can_monkey_type(ch: uint) -> bool:
+function can_monkey_type(ch: uint) -> bool:
     var modstate: c.SDL_Keymod = 0
     let scancode = c.SDL_GetScancodeFromKey(ch, ptr_of(modstate))
     let scancode_value = int<-scancode
@@ -141,7 +141,7 @@ def can_monkey_type(ch: uint) -> bool:
     return true
 
 
-def advance_row() -> void:
+function advance_row() -> void:
     if rows <= 0:
         return
 
@@ -155,7 +155,7 @@ def advance_row() -> void:
         line.length = 0
 
 
-def add_monkey_char(monkey: int, ch: uint) -> void:
+function add_monkey_char(monkey: int, ch: uint) -> void:
     let monkey_text = monkey_chars.text
     if monkey >= 0 and monkey_text != null and cols > 0:
         unsafe:
@@ -180,7 +180,7 @@ def add_monkey_char(monkey: int, ch: uint) -> void:
     step_progress()
 
 
-def get_next_char() -> uint:
+function get_next_char() -> uint:
     while progress_remaining > 0:
         var spot = progress
         var remaining = progress_remaining
@@ -197,14 +197,14 @@ def get_next_char() -> uint:
     return 0
 
 
-def monkey_play() -> uint:
+function monkey_play() -> uint:
     let count = max_monkey_scancode - min_monkey_scancode + 1
     let scancode = c.SDL_Scancode<-(min_monkey_scancode + c.SDL_rand(count))
     let modstate = if c.SDL_rand(2) != 0: monkey_shift_mod else: ushort<-0
     return c.SDL_GetKeyFromScancode(scancode, modstate, false)
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -217,7 +217,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     var next_char: uint = 0
 
     for monkey in 0..monkeys:
@@ -292,7 +292,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     monkeys = default_monkey_count
     progress = c""
     progress_remaining = 0
@@ -372,5 +372,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

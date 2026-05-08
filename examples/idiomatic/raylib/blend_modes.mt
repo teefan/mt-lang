@@ -9,7 +9,7 @@ const foreground_path: str = "../../raylib/resources/cyberpunk_street_foreground
 const blend_count_max: int = 4
 
 
-def blend_label(blend_mode: int) -> str:
+function blend_label(blend_mode: int) -> str:
     if blend_mode == rl.BlendMode.BLEND_ALPHA:
         return "Current: BLEND_ALPHA"
     elif blend_mode == rl.BlendMode.BLEND_ADDITIVE:
@@ -19,7 +19,7 @@ def blend_label(blend_mode: int) -> str:
     return "Current: BLEND_ADD_COLORS"
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Blend Modes")
     defer rl.close_window()
 

@@ -10,7 +10,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           let double = 1
           return double
     MT
@@ -26,7 +26,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-param"])
       module demo.lint
 
-      def main(int: int) -> int:
+      function main(int: int) -> int:
           return int
     MT
 
@@ -41,10 +41,10 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def double(value: int) -> int:
+      function double(value: int) -> int:
           return value * 2
 
-      def main() -> int:
+      function main() -> int:
           return double(3)
     MT
 
@@ -63,8 +63,8 @@ class MilkTeaLinterTest < Minitest::Test
       var double: int = 2
     MT
     warnings += MilkTea::Linter.lint_source(<<~MT, path: "extern.mt")
-      extern module std.c.double:
-          extern def int() -> void
+      external module std.c.double:
+          external function int() -> void
     MT
 
     assert_equal ["builtin-type-name", "builtin-type-name", "builtin-type-name"], warnings.map(&:code)
@@ -77,7 +77,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           let byte = 1
           return byte
     MT
@@ -89,7 +89,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           let unused = 1
           return 0
     MT
@@ -106,7 +106,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           let used = 1
           return used
     MT
@@ -118,7 +118,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["constant-condition"])
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           let value = 1
           if true:
               let value = 2
@@ -138,7 +138,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           let _unused = 1
           return 0
     MT
@@ -150,7 +150,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var total = 1
           total += 2
           return total
@@ -165,7 +165,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def add(a: int, b: int) -> int:
+      function add(a: int, b: int) -> int:
           return a
     MT
 
@@ -180,7 +180,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def add(a: int, b: int) -> int:
+      function add(a: int, b: int) -> int:
           return a + b
     MT
 
@@ -191,7 +191,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def callback(_event: int) -> int:
+      function callback(_event: int) -> int:
           return 0
     MT
 
@@ -204,7 +204,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var value = 42
           return value
     MT
@@ -221,7 +221,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var counter = 0
           counter = counter + 1
           return counter
@@ -234,7 +234,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           let value = 42
           return value
     MT
@@ -248,7 +248,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           return 0
           let dead = 1
     MT
@@ -264,7 +264,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           let x = 1
           return x
     MT
@@ -276,7 +276,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["missing-return"])
       module demo.lint
 
-      def main(flag: bool) -> int:
+      function main(flag: bool) -> int:
           if flag:
               return 1
           else:
@@ -296,7 +296,7 @@ class MilkTeaLinterTest < Minitest::Test
       module demo.lint
       import std.mem
 
-      def foo(n: int) -> int:
+      function foo(n: int) -> int:
           var x: int = n
           let p = ref_of(x)
           x = 42
@@ -313,7 +313,7 @@ class MilkTeaLinterTest < Minitest::Test
       module demo.lint
       import std.mem
 
-      def foo(n: int) -> int:
+      function foo(n: int) -> int:
           var x: int = n
           let p = ref_of(x)
           return read(p)
@@ -327,10 +327,10 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def consume(_value: ptr[int]) -> void:
+      function consume(_value: ptr[int]) -> void:
           return
 
-      def foo(n: int) -> int:
+      function foo(n: int) -> int:
           var x: int = n
           consume(ptr_of(x))
           x = 42
@@ -348,7 +348,7 @@ class MilkTeaLinterTest < Minitest::Test
       module demo.lint
       import std.vec
 
-      def main() -> int:
+      function main() -> int:
           return 0
     MT
 
@@ -364,7 +364,7 @@ class MilkTeaLinterTest < Minitest::Test
       module demo.lint
       import std.vec
 
-      def main() -> int:
+      function main() -> int:
           let _v = vec.new()
           return 0
     MT
@@ -377,7 +377,7 @@ class MilkTeaLinterTest < Minitest::Test
       module demo.lint
       import std.vec
 
-      def process(_v: vec.Vec[int, 4]) -> int:
+      function process(_v: vec.Vec[int, 4]) -> int:
           return 0
     MT
 
@@ -389,7 +389,7 @@ class MilkTeaLinterTest < Minitest::Test
       module demo.lint
       import std.vec as v
 
-      def main() -> int:
+      function main() -> int:
           return 0
     MT
 
@@ -405,7 +405,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var x = 1
           x = 2
           return x
@@ -422,7 +422,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var x = 1
           let _y = x
           x = 2
@@ -437,7 +437,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var x = 1
           let _y = x
           x = 2
@@ -454,7 +454,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var x: int
           x = 5
           return x
@@ -468,7 +468,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           let unused = 1
           return 0
     MT
@@ -482,7 +482,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var index: int = 0
           while index < 3:
               index += 1
@@ -496,7 +496,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main(cond: bool) -> int:
+      function main(cond: bool) -> int:
           var count: int = 0
           if cond:
               count = 1
@@ -513,7 +513,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> bool:
+      function main() -> bool:
           var use_ttf = false
           var counter: int = 0
           while counter < 10:
@@ -529,7 +529,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main(cond: bool) -> int:
+      function main(cond: bool) -> int:
           var x: int = 0
           if cond:
               x = 1
@@ -551,7 +551,7 @@ class MilkTeaLinterTest < Minitest::Test
     source = <<~MT
       module demo.fix
 
-      def main() -> int:
+      function main() -> int:
           var x = 1
           return x
     MT
@@ -566,7 +566,7 @@ class MilkTeaLinterTest < Minitest::Test
     source = <<~MT
       module demo.fix
 
-      def main() -> int:
+      function main() -> int:
           var x = 1
           x = 2
           return x
@@ -582,7 +582,7 @@ class MilkTeaLinterTest < Minitest::Test
     source = <<~MT
       module demo.fix
 
-      def main() -> int:
+      function main() -> int:
           let x = 1
           return x
     MT
@@ -597,7 +597,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def compute() -> int:
+      function compute() -> int:
           let _x = 1
     MT
 
@@ -612,7 +612,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def compute() -> int:
+      function compute() -> int:
           return 42
     MT
 
@@ -623,7 +623,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def setup():
+      function setup():
           let _x = 1
     MT
 
@@ -634,7 +634,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def pick(flag: bool) -> int:
+      function pick(flag: bool) -> int:
           if flag:
               return 1
           else:
@@ -648,7 +648,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def pick(flag: bool) -> int:
+      function pick(flag: bool) -> int:
           if flag:
               return 1
     MT
@@ -660,7 +660,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["redundant-else"])
       module demo.lint
 
-      def pick(flag: bool) -> int:
+      function pick(flag: bool) -> int:
           if flag:
               panic(c"boom")
           else:
@@ -674,7 +674,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def spin(flag: bool) -> int:
+      function spin(flag: bool) -> int:
           while true:
               if flag:
                   continue
@@ -687,7 +687,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def spin(flag: bool) -> int:
+      function spin(flag: bool) -> int:
           while true:
               if flag:
                   break
@@ -702,7 +702,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           let unused = 1 # lint: ignore
           return 0
     MT
@@ -714,7 +714,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           let unused = 1 # lint: ignore(unused-local)
           return 0
     MT
@@ -726,7 +726,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var unused = 1 # lint: ignore(prefer-let)
           return 0
     MT
@@ -740,7 +740,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           # lint: ignore(unused-local)
           let unused = 1
           return 0
@@ -755,7 +755,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", select: Set["unused-local"])
       module demo.lint
 
-      def compute(x: int) -> int:
+      function compute(x: int) -> int:
           let unused = 1
           return 0
     MT
@@ -769,7 +769,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-param"])
       module demo.lint
 
-      def compute(x: int) -> int:
+      function compute(x: int) -> int:
           let unused = 1
           return 0
     MT
@@ -785,7 +785,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def sign(n: int) -> int:
+      function sign(n: int) -> int:
           if n > 0:
               return 1
           else:
@@ -799,7 +799,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["missing-return"])
       module demo.lint
 
-      def sign(n: int) -> int:
+      function sign(n: int) -> int:
           if n > 0:
               let _x = 1
           else:
@@ -813,7 +813,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["missing-return"])
       module demo.lint
 
-      def sign(n: int) -> int:
+      function sign(n: int) -> int:
           if n > 0:
               return 1
     MT
@@ -826,7 +826,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def classify(n: int) -> int:
+      function classify(n: int) -> int:
           if n > 0:
               return 1
           elif n < 0:
@@ -842,7 +842,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["missing-return"])
       module demo.lint
 
-      def sign(n: int) -> int:
+      function sign(n: int) -> int:
           if n > 0:
               panic(c"boom")
           else:
@@ -858,7 +858,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           let x = 1
           if true:
               let x = 2
@@ -876,7 +876,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           let x = 1
           return x
     MT
@@ -888,7 +888,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           let _x = 1
           if true:
               let _x = 2
@@ -904,7 +904,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def compute() -> int:
+      function compute() -> int:
           let _x = 1
     MT
 
@@ -917,7 +917,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var x = 1
           return x
     MT
@@ -931,7 +931,7 @@ class MilkTeaLinterTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           let unused = 1
           return 0
     MT
@@ -951,7 +951,7 @@ class MilkTeaLinterTest < Minitest::Test
           value: int
 
       methods Counter:
-          def get() -> int:
+          function get() -> int:
               let unused = 1
               return this.value
     MT
@@ -969,7 +969,7 @@ class MilkTeaLinterTest < Minitest::Test
           value: int
 
       methods Counter:
-          def get() -> int:
+          function get() -> int:
               return this.value
     MT
 
@@ -1008,7 +1008,7 @@ class MilkTeaLinterConfigTest < Minitest::Test
       File.write(path, <<~MT)
         module demo.lint
 
-        def compute(x: int) -> int:
+        function compute(x: int) -> int:
             let unused = 1
             return 0
       MT
@@ -1027,7 +1027,7 @@ class MilkTeaLinterConfigTest < Minitest::Test
       File.write(path, <<~MT)
         module demo.lint
 
-        def main() -> int:
+        function main() -> int:
             var x = 1
             return x
       MT
@@ -1045,7 +1045,7 @@ class MilkTeaLinterConfigTest < Minitest::Test
       File.write(path, <<~MT)
         module demo.lint
 
-        def compute(x: int) -> int:
+        function compute(x: int) -> int:
             let unused = 1
             return 0
       MT
@@ -1064,7 +1064,7 @@ class MilkTeaLinterConfigTest < Minitest::Test
       File.write(path, <<~MT)
         module demo.lint
 
-        def compute(x: int) -> int:
+        function compute(x: int) -> int:
             let unused = 1
             return 0
       MT
@@ -1084,7 +1084,7 @@ class MilkTeaLinterFixRedundantElseTest < Minitest::Test
     source = <<~MT
       module demo.fix
 
-      def sign(n: int) -> int:
+      function sign(n: int) -> int:
           if n > 0:
               return 1
           else:
@@ -1103,7 +1103,7 @@ class MilkTeaLinterFixRedundantElseTest < Minitest::Test
     source = <<~MT
       module demo.fix
 
-      def sign(n: int) -> int:
+      function sign(n: int) -> int:
           if n > 0:
               let _x = 1
           else:
@@ -1119,7 +1119,7 @@ class MilkTeaLinterFixRedundantElseTest < Minitest::Test
     source = <<~MT
       module demo.fix
 
-      def classify(n: int) -> int:
+      function classify(n: int) -> int:
           if n > 0:
               return 1
           else:
@@ -1142,7 +1142,7 @@ class MilkTeaLinterUselessExpressionTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           42
           return 0
     MT
@@ -1154,7 +1154,7 @@ class MilkTeaLinterUselessExpressionTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           1 + 2
           return 0
     MT
@@ -1166,7 +1166,7 @@ class MilkTeaLinterUselessExpressionTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           "hello"
           return 0
     MT
@@ -1178,10 +1178,10 @@ class MilkTeaLinterUselessExpressionTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def side_effect() -> int:
+      function side_effect() -> int:
           return 1
 
-      def main() -> int:
+      function main() -> int:
           side_effect()
           return 0
     MT
@@ -1193,7 +1193,7 @@ class MilkTeaLinterUselessExpressionTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           42
           return 0
     MT
@@ -1213,7 +1213,7 @@ class MilkTeaLinterFixUnusedImportDeadAssignmentTest < Minitest::Test
 
       import demo.other
 
-      def main() -> int:
+      function main() -> int:
           return 0
     MT
 
@@ -1228,7 +1228,7 @@ class MilkTeaLinterFixUnusedImportDeadAssignmentTest < Minitest::Test
 
       import demo.other
 
-      def main() -> int:
+      function main() -> int:
           let x: other.Value = other.Value.new()
           return 0
     MT
@@ -1242,7 +1242,7 @@ class MilkTeaLinterFixUnusedImportDeadAssignmentTest < Minitest::Test
     source = <<~MT
       module demo.fix
 
-      def compute(n: int) -> int:
+      function compute(n: int) -> int:
           let result = n + 1
           result = n + 2
           return result
@@ -1262,7 +1262,7 @@ class MilkTeaLinterFixUnusedImportDeadAssignmentTest < Minitest::Test
     source = <<~MT
       module demo.fix
 
-      def compute(n: int) -> int:
+      function compute(n: int) -> int:
           let result = n + 1
           return result
     MT
@@ -1281,7 +1281,7 @@ class MilkTeaLinterSelfAssignmentTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var x: int = 1
           x = x
           return x
@@ -1297,7 +1297,7 @@ class MilkTeaLinterSelfAssignmentTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var x: int = 1
           var y: int = 2
           x = y
@@ -1311,7 +1311,7 @@ class MilkTeaLinterSelfAssignmentTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var x: int = 1
           x += x
           return x
@@ -1328,7 +1328,7 @@ class MilkTeaLinterSelfComparisonTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main(x: int) -> int:
+      function main(x: int) -> int:
           if x == x:
               return 1
           return 0
@@ -1344,7 +1344,7 @@ class MilkTeaLinterSelfComparisonTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main(x: int) -> int:
+      function main(x: int) -> int:
           if x != x:
               return 1
           return 0
@@ -1359,7 +1359,7 @@ class MilkTeaLinterSelfComparisonTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main(x: int, y: int) -> int:
+      function main(x: int, y: int) -> int:
           if x == y:
               return 1
           return 0
@@ -1376,7 +1376,7 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["redundant-else"])
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           if true:
               return 1
           else:
@@ -1393,7 +1393,7 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           if false:
               return 1
           return 0
@@ -1408,7 +1408,7 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           while false:
               let _x = 1
           return 0
@@ -1423,7 +1423,7 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           while true:
               return 42
     MT
@@ -1435,7 +1435,7 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local", "prefer-let"])
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var flag: bool = true
           if flag:
               return 1
@@ -1451,7 +1451,7 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main(flag: bool) -> int:
+      function main(flag: bool) -> int:
           if flag:
               return 1
           return 0
@@ -1466,7 +1466,7 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
 
       import std.sample as sample
 
-      def main() -> int:
+      function main() -> int:
           var tab_active: int = 0
           sample.tab_bar(tab_active)
           if tab_active == 0:
@@ -1479,15 +1479,15 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     Dir.mktmpdir do |dir|
       FileUtils.mkdir_p(File.join(dir, "std", "c"))
       File.write(File.join(dir, "std", "c", "sample.mt"), <<~MT)
-        extern module std.c.sample:
-            extern def TabBar(active: ptr[int]) -> void
+        external module std.c.sample:
+            external function TabBar(active: ptr[int]) -> void
       MT
       File.write(File.join(dir, "std", "sample.mt"), <<~MT)
         module std.sample
 
         import std.c.sample as c
 
-        pub foreign def tab_bar(inout active: int) -> void = c.TabBar
+        public foreign function tab_bar(inout active: int) -> void = c.TabBar
       MT
 
       path = File.join(dir, "demo.mt")
@@ -1509,10 +1509,10 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local"])
       module demo.lint
 
-      def mutate(value: ptr[int]) -> void:
+      function mutate(value: ptr[int]) -> void:
           return
 
-      def main() -> int:
+      function main() -> int:
           var device_count: int = 0
           mutate(ptr_of(device_count))
           if device_count == 0:
@@ -1528,7 +1528,7 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local", "prefer-let"])
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var index = 3
           while index > 0:
               index -= 1
@@ -1542,7 +1542,7 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           while false:
               return 1
           return 0
@@ -1562,7 +1562,7 @@ class MilkTeaLinterRedundantNullCheckTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local"])
       module demo.lint
 
-      def process(x: int?) -> int:
+      function process(x: int?) -> int:
           if x != null:
               if x != null:
                   let _v = 1
@@ -1580,7 +1580,7 @@ class MilkTeaLinterRedundantNullCheckTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local"])
       module demo.lint
 
-      def process(x: int?) -> int:
+      function process(x: int?) -> int:
           if x != null:
               let _v = 1
               return 1
@@ -1604,7 +1604,7 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
     warnings = lint_with_sema(<<~MT, path: "demo.mt", ignore: Set["unused-local"])
       module demo.lint
 
-      def main(value: int) -> int:
+      function main(value: int) -> int:
           unsafe:
               let copy = value + 1
           return value
@@ -1620,7 +1620,7 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
     warnings = lint_with_sema(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main(value: ptr[int]) -> int:
+      function main(value: ptr[int]) -> int:
           unsafe:
               return read(value)
     MT
@@ -1632,7 +1632,7 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
     warnings = lint_with_sema(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main(value: ptr[int]) -> int:
+      function main(value: ptr[int]) -> int:
           unsafe:
               unsafe:
                   return read(value)
@@ -1647,7 +1647,7 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
     source = <<~MT
       module demo.lint
 
-      def main(value: int) -> int:
+      function main(value: int) -> int:
           unsafe:
               let copy = value + 1
           return value
@@ -1666,7 +1666,7 @@ class MilkTeaLinterLoopSingleIterationTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["constant-condition"])
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var result: int = 0
           while true:
               result = 1
@@ -1683,7 +1683,7 @@ class MilkTeaLinterLoopSingleIterationTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["missing-return", "constant-condition"])
       module demo.lint
 
-      def find() -> int:
+      function find() -> int:
           while true:
               return 42
     MT
@@ -1696,7 +1696,7 @@ class MilkTeaLinterLoopSingleIterationTest < Minitest::Test
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
-      def main() -> int:
+      function main() -> int:
           var i: int = 0
           while i < 10:
               i = i + 1

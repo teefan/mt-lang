@@ -7,7 +7,7 @@ const screen_height: int = 540
 const overlay_alpha: float = 0.45
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Free Camera")
     defer rl.close_window()
 

@@ -20,7 +20,7 @@ const manual_text: cstr = c"MANUAL"
 const window_title: cstr = c"raylib [shaders] example - hot reloading"
 
 
-def formatted_mod_time(mod_time: ref[ctime.time_t], buffer: ref[array[char, 64]]) -> cstr:
+function formatted_mod_time(mod_time: ref[ctime.time_t], buffer: ref[array[char, 64]]) -> cstr:
     let tm_info = ctime.localtime(ptr_of(read(mod_time)))
 
     unsafe:
@@ -28,7 +28,7 @@ def formatted_mod_time(mod_time: ref[ctime.time_t], buffer: ref[array[char, 64]]
         return cstr<-ptr_of(read(buffer)[0])
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

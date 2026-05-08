@@ -9,7 +9,7 @@ const line_length: float = 150.0
 const angle_count: int = 4
 
 
-def line_color(index: int) -> rl.Color:
+function line_color(index: int) -> rl.Color:
     if index == 0:
         return rl.GREEN
     if index == 1:
@@ -21,7 +21,7 @@ def line_color(index: int) -> rl.Color:
     return rl.WHITE
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Angle Rotation")
     defer rl.close_window()
 

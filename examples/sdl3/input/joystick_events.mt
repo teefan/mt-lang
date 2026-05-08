@@ -26,7 +26,7 @@ var axis_motion_cooldown_time: c.Uint64 = 0
 var ball_motion_cooldown_time: c.Uint64 = 0
 
 
-def hat_state_string(state: c.Uint8) -> cstr:
+function hat_state_string(state: c.Uint8) -> cstr:
     let value = uint<-state
 
     if value == c.SDL_HAT_CENTERED:
@@ -59,7 +59,7 @@ def hat_state_string(state: c.Uint8) -> cstr:
     return c"UNKNOWN"
 
 
-def battery_state_string(state: c.SDL_PowerState) -> cstr:
+function battery_state_string(state: c.SDL_PowerState) -> cstr:
     if state == c.SDL_PowerState.SDL_POWERSTATE_ERROR:
         return c"ERROR"
     else:
@@ -81,7 +81,7 @@ def battery_state_string(state: c.SDL_PowerState) -> cstr:
     return c"UNKNOWN"
 
 
-def append_message(jid: uint, text: ptr[char]?) -> void:
+function append_message(jid: uint, text: ptr[char]?) -> void:
     let message_text = text
     if message_text == null:
         return
@@ -103,7 +103,7 @@ def append_message(jid: uint, text: ptr[char]?) -> void:
     messages_tail = message
 
 
-def add_plain_message(jid: uint, text: cstr) -> void:
+function add_plain_message(jid: uint, text: cstr) -> void:
     var message: ptr[char]? = null
 
     unsafe:
@@ -112,7 +112,7 @@ def add_plain_message(jid: uint, text: cstr) -> void:
     append_message(jid, message)
 
 
-def add_added_message(which: uint, joystick: ptr[c.SDL_Joystick]?) -> void:
+function add_added_message(which: uint, joystick: ptr[c.SDL_Joystick]?) -> void:
     var message: ptr[char]? = null
 
     if joystick == null:
@@ -128,7 +128,7 @@ def add_added_message(which: uint, joystick: ptr[c.SDL_Joystick]?) -> void:
     append_message(which, message)
 
 
-def add_removed_message(which: uint) -> void:
+function add_removed_message(which: uint) -> void:
     var message: ptr[char]? = null
 
     unsafe:
@@ -137,7 +137,7 @@ def add_removed_message(which: uint) -> void:
     append_message(which, message)
 
 
-def add_axis_message(which: uint, axis: c.Uint8, value: c.Sint16) -> void:
+function add_axis_message(which: uint, axis: c.Uint8, value: c.Sint16) -> void:
     var message: ptr[char]? = null
 
     unsafe:
@@ -146,7 +146,7 @@ def add_axis_message(which: uint, axis: c.Uint8, value: c.Sint16) -> void:
     append_message(which, message)
 
 
-def add_ball_message(which: uint, ball: c.Uint8, xrel: c.Sint16, yrel: c.Sint16) -> void:
+function add_ball_message(which: uint, ball: c.Uint8, xrel: c.Sint16, yrel: c.Sint16) -> void:
     var message: ptr[char]? = null
 
     unsafe:
@@ -155,7 +155,7 @@ def add_ball_message(which: uint, ball: c.Uint8, xrel: c.Sint16, yrel: c.Sint16)
     append_message(which, message)
 
 
-def add_hat_message(which: uint, hat: c.Uint8, value: c.Uint8) -> void:
+function add_hat_message(which: uint, hat: c.Uint8, value: c.Uint8) -> void:
     var message: ptr[char]? = null
 
     unsafe:
@@ -164,7 +164,7 @@ def add_hat_message(which: uint, hat: c.Uint8, value: c.Uint8) -> void:
     append_message(which, message)
 
 
-def add_button_message(which: uint, button: c.Uint8, down: bool) -> void:
+function add_button_message(which: uint, button: c.Uint8, down: bool) -> void:
     var message: ptr[char]? = null
     let state_text = if down: c"PRESSED" else: c"RELEASED"
 
@@ -174,7 +174,7 @@ def add_button_message(which: uint, button: c.Uint8, down: bool) -> void:
     append_message(which, message)
 
 
-def add_battery_message(which: uint, state: c.SDL_PowerState, percent: int) -> void:
+function add_battery_message(which: uint, state: c.SDL_PowerState, percent: int) -> void:
     var message: ptr[char]? = null
 
     unsafe:
@@ -183,7 +183,7 @@ def add_battery_message(which: uint, state: c.SDL_PowerState, percent: int) -> v
     append_message(which, message)
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -226,7 +226,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     let now = c.SDL_GetTicks()
     var previous: ptr[EventMessage]? = ptr[EventMessage]<-ptr_of(messages)
     var current = messages.next
@@ -278,7 +278,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Input Joystick Events", c"1.0", c"com.example.input-joystick-events")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_JOYSTICK):
@@ -314,5 +314,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

@@ -12,37 +12,37 @@ const skeleton_text: cstr = c"Press SPACE to draw skeleton"
 const credit_text: cstr = c"(c) CesiumMan model by KhronosGroup"
 
 
-def chars_to_cstr(text: ptr[char]) -> cstr:
+function chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
 
 
-def model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
+function model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
     unsafe:
         return read(anims + index)
 
 
-def model_animation_name(anims: ptr[rl.ModelAnimation], index: int) -> cstr:
+function model_animation_name(anims: ptr[rl.ModelAnimation], index: int) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of((anims + index).name[0]))
 
 
-def model_animation_pose(anim: rl.ModelAnimation, frame: int) -> rl.ModelAnimPose:
+function model_animation_pose(anim: rl.ModelAnimation, frame: int) -> rl.ModelAnimPose:
     unsafe:
         return read(anim.keyframePoses + frame)
 
 
-def pose_translation(pose: rl.ModelAnimPose, index: int) -> rl.Vector3:
+function pose_translation(pose: rl.ModelAnimPose, index: int) -> rl.Vector3:
     unsafe:
         return (pose + index).translation
 
 
-def skeleton_bone_parent(skeleton: rl.ModelSkeleton, index: int) -> int:
+function skeleton_bone_parent(skeleton: rl.ModelSkeleton, index: int) -> int:
     unsafe:
         return (skeleton.bones + index).parent
 
 
-def draw_model_skeleton(skeleton: rl.ModelSkeleton, pose: rl.ModelAnimPose, scale: float, color: rl.Color) -> void:
+function draw_model_skeleton(skeleton: rl.ModelSkeleton, pose: rl.ModelAnimPose, scale: float, color: rl.Color) -> void:
     for index in 0..skeleton.boneCount - 1:
         let translation = pose_translation(pose, index)
         rl.DrawCube(translation, scale * 0.05, scale * 0.05, scale * 0.05, color)
@@ -52,7 +52,7 @@ def draw_model_skeleton(skeleton: rl.ModelSkeleton, pose: rl.ModelAnimPose, scal
             rl.DrawLine3D(translation, pose_translation(pose, parent), color)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

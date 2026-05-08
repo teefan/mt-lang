@@ -28,7 +28,7 @@ const draw_circle_text: cstr = c"Draw method: DrawCircle(*)"
 const status_format: cstr = c"[ FPS: %d, Bullets: %d, Rows: %d, Bullet speed: %.2f, Angle increment per frame: %d, Cooldown: %.0f ]"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

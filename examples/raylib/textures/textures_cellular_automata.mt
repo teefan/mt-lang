@@ -19,7 +19,7 @@ const presets_count: int = 10
 const window_title: cstr = c"raylib [textures] example - cellular automata"
 
 
-def compute_line(image: ref[rl.Image], line: int, rule: int) -> void:
+function compute_line(image: ref[rl.Image], line: int, rule: int) -> void:
     for index in 1..image_width - 1:
         let prev_value = (
             if rl.GetImageColor(read(image), index - 1, line - 1).r < 5: 4 else: 0
@@ -32,7 +32,7 @@ def compute_line(image: ref[rl.Image], line: int, rule: int) -> void:
         rl.ImageDrawPixel(ptr_of(image), index, line, if curr_value: rl.BLACK else: rl.RAYWHITE)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -20,7 +20,7 @@ const parrots_path: cstr = c"../resources/parrots.png"
 const title_text: cstr = c"IMAGE PROCESSING:"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

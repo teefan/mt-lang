@@ -68,27 +68,27 @@ struct Light:
 var light_count: int = 0
 
 
-def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
+function set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
 
 
-def set_material_map_color(materials: ptr[rl.Material], map_index: int, color: rl.Color) -> void:
+function set_material_map_color(materials: ptr[rl.Material], map_index: int, color: rl.Color) -> void:
     unsafe:
         materials.maps[map_index].color = color
 
 
-def set_material_map_value(materials: ptr[rl.Material], map_index: int, value: float) -> void:
+function set_material_map_value(materials: ptr[rl.Material], map_index: int, value: float) -> void:
     unsafe:
         materials.maps[map_index].value = value
 
 
-def set_shader_int(shader: rl.Shader, location: int, value: int) -> void:
+function set_shader_int(shader: rl.Shader, location: int, value: int) -> void:
     var storage = value
     rl.SetShaderValue(shader, location, ptr_of(storage), rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
 
 
-def update_light(shader: rl.Shader, light: Light) -> void:
+function update_light(shader: rl.Shader, light: Light) -> void:
     var enabled = light.enabled
     var type_value = light.kind
     var position = array[float, 3](light.position.x, light.position.y, light.position.z)
@@ -104,7 +104,7 @@ def update_light(shader: rl.Shader, light: Light) -> void:
     rl.SetShaderValue(shader, light.intensity_loc, ptr_of(intensity), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
 
-def create_light(kind: int, position: rl.Vector3, target: rl.Vector3, color: rl.Color, intensity: float, shader: rl.Shader) -> Light:
+function create_light(kind: int, position: rl.Vector3, target: rl.Vector3, color: rl.Color, intensity: float, shader: rl.Shader) -> Light:
     var light = Light(
         kind = 0,
         enabled = 0,
@@ -144,7 +144,7 @@ def create_light(kind: int, position: rl.Vector3, target: rl.Vector3, color: rl.
     return light
 
 
-def light_display_color(light: Light) -> rl.Color:
+function light_display_color(light: Light) -> rl.Color:
     return rl.Color(
         r = ubyte<-(light.color[0] * 255.0),
         g = ubyte<-(light.color[1] * 255.0),
@@ -153,7 +153,7 @@ def light_display_color(light: Light) -> rl.Color:
     )
 
 
-def main() -> int:
+function main() -> int:
     light_count = 0
 
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)

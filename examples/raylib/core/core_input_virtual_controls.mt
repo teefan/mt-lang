@@ -16,7 +16,7 @@ enum PadButton: int
     BUTTON_DOWN = 3
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

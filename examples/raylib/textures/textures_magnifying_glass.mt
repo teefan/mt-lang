@@ -13,7 +13,7 @@ const parrots_path: cstr = c"../resources/parrots.png"
 const help_text: cstr = c"Use the magnifying glass to find hidden bunnies!"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

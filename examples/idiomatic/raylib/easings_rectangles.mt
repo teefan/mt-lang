@@ -13,7 +13,7 @@ const rec_count: int = max_recs_x * max_recs_y
 const play_time_in_frames: int = 240
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Easings Rectangles")
     defer rl.close_window()
 

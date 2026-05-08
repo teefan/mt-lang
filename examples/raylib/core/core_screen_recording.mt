@@ -11,19 +11,19 @@ const gif_record_framerate: int = 5
 const max_sinewave_points: int = 256
 
 
-def half_screen_height() -> float:
+function half_screen_height() -> float:
     return 0.5 * screen_height
 
 
-def horizontal_step() -> float:
+function horizontal_step() -> float:
     return float<-rl.GetScreenWidth() / float<-180
 
 
-def sine_factor() -> float:
+function sine_factor() -> float:
     return (2.0 * rl.PI / 1.5)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

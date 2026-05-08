@@ -23,7 +23,7 @@ struct EnvElement:
     color: rl.Color
 
 methods Player:
-    edit def update(env_elements: array[EnvElement, 5], delta: float) -> void:
+    edit function update(env_elements: array[EnvElement, 5], delta: float) -> void:
         if rl.IsKeyDown(rl.KeyboardKey.KEY_LEFT):
             this.position.x -= player_hor_speed * delta
         if rl.IsKeyDown(rl.KeyboardKey.KEY_RIGHT):
@@ -50,11 +50,11 @@ methods Player:
             this.can_jump = true
 
 
-def screen_half(value: int) -> float:
+function screen_half(value: int) -> float:
     return 0.5 * value
 
 
-def reset_scene(player: ref[Player], camera: ref[rl.Camera2D]) -> void:
+function reset_scene(player: ref[Player], camera: ref[rl.Camera2D]) -> void:
     player.position = rl.Vector2(x = 400.0, y = 280.0)
     player.speed = 0.0
     player.can_jump = false
@@ -65,7 +65,7 @@ def reset_scene(player: ref[Player], camera: ref[rl.Camera2D]) -> void:
     camera.zoom = 1.0
 
 
-def update_camera(camera: ref[rl.Camera2D], player: Player, env_elements: array[EnvElement, 5]) -> void:
+function update_camera(camera: ref[rl.Camera2D], player: Player, env_elements: array[EnvElement, 5]) -> void:
     camera.target = player.position
     camera.offset = rl.Vector2(x = screen_half(screen_width), y = screen_half(screen_height))
 
@@ -104,7 +104,7 @@ def update_camera(camera: ref[rl.Camera2D], player: Player, env_elements: array[
         camera.offset.y = screen_half(screen_height) - min_screen.y
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

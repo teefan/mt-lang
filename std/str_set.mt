@@ -4,42 +4,42 @@ import std.hash as hash
 import std.set as set
 
 
-def hash_key(key: str) -> ulong:
+function hash_key(key: str) -> ulong:
     return hash.str_value(key)
 
 
-def equal_key(left: str, right: str) -> bool:
+function equal_key(left: str, right: str) -> bool:
     return hash.str_equal(left, right)
 
-pub struct StrSet:
+public struct StrSet:
     items: set.HashSet[str]
 
 
-pub def create() -> StrSet:
+public function create() -> StrSet:
     return StrSet(items = set.create[str](hash_key, equal_key))
 
 
-pub def count(items: StrSet) -> ptr_uint:
+public function count(items: StrSet) -> ptr_uint:
     return set.count[str](items.items)
 
 
-pub def release(items: ref[StrSet]) -> void:
+public function release(items: ref[StrSet]) -> void:
     set.release[str](ref_of(items.items))
     return
 
 
-pub def add(items: ref[StrSet], value_item: str) -> void:
+public function add(items: ref[StrSet], value_item: str) -> void:
     set.add[str](ref_of(items.items), value_item)
     return
 
 
-pub def try_add(items: ref[StrSet], value_item: str) -> bool:
+public function try_add(items: ref[StrSet], value_item: str) -> bool:
     return set.try_add[str](ref_of(items.items), value_item)
 
 
-pub def contains(items: StrSet, value_item: str) -> bool:
+public function contains(items: StrSet, value_item: str) -> bool:
     return set.contains[str](items.items, value_item)
 
 
-pub def remove(items: ref[StrSet], value_item: str) -> bool:
+public function remove(items: ref[StrSet], value_item: str) -> bool:
     return set.remove[str](ref_of(items.items), value_item)

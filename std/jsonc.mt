@@ -6,15 +6,15 @@ import std.status as status
 import std.str as text
 import std.string as string
 
-pub type JSON = cjson.JSON
+public type JSON = cjson.JSON
 
-pub enum Error: ubyte
+public enum Error: ubyte
     unterminated_string = 1
     unterminated_block_comment = 2
     parse_failed = 3
 
 
-def append_string_segment(output: ref[string.String], source: str, start: ptr_uint) -> status.Status[ptr_uint, Error]:
+function append_string_segment(output: ref[string.String], source: str, start: ptr_uint) -> status.Status[ptr_uint, Error]:
     var index = start
     output.push_byte(text.byte_at(source, index))
     index += 1
@@ -37,14 +37,14 @@ def append_string_segment(output: ref[string.String], source: str, start: ptr_ui
     return status.Status[ptr_uint, Error].err(error= Error.unterminated_string)
 
 
-def skip_line_comment(source: str, start: ptr_uint) -> ptr_uint:
+function skip_line_comment(source: str, start: ptr_uint) -> ptr_uint:
     var index = start
     while index < source.len and text.byte_at(source, index) != ubyte<-10:
         index += 1
     return index
 
 
-def skip_block_comment(source: str, start: ptr_uint) -> status.Status[ptr_uint, Error]:
+function skip_block_comment(source: str, start: ptr_uint) -> status.Status[ptr_uint, Error]:
     var index = start
     while index + 1 < source.len:
         if text.byte_at(source, index) == ubyte<-42 and text.byte_at(source, index + 1) == ubyte<-47:
@@ -54,7 +54,7 @@ def skip_block_comment(source: str, start: ptr_uint) -> status.Status[ptr_uint, 
     return status.Status[ptr_uint, Error].err(error= Error.unterminated_block_comment)
 
 
-def next_significant_index(source: str, start: ptr_uint) -> status.Status[ptr_uint, Error]:
+function next_significant_index(source: str, start: ptr_uint) -> status.Status[ptr_uint, Error]:
     var index = start
     while index < source.len:
         let current = text.byte_at(source, index)
@@ -81,7 +81,7 @@ def next_significant_index(source: str, start: ptr_uint) -> status.Status[ptr_ui
     return status.Status[ptr_uint, Error].ok(value= source.len)
 
 
-pub def normalize(source: str) -> status.Status[string.String, Error]:
+public function normalize(source: str) -> status.Status[string.String, Error]:
     var output = string.String.with_capacity(source.len)
     var index: ptr_uint = 0
 
@@ -134,7 +134,7 @@ pub def normalize(source: str) -> status.Status[string.String, Error]:
     return status.Status[string.String, Error].ok(value= output)
 
 
-pub def parse(source: str) -> status.Status[ptr[JSON], Error]:
+public function parse(source: str) -> status.Status[ptr[JSON], Error]:
     let normalized_result = normalize(source)
     match normalized_result:
         status.Status.err as payload:

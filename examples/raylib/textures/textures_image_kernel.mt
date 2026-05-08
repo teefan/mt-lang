@@ -8,7 +8,7 @@ const window_title: cstr = c"raylib [textures] example - image kernel"
 const cat_path: cstr = c"../resources/cat.png"
 
 
-def normalize_kernel(kernel: ptr[float], size: int) -> void:
+function normalize_kernel(kernel: ptr[float], size: int) -> void:
     unsafe:
         var sum: float = 0.0
         for index in 0..size:
@@ -19,7 +19,7 @@ def normalize_kernel(kernel: ptr[float], size: int) -> void:
                 read(kernel + index) /= sum
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -13,7 +13,7 @@ const bm_text: cstr = c"Using BMFont (Angelcode) imported"
 const ttf_text: cstr = c"Using TTF font generated"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

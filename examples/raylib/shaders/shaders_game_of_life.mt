@@ -27,18 +27,18 @@ const speed_format: cstr = c"Speed: %i frame%s"
 const window_title: cstr = c"raylib [shaders] example - game of life"
 
 
-def gui_rect(x: float, y: float, width: float, height: float) -> gui.Rectangle:
+function gui_rect(x: float, y: float, width: float, height: float) -> gui.Rectangle:
     return gui.Rectangle(x = x, y = y, width = width, height = height)
 
 
-def free_image_to_draw(image_to_draw: ref[rl.Image], has_image_to_draw: ref[bool]) -> void:
+function free_image_to_draw(image_to_draw: ref[rl.Image], has_image_to_draw: ref[bool]) -> void:
     if read(has_image_to_draw):
         rl.UnloadImage(read(image_to_draw))
         read(image_to_draw) = zero[rl.Image]
         read(has_image_to_draw) = false
 
 
-def load_preset_image(preset: int) -> rl.Image:
+function load_preset_image(preset: int) -> rl.Image:
     if preset == 0:
         return rl.LoadImage(c"../resources/game_of_life/glider.png")
     if preset == 1:
@@ -58,7 +58,7 @@ def load_preset_image(preset: int) -> rl.Image:
     return rl.LoadImage(c"../resources/game_of_life/breeder.png")
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

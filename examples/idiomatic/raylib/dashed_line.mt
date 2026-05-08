@@ -7,7 +7,7 @@ const screen_height: int = 450
 const line_color_count: int = 8
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Dashed Line")
     defer rl.close_window()
 

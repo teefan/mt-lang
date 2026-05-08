@@ -3,7 +3,7 @@ module examples.idiomatic.std.format_specifiers
 import std.io as io
 
 
-def main() -> int:
+function main() -> int:
     let pi: double = 3.14159265358979
     let ratio: double = 1.0 / 3.0
     let small: float = 0.00123

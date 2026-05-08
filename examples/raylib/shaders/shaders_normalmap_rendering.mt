@@ -23,12 +23,12 @@ const specular_exponent_format: cstr = c"Specular Exponent: %.2f"
 const window_title: cstr = c"raylib [shaders] example - normalmap rendering"
 
 
-def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
+function set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
 
 
-def rotate_y(angle: float) -> rl.Matrix:
+function rotate_y(angle: float) -> rl.Matrix:
     let cosy = rm.cos(angle)
     let siny = rm.sin(angle)
     return rl.Matrix(
@@ -51,7 +51,7 @@ def rotate_y(angle: float) -> rl.Matrix:
     )
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

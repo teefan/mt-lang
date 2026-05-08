@@ -13,7 +13,7 @@ const help_text: cstr = c"PRESS RIGHT/LEFT KEYS to CHANGE SPEED!"
 const credit_text: cstr = c"(c) Scarfy sprite by Eiden Marsal"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

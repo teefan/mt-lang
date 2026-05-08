@@ -1,4 +1,4 @@
-extern module std.c.libuv_system:
+external module std.c.libuv_system:
     opaque DIR = c"DIR"
     opaque addrinfo = c"struct addrinfo"
     opaque pthread_barrier_t = c"pthread_barrier_t"

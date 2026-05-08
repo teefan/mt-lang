@@ -11,14 +11,14 @@ const screen_width: int = 800
 const screen_height: int = 450
 
 
-def unload_collection(collection: array[TextureCollection, 20], count: int) -> void:
+function unload_collection(collection: array[TextureCollection, 20], count: int) -> void:
     for index in 0..count:
         if rl.is_texture_valid(collection[index].texture):
             rl.unload_texture(collection[index].texture)
     return
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Clipboard Image")
     defer rl.close_window()
 

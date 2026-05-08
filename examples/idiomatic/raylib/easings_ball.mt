@@ -7,7 +7,7 @@ const screen_width: int = 800
 const screen_height: int = 450
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Easings Ball")
     defer rl.close_window()
 

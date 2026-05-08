@@ -15,7 +15,7 @@ const controls_rotate: cstr = c"- A / S to Rotate"
 const controls_reset: cstr = c"- R to reset Zoom and Rotation"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

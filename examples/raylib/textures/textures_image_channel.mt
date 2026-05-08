@@ -8,7 +8,7 @@ const window_title: cstr = c"raylib [textures] example - image channel"
 const fudesumi_path: cstr = c"../resources/fudesumi.png"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

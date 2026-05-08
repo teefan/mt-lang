@@ -47,25 +47,25 @@ var fps_last_tick: c.Uint64 = 0
 var past_tick: c.Uint64 = 0
 
 
-def min_double(lhs: double, rhs: double) -> double:
+function min_double(lhs: double, rhs: double) -> double:
     if lhs < rhs:
         return lhs
 
     return rhs
 
 
-def max_double(lhs: double, rhs: double) -> double:
+function max_double(lhs: double, rhs: double) -> double:
     if lhs > rhs:
         return lhs
 
     return rhs
 
 
-def clamp_double(value: double, min_value: double, max_value: double) -> double:
+function clamp_double(value: double, min_value: double, max_value: double) -> double:
     return max_double(min_value, min_double(max_value, value))
 
 
-def clamp_int(value: int, min_value: int, max_value: int) -> int:
+function clamp_int(value: int, min_value: int, max_value: int) -> int:
     if value < min_value:
         return min_value
     if value > max_value:
@@ -74,7 +74,7 @@ def clamp_int(value: int, min_value: int, max_value: int) -> int:
     return value
 
 
-def whose_mouse(mouse: c.SDL_MouseID) -> int:
+function whose_mouse(mouse: c.SDL_MouseID) -> int:
     for index in 0..player_count:
         if players[index].mouse == mouse:
             return index
@@ -82,7 +82,7 @@ def whose_mouse(mouse: c.SDL_MouseID) -> int:
     return -1
 
 
-def whose_keyboard(keyboard: c.SDL_KeyboardID) -> int:
+function whose_keyboard(keyboard: c.SDL_KeyboardID) -> int:
     for index in 0..player_count:
         if players[index].keyboard == keyboard:
             return index
@@ -90,7 +90,7 @@ def whose_keyboard(keyboard: c.SDL_KeyboardID) -> int:
     return -1
 
 
-def set_player_color(index: int) -> void:
+function set_player_color(index: int) -> void:
     if index == 0:
         players[index].color[0] = 0
         players[index].color[1] = 255
@@ -114,13 +114,13 @@ def set_player_color(index: int) -> void:
     players[index].color[2] = 255
 
 
-def respawn_player(index: int) -> void:
+function respawn_player(index: int) -> void:
     players[index].pos[0] = double<-(map_box_scale * (c.SDL_rand(256) - 128)) / 256.0
     players[index].pos[1] = double<-(map_box_scale * (c.SDL_rand(256) - 128)) / 256.0
     players[index].pos[2] = double<-(map_box_scale * (c.SDL_rand(256) - 128)) / 256.0
 
 
-def initialize_player(index: int) -> void:
+function initialize_player(index: int) -> void:
     let x_sign = if (index & 1) != 0: -1.0 else: 1.0
     let z_sign = if (index & 2) != 0: -1.0 else: 1.0
 
@@ -140,12 +140,12 @@ def initialize_player(index: int) -> void:
     set_player_color(index)
 
 
-def init_players() -> void:
+function init_players() -> void:
     for index in 0..max_player_count:
         initialize_player(index)
 
 
-def init_edges() -> void:
+function init_edges() -> void:
     let bound = float<-map_box_scale
 
     for index in 0..12:
@@ -165,7 +165,7 @@ def init_edges() -> void:
             edges[index + 12 + map_box_scale][endpoint * 3 + 2] = if endpoint != 0: bound else: -bound
 
 
-def shoot(shooter: int) -> void:
+function shoot(shooter: int) -> void:
     let x0 = players[shooter].pos[0]
     let y0 = players[shooter].pos[1]
     let z0 = players[shooter].pos[2]
@@ -205,7 +205,7 @@ def shoot(shooter: int) -> void:
             respawn_player(index)
 
 
-def update_players(dt_ns: c.Uint64) -> void:
+function update_players(dt_ns: c.Uint64) -> void:
     for index in 0..player_count:
         let time = double<-dt_ns * 1.0e-9
         let drag = c.SDL_exp(-time * 6.0)
@@ -246,7 +246,7 @@ def update_players(dt_ns: c.Uint64) -> void:
         players[index].pos[2] = clamped_z
 
 
-def draw_circle(radius: float, x: float, y: float) -> void:
+function draw_circle(radius: float, x: float, y: float) -> void:
     var points = zero[array[c.SDL_FPoint, 33]]
 
     for index in 0..circle_draw_sides_len:
@@ -257,7 +257,7 @@ def draw_circle(radius: float, x: float, y: float) -> void:
     c.SDL_RenderLines(renderer, ptr_of(points[0]), circle_draw_sides_len)
 
 
-def draw_clipped_segment(ax: float, ay: float, az: float, bx: float, by: float, bz: float, x: float, y: float, z: float, w: float) -> void:
+function draw_clipped_segment(ax: float, ay: float, az: float, bx: float, by: float, bz: float, x: float, y: float, z: float, w: float) -> void:
     var start_x = ax
     var start_y = ay
     var start_z = az
@@ -290,7 +290,7 @@ def draw_clipped_segment(ax: float, ay: float, az: float, bx: float, by: float, 
     c.SDL_RenderLine(renderer, x + start_x, y - start_y, x + end_x, y - end_y)
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     var output_width: int = 0
     var output_height: int = 0
 
@@ -378,7 +378,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def set_wasd_bit(player_index: int, scancode: c.SDL_Scancode, pressed: bool) -> void:
+function set_wasd_bit(player_index: int, scancode: c.SDL_Scancode, pressed: bool) -> void:
     var mask: ubyte = 0
 
     if scancode == c.SDL_Scancode.SDL_SCANCODE_W:
@@ -405,7 +405,7 @@ def set_wasd_bit(player_index: int, scancode: c.SDL_Scancode, pressed: bool) -> 
         players[player_index].wasd &= ubyte<-~mask
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -473,7 +473,7 @@ def pump_events() -> bool:
     return true
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example splitscreen shooter game", c"1.0", c"com.example.woodeneye-008")
     c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.url", c"https://examples.libsdl.org/SDL3/demo/02-woodeneye-008/")
     c.SDL_SetAppMetadataProperty(c"SDL.app.metadata.creator", c"SDL team")
@@ -523,5 +523,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

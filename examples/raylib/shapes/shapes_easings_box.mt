@@ -10,29 +10,29 @@ const window_title: cstr = c"raylib [shapes] example - easings box"
 const reset_text: cstr = c"PRESS [SPACE] TO RESET BOX ANIMATION!"
 
 
-def pow2(exponent: float) -> float:
+function pow2(exponent: float) -> float:
     return math.expf(math.logf(2.0) * exponent)
 
 
-def ease_linear_in(t: float, b: float, c: float, d: float) -> float:
+function ease_linear_in(t: float, b: float, c: float, d: float) -> float:
     return c * t / d + b
 
 
-def ease_sine_out(t: float, b: float, c: float, d: float) -> float:
+function ease_sine_out(t: float, b: float, c: float, d: float) -> float:
     return c * math.sinf(t / d * (mt_math.pi / 2.0)) + b
 
 
-def ease_circ_out(t: float, b: float, c: float, d: float) -> float:
+function ease_circ_out(t: float, b: float, c: float, d: float) -> float:
     let normalized = t / d - 1.0
     return c * math.sqrtf(1.0 - normalized * normalized) + b
 
 
-def ease_quad_out(t: float, b: float, c: float, d: float) -> float:
+function ease_quad_out(t: float, b: float, c: float, d: float) -> float:
     let normalized = t / d
     return -c * normalized * (normalized - 2.0) + b
 
 
-def ease_bounce_out(t: float, b: float, c: float, d: float) -> float:
+function ease_bounce_out(t: float, b: float, c: float, d: float) -> float:
     var normalized = t / d
 
     if normalized < 1.0 / 2.75:
@@ -48,7 +48,7 @@ def ease_bounce_out(t: float, b: float, c: float, d: float) -> float:
     return c * (7.5625 * normalized * normalized + 0.984375) + b
 
 
-def ease_elastic_out(t: float, b: float, c: float, d: float) -> float:
+function ease_elastic_out(t: float, b: float, c: float, d: float) -> float:
     if t == 0.0:
         return b
 
@@ -63,7 +63,7 @@ def ease_elastic_out(t: float, b: float, c: float, d: float) -> float:
     return amplitude * pow2(-10.0 * normalized) * math.sinf((normalized * d - shift) * mt_math.tau / period) + c + b
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -15,7 +15,7 @@ var renderer: sdl.Renderer
 var points: array[sdl.FPoint, 500] = zero[array[sdl.FPoint, 500]]
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[sdl.Event]
 
     while sdl.poll_event(event):
@@ -25,7 +25,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     var rect = sdl.FRect(x = 100.0, y = 100.0, w = 440.0, h = 280.0)
 
     sdl.set_render_draw_color(renderer, 33, 33, 33, 255)
@@ -51,7 +51,7 @@ def render_frame() -> void:
     sdl.render_present(renderer)
 
 
-def app_main() -> int:
+function app_main() -> int:
     sdl.set_app_metadata("Example Renderer Primitives", "1.0", "com.example.renderer-primitives")
 
     if not sdl.init(sdl.INIT_VIDEO):
@@ -76,5 +76,5 @@ def app_main() -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return sdl_rt.run_app_no_args(argc, argv, app_main)

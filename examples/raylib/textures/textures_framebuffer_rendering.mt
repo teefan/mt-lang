@@ -16,7 +16,7 @@ const near_plane: float = 0.05
 const capture_size: float = 128.0
 
 
-def draw_camera_prism(camera: rl.Camera3D, aspect: float, color: rl.Color) -> void:
+function draw_camera_prism(camera: rl.Camera3D, aspect: float, color: rl.Color) -> void:
     let length = camera.position.distance(camera.target)
     let plane_ndc = array[rl.Vector3, 4](
         rl.Vector3(x = -1.0, y = -1.0, z = 1.0),
@@ -49,7 +49,7 @@ def draw_camera_prism(camera: rl.Camera3D, aspect: float, color: rl.Color) -> vo
         rl.DrawLine3D(camera.position, corners[index], color)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

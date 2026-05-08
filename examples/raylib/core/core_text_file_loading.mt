@@ -14,7 +14,7 @@ const window_title: cstr = c"raylib [core] example - text file loading"
 const file_name: cstr = c"../resources/text_file.txt"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
