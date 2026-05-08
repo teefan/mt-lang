@@ -23,7 +23,7 @@ module MilkTea
   end
 
   class Sema
-    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :values, :functions, :methods, :local_completion_frames, :binding_resolution, :required_unsafe_lines)
+    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :values, :functions, :methods, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines)
     LocalCompletionFrame = Data.define(:start_line, :end_line, :function_name, :receiver_type, :snapshots)
     LocalCompletionSnapshot = Data.define(:line, :column, :bindings)
     BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids, :mutating_argument_identifier_ids)
@@ -126,6 +126,8 @@ module MilkTea
         @preassigned_local_binding_ids = {}
         @nullability_flow_result = nil
         @unsafe_statement_lines = []
+        @callable_value_identifier_sites = {}
+        @callable_value_member_access_sites = {}
         @required_unsafe_lines = []
       end
 
@@ -156,6 +158,8 @@ module MilkTea
           methods: snapshot_methods,
           local_completion_frames: @local_completion_frames.dup.freeze,
           binding_resolution: binding_resolution_snapshot,
+          callable_value_identifier_sites: @callable_value_identifier_sites.dup.freeze,
+          callable_value_member_access_sites: @callable_value_member_access_sites.dup.freeze,
           required_unsafe_lines: @required_unsafe_lines.uniq.freeze,
         )
       end
@@ -209,6 +213,8 @@ module MilkTea
           methods: snapshot_methods,
           local_completion_frames: @local_completion_frames.dup.freeze,
           binding_resolution: binding_resolution_snapshot,
+          callable_value_identifier_sites: @callable_value_identifier_sites.dup.freeze,
+          callable_value_member_access_sites: @callable_value_member_access_sites.dup.freeze,
           required_unsafe_lines: @required_unsafe_lines.uniq.freeze,
         )
 
@@ -908,6 +914,7 @@ module MilkTea
         with_scope(binding.body_params) do |scopes|
           start_local_completion_frame(binding, scopes)
           if binding.ast.is_a?(AST::ForeignFunctionDecl)
+            record_callable_value_expression_site(binding.ast.mapping) unless binding.ast.mapping.is_a?(AST::Call)
             expression = foreign_mapping_expression(binding.ast)
             actual_type = with_foreign_mapping_context do
               infer_expression(expression, scopes:, expected_type: binding.type.return_type)
@@ -1885,7 +1892,10 @@ module MilkTea
           raise_sema_error("generic function #{expression.name} must be called") if @top_level_functions.fetch(expression.name).type_params.any?
 
           function_type = function_type_for_name(expression.name)
-          return function_type if expected_type
+          if expected_type
+            record_callable_value_identifier_site(expression)
+            return function_type
+          end
 
           raise_sema_error("function #{expression.name} must be called")
         end
@@ -1922,7 +1932,10 @@ module MilkTea
           if imported_module.functions.key?(expression.member)
             function = imported_module.functions.fetch(expression.member)
             raise_sema_error("generic function #{expression.receiver.name}.#{expression.member} must be called") if function.type_params.any?
-            return function.type if expected_type
+            if expected_type
+              record_callable_value_member_access_site(expression)
+              return function.type
+            end
 
             raise_sema_error("function #{expression.receiver.name}.#{expression.member} must be called")
           end
@@ -2014,7 +2027,9 @@ module MilkTea
         right_expected_type = case expression.operator
                               when "<<", ">>"
                                 propagated_type || left_type
-                              when "+", "-", "*", "/", "%", "|", "&", "^"
+                              when "+", "-", "*", "/", "%"
+                                propagated_type || left_type
+                              when "|", "&", "^"
                                 left_type
                               else
                                 left_type
@@ -2776,6 +2791,7 @@ module MilkTea
             "field #{display_name}.#{argument.name} expects #{field_type}, got #{actual_type}",
             expression: argument.value,
             external_numeric: struct_type.respond_to?(:external) && struct_type.external,
+            contextual_int_to_float: contextual_int_to_float_target?(field_type),
           )
           provided[argument.name] = true
         end
@@ -2802,7 +2818,13 @@ module MilkTea
           raise_sema_error("duplicate field #{variant_type}.#{arm_name}.#{argument.name}") if provided.key?(argument.name)
 
           actual_type = infer_expression(argument.value, scopes:, expected_type: field_type)
-          ensure_assignable!(actual_type, field_type, "field #{variant_type}.#{arm_name}.#{argument.name} expects #{field_type}, got #{actual_type}", expression: argument.value)
+          ensure_assignable!(
+            actual_type,
+            field_type,
+            "field #{variant_type}.#{arm_name}.#{argument.name} expects #{field_type}, got #{actual_type}",
+            expression: argument.value,
+            contextual_int_to_float: contextual_int_to_float_target?(field_type),
+          )
           provided[argument.name] = true
         end
 
@@ -3250,7 +3272,7 @@ module MilkTea
       end
 
       def call_argument_compatible?(actual_type, expected_type, scopes:, external:, expression: nil)
-        return true if argument_types_compatible?(actual_type, expected_type, external:, expression:)
+        return true if argument_types_compatible?(actual_type, expected_type, external:, expression:, contextual_int_to_float: !external)
         return true if direct_function_to_proc_argument_compatible?(actual_type, expected_type, expression, scopes)
 
         false
@@ -3275,8 +3297,8 @@ module MilkTea
         expression.is_a?(AST::StringLiteral) && !expression.cstring && expected_type == @types.fetch("cstr")
       end
 
-      def argument_types_compatible?(actual_type, expected_type, external:, expression: nil)
-        return true if types_compatible?(actual_type, expected_type, expression:, external_numeric: external)
+      def argument_types_compatible?(actual_type, expected_type, external:, expression: nil, contextual_int_to_float: false)
+        return true if types_compatible?(actual_type, expected_type, expression:, external_numeric: external, contextual_int_to_float:)
         return true if external && external_void_pointer_argument_compatibility?(actual_type, expected_type)
         return true if external && extern_enum_integer_argument_compatibility?(actual_type, expected_type)
         if external && foreign_mapping_context? && foreign_identity_projection_compatible?(actual_type, expected_type)
@@ -5082,6 +5104,32 @@ module MilkTea
         return unless binding&.id
 
         @identifier_binding_ids[expression.object_id] = binding.id
+      end
+
+      def record_callable_value_identifier_site(expression)
+        return unless expression.is_a?(AST::Identifier)
+        return unless expression.line && expression.column
+
+        @callable_value_identifier_sites[[expression.line, expression.column]] = true
+      end
+
+      def record_callable_value_expression_site(expression)
+        case expression
+        when AST::Identifier
+          record_callable_value_identifier_site(expression)
+        when AST::MemberAccess
+          record_callable_value_member_access_site(expression)
+        end
+      end
+
+      def record_callable_value_member_access_site(expression)
+        return unless expression.is_a?(AST::MemberAccess)
+        return unless expression.receiver.is_a?(AST::Identifier)
+        return unless expression.receiver.line && expression.receiver.column
+
+        @callable_value_member_access_sites[
+          [expression.receiver.name, expression.receiver.line, expression.receiver.column, expression.member]
+        ] = true
       end
 
       def record_declaration_binding(node, binding)

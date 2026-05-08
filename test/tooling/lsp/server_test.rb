@@ -257,6 +257,60 @@ class LSPServerTest < Minitest::Test
         return add(invoked, from_entry)
   MT
 
+  SOURCE_WITH_FUNCTION_VALUE_AND_ZERO_SEMANTICS = <<~MT
+    struct Box:
+        value: int
+
+    def add_one(value: int) -> int:
+        return value + 1
+
+    def apply(callback: fn(value: int) -> int, value: int) -> int:
+        return callback(value)
+
+    def main() -> int:
+        let callback: fn(value: int) -> int = add_one
+        let zeroed = zero[Box]
+        return apply(add_one, zeroed.value) + callback(0)
+  MT
+
+  SOURCE_WITH_INVALID_BARE_FUNCTION_REFERENCE_SEMANTICS = <<~MT
+    def add_one(value: int) -> int:
+        return value + 1
+
+    def main() -> int:
+        let callback = add_one
+        return 0
+  MT
+
+  SOURCE_WITH_SPECIALIZED_MEMBER_CALL_SEMANTICS = <<~MT
+    module tmp.specialized_member_calls
+
+    import std.mem.pool as pool
+
+    struct Mat4:
+        value: int
+
+    def main() -> int:
+        var matrices = pool.create_for[Mat4](2)
+        let item = matrices.alloc[Mat4]()
+        if item == null:
+            return 1
+        return 0
+  MT
+
+  SOURCE_WITH_GENERIC_VARIANT_SEMANTICS = <<~MT
+    variant Option[T]:
+        some(value: T)
+        none
+
+    def has_payload(value: Option[int]) -> bool:
+        match value:
+            Option.some as payload:
+                return payload.value > 0
+            Option.none:
+                return false
+  MT
+
   SOURCE_WITH_FSTRING_INTERPOLATION = <<~'MT'
     def main() -> int:
         let name = "milk"
@@ -1067,6 +1121,55 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_inlay_hint_suppresses_identifier_arguments_but_keeps_literal_hints_for_imported_module_calls
+    Dir.mktmpdir("mt_lsp_inlay_module_call_identifiers") do |dir|
+      Dir.mkdir(File.join(dir, "std"))
+
+      module_path = File.join(dir, "ui.mt")
+      module_source = <<~MT
+        module ui
+
+        pub def draw(width: int, title: str, count: int) -> int:
+            return count
+      MT
+      File.write(module_path, module_source)
+
+      main_path = File.join(dir, "main.mt")
+      main_source = <<~MT
+        module main
+
+        import ui as ui
+
+        def main() -> int:
+            let screen_width = 800
+            return ui.draw(screen_width, "Milk Tea", 3)
+      MT
+      File.write(main_path, main_source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+        uri = path_to_uri(main_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => main_source }
+        })
+
+        response = client.send_request("textDocument/inlayHint", {
+          "textDocument" => { "uri" => uri },
+          "range" => {
+            "start" => { "line" => 5, "character" => 0 },
+            "end" => { "line" => 6, "character" => 50 }
+          }
+        })
+
+        labels = response.fetch("result").map { |hint| hint["label"] }
+        refute_includes labels, "width: "
+        assert_includes labels, "title: "
+        assert_includes labels, "count: "
+      end
+    end
+  end
+
   def test_document_diagnostic_returns_full_report
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -1851,6 +1954,49 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_semantic_tokens_do_not_classify_invalid_imported_module_function_reference_as_function
+    Dir.mktmpdir("mt_lsp_semantic_tokens_invalid_imported") do |dir|
+      c_dir = File.join(dir, "std", "c")
+      FileUtils.mkdir_p(c_dir)
+
+      File.write(File.join(c_dir, "sdl3.mt"), <<~MT)
+        extern module std.c.sdl3:
+            extern def SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
+      MT
+
+      source_path = File.join(dir, "std", "sdl3.mt")
+      FileUtils.mkdir_p(File.dirname(source_path))
+      source = <<~MT
+        module std.sdl3
+
+        import std.c.sdl3 as c
+
+        def main() -> int:
+            let callback = c.SDL_SetWindowFillDocument
+            return 0
+      MT
+      File.write(source_path, source)
+
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        uri = path_to_uri(source_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+        member_entry = semantic_entry_for_lexeme_on_line(source, entries, "SDL_SetWindowFillDocument", 5)
+
+        assert_equal "property", member_entry.fetch("tokenType")
+      end
+    end
+  end
+
   def test_semantic_tokens_classify_large_std_imported_module_type_reference
     Dir.mktmpdir("mt_lsp_semantic_tokens_large_std") do |dir|
       c_dir = File.join(dir, "std", "c")
@@ -2096,6 +2242,111 @@ class LSPServerTest < Minitest::Test
         assert_equal "variable", callback_call.fetch("tokenType")
         assert_equal "property", field_callback_call.fetch("tokenType")
         assert_equal "function", add_call.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_classify_function_values_and_bare_zero_specialization
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_function_value_zero_test.mt"
+        source = SOURCE_WITH_FUNCTION_VALUE_AND_ZERO_SEMANTICS
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        callback_value = semantic_entry_for_lexeme_on_line(source, entries, "add_one", 10)
+        zero_value = semantic_entry_for_lexeme_on_line(source, entries, "zero", 11)
+        callback_argument = semantic_entry_for_lexeme_on_line(source, entries, "add_one", 12)
+
+        assert_equal "function", callback_value.fetch("tokenType")
+        assert_equal "function", callback_argument.fetch("tokenType")
+        assert_equal "function", zero_value.fetch("tokenType")
+        assert_includes zero_value.fetch("modifierNames"), "defaultLibrary"
+      end
+    end
+
+    def test_semantic_tokens_do_not_classify_invalid_bare_function_reference_as_function
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_invalid_bare_function_reference_test.mt"
+        source = SOURCE_WITH_INVALID_BARE_FUNCTION_REFERENCE_SEMANTICS
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+        invalid_reference = semantic_entry_for_lexeme_on_line(source, entries, "add_one", 4)
+
+        assert_equal "variable", invalid_reference.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_classify_specialized_member_calls_as_function_and_method
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
+        source = SOURCE_WITH_SPECIALIZED_MEMBER_CALL_SEMANTICS
+        path = File.join(Dir.pwd, "tmp", "lsp_semantic_specialized_member_calls_test.mt")
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, source)
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+        create_for_entry = semantic_entry_for_lexeme_on_line(source, entries, "create_for", 8)
+        alloc_entry = semantic_entry_for_lexeme_on_line(source, entries, "alloc", 9)
+
+        assert_equal "function", create_for_entry.fetch("tokenType")
+        assert_equal "method", alloc_entry.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_classify_type_parameters_match_scrutinees_and_match_binders
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_generic_variant_test.mt"
+        source = SOURCE_WITH_GENERIC_VARIANT_SEMANTICS
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        header_type_param = semantic_entry_for_lexeme_on_line(source, entries, "T", 0)
+        field_type_param = semantic_entry_for_lexeme_on_line(source, entries, "T", 1)
+        match_scrutinee = semantic_entry_for_lexeme_on_line(source, entries, "value", 5)
+        match_binder = semantic_entry_for_lexeme_on_line(source, entries, "payload", 6)
+
+        assert_equal "typeParameter", header_type_param.fetch("tokenType")
+        assert_includes header_type_param.fetch("modifierNames"), "declaration"
+        assert_equal "typeParameter", field_type_param.fetch("tokenType")
+        assert_equal "parameter", match_scrutinee.fetch("tokenType")
+        refute_includes match_scrutinee.fetch("modifierNames"), "declaration"
+        assert_equal "variable", match_binder.fetch("tokenType")
+        assert_includes match_binder.fetch("modifierNames"), "declaration"
       end
     end
 
@@ -2400,7 +2651,8 @@ class LSPServerTest < Minitest::Test
     lines = source.lines
     entries.find do |entry|
       line_text = lines.fetch(entry.fetch("line"))
-      line_text[entry.fetch("startChar"), lexeme.length] == lexeme
+      entry.fetch("endChar") - entry.fetch("startChar") == lexeme.length &&
+        line_text[entry.fetch("startChar"), lexeme.length] == lexeme
     end or flunk("expected semantic token entry for #{lexeme.inspect}")
   end
 
@@ -2410,7 +2662,8 @@ class LSPServerTest < Minitest::Test
       next false unless entry.fetch("line") == line
 
       line_text = lines.fetch(line)
-      line_text[entry.fetch("startChar"), lexeme.length] == lexeme
+      entry.fetch("endChar") - entry.fetch("startChar") == lexeme.length &&
+        line_text[entry.fetch("startChar"), lexeme.length] == lexeme
     end or flunk("expected semantic token entry for #{lexeme.inspect} on line #{line}")
   end
 

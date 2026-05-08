@@ -591,9 +591,9 @@ Float literals default to `double` when unconstrained.
 
 Typed contexts may adopt the expected numeric type for a literal directly. This is limited to literal typing, not general implicit conversion.
 
-There is one additional narrow boundary rule for float-heavy code: a primitive integer expression may flow into an expected float type for an explicitly typed local declaration, an `=` assignment to a float-typed lvalue, or a return expression from a float-returning function.
+There is one additional narrow boundary rule for float-heavy code: a primitive integer expression may flow into an expected float type for an explicitly typed local declaration, an `=` assignment to a float-typed lvalue, a return expression from a float-returning function, an ordinary function argument with a float parameter type, or an aggregate/variant field initializer with a float field type.
 
-This is still a boundary cast, not a general usual-arithmetic-conversions model. It does not widen ordinary function arguments, aggregate field initializers, public constant initialization, or arbitrary expression typing. Integer arithmetic stays integer arithmetic until that final boundary cast, so `let ratio: float = hits / total` still performs integer division before the result is converted.
+This is still a boundary cast, not a general usual-arithmetic-conversions model. It does not widen public constant initialization or arbitrary expression typing. Integer arithmetic stays integer arithmetic until that final boundary cast, so `let ratio: float = hits / total` still performs integer division before the result is converted. When a float boundary is already known, mixed arithmetic under that boundary may type float literals as `float` instead of defaulting the whole expression to `double`, so code like `takes_float(angle * 0.5)` does not need a manual `float<-` on the literal.
 
 Examples of typed contexts:
 

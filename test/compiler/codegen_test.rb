@@ -1600,6 +1600,34 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return \(\(float\) \(value \+ 3\)\);/, generated)
   end
 
+  def test_generate_c_for_contextual_integer_to_float_at_call_and_field_boundaries
+    source = [
+      "module demo.contextual_float_calls",
+      "",
+      "struct Point:",
+      "    x: float",
+      "    y: float",
+      "",
+      "def takes_float(value: float) -> float:",
+      "    return value",
+      "",
+      "def main() -> int:",
+      "    let value = 7",
+      "    let point = Point(x = value, y = value * 0.5)",
+      "    let direct = takes_float(value)",
+      "    let mixed = takes_float(value * 0.5)",
+      "    return int<-(point.x + point.y + direct + mixed)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/\.x = \(\(float\) value\)/, generated)
+    assert_match(/\.y = \(\(\(float\) value\)\) \* 0\.5f/, generated)
+    assert_match(/takes_float\(\(\(float\) value\)\);/, generated)
+    assert_match(/takes_float\(\(\(\(float\) value\)\) \* 0\.5f\);/, generated)
+  end
+
   def test_generate_c_for_generic_struct_instantiation_and_embedding
     source = [
       "module demo.generic_surface",
