@@ -254,6 +254,16 @@ class LSPServerTest < Minitest::Test
         return speed
   MT
 
+  SOURCE_WITH_STRUCT_FIELD_SEMANTICS = <<~MT
+    struct Packet:
+        str: ptr[char]
+        size: int
+
+    function read(packet: Packet) -> int:
+        let raw = packet.str
+        return packet.size
+  MT
+
   SOURCE_WITH_RESOLVED_CALLABLE_SEMANTICS = <<~MT
     struct Point:
         x: int
@@ -880,35 +890,59 @@ class LSPServerTest < Minitest::Test
     server&.send(:handle_shutdown, nil)
   end
 
-  def test_server_disables_workspace_background_analysis_warmup
-    server = MilkTea::LSP::Server.new
+  def test_semantic_tokens_classify_import_heavy_imported_module_function_reference_as_function
+    Dir.mktmpdir("lsp_semantic_import_heavy") do |dir|
+      c_dir = File.join(dir, "std", "c")
+      FileUtils.mkdir_p(c_dir)
 
-    refute server.instance_variable_get(:@workspace).background_analysis_warmup_enabled?
-  ensure
-    server&.send(:handle_shutdown, nil)
-  end
-
-  def test_semantic_tokens_skip_reason_uses_workspace_expensive_file_guard
-    Dir.mktmpdir("lsp_semantic_skip_reason") do |dir|
-      FileUtils.mkdir_p(File.join(dir, "std"))
-      path = File.join(dir, "main.mt")
-      source = <<~MT
-        module main
-
-        import alpha as a
-        import beta as b
-        import gamma as g
-        import delta as d
-
-        function main() -> int:
-            return 0
+      File.write(File.join(c_dir, "sdl3.mt"), <<~MT)
+        external module std.c.sdl3:
+            external function SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
       MT
-      File.write(path, source)
 
-      server = MilkTea::LSP::Server.new
-      assert_equal 'import-heavy', server.send(:semantic_tokens_analysis_skip_reason, path_to_uri(path), source)
-    ensure
-      server&.send(:handle_shutdown, nil)
+      %w[alpha beta gamma].each do |name|
+        File.write(File.join(dir, "std", "#{name}.mt"), <<~MT)
+          module std.#{name}
+
+          public function answer() -> int:
+              return 42
+        MT
+      end
+
+      source_path = File.join(dir, "std", "sdl3.mt")
+      FileUtils.mkdir_p(File.dirname(source_path))
+      source = <<~MT
+        module std.sdl3
+
+        import std.c.sdl3 as c
+        import std.alpha as a
+        import std.beta as b
+        import std.gamma as g
+
+        public foreign function set_window_fill_document(window: ptr[void], fill: bool) -> bool = c.SDL_SetWindowFillDocument
+      MT
+      File.write(source_path, source)
+
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        uri = path_to_uri(source_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        alias_entry = semantic_entry_for_lexeme(source, entries, "c")
+        member_entry = semantic_entry_for_lexeme(source, entries, "SDL_SetWindowFillDocument")
+
+        assert_equal "namespace", alias_entry.fetch("tokenType")
+        assert_equal "function", member_entry.fetch("tokenType")
+      end
     end
   end
 
@@ -2243,6 +2277,37 @@ class LSPServerTest < Minitest::Test
         assert_equal "variable", index_decl.fetch("tokenType")
         assert_includes index_decl.fetch("modifierNames"), "declaration"
         assert_equal "variable", index_ref.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_classify_struct_field_declarations_and_member_access
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_struct_field_test.mt"
+        source = SOURCE_WITH_STRUCT_FIELD_SEMANTICS
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        str_decl = semantic_entry_for_lexeme_on_line(source, entries, "str", 1)
+        size_decl = semantic_entry_for_lexeme_on_line(source, entries, "size", 2)
+        str_access = semantic_entry_for_lexeme_on_line(source, entries, "str", 5)
+        size_access = semantic_entry_for_lexeme_on_line(source, entries, "size", 6)
+
+        assert_equal "property", str_decl.fetch("tokenType")
+        assert_includes str_decl.fetch("modifierNames"), "declaration"
+        assert_equal "property", size_decl.fetch("tokenType")
+        assert_includes size_decl.fetch("modifierNames"), "declaration"
+        assert_equal "property", str_access.fetch("tokenType")
+        refute_includes str_access.fetch("modifierNames"), "declaration"
+        assert_equal "property", size_access.fetch("tokenType")
       end
     end
 

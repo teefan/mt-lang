@@ -71,7 +71,7 @@ module MilkTea
 
       def initialize(protocol: Protocol)
         @protocol = protocol
-        @workspace = Workspace.new(enable_background_analysis_warmup: false)
+        @workspace = Workspace.new
         @format_mode = :tidy
         @handlers = {}
         @diagnostic_report_cache = {}
@@ -465,12 +465,7 @@ module MilkTea
 
         elapsed = elapsed_ms(total_start)
         short_uri = shorten_uri(uri) || uri
-        analysis_detail = if open_stats[:eager_analysis]
-                            mode = open_stats[:analysis_mode] || :unknown
-                            "on(#{mode})"
-                          else
-                            "skipped(#{open_stats[:skip_reason] || 'none'})"
-                          end
+        analysis_detail = "on(#{open_stats[:analysis_mode] || :unknown})"
         log_perf_breakdown(
           'textDocument/didOpen',
           elapsed,
@@ -563,8 +558,7 @@ module MilkTea
         tokens_ms = elapsed_ms(tokens_start)
 
         analysis_start = monotonic_time
-        analysis_skip_reason = semantic_tokens_analysis_skip_reason(uri, content, for_lsp: true)
-        analysis = analysis_skip_reason.nil? ? @workspace.get_analysis(uri) : nil
+        analysis = @workspace.get_analysis(uri)
         analysis_ms = elapsed_ms(analysis_start)
 
         build_start = monotonic_time
@@ -579,9 +573,8 @@ module MilkTea
 
         elapsed = elapsed_ms(total_start)
         short_uri = shorten_uri(uri) || uri
-        analysis_detail = analysis_skip_reason ? "off(#{analysis_skip_reason})" : 'on'
         log_perf_breakdown('textDocument/semanticTokens/full', elapsed,
-                           "uri=#{short_uri} bytes=#{content.bytesize} lines=#{content.count("\n") + 1} cache=miss tokens=#{tokens.length} entries=#{semantic_entries.length} data_len=#{data.length} analysis=#{analysis_detail} stages_ms=tokens:#{tokens_ms},analysis:#{analysis_ms},build:#{build_ms},encode:#{encode_ms}")
+                           "uri=#{short_uri} bytes=#{content.bytesize} lines=#{content.count("\n") + 1} cache=miss tokens=#{tokens.length} entries=#{semantic_entries.length} data_len=#{data.length} analysis=on stages_ms=tokens:#{tokens_ms},analysis:#{analysis_ms},build:#{build_ms},encode:#{encode_ms}")
 
         { data: data }
       rescue StandardError => e
@@ -1178,27 +1171,6 @@ module MilkTea
       rescue StandardError => e
         warn "Error in codeAction handler: #{e.message}"
         []
-      end
-
-      def semantic_tokens_use_analysis?(uri, content)
-        return false if semantic_tokens_analysis_skip_reason(uri, content)
-
-        true
-      rescue StandardError
-        true
-      end
-
-      def semantic_tokens_analysis_skip_reason(uri, content, for_lsp: false)
-        # Skip analysis for URIs outside the workspace (e.g. vscode-internal or gem paths).
-        # This includes the system MilkTea stdlib and gem code.
-        return 'library-uri' if library_uri?(uri)
-
-        skip_reason = @workspace.analysis_skip_reason(uri, content)
-        return skip_reason if skip_reason && skip_reason != 'std-path'
-
-        nil
-      rescue StandardError
-        nil
       end
 
       def handle_document_diagnostic(params)
@@ -2171,6 +2143,7 @@ module MilkTea
         end
 
         return [:variable, ['declaration']] if match_arm_binding_token?(tokens, index)
+        return [:property, ['declaration']] if field_declaration_token?(tokens, index)
 
         if analysis
           return [:typeParameter, ['declaration']] if type_parameter_declaration_token?(analysis, tokens, index)
@@ -2275,6 +2248,17 @@ module MilkTea
         prev_tok = previous_non_trivia_token(tokens, index)
         next_tok = next_non_trivia_token(tokens, index + 1)
         prev_tok&.type == :as && next_tok&.type == :colon
+      end
+
+      def field_declaration_token?(tokens, index)
+        tok = tokens[index]
+        return false unless tok&.type == :identifier
+        return false unless first_non_trivia_token_on_line?(tokens, index)
+        return false if parameter_declaration_token?(tokens, index)
+        return false if match_arm_binding_token?(tokens, index)
+
+        next_tok = next_non_trivia_token(tokens, index + 1)
+        next_tok&.type == :colon
       end
 
       def parameter_declaration_token?(tokens, index)
@@ -2691,6 +2675,22 @@ module MilkTea
         return nil unless prev_index
 
         tokens[prev_index]
+      end
+
+      def first_non_trivia_token_on_line?(tokens, index)
+        token = tokens[index]
+        return false unless token
+
+        i = index - 1
+        while i >= 0
+          previous = tokens[i]
+          return true if previous.type == :newline
+          return false if previous.line == token.line && ![:indent, :dedent].include?(previous.type)
+
+          i -= 1
+        end
+
+        true
       end
 
       def previous_non_trivia_token_index(tokens, index)
