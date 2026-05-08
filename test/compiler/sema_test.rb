@@ -2523,7 +2523,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_rejects_non_literal_numeric_coercion_for_non_external_boundaries
+  def test_type_checks_contextual_integer_to_float_for_non_external_call_and_field_boundaries
     source = <<~MT
       module demo.non_external_numeric_strict
 
@@ -2537,14 +2537,14 @@ class MilkTeaSemaTest < Minitest::Test
           let value = 7
           takes_float(value)
           let point = Point(x = value)
-          return int<-point.x
+          let radians: float = value * 0.5
+          takes_float(value * 0.5)
+          return int<-(point.x + radians)
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_source(source)
-    end
+    result = check_source(source)
 
-    assert_match(/argument value to takes_float expects float, got int/, error.message)
+    assert_equal true, result.functions.key?("main")
   end
 
   def test_type_checks_contextual_integer_to_float_for_local_assignment_and_return
@@ -2570,6 +2570,24 @@ class MilkTeaSemaTest < Minitest::Test
     result = check_source(source)
 
     assert_equal true, result.functions.key?("project")
+  end
+
+  def test_rejects_contextual_float_narrowing_without_float_expected_context
+    source = <<~MT
+      module demo.contextual_float_expected_only
+
+      def main() -> int:
+          let angle = 1
+          let radians = angle * 0.5
+          let target: float = radians
+          return int<-target
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/cannot assign double to target: expected float/, error.message)
   end
 
   def test_type_checks_numeric_coercion_for_external_boundaries

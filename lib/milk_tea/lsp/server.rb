@@ -1285,6 +1285,7 @@ module MilkTea
               arg_starts.each_with_index do |arg_tok, index|
                 break if index >= params_list.length
                 next unless position_in_range?(arg_tok.line - 1, arg_tok.column - 1, start_line, start_char, end_line, end_char)
+                next if self_describing_argument_expression?(tokens, arg_tok)
                 # Suppress hint when the argument is a bare identifier whose name
                 # already matches the parameter — `foo(x: x)` hints are just noise.
                 param_name = params_list[index].name
@@ -2138,7 +2139,7 @@ module MilkTea
         tok = tokens[index]
         prev_tok = previous_non_trivia_token(tokens, index)
         next_tok = next_non_trivia_token(tokens, index + 1)
-        colon_terminated_identifier = next_tok&.type == :colon
+        parameter_declaration = parameter_declaration_token?(tokens, index)
 
         if (import_info = import_path_info_at(tokens, index, allow_keywords: true))
           modifiers = []
@@ -2168,14 +2169,21 @@ module MilkTea
           return [:variable, ['declaration']]
         end
 
+        return [:variable, ['declaration']] if match_arm_binding_token?(tokens, index)
+
+        if analysis
+          return [:typeParameter, ['declaration']] if type_parameter_declaration_token?(analysis, tokens, index)
+          return [:typeParameter, []] if type_parameter_reference_token?(analysis, tokens, index)
+        end
+
         return [:property, []] if named_argument_label_token?(tokens, index)
 
         if next_tok&.type == :dot && analysis
           return [:type, []] if analysis.types.key?(name)
           return [:namespace, []] if analysis.imports.key?(name)
 
-          if (binding = local_semantic_value_binding(analysis, tok, allow_same_line_future: colon_terminated_identifier))
-            return semantic_value_binding_entry(binding, declaration: binding.kind == :param && colon_terminated_identifier)
+          if (binding = local_semantic_value_binding(analysis, tok, allow_same_line_future: parameter_declaration))
+            return semantic_value_binding_entry(binding, declaration: binding.kind == :param && parameter_declaration)
           end
 
           if (binding = analysis.values[name])
@@ -2193,7 +2201,11 @@ module MilkTea
           if analysis
             module_binding = imported_module_binding_for_member(tokens, index, analysis)
             if module_binding
-              return [:function, []] if module_binding.functions.key?(name)
+              if module_binding.functions.key?(name)
+                return [:function, []] if next_tok&.type == :lparen || specialized_call_with_type_args?(tokens, index)
+                return [:function, []] if imported_module_function_value_member_access_site?(analysis, tokens, index)
+                return [:property, []]
+              end
               return [:type, []] if module_binding.types.key?(name)
               if (value_binding = module_binding.values[name])
                 modifiers = []
@@ -2207,12 +2219,12 @@ module MilkTea
           end
 
           return [:enumMember, []] if type_name_member_access?(tokens, index)
-          return [:method, []] if next_tok&.type == :lparen
+          return [:method, []] if next_tok&.type == :lparen || specialized_call_with_type_args?(tokens, index)
           return [:property, []]
         end
 
         if next_tok&.type == :lparen
-          if analysis && (resolved = resolved_call_callee_semantic(name, tok, colon_terminated_identifier, analysis))
+          if analysis && (resolved = resolved_call_callee_semantic(name, tok, parameter_declaration, analysis))
             return resolved
           end
 
@@ -2236,14 +2248,18 @@ module MilkTea
           return [:type, []] if analysis.types.key?(name)
           return [:namespace, []] if analysis.imports.key?(name)
 
-          if (binding = local_semantic_value_binding(analysis, tok, allow_same_line_future: colon_terminated_identifier))
-            return semantic_value_binding_entry(binding, declaration: binding.kind == :param && colon_terminated_identifier)
+          if (binding = local_semantic_value_binding(analysis, tok, allow_same_line_future: parameter_declaration))
+            return semantic_value_binding_entry(binding, declaration: binding.kind == :param && parameter_declaration)
           end
 
           if (binding = analysis.values[name])
             return semantic_value_binding_entry(binding)
           end
+
+          return [:function, []] if bare_function_value_identifier_site?(analysis, tok)
         end
+
+        return [:function, ['defaultLibrary']] if bare_zero_specialization?(name, tokens, index)
 
         [:variable, []]
       end
@@ -2252,6 +2268,18 @@ module MilkTea
         prev_tok = previous_non_trivia_token(tokens, index)
         next_tok = next_non_trivia_token(tokens, index + 1)
         next_tok&.type == :equal && prev_tok && [:lparen, :comma].include?(prev_tok.type)
+      end
+
+      def match_arm_binding_token?(tokens, index)
+        prev_tok = previous_non_trivia_token(tokens, index)
+        next_tok = next_non_trivia_token(tokens, index + 1)
+        prev_tok&.type == :as && next_tok&.type == :colon
+      end
+
+      def parameter_declaration_token?(tokens, index)
+        prev_tok = previous_non_trivia_token(tokens, index)
+        next_tok = next_non_trivia_token(tokens, index + 1)
+        next_tok&.type == :colon && prev_tok && [:lparen, :comma].include?(prev_tok.type)
       end
 
       def local_semantic_value_binding(analysis, token, allow_same_line_future: false)
@@ -2289,9 +2317,9 @@ module MilkTea
         end
       end
 
-      def resolved_call_callee_semantic(name, token, colon_terminated_identifier, analysis)
-        if (binding = local_semantic_value_binding(analysis, token, allow_same_line_future: colon_terminated_identifier))
-          return semantic_value_binding_entry(binding, declaration: binding.kind == :param && colon_terminated_identifier)
+      def resolved_call_callee_semantic(name, token, parameter_declaration, analysis)
+        if (binding = local_semantic_value_binding(analysis, token, allow_same_line_future: parameter_declaration))
+          return semantic_value_binding_entry(binding, declaration: binding.kind == :param && parameter_declaration)
         end
 
         if (binding = analysis.values[name])
@@ -2349,6 +2377,40 @@ module MilkTea
         type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || type.is_a?(Types::Task)
       end
 
+      def bare_zero_specialization?(name, tokens, index)
+        return false unless name == 'zero'
+
+        next_index = next_non_trivia_token_index(tokens, index + 1)
+        return false unless next_index && tokens[next_index].type == :lbracket
+
+        rbracket_index = matching_closer_index(tokens, next_index, :lbracket, :rbracket)
+        return false unless rbracket_index
+
+        after_bracket_index = next_non_trivia_token_index(tokens, rbracket_index + 1)
+        after_bracket_index.nil? || tokens[after_bracket_index].type != :lparen
+      end
+
+      def bare_function_value_identifier_site?(analysis, token)
+        analysis.functions.key?(token.lexeme) &&
+          analysis.callable_value_identifier_sites.fetch([token.line, token.column], false)
+      end
+
+      def imported_module_function_value_member_access_site?(analysis, tokens, index)
+        dot_index = previous_non_trivia_token_index(tokens, index)
+        return false unless dot_index && tokens[dot_index].type == :dot
+
+        receiver_index = previous_non_trivia_token_index(tokens, dot_index)
+        return false unless receiver_index
+
+        receiver = tokens[receiver_index]
+        return false unless receiver.type == :identifier
+
+        analysis.callable_value_member_access_sites.fetch(
+          [receiver.lexeme, receiver.line, receiver.column, tokens[index].lexeme],
+          false,
+        )
+      end
+
       def imported_module_binding_for_member(tokens, index, analysis)
         dot_index = previous_non_trivia_token_index(tokens, index)
         return nil unless dot_index && tokens[dot_index].type == :dot
@@ -2385,6 +2447,98 @@ module MilkTea
 
         # Type argument entries should stay inside the current [] pair.
         next_index <= rbracket_index
+      end
+
+      def type_parameter_declaration_token?(analysis, tokens, index)
+        info = type_parameter_declaration_info_on_line(tokens, tokens[index].line)
+        info && info[:tokens].any? { |token| token.equal?(tokens[index]) }
+      end
+
+      def type_parameter_reference_token?(analysis, tokens, index)
+        tok = tokens[index]
+        return false unless type_parameter_names_in_scope(analysis, tok.line).include?(tok.lexeme)
+        return false if type_parameter_declaration_token?(analysis, tokens, index)
+
+        identifier_in_type_parameter_reference_position?(tokens, index)
+      end
+
+      def identifier_in_type_parameter_reference_position?(tokens, index)
+        return true if identifier_in_type_argument_position?(tokens, index)
+
+        prev_tok = previous_non_trivia_token(tokens, index)
+        [:colon, :arrow].include?(prev_tok&.type)
+      end
+
+      def type_parameter_declaration_info_on_line(tokens, line)
+        line_tokens = non_trivia_tokens_on_line(tokens, line)
+        return nil if line_tokens.empty?
+
+        header_index = line_tokens.index { |line_tok| generic_type_parameter_header_token?(line_tok.type) }
+        return nil unless header_index
+
+        name_index = ((header_index + 1)...line_tokens.length).find { |i| line_tokens[i].type == :identifier }
+        return nil unless name_index
+
+        lbracket_index = name_index + 1
+        return nil unless line_tokens[lbracket_index]&.type == :lbracket
+
+        depth = 0
+        type_param_tokens = []
+        i = lbracket_index
+        while i < line_tokens.length
+          tok = line_tokens[i]
+          case tok.type
+          when :lbracket
+            depth += 1
+          when :rbracket
+            depth -= 1
+            return {
+              names: type_param_tokens.map(&:lexeme),
+              tokens: type_param_tokens,
+            } if depth.zero?
+          else
+            type_param_tokens << tok if depth == 1 && tok.type == :identifier
+          end
+          i += 1
+        end
+
+        nil
+      end
+
+      def generic_type_parameter_header_token?(type)
+        [:def, :struct, :union, :enum, :flags, :variant, :type, :methods].include?(type)
+      end
+
+      def type_parameter_names_in_scope(analysis, line)
+        scopes = @type_parameter_scope_cache ||= {}
+        cached = scopes[analysis.object_id]
+        unless cached
+          decls = Array(analysis.ast&.declarations)
+          cached = decls.each_with_index.filter_map do |decl, index|
+            names = generic_type_parameter_names_for_declaration(decl)
+            next if names.empty? || decl.line.nil?
+
+            next_decl = decls[(index + 1)..]&.find { |candidate| candidate.respond_to?(:line) && !candidate.line.nil? }
+            {
+              start_line: decl.line,
+              end_line: next_decl ? next_decl.line - 1 : Float::INFINITY,
+              names: names,
+            }
+          end
+          scopes[analysis.object_id] = cached
+        end
+
+        cached.reverse_each do |scope|
+          return scope[:names] if line >= scope[:start_line] && line <= scope[:end_line]
+        end
+
+        []
+      end
+
+      def generic_type_parameter_names_for_declaration(decl)
+        return [] unless decl.respond_to?(:type_params)
+
+        Array(decl.type_params).filter_map { |type_param| type_param.respond_to?(:name) ? type_param.name : nil }
       end
 
       def matching_closer_index(tokens, opener_index, opener_type, closer_type)
@@ -2886,6 +3040,40 @@ module MilkTea
         end
 
         [starts, nil]
+      end
+
+      def self_describing_argument_expression?(tokens, arg_tok)
+        arg_index = tokens.index(arg_tok)
+        return false unless arg_index
+
+        simple_identifier_like_argument_expression?(tokens, arg_index)
+      end
+
+      def simple_identifier_like_argument_expression?(tokens, start_index)
+        saw_identifier = false
+        expect_identifier = true
+        i = start_index
+
+        while i < tokens.length
+          tok = tokens[i]
+          break if [:comma, :rparen].include?(tok.type)
+          return false if [:newline, :indent, :dedent].include?(tok.type)
+
+          if expect_identifier
+            return false unless tok.type == :identifier
+
+            saw_identifier = true
+            expect_identifier = false
+          else
+            return false unless tok.type == :dot
+
+            expect_identifier = true
+          end
+
+          i += 1
+        end
+
+        saw_identifier && !expect_identifier
       end
 
       def next_non_trivia_token(tokens, index)

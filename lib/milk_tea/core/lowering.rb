@@ -4450,6 +4450,7 @@ module MilkTea
                 env:,
                 expected_type: field_type,
                 external_numeric: type.respond_to?(:external) && type.external,
+                contextual_int_to_float: contextual_int_to_float_target?(field_type),
               ),
             )
           end
@@ -4459,7 +4460,15 @@ module MilkTea
           arm_fields = variant_type.arm(arm_name)
           payload_fields = expression.arguments.map do |argument|
             field_type = arm_fields.fetch(argument.name)
-            IR::AggregateField.new(name: argument.name, value: lower_contextual_expression(argument.value, env:, expected_type: field_type))
+            IR::AggregateField.new(
+              name: argument.name,
+              value: lower_contextual_expression(
+                argument.value,
+                env:,
+                expected_type: field_type,
+                contextual_int_to_float: contextual_int_to_float_target?(field_type),
+              ),
+            )
           end
           IR::VariantLiteral.new(type: variant_type, arm_name:, fields: payload_fields)
         when :array
@@ -4567,11 +4576,13 @@ module MilkTea
       def lower_call_arguments(arguments, callee_type, env:)
         arguments.map.with_index do |argument, index|
           expected_type = index < callee_type.params.length ? callee_type.params[index].type : nil
+          external_call = callee_type.respond_to?(:external) && callee_type.external && !expected_type.nil?
           lower_contextual_expression(
             argument.value,
             env:,
             expected_type:,
-            external_numeric: callee_type.respond_to?(:external) && callee_type.external && !expected_type.nil?,
+            external_numeric: external_call,
+            contextual_int_to_float: expected_type && contextual_int_to_float_target?(expected_type) && !external_call,
           )
         end
       end
@@ -6399,7 +6410,9 @@ module MilkTea
         right_expected_type = case expression.operator
                               when "<<", ">>"
                                 propagated_type || left_type
-                              when "+", "-", "*", "/", "%", "|", "&", "^"
+                              when "+", "-", "*", "/", "%"
+                                propagated_type || left_type
+                              when "|", "&", "^"
                                 left_type
                               else
                                 left_type

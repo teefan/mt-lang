@@ -40,10 +40,10 @@ def render_frame() -> void:
     sdl.render_clear(renderer)
 
     sdl.set_render_draw_color(renderer, 127, 49, 32, 255)
-    sdl.render_line(renderer, float<-240.0, float<-450.0, float<-400.0, float<-450.0)
-    sdl.render_line(renderer, float<-240.0, float<-356.0, float<-400.0, float<-356.0)
-    sdl.render_line(renderer, float<-240.0, float<-356.0, float<-240.0, float<-450.0)
-    sdl.render_line(renderer, float<-400.0, float<-356.0, float<-400.0, float<-450.0)
+    sdl.render_line(renderer, 240.0, 450.0, 400.0, 450.0)
+    sdl.render_line(renderer, 240.0, 356.0, 400.0, 356.0)
+    sdl.render_line(renderer, 240.0, 356.0, 240.0, 450.0)
+    sdl.render_line(renderer, 400.0, 356.0, 400.0, 450.0)
 
     sdl.set_render_draw_color(renderer, 0, 255, 0, 255)
     sdl.render_lines(renderer, line_points)
@@ -52,7 +52,7 @@ def render_frame() -> void:
         let size: float = 30.0
         let x: float = 320.0
         let y: float = 95.0 - (size / 2.0)
-        let radians: float = float<-angle * (sdl.PI_F / 180.0)
+        let radians: float = angle * (sdl.PI_F / 180.0)
 
         sdl.set_render_draw_color(
             renderer,
