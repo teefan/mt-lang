@@ -21,7 +21,7 @@ class MilkTeaLexerTest < Minitest::Test
 
   def test_rejects_tabs
     source = <<~MT
-      def main() -> int:
+      function main() -> int:
 	return 0
     MT
 
@@ -34,7 +34,7 @@ class MilkTeaLexerTest < Minitest::Test
 
   def test_ignores_indentation_inside_parenthesized_calls
     source = <<~MT
-      def main() -> int:
+      function main() -> int:
           var ball = Ball(
               radius = 20.0,
           )
@@ -80,7 +80,7 @@ class MilkTeaLexerTest < Minitest::Test
 
   def test_reports_indentation_and_grouping_errors
     indentation_error = assert_raises(MilkTea::LexError) do
-      MilkTea::Lexer.lex("def main() -> int:\n  return 0\n")
+      MilkTea::Lexer.lex("function main() -> int:\n  return 0\n")
     end
     assert_match(/multiples of 4 spaces/, indentation_error.message)
 
@@ -113,7 +113,7 @@ class MilkTeaLexerTest < Minitest::Test
   end
 
   def test_lexes_ellipsis_token
-    types = MilkTea::Lexer.lex("extern def printf(format: cstr, ...) -> int\n").map(&:type)
+    types = MilkTea::Lexer.lex("external function printf(format: cstr, ...) -> int\n").map(&:type)
 
     assert_includes types, :ellipsis
   end
@@ -207,7 +207,7 @@ class MilkTeaLexerTest < Minitest::Test
     source = <<~MT
       # module banner
 
-      def main() -> int: # inline doc
+      function main() -> int: # inline doc
           return 0
     MT
 
@@ -219,7 +219,7 @@ class MilkTeaLexerTest < Minitest::Test
     assert_equal 2, comment_kinds.length
     assert_equal 1, blank_line_kinds.length
 
-    main_token = result.tokens.find { |token| token.lexeme == "def" }
+    main_token = result.tokens.find { |token| token.lexeme == "function" }
     refute_nil main_token
     assert_equal true, main_token.leading_trivia.any? { |token| token.kind == :comment }
 

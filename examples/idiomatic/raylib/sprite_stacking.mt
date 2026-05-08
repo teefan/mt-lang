@@ -9,7 +9,7 @@ const stack_count: int = 122
 const booth_path: str = "../../raylib/resources/booth.png"
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Sprite Stacking")
     defer rl.close_window()
 

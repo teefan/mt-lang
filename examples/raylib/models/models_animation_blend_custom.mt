@@ -19,82 +19,82 @@ const uniform_mode_text: cstr = c"Uniform Blending"
 const window_title: cstr = c"raylib [models] example - animation blend custom"
 
 
-def chars_to_cstr(text: ptr[char]) -> cstr:
+function chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
 
 
-def model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
+function model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
     unsafe:
         return read(anims + index)
 
 
-def model_animation_name(anims: ptr[rl.ModelAnimation], index: int) -> cstr:
+function model_animation_name(anims: ptr[rl.ModelAnimation], index: int) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of((anims + index).name[0]))
 
 
-def model_animation_pose(anim: rl.ModelAnimation, frame: int) -> rl.ModelAnimPose:
+function model_animation_pose(anim: rl.ModelAnimation, frame: int) -> rl.ModelAnimPose:
     unsafe:
         return read(anim.keyframePoses + frame)
 
 
-def pose_transform(pose: rl.ModelAnimPose, index: int) -> rl.Transform:
+function pose_transform(pose: rl.ModelAnimPose, index: int) -> rl.Transform:
     unsafe:
         return read(pose + index)
 
 
-def bind_pose_transform(skeleton: rl.ModelSkeleton, index: int) -> rl.Transform:
+function bind_pose_transform(skeleton: rl.ModelSkeleton, index: int) -> rl.Transform:
     unsafe:
         return read(skeleton.bindPose + index)
 
 
-def skeleton_bone_name(skeleton: rl.ModelSkeleton, index: int) -> cstr:
+function skeleton_bone_name(skeleton: rl.ModelSkeleton, index: int) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of((skeleton.bones + index).name[0]))
 
 
-def model_value(model: ptr[rl.Model]) -> rl.Model:
+function model_value(model: ptr[rl.Model]) -> rl.Model:
     unsafe:
         return read(model)
 
 
-def model_mesh(model: rl.Model, index: int) -> rl.Mesh:
+function model_mesh(model: rl.Model, index: int) -> rl.Mesh:
     unsafe:
         return model.meshes[index]
 
 
-def model_bone_matrix(model: rl.Model, index: int) -> rl.Matrix:
+function model_bone_matrix(model: rl.Model, index: int) -> rl.Matrix:
     unsafe:
         return read(model.boneMatrices + index)
 
 
-def set_model_bone_matrix(model: rl.Model, index: int, matrix: rl.Matrix) -> void:
+function set_model_bone_matrix(model: rl.Model, index: int, matrix: rl.Matrix) -> void:
     unsafe:
         read(model.boneMatrices + index) = matrix
 
 
-def read_float(values: ptr[float], index: int) -> float:
+function read_float(values: ptr[float], index: int) -> float:
     unsafe:
         return read(values + index)
 
 
-def write_float(values: ptr[float], index: int, value: float) -> void:
+function write_float(values: ptr[float], index: int, value: float) -> void:
     unsafe:
         read(values + index) = value
 
 
-def read_ubyte(values: ptr[ubyte], index: int) -> ubyte:
+function read_ubyte(values: ptr[ubyte], index: int) -> ubyte:
     unsafe:
         return read(values + index)
 
 
-def mesh_vbo_id(mesh: rl.Mesh, index: int) -> uint:
+function mesh_vbo_id(mesh: rl.Mesh, index: int) -> uint:
     unsafe:
         return read(mesh.vboId + index)
 
 
-def is_upper_body_bone(bone_name: cstr) -> bool:
+function is_upper_body_bone(bone_name: cstr) -> bool:
     if rl.TextIsEqual(bone_name, c"spine") or rl.TextIsEqual(bone_name, c"spine1") or rl.TextIsEqual(bone_name, c"spine2"):
         return true
     if rl.TextIsEqual(bone_name, c"chest") or rl.TextIsEqual(bone_name, c"upperChest"):
@@ -124,7 +124,7 @@ def is_upper_body_bone(bone_name: cstr) -> bool:
     return false
 
 
-def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation, frame0: int, anim1: rl.ModelAnimation, frame1: int, blend: float, upper_body_blend: bool) -> void:
+function update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation, frame0: int, anim1: rl.ModelAnimation, frame1: int, blend: float, upper_body_blend: bool) -> void:
     let current_model = model_value(model)
     let pose0 = model_animation_pose(anim0, frame0)
     let pose1 = model_animation_pose(anim1, frame1)
@@ -220,7 +220,7 @@ def update_model_animation_bones(model: ptr[rl.Model], anim0: rl.ModelAnimation,
             )
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

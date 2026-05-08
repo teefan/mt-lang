@@ -19,12 +19,12 @@ const fog_density_format: cstr = c"Use KEY_UP/KEY_DOWN to change fog density [%.
 const window_title: cstr = c"raylib [shaders] example - fog rendering"
 
 
-def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
+function set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
 
 
-def rotate_x(angle: float) -> rl.Matrix:
+function rotate_x(angle: float) -> rl.Matrix:
     let cosx = rm.cos(angle)
     let sinx = rm.sin(angle)
     return rl.Matrix(
@@ -47,7 +47,7 @@ def rotate_x(angle: float) -> rl.Matrix:
     )
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

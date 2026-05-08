@@ -8,7 +8,7 @@ const window_title: cstr = c"raylib [shapes] example - lines bezier"
 const help_text: cstr = c"MOVE START-END POINTS WITH MOUSE"
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

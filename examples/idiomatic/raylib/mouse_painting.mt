@@ -8,7 +8,7 @@ const screen_height: int = 450
 const save_path: str = "my_amazing_texture_painting.png"
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Mouse Painting")
     defer rl.close_window()
 

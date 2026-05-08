@@ -8,7 +8,7 @@ const window_title: cstr = c"raylib [core] example - 3d camera mode"
 const welcome_text: cstr = c"Welcome to the third dimension!"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -13,7 +13,7 @@ const logo_path: str = "../../raylib/resources/raylib_logo.png"
 const sound_path: str = "../../raylib/resources/sound.wav"
 
 
-def load_logo_bytes() -> bytes.Buffer:
+function load_logo_bytes() -> bytes.Buffer:
     let loaded = fs.read_bytes(logo_path)
     if status.is_err(loaded):
         panic("could not read raylib logo bytes")
@@ -24,7 +24,7 @@ def load_logo_bytes() -> bytes.Buffer:
             panic("could not read raylib logo bytes")
 
 
-def load_sound_bytes() -> bytes.Buffer:
+function load_sound_bytes() -> bytes.Buffer:
     let loaded = fs.read_bytes(sound_path)
     if status.is_err(loaded):
         panic("could not read raylib sound bytes")
@@ -35,7 +35,7 @@ def load_sound_bytes() -> bytes.Buffer:
             panic("could not read raylib sound bytes")
 
 
-def texture_from_png_bytes(data: bytes.Buffer) -> rl.Texture2D:
+function texture_from_png_bytes(data: bytes.Buffer) -> rl.Texture2D:
     let view = bytes.as_span(data)
     let image = rl.load_image_from_memory(".png", view)
     if not rl.is_image_valid(image):
@@ -48,7 +48,7 @@ def texture_from_png_bytes(data: bytes.Buffer) -> rl.Texture2D:
     return texture
 
 
-def sound_from_wav_bytes(data: bytes.Buffer) -> rl.Sound:
+function sound_from_wav_bytes(data: bytes.Buffer) -> rl.Sound:
     let view = bytes.as_span(data)
     let wave = rl.load_wave_from_memory(".wav", view)
     if not rl.is_wave_valid(wave):
@@ -61,7 +61,7 @@ def sound_from_wav_bytes(data: bytes.Buffer) -> rl.Sound:
     return sound
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Async Asset Loading")
     defer rl.close_window()
 

@@ -139,7 +139,7 @@ module MilkTea
       return if program.is_a?(IR::Program)
 
       if program.root_analysis.functions.key?("main")
-        raise BuildError, "root main is not a valid executable entrypoint; expected `def main() -> int|void`, `def main(argc: int, argv: ptr[cstr]) -> int|void`, `def main(argc: int, argv: ptr[ptr[char]]) -> int|void`, or `def main(args: span[str]) -> int|void`"
+        raise BuildError, "root main is not a valid executable entrypoint; expected `function main() -> int|void`, `function main(argc: int, argv: ptr[cstr]) -> int|void`, `function main(argc: int, argv: ptr[ptr[char]]) -> int|void`, or `function main(args: span[str]) -> int|void`"
       end
 
       raise BuildError, "no executable entrypoint found; define `main` with one of the supported executable signatures"

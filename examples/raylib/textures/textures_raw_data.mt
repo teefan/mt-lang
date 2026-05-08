@@ -17,7 +17,7 @@ const title_line_three: cstr = c"and RAW IMAGE LOADING"
 const credit_text: cstr = c"(c) Fudesumi sprite by Eiden Marsal"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -28,7 +28,7 @@ const reset_button_text: cstr = c"Reset"
 const window_title: cstr = c"raylib [shaders] example - color correction"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

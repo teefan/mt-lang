@@ -10,22 +10,22 @@ const screen_height: int = 450
 const window_title: cstr = c"raylib [shapes] example - rectangle advanced"
 
 
-def emit_color(color: rl.Color) -> void:
+function emit_color(color: rl.Color) -> void:
     rlgl.rlColor4ub(color.r, color.g, color.b, color.a)
 
 
-def emit_vertex(point: rl.Vector2) -> void:
+function emit_vertex(point: rl.Vector2) -> void:
     rlgl.rlVertex2f(point.x, point.y)
 
 
-def emit_arc_vertex(center: rl.Vector2, angle: float, radius: float) -> void:
+function emit_arc_vertex(center: rl.Vector2, angle: float, radius: float) -> void:
     rlgl.rlVertex2f(
         center.x + math.cosf(mt_math.deg2rad * angle) * radius,
         center.y + math.sinf(mt_math.deg2rad * angle) * radius,
     )
 
 
-def draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: float, roundness_right: float, segments: int, left: rl.Color, right: rl.Color) -> void:
+function draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: float, roundness_right: float, segments: int, left: rl.Color, right: rl.Color) -> void:
     let not_rounded = roundness_left <= 0.0 and roundness_right <= 0.0
     if not_rounded or rec.width < 1.0 or rec.height < 1.0:
         rl.DrawRectangleGradientEx(rec, left, left, right, right)
@@ -148,7 +148,7 @@ def draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: float, 
     rlgl.rlEnd()
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -8,7 +8,7 @@ const window_title: cstr = c"raylib [core] example - vr simulator"
 const distortion_shader_path: cstr = c"../resources/shaders/glsl330/distortion.fs"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

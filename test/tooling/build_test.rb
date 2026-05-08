@@ -43,7 +43,7 @@ class MilkTeaBuildTest < Minitest::Test
       File.write(source_path, [
         "module demo.emit_count",
         "",
-        "def main() -> int:",
+        "function main() -> int:",
         "    return 0",
         "",
       ].join("\n"))
@@ -84,11 +84,11 @@ class MilkTeaBuildTest < Minitest::Test
       File.write(source_path, [
         "module demo.debug_map",
         "",
-        "def add(a: int, b: int) -> int:",
+        "function add(a: int, b: int) -> int:",
         "    let total = a + b",
         "    return total",
         "",
-        "def main() -> int:",
+        "function main() -> int:",
         "    return add(1, 2)",
         "",
       ].join("\n"))
@@ -131,7 +131,7 @@ class MilkTeaBuildTest < Minitest::Test
         "",
         "const base: int = 40",
         "",
-        "def main() -> int:",
+        "function main() -> int:",
         "    let value = base + 2",
         "    return value",
         "",
@@ -165,7 +165,7 @@ class MilkTeaBuildTest < Minitest::Test
         "",
         "import std.libm as libm",
         "",
-        "def main() -> int:",
+        "function main() -> int:",
         "    if libm.sqrtf(25.0) != 5.0:",
         "        return 1",
         "    if libm.PI_F <= 3.14:",
@@ -201,7 +201,7 @@ class MilkTeaBuildTest < Minitest::Test
         "",
         "import std.io as io",
         "",
-        "def main(args: span[str]) -> int:",
+        "function main(args: span[str]) -> int:",
         "    if args.len != 2:",
         "        return 9",
         "    if not io.println(f\"a=\#{args[0]}\"):",
@@ -238,7 +238,7 @@ class MilkTeaBuildTest < Minitest::Test
         "",
         "import std.libuv.async",
         "",
-        "async def main(args: span[str]) -> int:",
+        "async function main(args: span[str]) -> int:",
         "    if args.len != 2:",
         "        return 9",
         "    return int<-args[0].len + int<-args[1].len",
@@ -267,7 +267,7 @@ class MilkTeaBuildTest < Minitest::Test
       File.write(source_path, [
         "module demo.invalid_main",
         "",
-        "def main(args: array[str, 2]) -> int:",
+        "function main(args: array[str, 2]) -> int:",
         "    return 0",
         "",
       ].join("\n"))
@@ -293,10 +293,10 @@ class MilkTeaBuildTest < Minitest::Test
       FileUtils.mkdir_p(File.join(workspace_dir, "demo"))
 
       File.write(File.join(workspace_dir, "std", "c", "stdio.mt"), [
-        "extern module #{unique_root}.std.c.stdio:",
+        "external module #{unique_root}.std.c.stdio:",
         "    include \"stdio.h\"",
         "",
-        "    extern def printf(format: cstr, ...) -> int",
+        "    external function printf(format: cstr, ...) -> int",
         "",
       ].join("\n"))
 
@@ -308,7 +308,7 @@ class MilkTeaBuildTest < Minitest::Test
         "",
         "import #{unique_root}.std.c.stdio as c",
         "",
-        "def main() -> int:",
+        "function main() -> int:",
         "    c.printf(c\"%d %s\\n\", 42, c\"ok\")",
         "    return 0",
         "",
@@ -343,7 +343,7 @@ class MilkTeaBuildTest < Minitest::Test
         "",
         "const time_format: cstr = c\"%H:%M:%S\"",
         "",
-        "def main() -> int:",
+        "function main() -> int:",
         "    var now: ctime.time_t = 0",
         "    now = ctime.time(ptr_of(now))",
         "    let tm_info = ctime.localtime(ptr_of(now))",
@@ -389,7 +389,7 @@ class MilkTeaBuildTest < Minitest::Test
       File.write(File.join(src_dir, "game_types.mt"), [
         "module src.game_types",
         "",
-        "pub def value() -> int:",
+        "public function value() -> int:",
         "    return 41",
         "",
       ].join("\n"))
@@ -401,7 +401,7 @@ class MilkTeaBuildTest < Minitest::Test
         "import std.maybe as maybe",
         "import src.game_types as gt",
         "",
-        "def main() -> int:",
+        "function main() -> int:",
         "    return gt.value() + 1",
         "",
       ].join("\n"))
@@ -439,7 +439,7 @@ class MilkTeaBuildTest < Minitest::Test
       File.write(source_path, [
         "module projects.snake_duel",
         "",
-        "def main() -> int:",
+        "function main() -> int:",
         "    return 0",
         "",
       ].join("\n"))
@@ -464,7 +464,7 @@ class MilkTeaBuildTest < Minitest::Test
       File.write(source_path, [
         "module demo.loop_labels",
         "",
-        "def main() -> int:",
+        "function main() -> int:",
         "    var outer = 0",
         "    while outer < 2:",
         "        if outer == 0:",
@@ -568,7 +568,7 @@ class MilkTeaBuildTest < Minitest::Test
         "",
         "import std.c.raygui as gui",
         "",
-        "def main() -> int:",
+        "function main() -> int:",
         "    gui.GuiEnable()",
         "    return 0",
         "",
@@ -606,7 +606,7 @@ class MilkTeaBuildTest < Minitest::Test
         "import std.c.raylib as rl",
         "import std.c.rlights as lights",
         "",
-        "def main() -> int:",
+        "function main() -> int:",
         "    let shader = zero[rl.Shader]",
         "    let light = lights.CreateLight(int<-lights.LightType.LIGHT_POINT, rl.Vector3(x = 1.0, y = 2.0, z = 3.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.WHITE, shader)",
         "    if light.enabled:",

@@ -6,7 +6,7 @@ const screen_width: int = 800
 const screen_height: int = 450
 
 
-def main() -> int:
+function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(screen_width, screen_height, "Milk Tea Bezier Lines")
     defer rl.close_window()

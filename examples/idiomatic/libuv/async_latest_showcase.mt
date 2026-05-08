@@ -7,39 +7,39 @@ enum Mode: int
     b = 1
 
 
-async def choose_mode(flag: bool) -> Mode:
+async function choose_mode(flag: bool) -> Mode:
     return if flag: Mode.a else: Mode.b
 
 
-async def limit() -> int:
+async function limit() -> int:
     return 3
 
 
-async def idx() -> int:
+async function idx() -> int:
     return 0
 
 
-async def cond(value: int) -> bool:
+async function cond(value: int) -> bool:
     return value < 2
 
 
-async def truthy() -> bool:
+async function truthy() -> bool:
     return true
 
 
-async def falsy() -> bool:
+async function falsy() -> bool:
     return false
 
 
-async def score_a() -> int:
+async function score_a() -> int:
     return 10
 
 
-async def score_b() -> int:
+async function score_b() -> int:
     return 20
 
 
-async def showcase() -> int:
+async function showcase() -> int:
     var total = 0
     var slots = array[int, 1](0)
 
@@ -73,7 +73,7 @@ async def showcase() -> int:
     return total
 
 
-async def main() -> int:
+async function main() -> int:
     let delay = aio.sleep(1)
     let value = showcase()
     return await delay + await value

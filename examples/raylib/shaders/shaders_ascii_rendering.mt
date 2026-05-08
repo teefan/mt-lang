@@ -14,7 +14,7 @@ const title_format: cstr = c"Ascii effect - FontSize:%2.0f - [Left] -1 [Right] +
 const window_title: cstr = c"raylib [shaders] example - ascii rendering"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

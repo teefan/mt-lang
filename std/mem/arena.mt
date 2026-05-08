@@ -2,20 +2,20 @@ module std.mem.arena
 
 import std.mem.heap as heap
 
-pub type Mark = ptr_uint
+public type Mark = ptr_uint
 
-pub struct Arena:
+public struct Arena:
     memory: ptr[ubyte]?
     capacity: ptr_uint
     alignment: ptr_uint
     offset: ptr_uint
 
 
-pub def create(capacity_bytes: ptr_uint) -> Arena:
+public function create(capacity_bytes: ptr_uint) -> Arena:
     return create_aligned(capacity_bytes, 1)
 
 
-pub def create_aligned(capacity_bytes: ptr_uint, alignment: ptr_uint) -> Arena:
+public function create_aligned(capacity_bytes: ptr_uint, alignment: ptr_uint) -> Arena:
     let normalized_alignment = heap.normalize_alignment(alignment)
     if normalized_alignment == 0:
         panic(c"arena.create_aligned requires a power-of-two alignment")
@@ -41,7 +41,7 @@ pub def create_aligned(capacity_bytes: ptr_uint, alignment: ptr_uint) -> Arena:
         )
 
 
-pub def create_for[T](count: ptr_uint) -> Arena:
+public function create_for[T](count: ptr_uint) -> Arena:
     let element_size = ptr_uint<-size_of(T)
     if heap.mul_overflows(count, element_size):
         panic(c"arena.create_for size overflow")
@@ -49,11 +49,11 @@ pub def create_for[T](count: ptr_uint) -> Arena:
     return create_aligned(count * element_size, ptr_uint<-align_of(T))
 
 methods Arena:
-    pub def mark() -> Mark:
+    public function mark() -> Mark:
         return this.offset
 
 
-    pub edit def reset(mark: Mark) -> void:
+    public edit function reset(mark: Mark) -> void:
         if mark > this.offset:
             panic(c"arena.reset invalid mark")
 
@@ -61,15 +61,15 @@ methods Arena:
         return
 
 
-    pub def remaining_bytes() -> ptr_uint:
+    public function remaining_bytes() -> ptr_uint:
         return this.capacity - this.offset
 
 
-    pub edit def alloc_bytes(size_bytes: ptr_uint) -> ptr[ubyte]?:
+    public edit function alloc_bytes(size_bytes: ptr_uint) -> ptr[ubyte]?:
         return this.alloc_bytes_aligned(size_bytes, 1)
 
 
-    pub edit def alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[ubyte]?:
+    public edit function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[ubyte]?:
         let backing = this.memory
         if backing == null:
             return null
@@ -96,7 +96,7 @@ methods Arena:
             return result
 
 
-    pub edit def alloc[T](count: ptr_uint) -> ptr[T]?:
+    public edit function alloc[T](count: ptr_uint) -> ptr[T]?:
         let element_size = ptr_uint<-size_of(T)
         if heap.mul_overflows(count, element_size):
             return null
@@ -109,7 +109,7 @@ methods Arena:
             return ptr[T]<-memory
 
 
-    pub edit def try_to_cstr(text: str) -> cstr?:
+    public edit function try_to_cstr(text: str) -> cstr?:
         let memory = this.alloc_bytes(text.len + 1)
         if memory == null:
             return null
@@ -124,7 +124,7 @@ methods Arena:
             return cstr<-buffer
 
 
-    pub edit def to_cstr(text: str) -> cstr:
+    public edit function to_cstr(text: str) -> cstr:
         let memory = this.alloc_bytes(text.len + 1)
         if memory == null:
             panic(c"Arena.to_cstr out of memory")
@@ -139,7 +139,7 @@ methods Arena:
             return cstr<-buffer
 
 
-    pub edit def release() -> void:
+    public edit function release() -> void:
         heap.release(this.memory)
         this.memory = null
         this.capacity = 0

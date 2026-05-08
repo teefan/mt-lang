@@ -7,7 +7,7 @@ const screen_width: int = 940
 const screen_height: int = 560
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Raygui Dynamic String Lists")
     defer rl.close_window()
 

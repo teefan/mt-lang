@@ -19,7 +19,7 @@ const camera_rotate_text: cstr = c"- MOUSE MIDDLE BUTTON: ZOOM OR ROTATE CAMERA"
 const camera_move_text: cstr = c"- UP-DOWN-LEFT-RIGHT KEYS: MOVE CAMERA"
 
 
-def camera_axis_speed(positive: bool, negative: bool) -> float:
+function camera_axis_speed(positive: bool, negative: bool) -> float:
     if positive and not negative:
         return 0.1
     if negative and not positive:
@@ -27,7 +27,7 @@ def camera_axis_speed(positive: bool, negative: bool) -> float:
     return 0.0
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

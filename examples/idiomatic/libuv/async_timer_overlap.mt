@@ -7,7 +7,7 @@ const overlap_delay_msec: ptr_uint = 180
 const max_parallel_elapsed_ns: ulong = 300000000
 
 
-async def prove_timer_overlap() -> int:
+async function prove_timer_overlap() -> int:
     let start_ns = uv.hrtime()
     let left = aio.sleep(overlap_delay_msec)
     let right = aio.sleep(overlap_delay_msec)
@@ -16,5 +16,5 @@ async def prove_timer_overlap() -> int:
     return if elapsed_ns < max_parallel_elapsed_ns: exit_code else: 1
 
 
-async def main() -> int:
+async function main() -> int:
     return await prove_timer_overlap()

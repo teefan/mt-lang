@@ -11,15 +11,15 @@ const remove_text: cstr = c"Left-click a voxel to remove it!"
 const move_text: cstr = c"WASD to move, mouse to look around"
 
 
-def voxel_index(x: int, y: int, z: int) -> int:
+function voxel_index(x: int, y: int, z: int) -> int:
     return x * world_size * world_size + y * world_size + z
 
 
-def voxel_position(x: int, y: int, z: int) -> rl.Vector3:
+function voxel_position(x: int, y: int, z: int) -> rl.Vector3:
     return rl.Vector3(x = float<-x, y = float<-y, z = float<-z)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

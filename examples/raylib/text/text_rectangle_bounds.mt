@@ -16,11 +16,11 @@ const measure_state: int = 0
 const draw_state: int = 1
 
 
-def draw_text_boxed(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: float, spacing: float, word_wrap: bool, tint: rl.Color) -> void:
+function draw_text_boxed(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: float, spacing: float, word_wrap: bool, tint: rl.Color) -> void:
     draw_text_boxed_selectable(font, text, rec, font_size, spacing, word_wrap, tint, 0, 0, rl.WHITE, rl.WHITE)
 
 
-def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: float, spacing: float, word_wrap: bool, tint: rl.Color, select_start: int, select_length: int, select_tint: rl.Color, select_back_tint: rl.Color) -> void:
+function draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, font_size: float, spacing: float, word_wrap: bool, tint: rl.Color, select_start: int, select_length: int, select_tint: rl.Color, select_back_tint: rl.Color) -> void:
     let length = int<-rl.TextLength(text)
 
     var text_offset_y: float = 0.0
@@ -137,7 +137,7 @@ def draw_text_boxed_selectable(font: rl.Font, text: cstr, rec: rl.Rectangle, fon
             k += 1
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

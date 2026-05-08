@@ -8,7 +8,7 @@ const screen_height: int = 450
 const logo_path: str = "../../raylib/resources/raylib_logo.png"
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Image Rotate")
     defer rl.close_window()
 

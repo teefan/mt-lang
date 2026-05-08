@@ -13,7 +13,7 @@ struct Ball:
     color: rl.Color
 
 methods Ball:
-    edit def update(dt: float):
+    edit function update(dt: float):
         this.position.x += this.velocity.x * dt
         this.position.y += this.velocity.y * dt
 
@@ -24,11 +24,11 @@ methods Ball:
             this.velocity.y = -this.velocity.y
 
 
-    def draw():
+    function draw():
         rl.draw_circle_v(this.position, this.radius, this.color)
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, window_title)
     defer rl.close_window()
 

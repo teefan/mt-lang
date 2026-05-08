@@ -36,7 +36,7 @@ The output target is beautiful C. The generated C should be readable enough that
 
 If code allocates, takes an address, dereferences a raw pointer, performs an FFI call, or enters unsafe territory, the source should say so directly.
 
-FFI visibility belongs at the declaration site. Raw `extern module` declarations expose exact ABI types. Imported foreign declarations may project those raw types into ordinary Milk Tea types, but the projection rule, temporary-storage rule, and ownership rule must be declared there instead of repeated at every call site.
+FFI visibility belongs at the declaration site. Raw `external module` declarations expose exact ABI types. Imported foreign declarations may project those raw types into ordinary Milk Tea types, but the projection rule, temporary-storage rule, and ownership rule must be declared there instead of repeated at every call site.
 
 The same rule applies to text construction. Plain string literals and format string literals are borrowed `str` values. Any surface that builds owned text must say so explicitly, for example `std.fmt.string(f"...")` when ownership must escape.
 
@@ -110,11 +110,11 @@ struct Player:
 	radius: float
 
 methods Player:
-	edit def update(dt: float):
+	edit function update(dt: float):
 		this.position.x += this.velocity.x * dt
 		this.position.y += this.velocity.y * dt
 
-def main() -> int:
+function main() -> int:
 	rl.init_window(screen_width, screen_height, "Milk Tea")
 	defer rl.close_window()
 
@@ -203,7 +203,7 @@ Public items should always spell their types out.
 ### Functions
 
 ```mt
-def clamp(value: float, min_value: float, max_value: float) -> float:
+function clamp(value: float, min_value: float, max_value: float) -> float:
 	if value < min_value:
 		return min_value
 	elif value > max_value:
@@ -224,14 +224,14 @@ struct Camera:
 	zoom: float
 
 methods Camera:
-	edit def move_by(delta: Vec2):
+	edit function move_by(delta: Vec2):
 		this.position.x += delta.x
 		this.position.y += delta.y
 
-	def world_scale() -> float:
+	function world_scale() -> float:
 		return this.zoom
 
-	static def origin() -> Camera:
+	static function origin() -> Camera:
 		return Camera(position = Vec2(x = 0.0, y = 0.0), zoom = 1.0)
 ```
 
@@ -243,9 +243,9 @@ Lowering rule, in emitted C:
 
 Receiver rule:
 
-- Plain `def` inside `methods T:` means an implicit `this: T` value receiver.
-- `edit def` inside `methods T:` means an implicit writable `this` receiver and requires an addressable receiver.
-- `static def` inside `methods T:` means there is no receiver.
+- Plain `function` inside `methods T:` means an implicit `this: T` value receiver.
+- `edit function` inside `methods T:` means an implicit writable `this` receiver and requires an addressable receiver.
+- `static function` inside `methods T:` means there is no receiver.
 - There is no hidden dynamic dispatch, vtable lookup, or heap allocation.
 
 Value receivers are deliberate. They keep fluent calls on temporaries honest and let method calls lower directly to plain C value parameters. Writable methods are the only place where the compiler takes an address implicitly.
@@ -296,7 +296,7 @@ Milk Tea should include a small number of control-flow features that materially 
 ```mt
 import std.status as status
 
-def load_texture(path: str) -> status.Status[Texture, LoadError]:
+function load_texture(path: str) -> status.Status[Texture, LoadError]:
 	let texture = rl.load_texture(path)
 
 	if texture.id == 0:
@@ -345,7 +345,7 @@ Notes:
 
 - `str` is a UTF-8 string view, not a NUL-terminated C string.
 - Every `str` value must contain valid UTF-8 bytes for its full length.
-- `cstr` is the raw ABI-facing NUL-terminated C string type. It belongs primarily in raw `extern module` declarations and low-level interop code.
+- `cstr` is the raw ABI-facing NUL-terminated C string type. It belongs primarily in raw `external module` declarations and low-level interop code.
 - `char` is the ABI-facing single-byte character type for C text and raw buffers. It is not a general arithmetic integer type.
 - String literals produce `str`.
 - Safe code does not fabricate `str` values from raw parts. Source code ordinarily obtains `str` values from literals, `str_builder.as_str()`, slicing an existing `str`, imported foreign boundaries that declare borrowed text, or other compiler/runtime surfaces that preserve the UTF-8 invariant.
@@ -515,15 +515,15 @@ struct Slice[T]:
 	data: ptr[T]
 	len: ptr_uint
 
-def first[T](items: Slice[T]) -> ptr[T]?:
+function first[T](items: Slice[T]) -> ptr[T]?:
 	if items.len == 0:
 		return null
 	return items.data
 
-def capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
+function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
 	return buffer.capacity()
 
-def explicit_capacity(buffer: str_builder[32]) -> ptr_uint:
+function explicit_capacity(buffer: str_builder[32]) -> ptr_uint:
 	return capacity_of[32](buffer)
 ```
 
@@ -561,7 +561,7 @@ unsafe:
 
 Binary arithmetic and numeric comparison operators may promote primitive operands to a common type locally.
 This is limited to `+ - * / % == != < <= > >=` and does not change assignment, return, or aggregate-field typing rules.
-Non-extern call boundaries remain strict, but extern calls may pass enum or flags values to same-width fixed-width integer parameters without an explicit cast for C ABI interop.
+Non-external call boundaries remain strict, but external calls may pass enum or flags values to same-width fixed-width integer parameters without an explicit cast for C ABI interop.
 Mixed signed and unsigned integers still require an explicit cast.
 
 `char` stays outside the general numeric-promotion rules. If code wants arithmetic on a character value, cast it to an integer type first. If code wants to write bytes back into a `char` buffer, either use `char<-...` explicitly or rely on the expected `char` boundary where a known `char` target is being initialized or assigned.
@@ -653,7 +653,7 @@ Heap allocation is always explicit and allocator-driven.
 ```mt
 import std.mem.heap as heap
 
-def spawn_enemy(start: Vec2) -> ptr[Enemy]:
+function spawn_enemy(start: Vec2) -> ptr[Enemy]:
 	let enemy = heap.must_alloc[Enemy](1)
 	unsafe:
 		enemy.position = start
@@ -699,7 +699,7 @@ Rules for safe references:
 - member access and method calls auto-project through refs, so `handle.field` and `handle.edit_method()` are the preferred forms.
 - there is no implicit ref-to-value call conversion: if a function expects `T`, pass `read(handle)`.
 - references do not support arithmetic, pointer indexing, or nullable semantics.
-- writable references are non-escaping in the current implementation: they may be used in locals and non-extern function parameters, and imported foreign parameters may expose `out` or `inout` boundary forms that lower to raw pointers, but refs themselves still cannot be stored, nested inside other types, returned, or used directly in raw `extern module` declarations.
+- writable references are non-escaping in the current implementation: they may be used in locals and non-external function parameters, and imported foreign parameters may expose `out` or `inout` boundary forms that lower to raw pointers, but refs themselves still cannot be stored, nested inside other types, returned, or used directly in raw `external module` declarations.
 
 Rules for raw pointers:
 
@@ -718,8 +718,8 @@ Rules for raw pointers:
 References are separate from methods:
 
 - plain methods still receive values.
-- `edit def` methods use the writable implicit receiver and require an addressable call target.
-- `static def` methods receive nothing.
+- `edit function` methods use the writable implicit receiver and require an addressable call target.
+- `static function` methods receive nothing.
 - `ref[T]` is for explicit aliasing in APIs, not hidden receiver lowering.
 
 This gives the language clear aliasing tools instead of one overloaded surface:
@@ -774,13 +774,13 @@ Hash collections use explicit function pointers instead of traits:
 import std.hash as hash
 import std.map as map
 
-def hash_int(value: int) -> ulong:
+function hash_int(value: int) -> ulong:
 	return hash.int_value(value)
 
-def equal_int(left: int, right: int) -> bool:
+function equal_int(left: int, right: int) -> bool:
 	return hash.int_equal(left, right)
 
-def example() -> int:
+function example() -> int:
 	var scores = map.create[int, int](hash_int, equal_int)
 	defer map.release[int, int](ref_of(scores))
 
@@ -829,7 +829,7 @@ enum LoadError: ubyte
 	file_not_found = 1
 	invalid_format = 2
 
-def load_level(path: str, arena: ptr[Arena]) -> status.Status[Level, LoadError]:
+function load_level(path: str, arena: ptr[Arena]) -> status.Status[Level, LoadError]:
 	let json = read_text_file(path, arena)
 	if json == null:
 		return status.Status[Level, LoadError].err(error= LoadError.file_not_found)
@@ -879,12 +879,12 @@ This is the same split C# gets right with P/Invoke versus `unsafe` pointer code.
 
 ### Raw C bindings
 
-Milk Tea needs a dedicated `extern module` form for ABI-exact bindings.
+Milk Tea needs a dedicated `external module` form for ABI-exact bindings.
 
-Direct `extern def` declarations are also allowed in ordinary modules for small manual ABI bridges, but generated and standard-library bindings should prefer full `extern module` files so the raw surface stays grouped, auditable, and easy to regenerate.
+Direct `external function` declarations are also allowed in ordinary modules for small manual ABI bridges, but generated and standard-library bindings should prefer full `external module` files so the raw surface stays grouped, auditable, and easy to regenerate.
 
 ```mt
-extern module std.c.raylib:
+external module std.c.raylib:
 	link "raylib"
 	include "raylib.h"
 
@@ -898,11 +898,11 @@ extern module std.c.raylib:
 		b: ubyte
 		a: ubyte
 
-	extern def InitWindow(width: int, height: int, title: cstr) -> void
-	extern def WindowShouldClose() -> bool
-	extern def BeginDrawing() -> void
-	extern def EndDrawing() -> void
-	extern def DrawCircleV(center: Vector2, radius: float, color: Color) -> void
+	external function InitWindow(width: int, height: int, title: cstr) -> void
+	external function WindowShouldClose() -> bool
+	external function BeginDrawing() -> void
+	external function EndDrawing() -> void
+	external function DrawCircleV(center: Vector2, radius: float, color: Color) -> void
 ```
 
 Capabilities required by the FFI surface:
@@ -940,36 +940,36 @@ The focused follow-on proposal for reducing imported-call friction without addin
 
 Most application code should call imported foreign declarations, not raw `std.c.*` bindings.
 
-Imported foreign modules are ordinary `module` files. They import a raw `std.c.*` module and re-export compiler-recognized `foreign def` declarations.
+Imported foreign modules are ordinary `module` files. They import a raw `std.c.*` module and re-export compiler-recognized `foreign function` declarations.
 
 ```mt
 module std.raylib
 
 import std.c.raylib as c
 
-pub type Vector2 = c.Vector2
-pub type Texture = c.Texture
-pub type Color = c.Color
+public type Vector2 = c.Vector2
+public type Texture = c.Texture
+public type Color = c.Color
 
-pub const BLACK: Color = c.BLACK
-pub const GOLD: Color = c.GOLD
+public const BLACK: Color = c.BLACK
+public const GOLD: Color = c.GOLD
 
-pub foreign def init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow
-pub foreign def close_window() -> void = c.CloseWindow
-pub foreign def window_should_close() -> bool = c.WindowShouldClose
-pub foreign def get_frame_time() -> float = c.GetFrameTime
+public foreign function init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow
+public foreign function close_window() -> void = c.CloseWindow
+public foreign function window_should_close() -> bool = c.WindowShouldClose
+public foreign function get_frame_time() -> float = c.GetFrameTime
 
-pub foreign def load_texture(path: str as cstr) -> Texture = c.LoadTexture
-pub foreign def load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
-pub foreign def save_file_data(file_name: str as cstr, data: span[ubyte]) -> bool = c.SaveFileData(file_name, data.data, int<-data.len)
-pub foreign def set_shader_value[T](shader: Shader, loc_index: int, in value: T as const_ptr[void], uniform_type: int) -> void = c.SetShaderValue
+public foreign function load_texture(path: str as cstr) -> Texture = c.LoadTexture
+public foreign function load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
+public foreign function save_file_data(file_name: str as cstr, data: span[ubyte]) -> bool = c.SaveFileData(file_name, data.data, int<-data.len)
+public foreign function set_shader_value[T](shader: Shader, loc_index: int, in value: T as const_ptr[void], uniform_type: int) -> void = c.SetShaderValue
 
-pub foreign def mem_alloc[T](count: ptr_uint) -> ptr[T]? = c.MemAlloc(count * uint<-size_of(T))
-pub foreign def mem_realloc[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]? = c.MemRealloc(memory, count * uint<-size_of(T))
-pub foreign def mem_free[T](memory: ptr[T]?) -> void = c.MemFree(memory)
+public foreign function mem_alloc[T](count: ptr_uint) -> ptr[T]? = c.MemAlloc(count * uint<-size_of(T))
+public foreign function mem_realloc[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]? = c.MemRealloc(memory, count * uint<-size_of(T))
+public foreign function mem_free[T](memory: ptr[T]?) -> void = c.MemFree(memory)
 ```
 
-Types, enums, flags, and constants that need no boundary conversion should usually be re-exported with ordinary `pub type`, `pub const`, `enum`, or `flags` declarations. `foreign def` is for call boundaries, not for everything else in the module.
+Types, enums, flags, and constants that need no boundary conversion should usually be re-exported with ordinary `public type`, `public const`, `enum`, or `flags` declarations. `foreign function` is for call boundaries, not for everything else in the module.
 
 These declarations are not handwritten wrappers:
 
@@ -980,7 +980,7 @@ These declarations are not handwritten wrappers:
 
 Chosen v1 form:
 
-- `foreign def` is a new declaration kind allowed in ordinary modules
+- `foreign function` is a new declaration kind allowed in ordinary modules
 - the left side is the public Milk Tea signature
 - the right side is either a raw symbol name or a declarative raw call expression
 - `= c.Symbol` is shorthand for positional lowering when surface parameters map directly to the raw ABI after boundary conversion
@@ -1026,16 +1026,16 @@ Parameter and boundary rules:
 
 #### Sema rules for foreign defs
 
-The checker should treat `foreign def` as its own declaration kind with dedicated rules.
+The checker should treat `foreign function` as its own declaration kind with dedicated rules.
 
 Declaration rules:
 
-- `foreign def` is allowed only in ordinary modules, not inside `extern module`, `methods`, or function bodies
-- the right-hand side must resolve to an imported raw extern symbol from a `std.c.*` module
-- `= c.Symbol` is shorthand symbol mapping; `c.Symbol` must resolve to an imported `extern def`
-- `= c.Symbol(...)` is declarative RHS mapping; the callee must resolve to an imported `extern def`
+- `foreign function` is allowed only in ordinary modules, not inside `external module`, `methods`, or function bodies
+- the right-hand side must resolve to an imported raw external symbol from a `std.c.*` module
+- `= c.Symbol` is shorthand symbol mapping; `c.Symbol` must resolve to an imported `external function`
+- `= c.Symbol(...)` is declarative RHS mapping; the callee must resolve to an imported `external function`
 - the right-hand side may reference only declaration parameters and imported raw symbols from the module scope
-- a `consuming` parameter may not use `as`, must have a non-null `opaque Handle` or `ptr[T]` type, and any `foreign def` that has a `consuming` parameter must return `void`
+- a `consuming` parameter may not use `as`, must have a non-null `opaque Handle` or `ptr[T]` type, and any `foreign function` that has a `consuming` parameter must return `void`
 
 Shorthand symbol mapping rules:
 
@@ -1049,7 +1049,7 @@ Shorthand symbol mapping rules:
 
 Declarative RHS mapping rules:
 
-- the RHS must be a raw call expression whose callee is an imported raw extern function
+- the RHS must be a raw call expression whose callee is an imported raw external function
 - raw call arity must match the raw target signature, respecting raw varargs rules
 - the checker analyzes each raw argument expression in an environment containing the public parameters
 - allowed RHS expression forms are: parameter identifiers, member access, index access, literals, `null`, `size_of`, `align_of`, `offset_of`, explicit `T<-expr` casts, and simple arithmetic or comparisons built from those forms
@@ -1068,10 +1068,10 @@ Parameter consumption rules:
 
 Call-site checking rules:
 
-- a call to a `foreign def` with `out` parameters requires an ordinary mutable addressable lvalue at the corresponding argument position
-- a call to a `foreign def` with `in` parameters accepts an ordinary expression at the corresponding argument position
-- a call to a `foreign def` with `inout` parameters requires an ordinary mutable addressable lvalue at the corresponding argument position
-- a call to a `foreign def` with `consuming` parameters requires a bare identifier naming a nullable local or parameter binding
+- a call to a `foreign function` with `out` parameters requires an ordinary mutable addressable lvalue at the corresponding argument position
+- a call to a `foreign function` with `in` parameters accepts an ordinary expression at the corresponding argument position
+- a call to a `foreign function` with `inout` parameters requires an ordinary mutable addressable lvalue at the corresponding argument position
+- a call to a `foreign function` with `consuming` parameters requires a bare identifier naming a nullable local or parameter binding
 - the current flow type of that binding must already be the non-null handle type required by the `consuming` parameter
 - in v1, a foreign call with any `consuming` parameter must be a top-level expression statement; `defer`, local initializers, assignments, returns, and larger expressions are rejected
 - after a `consuming` foreign call, continuation flow refines each consumed binding to `null`
@@ -1090,11 +1090,11 @@ Allowed identity ABI projections in v1 are deliberately narrow:
 - `ptr[char]` or `ptr[char]?` to `cstr` or `ptr[char]?` when mutability rules permit the raw direction
 - raw opaque pointer returns to typed pointer-like public returns when the representation is unchanged
 
-Anything outside those cases requires the raw layer or an explicit later language feature. `foreign def` is not a general coercion system.
+Anything outside those cases requires the raw layer or an explicit later language feature. `foreign function` is not a general coercion system.
 
 #### Lowering rules for foreign calls
 
-`foreign def` lowers directly to the referenced raw call boundary. It does not lower as a normal Milk Tea function body.
+`foreign function` lowers directly to the referenced raw call boundary. It does not lower as a normal Milk Tea function body.
 
 Shorthand symbol mapping lowering:
 
@@ -1137,7 +1137,7 @@ Release-function ownership lowering:
 Generated C quality rule:
 
 - lowering may introduce short-lived temporaries for foreign text marshalling, result spilling, or identity casts
-- lowering should not emit an extra helper function for each `foreign def` in the ordinary case
+- lowering should not emit an extra helper function for each `foreign function` in the ordinary case
 - the preferred output is one visible raw call site whose surrounding temporaries make the boundary work obvious in C
 
 Call sites should read like this:
@@ -1160,7 +1160,7 @@ This is the C# part worth copying: declarations say how the boundary works, whil
 
 String and buffer rules must stay explicit, but the explicitness belongs in imported declarations, not in every call site:
 
-- raw `extern module` declarations stay exact and continue to use `cstr`, `ptr[T]`, and `ptr[void]`
+- raw `external module` declarations stay exact and continue to use `cstr`, `ptr[T]`, and `ptr[void]`
 - a string literal may satisfy a contextual `cstr` position directly; ordinary UI code should not need `c"..."` just to populate `cstr` locals, `array[cstr, N]`, or borrowed C-string arguments
 - converting a dynamic `str` or `span[str]` to foreign C-compatible text is automatic when an imported declaration chooses that public surface
 - `cstr` remains available for raw ABI work, returned native strings, and low-level code
@@ -1232,7 +1232,7 @@ struct Player:
 	velocity: Vec2
 
 methods Player:
-	edit def update(dt: float):
+	edit function update(dt: float):
 		this.position.x += this.velocity.x * dt
 		this.position.y += this.velocity.y * dt
 ```

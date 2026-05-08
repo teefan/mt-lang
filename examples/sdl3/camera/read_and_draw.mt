@@ -15,7 +15,7 @@ var texture: ptr[c.SDL_Texture]? = null
 var exit_status: int = 0
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -33,7 +33,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     var timestamp_ns: c.Uint64 = 0
 
     if camera != null:
@@ -72,7 +72,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     var devices: ptr[c.SDL_CameraID]? = null
     var device_count: int = 0
 
@@ -119,5 +119,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return exit_status
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

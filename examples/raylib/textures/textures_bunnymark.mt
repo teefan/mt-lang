@@ -19,7 +19,7 @@ const bunnies_format: cstr = c"bunnies: %i"
 const draw_calls_format: cstr = c"batched draw calls: %i"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

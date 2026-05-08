@@ -36,7 +36,7 @@ struct FpsState:
     lean: rl.Vector2
 
 methods Body:
-    edit def update(rot: float, side: int, forward: int, jump_pressed: bool, crouch_hold: bool) -> void:
+    edit function update(rot: float, side: int, forward: int, jump_pressed: bool, crouch_hold: bool) -> void:
         var input = rl.Vector2(x = side, y = -forward)
         if side != 0 and forward != 0:
             input = input.normalize()
@@ -86,7 +86,7 @@ methods Body:
             this.is_grounded = true
 
 methods FpsState:
-    edit def update_camera(camera: ref[rl.Camera3D], body: Body) -> void:
+    edit function update_camera(camera: ref[rl.Camera3D], body: Body) -> void:
         let up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
         let target_offset = rl.Vector3(x = 0.0, y = 0.0, z = -1.0)
 
@@ -119,7 +119,7 @@ methods FpsState:
         camera.target = camera.position.add(pitch)
 
 
-def draw_level() -> void:
+function draw_level() -> void:
     let floor_extent = 25
     let tile_size: float = 5.0
     let tile_color_one = rl.Color(r = 150, g = 200, b = 200, a = 255)
@@ -158,7 +158,7 @@ def draw_level() -> void:
     rl.DrawSphere(rl.Vector3(x = 300.0, y = 300.0, z = 0.0), 100.0, rl.RED)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

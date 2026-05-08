@@ -7,7 +7,7 @@ align(16) struct Mat4:
     data: array[float, 16]
 
 
-def main() -> int:
+function main() -> int:
     var temp = stack.create_for[Mat4](2)
     defer temp.release()
     let capacity = temp.remaining_bytes()

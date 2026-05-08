@@ -9,7 +9,7 @@ const render_texture_height: int = 300
 const ball_radius: float = 20.0
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Render Texture")
     defer rl.close_window()
 

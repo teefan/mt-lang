@@ -14,14 +14,14 @@ const screen_width: int = 800
 const screen_height: int = 450
 
 
-def branch_limit(depth: int) -> int:
+function branch_limit(depth: int) -> int:
     var limit = 1
     for _ in 0..depth:
         limit *= 2
     return limit
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Recursive Tree")
     defer rl.close_window()
 

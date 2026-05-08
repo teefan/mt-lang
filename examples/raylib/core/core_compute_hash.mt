@@ -11,16 +11,16 @@ const window_title: cstr = c"raylib [core] example - compute hash"
 const default_input_text: cstr = c"The quick brown fox jumps over the lazy dog."
 
 
-def readonly_text_box(bounds: gui.Rectangle, text: cstr, text_size: int) -> void:
+function readonly_text_box(bounds: gui.Rectangle, text: cstr, text_size: int) -> void:
     unsafe:
         gui.GuiTextBox(bounds, ptr[char]<-text, text_size, false)
 
 
-def hash_crc32_text(hash_crc32: uint) -> cstr:
+function hash_crc32_text(hash_crc32: uint) -> cstr:
     return rl.TextFormat(c"%08X", hash_crc32)
 
 
-def hash_md5_text(hash_md5: ptr[uint]?) -> cstr:
+function hash_md5_text(hash_md5: ptr[uint]?) -> cstr:
     if hash_md5 == null:
         return c"00000000000000000000000000000000"
 
@@ -34,7 +34,7 @@ def hash_md5_text(hash_md5: ptr[uint]?) -> cstr:
         )
 
 
-def hash_sha1_text(hash_sha1: ptr[uint]?) -> cstr:
+function hash_sha1_text(hash_sha1: ptr[uint]?) -> cstr:
     if hash_sha1 == null:
         return c"0000000000000000000000000000000000000000"
 
@@ -49,7 +49,7 @@ def hash_sha1_text(hash_sha1: ptr[uint]?) -> cstr:
         )
 
 
-def hash_sha256_text(hash_sha256: ptr[uint]?) -> cstr:
+function hash_sha256_text(hash_sha256: ptr[uint]?) -> cstr:
     if hash_sha256 == null:
         return c"0000000000000000000000000000000000000000000000000000000000000000"
 
@@ -67,7 +67,7 @@ def hash_sha256_text(hash_sha256: ptr[uint]?) -> cstr:
         )
 
 
-def base64_display_text(base64_text: ptr[char]?) -> cstr:
+function base64_display_text(base64_text: ptr[char]?) -> cstr:
     if base64_text == null:
         return c""
 
@@ -75,7 +75,7 @@ def base64_display_text(base64_text: ptr[char]?) -> cstr:
         return cstr<-base64_text
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

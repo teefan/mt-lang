@@ -11,7 +11,7 @@ const virtual_ratio: float = float<-screen_width / virtual_screen_width
 const window_title: cstr = c"raylib [core] example - smooth pixelperfect"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

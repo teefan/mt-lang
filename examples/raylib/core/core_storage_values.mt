@@ -10,11 +10,11 @@ const score_position: ptr_uint = 0
 const hiscore_position: ptr_uint = 1
 
 
-def storage_size_bytes(position: ptr_uint) -> int:
+function storage_size_bytes(position: ptr_uint) -> int:
     return int<-((position + 1) * ptr_uint<-size_of(int))
 
 
-def save_storage_value(position: ptr_uint, stored_value: int) -> bool:
+function save_storage_value(position: ptr_uint, stored_value: int) -> bool:
     var data_size = 0
     let loaded_file_data: ptr[ubyte]? = rl.LoadFileData(storage_data_file, ptr_of(data_size))
     let required_size = storage_size_bytes(position)
@@ -49,7 +49,7 @@ def save_storage_value(position: ptr_uint, stored_value: int) -> bool:
         return success
 
 
-def load_storage_value(position: ptr_uint) -> int:
+function load_storage_value(position: ptr_uint) -> int:
     var data_size = 0
     let loaded_file_data: ptr[ubyte]? = rl.LoadFileData(storage_data_file, ptr_of(data_size))
     if loaded_file_data == null:
@@ -68,7 +68,7 @@ def load_storage_value(position: ptr_uint) -> int:
         return stored_value
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

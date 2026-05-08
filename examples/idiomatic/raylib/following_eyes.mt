@@ -7,7 +7,7 @@ const screen_width: int = 800
 const screen_height: int = 450
 
 
-def clamp_to_circle(point: rl.Vector2, center: rl.Vector2, radius: float) -> rl.Vector2:
+function clamp_to_circle(point: rl.Vector2, center: rl.Vector2, radius: float) -> rl.Vector2:
     if rl.check_collision_point_circle(point, center, radius):
         return point
 
@@ -20,7 +20,7 @@ def clamp_to_circle(point: rl.Vector2, center: rl.Vector2, radius: float) -> rl.
     )
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Following Eyes")
     defer rl.close_window()
 

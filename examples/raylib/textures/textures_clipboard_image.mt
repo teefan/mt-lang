@@ -14,7 +14,7 @@ const help_text: cstr = c"Clipboard Image - Ctrl+V to Paste and R to Reset "
 const clipboard_error_text: cstr = c"IMAGE: Could not retrieve image from clipboard"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

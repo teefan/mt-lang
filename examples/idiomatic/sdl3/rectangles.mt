@@ -14,7 +14,7 @@ var window: sdl.Window
 var renderer: sdl.Renderer
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[sdl.Event]
 
     while sdl.poll_event(event):
@@ -24,7 +24,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     let now = int<-sdl.get_ticks()
     let direction: float = if (now % 2000) >= 1000: 1.0 else: -1.0
     let scale: float = (((now % 1000) - 500) / 500.0) * direction
@@ -72,7 +72,7 @@ def render_frame() -> void:
     sdl.render_present(renderer)
 
 
-def app_main() -> int:
+function app_main() -> int:
     sdl.set_app_metadata("Example Renderer Rectangles", "1.0", "com.example.renderer-rectangles")
 
     if not sdl.init(sdl.INIT_VIDEO):
@@ -93,5 +93,5 @@ def app_main() -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return sdl_rt.run_app_no_args(argc, argv, app_main)

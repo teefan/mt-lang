@@ -10,7 +10,7 @@ const delta_text: cstr = c"FUNC: x += GetFrameTime()*speed"
 const frame_text: cstr = c"FUNC: x += speed"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

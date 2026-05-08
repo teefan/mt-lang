@@ -19,7 +19,7 @@ var converted_texture_width: int = 0
 var converted_texture_height: int = 0
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -29,7 +29,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_frame() -> bool:
+function render_frame() -> bool:
     let now = int<-c.SDL_GetTicks()
     let rotation = (float<-(now % 2000) / 2000.0) * 360.0
 
@@ -114,7 +114,7 @@ def render_frame() -> bool:
     return true
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Renderer Read Pixels", c"1.0", c"com.example.renderer-read-pixels")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -154,5 +154,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

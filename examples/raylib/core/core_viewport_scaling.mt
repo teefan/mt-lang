@@ -17,7 +17,7 @@ enum ViewportType: int
     KEEP_WIDTH = 5
 
 
-def viewport_type_name(viewport_type: ViewportType) -> cstr:
+function viewport_type_name(viewport_type: ViewportType) -> cstr:
     if viewport_type == ViewportType.KEEP_ASPECT_INTEGER:
         return c"KEEP_ASPECT_INTEGER"
     if viewport_type == ViewportType.KEEP_HEIGHT_INTEGER:
@@ -31,7 +31,7 @@ def viewport_type_name(viewport_type: ViewportType) -> cstr:
     return c"KEEP_WIDTH"
 
 
-def keep_aspect_centered_integer(screen_width: int, screen_height: int, game_width: int, game_height: int, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
+function keep_aspect_centered_integer(screen_width: int, screen_height: int, game_width: int, game_height: int, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
     var source = read(source_rect)
     source.x = 0.0
     source.y = game_height
@@ -52,7 +52,7 @@ def keep_aspect_centered_integer(screen_width: int, screen_height: int, game_wid
     return
 
 
-def keep_height_centered_integer(screen_width: int, screen_height: int, game_width: int, game_height: int, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
+function keep_height_centered_integer(screen_width: int, screen_height: int, game_width: int, game_height: int, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
     let resize_ratio: float = float<-screen_height / game_height
 
     var source = read(source_rect)
@@ -71,7 +71,7 @@ def keep_height_centered_integer(screen_width: int, screen_height: int, game_wid
     return
 
 
-def keep_width_centered_integer(screen_width: int, screen_height: int, game_width: int, game_height: int, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
+function keep_width_centered_integer(screen_width: int, screen_height: int, game_width: int, game_height: int, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
     let resize_ratio: float = float<-screen_width / game_width
 
     var source = read(source_rect)
@@ -94,7 +94,7 @@ def keep_width_centered_integer(screen_width: int, screen_height: int, game_widt
     return
 
 
-def keep_aspect_centered(screen_width: int, screen_height: int, game_width: int, game_height: int, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
+function keep_aspect_centered(screen_width: int, screen_height: int, game_width: int, game_height: int, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
     var source = read(source_rect)
     source.x = 0.0
     source.y = game_height
@@ -115,7 +115,7 @@ def keep_aspect_centered(screen_width: int, screen_height: int, game_width: int,
     return
 
 
-def keep_height_centered(screen_width: int, screen_height: int, game_width: int, game_height: int, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
+function keep_height_centered(screen_width: int, screen_height: int, game_width: int, game_height: int, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
     let resize_ratio: float = float<-screen_height / game_height
 
     var source = read(source_rect)
@@ -134,7 +134,7 @@ def keep_height_centered(screen_width: int, screen_height: int, game_width: int,
     return
 
 
-def keep_width_centered(screen_width: int, screen_height: int, game_width: int, game_height: int, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
+function keep_width_centered(screen_width: int, screen_height: int, game_width: int, game_height: int, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle]) -> void:
     let resize_ratio: float = float<-screen_width / game_width
 
     var source = read(source_rect)
@@ -157,7 +157,7 @@ def keep_width_centered(screen_width: int, screen_height: int, game_width: int, 
     return
 
 
-def resize_render_size(viewport_type: ViewportType, screen_width: ref[int], screen_height: ref[int], game_width: int, game_height: int, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle], target: ref[rl.RenderTexture2D]) -> void:
+function resize_render_size(viewport_type: ViewportType, screen_width: ref[int], screen_height: ref[int], game_width: int, game_height: int, source_rect: ref[rl.Rectangle], dest_rect: ref[rl.Rectangle], target: ref[rl.RenderTexture2D]) -> void:
     read(screen_width) = rl.GetScreenWidth()
     read(screen_height) = rl.GetScreenHeight()
 
@@ -181,7 +181,7 @@ def resize_render_size(viewport_type: ViewportType, screen_width: ref[int], scre
     return
 
 
-def screen_to_render_texture_position(point: rl.Vector2, texture_rect: rl.Rectangle, scaled_rect: rl.Rectangle) -> rl.Vector2:
+function screen_to_render_texture_position(point: rl.Vector2, texture_rect: rl.Rectangle, scaled_rect: rl.Rectangle) -> rl.Vector2:
     let relative_position = rl.Vector2(
         x = point.x - scaled_rect.x,
         y = point.y - scaled_rect.y,
@@ -196,7 +196,7 @@ def screen_to_render_texture_position(point: rl.Vector2, texture_rect: rl.Rectan
     )
 
 
-def main() -> int:
+function main() -> int:
     var screen_width = screen_width_default
     var screen_height = screen_height_default
 

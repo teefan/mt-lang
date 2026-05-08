@@ -7,7 +7,7 @@ const screen_width: int = 960
 const screen_height: int = 560
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Raygui Controls Showcase")
     defer rl.close_window()
 

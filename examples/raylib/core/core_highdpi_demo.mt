@@ -9,7 +9,7 @@ const window_title: cstr = c"raylib [core] example - highdpi demo"
 const sample_text: cstr = c"Can you see this?"
 
 
-def draw_text_center(text: cstr, x: int, y: int, font_size: float, color: rl.Color) -> void:
+function draw_text_center(text: cstr, x: int, y: int, font_size: float, color: rl.Color) -> void:
     let font = rl.GetFontDefault()
     let size = rl.MeasureTextEx(font, text, font_size, 3.0)
     rl.DrawTextEx(
@@ -25,7 +25,7 @@ def draw_text_center(text: cstr, x: int, y: int, font_size: float, color: rl.Col
     )
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_WINDOW_HIGHDPI | rl.ConfigFlags.FLAG_WINDOW_RESIZABLE)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

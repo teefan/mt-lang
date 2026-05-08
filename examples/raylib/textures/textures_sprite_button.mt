@@ -10,7 +10,7 @@ const button_fx_path: cstr = c"../resources/buttonfx.wav"
 const button_path: cstr = c"../resources/button.png"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

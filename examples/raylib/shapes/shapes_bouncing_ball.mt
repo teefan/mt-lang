@@ -11,7 +11,7 @@ const gravity_off_text: cstr = c"GRAVITY: OFF (Press G to enable)"
 const paused_text: cstr = c"PAUSED"
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

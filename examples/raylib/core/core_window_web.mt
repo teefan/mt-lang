@@ -8,7 +8,7 @@ const window_title: cstr = c"raylib [core] example - window web"
 const message_text: cstr = c"Welcome to raylib web structure!"
 
 
-def update_draw_frame() -> void:
+function update_draw_frame() -> void:
     rl.BeginDrawing()
     defer rl.EndDrawing()
 
@@ -16,7 +16,7 @@ def update_draw_frame() -> void:
     rl.DrawText(message_text, 220, 200, 20, rl.SKYBLUE)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

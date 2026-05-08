@@ -13,12 +13,12 @@ const backspace_text: cstr = c"Press BACKSPACE to delete chars..."
 const underscore_text: cstr = c"_"
 
 
-def cstr_from_bytes(bytes: ptr[ubyte]) -> cstr:
+function cstr_from_bytes(bytes: ptr[ubyte]) -> cstr:
     unsafe:
         return cstr<-bytes
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

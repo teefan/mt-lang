@@ -42,13 +42,13 @@ var history_pos: int = 0
 var tapback_pos: float = 0.01
 
 
-def swap_fft_values(left: int, right: int) -> void:
+function swap_fft_values(left: int, right: int) -> void:
     let temp = work_buffer[left]
     work_buffer[left] = work_buffer[right]
     work_buffer[right] = temp
 
 
-def cooley_tukey_fft_slow() -> void:
+function cooley_tukey_fft_slow() -> void:
     var j = 0
     for index in 1..fft_window_size - 1:
         var bit = fft_window_size / 2
@@ -93,7 +93,7 @@ def cooley_tukey_fft_slow() -> void:
         length *= 2
 
 
-def capture_frame(audio_samples: ptr[float]) -> void:
+function capture_frame(audio_samples: ptr[float]) -> void:
     for index in 0..fft_window_size:
         let x = (2.0 * rl.PI * float<-index) / float<-(fft_window_size - 1)
         let blackman_weight = 0.42 - 0.5 * rm.cos(x) + 0.08 * rm.cos(2.0 * x)
@@ -122,7 +122,7 @@ def capture_frame(audio_samples: ptr[float]) -> void:
     history_pos = (history_pos + 1) % fft_history_len
 
 
-def render_frame(fft_image: ptr[rl.Image]) -> void:
+function render_frame(fft_image: ptr[rl.Image]) -> void:
     var frames_since_tapback = libm.floorf(tapback_pos / window_time)
     frames_since_tapback = rm.clamp(frames_since_tapback, 0.0, float<-(fft_history_len - 1))
 
@@ -140,7 +140,7 @@ def render_frame(fft_image: ptr[rl.Image]) -> void:
         )
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

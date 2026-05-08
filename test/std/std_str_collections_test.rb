@@ -14,7 +14,7 @@ class MilkTeaStdStrCollectionsTest < Minitest::Test
       "import std.str_map as str_map",
       "import std.str_set as str_set",
       "",
-      "def main() -> int:",
+      "function main() -> int:",
       "    var symbols = str_map.create[int]()",
       "    defer str_map.release[int](ref_of(symbols))",
       "    var seen = str_set.create()",

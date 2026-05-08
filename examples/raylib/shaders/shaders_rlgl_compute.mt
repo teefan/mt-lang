@@ -26,12 +26,12 @@ struct GolUpdateSSBO:
     commands: array[GolUpdateCmd, 48]
 
 
-def char_ptr_to_cstr(value: ptr[char]) -> cstr:
+function char_ptr_to_cstr(value: ptr[char]) -> cstr:
     unsafe:
         return cstr<-value
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

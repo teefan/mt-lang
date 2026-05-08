@@ -10,7 +10,7 @@ const scissor_half_width: int = 150
 const scissor_half_height: int = 150
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Scissor Test")
     defer rl.close_window()
 

@@ -97,7 +97,7 @@ class MilkTeaBindgenTest < Minitest::Test
         clang:,
       )
 
-      assert_match(/extern module std\.c\.sample:/, generated)
+      assert_match(/external module std\.c\.sample:/, generated)
       assert_match(/link "sample"/, generated)
       assert_match(/include "sample\.h"/, generated)
       assert_match(/struct Vec2:/, generated)
@@ -132,20 +132,20 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_match(/type HiddenU32 = uint/, generated)
       assert_match(/type PublicU32 = uint/, generated)
       refute_match(/type ComplexValue =/, generated)
-      refute_match(/extern def measure_long_double/, generated)
-      assert_match(/extern def add\(a: int, b: int\) -> int/, generated)
-      assert_equal 1, generated.scan("extern def add(a: int, b: int) -> int").length
-      assert_match(/extern def add\(a: int, b: int\) -> int\n    extern def fill_buffer\(value: uint, count: ptr_uint\) -> ptr_uint/, generated)
-      assert_match(/extern def fill_buffer\(value: uint, count: ptr_uint\) -> ptr_uint/, generated)
-      assert_match(/extern def widen\(value: int\) -> int/, generated)
-      assert_match(/extern def name_of\(mode: Mode\) -> cstr/, generated)
-      assert_match(/extern def logf\(format: cstr, \.\.\.\) -> int/, generated)
-      assert_match(/extern def set_callback\(callback: fn\(arg0: int, arg1: cstr\) -> void\) -> void/, generated)
-      assert_match(/extern def set_trace_callback\(callback: fn\(arg0: int, arg1: cstr, arg2: va_list\) -> void\) -> void/, generated)
-      assert_match(/extern def take_hidden\(hidden: ptr\[Hidden\]\) -> void/, generated)
-      assert_match(/extern def inspect_pointer\(data: const_ptr\[void\]\) -> void/, generated)
-      assert_match(/extern def read_vec\(vec: const_ptr\[Vec2\]\) -> void/, generated)
-      assert_match(/extern def consume_strings\(values: ptr\[ptr\[char\]\], tokens: const_ptr\[ptr\[char\]\]\) -> int/, generated)
+      refute_match(/external function measure_long_double/, generated)
+      assert_match(/external function add\(a: int, b: int\) -> int/, generated)
+      assert_equal 1, generated.scan("external function add(a: int, b: int) -> int").length
+      assert_match(/external function add\(a: int, b: int\) -> int\n    external function fill_buffer\(value: uint, count: ptr_uint\) -> ptr_uint/, generated)
+      assert_match(/external function fill_buffer\(value: uint, count: ptr_uint\) -> ptr_uint/, generated)
+      assert_match(/external function widen\(value: int\) -> int/, generated)
+      assert_match(/external function name_of\(mode: Mode\) -> cstr/, generated)
+      assert_match(/external function logf\(format: cstr, \.\.\.\) -> int/, generated)
+      assert_match(/external function set_callback\(callback: fn\(arg0: int, arg1: cstr\) -> void\) -> void/, generated)
+      assert_match(/external function set_trace_callback\(callback: fn\(arg0: int, arg1: cstr, arg2: va_list\) -> void\) -> void/, generated)
+      assert_match(/external function take_hidden\(hidden: ptr\[Hidden\]\) -> void/, generated)
+      assert_match(/external function inspect_pointer\(data: const_ptr\[void\]\) -> void/, generated)
+      assert_match(/external function read_vec\(vec: const_ptr\[Vec2\]\) -> void/, generated)
+      assert_match(/external function consume_strings\(values: ptr\[ptr\[char\]\], tokens: const_ptr\[ptr\[char\]\]\) -> int/, generated)
 
       File.write(output_path, generated)
       analysis = MilkTea::ModuleLoader.check_file(output_path)
@@ -187,7 +187,7 @@ class MilkTeaBindgenTest < Minitest::Test
         },
       )
 
-      assert_match(/extern def load_font_ex\(codepoints: ptr\[int\]\?, codepointCount: int\) -> int/, generated)
+      assert_match(/external function load_font_ex\(codepoints: ptr\[int\]\?, codepointCount: int\) -> int/, generated)
     end
   end
 
@@ -221,9 +221,9 @@ class MilkTeaBindgenTest < Minitest::Test
       generated = result.fetch(:source)
       report = result.fetch(:nullable_policy_report)
 
-      assert_match(/extern def returns_nullable\(\) -> ptr\[void\]\?/, generated)
-      assert_match(/extern def returns_name\(\) -> cstr\?/, generated)
-      assert_match(/extern def takes_nullable\(data: ptr\[void\]\?, name: cstr\?\) -> void/, generated)
+      assert_match(/external function returns_nullable\(\) -> ptr\[void\]\?/, generated)
+      assert_match(/external function returns_name\(\) -> cstr\?/, generated)
+      assert_match(/external function takes_nullable\(data: ptr\[void\]\?, name: cstr\?\) -> void/, generated)
       assert_equal 2, report.dig(:summary, :total)
       assert_equal [{
         function: "takes_manual",
@@ -407,7 +407,7 @@ class MilkTeaBindgenTest < Minitest::Test
 
       assert_match(/opaque WindowHandle = c"WindowHandle"/, generated)
       assert_match(/type WindowCallback = fn\(arg0: ptr\[WindowHandle\], arg1: cstr\) -> void/, generated)
-      assert_match(/extern def set_window_callback\(callback: fn\(arg0: ptr\[WindowHandle\], arg1: cstr\) -> void\) -> void/, generated)
+      assert_match(/external function set_window_callback\(callback: fn\(arg0: ptr\[WindowHandle\], arg1: cstr\) -> void\) -> void/, generated)
 
       File.write(output_path, generated)
       analysis = MilkTea::ModuleLoader.check_file(output_path)
@@ -444,7 +444,40 @@ class MilkTeaBindgenTest < Minitest::Test
 
       assert_match(/struct Vector2:\n\s+x: float\n\s+y: float/, generated)
       refute_match(/opaque Vector2/, generated)
-      assert_match(/extern def uses_vector\(value: Vector2\) -> int/, generated)
+      assert_match(/external function uses_vector\(value: Vector2\) -> int/, generated)
+    end
+  end
+
+  def test_generate_skips_self_alias_primitive_typedefs
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-self-alias") do |dir|
+      header_path = File.join(dir, "sample.h")
+      output_path = File.join(dir, "sample.mt")
+      File.write(header_path, <<~C)
+        typedef unsigned short ushort;
+        typedef unsigned int uint;
+        typedef unsigned long ulong_alias;
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+      )
+
+      refute_match(/type ushort = ushort/, generated)
+      refute_match(/type uint = uint/, generated)
+      assert_match(/type ulong_alias = ptr_uint/, generated)
+
+      File.write(output_path, generated)
+      analysis = MilkTea::ModuleLoader.check_file(output_path)
+
+      assert_equal :extern_module, analysis.module_kind
+      assert_equal "std.c.sample", analysis.module_name
+      assert_includes analysis.types.keys, "ulong_alias"
     end
   end
 
@@ -476,7 +509,7 @@ class MilkTeaBindgenTest < Minitest::Test
 
       assert_match(/struct Vector2:\n\s+x: float\n\s+y: float/, generated)
       refute_match(/opaque Vector2/, generated)
-      assert_match(/extern def uses_vector\(value: ptr\[Vector2\]\) -> int/, generated)
+      assert_match(/external function uses_vector\(value: ptr\[Vector2\]\) -> int/, generated)
     end
   end
 
@@ -500,7 +533,7 @@ class MilkTeaBindgenTest < Minitest::Test
         },
       )
 
-      assert_match(/extern def allocate\(count: int\) -> ptr\[void\]\?/, generated)
+      assert_match(/external function allocate\(count: int\) -> ptr\[void\]\?/, generated)
     end
   end
 
@@ -522,13 +555,45 @@ class MilkTeaBindgenTest < Minitest::Test
         clang:,
       )
 
-      assert_match(/extern def use_keywords\(type_: int, in_: int, out_: int\) -> int/, generated)
+      assert_match(/external function use_keywords\(type_: int, in_: int, out_: int\) -> int/, generated)
 
       File.write(output_path, generated)
       analysis = MilkTea::ModuleLoader.check_file(output_path)
 
       assert_equal :extern_module, analysis.module_kind
       assert_includes analysis.functions.keys, "use_keywords"
+    end
+  end
+
+  def test_generate_renames_keyword_struct_fields
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-keyword-fields") do |dir|
+      header_path = File.join(dir, "sample.h")
+      output_path = File.join(dir, "sample.mt")
+      File.write(header_path, <<~C)
+        typedef struct KeywordFields {
+          int function;
+          int external;
+          int public;
+        } KeywordFields;
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+      )
+
+      assert_match(/struct KeywordFields:\n        function_: int\n        external_: int\n        public_: int/, generated)
+
+      File.write(output_path, generated)
+      analysis = MilkTea::ModuleLoader.check_file(output_path)
+
+      assert_equal :extern_module, analysis.module_kind
+      assert_includes analysis.types.keys, "KeywordFields"
     end
   end
 
@@ -659,7 +724,7 @@ class MilkTeaBindgenTest < Minitest::Test
       )
 
       assert_match(/type SampleFlags = uint/, generated)
-      assert_match(/extern def SampleRun\(argc: int, argv: ptr\[ptr\[char\]\], main_fn: fn\(arg0: int, arg1: ptr\[ptr\[char\]\]\) -> int\) -> int/, generated)
+      assert_match(/external function SampleRun\(argc: int, argv: ptr\[ptr\[char\]\], main_fn: fn\(arg0: int, arg1: ptr\[ptr\[char\]\]\) -> int\) -> int/, generated)
     end
   end
 

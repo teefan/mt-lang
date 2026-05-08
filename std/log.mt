@@ -4,14 +4,14 @@ import std.fmt as fmt
 import std.io as io
 import std.string as string
 
-pub enum Level: ubyte
+public enum Level: ubyte
     debug = 1
     info = 2
     warn = 3
     error = 4
 
 
-pub def level_name(level: Level) -> str:
+public function level_name(level: Level) -> str:
     match level:
         Level.debug:
             return "debug"
@@ -23,7 +23,7 @@ pub def level_name(level: Level) -> str:
             return "error"
 
 
-pub def write(level: Level, message: str) -> bool:
+public function write(level: Level, message: str) -> bool:
     var line = string.String.create()
     defer line.release()
 
@@ -35,17 +35,17 @@ pub def write(level: Level, message: str) -> bool:
     return ok
 
 
-pub def debug(message: str) -> bool:
+public function debug(message: str) -> bool:
     return write(Level.debug, message)
 
 
-pub def info(message: str) -> bool:
+public function info(message: str) -> bool:
     return write(Level.info, message)
 
 
-pub def warn(message: str) -> bool:
+public function warn(message: str) -> bool:
     return write(Level.warn, message)
 
 
-pub def error(message: str) -> bool:
+public function error(message: str) -> bool:
     return write(Level.error, message)

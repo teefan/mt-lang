@@ -9,7 +9,7 @@ const runtime_flags_text: cstr = c"Following flags can be set after window creat
 const startup_flags_text: cstr = c"Following flags can only be set before window creation:"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

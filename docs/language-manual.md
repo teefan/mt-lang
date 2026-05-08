@@ -9,7 +9,7 @@ Milk Tea source files use the `.mt` extension.
 A file can be either:
 
 - an ordinary module (`module ...`)
-- an extern module (`extern module ...`)
+- an external module (`external module ...`)
 
 ### 1.1 Ordinary module
 
@@ -18,14 +18,14 @@ module demo.main
 
 import std.io as io
 
-def main() -> int:
+function main() -> int:
     return 0
 ```
 
 ### 1.2 Extern module
 
 ```mt
-extern module std.c.raylib:
+external module std.c.raylib:
     include "raylib.h"
     link "raylib"
 
@@ -35,13 +35,13 @@ extern module std.c.raylib:
         b: ubyte
         a: ubyte
 
-    extern def InitWindow(width: int, height: int, title: cstr) -> void
+    external function InitWindow(width: int, height: int, title: cstr) -> void
 ```
 
 Rules:
 
 - In ordinary modules, `import` statements are parsed only at the top after `module`.
-- In extern modules, leading `import` statements are allowed inside the extern-module body.
+- In external modules, leading `import` statements are allowed inside the external-module body.
 - Module lookup resolves `a.b.c` to `a/b/c.mt`.
 
 ## 2. Lexical Rules
@@ -66,7 +66,7 @@ without a blank line in between.
 ```mt
 ## Draws a colorful triangle strip.
 ## Values are normalized to screen center.
-def draw_strip() -> void:
+function draw_strip() -> void:
     return
 ```
 
@@ -76,7 +76,7 @@ Rules for documentation comments:
 - Contiguous `##` lines form one markdown block.
 - A blank line breaks attachment.
 - Plain `#` comments are ignored by hover documentation.
-- Documentation attaches only to declarations (`def`, `struct`, `union`, `enum`, `flags`, `variant`, `type`, `const`, `var`, `let`, `methods`, `opaque`).
+- Documentation attaches only to declarations (`function`, `struct`, `union`, `enum`, `flags`, `variant`, `type`, `const`, `var`, `let`, `methods`, `opaque`).
 
 ### 2.3 Literals
 
@@ -108,7 +108,7 @@ Symbols:
 Word operators:
 
 - `and`, `or`, `not`
-- `in`, `out`, `inout` (reserved for `foreign def` parameter modes; legacy call-site forms are rejected semantically)
+- `in`, `out`, `inout` (reserved for `foreign function` parameter modes; legacy call-site forms are rejected semantically)
 
 ## 3. Declarations
 
@@ -124,18 +124,18 @@ Top-level declarations:
 - `flags`
 - `opaque`
 - `methods`
-- `def`
-- `async def`
-- `extern def`
-- `foreign def`
+- `function`
+- `async function`
+- `external function`
+- `foreign function`
 - `static_assert(...)`
 
 ### 3.1 Visibility
 
-- `pub` is supported for exportable ordinary declarations.
-- `pub` is rejected on `methods` blocks.
-- `pub` is rejected on ordinary `extern` declarations and `static_assert`.
-- In extern modules, declarations are implicitly exported and `pub` is rejected.
+- `public` is supported for exportable ordinary declarations.
+- `public` is rejected on `methods` blocks.
+- `public` is rejected on ordinary `external` declarations and `static_assert`.
+- In external modules, declarations are implicitly exported and `public` is rejected.
 
 ### 3.2 Constants and variables
 
@@ -212,21 +212,21 @@ align(16) struct Mat4:
 
 ```mt
 methods Counter:
-    def read() -> int:
+    function read() -> int:
         return this.value
 
-    edit def bump() -> void:
+    edit function bump() -> void:
         this.value += 1
 
-    static def zero() -> Counter:
+    static function zero() -> Counter:
         return Counter(value = 0)
 ```
 
 Kinds:
 
-- `def` (value receiver)
-- `edit def` (mutable receiver)
-- `static def` (no receiver)
+- `function` (value receiver)
+- `edit function` (mutable receiver)
+- `static function` (no receiver)
 
 Method capabilities:
 
@@ -236,7 +236,7 @@ Method capabilities:
 ### 3.6 Functions
 
 ```mt
-def add(a: int, b: int) -> int:
+function add(a: int, b: int) -> int:
     return a + b
 ```
 
@@ -251,7 +251,7 @@ Rules:
 ### 3.7 Extern functions
 
 ```mt
-extern def printf(format: cstr, ...) -> int
+external function printf(format: cstr, ...) -> int
 ```
 
 Rules:
@@ -265,9 +265,9 @@ Rules:
 ### 3.8 Foreign functions
 
 ```mt
-foreign def init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow
-foreign def load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
-foreign def close_window(consuming window: Window) -> void = c.CloseWindow
+foreign function init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow
+foreign function load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
+foreign function close_window(consuming window: Window) -> void = c.CloseWindow
 ```
 
 Parameter modes:
@@ -285,7 +285,7 @@ Boundary projections:
 Rules:
 
 - `as` is only allowed on plain and `in` params.
-- `in`, `out`, and `inout` are declared on the `foreign def` parameter; callers pass ordinary expressions or lvalues at those argument positions.
+- `in`, `out`, and `inout` are declared on the `foreign function` parameter; callers pass ordinary expressions or lvalues at those argument positions.
 - Legacy imported-call syntax such as `load_file_data(path, out size)` or `set_shader_value(shader, loc, in value, kind)` is rejected semantically.
 - consuming foreign calls must appear as top-level expression statements.
 - foreign functions with consuming params must return `void`.
@@ -569,10 +569,10 @@ The following standard library functions receive special lowering for format str
 ## 10. Async Semantics
 
 ```mt
-async def child() -> int:
+async function child() -> int:
     return 41
 
-async def parent() -> int:
+async function parent() -> int:
     let v = await child()
     return v + 1
 ```
@@ -661,13 +661,13 @@ struct Counter:
     value: int
 
 methods Counter:
-    edit def bump() -> void:
+    edit function bump() -> void:
         this.value += 1
 
-    def read() -> int:
+    function read() -> int:
         return this.value
 
-def main() -> int:
+function main() -> int:
     var c = Counter(value = 0)
 
     for i in 0..3:

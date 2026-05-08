@@ -11,13 +11,13 @@ const foreground_path: cstr = c"../resources/cyberpunk_street_foreground.png"
 const background_scale: float = 2.0
 
 
-def reset_scroll(scroll: float, texture_width: int) -> float:
+function reset_scroll(scroll: float, texture_width: int) -> float:
     if scroll <= -float<-(texture_width * 2):
         return 0.0
     return scroll
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

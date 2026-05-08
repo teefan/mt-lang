@@ -12,7 +12,7 @@ const window_title: cstr = c"raylib [core] example - window letterbox"
 const help_text: cstr = c"If executed inside a window,\nyou can resize the window,\nand see the screen scaling!"
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE | rl.ConfigFlags.FLAG_VSYNC_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

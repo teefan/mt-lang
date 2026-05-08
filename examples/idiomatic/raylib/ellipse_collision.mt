@@ -7,13 +7,13 @@ const screen_width: int = 800
 const screen_height: int = 450
 
 
-def check_collision_point_ellipse(point: rl.Vector2, center: rl.Vector2, radius_x: float, radius_y: float) -> bool:
+function check_collision_point_ellipse(point: rl.Vector2, center: rl.Vector2, radius_x: float, radius_y: float) -> bool:
     let dx = (point.x - center.x) / radius_x
     let dy = (point.y - center.y) / radius_y
     return dx * dx + dy * dy <= 1.0
 
 
-def check_collision_ellipses(center_a: rl.Vector2, radius_x_a: float, radius_y_a: float, center_b: rl.Vector2, radius_x_b: float, radius_y_b: float) -> bool:
+function check_collision_ellipses(center_a: rl.Vector2, radius_x_a: float, radius_y_a: float, center_b: rl.Vector2, radius_x_b: float, radius_y_b: float) -> bool:
     let dx = center_b.x - center_a.x
     let dy = center_b.y - center_a.y
     let distance = math.sqrt(dx * dx + dy * dy)
@@ -28,7 +28,7 @@ def check_collision_ellipses(center_a: rl.Vector2, radius_x_a: float, radius_y_a
     return distance <= radius_a + radius_b
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Ellipse Collision")
     defer rl.close_window()
 

@@ -26,7 +26,7 @@ const footer_text: cstr = c"Shadows in raylib using the shadowmapping algorithm!
 const screenshot_path: cstr = c"shaders_shadowmap.png"
 
 
-def raylib_matrix(mat: rlgl.Matrix) -> rl.Matrix:
+function raylib_matrix(mat: rlgl.Matrix) -> rl.Matrix:
     return rl.Matrix(
         m0 = mat.m0,
         m4 = mat.m4,
@@ -47,18 +47,18 @@ def raylib_matrix(mat: rlgl.Matrix) -> rl.Matrix:
     )
 
 
-def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
+function set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
 
 
-def set_all_model_shaders(model: ptr[rl.Model], shader: rl.Shader) -> void:
+function set_all_model_shaders(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         for index in 0..model.materialCount:
             model.materials[index].shader = shader
 
 
-def load_shadowmap_render_texture(width: int, height: int) -> rl.RenderTexture2D:
+function load_shadowmap_render_texture(width: int, height: int) -> rl.RenderTexture2D:
     var target = zero[rl.RenderTexture2D]
     target.id = rlgl.rlLoadFramebuffer()
     target.texture.width = width
@@ -87,18 +87,18 @@ def load_shadowmap_render_texture(width: int, height: int) -> rl.RenderTexture2D
     return target
 
 
-def unload_shadowmap_render_texture(target: rl.RenderTexture2D) -> void:
+function unload_shadowmap_render_texture(target: rl.RenderTexture2D) -> void:
     if target.id > 0:
         rlgl.rlUnloadFramebuffer(target.id)
 
 
-def draw_scene(cube: rl.Model, robot: rl.Model) -> void:
+function draw_scene(cube: rl.Model, robot: rl.Model) -> void:
     rl.DrawModelEx(cube, rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector3(x = 0.0, y = 1.0, z = 0.0), 0.0, rl.Vector3(x = 10.0, y = 1.0, z = 10.0), rl.BLUE)
     rl.DrawModelEx(cube, rl.Vector3(x = 1.5, y = 1.0, z = -1.5), rl.Vector3(x = 0.0, y = 1.0, z = 0.0), 0.0, rl.Vector3(x = 1.0, y = 1.0, z = 1.0), rl.WHITE)
     rl.DrawModelEx(robot, rl.Vector3(x = 0.0, y = 0.5, z = 0.0), rl.Vector3(x = 0.0, y = 1.0, z = 0.0), 0.0, rl.Vector3(x = 1.0, y = 1.0, z = 1.0), rl.RED)
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

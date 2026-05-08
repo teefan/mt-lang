@@ -11,7 +11,7 @@ const save_text: cstr = c"SAVE!"
 const saved_text: cstr = c"IMAGE SAVED!"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

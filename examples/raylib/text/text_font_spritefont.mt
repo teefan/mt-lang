@@ -13,7 +13,7 @@ const font2_path: cstr = c"../resources/custom_alagard.png"
 const font3_path: cstr = c"../resources/custom_jupiter_crash.png"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

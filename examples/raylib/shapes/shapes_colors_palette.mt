@@ -11,7 +11,7 @@ const title_text: cstr = c"raylib colors palette"
 const help_text: cstr = c"press SPACE to see all colors"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

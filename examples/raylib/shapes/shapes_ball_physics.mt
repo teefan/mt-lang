@@ -27,7 +27,7 @@ const ball_count_format: cstr = c"BALL COUNT: %d"
 const gravity_format: cstr = c"GRAVITY: %.2f"
 
 
-def ball_at(position: rl.Vector2, speed: rl.Vector2, radius: float, color: rl.Color) -> Ball:
+function ball_at(position: rl.Vector2, speed: rl.Vector2, radius: float, color: rl.Color) -> Ball:
     return Ball(
         position = position,
         speed = speed,
@@ -40,13 +40,13 @@ def ball_at(position: rl.Vector2, speed: rl.Vector2, radius: float, color: rl.Co
     )
 
 
-def distance(left: rl.Vector2, right: rl.Vector2) -> float:
+function distance(left: rl.Vector2, right: rl.Vector2) -> float:
     let dx = left.x - right.x
     let dy = left.y - right.y
     return math.sqrtf(dx * dx + dy * dy)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -7,7 +7,7 @@ align(16) struct Mat4:
     data: array[float, 16]
 
 
-def main() -> int:
+function main() -> int:
     let items = heap.alloc[int](4)
     if items == null:
         return 1

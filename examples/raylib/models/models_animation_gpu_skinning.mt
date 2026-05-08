@@ -14,22 +14,22 @@ const shader_fragment_path_format: cstr = c"../resources/shaders/glsl%i/skinning
 const window_title: cstr = c"raylib [models] example - animation gpu skinning"
 
 
-def chars_to_cstr(text: ptr[char]) -> cstr:
+function chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
 
 
-def model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
+function model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
     unsafe:
         return read(anims + index)
 
 
-def model_animation_name(anims: ptr[rl.ModelAnimation], index: int) -> cstr:
+function model_animation_name(anims: ptr[rl.ModelAnimation], index: int) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of((anims + index).name[0]))
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

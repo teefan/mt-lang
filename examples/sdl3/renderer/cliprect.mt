@@ -19,7 +19,7 @@ var cliprect_direction: c.SDL_FPoint = zero[c.SDL_FPoint]
 var last_time: c.Uint64 = 0
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -29,7 +29,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     let now = c.SDL_GetTicks()
     let elapsed = float<-(now - last_time) / 1000.0
     let distance = elapsed * cliprect_speed
@@ -70,7 +70,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Renderer Clipping Rectangle", c"1.0", c"com.example.renderer-cliprect")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -106,5 +106,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

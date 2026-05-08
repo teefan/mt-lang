@@ -26,11 +26,11 @@ var audio_device: c.SDL_AudioDeviceID = 0
 var playing_sound: int = 0
 
 
-def point_in_rect(point: c.SDL_FPoint, rect: c.SDL_FRect) -> bool:
+function point_in_rect(point: c.SDL_FPoint, rect: c.SDL_FRect) -> bool:
     return point.x >= rect.x and point.x < (rect.x + rect.w) and point.y >= rect.y and point.y < (rect.y + rect.h)
 
 
-def play_left_sound() -> void:
+function play_left_sound() -> void:
     let active_stream = stream
     if active_stream == null:
         return
@@ -49,7 +49,7 @@ def play_left_sound() -> void:
     playing_sound = left_button_value
 
 
-def play_right_sound() -> void:
+function play_right_sound() -> void:
     let active_stream = stream
     if active_stream == null:
         return
@@ -68,7 +68,7 @@ def play_right_sound() -> void:
     playing_sound = right_button_value
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -88,7 +88,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_button(rect: c.SDL_FRect, text: cstr, button_value: int) -> void:
+function render_button(rect: c.SDL_FRect, text: cstr, button_value: int) -> void:
     var draw_rect = rect
 
     if playing_sound == button_value:
@@ -105,7 +105,7 @@ def render_button(rect: c.SDL_FRect, text: cstr, button_value: int) -> void:
     c.SDL_RenderDebugText(renderer, x, y, text)
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     let active_stream = stream
 
     if active_stream != null and playing_sound != 0:
@@ -119,7 +119,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     var spec = zero[c.SDL_AudioSpec]
 
     c.SDL_SetAppMetadata(c"Example Audio Planar Data", c"1.0", c"com.example.audio-planar-data")
@@ -164,5 +164,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

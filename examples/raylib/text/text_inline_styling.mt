@@ -13,7 +13,7 @@ const alpha_text: cstr = c"This changes the [c00ff00ff]alpha[r] relative [cfffff
 const creative_format: cstr = c"Let's be [c%02x%02x%02xFF]CREATIVE[r] !!!"
 
 
-def draw_text_styled(font: rl.Font, text: cstr, position: rl.Vector2, font_size: float, spacing: float, color: rl.Color) -> void:
+function draw_text_styled(font: rl.Font, text: cstr, position: rl.Vector2, font_size: float, spacing: float, color: rl.Color) -> void:
     var active_font = font
     if active_font.texture.id == 0:
         active_font = rl.GetFontDefault()
@@ -96,7 +96,7 @@ def draw_text_styled(font: rl.Font, text: cstr, position: rl.Vector2, font_size:
             index += codepoint_byte_count
 
 
-def measure_text_styled(font: rl.Font, text: cstr, font_size: float, spacing: float) -> rl.Vector2:
+function measure_text_styled(font: rl.Font, text: cstr, font_size: float, spacing: float) -> rl.Vector2:
     let empty_size = rl.Vector2(x = 0.0, y = 0.0)
     let text_len = int<-rl.TextLength(text)
     if text_len == 0:
@@ -154,7 +154,7 @@ def measure_text_styled(font: rl.Font, text: cstr, font_size: float, spacing: fl
         )
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

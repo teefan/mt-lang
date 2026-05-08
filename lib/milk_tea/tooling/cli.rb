@@ -12,7 +12,8 @@ module MilkTea
       @argv = argv.dup
       @out = out
       @err = err
-      @module_roots = MilkTea::ModuleRoots.roots_for_path(Dir.pwd)
+      @include_module_roots = []
+      @ambient_module_roots = MilkTea::ModuleRoots.roots_for_path(Dir.pwd)
     end
 
     def start
@@ -690,10 +691,15 @@ module MilkTea
     end
 
     def module_roots_for(path = nil)
-      roots = @module_roots.dup
-      return roots unless path
+      roots = @include_module_roots.dup
 
-      MilkTea::ModuleRoots.roots_for_path(path).each do |root|
+      if path
+        MilkTea::ModuleRoots.roots_for_path(path).each do |root|
+          roots << root unless roots.include?(root)
+        end
+      end
+
+      @ambient_module_roots.each do |root|
         roots << root unless roots.include?(root)
       end
       roots
@@ -706,7 +712,7 @@ module MilkTea
         if @argv[i] == "-I" || @argv[i] == "--include-path"
           value = @argv[i + 1]
           if value && !value.start_with?("-")
-            @module_roots << File.expand_path(value)
+            @include_module_roots << File.expand_path(value)
             i += 2
           else
             @err.puts("missing value for #{@argv[i]}")

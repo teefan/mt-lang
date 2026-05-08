@@ -10,7 +10,7 @@ const player_one_text: cstr = c"PLAYER1: W/S/A/D to move"
 const player_two_text: cstr = c"PLAYER2: UP/DOWN/LEFT/RIGHT to move"
 
 
-def draw_grid() -> void:
+function draw_grid() -> void:
     var column = 0
     while column < screen_width / player_size + 1:
         let x = player_size * column
@@ -24,7 +24,7 @@ def draw_grid() -> void:
         row += 1
 
 
-def draw_camera_scene(camera: rl.Camera2D, player1: rl.Rectangle, player2: rl.Rectangle) -> void:
+function draw_camera_scene(camera: rl.Camera2D, player1: rl.Rectangle, player2: rl.Rectangle) -> void:
     rl.BeginMode2D(camera)
     draw_grid()
     rl.DrawRectangleRec(player1, rl.RED)
@@ -32,7 +32,7 @@ def draw_camera_scene(camera: rl.Camera2D, player1: rl.Rectangle, player2: rl.Re
     rl.EndMode2D()
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

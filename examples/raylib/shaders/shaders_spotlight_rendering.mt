@@ -32,17 +32,17 @@ const raysan_path: cstr = c"../resources/raysan.png"
 const window_title: cstr = c"raylib [shaders] example - spotlight rendering"
 
 
-def set_vec2_uniform(shader: rl.Shader, location: int, vector: rl.Vector2) -> void:
+function set_vec2_uniform(shader: rl.Shader, location: int, vector: rl.Vector2) -> void:
     var values = array[float, 2](vector.x, vector.y)
     rl.SetShaderValue(shader, location, ptr_of(values[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
 
-def set_float_uniform(shader: rl.Shader, location: int, value: float) -> void:
+function set_float_uniform(shader: rl.Shader, location: int, value: float) -> void:
     var storage = value
     rl.SetShaderValue(shader, location, ptr_of(storage), rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
 
-def reset_star(star: ref[Star]) -> void:
+function reset_star(star: ref[Star]) -> void:
     var current = read(star)
     current.position = rl.Vector2(x = screen_width_f / 2.0, y = screen_height_f / 2.0)
     current.speed.x = float<-rl.GetRandomValue(-1000, 1000) / 100.0
@@ -56,7 +56,7 @@ def reset_star(star: ref[Star]) -> void:
     read(star) = current
 
 
-def update_star(star: ref[Star]) -> void:
+function update_star(star: ref[Star]) -> void:
     var current = read(star)
     current.position = current.position.add(current.speed)
 
@@ -68,7 +68,7 @@ def update_star(star: ref[Star]) -> void:
     read(star) = current
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

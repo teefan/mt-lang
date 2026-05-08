@@ -13,7 +13,7 @@ const volume_text: cstr = c"UP-DOWN for VOLUME CONTROL"
 const window_title: cstr = c"raylib [audio] example - music stream"
 
 
-def clamp(value: float, min_value: float, max_value: float) -> float:
+function clamp(value: float, min_value: float, max_value: float) -> float:
     if value < min_value:
         return min_value
     if value > max_value:
@@ -21,7 +21,7 @@ def clamp(value: float, min_value: float, max_value: float) -> float:
     return value
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

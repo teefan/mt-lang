@@ -7,12 +7,12 @@ import std.string as string
 # Demonstrates a declared `str` initialized from interpolation.
 
 
-def print_declared_header(user: str, count: int) -> bool:
+function print_declared_header(user: str, count: int) -> bool:
     let header: str = f"declared-str -> user=#{user} count=#{count}"
     return io.println(header)
 
 
-def main() -> int:
+function main() -> int:
     let user: str = "milk-tea"
     let count: int = 3
     let ratio: double = 0.625

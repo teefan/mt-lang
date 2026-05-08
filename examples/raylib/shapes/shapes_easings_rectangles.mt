@@ -15,16 +15,16 @@ const window_title: cstr = c"raylib [shapes] example - easings rectangles"
 const replay_text: cstr = c"PRESS [SPACE] TO PLAY AGAIN!"
 
 
-def ease_linear_in(t: float, b: float, c: float, d: float) -> float:
+function ease_linear_in(t: float, b: float, c: float, d: float) -> float:
     return c * t / d + b
 
 
-def ease_circ_out(t: float, b: float, c: float, d: float) -> float:
+function ease_circ_out(t: float, b: float, c: float, d: float) -> float:
     let normalized = t / d - 1.0
     return c * math.sqrtf(1.0 - normalized * normalized) + b
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

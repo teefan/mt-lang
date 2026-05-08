@@ -20,7 +20,7 @@ const stack_rows: int = 6
 const stack_box_count: int = 30
 
 
-def create_static_box(world_id: b2.WorldId, position: b2.Vec2, half_width: float, half_height: float) -> b2.BodyId:
+function create_static_box(world_id: b2.WorldId, position: b2.Vec2, half_width: float, half_height: float) -> b2.BodyId:
     var body_def = b2.default_body_def()
     body_def.position = position
     let body_id = b2.create_body(world_id, body_def)
@@ -31,7 +31,7 @@ def create_static_box(world_id: b2.WorldId, position: b2.Vec2, half_width: float
     return body_id
 
 
-def create_dynamic_box(world_id: b2.WorldId, position: b2.Vec2, half_width: float, half_height: float, density: float) -> b2.BodyId:
+function create_dynamic_box(world_id: b2.WorldId, position: b2.Vec2, half_width: float, half_height: float, density: float) -> b2.BodyId:
     var body_def = b2.default_body_def()
     body_def.position = position
     let body_id = b2.create_body(world_id, body_def)
@@ -44,19 +44,19 @@ def create_dynamic_box(world_id: b2.WorldId, position: b2.Vec2, half_width: floa
     return body_id
 
 
-def to_screen(position: b2.Vec2) -> rl.Vector2:
+function to_screen(position: b2.Vec2) -> rl.Vector2:
     return rl.Vector2(
         x = position.x * pixels_per_meter,
         y = position.y * pixels_per_meter,
     )
 
 
-def body_angle_degrees(body_id: b2.BodyId) -> float:
+function body_angle_degrees(body_id: b2.BodyId) -> float:
     let rotation = b2.body_get_rotation(body_id)
     return math.atan2(rotation.s, rotation.c) * math.rad2deg
 
 
-def draw_box(sprite: BoxSprite) -> void:
+function draw_box(sprite: BoxSprite) -> void:
     let center = to_screen(b2.body_get_position(sprite.body_id))
     let width = sprite.half_width * pixels_per_meter * 2.0
     let height = sprite.half_height * pixels_per_meter * 2.0
@@ -74,7 +74,7 @@ def draw_box(sprite: BoxSprite) -> void:
     )
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Box2D Box Stack")
     defer rl.close_window()
     rl.set_target_fps(60)

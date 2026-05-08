@@ -1254,14 +1254,14 @@ module MilkTea
           callee = tokens[i]
           next_tok = tokens[i + 1]
 
-          # Skip function definitions — `def foo(` has the same identifier+lparen
+          # Skip function definitions — `function foo(` has the same identifier+lparen
           # shape as a call site but must not get parameter-name inlay hints.
           prev_tok = i > 0 ? tokens[i - 1] : nil
 
           # Also support module-qualified call sites (`mod.fn(...)`).
           # Ignore identifiers immediately after `.` to avoid treating member names
           # as unqualified local calls.
-          if callee.type == :identifier && prev_tok&.type != :def && prev_tok&.type != :dot
+          if callee.type == :identifier && prev_tok&.type != :function && prev_tok&.type != :dot
             binding = nil
             lparen_index = nil
 
@@ -1336,7 +1336,7 @@ module MilkTea
               items << {
                 label:      fname,
                 kind:       3,  # Function
-                detail:     "def #{fname}(#{params_str}) -> #{binding.type.return_type}",
+                detail:     "function #{fname}(#{params_str}) -> #{binding.type.return_type}",
                 insertText: fname,
                 sortText:   "0_#{fname}"
               }
@@ -1428,7 +1428,7 @@ module MilkTea
           items << {
             label:        name,
             kind:         3,  # Function
-            detail:       "def #{name}(#{params_str}) -> #{binding.type.return_type}",
+            detail:       "function #{name}(#{params_str}) -> #{binding.type.return_type}",
             insertText:   name,
             sortText:     "0_#{name}"  # Functions first
           }
@@ -1695,7 +1695,7 @@ module MilkTea
 
         if (binding = analysis.functions[name])
           params_str = format_params(binding.type.params)
-          signature = "def #{name}(#{params_str}) -> #{binding.type.return_type}"
+          signature = "function #{name}(#{params_str}) -> #{binding.type.return_type}"
         elsif analysis.types.key?(name)
           type = analysis.types[name]
           signature = "type #{name} = #{type}"
@@ -1709,7 +1709,7 @@ module MilkTea
           if dot_receiver && (module_binding = analysis.imports[dot_receiver])
             if (fn = module_binding.functions[name])
               params_str = format_params(fn.type.params)
-              signature = "def #{name}(#{params_str}) -> #{fn.type.return_type}"
+              signature = "function #{name}(#{params_str}) -> #{fn.type.return_type}"
             elsif (val = module_binding.values[name])
               signature = "#{name}: #{val.type}"
             elsif module_binding.types.key?(name)
@@ -2149,7 +2149,7 @@ module MilkTea
 
         return [:namespace, []] if module_declaration_path_token?(tokens, index)
 
-        if prev_tok && [:def, :fn, :proc].include?(prev_tok.type)
+        if prev_tok && [:function, :fn, :proc].include?(prev_tok.type)
           return [:function, ['declaration']]
         end
 
@@ -2506,7 +2506,7 @@ module MilkTea
       end
 
       def generic_type_parameter_header_token?(type)
-        [:def, :struct, :union, :enum, :flags, :variant, :type, :methods].include?(type)
+        [:function, :struct, :union, :enum, :flags, :variant, :type, :methods].include?(type)
       end
 
       def type_parameter_names_in_scope(analysis, line)

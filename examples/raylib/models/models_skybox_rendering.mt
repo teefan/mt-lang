@@ -23,30 +23,30 @@ const vflipped_text: cstr = c"vflipped"
 const window_title: cstr = c"raylib [models] example - skybox rendering"
 
 
-def chars_to_cstr(text: ptr[char]) -> cstr:
+function chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
 
 
-def text_buffer_ptr(text: ref[array[char, 256]]) -> ptr[char]:
+function text_buffer_ptr(text: ref[array[char, 256]]) -> ptr[char]:
     return ptr_of(read(text)[0])
 
 
-def text_buffer_cstr(text: ref[array[char, 256]]) -> cstr:
+function text_buffer_cstr(text: ref[array[char, 256]]) -> cstr:
     return chars_to_cstr(text_buffer_ptr(text))
 
 
-def shader_location(shader: rl.Shader, location_index: int) -> int:
+function shader_location(shader: rl.Shader, location_index: int) -> int:
     unsafe:
         return read(shader.locs + location_index)
 
 
-def file_path_list_path(files: rl.FilePathList, index: int) -> cstr:
+function file_path_list_path(files: rl.FilePathList, index: int) -> cstr:
     unsafe:
         return cstr<-read(files.paths + ptr_uint<-index)
 
 
-def rlgl_matrix(mat: rl.Matrix) -> rlgl.Matrix:
+function rlgl_matrix(mat: rl.Matrix) -> rlgl.Matrix:
     return rlgl.Matrix(
         m0 = mat.m0,
         m4 = mat.m4,
@@ -67,7 +67,7 @@ def rlgl_matrix(mat: rl.Matrix) -> rlgl.Matrix:
     )
 
 
-def set_shader_int(shader: rl.Shader, uniform_name: cstr, value: int) -> void:
+function set_shader_int(shader: rl.Shader, uniform_name: cstr, value: int) -> void:
     var raw_value = zero[array[int, 1]]
     raw_value[0] = value
     rl.SetShaderValue(
@@ -78,22 +78,22 @@ def set_shader_int(shader: rl.Shader, uniform_name: cstr, value: int) -> void:
     )
 
 
-def set_skybox_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
+function set_skybox_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
 
 
-def set_skybox_cubemap(model: ptr[rl.Model], texture: rl.TextureCubemap) -> void:
+function set_skybox_cubemap(model: ptr[rl.Model], texture: rl.TextureCubemap) -> void:
     unsafe:
         model.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = texture
 
 
-def skybox_cubemap(model: rl.Model) -> rl.TextureCubemap:
+function skybox_cubemap(model: rl.Model) -> rl.TextureCubemap:
     unsafe:
         return model.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture
 
 
-def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: int, format: int) -> rl.TextureCubemap:
+function gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: int, format: int) -> rl.TextureCubemap:
     var cubemap = zero[rl.TextureCubemap]
 
     rlgl.rlDisableBackfaceCulling()
@@ -168,7 +168,7 @@ def gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: int, fo
     return cubemap
 
 
-def load_skybox_texture(skybox: ptr[rl.Model], cubemap_shader: rl.Shader, use_hdr: bool, skybox_file_name: ref[array[char, 256]], file_path: cstr) -> void:
+function load_skybox_texture(skybox: ptr[rl.Model], cubemap_shader: rl.Shader, use_hdr: bool, skybox_file_name: ref[array[char, 256]], file_path: cstr) -> void:
     rl.TextCopy(text_buffer_ptr(skybox_file_name), file_path)
 
     if use_hdr:
@@ -189,7 +189,7 @@ def load_skybox_texture(skybox: ptr[rl.Model], cubemap_shader: rl.Shader, use_hd
         rl.UnloadImage(image)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

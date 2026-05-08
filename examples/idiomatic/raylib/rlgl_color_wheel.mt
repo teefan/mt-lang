@@ -11,13 +11,13 @@ const points_min: int = 3
 const points_max: int = 256
 
 
-def angle_fraction(center: rl.Vector2, circle_position: rl.Vector2, point_scale: float) -> float:
+function angle_fraction(center: rl.Vector2, circle_position: rl.Vector2, point_scale: float) -> float:
     let reference = rl.Vector2(x = 0.0, y = -point_scale)
     let relative = center.subtract(circle_position)
     return (reference.angle(relative) / rl.PI + 1.0) / 2.0
 
 
-def clamp_handle_position(center: rl.Vector2, circle_position: rl.Vector2, point_scale: float) -> rl.Vector2:
+function clamp_handle_position(center: rl.Vector2, circle_position: rl.Vector2, point_scale: float) -> rl.Vector2:
     let distance = center.distance(circle_position) / point_scale
     if distance <= 1.0:
         return circle_position
@@ -29,7 +29,7 @@ def clamp_handle_position(center: rl.Vector2, circle_position: rl.Vector2, point
     ).add(center)
 
 
-def main() -> int:
+function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(screen_width, screen_height, "Milk Tea rlgl Color Wheel")
     defer rl.close_window()

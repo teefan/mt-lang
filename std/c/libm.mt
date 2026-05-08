@@ -1,4 +1,4 @@
-extern module std.c.libm:
+external module std.c.libm:
     link "m"
     include "libm_helpers.h"
 
@@ -19,29 +19,29 @@ extern module std.c.libm:
     const M_PI_F: float = 3.14159274
     const M_TAU_F: float = 6.28318548
 
-    extern def sqrt(__x: double) -> double
-    extern def sqrtf(__x: float) -> float
-    extern def exp(__x: double) -> double
-    extern def expf(__x: float) -> float
-    extern def log(__x: double) -> double
-    extern def logf(__x: float) -> float
-    extern def sin(__x: double) -> double
-    extern def sinf(__x: float) -> float
-    extern def cos(__x: double) -> double
-    extern def cosf(__x: float) -> float
-    extern def trunc(__x: double) -> double
-    extern def truncf(__x: float) -> float
-    extern def ceil(__x: double) -> double
-    extern def ceilf(__x: float) -> float
-    extern def floor(__x: double) -> double
-    extern def floorf(__x: float) -> float
-    extern def pow(__x: double, __y: double) -> double
-    extern def powf(__x: float, __y: float) -> float
-    extern def tan(__x: double) -> double
-    extern def tanf(__x: float) -> float
-    extern def atan2(__y: double, __x: double) -> double
-    extern def atan2f(__y: float, __x: float) -> float
-    extern def acos(__x: double) -> double
-    extern def acosf(__x: float) -> float
-    extern def fabs(__x: double) -> double
-    extern def fabsf(__x: float) -> float
+    external function sqrt(__x: double) -> double
+    external function sqrtf(__x: float) -> float
+    external function exp(__x: double) -> double
+    external function expf(__x: float) -> float
+    external function log(__x: double) -> double
+    external function logf(__x: float) -> float
+    external function sin(__x: double) -> double
+    external function sinf(__x: float) -> float
+    external function cos(__x: double) -> double
+    external function cosf(__x: float) -> float
+    external function trunc(__x: double) -> double
+    external function truncf(__x: float) -> float
+    external function ceil(__x: double) -> double
+    external function ceilf(__x: float) -> float
+    external function floor(__x: double) -> double
+    external function floorf(__x: float) -> float
+    external function pow(__x: double, __y: double) -> double
+    external function powf(__x: float, __y: float) -> float
+    external function tan(__x: double) -> double
+    external function tanf(__x: float) -> float
+    external function atan2(__y: double, __x: double) -> double
+    external function atan2f(__y: float, __x: float) -> float
+    external function acos(__x: double) -> double
+    external function acosf(__x: float) -> float
+    external function fabs(__x: double) -> double
+    external function fabsf(__x: float) -> float

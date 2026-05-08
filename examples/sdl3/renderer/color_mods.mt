@@ -16,7 +16,7 @@ var texture_width: int = 0
 var texture_height: int = 0
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -26,7 +26,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     let now = double<-c.SDL_GetTicks() / 1000.0
     let red = float<-(0.5 + (0.5 * c.SDL_sin(now)))
     let green = float<-(0.5 + (0.5 * c.SDL_sin(now + ((c.SDL_PI_D * 2.0) / 3.0))))
@@ -53,7 +53,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Renderer Color Mods", c"1.0", c"com.example.renderer-color-mods")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -89,5 +89,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

@@ -13,7 +13,7 @@ const line_two_text: cstr = c"Source images have been cropped, scaled, flipped a
 const title_text: cstr = c"PARROTS & CAT"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

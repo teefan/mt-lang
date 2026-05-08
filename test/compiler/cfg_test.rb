@@ -8,7 +8,7 @@ class MilkTeaCFGTest < Minitest::Test
     body = function_body(<<~MT)
       module demo.cfg
 
-      def main() -> int:
+      function main() -> int:
           var index: int = 0
           while index < 3:
               index += 1
@@ -27,7 +27,7 @@ class MilkTeaCFGTest < Minitest::Test
     body = function_body(<<~MT)
       module demo.cfg
 
-      def main(cond: bool) -> int:
+      function main(cond: bool) -> int:
           var count: int = 0
           if cond:
               count = 1
@@ -48,7 +48,7 @@ class MilkTeaCFGTest < Minitest::Test
     body = function_body(<<~MT)
       module demo.cfg
 
-      def main(cond: bool) -> int:
+      function main(cond: bool) -> int:
           var x: int = 0
           if cond:
               x = 1
@@ -71,7 +71,7 @@ class MilkTeaCFGTest < Minitest::Test
     context = sema_function_context(<<~MT)
       module demo.cfg
 
-      def main(flag: bool) -> int:
+      function main(flag: bool) -> int:
           let x: int = 1
           if flag:
               let x: int = 2
@@ -95,7 +95,7 @@ class MilkTeaCFGTest < Minitest::Test
     context = sema_function_context(<<~MT)
       module demo.cfg
 
-      def main(flag: bool) -> int:
+      function main(flag: bool) -> int:
           var x: int
           if flag:
               x = 1
@@ -118,7 +118,7 @@ class MilkTeaCFGTest < Minitest::Test
     body = function_body(<<~MT)
       module demo.cfg
 
-      def main(flag: bool) -> str:
+      function main(flag: bool) -> str:
           var x: int
           if flag:
               x = 1
@@ -138,7 +138,7 @@ class MilkTeaCFGTest < Minitest::Test
     body = function_body(<<~MT)
       module demo.cfg
 
-      def main(left: int, right: int) -> int:
+      function main(left: int, right: int) -> int:
           var values = array[int, 2](0, 0)
           values[0..1] = (left, right)
           return left + right
@@ -158,7 +158,7 @@ class MilkTeaCFGTest < Minitest::Test
     body = function_body(<<~MT)
       module demo.cfg
 
-      def main() -> int:
+      function main() -> int:
           return 0
           let dead = 1
     MT
@@ -175,7 +175,7 @@ class MilkTeaCFGTest < Minitest::Test
     body = function_body(<<~MT)
       module demo.cfg
 
-      def main(flag: bool) -> int:
+      function main(flag: bool) -> int:
           if flag:
               return 1
           else:
@@ -195,7 +195,7 @@ class MilkTeaCFGTest < Minitest::Test
     body = function_body(<<~MT)
       module demo.cfg
 
-      def main() -> int:
+      function main() -> int:
           return 42
     MT
 
@@ -211,7 +211,7 @@ class MilkTeaCFGTest < Minitest::Test
     body = function_body(<<~MT)
       module demo.cfg
 
-      def main(p: bool) -> int:
+      function main(p: bool) -> int:
           if p:
               return 1
           return 0
@@ -231,7 +231,7 @@ class MilkTeaCFGTest < Minitest::Test
     body = function_body(<<~MT)
       module demo.cfg
 
-      def main(p: bool) -> int:
+      function main(p: bool) -> int:
           if p:
               return 1
           return 0
@@ -248,7 +248,7 @@ class MilkTeaCFGTest < Minitest::Test
     body = function_body(<<~MT)
       module demo.cfg
 
-      def main(x: ptr[int]?, y: ptr[int]?) -> int:
+      function main(x: ptr[int]?, y: ptr[int]?) -> int:
           if x != null and y != null:
               if x != null:
                   return 1
@@ -271,7 +271,7 @@ class MilkTeaCFGTest < Minitest::Test
     body = function_body(<<~MT)
       module demo.cfg
 
-      def main() -> int:
+      function main() -> int:
           let x: int = 42
           return x
     MT
@@ -289,7 +289,7 @@ class MilkTeaCFGTest < Minitest::Test
     body = function_body(<<~MT)
       module demo.cfg
 
-      def main() -> int:
+      function main() -> int:
           let a: int = 10
           let b: int = 32
           let c: int = a + b
@@ -308,7 +308,7 @@ class MilkTeaCFGTest < Minitest::Test
     body = function_body(<<~MT)
       module demo.cfg
 
-      def main(x: int) -> int:
+      function main(x: int) -> int:
           let y: int = x + 1
           return y
     MT
@@ -325,7 +325,7 @@ class MilkTeaCFGTest < Minitest::Test
     context = sema_function_context(<<~MT)
       module demo.cfg
 
-      def main(flag: bool) -> int:
+      function main(flag: bool) -> int:
           let x: int = 10
           if flag:
               let x: int = 20

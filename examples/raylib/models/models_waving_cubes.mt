@@ -9,7 +9,7 @@ const window_title: cstr = c"raylib [models] example - waving cubes"
 const num_blocks: int = 15
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -12,7 +12,7 @@ var window: ptr[c.SDL_Window]
 var renderer: ptr[c.SDL_Renderer]
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -22,7 +22,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     let seconds = float<-c.SDL_GetTicks() / 1000.0
     let red = (c.SDL_sinf(seconds) * 0.5) + 0.5
     let green = (c.SDL_sinf(seconds + (c.SDL_PI_F / 3.0)) * 0.5) + 0.5
@@ -33,7 +33,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Renderer Clear", c"1.0", c"com.example.renderer-clear")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -54,5 +54,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

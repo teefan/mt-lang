@@ -20,7 +20,7 @@ const gesture_pinch_in_text: cstr = c"GESTURE PINCH IN"
 const gesture_pinch_out_text: cstr = c"GESTURE PINCH OUT"
 
 
-def gesture_label(gesture: int) -> cstr:
+function gesture_label(gesture: int) -> cstr:
     if gesture == rl.Gesture.GESTURE_TAP:
         return gesture_tap_text
     if gesture == rl.Gesture.GESTURE_DOUBLETAP:
@@ -45,7 +45,7 @@ def gesture_label(gesture: int) -> cstr:
     return gesture_none_text
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -17,7 +17,7 @@ class MilkTeaStdLibcRuntimeTest < Minitest::Test
         "import std.libc as libc",
         "import std.str as text",
         "",
-        "def main() -> int:",
+        "function main() -> int:",
         "    var file_template: str_builder[64]",
         "    file_template.assign(\"mt-libc-file-XXXXXX\")",
         "    let file = libc.mkstemp(file_template)",

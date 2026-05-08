@@ -9,7 +9,7 @@ const window_title: cstr = c"raylib [core] example - keyboard testbed"
 const keyboard_layout_text: cstr = c"KEYBOARD LAYOUT: ENG-US"
 
 
-def key_text(key: int) -> cstr:
+function key_text(key: int) -> cstr:
     if key == rl.KeyboardKey.KEY_APOSTROPHE:
         return c"'"
     if key == rl.KeyboardKey.KEY_COMMA:
@@ -177,7 +177,7 @@ def key_text(key: int) -> cstr:
     return c""
 
 
-def draw_keyboard_key(bounds: rl.Rectangle, key: int) -> void:
+function draw_keyboard_key(bounds: rl.Rectangle, key: int) -> void:
     let label_x: int = int<-(bounds.x + 4.0)
     let label_y: int = int<-(bounds.y + 4.0)
 
@@ -197,7 +197,7 @@ def draw_keyboard_key(bounds: rl.Rectangle, key: int) -> void:
         rl.DrawRectangleLinesEx(bounds, 3.0, rl.RED)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
     rl.SetExitKey(rl.KeyboardKey.KEY_NULL)

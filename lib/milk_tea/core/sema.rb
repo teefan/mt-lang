@@ -494,9 +494,9 @@ module MilkTea
         foreign = decl.is_a?(AST::ForeignFunctionDecl)
         async_function = decl.respond_to?(:async) ? decl.async : false
         type_param_names = receiver_type_param_names + decl.type_params.map(&:name)
-        raise_sema_error("extern function #{decl.name} cannot be generic") if external && type_param_names.any?
+        raise_sema_error("external function #{decl.name} cannot be generic") if external && type_param_names.any?
         raise_sema_error("main cannot be generic") if decl.name == "main" && type_param_names.any?
-        raise_sema_error("extern function #{decl.name} cannot be async") if external && async_function
+        raise_sema_error("external function #{decl.name} cannot be async") if external && async_function
         raise_sema_error("foreign function #{decl.name} cannot be async") if foreign && async_function
         if decl.name == "main" && async_function
           raise_sema_error("async main requires importing std.async or std.libuv.async") unless async_runtime_import_available?
@@ -529,7 +529,7 @@ module MilkTea
           validate_parameter_proc_type!(type, function_name: decl.name, parameter_name: param.name, external:, foreign:)
 
           if external && array_type?(type)
-            raise_sema_error("extern function #{decl.name} cannot take array parameters")
+            raise_sema_error("external function #{decl.name} cannot take array parameters")
           end
 
           if foreign
@@ -586,7 +586,7 @@ module MilkTea
           raise_sema_error("foreign function #{decl.name} with consuming parameters must return void")
         end
         if external && array_type?(body_return_type)
-          raise_sema_error("extern function #{decl.name} cannot return arrays")
+          raise_sema_error("external function #{decl.name} cannot return arrays")
         end
         function_return_type = async_function ? Types::Task.new(body_return_type) : body_return_type
 
@@ -4799,7 +4799,7 @@ module MilkTea
 
       def validate_parameter_ref_type!(type, function_name:, parameter_name:, external:)
         if ref_type?(type)
-          raise_sema_error("extern function #{function_name} cannot take ref parameters") if external
+          raise_sema_error("external function #{function_name} cannot take ref parameters") if external
 
           return
         end
@@ -4809,7 +4809,7 @@ module MilkTea
 
       def validate_parameter_proc_type!(type, function_name:, parameter_name:, external:, foreign:)
         if contains_proc_type?(type)
-          raise_sema_error("extern function #{function_name} cannot take proc parameters") if external
+          raise_sema_error("external function #{function_name} cannot take proc parameters") if external
           raise_sema_error("foreign function #{function_name} cannot take proc parameters") if foreign
           raise_sema_error("parameter #{parameter_name} of #{function_name} uses unsupported proc nesting") unless proc_storage_supported_type?(type)
         end

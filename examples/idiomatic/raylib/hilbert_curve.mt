@@ -13,7 +13,7 @@ const max_stroke_count: int = 65536
 const panel_width: float = 350.0
 
 
-def compute_hilbert_step(order: int, index_start: int) -> rl.Vector2:
+function compute_hilbert_step(order: int, index_start: int) -> rl.Vector2:
     let hilbert_points = array[rl.Vector2, 4](
         rl.Vector2(x = 0.0, y = 0.0),
         rl.Vector2(x = 0.0, y = 1.0),
@@ -49,7 +49,7 @@ def compute_hilbert_step(order: int, index_start: int) -> rl.Vector2:
     return vect
 
 
-def rebuild_path(hilbert_path: span[rl.Vector2], order: int, size: float) -> int:
+function rebuild_path(hilbert_path: span[rl.Vector2], order: int, size: float) -> int:
     let path_count = 1 << order
     let stroke_count = path_count * path_count
     let path_len = size / float<-path_count
@@ -62,7 +62,7 @@ def rebuild_path(hilbert_path: span[rl.Vector2], order: int, size: float) -> int
     return stroke_count
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Hilbert Curve")
     defer rl.close_window()
 

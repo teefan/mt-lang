@@ -18,7 +18,7 @@ var wav_data: ptr[c.Uint8]
 var wav_data_len: c.Uint32 = 0
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -28,7 +28,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     let active_stream = stream
 
     if active_stream != null:
@@ -39,7 +39,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     var spec = zero[c.SDL_AudioSpec]
 
     c.SDL_SetAppMetadata(c"Example Audio Load Wave", c"1.0", c"com.example.audio-load-wav")
@@ -83,5 +83,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

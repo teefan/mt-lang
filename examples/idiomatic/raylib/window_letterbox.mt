@@ -10,7 +10,7 @@ const game_screen_height: int = 480
 const bar_count: int = 10
 
 
-def random_bar_color() -> rl.Color:
+function random_bar_color() -> rl.Color:
     return rl.Color(
         r = ubyte<-rl.get_random_value(100, 250),
         g = ubyte<-rl.get_random_value(50, 150),
@@ -19,7 +19,7 @@ def random_bar_color() -> rl.Color:
     )
 
 
-def fresh_colors() -> array[rl.Color, 10]:
+function fresh_colors() -> array[rl.Color, 10]:
     var colors = zero[array[rl.Color, 10]]
     var color_index = 0
     while color_index < bar_count:
@@ -28,7 +28,7 @@ def fresh_colors() -> array[rl.Color, 10]:
     return colors
 
 
-def main() -> int:
+function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE | rl.ConfigFlags.FLAG_VSYNC_HINT)
     rl.init_window(screen_width, screen_height, "Milk Tea Letterbox")
     defer rl.close_window()

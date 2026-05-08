@@ -13,7 +13,7 @@ const scissor_half_width: float = 150.0
 const scissor_half_height: float = 150.0
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

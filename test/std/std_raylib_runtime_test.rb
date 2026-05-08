@@ -13,7 +13,7 @@ class MilkTeaStdRaylibRuntimeTest < Minitest::Test
       "",
       "import std.raylib.runtime as runtime",
       "",
-      "def main() -> int:",
+      "function main() -> int:",
       "    if not runtime.env_flag(\"PATH\"):",
       "        return 1",
       "    if runtime.env_flag(\"MILK_TEA_ENV_FLAG_SHOULD_NOT_EXIST_9A77E9\"):",

@@ -11,7 +11,7 @@ const cubicmap_caption_top: cstr = c"cubicmap image used to"
 const cubicmap_caption_bottom: cstr = c"generate map 3d model"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

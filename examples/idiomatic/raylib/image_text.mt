@@ -9,7 +9,7 @@ const font_path: str = "../../raylib/resources/KAISG.ttf"
 const font_size: int = 64
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Image Text")
     defer rl.close_window()
 

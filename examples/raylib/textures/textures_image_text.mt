@@ -12,7 +12,7 @@ const help_text: cstr = c"PRESS SPACE to SHOW FONT ATLAS USED"
 const font_size: int = 64
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

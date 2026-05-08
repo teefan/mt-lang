@@ -7,7 +7,7 @@ const screen_width: int = 920
 const screen_height: int = 540
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Raygui Text Builders")
     defer rl.close_window()
 

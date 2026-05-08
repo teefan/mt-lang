@@ -11,7 +11,7 @@ const controls_pan: cstr = c"- Mouse Wheel Pressed to Pan"
 const controls_reset: cstr = c"- Z to zoom to (0, 0, 0)"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

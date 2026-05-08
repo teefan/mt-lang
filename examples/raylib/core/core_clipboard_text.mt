@@ -13,7 +13,7 @@ const clipboard_label_text: cstr = c"Clipboard current text data:"
 const clipboard_help_text: cstr = c"Try copying text from other applications and pasting here!"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

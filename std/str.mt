@@ -6,7 +6,7 @@ import std.mem.arena as arena
 import std.span as sp
 
 
-pub def cstr_len(text: cstr) -> ptr_uint:
+public function cstr_len(text: cstr) -> ptr_uint:
     var count: ptr_uint = 0
     unsafe:
         let data = ptr[char]<-text
@@ -15,29 +15,29 @@ pub def cstr_len(text: cstr) -> ptr_uint:
     return count
 
 
-pub def cstr_as_str(text: cstr) -> str:
+public function cstr_as_str(text: cstr) -> str:
     unsafe:
         return str(data = ptr[char]<-text, len = cstr_len(text))
 
 
-pub def chars_as_str(text: ptr[char]) -> str:
+public function chars_as_str(text: ptr[char]) -> str:
     unsafe:
         return str(data = text, len = cstr_len(cstr<-text))
 
 
-pub def nullable_cstr_as_str(text: cstr?) -> maybe.Maybe[str]:
+public function nullable_cstr_as_str(text: cstr?) -> maybe.Maybe[str]:
     if text == null:
         return maybe.Maybe[str].none
 
     return maybe.Maybe[str].some(value= cstr_as_str(cstr<-text))
 
 
-pub def as_byte_span(text: str) -> span[ubyte]:
+public function as_byte_span(text: str) -> span[ubyte]:
     unsafe:
         return sp.from_ptr[ubyte](ptr[ubyte]<-text.data, text.len)
 
 
-pub def utf8_byte_span_as_str(bytes: span[ubyte]) -> maybe.Maybe[str]:
+public function utf8_byte_span_as_str(bytes: span[ubyte]) -> maybe.Maybe[str]:
     unsafe:
         let borrowed = str(data = ptr[char]<-bytes.data, len = bytes.len)
         if not is_valid_utf8(borrowed):
@@ -46,11 +46,11 @@ pub def utf8_byte_span_as_str(bytes: span[ubyte]) -> maybe.Maybe[str]:
         return maybe.Maybe[str].some(value= borrowed)
 
 
-pub def utf8_continuation_byte(byte: ubyte) -> bool:
+public function utf8_continuation_byte(byte: ubyte) -> bool:
     return (byte & ubyte<-0xC0) == ubyte<-0x80
 
 
-def utf8_boundary(text: str, index: ptr_uint) -> bool:
+function utf8_boundary(text: str, index: ptr_uint) -> bool:
     if index == 0 or index == text.len:
         return true
 
@@ -59,7 +59,7 @@ def utf8_boundary(text: str, index: ptr_uint) -> bool:
         return not utf8_continuation_byte(byte)
 
 
-pub def byte_at(text: str, index: ptr_uint) -> ubyte:
+public function byte_at(text: str, index: ptr_uint) -> ubyte:
     if index >= text.len:
         panic(c"str.byte_at index out of bounds")
 
@@ -67,7 +67,7 @@ pub def byte_at(text: str, index: ptr_uint) -> ubyte:
         return ubyte<-read(text.data + index)
 
 
-pub def equal(left: str, right: str) -> bool:
+public function equal(left: str, right: str) -> bool:
     if left.len != right.len:
         return false
 
@@ -79,7 +79,7 @@ pub def equal(left: str, right: str) -> bool:
     return true
 
 
-pub def starts_with(text: str, prefix: str) -> bool:
+public function starts_with(text: str, prefix: str) -> bool:
     if prefix.len > text.len:
         return false
 
@@ -91,7 +91,7 @@ pub def starts_with(text: str, prefix: str) -> bool:
     return true
 
 
-pub def ends_with(text: str, suffix: str) -> bool:
+public function ends_with(text: str, suffix: str) -> bool:
     if suffix.len > text.len:
         return false
 
@@ -104,7 +104,7 @@ pub def ends_with(text: str, suffix: str) -> bool:
     return true
 
 
-pub def find_byte(text: str, byte: ubyte) -> maybe.Maybe[ptr_uint]:
+public function find_byte(text: str, byte: ubyte) -> maybe.Maybe[ptr_uint]:
     var index: ptr_uint = 0
     while index < text.len:
         if byte_at(text, index) == byte:
@@ -113,7 +113,7 @@ pub def find_byte(text: str, byte: ubyte) -> maybe.Maybe[ptr_uint]:
     return maybe.Maybe[ptr_uint].none
 
 
-pub def trim_ascii_whitespace(text: str) -> str:
+public function trim_ascii_whitespace(text: str) -> str:
     var start: ptr_uint = 0
     while start < text.len and ascii.is_space(byte_at(text, start)):
         start += 1
@@ -126,7 +126,7 @@ pub def trim_ascii_whitespace(text: str) -> str:
         return str(data = text.data + start, len = stop - start)
 
 
-pub def is_valid_utf8(text: str) -> bool:
+public function is_valid_utf8(text: str) -> bool:
     var index: ptr_uint = 0
     while index < text.len:
         let first = byte_at(text, index)
@@ -182,7 +182,7 @@ pub def is_valid_utf8(text: str) -> bool:
     return true
 
 methods str:
-    pub def slice(start: ptr_uint, len: ptr_uint) -> str:
+    public function slice(start: ptr_uint, len: ptr_uint) -> str:
         if start > this.len:
             panic(c"str slice start out of bounds")
         if len > this.len - start:
@@ -198,5 +198,5 @@ methods str:
             return str(data = this.data + start, len = len)
 
 
-    pub def to_cstr(space: ref[arena.Arena]) -> cstr:
+    public function to_cstr(space: ref[arena.Arena]) -> cstr:
         return space.to_cstr(this)

@@ -1,11 +1,11 @@
 module std.status
 
-pub variant Status[T, E]:
+public variant Status[T, E]:
     ok(value: T)
     err(error: E)
 
 
-pub def is_ok[T, E](value: Status[T, E]) -> bool:
+public function is_ok[T, E](value: Status[T, E]) -> bool:
     match value:
         Status.ok:
             return true
@@ -13,11 +13,11 @@ pub def is_ok[T, E](value: Status[T, E]) -> bool:
             return false
 
 
-pub def is_err[T, E](value: Status[T, E]) -> bool:
+public function is_err[T, E](value: Status[T, E]) -> bool:
     return not is_ok(value)
 
 
-pub def value_or[T, E](value: Status[T, E], fallback: T) -> T:
+public function value_or[T, E](value: Status[T, E], fallback: T) -> T:
     match value:
         Status.ok as payload:
             return payload.value

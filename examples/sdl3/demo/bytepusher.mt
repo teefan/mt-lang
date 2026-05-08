@@ -37,39 +37,39 @@ var display_help: bool = true
 var positional_input: bool = false
 
 
-def chars_to_cstr(text: ptr[char]) -> cstr:
+function chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
 
 
-def read_ushort(addr: int) -> c.Uint16:
+function read_ushort(addr: int) -> c.Uint16:
     return (c.Uint16<-ram[addr] << 8) | c.Uint16<-ram[addr + 1]
 
 
-def read_u24(addr: int) -> c.Uint32:
+function read_u24(addr: int) -> c.Uint32:
     return (c.Uint32<-ram[addr] << 16) | (c.Uint32<-ram[addr + 1] << 8) | c.Uint32<-ram[addr + 2]
 
 
-def set_status_message(message: cstr) -> void:
+function set_status_message(message: cstr) -> void:
     c.SDL_strlcpy(ptr_of(status[0]), message, ptr_uint<-status_buffer_len)
     status[status_buffer_len - 1] = char<-0
     status_ticks = int<-(frames_per_second * 3)
 
 
-def set_status_filename(prefix: cstr, path: cstr) -> void:
+function set_status_filename(prefix: cstr, path: cstr) -> void:
     c.SDL_snprintf(ptr_of(status[0]), ptr_uint<-status_buffer_len, prefix, filename(path))
     status[status_buffer_len - 1] = char<-0
     status_ticks = int<-(frames_per_second * 3)
 
 
-def set_status_renderer(name: cstr?) -> void:
+function set_status_renderer(name: cstr?) -> void:
     let display_name = if name != null: cstr<-name else: c"<unknown>"
     c.SDL_snprintf(ptr_of(status[0]), ptr_uint<-status_buffer_len, c"renderer: %s", display_name)
     status[status_buffer_len - 1] = char<-0
     status_ticks = int<-(frames_per_second * 3)
 
 
-def filename(path: cstr) -> cstr:
+function filename(path: cstr) -> cstr:
     var index = int<-c.SDL_strlen(path)
     var result = path
 
@@ -86,7 +86,7 @@ def filename(path: cstr) -> cstr:
     return result
 
 
-def load_stream(stream: ptr[c.SDL_IOStream]?, close_io: bool) -> bool:
+function load_stream(stream: ptr[c.SDL_IOStream]?, close_io: bool) -> bool:
     var bytes_read: ptr_uint = 0
     var ok = true
 
@@ -112,7 +112,7 @@ def load_stream(stream: ptr[c.SDL_IOStream]?, close_io: bool) -> bool:
     return ok
 
 
-def load_file(path: cstr) -> bool:
+function load_file(path: cstr) -> bool:
     if load_stream(c.SDL_IOFromFile(path, c"rb"), true):
         set_status_filename(c"loaded %s", path)
         return true
@@ -121,7 +121,7 @@ def load_file(path: cstr) -> bool:
     return false
 
 
-def print_text(x: int, y: int, text: cstr) -> void:
+function print_text(x: int, y: int, text: cstr) -> void:
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
     c.SDL_RenderDebugText(renderer, float<-(x + 1), float<-(y + 1), text)
     c.SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, c.SDL_ALPHA_OPAQUE)
@@ -129,7 +129,7 @@ def print_text(x: int, y: int, text: cstr) -> void:
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
 
 
-def keycode_mask(key: uint) -> c.Uint16:
+function keycode_mask(key: uint) -> c.Uint16:
     if key >= uint<-48 and key <= uint<-57:
         return c.Uint16<-1 << c.Uint16<-(key - uint<-48)
 
@@ -142,7 +142,7 @@ def keycode_mask(key: uint) -> c.Uint16:
     return 0
 
 
-def scancode_mask(scancode: c.SDL_Scancode) -> c.Uint16:
+function scancode_mask(scancode: c.SDL_Scancode) -> c.Uint16:
     if scancode == c.SDL_Scancode.SDL_SCANCODE_1:
         return c.Uint16<-1 << c.Uint16<-0x1
     elif scancode == c.SDL_Scancode.SDL_SCANCODE_2:
@@ -179,7 +179,7 @@ def scancode_mask(scancode: c.SDL_Scancode) -> c.Uint16:
     return 0
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -214,7 +214,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     let tick = c.SDL_GetTicksNS()
     let delta = tick - last_tick
     let active_audio_stream = audio_stream
@@ -270,7 +270,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     var usable_bounds = zero[c.SDL_Rect]
     var audio_spec = zero[c.SDL_AudioSpec]
     var zoom = 2
@@ -392,5 +392,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

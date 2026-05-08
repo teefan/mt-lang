@@ -9,7 +9,7 @@ const window_title: cstr = c"raylib [models] example - mesh generation"
 const cycle_prompt: cstr = c"MOUSE LEFT BUTTON to CYCLE PROCEDURAL MODELS"
 
 
-def model_label(model_index: int) -> cstr:
+function model_label(model_index: int) -> cstr:
     if model_index == 0:
         return c"PLANE"
     if model_index == 1:
@@ -31,7 +31,7 @@ def model_label(model_index: int) -> cstr:
     return c""
 
 
-def model_label_x(model_index: int) -> int:
+function model_label_x(model_index: int) -> int:
     if model_index == 3:
         return 640
     if model_index == 8:
@@ -39,7 +39,7 @@ def model_label_x(model_index: int) -> int:
     return 680
 
 
-def custom_mesh() -> rl.Mesh:
+function custom_mesh() -> rl.Mesh:
     var mesh = zero[rl.Mesh]
     mesh.triangleCount = 1
     mesh.vertexCount = mesh.triangleCount * 3
@@ -83,7 +83,7 @@ def custom_mesh() -> rl.Mesh:
     return mesh
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

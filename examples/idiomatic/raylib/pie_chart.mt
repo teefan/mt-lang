@@ -12,7 +12,7 @@ const panel_margin: float = 5.0
 const radius: float = 205.0
 
 
-def draw_slice_label(center: rl.Vector2, mid_angle: float, label_text: str) -> void:
+function draw_slice_label(center: rl.Vector2, mid_angle: float, label_text: str) -> void:
     let text_size = rl.measure_text_ex(rl.get_font_default(), label_text, 20.0, 1.0)
     let label_radius = radius * 0.7
     let label_pos = rl.Vector2(
@@ -22,7 +22,7 @@ def draw_slice_label(center: rl.Vector2, mid_angle: float, label_text: str) -> v
     rl.draw_text(label_text, int<-label_pos.x, int<-label_pos.y, 20, rl.WHITE)
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Pie Chart")
     defer rl.close_window()
 

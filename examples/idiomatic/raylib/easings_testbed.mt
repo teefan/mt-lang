@@ -17,7 +17,7 @@ struct EasingFunc:
     callback: fn(time: float, start: float, change: float, duration: float) -> float
 
 
-def restart_requested(bounded_t: bool, t: float, duration: float) -> bool:
+function restart_requested(bounded_t: bool, t: float, duration: float) -> bool:
     if rl.is_key_pressed(rl.KeyboardKey.KEY_RIGHT) or rl.is_key_pressed(rl.KeyboardKey.KEY_LEFT):
         return true
     if rl.is_key_pressed(rl.KeyboardKey.KEY_DOWN) or rl.is_key_pressed(rl.KeyboardKey.KEY_UP):
@@ -32,7 +32,7 @@ def restart_requested(bounded_t: bool, t: float, duration: float) -> bool:
     return rl.is_key_pressed(rl.KeyboardKey.KEY_ENTER) and bounded_t and t >= duration
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Easings Testbed")
     defer rl.close_window()
 

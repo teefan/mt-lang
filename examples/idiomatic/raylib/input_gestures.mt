@@ -6,7 +6,7 @@ const screen_width: int = 800
 const screen_height: int = 450
 
 
-def gesture_label(gesture: int) -> str:
+function gesture_label(gesture: int) -> str:
     if gesture == rl.Gesture.GESTURE_TAP:
         return "GESTURE TAP"
     if gesture == rl.Gesture.GESTURE_DOUBLETAP:
@@ -30,7 +30,7 @@ def gesture_label(gesture: int) -> str:
     return "GESTURE NONE"
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Gestures")
     defer rl.close_window()
 

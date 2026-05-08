@@ -14,7 +14,7 @@ const credit_text: cstr = c"(c) Raymarching shader by Inigo Quilez. MIT License.
 const window_title: cstr = c"raylib [shaders] example - raymarching rendering"
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE)
 
     rl.InitWindow(screen_width, screen_height, window_title)

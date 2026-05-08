@@ -9,7 +9,7 @@ const raylib_text: cstr = c"raylib"
 const texture_text: cstr = c"this is NOT a texture!"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

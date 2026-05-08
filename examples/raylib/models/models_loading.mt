@@ -12,11 +12,11 @@ const selected_text: cstr = c"MODEL SELECTED"
 const castle_credit: cstr = c"(c) Castle 3D model by Alberto Cano"
 
 
-def is_supported_model_path(path: cstr) -> bool:
+function is_supported_model_path(path: cstr) -> bool:
     return rl.IsFileExtension(path, c".obj") or rl.IsFileExtension(path, c".gltf") or rl.IsFileExtension(path, c".glb") or rl.IsFileExtension(path, c".vox") or rl.IsFileExtension(path, c".iqm") or rl.IsFileExtension(path, c".m3d")
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

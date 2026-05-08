@@ -3,22 +3,22 @@ module std.mem.heap
 import std.c.libc as libc
 
 
-def valid_alignment(alignment: ptr_uint) -> bool:
+function valid_alignment(alignment: ptr_uint) -> bool:
     if alignment == 0:
         return false
 
     return (alignment & (alignment - 1)) == 0
 
 
-pub def ptr_uint_max() -> ptr_uint:
+public function ptr_uint_max() -> ptr_uint:
     return ~ptr_uint<-0
 
 
-pub def minimum_alignment() -> ptr_uint:
+public function minimum_alignment() -> ptr_uint:
     return ptr_uint<-size_of(ptr[void])
 
 
-pub def normalize_alignment(alignment: ptr_uint) -> ptr_uint:
+public function normalize_alignment(alignment: ptr_uint) -> ptr_uint:
     if not valid_alignment(alignment):
         return 0
 
@@ -29,21 +29,21 @@ pub def normalize_alignment(alignment: ptr_uint) -> ptr_uint:
     return alignment
 
 
-pub def mul_overflows(left: ptr_uint, right: ptr_uint) -> bool:
+public function mul_overflows(left: ptr_uint, right: ptr_uint) -> bool:
     if left != 0 and right > ptr_uint_max() / left:
         return true
 
     return false
 
 
-pub def alloc_bytes(size_bytes: ptr_uint) -> ptr[void]?:
+public function alloc_bytes(size_bytes: ptr_uint) -> ptr[void]?:
     if size_bytes == 0:
         return null
 
     return libc.malloc(ptr_uint<-size_bytes)
 
 
-pub def must_alloc_bytes(size_bytes: ptr_uint) -> ptr[void]:
+public function must_alloc_bytes(size_bytes: ptr_uint) -> ptr[void]:
     if size_bytes == 0:
         panic(c"heap.must_alloc_bytes requires size > 0")
 
@@ -55,7 +55,7 @@ pub def must_alloc_bytes(size_bytes: ptr_uint) -> ptr[void]:
         return ptr[void]<-memory
 
 
-pub def alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[void]?:
+public function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[void]?:
     if size_bytes == 0:
         return null
 
@@ -71,7 +71,7 @@ pub def alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[vo
     return libc.aligned_alloc(normalized_alignment, rounded_size)
 
 
-pub def must_alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[void]:
+public function must_alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[void]:
     if size_bytes == 0:
         panic(c"heap.must_alloc_bytes_aligned requires size > 0")
 
@@ -87,7 +87,7 @@ pub def must_alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> p
         return ptr[void]<-memory
 
 
-pub def alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr_uint) -> ptr[void]?:
+public function alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr_uint) -> ptr[void]?:
     if count == 0 or element_size_bytes == 0:
         return null
 
@@ -97,7 +97,7 @@ pub def alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr_uint) -> ptr
     return libc.calloc(ptr_uint<-count, ptr_uint<-element_size_bytes)
 
 
-pub def must_alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr_uint) -> ptr[void]:
+public function must_alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr_uint) -> ptr[void]:
     if count == 0 or element_size_bytes == 0:
         panic(c"heap.must_alloc_zeroed_bytes requires count > 0 and element size > 0")
 
@@ -109,7 +109,7 @@ pub def must_alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr_uint) -
         return ptr[void]<-memory
 
 
-pub def resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[void]?:
+public function resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[void]?:
     if size_bytes == 0:
         release_bytes(memory)
         return null
@@ -117,7 +117,7 @@ pub def resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[void]?:
     return libc.realloc(memory, ptr_uint<-size_bytes)
 
 
-pub def must_resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[void]:
+public function must_resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[void]:
     if size_bytes == 0:
         panic(c"heap.must_resize_bytes requires size > 0")
 
@@ -129,12 +129,12 @@ pub def must_resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[void]
         return ptr[void]<-resized
 
 
-pub def release_bytes(memory: ptr[void]?) -> void:
+public function release_bytes(memory: ptr[void]?) -> void:
     libc.free(memory)
     return
 
 
-pub def alloc[T](count: ptr_uint) -> ptr[T]?:
+public function alloc[T](count: ptr_uint) -> ptr[T]?:
     let alignment = ptr_uint<-align_of(T)
     if alignment > minimum_alignment():
         return null
@@ -151,7 +151,7 @@ pub def alloc[T](count: ptr_uint) -> ptr[T]?:
         return ptr[T]<-memory
 
 
-pub def must_alloc[T](count: ptr_uint) -> ptr[T]:
+public function must_alloc[T](count: ptr_uint) -> ptr[T]:
     if ptr_uint<-align_of(T) > minimum_alignment():
         panic(c"heap.must_alloc does not support over-aligned types")
 
@@ -163,7 +163,7 @@ pub def must_alloc[T](count: ptr_uint) -> ptr[T]:
         return ptr[T]<-memory
 
 
-pub def alloc_aligned[T](count: ptr_uint) -> ptr[T]?:
+public function alloc_aligned[T](count: ptr_uint) -> ptr[T]?:
     let element_size = ptr_uint<-size_of(T)
     if mul_overflows(count, element_size):
         return null
@@ -176,7 +176,7 @@ pub def alloc_aligned[T](count: ptr_uint) -> ptr[T]?:
         return ptr[T]<-memory
 
 
-pub def must_alloc_aligned[T](count: ptr_uint) -> ptr[T]:
+public function must_alloc_aligned[T](count: ptr_uint) -> ptr[T]:
     let memory = alloc_aligned[T](count)
     if memory == null:
         panic(c"heap.must_alloc_aligned out of memory")
@@ -185,7 +185,7 @@ pub def must_alloc_aligned[T](count: ptr_uint) -> ptr[T]:
         return ptr[T]<-memory
 
 
-pub def alloc_zeroed[T](count: ptr_uint) -> ptr[T]?:
+public function alloc_zeroed[T](count: ptr_uint) -> ptr[T]?:
     let alignment = ptr_uint<-align_of(T)
     if alignment > minimum_alignment():
         return null
@@ -198,7 +198,7 @@ pub def alloc_zeroed[T](count: ptr_uint) -> ptr[T]?:
         return ptr[T]<-memory
 
 
-pub def must_alloc_zeroed[T](count: ptr_uint) -> ptr[T]:
+public function must_alloc_zeroed[T](count: ptr_uint) -> ptr[T]:
     if ptr_uint<-align_of(T) > minimum_alignment():
         panic(c"heap.must_alloc_zeroed does not support over-aligned types")
 
@@ -210,7 +210,7 @@ pub def must_alloc_zeroed[T](count: ptr_uint) -> ptr[T]:
         return ptr[T]<-memory
 
 
-pub def resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]?:
+public function resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]?:
     let alignment = ptr_uint<-align_of(T)
     if alignment > minimum_alignment():
         return null
@@ -235,7 +235,7 @@ pub def resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]?:
         return ptr[T]<-resized
 
 
-pub def must_resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]:
+public function must_resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]:
     if ptr_uint<-align_of(T) > minimum_alignment():
         panic(c"heap.must_resize does not support over-aligned types")
 
@@ -247,7 +247,7 @@ pub def must_resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]:
         return ptr[T]<-resized
 
 
-pub def release[T](memory: ptr[T]?) -> void:
+public function release[T](memory: ptr[T]?) -> void:
     if memory == null:
         release_bytes(null)
         return

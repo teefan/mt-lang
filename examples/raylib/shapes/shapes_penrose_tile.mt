@@ -34,7 +34,7 @@ const turtle_stack_overflow_text: cstr = c"TURTLE STACK OVERFLOW!"
 const turtle_stack_underflow_text: cstr = c"TURTLE STACK UNDERFLOW!"
 
 
-def append_text(buffer: ptr[char], position: ptr[int], text: cstr) -> void:
+function append_text(buffer: ptr[char], position: ptr[int], text: cstr) -> void:
     unsafe:
         let remaining = str_max_size - read(position) - 1
         if remaining <= 0:
@@ -47,7 +47,7 @@ def append_text(buffer: ptr[char], position: ptr[int], text: cstr) -> void:
             rl.TextAppend(buffer, rl.TextSubtext(text, 0, remaining), position)
 
 
-def append_char(buffer: ptr[char], position: ptr[int], ch: char) -> void:
+function append_char(buffer: ptr[char], position: ptr[int], ch: char) -> void:
     unsafe:
         let remaining = str_max_size - read(position) - 1
         if remaining <= 0:
@@ -58,7 +58,7 @@ def append_char(buffer: ptr[char], position: ptr[int], ch: char) -> void:
         rl.TextAppend(buffer, cstr<-ptr_of(scratch[0]), position)
 
 
-def push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[int], state: TurtleState) -> void:
+function push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[int], state: TurtleState) -> void:
     if read(top) < turtle_stack_max_size - 1:
         var items = read(stack)
         read(top) += 1
@@ -68,7 +68,7 @@ def push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[int], state: 
         rl.TraceLog(rl.TraceLogLevel.LOG_WARNING, turtle_stack_overflow_text)
 
 
-def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[int]) -> TurtleState:
+function pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[int]) -> TurtleState:
     if read(top) >= 0:
         let items = read(stack)
         let state = items[read(top)]
@@ -79,7 +79,7 @@ def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[int]) -> Turtl
     return zero[TurtleState]
 
 
-def create_penrose_lsystem(draw_length: float) -> PenroseLSystem:
+function create_penrose_lsystem(draw_length: float) -> PenroseLSystem:
     var production: ptr[char]
     unsafe:
         production = ptr[char]<-rl.MemAlloc(uint<-str_max_size)
@@ -98,7 +98,7 @@ def create_penrose_lsystem(draw_length: float) -> PenroseLSystem:
     )
 
 
-def build_production_step(ls: ref[PenroseLSystem]) -> void:
+function build_production_step(ls: ref[PenroseLSystem]) -> void:
     var new_production: ptr[char]
     unsafe:
         new_production = ptr[char]<-rl.MemAlloc(uint<-str_max_size)
@@ -125,7 +125,7 @@ def build_production_step(ls: ref[PenroseLSystem]) -> void:
         rl.MemFree(ptr[void]<-new_production)
 
 
-def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[TurtleState, 50]], turtle_top: ref[int]) -> void:
+function draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[TurtleState, 50]], turtle_top: ref[int]) -> void:
     let screen_center = rl.Vector2(x = rl.GetScreenWidth() / 2.0, y = rl.GetScreenHeight() / 2.0)
     var turtle = TurtleState(origin = rl.Vector2(x = 0.0, y = 0.0), angle = -90.0)
     var repeats = 1
@@ -176,7 +176,7 @@ def draw_penrose_lsystem(ls: ref[PenroseLSystem], turtle_stack: ref[array[Turtle
     read(turtle_top) = -1
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

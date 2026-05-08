@@ -11,7 +11,7 @@ const render_texture_height: int = 300
 const ball_radius_limit: float = 20.0
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

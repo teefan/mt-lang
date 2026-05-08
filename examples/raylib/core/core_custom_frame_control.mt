@@ -12,7 +12,7 @@ const target_text: cstr = c"PRESS UP | DOWN to CHANGE TARGET FPS"
 const custom_frame_control_env: str = "MILK_TEA_RAYLIB_ENABLE_CUSTOM_FRAME_CONTROL"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

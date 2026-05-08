@@ -51,7 +51,7 @@ module MilkTea
 
     # Enforce blank-line rules:
     #   - exactly 2 blank lines before function definitions with a body
-    #   - bodyless def declarations: 1 blank line before the first declaration,
+    #   - bodyless function declarations: 1 blank line before the first declaration,
     #     then 0 blank lines between consecutive declarations
     #   - at most 1 blank line everywhere else (constants, variable declarations, expressions)
     #   - exactly 1 trailing newline at EOF
@@ -67,12 +67,12 @@ module MilkTea
           blank_run += 1
         else
           if emitted_content
-            needed = if def_line?(line)
-              if bodyless_def_line?(line)
-                if previous_content_line && def_line?(previous_content_line) && bodyless_def_line?(previous_content_line)
-                  0 # Keep consecutive declaration-style defs tightly packed.
+            needed = if function_line?(line)
+              if bodyless_function_line?(line)
+                if previous_content_line && function_line?(previous_content_line) && bodyless_function_line?(previous_content_line)
+                  0 # Keep consecutive declaration-style functions tightly packed.
                 else
-                  1 # Separate declaration-style defs from preceding non-def content.
+                  1 # Separate declaration-style functions from preceding non-function content.
                 end
               elsif previous_content_line && methods_block_header_line?(previous_content_line)
                 0 # First method in a methods block should not have leading blank lines.
@@ -96,7 +96,7 @@ module MilkTea
       "#{result.join("\n")}\n"
     end
 
-    def self.def_line?(line)
+    def self.function_line?(line)
       bytes = line.bytes
       i = 0
 
@@ -111,7 +111,7 @@ module MilkTea
         i += 1 while i < bytes.length && identifier_tail_byte?(bytes[i])
         word = bytes[word_start...i].pack("C*")
 
-        if word == "def"
+        if word == "function"
           return i < bytes.length && (bytes[i] == 32 || bytes[i] == 9)
         end
 
@@ -134,7 +134,7 @@ module MilkTea
       identifier_head_byte?(byte) || (byte >= 48 && byte <= 57)
     end
 
-    def self.bodyless_def_line?(line)
+    def self.bodyless_function_line?(line)
       bytes = line.bytes
       i = bytes.length - 1
       i -= 1 while i >= 0 && (bytes[i] == 32 || bytes[i] == 9)

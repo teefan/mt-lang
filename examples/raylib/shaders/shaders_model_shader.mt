@@ -12,12 +12,12 @@ const credit_text: cstr = c"(c) Watermill 3D model by Alberto Cano"
 const window_title: cstr = c"raylib [shaders] example - model shader"
 
 
-def set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
+function set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
     unsafe:
         model.materials[0].shader = shader
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
 
     rl.InitWindow(screen_width, screen_height, window_title)

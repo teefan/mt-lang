@@ -23,7 +23,7 @@ var audio_device: c.SDL_AudioDeviceID = 0
 var sounds: array[Sound, 2] = zero[array[Sound, 2]]
 
 
-def init_sound(path: cstr, sound_index: int) -> bool:
+function init_sound(path: cstr, sound_index: int) -> bool:
     var spec = zero[c.SDL_AudioSpec]
     var wav_data: ptr[c.Uint8]
     var wav_data_len: c.Uint32 = 0
@@ -47,7 +47,7 @@ def init_sound(path: cstr, sound_index: int) -> bool:
     return true
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -57,7 +57,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     for index in 0..sound_count:
         let stream = sounds[index].stream
         if stream != null:
@@ -71,7 +71,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def cleanup_sound(sound_index: int) -> void:
+function cleanup_sound(sound_index: int) -> void:
     let stream = sounds[sound_index].stream
     if stream != null:
         c.SDL_DestroyAudioStream(stream)
@@ -85,7 +85,7 @@ def cleanup_sound(sound_index: int) -> void:
     sounds[sound_index].wav_data_len = 0
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Audio Multiple Streams", c"1.0", c"com.example.audio-multiple-streams")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_AUDIO):
@@ -119,5 +119,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

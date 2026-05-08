@@ -4,12 +4,12 @@ require_relative "../test_helper"
 
 class MilkTeaFormatterTest < Minitest::Test
   def test_check_source_detects_changes
-    source = "module demo.f\n\ndef main()->int:\n    return 0\n"
+    source = "module demo.f\n\nfunction main()->int:\n    return 0\n"
 
     result = MilkTea::Formatter.check_source(source, path: "demo.mt")
 
     assert_equal true, result.changed
-    assert_equal "module demo.f\n\ndef main() -> int:\n    return 0\n", result.formatted_source
+    assert_equal "module demo.f\n\nfunction main() -> int:\n    return 0\n", result.formatted_source
   end
 
   def test_build_cst_reconstructs_original_source
@@ -17,7 +17,7 @@ class MilkTeaFormatterTest < Minitest::Test
       # banner
       module demo.cst
 
-      def main() -> int: # keep
+      function main() -> int: # keep
           return 0
     MT
 
@@ -33,7 +33,7 @@ class MilkTeaFormatterTest < Minitest::Test
       # banner
       module demo.fmt
 
-      def main() -> int: # trailing
+      function main() -> int: # trailing
           return 0
     MT
 
@@ -46,7 +46,7 @@ class MilkTeaFormatterTest < Minitest::Test
     source = <<~MT
       module demo.fmt
 
-      def main() -> int:
+      function main() -> int:
           log(
               "a",
               "b",
@@ -117,7 +117,7 @@ class MilkTeaFormatterTest < Minitest::Test
       module demo.comments
 
       # computes sum
-      def add(a: int, b: int) -> int:
+      function add(a: int, b: int) -> int:
           return a + b
     MT
 
@@ -125,15 +125,15 @@ class MilkTeaFormatterTest < Minitest::Test
 
     assert_includes formatted, "# computes sum"
     idx_comment = formatted.index("# computes sum")
-    idx_def     = formatted.index("def add(")
-    assert idx_comment < idx_def, "comment should precede function def"
+    idx_def     = formatted.index("function add(")
+    assert idx_comment < idx_def, "comment should precede function declaration"
   end
 
   def test_canonical_preserves_comment_before_statement
     source = <<~MT
       module demo.comments
 
-      def main() -> int:
+      function main() -> int:
           # initialize counter
           let x = 0
           return x
@@ -149,7 +149,7 @@ class MilkTeaFormatterTest < Minitest::Test
     source = <<~MT
       module demo.comments
 
-      def main() -> int:
+      function main() -> int:
           let x = 42  # the answer
           return x
     MT
@@ -164,12 +164,12 @@ class MilkTeaFormatterTest < Minitest::Test
     source = <<~MT
       module demo.var
 
-      pub var  counter  :  int   =  1
+      public var  counter  :  int   =  1
     MT
 
     formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
 
-    assert_equal "module demo.var\n\npub var counter: int = 1\n", formatted
+    assert_equal "module demo.var\n\npublic var counter: int = 1\n", formatted
   end
 
   def test_tidy_mode_does_not_insert_blank_lines_before_first_method
@@ -182,14 +182,14 @@ class MilkTeaFormatterTest < Minitest::Test
       methods Ball:
 
 
-          def draw() -> void:
+          function draw() -> void:
               return
     MT
 
     formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
 
-    assert_includes formatted, "methods Ball:\n    def draw() -> void:"
-    refute_includes formatted, "methods Ball:\n\n    def draw() -> void:"
+    assert_includes formatted, "methods Ball:\n    function draw() -> void:"
+    refute_includes formatted, "methods Ball:\n\n    function draw() -> void:"
   end
 
   def test_tidy_mode_preserves_utf8_string_literals
@@ -208,7 +208,7 @@ class MilkTeaFormatterTest < Minitest::Test
 
   def test_canonical_groups_extern_module_simple_declarations_by_kind
     source = <<~MT
-      extern module std.c.sample:
+      external module std.c.sample:
           include "sample.h"
 
           opaque Handle = c"struct Handle"
@@ -219,15 +219,15 @@ class MilkTeaFormatterTest < Minitest::Test
 
           const LIMIT: int = 8
 
-          extern def init() -> int
+          external function init() -> int
 
-          extern def close() -> void
+          external function close() -> void
     MT
 
     formatted = MilkTea::Formatter.format_source(source, path: "sample.mt", mode: :canonical)
 
     assert_equal <<~MT, formatted
-      extern module std.c.sample:
+      external module std.c.sample:
           include "sample.h"
 
           opaque Handle = c"struct Handle"
@@ -236,8 +236,8 @@ class MilkTeaFormatterTest < Minitest::Test
           const MAGIC: int = 7
           const LIMIT: int = 8
 
-          extern def init() -> int
-          extern def close() -> void
+          external function init() -> int
+          external function close() -> void
     MT
   end
 end

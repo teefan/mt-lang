@@ -14,7 +14,7 @@ const atlas_codepoints_format: cstr = c"Total codepoints required for font atlas
 const toggle_atlas_text: cstr = c"Press SPACE to toggle font atlas view!"
 
 
-def codepoint_remove_duplicates(codepoints: ptr[int], codepoint_count: int, codepoints_result_count: ptr[int]) -> ptr[int]:
+function codepoint_remove_duplicates(codepoints: ptr[int], codepoint_count: int, codepoints_result_count: ptr[int]) -> ptr[int]:
     let codepoints_no_dups = heap.must_alloc_zeroed[int](ptr_uint<-codepoint_count)
     var codepoints_no_dups_count = codepoint_count
 
@@ -39,7 +39,7 @@ def codepoint_remove_duplicates(codepoints: ptr[int], codepoint_count: int, code
     return codepoints_no_dups
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

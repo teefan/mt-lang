@@ -23,27 +23,27 @@ var current_time: array[char, 64] = zero[array[char, 64]]
 var pasted_str: ptr[char]? = null
 
 
-def text_width(text: cstr) -> float:
+function text_width(text: cstr) -> float:
     return float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * float<-c.SDL_strlen(text)
 
 
-def min_ptr_uint(left: ptr_uint, right: ptr_uint) -> ptr_uint:
+function min_ptr_uint(left: ptr_uint, right: ptr_uint) -> ptr_uint:
     if left < right:
         return left
 
     return right
 
 
-def point_in_rect(point: c.SDL_FPoint, rect: c.SDL_FRect) -> bool:
+function point_in_rect(point: c.SDL_FPoint, rect: c.SDL_FRect) -> bool:
     return point.x >= rect.x and point.x < (rect.x + rect.w) and point.y >= rect.y and point.y < (rect.y + rect.h)
 
 
-def current_time_text() -> cstr:
+function current_time_text() -> cstr:
     unsafe:
         return cstr<-ptr_of(current_time[0])
 
 
-def calculate_current_time_string() -> void:
+function calculate_current_time_string() -> void:
     let month_names = array[cstr, 12](
         c"January",
         c"February",
@@ -79,7 +79,7 @@ def calculate_current_time_string() -> void:
         )
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -114,7 +114,7 @@ def pump_events() -> bool:
     return true
 
 
-def render_truncated_line(text: ptr[char], x: float, y: float, max_chars_per_line: ptr_uint) -> void:
+function render_truncated_line(text: ptr[char], x: float, y: float, max_chars_per_line: ptr_uint) -> void:
     unsafe:
         let line_length = min_ptr_uint(c.SDL_strlen(cstr<-text), max_chars_per_line)
         let end_ptr = ptr[char]<-(text + int<-line_length)
@@ -124,7 +124,7 @@ def render_truncated_line(text: ptr[char], x: float, y: float, max_chars_per_lin
         read(end_ptr) = saved_char
 
 
-def render_pasted_text() -> void:
+function render_pasted_text() -> void:
     let initial_text = pasted_str
     if initial_text == null:
         return
@@ -179,7 +179,7 @@ def render_pasted_text() -> void:
         render_truncated_line(final_line, x, y, max_chars_per_line)
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     calculate_current_time_string()
 
     c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, c.SDL_ALPHA_OPAQUE)
@@ -223,7 +223,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Misc Clipboard", c"1.0", c"com.example.misc-clipboard")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO):
@@ -270,5 +270,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

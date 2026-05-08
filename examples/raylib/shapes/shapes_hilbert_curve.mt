@@ -17,7 +17,7 @@ const size_text: cstr = c"TOTAL SIZE: "
 const empty_text: cstr = c""
 
 
-def compute_hilbert_step(order: int, index_start: int) -> rl.Vector2:
+function compute_hilbert_step(order: int, index_start: int) -> rl.Vector2:
     let hilbert_points = array[rl.Vector2, 4](
         rl.Vector2(x = 0.0, y = 0.0),
         rl.Vector2(x = 0.0, y = 1.0),
@@ -53,7 +53,7 @@ def compute_hilbert_step(order: int, index_start: int) -> rl.Vector2:
     return vect
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

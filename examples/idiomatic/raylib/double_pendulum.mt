@@ -9,20 +9,20 @@ const screen_width: int = 800
 const screen_height: int = 450
 
 
-def calculate_pendulum_end_point(length: float, theta: float) -> rl.Vector2:
+function calculate_pendulum_end_point(length: float, theta: float) -> rl.Vector2:
     return rl.Vector2(
         x = 10.0 * length * math.sin(theta),
         y = 10.0 * length * math.cos(theta),
     )
 
 
-def calculate_double_pendulum_end_point(length1: float, theta1: float, length2: float, theta2: float) -> rl.Vector2:
+function calculate_double_pendulum_end_point(length1: float, theta1: float, length2: float, theta2: float) -> rl.Vector2:
     let endpoint1 = calculate_pendulum_end_point(length1, theta1)
     let endpoint2 = calculate_pendulum_end_point(length2, theta2)
     return rl.Vector2(x = endpoint1.x + endpoint2.x, y = endpoint1.y + endpoint2.y)
 
 
-def main() -> int:
+function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_HIGHDPI)
     rl.init_window(screen_width, screen_height, "Milk Tea Double Pendulum")
     defer rl.close_window()

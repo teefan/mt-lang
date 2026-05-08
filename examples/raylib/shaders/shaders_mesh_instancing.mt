@@ -16,27 +16,27 @@ const ambient_uniform_name: cstr = c"ambient"
 const window_title: cstr = c"raylib [shaders] example - mesh instancing"
 
 
-def alloc_transforms(count: int) -> ptr[rl.Matrix]:
+function alloc_transforms(count: int) -> ptr[rl.Matrix]:
     unsafe:
         return ptr[rl.Matrix]<-rl.MemAlloc(uint<-count * uint<-size_of(rl.Matrix))
 
 
-def free_transforms(transforms: ptr[rl.Matrix]) -> void:
+function free_transforms(transforms: ptr[rl.Matrix]) -> void:
     unsafe:
         rl.MemFree(ptr[void]<-transforms)
 
 
-def set_transform(transforms: ptr[rl.Matrix], index: int, transform: rl.Matrix) -> void:
+function set_transform(transforms: ptr[rl.Matrix], index: int, transform: rl.Matrix) -> void:
     unsafe:
         read(transforms + ptr_uint<-index) = transform
 
 
-def set_material_color(material: ptr[rl.Material], map_index: int, color: rl.Color) -> void:
+function set_material_color(material: ptr[rl.Material], map_index: int, color: rl.Color) -> void:
     unsafe:
         material.maps[map_index].color = color
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

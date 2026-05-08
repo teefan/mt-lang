@@ -10,7 +10,7 @@ const vertex_count: int = 16
 const window_title: cstr = c"raylib [models] example - tesseract view"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

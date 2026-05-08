@@ -10,13 +10,13 @@ const help_text: cstr = c"Move the mouse to stretch or shrink the n-patches"
 const texture_label: cstr = c"TEXTURE"
 
 
-def clamp_min(value: float, minimum: float) -> float:
+function clamp_min(value: float, minimum: float) -> float:
     if value < minimum:
         return minimum
     return value
 
 
-def clamp_width(value: float) -> float:
+function clamp_width(value: float) -> float:
     if value < 1.0:
         return 1.0
     if value > 300.0:
@@ -24,7 +24,7 @@ def clamp_width(value: float) -> float:
     return value
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -9,7 +9,7 @@ const exit_prompt_text: cstr = c"Are you sure you want to exit program? [Y/N]"
 const info_text: cstr = c"Try to close the window to get confirmation message!"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

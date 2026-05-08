@@ -18,7 +18,7 @@ const time_format_24: cstr = c"%H%M%S"
 const time_format_12: cstr = c"%I%M%S"
 
 
-def blank_digit_angles() -> array[rl.Vector2, 24]:
+function blank_digit_angles() -> array[rl.Vector2, 24]:
     let zz = rl.Vector2(x = 135.0, y = 135.0)
     var result = zero[array[rl.Vector2, 24]]
     for index in 0..cells_per_digit:
@@ -26,7 +26,7 @@ def blank_digit_angles() -> array[rl.Vector2, 24]:
     return result
 
 
-def digit_angles_for(digit: int) -> array[rl.Vector2, 24]:
+function digit_angles_for(digit: int) -> array[rl.Vector2, 24]:
     let tl = rl.Vector2(x = 0.0, y = 90.0)
     let tr = rl.Vector2(x = 90.0, y = 180.0)
     let br = rl.Vector2(x = 180.0, y = 270.0)
@@ -129,11 +129,11 @@ def digit_angles_for(digit: int) -> array[rl.Vector2, 24]:
     return blank_digit_angles()
 
 
-def digit_value(time_buffer: array[char, 7], index: int) -> int:
+function digit_value(time_buffer: array[char, 7], index: int) -> int:
     return int<-time_buffer[index] - 48
 
 
-def load_time_digits(time_buffer: ref[array[char, 7]], hour_mode: int) -> void:
+function load_time_digits(time_buffer: ref[array[char, 7]], hour_mode: int) -> void:
     var now: ctime.time_t = 0
     now = ctime.time(ptr_of(now))
     let tm_info = ctime.localtime(ptr_of(now))
@@ -143,11 +143,11 @@ def load_time_digits(time_buffer: ref[array[char, 7]], hour_mode: int) -> void:
         ctime.strftime(ptr_of(read(time_buffer)[0]), 7, format, tm_info)
 
 
-def angle_slot(digit: int, cell: int) -> int:
+function angle_slot(digit: int, cell: int) -> int:
     return digit * cells_per_digit + cell
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

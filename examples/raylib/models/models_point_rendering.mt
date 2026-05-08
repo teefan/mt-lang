@@ -18,11 +18,11 @@ const using_draw_model_points_text: cstr = c"Using: DrawModelPoints()"
 const using_draw_point3d_text: cstr = c"Using: DrawPoint3D()"
 
 
-def random_unit() -> float:
+function random_unit() -> float:
     return float<-rl.GetRandomValue(0, random_resolution) / float<-random_resolution
 
 
-def gen_mesh_points(num_points: int) -> rl.Mesh:
+function gen_mesh_points(num_points: int) -> rl.Mesh:
     var mesh = zero[rl.Mesh]
     mesh.triangleCount = 1
     mesh.vertexCount = num_points
@@ -53,7 +53,7 @@ def gen_mesh_points(num_points: int) -> rl.Mesh:
     return mesh
 
 
-def draw_model_points(model: rl.Model, position: rl.Vector3, scale: float, tint: rl.Color) -> void:
+function draw_model_points(model: rl.Model, position: rl.Vector3, scale: float, tint: rl.Color) -> void:
     rlgl.rlEnablePointMode()
     rlgl.rlDisableBackfaceCulling()
     rl.DrawModel(model, position, scale, tint)
@@ -61,7 +61,7 @@ def draw_model_points(model: rl.Model, position: rl.Vector3, scale: float, tint:
     rlgl.rlDisablePointMode()
 
 
-def mesh_point(mesh: rl.Mesh, index: int) -> rl.Vector3:
+function mesh_point(mesh: rl.Mesh, index: int) -> rl.Vector3:
     unsafe:
         return rl.Vector3(
             x = mesh.vertices[index * 3],
@@ -70,7 +70,7 @@ def mesh_point(mesh: rl.Mesh, index: int) -> rl.Vector3:
         )
 
 
-def mesh_color(mesh: rl.Mesh, index: int) -> rl.Color:
+function mesh_color(mesh: rl.Mesh, index: int) -> rl.Color:
     unsafe:
         return rl.Color(
             r = mesh.colors[index * 4],
@@ -80,7 +80,7 @@ def mesh_color(mesh: rl.Mesh, index: int) -> rl.Color:
         )
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

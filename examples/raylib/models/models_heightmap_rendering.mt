@@ -8,7 +8,7 @@ const window_title: cstr = c"raylib [models] example - heightmap rendering"
 const heightmap_path: cstr = c"../resources/heightmap.png"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

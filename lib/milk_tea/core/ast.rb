@@ -102,8 +102,8 @@ module MilkTea
     MatchStmt = Data.define(:expression, :arms, :line) do
       def initialize(expression:, arms:, line: nil) = super
     end
-    UnsafeStmt = Data.define(:body, :line) do
-      def initialize(body:, line: nil) = super
+    UnsafeStmt = Data.define(:body, :line, :column, :length) do
+      def initialize(body:, line: nil, column: nil, length: nil) = super
     end
     StaticAssert = Data.define(:condition, :message, :line) do
       def initialize(condition:, message:, line: nil) = super

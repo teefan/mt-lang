@@ -16,13 +16,13 @@ const screen_height: int = 450
 const smoke_path: str = "../../raylib/resources/spark_flame.png"
 
 
-def blend_label(blend_mode: int) -> str:
+function blend_label(blend_mode: int) -> str:
     if blend_mode == rl.BlendMode.BLEND_ALPHA:
         return "ALPHA BLENDING"
     return "ADDITIVE BLENDING"
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Particles Blending")
     defer rl.close_window()
 

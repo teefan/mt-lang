@@ -1318,6 +1318,8 @@ module MilkTea
             @warnings << Warning.new(
               path: @path,
               line: stmt.line,
+              column: stmt.column,
+              length: stmt.length || "unsafe".length,
               code: "redundant-unsafe",
               message: "unsafe block does not contain any operation that requires unsafe",
               severity: :hint

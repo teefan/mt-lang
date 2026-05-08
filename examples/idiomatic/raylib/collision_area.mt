@@ -7,7 +7,7 @@ const screen_height: int = 450
 const screen_upper_limit: int = 40
 
 
-def main() -> int:
+function main() -> int:
     rl.init_window(screen_width, screen_height, "Milk Tea Collision Area")
     defer rl.close_window()
 

@@ -1,4 +1,4 @@
-extern module std.c.stdio:
+external module std.c.stdio:
     include "stdio.h"
 
     opaque FILE = c"FILE"
@@ -6,12 +6,12 @@ extern module std.c.stdio:
 
     const EOF: int = -1
 
-    extern def printf(format: cstr, ...) -> int
-    extern def snprintf(text: ptr[char], maxlen: ptr_uint, format: cstr, ...) -> int
-    extern def vprintf(format: cstr, args: va_list) -> int
-    extern def fopen(path: cstr, mode: cstr) -> FILE?
-    extern def fclose(stream: FILE?) -> int
-    extern def fgetc(stream: FILE?) -> int
-    extern def fputc(ch: int, stream: FILE?) -> int
-    extern def ferror(stream: FILE?) -> int
-    extern def fflush(stream: FILE?) -> int
+    external function printf(format: cstr, ...) -> int
+    external function snprintf(text: ptr[char], maxlen: ptr_uint, format: cstr, ...) -> int
+    external function vprintf(format: cstr, args: va_list) -> int
+    external function fopen(path: cstr, mode: cstr) -> FILE?
+    external function fclose(stream: FILE?) -> int
+    external function fgetc(stream: FILE?) -> int
+    external function fputc(ch: int, stream: FILE?) -> int
+    external function ferror(stream: FILE?) -> int
+    external function fflush(stream: FILE?) -> int

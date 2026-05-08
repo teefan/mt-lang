@@ -28,7 +28,7 @@ const byte_zero: ubyte = 48
 const byte_nine: ubyte = 57
 
 
-def append_rule(output: ref[string.String], step: ubyte) -> void:
+function append_rule(output: ref[string.String], step: ubyte) -> void:
     if step == byte_w:
         output.append("YF++ZF4-XF[-YF4-WF]++")
     elif step == byte_x:
@@ -41,7 +41,7 @@ def append_rule(output: ref[string.String], step: ubyte) -> void:
         output.push_byte(step)
 
 
-def build_production_step(production: string.String) -> string.String:
+function build_production_step(production: string.String) -> string.String:
     let production_view = production.as_str()
     var next = string.String.with_capacity(production_view.len * 4)
     var index: ptr_uint = 0
@@ -51,7 +51,7 @@ def build_production_step(production: string.String) -> string.String:
     return next
 
 
-def rebuild_production(generations: int) -> string.String:
+function rebuild_production(generations: int) -> string.String:
     var production = string.String.from_str("[X]++[X]++[X]++[X]++[X]")
     for generation in 0..generations:
         var next = build_production_step(production)
@@ -60,7 +60,7 @@ def rebuild_production(generations: int) -> string.String:
     return production
 
 
-def push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[int], state: TurtleState) -> void:
+function push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[int], state: TurtleState) -> void:
     if read(top) < turtle_stack_max_size - 1:
         var items = read(stack)
         read(top) += 1
@@ -68,7 +68,7 @@ def push_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[int], state: 
         read(stack) = items
 
 
-def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[int]) -> TurtleState:
+function pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[int]) -> TurtleState:
     if read(top) >= 0:
         let items = read(stack)
         let state = items[read(top)]
@@ -77,7 +77,7 @@ def pop_turtle_state(stack: ref[array[TurtleState, 50]], top: ref[int]) -> Turtl
     return zero[TurtleState]
 
 
-def draw_penrose_lsystem(production: string.String, draw_length: float, steps: ref[int], turtle_stack: ref[array[TurtleState, 50]], turtle_top: ref[int]) -> void:
+function draw_penrose_lsystem(production: string.String, draw_length: float, steps: ref[int], turtle_stack: ref[array[TurtleState, 50]], turtle_top: ref[int]) -> void:
     let production_view = production.as_str()
     let screen_center = rl.Vector2(x = float<-rl.get_screen_width() / 2.0, y = float<-rl.get_screen_height() / 2.0)
     var turtle = TurtleState(origin = rl.Vector2(x = 0.0, y = 0.0), angle = -90.0)
@@ -127,11 +127,11 @@ def draw_penrose_lsystem(production: string.String, draw_length: float, steps: r
     read(turtle_top) = -1
 
 
-def draw_length_for(generations: int) -> float:
+function draw_length_for(generations: int) -> float:
     return draw_length_base * float<-generations / float<-max_generations
 
 
-def main() -> int:
+function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(screen_width, screen_height, "Milk Tea Penrose Tile")
     defer rl.close_window()

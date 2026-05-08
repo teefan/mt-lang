@@ -4,46 +4,46 @@ import std.hash as hash
 import std.map as map
 
 
-def hash_key(key: str) -> ulong:
+function hash_key(key: str) -> ulong:
     return hash.str_value(key)
 
 
-def equal_key(left: str, right: str) -> bool:
+function equal_key(left: str, right: str) -> bool:
     return hash.str_equal(left, right)
 
-pub struct StrMap[V]:
+public struct StrMap[V]:
     items: map.HashMap[str, V]
 
 
-pub def create[V]() -> StrMap[V]:
+public function create[V]() -> StrMap[V]:
     return StrMap[V](items = map.create[str, V](hash_key, equal_key))
 
 
-pub def count[V](items: StrMap[V]) -> ptr_uint:
+public function count[V](items: StrMap[V]) -> ptr_uint:
     return map.count[str, V](items.items)
 
 
-pub def release[V](items: ref[StrMap[V]]) -> void:
+public function release[V](items: ref[StrMap[V]]) -> void:
     map.release[str, V](ref_of(items.items))
     return
 
 
-pub def put[V](items: ref[StrMap[V]], key: str, value_item: V) -> void:
+public function put[V](items: ref[StrMap[V]], key: str, value_item: V) -> void:
     map.put[str, V](ref_of(items.items), key, value_item)
     return
 
 
-pub def try_put[V](items: ref[StrMap[V]], key: str, value_item: V) -> bool:
+public function try_put[V](items: ref[StrMap[V]], key: str, value_item: V) -> bool:
     return map.try_put[str, V](ref_of(items.items), key, value_item)
 
 
-pub def get_into[V](items: StrMap[V], key: str, target: ref[V]) -> bool:
+public function get_into[V](items: StrMap[V], key: str, target: ref[V]) -> bool:
     return map.get_into[str, V](items.items, key, target)
 
 
-pub def contains[V](items: StrMap[V], key: str) -> bool:
+public function contains[V](items: StrMap[V], key: str) -> bool:
     return map.contains[str, V](items.items, key)
 
 
-pub def remove[V](items: ref[StrMap[V]], key: str) -> bool:
+public function remove[V](items: ref[StrMap[V]], key: str) -> bool:
     return map.remove[str, V](ref_of(items.items), key)

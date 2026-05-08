@@ -11,7 +11,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       "struct Counter:",
       "    value: int",
       "",
-      "def main() -> int:",
+      "function main() -> int:",
       "    var counter = Counter(value = 3)",
       "    let counter_ptr = ptr_of(counter)",
       "    unsafe:",
@@ -27,11 +27,11 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_extern_module_ast_like_source
     source = <<~MT
-      extern module std.c.sample:
+      external module std.c.sample:
           link "sample"
           include "sample.h"
 
-          extern def add(a: int, b: int) -> int
+          external function add(a: int, b: int) -> int
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -41,7 +41,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_extern_module_imports_like_source
     source = <<~MT
-      extern module std.c.helper:
+      external module std.c.helper:
           import std.c.dep as dep
 
           include "helper.h"
@@ -59,17 +59,17 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     source = <<~MT
       module demo.pretty
 
-      pub struct Counter:
+      public struct Counter:
           value: int
 
       methods Counter:
-          pub def read() -> int:
+          public function read() -> int:
               return this.value
 
-          def bump() -> void:
+          function bump() -> void:
               this.value += 1
 
-      pub def main() -> int:
+      public function main() -> int:
           let counter = Counter(value = 3)
           return counter.read()
     MT
@@ -87,7 +87,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
           value: T
 
       methods Box[T]:
-          def get() -> T:
+          function get() -> T:
               return this.value
     MT
 
@@ -98,10 +98,10 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_variadic_extern_module_ast_like_source
     source = <<~MT
-      extern module std.c.stdio:
+      external module std.c.stdio:
           include "stdio.h"
 
-          extern def printf(format: cstr, ...) -> int
+          external function printf(format: cstr, ...) -> int
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -111,7 +111,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_extern_opaque_with_explicit_c_name_like_source
     source = <<~MT
-      extern module std.c.time:
+      external module std.c.time:
           opaque tm = c"struct tm"
     MT
 
@@ -122,7 +122,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_extern_module_groups_simple_declarations_by_kind
     source = <<~MT
-      extern module std.c.sample:
+      external module std.c.sample:
           include "sample.h"
 
           opaque Handle = c"struct Handle"
@@ -131,8 +131,8 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
           const MAGIC: int = 7
           const LIMIT: int = 8
 
-          extern def init() -> int
-          extern def close() -> void
+          external function init() -> int
+          external function close() -> void
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -146,15 +146,15 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
       import std.c.raylib as c
 
-      pub foreign def load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
+      public foreign function load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
 
-      pub foreign def set_shader_value[T](shader: Shader, loc_index: int, in value: T as const_ptr[void], uniform_type: int) -> void = c.SetShaderValue
+      public foreign function set_shader_value[T](shader: Shader, loc_index: int, in value: T as const_ptr[void], uniform_type: int) -> void = c.SetShaderValue
 
-      pub foreign def close_window(consuming window: Window) -> void = c.CloseWindow
+      public foreign function close_window(consuming window: Window) -> void = c.CloseWindow
 
-      pub foreign def save_file_data(file_name: str as cstr, data: span[ubyte]) -> bool = c.SaveFileData(file_name, data.data, int<-data.len)
+      public foreign function save_file_data(file_name: str as cstr, data: span[ubyte]) -> bool = c.SaveFileData(file_name, data.data, int<-data.len)
 
-      def main(path: str) -> ptr[ubyte]?:
+      function main(path: str) -> ptr[ubyte]?:
           var data_size = 0
           let contrast = 1.0
           set_shader_value(Shader(), 0, contrast, 0)
@@ -170,7 +170,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     source = <<~MT
       module demo.array_char
 
-      def main() -> int:
+      function main() -> int:
           var buffer = zero[array[char, 64]]
           buffer[0] = 65
           return 0
@@ -185,7 +185,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     source = <<~MT
       module demo.locals
 
-      def main() -> void:
+      function main() -> void:
           var buffer: array[char, 64]
     MT
 
@@ -198,7 +198,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     source = <<~MT
       module demo.cleanup
 
-      def main() -> void:
+      function main() -> void:
           defer:
               first_cleanup()
               second_cleanup()
@@ -246,7 +246,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       "struct Counter:",
       "    value: int",
       "",
-      "def main() -> int:",
+      "function main() -> int:",
       "    var counter = Counter(value = 3)",
       "    let counter_ptr = ptr_of(counter)",
       "    unsafe:",
@@ -271,10 +271,10 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     source = [
       "module demo.pretty_for",
       "",
-      "def keep(value: int) -> void:",
+      "function keep(value: int) -> void:",
       "    return",
       "",
-      "def main() -> void:",
+      "function main() -> void:",
       "    for i in 0..3:",
       "        keep(i)",
       "",

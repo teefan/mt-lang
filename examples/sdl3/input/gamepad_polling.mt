@@ -39,7 +39,7 @@ var left_thumb_last: c.Uint64 = 0
 var right_thumb_last: c.Uint64 = 0
 
 
-def pump_events() -> bool:
+function pump_events() -> bool:
     var event = zero[c.SDL_Event]
 
     while c.SDL_PollEvent(ptr_of(event)):
@@ -59,24 +59,24 @@ def pump_events() -> bool:
     return true
 
 
-def thumbbox_x(origin: float, axis_x: c.Sint16) -> float:
+function thumbbox_x(origin: float, axis_x: c.Sint16) -> float:
     return origin + ((float<-axis_x / 32767.0) * thumbbox_size)
 
 
-def thumbbox_y(origin: float, axis_y: c.Sint16) -> float:
+function thumbbox_y(origin: float, axis_y: c.Sint16) -> float:
     return origin + ((float<-axis_y / 32767.0) * thumbbox_size)
 
 
-def axis_active(axis_x: c.Sint16, axis_y: c.Sint16) -> bool:
+function axis_active(axis_x: c.Sint16, axis_y: c.Sint16) -> bool:
     return c.SDL_abs(int<-axis_x) > 1000 or c.SDL_abs(int<-axis_y) > 1000
 
 
-def trigger_box(x: float, axis_y: c.Sint16) -> c.SDL_FRect:
+function trigger_box(x: float, axis_y: c.Sint16) -> c.SDL_FRect:
     let height = (float<-axis_y / 32767.0) * trigger_height
     return c.SDL_FRect(x = x, y = 1.0 + (trigger_height - height), w = 37.0, h = height)
 
 
-def render_frame() -> void:
+function render_frame() -> void:
     var text: cstr = c"Plug in a gamepad, please."
     var x: float = 0.0
     var y: float = 0.0
@@ -138,7 +138,7 @@ def render_frame() -> void:
     c.SDL_RenderPresent(renderer)
 
 
-def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
+function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     c.SDL_SetAppMetadata(c"Example Input Gamepad Polling", c"1.0", c"com.example.input-gamepad-polling")
 
     if not c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_GAMEPAD):
@@ -173,5 +173,5 @@ def app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     return 0
 
 
-def main(argc: int, argv: ptr[ptr[char]]) -> int:
+function main(argc: int, argv: ptr[ptr[char]]) -> int:
     return c.SDL_RunApp(argc, argv, app_main, null)

@@ -10,7 +10,7 @@ const toggle_text: cstr = c"Right click mouse to toggle camera controls"
 const selected_text: cstr = c"BOX SELECTED"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

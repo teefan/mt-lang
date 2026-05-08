@@ -26,19 +26,19 @@ const time_format: cstr = c"%H:%M:%S"
 const clock_mode_format: cstr = c"Press [SPACE] to switch clock mode: %s"
 
 
-def clock_hand(angle: float, length: int, thickness: int, color: rl.Color) -> ClockHand:
+function clock_hand(angle: float, length: int, thickness: int, color: rl.Color) -> ClockHand:
     return ClockHand(value = 0, angle = angle, length = length, thickness = thickness, color = color)
 
 
-def digit_value(digit: char) -> int:
+function digit_value(digit: char) -> int:
     return int<-digit - 48
 
 
-def parse_two_digits(time_buffer: array[char, 9], index: int) -> int:
+function parse_two_digits(time_buffer: array[char, 9], index: int) -> int:
     return digit_value(time_buffer[index]) * 10 + digit_value(time_buffer[index + 1])
 
 
-def update_clock(clock: ref[Clock], time_buffer: ref[array[char, 9]]) -> void:
+function update_clock(clock: ref[Clock], time_buffer: ref[array[char, 9]]) -> void:
     var now: ctime.time_t = 0
     now = ctime.time(ptr_of(now))
     let tm_info = ctime.localtime(ptr_of(now))
@@ -62,7 +62,7 @@ def update_clock(clock: ref[Clock], time_buffer: ref[array[char, 9]]) -> void:
     clock.second.angle -= 90.0
 
 
-def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
+function draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
     rl.DrawCircleV(position, float<-clock.second.length + 40.0, rl.LIGHTGRAY)
     rl.DrawCircleV(position, 12.0, rl.GRAY)
 
@@ -102,7 +102,7 @@ def draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
     )
 
 
-def draw_display_segment(center: rl.Vector2, length: int, thick: int, vertical: bool, color: rl.Color) -> void:
+function draw_display_segment(center: rl.Vector2, length: int, thick: int, vertical: bool, color: rl.Color) -> void:
     if not vertical:
         var segment_points = array[rl.Vector2, 6](
             rl.Vector2(x = center.x - float<-length / 2.0 - float<-thick / 2.0, y = center.y),
@@ -125,7 +125,7 @@ def draw_display_segment(center: rl.Vector2, length: int, thick: int, vertical: 
         rl.DrawTriangleStrip(ptr_of(segment_points[0]), 6, color)
 
 
-def draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color, color_off: rl.Color) -> void:
+function draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color, color_off: rl.Color) -> void:
     let segment_len = 60
     let segment_thick = 20
     let offset_y_adjust = float<-segment_thick * 0.3
@@ -181,7 +181,7 @@ def draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color, col
     )
 
 
-def draw_display_value(position: rl.Vector2, value: int, color_on: rl.Color, color_off: rl.Color) -> void:
+function draw_display_value(position: rl.Vector2, value: int, color_on: rl.Color, color_off: rl.Color) -> void:
     if value == 0:
         draw_7s_display(position, 63, color_on, color_off)
     elif value == 1:
@@ -204,7 +204,7 @@ def draw_display_value(position: rl.Vector2, value: int, color_on: rl.Color, col
         draw_7s_display(position, 111, color_on, color_off)
 
 
-def draw_clock_digital(clock: Clock, position: rl.Vector2) -> void:
+function draw_clock_digital(clock: Clock, position: rl.Vector2) -> void:
     let color_off = rl.Fade(rl.LIGHTGRAY, 0.3)
 
     draw_display_value(position, clock.hour.value / 10, rl.RED, color_off)
@@ -223,7 +223,7 @@ def draw_clock_digital(clock: Clock, position: rl.Vector2) -> void:
     draw_display_value(rl.Vector2(x = position.x + 640.0, y = position.y), clock.second.value % 10, rl.RED, color_off)
 
 
-def main() -> int:
+function main() -> int:
     rl.SetConfigFlags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()

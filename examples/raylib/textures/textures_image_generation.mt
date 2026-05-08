@@ -9,7 +9,7 @@ const window_title: cstr = c"raylib [textures] example - image generation"
 const cycle_message: cstr = c"MOUSE LEFT BUTTON to CYCLE PROCEDURAL TEXTURES"
 
 
-def texture_label(texture_index: int) -> cstr:
+function texture_label(texture_index: int) -> cstr:
     if texture_index == 0:
         return c"VERTICAL GRADIENT"
     elif texture_index == 1:
@@ -29,7 +29,7 @@ def texture_label(texture_index: int) -> cstr:
     return c"CELLULAR"
 
 
-def texture_label_color(texture_index: int) -> rl.Color:
+function texture_label_color(texture_index: int) -> rl.Color:
     if texture_index <= 2:
         return rl.RAYWHITE
     elif texture_index <= 4:
@@ -41,7 +41,7 @@ def texture_label_color(texture_index: int) -> rl.Color:
     return rl.RAYWHITE
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

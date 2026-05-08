@@ -16,7 +16,7 @@ const outline_format: cstr = c"Outline size: %i px"
 const window_title: cstr = c"raylib [shaders] example - texture outline"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

@@ -9,7 +9,7 @@ const enemy_text: cstr = c"Enemy: 100/100"
 const help_text: cstr = c"Text 2d should be always on top of the cube"
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 

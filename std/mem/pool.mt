@@ -3,7 +3,7 @@ module std.mem.pool
 import std.mem.heap as heap
 
 
-def slot_alignment(slot_size_bytes: ptr_uint, base_alignment: ptr_uint) -> ptr_uint:
+function slot_alignment(slot_size_bytes: ptr_uint, base_alignment: ptr_uint) -> ptr_uint:
     if slot_size_bytes == 0:
         return base_alignment
 
@@ -13,7 +13,7 @@ def slot_alignment(slot_size_bytes: ptr_uint, base_alignment: ptr_uint) -> ptr_u
 
     return alignment
 
-pub struct Pool:
+public struct Pool:
     memory: ptr[ubyte]?
     occupancy: ptr[bool]?
     slot_size: ptr_uint
@@ -22,11 +22,11 @@ pub struct Pool:
     used_count: ptr_uint
 
 
-pub def create(slot_size_bytes: ptr_uint, slot_count: ptr_uint) -> Pool:
+public function create(slot_size_bytes: ptr_uint, slot_count: ptr_uint) -> Pool:
     return create_aligned(slot_size_bytes, slot_count, 1)
 
 
-pub def create_aligned(slot_size_bytes: ptr_uint, slot_count: ptr_uint, alignment: ptr_uint) -> Pool:
+public function create_aligned(slot_size_bytes: ptr_uint, slot_count: ptr_uint, alignment: ptr_uint) -> Pool:
     let normalized_alignment = heap.normalize_alignment(alignment)
     if normalized_alignment == 0:
         panic(c"pool.create_aligned requires a power-of-two alignment")
@@ -65,7 +65,7 @@ pub def create_aligned(slot_size_bytes: ptr_uint, slot_count: ptr_uint, alignmen
         )
 
 
-pub def slot_size_for[T]() -> ptr_uint:
+public function slot_size_for[T]() -> ptr_uint:
     let size = ptr_uint<-size_of(T)
     let alignment = ptr_uint<-align_of(T)
     let mask = alignment - 1
@@ -75,15 +75,15 @@ pub def slot_size_for[T]() -> ptr_uint:
     return (size + mask) & ~mask
 
 
-pub def create_for[T](slot_count: ptr_uint) -> Pool:
+public function create_for[T](slot_count: ptr_uint) -> Pool:
     return create_aligned(slot_size_for[T](), slot_count, ptr_uint<-align_of(T))
 
 methods Pool:
-    pub def remaining_slots() -> ptr_uint:
+    public function remaining_slots() -> ptr_uint:
         return this.slot_count - this.used_count
 
 
-    pub edit def alloc_bytes() -> ptr[ubyte]?:
+    public edit function alloc_bytes() -> ptr[ubyte]?:
         let memory = this.memory
         if memory == null:
             return null
@@ -104,7 +104,7 @@ methods Pool:
         return null
 
 
-    pub edit def alloc[T]() -> ptr[T]?:
+    public edit function alloc[T]() -> ptr[T]?:
         let size = ptr_uint<-size_of(T)
         let alignment = ptr_uint<-align_of(T)
         let mask = alignment - 1
@@ -125,7 +125,7 @@ methods Pool:
             return ptr[T]<-memory
 
 
-    pub edit def release_bytes(slot: ptr[ubyte]?) -> bool:
+    public edit function release_bytes(slot: ptr[ubyte]?) -> bool:
         if slot == null:
             return false
 
@@ -153,7 +153,7 @@ methods Pool:
         return false
 
 
-    pub edit def release_slot[T](slot: ptr[T]?) -> bool:
+    public edit function release_slot[T](slot: ptr[T]?) -> bool:
         if slot == null:
             return false
 
@@ -161,7 +161,7 @@ methods Pool:
             return this.release_bytes(ptr[ubyte]<-slot)
 
 
-    pub edit def release() -> void:
+    public edit function release() -> void:
         heap.release(this.memory)
         heap.release(this.occupancy)
         this.memory = null

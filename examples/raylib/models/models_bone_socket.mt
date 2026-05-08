@@ -23,37 +23,37 @@ const toggle_text: cstr = c"Use the 1,2,3 to toggle shown of hat, sword and shie
 const window_title: cstr = c"raylib [models] example - bone socket"
 
 
-def chars_to_cstr(text: ptr[char]) -> cstr:
+function chars_to_cstr(text: ptr[char]) -> cstr:
     unsafe:
         return cstr<-text
 
 
-def model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
+function model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
     unsafe:
         return read(anims + index)
 
 
-def model_animation_pose(anim: rl.ModelAnimation, frame: int) -> rl.ModelAnimPose:
+function model_animation_pose(anim: rl.ModelAnimation, frame: int) -> rl.ModelAnimPose:
     unsafe:
         return read(anim.keyframePoses + frame)
 
 
-def pose_transform(pose: rl.ModelAnimPose, index: int) -> rl.Transform:
+function pose_transform(pose: rl.ModelAnimPose, index: int) -> rl.Transform:
     unsafe:
         return read(pose + index)
 
 
-def skeleton_bone_name(skeleton: rl.ModelSkeleton, index: int) -> cstr:
+function skeleton_bone_name(skeleton: rl.ModelSkeleton, index: int) -> cstr:
     unsafe:
         return chars_to_cstr(ptr_of((skeleton.bones + index).name[0]))
 
 
-def bind_pose_transform(skeleton: rl.ModelSkeleton, index: int) -> rl.Transform:
+function bind_pose_transform(skeleton: rl.ModelSkeleton, index: int) -> rl.Transform:
     unsafe:
         return read(skeleton.bindPose + index)
 
 
-def main() -> int:
+function main() -> int:
     rl.InitWindow(screen_width, screen_height, window_title)
     defer rl.CloseWindow()
 
