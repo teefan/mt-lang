@@ -5,11 +5,11 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaModuleLoaderTest < Minitest::Test
-  def test_load_file_parses_demo_file
-    ast = MilkTea::ModuleLoader.load_file(demo_path)
+  def test_load_file_parses_language_standard_file
+    ast = MilkTea::ModuleLoader.load_file(language_standard_path)
 
-    assert_equal "demo.bouncing_ball", ast.module_name.to_s
-    assert_equal 6, ast.declarations.length
+    assert_equal "examples.language_standard", ast.module_name.to_s
+    assert_equal 10, ast.declarations.length
   end
 
   def test_load_file_reports_missing_files
@@ -21,23 +21,24 @@ class MilkTeaModuleLoaderTest < Minitest::Test
   end
 
   def test_check_file_runs_semantic_analysis
-    result = MilkTea::ModuleLoader.check_file(demo_path)
+    result = MilkTea::ModuleLoader.check_file(language_standard_path)
 
-    assert_equal "demo.bouncing_ball", result.module_name
-    assert_equal %w[main], result.functions.keys.sort
+    assert_equal "examples.language_standard", result.module_name
+    assert_equal %w[main mode_label pair_label printf release_allocated_values], result.functions.keys.sort
   end
 
   def test_check_program_exposes_root_and_imported_modules
-    program = MilkTea::ModuleLoader.check_program(demo_path)
+    program = MilkTea::ModuleLoader.check_program(language_standard_path)
     loaded_modules = program.analyses_by_module_name.keys
 
-    assert_equal demo_path, program.root_path
-    assert_equal "demo.bouncing_ball", program.root_analysis.module_name
-    assert_includes loaded_modules, "demo.bouncing_ball"
-    assert_includes loaded_modules, "std.raylib"
-    assert_includes loaded_modules, "std.c.raylib"
-    assert_equal :module, program.analyses_by_module_name.fetch("std.raylib").module_kind
-    assert_equal :extern_module, program.analyses_by_module_name.fetch("std.c.raylib").module_kind
+    assert_equal language_standard_path, program.root_path
+    assert_equal "examples.language_standard", program.root_analysis.module_name
+    assert_includes loaded_modules, "examples.language_standard"
+    assert_includes loaded_modules, "examples.language_standard.foreign_bridge"
+    assert_includes loaded_modules, "examples.language_standard.external_runtime"
+    assert_includes loaded_modules, "std.fmt"
+    assert_equal :module, program.analyses_by_module_name.fetch("std.fmt").module_kind
+    assert_equal :extern_module, program.analyses_by_module_name.fetch("examples.language_standard.external_runtime").module_kind
   end
 
   def test_check_file_reports_missing_imported_modules
@@ -308,7 +309,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
   private
 
-  def demo_path
-    File.expand_path("../../examples/milk-tea-demo.mt", __dir__)
+  def language_standard_path
+    File.expand_path("../../examples/language_standard.mt", __dir__)
   end
 end

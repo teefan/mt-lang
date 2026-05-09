@@ -3,53 +3,60 @@
 require_relative "../test_helper"
 
 class MilkTeaParserTest < Minitest::Test
-  def test_parses_demo_file_into_expected_ast_shape
-    ast = MilkTea::Parser.parse(File.read(demo_path), path: demo_path)
+  def test_parses_language_standard_file_into_expected_ast_shape
+    ast = MilkTea::Parser.parse(File.read(language_standard_path), path: language_standard_path)
 
-    assert_equal "demo.bouncing_ball", ast.module_name.to_s
+    assert_equal "examples.language_standard", ast.module_name.to_s
     assert_equal :module, ast.module_kind
     assert_equal [], ast.directives
-    assert_equal 1, ast.imports.length
-    assert_equal "std.raylib", ast.imports.first.path.to_s
-    assert_equal "rl", ast.imports.first.alias_name
+    assert_equal 9, ast.imports.length
     assert_equal(
-      %w[ConstDecl ConstDecl ConstDecl StructDecl MethodsBlock FunctionDef],
+      [
+        ["std.fmt", "fmt"],
+        ["std.io", "io"],
+        ["std.maybe", "maybe"],
+        ["std.status", "status"],
+        ["std.string", "string"],
+        ["examples.language_standard.algorithms", "alg"],
+        ["examples.language_standard.async_showcase", "async_demo"],
+        ["examples.language_standard.foreign_bridge", "foreign_demo"],
+        ["examples.language_standard.types", "types"],
+      ],
+      ast.imports.map { |import| [import.path.to_s, import.alias_name] },
+    )
+    assert_equal(
+      %w[ExternFunctionDecl ConstDecl ConstDecl TypeAliasDecl StructDecl MethodsBlock FunctionDef FunctionDef FunctionDef FunctionDef],
       ast.declarations.map { |node| node.class.name.split("::").last },
     )
 
-    struct_decl = ast.declarations[3]
-    assert_equal "Ball", struct_decl.name
-    assert_equal %w[position velocity radius color], struct_decl.fields.map(&:name)
+    extern_decl = ast.declarations[0]
+    assert_equal "printf", extern_decl.name
 
-    methods_block = ast.declarations[4]
-    assert_equal "Ball", methods_block.type_name.to_s
-    assert_equal %w[update draw], methods_block.methods.map(&:name)
+    type_alias = ast.declarations[3]
+    assert_equal "ExitCode", type_alias.name
 
-    update_method = methods_block.methods.first
-    assert_equal :edit, update_method.kind
-    assert_equal 4, update_method.body.length
-    assert_instance_of MilkTea::AST::Assignment, update_method.body[0]
-    assert_instance_of MilkTea::AST::Assignment, update_method.body[1]
-    assert_instance_of MilkTea::AST::IfStmt, update_method.body[2]
-    assert_instance_of MilkTea::AST::IfStmt, update_method.body[3]
+    struct_decl = ast.declarations[4]
+    assert_equal "AppState", struct_decl.name
+    assert_equal %w[counter header block last_bits], struct_decl.fields.map(&:name)
 
-    draw_method = methods_block.methods[1]
-    assert_equal :plain, draw_method.kind
+    methods_block = ast.declarations[5]
+    assert_equal "AppState", methods_block.type_name.to_s
+    assert_equal %w[create touch label], methods_block.methods.map(&:name)
 
-    main_fn = ast.declarations[5]
+    create_method, touch_method, label_method = methods_block.methods
+    assert_equal :static, create_method.kind
+    assert_equal :edit, touch_method.kind
+    assert_equal :plain, label_method.kind
+
+    main_fn = ast.declarations[9]
     assert_equal "main", main_fn.name
-    assert_equal 6, main_fn.body.length
-
-    ball_decl = main_fn.body[3]
-    assert_instance_of MilkTea::AST::LocalDecl, ball_decl
-    assert_equal :var, ball_decl.kind
-    assert_instance_of MilkTea::AST::Call, ball_decl.value
-    assert_equal %w[position velocity radius color], ball_decl.value.arguments.map(&:name)
-
-    while_stmt = main_fn.body[4]
-    assert_instance_of MilkTea::AST::WhileStmt, while_stmt
-    assert_instance_of MilkTea::AST::UnaryOp, while_stmt.condition
-    assert_equal "not", while_stmt.condition.operator
+    assert_equal(
+      %w[StaticAssert LocalDecl ExpressionStmt MatchStmt DeferStmt ReturnStmt],
+      main_fn.body.map { |node| node.class.name.split("::").last }.uniq,
+    )
+    assert main_fn.body.any? { |node| node.is_a?(MilkTea::AST::MatchStmt) }
+    assert main_fn.body.any? { |node| node.is_a?(MilkTea::AST::DeferStmt) }
+    assert_instance_of MilkTea::AST::ReturnStmt, main_fn.body.last
   end
 
   def test_parses_if_elif_else_chains
@@ -326,6 +333,32 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::FormatExprPart, format_string.parts[1]
     assert_equal "count=", format_string.parts[0].value
     assert_instance_of MilkTea::AST::Identifier, format_string.parts[1].expression
+  end
+
+  def test_parses_format_string_literal_with_expression_colons_and_trailing_precision
+    source = <<~MT
+      module demo.format_colons
+
+      function main(flag: bool, handle: ptr[int]) -> int:
+          let text = f"value=\#{unsafe: read(handle)} precise=\#{if flag: 1.0 else: 2.0:.2}"
+          return int<-text.len
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    local_decl = ast.declarations.first.body.first
+    format_string = local_decl.value
+
+    assert_instance_of MilkTea::AST::FormatString, format_string
+
+    first_expr = format_string.parts[1]
+    assert_instance_of MilkTea::AST::FormatExprPart, first_expr
+    assert_instance_of MilkTea::AST::UnsafeExpr, first_expr.expression
+    assert_nil first_expr.format_spec
+
+    second_expr = format_string.parts[3]
+    assert_instance_of MilkTea::AST::FormatExprPart, second_expr
+    assert_instance_of MilkTea::AST::IfExpr, second_expr.expression
+    assert_equal({ kind: :precision, value: 2 }, second_expr.format_spec)
   end
 
   def test_parses_prefix_cast_with_identifier_rhs
@@ -1639,7 +1672,7 @@ class MilkTeaParserTest < Minitest::Test
 
   private
 
-  def demo_path
-    File.expand_path("../../examples/milk-tea-demo.mt", __dir__)
+  def language_standard_path
+    File.expand_path("../../examples/language_standard.mt", __dir__)
   end
 end

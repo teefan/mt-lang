@@ -110,6 +110,33 @@ class MilkTeaStdFmtLogTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_direct_string_sink_format_literals
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_fmt_string_sink",
+      "",
+      "import std.string as string",
+      "",
+      "function main() -> int:",
+      "    let value = 7",
+      "    var output = string.String.create()",
+      "    defer output.release()",
+      "    output.assign(f\"value=\#{value}\")",
+      "    output.append(f\" ok=\#{true}\")",
+      "    return int<-output.count()",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 15, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   def test_host_runtime_executes_float_format_literals
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

@@ -11,25 +11,27 @@ class MilkTeaBuildTest < Minitest::Test
     Dir.mktmpdir("milk-tea-build") do |dir|
       compiler_log = File.join(dir, "compiler.log")
       compiler_path = write_fake_compiler(dir, compiler_log)
-      output_path = File.join(dir, "milk-tea-demo")
-      c_path = File.join(dir, "milk-tea-demo.c")
+      output_path = File.join(dir, "language-standard")
+      c_path = File.join(dir, "language-standard.c")
 
-      result = MilkTea::Build.build(demo_path, output_path:, cc: compiler_path, keep_c_path: c_path)
+      result = MilkTea::Build.build(language_standard_path, output_path:, cc: compiler_path, keep_c_path: c_path)
 
       assert_equal File.expand_path(output_path), result.output_path
       assert_equal File.expand_path(c_path), result.c_path
       assert_equal File.expand_path(compiler_path), result.compiler
-      assert_includes result.link_flags, "-lraylib"
+      assert_includes result.link_flags, "-lm"
+      assert_includes result.link_flags, "-luv"
       assert File.exist?(output_path)
       assert File.exist?(c_path)
-      assert_match(/#include "raylib\.h"/, File.read(c_path))
+      assert_match(/#include "uv\.h"/, File.read(c_path))
       refute_match(/^#line\s+/m, File.read(c_path))
 
       invocation = File.read(compiler_log).lines(chomp: true)
       assert_includes invocation, "-std=c11"
       refute_includes invocation, File.expand_path(c_path)
       assert_includes invocation, File.expand_path(output_path)
-      assert_includes invocation, "-lraylib"
+      assert_includes invocation, "-lm"
+      assert_includes invocation, "-luv"
     end
   end
 
@@ -68,7 +70,7 @@ class MilkTeaBuildTest < Minitest::Test
 
   def test_build_reports_missing_compiler
     error = assert_raises(MilkTea::BuildError) do
-      MilkTea::Build.build(demo_path, cc: "/definitely/missing/cc")
+      MilkTea::Build.build(language_standard_path, cc: "/definitely/missing/cc")
     end
 
     assert_match(/C compiler not found/, error.message)
@@ -496,7 +498,8 @@ class MilkTeaBuildTest < Minitest::Test
     Dir.mktmpdir("milk-tea-build-raw-binding-flags") do |dir|
       compiler_log = File.join(dir, "compiler.log")
       compiler_path = write_fake_compiler(dir, compiler_log)
-      output_path = File.join(dir, "milk-tea-demo")
+      output_path = File.join(dir, "raylib-smoke")
+      source_path = write_raylib_smoke_source(dir)
       header_path = File.join(dir, "raylib.h")
       File.write(header_path, "")
 
@@ -514,7 +517,7 @@ class MilkTeaBuildTest < Minitest::Test
         ),
       ])
 
-      MilkTea::Build.build(demo_path, output_path:, cc: compiler_path, raw_bindings:)
+      MilkTea::Build.build(source_path, output_path:, cc: compiler_path, raw_bindings:)
 
       invocation = File.read(compiler_log).lines(chomp: true)
       assert_includes invocation, "-I#{dir}"
@@ -532,7 +535,8 @@ class MilkTeaBuildTest < Minitest::Test
     Dir.mktmpdir("milk-tea-build-raw-binding-prepare") do |dir|
       compiler_log = File.join(dir, "compiler.log")
       compiler_path = write_fake_compiler(dir, compiler_log)
-      output_path = File.join(dir, "milk-tea-demo")
+      output_path = File.join(dir, "raylib-smoke")
+      source_path = write_raylib_smoke_source(dir)
       header_path = File.join(dir, "raylib.h")
       File.write(header_path, "")
 
@@ -549,7 +553,7 @@ class MilkTeaBuildTest < Minitest::Test
         ),
       ])
 
-      MilkTea::Build.build(demo_path, output_path:, cc: compiler_path, raw_bindings:)
+      MilkTea::Build.build(source_path, output_path:, cc: compiler_path, raw_bindings:)
 
       assert_equal [File.expand_path(compiler_path)], prepared
     end
@@ -634,8 +638,22 @@ class MilkTeaBuildTest < Minitest::Test
 
   private
 
-  def demo_path
-    File.expand_path("../../examples/milk-tea-demo.mt", __dir__)
+  def language_standard_path
+    File.expand_path("../../examples/language_standard.mt", __dir__)
+  end
+
+  def write_raylib_smoke_source(dir)
+    path = File.join(dir, "raylib_smoke.mt")
+    File.write(path, [
+      "module demo.raylib_smoke",
+      "",
+      "import std.raylib as rl",
+      "",
+      "function main() -> int:",
+      "    return 0",
+      "",
+    ].join("\n"))
+    path
   end
 
   def write_fake_compiler(dir, log_path)

@@ -11,7 +11,7 @@ class MilkTeaRunTest < Minitest::Test
       output_path = File.join(dir, "demo-run")
       c_path = File.join(dir, "demo-run.c")
 
-      result = MilkTea::Run.run(demo_path, output_path:, cc: compiler_path, keep_c_path: c_path)
+      result = MilkTea::Run.run(language_standard_path, output_path:, cc: compiler_path, keep_c_path: c_path)
 
       assert_equal "hello\n", result.stdout
       assert_equal "warn\n", result.stderr
@@ -19,11 +19,14 @@ class MilkTeaRunTest < Minitest::Test
       assert_equal File.expand_path(output_path), result.output_path
       assert_equal File.expand_path(c_path), result.c_path
       assert_equal File.expand_path(compiler_path), result.compiler
-      assert_includes result.link_flags, "-lraylib"
+      assert_includes result.link_flags, "-lm"
+      assert_includes result.link_flags, "-luv"
       assert File.exist?(output_path)
       assert File.exist?(c_path)
       refute_match(/^#line\s+/m, File.read(c_path))
-      assert_includes File.read(compiler_log).lines(chomp: true), "-lraylib"
+      invocation = File.read(compiler_log).lines(chomp: true)
+      assert_includes invocation, "-lm"
+      assert_includes invocation, "-luv"
     end
   end
 
@@ -1802,8 +1805,8 @@ class MilkTeaRunTest < Minitest::Test
 
   private
 
-  def demo_path
-    File.expand_path("../../examples/milk-tea-demo.mt", __dir__)
+  def language_standard_path
+    File.expand_path("../../examples/language_standard.mt", __dir__)
   end
 
   def write_fake_script_compiler(dir, log_path, stdout:, stderr:, exit_status:)

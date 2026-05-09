@@ -2434,6 +2434,10 @@ module MilkTea
       end
 
       def lower_async_expression_statement(statement, env:)
+        if (sink_lowered = lower_format_string_sink_statement(statement.expression, env:, line: statement.line))
+          return sink_lowered
+        end
+
         lowered = []
         prepared_setup, prepared_expression = prepare_expression_for_inline_lowering(
           statement.expression,
@@ -2997,6 +3001,11 @@ module MilkTea
             lowered.concat(cleanup)
             lowered << IR::ReturnStmt.new(value:, line: statement.line, source_path: @current_analysis_path)
           when AST::ExpressionStmt
+            if (sink_lowered = lower_format_string_sink_statement(statement.expression, env: local_env, line: statement.line))
+              lowered.concat(sink_lowered)
+              next
+            end
+
             prepared_setup, prepared_expression, prepared_cleanups = prepare_expression_with_cleanups(
               statement.expression,
               env: local_env,
@@ -4116,7 +4125,7 @@ module MilkTea
         [setup, temp_name, temp_ref]
       end
 
-      def build_format_string_builder_call(format_string, env:)
+      def build_format_string_helper_plan(format_string, env:)
         helper_parts = []
         helper_params = []
         helper_arguments = []
@@ -4167,7 +4176,12 @@ module MilkTea
           end
         end
 
-        signature = format_string_builder_signature(helper_parts)
+        [setup, helper_params, helper_arguments, helper_parts]
+      end
+
+      def build_format_string_builder_call(format_string, env:)
+        setup, helper_params, helper_arguments, helper_parts = build_format_string_helper_plan(format_string, env:)
+        signature = format_string_helper_signature(:owned_string, helper_parts)
         helper_c_name = @format_builder_cache[signature]
         unless helper_c_name
           helper_c_name = "#{@module_prefix}__fmt_#{fresh_format_symbol}"
@@ -4178,9 +4192,26 @@ module MilkTea
         [setup, helper_c_name, helper_arguments]
       end
 
-      def format_string_builder_signature(helper_parts)
+      def build_string_format_sink_call(format_string, output_ref, env:, assign:)
+        setup, helper_params, helper_arguments, helper_parts = build_format_string_helper_plan(format_string, env:)
+        signature = format_string_helper_signature(assign ? :string_assign : :string_append, helper_parts)
+        helper_c_name = @format_builder_cache[signature]
+        unless helper_c_name
+          helper_c_name = "#{@module_prefix}__fmt_#{fresh_format_symbol}"
+          @synthetic_functions << build_format_string_sink_function(helper_c_name, helper_params, helper_parts, assign:)
+          @format_builder_cache[signature] = helper_c_name
+        end
+
+        [
+          setup,
+          IR::Call.new(callee: helper_c_name, arguments: [output_ref, *helper_arguments], type: @types.fetch("void")),
+        ]
+      end
+
+      def format_string_helper_signature(kind, helper_parts)
         [
           @module_prefix,
+          kind,
           helper_parts.map do |part|
             case part[:kind]
             when :text
@@ -4266,6 +4297,73 @@ module MilkTea
         )
       end
 
+      def build_format_string_sink_function(helper_c_name, helper_params, helper_parts, assign:)
+        output_name = "output"
+        output_c_name = "__mt_output"
+        output_ref = IR::Name.new(name: output_c_name, type: std_string_ref_type, pointer: false)
+        body = []
+
+        if assign
+          body << IR::ExpressionStmt.new(
+            expression: IR::Call.new(
+              callee: std_string_clear_c_name,
+              arguments: [output_ref],
+              type: @types.fetch("void"),
+            ),
+          )
+        end
+
+        helper_parts.each do |part|
+          if part[:kind] == :text
+            body << IR::ExpressionStmt.new(
+              expression: IR::Call.new(
+                callee: std_fmt_function_c_name("append"),
+                arguments: [output_ref, IR::StringLiteral.new(value: part[:value], type: @types.fetch("str"), cstring: false)],
+                type: @types.fetch("void"),
+              ),
+            )
+            next
+          end
+
+          if part[:kind] == :precision_expression
+            body << IR::ExpressionStmt.new(
+              expression: IR::Call.new(
+                callee: std_fmt_function_c_name(part[:append_function_name]),
+                arguments: [
+                  output_ref,
+                  IR::Name.new(name: part[:parameter_c_name], type: part[:parameter_type], pointer: false),
+                  IR::IntegerLiteral.new(value: part[:precision], type: @types.fetch("int")),
+                ],
+                type: @types.fetch("void"),
+              ),
+            )
+            next
+          end
+
+          body << IR::ExpressionStmt.new(
+            expression: IR::Call.new(
+              callee: std_fmt_function_c_name(part[:append_function_name]),
+              arguments: [
+                output_ref,
+                IR::Name.new(name: part[:parameter_c_name], type: part[:parameter_type], pointer: false),
+              ],
+              type: @types.fetch("void"),
+            ),
+          )
+        end
+
+        body << IR::ReturnStmt.new(value: nil)
+
+        IR::Function.new(
+          name: helper_c_name,
+          c_name: helper_c_name,
+          params: [IR::Param.new(name: output_name, c_name: output_c_name, type: std_string_ref_type, pointer: false), *helper_params],
+          return_type: @types.fetch("void"),
+          body: body,
+          entry_point: false,
+        )
+      end
+
       def format_string_has_dynamic_parts?(format_string)
         format_string.parts.any? { |part| part.is_a?(AST::FormatExprPart) }
       end
@@ -4302,6 +4400,20 @@ module MilkTea
         return :io_println if binding.owner.module_name == "std.io" && binding.name == "println"
         return :io_write_error if binding.owner.module_name == "std.io" && binding.name == "write_error"
         return :io_write_error_line if binding.owner.module_name == "std.io" && binding.name == "write_error_line"
+
+        nil
+      end
+
+      def format_string_sink_call_kind(kind, binding, arguments)
+        return nil unless binding
+
+        case kind
+        when :function
+          return :fmt_append if binding.owner.module_name == "std.fmt" && %w[append append_str].include?(binding.name) && arguments.length == 2 && arguments.last.value.is_a?(AST::FormatString)
+        when :method
+          return :string_append if binding.owner.module_name == "std.string" && binding.name == "append" && arguments.length == 1 && arguments.first.value.is_a?(AST::FormatString)
+          return :string_assign if binding.owner.module_name == "std.string" && binding.name == "assign" && arguments.length == 1 && arguments.first.value.is_a?(AST::FormatString)
+        end
 
         nil
       end
@@ -4356,6 +4468,10 @@ module MilkTea
         analysis_for_module("std.string").types.fetch("String")
       end
 
+      def std_string_ref_type
+        Types::GenericInstance.new("ref", [std_string_type])
+      end
+
       def std_string_create_c_name
         analysis = analysis_for_module("std.string")
         string_type = analysis.types.fetch("String")
@@ -4374,6 +4490,13 @@ module MilkTea
         analysis = analysis_for_module("std.string")
         string_type = analysis.types.fetch("String")
         binding = analysis.methods.fetch(string_type).fetch("from_str")
+        function_binding_c_name(binding, module_name: binding.owner.module_name, receiver_type: string_type)
+      end
+
+      def std_string_clear_c_name
+        analysis = analysis_for_module("std.string")
+        string_type = analysis.types.fetch("String")
+        binding = analysis.methods.fetch(string_type).fetch("clear")
         function_binding_c_name(binding, module_name: binding.owner.module_name, receiver_type: string_type)
       end
 
@@ -4871,6 +4994,60 @@ module MilkTea
         lowered_receiver
       end
 
+      def lower_string_sink_receiver_argument(receiver, env:)
+        lowered_receiver = lower_expression(receiver, env:)
+
+        return lowered_receiver if ref_type?(lowered_receiver.type)
+        return lowered_receiver if pointer_type?(lowered_receiver.type)
+
+        if lowered_receiver.is_a?(IR::Name) && lowered_receiver.pointer
+          return lowered_receiver
+        end
+
+        if lowered_receiver.is_a?(IR::Unary) && lowered_receiver.operator == "*"
+          return lowered_receiver.operand
+        end
+
+        IR::AddressOf.new(expression: lowered_receiver, type: std_string_ref_type)
+      end
+
+      def lower_format_string_sink_statement(expression, env:, line: nil)
+        return unless expression.is_a?(AST::Call)
+
+        kind, _callee_name, receiver, _callee_type, callee_binding = resolve_callee(expression.callee, env, arguments: expression.arguments)
+        sink_kind = format_string_sink_call_kind(kind, callee_binding, expression.arguments)
+        return unless sink_kind
+
+        env[:prepared_expression_cleanups] ||= []
+        start_index = env[:prepared_expression_cleanups].length
+
+        case sink_kind
+        when :fmt_append
+          output_ref = lower_contextual_expression(expression.arguments.first.value, env:, expected_type: std_string_ref_type)
+          format_string = expression.arguments.last.value
+          setup, call = build_string_format_sink_call(format_string, output_ref, env:, assign: false)
+        when :string_append
+          output_ref = lower_string_sink_receiver_argument(receiver, env:)
+          format_string = expression.arguments.first.value
+          setup, call = build_string_format_sink_call(format_string, output_ref, env:, assign: false)
+        when :string_assign
+          output_ref = lower_string_sink_receiver_argument(receiver, env:)
+          format_string = expression.arguments.first.value
+          setup, call = build_string_format_sink_call(format_string, output_ref, env:, assign: true)
+        else
+          raise LoweringError, "unsupported format sink kind #{sink_kind}"
+        end
+
+        cleanup_count = env[:prepared_expression_cleanups].length - start_index
+        cleanups = cleanup_count.positive? ? env[:prepared_expression_cleanups].slice!(start_index, cleanup_count) : []
+
+        [
+          *setup,
+          IR::ExpressionStmt.new(expression: call, line: line || expression.line, source_path: @current_analysis_path),
+          *cleanups.flat_map(&:itself),
+        ]
+      end
+
       def lower_addr_expression(expression, env:, target_type:)
         lowered_expression = lower_expression(expression, env:)
         return cast_expression(lowered_expression, target_type) if lowered_expression.is_a?(IR::Name) && lowered_expression.pointer
@@ -5211,16 +5388,25 @@ module MilkTea
       end
 
       def lower_foreign_pointer_argument_value(parameter, argument, env:)
+        slot_type = foreign_slot_boundary_value_type(parameter.type)
         operand = foreign_argument_expression(argument)
         address = IR::AddressOf.new(
           expression: lower_expression(operand, env:),
-          type: pointer_to(parameter.type),
+          type: pointer_to(slot_type),
         )
 
         converted = foreign_identity_projection_expression(address, parameter.boundary_type)
         return converted if converted
 
         raise LoweringError, "unsupported foreign pointer boundary mapping #{parameter.type} as #{parameter.boundary_type}"
+      end
+
+      def foreign_slot_boundary_value_type(type)
+        if type.is_a?(Types::Nullable) && pointer_type?(type.base)
+          return type.base
+        end
+
+        type
       end
 
       def prepare_foreign_in_argument(parameter, argument, source_env:, lowered:, env:)
@@ -6554,7 +6740,7 @@ module MilkTea
               method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
               if method_binding.type.receiver_type.nil?
                 method_binding = specialize_function_binding(method_binding, arguments, env, receiver_type: type_expr) if method_binding.type_params.any?
-                return [:associated_method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type), nil, method_binding.type]
+                return [:associated_method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type), nil, method_binding.type, method_binding]
               end
             end
 
@@ -6578,6 +6764,7 @@ module MilkTea
               function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type),
               callee.receiver,
               method_binding.type,
+              method_binding,
             ]
           end
 

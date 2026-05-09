@@ -814,7 +814,7 @@ module MilkTea
           with_indent do
             statement.then_body.each { |nested| emit_statement(nested) }
           end
-          unless statement.else_body.empty?
+          if statement.else_body && !statement.else_body.empty?
             line("else:")
             with_indent do
               statement.else_body.each { |nested| emit_statement(nested) }
@@ -824,7 +824,11 @@ module MilkTea
           line("switch #{render_expression(statement.expression)}:")
           with_indent do
             statement.cases.each do |switch_case|
-              line("case #{render_expression(switch_case.value)}:")
+              if switch_case.is_a?(IR::SwitchDefaultCase)
+                line("default:")
+              else
+                line("case #{render_expression(switch_case.value)}:")
+              end
               with_indent do
                 switch_case.body.each { |nested| emit_statement(nested) }
               end

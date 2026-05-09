@@ -5,18 +5,21 @@ require "tempfile"
 require_relative "../test_helper"
 
 class MilkTeaCodegenTest < Minitest::Test
-  def test_generate_c_for_demo_emits_structs_functions_and_imported_headers
-    program = MilkTea::ModuleLoader.check_program(demo_path)
+  def test_generate_c_for_language_standard_emits_functions_and_imported_headers
+    program = MilkTea::ModuleLoader.check_program(language_standard_path)
     generated = MilkTea::Codegen.generate_c(program)
 
     assert_match(/#include <stdbool\.h>/, generated)
     assert_match(/#include <stdint\.h>/, generated)
-    assert_match(/#include "raylib\.h"/, generated)
-    assert_match(/typedef struct demo_bouncing_ball_Ball/, generated)
-    assert_match(/static void demo_bouncing_ball_Ball_update\(demo_bouncing_ball_Ball \*this, float dt\)/, generated)
-    assert_match(/demo_bouncing_ball_Ball_update\(&ball, dt\);/, generated)
+    assert_match(/#include "uv\.h"/, generated)
+    assert_match(/#include "math\.h"/, generated)
+    assert_match(/typedef struct examples_language_standard_AppState/, generated)
+    assert_match(/static void examples_language_standard_AppState_touch\(examples_language_standard_AppState \*this, int32_t step\)/, generated)
+    assert_match(/examples_language_standard_AppState_touch\(&state, 3\);/, generated)
+    assert_match(/static int32_t examples_language_standard_main\(void\);/, generated)
     assert_match(/int32_t main\(void\)/, generated)
-    assert_equal 1, generated.scan("CloseWindow();").length
+    assert_match(/examples_language_standard_printf\("extern -> %s %d\\n"/, generated)
+    refute_match(/#include "raylib\.h"/, generated)
   end
 
     def test_generate_c_for_local_enums_flags_and_unions
@@ -709,6 +712,29 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/std_string_String_release\(&__mt_fmt_string_1\);/, generated)
   end
 
+  def test_generate_c_for_direct_string_sink_format_literals
+    source = <<~MT
+      module demo.format_sink_codegen
+
+      import std.string as string
+
+      function main(value: int) -> int:
+          var output = string.String.create()
+          defer output.release()
+          output.assign(f"value=\#{value}")
+          output.append(f" ok=\#{true}")
+          return int<-output.count()
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static void demo_format_sink_codegen__fmt_\d+\(/, generated)
+    assert_match(/std_string_String_clear\(__mt_output\);/, generated)
+    assert_match(/std_fmt_append_int\(__mt_output, __mt_fmt_part_1\);/, generated)
+    assert_match(/std_fmt_append_bool\(__mt_output, __mt_fmt_part_1\);/, generated)
+    refute_match(/static std_string_String demo_format_sink_codegen__fmt_\d+\(/, generated)
+  end
+
   def test_generate_c_reuses_identical_format_string_helpers
     source = <<~MT
       module demo.format_dedup_codegen
@@ -1117,6 +1143,38 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/UseNames\(/, generated)
     assert_match(/&labels\[0\]/, generated)
     assert_match(/&active/, generated)
+  end
+
+  def test_generate_c_for_foreign_defs_with_nullable_pointer_inout_slot
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      function main() -> int:
+          var state: ptr[char]? = null
+          let token = sample.next_token(null[ptr[char]], c",", state)
+          return if token == null: 0 else: 1
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        external module std.c.sample:
+            external function NextToken(text: ptr[char]?, delim: cstr, state: ptr[ptr[char]]) -> ptr[char]?
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        public foreign function next_token(text: ptr[char]?, delim: cstr, inout state: ptr[char]?) -> ptr[char]? = c.NextToken(text, delim, state)
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/NextToken\(/, generated)
+    assert_match(/&state/, generated)
   end
 
   def test_generate_c_for_contextual_string_literals_as_cstr
@@ -3913,8 +3971,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
   private
 
-  def demo_path
-    File.expand_path("../../examples/milk-tea-demo.mt", __dir__)
+  def language_standard_path
+    File.expand_path("../../examples/language_standard.mt", __dir__)
   end
 
   def generate_c_from_source(source)
