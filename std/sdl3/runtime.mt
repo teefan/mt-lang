@@ -6,7 +6,7 @@ import std.string as string
 
 
 function run_app_no_args_uninitialized() -> int:
-    panic(c"std.sdl3.runtime.run_app_no_args callback not initialized")
+    fatal(c"std.sdl3.runtime.run_app_no_args callback not initialized")
 
 
 var run_app_no_args_slot: array[fn() -> int, 1] = array[fn() -> int, 1](run_app_no_args_uninitialized)
@@ -24,7 +24,7 @@ public function run_app_no_args(argc: int, argv: ptr[ptr[char]], main_function: 
 
 public function require_ptr[T](value: ptr[T]?, message: str) -> ptr[T]:
     if value == null:
-        panic(message)
+        fatal(message)
 
     return unsafe: ptr[T]<-value
 

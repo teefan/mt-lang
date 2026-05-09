@@ -29,7 +29,7 @@ public function create(slot_size_bytes: ptr_uint, slot_count: ptr_uint) -> Pool:
 public function create_aligned(slot_size_bytes: ptr_uint, slot_count: ptr_uint, alignment: ptr_uint) -> Pool:
     let normalized_alignment = heap.normalize_alignment(alignment)
     if normalized_alignment == 0:
-        panic(c"pool.create_aligned requires a power-of-two alignment")
+        fatal(c"pool.create_aligned requires a power-of-two alignment")
 
     if slot_size_bytes == 0 or slot_count == 0:
         return Pool(
@@ -42,17 +42,17 @@ public function create_aligned(slot_size_bytes: ptr_uint, slot_count: ptr_uint, 
         )
 
     if heap.mul_overflows(slot_size_bytes, slot_count):
-        panic(c"pool.create size overflow")
+        fatal(c"pool.create size overflow")
 
     let total_size = slot_size_bytes * slot_count
     let memory = heap.alloc_bytes_aligned(total_size, normalized_alignment)
     if memory == null:
-        panic(c"pool.create_aligned out of memory")
+        fatal(c"pool.create_aligned out of memory")
 
     let occupancy = heap.alloc_zeroed[bool](slot_count)
     if occupancy == null:
         heap.release_bytes(memory)
-        panic(c"pool.create occupancy out of memory")
+        fatal(c"pool.create occupancy out of memory")
 
     return unsafe: Pool(
             memory = ptr[ubyte]<-memory,
@@ -69,7 +69,7 @@ public function slot_size_for[T]() -> ptr_uint:
     let alignment = ptr_uint<-align_of(T)
     let mask = alignment - 1
     if size > heap.ptr_uint_max() - mask:
-        panic(c"pool.slot_size_for overflow")
+        fatal(c"pool.slot_size_for overflow")
 
     return (size + mask) & ~mask
 

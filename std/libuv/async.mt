@@ -35,7 +35,7 @@ function work_state[T](frame: ptr[void]) -> ptr[WorkState[T]]:
 
 function require_current_loop() -> rt.Loop:
     if not current_loop_active:
-        panic(c"libuv.async requires an active loop; use async.block_on or async.run, or call the explicit *_on helpers")
+        fatal(c"libuv.async requires an active loop; use async.block_on or async.run, or call the explicit *_on helpers")
     return current_loop
 
 
@@ -187,7 +187,7 @@ public function work_take_result[T](frame: ptr[void]) -> T:
     let state = work_state[T](frame)
     unsafe:
         if state.status != 0:
-            panic(c"libuv.async.work failed")
+            fatal(c"libuv.async.work failed")
         return state.result
 
 
@@ -230,7 +230,7 @@ public function work_on[T](loop: rt.Loop, run_work: fn() -> T) -> Task[T]:
     if status != 0:
         unsafe: rt.request_release(ref_of(state.request))
         heap.release[WorkState[T]](state)
-        panic(c"libuv.async.work queue_work failed")
+        fatal(c"libuv.async.work queue_work failed")
     return work_task[T](state)
 
 
@@ -244,13 +244,13 @@ function must_create_loop() -> rt.Loop:
         status.Status.ok as payload:
             return payload.value
         status.Status.err:
-            panic(c"libuv.async.create_loop failed")
+            fatal(c"libuv.async.create_loop failed")
     return zero[rt.Loop]
 
 
 function must_release_loop(loop: ref[rt.Loop]) -> void:
     if rt.loop_release(loop) != 0:
-        panic(c"libuv.async.loop_release failed")
+        fatal(c"libuv.async.loop_release failed")
     return
 
 
@@ -265,7 +265,7 @@ public function ready[T](task: Task[T]) -> bool:
 
 public function finish[T](task: Task[T]) -> T:
     if not ready[T](task):
-        panic(c"libuv.async.finish called before task completed")
+        fatal(c"libuv.async.finish called before task completed")
 
     let result = task.take_result(task.frame)
     task.release(task.frame)
@@ -276,7 +276,7 @@ public function block_on_loop[T](loop: rt.Loop, task: Task[T]) -> T:
     while not task.ready(task.frame):
         let status = rt.loop_run_default(loop)
         if status != 0:
-            panic(c"libuv.async.block_on loop_run_default failed")
+            fatal(c"libuv.async.block_on loop_run_default failed")
 
     let result = task.take_result(task.frame)
     task.release(task.frame)
@@ -287,7 +287,7 @@ public function run_loop(loop: rt.Loop, task: Task[void]) -> void:
     while not task.ready(task.frame):
         let status = rt.loop_run_default(loop)
         if status != 0:
-            panic(c"libuv.async.run loop_run_default failed")
+            fatal(c"libuv.async.run loop_run_default failed")
 
     task.take_result(task.frame)
     task.release(task.frame)

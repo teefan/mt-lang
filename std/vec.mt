@@ -78,7 +78,7 @@ methods Vec[T]:
 
     public edit function reserve(min_capacity: ptr_uint) -> void:
         if not this.try_reserve(min_capacity):
-            panic(c"vec.reserve out of memory")
+            fatal(c"vec.reserve out of memory")
         return
 
 
@@ -101,17 +101,17 @@ methods Vec[T]:
 
     public edit function push(item: T) -> void:
         if not this.try_push(item):
-            panic(c"vec.push out of memory")
+            fatal(c"vec.push out of memory")
         return
 
 
     public function get(index: ptr_uint) -> T:
         if index >= this.len:
-            panic(c"vec.get index out of bounds")
+            fatal(c"vec.get index out of bounds")
 
         let data = this.data
         if data == null:
-            panic(c"vec.get missing storage")
+            fatal(c"vec.get missing storage")
 
         unsafe:
             let data_ptr = ptr[T]<-data
@@ -120,11 +120,11 @@ methods Vec[T]:
 
     public edit function set(index: ptr_uint, item: T) -> void:
         if index >= this.len:
-            panic(c"vec.set index out of bounds")
+            fatal(c"vec.set index out of bounds")
 
         let data = this.data
         if data == null:
-            panic(c"vec.set missing storage")
+            fatal(c"vec.set missing storage")
 
         unsafe:
             let data_ptr = ptr[T]<-data
@@ -139,7 +139,7 @@ methods Vec[T]:
         let last_index = this.len - 1
         let data = this.data
         if data == null:
-            panic(c"vec.pop missing storage")
+            fatal(c"vec.pop missing storage")
 
         this.len -= 1
         unsafe:
@@ -148,12 +148,12 @@ methods Vec[T]:
 
     public edit function remove_swap(index: ptr_uint) -> T:
         if index >= this.len:
-            panic(c"vec.remove_swap index out of bounds")
+            fatal(c"vec.remove_swap index out of bounds")
 
         let last_index = this.len - 1
         let data = this.data
         if data == null:
-            panic(c"vec.remove_swap missing storage")
+            fatal(c"vec.remove_swap missing storage")
 
         unsafe:
             let data_ptr = ptr[T]<-data
@@ -165,11 +165,11 @@ methods Vec[T]:
 
     public edit function remove_ordered(index: ptr_uint) -> T:
         if index >= this.len:
-            panic(c"vec.remove_ordered index out of bounds")
+            fatal(c"vec.remove_ordered index out of bounds")
 
         let data = this.data
         if data == null:
-            panic(c"vec.remove_ordered missing storage")
+            fatal(c"vec.remove_ordered missing storage")
 
         unsafe:
             let data_ptr = ptr[T]<-data

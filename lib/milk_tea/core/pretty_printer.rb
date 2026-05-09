@@ -418,7 +418,14 @@ module MilkTea
           text = "#{statement.kind} #{statement.name}"
           text += ": #{render_type(statement.type)}" if statement.type
           text += " = #{render_expression(statement.value)}" if statement.value
-          line(text)
+          if statement.else_body
+            line("#{text} else:")
+            with_indent do
+              statement.else_body.each { |nested| emit_statement(nested) }
+            end
+          else
+            line(text)
+          end
         when AST::Assignment
           line("#{render_expression(statement.target)} #{statement.operator} #{render_expression(statement.value)}")
         when AST::IfStmt
@@ -498,6 +505,8 @@ module MilkTea
       def render_inline_statement(statement)
         case statement
         when AST::LocalDecl
+          return nil if statement.else_body
+
           text = +"#{statement.kind} #{statement.name}"
           text << ": #{render_type(statement.type)}" if statement.type
           text << " = #{render_expression(statement.value)}" if statement.value

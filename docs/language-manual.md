@@ -496,7 +496,7 @@ Type arguments can be:
 
 Special recognized callables:
 
-- `panic(message)`
+- `fatal(message)`
 - `ref_of(x)`
 - `const_ptr_of(x)`
 - `read(r)`

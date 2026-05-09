@@ -20,7 +20,7 @@ module MilkTea
       lines = []
       constants = emitted_constants
       headers = @program.includes.map(&:header)
-      if uses_panic_helper?
+      if uses_fatal_helper?
         headers << "<stdio.h>"
         headers << "<stdlib.h>"
       end
@@ -33,8 +33,8 @@ module MilkTea
       lines.concat(emit_string_type)
       lines << ""
 
-      if uses_panic_helper?
-        lines.concat(emit_panic_helper)
+      if uses_fatal_helper?
+        lines.concat(emit_fatal_helper)
         lines << ""
       end
 
@@ -394,17 +394,17 @@ module MilkTea
       end
     end
 
-    def uses_panic_helper?
-      uses_mt_panic_helper? || uses_mt_panic_str_helper?
+    def uses_fatal_helper?
+      uses_mt_fatal_helper? || uses_mt_fatal_str_helper?
     end
 
-    def uses_mt_panic_helper?
+    def uses_mt_fatal_helper?
       collect_checked_array_index_types.any? || collect_checked_span_index_types.any? ||
-        emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_panic mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_assign mt_str_builder_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp]) }
+        emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_fatal mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_assign mt_str_builder_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp]) }
     end
 
-    def uses_mt_panic_str_helper?
-      emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_panic_str]) }
+    def uses_mt_fatal_str_helper?
+      emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_fatal_str]) }
     end
 
     def uses_foreign_temp_cstr_helpers?
@@ -488,12 +488,12 @@ module MilkTea
       end
     end
 
-    def emit_panic_helper
+    def emit_fatal_helper
       lines = []
 
-      if uses_mt_panic_helper?
+      if uses_mt_fatal_helper?
         lines.concat([
-          "static void mt_panic(const char* message) {",
+          "static void mt_fatal(const char* message) {",
           "#{INDENT}fputs(message, stderr);",
           "#{INDENT}fputc('\\n', stderr);",
           "#{INDENT}abort();",
@@ -501,10 +501,10 @@ module MilkTea
         ])
       end
 
-      if uses_mt_panic_str_helper?
+      if uses_mt_fatal_str_helper?
         lines << "" unless lines.empty?
         lines.concat([
-          "static void mt_panic_str(mt_str message) {",
+          "static void mt_fatal_str(mt_str message) {",
           "#{INDENT}fwrite(message.data, 1, message.len, stderr);",
           "#{INDENT}fputc('\\n', stderr);",
           "#{INDENT}abort();",
@@ -539,7 +539,7 @@ module MilkTea
           "static const char* mt_foreign_str_to_cstr_temp(mt_str value) {",
           "#{INDENT}char* data = (char*)malloc(value.len + 1);",
           "#{INDENT}uintptr_t index = 0;",
-          "#{INDENT}if (data == NULL) mt_panic(\"foreign str temporary allocation failed\");",
+          "#{INDENT}if (data == NULL) mt_fatal(\"foreign str temporary allocation failed\");",
           "#{INDENT}while (index < value.len) {",
           "#{INDENT * 2}data[index] = value.data[index];",
           "#{INDENT * 2}index++;",
@@ -574,13 +574,13 @@ module MilkTea
           "#{INDENT}}",
           "#{INDENT}if (values.len > 0) {",
           "#{INDENT * 2}items = (char**)malloc(values.len * sizeof(char*));",
-          "#{INDENT * 2}if (items == NULL) mt_panic(\"foreign string-list temporary allocation failed\");",
+          "#{INDENT * 2}if (items == NULL) mt_fatal(\"foreign string-list temporary allocation failed\");",
           "#{INDENT}}",
           "#{INDENT}if (total_bytes > 0) {",
           "#{INDENT * 2}data = (char*)malloc(total_bytes);",
           "#{INDENT * 2}if (data == NULL) {",
           "#{INDENT * 3}free(items);",
-          "#{INDENT * 3}mt_panic(\"foreign string-list temporary allocation failed\");",
+          "#{INDENT * 3}mt_fatal(\"foreign string-list temporary allocation failed\");",
           "#{INDENT * 2}}",
           "#{INDENT}}",
           "#{INDENT}index = 0;",
@@ -723,8 +723,8 @@ module MilkTea
           "#{INDENT * 2}while (current < cap + 1 && data[current] != '\\0') {",
           "#{INDENT * 3}current++;",
           "#{INDENT * 2}}",
-          "#{INDENT * 2}if (current > cap) mt_panic(\"str_builder text requires a trailing NUL within capacity\");",
-          "#{INDENT * 2}if (!mt_is_valid_utf8(data, current)) mt_panic(\"str_builder text must be valid UTF-8\");",
+          "#{INDENT * 2}if (current > cap) mt_fatal(\"str_builder text requires a trailing NUL within capacity\");",
+          "#{INDENT * 2}if (!mt_is_valid_utf8(data, current)) mt_fatal(\"str_builder text must be valid UTF-8\");",
           "#{INDENT * 2}*len = current;",
           "#{INDENT * 2}*dirty = false;",
           "#{INDENT}}",
@@ -758,7 +758,7 @@ module MilkTea
         lines << "" unless lines.empty?
         lines.concat([
           "static void mt_str_builder_assign(mt_str value, char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {",
-          "#{INDENT}if (value.len > cap) mt_panic(\"str_builder.assign exceeds capacity\");",
+          "#{INDENT}if (value.len > cap) mt_fatal(\"str_builder.assign exceeds capacity\");",
           "#{INDENT}memcpy(data, value.data, value.len);",
           "#{INDENT}data[value.len] = '\\0';",
           "#{INDENT}if (value.len < cap + 1) memset(data + value.len + 1, 0, cap - value.len);",
@@ -773,7 +773,7 @@ module MilkTea
         lines.concat([
           "static void mt_str_builder_append(mt_str value, char* data, uintptr_t cap, uintptr_t* len, bool* dirty) {",
           "#{INDENT}uintptr_t current = mt_str_builder_len(data, cap, len, dirty);",
-          "#{INDENT}if (value.len > cap - current) mt_panic(\"str_builder.append exceeds capacity\");",
+          "#{INDENT}if (value.len > cap - current) mt_fatal(\"str_builder.append exceeds capacity\");",
           "#{INDENT}memcpy(data + current, value.data, value.len);",
           "#{INDENT}current += value.len;",
           "#{INDENT}data[current] = '\\0';",
@@ -811,7 +811,7 @@ module MilkTea
       params = [c_declaration(type, '(*array)'), c_declaration(Types::Primitive.new('ptr_uint'), 'index')].join(', ')
       [
         "static inline #{c_function_declaration(pointer_to(array_element_type(type)), helper_name, params)} {",
-        "#{INDENT}if (index >= #{array_length(type)}) mt_panic(\"array index out of bounds\");",
+        "#{INDENT}if (index >= #{array_length(type)}) mt_fatal(\"array index out of bounds\");",
         "#{INDENT}return &(*array)[index];",
         "}",
       ]
@@ -822,7 +822,7 @@ module MilkTea
       params = [c_declaration(type, 'span'), c_declaration(Types::Primitive.new('ptr_uint'), 'index')].join(', ')
       [
         "static inline #{c_function_declaration(pointer_to(type.element_type), helper_name, params)} {",
-        "#{INDENT}if (index >= span.len) mt_panic(\"span index out of bounds\");",
+        "#{INDENT}if (index >= span.len) mt_fatal(\"span index out of bounds\");",
         "#{INDENT}return &span.data[index];",
         "}",
       ]

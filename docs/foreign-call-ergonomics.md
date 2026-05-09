@@ -246,8 +246,8 @@ let value = expr else:
 Semantics:
 
 - if `expr` has type `T?`, the `else` block runs when the value is `null`; otherwise `value` is bound as non-null `T`
-- if `expr` has type `status.Status[T, E]`, the `else` block runs on `.err`; otherwise `value` is bound as `T`
-- the `else` block must exit the current control-flow path via `return`, `break`, `continue`, or `panic`
+- initial implementation should ship for `T?` first; `status.Status[T, E]` can follow once the nullable path is proven in real code
+- the `else` block must exit the current control-flow path via `return`, `break`, `continue`, or `fatal`
 
 Examples:
 
@@ -262,7 +262,7 @@ let texture = rl.load_texture(path) else:
     return 1
 ```
 
-For status-style imported calls, the imported surface should prefer `status.Status[void, ForeignError]` so the same feature works:
+Follow-up direction for status-style imported calls once the nullable form is in place:
 
 ```mt
 let _ = sdl.init(sdl.INIT_VIDEO) else:

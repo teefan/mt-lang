@@ -97,6 +97,250 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("main")
   end
 
+  def test_type_checks_let_else_nullable_flow_narrowing
+    source = <<~MT
+      module demo.null_flow
+
+      function read_handle(handle: ptr[int]?) -> int:
+          let value = handle else:
+              return 0
+          unsafe:
+              return read(value)
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("read_handle")
+  end
+
+  def test_type_checks_for_loop_over_custom_iterator_protocol
+    source = <<~MT
+      module demo.iterator_for
+
+      struct Numbers:
+          stop: int
+
+      struct NumbersIter:
+          index: int
+          stop: int
+          current: int
+
+      methods Numbers:
+          public function iter() -> NumbersIter:
+              return NumbersIter(index = 0, stop = this.stop, current = 0)
+
+      methods NumbersIter:
+          public edit function next() -> ptr[int]?:
+              if this.index >= this.stop:
+                  return null[ptr[int]]
+              this.current = this.index
+              this.index += 1
+              unsafe:
+                  return ptr_of(this.current)
+
+      function main() -> int:
+          var total = 0
+          for value in Numbers(stop = 3):
+              unsafe:
+                  total += read(value)
+          return total
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_for_loop_iterator_next_without_nullable_pointer_item
+    source = <<~MT
+      module demo.iterator_for
+
+      struct Numbers:
+          stop: int
+
+      struct NumbersIter:
+          index: int
+
+      methods Numbers:
+          public function iter() -> NumbersIter:
+              return NumbersIter(index = this.stop)
+
+      methods NumbersIter:
+          public edit function next() -> ptr[int]:
+              unsafe:
+                  return ptr_of(this.index)
+
+      function main() -> int:
+          for value in Numbers(stop = 1):
+              unsafe:
+                  return read(value)
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/next must return bool or a nullable pointer-like item/, error.message)
+  end
+
+  def test_type_checks_for_loop_over_bool_current_iterator_protocol
+    source = <<~MT
+      module demo.iterator_current
+
+      struct Numbers:
+          stop: int
+
+      struct NumbersIter:
+          index: int
+          stop: int
+
+      methods Numbers:
+          public function iter() -> NumbersIter:
+              return NumbersIter(index = 0, stop = this.stop)
+
+      methods NumbersIter:
+          public edit function next() -> bool:
+              if this.index >= this.stop:
+                  return false
+              this.index += 1
+              return true
+
+          public function current() -> int:
+              return this.index - 1
+
+      function main() -> int:
+          var total = 0
+          for value in Numbers(stop = 3):
+              total += value
+          return total
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_struct_span_for_loop_as_mutable_alias
+    source = <<~MT
+      module demo.for_ref
+
+      struct Position:
+          x: int
+          y: int
+
+      function apply(items: span[Position]) -> void:
+          for item in items:
+              item.x += 1
+              item.y += 2
+          return
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("apply")
+  end
+
+  def test_type_checks_parallel_collection_for_loop
+    source = <<~MT
+      module demo.parallel_for
+
+      struct Position:
+          x: int
+          y: int
+
+      struct Velocity:
+          x: int
+          y: int
+
+      function apply(entities: span[int], positions: span[Position], velocities: span[Velocity]) -> int:
+          var total = 0
+          for entity, position, velocity in entities, positions, velocities:
+              position.x += velocity.x
+              position.y += velocity.y
+              total += entity
+          return total
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("apply")
+  end
+
+  def test_rejects_parallel_for_loop_in_async_function
+    source = <<~MT
+      module demo.parallel_for
+
+      async function worker(values: span[int], other: span[int]) -> int:
+          for left, right in values, other:
+              if left == right:
+                  return 1
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/async functions do not yet support parallel for loops/, error.message)
+  end
+
+  def test_type_checks_owned_foreign_release_after_let_else
+    root_source = <<~MT
+      module demo.main
+
+      import std.window as win
+
+      function main() -> void:
+          let window = win.create() else:
+              return
+          win.destroy(window)
+    MT
+
+    imported_sources = {
+      "std/c/window.mt" => <<~MT,
+        external module std.c.window:
+            include "window.h"
+
+            external function CreateWindow() -> ptr[void]?
+            external function DestroyWindow(window: ptr[void]?) -> void
+      MT
+      "std/window.mt" => <<~MT,
+        module std.window
+
+        import std.c.window as c
+
+        public opaque Window
+
+        public foreign function create() -> Window? = c.CreateWindow
+        public foreign function destroy(consuming window: Window) -> void = c.DestroyWindow
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_let_else_without_terminating_else_body
+    source = <<~MT
+      module demo.null_flow
+
+      function read_handle(handle: ptr[int]?) -> int:
+          let value = handle else:
+              let fallback = 0
+          unsafe:
+              return read(value)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/else block for value must exit control flow/, error.message)
+  end
+
   def test_type_checks_if_expression
     source = <<~MT
       module demo.if_expr
@@ -1627,7 +1871,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_rejects_owned_foreign_release_outside_expression_statement
+  def test_type_checks_owned_foreign_release_inside_defer_expression
     root_source = <<~MT
       module demo.main
 
@@ -1659,46 +1903,84 @@ class MilkTeaSemaTest < Minitest::Test
       MT
     }
 
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_owned_foreign_release_inside_defer_block
+    root_source = <<~MT
+      module demo.main
+
+      import std.window as win
+
+      function main() -> void:
+          let window = win.create()
+          if window != null:
+              defer:
+                  win.destroy(window)
+    MT
+
+    imported_sources = {
+      "std/c/window.mt" => <<~MT,
+        external module std.c.window:
+            include "window.h"
+
+            external function CreateWindow() -> ptr[void]?
+            external function DestroyWindow(window: ptr[void]?) -> void
+      MT
+      "std/window.mt" => <<~MT,
+        module std.window
+
+        import std.c.window as c
+
+        public opaque Window
+
+        public foreign function create() -> Window? = c.CreateWindow
+        public foreign function destroy(consuming window: Window) -> void = c.DestroyWindow
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_owned_foreign_release_in_local_initializer
+    root_source = <<~MT
+      module demo.main
+
+      import std.window as win
+
+      function main() -> void:
+          let window = win.create()
+          if window != null:
+              let released = win.destroy(window)
+    MT
+
+    imported_sources = {
+      "std/c/window.mt" => <<~MT,
+        external module std.c.window:
+            include "window.h"
+
+            external function CreateWindow() -> ptr[void]?
+            external function DestroyWindow(window: ptr[void]?) -> void
+      MT
+      "std/window.mt" => <<~MT,
+        module std.window
+
+        import std.c.window as c
+
+        public opaque Window
+
+        public foreign function create() -> Window? = c.CreateWindow
+        public foreign function destroy(consuming window: Window) -> void = c.DestroyWindow
+      MT
+    }
+
     error = assert_raises(MilkTea::SemaError) do
-
-      def test_type_checks_owned_foreign_release_inside_defer_block
-        root_source = <<~MT
-          module demo.main
-
-          import std.window as win
-
-          function main() -> void:
-              let window = win.create()
-              if window != null:
-                  defer:
-                      win.destroy(window)
-        MT
-
-        imported_sources = {
-          "std/c/window.mt" => <<~MT,
-            external module std.c.window:
-                include "window.h"
-
-                external function CreateWindow() -> ptr[void]?
-                external function DestroyWindow(window: ptr[void]?) -> void
-          MT
-          "std/window.mt" => <<~MT,
-            module std.window
-
-            import std.c.window as c
-
-            public opaque Window
-
-            public foreign function create() -> Window? = c.CreateWindow
-            public foreign function destroy(consuming window: Window) -> void = c.DestroyWindow
-          MT
-        }
-
-        program = check_program_source(root_source, imported_sources)
-        result = program.root_analysis
-
-        assert_equal true, result.functions.key?("main")
-      end
       check_program_source(root_source, imported_sources)
     end
 
@@ -2128,12 +2410,12 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/unknown callable err/, err_error.message)
   end
 
-  def test_type_checks_panic_statement_with_string_message
+  def test_type_checks_fatal_statement_with_string_message
     source = <<~MT
-      module demo.panic
+      module demo.fatal
 
       function main() -> int:
-          panic("bad state")
+          fatal("bad state")
           return 0
     MT
 
@@ -2196,7 +2478,7 @@ class MilkTeaSemaTest < Minitest::Test
 
           if text.len == ptr_uint<-11 and part.len == ptr_uint<-5:
               return int<-part.len
-          panic(copied)
+          fatal(copied)
           return 0
     MT
 
@@ -2817,6 +3099,124 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_import_of_public_methods_on_imported_receiver_types
+    source = <<~MT
+      module demo.main
+
+      import demo.ext as ext
+
+      function main() -> int:
+          let counter = ext.make_counter()
+          return counter.read()
+    MT
+
+    imported = {
+      "demo/dep.mt" => <<~MT,
+        module demo.dep
+
+        public struct Counter:
+            value: int
+      MT
+      "demo/ext.mt" => <<~MT,
+        module demo.ext
+
+        import demo.dep as dep
+
+        methods dep.Counter:
+            public function read() -> int:
+                return this.value
+
+        public function make_counter() -> dep.Counter:
+            return dep.Counter(value = 7)
+      MT
+    }
+
+    result = check_program_source(source, imported).root_analysis
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_methods_on_opaque_receivers
+    source = <<~MT
+      module demo.opaque_methods
+
+      opaque Handle
+
+      methods Handle:
+          public function ready() -> bool:
+              return true
+
+      function main(handle: Handle) -> bool:
+          return handle.ready()
+    MT
+
+    result = check_program_source(source).root_analysis
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_methods_on_pointer_receivers_without_unsafe
+    source = <<~MT
+      module demo.pointer_methods
+
+      opaque Handle
+
+      methods ptr[Handle]:
+          public function ready() -> bool:
+              return true
+
+      function main(handle: ptr[Handle]) -> bool:
+          return handle.ready()
+    MT
+
+    result = check_program_source(source).root_analysis
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_methods_on_generic_pointer_receivers
+    source = <<~MT
+      module demo.generic_pointer_methods
+
+      struct Point:
+          x: int
+
+      methods const_ptr[T]:
+          public function read_value() -> T:
+              return unsafe: read(this)
+
+      function main(point: const_ptr[Point]) -> int:
+          return point.read_value().x
+    MT
+
+    result = check_program_source(source).root_analysis
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_methods_on_nullable_generic_pointer_receivers
+    source = <<~MT
+      module demo.nullable_generic_pointer_methods
+
+      struct Point:
+          x: int
+
+      methods const_ptr[T]?:
+          public function require_value(message: str) -> const_ptr[T]:
+              if this == null:
+                  fatal(message)
+
+              return unsafe: const_ptr[T]<-this
+
+      function main(point: const_ptr[Point]?) -> const_ptr[Point]:
+          return point.require_value("missing")
+    MT
+
+    result = check_program_source(source).root_analysis
+
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_rejects_import_of_private_module_member
     source = <<~MT
       module demo.main
@@ -3030,7 +3430,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/for loop expects start\.\.stop, array\[T, N\], or span\[T\]/, error.message)
+    assert_match(/for loop expects start\.\.stop, array\[T, N\], span\[T\], or an iterable with iter\(\)\/next\(\)/, error.message)
   end
 
   def test_type_checks_dot_dot_range_in_for_loop
@@ -3160,12 +3560,12 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/match on demo.match.EventKind is missing cases: resize/, error.message)
   end
 
-  def test_rejects_panic_with_non_string_message
+  def test_rejects_fatal_with_non_string_message
     source = <<~MT
-      module demo.panic
+      module demo.fatal
 
       function main() -> int:
-          panic(123)
+          fatal(123)
           return 0
     MT
 
@@ -3173,7 +3573,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/panic expects str or cstr, got int/, error.message)
+    assert_match(/fatal expects str or cstr, got int/, error.message)
   end
 
   def test_rejects_mismatched_callback_arguments
@@ -4824,6 +5224,32 @@ class MilkTeaSemaTest < Minitest::Test
     error = assert_raises(MilkTea::SemaError) do
       check_program_source(source, imported_sources)
     end
+
+      def test_allows_callback_parameters_with_ref_arguments
+        source = <<~MT
+          module demo.ref_callback_param
+
+          struct Counter:
+              value: int
+
+          function each(counter: ref[Counter], body: fn(arg0: ref[Counter]) -> bool) -> bool:
+              return body(counter)
+
+          function increment(counter: ref[Counter]) -> bool:
+              counter.value += 1
+              return true
+
+          function main() -> int:
+              var counter = Counter(value = 0)
+              if not each(ref_of(counter), increment):
+                  return 1
+              return counter.value
+        MT
+
+        result = check_source(source)
+
+        assert_equal "fn(arg0: ref[demo.ref_callback_param.Counter]) -> bool", result.functions.fetch("each").type.params[1].type.to_s
+      end
 
     assert_match(/foreign parameter matrix of set_matrix cannot map std\.c\.shared\.Matrix as std\.c\.sample\.Matrix/, error.message)
   end

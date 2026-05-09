@@ -410,6 +410,53 @@ class MilkTeaLinterTest < Minitest::Test
     assert_equal [], warnings
   end
 
+  def test_does_not_report_import_used_only_for_imported_methods
+    Dir.mktmpdir("linter_method_only_import") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+
+      File.write(File.join(std_dir, "string.mt"), <<~MT)
+        module std.string
+
+        public struct String:
+            value: str
+
+        methods String:
+            public function as_str() -> str:
+                return this.value
+      MT
+
+      File.write(File.join(dir, "util.mt"), <<~MT)
+        module util
+
+        import std.string as string
+
+        public function make() -> string.String:
+            return string.String(value = "hi")
+      MT
+
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        module demo.lint
+
+        import util
+        import std.string as string
+
+        function main() -> str:
+            let value = util.make()
+            return value.as_str()
+      MT
+      File.write(path, source)
+
+      ast = MilkTea::Parser.parse(source, path: path)
+      loader = MilkTea::ModuleLoader.new(module_roots: [dir])
+      analysis = MilkTea::Sema.check(ast, imported_modules: loader.imported_modules_for_ast(ast))
+      warnings = MilkTea::Linter.lint_source(source, path: path, sema_analysis: analysis)
+
+      refute warnings.any? { |warning| warning.code == "unused-import" && warning.message.include?("string") }
+    end
+  end
+
   def test_import_with_alias_uses_alias_name
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
@@ -682,13 +729,13 @@ class MilkTeaLinterTest < Minitest::Test
     assert_any(warnings, "missing-return")
   end
 
-  def test_missing_return_no_warn_when_other_path_panics
+  def test_missing_return_no_warn_when_other_path_fatals
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["redundant-else"])
       module demo.lint
 
       function pick(flag: bool) -> int:
           if flag:
-              panic(c"boom")
+              fatal(c"boom")
           else:
               return 1
     MT
@@ -864,13 +911,13 @@ class MilkTeaLinterTest < Minitest::Test
     assert_any(warnings, "redundant-else")
   end
 
-  def test_redundant_else_fires_when_branch_panics
+  def test_redundant_else_fires_when_branch_fatals
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["missing-return"])
       module demo.lint
 
       function sign(n: int) -> int:
           if n > 0:
-              panic(c"boom")
+              fatal(c"boom")
           else:
               return -1
     MT

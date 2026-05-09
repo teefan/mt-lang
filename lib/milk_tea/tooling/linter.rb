@@ -286,6 +286,7 @@ module MilkTea
       return if source_file.imports.empty?
 
       used = collect_used_names(source_file)
+      used.merge(collect_method_only_import_uses(source_file))
       source_file.imports.each do |import|
         local_name = import.alias_name || import.path.parts.last
         next if ignored_binding_name?(local_name)
@@ -312,6 +313,23 @@ module MilkTea
         collect_names_from_declaration(decl, used)
       end
       used
+    end
+
+    def collect_method_only_import_uses(source_file)
+      return Set.new unless @sema_analysis
+
+      called_members = Set.new
+      source_file.declarations.each do |decl|
+        collect_called_members_from_declaration(decl, called_members)
+      end
+      return Set.new if called_members.empty?
+
+      @sema_analysis.imports.each_with_object(Set.new) do |(local_name, imported_module), used|
+        method_names = imported_module.methods.each_value.each_with_object(Set.new) do |bindings, names|
+          names.merge(bindings.keys)
+        end
+        used << local_name unless (called_members & method_names).empty?
+      end
     end
 
     def collect_names_from_declaration(decl, used)
@@ -355,7 +373,7 @@ module MilkTea
         collect_names_from_expr(stmt.expression, used)
         stmt.arms.each { |arm| arm.body.each { |s| collect_names_from_statement(s, used) } }
       when AST::ForStmt
-        collect_names_from_expr(stmt.iterable, used)
+        stmt.iterables.each { |iterable| collect_names_from_expr(iterable, used) }
         stmt.body.each { |s| collect_names_from_statement(s, used) }
       when AST::WhileStmt
         collect_names_from_expr(stmt.condition, used)
@@ -420,6 +438,92 @@ module MilkTea
       when AST::FunctionType, AST::ProcType
         type.params.each { |p| collect_names_from_type(p.respond_to?(:type) ? p.type : p, used) }
         collect_names_from_type(type.return_type, used) if type.return_type
+      end
+    end
+
+    def collect_called_members_from_declaration(decl, called_members)
+      case decl
+      when AST::FunctionDef, AST::MethodDef
+        decl.body.each { |stmt| collect_called_members_from_statement(stmt, called_members) }
+      when AST::MethodsBlock
+        decl.methods.each { |method| collect_called_members_from_declaration(method, called_members) }
+      when AST::ConstDecl, AST::VarDecl
+        collect_called_members_from_expr(decl.value, called_members) if decl.value
+      end
+    end
+
+    def collect_called_members_from_statement(stmt, called_members)
+      case stmt
+      when AST::LocalDecl
+        collect_called_members_from_expr(stmt.value, called_members) if stmt.value
+      when AST::Assignment
+        collect_called_members_from_expr(stmt.target, called_members)
+        collect_called_members_from_expr(stmt.value, called_members)
+      when AST::IfStmt
+        stmt.branches.each do |branch|
+          collect_called_members_from_expr(branch.condition, called_members)
+          branch.body.each { |child| collect_called_members_from_statement(child, called_members) }
+        end
+        stmt.else_body&.each { |child| collect_called_members_from_statement(child, called_members) }
+      when AST::MatchStmt
+        collect_called_members_from_expr(stmt.expression, called_members)
+        stmt.arms.each { |arm| arm.body.each { |child| collect_called_members_from_statement(child, called_members) } }
+      when AST::ForStmt
+        stmt.iterables.each { |iterable| collect_called_members_from_expr(iterable, called_members) }
+        stmt.body.each { |child| collect_called_members_from_statement(child, called_members) }
+      when AST::WhileStmt
+        collect_called_members_from_expr(stmt.condition, called_members)
+        stmt.body.each { |child| collect_called_members_from_statement(child, called_members) }
+      when AST::UnsafeStmt
+        stmt.body.each { |child| collect_called_members_from_statement(child, called_members) }
+      when AST::DeferStmt
+        collect_called_members_from_expr(stmt.expression, called_members) if stmt.expression
+        stmt.body&.each { |child| collect_called_members_from_statement(child, called_members) }
+      when AST::ReturnStmt
+        collect_called_members_from_expr(stmt.value, called_members) if stmt.value
+      when AST::ExpressionStmt
+        collect_called_members_from_expr(stmt.expression, called_members)
+      when AST::StaticAssert
+        collect_called_members_from_expr(stmt.condition, called_members)
+      end
+    end
+
+    def collect_called_members_from_expr(expr, called_members)
+      case expr
+      when nil then nil
+      when AST::MemberAccess
+        collect_called_members_from_expr(expr.receiver, called_members)
+      when AST::IndexAccess
+        collect_called_members_from_expr(expr.receiver, called_members)
+        collect_called_members_from_expr(expr.index, called_members)
+      when AST::Specialization
+        collect_called_members_from_expr(expr.callee, called_members)
+      when AST::Call
+        called_members << expr.callee.member if expr.callee.is_a?(AST::MemberAccess)
+        collect_called_members_from_expr(expr.callee, called_members)
+        expr.arguments.each { |argument| collect_called_members_from_expr(argument.value, called_members) }
+      when AST::UnaryOp
+        collect_called_members_from_expr(expr.operand, called_members)
+      when AST::BinaryOp
+        collect_called_members_from_expr(expr.left, called_members)
+        collect_called_members_from_expr(expr.right, called_members)
+      when AST::RangeExpr
+        collect_called_members_from_expr(expr.start_expr, called_members)
+        collect_called_members_from_expr(expr.end_expr, called_members)
+      when AST::ExpressionList
+        expr.elements.each { |element| collect_called_members_from_expr(element, called_members) }
+      when AST::IfExpr
+        collect_called_members_from_expr(expr.condition, called_members)
+        collect_called_members_from_expr(expr.then_expression, called_members)
+        collect_called_members_from_expr(expr.else_expression, called_members)
+      when AST::ProcExpr
+        expr.body.each { |stmt| collect_called_members_from_statement(stmt, called_members) }
+      when AST::AwaitExpr
+        collect_called_members_from_expr(expr.expression, called_members)
+      when AST::UnsafeExpr
+        collect_called_members_from_expr(expr.expression, called_members)
+      when AST::FormatString
+        expr.parts.each { |part| collect_called_members_from_expr(part.expression, called_members) if part.is_a?(AST::FormatExprPart) }
       end
     end
 
@@ -532,7 +636,7 @@ module MilkTea
     def terminating_callee?(callee)
       case callee
       when AST::Identifier
-        callee.name == "panic"
+        callee.name == "fatal"
       when AST::Specialization
         terminating_callee?(callee.callee)
       else

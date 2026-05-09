@@ -102,7 +102,7 @@ module MilkTea
       def collect_includes
         headers = ["<stdbool.h>", "<stdint.h>", "<stdlib.h>", "<string.h>"]
         headers << "<stddef.h>" if program_uses_offsetof?
-        if program_uses_panic?
+        if program_uses_fatal?
           headers << "<stdio.h>"
         end
 
@@ -127,21 +127,21 @@ module MilkTea
         %w[stdbool.h stdint.h stdlib.h string.h stddef.h stdio.h].include?(header_name)
       end
 
-      def program_uses_panic?
-        @program.analyses_by_path.values.any? { |analysis| analysis_uses_panic?(analysis) }
+      def program_uses_fatal?
+        @program.analyses_by_path.values.any? { |analysis| analysis_uses_fatal?(analysis) }
       end
 
       def program_uses_offsetof?
         @program.analyses_by_path.values.any? { |analysis| analysis_uses_offsetof?(analysis) }
       end
 
-      def analysis_uses_panic?(analysis)
+      def analysis_uses_fatal?(analysis)
         analysis.ast.declarations.any? do |decl|
           case decl
           when AST::FunctionDef
-            block_uses_panic?(decl.body)
+            block_uses_fatal?(decl.body)
           when AST::MethodsBlock
-            decl.methods.any? { |method| block_uses_panic?(method.body) }
+            decl.methods.any? { |method| block_uses_fatal?(method.body) }
           else
             false
           end
@@ -165,36 +165,36 @@ module MilkTea
         end
       end
 
-      def block_uses_panic?(statements)
-        statements.any? { |statement| statement_uses_panic?(statement) }
+      def block_uses_fatal?(statements)
+        statements.any? { |statement| statement_uses_fatal?(statement) }
       end
 
       def block_uses_offsetof?(statements)
         statements.any? { |statement| statement_uses_offsetof?(statement) }
       end
 
-      def statement_uses_panic?(statement)
+      def statement_uses_fatal?(statement)
         case statement
         when AST::LocalDecl
-          expression_uses_panic?(statement.value)
+          expression_uses_fatal?(statement.value)
         when AST::Assignment
-          expression_uses_panic?(statement.target) || expression_uses_panic?(statement.value)
+          expression_uses_fatal?(statement.target) || expression_uses_fatal?(statement.value)
         when AST::IfStmt
-          statement.branches.any? { |branch| expression_uses_panic?(branch.condition) || block_uses_panic?(branch.body) } ||
-            (statement.else_body && block_uses_panic?(statement.else_body))
+          statement.branches.any? { |branch| expression_uses_fatal?(branch.condition) || block_uses_fatal?(branch.body) } ||
+            (statement.else_body && block_uses_fatal?(statement.else_body))
         when AST::MatchStmt
-          expression_uses_panic?(statement.expression) || statement.arms.any? { |arm| expression_uses_panic?(arm.pattern) || block_uses_panic?(arm.body) }
+          expression_uses_fatal?(statement.expression) || statement.arms.any? { |arm| expression_uses_fatal?(arm.pattern) || block_uses_fatal?(arm.body) }
         when AST::StaticAssert
-          expression_uses_panic?(statement.condition) || expression_uses_panic?(statement.message)
+          expression_uses_fatal?(statement.condition) || expression_uses_fatal?(statement.message)
         when AST::ForStmt
-          expression_uses_panic?(statement.iterable) || block_uses_panic?(statement.body)
+          statement.iterables.any? { |iterable| expression_uses_fatal?(iterable) } || block_uses_fatal?(statement.body)
         when AST::UnsafeStmt, AST::WhileStmt
           expression = statement.is_a?(AST::WhileStmt) ? statement.condition : nil
-          (expression && expression_uses_panic?(expression)) || block_uses_panic?(statement.body)
+          (expression && expression_uses_fatal?(expression)) || block_uses_fatal?(statement.body)
         when AST::ReturnStmt
-          statement.value && expression_uses_panic?(statement.value)
+          statement.value && expression_uses_fatal?(statement.value)
         when AST::DeferStmt, AST::ExpressionStmt
-          expression_uses_panic?(statement.expression)
+          expression_uses_fatal?(statement.expression)
         else
           false
         end
@@ -214,7 +214,7 @@ module MilkTea
         when AST::StaticAssert
           expression_uses_offsetof?(statement.condition) || expression_uses_offsetof?(statement.message)
         when AST::ForStmt
-          expression_uses_offsetof?(statement.iterable) || block_uses_offsetof?(statement.body)
+          statement.iterables.any? { |iterable| expression_uses_offsetof?(iterable) } || block_uses_offsetof?(statement.body)
         when AST::UnsafeStmt, AST::WhileStmt
           expression = statement.is_a?(AST::WhileStmt) ? statement.condition : nil
           (expression && expression_uses_offsetof?(expression)) || block_uses_offsetof?(statement.body)
@@ -227,31 +227,31 @@ module MilkTea
         end
       end
 
-      def expression_uses_panic?(expression)
+      def expression_uses_fatal?(expression)
         case expression
         when AST::AwaitExpr
-          expression_uses_panic?(expression.expression)
+          expression_uses_fatal?(expression.expression)
         when AST::Call
           identifier = expression.callee
-          return true if identifier.is_a?(AST::Identifier) && identifier.name == "panic"
+          return true if identifier.is_a?(AST::Identifier) && identifier.name == "fatal"
 
-          expression_uses_panic?(expression.callee) || expression.arguments.any? { |argument| expression_uses_panic?(argument.value) }
+          expression_uses_fatal?(expression.callee) || expression.arguments.any? { |argument| expression_uses_fatal?(argument.value) }
         when AST::BinaryOp
-          expression_uses_panic?(expression.left) || expression_uses_panic?(expression.right)
+          expression_uses_fatal?(expression.left) || expression_uses_fatal?(expression.right)
         when AST::RangeExpr
-          expression_uses_panic?(expression.start_expr) || expression_uses_panic?(expression.end_expr)
+          expression_uses_fatal?(expression.start_expr) || expression_uses_fatal?(expression.end_expr)
         when AST::IfExpr
-          expression_uses_panic?(expression.condition) || expression_uses_panic?(expression.then_expression) || expression_uses_panic?(expression.else_expression)
+          expression_uses_fatal?(expression.condition) || expression_uses_fatal?(expression.then_expression) || expression_uses_fatal?(expression.else_expression)
         when AST::UnsafeExpr
-          expression_uses_panic?(expression.expression)
+          expression_uses_fatal?(expression.expression)
         when AST::UnaryOp
-          expression_uses_panic?(expression.operand)
+          expression_uses_fatal?(expression.operand)
         when AST::MemberAccess
-          expression_uses_panic?(expression.receiver)
+          expression_uses_fatal?(expression.receiver)
         when AST::IndexAccess
-          expression_uses_panic?(expression.receiver) || expression_uses_panic?(expression.index)
+          expression_uses_fatal?(expression.receiver) || expression_uses_fatal?(expression.index)
         when AST::Specialization
-          expression_uses_panic?(expression.callee) || expression.arguments.any? { |argument| expression_uses_panic?(argument.value) }
+          expression_uses_fatal?(expression.callee) || expression.arguments.any? { |argument| expression_uses_fatal?(argument.value) }
         else
           false
         end
@@ -497,6 +497,17 @@ module MilkTea
             validate_methods_receiver_type_arguments!(type_name, generic_type)
             return generic_type
           end
+
+          begin
+            return resolve_type_ref_for_analysis(type_name, analysis)
+          rescue LoweringError => error
+            receiver_type_param_names = methods_receiver_type_argument_names!(type_name)
+            raise error if receiver_type_param_names.empty?
+
+            receiver_type_params = receiver_type_param_names.to_h { |name| [name, Types::TypeVar.new(name)] }
+            receiver_type = resolve_type_ref_for_analysis(type_name, analysis, type_params: receiver_type_params)
+            return method_dispatch_receiver_type(receiver_type)
+          end
         end
 
         parts = type_name.name.parts
@@ -707,7 +718,7 @@ module MilkTea
               then_body: [
                 IR::ExpressionStmt.new(
                   expression: IR::Call.new(
-                    callee: "mt_panic",
+                    callee: "mt_fatal",
                     arguments: [IR::StringLiteral.new(value: "async main loop_run_default failed", type: @types.fetch("cstr"), cstring: true)],
                     type: @types.fetch("void"),
                   ),
@@ -1003,6 +1014,7 @@ module MilkTea
             await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
           when AST::ForStmt
             # For loops with await need the loop variable in the frame so it survives across suspension
+            raise LoweringError, "async parallel for loops are unsupported" if statement.parallel?
             loop_type = range_iterable?(statement.iterable) ? infer_range_loop_type(statement.iterable, env:) : collection_loop_type(infer_expression_type(statement.iterable, env:))
             local_fields[statement.name] ||= { field_name: "local_#{statement.name}", type: loop_type, mutable: true }
               if range_iterable?(statement.iterable)
@@ -1536,7 +1548,7 @@ module MilkTea
             declared_type = statement.type ? resolve_type_ref(statement.type) : nil
             original_value_type = statement.type ? nil : infer_expression_type(statement.value, env:)
             setup, value = normalize_async_expression(statement.value, counter, env:, expected_type: declared_type)
-            normalized = AST::LocalDecl.new(kind: statement.kind, name: statement.name, type: statement.type, value: value, line: statement.line)
+            normalized = AST::LocalDecl.new(kind: statement.kind, name: statement.name, type: statement.type, value: value, else_body: statement.else_body, line: statement.line)
             local_type = statement.type ? resolve_type_ref(statement.type) : original_value_type
             current_actual_scope(env[:scopes])[statement.name] = local_binding(
               type: local_type,
@@ -1607,6 +1619,7 @@ module MilkTea
             ]
           end
         when AST::ForStmt
+          raise LoweringError, "async parallel for loops are unsupported" if statement.parallel?
           original_iterable = statement.iterable
           loop_type = if range_iterable?(original_iterable)
                         infer_range_loop_type(original_iterable, env:)
@@ -1618,7 +1631,7 @@ module MilkTea
           for_env = duplicate_env(env)
           current_actual_scope(for_env[:scopes])[statement.name] = local_binding(type: loop_type, c_name: statement.name, mutable: false, pointer: false)
           body = normalize_async_statements(statement.body, counter, for_env, return_type:)
-          iterable_setup + [AST::ForStmt.new(name: statement.name, iterable:, body:)]
+          iterable_setup + [AST::ForStmt.new(bindings: statement.bindings, iterables: [iterable], body:)]
         when AST::UnsafeStmt
           unsafe_env = duplicate_env(env)
           [AST::UnsafeStmt.new(body: normalize_async_statements(statement.body, counter, unsafe_env, return_type:))]
@@ -2639,7 +2652,18 @@ module MilkTea
             )
             lowered << IR::BlockStmt.new(body:)
           when AST::LocalDecl
-            type = statement.type ? resolve_type_ref(statement.type) : infer_expression_type(statement.value, env: local_env)
+            storage_type = if statement.else_body
+                             infer_expression_type(statement.value, env: local_env)
+                           elsif statement.type
+                             resolve_type_ref(statement.type)
+                           else
+                             infer_expression_type(statement.value, env: local_env)
+                           end
+            type = if statement.else_body
+                     statement.type ? resolve_type_ref(statement.type) : storage_type.base
+                   else
+                     storage_type
+                   end
             c_name = c_local_name(statement.name)
             prepared_setup = []
             prepared_value = statement.value
@@ -2649,7 +2673,7 @@ module MilkTea
               prepared_setup, prepared_value, prepared_cleanups = prepare_expression_with_cleanups(
                 statement.value,
                 env: local_env,
-                expected_type: type,
+                expected_type: storage_type,
                 allow_root_statement_foreign: true,
               )
               lowered.concat(prepared_setup)
@@ -2658,47 +2682,68 @@ module MilkTea
               setup, value, call_type, release_assignments, cleanup_statements = lower_foreign_call_components(
                 foreign_call,
                 env: local_env,
-                expected_type: type,
+                expected_type: storage_type,
                 statement_position: false,
               )
               lowered.concat(setup)
               raise LoweringError, "foreign call used to initialize #{statement.name} must return a value" if call_type == @types.fetch("void")
               raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
 
-              lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:, line: statement.line, source_path: @current_analysis_path)
+              lowered << IR::LocalDecl.new(name: statement.name, c_name:, type: storage_type, value:, line: statement.line, source_path: @current_analysis_path)
               lowered.concat(cleanup_statements)
-              local_defers.concat(prepared_cleanups)
               emitted_decl = true
             elsif prepared_value.is_a?(AST::ProcExpr)
-              setup, value = lower_proc_expression_for_local(prepared_value, env: local_env, local_name: statement.name, proc_type: type)
+              setup, value = lower_proc_expression_for_local(prepared_value, env: local_env, local_name: statement.name, proc_type: storage_type)
               lowered.concat(setup)
             elsif prepared_value
               value = lower_contextual_expression(
                 prepared_value,
                 env: local_env,
-                expected_type: type,
+                expected_type: storage_type,
                 contextual_int_to_float: statement.type && contextual_int_to_float_target?(type),
               )
             else
-              value = IR::ZeroInit.new(type:)
+              value = IR::ZeroInit.new(type: storage_type)
             end
             current_actual_scope(local_env[:scopes])[statement.name] = local_binding(
               type:,
+              storage_type:,
               c_name:,
               mutable: statement.kind == :var,
               pointer: false,
-              cstr_backed: cstr_backed_storage_value?(type, prepared_value, local_env),
-              cstr_list_backed: cstr_list_backed_storage_value?(type, prepared_value, local_env),
-              const_value: statement.kind == :let && prepared_value ? compile_time_const_value(prepared_value, env: local_env) : nil,
+              cstr_backed: cstr_backed_storage_value?(storage_type, prepared_value, local_env),
+              cstr_list_backed: cstr_list_backed_storage_value?(storage_type, prepared_value, local_env),
+              const_value: statement.else_body ? nil : statement.kind == :let && prepared_value ? compile_time_const_value(prepared_value, env: local_env) : nil,
             )
-            lowered << IR::LocalDecl.new(name: statement.name, c_name:, type:, value:, line: statement.line, source_path: @current_analysis_path) unless emitted_decl
+            lowered << IR::LocalDecl.new(name: statement.name, c_name:, type: storage_type, value:, line: statement.line, source_path: @current_analysis_path) unless emitted_decl
+            if statement.else_body
+              else_body = lower_block(
+                statement.else_body,
+                env: local_env,
+                active_defers: active_defers + local_defers + prepared_cleanups,
+                return_type:,
+                loop_flow: nested_loop_flow(loop_flow, local_defers),
+                allow_return:,
+              )
+              local_ref = IR::Name.new(name: c_name, type: storage_type, pointer: false)
+              lowered << IR::IfStmt.new(
+                condition: IR::Binary.new(
+                  operator: "==",
+                  left: local_ref,
+                  right: IR::NullLiteral.new(type: storage_type),
+                  type: @types.fetch("bool"),
+                ),
+                then_body: else_body,
+                else_body: nil,
+              )
+            end
             local_defers.concat(prepared_cleanups)
-            if contains_proc_storage_type?(type)
-              local_value = IR::Name.new(name: c_name, type:, pointer: false)
+            if contains_proc_storage_type?(storage_type)
+              local_value = IR::Name.new(name: c_name, type: storage_type, pointer: false)
               # Use guarded release so zero-initialized var locals are safe (invoke == NULL guard).
-              local_defers << lower_proc_contained_guarded_release_statements(local_value, type)
+              local_defers << lower_proc_contained_guarded_release_statements(local_value, storage_type)
               if statement.value && !expression_contains_proc_expr?(statement.value)
-                lowered.concat(lower_proc_contained_retain_statements(local_value, type))
+                lowered.concat(lower_proc_contained_retain_statements(local_value, storage_type))
               end
             end
           when AST::Assignment
@@ -3221,8 +3266,8 @@ module MilkTea
           collect_proc_captures_from_expression(statement.condition, env, local_scopes, captures)
           collect_proc_captures_from_expression(statement.message, env, local_scopes, captures)
         when AST::ForStmt
-          collect_proc_captures_from_expression(statement.iterable, env, local_scopes, captures)
-          collect_proc_captures_from_statements(statement.body, env, local_scopes + [{ statement.name => true }], captures)
+          statement.iterables.each { |iterable| collect_proc_captures_from_expression(iterable, env, local_scopes, captures) }
+          collect_proc_captures_from_statements(statement.body, env, local_scopes + [statement.names.each_with_object({}) { |name, scope| scope[name] = true }], captures)
         when AST::WhileStmt
           collect_proc_captures_from_expression(statement.condition, env, local_scopes, captures)
           collect_proc_captures_from_statements(statement.body, env, local_scopes + [{}], captures)
@@ -3435,7 +3480,11 @@ module MilkTea
       end
 
       def lower_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
+        return lower_parallel_collection_for_stmt(statement, env:, active_defers:, return_type:, allow_return:) if statement.parallel?
         return lower_range_for_stmt(statement, env:, active_defers:, return_type:, allow_return:) if range_iterable?(statement.iterable)
+
+        iterable_type = infer_expression_type(statement.iterable, env:)
+        return lower_iterator_for_stmt(statement, env:, active_defers:, return_type:, allow_return:) if collection_loop_type(iterable_type).nil?
 
         lower_collection_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
       end
@@ -3557,8 +3606,9 @@ module MilkTea
       def lower_collection_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
         iterable_type = infer_expression_type(statement.iterable, env:)
         element_type = collection_loop_type(iterable_type)
-        raise LoweringError, "for loop expects start..stop, array[T, N], or span[T], got #{iterable_type}" unless element_type
+        raise LoweringError, "for loop expects start..stop, array[T, N], span[T], or an iterable with iter()/next(), got #{iterable_type}" unless element_type
         iterable_setup, prepared_iterable = prepare_expression_for_inline_lowering(statement.iterable, env:, expected_type: iterable_type)
+        binding_type = collection_loop_binding_type(iterable_type, element_type) || element_type
 
         iterable_c_name = fresh_c_temp_name(env, "for_items")
         index_c_name = fresh_c_temp_name(env, "for_index")
@@ -3580,11 +3630,17 @@ module MilkTea
                        IR::Member.new(receiver: iterable_ref, member: "len", type: @types.fetch("ptr_uint"))
                      end
 
+        loop_item_value = if ref_type?(binding_type)
+                            IR::AddressOf.new(expression: item_value, type: binding_type)
+                          else
+                            item_value
+                          end
+
         while_env = duplicate_env(env)
-        current_actual_scope(while_env[:scopes])[statement.name] = local_binding(type: element_type, c_name: c_local_name(statement.name), mutable: false, pointer: false)
+        current_actual_scope(while_env[:scopes])[statement.name] = local_binding(type: binding_type, c_name: c_local_name(statement.name), mutable: false, pointer: false)
 
         body = [
-          IR::LocalDecl.new(name: statement.name, c_name: c_local_name(statement.name), type: element_type, value: item_value),
+          IR::LocalDecl.new(name: statement.name, c_name: c_local_name(statement.name), type: binding_type, value: loop_item_value),
         ]
         body.concat(
           lower_block(
@@ -3613,6 +3669,220 @@ module MilkTea
           *iterable_setup,
           IR::LocalDecl.new(name: iterable_c_name, c_name: iterable_c_name, type: iterable_type, value: lower_expression(prepared_iterable, env:, expected_type: iterable_type)),
           for_statement,
+        ]
+        statements << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
+
+        IR::BlockStmt.new(body: statements)
+      end
+
+      def lower_parallel_collection_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
+        infos = statement.bindings.each_with_index.map do |binding, index|
+          iterable = statement.iterables[index]
+          iterable_type = infer_expression_type(iterable, env:)
+          element_type = collection_loop_type(iterable_type)
+          raise LoweringError, "parallel for loops expect arrays or spans for each iterable, got #{iterable_type}" unless element_type
+
+          {
+            binding:,
+            iterable:,
+            iterable_type:,
+            element_type:,
+            binding_type: collection_loop_binding_type(iterable_type, element_type) || element_type,
+          }
+        end
+
+        iterable_entries = infos.map do |info|
+          setup, prepared_iterable = prepare_expression_for_inline_lowering(info[:iterable], env:, expected_type: info[:iterable_type])
+          c_name = fresh_c_temp_name(env, "for_items")
+          info.merge(
+            setup:,
+            prepared_iterable:,
+            iterable_c_name: c_name,
+            iterable_ref: IR::Name.new(name: c_name, type: info[:iterable_type], pointer: false),
+          )
+        end
+
+        index_c_name = fresh_c_temp_name(env, "for_index")
+        continue_label = fresh_c_temp_name(env, "loop_continue")
+        break_label = fresh_c_temp_name(env, "loop_break")
+        index_ref = IR::Name.new(name: index_c_name, type: @types.fetch("ptr_uint"), pointer: false)
+        stop_value = collection_loop_stop_value(iterable_entries.first[:iterable_ref], iterable_entries.first[:iterable_type])
+
+        while_env = duplicate_env(env)
+        body = iterable_entries.map do |entry|
+          item_value = collection_loop_item_value(entry[:iterable_ref], entry[:iterable_type], index_ref, entry[:element_type])
+          loop_item_value = if ref_type?(entry[:binding_type])
+                              IR::AddressOf.new(expression: item_value, type: entry[:binding_type])
+                            else
+                              item_value
+                            end
+          binding = entry[:binding]
+          current_actual_scope(while_env[:scopes])[binding.name] = local_binding(type: entry[:binding_type], c_name: c_local_name(binding.name), mutable: false, pointer: false)
+          IR::LocalDecl.new(name: binding.name, c_name: c_local_name(binding.name), type: entry[:binding_type], value: loop_item_value)
+        end
+        body.concat(
+          lower_block(
+            statement.body,
+            env: while_env,
+            active_defers:,
+            return_type:,
+            loop_flow: loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label)),
+            allow_return:,
+          ),
+        )
+        body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
+
+        length_checks = iterable_entries.drop(1).map do |entry|
+          IR::IfStmt.new(
+            condition: IR::Binary.new(
+              operator: "!=",
+              left: collection_loop_stop_value(entry[:iterable_ref], entry[:iterable_type]),
+              right: stop_value,
+              type: @types.fetch("bool"),
+            ),
+            then_body: [lower_fatal_statement("parallel for iterables must have matching lengths", env:)],
+            else_body: nil,
+          )
+        end
+
+        for_statement = IR::ForStmt.new(
+          init: IR::LocalDecl.new(name: index_c_name, c_name: index_c_name, type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
+          condition: IR::Binary.new(operator: "<", left: index_ref, right: stop_value, type: @types.fetch("bool")),
+          post: IR::Assignment.new(
+            target: index_ref,
+            operator: "+=",
+            value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint")),
+          ),
+          body:,
+        )
+
+        statements = [
+          *iterable_entries.flat_map { |entry| entry[:setup] },
+          *iterable_entries.map do |entry|
+            IR::LocalDecl.new(
+              name: entry[:iterable_c_name],
+              c_name: entry[:iterable_c_name],
+              type: entry[:iterable_type],
+              value: lower_expression(entry[:prepared_iterable], env:, expected_type: entry[:iterable_type]),
+            )
+          end,
+          *length_checks,
+          for_statement,
+        ]
+        statements << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
+
+        IR::BlockStmt.new(body: statements)
+      end
+
+      def lower_iterator_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
+        iterable_type = infer_expression_type(statement.iterable, env:)
+        iterator_info = iterator_loop_info(iterable_type, env:)
+        raise LoweringError, "for loop expects start..stop, array[T, N], span[T], or an iterable with iter()/next(), got #{iterable_type}" unless iterator_info
+
+        iterable_setup, prepared_iterable = prepare_expression_for_inline_lowering(statement.iterable, env:, expected_type: iterable_type)
+        iterator_c_name = fresh_c_temp_name(env, "for_iterator")
+        iterator_name = iterator_c_name
+        continue_label = fresh_c_temp_name(env, "loop_continue")
+        break_label = fresh_c_temp_name(env, "loop_break")
+
+        iter_call = AST::Call.new(
+          callee: AST::MemberAccess.new(receiver: prepared_iterable, member: "iter"),
+          arguments: [],
+        )
+
+        iterator_env = duplicate_env(env)
+        current_actual_scope(iterator_env[:scopes])[iterator_name] = local_binding(
+          type: iterator_info[:iterator_type],
+          c_name: iterator_c_name,
+          mutable: true,
+          pointer: false,
+        )
+
+        loop_env = duplicate_env(iterator_env)
+        current_actual_scope(loop_env[:scopes])[statement.name] = local_binding(
+          type: iterator_info[:item_type],
+          storage_type: iterator_info[:item_storage_type],
+          c_name: c_local_name(statement.name),
+          mutable: false,
+          pointer: false,
+        )
+
+        next_call = AST::Call.new(
+          callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iterator_name), member: "next"),
+          arguments: [],
+        )
+
+        body = if iterator_info[:kind] == :nullable_item
+                 item_ref = IR::Name.new(name: c_local_name(statement.name), type: iterator_info[:item_storage_type], pointer: false)
+                 [
+                   IR::LocalDecl.new(
+                     name: statement.name,
+                     c_name: c_local_name(statement.name),
+                     type: iterator_info[:item_storage_type],
+                     value: lower_expression(next_call, env: iterator_env, expected_type: iterator_info[:item_storage_type]),
+                   ),
+                   IR::IfStmt.new(
+                     condition: IR::Binary.new(
+                       operator: "==",
+                       left: item_ref,
+                       right: IR::NullLiteral.new(type: iterator_info[:item_storage_type]),
+                       type: @types.fetch("bool"),
+                     ),
+                     then_body: [loop_exit_statement(loop_exit_break(break_label), local_defers: [], outer_defers: [])],
+                     else_body: nil,
+                   ),
+                 ]
+               else
+                 ready_c_name = fresh_c_temp_name(env, "for_ready")
+                 ready_ref = IR::Name.new(name: ready_c_name, type: @types.fetch("bool"), pointer: false)
+                 current_call = AST::Call.new(
+                   callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iterator_name), member: "current"),
+                   arguments: [],
+                 )
+                 [
+                   IR::LocalDecl.new(
+                     name: ready_c_name,
+                     c_name: ready_c_name,
+                     type: @types.fetch("bool"),
+                     value: lower_expression(next_call, env: iterator_env, expected_type: @types.fetch("bool")),
+                   ),
+                   IR::IfStmt.new(
+                     condition: IR::Unary.new(operator: "not", operand: ready_ref, type: @types.fetch("bool")),
+                     then_body: [loop_exit_statement(loop_exit_break(break_label), local_defers: [], outer_defers: [])],
+                     else_body: nil,
+                   ),
+                   IR::LocalDecl.new(
+                     name: statement.name,
+                     c_name: c_local_name(statement.name),
+                     type: iterator_info[:item_storage_type],
+                     value: lower_expression(current_call, env: iterator_env, expected_type: iterator_info[:item_storage_type]),
+                   ),
+                 ]
+               end
+        body.concat(
+          lower_block(
+            statement.body,
+            env: loop_env,
+            active_defers:,
+            return_type:,
+            loop_flow: loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label)),
+            allow_return:,
+          ),
+        )
+        body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
+
+        statements = [
+          *iterable_setup,
+          IR::LocalDecl.new(
+            name: iterator_name,
+            c_name: iterator_c_name,
+            type: iterator_info[:iterator_type],
+            value: lower_expression(iter_call, env:, expected_type: iterator_info[:iterator_type]),
+          ),
+          IR::WhileStmt.new(
+            condition: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")),
+            body:,
+          ),
         ]
         statements << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
 
@@ -3653,9 +3923,10 @@ module MilkTea
           binding = lookup_value(expression.name, env)
           IR::Name.new(name: binding[:c_name], type: binding[:storage_type], pointer: binding[:pointer])
         when AST::MemberAccess
+          receiver_type = infer_expression_type(expression.receiver, env:)
           receiver = lower_expression(expression.receiver, env:)
           type = infer_expression_type(expression, env:)
-          IR::Member.new(receiver:, member: expression.member, type:)
+          IR::Member.new(receiver:, member: member_c_name(receiver_type, expression.member), type:)
         when AST::IndexAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
           receiver = lower_expression(expression.receiver, env:)
@@ -4541,10 +4812,10 @@ module MilkTea
           )
         when :zero
           IR::ZeroInit.new(type:)
-        when :panic
+        when :fatal
           argument = expression.arguments.fetch(0)
           message_type = infer_expression_type(argument.value, env:)
-          callee = message_type == @types.fetch("cstr") ? "mt_panic" : "mt_panic_str"
+          callee = message_type == @types.fetch("cstr") ? "mt_fatal" : "mt_fatal_str"
           IR::Call.new(callee:, arguments: [lower_expression(argument.value, env:, expected_type: message_type)], type:)
         when :ref_of
           argument = expression.arguments.fetch(0)
@@ -4570,6 +4841,7 @@ module MilkTea
 
       def lower_method_receiver_argument(receiver, callee_type, env:)
         lowered_receiver = lower_expression(receiver, env:)
+        declared_receiver_type = callee_type.receiver_type
 
         if callee_type.receiver_mutable
           return lowered_receiver if ref_type?(lowered_receiver.type)
@@ -4585,6 +4857,8 @@ module MilkTea
 
           return IR::AddressOf.new(expression: lowered_receiver, type: lowered_receiver.type)
         end
+
+        return lowered_receiver if declared_receiver_type && pointer_type?(declared_receiver_type)
 
         if ref_type?(lowered_receiver.type)
           return IR::Unary.new(operator: "*", operand: lowered_receiver, type: referenced_type(lowered_receiver.type))
@@ -4644,6 +4918,9 @@ module MilkTea
         binding = foreign_call.fetch(:binding)
         raise LoweringError, "consuming foreign calls must be top-level expression statements" if foreign_call_consumes_binding?(binding) && !statement_position
 
+        previous_type_substitutions = @current_type_substitutions
+        @current_type_substitutions = binding.type_substitutions
+
         owner_analysis = analysis_for_module(binding.owner.module_name)
         mapping_expression = foreign_mapping_expression(binding.ast)
         reference_counts = foreign_mapping_reference_counts(mapping_expression)
@@ -4664,6 +4941,8 @@ module MilkTea
         )
 
         [lowered, lowered_call, call_type, release_assignments, cleanup_statements]
+      ensure
+        @current_type_substitutions = previous_type_substitutions
       end
 
       def lower_foreign_call_statement(foreign_call, env:, expected_type:, statement_position:, discard_result: false)
@@ -5007,6 +5286,9 @@ module MilkTea
       end
 
       def lower_foreign_call_inline(expression, binding, env:, type:)
+        previous_type_substitutions = @current_type_substitutions
+        @current_type_substitutions = binding.type_substitutions
+
         owner_analysis = analysis_for_module(binding.owner.module_name)
         mapping_expression = foreign_mapping_expression(binding.ast)
         reference_counts = foreign_mapping_reference_counts(mapping_expression)
@@ -5068,6 +5350,8 @@ module MilkTea
         return converted if converted
 
         lowered_expression
+      ensure
+        @current_type_substitutions = previous_type_substitutions
       end
 
       def lower_inline_foreign_mapping_expression(expression, mapping_env:, replacements:, owner_analysis:, expected_type: nil)
@@ -5085,13 +5369,16 @@ module MilkTea
         when AST::Identifier
           replacements.fetch(expression.name)
         when AST::MemberAccess
+          receiver_type = with_analysis_context(owner_analysis) do
+            infer_expression_type(expression.receiver, env: mapping_env)
+          end
           receiver = lower_inline_foreign_mapping_expression(
             expression.receiver,
             mapping_env:,
             replacements:,
             owner_analysis:,
           )
-          IR::Member.new(receiver:, member: expression.member, type:)
+          IR::Member.new(receiver:, member: member_c_name(receiver_type, expression.member), type:)
         when AST::IndexAccess
           receiver_type = with_analysis_context(owner_analysis) do
             infer_expression_type(expression.receiver, env: mapping_env)
@@ -6214,8 +6501,8 @@ module MilkTea
           if @functions.key?(callee.name)
             binding = specialize_function_binding(@functions.fetch(callee.name), arguments, env)
             [ :function, function_binding_c_name(binding, module_name: @module_name), nil, binding.type, binding ]
-          elsif callee.name == "panic"
-            [:panic, nil, nil, nil]
+          elsif callee.name == "fatal"
+            [:fatal, nil, nil, nil]
           elsif callee.name == "ref_of"
             [:ref_of, nil, nil, nil]
           elsif callee.name == "const_ptr_of"
@@ -6256,31 +6543,39 @@ module MilkTea
             end
 
             dispatch_receiver_type = method_dispatch_receiver_type(type_expr)
+            method_entry_receiver_type = type_expr
             method_entry = @method_definitions[[type_expr, callee.member]]
-            method_entry ||= @method_definitions[[dispatch_receiver_type, callee.member]] unless dispatch_receiver_type == type_expr
+            unless method_entry || dispatch_receiver_type == type_expr
+              method_entry_receiver_type = dispatch_receiver_type
+              method_entry = @method_definitions[[dispatch_receiver_type, callee.member]]
+            end
             if method_entry
               method_analysis, method_ast = method_entry
-              method_binding = method_analysis.methods.fetch(dispatch_receiver_type).fetch(method_ast.name)
+              method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
               if method_binding.type.receiver_type.nil?
                 method_binding = specialize_function_binding(method_binding, arguments, env, receiver_type: type_expr) if method_binding.type_params.any?
-                return [:associated_method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: dispatch_receiver_type), nil, method_binding.type]
+                return [:associated_method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type), nil, method_binding.type]
               end
             end
 
             raise LoweringError, "unknown associated function #{type_expr}.#{callee.member}"
           end
 
-          resolved_receiver_type = infer_method_receiver_type(callee.receiver, env:)
+          resolved_receiver_type = infer_method_receiver_type(callee.receiver, env:, member_name: callee.member)
           dispatch_receiver_type = method_dispatch_receiver_type(resolved_receiver_type)
+          method_entry_receiver_type = resolved_receiver_type
           method_entry = @method_definitions[[resolved_receiver_type, callee.member]]
-          method_entry ||= @method_definitions[[dispatch_receiver_type, callee.member]] unless dispatch_receiver_type == resolved_receiver_type
+          unless method_entry || dispatch_receiver_type == resolved_receiver_type
+            method_entry_receiver_type = dispatch_receiver_type
+            method_entry = @method_definitions[[dispatch_receiver_type, callee.member]]
+          end
           if method_entry
             method_analysis, method_ast = method_entry
-            method_binding = method_analysis.methods.fetch(dispatch_receiver_type).fetch(method_ast.name)
+            method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
             method_binding = specialize_function_binding(method_binding, arguments, env, receiver_type: resolved_receiver_type)
             return [
               :method,
-              function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: dispatch_receiver_type),
+              function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type),
               callee.receiver,
               method_binding.type,
             ]
@@ -6395,11 +6690,15 @@ module MilkTea
             return member_type if member_type
 
             dispatch_receiver_type = method_dispatch_receiver_type(type_expr)
+            method_entry_receiver_type = type_expr
             method_entry = @method_definitions[[type_expr, expression.member]]
-            method_entry ||= @method_definitions[[dispatch_receiver_type, expression.member]] unless dispatch_receiver_type == type_expr
+            unless method_entry || dispatch_receiver_type == type_expr
+              method_entry_receiver_type = dispatch_receiver_type
+              method_entry = @method_definitions[[dispatch_receiver_type, expression.member]]
+            end
             if method_entry
               method_analysis, method_ast = method_entry
-              method_binding = method_analysis.methods.fetch(dispatch_receiver_type).fetch(method_ast.name)
+              method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
               return method_binding.type if method_binding.type.receiver_type.nil?
             end
           end
@@ -6491,7 +6790,7 @@ module MilkTea
           when :variant_arm_ctor
             _, _, _, variant_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             variant_type
-          when :panic
+          when :fatal
             @types.fetch("void")
           else
             raise LoweringError, "unsupported call kind #{kind}"
@@ -6853,27 +7152,35 @@ module MilkTea
                       @imports.fetch(expression.callee.receiver.name).functions[expression.callee.member]
                     elsif (type_expr = resolve_type_expression(expression.callee.receiver))
                       dispatch_receiver_type = method_dispatch_receiver_type(type_expr)
+                      method_entry_receiver_type = type_expr
                       method_entry = @method_definitions[[type_expr, expression.callee.member]]
-                      method_entry ||= @method_definitions[[dispatch_receiver_type, expression.callee.member]] unless dispatch_receiver_type == type_expr
+                      unless method_entry || dispatch_receiver_type == type_expr
+                        method_entry_receiver_type = dispatch_receiver_type
+                        method_entry = @method_definitions[[dispatch_receiver_type, expression.callee.member]]
+                      end
                       if method_entry
                         method_analysis, method_ast = method_entry
-                        method_binding = method_analysis.methods.fetch(dispatch_receiver_type).fetch(method_ast.name)
+                        method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
                         if method_binding.type.receiver_type.nil?
                           receiver_type = type_expr
                           method_binding
                         end
                       end
                     else
-                      resolved_receiver_type = infer_method_receiver_type(expression.callee.receiver, env:)
+                      resolved_receiver_type = infer_method_receiver_type(expression.callee.receiver, env:, member_name: expression.callee.member)
                       dispatch_receiver_type = method_dispatch_receiver_type(resolved_receiver_type)
+                      method_entry_receiver_type = resolved_receiver_type
                       method_entry = @method_definitions[[resolved_receiver_type, expression.callee.member]]
-                      method_entry ||= @method_definitions[[dispatch_receiver_type, expression.callee.member]] unless dispatch_receiver_type == resolved_receiver_type
+                      unless method_entry || dispatch_receiver_type == resolved_receiver_type
+                        method_entry_receiver_type = dispatch_receiver_type
+                        method_entry = @method_definitions[[dispatch_receiver_type, expression.callee.member]]
+                      end
                       if method_entry
                         method_analysis, method_ast = method_entry
                         callable_kind = :method
                         receiver = expression.callee.receiver
                         receiver_type = resolved_receiver_type
-                        method_analysis.methods.fetch(dispatch_receiver_type).fetch(method_ast.name)
+                        method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
                       end
                     end
                   end
@@ -7107,7 +7414,22 @@ module MilkTea
       end
 
       def method_dispatch_receiver_type(receiver_type)
-        receiver_type.is_a?(Types::StructInstance) ? receiver_type.definition : receiver_type
+        return receiver_type.definition if receiver_type.is_a?(Types::StructInstance)
+        if receiver_type.is_a?(Types::Nullable)
+          dispatch_base_type = method_dispatch_receiver_type(receiver_type.base)
+          return receiver_type if dispatch_base_type == receiver_type.base
+
+          return Types::Nullable.new(dispatch_base_type)
+        end
+        return receiver_type unless receiver_type.is_a?(Types::GenericInstance)
+
+        dispatch_receiver_type = Types::GenericInstance.new(
+          receiver_type.name,
+          receiver_type.arguments.each_with_index.map do |argument, index|
+            argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__receiver_arg#{index}")
+          end,
+        )
+        dispatch_receiver_type == receiver_type ? receiver_type : dispatch_receiver_type
       end
 
       def resolve_named_generic_type_for_analysis(analysis, parts)
@@ -7139,17 +7461,56 @@ module MilkTea
         expected_names
       end
 
+      def methods_receiver_type_argument_names!(type_ref)
+        names = type_ref.arguments.map do |argument|
+          value = argument.value
+          next unless value.is_a?(AST::TypeRef)
+          next unless value.arguments.empty? && !value.nullable && value.name.parts.length == 1
+
+          value.name.parts.first
+        end
+
+        raise LoweringError, "methods target #{type_ref} must use the receiver type parameters directly" if names.any?(&:nil?)
+
+        names
+      end
+
       def infer_receiver_type_substitutions(binding, receiver_type)
         declared_receiver_type = binding.declared_receiver_type
         return {} unless declared_receiver_type
-        return {} unless declared_receiver_type.is_a?(Types::StructInstance)
-        return {} unless declared_receiver_type.definition.is_a?(Types::GenericStructDefinition)
+        case declared_receiver_type
+        when Types::Nullable
+          unless receiver_type.is_a?(Types::Nullable)
+            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+          end
 
-        unless receiver_type.is_a?(Types::StructInstance) && receiver_type.definition == declared_receiver_type.definition
-          raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+          infer_receiver_type_substitutions(
+            binding.with(declared_receiver_type: declared_receiver_type.base),
+            receiver_type.base,
+          )
+        when Types::StructInstance
+          return {} unless declared_receiver_type.definition.is_a?(Types::GenericStructDefinition)
+
+          unless receiver_type.is_a?(Types::StructInstance) && receiver_type.definition == declared_receiver_type.definition
+            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+          end
+
+          declared_receiver_type.definition.type_params.zip(receiver_type.arguments).to_h
+        when Types::GenericInstance
+          unless receiver_type.is_a?(Types::GenericInstance) && receiver_type.name == declared_receiver_type.name && receiver_type.arguments.length == declared_receiver_type.arguments.length
+            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+          end
+
+          declared_receiver_type.arguments.zip(receiver_type.arguments).each_with_object({}) do |(declared_argument, actual_argument), substitutions|
+            if declared_argument.is_a?(Types::TypeVar)
+              substitutions[declared_argument.name] = actual_argument
+            elsif declared_argument != actual_argument
+              raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+            end
+          end
+        else
+          {}
         end
-
-        declared_receiver_type.definition.type_params.zip(receiver_type.arguments).to_h
       end
 
       def call_arity_matches?(function_type, actual_count)
@@ -7523,10 +7884,16 @@ module MilkTea
         raise LoweringError, "read expects ref[...] or ptr[...], got #{handle_type}"
       end
 
-      def infer_method_receiver_type(receiver_expression, env:)
+      def infer_method_receiver_type(receiver_expression, env:, member_name: nil)
         receiver_type = infer_expression_type(receiver_expression, env:)
-        return referenced_type(receiver_type) if ref_type?(receiver_type)
-        return pointee_type(receiver_type) if pointer_type?(receiver_type)
+        receiver_type = referenced_type(receiver_type) if ref_type?(receiver_type)
+
+        if pointer_type?(receiver_type)
+          dispatch_receiver_type = method_dispatch_receiver_type(receiver_type)
+          return receiver_type if member_name && (@method_definitions.key?([receiver_type, member_name]) || @method_definitions.key?([dispatch_receiver_type, member_name]))
+
+          return pointee_type(receiver_type)
+        end
 
         receiver_type
       end
@@ -7544,6 +7911,97 @@ module MilkTea
         return type.element_type if type.is_a?(Types::Span)
 
         nil
+      end
+
+      def collection_loop_binding_type(iterable_type, element_type)
+        return nil unless array_type?(iterable_type) || iterable_type.is_a?(Types::Span)
+        return nil unless collection_loop_ref_element_type?(element_type)
+
+        Types::GenericInstance.new("ref", [element_type])
+      end
+
+      def collection_loop_ref_element_type?(type)
+        type.is_a?(Types::Struct)
+      end
+
+      def iterator_loop_info(type, env:)
+        iter_name = "__mt_for_iterable__"
+        iterator_name = "__mt_for_iterator__"
+        probe_env = duplicate_env(env)
+        current_actual_scope(probe_env[:scopes])[iter_name] = local_binding(type:, c_name: iter_name, mutable: false, pointer: false)
+
+        iter_call = AST::Call.new(
+          callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iter_name), member: "iter"),
+          arguments: [],
+        )
+        iterator_type = infer_expression_type(iter_call, env: probe_env)
+
+        current_actual_scope(probe_env[:scopes])[iterator_name] = local_binding(type: iterator_type, c_name: iterator_name, mutable: true, pointer: false)
+        next_call = AST::Call.new(
+          callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iterator_name), member: "next"),
+          arguments: [],
+        )
+        item_storage_type = infer_expression_type(next_call, env: probe_env)
+        if item_storage_type.is_a?(Types::Nullable) && nullable_iterator_item_type?(item_storage_type.base)
+          return {
+            kind: :nullable_item,
+            iterator_type:,
+            item_storage_type:,
+            item_type: item_storage_type.base,
+          }
+        end
+
+        if item_storage_type == @types.fetch("bool")
+          current_call = AST::Call.new(
+            callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iterator_name), member: "current"),
+            arguments: [],
+          )
+          current_type = infer_expression_type(current_call, env: probe_env)
+          return {
+            kind: :current_item,
+            iterator_type:,
+            item_storage_type: current_type,
+            item_type: current_type,
+          }
+        end
+
+        nil
+      rescue SemaError
+        nil
+      end
+
+      def nullable_iterator_item_type?(type)
+        type == @types.fetch("cstr") || pointer_type?(type)
+      end
+
+      def collection_loop_item_value(iterable_ref, iterable_type, index_ref, element_type)
+        if array_type?(iterable_type)
+          IR::Index.new(receiver: iterable_ref, index: index_ref, type: element_type)
+        else
+          data_ref = IR::Member.new(receiver: iterable_ref, member: "data", type: pointer_to(element_type))
+          IR::Index.new(receiver: data_ref, index: index_ref, type: element_type)
+        end
+      end
+
+      def collection_loop_stop_value(iterable_ref, iterable_type)
+        if array_type?(iterable_type)
+          IR::IntegerLiteral.new(value: array_length(iterable_type), type: @types.fetch("ptr_uint"))
+        else
+          IR::Member.new(receiver: iterable_ref, member: "len", type: @types.fetch("ptr_uint"))
+        end
+      end
+
+      def lower_fatal_statement(message, env:)
+        IR::ExpressionStmt.new(
+          expression: lower_expression(
+            AST::Call.new(
+              callee: AST::Identifier.new(name: "fatal"),
+              arguments: [AST::Argument.new(name: nil, value: AST::StringLiteral.new(lexeme: message.inspect, value: message, cstring: false))],
+            ),
+            env:,
+            expected_type: @types.fetch("void"),
+          ),
+        )
       end
 
       def infer_range_loop_type(expression, env:)
@@ -7665,7 +8123,7 @@ module MilkTea
         @functions = saved_functions
       end
 
-      def resolve_type_ref_for_analysis(type_ref, analysis)
+      def resolve_type_ref_for_analysis(type_ref, analysis, type_params: current_type_params)
         saved_analysis = @analysis
         saved_module_name = @module_name
         saved_module_prefix = @module_prefix
@@ -7681,7 +8139,7 @@ module MilkTea
         @types = analysis.types
         @values = analysis.values
         @functions = analysis.functions
-        resolve_type_ref(type_ref)
+        resolve_type_ref(type_ref, type_params:)
       ensure
         @analysis = saved_analysis
         @module_name = saved_module_name
@@ -8144,7 +8602,29 @@ module MilkTea
       end
 
       def lower_defer_cleanup_expression(expression, env:)
-        [IR::ExpressionStmt.new(expression: lower_expression(expression, env:))]
+        prepared_setup, prepared_expression, prepared_cleanups = prepare_expression_with_cleanups(
+          expression,
+          env:,
+          expected_type: infer_expression_type(expression, env:),
+          allow_root_statement_foreign: true,
+        )
+
+        lowered = []
+        lowered.concat(prepared_setup)
+        if (foreign_call = foreign_call_info(prepared_expression, env))
+          setup, = lower_foreign_call_statement(
+            foreign_call,
+            env:,
+            expected_type: foreign_call[:binding].type.return_type,
+            statement_position: true,
+            discard_result: true,
+          )
+          lowered.concat(setup)
+        else
+          lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env:))
+        end
+        lowered.concat(prepared_cleanups.flat_map(&:itself))
+        lowered
       end
 
       def lower_defer_cleanup_body(statements, env:, return_type:)
@@ -8164,6 +8644,22 @@ module MilkTea
       end
 
       def c_type_name(type)
+        if type.is_a?(Types::Nullable)
+          return "nullable_#{c_type_name(type.base)}"
+        end
+
+        if type.is_a?(Types::GenericInstance)
+          base = if type.respond_to?(:module_name) && type.module_name&.start_with?("std.c.")
+                   type.name
+                 elsif type.respond_to?(:module_name) && !type.module_name.nil?
+                   "#{type.module_name.tr('.', '_')}_#{type.name}"
+                 else
+                   type.name
+                 end
+
+          return "#{base}_#{sanitize_identifier(type.arguments.join('_'))}"
+        end
+
         return type.name if type.module_name&.start_with?("std.c.")
         return type.name if type.module_name.nil?
 

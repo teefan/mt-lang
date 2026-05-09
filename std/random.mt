@@ -38,14 +38,14 @@ public function next_bool(generator: ref[Random]) -> bool:
 
 public function range_ptr_uint(generator: ref[Random], upper_bound: ptr_uint) -> ptr_uint:
     if upper_bound == 0:
-        panic(c"random.range_ptr_uint upper_bound must be positive")
+        fatal(c"random.range_ptr_uint upper_bound must be positive")
 
     return ptr_uint<-(next_ulong(generator) % ulong<-upper_bound)
 
 
 public function range_int(generator: ref[Random], min_value: int, max_value: int) -> int:
     if max_value < min_value:
-        panic(c"random.range_int max_value must be >= min_value")
+        fatal(c"random.range_int max_value must be >= min_value")
 
     let width = ptr_uint<-(long<-max_value - long<-min_value + 1)
     return min_value + int<-range_ptr_uint(generator, width)

@@ -428,7 +428,10 @@ module MilkTea
       end
 
       def field_c_name(name)
-        name.delete_suffix("_")
+        stripped = name.delete_suffix("_")
+        return stripped if stripped != name && Token::KEYWORDS.key?(stripped)
+
+        name
       end
 
       def instantiate(arguments)
@@ -529,7 +532,10 @@ module MilkTea
       end
 
       def field_c_name(name)
-        name.delete_suffix("_")
+        stripped = name.delete_suffix("_")
+        return stripped if stripped != name && Token::KEYWORDS.key?(stripped)
+
+        name
       end
 
       def to_s

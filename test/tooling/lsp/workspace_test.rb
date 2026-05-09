@@ -252,6 +252,56 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
+  def test_collect_diagnostics_does_not_report_method_only_import_as_unused
+    Dir.mktmpdir("lsp_workspace_method_only_import") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+
+      File.write(File.join(std_dir, "string.mt"), <<~MT)
+        module std.string
+
+        public struct String:
+            value: str
+
+        methods String:
+            public function as_str() -> str:
+                return this.value
+      MT
+
+      File.write(File.join(dir, "util.mt"), <<~MT)
+        module util
+
+        import std.string as string
+
+        public function make() -> string.String:
+            return string.String(value = "hi")
+      MT
+
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module demo.main
+
+        import util
+        import std.string as string
+
+        function main() -> str:
+            let value = util.make()
+            return value.as_str()
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      refute diagnostics.any? { |diagnostic| diagnostic[:code] == "unused-import" && diagnostic[:message].include?("string") }
+      assert_equal [], diagnostics
+    ensure
+      workspace&.shutdown
+    end
+  end
+
   def test_index_workspace_does_not_start_definition_warmup_for_every_file
     Dir.mktmpdir("lsp_workspace_index") do |dir|
       path = File.join(dir, "main.mt")

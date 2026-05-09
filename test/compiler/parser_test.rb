@@ -80,6 +80,45 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal 4, if_stmt.branches[1].length
   end
 
+  def test_parses_let_else_local_declaration
+    source = <<~MT
+      module demo.guard
+
+      function main(handle: ptr[int]?) -> int:
+          let value = handle else:
+              return 1
+          unsafe:
+              return read(value)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    local_decl = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::LocalDecl, local_decl
+    assert_equal :let, local_decl.kind
+    assert_instance_of MilkTea::AST::Identifier, local_decl.value
+    assert_equal 1, local_decl.else_body.length
+    assert_instance_of MilkTea::AST::ReturnStmt, local_decl.else_body.first
+  end
+
+  def test_rejects_var_else_local_declaration
+    source = <<~MT
+      module demo.guard
+
+      function main(handle: ptr[int]?) -> int:
+          var value = handle else:
+              return 1
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(source)
+    end
+
+    assert_match(/let-else is only allowed on let declarations/, error.message)
+  end
+
   def test_parses_public_declarations_and_methods
     source = <<~MT
       module demo.visibility

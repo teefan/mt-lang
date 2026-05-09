@@ -951,7 +951,7 @@ module MilkTea
 
         lines << "    if #{size_name} < 0:"
         lines << "        #{wrapper.fetch(:release)}(#{raw_value_expression})"
-        lines << "        panic(c\"imported wrapper #{function_name} returned negative size\")"
+        lines << "        fatal(c\"imported wrapper #{function_name} returned negative size\")"
         lines << ""
         lines << "    var value = #{wrapper.fetch(:bytes_alias)}.with_capacity(ptr_uint<-#{size_name})"
         lines << "    #{wrapper.fetch(:bytes_alias)}.append(ref_of(value), span[ubyte](data = #{raw_value_expression}, len = ptr_uint<-#{size_name}))"
@@ -990,7 +990,7 @@ module MilkTea
         lines << "    if #{count_name} < 0:"
         lines << "        if raw_result != null:"
         lines << "            #{wrapper.fetch(:release)}(#{raw_value_expression})"
-        lines << "        panic(c\"imported wrapper #{function_name} returned negative count\")"
+        lines << "        fatal(c\"imported wrapper #{function_name} returned negative count\")"
         lines << ""
         lines << "    var value = #{vec_alias}.Vec[#{element_type}].with_capacity(ptr_uint<-#{count_name})"
         lines << "    if #{count_name} == 0:"

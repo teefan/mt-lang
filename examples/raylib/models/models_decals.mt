@@ -71,7 +71,7 @@ function mesh_index(mesh: rl.Mesh, index: int) -> int:
     if indices != null:
         return unsafe: int<-indices[index]
 
-    panic("mesh indices missing")
+    fatal("mesh indices missing")
 
 
 function triangle_vertices(v0: rl.Vector3, v1: rl.Vector3, v2: rl.Vector3) -> array[rl.Vector3, 3]:

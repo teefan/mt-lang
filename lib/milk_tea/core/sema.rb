@@ -70,6 +70,33 @@ module MilkTea
       def private_method?(receiver_type, name)
         return true if private_methods.fetch(receiver_type, {}).key?(name)
 
+        if receiver_type.is_a?(Types::GenericInstance)
+          dispatch_receiver_type = Types::GenericInstance.new(
+            receiver_type.name,
+            receiver_type.arguments.each_with_index.map do |argument, index|
+              argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__receiver_arg#{index}")
+            end,
+          )
+          return true if dispatch_receiver_type != receiver_type && private_methods.fetch(dispatch_receiver_type, {}).key?(name)
+        end
+
+        if receiver_type.is_a?(Types::Nullable)
+          dispatch_base_type = receiver_type.base
+          if dispatch_base_type.is_a?(Types::StructInstance)
+            dispatch_base_type = dispatch_base_type.definition
+          elsif dispatch_base_type.is_a?(Types::GenericInstance)
+            dispatch_base_type = Types::GenericInstance.new(
+              dispatch_base_type.name,
+              dispatch_base_type.arguments.each_with_index.map do |argument, index|
+                argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__receiver_arg#{index}")
+              end,
+            )
+          end
+
+          dispatch_receiver_type = Types::Nullable.new(dispatch_base_type)
+          return true if dispatch_receiver_type != receiver_type && private_methods.fetch(dispatch_receiver_type, {}).key?(name)
+        end
+
         receiver_type.is_a?(Types::StructInstance) && private_methods.fetch(receiver_type.definition, {}).key?(name)
       end
     end
@@ -1073,6 +1100,7 @@ module MilkTea
           case statement
           when AST::LocalDecl
             @preassigned_local_binding_ids[statement.object_id] ||= allocate_binding_id
+            preassign_local_binding_ids_in_statements(statement.else_body || [])
           when AST::IfStmt
             statement.branches.each { |branch| preassign_local_binding_ids_in_statements(branch.body || []) }
             preassign_local_binding_ids_in_statements(statement.else_body || [])
@@ -1084,7 +1112,9 @@ module MilkTea
           when AST::UnsafeStmt, AST::WhileStmt
             preassign_local_binding_ids_in_statements(statement.body || [])
           when AST::ForStmt
-            @preassigned_local_binding_ids[statement.object_id] ||= allocate_binding_id
+            statement.bindings.each do |binding|
+              @preassigned_local_binding_ids[binding.object_id] ||= allocate_binding_id
+            end
             preassign_local_binding_ids_in_statements(statement.body || [])
           when AST::DeferStmt
             preassign_local_binding_ids_in_statements(statement.body || []) if statement.body
@@ -1123,6 +1153,7 @@ module MilkTea
           case statement
           when AST::LocalDecl
             walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids) if statement.value
+            walk_statements_for_precheck_resolution(statement.else_body || [], block_scopes, declaration_ids, identifier_ids)
             binding_id = @preassigned_local_binding_ids.fetch(statement.object_id)
             block_scopes.last[statement.name] = binding_id
             declaration_ids[statement.object_id] = binding_id
@@ -1155,11 +1186,15 @@ module MilkTea
             walk_expression_for_precheck_resolution(statement.condition, block_scopes, identifier_ids) if statement.is_a?(AST::WhileStmt)
             walk_statements_for_precheck_resolution(statement.body || [], block_scopes, declaration_ids, identifier_ids)
           when AST::ForStmt
-            walk_expression_for_precheck_resolution(statement.iterable, block_scopes, identifier_ids)
+            statement.iterables.each do |iterable|
+              walk_expression_for_precheck_resolution(iterable, block_scopes, identifier_ids)
+            end
             for_scopes = block_scopes + [{}]
-            binding_id = @preassigned_local_binding_ids.fetch(statement.object_id)
-            for_scopes.last[statement.name] = binding_id
-            declaration_ids[statement.object_id] = binding_id
+            statement.bindings.each do |binding|
+              binding_id = @preassigned_local_binding_ids.fetch(binding.object_id)
+              for_scopes.last[binding.name] = binding_id
+              declaration_ids[binding.object_id] = binding_id
+            end
             walk_statements_for_precheck_resolution(statement.body || [], for_scopes, declaration_ids, identifier_ids)
           when AST::DeferStmt
             walk_expression_for_precheck_resolution(statement.expression, block_scopes, identifier_ids) if statement.expression
@@ -1253,7 +1288,7 @@ module MilkTea
         with_error_node(statement) do
           case statement
           when AST::LocalDecl
-            check_local_decl(statement, scopes:)
+            check_local_decl(statement, scopes:, return_type:, allow_return:)
           when AST::Assignment
             check_assignment(statement, scopes:)
           when AST::IfStmt
@@ -1317,7 +1352,7 @@ module MilkTea
                 check_block(statement.body, scopes:, return_type:, allow_return: false)
               end
             else
-              validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: false)
+              validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: true)
               validate_hoistable_foreign_expression!(statement.expression, scopes:, root_hoistable: false)
               infer_expression(statement.expression, scopes:)
             end
@@ -1333,7 +1368,7 @@ module MilkTea
         end
       end
 
-      def check_local_decl(statement, scopes:)
+      def check_local_decl(statement, scopes:, return_type:, allow_return:)
         current_scope = current_actual_scope(scopes)
         raise_sema_error("duplicate local #{statement.name}") if current_scope.key?(statement.name)
 
@@ -1359,36 +1394,80 @@ module MilkTea
           inferred_type = declared_type
         end
 
-        if declared_type
-          validate_local_ref_type!(declared_type, statement.name)
-          validate_local_proc_type!(declared_type, statement.name, initializer: statement.value)
-          ensure_assignable!(
-            inferred_type,
-            declared_type,
-            "cannot assign #{inferred_type} to #{statement.name}: expected #{declared_type}",
-            expression: statement.value,
-            scopes:,
-            contextual_int_to_float: contextual_int_to_float_target?(declared_type),
-            line: statement.line,
-            column: statement.column,
-          )
-          final_type = declared_type
+        if statement.else_body
+          raise_sema_error("let-else is only allowed on let declarations") unless statement.kind == :let
+          raise_sema_error("let-else initializer for #{statement.name} must be nullable, got #{inferred_type}") unless inferred_type.is_a?(Types::Nullable)
+
+          if declared_type&.is_a?(Types::Nullable)
+            raise_sema_error("let-else type annotation for #{statement.name} must be non-null, got #{declared_type}")
+          end
+
+          success_type = inferred_type.base
+
+          if declared_type
+            validate_local_ref_type!(declared_type, statement.name)
+            validate_local_proc_type!(declared_type, statement.name, initializer: statement.value)
+            ensure_assignable!(
+              success_type,
+              declared_type,
+              "cannot assign #{success_type} to #{statement.name}: expected #{declared_type}",
+              expression: statement.value,
+              scopes:,
+              contextual_int_to_float: contextual_int_to_float_target?(declared_type),
+              line: statement.line,
+              column: statement.column,
+            )
+            final_type = declared_type
+          else
+            raise_sema_error("cannot bind void result to #{statement.name}") if success_type.void?
+
+            final_type = success_type
+          end
+
+          validate_local_ref_type!(final_type, statement.name)
+          validate_local_proc_type!(final_type, statement.name, initializer: statement.value)
+
+          check_block(statement.else_body, scopes:, return_type:, allow_return:)
+          raise_sema_error("else block for #{statement.name} must exit control flow") unless cfg_block_always_terminates?(statement.else_body)
+
+          storage_type = inferred_type
+          const_value = nil
         else
-          raise_sema_error("cannot infer type for #{statement.name} from null") if inferred_type.is_a?(Types::Null)
-          raise_sema_error("cannot bind void result to #{statement.name}") if inferred_type.void?
+          if declared_type
+            validate_local_ref_type!(declared_type, statement.name)
+            validate_local_proc_type!(declared_type, statement.name, initializer: statement.value)
+            ensure_assignable!(
+              inferred_type,
+              declared_type,
+              "cannot assign #{inferred_type} to #{statement.name}: expected #{declared_type}",
+              expression: statement.value,
+              scopes:,
+              contextual_int_to_float: contextual_int_to_float_target?(declared_type),
+              line: statement.line,
+              column: statement.column,
+            )
+            final_type = declared_type
+          else
+            raise_sema_error("cannot infer type for #{statement.name} from null") if inferred_type.is_a?(Types::Null)
+            raise_sema_error("cannot bind void result to #{statement.name}") if inferred_type.void?
 
-          final_type = inferred_type
+            final_type = inferred_type
+          end
+
+          validate_local_ref_type!(final_type, statement.name)
+          validate_local_proc_type!(final_type, statement.name, initializer: statement.value)
+
+          storage_type = final_type
+          const_value = statement.kind == :let && statement.value ? evaluate_compile_time_const_value(statement.value, scopes:) : nil
         end
-
-        validate_local_ref_type!(final_type, statement.name)
-        validate_local_proc_type!(final_type, statement.name, initializer: statement.value)
 
         current_scope[statement.name] = value_binding(
           name: statement.name,
-          type: final_type,
+          type: storage_type,
           mutable: statement.kind == :var,
           kind: statement.kind,
-          const_value: statement.kind == :let && statement.value ? evaluate_compile_time_const_value(statement.value, scopes:) : nil,
+          flow_type: final_type,
+          const_value:,
           id: @preassigned_local_binding_ids[statement.object_id],
         )
         record_declaration_binding(statement, current_scope[statement.name])
@@ -1625,29 +1704,72 @@ module MilkTea
       end
 
       def check_for_stmt(statement, scopes:, return_type:, allow_return:)
-        validate_consuming_foreign_expression!(statement.iterable, scopes:, root_allowed: false)
-        loop_type = if range_expr?(statement.iterable)
-                      check_range_expr_loop(statement.iterable, scopes:)
-                    else
-                      iterable_type = infer_expression(statement.iterable, scopes:)
-                      collection_loop_type(iterable_type)
-                    end
+        statement.iterables.each do |iterable|
+          validate_consuming_foreign_expression!(iterable, scopes:, root_allowed: false)
+        end
 
-        raise_sema_error("for loop expects start..stop, array[T, N], or span[T]") unless loop_type
+        raise_sema_error("for loop binder count must match iterable count") unless statement.bindings.length == statement.iterables.length
+
+        binding_infos = if statement.parallel?
+                          check_parallel_for_bindings(statement, scopes:)
+                        else
+                          iterable_type = nil
+                          loop_type = if range_expr?(statement.iterable)
+                                        check_range_expr_loop(statement.iterable, scopes:)
+                                      else
+                                        iterable_type = infer_expression(statement.iterable, scopes:)
+                                        collection_loop_type(iterable_type) || iterator_loop_type(iterable_type)
+                                      end
+
+                          raise_sema_error("for loop expects start..stop, array[T, N], span[T], or an iterable with iter()/next()") unless loop_type
+
+                          binding_type = if iterable_type
+                                           collection_loop_binding_type(iterable_type, loop_type) || loop_type
+                                         else
+                                           loop_type
+                                         end
+                          [{ binding: statement.binding, type: binding_type }]
+                        end
 
         with_nested_scope(scopes) do |loop_scopes|
-          current_actual_scope(loop_scopes)[statement.name] = value_binding(
-            name: statement.name,
-            type: loop_type,
-            mutable: false,
-            kind: :let,
-            id: @preassigned_local_binding_ids[statement.object_id],
-          )
-          record_declaration_binding(statement, current_actual_scope(loop_scopes)[statement.name])
+          binding_infos.each do |entry|
+            binding = entry[:binding]
+            current_actual_scope(loop_scopes)[binding.name] = value_binding(
+              name: binding.name,
+              type: entry[:type],
+              mutable: false,
+              kind: :let,
+              id: @preassigned_local_binding_ids[binding.object_id],
+            )
+            record_declaration_binding(binding, current_actual_scope(loop_scopes)[binding.name])
+          end
           with_loop do
             check_block(statement.body, scopes: loop_scopes, return_type:, allow_return:)
           end
         end
+      end
+
+      def check_parallel_for_bindings(statement, scopes:)
+        raise_sema_error("parallel for loops currently support arrays and spans only") if statement.iterables.any? { |iterable| range_expr?(iterable) }
+
+        iterable_types = statement.iterables.map { |iterable| infer_expression(iterable, scopes:) }
+        binding_infos = iterable_types.each_with_index.map do |iterable_type, index|
+          loop_type = collection_loop_type(iterable_type)
+          raise_sema_error("parallel for loops expect arrays or spans for each iterable") unless loop_type
+
+          binding_type = collection_loop_binding_type(iterable_type, loop_type) || loop_type
+          { binding: statement.bindings[index], iterable_type:, type: binding_type }
+        end
+
+        ensure_parallel_for_static_lengths_match!(binding_infos.map { |entry| entry[:iterable_type] })
+        binding_infos
+      end
+
+      def ensure_parallel_for_static_lengths_match!(iterable_types)
+        lengths = iterable_types.filter_map { |iterable_type| array_type?(iterable_type) ? array_length(iterable_type) : nil }
+        return if lengths.empty? || lengths.all? { |length| length == lengths.first }
+
+        raise_sema_error("parallel for iterables must have matching lengths")
       end
 
 
@@ -1981,7 +2103,7 @@ module MilkTea
         end
 
         field_receiver_type = infer_field_receiver_type(expression.receiver, scopes:)
-        method_receiver_type = infer_method_receiver_type(expression.receiver, scopes:)
+        method_receiver_type = infer_method_receiver_type(expression.receiver, scopes:, member_name: expression.member)
         if char_array_removed_text_method?(method_receiver_type, expression.member)
           raise_sema_error("#{method_receiver_type}.#{expression.member} is not available; array[char, N] is raw storage, use str_builder[N] or an explicit helper")
         end
@@ -2226,7 +2348,7 @@ module MilkTea
             callable,
             expression.arguments,
             scopes:,
-            receiver_type: infer_method_receiver_type(receiver, scopes:),
+            receiver_type: infer_method_receiver_type(receiver, scopes:, member_name: expression.callee.member),
           ) if callable.type_params.any?
           raise_sema_error("cannot call edit method #{callable.name} on an immutable receiver") if callable.type.receiver_mutable && !assignable_receiver?(receiver, scopes)
 
@@ -2250,8 +2372,8 @@ module MilkTea
           check_reinterpret_call(callable, expression.arguments, scopes:)
         when :zero
           raise_sema_error("zero[T]() is no longer supported; use zero[T]")
-        when :panic
-          check_panic_call(expression.arguments, scopes:)
+        when :fatal
+          check_fatal_call(expression.arguments, scopes:)
         when :ref_of
           check_ref_of_call(expression.arguments, scopes:)
         when :const_ptr_of
@@ -2480,7 +2602,7 @@ module MilkTea
           end
 
           return [:function, @top_level_functions.fetch(callee.name), nil] if @top_level_functions.key?(callee.name)
-          return [:panic, nil, nil] if callee.name == "panic"
+          return [:fatal, nil, nil] if callee.name == "fatal"
           return [:ref_of, nil, nil] if callee.name == "ref_of"
           return [:const_ptr_of, nil, nil] if callee.name == "const_ptr_of"
           return [:read, nil, nil] if callee.name == "read"
@@ -2531,7 +2653,7 @@ module MilkTea
             raise_sema_error("unknown associated function #{type_expr}.#{callee.member}")
           end
 
-          method_receiver_type = infer_method_receiver_type(callee.receiver, scopes:)
+          method_receiver_type = infer_method_receiver_type(callee.receiver, scopes:, member_name: callee.member)
           method = lookup_method(method_receiver_type, callee.member)
           return [:method, method, callee.receiver] if method
 
@@ -2740,14 +2862,14 @@ module MilkTea
         end
       end
 
-      def check_panic_call(arguments, scopes:)
-        raise_sema_error("panic does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("panic expects 1 argument, got #{arguments.length}") unless arguments.length == 1
+      def check_fatal_call(arguments, scopes:)
+        raise_sema_error("fatal does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("fatal expects 1 argument, got #{arguments.length}") unless arguments.length == 1
 
         message_type = infer_expression(arguments.first.value, scopes:, expected_type: @types.fetch("str"))
         return @types.fetch("void") if string_like_type?(message_type)
 
-        raise_sema_error("panic expects str or cstr, got #{message_type}")
+        raise_sema_error("fatal expects str or cstr, got #{message_type}")
       end
 
       def check_ref_of_call(arguments, scopes:)
@@ -3758,6 +3880,8 @@ module MilkTea
       def validate_async_statement!(statement)
         case statement
         when AST::LocalDecl
+          raise_sema_error("let-else is not supported in async functions yet") if statement.else_body
+
           return unless statement.value
 
           validate_async_expression_support!(statement.value, context: "local initializer")
@@ -3782,7 +3906,10 @@ module MilkTea
 
           statement.body.each { |s| validate_async_statement!(s) }
         when AST::ForStmt
-          validate_async_expression_support!(statement.iterable, context: "for iterables")
+          raise_sema_error("async functions do not yet support parallel for loops") if statement.parallel?
+          statement.iterables.each do |iterable|
+            validate_async_expression_support!(iterable, context: "for iterables")
+          end
 
           statement.body.each { |s| validate_async_statement!(s) }
         when AST::MatchStmt
@@ -3852,7 +3979,7 @@ module MilkTea
         when AST::StaticAssert
           expression_contains_await?(statement.condition) || expression_contains_await?(statement.message)
         when AST::ForStmt
-          expression_contains_await?(statement.iterable) || statements_contain_await?(statement.body)
+          statement.iterables.any? { |iterable| expression_contains_await?(iterable) } || statements_contain_await?(statement.body)
         when AST::WhileStmt
           expression_contains_await?(statement.condition) || statements_contain_await?(statement.body)
         when AST::ReturnStmt
@@ -4200,6 +4327,54 @@ module MilkTea
         nil
       end
 
+      def collection_loop_binding_type(iterable_type, element_type)
+        return nil unless array_type?(iterable_type) || span_type?(iterable_type)
+        return nil unless collection_loop_ref_element_type?(element_type)
+
+        Types::GenericInstance.new("ref", [element_type])
+      end
+
+      def collection_loop_ref_element_type?(type)
+        type.is_a?(Types::Struct)
+      end
+
+      def iterator_loop_type(type)
+        iter_method = lookup_method(type, "iter")
+        return nil unless iter_method
+
+        unless iter_method.type.params.empty?
+          raise_sema_error("for iterator #{type}.iter expects 0 arguments")
+        end
+        if iter_method.type.receiver_mutable
+          raise_sema_error("for iterator #{type}.iter cannot be an edit method")
+        end
+
+        iterator_type = iter_method.type.return_type
+        next_method = lookup_method(iterator_type, "next")
+        raise_sema_error("for iterator #{iterator_type} must define next()") unless next_method
+        unless next_method.type.params.empty?
+          raise_sema_error("for iterator #{iterator_type}.next expects 0 arguments")
+        end
+
+        next_type = next_method.type.return_type
+        if next_type.is_a?(Types::Nullable) && typed_null_target_type?(next_type.base)
+          return next_type.base
+        end
+
+        if next_type == @types.fetch("bool")
+          current_method = lookup_method(iterator_type, "current")
+          raise_sema_error("for iterator #{iterator_type} must define current() when next() returns bool") unless current_method
+          unless current_method.type.params.empty?
+            raise_sema_error("for iterator #{iterator_type}.current expects 0 arguments")
+          end
+          raise_sema_error("for iterator #{iterator_type}.current cannot return void") if current_method.type.return_type == @types.fetch("void")
+
+          return current_method.type.return_type
+        end
+
+        raise_sema_error("for iterator #{iterator_type}.next must return bool or a nullable pointer-like item, got #{next_type}")
+      end
+
       def string_like_type?(type)
         type == @types.fetch("str") || type == @types.fetch("cstr")
       end
@@ -4280,7 +4455,22 @@ module MilkTea
       end
 
       def method_dispatch_receiver_type(receiver_type)
-        receiver_type.is_a?(Types::StructInstance) ? receiver_type.definition : receiver_type
+        return receiver_type.definition if receiver_type.is_a?(Types::StructInstance)
+        if receiver_type.is_a?(Types::Nullable)
+          dispatch_base_type = method_dispatch_receiver_type(receiver_type.base)
+          return receiver_type if dispatch_base_type == receiver_type.base
+
+          return Types::Nullable.new(dispatch_base_type)
+        end
+        return receiver_type unless receiver_type.is_a?(Types::GenericInstance)
+
+        dispatch_receiver_type = Types::GenericInstance.new(
+          receiver_type.name,
+          receiver_type.arguments.each_with_index.map do |argument, index|
+            argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__receiver_arg#{index}")
+          end,
+        )
+        dispatch_receiver_type == receiver_type ? receiver_type : dispatch_receiver_type
       end
 
       def resolve_methods_receiver_target(type_ref)
@@ -4292,14 +4482,44 @@ module MilkTea
             receiver_type = resolve_type_ref(type_ref, type_params: receiver_type_params)
             return [generic_type, receiver_type, receiver_type_param_names]
           end
+
+          begin
+            receiver_type = resolve_type_ref(type_ref)
+            unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::Opaque) || receiver_type.is_a?(Types::GenericInstance) || receiver_type.is_a?(Types::Nullable) || receiver_type.is_a?(Types::StringView)
+              raise_sema_error("methods target #{type_ref} must be a struct, opaque, nullable/generic receiver, or str")
+            end
+
+            return [receiver_type, receiver_type, []]
+          rescue MilkTea::SemaError => error
+            receiver_type_param_names = methods_receiver_type_argument_names!(type_ref)
+            raise error if receiver_type_param_names.empty?
+
+            receiver_type_params = receiver_type_param_names.to_h { |name| [name, Types::TypeVar.new(name)] }
+            receiver_type = resolve_type_ref(type_ref, type_params: receiver_type_params)
+            return [method_dispatch_receiver_type(receiver_type), receiver_type, receiver_type_param_names]
+          end
         end
 
         receiver_type = resolve_type_ref(type_ref)
-        unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::StringView)
-          raise_sema_error("methods target #{type_ref} must be a struct or str")
+        unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::Opaque) || receiver_type.is_a?(Types::GenericInstance) || receiver_type.is_a?(Types::Nullable) || receiver_type.is_a?(Types::StringView)
+          raise_sema_error("methods target #{type_ref} must be a struct, opaque, nullable/generic receiver, or str")
         end
 
         [receiver_type, receiver_type, []]
+      end
+
+      def methods_receiver_type_argument_names!(type_ref)
+        names = type_ref.arguments.map do |argument|
+          value = argument.value
+          next unless value.is_a?(AST::TypeRef)
+          next unless value.arguments.empty? && !value.nullable && value.name.parts.length == 1
+
+          value.name.parts.first
+        end
+
+        raise_sema_error("methods target #{type_ref} must use the receiver type parameters directly") if names.any?(&:nil?)
+
+        names
       end
 
       def validate_methods_receiver_type_arguments!(type_ref, generic_type)
@@ -4322,14 +4542,39 @@ module MilkTea
       def infer_receiver_type_substitutions(binding, receiver_type)
         declared_receiver_type = binding.declared_receiver_type
         return {} unless declared_receiver_type
-        return {} unless declared_receiver_type.is_a?(Types::StructInstance)
-        return {} unless declared_receiver_type.definition.is_a?(Types::GenericStructDefinition)
+        case declared_receiver_type
+        when Types::Nullable
+          unless receiver_type.is_a?(Types::Nullable)
+            raise_sema_error("cannot use method #{binding.name} with receiver #{receiver_type}")
+          end
 
-        unless receiver_type.is_a?(Types::StructInstance) && receiver_type.definition == declared_receiver_type.definition
-          raise_sema_error("cannot use method #{binding.name} with receiver #{receiver_type}")
+          infer_receiver_type_substitutions(
+            binding.with(declared_receiver_type: declared_receiver_type.base),
+            receiver_type.base,
+          )
+        when Types::StructInstance
+          return {} unless declared_receiver_type.definition.is_a?(Types::GenericStructDefinition)
+
+          unless receiver_type.is_a?(Types::StructInstance) && receiver_type.definition == declared_receiver_type.definition
+            raise_sema_error("cannot use method #{binding.name} with receiver #{receiver_type}")
+          end
+
+          declared_receiver_type.definition.type_params.zip(receiver_type.arguments).to_h
+        when Types::GenericInstance
+          unless receiver_type.is_a?(Types::GenericInstance) && receiver_type.name == declared_receiver_type.name && receiver_type.arguments.length == declared_receiver_type.arguments.length
+            raise_sema_error("cannot use method #{binding.name} with receiver #{receiver_type}")
+          end
+
+          declared_receiver_type.arguments.zip(receiver_type.arguments).each_with_object({}) do |(declared_argument, actual_argument), substitutions|
+            if declared_argument.is_a?(Types::TypeVar)
+              substitutions[declared_argument.name] = actual_argument
+            elsif declared_argument != actual_argument
+              raise_sema_error("cannot use method #{binding.name} with receiver #{receiver_type}")
+            end
+          end
+        else
+          {}
         end
-
-        declared_receiver_type.definition.type_params.zip(receiver_type.arguments).to_h
       end
 
       def callable_receiver_type_for_specialization(callee, scopes:)
@@ -4384,7 +4629,7 @@ module MilkTea
                         nil
                       end
                     else
-                      receiver_type = infer_method_receiver_type(expression.callee.receiver, scopes:)
+                      receiver_type = infer_method_receiver_type(expression.callee.receiver, scopes:, member_name: expression.callee.member)
                       method = lookup_method(receiver_type, expression.callee.member)
                       if method
                         callable_kind = :method
@@ -4831,7 +5076,23 @@ module MilkTea
           return
         end
 
+        return if callable_param_ref_supported?(type)
+
         raise_sema_error("parameter #{parameter_name} of #{function_name} cannot nest ref types") if contains_ref_type?(type)
+      end
+
+      def callable_param_ref_supported?(type)
+        case type
+        when Types::Proc
+          type.params.all? { |param| ref_type?(param.type) || !contains_ref_type?(param.type) } &&
+            !contains_ref_type?(type.return_type)
+        when Types::Function
+          type.params.all? { |param| ref_type?(param.type) || !contains_ref_type?(param.type) } &&
+            !contains_ref_type?(type.return_type) &&
+            (type.receiver_type.nil? || !contains_ref_type?(type.receiver_type))
+        else
+          false
+        end
       end
 
       def validate_parameter_proc_type!(type, function_name:, parameter_name:, external:, foreign:)
@@ -5080,9 +5341,9 @@ module MilkTea
         raise_sema_error("read expects ref[...] or ptr[...], got #{handle_type}")
       end
 
-      def infer_method_receiver_type(receiver_expression, scopes:)
+      def infer_method_receiver_type(receiver_expression, scopes:, member_name: nil)
         receiver_type = infer_expression(receiver_expression, scopes:)
-        project_method_receiver_type(receiver_type)
+        project_method_receiver_type(receiver_type, member_name:)
       end
 
       def infer_field_receiver_type(receiver_expression, scopes:, require_mutable_pointer: false)
@@ -5102,9 +5363,11 @@ module MilkTea
         pointee_type(receiver_type)
       end
 
-      def project_method_receiver_type(receiver_type)
-        return referenced_type(receiver_type) if ref_type?(receiver_type)
+      def project_method_receiver_type(receiver_type, member_name: nil)
+        receiver_type = referenced_type(receiver_type) if ref_type?(receiver_type)
         return receiver_type unless pointer_type?(receiver_type)
+
+        return receiver_type if member_name && lookup_method(receiver_type, member_name)
 
         require_unsafe!("raw pointer dereference requires unsafe")
 

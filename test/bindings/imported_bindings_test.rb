@@ -879,7 +879,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         "",
         "    if data_size < 0:",
         "        c.UnloadData(ptr[ubyte]<-raw_result)",
-        "        panic(c\"imported wrapper load_data returned negative size\")",
+        "        fatal(c\"imported wrapper load_data returned negative size\")",
         "",
         "    var value = bytes.with_capacity(ptr_uint<-data_size)",
         "    bytes.append(ref_of(value), span[ubyte](data = ptr[ubyte]<-raw_result, len = ptr_uint<-data_size))",
@@ -981,7 +981,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
             if count < 0:
                 if raw_result != null:
                     c.UnloadItems(ptr[int]<-raw_result)
-                panic(c"imported wrapper load_items returned negative count")
+                fatal(c"imported wrapper load_items returned negative count")
 
             var value = vec.Vec[int].with_capacity(ptr_uint<-count)
             if count == 0:

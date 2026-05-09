@@ -58,7 +58,7 @@ function utf8_boundary(text: str, index: ptr_uint) -> bool:
 
 public function byte_at(text: str, index: ptr_uint) -> ubyte:
     if index >= text.len:
-        panic(c"str.byte_at index out of bounds")
+        fatal(c"str.byte_at index out of bounds")
 
     return unsafe: ubyte<-read(text.data + index)
 
@@ -179,15 +179,15 @@ public function is_valid_utf8(text: str) -> bool:
 methods str:
     public function slice(start: ptr_uint, len: ptr_uint) -> str:
         if start > this.len:
-            panic(c"str slice start out of bounds")
+            fatal(c"str slice start out of bounds")
         if len > this.len - start:
-            panic(c"str slice length out of bounds")
+            fatal(c"str slice length out of bounds")
 
         let stop = start + len
         if not utf8_boundary(this, start):
-            panic(c"str slice start must be a UTF-8 boundary")
+            fatal(c"str slice start must be a UTF-8 boundary")
         if not utf8_boundary(this, stop):
-            panic(c"str slice end must be a UTF-8 boundary")
+            fatal(c"str slice end must be a UTF-8 boundary")
 
         return unsafe: str(data = this.data + start, len = len)
 

@@ -68,7 +68,7 @@ function insert_existing[K, V](entries: ptr[Entry[K, V]], capacity: ptr_uint, en
         index = (index + 1) % capacity
         probes += 1
 
-    panic(c"map.insert_existing table full")
+    fatal(c"map.insert_existing table full")
 
 
 public function try_reserve[K, V](items: ref[HashMap[K, V]], min_capacity: ptr_uint) -> bool:
@@ -106,7 +106,7 @@ public function try_reserve[K, V](items: ref[HashMap[K, V]], min_capacity: ptr_u
 
 public function reserve[K, V](items: ref[HashMap[K, V]], min_capacity: ptr_uint) -> void:
     if not try_reserve[K, V](items, min_capacity):
-        panic(c"map.reserve out of memory")
+        fatal(c"map.reserve out of memory")
     return
 
 
@@ -165,7 +165,7 @@ public function try_put[K, V](items: ref[HashMap[K, V]], key: K, value_item: V) 
 
 public function put[K, V](items: ref[HashMap[K, V]], key: K, value_item: V) -> void:
     if not try_put[K, V](items, key, value_item):
-        panic(c"map.put out of memory")
+        fatal(c"map.put out of memory")
     return
 
 

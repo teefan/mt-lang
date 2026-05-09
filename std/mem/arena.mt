@@ -18,12 +18,12 @@ public function create(capacity_bytes: ptr_uint) -> Arena:
 public function create_aligned(capacity_bytes: ptr_uint, alignment: ptr_uint) -> Arena:
     let normalized_alignment = heap.normalize_alignment(alignment)
     if normalized_alignment == 0:
-        panic(c"arena.create_aligned requires a power-of-two alignment")
+        fatal(c"arena.create_aligned requires a power-of-two alignment")
 
     let memory = heap.alloc_bytes_aligned(capacity_bytes, normalized_alignment)
     if memory == null:
         if capacity_bytes != 0:
-            panic(c"arena.create_aligned out of memory")
+            fatal(c"arena.create_aligned out of memory")
 
         return Arena(
             memory = null,
@@ -43,7 +43,7 @@ public function create_aligned(capacity_bytes: ptr_uint, alignment: ptr_uint) ->
 public function create_for[T](count: ptr_uint) -> Arena:
     let element_size = ptr_uint<-size_of(T)
     if heap.mul_overflows(count, element_size):
-        panic(c"arena.create_for size overflow")
+        fatal(c"arena.create_for size overflow")
 
     return create_aligned(count * element_size, ptr_uint<-align_of(T))
 
@@ -54,7 +54,7 @@ methods Arena:
 
     public edit function reset(mark: Mark) -> void:
         if mark > this.offset:
-            panic(c"arena.reset invalid mark")
+            fatal(c"arena.reset invalid mark")
 
         this.offset = mark
         return
@@ -125,7 +125,7 @@ methods Arena:
     public edit function to_cstr(text: str) -> cstr:
         let memory = this.alloc_bytes(text.len + 1)
         if memory == null:
-            panic(c"Arena.to_cstr out of memory")
+            fatal(c"Arena.to_cstr out of memory")
 
         unsafe:
             let buffer = ptr[char]<-memory
