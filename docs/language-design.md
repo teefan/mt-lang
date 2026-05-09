@@ -316,9 +316,11 @@ function load_texture(path: str) -> status.Status[Texture, LoadError]:
 - raw ABI work that is not covered by a declared foreign import contract
 
 ```mt
+let p = unsafe: pixels + offset
+
 unsafe:
-	let p = pixels + offset
 	let pixel = read(ptr[uint]<-p)
+	pixels = p
 ```
 
 The point is not to forbid sharp tools. The point is to mark them.

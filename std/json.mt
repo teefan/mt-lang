@@ -91,13 +91,11 @@ function token(kind: TokenKind) -> Token:
 
 
 function slice_token(kind: TokenKind, source: str, start: ptr_uint, stop: ptr_uint) -> Token:
-    unsafe:
-        return Token(kind = kind, text = str(data = source.data + start, len = stop - start))
+    return unsafe: Token(kind = kind, text = str(data = source.data + start, len = stop - start))
 
 
 function byte_at(source: str, index: ptr_uint) -> ubyte:
-    unsafe:
-        return ubyte<-read(source.data + index)
+    return unsafe: ubyte<-read(source.data + index)
 
 
 function skip_space(lexer: ref[Lexer]) -> void:

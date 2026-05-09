@@ -147,5 +147,4 @@ public function parse(source: str) -> status.Status[ptr[JSON], Error]:
             if parsed == null:
                 return status.Status[ptr[JSON], Error].err(error= Error.parse_failed)
 
-            unsafe:
-                return status.Status[ptr[JSON], Error].ok(value= ptr[JSON]<-parsed)
+            return unsafe: status.Status[ptr[JSON], Error].ok(value= ptr[JSON]<-parsed)

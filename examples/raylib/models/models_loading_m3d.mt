@@ -13,33 +13,27 @@ const credit_text: cstr = c"(c) CesiumMan model by KhronosGroup"
 
 
 function chars_to_cstr(text: ptr[char]) -> cstr:
-    unsafe:
-        return cstr<-text
+    return unsafe: cstr<-text
 
 
 function model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
-    unsafe:
-        return read(anims + index)
+    return unsafe: read(anims + index)
 
 
 function model_animation_name(anims: ptr[rl.ModelAnimation], index: int) -> cstr:
-    unsafe:
-        return chars_to_cstr(ptr_of((anims + index).name[0]))
+    return unsafe: chars_to_cstr(ptr_of((anims + index).name[0]))
 
 
 function model_animation_pose(anim: rl.ModelAnimation, frame: int) -> rl.ModelAnimPose:
-    unsafe:
-        return read(anim.keyframePoses + frame)
+    return unsafe: read(anim.keyframePoses + frame)
 
 
 function pose_translation(pose: rl.ModelAnimPose, index: int) -> rl.Vector3:
-    unsafe:
-        return (pose + index).translation
+    return unsafe: (pose + index).translation
 
 
 function skeleton_bone_parent(skeleton: rl.ModelSkeleton, index: int) -> int:
-    unsafe:
-        return (skeleton.bones + index).parent
+    return unsafe: (skeleton.bones + index).parent
 
 
 function draw_model_skeleton(skeleton: rl.ModelSkeleton, pose: rl.ModelAnimPose, scale: float, color: rl.Color) -> void:

@@ -17,12 +17,10 @@ function main() -> int:
 
     var directory = zero[array[char, 1024]]
     let directory_ptr = ptr_of(directory[0])
-    unsafe:
-        rl.TextCopy(directory_ptr, rl.GetWorkingDirectory())
+    unsafe: rl.TextCopy(directory_ptr, rl.GetWorkingDirectory())
 
     var files = zero[rl.FilePathList]
-    unsafe:
-        files = rl.LoadDirectoryFilesEx(cstr<-directory_ptr, filter_text, false)
+    files = unsafe: rl.LoadDirectoryFilesEx(cstr<-directory_ptr, filter_text, false)
 
     var btn_back_pressed = false
     var list_scroll_index = 0
@@ -46,8 +44,7 @@ function main() -> int:
         btn_back_pressed = gui.GuiButton(gui.Rectangle(x = 40.0, y = 10.0, width = 48.0, height = 28.0), back_button_text) != 0
 
         gui.GuiSetStyle(gui.GuiControl.DEFAULT, gui.GuiDefaultProperty.TEXT_SIZE, gui.GuiGetFont().baseSize * 2)
-        unsafe:
-            gui.GuiLabel(gui.Rectangle(x = 98.0, y = 10.0, width = 700.0, height = 28.0), cstr<-directory_ptr)
+        unsafe: gui.GuiLabel(gui.Rectangle(x = 98.0, y = 10.0, width = 700.0, height = 28.0), cstr<-directory_ptr)
         gui.GuiSetStyle(gui.GuiControl.DEFAULT, gui.GuiDefaultProperty.TEXT_SIZE, gui.GuiGetFont().baseSize)
 
         gui.GuiSetStyle(gui.GuiControl.LISTVIEW, gui.GuiControlProperty.TEXT_ALIGNMENT, gui.GuiTextAlignment.TEXT_ALIGN_LEFT)

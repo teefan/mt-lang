@@ -13,8 +13,7 @@ const window_title: cstr = c"raylib [shaders] example - texture tiling"
 
 
 function set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
-    unsafe:
-        model.materials[0].shader = shader
+    unsafe: model.materials[0].shader = shader
 
 
 function main() -> int:

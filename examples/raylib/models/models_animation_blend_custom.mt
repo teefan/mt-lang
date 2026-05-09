@@ -20,78 +20,63 @@ const window_title: cstr = c"raylib [models] example - animation blend custom"
 
 
 function chars_to_cstr(text: ptr[char]) -> cstr:
-    unsafe:
-        return cstr<-text
+    return unsafe: cstr<-text
 
 
 function model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
-    unsafe:
-        return read(anims + index)
+    return unsafe: read(anims + index)
 
 
 function model_animation_name(anims: ptr[rl.ModelAnimation], index: int) -> cstr:
-    unsafe:
-        return chars_to_cstr(ptr_of((anims + index).name[0]))
+    return unsafe: chars_to_cstr(ptr_of((anims + index).name[0]))
 
 
 function model_animation_pose(anim: rl.ModelAnimation, frame: int) -> rl.ModelAnimPose:
-    unsafe:
-        return read(anim.keyframePoses + frame)
+    return unsafe: read(anim.keyframePoses + frame)
 
 
 function pose_transform(pose: rl.ModelAnimPose, index: int) -> rl.Transform:
-    unsafe:
-        return read(pose + index)
+    return unsafe: read(pose + index)
 
 
 function bind_pose_transform(skeleton: rl.ModelSkeleton, index: int) -> rl.Transform:
-    unsafe:
-        return read(skeleton.bindPose + index)
+    return unsafe: read(skeleton.bindPose + index)
 
 
 function skeleton_bone_name(skeleton: rl.ModelSkeleton, index: int) -> cstr:
-    unsafe:
-        return chars_to_cstr(ptr_of((skeleton.bones + index).name[0]))
+    return unsafe: chars_to_cstr(ptr_of((skeleton.bones + index).name[0]))
 
 
 function model_value(model: ptr[rl.Model]) -> rl.Model:
-    unsafe:
-        return read(model)
+    return unsafe: read(model)
 
 
 function model_mesh(model: rl.Model, index: int) -> rl.Mesh:
-    unsafe:
-        return model.meshes[index]
+    return unsafe: model.meshes[index]
 
 
 function model_bone_matrix(model: rl.Model, index: int) -> rl.Matrix:
-    unsafe:
-        return read(model.boneMatrices + index)
+    return unsafe: read(model.boneMatrices + index)
 
 
 function set_model_bone_matrix(model: rl.Model, index: int, matrix: rl.Matrix) -> void:
-    unsafe:
-        read(model.boneMatrices + index) = matrix
+    unsafe: read(model.boneMatrices + index) = matrix
 
 
 function read_float(values: ptr[float], index: int) -> float:
-    unsafe:
-        return read(values + index)
+    return unsafe: read(values + index)
 
 
 function write_float(values: ptr[float], index: int, value: float) -> void:
-    unsafe:
-        read(values + index) = value
+    unsafe: read(values + index) = value
 
 
 function read_ubyte(values: ptr[ubyte], index: int) -> ubyte:
-    unsafe:
-        return read(values + index)
+    return unsafe: read(values + index)
 
 
 function mesh_vbo_id(mesh: rl.Mesh, index: int) -> uint:
-    unsafe:
-        return read(mesh.vboId + index)
+    return unsafe: read(mesh.vboId + index)
 
 
 function is_upper_body_bone(bone_name: cstr) -> bool:
@@ -241,8 +226,7 @@ function main() -> int:
         rl.TextFormat(shader_fragment_path_format, glsl_version),
     )
     defer rl.UnloadShader(skinning_shader)
-    unsafe:
-        model.materials[1].shader = skinning_shader
+    unsafe: model.materials[1].shader = skinning_shader
 
     var anim_count = 0
     let anims = rlr.require_ptr[rl.ModelAnimation](rl.LoadModelAnimations(model_path, ptr_of(anim_count)), "could not load model animations")

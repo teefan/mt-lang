@@ -48,15 +48,13 @@ function main() -> int:
 
     while not rl.WindowShouldClose():
         if btn_cut_pressed:
-            unsafe:
-                rl.SetClipboardText(cstr<-input_buffer_ptr)
+            unsafe: rl.SetClipboardText(cstr<-input_buffer_ptr)
             clipboard_text = rl.GetClipboardText()
             rl.TextCopy(clipboard_buffer_ptr, clipboard_text)
             rl.TextCopy(input_buffer_ptr, c"")
 
         if btn_copy_pressed:
-            unsafe:
-                rl.SetClipboardText(cstr<-input_buffer_ptr)
+            unsafe: rl.SetClipboardText(cstr<-input_buffer_ptr)
             clipboard_text = rl.GetClipboardText()
             rl.TextCopy(clipboard_buffer_ptr, clipboard_text)
 
@@ -74,15 +72,13 @@ function main() -> int:
 
         if rl.IsKeyDown(rl.KeyboardKey.KEY_LEFT_CONTROL) or rl.IsKeyDown(rl.KeyboardKey.KEY_RIGHT_CONTROL):
             if rl.IsKeyPressed(rl.KeyboardKey.KEY_X):
-                unsafe:
-                    rl.SetClipboardText(cstr<-input_buffer_ptr)
+                unsafe: rl.SetClipboardText(cstr<-input_buffer_ptr)
                 clipboard_text = rl.GetClipboardText()
                 rl.TextCopy(clipboard_buffer_ptr, clipboard_text)
                 rl.TextCopy(input_buffer_ptr, c"")
 
             if rl.IsKeyPressed(rl.KeyboardKey.KEY_C):
-                unsafe:
-                    rl.SetClipboardText(cstr<-input_buffer_ptr)
+                unsafe: rl.SetClipboardText(cstr<-input_buffer_ptr)
                 clipboard_text = rl.GetClipboardText()
                 rl.TextCopy(clipboard_buffer_ptr, clipboard_text)
 

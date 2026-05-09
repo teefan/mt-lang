@@ -242,6 +242,17 @@ class LSPServerTest < Minitest::Test
         return array[int, 4](1, 2, 3, 4)
   MT
 
+  SOURCE_WITH_MULTI_TYPE_ARGUMENT_SEMANTICS = <<~MT
+    struct HashMap[K, V]:
+        left: int
+
+    struct Holder[K, V]:
+        items: HashMap[K, V]
+
+    function make[K, V]() -> HashMap[K, V]:
+        return HashMap[K, V](left = 1)
+  MT
+
   SOURCE_WITH_PARAMETER_AND_LABEL_SEMANTICS = <<~MT
     struct Vec2:
         x: int
@@ -327,6 +338,62 @@ class LSPServerTest < Minitest::Test
             return 1
         return 0
   MT
+
+      SOURCE_WITH_GENERIC_PARAMETER_SHADOWING_IMPORT_SEMANTICS = <<~MT
+      module tmp.semantic_generic_param_shadow
+
+      import std.status as status
+
+      function wrap[T](status: int, value: T) -> int:
+          if status != 0:
+              return status
+          return 0
+      MT
+
+      SOURCE_WITH_SPECIALIZED_FUNCTION_CALL_SEMANTICS = <<~MT
+      function identity[T](value: T) -> T:
+          return value
+
+      function main() -> int:
+          return identity[int](1)
+      MT
+
+      SOURCE_WITH_GENERIC_PARAMETER_AND_PROPERTY_SEMANTICS = <<~MT
+      struct Box:
+          status: int
+
+      function read_status[T](status: int, box: Box) -> int:
+          let current = box.status
+          return status + current
+      MT
+
+      SOURCE_WITH_KEYWORD_NAMESPACE_PATH_SEMANTICS = <<~MT
+      module std.async
+
+      import std.libuv.async as impl
+
+      function main() -> int:
+          return 0
+      MT
+
+      SOURCE_WITH_GENERIC_LOCAL_AND_SPECIALIZED_FUNCTION_VALUE_SEMANTICS = <<~MT
+      module tmp.semantic_generic_local_specialized
+
+      import std.status as status
+
+      function invoke(callback: fn() -> int) -> int:
+          return callback()
+
+      function make_status[T]() -> int:
+          return 1
+
+      function run[T]() -> int:
+          var status = 0
+          status = invoke(make_status[T])
+          if status != 0:
+              return status
+          return 0
+      MT
 
     SOURCE_WITH_GENERIC_VARIANT_SEMANTICS = <<~MT
       variant Maybe[T]:
@@ -2297,6 +2364,34 @@ class LSPServerTest < Minitest::Test
       end
     end
 
+    def test_semantic_tokens_classify_all_generic_type_arguments_as_type_parameters
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_multi_type_argument_test.mt"
+        source = SOURCE_WITH_MULTI_TYPE_ARGUMENT_SEMANTICS
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        field_k = semantic_entry_for_lexeme_on_line(source, entries, "K", 4)
+        field_v = semantic_entry_for_lexeme_on_line(source, entries, "V", 4)
+        ctor_k = semantic_entry_for_lexeme_on_line(source, entries, "K", 7)
+        ctor_v = semantic_entry_for_lexeme_on_line(source, entries, "V", 7)
+
+        assert_equal "typeParameter", field_k.fetch("tokenType")
+        assert_equal "typeParameter", field_v.fetch("tokenType")
+        assert_equal "typeParameter", ctor_k.fetch("tokenType")
+        assert_equal "typeParameter", ctor_v.fetch("tokenType")
+      end
+    end
+
     def test_semantic_tokens_classify_parameters_named_labels_and_for_binders
       with_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -2464,6 +2559,141 @@ class LSPServerTest < Minitest::Test
 
         assert_equal "function", create_for_entry.fetch("tokenType")
         assert_equal "method", alloc_entry.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_classify_generic_parameter_shadowing_import_alias_as_parameter
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
+        source = SOURCE_WITH_GENERIC_PARAMETER_SHADOWING_IMPORT_SEMANTICS
+        path = File.join(Dir.pwd, "tmp", "lsp_semantic_generic_param_shadow_test.mt")
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, source)
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+        status_decl = semantic_entry_for_lexeme_on_line(source, entries, "status", 4)
+        status_if_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", 5)
+        status_return_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", 6)
+
+        assert_equal "parameter", status_decl.fetch("tokenType")
+        assert_includes status_decl.fetch("modifierNames"), "declaration"
+        assert_equal "parameter", status_if_ref.fetch("tokenType")
+        refute_includes status_if_ref.fetch("modifierNames"), "declaration"
+        assert_equal "parameter", status_return_ref.fetch("tokenType")
+        refute_includes status_return_ref.fetch("modifierNames"), "declaration"
+      end
+    end
+
+    def test_semantic_tokens_classify_specialized_generic_function_calls_as_function
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_specialized_function_call_test.mt"
+        source = SOURCE_WITH_SPECIALIZED_FUNCTION_CALL_SEMANTICS
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+        identity_call = semantic_entry_for_lexeme_on_line(source, entries, "identity", 4)
+
+        assert_equal "function", identity_call.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_classify_keyword_module_and_import_path_segments_as_namespace
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
+        source = SOURCE_WITH_KEYWORD_NAMESPACE_PATH_SEMANTICS
+        path = File.join(Dir.pwd, "tmp", "lsp_semantic_keyword_namespace_path_test.mt")
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, source)
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+        module_async = semantic_entry_for_lexeme_on_line(source, entries, "async", 0)
+        import_async = semantic_entry_for_lexeme_on_line(source, entries, "async", 2)
+
+        assert_equal "namespace", module_async.fetch("tokenType")
+        assert_equal "namespace", import_async.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_classify_generic_local_shadowing_and_specialized_function_values
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
+        source = SOURCE_WITH_GENERIC_LOCAL_AND_SPECIALIZED_FUNCTION_VALUE_SEMANTICS
+        path = File.join(Dir.pwd, "tmp", "lsp_semantic_generic_local_specialized_test.mt")
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, source)
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+        status_decl = semantic_entry_for_lexeme_on_line(source, entries, "status", 11)
+        status_assign_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", 12)
+        make_status_ref = semantic_entry_for_lexeme_on_line(source, entries, "make_status", 12)
+        status_if_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", 13)
+        status_return_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", 14)
+
+        assert_equal "variable", status_decl.fetch("tokenType")
+        assert_includes status_decl.fetch("modifierNames"), "declaration"
+        assert_equal "variable", status_assign_ref.fetch("tokenType")
+        refute_includes status_assign_ref.fetch("modifierNames"), "declaration"
+        assert_equal "function", make_status_ref.fetch("tokenType")
+        assert_equal "variable", status_if_ref.fetch("tokenType")
+        assert_equal "variable", status_return_ref.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_do_not_let_generic_parameter_fallback_override_member_access
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_generic_parameter_property_test.mt"
+        source = SOURCE_WITH_GENERIC_PARAMETER_AND_PROPERTY_SEMANTICS
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+        property_access = semantic_entry_for_lexeme_on_line(source, entries, "status", 4)
+        parameter_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", 5)
+
+        assert_equal "property", property_access.fetch("tokenType")
+        assert_equal "parameter", parameter_ref.fetch("tokenType")
       end
     end
 

@@ -139,8 +139,7 @@ function load_time_digits(time_buffer: ref[array[char, 7]], hour_mode: int) -> v
     let tm_info = ctime.localtime(ptr_of(now))
     let format = if hour_mode == hour_mode_24: time_format_24 else: time_format_12
 
-    unsafe:
-        ctime.strftime(ptr_of(read(time_buffer)[0]), 7, format, tm_info)
+    unsafe: ctime.strftime(ptr_of(read(time_buffer)[0]), 7, format, tm_info)
 
 
 function angle_slot(digit: int, cell: int) -> int:

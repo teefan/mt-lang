@@ -12,18 +12,15 @@ const controls_text: cstr = c"Use the LEFT/RIGHT keys to switch animation"
 
 
 function chars_to_cstr(text: ptr[char]) -> cstr:
-    unsafe:
-        return cstr<-text
+    return unsafe: cstr<-text
 
 
 function model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
-    unsafe:
-        return read(anims + index)
+    return unsafe: read(anims + index)
 
 
 function model_animation_name(anims: ptr[rl.ModelAnimation], index: int) -> cstr:
-    unsafe:
-        return chars_to_cstr(ptr_of((anims + index).name[0]))
+    return unsafe: chars_to_cstr(ptr_of((anims + index).name[0]))
 
 
 function main() -> int:

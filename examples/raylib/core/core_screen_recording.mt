@@ -68,8 +68,7 @@ function main() -> int:
             gif_frame_counter += 1
             if gif_frame_counter > gif_record_framerate:
                 let image_screen = rl.LoadImageFromScreen()
-                unsafe:
-                    gif.msf_gif_frame(
+                unsafe: gif.msf_gif_frame(
                         ptr_of(gif_state),
                         ptr[ubyte]<-image_screen.data,
                         int<-((1.0 / 60.0) * gif_record_framerate) / 10,

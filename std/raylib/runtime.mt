@@ -10,5 +10,4 @@ public function require_ptr[T](value: ptr[T]?, message: str) -> ptr[T]:
     if value == null:
         panic(message)
 
-    unsafe:
-        return ptr[T]<-value
+    return unsafe: ptr[T]<-value

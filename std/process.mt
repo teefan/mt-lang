@@ -15,8 +15,7 @@ public function arg(argc: int, argv: ptr[cstr], index: ptr_uint) -> maybe.Maybe[
     if index >= arg_count(argc):
         return maybe.Maybe[str].none
 
-    unsafe:
-        return maybe.Maybe[str].some(value= text_ops.cstr_as_str(read(argv + index)))
+    return unsafe: maybe.Maybe[str].some(value= text_ops.cstr_as_str(read(argv + index)))
 
 
 public function env(name: str) -> maybe.Maybe[str]:

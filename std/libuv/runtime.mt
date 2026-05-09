@@ -45,14 +45,12 @@ public function failed(status: int) -> bool:
 
 function alloc_handle[T](kind: c.uv_handle_type) -> Handle[T]:
     let storage = heap.must_alloc_zeroed_bytes(1, uv.handle_size(kind))
-    unsafe:
-        return Handle[T](raw = ptr[T]<-storage, storage = storage)
+    return unsafe: Handle[T](raw = ptr[T]<-storage, storage = storage)
 
 
 function alloc_request[T](kind: c.uv_req_type) -> Request[T]:
     let storage = heap.must_alloc_zeroed_bytes(1, uv.req_size(kind))
-    unsafe:
-        return Request[T](raw = ptr[T]<-storage, storage = storage)
+    return unsafe: Request[T](raw = ptr[T]<-storage, storage = storage)
 
 
 function release_ipv4_address(address: ref[IPv4Address]) -> void:
@@ -73,18 +71,15 @@ function create_ipv4_address(ip: str, port: int) -> status.Status[IPv4Address, i
 
 
 function ipv4_sockaddr(address: IPv4Address) -> ptr[sys.sockaddr]:
-    unsafe:
-        return ptr[sys.sockaddr]<-address.raw
+    return unsafe: ptr[sys.sockaddr]<-address.raw
 
 
 function ipv4_const_sockaddr(address: IPv4Address) -> const_ptr[sys.sockaddr]:
-    unsafe:
-        return const_ptr[sys.sockaddr]<-address.raw
+    return unsafe: const_ptr[sys.sockaddr]<-address.raw
 
 
 function byte_buffer(data: span[ubyte]) -> uv.uv_buf_t:
-    unsafe:
-        return uv.buf_init(ptr[char]<-data.data, uint<-data.len)
+    return unsafe: uv.buf_init(ptr[char]<-data.data, uint<-data.len)
 
 
 public function create_loop() -> status.Status[Loop, int]:
@@ -144,14 +139,12 @@ public function handle_release[T](handle: ref[Handle[T]]) -> void:
 
 
 public function handle_close[T](handle: Handle[T], close_cb: fn(arg0: ptr[uv.uv_handle_t]) -> void) -> void:
-    unsafe:
-        uv.close(ptr[uv.uv_handle_t]<-handle.raw, close_cb)
+    unsafe: uv.close(ptr[uv.uv_handle_t]<-handle.raw, close_cb)
     return
 
 
 public function close_raw_handle[T](handle: ptr[T], close_cb: fn(arg0: ptr[uv.uv_handle_t]) -> void) -> void:
-    unsafe:
-        uv.close(ptr[uv.uv_handle_t]<-handle, close_cb)
+    unsafe: uv.close(ptr[uv.uv_handle_t]<-handle, close_cb)
     return
 
 
@@ -218,8 +211,7 @@ public function create_connect_request() -> Request[uv.uv_connect_t]:
 
 
 public function tcp_stream(tcp: Handle[uv.uv_tcp_t]) -> ptr[uv.uv_stream_t]:
-    unsafe:
-        return ptr[uv.uv_stream_t]<-tcp.raw
+    return unsafe: ptr[uv.uv_stream_t]<-tcp.raw
 
 
 public function tcp_listen(tcp: Handle[uv.uv_tcp_t], backlog: int, callback: fn(arg0: ptr[uv.uv_stream_t], arg1: int) -> void) -> int:

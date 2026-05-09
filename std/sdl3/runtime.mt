@@ -26,27 +26,23 @@ public function require_ptr[T](value: ptr[T]?, message: str) -> ptr[T]:
     if value == null:
         panic(message)
 
-    unsafe:
-        return ptr[T]<-value
+    return unsafe: ptr[T]<-value
 
 
 public function free_chars(text_ptr: ptr[char]?) -> void:
     if text_ptr != null:
-        unsafe:
-            sdl.free(ptr[void]<-ptr[char]<-text_ptr)
+        unsafe: sdl.free(ptr[void]<-ptr[char]<-text_ptr)
     return
 
 
 public function free_locale_list(locales: ptr[ptr[sdl.Locale]]?) -> void:
     if locales != null:
-        unsafe:
-            sdl.free(ptr[void]<-ptr[ptr[sdl.Locale]]<-locales)
+        unsafe: sdl.free(ptr[void]<-ptr[ptr[sdl.Locale]]<-locales)
     return
 
 
 public function locale_list(locales: ptr[ptr[sdl.Locale]], count: int) -> span[ptr[sdl.Locale]?]:
-    unsafe:
-        return span[ptr[sdl.Locale]?](data = ptr[ptr[sdl.Locale]?]<-locales, len = ptr_uint<-count)
+    return unsafe: span[ptr[sdl.Locale]?](data = ptr[ptr[sdl.Locale]?]<-locales, len = ptr_uint<-count)
 
 
 public function locale_string(locale: ptr[sdl.Locale]) -> string.String:

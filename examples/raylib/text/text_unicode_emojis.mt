@@ -34,13 +34,11 @@ struct EmojiMessage:
 
 
 function chars_to_cstr(text: ptr[char]) -> cstr:
-    unsafe:
-        return cstr<-text
+    return unsafe: cstr<-text
 
 
 function emoji_text_at(offset: int) -> cstr:
-    unsafe:
-        return cstr<-(ptr[char]<-emoji_codepoints + offset)
+    return unsafe: cstr<-(ptr[char]<-emoji_codepoints + offset)
 
 
 function randomize_emoji(emojis: ptr[EmojiSlot], hovered: ref[int], selected: ref[int], total_messages: int) -> void:

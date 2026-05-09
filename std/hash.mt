@@ -36,8 +36,7 @@ public function str_value(text: str) -> ulong:
     var hash = ulong<-14695981039346656037
     var index: ptr_uint = 0
     while index < text.len:
-        unsafe:
-            hash = hash ^ ulong<-ubyte<-read(text.data + index)
+        hash = unsafe: hash ^ ulong<-ubyte<-read(text.data + index)
         hash = hash * ulong<-1099511628211
         index += 1
 

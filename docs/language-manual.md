@@ -382,6 +382,19 @@ defer:
 
 ### 4.5 Unsafe
 
+Forms:
+
+```mt
+unsafe: pointer[0] = 1
+let raw = unsafe: read(ptr)
+
+# or
+
+unsafe:
+    pointer[0] = 1
+    pointer[1] = 2
+```
+
 Unsafe context is required for raw-pointer-level operations such as:
 
 - pointer indexing

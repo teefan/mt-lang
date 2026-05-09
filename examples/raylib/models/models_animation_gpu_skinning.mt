@@ -15,18 +15,15 @@ const window_title: cstr = c"raylib [models] example - animation gpu skinning"
 
 
 function chars_to_cstr(text: ptr[char]) -> cstr:
-    unsafe:
-        return cstr<-text
+    return unsafe: cstr<-text
 
 
 function model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
-    unsafe:
-        return read(anims + index)
+    return unsafe: read(anims + index)
 
 
 function model_animation_name(anims: ptr[rl.ModelAnimation], index: int) -> cstr:
-    unsafe:
-        return chars_to_cstr(ptr_of((anims + index).name[0]))
+    return unsafe: chars_to_cstr(ptr_of((anims + index).name[0]))
 
 
 function main() -> int:
@@ -51,8 +48,7 @@ function main() -> int:
     )
     defer rl.UnloadShader(skinning_shader)
 
-    unsafe:
-        model.materials[1].shader = skinning_shader
+    unsafe: model.materials[1].shader = skinning_shader
 
     var anim_count = 0
     let anims = rlr.require_ptr[rl.ModelAnimation](rl.LoadModelAnimations(model_path, ptr_of(anim_count)), "could not load model animations")

@@ -43,8 +43,7 @@ function update_clock(clock: ref[Clock], time_buffer: ref[array[char, 9]]) -> vo
     now = ctime.time(ptr_of(now))
     let tm_info = ctime.localtime(ptr_of(now))
 
-    unsafe:
-        ctime.strftime(ptr_of(read(time_buffer)[0]), 9, time_format, tm_info)
+    unsafe: ctime.strftime(ptr_of(read(time_buffer)[0]), 9, time_format, tm_info)
 
     clock.hour.value = parse_two_digits(read(time_buffer), 0)
     clock.minute.value = parse_two_digits(read(time_buffer), 3)

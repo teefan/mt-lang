@@ -17,23 +17,19 @@ const window_title: cstr = c"raylib [shaders] example - mesh instancing"
 
 
 function alloc_transforms(count: int) -> ptr[rl.Matrix]:
-    unsafe:
-        return ptr[rl.Matrix]<-rl.MemAlloc(uint<-count * uint<-size_of(rl.Matrix))
+    return unsafe: ptr[rl.Matrix]<-rl.MemAlloc(uint<-count * uint<-size_of(rl.Matrix))
 
 
 function free_transforms(transforms: ptr[rl.Matrix]) -> void:
-    unsafe:
-        rl.MemFree(ptr[void]<-transforms)
+    unsafe: rl.MemFree(ptr[void]<-transforms)
 
 
 function set_transform(transforms: ptr[rl.Matrix], index: int, transform: rl.Matrix) -> void:
-    unsafe:
-        read(transforms + ptr_uint<-index) = transform
+    unsafe: read(transforms + ptr_uint<-index) = transform
 
 
 function set_material_color(material: ptr[rl.Material], map_index: int, color: rl.Color) -> void:
-    unsafe:
-        material.maps[map_index].color = color
+    unsafe: material.maps[map_index].color = color
 
 
 function main() -> int:

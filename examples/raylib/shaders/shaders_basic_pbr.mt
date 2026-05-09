@@ -69,18 +69,15 @@ var light_count: int = 0
 
 
 function set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
-    unsafe:
-        model.materials[0].shader = shader
+    unsafe: model.materials[0].shader = shader
 
 
 function set_material_map_color(materials: ptr[rl.Material], map_index: int, color: rl.Color) -> void:
-    unsafe:
-        materials.maps[map_index].color = color
+    unsafe: materials.maps[map_index].color = color
 
 
 function set_material_map_value(materials: ptr[rl.Material], map_index: int, value: float) -> void:
-    unsafe:
-        materials.maps[map_index].value = value
+    unsafe: materials.maps[map_index].value = value
 
 
 function set_shader_int(shader: rl.Shader, location: int, value: int) -> void:
@@ -271,8 +268,7 @@ function main() -> int:
         rl.UpdateCamera(ptr_of(camera), rl.CameraMode.CAMERA_ORBITAL)
 
         var camera_pos = array[float, 3](camera.position.x, camera.position.y, camera.position.z)
-        unsafe:
-            rl.SetShaderValue(
+        unsafe: rl.SetShaderValue(
                 shader,
                 read(shader.locs + ptr_uint<-(int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW)),
                 ptr_of(camera_pos[0]),

@@ -16,8 +16,7 @@ const window_title: cstr = c"raylib [shaders] example - simple mask"
 
 
 function set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
-    unsafe:
-        model.materials[0].shader = shader
+    unsafe: model.materials[0].shader = shader
 
 
 function main() -> int:
@@ -57,8 +56,7 @@ function main() -> int:
     rl.SetMaterialTexture(model1.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_EMISSION, tex_mask)
     rl.SetMaterialTexture(model2.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_EMISSION, tex_mask)
 
-    unsafe:
-        shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MAP_EMISSION] = rl.GetShaderLocation(shader, mask_uniform_name)
+    unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MAP_EMISSION] = rl.GetShaderLocation(shader, mask_uniform_name)
 
     let shader_frame = rl.GetShaderLocation(shader, frame_uniform_name)
     set_model_shader(ptr_of(model1), shader)

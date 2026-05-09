@@ -117,8 +117,7 @@ function main() -> int:
 
             var mesh_hit_info = zero[rl.RayCollision]
             for mesh_index in 0..tower.meshCount:
-                unsafe:
-                    mesh_hit_info = rl.GetRayCollisionMesh(ray, tower.meshes[mesh_index], tower.transform)
+                mesh_hit_info = unsafe: rl.GetRayCollisionMesh(ray, tower.meshes[mesh_index], tower.transform)
 
                 if mesh_hit_info.hit:
                     if not collision.hit or collision.distance > mesh_hit_info.distance:

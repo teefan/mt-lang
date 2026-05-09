@@ -74,7 +74,6 @@ public function set(buffer: ref[Buffer], index: ptr_uint, byte: ubyte) -> void:
 public function append(buffer: ref[Buffer], bytes: span[ubyte]) -> void:
     var index: ptr_uint = 0
     while index < bytes.len:
-        unsafe:
-            push(buffer, read(bytes.data + index))
+        unsafe: push(buffer, read(bytes.data + index))
         index += 1
     return

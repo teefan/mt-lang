@@ -56,8 +56,7 @@ methods String:
     public edit function append(suffix: str) -> void:
         var index: ptr_uint = 0
         while index < suffix.len:
-            unsafe:
-                this.push_byte(ubyte<-read(suffix.data + index))
+            unsafe: this.push_byte(ubyte<-read(suffix.data + index))
             index += 1
         return
 
@@ -70,8 +69,7 @@ methods String:
 
     public function as_str() -> str:
         let data = bytes.data_ptr(this.buffer)
-        unsafe:
-            return str(data = ptr[char]<-data, len = bytes.count(this.buffer))
+        return unsafe: str(data = ptr[char]<-data, len = bytes.count(this.buffer))
 
 
     public function to_cstr(space: ref[arena.Arena]) -> cstr:

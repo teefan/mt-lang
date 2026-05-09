@@ -684,6 +684,8 @@ module MilkTea
           validate_static_storage_initializer!(expression.condition, scopes:)
           validate_static_storage_initializer!(expression.then_expression, scopes:)
           validate_static_storage_initializer!(expression.else_expression, scopes:)
+        when AST::UnsafeExpr
+          validate_static_storage_initializer!(expression.expression, scopes:)
         when AST::Specialization
           return if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "zero"
 
@@ -1202,6 +1204,8 @@ module MilkTea
           walk_expression_for_precheck_resolution(expression.condition, scopes, identifier_ids)
           walk_expression_for_precheck_resolution(expression.then_expression, scopes, identifier_ids)
           walk_expression_for_precheck_resolution(expression.else_expression, scopes, identifier_ids)
+        when AST::UnsafeExpr
+          walk_expression_for_precheck_resolution(expression.expression, scopes, identifier_ids)
         when AST::AwaitExpr
           walk_expression_for_precheck_resolution(expression.expression, scopes, identifier_ids)
         when AST::FormatString
@@ -1843,6 +1847,8 @@ module MilkTea
             infer_binary(expression, scopes:, expected_type:)
           when AST::IfExpr
             infer_if_expression(expression, scopes:, expected_type:)
+          when AST::UnsafeExpr
+            infer_unsafe_expression(expression, scopes:, expected_type:)
           when AST::ProcExpr
             infer_proc_expression(expression, scopes:, expected_type:)
           when AST::AwaitExpr
@@ -1870,6 +1876,17 @@ module MilkTea
           else
             raise_sema_error("unsupported expression #{expression.class.name}")
           end
+        end
+      end
+
+      def infer_unsafe_expression(expression, scopes:, expected_type: nil)
+        @unsafe_statement_lines << expression.line
+        begin
+          with_unsafe do
+            infer_expression(expression.expression, scopes:, expected_type:)
+          end
+        ensure
+          @unsafe_statement_lines.pop
         end
       end
 
@@ -2270,6 +2287,8 @@ module MilkTea
           validate_consuming_foreign_expression!(expression.condition, scopes:, root_allowed: false)
           validate_consuming_foreign_expression!(expression.then_expression, scopes:, root_allowed: false)
           validate_consuming_foreign_expression!(expression.else_expression, scopes:, root_allowed: false)
+        when AST::UnsafeExpr
+          validate_consuming_foreign_expression!(expression.expression, scopes:, root_allowed: false)
         when AST::FormatString
           expression.parts.each do |part|
             next unless part.is_a?(AST::FormatExprPart)
@@ -2309,6 +2328,8 @@ module MilkTea
           validate_hoistable_foreign_expression!(expression.condition, scopes:, root_hoistable: false)
           validate_hoistable_foreign_expression!(expression.then_expression, scopes:, root_hoistable: false)
           validate_hoistable_foreign_expression!(expression.else_expression, scopes:, root_hoistable: false)
+        when AST::UnsafeExpr
+          validate_hoistable_foreign_expression!(expression.expression, scopes:, root_hoistable: false)
         when AST::FormatString
           expression.parts.each do |part|
             next unless part.is_a?(AST::FormatExprPart)
@@ -2400,6 +2421,8 @@ module MilkTea
           foreign_mapping_reference_counts(expression.condition, counts)
           foreign_mapping_reference_counts(expression.then_expression, counts)
           foreign_mapping_reference_counts(expression.else_expression, counts)
+        when AST::UnsafeExpr
+          foreign_mapping_reference_counts(expression.expression, counts)
         end
 
         counts
@@ -3796,6 +3819,8 @@ module MilkTea
           unsupported_async_await_context(expression.condition) ||
             unsupported_async_await_context(expression.then_expression) ||
             unsupported_async_await_context(expression.else_expression)
+        when AST::UnsafeExpr
+          unsupported_async_await_context(expression.expression)
         when AST::MemberAccess
           unsupported_async_await_context(expression.receiver)
         when AST::IndexAccess
@@ -3861,6 +3886,8 @@ module MilkTea
           expression_contains_await?(expression.left) || expression_contains_await?(expression.right)
         when AST::IfExpr
           expression_contains_await?(expression.condition) || expression_contains_await?(expression.then_expression) || expression_contains_await?(expression.else_expression)
+        when AST::UnsafeExpr
+          expression_contains_await?(expression.expression)
         when AST::MemberAccess
           expression_contains_await?(expression.receiver)
         when AST::IndexAccess

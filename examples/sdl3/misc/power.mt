@@ -115,8 +115,7 @@ function render_frame() -> void:
         c.SDL_SetRenderDrawColor(renderer, frame_r, frame_g, frame_b, c.SDL_ALPHA_OPAQUE)
         c.SDL_RenderRect(renderer, ptr_of(frame))
         c.SDL_SetRenderDrawColor(renderer, text_r, text_g, text_b, c.SDL_ALPHA_OPAQUE)
-        unsafe:
-            c.SDL_RenderDebugText(renderer, x, y, cstr<-ptr_of(msgbuf[0]))
+        unsafe: c.SDL_RenderDebugText(renderer, x, y, cstr<-ptr_of(msgbuf[0]))
 
     if has_msg:
         let x = frame.x + ((frame.w - (float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * float<-c.SDL_strlen(msg))) / 2.0)

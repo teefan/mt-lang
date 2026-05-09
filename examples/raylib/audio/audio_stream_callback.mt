@@ -27,8 +27,7 @@ var buffer: array[float, 44100]
 
 
 function void_ptr_to_float(value: ptr[void]) -> ptr[float]:
-    unsafe:
-        return ptr[float]<-value
+    return unsafe: ptr[float]<-value
 
 
 function advance_wave_state(wavelength: int) -> void:

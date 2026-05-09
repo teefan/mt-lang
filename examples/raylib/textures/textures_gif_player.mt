@@ -29,8 +29,7 @@ function main() -> int:
     defer rl.UnloadTexture(tex_scarfy_anim)
 
     var frame_pixels: ptr[ubyte]
-    unsafe:
-        frame_pixels = ptr[ubyte]<-im_scarfy_anim.data
+    frame_pixels = unsafe: ptr[ubyte]<-im_scarfy_anim.data
 
     var next_frame_data_offset = 0
     var current_anim_frame = 0
@@ -48,8 +47,7 @@ function main() -> int:
                 current_anim_frame = 0
 
             next_frame_data_offset = im_scarfy_anim.width * im_scarfy_anim.height * 4 * current_anim_frame
-            unsafe:
-                rl.UpdateTexture(tex_scarfy_anim, ptr[void]<-(frame_pixels + next_frame_data_offset))
+            unsafe: rl.UpdateTexture(tex_scarfy_anim, ptr[void]<-(frame_pixels + next_frame_data_offset))
 
             frame_counter = 0
 

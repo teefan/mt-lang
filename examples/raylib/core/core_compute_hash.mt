@@ -12,8 +12,7 @@ const default_input_text: cstr = c"The quick brown fox jumps over the lazy dog."
 
 
 function readonly_text_box(bounds: gui.Rectangle, text: cstr, text_size: int) -> void:
-    unsafe:
-        gui.GuiTextBox(bounds, ptr[char]<-text, text_size, false)
+    unsafe: gui.GuiTextBox(bounds, ptr[char]<-text, text_size, false)
 
 
 function hash_crc32_text(hash_crc32: uint) -> cstr:
@@ -24,8 +23,7 @@ function hash_md5_text(hash_md5: ptr[uint]?) -> cstr:
     if hash_md5 == null:
         return c"00000000000000000000000000000000"
 
-    unsafe:
-        return rl.TextFormat(
+    return unsafe: rl.TextFormat(
             c"%08X%08X%08X%08X",
             read(hash_md5),
             read(hash_md5 + 1),
@@ -38,8 +36,7 @@ function hash_sha1_text(hash_sha1: ptr[uint]?) -> cstr:
     if hash_sha1 == null:
         return c"0000000000000000000000000000000000000000"
 
-    unsafe:
-        return rl.TextFormat(
+    return unsafe: rl.TextFormat(
             c"%08X%08X%08X%08X%08X",
             read(hash_sha1),
             read(hash_sha1 + 1),
@@ -53,8 +50,7 @@ function hash_sha256_text(hash_sha256: ptr[uint]?) -> cstr:
     if hash_sha256 == null:
         return c"0000000000000000000000000000000000000000000000000000000000000000"
 
-    unsafe:
-        return rl.TextFormat(
+    return unsafe: rl.TextFormat(
             c"%08X%08X%08X%08X%08X%08X%08X%08X",
             read(hash_sha256),
             read(hash_sha256 + 1),
@@ -71,8 +67,7 @@ function base64_display_text(base64_text: ptr[char]?) -> cstr:
     if base64_text == null:
         return c""
 
-    unsafe:
-        return cstr<-base64_text
+    return unsafe: cstr<-base64_text
 
 
 function main() -> int:

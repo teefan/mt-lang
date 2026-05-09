@@ -10,13 +10,11 @@ struct Segment:
 
 
 function byte_at(path: str, index: ptr_uint) -> ubyte:
-    unsafe:
-        return ubyte<-read(path.data + index)
+    return unsafe: ubyte<-read(path.data + index)
 
 
 function segment_text(path: str, segment: Segment) -> str:
-    unsafe:
-        return str(data = path.data + segment.start, len = segment.len)
+    return unsafe: str(data = path.data + segment.start, len = segment.len)
 
 
 function segment_equals(path: str, segment: Segment, value: str) -> bool:
@@ -142,8 +140,7 @@ public function basename(path: str) -> string.String:
     while start > 0 and byte_at(path, start - 1) != ubyte<-47:
         start -= 1
 
-    unsafe:
-        return string.String.from_str(str(data = path.data + start, len = stop - start))
+    return unsafe: string.String.from_str(str(data = path.data + start, len = stop - start))
 
 
 public function dirname(path: str) -> string.String:
@@ -164,5 +161,4 @@ public function dirname(path: str) -> string.String:
     while slash > 1 and byte_at(path, slash - 1) == ubyte<-47:
         slash -= 1
 
-    unsafe:
-        return string.String.from_str(str(data = path.data, len = slash))
+    return unsafe: string.String.from_str(str(data = path.data, len = slash))

@@ -58,8 +58,7 @@ function render_frame() -> void:
 
             let frame_texture = texture
             if frame_texture != null:
-                unsafe:
-                    c.SDL_UpdateTexture(frame_texture, null, frame.pixels, frame.pitch)
+                unsafe: c.SDL_UpdateTexture(frame_texture, null, frame.pixels, frame.pitch)
 
             c.SDL_ReleaseCameraFrame(camera, frame)
 
@@ -98,8 +97,7 @@ function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
         return 1
 
     if device_count == 0:
-        unsafe:
-            c.SDL_free(ptr[void]<-devices)
+        unsafe: c.SDL_free(ptr[void]<-devices)
         return 1
 
     unsafe:
