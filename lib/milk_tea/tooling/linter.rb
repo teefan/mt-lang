@@ -30,7 +30,7 @@ module MilkTea
       ast = sema_analysis&.ast || Parser.parse(source, path:)
       trivia = Lexer.lex_with_trivia(source, path:).trivia
       suppressions = parse_suppressions(trivia)
-      warnings = new(path:, sema_analysis:).lint(ast)
+      warnings = new(path:, sema_analysis:, source:).lint(ast)
       warnings = apply_suppressions(warnings, suppressions)
 
       # Layer in config-file defaults before per-call overrides
@@ -243,9 +243,10 @@ module MilkTea
       warnings
     end
 
-    def initialize(path: nil, sema_analysis: nil)
+    def initialize(path: nil, sema_analysis: nil, source: nil)
       @path = path
       @sema_analysis = sema_analysis
+      @source_lines = source ? source.lines.map { |line| line.delete_suffix("\n") } : []
       @warnings = []
       @scopes = []
     end
@@ -403,6 +404,7 @@ module MilkTea
         expr.params.each { |p| collect_names_from_type(p.type, used) if p.respond_to?(:type) && p.type }
         expr.body.each { |s| collect_names_from_statement(s, used) }
       when AST::AwaitExpr then collect_names_from_expr(expr.expression, used)
+      when AST::UnsafeExpr then collect_names_from_expr(expr.expression, used)
       when AST::FormatString
         expr.parts.each { |p| collect_names_from_expr(p.expression, used) if p.is_a?(AST::FormatExprPart) }
       end
@@ -563,17 +565,27 @@ module MilkTea
       AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral, AST::FormatString,
       AST::BooleanLiteral, AST::NullLiteral,
       AST::BinaryOp, AST::UnaryOp,
-      AST::Identifier,
+      AST::Identifier, AST::UnsafeExpr,
     ].freeze
 
     def check_useless_expression(stmt)
       expr = stmt.expression
       return unless PURE_EXPRESSION_TYPES.any? { |t| expr.is_a?(t) }
 
-      line = stmt.respond_to?(:line) ? stmt.line : nil
+      line = expression_line(expr) || (stmt.respond_to?(:line) ? stmt.line : nil)
+      column = expression_column(expr)
+      length = expression_length(expr)
+      if line && (!column || !length || !expr.respond_to?(:column) || expr.is_a?(AST::UnsafeExpr))
+        fallback_span = source_statement_span(line)
+        column ||= fallback_span&.first
+        length = fallback_span&.last if !length || !expr.respond_to?(:column) || expr.is_a?(AST::UnsafeExpr)
+      end
+
       @warnings << Warning.new(
         path: @path,
         line:,
+        column:,
+        length:,
         code: "useless-expression",
         message: "expression result is unused and has no side effects",
         severity: :warning
@@ -694,6 +706,8 @@ module MilkTea
         visit_expression(expression.condition)
         visit_expression(expression.then_expression)
         visit_expression(expression.else_expression)
+      when AST::UnsafeExpr
+        visit_expression(expression.expression)
       when AST::ProcExpr
         with_scope do
           fallback_line = expression.respond_to?(:line) ? expression.line : nil
@@ -880,6 +894,79 @@ module MilkTea
       declaration.respond_to?(:column) ? declaration.column : nil
     end
 
+    def source_line_text(line)
+      return nil unless line && line >= 1 && line <= @source_lines.length
+
+      @source_lines[line - 1]
+    end
+
+    def source_code_line(line)
+      text = source_line_text(line)
+      return nil unless text
+
+      text.rstrip
+    end
+
+    def source_statement_span(line)
+      text = source_code_line(line)
+      return nil unless text
+
+      start_index = text.index(/\S/)
+      return nil unless start_index
+
+      [start_index + 1, text.length - start_index]
+    end
+
+    def source_condition_span(line, keyword_pattern:)
+      text = source_code_line(line)
+      return nil unless text
+
+      match = text.match(/\A\s*(?:#{keyword_pattern})\s+(.*?)\s*:/)
+      return nil unless match
+
+      condition = match[1].rstrip
+      return nil if condition.empty?
+
+      [match.begin(1) + 1, condition.length]
+    end
+
+    def expression_line(expr)
+      return nil unless expr
+
+      return expr.line if expr.respond_to?(:line) && expr.line
+
+      case expr
+      when AST::BinaryOp
+        expression_line(expr.left) || expression_line(expr.right)
+      when AST::UnaryOp
+        expression_line(expr.operand)
+      when AST::Specialization
+        expression_line(expr.callee)
+      when AST::Call
+        expression_line(expr.callee) || expr.arguments.filter_map { |argument| expression_line(argument.value) }.first
+      when AST::IndexAccess
+        expression_line(expr.receiver) || expression_line(expr.index)
+      when AST::MemberAccess
+        expression_line(expr.receiver)
+      when AST::RangeExpr
+        expression_line(expr.start_expr) || expression_line(expr.end_expr)
+      when AST::ExpressionList
+        expr.elements.filter_map { |element| expression_line(element) }.first
+      when AST::IfExpr
+        expression_line(expr.condition) || expression_line(expr.then_expression) || expression_line(expr.else_expression)
+      when AST::AwaitExpr
+        expression_line(expr.expression)
+      when AST::UnsafeExpr
+        expression_line(expr.expression)
+      when AST::FormatString
+        expr.parts.filter_map do |part|
+          expression_line(part.expression) if part.is_a?(AST::FormatExprPart)
+        end.first
+      else
+        nil
+      end
+    end
+
     def expression_column(expr)
       return nil unless expr
 
@@ -892,6 +979,8 @@ module MilkTea
         expression_column(expr.left) || expression_column(expr.right)
       when AST::UnaryOp
         expression_column(expr.operand)
+      when AST::Specialization
+        expression_column(expr.callee)
       when AST::Call
         expression_column(expr.callee)
       when AST::IndexAccess
@@ -900,6 +989,14 @@ module MilkTea
         expression_column(expr.receiver)
       when AST::RangeExpr
         expression_column(expr.start_expr) || expression_column(expr.end_expr)
+      when AST::ExpressionList
+        expr.elements.filter_map { |element| expression_column(element) }.first
+      when AST::IfExpr
+        expression_column(expr.condition) || expression_column(expr.then_expression) || expression_column(expr.else_expression)
+      when AST::AwaitExpr
+        expression_column(expr.expression)
+      when AST::UnsafeExpr
+        expression_column(expr.expression)
       else
         nil
       end
@@ -913,10 +1010,27 @@ module MilkTea
         expr.name.length
       when AST::BooleanLiteral
         expr.value ? 4 : 5
-      when AST::IntegerLiteral
-        expr.value.to_s.length
-      when AST::FloatLiteral
-        expr.value.to_s.length
+      when AST::NullLiteral
+        4
+      when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral
+        expr.lexeme.length
+      when AST::BinaryOp
+        left_column = expression_column(expr.left)
+        right_column = expression_column(expr.right)
+        right_length = expression_length(expr.right)
+        if left_column && right_column && right_length
+          (right_column + right_length) - left_column
+        end
+      when AST::UnaryOp
+        expression_length(expr.operand)
+      when AST::Specialization
+        expression_length(expr.callee)
+      when AST::Call
+        expression_length(expr.callee)
+      when AST::AwaitExpr
+        expression_length(expr.expression)
+      when AST::UnsafeExpr
+        expression_length(expr.expression)
       else
         1
       end
@@ -941,7 +1055,7 @@ module MilkTea
       when AST::DeferStmt
         expression_column(statement.expression)
       when AST::ExpressionStmt
-        expression_column(statement.expression)
+        expression_column(statement.expression) || source_statement_span(statement.line)&.first
       else
         nil
       end
@@ -968,9 +1082,18 @@ module MilkTea
       when AST::DeferStmt
         expression_length(statement.expression)
       when AST::ExpressionStmt
-        expression_length(statement.expression)
+        expression_length(statement.expression) || source_statement_span(statement.line)&.last
       else
         nil
+      end
+    end
+
+    def condition_span(expr, line:, keyword_pattern:)
+      source_span = source_condition_span(line, keyword_pattern:)
+      if source_span
+        [line, source_span.first, source_span.last]
+      else
+        [expression_line(expr) || line, expression_column(expr), expression_length(expr)]
       end
     end
 
@@ -1113,10 +1236,12 @@ module MilkTea
       written = collect_written_names(stmts)
       (borrowed & written).each do |name|
         # Find the earliest borrow site for the warning location
-        borrow_line = find_borrow_line(stmts, name)
+        borrow_line, borrow_column, borrow_length = find_borrow_location(stmts, name)
         @warnings << Warning.new(
           path: @path,
           line: borrow_line,
+          column: borrow_column,
+          length: borrow_length,
           code: "borrow-and-mutate",
           message: "'#{name}' is borrowed via ref_of/ptr_of and also mutated in the same scope — potential aliasing hazard",
           severity: :warning,
@@ -1180,7 +1305,9 @@ module MilkTea
 
       @warnings << Warning.new(
         path: @path,
-        line: stmt.line,
+        line: expression_line(stmt.target) || stmt.line,
+        column: expression_column(stmt.target),
+        length: expression_length(stmt.target),
         code: "self-assignment",
         message: "'#{stmt.target.name}' is assigned to itself",
         severity: :warning,
@@ -1195,11 +1322,13 @@ module MilkTea
       return unless expr.left.is_a?(AST::Identifier) && expr.right.is_a?(AST::Identifier)
       return unless expr.left.name == expr.right.name
 
-      line = expr.left.respond_to?(:line) ? expr.left.line : nil
+      line = expression_line(expr) || expr.left.line
       always = expr.operator == "==" ? "always true" : "always false"
       @warnings << Warning.new(
         path: @path,
         line:,
+        column: expression_column(expr),
+        length: expression_length(expr),
         code: "self-comparison",
         message: "'#{expr.left.name}' is compared to itself — #{always}",
         severity: :warning,
@@ -1222,19 +1351,19 @@ module MilkTea
       loop_bodies = compute_loop_body_nodes(graph)
 
       graph.each_node do |node|
-        cond_expr, line, column, length, skip_node =
+        cond_expr, line, keyword_pattern, skip_node =
           case node.kind
           when :if_condition
             branch = node.statement
             # Skip if conditions inside loops; variables can change across iterations.
             skip = loop_bodies.include?(node.id)
-            [branch&.condition, branch&.line || node.line, branch&.column, branch&.length, skip]
+            [branch&.condition, branch&.line || node.line, "if|elif", skip]
           when :while_condition
             wstmt = node.statement
             # `while true` is an idiomatic infinite loop — do not warn
             skip = wstmt&.condition.is_a?(AST::BooleanLiteral) && wstmt.condition.value == true
             condition = wstmt&.condition
-            [condition, node.line, expression_column(condition), expression_length(condition), skip]
+            [condition, node.line, "while", skip]
           else
             next
           end
@@ -1246,6 +1375,7 @@ module MilkTea
         next unless const_val == true || const_val == false
 
         ctx = node.kind == :while_condition ? "loop condition" : "branch condition"
+        line, column, length = condition_span(cond_expr, line:, keyword_pattern:)
         @warnings << Warning.new(
           path: @path,
           line:,
@@ -1336,9 +1466,13 @@ module MilkTea
         nonnull = nf.nonnull_before(branch)
         next unless nonnull.include?(identifier.name)
 
+        line, column, length = condition_span(branch.condition, line: node.line, keyword_pattern: "if|elif")
+
         @warnings << Warning.new(
           path: @path,
-          line: node.line,
+          line:,
+          column:,
+          length:,
           code: "redundant-null-check",
           message: "'#{identifier.name}' is already known to be non-null here — this nil check is redundant",
           severity: :hint,
@@ -1418,6 +1552,8 @@ module MilkTea
             @warnings << Warning.new(
               path: @path,
               line: stmt.line,
+              column: stmt.column,
+              length: stmt.length || "while".length,
               code: "loop-single-iteration",
               message: "loop body always exits on the first iteration — consider replacing with an 'if' block",
               severity: :warning
@@ -1430,6 +1566,8 @@ module MilkTea
             @warnings << Warning.new(
               path: @path,
               line: stmt.line,
+              column: stmt.column,
+              length: stmt.length || "for".length,
               code: "loop-single-iteration",
               message: "loop body always exits on the first iteration — consider iterating directly without a loop",
               severity: :warning
@@ -1504,6 +1642,10 @@ module MilkTea
         collect_borrows_from_expr(expr.condition, names, inside_call_argument:)
         collect_borrows_from_expr(expr.then_expression, names, inside_call_argument:)
         collect_borrows_from_expr(expr.else_expression, names, inside_call_argument:)
+      when AST::AwaitExpr
+        collect_borrows_from_expr(expr.expression, names, inside_call_argument:)
+      when AST::UnsafeExpr
+        collect_borrows_from_expr(expr.expression, names, inside_call_argument:)
       when AST::MemberAccess  then collect_borrows_from_expr(expr.receiver, names, inside_call_argument:)
       when AST::IndexAccess
         collect_borrows_from_expr(expr.receiver, names, inside_call_argument:)
@@ -1540,60 +1682,71 @@ module MilkTea
       []
     end
 
-    def find_borrow_line(stmts, name)
+    def find_borrow_location(stmts, name)
       stmts.each do |stmt|
-        line = find_borrow_line_in_stmt(stmt, name)
-        return line if line
+        location = find_borrow_location_in_stmt(stmt, name)
+        return location if location
       end
       nil
     end
 
-    def find_borrow_line_in_stmt(stmt, name)
+    def find_borrow_location_in_stmt(stmt, name)
       case stmt
       when AST::LocalDecl
-        find_borrow_line_in_expr(stmt.value, name) if stmt.value
+        find_borrow_location_in_expr(stmt.value, name) if stmt.value
       when AST::Assignment
-        find_borrow_line_in_expr(stmt.value, name)
+        find_borrow_location_in_expr(stmt.value, name)
       when AST::ExpressionStmt
-        find_borrow_line_in_expr(stmt.expression, name)
+        find_borrow_location_in_expr(stmt.expression, name)
       when AST::IfStmt
         stmt.branches.each do |b|
-          line = find_borrow_line_in_expr(b.condition, name)
-          return line if line
-          b.body.each { |s| line = find_borrow_line_in_stmt(s, name); return line if line }
+          location = find_borrow_location_in_expr(b.condition, name)
+          return location if location
+          b.body.each { |s| location = find_borrow_location_in_stmt(s, name); return location if location }
         end
+        stmt.else_body&.each { |s| location = find_borrow_location_in_stmt(s, name); return location if location }
         nil
       when AST::WhileStmt
-        line = find_borrow_line_in_expr(stmt.condition, name)
-        return line if line
-        stmt.body.each { |s| line = find_borrow_line_in_stmt(s, name); return line if line }
+        location = find_borrow_location_in_expr(stmt.condition, name)
+        return location if location
+        stmt.body.each { |s| location = find_borrow_location_in_stmt(s, name); return location if location }
         nil
       when AST::ForStmt
-        stmt.body.each { |s| line = find_borrow_line_in_stmt(s, name); return line if line }
+        stmt.body.each { |s| location = find_borrow_location_in_stmt(s, name); return location if location }
         nil
       when AST::ReturnStmt
-        find_borrow_line_in_expr(stmt.value, name) if stmt.value
+        find_borrow_location_in_expr(stmt.value, name) if stmt.value
       end
     end
 
-    def find_borrow_line_in_expr(expr, name)
+    def find_borrow_location_in_expr(expr, name)
       case expr
       when nil then nil
       when AST::Call
         if expr.callee.is_a?(AST::Identifier) && BORROW_CALL_NAMES.include?(expr.callee.name)
           arg = expr.arguments.first
           if arg&.value.is_a?(AST::Identifier) && arg.value.name == name
-            return expr.respond_to?(:line) ? expr.line : nil
+            return [arg.value.line, arg.value.column, arg.value.name.length]
           end
         end
+        location = find_borrow_location_in_expr(expr.callee, name)
+        return location if location
         expr.arguments.each do |a|
-          line = find_borrow_line_in_expr(a.value, name)
-          return line if line
+          location = find_borrow_location_in_expr(a.value, name)
+          return location if location
         end
         nil
-      when AST::UnaryOp  then find_borrow_line_in_expr(expr.operand, name)
+      when AST::UnaryOp  then find_borrow_location_in_expr(expr.operand, name)
       when AST::BinaryOp
-        find_borrow_line_in_expr(expr.left, name) || find_borrow_line_in_expr(expr.right, name)
+        find_borrow_location_in_expr(expr.left, name) || find_borrow_location_in_expr(expr.right, name)
+      when AST::IfExpr
+        find_borrow_location_in_expr(expr.condition, name) ||
+          find_borrow_location_in_expr(expr.then_expression, name) ||
+          find_borrow_location_in_expr(expr.else_expression, name)
+      when AST::AwaitExpr
+        find_borrow_location_in_expr(expr.expression, name)
+      when AST::UnsafeExpr
+        find_borrow_location_in_expr(expr.expression, name)
       else
         nil
       end

@@ -329,6 +329,9 @@ class MilkTeaLinterTest < Minitest::Test
     borrow = warnings.select { |w| w.code == "borrow-and-mutate" }
     refute_empty borrow
     assert_match(/x/, borrow.first.message)
+    assert_equal 6, borrow.first.line
+    assert_equal 20, borrow.first.column
+    assert_equal 1, borrow.first.length
   end
 
   def test_no_borrow_warn_when_no_write_after_borrow
@@ -1170,7 +1173,27 @@ class MilkTeaLinterUselessExpressionTest < Minitest::Test
           return 0
     MT
 
-    assert_any warnings, "useless-expression"
+    w = warnings.find { |warning| warning.code == "useless-expression" }
+    assert w, "expected useless-expression warning"
+    assert_equal 4, w.line
+    assert_equal 5, w.column
+    assert_equal 2, w.length
+  end
+
+  def test_warns_on_identifier_statement_with_identifier_span
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      function main(argc: int) -> int:
+          argc
+          return 0
+    MT
+
+    w = warnings.find { |warning| warning.code == "useless-expression" }
+    assert w, "expected useless-expression warning"
+    assert_equal 4, w.line
+    assert_equal 5, w.column
+    assert_equal 4, w.length
   end
 
   def test_warns_on_binary_op_statement
@@ -1224,6 +1247,20 @@ class MilkTeaLinterUselessExpressionTest < Minitest::Test
     w = warnings.find { |x| x.code == "useless-expression" }
     assert w
     assert_equal :warning, w.severity
+  end
+end
+
+class MilkTeaLinterUnsafeExpressionTraversalTest < Minitest::Test
+  def test_param_use_inside_unsafe_expression_counts_as_used
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      function main(value: ptr[int]) -> int:
+          let result = unsafe: read(value)
+          return result
+    MT
+
+    refute warnings.any? { |warning| warning.code == "unused-param" && warning.symbol_name == "value" }
   end
 end
 
@@ -1313,6 +1350,8 @@ class MilkTeaLinterSelfAssignmentTest < Minitest::Test
     w = warnings.find { |w| w.code == "self-assignment" }
     assert w, "expected self-assignment warning"
     assert_equal 5, w.line
+    assert_equal 5, w.column
+    assert_equal 1, w.length
     assert_match(/'x'/, w.message)
   end
 
@@ -1359,6 +1398,9 @@ class MilkTeaLinterSelfComparisonTest < Minitest::Test
 
     w = warnings.find { |w| w.code == "self-comparison" }
     assert w, "expected self-comparison warning"
+    assert_equal 4, w.line
+    assert_equal 8, w.column
+    assert_equal 6, w.length
     assert_match(/'x'/, w.message)
     assert_match(/always true/, w.message)
   end
@@ -1410,6 +1452,8 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     assert w, "expected constant-condition warning"
     assert_match(/always true/, w.message)
     assert_equal 4, w.line
+    assert_equal 8, w.column
+    assert_equal 4, w.length
   end
 
   def test_warns_on_literal_false_in_if
@@ -1425,6 +1469,8 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     w = warnings.find { |w| w.code == "constant-condition" }
     assert w, "expected constant-condition warning"
     assert_match(/always false/, w.message)
+    assert_equal 8, w.column
+    assert_equal 5, w.length
   end
 
   def test_warns_on_literal_false_in_while
@@ -1440,6 +1486,9 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     w = warnings.find { |w| w.code == "constant-condition" }
     assert w, "expected constant-condition warning"
     assert_match(/always false/, w.message)
+    assert_equal 4, w.line
+    assert_equal 11, w.column
+    assert_equal 5, w.length
   end
 
   def test_no_warn_on_while_true
@@ -1561,7 +1610,7 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     refute warnings.any? { |w| w.code == "constant-condition" }
   end
 
-  def test_constant_condition_while_reports_while_span
+  def test_constant_condition_while_reports_condition_span
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
 
@@ -1574,6 +1623,8 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     w = warnings.find { |warning| warning.code == "constant-condition" }
     assert w, "expected constant-condition warning"
     assert_equal 4, w.line
+    assert_equal 11, w.column
+    assert_equal 5, w.length
     assert_equal "false", w.symbol_name
   end
 end
@@ -1595,6 +1646,9 @@ class MilkTeaLinterRedundantNullCheckTest < Minitest::Test
 
     w = warnings.find { |w| w.code == "redundant-null-check" }
     assert w, "expected redundant-null-check warning"
+    assert_equal 5, w.line
+    assert_equal 12, w.column
+    assert_equal 9, w.length
     assert_match(/'x'/, w.message)
     assert_equal :hint, w.severity
   end
@@ -1700,6 +1754,8 @@ class MilkTeaLinterLoopSingleIterationTest < Minitest::Test
     w = warnings.find { |w| w.code == "loop-single-iteration" }
     assert w, "expected loop-single-iteration warning"
     assert_equal 5, w.line
+    assert_equal 5, w.column
+    assert_equal 5, w.length
   end
 
   def test_warns_on_while_loop_that_always_returns
