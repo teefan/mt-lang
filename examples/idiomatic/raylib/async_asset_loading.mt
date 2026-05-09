@@ -16,35 +16,35 @@ const sound_path: str = "../../raylib/resources/sound.wav"
 function load_logo_bytes() -> bytes.Buffer:
     let loaded = fs.read_bytes(logo_path)
     if status.is_err(loaded):
-        panic("could not read raylib logo bytes")
+        fatal("could not read raylib logo bytes")
     match loaded:
         status.Status.ok as payload:
             return payload.value
         status.Status.err:
-            panic("could not read raylib logo bytes")
+            fatal("could not read raylib logo bytes")
 
 
 function load_sound_bytes() -> bytes.Buffer:
     let loaded = fs.read_bytes(sound_path)
     if status.is_err(loaded):
-        panic("could not read raylib sound bytes")
+        fatal("could not read raylib sound bytes")
     match loaded:
         status.Status.ok as payload:
             return payload.value
         status.Status.err:
-            panic("could not read raylib sound bytes")
+            fatal("could not read raylib sound bytes")
 
 
 function texture_from_png_bytes(data: bytes.Buffer) -> rl.Texture2D:
     let view = bytes.as_span(data)
     let image = rl.load_image_from_memory(".png", view)
     if not rl.is_image_valid(image):
-        panic("raylib could not decode png bytes")
+        fatal("raylib could not decode png bytes")
 
     let texture = rl.load_texture_from_image(image)
     rl.unload_image(image)
     if not rl.is_texture_valid(texture):
-        panic("raylib could not upload texture bytes")
+        fatal("raylib could not upload texture bytes")
     return texture
 
 
@@ -52,12 +52,12 @@ function sound_from_wav_bytes(data: bytes.Buffer) -> rl.Sound:
     let view = bytes.as_span(data)
     let wave = rl.load_wave_from_memory(".wav", view)
     if not rl.is_wave_valid(wave):
-        panic("raylib could not decode wav bytes")
+        fatal("raylib could not decode wav bytes")
 
     let sound = rl.load_sound_from_wave(wave)
     rl.unload_wave(wave)
     if not rl.is_sound_valid(sound):
-        panic("raylib could not create sound")
+        fatal("raylib could not create sound")
     return sound
 
 
@@ -91,7 +91,7 @@ function main() -> int:
                 if rl.is_sound_valid(ping):
                     rl.unload_sound(ping)
                 if rt.loop_release(ref_of(loop)) != 0:
-                    panic("libuv loop release failed")
+                    fatal("libuv loop release failed")
 
             rl.set_target_fps(60)
 

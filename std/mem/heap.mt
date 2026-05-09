@@ -45,11 +45,11 @@ public function alloc_bytes(size_bytes: ptr_uint) -> ptr[void]?:
 
 public function must_alloc_bytes(size_bytes: ptr_uint) -> ptr[void]:
     if size_bytes == 0:
-        panic(c"heap.must_alloc_bytes requires size > 0")
+        fatal(c"heap.must_alloc_bytes requires size > 0")
 
     let memory = alloc_bytes(size_bytes)
     if memory == null:
-        panic(c"heap.must_alloc_bytes out of memory")
+        fatal(c"heap.must_alloc_bytes out of memory")
 
     return unsafe: ptr[void]<-memory
 
@@ -72,15 +72,15 @@ public function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -
 
 public function must_alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[void]:
     if size_bytes == 0:
-        panic(c"heap.must_alloc_bytes_aligned requires size > 0")
+        fatal(c"heap.must_alloc_bytes_aligned requires size > 0")
 
     let normalized_alignment = normalize_alignment(alignment)
     if normalized_alignment == 0:
-        panic(c"heap.must_alloc_bytes_aligned requires a power-of-two alignment")
+        fatal(c"heap.must_alloc_bytes_aligned requires a power-of-two alignment")
 
     let memory = alloc_bytes_aligned(size_bytes, normalized_alignment)
     if memory == null:
-        panic(c"heap.must_alloc_bytes_aligned out of memory")
+        fatal(c"heap.must_alloc_bytes_aligned out of memory")
 
     return unsafe: ptr[void]<-memory
 
@@ -97,11 +97,11 @@ public function alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr_uint
 
 public function must_alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr_uint) -> ptr[void]:
     if count == 0 or element_size_bytes == 0:
-        panic(c"heap.must_alloc_zeroed_bytes requires count > 0 and element size > 0")
+        fatal(c"heap.must_alloc_zeroed_bytes requires count > 0 and element size > 0")
 
     let memory = alloc_zeroed_bytes(count, element_size_bytes)
     if memory == null:
-        panic(c"heap.must_alloc_zeroed_bytes out of memory")
+        fatal(c"heap.must_alloc_zeroed_bytes out of memory")
 
     return unsafe: ptr[void]<-memory
 
@@ -116,11 +116,11 @@ public function resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[vo
 
 public function must_resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[void]:
     if size_bytes == 0:
-        panic(c"heap.must_resize_bytes requires size > 0")
+        fatal(c"heap.must_resize_bytes requires size > 0")
 
     let resized = resize_bytes(memory, size_bytes)
     if resized == null:
-        panic(c"heap.must_resize_bytes out of memory")
+        fatal(c"heap.must_resize_bytes out of memory")
 
     return unsafe: ptr[void]<-resized
 
@@ -148,11 +148,11 @@ public function alloc[T](count: ptr_uint) -> ptr[T]?:
 
 public function must_alloc[T](count: ptr_uint) -> ptr[T]:
     if ptr_uint<-align_of(T) > minimum_alignment():
-        panic(c"heap.must_alloc does not support over-aligned types")
+        fatal(c"heap.must_alloc does not support over-aligned types")
 
     let memory = alloc[T](count)
     if memory == null:
-        panic(c"heap.must_alloc out of memory")
+        fatal(c"heap.must_alloc out of memory")
 
     return unsafe: ptr[T]<-memory
 
@@ -172,7 +172,7 @@ public function alloc_aligned[T](count: ptr_uint) -> ptr[T]?:
 public function must_alloc_aligned[T](count: ptr_uint) -> ptr[T]:
     let memory = alloc_aligned[T](count)
     if memory == null:
-        panic(c"heap.must_alloc_aligned out of memory")
+        fatal(c"heap.must_alloc_aligned out of memory")
 
     return unsafe: ptr[T]<-memory
 
@@ -191,11 +191,11 @@ public function alloc_zeroed[T](count: ptr_uint) -> ptr[T]?:
 
 public function must_alloc_zeroed[T](count: ptr_uint) -> ptr[T]:
     if ptr_uint<-align_of(T) > minimum_alignment():
-        panic(c"heap.must_alloc_zeroed does not support over-aligned types")
+        fatal(c"heap.must_alloc_zeroed does not support over-aligned types")
 
     let memory = alloc_zeroed[T](count)
     if memory == null:
-        panic(c"heap.must_alloc_zeroed out of memory")
+        fatal(c"heap.must_alloc_zeroed out of memory")
 
     return unsafe: ptr[T]<-memory
 
@@ -226,11 +226,11 @@ public function resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]?:
 
 public function must_resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]:
     if ptr_uint<-align_of(T) > minimum_alignment():
-        panic(c"heap.must_resize does not support over-aligned types")
+        fatal(c"heap.must_resize does not support over-aligned types")
 
     let resized = resize[T](memory, count)
     if resized == null:
-        panic(c"heap.must_resize out of memory")
+        fatal(c"heap.must_resize out of memory")
 
     return unsafe: ptr[T]<-resized
 

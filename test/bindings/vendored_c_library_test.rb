@@ -101,6 +101,41 @@ class MilkTeaVendoredCLibraryTest < Minitest::Test
     end
   end
 
+  def test_archive_creates_nested_object_directories_for_nested_sources
+    Dir.mktmpdir("milk-tea-vendored-c-library") do |dir|
+      source_root = File.join(dir, "src")
+      build_root = File.join(dir, "build")
+      FileUtils.mkdir_p(File.join(source_root, "distr"))
+      File.write(File.join(source_root, "distr", "helper.c"), "int helper(void) { return 1; }\n")
+
+      archive = MilkTea::VendoredCLibrary::Archive.new(
+        name: "sample",
+        source_root:,
+        build_root:,
+        archive_name: "libsample.a",
+        sources: ["distr/helper.c"],
+        include_roots: [source_root],
+      )
+
+      with_singleton_method_override(Open3, :capture3, lambda { |*args|
+        output_index = args.index("-o")
+        if output_index
+          output_path = args[output_index + 1]
+          File.write(output_path, "")
+        elsif args[0] == "ar"
+          FileUtils.mkdir_p(File.dirname(archive.archive_path.to_s))
+          File.write(archive.archive_path.to_s, "")
+        end
+
+        ["", "", success_status]
+      }) do
+        archive.prepare!(cc: "cc")
+      end
+
+      assert File.exist?(File.join(build_root, "distr", "helper.o"))
+    end
+  end
+
   private
 
   def success_status

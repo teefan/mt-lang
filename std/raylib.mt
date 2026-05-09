@@ -225,7 +225,7 @@ public function load_file_data(file_name: str) -> maybe.Maybe[bytes.Buffer]:
 
     if data_size < 0:
         c.UnloadFileData(ptr[ubyte]<-raw_result)
-        panic(c"imported wrapper load_file_data returned negative size")
+        fatal(c"imported wrapper load_file_data returned negative size")
 
     var value = bytes.with_capacity(ptr_uint<-data_size)
     bytes.append(ref_of(value), span[ubyte](data = ptr[ubyte]<-raw_result, len = ptr_uint<-data_size))
@@ -571,7 +571,7 @@ public function load_codepoints(text: str) -> maybe.Maybe[vec.Vec[int]]:
     if count < 0:
         if raw_result != null:
             c.UnloadCodepoints(ptr[int]<-raw_result)
-        panic(c"imported wrapper load_codepoints returned negative count")
+        fatal(c"imported wrapper load_codepoints returned negative count")
 
     var value = vec.Vec[int].with_capacity(ptr_uint<-count)
     if count == 0:

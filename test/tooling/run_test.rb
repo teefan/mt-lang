@@ -629,18 +629,18 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
-  def test_run_with_host_compiler_executes_program_using_builtin_panic
+  def test_run_with_host_compiler_executes_program_using_builtin_fatal
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    Dir.mktmpdir("milk-tea-run-panic") do |dir|
-      source_path = File.join(dir, "panic.mt")
+    Dir.mktmpdir("milk-tea-run-fatal") do |dir|
+      source_path = File.join(dir, "fatal.mt")
 
       File.write(source_path, [
-        "module demo.panic_runtime",
+        "module demo.fatal_runtime",
         "",
         "function main() -> int:",
-        "    panic(\"bad state\")",
+        "    fatal(\"bad state\")",
         "    return 0",
         "",
       ].join("\n"))

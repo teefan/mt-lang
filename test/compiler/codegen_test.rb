@@ -197,6 +197,142 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/#line \d+ ".*\.mt"/, generated)
   end
 
+  def test_generate_c_for_loop_over_custom_iterator_protocol
+    source = <<~MT
+      module demo.iterator_for
+
+      struct Numbers:
+          stop: int
+
+      struct NumbersIter:
+          index: int
+          stop: int
+          current: int
+
+      methods Numbers:
+          public function iter() -> NumbersIter:
+              return NumbersIter(index = 0, stop = this.stop, current = 0)
+
+      methods NumbersIter:
+          public edit function next() -> ptr[int]?:
+              if this.index >= this.stop:
+                  return null[ptr[int]]
+              this.current = this.index
+              this.index += 1
+              unsafe:
+                  return ptr_of(this.current)
+
+      function main() -> int:
+          var total = 0
+          for value in Numbers(stop = 3):
+              unsafe:
+                  total += read(value)
+          return total
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static demo_iterator_for_NumbersIter demo_iterator_for_Numbers_iter\(demo_iterator_for_Numbers this\)/, generated)
+    assert_match(/static int32_t\s*\*\s*demo_iterator_for_NumbersIter_next\(demo_iterator_for_NumbersIter \*this\)/, generated)
+    assert_match(/demo_iterator_for_NumbersIter_next\(&[A-Za-z0-9_]+\)/, generated)
+    assert_match(/if \([A-Za-z0-9_]+ == NULL\)/, generated)
+    assert_match(/total \+= \*[A-Za-z0-9_]+;/, generated)
+  end
+
+  def test_generate_c_for_loop_over_bool_current_iterator_protocol
+    source = <<~MT
+      module demo.iterator_current
+
+      struct Numbers:
+          stop: int
+
+      struct NumbersIter:
+          index: int
+          stop: int
+
+      methods Numbers:
+          public function iter() -> NumbersIter:
+              return NumbersIter(index = 0, stop = this.stop)
+
+      methods NumbersIter:
+          public edit function next() -> bool:
+              if this.index >= this.stop:
+                  return false
+              this.index += 1
+              return true
+
+          public function current() -> int:
+              return this.index - 1
+
+      function main() -> int:
+          var total = 0
+          for value in Numbers(stop = 3):
+              total += value
+          return total
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static bool demo_iterator_current_NumbersIter_next\(demo_iterator_current_NumbersIter \*this\)/, generated)
+    assert_match(/static int32_t demo_iterator_current_NumbersIter_current\(demo_iterator_current_NumbersIter this\)/, generated)
+    assert_match(/demo_iterator_current_NumbersIter_current\([A-Za-z0-9_]+\)/, generated)
+    assert_match(/if \(![A-Za-z0-9_]+\([^)]*\)\)/, generated)
+    assert_match(/total \+= value;/, generated)
+  end
+
+  def test_generate_c_struct_span_for_loop_as_mutable_alias
+    source = <<~MT
+      module demo.for_ref
+
+      struct Position:
+          x: int
+          y: int
+
+      function apply(items: span[Position]) -> void:
+          for item in items:
+              item.x += 1
+              item.y += 2
+          return
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/demo_for_ref_Position \*item = &__mt_for_items_[A-Za-z0-9_]+\.data\[__mt_for_index_[A-Za-z0-9_]+\];/, generated)
+    assert_match(/item->x \+= 1;/, generated)
+    assert_match(/item->y \+= 2;/, generated)
+  end
+
+  def test_generate_c_parallel_collection_for_loop
+    source = <<~MT
+      module demo.parallel_for
+
+      struct Position:
+          x: int
+          y: int
+
+      struct Velocity:
+          x: int
+          y: int
+
+      function apply(entities: span[int], positions: span[Position], velocities: span[Velocity]) -> int:
+          var total = 0
+          for entity, position, velocity in entities, positions, velocities:
+              position.x += velocity.x
+              position.y += velocity.y
+              total += entity
+          return total
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/if \(__mt_for_items_[A-Za-z0-9_]+\.len != __mt_for_items_[A-Za-z0-9_]+\.len\)/, generated)
+    assert_match(/int32_t entity = __mt_for_items_[A-Za-z0-9_]+\.data\[__mt_for_index_[A-Za-z0-9_]+\];/, generated)
+    assert_match(/demo_parallel_for_Position \*position = &__mt_for_items_[A-Za-z0-9_]+\.data\[__mt_for_index_[A-Za-z0-9_]+\];/, generated)
+    assert_match(/demo_parallel_for_Velocity \*velocity = &__mt_for_items_[A-Za-z0-9_]+\.data\[__mt_for_index_[A-Za-z0-9_]+\];/, generated)
+    assert_match(/position->x \+= velocity->x;/, generated)
+    assert_match(/position->y \+= velocity->y;/, generated)
+  end
+
   def test_generate_c_for_async_methods
     source = <<~MT
       module demo.async_methods_codegen
@@ -1405,6 +1541,91 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/if \(window == NULL\)/, generated)
   end
 
+  def test_generate_c_for_let_else_owned_foreign_release_calls
+    source = <<~MT
+      module demo.main
+
+      import std.window as win
+
+      function main() -> int:
+          let window = win.create() else:
+              return 0
+          win.destroy(window)
+          if window == null:
+              return 1
+          return 2
+    MT
+
+    imported_sources = {
+      "std/c/window.mt" => <<~MT,
+        external module std.c.window:
+            include "window.h"
+
+            external function CreateWindow() -> ptr[void]?
+            external function DestroyWindow(window: ptr[void]?) -> void
+      MT
+      "std/window.mt" => <<~MT,
+        module std.window
+
+        import std.c.window as c
+
+        public opaque Window
+
+        public foreign function create() -> Window? = c.CreateWindow
+        public foreign function destroy(consuming window: Window) -> void = c.DestroyWindow
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/std_window_Window\* window = CreateWindow\(\);/, generated)
+    assert_match(/if \(window == NULL\)/, generated)
+    assert_match(/DestroyWindow\(window\);/, generated)
+    assert_match(/window = NULL;/, generated)
+  end
+
+  def test_generate_c_for_defer_expression_owned_foreign_release_calls
+    source = <<~MT
+      module demo.main
+
+      import std.window as win
+
+      function main() -> int:
+          let window = win.create()
+          if window == null:
+              return 0
+          defer win.destroy(window)
+          return 1
+    MT
+
+    imported_sources = {
+      "std/c/window.mt" => <<~MT,
+        external module std.c.window:
+            include "window.h"
+
+            external function CreateWindow() -> ptr[void]?
+            external function DestroyWindow(window: ptr[void]?) -> void
+      MT
+      "std/window.mt" => <<~MT,
+        module std.window
+
+        import std.c.window as c
+
+        public opaque Window
+
+        public foreign function create() -> Window? = c.CreateWindow
+        public foreign function destroy(consuming window: Window) -> void = c.DestroyWindow
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/std_window_Window\* window = CreateWindow\(\);/, generated)
+    assert_match(/if \(window == NULL\)/, generated)
+    assert_match(/DestroyWindow\(window\);/, generated)
+    assert_match(/window = NULL;/, generated)
+  end
+
   def test_generate_c_for_typed_opaque_handle_out_projection
     source = <<~MT
       module demo.main
@@ -1470,7 +1691,7 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_source(source)
 
     assert_match(/static inline int32_t \*mt_checked_span_index_span_int\(mt_span_int span, uintptr_t index\)/, generated)
-    assert_match(/if \(index >= span\.len\) mt_panic\("span index out of bounds"\);/, generated)
+    assert_match(/if \(index >= span\.len\) mt_fatal\("span index out of bounds"\);/, generated)
     assert_match(/int32_t first = \(\*mt_checked_span_index_span_int\(items, 0\)\);/, generated)
     assert_match(/\(\*mt_checked_span_index_span_int\(items, 0\)\) = first \+ 2;/, generated)
     assert_match(/return \(\*mt_checked_span_index_span_int\(items, 0\)\);/, generated)
@@ -1862,12 +2083,12 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/unknown generic type Result/, error.message)
   end
 
-  def test_generate_c_for_builtin_panic_helper
+  def test_generate_c_for_builtin_fatal_helper
     source = [
-      "module demo.panic_surface",
+      "module demo.fatal_surface",
       "",
       "function main() -> int:",
-      "    panic(\"bad state\")",
+      "    fatal(\"bad state\")",
       "    return 0",
       "",
     ].join("\n")
@@ -1876,11 +2097,11 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/#include <stdio\.h>/, generated)
     assert_match(/#include <stdlib\.h>/, generated)
-    refute_match(/static void mt_panic\(const char\* message\)/, generated)
-    assert_match(/static void mt_panic_str\(mt_str message\)/, generated)
+    refute_match(/static void mt_fatal\(const char\* message\)/, generated)
+    assert_match(/static void mt_fatal_str\(mt_str message\)/, generated)
     assert_match(/fwrite\(message\.data, 1, message\.len, stderr\);/, generated)
     assert_match(/abort\(\);/, generated)
-    assert_match(/mt_panic_str\(\(mt_str\)\{ \.data = "bad state", \.len = 9 \}\);/, generated)
+    assert_match(/mt_fatal_str\(\(mt_str\)\{ \.data = "bad state", \.len = 9 \}\);/, generated)
   end
 
   def test_generate_c_dedupes_standard_runtime_headers_from_extern_imports
@@ -2186,14 +2407,14 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return offsetof\(demo_layout_surface_Header, version\) \+ _Alignof\(demo_layout_surface_Header\);/, generated)
   end
 
-  def test_generate_c_for_real_str_literals_and_panic
+  def test_generate_c_for_real_str_literals_and_fatal
     source = [
       "module demo.str_surface",
       "",
       "const greeting: str = \"hello\"",
       "",
       "function main() -> int:",
-      "    panic(greeting)",
+      "    fatal(greeting)",
       "    return 0",
       "",
     ].join("\n")
@@ -2204,9 +2425,9 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/char\* data;/, generated)
     assert_match(/uintptr_t len;/, generated)
     assert_match(/static const mt_str demo_str_surface_greeting = \(mt_str\)\{ \.data = "hello", \.len = 5 \};/, generated)
-    assert_match(/static void mt_panic_str\(mt_str message\) \{/, generated)
+    assert_match(/static void mt_fatal_str\(mt_str message\) \{/, generated)
     assert_match(/fwrite\(message\.data, 1, message\.len, stderr\);/, generated)
-    assert_match(/mt_panic_str\(demo_str_surface_greeting\);/, generated)
+    assert_match(/mt_fatal_str\(demo_str_surface_greeting\);/, generated)
   end
 
   def test_generate_c_for_str_slice_and_arena_cstr_conversion
@@ -2222,7 +2443,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    let text = \"hello world\"",
       "    let part = text.slice(6, 5)",
       "    let copied = part.to_cstr(ref_of(scratch))",
-      "    panic(copied)",
+      "    fatal(copied)",
       "    if part.len == ptr_uint<-5:",
       "        return int<-part.len",
       "    return 0",
@@ -2594,7 +2815,7 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_source(source)
 
     assert_match(/static inline uint32_t \*mt_checked_index_array_uint_4\(uint32_t \(\*array\)\[4\], uintptr_t index\)/, generated)
-    assert_match(/if \(index >= 4\) mt_panic\("array index out of bounds"\);/, generated)
+    assert_match(/if \(index >= 4\) mt_fatal\("array index out of bounds"\);/, generated)
     assert_match(/\(\*mt_checked_index_array_uint_4\(\&\(palette\), 1\)\) = 9;/, generated)
     assert_match(/\(\*mt_checked_index_array_uint_4\(\&\(holder\.colors\), 2\)\) = 10;/, generated)
     assert_match(/if \(\(\(\*mt_checked_index_array_uint_4\(\&\(palette\), 0\)\)\) != 1\)/, generated)

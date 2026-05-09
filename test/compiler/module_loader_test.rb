@@ -149,6 +149,163 @@ class MilkTeaModuleLoaderTest < Minitest::Test
     end
   end
 
+  def test_check_program_exports_public_methods_on_imported_public_types
+    Dir.mktmpdir("milk-tea-module-loader-imported-methods") do |dir|
+      root_path = File.join(dir, "demo", "main.mt")
+      ext_path = File.join(dir, "demo", "ext.mt")
+      dep_path = File.join(dir, "demo", "dep.mt")
+
+      FileUtils.mkdir_p(File.dirname(root_path))
+
+      File.write(root_path, <<~MT)
+        module demo.main
+
+        import demo.ext as ext
+
+        function main() -> int:
+            let counter = ext.make_counter()
+            return counter.read()
+      MT
+
+      File.write(dep_path, <<~MT)
+        module demo.dep
+
+        public struct Counter:
+            value: int
+      MT
+
+      File.write(ext_path, <<~MT)
+        module demo.ext
+
+        import demo.dep as dep
+
+        methods dep.Counter:
+            public function read() -> int:
+                return this.value
+
+        public function make_counter() -> dep.Counter:
+            return dep.Counter(value = 7)
+      MT
+
+      program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
+      imported = program.root_analysis.imports.fetch("ext")
+      counter_type = program.analyses_by_module_name.fetch("demo.dep").types.fetch("Counter")
+
+      assert_equal %w[make_counter], imported.functions.keys.sort
+      assert_equal %w[read], imported.methods.fetch(counter_type).keys.sort
+    end
+  end
+
+  def test_check_program_exports_public_methods_on_imported_generic_receivers
+    Dir.mktmpdir("milk-tea-module-loader-imported-generic-methods") do |dir|
+      root_path = File.join(dir, "demo", "main.mt")
+      ext_path = File.join(dir, "demo", "ext.mt")
+      dep_path = File.join(dir, "demo", "dep.mt")
+
+      FileUtils.mkdir_p(File.dirname(root_path))
+
+      File.write(root_path, <<~MT)
+        module demo.main
+
+        import demo.dep as dep
+        import demo.ext as ext
+
+        function main(handle: ptr[dep.Handle]) -> int:
+            return handle.read_code()
+      MT
+
+      File.write(dep_path, <<~MT)
+        module demo.dep
+
+        public opaque Handle
+      MT
+
+      File.write(ext_path, <<~MT)
+        module demo.ext
+
+        import demo.dep as dep
+
+        methods ptr[dep.Handle]:
+            public function read_code() -> int:
+                return 7
+      MT
+
+      program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
+      imported = program.root_analysis.imports.fetch("ext")
+      handle_type = program.analyses_by_module_name.fetch("demo.dep").types.fetch("Handle")
+      receiver_type = MilkTea::Types::GenericInstance.new("ptr", [handle_type])
+
+      assert_equal %w[read_code], imported.methods.fetch(receiver_type).keys.sort
+    end
+  end
+
+  def test_check_program_exports_public_methods_on_imported_generic_receiver_templates
+    Dir.mktmpdir("milk-tea-module-loader-imported-generic-template-methods") do |dir|
+      root_path = File.join(dir, "demo", "main.mt")
+      ext_path = File.join(dir, "demo", "ext.mt")
+
+      FileUtils.mkdir_p(File.dirname(root_path))
+
+      File.write(root_path, <<~MT)
+        module demo.main
+
+        import demo.ext as ext
+
+        function main(value: const_ptr[int]) -> int:
+            return value.read_value()
+      MT
+
+      File.write(ext_path, <<~MT)
+        module demo.ext
+
+        methods const_ptr[T]:
+            public function read_value() -> T:
+                return unsafe: read(this)
+      MT
+
+      program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
+      imported = program.root_analysis.imports.fetch("ext")
+      receiver_type = MilkTea::Types::GenericInstance.new("const_ptr", [MilkTea::Types::TypeVar.new("__receiver_arg0")])
+
+      assert_equal %w[read_value], imported.methods.fetch(receiver_type).keys.sort
+    end
+  end
+
+  def test_check_program_exports_public_methods_on_imported_nullable_generic_receiver_templates
+    Dir.mktmpdir("milk-tea-module-loader-imported-nullable-generic-template-methods") do |dir|
+      root_path = File.join(dir, "demo", "main.mt")
+      ext_path = File.join(dir, "demo", "ext.mt")
+
+      FileUtils.mkdir_p(File.dirname(root_path))
+
+      File.write(root_path, <<~MT)
+        module demo.main
+
+        import demo.ext as ext
+
+        function main(value: const_ptr[int]?) -> const_ptr[int]:
+            return value.require_value("missing")
+      MT
+
+      File.write(ext_path, <<~MT)
+        module demo.ext
+
+        methods const_ptr[T]?:
+            public function require_value(message: str) -> const_ptr[T]:
+                if this == null:
+                    fatal(message)
+
+                return unsafe: const_ptr[T]<-this
+      MT
+
+      program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
+      imported = program.root_analysis.imports.fetch("ext")
+      receiver_type = MilkTea::Types::Nullable.new(MilkTea::Types::GenericInstance.new("const_ptr", [MilkTea::Types::TypeVar.new("__receiver_arg0")]))
+
+      assert_equal %w[require_value], imported.methods.fetch(receiver_type).keys.sort
+    end
+  end
+
   private
 
   def demo_path

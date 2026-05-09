@@ -116,6 +116,29 @@ module MilkTea
       def build_statement(stmt, next_id, break_target:, continue_target:)
         case stmt
         when AST::LocalDecl
+          if stmt.else_body
+            reads = read_identifiers(stmt.value)
+            writes = Set.new
+            writes_info = []
+            declaration_key = declaration_binding_key(stmt, stmt.name)
+            if declaration_key && (stmt.value || @local_decl_without_initializer_writes)
+              writes << declaration_key
+              writes_info << { name: stmt.name, binding_key: declaration_key, line: stmt.line, column: stmt.column, origin: :declaration }
+            end
+
+            success_id = add_linear_node(:local_decl, stmt, next_id, writes:, writes_info:)
+            null_entry = build_block(stmt.else_body, next_id, break_target:, continue_target:)
+            condition_id = @graph.add_node(
+              kind: :local_decl_condition,
+              statement: stmt,
+              line: stmt.line,
+              reads:,
+            )
+            @graph.add_edge(condition_id, success_id, label: :non_null)
+            @graph.add_edge(condition_id, null_entry, label: :null)
+            return condition_id
+          end
+
           reads = read_identifiers(stmt.value)
           writes = Set.new
           writes_info = []

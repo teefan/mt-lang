@@ -8,6 +8,6 @@ public function env_flag(name: str) -> bool:
 
 public function require_ptr[T](value: ptr[T]?, message: str) -> ptr[T]:
     if value == null:
-        panic(message)
+        fatal(message)
 
     return unsafe: ptr[T]<-value

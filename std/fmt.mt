@@ -38,7 +38,7 @@ function append_formatted_float(output: ref[string.String], format: cstr, number
     var buffer = zero[array[char, 64]]
     let written = c.snprintf(ptr_of(buffer[0]), float_buffer_capacity, format, number)
     if written < 0 or ptr_uint<-written >= float_buffer_capacity:
-        panic("fmt could not format float")
+        fatal("fmt could not format float")
 
     output.append(text_ops.chars_as_str(ptr_of(buffer[0])))
     return
@@ -58,7 +58,7 @@ public function append_double_precision(output: ref[string.String], number: doub
     var buffer = zero[array[char, 64]]
     let written = c.snprintf(ptr_of(buffer[0]), float_buffer_capacity, c"%.*f", precision, number)
     if written < 0 or ptr_uint<-written >= float_buffer_capacity:
-        panic("fmt could not format float with precision")
+        fatal("fmt could not format float with precision")
 
     output.append(text_ops.chars_as_str(ptr_of(buffer[0])))
     return

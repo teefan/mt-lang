@@ -115,7 +115,7 @@ function main() -> int:
                 rl.update_texture[rl.Color](texture, pixels)
                 rl.unload_image_colors(pixels)
             else:
-                panic("raylib could not extract image colors")
+                fatal("raylib could not extract image colors")
 
             texture_reload = false
 

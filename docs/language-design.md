@@ -663,7 +663,7 @@ function spawn_enemy(start: Vec2) -> ptr[Enemy]:
 	return enemy
 ```
 
-The default heap allocation functions return nullable pointers because C allocation can fail: `alloc_bytes`, `alloc_zeroed_bytes`, `resize_bytes`, `alloc[T]`, `alloc_zeroed[T]`, and `resize[T]` all return `...?`. Code that wants explicit error handling checks for `null`. Code that wants simple fail-fast behavior uses `must_alloc*` or `must_resize*`, which panic on allocation failure.
+The default heap allocation functions return nullable pointers because C allocation can fail: `alloc_bytes`, `alloc_zeroed_bytes`, `resize_bytes`, `alloc[T]`, `alloc_zeroed[T]`, and `resize[T]` all return `...?`. Code that wants explicit error handling checks for `null`. Code that wants simple fail-fast behavior uses `must_alloc*` or `must_resize*`, which fatal on allocation failure.
 
 Allocator surfaces are semantic, not stylistic. Heap, arena, pool, and stack model different ownership and lifetime stories; the language should not add alias APIs that make them feel interchangeable.
 
@@ -819,7 +819,7 @@ Exceptions do not belong here.
 Preferred strategy:
 
 - `status.Status[T, E]` for recoverable failures
-- `panic("message")` for programmer errors and impossible states
+- `fatal("message")` for programmer errors and impossible states
 - explicit status codes for imported foreign APIs when that matches the C API better
 
 Example:
@@ -1222,7 +1222,7 @@ Milk Tea only succeeds if the generated C is respectable.
 4. Lower methods to plain functions.
 5. Lower `match` to `switch` where possible.
 6. Lower `defer` to readable cleanup labels or scoped cleanup blocks.
-7. Avoid a mandatory runtime beyond what is needed for startup, panic hooks, and core helper intrinsics.
+7. Avoid a mandatory runtime beyond what is needed for startup, fatal hooks, and core helper intrinsics.
 
 Example lowering:
 

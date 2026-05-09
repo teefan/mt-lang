@@ -43,9 +43,9 @@ class MilkTeaRayguiIdiomaticExamplesTest < Minitest::Test
     refute_match(/mt_foreign_strs_to_cstrs_temp/, dynamic)
     refute_match(/mt_free_foreign_cstrs_temp/, dynamic)
 
-    refute_match(/static void mt_panic_str\(/, controls)
-    refute_match(/static void mt_panic_str\(/, dynamic)
-    refute_match(/static void mt_panic_str\(/, text_builders)
+    refute_match(/static void mt_fatal_str\(/, controls)
+    refute_match(/static void mt_fatal_str\(/, dynamic)
+    refute_match(/static void mt_fatal_str\(/, text_builders)
     refute_match(/if \(64 == 64\)/, text_builders)
   end
 

@@ -80,8 +80,8 @@ module MilkTea
       def initialize(name:, type:, line: nil, column: nil) = super
     end
     ForeignParam = Data.define(:name, :type, :mode, :boundary_type)
-    LocalDecl = Data.define(:kind, :name, :type, :value, :line, :column) do
-      def initialize(kind:, name:, type:, value:, line: nil, column: nil) = super
+    LocalDecl = Data.define(:kind, :name, :type, :value, :else_body, :line, :column) do
+      def initialize(kind:, name:, type:, value:, else_body: nil, line: nil, column: nil) = super
     end
     Assignment = Data.define(:target, :operator, :value, :line) do
       def initialize(target:, operator:, value:, line: nil) = super
@@ -108,8 +108,16 @@ module MilkTea
     StaticAssert = Data.define(:condition, :message, :line) do
       def initialize(condition:, message:, line: nil) = super
     end
-    ForStmt = Data.define(:name, :iterable, :body, :line, :column) do
-      def initialize(name:, iterable:, body:, line: nil, column: nil) = super
+    ForBinding = Data.define(:name, :line, :column) do
+      def initialize(name:, line: nil, column: nil) = super
+    end
+    ForStmt = Data.define(:bindings, :iterables, :body, :line, :column) do
+      def initialize(bindings:, iterables:, body:, line: nil, column: nil) = super
+      def name = bindings.first.name
+      def names = bindings.map(&:name)
+      def binding = bindings.first
+      def iterable = iterables.first
+      def parallel? = bindings.length > 1 || iterables.length > 1
     end
     WhileStmt = Data.define(:condition, :body, :line, :column, :length) do
       def initialize(condition:, body:, line: nil, column: nil, length: nil) = super

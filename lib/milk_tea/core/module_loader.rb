@@ -210,7 +210,9 @@ module MilkTea
         hidden_bindings = {}
 
         bindings.each do |name, binding|
-          visible = binding.ast.respond_to?(:visibility) && binding.ast.visibility == :public && exported_method_receiver?(receiver_type, exported_types)
+          visible = binding.ast.respond_to?(:visibility) &&
+            binding.ast.visibility == :public &&
+            exported_method_receiver?(receiver_type, analysis, exported_types)
 
           if visible
             public_bindings[name] = binding
@@ -226,11 +228,30 @@ module MilkTea
       [methods, private_methods]
     end
 
-    def exported_method_receiver?(receiver_type, exported_types)
+    def exported_method_receiver?(receiver_type, analysis, exported_types)
       return true if receiver_type.is_a?(Types::StringView)
       return true if exported_types.value?(receiver_type)
+      return true if imported_receiver_type?(receiver_type, analysis.imports)
+      return exported_method_receiver?(receiver_type.base, analysis, exported_types) if receiver_type.is_a?(Types::Nullable)
+      return receiver_type.arguments.all? { |argument| exported_method_receiver_argument?(argument, analysis, exported_types) } if receiver_type.is_a?(Types::GenericInstance)
 
-      receiver_type.is_a?(Types::StructInstance) && exported_types.value?(receiver_type.definition)
+      receiver_type.is_a?(Types::StructInstance) &&
+        (exported_types.value?(receiver_type.definition) || imported_receiver_type?(receiver_type.definition, analysis.imports))
+    end
+
+    def exported_method_receiver_argument?(argument, analysis, exported_types)
+      return true if argument.is_a?(Types::LiteralTypeArg)
+      return true if argument.is_a?(Types::TypeVar)
+
+      exported_method_receiver?(argument, analysis, exported_types)
+    end
+
+    def imported_receiver_type?(receiver_type, imports)
+      imports.each_value do |module_binding|
+        return true if module_binding.types.value?(receiver_type)
+      end
+
+      false
     end
 
     def ensure_format_string_support_loaded!

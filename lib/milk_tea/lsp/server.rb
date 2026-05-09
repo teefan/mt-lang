@@ -28,7 +28,7 @@ module MilkTea
 
       KEYWORD_TOKEN_TYPES = Token::KEYWORDS.values.to_set.freeze
       DEFAULT_LIBRARY_TYPE_NAMES = Types::BUILTIN_TYPE_NAMES.to_set.freeze
-      BUILTIN_FUNCTION_NAMES = %w[ref_of const_ptr_of ptr_of read panic cast reinterpret array span zero range].to_set.freeze
+      BUILTIN_FUNCTION_NAMES = %w[ref_of const_ptr_of ptr_of read fatal cast reinterpret array span zero range].to_set.freeze
       OPERATOR_TOKEN_TYPES = %i[
         amp colon comma caret dot lparen rparen pipe lbracket rbracket question
         equal plus minus star slash percent less greater tilde

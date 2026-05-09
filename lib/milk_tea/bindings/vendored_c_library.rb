@@ -138,6 +138,8 @@ module MilkTea
           return object_path.to_s
         end
 
+        FileUtils.mkdir_p(object_path.dirname)
+
         compiler, language_flags = compiler_for_source(source, cc:, cxx:)
 
         command = [

@@ -682,15 +682,25 @@ module MilkTea
       name_token = consume_name("expected local variable name")
       name = name_token.lexeme
       var_type = match(:colon) ? parse_type_ref : nil
-      value = if match(:equal)
-                parse_expression
-              else
-                raise ParseError, "local declaration without initializer requires a type" unless var_type
+      value = nil
+      else_body = nil
 
-                nil
-              end
-      consume_end_of_statement unless block_expression?(value)
-                  AST::LocalDecl.new(kind:, name:, type: var_type, value:, line:, column: name_token.column)
+      if match(:equal)
+        value = parse_expression
+        if match(:else)
+          raise error(previous, "let-else is only allowed on let declarations") unless kind == :let
+
+          else_body = parse_block
+        else
+          consume_end_of_statement unless block_expression?(value)
+        end
+      else
+        raise ParseError, "local declaration without initializer requires a type" unless var_type
+
+        consume_end_of_statement
+      end
+
+      AST::LocalDecl.new(kind:, name:, type: var_type, value:, else_body:, line:, column: name_token.column)
     end
 
     def parse_if_stmt
@@ -786,12 +796,17 @@ module MilkTea
 
     def parse_for_stmt
       line = previous.line
-      name_token = consume_name("expected loop variable name")
-      name = name_token.lexeme
+      bindings = []
+      loop do
+        name_token = consume_name("expected loop variable name")
+        bindings << AST::ForBinding.new(name: name_token.lexeme, line: name_token.line, column: name_token.column)
+        break unless match(:comma)
+      end
       consume(:in, "expected 'in' in for loop")
-      iterable = parse_expression
+      iterables = [parse_expression]
+      iterables << parse_expression while match(:comma)
       body = parse_block
-      AST::ForStmt.new(name:, iterable:, body:, line:, column: name_token.column)
+      AST::ForStmt.new(bindings:, iterables:, body:, line:, column: bindings.first.column)
     end
 
     def parse_while_stmt
