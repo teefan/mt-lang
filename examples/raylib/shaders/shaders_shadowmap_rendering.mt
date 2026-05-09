@@ -48,8 +48,7 @@ function raylib_matrix(mat: rlgl.Matrix) -> rl.Matrix:
 
 
 function set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
-    unsafe:
-        model.materials[0].shader = shader
+    unsafe: model.materials[0].shader = shader
 
 
 function set_all_model_shaders(model: ptr[rl.Model], shader: rl.Shader) -> void:
@@ -118,8 +117,7 @@ function main() -> int:
     defer rl.UnloadShader(shadow_shader)
 
     let view_loc = rl.GetShaderLocation(shadow_shader, view_pos_uniform_name)
-    unsafe:
-        shadow_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
+    unsafe: shadow_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     var light_dir = rl.Vector3(x = 0.35, y = -1.0, z = -0.35).normalize()
     let light_dir_loc = rl.GetShaderLocation(shadow_shader, light_dir_uniform_name)
@@ -148,8 +146,7 @@ function main() -> int:
     let anims = rlr.require_ptr[rl.ModelAnimation](rl.LoadModelAnimations(robot_model_path, ptr_of(anim_count)), "could not load model animations")
     defer rl.UnloadModelAnimations(anims, anim_count)
     var anim = zero[rl.ModelAnimation]
-    unsafe:
-        anim = anims[0]
+    anim = unsafe: anims[0]
 
     let shadow_map = load_shadowmap_render_texture(shadowmap_resolution, shadowmap_resolution)
     defer unload_shadowmap_render_texture(shadow_map)

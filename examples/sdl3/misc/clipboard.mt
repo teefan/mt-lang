@@ -39,8 +39,7 @@ function point_in_rect(point: c.SDL_FPoint, rect: c.SDL_FRect) -> bool:
 
 
 function current_time_text() -> cstr:
-    unsafe:
-        return cstr<-ptr_of(current_time[0])
+    return unsafe: cstr<-ptr_of(current_time[0])
 
 
 function calculate_current_time_string() -> void:
@@ -103,8 +102,7 @@ function pump_events() -> bool:
                         else:
                             if paste_pressed and point_in_rect(point, paste_button_rect):
                                 if pasted_str != null:
-                                    unsafe:
-                                        c.SDL_free(ptr[void]<-pasted_str)
+                                    unsafe: c.SDL_free(ptr[void]<-pasted_str)
 
                                 pasted_str = c.SDL_GetClipboardText()
 
@@ -143,8 +141,7 @@ function render_pasted_text() -> void:
             break
 
         var newline: ptr[char]? = null
-        unsafe:
-            newline = c.SDL_strchr(cstr<-line, 10)
+        newline = unsafe: c.SDL_strchr(cstr<-line, 10)
         if newline == null:
             break
 
@@ -236,8 +233,7 @@ function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     defer c.SDL_DestroyWindow(window)
     defer:
         if pasted_str != null:
-            unsafe:
-                c.SDL_free(ptr[void]<-pasted_str)
+            unsafe: c.SDL_free(ptr[void]<-pasted_str)
 
     if not c.SDL_SetRenderLogicalPresentation(renderer, window_width, window_height, presentation_mode):
         return 1

@@ -751,7 +751,26 @@ module MilkTea
 
     def parse_unsafe_stmt
       token = previous
-      AST::UnsafeStmt.new(body: parse_block, line: token.line, column: token.column, length: token.lexeme.length)
+      consume(:colon, "expected ':' after unsafe")
+      body = if match(:newline)
+               consume(:indent, "expected indented block")
+
+               statements = []
+               skip_newlines
+               until check(:dedent) || eof?
+                 statements << parse_statement
+                 skip_newlines
+               end
+
+               consume(:dedent, "expected end of block")
+               statements
+             else
+               statement = parse_statement
+               raise ParseError.new("inline unsafe local declarations must use expression form", token:) if statement.is_a?(AST::LocalDecl)
+
+               [statement]
+             end
+      AST::UnsafeStmt.new(body:, line: token.line, column: token.column, length: token.lexeme.length)
     end
 
     def parse_static_assert
@@ -834,6 +853,7 @@ module MilkTea
 
     def parse_expression
       return parse_if_expression if match(:if)
+      return parse_unsafe_expression if match(:unsafe)
 
       parse_range
     end
@@ -856,6 +876,13 @@ module MilkTea
       consume(:colon, "expected ':' after 'else' in if expression")
       else_expression = parse_expression
       AST::IfExpr.new(condition:, then_expression:, else_expression:)
+    end
+
+    def parse_unsafe_expression
+      token = previous
+      consume(:colon, "expected ':' after unsafe in expression")
+      expression = parse_expression
+      AST::UnsafeExpr.new(expression:, line: token.line, column: token.column, length: token.lexeme.length)
     end
 
     def parse_or

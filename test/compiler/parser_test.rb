@@ -553,6 +553,68 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "uint", bits_decl.value.callee.arguments.first.value.name.to_s
   end
 
+  def test_parses_single_statement_unsafe_local_declaration
+    source = <<~MT
+      module demo.bits
+
+      function main(value: float) -> uint:
+          let bits = unsafe: reinterpret[uint](value)
+          return bits
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations[0]
+    bits_decl = main_fn.body[0]
+
+    assert_instance_of MilkTea::AST::LocalDecl, bits_decl
+    assert_instance_of MilkTea::AST::UnsafeExpr, bits_decl.value
+    assert_instance_of MilkTea::AST::Call, bits_decl.value.expression
+    assert_instance_of MilkTea::AST::Specialization, bits_decl.value.expression.callee
+    assert_equal "reinterpret", bits_decl.value.expression.callee.callee.name
+    assert_equal "uint", bits_decl.value.expression.callee.arguments.first.value.name.to_s
+  end
+
+  def test_parses_single_statement_unsafe_assignment_with_colon
+    source = <<~MT
+      module demo.bits
+
+      function main(ptr: ptr[uint]) -> void:
+          unsafe: read(ptr) = 1
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations[0]
+    unsafe_stmt = main_fn.body[0]
+
+    assert_instance_of MilkTea::AST::UnsafeStmt, unsafe_stmt
+    assert_equal 1, unsafe_stmt.body.length
+    assert_instance_of MilkTea::AST::Assignment, unsafe_stmt.body[0]
+  end
+
+  def test_rejects_inline_unsafe_local_declaration_with_colon
+    source = <<~MT
+      module demo.bits
+
+      function main(value: float) -> uint:
+          unsafe: let bits = reinterpret[uint](value)
+          return bits
+    MT
+
+    assert_raises(MilkTea::ParseError) { MilkTea::Parser.parse(source) }
+  end
+
+  def test_rejects_bare_single_statement_unsafe_without_colon
+    source = <<~MT
+      module demo.bits
+
+      function main(value: float) -> uint:
+          unsafe let bits = reinterpret[uint](value)
+          return bits
+    MT
+
+    assert_raises(MilkTea::ParseError) { MilkTea::Parser.parse(source) }
+  end
+
   def test_parses_match_statement_with_enum_member_arms
     source = <<~MT
       module demo.flow

@@ -2443,6 +2443,21 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_unsafe_expression_reinterpret_initializer
+    source = <<~MT
+      module demo.bits
+
+      function main() -> uint:
+          let value: float = 1.0
+          let bits = unsafe: reinterpret[uint](value)
+          return bits
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_rejects_reinterpret_outside_unsafe
     source = <<~MT
       module demo.bits

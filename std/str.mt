@@ -16,13 +16,11 @@ public function cstr_len(text: cstr) -> ptr_uint:
 
 
 public function cstr_as_str(text: cstr) -> str:
-    unsafe:
-        return str(data = ptr[char]<-text, len = cstr_len(text))
+    return unsafe: str(data = ptr[char]<-text, len = cstr_len(text))
 
 
 public function chars_as_str(text: ptr[char]) -> str:
-    unsafe:
-        return str(data = text, len = cstr_len(cstr<-text))
+    return unsafe: str(data = text, len = cstr_len(cstr<-text))
 
 
 public function nullable_cstr_as_str(text: cstr?) -> maybe.Maybe[str]:
@@ -33,8 +31,7 @@ public function nullable_cstr_as_str(text: cstr?) -> maybe.Maybe[str]:
 
 
 public function as_byte_span(text: str) -> span[ubyte]:
-    unsafe:
-        return sp.from_ptr[ubyte](ptr[ubyte]<-text.data, text.len)
+    return unsafe: sp.from_ptr[ubyte](ptr[ubyte]<-text.data, text.len)
 
 
 public function utf8_byte_span_as_str(bytes: span[ubyte]) -> maybe.Maybe[str]:
@@ -63,8 +60,7 @@ public function byte_at(text: str, index: ptr_uint) -> ubyte:
     if index >= text.len:
         panic(c"str.byte_at index out of bounds")
 
-    unsafe:
-        return ubyte<-read(text.data + index)
+    return unsafe: ubyte<-read(text.data + index)
 
 
 public function equal(left: str, right: str) -> bool:
@@ -122,8 +118,7 @@ public function trim_ascii_whitespace(text: str) -> str:
     while stop > start and ascii.is_space(byte_at(text, stop - 1)):
         stop -= 1
 
-    unsafe:
-        return str(data = text.data + start, len = stop - start)
+    return unsafe: str(data = text.data + start, len = stop - start)
 
 
 public function is_valid_utf8(text: str) -> bool:
@@ -194,8 +189,7 @@ methods str:
         if not utf8_boundary(this, stop):
             panic(c"str slice end must be a UTF-8 boundary")
 
-        unsafe:
-            return str(data = this.data + start, len = len)
+        return unsafe: str(data = this.data + start, len = len)
 
 
     public function to_cstr(space: ref[arena.Arena]) -> cstr:

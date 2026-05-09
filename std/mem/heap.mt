@@ -51,8 +51,7 @@ public function must_alloc_bytes(size_bytes: ptr_uint) -> ptr[void]:
     if memory == null:
         panic(c"heap.must_alloc_bytes out of memory")
 
-    unsafe:
-        return ptr[void]<-memory
+    return unsafe: ptr[void]<-memory
 
 
 public function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[void]?:
@@ -83,8 +82,7 @@ public function must_alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_ui
     if memory == null:
         panic(c"heap.must_alloc_bytes_aligned out of memory")
 
-    unsafe:
-        return ptr[void]<-memory
+    return unsafe: ptr[void]<-memory
 
 
 public function alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr_uint) -> ptr[void]?:
@@ -105,8 +103,7 @@ public function must_alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr
     if memory == null:
         panic(c"heap.must_alloc_zeroed_bytes out of memory")
 
-    unsafe:
-        return ptr[void]<-memory
+    return unsafe: ptr[void]<-memory
 
 
 public function resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[void]?:
@@ -125,8 +122,7 @@ public function must_resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> p
     if resized == null:
         panic(c"heap.must_resize_bytes out of memory")
 
-    unsafe:
-        return ptr[void]<-resized
+    return unsafe: ptr[void]<-resized
 
 
 public function release_bytes(memory: ptr[void]?) -> void:
@@ -147,8 +143,7 @@ public function alloc[T](count: ptr_uint) -> ptr[T]?:
     if memory == null:
         return null
 
-    unsafe:
-        return ptr[T]<-memory
+    return unsafe: ptr[T]<-memory
 
 
 public function must_alloc[T](count: ptr_uint) -> ptr[T]:
@@ -159,8 +154,7 @@ public function must_alloc[T](count: ptr_uint) -> ptr[T]:
     if memory == null:
         panic(c"heap.must_alloc out of memory")
 
-    unsafe:
-        return ptr[T]<-memory
+    return unsafe: ptr[T]<-memory
 
 
 public function alloc_aligned[T](count: ptr_uint) -> ptr[T]?:
@@ -172,8 +166,7 @@ public function alloc_aligned[T](count: ptr_uint) -> ptr[T]?:
     if memory == null:
         return null
 
-    unsafe:
-        return ptr[T]<-memory
+    return unsafe: ptr[T]<-memory
 
 
 public function must_alloc_aligned[T](count: ptr_uint) -> ptr[T]:
@@ -181,8 +174,7 @@ public function must_alloc_aligned[T](count: ptr_uint) -> ptr[T]:
     if memory == null:
         panic(c"heap.must_alloc_aligned out of memory")
 
-    unsafe:
-        return ptr[T]<-memory
+    return unsafe: ptr[T]<-memory
 
 
 public function alloc_zeroed[T](count: ptr_uint) -> ptr[T]?:
@@ -194,8 +186,7 @@ public function alloc_zeroed[T](count: ptr_uint) -> ptr[T]?:
     if memory == null:
         return null
 
-    unsafe:
-        return ptr[T]<-memory
+    return unsafe: ptr[T]<-memory
 
 
 public function must_alloc_zeroed[T](count: ptr_uint) -> ptr[T]:
@@ -206,8 +197,7 @@ public function must_alloc_zeroed[T](count: ptr_uint) -> ptr[T]:
     if memory == null:
         panic(c"heap.must_alloc_zeroed out of memory")
 
-    unsafe:
-        return ptr[T]<-memory
+    return unsafe: ptr[T]<-memory
 
 
 public function resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]?:
@@ -224,8 +214,7 @@ public function resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]?:
         if resized == null:
             return null
 
-        unsafe:
-            return ptr[T]<-resized
+        return unsafe: ptr[T]<-resized
 
     unsafe:
         let resized = resize_bytes(ptr[void]<-memory, count * element_size)
@@ -243,8 +232,7 @@ public function must_resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]:
     if resized == null:
         panic(c"heap.must_resize out of memory")
 
-    unsafe:
-        return ptr[T]<-resized
+    return unsafe: ptr[T]<-resized
 
 
 public function release[T](memory: ptr[T]?) -> void:
@@ -252,6 +240,5 @@ public function release[T](memory: ptr[T]?) -> void:
         release_bytes(null)
         return
 
-    unsafe:
-        release_bytes(ptr[void]<-memory)
+    unsafe: release_bytes(ptr[void]<-memory)
     return

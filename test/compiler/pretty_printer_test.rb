@@ -14,9 +14,59 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       "function main() -> int:",
       "    var counter = Counter(value = 3)",
       "    let counter_ptr = ptr_of(counter)",
+      "    unsafe: counter_ptr.value = 7",
+      "    return counter.value",
+      "",
+    ].join("\n")
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
+  def test_formats_single_statement_unsafe_block_canonically
+    source = [
+      "module demo.pretty",
+      "",
+      "struct Counter:",
+      "    value: int",
+      "",
+      "function main() -> int:",
+      "    var counter = Counter(value = 3)",
+      "    let counter_ptr = ptr_of(counter)",
       "    unsafe:",
       "        counter_ptr.value = 7",
       "    return counter.value",
+      "",
+    ].join("\n")
+
+    expected = [
+      "module demo.pretty",
+      "",
+      "struct Counter:",
+      "    value: int",
+      "",
+      "function main() -> int:",
+      "    var counter = Counter(value = 3)",
+      "    let counter_ptr = ptr_of(counter)",
+      "    unsafe: counter_ptr.value = 7",
+      "    return counter.value",
+      "",
+    ].join("\n")
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal expected, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
+  def test_formats_multi_statement_unsafe_block_like_source
+    source = [
+      "module demo.pretty",
+      "",
+      "function main(ptr: ptr[int]) -> int:",
+      "    unsafe:",
+      "        let value = read(ptr)",
+      "        return value",
       "",
     ].join("\n")
 

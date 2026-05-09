@@ -44,8 +44,7 @@ const cube_scale: float = 0.25
 
 
 function set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
-    unsafe:
-        model.materials[0].shader = shader
+    unsafe: model.materials[0].shader = shader
 
 
 function gbuffer_texture(id: uint, width: int, height: int) -> rl.Texture:
@@ -81,8 +80,7 @@ function main() -> int:
     )
     defer rl.UnloadShader(deferred_shader)
     let view_loc = rl.GetShaderLocation(deferred_shader, view_position_uniform_name)
-    unsafe:
-        deferred_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
+    unsafe: deferred_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     var gbuffer = zero[GBuffer]
     gbuffer.framebuffer_id = rlgl.rlLoadFramebuffer()

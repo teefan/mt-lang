@@ -35,38 +35,31 @@ const window_title: cstr = c"raylib [models] example - decals"
 
 
 function model_mesh(model: rl.Model, index: int) -> rl.Mesh:
-    unsafe:
-        return model.meshes[index]
+    return unsafe: model.meshes[index]
 
 
 function material_map(material: rl.Material, index: int) -> rl.MaterialMap:
-    unsafe:
-        return material.maps[index]
+    return unsafe: material.maps[index]
 
 
 function alloc_vector3(count: int) -> ptr[rl.Vector3]:
-    unsafe:
-        return ptr[rl.Vector3]<-rl.MemAlloc(uint<-count * uint<-size_of(rl.Vector3))
+    return unsafe: ptr[rl.Vector3]<-rl.MemAlloc(uint<-count * uint<-size_of(rl.Vector3))
 
 
 function alloc_vector2(count: int) -> ptr[rl.Vector2]:
-    unsafe:
-        return ptr[rl.Vector2]<-rl.MemAlloc(uint<-count * uint<-size_of(rl.Vector2))
+    return unsafe: ptr[rl.Vector2]<-rl.MemAlloc(uint<-count * uint<-size_of(rl.Vector2))
 
 
 function alloc_float(count: int) -> ptr[float]:
-    unsafe:
-        return ptr[float]<-rl.MemAlloc(uint<-count * uint<-size_of(float))
+    return unsafe: ptr[float]<-rl.MemAlloc(uint<-count * uint<-size_of(float))
 
 
 function mesh_has_indices(mesh: rl.Mesh) -> bool:
-    unsafe:
-        return mesh.indices != null
+    return unsafe: mesh.indices != null
 
 
 function mesh_vertex(mesh: rl.Mesh, index: int) -> rl.Vector3:
-    unsafe:
-        return rl.Vector3(
+    return unsafe: rl.Vector3(
             x = mesh.vertices[index * 3],
             y = mesh.vertices[index * 3 + 1],
             z = mesh.vertices[index * 3 + 2],
@@ -76,8 +69,7 @@ function mesh_vertex(mesh: rl.Mesh, index: int) -> rl.Vector3:
 function mesh_index(mesh: rl.Mesh, index: int) -> int:
     let indices = mesh.indices
     if indices != null:
-        unsafe:
-            return int<-indices[index]
+        return unsafe: int<-indices[index]
 
     panic("mesh indices missing")
 
@@ -360,12 +352,10 @@ function main() -> int:
 
     var placement_cube = rl.LoadModelFromMesh(rl.GenMeshCube(decal_size, decal_size, decal_size))
     defer rl.UnloadModel(placement_cube)
-    unsafe:
-        placement_cube.materials[0].maps[0].color = rl.LIME
+    unsafe: placement_cube.materials[0].maps[0].color = rl.LIME
 
     var decal_material = rl.LoadMaterialDefault()
-    unsafe:
-        decal_material.maps[0].color = rl.YELLOW
+    unsafe: decal_material.maps[0].color = rl.YELLOW
 
     var decal_image = rl.LoadImage(decal_texture_path)
     rl.ImageResizeNN(ptr_of(decal_image), decal_image.width / 4, decal_image.height / 4)
@@ -419,8 +409,7 @@ function main() -> int:
                 let decal_index = decal_count
                 decal_count += 1
                 decal_models[decal_index] = rl.LoadModelFromMesh(decal_mesh)
-                unsafe:
-                    decal_models[decal_index].materials[0].maps[0] = material_map(decal_material, 0)
+                unsafe: decal_models[decal_index].materials[0].maps[0] = material_map(decal_material, 0)
 
         rl.BeginDrawing()
         defer rl.EndDrawing()

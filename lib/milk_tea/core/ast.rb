@@ -143,6 +143,9 @@ module MilkTea
     RangeExpr = Data.define(:start_expr, :end_expr, :line, :column)
     ExpressionList = Data.define(:elements, :line, :column)
     IfExpr = Data.define(:condition, :then_expression, :else_expression)
+    UnsafeExpr = Data.define(:expression, :line, :column, :length) do
+      def initialize(expression:, line: nil, column: nil, length: nil) = super
+    end
     ProcExpr = Data.define(:params, :return_type, :body)
     AwaitExpr = Data.define(:expression)
     SizeofExpr = Data.define(:type)

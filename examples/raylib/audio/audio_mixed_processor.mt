@@ -19,8 +19,7 @@ var average_volume: array[float, 400]
 
 
 function void_ptr_to_float(value: ptr[void]) -> ptr[float]:
-    unsafe:
-        return ptr[float]<-value
+    return unsafe: ptr[float]<-value
 
 
 function signed_power(value: float) -> float:

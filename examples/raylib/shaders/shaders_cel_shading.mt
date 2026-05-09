@@ -23,13 +23,11 @@ const window_title: cstr = c"raylib [shaders] example - cel shading"
 
 
 function model_shader(model: ptr[rl.Model]) -> rl.Shader:
-    unsafe:
-        return model.materials[0].shader
+    return unsafe: model.materials[0].shader
 
 
 function set_model_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
-    unsafe:
-        model.materials[0].shader = shader
+    unsafe: model.materials[0].shader = shader
 
 
 function main() -> int:
@@ -55,8 +53,7 @@ function main() -> int:
     defer rl.UnloadShader(cel_shader)
 
     let view_loc = rl.GetShaderLocation(cel_shader, view_pos_uniform_name)
-    unsafe:
-        cel_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
+    unsafe: cel_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     let default_shader = model_shader(ptr_of(model))
     set_model_shader(ptr_of(model), cel_shader)

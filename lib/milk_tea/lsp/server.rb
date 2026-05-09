@@ -2060,7 +2060,7 @@ module MilkTea
       def classify_semantic_token(tokens, index, analysis = nil)
         tok = tokens[index]
 
-        if tok.type == :identifier
+        if tok.type == :identifier || namespace_keyword_token?(tokens, index)
           return classify_name_semantic(tok.lexeme, tokens, index, analysis)
         end
 
@@ -2120,7 +2120,7 @@ module MilkTea
           return [:namespace, modifiers]
         end
 
-        return [:namespace, []] if module_declaration_path_token?(tokens, index)
+        return [:namespace, []] if module_declaration_path_token?(tokens, index, allow_keywords: true)
 
         if prev_tok && [:function, :fn, :proc].include?(prev_tok.type)
           return [:function, ['declaration']]
@@ -2143,6 +2143,7 @@ module MilkTea
         end
 
         return [:variable, ['declaration']] if match_arm_binding_token?(tokens, index)
+        return [:parameter, ['declaration']] if callable_parameter_declaration_token?(tokens, index)
         return [:property, ['declaration']] if field_declaration_token?(tokens, index)
 
         if analysis
@@ -2152,13 +2153,17 @@ module MilkTea
 
         return [:property, []] if named_argument_label_token?(tokens, index)
 
-        if next_tok&.type == :dot && analysis
-          return [:type, []] if analysis.types.key?(name)
-          return [:namespace, []] if analysis.imports.key?(name)
+        if analysis && prev_tok&.type != :dot && (generic_binding = generic_function_lexical_binding_semantic(analysis, tok))
+          return generic_binding
+        end
 
+        if next_tok&.type == :dot && analysis
           if (binding = local_semantic_value_binding(analysis, tok, allow_same_line_future: parameter_declaration))
             return semantic_value_binding_entry(binding, declaration: binding.kind == :param && parameter_declaration)
           end
+
+          return [:type, []] if analysis.types.key?(name)
+          return [:namespace, []] if analysis.imports.key?(name)
 
           if (binding = analysis.values[name])
             return semantic_value_binding_entry(binding)
@@ -2177,6 +2182,7 @@ module MilkTea
             if module_binding
               if module_binding.functions.key?(name)
                 return [:function, []] if next_tok&.type == :lparen || specialized_call_with_type_args?(tokens, index)
+                return [:function, []] if next_tok&.type == :lbracket
                 return [:function, []] if imported_module_function_value_member_access_site?(analysis, tokens, index)
                 return [:property, []]
               end
@@ -2197,7 +2203,7 @@ module MilkTea
           return [:property, []]
         end
 
-        if next_tok&.type == :lparen
+        if next_tok&.type == :lparen || specialized_call_with_type_args?(tokens, index)
           if analysis && (resolved = resolved_call_callee_semantic(name, tok, parameter_declaration, analysis))
             return resolved
           end
@@ -2207,12 +2213,7 @@ module MilkTea
           return [:function, modifiers]
         end
 
-        # Specialization syntax that is followed by a call: `cast[T](x)`,
-        # `array[T](...)`, etc. Bare `array[T, N]` and `span[T]` in annotations
-        # are types, not functions.
-        if next_tok&.type == :lbracket && BUILTIN_FUNCTION_NAMES.include?(name) && specialized_call_with_type_args?(tokens, index)
-          return [:function, ['defaultLibrary']]
-        end
+        return [:function, []] if analysis && next_tok&.type == :lbracket && analysis.functions.key?(name)
 
         if DEFAULT_LIBRARY_TYPE_NAMES.include?(name)
           return [:type, ['defaultLibrary']]
@@ -2220,11 +2221,12 @@ module MilkTea
 
         if analysis
           return [:type, []] if analysis.types.key?(name)
-          return [:namespace, []] if analysis.imports.key?(name)
 
           if (binding = local_semantic_value_binding(analysis, tok, allow_same_line_future: parameter_declaration))
             return semantic_value_binding_entry(binding, declaration: binding.kind == :param && parameter_declaration)
           end
+
+          return [:namespace, []] if analysis.imports.key?(name)
 
           if (binding = analysis.values[name])
             return semantic_value_binding_entry(binding)
@@ -2265,6 +2267,214 @@ module MilkTea
         prev_tok = previous_non_trivia_token(tokens, index)
         next_tok = next_non_trivia_token(tokens, index + 1)
         next_tok&.type == :colon && prev_tok && [:lparen, :comma].include?(prev_tok.type)
+      end
+
+      def callable_parameter_declaration_token?(tokens, index)
+        return false unless parameter_declaration_token?(tokens, index)
+
+        opener_index = parameter_list_opener_index(tokens, index)
+        return false unless opener_index
+
+        head_index = previous_non_trivia_token_index(tokens, opener_index)
+        return false unless head_index
+
+        head = tokens[head_index]
+        return true if [:fn, :proc].include?(head.type)
+
+        if head.type == :rbracket
+          lbracket_index = matching_opener_index(tokens, head_index)
+          return false unless lbracket_index
+
+          head_index = previous_non_trivia_token_index(tokens, lbracket_index)
+          return false unless head_index
+
+          head = tokens[head_index]
+        end
+
+        return false unless head.type == :identifier
+
+        previous_non_trivia_token(tokens, head_index)&.type == :function
+      end
+
+      def parameter_list_opener_index(tokens, index)
+        depth = 0
+        i = index - 1
+        while i >= 0
+          tok = tokens[i]
+          if tok.type == :rparen
+            depth += 1
+          elsif tok.type == :lparen
+            return i if depth.zero?
+
+            depth -= 1
+          end
+          i -= 1
+        end
+
+        nil
+      end
+
+      def generic_function_lexical_binding_semantic(analysis, token)
+        kind = generic_function_lexical_binding_kind_at(analysis, token.line, token.column, token.lexeme)
+        case kind
+        when :param
+          [:parameter, []]
+        when :variable
+          [:variable, []]
+        else
+          nil
+        end
+      end
+
+      def generic_function_lexical_binding_kind_at(analysis, line, column, name)
+        generic_function_lexical_binding_scopes(analysis).reverse_each do |scope|
+          next if line < scope[:start_line] || line > scope[:end_line]
+          next if line == scope[:start_line] && column < scope[:start_column]
+
+          kind = scope[:bindings][name]
+          return kind if kind
+        end
+
+        nil
+      end
+
+      def generic_function_lexical_binding_scopes(analysis)
+        scopes = @generic_function_lexical_binding_scope_cache ||= {}
+        cached = scopes[analysis.object_id]
+        unless cached
+          cached = Array(analysis.ast&.declarations).flat_map do |decl|
+            generic_function_lexical_scopes_for_declaration(decl)
+          end
+          scopes[analysis.object_id] = cached
+        end
+
+        cached
+      end
+
+      def generic_function_lexical_scopes_for_declaration(decl)
+        return [] unless generic_function_declaration?(decl)
+
+        function_end_line = generic_statement_list_end_line(decl.body, decl.line)
+        scopes = []
+        current_bindings = Array(decl.params).each_with_object({}) do |param, bindings|
+          next unless param.respond_to?(:name)
+
+          bindings[param.name] = :param
+        end
+
+        unless current_bindings.empty?
+          scopes << {
+            start_line: decl.line,
+            start_column: 0,
+            end_line: function_end_line,
+            bindings: current_bindings.dup,
+          }
+        end
+
+        collect_generic_function_local_scopes(Array(decl.body), current_bindings, function_end_line, scopes)
+
+        scopes
+      end
+
+      def generic_function_declaration?(decl)
+        decl.respond_to?(:type_params) &&
+          Array(decl.type_params).any? &&
+          decl.respond_to?(:params) &&
+          decl.respond_to?(:body) &&
+          !decl.body.nil?
+      end
+
+      def collect_generic_function_local_scopes(statements, current_bindings, block_end_line, scopes)
+        active_bindings = current_bindings.dup
+        Array(statements).each do |statement|
+          case statement
+          when AST::LocalDecl
+            active_bindings[statement.name] = :variable
+            scopes << generic_binding_scope(statement, active_bindings, block_end_line)
+          when AST::IfStmt
+            Array(statement.branches).each do |branch|
+              branch_body = Array(branch.body)
+              branch_end_line = generic_statement_list_end_line(branch_body, statement.line)
+              collect_generic_function_local_scopes(branch_body, active_bindings, branch_end_line, scopes)
+            end
+
+            else_body = Array(statement.else_body)
+            unless else_body.empty?
+              else_end_line = generic_statement_list_end_line(else_body, statement.line)
+              collect_generic_function_local_scopes(else_body, active_bindings, else_end_line, scopes)
+            end
+          when AST::MatchStmt
+            Array(statement.arms).each do |arm|
+              arm_bindings = active_bindings.dup
+              arm_body = Array(arm.body)
+              arm_end_line = generic_statement_list_end_line(arm_body, statement.line)
+              if arm.respond_to?(:binding_name) && arm.binding_name
+                arm_bindings[arm.binding_name] = :variable
+                scopes << generic_binding_scope(arm, arm_bindings, arm_end_line)
+              end
+              collect_generic_function_local_scopes(arm_body, arm_bindings, arm_end_line, scopes)
+            end
+          when AST::UnsafeStmt, AST::WhileStmt, AST::DeferStmt
+            body = Array(statement.body)
+            body_end_line = generic_statement_list_end_line(body, statement.line)
+            collect_generic_function_local_scopes(body, active_bindings, body_end_line, scopes)
+          when AST::ForStmt
+            next unless statement.respond_to?(:name) && statement.name
+
+            body = Array(statement.body)
+            body_end_line = generic_statement_list_end_line(body, statement.line)
+            for_bindings = active_bindings.dup
+            for_bindings[statement.name] = :variable
+            scopes << generic_binding_scope(statement, for_bindings, body_end_line)
+            collect_generic_function_local_scopes(body, for_bindings, body_end_line, scopes)
+          end
+        end
+      end
+
+      def generic_binding_scope(node, bindings, end_line)
+        {
+          start_line: node.respond_to?(:line) && node.line ? node.line : 0,
+          start_column: node.respond_to?(:column) && node.column ? node.column : 0,
+          end_line: end_line,
+          bindings: bindings.dup,
+        }
+      end
+
+      def generic_statement_list_end_line(statements, fallback_line)
+        Array(statements).reduce(fallback_line || 0) do |max_line, statement|
+          [max_line, generic_statement_end_line(statement)].compact.max
+        end
+      end
+
+      def generic_statement_end_line(statement)
+        return 0 unless statement
+
+        case statement
+        when AST::IfStmt
+          branch_lines = Array(statement.branches).map do |branch|
+            generic_statement_list_end_line(Array(branch.body), branch.respond_to?(:line) ? branch.line : statement.line)
+          end
+          else_line = generic_statement_list_end_line(Array(statement.else_body), statement.line)
+          ([statement.line, else_line] + branch_lines).compact.max
+        when AST::MatchStmt
+          arm_lines = Array(statement.arms).map do |arm|
+            generic_statement_list_end_line(Array(arm.body), arm.respond_to?(:line) ? arm.line : statement.line)
+          end
+          ([statement.line] + arm_lines).compact.max
+        when AST::UnsafeStmt, AST::WhileStmt, AST::ForStmt, AST::DeferStmt
+          [statement.line, generic_statement_list_end_line(Array(statement.body), statement.line)].compact.max
+        else
+          statement.respond_to?(:line) ? statement.line : 0
+        end
+      end
+
+      def namespace_keyword_token?(tokens, index)
+        tok = tokens[index]
+        return false unless tok && Token::KEYWORDS.value?(tok.type)
+
+        import_path_info_at(tokens, index, allow_keywords: true) ||
+          module_declaration_path_token?(tokens, index, allow_keywords: true)
+
       end
 
       def local_semantic_value_binding(analysis, token, allow_same_line_future: false)
@@ -2422,6 +2632,28 @@ module MilkTea
 
       def identifier_in_type_argument_position?(tokens, index)
         lbracket_index = previous_non_trivia_token_index(tokens, index)
+        return false unless lbracket_index
+
+        if tokens[lbracket_index].type == :comma
+          depth = 0
+          i = lbracket_index - 1
+          lbracket_index = nil
+          while i >= 0
+            tok = tokens[i]
+            if tok.type == :rbracket
+              depth += 1
+            elsif tok.type == :lbracket
+              if depth.zero?
+                lbracket_index = i
+                break
+              end
+
+              depth -= 1
+            end
+            i -= 1
+          end
+        end
+
         return false unless lbracket_index && tokens[lbracket_index].type == :lbracket
 
         rbracket_index = matching_closer_index(tokens, lbracket_index, :lbracket, :rbracket)
@@ -2554,7 +2786,9 @@ module MilkTea
         module_tokens = line_tokens[1...(as_index || line_tokens.length)] || []
         alias_token = as_index ? line_tokens[as_index + 1] : nil
 
-        module_identifiers = module_tokens.select { |line_tok| line_tok.type == :identifier }
+        module_identifiers = module_tokens.select do |line_tok|
+          line_tok.type == :identifier || (allow_keywords && Token::KEYWORDS.value?(line_tok.type))
+        end
         return nil if module_identifiers.empty?
 
         module_name = module_identifiers.map(&:lexeme).join('.')
@@ -2663,18 +2897,20 @@ module MilkTea
         end
       end
 
-      def module_declaration_path_token?(tokens, index)
-        !module_declaration_info_at(tokens, index).nil?
+      def module_declaration_path_token?(tokens, index, allow_keywords: false)
+        !module_declaration_info_at(tokens, index, allow_keywords:).nil?
       end
 
-      def module_declaration_info_at(tokens, index)
+      def module_declaration_info_at(tokens, index, allow_keywords: false)
         tok = tokens[index]
-        return nil unless tok&.type == :identifier
+        return nil unless tok&.type == :identifier || (allow_keywords && Token::KEYWORDS.value?(tok.type))
 
         line_tokens = non_trivia_tokens_on_line(tokens, tok.line)
         return nil if line_tokens.empty? || line_tokens.first.type != :module
 
-        path_tokens = line_tokens[1..].to_a.select { |line_tok| line_tok.type == :identifier }
+        path_tokens = line_tokens[1..].to_a.select do |line_tok|
+          line_tok.type == :identifier || (allow_keywords && Token::KEYWORDS.value?(line_tok.type))
+        end
         return nil unless path_tokens.any? { |line_tok| line_tok.equal?(tok) }
 
         {

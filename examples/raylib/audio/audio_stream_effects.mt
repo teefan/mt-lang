@@ -22,8 +22,7 @@ var low_pass_state: array[float, 2]
 
 
 function void_ptr_to_float(value: ptr[void]) -> ptr[float]:
-    unsafe:
-        return ptr[float]<-value
+    return unsafe: ptr[float]<-value
 
 
 function allocate_delay_buffer() -> void:
@@ -43,8 +42,7 @@ function free_delay_buffer() -> void:
     if delay_buffer == null:
         return
 
-    unsafe:
-        rl.MemFree(ptr[float]<-delay_buffer)
+    unsafe: rl.MemFree(ptr[float]<-delay_buffer)
 
 
 function audio_process_effect_lpf(buffer: ptr[void], frames: uint) -> void:

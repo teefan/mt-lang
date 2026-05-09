@@ -32,8 +32,7 @@ public function create_aligned(capacity_bytes: ptr_uint, alignment: ptr_uint) ->
             offset = 0,
         )
 
-    unsafe:
-        return Arena(
+    return unsafe: Arena(
             memory = ptr[ubyte]<-memory,
             capacity = capacity_bytes,
             alignment = normalized_alignment,
@@ -105,8 +104,7 @@ methods Arena:
         if memory == null:
             return null
 
-        unsafe:
-            return ptr[T]<-memory
+        return unsafe: ptr[T]<-memory
 
 
     public edit function try_to_cstr(text: str) -> cstr?:

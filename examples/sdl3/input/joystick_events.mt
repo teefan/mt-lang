@@ -106,8 +106,7 @@ function append_message(jid: uint, text: ptr[char]?) -> void:
 function add_plain_message(jid: uint, text: cstr) -> void:
     var message: ptr[char]? = null
 
-    unsafe:
-        c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(message), c"%s", text)
+    unsafe: c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(message), c"%s", text)
 
     append_message(jid, message)
 

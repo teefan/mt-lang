@@ -54,8 +54,7 @@ public function create_aligned(slot_size_bytes: ptr_uint, slot_count: ptr_uint, 
         heap.release_bytes(memory)
         panic(c"pool.create occupancy out of memory")
 
-    unsafe:
-        return Pool(
+    return unsafe: Pool(
             memory = ptr[ubyte]<-memory,
             occupancy = occupancy,
             slot_size = slot_size_bytes,
@@ -121,8 +120,7 @@ methods Pool:
         if memory == null:
             return null
 
-        unsafe:
-            return ptr[T]<-memory
+        return unsafe: ptr[T]<-memory
 
 
     public edit function release_bytes(slot: ptr[ubyte]?) -> bool:
@@ -157,8 +155,7 @@ methods Pool:
         if slot == null:
             return false
 
-        unsafe:
-            return this.release_bytes(ptr[ubyte]<-slot)
+        return unsafe: this.release_bytes(ptr[ubyte]<-slot)
 
 
     public edit function release() -> void:

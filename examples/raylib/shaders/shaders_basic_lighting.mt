@@ -35,8 +35,7 @@ function main() -> int:
     defer rl.UnloadShader(shader)
 
     let view_loc = rl.GetShaderLocation(shader, view_pos_uniform_name)
-    unsafe:
-        shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
+    unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     let ambient_loc = rl.GetShaderLocation(shader, ambient_uniform_name)
     var ambient = array[float, 4](0.1, 0.1, 0.1, 1.0)

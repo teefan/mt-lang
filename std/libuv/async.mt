@@ -26,13 +26,11 @@ struct WorkState[T]:
 
 
 function sleep_state(frame: ptr[void]) -> ptr[SleepState]:
-    unsafe:
-        return ptr[SleepState]<-frame
+    return unsafe: ptr[SleepState]<-frame
 
 
 function work_state[T](frame: ptr[void]) -> ptr[WorkState[T]]:
-    unsafe:
-        return ptr[WorkState[T]]<-frame
+    return unsafe: ptr[WorkState[T]]<-frame
 
 
 function require_current_loop() -> rt.Loop:
@@ -54,8 +52,7 @@ function deactivate_current_loop() -> void:
 
 
 function sleep_task(state: ptr[SleepState]) -> Task[int]:
-    unsafe:
-        return Task[int](
+    return unsafe: Task[int](
             frame = ptr[void]<-state,
             ready = sleep_ready,
             set_waiter = sleep_set_waiter,
@@ -65,8 +62,7 @@ function sleep_task(state: ptr[SleepState]) -> Task[int]:
 
 
 function work_task[T](state: ptr[WorkState[T]]) -> Task[T]:
-    unsafe:
-        return Task[T](
+    return unsafe: Task[T](
             frame = ptr[void]<-state,
             ready = work_ready[T],
             set_waiter = work_set_waiter[T],
@@ -132,8 +128,7 @@ function on_work_done[T](req: ptr[uv.uv_work_t], status: int) -> void:
 
 
 public function sleep_ready(frame: ptr[void]) -> bool:
-    unsafe:
-        return sleep_state(frame).ready
+    return unsafe: sleep_state(frame).ready
 
 
 public function sleep_set_waiter(frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
@@ -159,13 +154,11 @@ public function sleep_release(frame: ptr[void]) -> void:
 
 
 public function sleep_take_result(frame: ptr[void]) -> int:
-    unsafe:
-        return sleep_state(frame).status
+    return unsafe: sleep_state(frame).status
 
 
 public function work_ready[T](frame: ptr[void]) -> bool:
-    unsafe:
-        return work_state[T](frame).ready
+    return unsafe: work_state[T](frame).ready
 
 
 public function work_set_waiter[T](frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
@@ -213,8 +206,7 @@ public function sleep_on(loop: rt.Loop, timeout: ptr_uint) -> Task[int]:
                 uv.handle_set_data(ptr[uv.uv_handle_t]<-rt.handle_ptr(state.timer), ptr[void]<-state)
 
     var code = 0
-    unsafe:
-        code = rt.timer_start_once(state.timer, timeout, on_sleep_timer)
+    code = unsafe: rt.timer_start_once(state.timer, timeout, on_sleep_timer)
     if code != 0:
         unsafe:
             state.status = code
@@ -234,11 +226,9 @@ public function work_on[T](loop: rt.Loop, run_work: fn() -> T) -> Task[T]:
         uv.req_set_data(ptr[uv.uv_req_t]<-rt.request_ptr(state.request), ptr[void]<-state)
 
     var status = 0
-    unsafe:
-        status = rt.queue_work(loop, state.request, on_work_request[T], on_work_done[T])
+    status = unsafe: rt.queue_work(loop, state.request, on_work_request[T], on_work_done[T])
     if status != 0:
-        unsafe:
-            rt.request_release(ref_of(state.request))
+        unsafe: rt.request_release(ref_of(state.request))
         heap.release[WorkState[T]](state)
         panic(c"libuv.async.work queue_work failed")
     return work_task[T](state)

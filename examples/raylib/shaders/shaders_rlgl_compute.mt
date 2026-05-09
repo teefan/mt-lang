@@ -27,8 +27,7 @@ struct GolUpdateSSBO:
 
 
 function char_ptr_to_cstr(value: ptr[char]) -> cstr:
-    unsafe:
-        return cstr<-value
+    return unsafe: cstr<-value
 
 
 function main() -> int:

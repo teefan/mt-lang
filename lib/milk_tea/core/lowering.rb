@@ -242,6 +242,8 @@ module MilkTea
           expression_uses_panic?(expression.start_expr) || expression_uses_panic?(expression.end_expr)
         when AST::IfExpr
           expression_uses_panic?(expression.condition) || expression_uses_panic?(expression.then_expression) || expression_uses_panic?(expression.else_expression)
+        when AST::UnsafeExpr
+          expression_uses_panic?(expression.expression)
         when AST::UnaryOp
           expression_uses_panic?(expression.operand)
         when AST::MemberAccess
@@ -267,6 +269,8 @@ module MilkTea
           expression_uses_offsetof?(expression.left) || expression_uses_offsetof?(expression.right)
         when AST::IfExpr
           expression_uses_offsetof?(expression.condition) || expression_uses_offsetof?(expression.then_expression) || expression_uses_offsetof?(expression.else_expression)
+        when AST::UnsafeExpr
+          expression_uses_offsetof?(expression.expression)
         when AST::UnaryOp
           expression_uses_offsetof?(expression.operand)
         when AST::MemberAccess
@@ -1733,6 +1737,8 @@ module MilkTea
             ),
           ]
           [setup, AST::Identifier.new(name: temp_name)]
+        when AST::UnsafeExpr
+          normalize_async_expression(expression.expression, counter, env:, expected_type:)
         when AST::MemberAccess
           setup, receiver = normalize_async_expression(expression.receiver, counter, env:)
           [setup, AST::MemberAccess.new(receiver: receiver, member: expression.member)]
@@ -1831,6 +1837,8 @@ module MilkTea
           async_expression_contains_await?(expression.left) || async_expression_contains_await?(expression.right)
         when AST::IfExpr
           async_expression_contains_await?(expression.condition) || async_expression_contains_await?(expression.then_expression) || async_expression_contains_await?(expression.else_expression)
+        when AST::UnsafeExpr
+          async_expression_contains_await?(expression.expression)
         when AST::MemberAccess
           async_expression_contains_await?(expression.receiver)
         when AST::IndexAccess
@@ -3265,6 +3273,8 @@ module MilkTea
           collect_proc_captures_from_expression(expression.condition, env, local_scopes, captures)
           collect_proc_captures_from_expression(expression.then_expression, env, local_scopes, captures)
           collect_proc_captures_from_expression(expression.else_expression, env, local_scopes, captures)
+        when AST::UnsafeExpr
+          collect_proc_captures_from_expression(expression.expression, env, local_scopes, captures)
         when AST::AwaitExpr
           collect_proc_captures_from_expression(expression.expression, env, local_scopes, captures)
         when AST::FormatString
@@ -3411,6 +3421,8 @@ module MilkTea
           expression_contains_proc_expr?(expression.condition) ||
             expression_contains_proc_expr?(expression.then_expression) ||
             expression_contains_proc_expr?(expression.else_expression)
+        when AST::UnsafeExpr
+          expression_contains_proc_expr?(expression.expression)
         when AST::AwaitExpr
           expression_contains_proc_expr?(expression.expression)
         when AST::Call
@@ -3710,6 +3722,8 @@ module MilkTea
           prepare_binary_expression_for_inline_lowering(expression, env:, expected_type:)
         when AST::IfExpr
           prepare_if_expression_for_inline_lowering(expression, env:, expected_type:)
+        when AST::UnsafeExpr
+          prepare_expression_for_inline_lowering(expression.expression, env:, expected_type:)
         when AST::Call
           prepare_call_expression_for_inline_lowering(expression, env:, expected_type:, allow_root_statement_foreign:)
         when AST::ProcExpr
@@ -4286,6 +4300,8 @@ module MilkTea
             else_expression: lower_contextual_expression(expression.else_expression, env: else_env, expected_type: type),
             type:,
           )
+        when AST::UnsafeExpr
+          lower_expression(expression.expression, env:, expected_type: type)
         when AST::ProcExpr
           raise LoweringError, "proc expressions must be lowered in local initializer context"
         when AST::Call
@@ -5311,6 +5327,8 @@ module MilkTea
           foreign_mapping_uses_inline_replacement?(expression.condition, replacements) ||
             foreign_mapping_uses_inline_replacement?(expression.then_expression, replacements) ||
             foreign_mapping_uses_inline_replacement?(expression.else_expression, replacements)
+        when AST::UnsafeExpr
+          foreign_mapping_uses_inline_replacement?(expression.expression, replacements)
         else
           false
         end
@@ -5379,6 +5397,8 @@ module MilkTea
             then_expression: substitute_foreign_mapping_expression(expression.then_expression, replacements),
             else_expression: substitute_foreign_mapping_expression(expression.else_expression, replacements),
           )
+        when AST::UnsafeExpr
+          AST::UnsafeExpr.new(expression: substitute_foreign_mapping_expression(expression.expression, replacements))
         else
           expression
         end
@@ -5405,6 +5425,8 @@ module MilkTea
           foreign_mapping_reference_counts(expression.condition, counts)
           foreign_mapping_reference_counts(expression.then_expression, counts)
           foreign_mapping_reference_counts(expression.else_expression, counts)
+        when AST::UnsafeExpr
+          foreign_mapping_reference_counts(expression.expression, counts)
         end
 
         counts
@@ -5842,6 +5864,8 @@ module MilkTea
           else_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: false, env:))
           cstr_backed_expression?(expression.then_expression, then_env) &&
             cstr_backed_expression?(expression.else_expression, else_env)
+        when AST::UnsafeExpr
+          cstr_backed_expression?(expression.expression, env)
         else
           false
         end
@@ -5866,6 +5890,8 @@ module MilkTea
           else_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: false, env:))
           cstr_list_backed_expression?(expression.then_expression, then_env) &&
             cstr_list_backed_expression?(expression.else_expression, else_env)
+        when AST::UnsafeExpr
+          cstr_list_backed_expression?(expression.expression, env)
         else
           false
         end
@@ -6424,6 +6450,8 @@ module MilkTea
           end
 
           conditional_common_type(then_type, else_type) || raise(LoweringError, "if expression branches require compatible types, got #{then_type} and #{else_type}")
+        when AST::UnsafeExpr
+          infer_expression_type(expression.expression, env:, expected_type:)
         when AST::ProcExpr
           resolve_type_ref(AST::ProcType.new(params: expression.params, return_type: expression.return_type))
         when AST::Call
@@ -7793,6 +7821,8 @@ module MilkTea
             then_expression: rewrite_static_storage_initializer(expression.then_expression),
             else_expression: rewrite_static_storage_initializer(expression.else_expression),
           )
+        when AST::UnsafeExpr
+          AST::UnsafeExpr.new(expression: rewrite_static_storage_initializer(expression.expression))
         when AST::Call
           AST::Call.new(
             callee: rewrite_static_storage_initializer(expression.callee),

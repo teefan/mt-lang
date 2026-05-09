@@ -24,33 +24,27 @@ const window_title: cstr = c"raylib [models] example - bone socket"
 
 
 function chars_to_cstr(text: ptr[char]) -> cstr:
-    unsafe:
-        return cstr<-text
+    return unsafe: cstr<-text
 
 
 function model_animation(anims: ptr[rl.ModelAnimation], index: int) -> rl.ModelAnimation:
-    unsafe:
-        return read(anims + index)
+    return unsafe: read(anims + index)
 
 
 function model_animation_pose(anim: rl.ModelAnimation, frame: int) -> rl.ModelAnimPose:
-    unsafe:
-        return read(anim.keyframePoses + frame)
+    return unsafe: read(anim.keyframePoses + frame)
 
 
 function pose_transform(pose: rl.ModelAnimPose, index: int) -> rl.Transform:
-    unsafe:
-        return read(pose + index)
+    return unsafe: read(pose + index)
 
 
 function skeleton_bone_name(skeleton: rl.ModelSkeleton, index: int) -> cstr:
-    unsafe:
-        return chars_to_cstr(ptr_of((skeleton.bones + index).name[0]))
+    return unsafe: chars_to_cstr(ptr_of((skeleton.bones + index).name[0]))
 
 
 function bind_pose_transform(skeleton: rl.ModelSkeleton, index: int) -> rl.Transform:
-    unsafe:
-        return read(skeleton.bindPose + index)
+    return unsafe: read(skeleton.bindPose + index)
 
 
 function main() -> int:
@@ -137,8 +131,7 @@ function main() -> int:
         character_model.transform = character_rotate.to_matrix().multiply(rm.Matrix.translate(position.x, position.y, position.z))
         rl.UpdateModelAnimation(character_model, anim, float<-anim_current_frame)
 
-        unsafe:
-            rl.DrawMesh(character_model.meshes[0], character_model.materials[1], character_model.transform)
+        unsafe: rl.DrawMesh(character_model.meshes[0], character_model.materials[1], character_model.transform)
 
         let pose = model_animation_pose(anim, anim_current_frame)
         for index in 0..bone_sockets:
@@ -158,8 +151,7 @@ function main() -> int:
             matrix_transform = matrix_transform.multiply(rm.Matrix.translate(transform.translation.x, transform.translation.y, transform.translation.z))
             matrix_transform = matrix_transform.multiply(character_model.transform)
 
-            unsafe:
-                rl.DrawMesh(equip_models[index].meshes[0], equip_models[index].materials[1], matrix_transform)
+            unsafe: rl.DrawMesh(equip_models[index].meshes[0], equip_models[index].materials[1], matrix_transform)
 
         rl.DrawGrid(10, 1.0)
         rl.EndMode3D()

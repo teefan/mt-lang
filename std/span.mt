@@ -9,8 +9,7 @@ public function from_nullable_ptr[T](data: ptr[T]?, len: ptr_uint) -> span[T]:
     if data == null and len != 0:
         panic(c"span.from_nullable_ptr requires non-null data when len > 0")
 
-    unsafe:
-        return span[T](data = ptr[T]<-data, len = len)
+    return unsafe: span[T](data = ptr[T]<-data, len = len)
 
 
 public function empty[T]() -> span[T]:

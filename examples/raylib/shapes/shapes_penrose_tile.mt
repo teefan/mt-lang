@@ -204,8 +204,7 @@ function main() -> int:
                     rebuild = true
 
         if rebuild:
-            unsafe:
-                rl.MemFree(ptr[void]<-ls.production)
+            unsafe: rl.MemFree(ptr[void]<-ls.production)
             ls = create_penrose_lsystem(draw_length_base * float<-generations / float<-max_generations)
             for index in 0..generations:
                 build_production_step(ref_of(ls))
@@ -222,7 +221,6 @@ function main() -> int:
         rl.DrawText(help_text, 10, 30, 20, rl.DARKGRAY)
         rl.DrawText(rl.TextFormat(generations_format, generations), 10, 50, 20, rl.DARKGRAY)
 
-    unsafe:
-        rl.MemFree(ptr[void]<-ls.production)
+    unsafe: rl.MemFree(ptr[void]<-ls.production)
 
     return 0

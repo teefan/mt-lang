@@ -84,8 +84,7 @@ function on_window_size_changed() -> void:
     let monkey_text = monkey_chars.text
     if monkey_text != null:
         for index in 0..cols:
-            unsafe:
-                read(monkey_text + ptr_uint<-index) = uint<-32
+            unsafe: read(monkey_text + ptr_uint<-index) = uint<-32
 
 
 function step_progress() -> void:
@@ -158,8 +157,7 @@ function advance_row() -> void:
 function add_monkey_char(monkey: int, ch: uint) -> void:
     let monkey_text = monkey_chars.text
     if monkey >= 0 and monkey_text != null and cols > 0:
-        unsafe:
-            read(monkey_text + ptr_uint<-(monkey % cols)) = ch
+        unsafe: read(monkey_text + ptr_uint<-(monkey % cols)) = ch
 
     let line_storage = lines
     if line_storage != null:
@@ -267,12 +265,10 @@ function render_frame() -> void:
         let hours = int<-elapsed
         var caption: ptr[char]? = null
 
-        unsafe:
-            c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(caption), c"Monkeys: %d - %dH:%dM:%dS", monkeys, hours, minutes, seconds)
+        unsafe: c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(caption), c"Monkeys: %d - %dH:%dM:%dS", monkeys, hours, minutes, seconds)
 
         if caption != null:
-            unsafe:
-                c.SDL_RenderDebugText(renderer, x, y, cstr<-caption)
+            unsafe: c.SDL_RenderDebugText(renderer, x, y, cstr<-caption)
             c.SDL_free(caption)
 
         y += float<-c.SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE
@@ -360,8 +356,7 @@ function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     if loaded_text == null:
         return 1
 
-    unsafe:
-        progress = cstr<-loaded_text
+    progress = unsafe: cstr<-loaded_text
     progress_remaining = text_length
     c.SDL_GetCurrentTime(ptr_of(start_time))
     on_window_size_changed()

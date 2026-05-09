@@ -12,6 +12,25 @@ class MilkTeaFormatterTest < Minitest::Test
     assert_equal "module demo.f\n\nfunction main() -> int:\n    return 0\n", result.formatted_source
   end
 
+  def test_canonical_mode_rewrites_single_statement_unsafe_blocks
+    source = <<~MT
+      module demo.fmt
+
+      function main(counter_ptr: ptr[int]) -> void:
+          unsafe:
+              counter_ptr[0] = 1
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
+
+    assert_equal <<~MT, formatted
+      module demo.fmt
+
+      function main(counter_ptr: ptr[int]) -> void:
+          unsafe: counter_ptr[0] = 1
+    MT
+  end
+
   def test_build_cst_reconstructs_original_source
     source = <<~MT
       # banner

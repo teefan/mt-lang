@@ -24,8 +24,7 @@ const window_title: cstr = c"raylib [models] example - skybox rendering"
 
 
 function chars_to_cstr(text: ptr[char]) -> cstr:
-    unsafe:
-        return cstr<-text
+    return unsafe: cstr<-text
 
 
 function text_buffer_ptr(text: ref[array[char, 256]]) -> ptr[char]:
@@ -37,13 +36,11 @@ function text_buffer_cstr(text: ref[array[char, 256]]) -> cstr:
 
 
 function shader_location(shader: rl.Shader, location_index: int) -> int:
-    unsafe:
-        return read(shader.locs + location_index)
+    return unsafe: read(shader.locs + location_index)
 
 
 function file_path_list_path(files: rl.FilePathList, index: int) -> cstr:
-    unsafe:
-        return cstr<-read(files.paths + ptr_uint<-index)
+    return unsafe: cstr<-read(files.paths + ptr_uint<-index)
 
 
 function rlgl_matrix(mat: rl.Matrix) -> rlgl.Matrix:
@@ -79,18 +76,15 @@ function set_shader_int(shader: rl.Shader, uniform_name: cstr, value: int) -> vo
 
 
 function set_skybox_shader(model: ptr[rl.Model], shader: rl.Shader) -> void:
-    unsafe:
-        model.materials[0].shader = shader
+    unsafe: model.materials[0].shader = shader
 
 
 function set_skybox_cubemap(model: ptr[rl.Model], texture: rl.TextureCubemap) -> void:
-    unsafe:
-        model.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = texture
+    unsafe: model.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = texture
 
 
 function skybox_cubemap(model: rl.Model) -> rl.TextureCubemap:
-    unsafe:
-        return model.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture
+    return unsafe: model.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture
 
 
 function gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: int, format: int) -> rl.TextureCubemap:

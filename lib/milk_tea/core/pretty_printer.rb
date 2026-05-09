@@ -434,9 +434,13 @@ module MilkTea
             end
           end
         when AST::UnsafeStmt
-          line("unsafe:")
-          with_indent do
-            statement.body.each { |nested| emit_statement(nested) }
+          if (inline = render_inline_unsafe(statement))
+            line(inline)
+          else
+            line("unsafe:")
+            with_indent do
+              statement.body.each { |nested| emit_statement(nested) }
+            end
           end
         when AST::StaticAssert
           line("static_assert(#{render_expression(statement.condition)}, #{render_expression(statement.message)})")
@@ -476,6 +480,56 @@ module MilkTea
           comments = @comment_map.delete(stmt_line)
           @lines[header_idx] = "#{@lines[header_idx]}  #{comments.first}" unless comments.empty?
         end
+      end
+
+      def render_inline_unsafe(statement)
+        return nil unless statement.body.length == 1
+
+        nested = statement.body.first
+        return nil if nested.is_a?(AST::LocalDecl)
+
+        inline = render_inline_statement(nested)
+        return nil unless inline
+        return nil if unsafe_inline_trivia_conflict?(statement, nested)
+
+        "unsafe: #{inline}"
+      end
+
+      def render_inline_statement(statement)
+        case statement
+        when AST::LocalDecl
+          text = +"#{statement.kind} #{statement.name}"
+          text << ": #{render_type(statement.type)}" if statement.type
+          text << " = #{render_expression(statement.value)}" if statement.value
+          text
+        when AST::Assignment
+          "#{render_expression(statement.target)} #{statement.operator} #{render_expression(statement.value)}"
+        when AST::StaticAssert
+          "static_assert(#{render_expression(statement.condition)}, #{render_expression(statement.message)})"
+        when AST::BreakStmt
+          "break"
+        when AST::ContinueStmt
+          "continue"
+        when AST::ReturnStmt
+          statement.value ? "return #{render_expression(statement.value)}" : "return"
+        when AST::DeferStmt
+          return nil if statement.body
+
+          "defer #{render_expression(statement.expression)}"
+        when AST::ExpressionStmt
+          render_expression(statement.expression)
+        else
+          nil
+        end
+      end
+
+      def unsafe_inline_trivia_conflict?(unsafe_stmt, nested)
+        unsafe_line = unsafe_stmt.respond_to?(:line) ? unsafe_stmt.line : nil
+        nested_line = nested.respond_to?(:line) ? nested.line : nil
+        return false unless unsafe_line && nested_line && nested_line > unsafe_line
+
+        @comment_map.keys.any? { |line| line >= unsafe_line + 1 && line <= nested_line } ||
+          @blank_line_set.keys.any? { |line| line >= unsafe_line + 1 && line < nested_line }
       end
 
       def emit_if(statement)
@@ -577,6 +631,9 @@ module MilkTea
           then_expression = render_expression(expression.then_expression, IF_EXPRESSION_PRECEDENCE)
           else_expression = render_expression(expression.else_expression, IF_EXPRESSION_PRECEDENCE)
           wrap("if #{condition}: #{then_expression} else: #{else_expression}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
+        when AST::UnsafeExpr
+          inner = render_expression(expression.expression, IF_EXPRESSION_PRECEDENCE)
+          wrap("unsafe: #{inner}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
         when AST::SizeofExpr
           "size_of(#{render_type(expression.type)})"
         when AST::AlignofExpr

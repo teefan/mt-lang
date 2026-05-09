@@ -14,9 +14,7 @@ function main(argc: int, argv: ptr[ptr[char]]) -> int:
     if argc < 2:
         return usage()
 
-    var raw_app_id: cstr = c""
-    unsafe:
-        raw_app_id = cstr<-read(argv + ptr_uint<-1)
+    let raw_app_id: cstr = unsafe: cstr<-read(argv + ptr_uint<-1)
 
     let parsed_app_id = libc.atoi(raw_app_id)
     if parsed_app_id <= 0:

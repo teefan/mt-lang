@@ -38,8 +38,7 @@ var positional_input: bool = false
 
 
 function chars_to_cstr(text: ptr[char]) -> cstr:
-    unsafe:
-        return cstr<-text
+    return unsafe: cstr<-text
 
 
 function read_ushort(addr: int) -> c.Uint16:
@@ -383,8 +382,7 @@ function app_main(argc: int, argv: ptr[ptr[char]]) -> int:
     tick_acc = ns_per_second
 
     if argc > 1:
-        unsafe:
-            load_file(cstr<-read(argv + ptr_uint<-1))
+        unsafe: load_file(cstr<-read(argv + ptr_uint<-1))
 
     while pump_events():
         render_frame()

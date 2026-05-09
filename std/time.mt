@@ -117,8 +117,7 @@ function format_tm(time_info: ptr[c.tm], format: str, scratch: ref[arena.Arena])
     var result = string.String.with_capacity(written)
     var index: ptr_uint = 0
     while index < written:
-        unsafe:
-            result.push_byte(ubyte<-read(ptr_of(buffer[0]) + index))
+        unsafe: result.push_byte(ubyte<-read(ptr_of(buffer[0]) + index))
         index += 1
 
     return status.Status[string.String, Error].ok(value= result)

@@ -70,13 +70,11 @@ function main() -> int:
         rl.TextFormat(shader_fragment_path_format, glsl_version),
     )
     let view_loc = rl.GetShaderLocation(shader, c"viewPos")
-    unsafe:
-        shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
+    unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = view_loc
 
     let ambient_loc = rl.GetShaderLocation(shader, c"ambient")
     var ambient = array[float, 4](0.1, 0.1, 0.1, 1.0)
-    unsafe:
-        rl.SetShaderValue(shader, ambient_loc, ptr[void]<-ptr_of(ambient[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    unsafe: rl.SetShaderValue(shader, ambient_loc, ptr[void]<-ptr_of(ambient[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     unsafe:
         for model_index in 0..max_vox_files:
@@ -117,8 +115,7 @@ function main() -> int:
             current_model = (current_model + 1) % max_vox_files
 
         var camera_pos = array[float, 3](camera.position.x, camera.position.y, camera.position.z)
-        unsafe:
-            rl.SetShaderValue(shader, view_loc, ptr[void]<-ptr_of(camera_pos[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        unsafe: rl.SetShaderValue(shader, view_loc, ptr[void]<-ptr_of(camera_pos[0]), rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
         for light_index in 0..max_lights:
             lights.UpdateLightValues(shader, light_sources[light_index])

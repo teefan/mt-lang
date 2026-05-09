@@ -97,8 +97,7 @@ function capture_frame(audio_samples: ptr[float]) -> void:
     for index in 0..fft_window_size:
         let x = (2.0 * rl.PI * float<-index) / float<-(fft_window_size - 1)
         let blackman_weight = 0.42 - 0.5 * rm.cos(x) + 0.08 * rm.cos(2.0 * x)
-        unsafe:
-            work_buffer[index].real = read(audio_samples + index) * blackman_weight
+        unsafe: work_buffer[index].real = read(audio_samples + index) * blackman_weight
         work_buffer[index].imaginary = 0.0
 
     cooley_tukey_fft_slow()

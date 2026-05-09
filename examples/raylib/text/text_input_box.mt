@@ -14,8 +14,7 @@ const underscore_text: cstr = c"_"
 
 
 function cstr_from_bytes(bytes: ptr[ubyte]) -> cstr:
-    unsafe:
-        return cstr<-bytes
+    return unsafe: cstr<-bytes
 
 
 function main() -> int:

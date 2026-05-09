@@ -62,8 +62,7 @@ function draw_model_points(model: rl.Model, position: rl.Vector3, scale: float, 
 
 
 function mesh_point(mesh: rl.Mesh, index: int) -> rl.Vector3:
-    unsafe:
-        return rl.Vector3(
+    return unsafe: rl.Vector3(
             x = mesh.vertices[index * 3],
             y = mesh.vertices[index * 3 + 1],
             z = mesh.vertices[index * 3 + 2],
@@ -71,8 +70,7 @@ function mesh_point(mesh: rl.Mesh, index: int) -> rl.Vector3:
 
 
 function mesh_color(mesh: rl.Mesh, index: int) -> rl.Color:
-    unsafe:
-        return rl.Color(
+    return unsafe: rl.Color(
             r = mesh.colors[index * 4],
             g = mesh.colors[index * 4 + 1],
             b = mesh.colors[index * 4 + 2],

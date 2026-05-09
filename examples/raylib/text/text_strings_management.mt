@@ -36,13 +36,11 @@ struct TextParticle:
 
 
 function chars_to_cstr(text: ptr[char]) -> cstr:
-    unsafe:
-        return cstr<-text
+    return unsafe: cstr<-text
 
 
 function text_particle_text_ptr(tp: ptr[TextParticle]) -> ptr[char]:
-    unsafe:
-        return ptr_of(tp.text[0])
+    return unsafe: ptr_of(tp.text[0])
 
 
 function text_particle_text(tp: ptr[TextParticle]) -> cstr:

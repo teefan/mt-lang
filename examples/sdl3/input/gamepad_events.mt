@@ -72,8 +72,7 @@ function append_message(jid: uint, text: ptr[char]?) -> void:
 function add_plain_message(jid: uint, text: cstr) -> void:
     var message: ptr[char]? = null
 
-    unsafe:
-        c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(message), c"%s", text)
+    unsafe: c.SDL_asprintf(ptr[ptr[char]]<-ptr_of(message), c"%s", text)
 
     append_message(jid, message)
 
@@ -118,8 +117,7 @@ function add_removed_message(which: uint) -> void:
 function add_axis_message(which: uint, axis: c.Uint8, value: c.Sint16) -> void:
     var message: ptr[char]? = null
 
-    unsafe:
-        c.SDL_asprintf(
+    unsafe: c.SDL_asprintf(
             ptr[ptr[char]]<-ptr_of(message),
             c"Gamepad #%u axis %s -> %d",
             which,
@@ -134,8 +132,7 @@ function add_button_message(which: uint, button: c.Uint8, down: bool) -> void:
     var message: ptr[char]? = null
     let state_text = if down: c"PRESSED" else: c"RELEASED"
 
-    unsafe:
-        c.SDL_asprintf(
+    unsafe: c.SDL_asprintf(
             ptr[ptr[char]]<-ptr_of(message),
             c"Gamepad #%u button %s -> %s",
             which,
