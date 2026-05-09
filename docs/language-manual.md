@@ -154,6 +154,19 @@ Rules:
   - `let` is immutable
   - `var` is mutable
 - A local declaration without initializer requires explicit type and must be zero-initializable.
+- `let` declarations may use a nullable guard form:
+
+```mt
+let window = maybe_window else:
+        return 1
+```
+
+Rules for `let ... else:`:
+
+- only `let` supports an `else` block
+- the initializer must have a nullable type
+- an explicit type annotation, if present, must name the non-null success type
+- the `else` block must exit control flow (`return`, `break`, `continue`, or another terminating path)
 
 ### 3.3 Type aliases
 
@@ -356,11 +369,25 @@ match token:
 
 ### 4.3 Loops
 
-`for` supports:
+Single-form `for` supports:
 
 - `start..stop` — exclusive integer range via range expression
 - `array[T, N]`
 - `span[T]`
+
+Parallel `for` is also supported:
+
+```mt
+for entity, position, velocity in entities, positions, velocities:
+    update(entity, position, velocity)
+```
+
+Rules for parallel `for`:
+
+- each iterable must be an `array[T, N]` or `span[T]`
+- ranges are not supported in the parallel form
+- iterable counts must match the binding count
+- static array lengths must match; span lengths are checked at runtime
 
 `break` and `continue` must be inside loops.
 
@@ -402,6 +429,23 @@ Unsafe context is required for raw-pointer-level operations such as:
 - pointer arithmetic
 - pointer casts
 - `reinterpret[...]`
+
+### 4.6 Range index assignment
+
+Contiguous indexed slices may be assigned from an expression list:
+
+```mt
+var buf: array[float, 4]
+buf[0..3] = (1.0, 2.0, 3.0)
+```
+
+Rules:
+
+- the target must be an addressable array-, span-, or pointer-indexable lvalue
+- the index must be a range expression with integer literal bounds
+- the range is start-inclusive and end-exclusive
+- the right-hand side must be an expression list whose length exactly matches the range width
+- each element must be assignable to the indexed element type
 
 ## 5. Expressions
 
@@ -599,7 +643,10 @@ Rules:
 
 Current async limitations:
 
-- `await` is supported inside `if` expressions, `if`/`elif`/`else` bodies and conditions, `while` bodies and conditions, `for` bodies and iterables, `match` discriminants and arms, `unsafe` blocks, short-circuit `and`/`or` expressions, and assignment targets
+- `await` is supported inside `if` expressions, `if`/`elif`/`else` bodies and conditions, `while` bodies and conditions, single-form `for` bodies and iterables, `match` discriminants and arms, `unsafe` blocks, short-circuit `and`/`or` expressions, and assignment targets
+- parallel `for` loops are rejected in async functions
+- `let ... else:` is rejected in async functions
+- `defer` is rejected in async functions
 
 ## 11. Linting
 
