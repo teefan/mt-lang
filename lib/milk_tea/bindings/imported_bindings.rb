@@ -136,7 +136,6 @@ module MilkTea
         @module_roots = module_roots.map { |root| File.expand_path(root.to_s) }
         @public_type_names_by_raw_name = {}
         @public_type_kinds_by_raw_name = {}
-        @imported_public_types_by_alias = {}
         @raw_type_declarations = {}
       end
 
@@ -147,11 +146,9 @@ module MilkTea
         raw_ast = Parser.parse(File.read(@raw_module_path), path: @raw_module_path)
         validate_raw_module!(raw_ast)
         declarations = index_raw_declarations(raw_ast)
-        import_specs = merge_import_specs(raw_import_specs(raw_ast), normalize_imports(policy["imports"]))
+        import_specs = raw_import_specs(raw_ast)
         validate_import_specs!(import_specs)
         type_spec = normalize_alias_spec(policy["types"], context: "type")
-        validate_shared_import_aliases!(type_spec, import_specs) if type_spec.key?(:shared_from)
-        @imported_public_types_by_alias = build_imported_public_types(import_specs, aliases: type_spec.fetch(:shared_from, []))
         const_spec = normalize_alias_spec(policy["constants"], context: "constant")
         function_spec = normalize_function_spec(policy["functions"])
         @raw_type_declarations = declarations[:types]
@@ -199,6 +196,12 @@ module MilkTea
           raise Error, "extra_source in #{@policy_path} is no longer supported; move helper code into a normal .mt module"
         end
 
+        if policy.key?("imports")
+          raise Error, "imports in #{@policy_path} are no longer supported; imported bindings must depend only on raw std.c.* modules"
+        end
+
+        validate_allowed_keys!(policy, %w[module_name raw_module_name raw_import_alias types constants functions], context: "imported binding policy")
+
         policy_module_name = policy.fetch("module_name")
         if policy_module_name != @module_name
           raise Error, "imported binding policy #{@policy_path} targets #{policy_module_name}, expected #{@module_name}"
@@ -221,27 +224,6 @@ module MilkTea
         end
       end
 
-      def normalize_imports(value)
-        return [] if value.nil?
-        raise Error, "imports in #{@policy_path} must be an array" unless value.is_a?(Array)
-
-        value.map do |entry|
-          raise Error, "imports in #{@policy_path} must be objects" unless entry.is_a?(Hash)
-
-          validate_allowed_keys!(entry, %w[module_name alias], context: "import")
-          module_name = entry.fetch("module_name")
-          import_alias = entry.fetch("alias")
-
-          raise Error, "import module_name in #{@policy_path} must be a string" unless module_name.is_a?(String) && !module_name.empty?
-          raise Error, "import alias in #{@policy_path} must be a string" unless import_alias.is_a?(String) && !import_alias.empty?
-
-          {
-            module_name:,
-            alias: import_alias,
-          }
-        end
-      end
-
       def raw_import_specs(raw_ast)
         raw_ast.imports.map do |import|
           {
@@ -253,20 +235,6 @@ module MilkTea
 
       def generated_module_path
         "#{@module_name.tr('.', '/')}" + ".mt"
-      end
-
-      def merge_import_specs(*groups)
-        merged = []
-
-        groups.each do |group|
-          group.each do |spec|
-            next if merged.include?(spec)
-
-            merged << spec
-          end
-        end
-
-        merged
       end
 
       def validate_import_specs!(import_specs)
@@ -322,7 +290,7 @@ module MilkTea
           seen_public_names[public_name] = true
           case public_type_kind(raw_name, override:, raw_declaration:)
           when :alias
-            mapping = override && override["mapping"] || shared_type_mapping(raw_name, spec:) || "#{@import_alias}.#{raw_name}"
+            mapping = override && override["mapping"] || "#{@import_alias}.#{raw_name}"
             "public type #{public_name} = #{mapping}"
           when :opaque
             opaque_c_name = raw_declaration.c_name || raw_name
@@ -366,10 +334,6 @@ module MilkTea
           if raw_declaration.variadic
             if overrides.key?(raw_name)
               generated_signatures = overrides.fetch(raw_name).map do |entry|
-                if entry.key?("wrapper")
-                  raise Error, "variadic raw function #{raw_name} in #{@raw_module_name} cannot use wrapper overrides"
-                end
-
                 unless entry.key?("mapping")
                   raise Error, "variadic raw function #{raw_name} in #{@raw_module_name} requires an explicit mapping override"
                 end
@@ -414,7 +378,7 @@ module MilkTea
       def normalize_alias_spec(value, context:)
         case value
         when nil
-          spec = {
+          {
             include: :all,
             include_prefixes: [],
             exclude: [],
@@ -422,10 +386,8 @@ module MilkTea
             rename_rules: [],
             strip_prefix: nil,
           }
-          spec[:shared_from] = [] if context == "type"
-          spec
         when Array
-          spec = {
+          {
             include: normalize_name_list(value, context:, label: "include"),
             include_prefixes: [],
             exclude: [],
@@ -433,13 +395,10 @@ module MilkTea
             rename_rules: [],
             strip_prefix: nil,
           }
-          spec[:shared_from] = [] if context == "type"
-          spec
         when Hash
           allowed_keys = %w[include include_prefixes exclude overrides rename_rules strip_prefix]
-          allowed_keys << "shared_from" if context == "type"
           validate_allowed_keys!(value, allowed_keys, context: "#{context} section")
-          spec = {
+          {
             include: default_include(value, context:),
             include_prefixes: normalize_prefix_list(value["include_prefixes"], context:),
             exclude: normalize_name_list(value["exclude"], context:, label: "exclude"),
@@ -447,8 +406,6 @@ module MilkTea
             rename_rules: normalize_rename_rules(value["rename_rules"], context:),
             strip_prefix: normalize_strip_prefix(value["strip_prefix"], context:),
           }
-          spec[:shared_from] = normalize_name_list(value["shared_from"], context: "type import alias", label: "shared_from") if context == "type"
-          spec
         else
           raise Error, "#{context} section in #{@policy_path} must be an array or object"
         end
@@ -667,49 +624,6 @@ module MilkTea
         public_names
       end
 
-      def validate_shared_import_aliases!(spec, import_specs)
-        known_aliases = import_specs.map { |import_spec| import_spec[:alias] }
-        spec.fetch(:shared_from).each do |import_alias|
-          next if known_aliases.include?(import_alias)
-
-          raise Error, "unknown shared_from import alias #{import_alias} in #{@policy_path}"
-        end
-      end
-
-      def build_imported_public_types(import_specs, aliases:)
-        aliases.each_with_object({}) do |import_alias, public_types_by_alias|
-          import_spec = import_specs.find { |spec| spec[:alias] == import_alias }
-          public_types_by_alias[import_alias] = public_type_names_for_module(import_spec[:module_name])
-        end
-      end
-
-      def public_type_names_for_module(module_name)
-        module_path = resolve_module_path(module_name)
-        ast = Parser.parse(File.read(module_path), path: module_path)
-
-        ast.declarations.each_with_object([]) do |declaration, names|
-          next unless declaration.respond_to?(:visibility) && declaration.visibility == :public
-          next unless declaration.is_a?(AST::TypeAliasDecl) || declaration.is_a?(AST::StructDecl) || declaration.is_a?(AST::UnionDecl) || declaration.is_a?(AST::EnumDecl) || declaration.is_a?(AST::FlagsDecl) || declaration.is_a?(AST::OpaqueDecl)
-
-          names << declaration.name
-        end
-      end
-
-      def shared_type_mapping(raw_name, spec:)
-        matching_aliases = spec.fetch(:shared_from, []).select do |import_alias|
-          @imported_public_types_by_alias.fetch(import_alias, []).include?(raw_name)
-        end
-
-        if matching_aliases.length > 1
-          raise Error, "shared type #{raw_name} in #{@policy_path} is ambiguous across imports: #{matching_aliases.join(', ')}"
-        end
-
-        import_alias = matching_aliases.first
-        return unless import_alias
-
-        "#{import_alias}.#{raw_name}"
-      end
-
       def index_alias_overrides(entries, declarations_by_name, context:)
         overrides = {}
         allowed_keys = context == "constant" ? %w[raw name type mapping] : %w[raw name mapping kind]
@@ -792,7 +706,7 @@ module MilkTea
         overrides = {}
 
         entries.each do |entry|
-          validate_allowed_keys!(entry, %w[raw name type_params params return_type mapping wrapper], context: "function override")
+          validate_allowed_keys!(entry, %w[raw name type_params params return_type mapping], context: "function override")
 
           raw_name = entry.fetch("raw")
           raise Error, "function override raw names in #{@policy_path} must be strings" unless raw_name.is_a?(String)
@@ -805,11 +719,7 @@ module MilkTea
       end
 
       def render_overridden_function(entry, raw_declaration, spec:)
-        if entry.key?("wrapper")
-          render_wrapped_function(entry, raw_declaration, spec:)
-        else
-          render_overridden_foreign_function(entry, raw_declaration, spec:)
-        end
+        render_overridden_foreign_function(entry, raw_declaration, spec:)
       end
 
       def render_overridden_foreign_function(entry, raw_declaration, spec:)
@@ -832,265 +742,6 @@ module MilkTea
         [function_name, [build_foreign_signature(function_name, type_params: raw_type_param_names(raw_declaration), params:, return_type:, mapping:)]]
       end
 
-      def render_wrapped_function(entry, raw_declaration, spec:)
-        raw_name = raw_declaration.name
-        function_name = entry["name"] || foreign_function_name(raw_name, spec:)
-        raw_function_name = "mt_raw_#{function_name}"
-        type_params = override_type_param_names(entry, raw_declaration)
-        param_specs = override_param_specs(entry, raw_declaration)
-        wrapper = normalize_function_wrapper(entry["wrapper"], raw_name)
-
-        if entry.key?("mapping")
-          raise Error, "function wrapper #{raw_name} in #{@policy_path} cannot use mapping"
-        end
-        if entry.key?("return_type")
-          raise Error, "function wrapper #{raw_name} in #{@policy_path} cannot use return_type"
-        end
-
-        case wrapper[:kind]
-        when :owned_string
-          render_owned_string_wrapper(
-            raw_name,
-            function_name:,
-            raw_function_name:,
-            type_params:,
-            param_specs:,
-            raw_declaration:,
-            wrapper:,
-          )
-        when :owned_bytes
-          render_owned_bytes_wrapper(
-            raw_name,
-            function_name:,
-            raw_function_name:,
-            type_params:,
-            param_specs:,
-            raw_declaration:,
-            wrapper:,
-          )
-        when :owned_vec
-          render_owned_vec_wrapper(
-            raw_name,
-            function_name:,
-            raw_function_name:,
-            type_params:,
-            param_specs:,
-            raw_declaration:,
-            wrapper:,
-          )
-        else
-          raise Error, "unsupported wrapper kind #{wrapper[:kind]} for #{raw_name} in #{@policy_path}"
-        end
-      end
-
-      def render_owned_string_wrapper(raw_name, function_name:, raw_function_name:, type_params:, param_specs:, raw_declaration:, wrapper:)
-        validate_owned_string_wrapper_return_type!(raw_declaration, raw_name)
-        validate_owned_string_wrapper_param_specs!(param_specs, raw_name)
-
-        raw_return_type = render_public_foreign_type(raw_declaration.return_type)
-        raw_signature_params = param_specs.map { |param| render_foreign_param(param) }
-        public_signature_params = param_specs.map { |param| render_wrapper_param(param, raw_name:) }
-        public_return_type = owned_string_wrapper_return_type(raw_declaration, wrapper)
-        call_args = param_specs.map { |param| param.fetch("name") }.join(', ')
-        raw_value_expression = "ptr[char]<-raw_result"
-
-        lines = []
-        lines << build_foreign_signature(raw_function_name, type_params:, params: raw_signature_params, return_type: raw_return_type, mapping: "#{@import_alias}.#{raw_name}", visibility: :private)
-        lines << ""
-        lines << build_function_signature(function_name, type_params:, params: public_signature_params, return_type: public_return_type)
-        lines << "    let raw_result = #{raw_function_name}#{render_call_args(call_args)}"
-
-        if raw_declaration.return_type.nullable
-          maybe_alias = wrapper.fetch(:maybe_alias)
-          string_alias = wrapper.fetch(:string_alias)
-          lines << "    if raw_result == null:"
-          lines << "        return #{maybe_alias}.Maybe[#{string_alias}.String].none"
-          lines << ""
-        end
-
-        lines << "    let value = #{wrapper.fetch(:string_alias)}.String.from_str(#{wrapper.fetch(:text_alias)}.chars_as_str(#{raw_value_expression}))"
-        lines << "    #{wrapper.fetch(:release)}(#{raw_value_expression})"
-
-        if raw_declaration.return_type.nullable
-          maybe_alias = wrapper.fetch(:maybe_alias)
-          string_alias = wrapper.fetch(:string_alias)
-          lines << "    return #{maybe_alias}.Maybe[#{string_alias}.String].some(value= value)"
-        else
-          lines << "    return value"
-        end
-
-        [function_name, lines]
-      end
-
-      def render_owned_bytes_wrapper(raw_name, function_name:, raw_function_name:, type_params:, param_specs:, raw_declaration:, wrapper:)
-        validate_owned_bytes_wrapper_return_type!(raw_declaration, raw_name)
-        size_param, public_param_specs = owned_bytes_wrapper_params(param_specs, raw_name)
-
-        raw_return_type = render_public_foreign_type(raw_declaration.return_type)
-        raw_signature_params = param_specs.map { |param| render_foreign_param(param) }
-        public_signature_params = public_param_specs.map { |param| render_wrapper_param(param, raw_name:) }
-        public_return_type = owned_bytes_wrapper_return_type(raw_declaration, wrapper)
-        call_args = param_specs.map { |param| param.fetch("name") }.join(', ')
-        raw_value_expression = "ptr[ubyte]<-raw_result"
-        size_name = size_param.fetch("name")
-
-        lines = []
-        lines << build_foreign_signature(raw_function_name, type_params:, params: raw_signature_params, return_type: raw_return_type, mapping: "#{@import_alias}.#{raw_name}", visibility: :private)
-        lines << ""
-        lines << build_function_signature(function_name, type_params:, params: public_signature_params, return_type: public_return_type)
-        lines << "    var #{size_name} = 0"
-        lines << "    let raw_result = #{raw_function_name}#{render_call_args(call_args)}"
-
-        if raw_declaration.return_type.nullable
-          maybe_alias = wrapper.fetch(:maybe_alias)
-          bytes_alias = wrapper.fetch(:bytes_alias)
-          lines << "    if raw_result == null:"
-          lines << "        return #{maybe_alias}.Maybe[#{bytes_alias}.Buffer].none"
-          lines << ""
-        end
-
-        lines << "    if #{size_name} < 0:"
-        lines << "        #{wrapper.fetch(:release)}(#{raw_value_expression})"
-        lines << "        fatal(c\"imported wrapper #{function_name} returned negative size\")"
-        lines << ""
-        lines << "    var value = #{wrapper.fetch(:bytes_alias)}.with_capacity(ptr_uint<-#{size_name})"
-        lines << "    #{wrapper.fetch(:bytes_alias)}.append(ref_of(value), span[ubyte](data = #{raw_value_expression}, len = ptr_uint<-#{size_name}))"
-        lines << "    #{wrapper.fetch(:release)}(#{raw_value_expression})"
-
-        if raw_declaration.return_type.nullable
-          maybe_alias = wrapper.fetch(:maybe_alias)
-          bytes_alias = wrapper.fetch(:bytes_alias)
-          lines << "    return #{maybe_alias}.Maybe[#{bytes_alias}.Buffer].some(value= value)"
-        else
-          lines << "    return value"
-        end
-
-        [function_name, lines]
-      end
-
-      def render_owned_vec_wrapper(raw_name, function_name:, raw_function_name:, type_params:, param_specs:, raw_declaration:, wrapper:)
-        element_type = owned_vec_wrapper_element_type(raw_declaration, raw_name)
-        count_param, public_param_specs = owned_vec_wrapper_params(param_specs, raw_name)
-
-        raw_return_type = render_public_foreign_type(raw_declaration.return_type)
-        raw_signature_params = param_specs.map { |param| render_foreign_param(param) }
-        public_signature_params = public_param_specs.map { |param| render_wrapper_param(param, raw_name:) }
-        public_return_type = owned_vec_wrapper_return_type(raw_declaration, wrapper, element_type)
-        call_args = param_specs.map { |param| param.fetch("name") }.join(', ')
-        raw_value_expression = "#{raw_return_type.delete_suffix('?')}<-raw_result"
-        count_name = count_param.fetch("name")
-        vec_alias = wrapper.fetch(:vec_alias)
-
-        lines = []
-        lines << build_foreign_signature(raw_function_name, type_params:, params: raw_signature_params, return_type: raw_return_type, mapping: "#{@import_alias}.#{raw_name}", visibility: :private)
-        lines << ""
-        lines << build_function_signature(function_name, type_params:, params: public_signature_params, return_type: public_return_type)
-        lines << "    var #{count_name} = 0"
-        lines << "    let raw_result = #{raw_function_name}#{render_call_args(call_args)}"
-        lines << "    if #{count_name} < 0:"
-        lines << "        if raw_result != null:"
-        lines << "            #{wrapper.fetch(:release)}(#{raw_value_expression})"
-        lines << "        fatal(c\"imported wrapper #{function_name} returned negative count\")"
-        lines << ""
-        lines << "    var value = #{vec_alias}.Vec[#{element_type}].with_capacity(ptr_uint<-#{count_name})"
-        lines << "    if #{count_name} == 0:"
-        lines << "        if raw_result != null:"
-        lines << "            #{wrapper.fetch(:release)}(#{raw_value_expression})"
-
-        if raw_declaration.return_type.nullable
-          maybe_alias = wrapper.fetch(:maybe_alias)
-          lines << "        return #{maybe_alias}.Maybe[#{vec_alias}.Vec[#{element_type}]].some(value= value)"
-        else
-          lines << "        return value"
-        end
-
-        lines << ""
-        if raw_declaration.return_type.nullable
-          maybe_alias = wrapper.fetch(:maybe_alias)
-          lines << "    if raw_result == null:"
-          lines << "        return #{maybe_alias}.Maybe[#{vec_alias}.Vec[#{element_type}]].none"
-          lines << ""
-        end
-
-        lines << "    var index: ptr_uint = 0"
-        lines << "    while index < ptr_uint<-#{count_name}:"
-        lines << "        unsafe:"
-        lines << "            value.push(read(#{raw_value_expression} + index))"
-        lines << "        index += 1"
-        lines << "    #{wrapper.fetch(:release)}(#{raw_value_expression})"
-
-        if raw_declaration.return_type.nullable
-          maybe_alias = wrapper.fetch(:maybe_alias)
-          lines << "    return #{maybe_alias}.Maybe[#{vec_alias}.Vec[#{element_type}]].some(value= value)"
-        else
-          lines << "    return value"
-        end
-
-        [function_name, lines]
-      end
-
-      def normalize_function_wrapper(value, raw_name)
-        raise Error, "function wrapper for #{raw_name} in #{@policy_path} must be an object" unless value.is_a?(Hash)
-
-        kind = value.fetch("kind")
-        raise Error, "function wrapper kind for #{raw_name} in #{@policy_path} must be a string" unless kind.is_a?(String)
-
-        case kind
-        when "owned_string"
-          validate_allowed_keys!(value, %w[kind maybe_alias text_alias string_alias release], context: "function wrapper")
-          text_alias = value.fetch("text_alias")
-          string_alias = value.fetch("string_alias")
-          release = value.fetch("release")
-          maybe_alias = value["maybe_alias"]
-
-          [text_alias, string_alias, release, maybe_alias].compact.each do |field|
-            raise Error, "function wrapper fields for #{raw_name} in #{@policy_path} must be strings" unless field.is_a?(String) && !field.empty?
-          end
-
-          {
-            kind: :owned_string,
-            maybe_alias: maybe_alias,
-            text_alias:,
-            string_alias:,
-            release:,
-          }
-        when "owned_bytes"
-          validate_allowed_keys!(value, %w[kind maybe_alias bytes_alias release], context: "function wrapper")
-          bytes_alias = value.fetch("bytes_alias")
-          release = value.fetch("release")
-          maybe_alias = value["maybe_alias"]
-
-          [bytes_alias, release, maybe_alias].compact.each do |field|
-            raise Error, "function wrapper fields for #{raw_name} in #{@policy_path} must be strings" unless field.is_a?(String) && !field.empty?
-          end
-
-          {
-            kind: :owned_bytes,
-            maybe_alias: maybe_alias,
-            bytes_alias:,
-            release:,
-          }
-        when "owned_vec"
-          validate_allowed_keys!(value, %w[kind maybe_alias vec_alias release], context: "function wrapper")
-          vec_alias = value.fetch("vec_alias")
-          release = value.fetch("release")
-          maybe_alias = value["maybe_alias"]
-
-          [vec_alias, release, maybe_alias].compact.each do |field|
-            raise Error, "function wrapper fields for #{raw_name} in #{@policy_path} must be strings" unless field.is_a?(String) && !field.empty?
-          end
-
-          {
-            kind: :owned_vec,
-            maybe_alias: maybe_alias,
-            vec_alias:,
-            release:,
-          }
-        else
-          raise Error, "unsupported function wrapper kind #{kind} for #{raw_name} in #{@policy_path}"
-        end
-      end
-
       def override_type_param_names(entry, raw_declaration)
         if entry.key?("type_params")
           normalize_name_list(entry["type_params"], context: "function type parameter", label: "function type parameter")
@@ -1110,162 +761,6 @@ module MilkTea
             }
           end
         end
-      end
-
-      def validate_owned_string_wrapper_return_type!(raw_declaration, raw_name)
-        type = raw_declaration.return_type
-        unless type.is_a?(AST::TypeRef) && type.name.to_s == "ptr" && type.arguments.length == 1
-          raise Error, "owned_string wrapper for #{raw_name} in #{@policy_path} requires ptr[char] or ptr[char]? return type"
-        end
-
-        pointee = type.arguments.first.value
-        unless pointee.is_a?(AST::TypeRef) && pointee.name.to_s == "char" && pointee.arguments.empty? && !pointee.nullable
-          raise Error, "owned_string wrapper for #{raw_name} in #{@policy_path} requires ptr[char] or ptr[char]? return type"
-        end
-      end
-
-      def validate_owned_bytes_wrapper_return_type!(raw_declaration, raw_name)
-        type = raw_declaration.return_type
-        unless type.is_a?(AST::TypeRef) && type.name.to_s == "ptr" && type.arguments.length == 1
-          raise Error, "owned_bytes wrapper for #{raw_name} in #{@policy_path} requires ptr[ubyte] or ptr[ubyte]? return type"
-        end
-
-        pointee = type.arguments.first.value
-        unless pointee.is_a?(AST::TypeRef) && pointee.name.to_s == "ubyte" && pointee.arguments.empty? && !pointee.nullable
-          raise Error, "owned_bytes wrapper for #{raw_name} in #{@policy_path} requires ptr[ubyte] or ptr[ubyte]? return type"
-        end
-      end
-
-      def owned_vec_wrapper_element_type(raw_declaration, raw_name)
-        type = raw_declaration.return_type
-        unless type.is_a?(AST::TypeRef) && type.name.to_s == "ptr" && type.arguments.length == 1
-          raise Error, "owned_vec wrapper for #{raw_name} in #{@policy_path} requires ptr[T] or ptr[T]? return type"
-        end
-
-        render_public_foreign_type(type.arguments.first.value)
-      end
-
-      def validate_owned_string_wrapper_param_specs!(param_specs, raw_name)
-        param_specs.each do |param|
-          unless param.is_a?(Hash)
-            raise Error, "function parameters in #{@policy_path} must be objects"
-          end
-
-          mode = param["mode"]
-          next if mode.nil? || mode == "plain"
-
-          raise Error, "function wrapper #{raw_name} in #{@policy_path} does not support parameter mode #{mode}"
-        end
-      end
-
-      def owned_bytes_wrapper_params(param_specs, raw_name)
-        param_specs.each do |param|
-          raise Error, "function parameters in #{@policy_path} must be objects" unless param.is_a?(Hash)
-        end
-
-        out_params = []
-        public_params = []
-
-        param_specs.each do |param|
-          mode = param["mode"]
-          if mode.nil? || mode == "plain"
-            public_params << param
-          elsif mode == "out"
-            out_params << param
-          else
-            raise Error, "function wrapper #{raw_name} in #{@policy_path} does not support parameter mode #{mode}"
-          end
-        end
-
-        if out_params.length != 1
-          raise Error, "owned_bytes wrapper for #{raw_name} in #{@policy_path} requires exactly one out int parameter"
-        end
-
-        size_param = out_params.first
-        unless size_param["type"] == "int"
-          raise Error, "owned_bytes wrapper for #{raw_name} in #{@policy_path} requires its out parameter to use type int"
-        end
-        if size_param["boundary_type"]
-          raise Error, "owned_bytes wrapper for #{raw_name} in #{@policy_path} cannot use boundary_type on its out parameter"
-        end
-
-        [size_param, public_params]
-      end
-
-      def owned_vec_wrapper_params(param_specs, raw_name)
-        param_specs.each do |param|
-          raise Error, "function parameters in #{@policy_path} must be objects" unless param.is_a?(Hash)
-        end
-
-        out_params = []
-        public_params = []
-
-        param_specs.each do |param|
-          mode = param["mode"]
-          if mode.nil? || mode == "plain"
-            public_params << param
-          elsif mode == "out"
-            out_params << param
-          else
-            raise Error, "function wrapper #{raw_name} in #{@policy_path} does not support parameter mode #{mode}"
-          end
-        end
-
-        if out_params.length != 1
-          raise Error, "owned_vec wrapper for #{raw_name} in #{@policy_path} requires exactly one out int parameter"
-        end
-
-        count_param = out_params.first
-        unless count_param["type"] == "int"
-          raise Error, "owned_vec wrapper for #{raw_name} in #{@policy_path} requires its out parameter to use type int"
-        end
-        if count_param["boundary_type"]
-          raise Error, "owned_vec wrapper for #{raw_name} in #{@policy_path} cannot use boundary_type on its out parameter"
-        end
-
-        [count_param, public_params]
-      end
-
-      def render_wrapper_param(param, raw_name:)
-        unless param.is_a?(Hash)
-          raise Error, "function parameters in #{@policy_path} must be objects"
-        end
-
-        if param["boundary_type"] && !param["boundary_type"].is_a?(String)
-          raise Error, "function wrapper #{raw_name} in #{@policy_path} requires boundary_type strings when present"
-        end
-
-        "#{param.fetch("name")}: #{param.fetch("type")}"
-      end
-
-      def owned_string_wrapper_return_type(raw_declaration, wrapper)
-        string_type = "#{wrapper.fetch(:string_alias)}.String"
-        return string_type unless raw_declaration.return_type.nullable
-
-        maybe_alias = wrapper[:maybe_alias]
-        raise Error, "owned_string wrapper in #{@policy_path} requires maybe_alias for nullable raw returns" unless maybe_alias
-
-        "#{maybe_alias}.Maybe[#{string_type}]"
-      end
-
-      def owned_bytes_wrapper_return_type(raw_declaration, wrapper)
-        buffer_type = "#{wrapper.fetch(:bytes_alias)}.Buffer"
-        return buffer_type unless raw_declaration.return_type.nullable
-
-        maybe_alias = wrapper[:maybe_alias]
-        raise Error, "owned_bytes wrapper in #{@policy_path} requires maybe_alias for nullable raw returns" unless maybe_alias
-
-        "#{maybe_alias}.Maybe[#{buffer_type}]"
-      end
-
-      def owned_vec_wrapper_return_type(raw_declaration, wrapper, element_type)
-        vec_type = "#{wrapper.fetch(:vec_alias)}.Vec[#{element_type}]"
-        return vec_type unless raw_declaration.return_type.nullable
-
-        maybe_alias = wrapper[:maybe_alias]
-        raise Error, "owned_vec wrapper in #{@policy_path} requires maybe_alias for nullable raw returns" unless maybe_alias
-
-        "#{maybe_alias}.Maybe[#{vec_type}]"
       end
 
       def build_function_signature(name, type_params:, params:, return_type:)
@@ -1482,25 +977,11 @@ module MilkTea
           policy_path: root.join("bindings/imported/steamworks.binding.json"),
         ),
         Binding.new(
-          name: "libuv",
-          module_name: "std.libuv",
-          binding_path: root.join("std/libuv.mt"),
-          raw_module_name: "std.c.libuv",
-          policy_path: root.join("bindings/imported/libuv.binding.json"),
-        ),
-        Binding.new(
           name: "libc",
           module_name: "std.libc",
           binding_path: root.join("std/libc.mt"),
           raw_module_name: "std.c.libc",
           policy_path: root.join("bindings/imported/libc.binding.json"),
-        ),
-        Binding.new(
-          name: "libm",
-          module_name: "std.libm",
-          binding_path: root.join("std/libm.mt"),
-          raw_module_name: "std.c.libm",
-          policy_path: root.join("bindings/imported/libm.binding.json"),
         ),
       ]
     end

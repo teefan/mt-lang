@@ -1,32 +1,32 @@
-module std.async
+module std.async.runtime
 
-import std.async.runtime as backend
+import std.async.blocking_runtime as backend
 import std.status as status
 
 
 public type Runtime = backend.Runtime
 
 
-function runtime_create() -> Runtime:
+public function runtime_create() -> Runtime:
     return backend.runtime_create()
 
 
-function runtime_activate(runtime: Runtime) -> void:
+public function runtime_activate(runtime: Runtime) -> void:
     backend.runtime_activate(runtime)
     return
 
 
-function runtime_deactivate() -> void:
+public function runtime_deactivate() -> void:
     backend.runtime_deactivate()
     return
 
 
-function runtime_release(runtime: ref[Runtime]) -> void:
+public function runtime_release(runtime: ref[Runtime]) -> void:
     backend.runtime_release(runtime)
     return
 
 
-function runtime_poll(runtime: Runtime) -> int:
+public function runtime_poll(runtime: Runtime) -> int:
     return backend.runtime_poll(runtime)
 
 

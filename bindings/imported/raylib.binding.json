@@ -2,28 +2,6 @@
   "module_name": "std.raylib",
   "raw_module_name": "std.c.raylib",
   "raw_import_alias": "c",
-  "imports": [
-    {
-      "module_name": "std.bytes",
-      "alias": "bytes"
-    },
-    {
-      "module_name": "std.maybe",
-      "alias": "maybe"
-    },
-    {
-      "module_name": "std.vec",
-      "alias": "vec"
-    },
-    {
-      "module_name": "std.string",
-      "alias": "string"
-    },
-    {
-      "module_name": "std.str",
-      "alias": "text"
-    }
-  ],
   "types": {
     "exclude": [
       "va_list",
@@ -44,11 +22,7 @@
       "SetLoadFileDataCallback",
       "SetSaveFileDataCallback",
       "SetLoadFileTextCallback",
-      "SetSaveFileTextCallback",
-      "UnloadFileData",
-      "UnloadFileText",
-      "UnloadUTF8",
-      "UnloadCodepoints"
+      "SetSaveFileTextCallback"
     ],
     "overrides": [
       {
@@ -286,12 +260,7 @@
             "mode": "out"
           }
         ],
-        "wrapper": {
-          "kind": "owned_bytes",
-          "maybe_alias": "maybe",
-          "bytes_alias": "bytes",
-          "release": "c.UnloadFileData"
-        }
+        "return_type": "ptr[ubyte]?"
       },
       {
         "raw": "LoadFileText",
@@ -302,13 +271,7 @@
             "boundary_type": "cstr"
           }
         ],
-        "wrapper": {
-          "kind": "owned_string",
-          "maybe_alias": "maybe",
-          "text_alias": "text",
-          "string_alias": "string",
-          "release": "c.UnloadFileText"
-        }
+        "return_type": "ptr[char]?"
       },
       {
         "raw": "UnloadFileData",
@@ -695,13 +658,7 @@
             "type": "int"
           }
         ],
-        "wrapper": {
-          "kind": "owned_string",
-          "maybe_alias": "maybe",
-          "text_alias": "text",
-          "string_alias": "string",
-          "release": "c.UnloadUTF8"
-        }
+        "return_type": "ptr[char]?"
       },
       {
         "raw": "LoadCodepoints",
@@ -717,12 +674,7 @@
             "mode": "out"
           }
         ],
-        "wrapper": {
-          "kind": "owned_vec",
-          "maybe_alias": "maybe",
-          "vec_alias": "vec",
-          "release": "c.UnloadCodepoints"
-        }
+        "return_type": "ptr[int]?"
       },
       {
         "raw": "GetCodepointCount",
@@ -777,8 +729,7 @@
             "mode": "out"
           }
         ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.CodepointToUTF8(codepoint, utf_8_size))"
+        "return_type": "cstr"
       },
       {
         "raw": "TextLength",
@@ -789,276 +740,6 @@
             "boundary_type": "cstr"
           }
         ]
-      },
-      {
-        "raw": "TextFormat",
-        "name": "text_format_int",
-        "params": [
-          {
-            "name": "format",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "value",
-            "type": "int"
-          }
-        ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.TextFormat(format, value))"
-      },
-      {
-        "raw": "TextFormat",
-        "name": "text_format_int_int",
-        "params": [
-          {
-            "name": "format",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "first",
-            "type": "int"
-          },
-          {
-            "name": "second",
-            "type": "int"
-          }
-        ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.TextFormat(format, first, second))"
-      },
-      {
-        "raw": "TextFormat",
-        "name": "text_format_int_int_int",
-        "params": [
-          {
-            "name": "format",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "first",
-            "type": "int"
-          },
-          {
-            "name": "second",
-            "type": "int"
-          },
-          {
-            "name": "third",
-            "type": "int"
-          }
-        ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.TextFormat(format, first, second, third))"
-      },
-      {
-        "raw": "TextFormat",
-        "name": "text_format_int_int_int_int",
-        "params": [
-          {
-            "name": "format",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "first",
-            "type": "int"
-          },
-          {
-            "name": "second",
-            "type": "int"
-          },
-          {
-            "name": "third",
-            "type": "int"
-          },
-          {
-            "name": "fourth",
-            "type": "int"
-          }
-        ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.TextFormat(format, first, second, third, fourth))"
-      },
-      {
-        "raw": "TextFormat",
-        "name": "text_format_int_cstr",
-        "params": [
-          {
-            "name": "format",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "value",
-            "type": "int"
-          },
-          {
-            "name": "label",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.TextFormat(format, value, label))"
-      },
-      {
-        "raw": "TextFormat",
-        "name": "text_format_cstr",
-        "params": [
-          {
-            "name": "format",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "value",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.TextFormat(format, value))"
-      },
-      {
-        "raw": "TextFormat",
-        "name": "text_format_cstr_cstr",
-        "params": [
-          {
-            "name": "format",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "first",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "second",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.TextFormat(format, first, second))"
-      },
-      {
-        "raw": "TextFormat",
-        "name": "text_format_cstr_int_int",
-        "params": [
-          {
-            "name": "format",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "label",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "first",
-            "type": "int"
-          },
-          {
-            "name": "second",
-            "type": "int"
-          }
-        ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.TextFormat(format, label, first, second))"
-      },
-      {
-        "raw": "TextFormat",
-        "name": "text_format_int_int_float",
-        "params": [
-          {
-            "name": "format",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "first",
-            "type": "int"
-          },
-          {
-            "name": "second",
-            "type": "int"
-          },
-          {
-            "name": "third",
-            "type": "float"
-          }
-        ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.TextFormat(format, first, second, third))"
-      },
-      {
-        "raw": "TextFormat",
-        "name": "text_format_cstr_float_float",
-        "params": [
-          {
-            "name": "format",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "label",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "first",
-            "type": "float"
-          },
-          {
-            "name": "second",
-            "type": "float"
-          }
-        ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.TextFormat(format, label, first, second))"
-      },
-      {
-        "raw": "TextFormat",
-        "name": "text_format_float",
-        "params": [
-          {
-            "name": "format",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "value",
-            "type": "float"
-          }
-        ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.TextFormat(format, value))"
-      },
-      {
-        "raw": "TextFormat",
-        "name": "text_format_float_float",
-        "params": [
-          {
-            "name": "format",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "first",
-            "type": "float"
-          },
-          {
-            "name": "second",
-            "type": "float"
-          }
-        ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.TextFormat(format, first, second))"
       },
       {
         "raw": "TextSubtext",
@@ -1077,8 +758,7 @@
             "type": "int"
           }
         ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.TextSubtext(text, position, length))"
+        "return_type": "cstr"
       },
       {
         "raw": "TextSplit",
@@ -1461,23 +1141,19 @@
       },
       {
         "raw": "GetMonitorName",
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.GetMonitorName(monitor))"
+        "return_type": "cstr"
       },
       {
         "raw": "GetClipboardText",
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.GetClipboardText())"
+        "return_type": "cstr"
       },
       {
         "raw": "GetWorkingDirectory",
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.GetWorkingDirectory())"
+        "return_type": "cstr"
       },
       {
         "raw": "GetApplicationDirectory",
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.GetApplicationDirectory())"
+        "return_type": "cstr"
       },
       {
         "raw": "GetFileLength",
@@ -1508,8 +1184,7 @@
             "boundary_type": "cstr"
           }
         ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.GetFileExtension(file_name))"
+        "return_type": "cstr"
       },
       {
         "raw": "GetFileName",
@@ -1520,8 +1195,7 @@
             "boundary_type": "cstr"
           }
         ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.GetFileName(file_path))"
+        "return_type": "cstr"
       },
       {
         "raw": "GetFileNameWithoutExt",
@@ -1532,8 +1206,7 @@
             "boundary_type": "cstr"
           }
         ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.GetFileNameWithoutExt(file_path))"
+        "return_type": "cstr"
       },
       {
         "raw": "GetDirectoryPath",
@@ -1544,8 +1217,7 @@
             "boundary_type": "cstr"
           }
         ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.GetDirectoryPath(file_path))"
+        "return_type": "cstr"
       },
       {
         "raw": "GetPrevDirectoryPath",
@@ -1556,8 +1228,7 @@
             "boundary_type": "cstr"
           }
         ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.GetPrevDirectoryPath(dir_path))"
+        "return_type": "cstr"
       },
       {
         "raw": "MakeDirectory",
@@ -1659,13 +1330,11 @@
       },
       {
         "raw": "GetKeyName",
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.GetKeyName(key))"
+        "return_type": "cstr"
       },
       {
         "raw": "GetGamepadName",
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.GetGamepadName(gamepad))"
+        "return_type": "cstr"
       },
       {
         "raw": "TextRemoveSpaces",
@@ -1676,8 +1345,7 @@
             "boundary_type": "cstr"
           }
         ],
-        "return_type": "str",
-        "mapping": "text.cstr_as_str(c.TextRemoveSpaces(text))"
+        "return_type": "cstr"
       },
       {
         "raw": "ImageResize",

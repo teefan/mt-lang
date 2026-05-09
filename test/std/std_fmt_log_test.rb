@@ -52,32 +52,6 @@ class MilkTeaStdFmtLogTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
-  def test_host_runtime_executes_stderr_logging
-    compiler = ENV.fetch("CC", "cc")
-    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
-
-    source = [
-      "module demo.std_log",
-      "",
-      "import std.log as log",
-      "",
-      "function main() -> int:",
-      "    if not log.info(\"ready\"):",
-      "        return 1",
-      "    if not log.warn(\"careful\"):",
-      "        return 2",
-      "    return 0",
-      "",
-    ].join("\n")
-
-    result = run_program(source, compiler:)
-
-    assert_equal "", result.stdout
-    assert_equal "[info] ready\n[warn] careful\n", result.stderr
-    assert_equal 0, result.exit_status
-    assert_equal [], result.link_flags
-  end
-
   def test_host_runtime_executes_fmt_string_format_literals
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
@@ -162,6 +136,31 @@ class MilkTeaStdFmtLogTest < Minitest::Test
     result = run_program(source, compiler:)
 
     assert_equal "ratio=2.5 scale=0.125\n", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+  def test_host_runtime_executes_direct_io_format_string_calls
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_fmt_direct_io",
+      "",
+      "import std.io as io",
+      "",
+      "function main() -> int:",
+      "    let count = 7",
+      "    if not io.println(f\"count=\#{count} ok=\#{true}\"):",
+      "        return 1",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "count=7 ok=true\n", result.stdout
     assert_equal "", result.stderr
     assert_equal 0, result.exit_status
     assert_equal [], result.link_flags

@@ -121,7 +121,7 @@ module MilkTea
         raise error(visibility_token, "public is not allowed on methods blocks") if visibility == :public
 
         parse_methods_block
-      elsif check(:edit) || check(:static)
+      elsif check(:editable) || check(:static)
         raise error(peek, "#{peek.lexeme} function is only allowed inside methods blocks")
       elsif match(:foreign)
         parse_foreign_decl(visibility:)
@@ -163,6 +163,8 @@ module MilkTea
           directives << parse_link_directive
         elsif match(:include)
           directives << parse_include_directive
+        elsif match(:compiler_flag)
+          directives << parse_compiler_flag_directive
         else
           declarations << parse_extern_module_declaration
         end
@@ -183,6 +185,12 @@ module MilkTea
       value = consume(:string, "expected string literal after include").literal
       consume_end_of_statement
       AST::IncludeDirective.new(value:)
+    end
+
+    def parse_compiler_flag_directive
+      value = consume(:string, "expected string literal after compiler_flag").literal
+      consume_end_of_statement
+      AST::CompilerFlagDirective.new(value:)
     end
 
     def parse_extern_module_declaration
@@ -388,8 +396,8 @@ module MilkTea
       visibility, _visibility_token = parse_visibility
       async = match(:async)
 
-      kind = if match(:edit)
-               :edit
+      kind = if match(:editable)
+           :editable
              elsif match(:static)
                :static
              else

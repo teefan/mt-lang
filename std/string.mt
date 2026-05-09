@@ -33,27 +33,27 @@ methods String:
         return bytes.is_empty(this.buffer)
 
 
-    public edit function clear() -> void:
+    public editable function clear() -> void:
         bytes.clear(ref_of(this.buffer))
         return
 
 
-    public edit function release() -> void:
+    public editable function release() -> void:
         bytes.release(ref_of(this.buffer))
         return
 
 
-    public edit function reserve(min_capacity: ptr_uint) -> void:
+    public editable function reserve(min_capacity: ptr_uint) -> void:
         bytes.reserve(ref_of(this.buffer), min_capacity)
         return
 
 
-    public edit function push_byte(byte: ubyte) -> void:
+    public editable function push_byte(byte: ubyte) -> void:
         bytes.push(ref_of(this.buffer), byte)
         return
 
 
-    public edit function append(suffix: str) -> void:
+    public editable function append(suffix: str) -> void:
         var index: ptr_uint = 0
         while index < suffix.len:
             unsafe: this.push_byte(ubyte<-read(suffix.data + index))
@@ -61,7 +61,7 @@ methods String:
         return
 
 
-    public edit function assign(value_text: str) -> void:
+    public editable function assign(value_text: str) -> void:
         this.clear()
         this.append(value_text)
         return

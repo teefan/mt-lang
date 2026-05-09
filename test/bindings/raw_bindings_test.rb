@@ -8,7 +8,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raygui rlights rlgl msf_gif libc sdl3 box2d cjson steamworks libuv libuv_runtime], registry.map(&:name)
+    assert_equal %w[raylib raygui rlights rlgl msf_gif libc sdl3 box2d cjson steamworks], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -166,36 +166,6 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_includes registry.fetch("steamworks").header_candidates.first, "/std/c/steamworks.h"
     assert_includes registry.fetch("steamworks").tracked_header_paths.first, "/std/c/steamworks.h"
     assert_includes registry.fetch("steamworks").link_flags.first, "/tmp/vendored-steamworks"
-    assert_equal "std.c.libuv", registry.fetch("libuv").module_name
-    assert_equal ["uv"], registry.fetch("libuv").link_libraries
-    assert_equal ["-D_GNU_SOURCE"], registry.fetch("libuv").compiler_flags
-    assert_equal [{ module_name: "std.c.libuv_system", alias: "sys" }], registry.fetch("libuv").module_imports
-    assert_equal "LIBUV_HEADER", registry.fetch("libuv").env_var
-    assert_equal ["uv_", "UV_"], registry.fetch("libuv").declaration_name_prefixes
-    assert_includes registry.fetch("libuv").header_candidates, "/usr/include/uv.h"
-    assert_includes registry.fetch("libuv").header_candidates, "/usr/local/include/uv.h"
-    assert_equal "sys.DIR", registry.fetch("libuv").type_overrides.fetch("DIR")
-    assert_equal "sys.addrinfo", registry.fetch("libuv").type_overrides.fetch("addrinfo")
-    assert_equal "sys.sockaddr", registry.fetch("libuv").type_overrides.fetch("sockaddr")
-    assert_equal "sys.sockaddr_storage", registry.fetch("libuv").type_overrides.fetch("sockaddr_storage")
-    assert_equal "sys.sockaddr_in", registry.fetch("libuv").type_overrides.fetch("sockaddr_in")
-    assert_equal "sys.sockaddr_in6", registry.fetch("libuv").type_overrides.fetch("sockaddr_in6")
-    assert_equal "sys.termios", registry.fetch("libuv").type_overrides.fetch("termios")
-    assert_equal "uv__io_s", registry.fetch("libuv").type_overrides.fetch("uv__io_t")
-    assert_equal "sys.uv__work", registry.fetch("libuv").type_overrides.fetch("uv__work")
-    assert_equal "sys.pthread_mutex_t", registry.fetch("libuv").type_overrides.fetch("pthread_mutex_t")
-    assert_equal "sys.pthread_rwlock_t", registry.fetch("libuv").type_overrides.fetch("pthread_rwlock_t")
-    assert_equal "sys.sem_t", registry.fetch("libuv").type_overrides.fetch("sem_t")
-    assert_equal "sys.pthread_cond_t", registry.fetch("libuv").type_overrides.fetch("pthread_cond_t")
-    assert_equal "sys.pthread_barrier_t", registry.fetch("libuv").type_overrides.fetch("pthread_barrier_t")
-    assert_equal "std.c.libuv_runtime", registry.fetch("libuv_runtime").module_name
-    assert_equal ["uv"], registry.fetch("libuv_runtime").link_libraries
-    assert_equal ["-D_GNU_SOURCE"], registry.fetch("libuv_runtime").compiler_flags
-    assert_equal ["MT_LIBUV_RUNTIME_HELPERS_IMPLEMENTATION"], registry.fetch("libuv_runtime").implementation_defines
-    assert_equal [{ module_name: "std.c.libuv_system", alias: "sys" }], registry.fetch("libuv_runtime").module_imports
-    assert_equal ["mt_libuv_"], registry.fetch("libuv_runtime").declaration_name_prefixes
-    assert_includes registry.fetch("libuv_runtime").header_candidates.first, "/std/c/libuv_runtime_helpers.h"
-    assert_equal "sys.sockaddr_in", registry.fetch("libuv_runtime").type_overrides.fetch("sockaddr_in")
     assert_equal ["-D_GNU_SOURCE"], registry.fetch("libc").compiler_flags
     assert_equal "bindgen:check:libc", registry.fetch("libc").check_task_name
     assert_equal({ "__endptr" => "ptr[ptr[char]]?" }, registry.fetch("libc").function_param_type_overrides.fetch("strtoul"))

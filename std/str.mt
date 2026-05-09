@@ -1,9 +1,7 @@
 module std.str
 
-import std.ascii as ascii
 import std.maybe as maybe
 import std.mem.arena as arena
-import std.span as sp
 
 
 public function cstr_len(text: cstr) -> ptr_uint:
@@ -31,7 +29,7 @@ public function nullable_cstr_as_str(text: cstr?) -> maybe.Maybe[str]:
 
 
 public function as_byte_span(text: str) -> span[ubyte]:
-    return unsafe: sp.from_ptr[ubyte](ptr[ubyte]<-text.data, text.len)
+    return unsafe: span[ubyte](data = ptr[ubyte]<-text.data, len = text.len)
 
 
 public function utf8_byte_span_as_str(bytes: span[ubyte]) -> maybe.Maybe[str]:
@@ -109,13 +107,17 @@ public function find_byte(text: str, byte: ubyte) -> maybe.Maybe[ptr_uint]:
     return maybe.Maybe[ptr_uint].none
 
 
+function is_ascii_space(byte: ubyte) -> bool:
+    return byte == ubyte<-32 or byte == ubyte<-9 or byte == ubyte<-10 or byte == ubyte<-13 or byte == ubyte<-12
+
+
 public function trim_ascii_whitespace(text: str) -> str:
     var start: ptr_uint = 0
-    while start < text.len and ascii.is_space(byte_at(text, start)):
+    while start < text.len and is_ascii_space(byte_at(text, start)):
         start += 1
 
     var stop = text.len
-    while stop > start and ascii.is_space(byte_at(text, stop - 1)):
+    while stop > start and is_ascii_space(byte_at(text, stop - 1)):
         stop -= 1
 
     return unsafe: str(data = text.data + start, len = stop - start)

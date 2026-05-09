@@ -11,7 +11,7 @@ class MilkTeaRunTest < Minitest::Test
       output_path = File.join(dir, "demo-run")
       c_path = File.join(dir, "demo-run.c")
 
-      result = MilkTea::Run.run(language_standard_path, output_path:, cc: compiler_path, keep_c_path: c_path)
+      result = MilkTea::Run.run(language_fixture_path, output_path:, cc: compiler_path, keep_c_path: c_path)
 
       assert_equal "hello\n", result.stdout
       assert_equal "warn\n", result.stderr
@@ -19,14 +19,12 @@ class MilkTeaRunTest < Minitest::Test
       assert_equal File.expand_path(output_path), result.output_path
       assert_equal File.expand_path(c_path), result.c_path
       assert_equal File.expand_path(compiler_path), result.compiler
-      assert_includes result.link_flags, "-lm"
-      assert_includes result.link_flags, "-luv"
+      assert_equal [], result.link_flags
       assert File.exist?(output_path)
       assert File.exist?(c_path)
       refute_match(/^#line\s+/m, File.read(c_path))
       invocation = File.read(compiler_log).lines(chomp: true)
-      assert_includes invocation, "-lm"
-      assert_includes invocation, "-luv"
+      refute_includes invocation, "-lm"
     end
   end
 
@@ -136,22 +134,27 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
-  def test_run_with_host_compiler_executes_program_importing_std_math
+  def test_run_with_host_compiler_executes_program_using_local_generic_helper
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    Dir.mktmpdir("milk-tea-run-std-math") do |dir|
-      source_path = File.join(dir, "math-smoke.mt")
+    Dir.mktmpdir("milk-tea-run-generic-helper") do |dir|
+      source_path = File.join(dir, "generic-helper.mt")
 
       File.write(source_path, [
-        "module demo.math_smoke",
+        "module demo.generic_helper",
         "",
-        "import std.math as math",
+        "function clamp[T](value: T, min_value: T, max_value: T) -> T:",
+        "    if value < min_value:",
+        "        return min_value",
+        "    elif value > max_value:",
+        "        return max_value",
+        "    return value",
         "",
         "function main() -> int:",
-        "    let clamped = math.clamp(42, 0, 40)",
+        "    let clamped = clamp(42, 0, 40)",
         "    if clamped == 40:",
-        "        return math.max(6, 7)",
+        "        return 7",
         "    return 1",
         "",
       ].join("\n"))
@@ -281,7 +284,7 @@ class MilkTeaRunTest < Minitest::Test
         "    value: int",
         "",
         "methods Counter:",
-        "    edit function add(delta: int):",
+        "    editable function add(delta: int):",
         "        this.value += delta",
         "",
         "    function read() -> int:",
@@ -330,7 +333,7 @@ class MilkTeaRunTest < Minitest::Test
         "    value: int",
         "",
         "methods Counter:",
-        "    edit function add(delta: int):",
+        "    editable function add(delta: int):",
         "        this.value += delta",
         "",
         "    function read() -> int:",
@@ -1805,8 +1808,8 @@ class MilkTeaRunTest < Minitest::Test
 
   private
 
-  def language_standard_path
-    File.expand_path("../../examples/language_standard.mt", __dir__)
+  def language_fixture_path
+    File.expand_path("../fixtures/language_fixture.mt", __dir__)
   end
 
   def write_fake_script_compiler(dir, log_path, stdout:, stderr:, exit_status:)

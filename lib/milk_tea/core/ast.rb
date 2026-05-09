@@ -33,6 +33,7 @@ module MilkTea
     end
     LinkDirective = Data.define(:value)
     IncludeDirective = Data.define(:value)
+    CompilerFlagDirective = Data.define(:value)
     ConstDecl = Data.define(:name, :type, :value, :visibility, :line) do
       def initialize(name:, type:, value:, visibility:, line: nil) = super
     end

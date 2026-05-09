@@ -228,7 +228,7 @@ methods Counter:
     function read() -> int:
         return this.value
 
-    edit function bump() -> void:
+    editable function bump() -> void:
         this.value += 1
 
     static function zero() -> Counter:
@@ -238,7 +238,7 @@ methods Counter:
 Kinds:
 
 - `function` (value receiver)
-- `edit function` (mutable receiver)
+- `editable function` (mutable receiver)
 - `static function` (no receiver)
 
 Method capabilities:
@@ -597,8 +597,6 @@ GLSL
 
 Ordinary `"..."` and `c"..."` literals may continue across following indented lines when each continued line starts with the same literal kind and contains nothing else. The segments concatenate exactly with no inserted separator, so any spaces or punctuation between pieces must be written explicitly.
 
-For runtime JSONC handling, use `std.jsonc.normalize(...)` to strip comments and trailing commas before passing the resulting `str` to strict JSON tooling, or call `std.jsonc.parse(...)` directly.
-
 In the VS Code extension, specific heredoc tags opt into embedded highlighting without changing the Milk Tea type: `GLSL`, `VERT`, `FRAG`, `COMP`, `JSON`, `JSONC`, and `SQL`. These still produce ordinary `str` or `cstr` values, and SQL heredocs should still use bound parameters rather than string interpolation.
 
 Format strings have type `str` and are valid anywhere a `str` value is accepted. Interpolated expressions must be one of: `str`, `cstr`, `bool`, a numeric primitive, or an integer-backed enum or flags type. A precision specifier `:.N` is allowed on `float` and `double` interpolations.
@@ -638,7 +636,7 @@ Rules:
 
 - async function return type is lifted to `Task[T]`
 - `await` is only allowed inside async functions
-- `async main` requires importing `std.async` or `std.libuv.async`
+- `async main` requires importing `std.async`
 - `async main` pre-lift return type must be `int` or `void`
 
 Current async limitations:
@@ -721,7 +719,7 @@ struct Counter:
     value: int
 
 methods Counter:
-    edit function bump() -> void:
+    editable function bump() -> void:
         this.value += 1
 
     function read() -> int:

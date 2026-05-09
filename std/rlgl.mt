@@ -2,9 +2,8 @@
 module std.rlgl
 
 import std.c.rlgl as c
-import std.raylib as raylib
 
-public type Matrix = raylib.Matrix
+public type Matrix = c.Matrix
 public type VertexBuffer = c.rlVertexBuffer
 public type DrawCall = c.rlDrawCall
 public type RenderBatch = c.rlRenderBatch

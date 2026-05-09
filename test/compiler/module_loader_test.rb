@@ -5,11 +5,11 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaModuleLoaderTest < Minitest::Test
-  def test_load_file_parses_language_standard_file
-    ast = MilkTea::ModuleLoader.load_file(language_standard_path)
+  def test_load_file_parses_language_fixture_file
+    ast = MilkTea::ModuleLoader.load_file(language_fixture_path)
 
-    assert_equal "examples.language_standard", ast.module_name.to_s
-    assert_equal 10, ast.declarations.length
+    assert_equal "test.fixtures.language_fixture", ast.module_name.to_s
+    assert_equal 6, ast.declarations.length
   end
 
   def test_load_file_reports_missing_files
@@ -21,24 +21,51 @@ class MilkTeaModuleLoaderTest < Minitest::Test
   end
 
   def test_check_file_runs_semantic_analysis
-    result = MilkTea::ModuleLoader.check_file(language_standard_path)
+    result = MilkTea::ModuleLoader.check_file(language_fixture_path)
 
-    assert_equal "examples.language_standard", result.module_name
-    assert_equal %w[main mode_label pair_label printf release_allocated_values], result.functions.keys.sort
+    assert_equal "test.fixtures.language_fixture", result.module_name
+    assert_equal %w[describe main], result.functions.keys.sort
   end
 
   def test_check_program_exposes_root_and_imported_modules
-    program = MilkTea::ModuleLoader.check_program(language_standard_path)
+    program = MilkTea::ModuleLoader.check_program(language_fixture_path)
     loaded_modules = program.analyses_by_module_name.keys
 
-    assert_equal language_standard_path, program.root_path
-    assert_equal "examples.language_standard", program.root_analysis.module_name
-    assert_includes loaded_modules, "examples.language_standard"
-    assert_includes loaded_modules, "examples.language_standard.foreign_bridge"
-    assert_includes loaded_modules, "examples.language_standard.external_runtime"
-    assert_includes loaded_modules, "std.fmt"
-    assert_equal :module, program.analyses_by_module_name.fetch("std.fmt").module_kind
-    assert_equal :extern_module, program.analyses_by_module_name.fetch("examples.language_standard.external_runtime").module_kind
+    assert_equal language_fixture_path, program.root_path
+    assert_equal "test.fixtures.language_fixture", program.root_analysis.module_name
+    assert_includes loaded_modules, "test.fixtures.language_fixture"
+    assert_includes loaded_modules, "test.fixtures.language_fixture.external_runtime"
+    assert_includes loaded_modules, "test.fixtures.language_fixture.types"
+    assert_includes loaded_modules, "std.status"
+    assert_equal :module, program.analyses_by_module_name.fetch("std.status").module_kind
+    assert_equal :extern_module, program.analyses_by_module_name.fetch("test.fixtures.language_fixture.external_runtime").module_kind
+  end
+
+  def test_check_program_does_not_auto_load_std_fmt_for_plain_format_strings
+    Dir.mktmpdir("milk-tea-module-loader-format-string") do |dir|
+      root_path = File.join(dir, "demo", "main.mt")
+
+      FileUtils.mkdir_p(File.dirname(root_path))
+      File.write(root_path, <<~MT)
+        module demo.main
+
+        import std.io as io
+
+        function main() -> int:
+            let count = 7
+            if not io.println(f"count=\#{count}"):
+                return 1
+            return 0
+      MT
+
+      program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
+      loaded_modules = program.analyses_by_module_name.keys
+
+      assert_includes loaded_modules, "demo.main"
+      assert_includes loaded_modules, "std.io"
+      refute_includes loaded_modules, "std.fmt"
+      refute_includes loaded_modules, "std.string"
+    end
   end
 
   def test_check_file_reports_missing_imported_modules
@@ -309,7 +336,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
   private
 
-  def language_standard_path
-    File.expand_path("../../examples/language_standard.mt", __dir__)
+  def language_fixture_path
+    File.expand_path("../fixtures/language_fixture.mt", __dir__)
   end
 end

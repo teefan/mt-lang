@@ -526,7 +526,7 @@ module MilkTea
         raise_sema_error("external function #{decl.name} cannot be async") if external && async_function
         raise_sema_error("foreign function #{decl.name} cannot be async") if foreign && async_function
         if decl.name == "main" && async_function
-          raise_sema_error("async main requires importing std.async or std.libuv.async") unless async_runtime_import_available?
+          raise_sema_error("async main requires importing std.async") unless async_runtime_import_available?
         end
 
         method_kind = decl.is_a?(AST::MethodDef) ? decl.kind : nil
@@ -544,7 +544,7 @@ module MilkTea
           body_params << value_binding(
             name: "this",
             type: receiver_type,
-            mutable: method_kind == :edit,
+            mutable: method_kind == :editable,
             kind: :param,
           )
         end
@@ -589,7 +589,7 @@ module MilkTea
         call_params = body_params
         function_receiver_type = nil
         if instance_method
-          receiver_mutable = method_kind == :edit
+          receiver_mutable = method_kind == :editable
           call_params = body_params.drop(1)
           function_receiver_type = receiver_type
         end
@@ -2339,7 +2339,6 @@ module MilkTea
             scopes:,
             receiver_type: callable_receiver_type_for_specialization(expression.callee, scopes:),
           )
-          return check_format_string_call(callable, expression.arguments, scopes:) if format_string_call?(callable, expression.arguments)
 
           check_function_call(callable, expression.arguments, scopes:)
           callable.owner.send(:check_function, callable) unless callable.type_arguments.empty?
@@ -2351,7 +2350,7 @@ module MilkTea
             scopes:,
             receiver_type: infer_method_receiver_type(receiver, scopes:, member_name: expression.callee.member),
           ) if callable.type_params.any?
-          raise_sema_error("cannot call edit method #{callable.name} on an immutable receiver") if callable.type.receiver_mutable && !assignable_receiver?(receiver, scopes)
+          raise_sema_error("cannot call editable method #{callable.name} on an immutable receiver") if callable.type.receiver_mutable && !assignable_receiver?(receiver, scopes)
 
           check_function_call(callable, expression.arguments, scopes:)
           callable.owner.send(:check_function, callable) unless callable.type_arguments.empty?
@@ -2776,32 +2775,6 @@ module MilkTea
         @mutating_argument_identifier_ids[argument.value.object_id] = true
       end
 
-      def format_string_call?(binding, arguments)
-        !format_string_call_kind(binding, arguments).nil?
-      end
-
-      def format_string_call_kind(binding, arguments)
-        return nil unless arguments.length == 1
-        return nil unless arguments.first.value.is_a?(AST::FormatString)
-
-        return :fmt_string if binding.owner.module_name == "std.fmt" && binding.name == "string"
-        return :io_print if binding.owner.module_name == "std.io" && binding.name == "print"
-        return :io_println if binding.owner.module_name == "std.io" && binding.name == "println"
-        return :io_write_error if binding.owner.module_name == "std.io" && binding.name == "write_error"
-        return :io_write_error_line if binding.owner.module_name == "std.io" && binding.name == "write_error_line"
-
-        nil
-      end
-
-      def check_format_string_call(binding, arguments, scopes:)
-        raise_sema_error("function #{binding.name} does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("function #{binding.name} expects 1 argument, got #{arguments.length}") unless arguments.length == 1
-
-        check_format_string_literal(arguments.first.value, scopes:)
-
-        binding.type.return_type
-      end
-
       def check_format_string_literal(format_string, scopes:)
         format_string.parts.each do |part|
           next unless part.is_a?(AST::FormatExprPart)
@@ -3089,11 +3062,11 @@ module MilkTea
 
         case kind
         when :str_builder_clear
-          raise_sema_error("cannot call edit method #{receiver_type}.clear on an immutable receiver") unless assignable_receiver?(receiver, scopes)
+          raise_sema_error("cannot call editable method #{receiver_type}.clear on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
           @types.fetch("void")
         when :str_builder_assign, :str_builder_append
-          raise_sema_error("cannot call edit method #{receiver_type}.#{method_name} on an immutable receiver") unless assignable_receiver?(receiver, scopes)
+          raise_sema_error("cannot call editable method #{receiver_type}.#{method_name} on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
           actual_type = infer_expression(arguments.first.value, scopes:, expected_type: @types.fetch("str"))
           ensure_argument_assignable!(
@@ -3874,7 +3847,7 @@ module MilkTea
       end
 
       def async_runtime_import_available?
-        @imports.each_value.any? { |binding| binding.name == "std.async" || binding.name == "std.libuv.async" }
+        @imports.each_value.any? { |binding| binding.name == "std.async" }
       end
 
       def validate_async_function_body!(statements)
@@ -4350,7 +4323,7 @@ module MilkTea
           raise_sema_error("for iterator #{type}.iter expects 0 arguments")
         end
         if iter_method.type.receiver_mutable
-          raise_sema_error("for iterator #{type}.iter cannot be an edit method")
+          raise_sema_error("for iterator #{type}.iter cannot be an editable method")
         end
 
         iterator_type = iter_method.type.return_type

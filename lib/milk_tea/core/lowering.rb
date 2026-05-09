@@ -27,6 +27,7 @@ module MilkTea
         @synthetic_proc_counter = 0
         @synthetic_format_counter = 0
         @format_builder_cache = {}
+        @lowered_function_c_names = {}
         @method_definitions = build_method_definitions
       end
 
@@ -60,6 +61,22 @@ module MilkTea
           enums.concat(lower_enums)
           static_asserts.concat(lower_static_asserts)
           functions.concat(lower_functions)
+        end
+
+        pending_functions = true
+        while pending_functions
+          pending_functions = false
+
+          @program.analyses_by_path.each_pair do |path, analysis|
+            next if analysis.module_kind == :extern_module
+
+            prepare_analysis(analysis, source_path: path)
+            newly_lowered = lower_functions
+            next if newly_lowered.empty?
+
+            functions.concat(newly_lowered)
+            pending_functions = true
+          end
         end
 
         opaques.concat(lower_imported_external_opaques)
@@ -430,7 +447,6 @@ module MilkTea
 
       def lower_functions
         lowered = []
-        lowered_function_c_names = {}
 
         changed = true
         while changed
@@ -443,21 +459,23 @@ module MilkTea
               if binding.type_params.any?
                 binding.instances.values.sort_by { |instance| instance.type_arguments.map(&:to_s).join(",") }.each do |instance|
                   c_name = function_binding_c_name(instance, module_name: @module_name)
-                  next if lowered_function_c_names[c_name]
+                  next if @lowered_function_c_names[c_name]
 
                   lowered << lower_function_decl(instance)
-                  lowered_function_c_names[c_name] = true
+                  @lowered_function_c_names[c_name] = true
                   changed = true
                 end
               else
                 c_name = function_binding_c_name(binding, module_name: @module_name)
-                next if lowered_function_c_names[c_name]
+                next if @lowered_function_c_names[c_name]
 
                 lowered << lower_function_decl(binding)
-                lowered_function_c_names[c_name] = true
+                @lowered_function_c_names[c_name] = true
                 if (entrypoint = build_root_main_entrypoint(binding))
+                  next if @lowered_function_c_names[entrypoint.c_name]
+
                   lowered << entrypoint
-                  lowered_function_c_names[entrypoint.c_name] = true
+                  @lowered_function_c_names[entrypoint.c_name] = true
                 end
                 changed = true
               end
@@ -468,18 +486,18 @@ module MilkTea
                 if binding.type_params.any?
                   binding.instances.values.sort_by { |instance| instance.type_arguments.map(&:to_s).join(",") }.each do |instance|
                     c_name = function_binding_c_name(instance, module_name: @module_name, receiver_type:)
-                    next if lowered_function_c_names[c_name]
+                    next if @lowered_function_c_names[c_name]
 
                     lowered << lower_function_decl(instance, receiver_type:)
-                    lowered_function_c_names[c_name] = true
+                    @lowered_function_c_names[c_name] = true
                     changed = true
                   end
                 else
                   c_name = function_binding_c_name(binding, module_name: @module_name, receiver_type:)
-                  next if lowered_function_c_names[c_name]
+                  next if @lowered_function_c_names[c_name]
 
                   lowered << lower_function_decl(binding, receiver_type:)
-                  lowered_function_c_names[c_name] = true
+                  @lowered_function_c_names[c_name] = true
                   changed = true
                 end
               end
@@ -645,131 +663,81 @@ module MilkTea
         )
       end
 
-      def build_async_main_entrypoint(binding, constructor_c_name, async_info)
-        libuv_async = analysis_for_module("std.libuv.async")
-        loop_type = analysis_for_module("std.libuv.runtime").types.fetch("Loop")
+      def build_async_main_entrypoint(binding, _constructor_c_name, async_info)
+        async_runtime_module_name = "std.async"
         task_type = async_info[:task_type]
         signature = root_main_entrypoint_signature(binding)
         raise LoweringError, "async main entrypoint requires a supported signature" unless signature
 
-        params, setup_statements, constructor_arguments, cleanup_statements = build_root_main_entrypoint_bridge(signature)
+        params, setup_statements, call_arguments, cleanup_statements = build_root_main_entrypoint_bridge(signature)
         body = []
+        env = empty_env
 
-        loop_name = "__mt_loop"
-        task_name = "__mt_task"
-        status_name = "__mt_status"
+        root_proc_name = "__mt_async_main_root"
         result_name = "__mt_result"
 
-        loop_expr = IR::Name.new(name: loop_name, type: loop_type, pointer: false)
-        task_expr = IR::Name.new(name: task_name, type: task_type, pointer: false)
-
         body.concat(setup_statements)
-        body << IR::LocalDecl.new(
-          name: loop_name,
-          c_name: loop_name,
-          type: loop_type,
-          value: IR::Call.new(
-            callee: module_function_c_name(libuv_async.module_name, "must_create_loop"),
-            arguments: [],
-            type: loop_type,
-          ),
-        )
-        body << IR::ExpressionStmt.new(
-          expression: IR::Call.new(
-            callee: module_function_c_name(libuv_async.module_name, "activate_current_loop"),
-            arguments: [loop_expr],
-            type: @types.fetch("void"),
-          ),
-        )
-        body << IR::LocalDecl.new(
-          name: task_name,
-          c_name: task_name,
-          type: task_type,
-          value: IR::Call.new(callee: constructor_c_name, arguments: constructor_arguments, type: task_type),
-        )
-        body << IR::WhileStmt.new(
-          condition: IR::Unary.new(
-            operator: "not",
-            operand: IR::Call.new(
-              callee: IR::Member.new(receiver: task_expr, member: "ready", type: task_type.field("ready")),
-              arguments: [IR::Member.new(receiver: task_expr, member: "frame", type: task_type.field("frame"))],
-              type: @types.fetch("bool"),
-            ),
-            type: @types.fetch("bool"),
-          ),
+        argument_names = binding.type.params.each_index.map { |index| "__mt_async_main_arg_#{index + 1}" }
+        binding.type.params.each_with_index do |param, index|
+          name = argument_names.fetch(index)
+          env[:scopes].last[name] = local_binding(type: param.type, c_name: name, mutable: false, pointer: false)
+          body << IR::LocalDecl.new(
+            name: name,
+            c_name: name,
+            type: param.type,
+            value: call_arguments.fetch(index),
+          )
+        end
+
+        proc_expression = AST::ProcExpr.new(
+          params: [],
+          return_type: ast_type_ref_for(task_type),
           body: [
-            IR::LocalDecl.new(
-              name: status_name,
-              c_name: status_name,
-              type: @types.fetch("int"),
-              value: IR::Call.new(
-                callee: module_function_c_name("std.libuv.runtime", "loop_run_default"),
-                arguments: [loop_expr],
-                type: @types.fetch("int"),
+            AST::ReturnStmt.new(
+              value: AST::Call.new(
+                callee: AST::Identifier.new(name: binding.name),
+                arguments: argument_names.map { |name| AST::Argument.new(name: nil, value: AST::Identifier.new(name: name)) },
               ),
-            ),
-            IR::IfStmt.new(
-              condition: IR::Binary.new(
-                operator: "!=",
-                left: IR::Name.new(name: status_name, type: @types.fetch("int"), pointer: false),
-                right: IR::IntegerLiteral.new(value: 0, type: @types.fetch("int")),
-                type: @types.fetch("bool"),
-              ),
-              then_body: [
-                IR::ExpressionStmt.new(
-                  expression: IR::Call.new(
-                    callee: "mt_fatal",
-                    arguments: [IR::StringLiteral.new(value: "async main loop_run_default failed", type: @types.fetch("cstr"), cstring: true)],
-                    type: @types.fetch("void"),
-                  ),
-                ),
-              ],
-              else_body: nil,
             ),
           ],
         )
+        root_proc_type = Types::Proc.new(params: [], return_type: task_type)
+        proc_setup, proc_value = lower_proc_expression_for_local(proc_expression, env:, local_name: root_proc_name, proc_type: root_proc_type)
+        body.concat(proc_setup)
+        body << IR::LocalDecl.new(
+          name: root_proc_name,
+          c_name: root_proc_name,
+          type: root_proc_type,
+          value: proc_value,
+        )
+
+        root_proc_expr = IR::Name.new(name: root_proc_name, type: root_proc_type, pointer: false)
 
         if async_info[:result_type] == @types.fetch("int")
+          block_on_binding = async_main_std_async_binding(async_runtime_module_name, "block_on", type_arguments: [async_info[:result_type]])
           body << IR::LocalDecl.new(
             name: result_name,
             c_name: result_name,
             type: @types.fetch("int"),
             value: IR::Call.new(
-              callee: IR::Member.new(receiver: task_expr, member: "take_result", type: task_type.field("take_result")),
-              arguments: [IR::Member.new(receiver: task_expr, member: "frame", type: task_type.field("frame"))],
+              callee: function_binding_c_name(block_on_binding, module_name: block_on_binding.owner.module_name),
+              arguments: [root_proc_expr],
               type: @types.fetch("int"),
             ),
           )
         else
+          run_binding = async_main_std_async_binding(async_runtime_module_name, "run")
           body << IR::ExpressionStmt.new(
             expression: IR::Call.new(
-              callee: IR::Member.new(receiver: task_expr, member: "take_result", type: task_type.field("take_result")),
-              arguments: [IR::Member.new(receiver: task_expr, member: "frame", type: task_type.field("frame"))],
+              callee: function_binding_c_name(run_binding, module_name: run_binding.owner.module_name),
+              arguments: [root_proc_expr],
               type: @types.fetch("void"),
             ),
           )
         end
 
         body << IR::ExpressionStmt.new(
-          expression: IR::Call.new(
-            callee: IR::Member.new(receiver: task_expr, member: "release", type: task_type.field("release")),
-            arguments: [IR::Member.new(receiver: task_expr, member: "frame", type: task_type.field("frame"))],
-            type: @types.fetch("void"),
-          ),
-        )
-        body << IR::ExpressionStmt.new(
-          expression: IR::Call.new(
-            callee: module_function_c_name(libuv_async.module_name, "deactivate_current_loop"),
-            arguments: [],
-            type: @types.fetch("void"),
-          ),
-        )
-        body << IR::ExpressionStmt.new(
-          expression: IR::Call.new(
-            callee: module_function_c_name(libuv_async.module_name, "must_release_loop"),
-            arguments: [IR::AddressOf.new(expression: loop_expr, type: pointer_to(loop_type))],
-            type: @types.fetch("void"),
-          ),
+          expression: lower_proc_release_expression(root_proc_expr, root_proc_type),
         )
         body.concat(cleanup_statements)
         body << IR::ReturnStmt.new(
@@ -784,6 +752,13 @@ module MilkTea
           body: body,
           entry_point: true,
         )
+      end
+
+      def async_main_std_async_binding(module_name, function_name, type_arguments: [])
+        binding = analysis_for_module(module_name).functions.fetch(function_name)
+        return binding if type_arguments.empty?
+
+        binding.owner.send(:instantiate_function_binding, binding, type_arguments)
       end
 
       def build_root_main_entrypoint(binding)
@@ -2434,10 +2409,6 @@ module MilkTea
       end
 
       def lower_async_expression_statement(statement, env:)
-        if (sink_lowered = lower_format_string_sink_statement(statement.expression, env:, line: statement.line))
-          return sink_lowered
-        end
-
         lowered = []
         prepared_setup, prepared_expression = prepare_expression_for_inline_lowering(
           statement.expression,
@@ -3001,11 +2972,6 @@ module MilkTea
             lowered.concat(cleanup)
             lowered << IR::ReturnStmt.new(value:, line: statement.line, source_path: @current_analysis_path)
           when AST::ExpressionStmt
-            if (sink_lowered = lower_format_string_sink_statement(statement.expression, env: local_env, line: statement.line))
-              lowered.concat(sink_lowered)
-              next
-            end
-
             prepared_setup, prepared_expression, prepared_cleanups = prepare_expression_with_cleanups(
               statement.expression,
               env: local_env,
@@ -4018,19 +3984,6 @@ module MilkTea
       def prepare_call_expression_for_inline_lowering(expression, env:, expected_type: nil, allow_root_statement_foreign: false)
         kind, _callee_name, _receiver, callee_type, binding = resolve_callee(expression.callee, env, arguments: expression.arguments)
 
-        case format_string_call_kind(binding, expression.arguments)
-        when :fmt_string
-          return lower_format_string_call_to_temp(expression.arguments.first.value, env:)
-        when :io_print
-          return lower_io_format_string_call_to_temp(expression.arguments.first.value, env:, helper_name: "print_formatted")
-        when :io_println
-          return lower_io_format_string_call_to_temp(expression.arguments.first.value, env:, helper_name: "println_formatted")
-        when :io_write_error
-          return lower_io_format_string_call_to_temp(expression.arguments.first.value, env:, helper_name: "write_error_formatted")
-        when :io_write_error_line
-          return lower_io_format_string_call_to_temp(expression.arguments.first.value, env:, helper_name: "write_error_line_formatted")
-        end
-
         if binding && kind != :variant_arm_ctor && foreign_function_binding?(binding) && !allow_root_statement_foreign && foreign_call_requires_statement_lowering?(expression, binding, env:)
           type = infer_expression_type(expression, env:, expected_type:)
           setup, value = lower_foreign_call_statement({ call: expression, binding: binding }, env:, expected_type: type, statement_position: false)
@@ -4050,68 +4003,29 @@ module MilkTea
         [callee_setup + argument_setup, AST::Call.new(callee:, arguments:)]
       end
 
-      def lower_format_string_call_to_temp(format_string, env:)
-        setup, temp_name, = build_format_string_temp_setup(format_string, env:)
-        [setup, AST::Identifier.new(name: temp_name)]
-      end
-
       def prepare_format_string_expression_for_inline_lowering(format_string, env:)
-        setup, temp_name, = build_format_string_temp_setup(format_string, env:)
-        receiver = AST::Identifier.new(name: temp_name)
+        unless format_string_has_dynamic_parts?(format_string)
+          return [[], AST::StringLiteral.new(value: format_string_static_text(format_string), cstring: false)]
+        end
 
-        (env[:prepared_expression_cleanups] ||= []) << lower_defer_cleanup_expression(
-          AST::Call.new(callee: AST::MemberAccess.new(receiver:, member: "release"), arguments: []),
-          env:,
-        )
-
-        [
-          setup,
-          AST::Call.new(callee: AST::MemberAccess.new(receiver:, member: "as_str"), arguments: []),
-        ]
-      end
-
-      def build_format_string_temp_setup(format_string, env:)
-        return build_static_format_string_temp_setup(format_string, env:) unless format_string_has_dynamic_parts?(format_string)
-
-        build_extracted_format_string_temp_setup(format_string, env:)
-      end
-
-      def build_static_format_string_temp_setup(format_string, env:)
-        string_type = std_string_type
-        ref_string_type = Types::GenericInstance.new("ref", [string_type])
-        temp_name = fresh_c_temp_name(env, "fmt_string")
-        temp_value = IR::Name.new(name: temp_name, type: string_type, pointer: false)
-        temp_ref = IR::AddressOf.new(expression: temp_value, type: ref_string_type)
-        register_prepared_temp!(env, temp_name, string_type)
-
-        text = format_string.parts.filter_map do |part|
-          next unless part.is_a?(AST::FormatTextPart)
-
-          part.value
-        end.join
-
-        setup = [
-          IR::LocalDecl.new(
-            name: temp_name,
-            c_name: temp_name,
-            type: string_type,
-            value: IR::Call.new(
-              callee: std_string_from_str_c_name,
-              arguments: [IR::StringLiteral.new(value: text, type: @types.fetch("str"), cstring: false)],
-              type: string_type,
+        setup, temp_name = build_dynamic_format_string_temp_setup(format_string, env:)
+        temp_value = IR::Name.new(name: temp_name, type: @types.fetch("str"), pointer: false)
+        (env[:prepared_expression_cleanups] ||= []) << [
+          IR::ExpressionStmt.new(
+            expression: IR::Call.new(
+              callee: "mt_format_str_release",
+              arguments: [temp_value],
+              type: @types.fetch("void"),
             ),
           ),
         ]
 
-        [setup, temp_name, temp_ref]
+        [setup, AST::Identifier.new(name: temp_name)]
       end
 
-      def build_extracted_format_string_temp_setup(format_string, env:)
-        string_type = std_string_type
-        ref_string_type = Types::GenericInstance.new("ref", [string_type])
+      def build_dynamic_format_string_temp_setup(format_string, env:)
+        string_type = @types.fetch("str")
         temp_name = fresh_c_temp_name(env, "fmt_string")
-        temp_value = IR::Name.new(name: temp_name, type: string_type, pointer: false)
-        temp_ref = IR::AddressOf.new(expression: temp_value, type: ref_string_type)
         register_prepared_temp!(env, temp_name, string_type)
 
         setup, builder_c_name, builder_arguments = build_format_string_builder_call(format_string, env:)
@@ -4122,7 +4036,15 @@ module MilkTea
           value: IR::Call.new(callee: builder_c_name, arguments: builder_arguments, type: string_type),
         )
 
-        [setup, temp_name, temp_ref]
+        [setup, temp_name]
+      end
+
+      def format_string_static_text(format_string)
+        format_string.parts.filter_map do |part|
+          next unless part.is_a?(AST::FormatTextPart)
+
+          part.value
+        end.join
       end
 
       def build_format_string_helper_plan(format_string, env:)
@@ -4181,7 +4103,7 @@ module MilkTea
 
       def build_format_string_builder_call(format_string, env:)
         setup, helper_params, helper_arguments, helper_parts = build_format_string_helper_plan(format_string, env:)
-        signature = format_string_helper_signature(:owned_string, helper_parts)
+        signature = format_string_helper_signature(:owned_str, helper_parts)
         helper_c_name = @format_builder_cache[signature]
         unless helper_c_name
           helper_c_name = "#{@module_prefix}__fmt_#{fresh_format_symbol}"
@@ -4190,22 +4112,6 @@ module MilkTea
         end
 
         [setup, helper_c_name, helper_arguments]
-      end
-
-      def build_string_format_sink_call(format_string, output_ref, env:, assign:)
-        setup, helper_params, helper_arguments, helper_parts = build_format_string_helper_plan(format_string, env:)
-        signature = format_string_helper_signature(assign ? :string_assign : :string_append, helper_parts)
-        helper_c_name = @format_builder_cache[signature]
-        unless helper_c_name
-          helper_c_name = "#{@module_prefix}__fmt_#{fresh_format_symbol}"
-          @synthetic_functions << build_format_string_sink_function(helper_c_name, helper_params, helper_parts, assign:)
-          @format_builder_cache[signature] = helper_c_name
-        end
-
-        [
-          setup,
-          IR::Call.new(callee: helper_c_name, arguments: [output_ref, *helper_arguments], type: @types.fetch("void")),
-        ]
       end
 
       def format_string_helper_signature(kind, helper_parts)
@@ -4226,62 +4132,57 @@ module MilkTea
       end
 
       def build_format_string_builder_function(helper_c_name, helper_params, helper_parts)
-        string_type = std_string_type
-        ref_string_type = Types::GenericInstance.new("ref", [string_type])
+        string_type = @types.fetch("str")
         result_name = "__mt_result"
         result_value = IR::Name.new(name: result_name, type: string_type, pointer: false)
-        result_ref = IR::AddressOf.new(expression: result_value, type: ref_string_type)
+        total_len_name = "__mt_total_len"
+        total_len_value = IR::Name.new(name: total_len_name, type: @types.fetch("ptr_uint"), pointer: false)
+        offset_name = "__mt_offset"
+        offset_value = IR::Name.new(name: offset_name, type: @types.fetch("ptr_uint"), pointer: false)
         literal_capacity = helper_parts.sum { |part| part[:kind] == :text ? part[:value].bytesize : 0 }
-        initializer = if literal_capacity.zero?
-                        IR::Call.new(callee: std_string_create_c_name, arguments: [], type: string_type)
-                      else
-                        IR::Call.new(
-                          callee: std_string_with_capacity_c_name,
-                          arguments: [IR::IntegerLiteral.new(value: literal_capacity, type: @types.fetch("ptr_uint"))],
-                          type: string_type,
-                        )
-                      end
 
         body = [
-          IR::LocalDecl.new(name: result_name, c_name: result_name, type: string_type, value: initializer),
+          IR::LocalDecl.new(
+            name: total_len_name,
+            c_name: total_len_name,
+            type: @types.fetch("ptr_uint"),
+            value: IR::IntegerLiteral.new(value: literal_capacity, type: @types.fetch("ptr_uint")),
+          ),
         ]
 
         helper_parts.each do |part|
-          if part[:kind] == :text
-            body << IR::ExpressionStmt.new(
-              expression: IR::Call.new(
-                callee: std_fmt_function_c_name("append"),
-                arguments: [result_ref, IR::StringLiteral.new(value: part[:value], type: @types.fetch("str"), cstring: false)],
-                type: @types.fetch("void"),
-              ),
-            )
-            next
-          end
+          next if part[:kind] == :text
 
-          if part[:kind] == :precision_expression
-            body << IR::ExpressionStmt.new(
-              expression: IR::Call.new(
-                callee: std_fmt_function_c_name(part[:append_function_name]),
-                arguments: [
-                  result_ref,
-                  IR::Name.new(name: part[:parameter_c_name], type: part[:parameter_type], pointer: false),
-                  IR::IntegerLiteral.new(value: part[:precision], type: @types.fetch("int")),
-                ],
-                type: @types.fetch("void"),
-              ),
-            )
-            next
-          end
-
-          body << IR::ExpressionStmt.new(
-            expression: IR::Call.new(
-              callee: std_fmt_function_c_name(part[:append_function_name]),
-              arguments: [
-                result_ref,
-                IR::Name.new(name: part[:parameter_c_name], type: part[:parameter_type], pointer: false),
-              ],
-              type: @types.fetch("void"),
+          body << IR::Assignment.new(
+            target: total_len_value,
+            operator: "=",
+            value: IR::Binary.new(
+              operator: "+",
+              left: total_len_value,
+              right: format_string_part_length_expression(part),
+              type: @types.fetch("ptr_uint"),
             ),
+          )
+        end
+
+        body << IR::LocalDecl.new(
+          name: result_name,
+          c_name: result_name,
+          type: string_type,
+          value: IR::Call.new(callee: "mt_format_str_make", arguments: [total_len_value], type: string_type),
+        )
+        body << IR::LocalDecl.new(
+          name: offset_name,
+          c_name: offset_name,
+          type: @types.fetch("ptr_uint"),
+          value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
+        )
+
+        helper_parts.each do |part|
+          body << IR::Assignment.new(
+            target: offset_value,
+            operator: "=",
+            value: format_string_part_append_expression(part, result_value, offset_value),
           )
         end
 
@@ -4297,125 +4198,59 @@ module MilkTea
         )
       end
 
-      def build_format_string_sink_function(helper_c_name, helper_params, helper_parts, assign:)
-        output_name = "output"
-        output_c_name = "__mt_output"
-        output_ref = IR::Name.new(name: output_c_name, type: std_string_ref_type, pointer: false)
-        body = []
-
-        if assign
-          body << IR::ExpressionStmt.new(
-            expression: IR::Call.new(
-              callee: std_string_clear_c_name,
-              arguments: [output_ref],
-              type: @types.fetch("void"),
-            ),
-          )
-        end
-
-        helper_parts.each do |part|
-          if part[:kind] == :text
-            body << IR::ExpressionStmt.new(
-              expression: IR::Call.new(
-                callee: std_fmt_function_c_name("append"),
-                arguments: [output_ref, IR::StringLiteral.new(value: part[:value], type: @types.fetch("str"), cstring: false)],
-                type: @types.fetch("void"),
-              ),
-            )
-            next
-          end
-
-          if part[:kind] == :precision_expression
-            body << IR::ExpressionStmt.new(
-              expression: IR::Call.new(
-                callee: std_fmt_function_c_name(part[:append_function_name]),
-                arguments: [
-                  output_ref,
-                  IR::Name.new(name: part[:parameter_c_name], type: part[:parameter_type], pointer: false),
-                  IR::IntegerLiteral.new(value: part[:precision], type: @types.fetch("int")),
-                ],
-                type: @types.fetch("void"),
-              ),
-            )
-            next
-          end
-
-          body << IR::ExpressionStmt.new(
-            expression: IR::Call.new(
-              callee: std_fmt_function_c_name(part[:append_function_name]),
-              arguments: [
-                output_ref,
-                IR::Name.new(name: part[:parameter_c_name], type: part[:parameter_type], pointer: false),
-              ],
-              type: @types.fetch("void"),
-            ),
-          )
-        end
-
-        body << IR::ReturnStmt.new(value: nil)
-
-        IR::Function.new(
-          name: helper_c_name,
-          c_name: helper_c_name,
-          params: [IR::Param.new(name: output_name, c_name: output_c_name, type: std_string_ref_type, pointer: false), *helper_params],
-          return_type: @types.fetch("void"),
-          body: body,
-          entry_point: false,
-        )
-      end
-
       def format_string_has_dynamic_parts?(format_string)
         format_string.parts.any? { |part| part.is_a?(AST::FormatExprPart) }
       end
 
-      def lower_io_format_string_call_to_temp(format_string, env:, helper_name:)
-        setup, _temp_name, temp_ref = build_format_string_temp_setup(format_string, env:)
-        result_name = fresh_c_temp_name(env, helper_name)
-        register_prepared_temp!(env, result_name, @types.fetch("bool"))
-        setup << IR::LocalDecl.new(
-          name: result_name,
-          c_name: result_name,
-          type: @types.fetch("bool"),
-          value: IR::Call.new(
-            callee: std_io_function_c_name(helper_name),
-            arguments: [temp_ref],
-            type: @types.fetch("bool"),
-          ),
-        )
+      def format_string_part_length_expression(part)
+        parameter = format_string_part_parameter_expression(part)
 
-        [setup, AST::Identifier.new(name: result_name)]
-      end
-
-      def format_string_call?(binding, arguments)
-        !format_string_call_kind(binding, arguments).nil?
-      end
-
-      def format_string_call_kind(binding, arguments)
-        return nil unless binding
-        return nil unless arguments.length == 1
-        return nil unless arguments.first.value.is_a?(AST::FormatString)
-
-        return :fmt_string if binding.owner.module_name == "std.fmt" && binding.name == "string"
-        return :io_print if binding.owner.module_name == "std.io" && binding.name == "print"
-        return :io_println if binding.owner.module_name == "std.io" && binding.name == "println"
-        return :io_write_error if binding.owner.module_name == "std.io" && binding.name == "write_error"
-        return :io_write_error_line if binding.owner.module_name == "std.io" && binding.name == "write_error_line"
-
-        nil
-      end
-
-      def format_string_sink_call_kind(kind, binding, arguments)
-        return nil unless binding
-
-        case kind
-        when :function
-          return :fmt_append if binding.owner.module_name == "std.fmt" && %w[append append_str].include?(binding.name) && arguments.length == 2 && arguments.last.value.is_a?(AST::FormatString)
-        when :method
-          return :string_append if binding.owner.module_name == "std.string" && binding.name == "append" && arguments.length == 1 && arguments.first.value.is_a?(AST::FormatString)
-          return :string_assign if binding.owner.module_name == "std.string" && binding.name == "assign" && arguments.length == 1 && arguments.first.value.is_a?(AST::FormatString)
+        if part[:kind] == :precision_expression
+          return IR::Call.new(
+            callee: "mt_format_double_precision_len",
+            arguments: [parameter, IR::IntegerLiteral.new(value: part[:precision], type: @types.fetch("int"))],
+            type: @types.fetch("ptr_uint"),
+          )
         end
 
-        nil
+        case part[:append_function_name]
+        when "append"
+          IR::Member.new(receiver: parameter, member: "len", type: @types.fetch("ptr_uint"))
+        when "append_cstr"
+          IR::Call.new(callee: "mt_format_cstr_len", arguments: [parameter], type: @types.fetch("ptr_uint"))
+        else
+          IR::Call.new(callee: mt_format_length_c_name(part[:append_function_name]), arguments: [parameter], type: @types.fetch("ptr_uint"))
+        end
+      end
+
+      def format_string_part_append_expression(part, result_value, offset_value)
+        if part[:kind] == :text
+          return IR::Call.new(
+            callee: "mt_format_append_str",
+            arguments: [result_value, offset_value, IR::StringLiteral.new(value: part[:value], type: @types.fetch("str"), cstring: false)],
+            type: @types.fetch("ptr_uint"),
+          )
+        end
+
+        parameter = format_string_part_parameter_expression(part)
+
+        if part[:kind] == :precision_expression
+          return IR::Call.new(
+            callee: "mt_format_append_double_precision",
+            arguments: [result_value, offset_value, parameter, IR::IntegerLiteral.new(value: part[:precision], type: @types.fetch("int"))],
+            type: @types.fetch("ptr_uint"),
+          )
+        end
+
+        IR::Call.new(
+          callee: mt_format_append_c_name(part[:append_function_name]),
+          arguments: [result_value, offset_value, parameter],
+          type: @types.fetch("ptr_uint"),
+        )
+      end
+
+      def format_string_part_parameter_expression(part)
+        IR::Name.new(name: part[:parameter_c_name], type: part[:parameter_type], pointer: false)
       end
 
       def format_string_append_plan(type)
@@ -4440,64 +4275,32 @@ module MilkTea
         raise LoweringError, "formatted string interpolation supports str, cstr, bool, numeric primitives, and integer-backed enums/flags, got #{type}"
       end
 
-      def std_fmt_function_c_name(name)
-        binding = analysis_for_module("std.fmt").functions.fetch(name)
-        function_binding_c_name(binding, module_name: binding.owner.module_name)
+      def mt_format_length_c_name(name)
+        {
+          "append_bool" => "mt_format_bool_len",
+          "append_float" => "mt_format_float_len",
+          "append_double" => "mt_format_double_len",
+          "append_int" => "mt_format_int_len",
+          "append_uint" => "mt_format_uint_len",
+          "append_ptr_uint" => "mt_format_ptr_uint_len",
+          "append_long" => "mt_format_long_len",
+          "append_ulong" => "mt_format_ulong_len",
+        }.fetch(name)
       end
 
-      def std_io_function_c_name(name)
-        binding = analysis_for_module("std.io").functions.fetch(name)
-        function_binding_c_name(binding, module_name: binding.owner.module_name)
-      end
-
-      def canonical_std_io_direct_call_c_name(binding)
-        return nil unless binding
-        return nil unless binding.owner.module_name == "std.io"
-
-        case binding.name
-        when "print"
-          std_io_function_c_name("write")
-        when "println"
-          std_io_function_c_name("write_line")
-        else
-          nil
-        end
-      end
-
-      def std_string_type
-        analysis_for_module("std.string").types.fetch("String")
-      end
-
-      def std_string_ref_type
-        Types::GenericInstance.new("ref", [std_string_type])
-      end
-
-      def std_string_create_c_name
-        analysis = analysis_for_module("std.string")
-        string_type = analysis.types.fetch("String")
-        binding = analysis.methods.fetch(string_type).fetch("create")
-        function_binding_c_name(binding, module_name: binding.owner.module_name, receiver_type: string_type)
-      end
-
-      def std_string_with_capacity_c_name
-        analysis = analysis_for_module("std.string")
-        string_type = analysis.types.fetch("String")
-        binding = analysis.methods.fetch(string_type).fetch("with_capacity")
-        function_binding_c_name(binding, module_name: binding.owner.module_name, receiver_type: string_type)
-      end
-
-      def std_string_from_str_c_name
-        analysis = analysis_for_module("std.string")
-        string_type = analysis.types.fetch("String")
-        binding = analysis.methods.fetch(string_type).fetch("from_str")
-        function_binding_c_name(binding, module_name: binding.owner.module_name, receiver_type: string_type)
-      end
-
-      def std_string_clear_c_name
-        analysis = analysis_for_module("std.string")
-        string_type = analysis.types.fetch("String")
-        binding = analysis.methods.fetch(string_type).fetch("clear")
-        function_binding_c_name(binding, module_name: binding.owner.module_name, receiver_type: string_type)
+      def mt_format_append_c_name(name)
+        {
+          "append" => "mt_format_append_str",
+          "append_cstr" => "mt_format_append_cstr",
+          "append_bool" => "mt_format_append_bool",
+          "append_float" => "mt_format_append_float",
+          "append_double" => "mt_format_append_double",
+          "append_int" => "mt_format_append_int",
+          "append_uint" => "mt_format_append_uint",
+          "append_ptr_uint" => "mt_format_append_ptr_uint",
+          "append_long" => "mt_format_append_long",
+          "append_ulong" => "mt_format_append_ulong",
+        }.fetch(name)
       end
 
       def prepare_binary_expression_for_inline_lowering(expression, env:, expected_type: nil)
@@ -4770,9 +4573,8 @@ module MilkTea
             return lower_foreign_call_inline(expression, callee_binding, env:, type:)
           end
 
-          canonical_callee_name = canonical_std_io_direct_call_c_name(callee_binding) || callee_name
           arguments = lower_call_arguments(expression.arguments, callee_type, env:)
-          IR::Call.new(callee: canonical_callee_name, arguments:, type:)
+          IR::Call.new(callee: callee_name, arguments:, type:)
         when :callable_value
           callee_expression = lower_expression(expression.callee, env:, expected_type: callee_type)
           if proc_type?(callee_type)
@@ -4992,60 +4794,6 @@ module MilkTea
         end
 
         lowered_receiver
-      end
-
-      def lower_string_sink_receiver_argument(receiver, env:)
-        lowered_receiver = lower_expression(receiver, env:)
-
-        return lowered_receiver if ref_type?(lowered_receiver.type)
-        return lowered_receiver if pointer_type?(lowered_receiver.type)
-
-        if lowered_receiver.is_a?(IR::Name) && lowered_receiver.pointer
-          return lowered_receiver
-        end
-
-        if lowered_receiver.is_a?(IR::Unary) && lowered_receiver.operator == "*"
-          return lowered_receiver.operand
-        end
-
-        IR::AddressOf.new(expression: lowered_receiver, type: std_string_ref_type)
-      end
-
-      def lower_format_string_sink_statement(expression, env:, line: nil)
-        return unless expression.is_a?(AST::Call)
-
-        kind, _callee_name, receiver, _callee_type, callee_binding = resolve_callee(expression.callee, env, arguments: expression.arguments)
-        sink_kind = format_string_sink_call_kind(kind, callee_binding, expression.arguments)
-        return unless sink_kind
-
-        env[:prepared_expression_cleanups] ||= []
-        start_index = env[:prepared_expression_cleanups].length
-
-        case sink_kind
-        when :fmt_append
-          output_ref = lower_contextual_expression(expression.arguments.first.value, env:, expected_type: std_string_ref_type)
-          format_string = expression.arguments.last.value
-          setup, call = build_string_format_sink_call(format_string, output_ref, env:, assign: false)
-        when :string_append
-          output_ref = lower_string_sink_receiver_argument(receiver, env:)
-          format_string = expression.arguments.first.value
-          setup, call = build_string_format_sink_call(format_string, output_ref, env:, assign: false)
-        when :string_assign
-          output_ref = lower_string_sink_receiver_argument(receiver, env:)
-          format_string = expression.arguments.first.value
-          setup, call = build_string_format_sink_call(format_string, output_ref, env:, assign: true)
-        else
-          raise LoweringError, "unsupported format sink kind #{sink_kind}"
-        end
-
-        cleanup_count = env[:prepared_expression_cleanups].length - start_index
-        cleanups = cleanup_count.positive? ? env[:prepared_expression_cleanups].slice!(start_index, cleanup_count) : []
-
-        [
-          *setup,
-          IR::ExpressionStmt.new(expression: call, line: line || expression.line, source_path: @current_analysis_path),
-          *cleanups.flat_map(&:itself),
-        ]
       end
 
       def lower_addr_expression(expression, env:, target_type:)

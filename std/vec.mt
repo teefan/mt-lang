@@ -2,7 +2,6 @@ module std.vec
 
 import std.mem.heap as heap
 import std.maybe as maybe
-import std.span as sp
 
 public struct Vec[T]:
     data: ptr[T]?
@@ -37,15 +36,18 @@ methods Vec[T]:
 
 
     public function as_span() -> span[T]:
-        return sp.from_nullable_ptr[T](this.data, this.len)
+        if this.data == null and this.len != 0:
+            fatal(c"vec.as_span requires storage when len > 0")
+
+        return unsafe: span[T](data = ptr[T]<-this.data, len = this.len)
 
 
-    public edit function clear() -> void:
+    public editable function clear() -> void:
         this.len = 0
         return
 
 
-    public edit function release() -> void:
+    public editable function release() -> void:
         heap.release(this.data)
         this.data = null
         this.len = 0
@@ -53,7 +55,7 @@ methods Vec[T]:
         return
 
 
-    public edit function try_reserve(min_capacity: ptr_uint) -> bool:
+    public editable function try_reserve(min_capacity: ptr_uint) -> bool:
         if min_capacity <= this.capacity:
             return true
 
@@ -76,13 +78,13 @@ methods Vec[T]:
         return true
 
 
-    public edit function reserve(min_capacity: ptr_uint) -> void:
+    public editable function reserve(min_capacity: ptr_uint) -> void:
         if not this.try_reserve(min_capacity):
             fatal(c"vec.reserve out of memory")
         return
 
 
-    public edit function try_push(item: T) -> bool:
+    public editable function try_push(item: T) -> bool:
         if this.len == this.capacity:
             if not this.try_reserve(this.len + 1):
                 return false
@@ -99,7 +101,7 @@ methods Vec[T]:
         return true
 
 
-    public edit function push(item: T) -> void:
+    public editable function push(item: T) -> void:
         if not this.try_push(item):
             fatal(c"vec.push out of memory")
         return
@@ -118,7 +120,7 @@ methods Vec[T]:
             return read(data_ptr + index)
 
 
-    public edit function set(index: ptr_uint, item: T) -> void:
+    public editable function set(index: ptr_uint, item: T) -> void:
         if index >= this.len:
             fatal(c"vec.set index out of bounds")
 
@@ -132,7 +134,7 @@ methods Vec[T]:
         return
 
 
-    public edit function pop() -> maybe.Maybe[T]:
+    public editable function pop() -> maybe.Maybe[T]:
         if this.len == 0:
             return maybe.Maybe[T].none
 
@@ -146,7 +148,7 @@ methods Vec[T]:
             let data_ptr = ptr[T]<-data
             return maybe.Maybe[T].some(value= read(data_ptr + last_index))
 
-    public edit function remove_swap(index: ptr_uint) -> T:
+    public editable function remove_swap(index: ptr_uint) -> T:
         if index >= this.len:
             fatal(c"vec.remove_swap index out of bounds")
 
@@ -163,7 +165,7 @@ methods Vec[T]:
             return result
 
 
-    public edit function remove_ordered(index: ptr_uint) -> T:
+    public editable function remove_ordered(index: ptr_uint) -> T:
         if index >= this.len:
             fatal(c"vec.remove_ordered index out of bounds")
 

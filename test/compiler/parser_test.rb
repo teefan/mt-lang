@@ -3,55 +3,47 @@
 require_relative "../test_helper"
 
 class MilkTeaParserTest < Minitest::Test
-  def test_parses_language_standard_file_into_expected_ast_shape
-    ast = MilkTea::Parser.parse(File.read(language_standard_path), path: language_standard_path)
+  def test_parses_language_fixture_file_into_expected_ast_shape
+    ast = MilkTea::Parser.parse(File.read(language_fixture_path), path: language_fixture_path)
 
-    assert_equal "examples.language_standard", ast.module_name.to_s
+    assert_equal "test.fixtures.language_fixture", ast.module_name.to_s
     assert_equal :module, ast.module_kind
     assert_equal [], ast.directives
-    assert_equal 9, ast.imports.length
+    assert_equal 4, ast.imports.length
     assert_equal(
       [
-        ["std.fmt", "fmt"],
-        ["std.io", "io"],
         ["std.maybe", "maybe"],
         ["std.status", "status"],
-        ["std.string", "string"],
-        ["examples.language_standard.algorithms", "alg"],
-        ["examples.language_standard.async_showcase", "async_demo"],
-        ["examples.language_standard.foreign_bridge", "foreign_demo"],
-        ["examples.language_standard.types", "types"],
+        ["test.fixtures.language_fixture.external_runtime", "runtime"],
+        ["test.fixtures.language_fixture.types", "types"],
       ],
       ast.imports.map { |import| [import.path.to_s, import.alias_name] },
     )
     assert_equal(
-      %w[ExternFunctionDecl ConstDecl ConstDecl TypeAliasDecl StructDecl MethodsBlock FunctionDef FunctionDef FunctionDef FunctionDef],
+      %w[ConstDecl TypeAliasDecl StructDecl MethodsBlock FunctionDef FunctionDef],
       ast.declarations.map { |node| node.class.name.split("::").last },
     )
 
-    extern_decl = ast.declarations[0]
-    assert_equal "printf", extern_decl.name
-
-    type_alias = ast.declarations[3]
+    type_alias = ast.declarations[1]
     assert_equal "ExitCode", type_alias.name
 
-    struct_decl = ast.declarations[4]
+    struct_decl = ast.declarations[2]
     assert_equal "AppState", struct_decl.name
-    assert_equal %w[counter header block last_bits], struct_decl.fields.map(&:name)
+    assert_equal %w[counter touched], struct_decl.fields.map(&:name)
 
-    methods_block = ast.declarations[5]
+    methods_block = ast.declarations[3]
     assert_equal "AppState", methods_block.type_name.to_s
-    assert_equal %w[create touch label], methods_block.methods.map(&:name)
+    assert_equal %w[create touch read], methods_block.methods.map(&:name)
 
-    create_method, touch_method, label_method = methods_block.methods
+    create_method, touch_method, read_method = methods_block.methods
     assert_equal :static, create_method.kind
-    assert_equal :edit, touch_method.kind
-    assert_equal :plain, label_method.kind
+    assert_equal :editable, touch_method.kind
+    assert_equal :plain, read_method.kind
 
-    main_fn = ast.declarations[9]
+    main_fn = ast.declarations[5]
     assert_equal "main", main_fn.name
     assert_equal(
-      %w[StaticAssert LocalDecl ExpressionStmt MatchStmt DeferStmt ReturnStmt],
+      %w[LocalDecl DeferStmt ExpressionStmt MatchStmt ReturnStmt],
       main_fn.body.map { |node| node.class.name.split("::").last }.uniq,
     )
     assert main_fn.body.any? { |node| node.is_a?(MilkTea::AST::MatchStmt) }
@@ -1317,7 +1309,7 @@ class MilkTeaParserTest < Minitest::Test
           async function read() -> int:
               return this.value
 
-          async edit function bump() -> void:
+          async editable function bump() -> void:
               this.value += 1
     MT
 
@@ -1328,7 +1320,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal true, methods.methods[0].async
     assert_equal :plain, methods.methods[0].kind
     assert_equal true, methods.methods[1].async
-    assert_equal :edit, methods.methods[1].kind
+    assert_equal :editable, methods.methods[1].kind
   end
 
   def test_parses_generic_methods_block_targets
@@ -1672,7 +1664,7 @@ class MilkTeaParserTest < Minitest::Test
 
   private
 
-  def language_standard_path
-    File.expand_path("../../examples/language_standard.mt", __dir__)
+  def language_fixture_path
+    File.expand_path("../fixtures/language_fixture.mt", __dir__)
   end
 end

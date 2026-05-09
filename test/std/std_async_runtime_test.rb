@@ -3,13 +3,13 @@
 require "tmpdir"
 require_relative "../test_helper"
 
-class MilkTeaStdLibuvAsyncTest < Minitest::Test
+class MilkTeaStdAsyncRuntimeTest < Minitest::Test
   def test_host_runtime_executes_async_await_with_timer_and_work_tasks
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_libuv_async",
+      "module demo.std_async_runtime",
       "",
       "import std.async as aio",
       "",
@@ -29,7 +29,7 @@ class MilkTeaStdLibuvAsyncTest < Minitest::Test
     assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 44, result.exit_status
-    assert_includes result.link_flags, "-luv"
+    assert_equal [], result.link_flags
   end
 
   def test_host_runtime_executes_async_main_with_void_result
@@ -53,7 +53,7 @@ class MilkTeaStdLibuvAsyncTest < Minitest::Test
     assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 0, result.exit_status
-    assert_includes result.link_flags, "-luv"
+    assert_equal [], result.link_flags
   end
 
   def test_host_runtime_executes_async_run_for_void_tasks
@@ -61,7 +61,7 @@ class MilkTeaStdLibuvAsyncTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_libuv_async_void",
+      "module demo.std_async_runtime_void",
       "",
       "import std.async as aio",
       "",
@@ -81,7 +81,7 @@ class MilkTeaStdLibuvAsyncTest < Minitest::Test
     assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 3, result.exit_status
-    assert_includes result.link_flags, "-luv"
+    assert_equal [], result.link_flags
   end
 
   def test_host_runtime_executes_block_on_with_direct_function_root
@@ -106,7 +106,7 @@ class MilkTeaStdLibuvAsyncTest < Minitest::Test
     assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 42, result.exit_status
-    assert_includes result.link_flags, "-luv"
+    assert_equal [], result.link_flags
   end
 
   def test_host_runtime_executes_block_on_with_captured_root_closure
@@ -134,7 +134,7 @@ class MilkTeaStdLibuvAsyncTest < Minitest::Test
     assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 42, result.exit_status
-    assert_includes result.link_flags, "-luv"
+    assert_equal [], result.link_flags
   end
 
   def test_host_runtime_executes_generic_async_work_with_polling_helpers
@@ -142,10 +142,9 @@ class MilkTeaStdLibuvAsyncTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_libuv_async_generic_work",
+      "module demo.std_async_runtime_generic_work",
       "",
       "import std.async as aio",
-      "import std.libuv.runtime as rt",
       "import std.status as status",
       "",
       "struct Pair:",
@@ -156,21 +155,21 @@ class MilkTeaStdLibuvAsyncTest < Minitest::Test
       "    return Pair(left = 18, right = 24)",
       "",
       "function main() -> int:",
-      "    let loop_result = rt.create_loop()",
-      "    if status.is_err(loop_result):",
+      "    let runtime_result = aio.create_runtime()",
+      "    if status.is_err(runtime_result):",
       "        return 1",
-      "    match loop_result:",
+      "    match runtime_result:",
       "        status.Status.err:",
       "            return 1",
       "        status.Status.ok as payload:",
-      "            var loop = payload.value",
+      "            var runtime = payload.value",
       "",
-      "            let task = aio.work_on(loop, make_pair)",
+      "            let task = aio.work_on(runtime, make_pair)",
       "            while not aio.ready(task):",
-      "                aio.pump(loop)",
+      "                aio.pump(runtime)",
       "",
       "            let pair = aio.finish(task)",
-      "            if rt.loop_release(ref_of(loop)) != 0:",
+      "            if aio.release_runtime(ref_of(runtime)) != 0:",
       "                return 2",
       "            return pair.left + pair.right",
       "    return 3",
@@ -182,13 +181,13 @@ class MilkTeaStdLibuvAsyncTest < Minitest::Test
     assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 42, result.exit_status
-    assert_includes result.link_flags, "-luv"
+    assert_equal [], result.link_flags
   end
 
   private
 
   def run_program(source, compiler:)
-    Dir.mktmpdir("milk-tea-std-libuv-async") do |dir|
+    Dir.mktmpdir("milk-tea-std-async-runtime") do |dir|
       source_path = File.join(dir, "program.mt")
       File.write(source_path, source)
       return MilkTea::Run.run(source_path, cc: compiler)

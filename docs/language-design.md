@@ -110,7 +110,7 @@ struct Player:
 	radius: float
 
 methods Player:
-	edit function update(dt: float):
+	editable function update(dt: float):
 		this.position.x += this.velocity.x * dt
 		this.position.y += this.velocity.y * dt
 
@@ -233,7 +233,7 @@ struct Camera:
 	zoom: float
 
 methods Camera:
-	edit function move_by(delta: Vec2):
+	editable function move_by(delta: Vec2):
 		this.position.x += delta.x
 		this.position.y += delta.y
 
@@ -253,7 +253,7 @@ Lowering rule, in emitted C:
 Receiver rule:
 
 - Plain `function` inside `methods T:` means an implicit `this: T` value receiver.
-- `edit function` inside `methods T:` means an implicit writable `this` receiver and requires an addressable receiver.
+- `editable function` inside `methods T:` means an implicit writable `this` receiver and requires an addressable receiver.
 - `static function` inside `methods T:` means there is no receiver.
 - There is no hidden dynamic dispatch, vtable lookup, or heap allocation.
 
@@ -400,7 +400,7 @@ Notes:
 - `<<-TAG ... TAG` produces `str` and `c<<-TAG ... TAG` produces `cstr` for multiline block text. The content is dedented by the shared leading spaces of nonblank lines, and the newline before the terminator is preserved.
 - `"..."` and `c"..."` may continue across following indented lines when each continued line begins with the same literal kind and no trailing tokens. The segments concatenate exactly with no implicit separator, so long single-line text can wrap without introducing another literal form.
 - The VS Code extension may attach embedded grammars to specific heredoc tags such as `GLSL`, `VERT`, `FRAG`, `COMP`, `JSON`, `JSONC`, and `SQL`, but that is editor-only highlighting. It does not change runtime semantics, and SQL values should still use bound parameters rather than text interpolation.
-- Runtime JSONC support lives in `std.jsonc` as a normalize-to-JSON step that strips comments and trailing commas before feeding strict JSON tooling; `parse(...)` wraps that path over `std.cjson.parse`.
+- There is no first-party runtime JSONC normalization layer; editor JSONC highlighting remains separate from runtime parsing.
 
 ### Composite types
 
@@ -763,7 +763,7 @@ Rules for raw pointers:
 References are separate from methods:
 
 - plain methods still receive values.
-- `edit function` methods use the writable implicit receiver and require an addressable call target.
+- `editable methods` use the writable implicit receiver and require an addressable call target.
 - `static function` methods receive nothing.
 - `ref[T]` is for explicit aliasing in APIs, not hidden receiver lowering.
 
@@ -797,49 +797,15 @@ The standard library follows the same rule as the language: no hidden allocation
 Implemented core modules:
 
 - `std.maybe` provides `Maybe[T]` for APIs where an explicit optional value is clearer than a nullable pointer.
-- `std.ascii` provides byte-level classification and conversion helpers for lexers and parsers.
 - `std.vec` is the owned heap-backed `Vec[T]`. It grows explicitly, releases explicitly, and exposes borrowed `span[T]` views.
 - `std.bytes` is an owned byte buffer on top of `Vec[ubyte]`. It is a low-level substrate, not the default application-facing text tool.
 - `std.string.String` is the normal growable owned UTF-8 text surface. Its public API should mirror the mutable-text shape of `str_builder[N]`: method-style `append`, `assign`, `clear`, `as_str`, `to_cstr`, and explicit constructors, not a parallel module-function vocabulary. Byte-level appends exist as low-level escape hatches.
 - `std.str` provides borrowed string helpers: UTF-8 validation, byte lookup, prefix/suffix/equality, ASCII trimming, and byte search.
-- `std.path`, `std.fs`, and `std.io` provide pure path helpers, byte/text file read/write, stdout printing, and stderr diagnostics.
+- `std.io` provides stdout printing and stderr diagnostics.
 - `std.fmt` is the explicit formatting subsystem. It should be the single normal formatting engine for owned and fixed-capacity text rather than one option among many formatting styles. `f"..."` produces borrowed `str`; `fmt.string(f"...")` is the explicit owned-text allocation path when you need a `std.string.String`. Low-level append helpers remain implementation building blocks.
-- `std.log` is a tiny stderr logger built from `std.fmt` and `std.io`.
-- `std.hash`, `std.map`, and `std.set` provide deterministic hash helpers plus policy-based hash collections.
-- `std.str_map` and `std.str_set` provide borrowed-string-key wrappers for symbol tables and keyword sets.
-- `std.alg` provides generic `span[T]` algorithms: search, predicates, equality, copy, fill, and insertion sort.
-- `std.random` provides deterministic local PRNG state.
-- `std.time` provides Unix time and explicit `strftime`-style UTC/local formatting.
-- `std.process` exposes `argc`/`argv`, environment lookup, and explicit process exit.
-- `std.json` provides an explicit JSON tokenizer and writer helpers. It is not reflection or automatic serialization.
+- `std.async` provides the first-party async runtime surface.
 
-Hash collections use explicit function pointers instead of traits:
-
-```mt
-import std.hash as hash
-import std.map as map
-
-function hash_int(value: int) -> ulong:
-	return hash.int_value(value)
-
-function equal_int(left: int, right: int) -> bool:
-	return hash.int_equal(left, right)
-
-function example() -> int:
-	var scores = map.create[int, int](hash_int, equal_int)
-	defer map.release[int, int](ref_of(scores))
-
-	map.put[int, int](ref_of(scores), 7, 42)
-
-	var value = 0
-	if map.get_into[int, int](scores, 7, ref_of(value)):
-		return value
-	return 0
-```
-
-This keeps lookup semantics visible at construction time and avoids a hidden global typeclass dictionary. If a future trait system exists, it should lower to something equally explicit and readable.
-
-The self-hosting preparation boundary is now clear: the standard library has dynamic arrays, owned text, borrowed string helpers, maps/sets, path and file loading, process arguments, diagnostics, time, random, and JSON token/writer support. The remaining self-hosting work is not another hidden stdlib dependency; it is the actual compiler port: AST data structures, lexer, parser, type representation, semantic analysis, lowering, C generation, module loading, CLI behavior, and eventually bindgen strategy.
+The self-hosting preparation boundary is now clear: the standard library has dynamic arrays, owned text, borrowed string helpers, diagnostics, explicit memory utilities, maybe/status sum types, and async runtime support. The remaining self-hosting work is not another hidden stdlib dependency; it is the actual compiler port: AST data structures, lexer, parser, type representation, semantic analysis, lowering, C generation, module loading, CLI behavior, and eventually bindgen strategy.
 
 ### Lifetime story
 
@@ -1277,7 +1243,7 @@ struct Player:
 	velocity: Vec2
 
 methods Player:
-	edit function update(dt: float):
+	editable function update(dt: float):
 		this.position.x += this.velocity.x * dt
 		this.position.y += this.velocity.y * dt
 ```
