@@ -130,6 +130,17 @@ class MilkTeaLexerTest < Minitest::Test
     assert_equal "true", format_token.literal[3].fetch(:source)
   end
 
+  def test_lexes_format_string_interpolations_with_expression_colons
+    tokens = MilkTea::Lexer.lex("const message = f\"value=\#{unsafe: read(handle)} precise=\#{if flag: 1.0 else: 2.0:.2}\"\n")
+    format_token = tokens.find { |token| token.type == :fstring }
+
+    refute_nil format_token
+    assert_equal "unsafe: read(handle)", format_token.literal[1].fetch(:source)
+    assert_nil format_token.literal[1].fetch(:format_spec)
+    assert_equal "if flag: 1.0 else: 2.0", format_token.literal[3].fetch(:source)
+    assert_equal ".2", format_token.literal[3].fetch(:format_spec)
+  end
+
   def test_lexes_heredoc_strings_and_cstrings
     source = <<~MT
       const shader: cstr = c<<-GLSL

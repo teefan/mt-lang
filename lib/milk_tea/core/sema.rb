@@ -1952,6 +1952,7 @@ module MilkTea
           when AST::StringLiteral
             @types.fetch(expression.cstring ? "cstr" : "str")
           when AST::FormatString
+            check_format_string_literal(expression, scopes:)
             @types.fetch("str")
           when AST::BooleanLiteral
             @types.fetch("bool")
@@ -2796,7 +2797,12 @@ module MilkTea
         raise_sema_error("function #{binding.name} does not support named arguments") if arguments.any?(&:name)
         raise_sema_error("function #{binding.name} expects 1 argument, got #{arguments.length}") unless arguments.length == 1
 
-        format_string = arguments.first.value
+        check_format_string_literal(arguments.first.value, scopes:)
+
+        binding.type.return_type
+      end
+
+      def check_format_string_literal(format_string, scopes:)
         format_string.parts.each do |part|
           next unless part.is_a?(AST::FormatExprPart)
 
@@ -2811,8 +2817,6 @@ module MilkTea
             raise_sema_error("formatted string interpolation supports str, cstr, bool, numeric primitives, and integer-backed enums/flags, got #{value_type}")
           end
         end
-
-        binding.type.return_type
       end
 
       def format_string_interpolation_supported?(type)
@@ -5174,9 +5178,17 @@ module MilkTea
       def foreign_parameter_boundary_type(param, public_type, type_params:)
         return resolve_type_ref(param.boundary_type, type_params:) if param.boundary_type
         return const_pointer_to(public_type) if param.mode == :in
-        return pointer_to(public_type) if [:out, :inout].include?(param.mode)
+        return pointer_to(foreign_slot_boundary_value_type(public_type)) if [:out, :inout].include?(param.mode)
 
         nil
+      end
+
+      def foreign_slot_boundary_value_type(public_type)
+        if public_type.is_a?(Types::Nullable) && pointer_type?(public_type.base)
+          return public_type.base
+        end
+
+        public_type
       end
 
       def validate_in_foreign_parameter!(public_type, boundary_type, function_name:, parameter_name:)

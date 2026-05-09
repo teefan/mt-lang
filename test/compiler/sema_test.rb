@@ -5,12 +5,14 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaSemaTest < Minitest::Test
-  def test_demo_file_type_checks
-    result = MilkTea::ModuleLoader.check_file(demo_path)
+  def test_language_standard_file_type_checks
+    result = MilkTea::ModuleLoader.check_file(language_standard_path)
 
-    assert_equal "demo.bouncing_ball", result.module_name
-    assert_equal %w[main], result.functions.keys.sort
-    assert_equal true, result.imports.key?("rl")
+    assert_equal "examples.language_standard", result.module_name
+    assert_equal %w[main mode_label pair_label printf release_allocated_values], result.functions.keys.sort
+    assert_equal true, result.imports.key?("alg")
+    assert_equal true, result.imports.key?("foreign_demo")
+    assert_equal true, result.imports.key?("types")
   end
 
   def test_rejects_non_bool_conditions
@@ -742,6 +744,56 @@ class MilkTeaSemaTest < Minitest::Test
     result = check_program_source(source)
 
     assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_rejects_general_format_literal_with_unsupported_interpolation_type
+    source = <<~MT
+      module demo.format_bad
+
+      struct Counter:
+          value: int
+
+      function main() -> ptr_uint:
+          let text = f"counter=\#{Counter(value = 1)}"
+          return text.len
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/formatted string interpolation supports .* got .*Counter/, error.message)
+  end
+
+  def test_type_checks_foreign_defs_with_nullable_pointer_inout_slot
+    root_source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      function main() -> void:
+          var state: ptr[char]? = null
+          sample.next_token(null[ptr[char]], c",", state)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        external module std.c.sample:
+            external function NextToken(text: ptr[char]?, delim: cstr, state: ptr[ptr[char]]) -> ptr[char]?
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        public foreign function next_token(text: ptr[char]?, delim: cstr, inout state: ptr[char]?) -> ptr[char]? = c.NextToken(text, delim, state)
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+
+    assert_equal true, program.root_analysis.imports.key?("sample")
+    assert_equal true, program.root_analysis.functions.key?("main")
   end
 
   def test_type_checks_format_precision_spec_on_float
@@ -5674,8 +5726,8 @@ class MilkTeaSemaTest < Minitest::Test
 
   private
 
-  def demo_path
-    File.expand_path("../../examples/milk-tea-demo.mt", __dir__)
+  def language_standard_path
+    File.expand_path("../../examples/language_standard.mt", __dir__)
   end
 
   def check_source(source)

@@ -739,21 +739,60 @@ module MilkTea
     end
 
     # Splits a format interpolation source string into [expression_source, format_spec_string].
-    # A colon at paren/bracket depth 0 separates the expression from the format spec.
-    # Returns [source, nil] when no spec is present.
+    # Only a trailing top-level `:.N` suffix is treated as a format spec so
+    # expression forms like `unsafe: read(ptr)` and `if cond: a else: b` keep
+    # their internal colons inside the embedded expression.
     def split_format_interpolation_source(source)
       depth = 0
-      source.each_char.with_index do |char, i|
+      format_spec_index = nil
+      index = 0
+
+      while index < source.length
+        char = source[index]
+
+        if char == '"'
+          index = skip_interpolation_string_contents(source, index)
+          next
+        end
+
         case char
         when "(", "[", "{"
           depth += 1
         when ")", "]", "}"
-          depth -= 1
+          depth -= 1 if depth.positive?
         when ":"
-          return [source[0...i], source[(i + 1)..]] if depth == 0
+          suffix = source[(index + 1)..]
+          format_spec_index = index if depth.zero? && format_spec_suffix?(suffix)
         end
+
+        index += 1
       end
-      [source, nil]
+
+      return [source, nil] unless format_spec_index
+
+      [source[0...format_spec_index], source[(format_spec_index + 1)..]]
+    end
+
+    def skip_interpolation_string_contents(source, index)
+      index += 1
+
+      while index < source.length
+        char = source[index]
+        return index + 1 if char == '"'
+
+        if char == "\\"
+          index += 2
+          next
+        end
+
+        index += 1
+      end
+
+      source.length
+    end
+
+    def format_spec_suffix?(source)
+      source && source.strip.match?(/\A\.\d+\z/)
     end
 
     def lex_symbol(line, index, line_number, line_offset:)

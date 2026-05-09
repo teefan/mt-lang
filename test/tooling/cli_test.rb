@@ -9,7 +9,7 @@ class MilkTeaCliTest < Minitest::Test
     out = StringIO.new
     err = StringIO.new
 
-    status = MilkTea::CLI.start(["lex", demo_path], out:, err:)
+    status = MilkTea::CLI.start(["lex", language_standard_path], out:, err:)
 
     assert_equal 0, status
     assert_equal "", err.string
@@ -59,25 +59,25 @@ class MilkTeaCliTest < Minitest::Test
     out = StringIO.new
     err = StringIO.new
 
-    status = MilkTea::CLI.start(["parse", demo_path], out:, err:)
+    status = MilkTea::CLI.start(["parse", language_standard_path], out:, err:)
 
     assert_equal 0, status
     assert_equal "", err.string
-    assert_includes out.string, "module demo.bouncing_ball"
-    assert_includes out.string, "methods Ball:"
-    assert_includes out.string, "function main() -> int:"
+    assert_includes out.string, "module examples.language_standard"
+    assert_includes out.string, "methods AppState:"
+    assert_includes out.string, "function main() -> ExitCode:"
   end
 
   def test_fmt_command_prints_formatted_source
     out = StringIO.new
     err = StringIO.new
 
-    status = MilkTea::CLI.start(["fmt", demo_path], out:, err:)
+    status = MilkTea::CLI.start(["fmt", language_standard_path], out:, err:)
 
     assert_equal 0, status
     assert_equal "", err.string
-    assert_includes out.string, "module demo.bouncing_ball"
-    assert_includes out.string, "function main() -> int:"
+    assert_includes out.string, "module examples.language_standard"
+    assert_includes out.string, "function main() -> ExitCode:"
   end
 
   def test_fmt_command_check_mode_reports_changes
@@ -205,10 +205,10 @@ class MilkTeaCliTest < Minitest::Test
     out = StringIO.new
     err = StringIO.new
 
-    status = MilkTea::CLI.start(["check", demo_path], out:, err:)
+    status = MilkTea::CLI.start(["check", language_standard_path], out:, err:)
 
     assert_equal 0, status
-    assert_match(/checked .*milk-tea-demo\.mt as demo\.bouncing_ball/, out.string)
+    assert_match(/checked .*language_standard\.mt as examples\.language_standard/, out.string)
     assert_equal "", err.string
   end
 
@@ -216,26 +216,26 @@ class MilkTeaCliTest < Minitest::Test
     out = StringIO.new
     err = StringIO.new
 
-    status = MilkTea::CLI.start(["lower", demo_path], out:, err:)
+    status = MilkTea::CLI.start(["lower", language_standard_path], out:, err:)
 
     assert_equal 0, status
     assert_equal "", err.string
-    assert_includes out.string, "program demo.bouncing_ball"
-    assert_includes out.string, "include \"raylib.h\""
-    assert_includes out.string, "fn main() -> int [entry]:"
+    assert_includes out.string, "program examples.language_standard"
+    assert_includes out.string, "include \"uv.h\""
+    assert_includes out.string, "const example_name as examples_language_standard_example_name: str = \"language standard\""
   end
 
   def test_emit_c_command_reports_generated_c
     out = StringIO.new
     err = StringIO.new
 
-    status = MilkTea::CLI.start(["emit-c", demo_path], out:, err:)
+    status = MilkTea::CLI.start(["emit-c", language_standard_path], out:, err:)
 
     assert_equal 0, status
     assert_equal "", err.string
-    assert_match(/#include "raylib\.h"/, out.string)
-    assert_match(/demo_bouncing_ball_Ball_update\(&ball, dt\);/, out.string)
-    assert_equal 1, out.string.scan("CloseWindow();").length
+    assert_match(/#include "uv\.h"/, out.string)
+    assert_match(/examples_language_standard_AppState_touch\(&state, 3\);/, out.string)
+    assert_match(/examples_language_standard_printf\("extern -> %s %d\\n"/, out.string)
     refute_match(/^#line\s+/m, out.string)
   end
 
@@ -255,21 +255,23 @@ class MilkTeaCliTest < Minitest::Test
     Dir.mktmpdir("milk-tea-cli-build") do |dir|
       compiler_log = File.join(dir, "compiler.log")
       compiler_path = write_fake_compiler(dir, compiler_log)
-      output_path = File.join(dir, "milk-tea-demo")
-      c_path = File.join(dir, "milk-tea-demo.c")
+      output_path = File.join(dir, "language-standard")
+      c_path = File.join(dir, "language-standard.c")
       out = StringIO.new
       err = StringIO.new
 
-      status = MilkTea::CLI.start(["build", demo_path, "--cc", compiler_path, "-o", output_path, "--keep-c", c_path], out:, err:)
+      status = MilkTea::CLI.start(["build", language_standard_path, "--cc", compiler_path, "-o", output_path, "--keep-c", c_path], out:, err:)
 
       assert_equal 0, status
       assert_equal "", err.string
-      assert_match(/built .*milk-tea-demo\.mt -> .*milk-tea-demo/, out.string)
-      assert_match(/saved C to .*milk-tea-demo\.c/, out.string)
+      assert_match(/built .*language_standard\.mt -> .*language-standard/, out.string)
+      assert_match(/saved C to .*language-standard\.c/, out.string)
       assert File.exist?(output_path)
       assert File.exist?(c_path)
       refute_match(/^#line\s+/m, File.read(c_path))
-      assert_includes File.read(compiler_log).lines(chomp: true), "-lraylib"
+      invocation = File.read(compiler_log).lines(chomp: true)
+      assert_includes invocation, "-lm"
+      assert_includes invocation, "-luv"
     end
   end
 
@@ -277,7 +279,7 @@ class MilkTeaCliTest < Minitest::Test
     out = StringIO.new
     err = StringIO.new
 
-    status = MilkTea::CLI.start(["build", demo_path, "--cc"], out:, err:)
+    status = MilkTea::CLI.start(["build", language_standard_path, "--cc"], out:, err:)
 
     assert_equal 1, status
     assert_equal "", out.string
@@ -326,7 +328,7 @@ class MilkTeaCliTest < Minitest::Test
       out = StringIO.new
       err = StringIO.new
 
-      status = MilkTea::CLI.start(["build", demo_path, "--clean", "-o", output_path], out:, err:)
+      status = MilkTea::CLI.start(["build", language_standard_path, "--clean", "-o", output_path], out:, err:)
 
       assert_equal 0, status
       assert_equal "", err.string
@@ -342,12 +344,14 @@ class MilkTeaCliTest < Minitest::Test
       out = StringIO.new
       err = StringIO.new
 
-      status = MilkTea::CLI.start(["run", demo_path, "--cc", compiler_path], out:, err:)
+      status = MilkTea::CLI.start(["run", language_standard_path, "--cc", compiler_path], out:, err:)
 
       assert_equal 7, status
       assert_equal "run-ok\n", out.string
       assert_equal "run-err\n", err.string
-      assert_includes File.read(compiler_log).lines(chomp: true), "-lraylib"
+      invocation = File.read(compiler_log).lines(chomp: true)
+      assert_includes invocation, "-lm"
+      assert_includes invocation, "-luv"
     end
   end
 
@@ -751,8 +755,8 @@ class MilkTeaCliTest < Minitest::Test
     end or flunk("expected semantic token entry for #{lexeme.inspect}")
   end
 
-  def demo_path
-    File.expand_path("../../examples/milk-tea-demo.mt", __dir__)
+  def language_standard_path
+    File.expand_path("../../examples/language_standard.mt", __dir__)
   end
 
   def write_fake_compiler(dir, log_path)

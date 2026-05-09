@@ -20,7 +20,7 @@ class MilkTeaModuleRootsTest < Minitest::Test
   end
 
   def test_roots_for_path_keeps_project_root
-    roots = MilkTea::ModuleRoots.roots_for_path(File.expand_path("../../examples/milk-tea-demo.mt", __dir__))
+    roots = MilkTea::ModuleRoots.roots_for_path(File.expand_path("../../examples/language_standard.mt", __dir__))
 
     assert_includes roots, File.expand_path("../..", __dir__)
   end

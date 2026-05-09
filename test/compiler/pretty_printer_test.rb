@@ -340,6 +340,35 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_includes output, "demo_pretty_for_keep(i)"
   end
 
+  def test_formats_lowered_ir_with_nil_else_and_switch_default_case
+    source = [
+      "module demo.pretty_match",
+      "",
+      "function describe(code: int) -> int:",
+      "    if code < 0:",
+      "        return 0",
+      "",
+      "    match code:",
+      "        1:",
+      "            return 10",
+      "        _:",
+      "            return 20",
+      "",
+      "function main() -> int:",
+      "    return describe(2)",
+      "",
+    ].join("\n")
+
+    output = with_program(source) do |program|
+      MilkTea::PrettyPrinter.format_ir(MilkTea::Lowering.lower(program))
+    end
+
+    assert_includes output, "fn describe as demo_pretty_match_describe(code: int) -> int:"
+    assert_includes output, "if code < 0:"
+    assert_includes output, "switch code:"
+    assert_includes output, "default:"
+  end
+
   private
 
   def with_program(source)
