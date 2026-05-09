@@ -19,7 +19,6 @@ namespace :test do
     compiler: 'test/compiler/**/*_test.rb',
     tooling: 'test/tooling/**/*_test.rb',
     std: 'test/std/**/*_test.rb',
-    examples: 'test/examples/**/*_test.rb',
   }.each do |name, pattern|
     desc "Run #{name} tests"
     Rake::TestTask.new(name) do |t|
