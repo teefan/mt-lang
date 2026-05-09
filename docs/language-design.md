@@ -198,6 +198,15 @@ let dt = rl.GetFrameTime()      # inferred as float
 var player_count = 0            # inferred as int
 ```
 
+Nullable guard binding is part of the local declaration surface:
+
+```mt
+let handle = maybe_handle else:
+	return 1
+```
+
+The initializer must be nullable, the bound name is the non-null success value, and the `else` block must terminate control flow.
+
 Public items should always spell their types out.
 
 ### Functions
@@ -271,6 +280,9 @@ for i in 0..count:
 for body in bodies:
 	simulate(body)
 
+for entity, position in entities, positions:
+	integrate(entity, position)
+
 match event.kind:
 	EventKind.quit:
 		return 0
@@ -283,7 +295,17 @@ Rules:
 - Conditions must be `bool`. Integers and pointers do not become truthy implicitly.
 - `match` must be exhaustive for enums.
 - `break` and `continue` work exactly as in C and Python.
-- `for` accepts `start..stop`, `array[T, N]`, and `span[T]` as iterables.
+- Single-form `for` accepts `start..stop`, `array[T, N]`, and `span[T]` as iterables.
+- Parallel `for` accepts multiple array/span iterables and binds them in lockstep.
+- Parallel `for` does not accept ranges, and iterable lengths must match.
+
+Range-index assignment is also part of the control-flow-and-mutation surface when code wants an explicit fixed-width slice update:
+
+```mt
+buf[0..3] = (1.0, 2.0, 3.0)
+```
+
+The bounds are integer literals, the range is end-exclusive, and the right-hand tuple width must match the slice width exactly.
 
 ### Useful structured features
 
@@ -325,6 +347,27 @@ unsafe:
 
 The point is not to forbid sharp tools. The point is to mark them.
 Calling a foreign import that already declares borrowed strings, ordinary `str` parameters, string lists, `out` parameters, or typed pointer projections is ordinary code. Crossing into raw `std.c.*` bindings, doing pointer reinterpretation, or manually walking foreign memory remains explicit low-level work.
+
+#### `async` and `await`
+
+Milk Tea has a task surface today, but it is intentionally narrow and explicit.
+
+```mt
+async function child() -> int:
+	return 41
+
+async function parent() -> int:
+	let value = await child()
+	return value + 1
+```
+
+Current implemented shape:
+
+- `async function` lifts its return type to `Task[T]`
+- `await` is only valid inside async functions
+- async bodies support ordinary local declarations, assignments, returns, `if`, `while`, single-form `for`, `match`, and `unsafe`
+- current exclusions are explicit: `defer`, `let ... else:`, and parallel `for` are not supported in async functions yet
+- await placement is still intentionally restricted to the contexts the checker validates today rather than being universally expression-valid
 
 ## Type system
 
